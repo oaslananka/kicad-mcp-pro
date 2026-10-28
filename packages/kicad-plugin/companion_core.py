@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_BASE_URL = "http://127.0.0.1:3334"
+PROJECT_EXTENSION = ".kicad_pro"
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,18 @@ class SavedDrcResult:
     live_selectable_indices: tuple[int, ...] = ()
 
 
+def _finite_drc_location(position: object) -> tuple[float, float] | None:
+    if not isinstance(position, dict):
+        return None
+    coords = (position.get("x"), position.get("y"))
+    if not all(
+        isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+        for value in coords
+    ):
+        return None
+    return float(coords[0]), float(coords[1])
+
+
 def _read_drc_finding(entry: dict[str, Any]) -> DrcFinding:
     items = entry.get("items", [])
     if not isinstance(items, list):
@@ -84,18 +97,8 @@ def _read_drc_finding(entry: dict[str, Any]) -> DrcFinding:
         descriptor = item.get("description")
         if isinstance(descriptor, str) and descriptor:
             affected.append(descriptor[:180].replace("\n", " "))
-        pos = item.get("pos")
-        if location is None and isinstance(pos, dict):
-            x, y = pos.get("x"), pos.get("y")
-            if (
-                isinstance(x, (int, float))
-                and not isinstance(x, bool)
-                and isinstance(y, (int, float))
-                and not isinstance(y, bool)
-                and math.isfinite(x)
-                and math.isfinite(y)
-            ):
-                location = (float(x), float(y))
+        if location is None:
+            location = _finite_drc_location(item.get("pos"))
     check_type = entry.get("type")
     description = entry.get("description")
     if not isinstance(check_type, str):
@@ -116,7 +119,7 @@ def _read_drc_finding(entry: dict[str, Any]) -> DrcFinding:
 def _saved_board_file(summary: BoardSummary) -> Path:
     """Resolve only the saved PCB in the active KiCad project directory."""
     root = Path(summary.project_path).expanduser()
-    if root.suffix == ".kicad_pro":
+    if root.suffix == PROJECT_EXTENSION:
         root = root.parent
     if not root.is_absolute() or not root.is_dir() or not summary.name:
         raise RuntimeError("Save the active PCB in a project before checking DRC.")
@@ -131,6 +134,65 @@ def _saved_board_file(summary: BoardSummary) -> Path:
     return candidate
 
 
+def _execute_saved_drc_cli(work: Path, copied_board: Path, report: Path, timeout: int) -> int:
+    """Run fixed-argv KiCad CLI on a private saved-board copy."""
+    try:
+        # KiCad installations use OS-specific executable locations. The only
+        # PATH-resolved command is the fixed `kicad-cli` literal; it cannot
+        # come from the PCB/project. Fixed argv + shell=False avoid shell
+        # interpretation. B607 is an audited portability false-positive,
+        # not a permission to invoke user-selected commands.
+        process = subprocess.run(  # nosec B603, B607
+            [  # noqa: S607 - PATH-based KiCad executable is deliberate
+                "kicad-cli",
+                "pcb",
+                "drc",
+                "--format",
+                "json",
+                "--output",
+                str(report),
+                str(copied_board),
+            ],
+            cwd=work,
+            shell=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError("KiCad CLI DRC could not finish.") from exc
+    return process.returncode
+
+
+def _validated_drc_payload(
+    payload: object, saved_name: str
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str, str]:
+    """Fail closed on invalid CLI report shape, severity or board identity."""
+    if not isinstance(payload, dict):
+        raise RuntimeError("KiCad DRC report has an unexpected format.")
+    violations = payload.get("violations")
+    unconnected = payload.get("unconnected_items")
+    version = payload.get("kicad_version")
+    if (
+        not isinstance(violations, list)
+        or not isinstance(unconnected, list)
+        or not isinstance(version, str)
+        or not version
+        or payload.get("source") != saved_name
+    ):
+        raise RuntimeError("KiCad DRC report is incomplete or mismatched.")
+    if any(
+        not isinstance(v, dict) or v.get("severity") not in ("error", "warning", "exclusion")
+        for v in violations + unconnected
+    ):
+        raise RuntimeError("KiCad DRC report contains unknown severity.")
+    units = payload.get("coordinate_units", "mm")
+    if units not in ("mm", "in", "mils"):
+        raise RuntimeError("KiCad DRC report uses unexpected coordinate units.")
+    return violations, unconnected, version, units
+
+
 def run_saved_board_drc(summary: BoardSummary, *, timeout: int = 45) -> SavedDrcResult:
     """User-triggered DRC on a private copy of the SAVED board, not editor state.
 
@@ -143,66 +205,21 @@ def run_saved_board_drc(summary: BoardSummary, *, timeout: int = 45) -> SavedDrc
         work = Path(scratch)
         copied_board = work / saved.name
         shutil.copyfile(saved, copied_board)
-        for extension in (".kicad_pro", ".kicad_dru"):
+        for extension in (PROJECT_EXTENSION, ".kicad_dru"):
             candidate = saved.with_suffix(extension)
             if candidate.is_file() and not candidate.is_symlink():
                 shutil.copyfile(candidate, work / candidate.name)
         report = work / "saved-board-drc.json"
-        try:
-            # KiCad installations use OS-specific executable locations. The only
-            # PATH-resolved command is the fixed `kicad-cli` literal; it cannot
-            # come from the PCB/project. Fixed argv + shell=False avoid shell
-            # interpretation. B607 is an audited portability false-positive,
-            # not a permission to invoke user-selected commands.
-            process = subprocess.run(  # nosec B603, B607
-                [  # noqa: S607 - PATH-based KiCad executable is deliberate
-                    "kicad-cli",
-                    "pcb",
-                    "drc",
-                    "--format",
-                    "json",
-                    "--output",
-                    str(report),
-                    str(copied_board),
-                ],
-                cwd=work,
-                shell=False,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise RuntimeError("KiCad CLI DRC could not finish.") from exc
-        if process.returncode != 0 or not report.is_file() or report.stat().st_size > 3_000_000:
+        return_code = _execute_saved_drc_cli(work, copied_board, report, timeout)
+        if return_code != 0 or not report.is_file() or report.stat().st_size > 3_000_000:
             raise RuntimeError("KiCad CLI did not produce a complete DRC report.")
         try:
             payload = json.loads(report.read_text(encoding="utf-8"))
-        except (ValueError, UnicodeError) as exc:
+        except ValueError as exc:
             raise RuntimeError("KiCad CLI produced an invalid DRC report.") from exc
     if hashlib.sha256(saved.read_bytes()).digest() != before_hash:
         raise RuntimeError("Saved PCB changed during DRC; discard this report.")
-    if not isinstance(payload, dict):
-        raise RuntimeError("KiCad DRC report has an unexpected format.")
-    violations = payload.get("violations")
-    unconnected = payload.get("unconnected_items")
-    version = payload.get("kicad_version")
-    if (
-        not isinstance(violations, list)
-        or not isinstance(unconnected, list)
-        or not isinstance(version, str)
-        or not version
-        or payload.get("source") != saved.name
-    ):
-        raise RuntimeError("KiCad DRC report is incomplete or mismatched.")
-    if any(
-        not isinstance(v, dict) or v.get("severity") not in ("error", "warning", "exclusion")
-        for v in violations + unconnected
-    ):
-        raise RuntimeError("KiCad DRC report contains unknown severity.")
-    units = payload.get("coordinate_units", "mm")
-    if units not in ("mm", "in", "mils"):
-        raise RuntimeError("KiCad DRC report uses unexpected coordinate units.")
+    violations, unconnected, version, units = _validated_drc_payload(payload, saved.name)
     ordered = (
         [v for v in violations if v["severity"] == "error"]
         + list(unconnected)
@@ -248,25 +265,8 @@ def can_select_saved_drc_finding(report: SavedDrcResult, finding: DrcFinding) ->
     )
 
 
-def _resolve_verified_saved_drc_items(
-    report: SavedDrcResult,
-    finding: DrcFinding,
-    kicad_factory: Callable[[], Any] | None = None,
-) -> tuple[Any, list[Any]]:
-    """Validate a saved finding against live KiCad without changing selection.
-
-    This changes editor *selection* only, not PCB data or DRC result validity.
-    Snapshot hash/path + every ID must be verified before altering selection.
-    An in-memory unsaved edit may still make the old DRC finding obsolete.
-    """
-    path = Path(report.saved_file)
-    if (
-        not path.is_absolute()
-        or path.suffix != ".kicad_pcb"
-        or len(report.board_sha256) != 64
-        or not path.is_file()
-    ):
-        raise RuntimeError("Saved DRC board identity is unavailable.")
+def _validate_drc_finding_uuids(finding: DrcFinding) -> None:
+    """Require unique canonical, bounded UUIDs before inspecting saved files."""
     if (
         finding.reported_item_count < 1
         or finding.reported_item_count > 8
@@ -280,6 +280,19 @@ def _resolve_verified_saved_drc_items(
                 raise ValueError("Non-canonical UUID")
         except (ValueError, TypeError, AttributeError) as exc:
             raise RuntimeError("DRC finding has an invalid object UUID.") from exc
+
+
+def _validate_saved_drc_identity(report: SavedDrcResult, finding: DrcFinding) -> Path:
+    """Check on-disk snapshot, unique canonical IDs, and byte-level identity."""
+    path = Path(report.saved_file)
+    if (
+        not path.is_absolute()
+        or path.suffix != ".kicad_pcb"
+        or len(report.board_sha256) != 64
+        or not path.is_file()
+    ):
+        raise RuntimeError("Saved DRC board identity is unavailable.")
+    _validate_drc_finding_uuids(finding)
     content = path.read_bytes()
     if hashlib.sha256(content).hexdigest() != report.board_sha256:
         raise RuntimeError("Saved board changed after DRC; nothing selected.")
@@ -287,6 +300,21 @@ def _resolve_verified_saved_drc_items(
     # must contain these persistent identifiers. Old fixture has none.
     if any(f'(uuid "{key}")'.encode() not in content for key in finding.item_ids):
         raise RuntimeError("DRC object lacks a persistent UUID on disk; nothing selected.")
+    return path
+
+
+def _resolve_verified_saved_drc_items(
+    report: SavedDrcResult,
+    finding: DrcFinding,
+    kicad_factory: Callable[[], Any] | None = None,
+) -> tuple[Any, list[Any]]:
+    """Validate a saved finding against live KiCad without changing selection.
+
+    This changes editor *selection* only, not PCB data or DRC result validity.
+    Snapshot hash/path + every ID must be verified before altering selection.
+    An in-memory unsaved edit may still make the old DRC finding obsolete.
+    """
+    path = _validate_saved_drc_identity(report, finding)
     if kicad_factory is None:
         from kipy import KiCad
 
@@ -379,68 +407,87 @@ def _pad_net_names(item: object) -> set[str]:
     return names
 
 
+@dataclass(frozen=True)
+class _SelectedFootprint:
+    reference: str = ""
+    value: str = ""
+    identifier: str = ""
+    pad_count: int | None = None
+    nets: tuple[str, ...] = ()
+    unassigned_pads: int = 0
+    peers: tuple[tuple[str, tuple[str, ...]], ...] = ()
+
+
+def _pad_assignments(definition: object) -> tuple[int | None, tuple[str, ...], int]:
+    pads = getattr(definition, "pads", None)
+    if not isinstance(pads, (list, tuple)):
+        return None, (), 0
+    names: set[str] = set()
+    unassigned = 0
+    for pad in pads:
+        net_name = getattr(getattr(pad, "net", None), "name", None)
+        if isinstance(net_name, str) and net_name:
+            names.add(net_name)
+        else:
+            unassigned += 1
+    return len(pads), tuple(sorted(names)), unassigned
+
+
+def _shared_net_peers(
+    footprints: list[Any], reference: str, nets: tuple[str, ...]
+) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    if not reference or not nets:
+        return ()
+    names = set(nets)
+    peers: dict[str, set[str]] = {net: set() for net in nets}
+    for other in footprints:
+        other_ref = _footprint_ref(other)
+        if not other_ref or other_ref == reference:
+            continue
+        for name in _pad_net_names(other) & names:
+            peers[name].add(other_ref)
+    return tuple((name, tuple(sorted(refs))) for name, refs in sorted(peers.items()) if refs)
+
+
+def _single_selected_footprint(selection: list[Any], footprints: list[Any]) -> _SelectedFootprint:
+    # Never attribute first-item details to a multiple selection.
+    if len(selection) != 1:
+        return _SelectedFootprint()
+    item = selection[0]
+    reference = _footprint_ref(item)
+    definition = getattr(item, "definition", None)
+    if not reference or definition is None:
+        return _SelectedFootprint(reference=reference)
+    value = getattr(getattr(getattr(item, "value_field", None), "text", None), "value", None)
+    identifier = getattr(definition, "id", None)
+    library = getattr(identifier, "library", None)
+    name = getattr(identifier, "name", None)
+    footprint_name = ""
+    if isinstance(library, str) and isinstance(name, str) and name:
+        footprint_name = f"{library}:{name}" if library else name
+    count, nets, unassigned = _pad_assignments(definition)
+    return _SelectedFootprint(
+        reference=reference,
+        value=value if isinstance(value, str) else "",
+        identifier=footprint_name,
+        pad_count=count,
+        nets=nets,
+        unassigned_pads=unassigned,
+        peers=_shared_net_peers(footprints, reference, nets),
+    )
+
+
 def board_summary(kicad_factory: Callable[[], Any] | None = None) -> BoardSummary:
-    """Read the open board through KiCad's official IPC API."""
+    """Read the board and one-footprint context via KiCad's official IPC API."""
     if kicad_factory is None:
         from kipy import KiCad
 
         kicad_factory = KiCad
-    client = kicad_factory()
-    board = client.get_board()
+    board = kicad_factory().get_board()
     project = board.get_project()
     selection = board.get_selection()
     footprints = board.get_footprints()
-    selected_reference = ""
-    selected_value = ""
-    selected_footprint = ""
-    selected_pad_count: int | None = None
-    selected_nets: tuple[str, ...] = ()
-    selected_unconnected_pads = 0
-    selected_net_peers: tuple[tuple[str, tuple[str, ...]], ...] = ()
-    # A multi-selection must not falsely attribute the first footprint's
-    # value and nets to all selected items, or publish its reference as sole.
-    if len(selection) == 1:
-        item = selection[0]
-        selected_reference = _footprint_ref(item)
-
-        definition = getattr(item, "definition", None)
-        if selected_reference and definition is not None:
-            value_field = getattr(item, "value_field", None)
-            value = getattr(getattr(value_field, "text", None), "value", None)
-            if isinstance(value, str):
-                selected_value = value
-            identifier = getattr(definition, "id", None)
-            library = getattr(identifier, "library", None)
-            name = getattr(identifier, "name", None)
-            if isinstance(library, str) and isinstance(name, str) and name:
-                selected_footprint = f"{library}:{name}" if library else name
-            pads = getattr(definition, "pads", None)
-            if isinstance(pads, (list, tuple)):
-                selected_pad_count = len(pads)
-                net_names: set[str] = set()
-                for pad in pads:
-                    net = getattr(pad, "net", None)
-                    net_name = getattr(net, "name", None)
-                    if isinstance(net_name, str) and net_name:
-                        net_names.add(net_name)
-                    else:
-                        selected_unconnected_pads += 1
-                selected_nets = tuple(sorted(net_names))
-
-        # Scan the already-fetched footprint collection once. A shared net
-        # label means logical assignment, never routed copper or DRC success.
-        if selected_reference and selected_nets:
-            selected_names = set(selected_nets)
-            net_peers: dict[str, set[str]] = {net: set() for net in selected_nets}
-            for other in footprints:
-                other_ref = _footprint_ref(other)
-                if not other_ref or other_ref == selected_reference:
-                    continue
-                for name in _pad_net_names(other) & selected_names:
-                    net_peers[name].add(other_ref)
-            selected_net_peers = tuple(
-                (net, tuple(sorted(refs))) for net, refs in sorted(net_peers.items()) if refs
-            )
+    selected = _single_selected_footprint(selection, footprints)
     return BoardSummary(
         name=str(board.name),
         project=str(project.name),
@@ -448,13 +495,13 @@ def board_summary(kicad_factory: Callable[[], Any] | None = None) -> BoardSummar
         nets=len(board.get_nets()),
         selected=len(selection),
         project_path=str(getattr(project, "path", "")),
-        selected_reference=selected_reference,
-        selected_value=selected_value,
-        selected_footprint=selected_footprint,
-        selected_pad_count=selected_pad_count,
-        selected_nets=selected_nets,
-        selected_unconnected_pads=selected_unconnected_pads,
-        selected_net_peers=selected_net_peers,
+        selected_reference=selected.reference,
+        selected_value=selected.value,
+        selected_footprint=selected.identifier,
+        selected_pad_count=selected.pad_count,
+        selected_nets=selected.nets,
+        selected_unconnected_pads=selected.unassigned_pads,
+        selected_net_peers=selected.peers,
     )
 
 

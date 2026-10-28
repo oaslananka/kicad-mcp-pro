@@ -92,6 +92,35 @@ def _finding_detail(finding: DrcFinding, units: str) -> str:
     )
 
 
+def _selected_net_caption(summary: BoardSummary) -> str:
+    nets = ", ".join(summary.selected_nets[:2]) or "None"
+    if len(summary.selected_nets) > 2:
+        nets += f" +{len(summary.selected_nets) - 2} more"
+    extra = ""
+    if summary.selected_unconnected_pads:
+        suffix = "" if summary.selected_unconnected_pads == 1 else "s"
+        extra = f"  ·  {summary.selected_unconnected_pads} unassigned pad{suffix}"
+    return _display_board_name(f"Nets: {nets}{extra}", 47)
+
+
+def _selected_peer_caption(summary: BoardSummary) -> str:
+    if not summary.selected_net_peers:
+        return (
+            "No other footprints share these net labels"
+            if summary.selected_nets
+            else "No net labels to compare"
+        )
+    rows = []
+    for net, refs in summary.selected_net_peers[:2]:
+        view = ", ".join(refs[:2])
+        if len(refs) > 2:
+            view += f" +{len(refs) - 2} more"
+        rows.append(f"{net}: {view}")
+    if len(summary.selected_net_peers) > 2:
+        rows.append(f"+{len(summary.selected_net_peers) - 2} other nets")
+    return "Also assigned: " + "; ".join(rows)
+
+
 def _copy_finding_to_clipboard(finding: DrcFinding, units: str) -> bool:
     """Only copy on explicit user request; never change the editor or PCB."""
     clipboard = wx.TheClipboard
@@ -111,6 +140,104 @@ def _surface(parent: wx.Panel) -> tuple[wx.Panel, wx.BoxSizer]:
     padding.Add(content, 1, wx.EXPAND | wx.ALL, 12)
     surface.SetSizer(padding)
     return surface, content
+
+
+def _populate_drc_table(table: wx.ListCtrl, result: SavedDrcResult) -> None:
+    for index, (title, width) in enumerate(
+        (("Severity", 95), ("DRC check", 205), ("Reported location", 175))
+    ):
+        table.InsertColumn(index, title, width=width)
+    for index, finding in enumerate(result.findings):
+        row = table.InsertItem(index, finding.severity.upper())
+        table.SetItem(row, 1, _friendly_rule_name(finding.check_type))
+        coordinates = "Not reported"
+        if finding.location is not None:
+            coordinates = (
+                f"{finding.location[0]:.2f}, {finding.location[1]:.2f} {result.coordinate_units}"
+            )
+        table.SetItem(row, 2, coordinates)
+
+
+class _DrcDialogActions:
+    """Event handlers for an opt-in saved-board drilldown, not a PCB writer."""
+
+    def __init__(
+        self,
+        result: SavedDrcResult,
+        table: wx.ListCtrl,
+        details: wx.TextCtrl,
+        controls: wx.BoxSizer,
+        select_btn: wx.Button,
+        clipboard_status: wx.StaticText,
+        selection_status: wx.StaticText,
+    ) -> None:
+        self.result = result
+        self.table = table
+        self.details = details
+        self.controls = controls
+        self.select_btn = select_btn
+        self.clipboard_status = clipboard_status
+        self.selection_status = selection_status
+        self.current = 0
+        self.running = False
+        self.alive = True
+
+    def choose_row(self, event: wx.ListEvent) -> None:
+        index = event.GetIndex()
+        if 0 <= index < len(self.result.findings):
+            self.current = index
+            self.details.SetValue(
+                _finding_detail(self.result.findings[index], self.result.coordinate_units)
+            )
+        self.update_select_availability()
+
+    def copy_selected(self, _event: wx.CommandEvent) -> None:
+        try:
+            copied = _copy_finding_to_clipboard(
+                self.result.findings[self.current], self.result.coordinate_units
+            )
+        except Exception:
+            copied = False
+        self.clipboard_status.SetLabel("Finding copied" if copied else "Clipboard unavailable")
+
+    def update_select_availability(self) -> None:
+        permitted = self.current in self.result.live_selectable_indices
+        self.select_btn.Show(permitted)
+        self.select_btn.Enable(permitted and not self.running)
+        if not permitted:
+            self.selection_status.SetLabel("Selection unavailable · use Copy")
+        elif not self.running:
+            self.selection_status.SetLabel("")
+        self.controls.Layout()
+
+    def select_exact(self, _event: wx.CommandEvent) -> None:
+        if self.running or self.current not in self.result.live_selectable_indices:
+            return
+        self.running = True
+        self.select_btn.Enable(False)
+        self.selection_status.SetLabel("Verifying live IDs…")
+        chosen = self.result.findings[self.current]
+
+        def worker() -> None:
+            try:
+                count = select_verified_saved_drc_items(self.result, chosen)
+            except Exception:
+                count = 0
+            wx.CallAfter(self.selection_done, count)
+
+        threading.Thread(target=worker, daemon=True, name="kicad-mcp-drc-select").start()
+
+    def selection_done(self, count: int) -> None:
+        if not self.alive:
+            return
+        self.running = False
+        self.update_select_availability()
+        message = (
+            f"Selected {count} IDs · DRC may be stale"
+            if count
+            else "No exact live match · nothing selected"
+        )
+        self.selection_status.SetLabel(message)
 
 
 class CompanionFrame(wx.Frame):
@@ -432,30 +559,8 @@ class CompanionFrame(wx.Frame):
             _display_board_name(summary.selected_footprint or "Unknown footprint", 42)
         )
         self.footprint_label.SetToolTip(summary.selected_footprint)
-        nets = ", ".join(summary.selected_nets[:2]) or "None"
-        if len(summary.selected_nets) > 2:
-            nets += f" +{len(summary.selected_nets) - 2} more"
-        unassigned = summary.selected_unconnected_pads
-        extra = (
-            f"  ·  {unassigned} unassigned pad{'s' if unassigned != 1 else ''}"
-            if unassigned
-            else ""
-        )
-        self.net_label.SetLabel(_display_board_name(f"Nets: {nets}{extra}", 47))
-        if summary.selected_net_peers:
-            rows = []
-            for net, refs in summary.selected_net_peers[:2]:
-                view = ", ".join(refs[:2])
-                if len(refs) > 2:
-                    view += f" +{len(refs) - 2} more"
-                rows.append(f"{net}: {view}")
-            if len(summary.selected_net_peers) > 2:
-                rows.append(f"+{len(summary.selected_net_peers) - 2} other nets")
-            peer_info = "Also assigned: " + "; ".join(rows)
-        elif summary.selected_nets:
-            peer_info = "No other footprints share these net labels"
-        else:
-            peer_info = "No net labels to compare"
+        self.net_label.SetLabel(_selected_net_caption(summary))
+        peer_info = _selected_peer_caption(summary)
         self.peer_label.SetLabel(_display_board_name(peer_info, 47))
         self.peer_label.SetToolTip(peer_info + " — Shared net labels do not prove routed copper.")
         self.selected_panel.Show()
@@ -463,46 +568,43 @@ class CompanionFrame(wx.Frame):
             self._selection_visible = True
             self.Fit()
 
+    def _show_unavailable_board(self, missing_module: str | None = None) -> None:
+        self.board = None
+        self._drc_result = None
+        self._drc_board = None
+        self.findings_btn.Hide()
+        self.selected_panel.Hide()
+        self._selection_visible = False
+        self.drc_label.SetLabel("DRC snapshot unavailable · no active board")
+        self.drc_label.SetForegroundColour(wx.Colour(SECONDARY))
+        self.selection_label.SetLabel("")
+        if missing_module is None:
+            self.repair_btn.Hide()
+            self.board_label.SetLabel("No active PCB")
+            self.board_details.SetLabel("Open a saved board and enable KiCad's IPC API.")
+            self.board_label.SetForegroundColour(wx.Colour(SECONDARY))
+        else:
+            self.repair_btn.Show()
+            self.board_label.SetLabel("KiCad IPC needs setup")
+            self.board_details.SetLabel(f"Missing Python module: {missing_module}")
+            self.selection_label.SetLabel("Choose Repair below to restore board access.")
+            self.board_label.SetForegroundColour(wx.Colour(WARNING))
+
     def refresh_board(self) -> None:
-        """Re-read PCB/selection on focus, without a potentially slow HTTP health check."""
+        """Re-read PCB/selection on focus, without a potentially slow HTTP check."""
         if self._sync_busy:
             return
         try:
             summary = board_summary()
         except ModuleNotFoundError as exc:
-            self.board = None
-            self._drc_result = None
-            self._drc_board = None
-            self.findings_btn.Hide()
-            self.selected_panel.Hide()
-            self._selection_visible = False
-            self.drc_label.SetLabel("DRC snapshot unavailable · no active board")
-            self.drc_label.SetForegroundColour(wx.Colour(SECONDARY))
-            self.board_label.SetLabel("KiCad IPC needs setup")
-            self.board_details.SetLabel(f"Missing Python module: {exc.name or 'unknown'}")
-            self.selection_label.SetLabel("Choose Repair below to restore board access.")
-            self.repair_btn.Show()
-            self.board_label.SetForegroundColour(wx.Colour(WARNING))
+            self._show_unavailable_board(exc.name or "unknown")
         except Exception:
-            self.board = None
-            self._drc_result = None
-            self._drc_board = None
-            self.findings_btn.Hide()
-            self.selected_panel.Hide()
-            self._selection_visible = False
-            self.repair_btn.Hide()
-            self.drc_label.SetLabel("DRC snapshot unavailable · no active board")
-            self.drc_label.SetForegroundColour(wx.Colour(SECONDARY))
-            self.board_label.SetLabel("No active PCB")
-            self.board_details.SetLabel("Open a saved board and enable KiCad's IPC API.")
-            self.selection_label.SetLabel("")
-            self.board_label.SetForegroundColour(wx.Colour(SECONDARY))
+            self._show_unavailable_board()
         else:
             self._display_board(summary)
             if self.last_synced_board is not None and summary != self.last_synced_board:
                 self.feedback_label.SetLabel("PCB context changed. Sync to update MCP.")
                 self.feedback_label.SetForegroundColour(wx.Colour(WARNING))
-
         self._update_connection_indicator()
         if self.board is None:
             self.Fit()
@@ -533,42 +635,39 @@ class CompanionFrame(wx.Frame):
 
         threading.Thread(target=worker, daemon=True, name="kicad-mcp-saved-drc").start()
 
+    def _reset_drc_snapshot(self, status: str) -> None:
+        self._drc_board = None
+        self._drc_result = None
+        self.findings_btn.Hide()
+        self.drc_label.SetLabel(status)
+        self.drc_label.SetForegroundColour(wx.Colour(WARNING))
+
+    def _show_saved_drc_result(self, result: SavedDrcResult, identity: tuple[str, str]) -> None:
+        self._drc_board = identity
+        self._drc_result = result
+        if result.findings:
+            self.findings_btn.SetLabel(f"View {len(result.findings)} DRC findings")
+            self.findings_btn.Show()
+        else:
+            self.findings_btn.Hide()
+        self.drc_label.SetLabel(
+            f"Saved PCB: {result.errors} errors · {result.warnings} warnings · "
+            f"{result.unconnected} unconnected"
+        )
+        self.drc_label.SetToolTip(
+            "Saved file only; excludes unsaved KiCad edits. Not a release approval."
+        )
+        has_findings = result.errors or result.warnings or result.unconnected
+        self.drc_label.SetForegroundColour(wx.Colour(WARNING if has_findings else CONNECTED))
+
     def _drc_done(self, result: SavedDrcResult | None, identity: tuple[str, str] | None) -> None:
         self._drc_busy = False
         if result is None or identity is None:
-            self._drc_board = None
-            self._drc_result = None
-            self.findings_btn.Hide()
-            self.drc_label.SetLabel("DRC unavailable · saved file not checked")
-            self.drc_label.SetForegroundColour(wx.Colour(WARNING))
+            self._reset_drc_snapshot("DRC unavailable · saved file not checked")
         elif self.board is None or (self.board.name, self.board.project_path) != identity:
-            self._drc_board = None
-            self._drc_result = None
-            self.findings_btn.Hide()
-            self.drc_label.SetLabel("Board changed · discard old DRC result")
-            self.drc_label.SetForegroundColour(wx.Colour(WARNING))
+            self._reset_drc_snapshot("Board changed · discard old DRC result")
         else:
-            self._drc_board = identity
-            self._drc_result = result
-            if result.findings:
-                self.findings_btn.SetLabel(f"View {len(result.findings)} DRC findings")
-                self.findings_btn.Show()
-            else:
-                self.findings_btn.Hide()
-            self.drc_label.SetLabel(
-                f"Saved PCB: {result.errors} errors · {result.warnings} warnings · "
-                f"{result.unconnected} unconnected"
-            )
-            self.drc_label.SetToolTip(
-                "Saved file only; excludes unsaved KiCad edits. Not a release approval."
-            )
-            self.drc_label.SetForegroundColour(
-                wx.Colour(
-                    WARNING
-                    if (result.errors or result.warnings or result.unconnected)
-                    else CONNECTED
-                )
-            )
+            self._show_saved_drc_result(result, identity)
         self.drc_btn.Enable(self.board is not None)
         self.Fit()  # the findings action may have appeared or disappeared
         self.Layout()
@@ -602,7 +701,7 @@ class CompanionFrame(wx.Frame):
             size=(720, 490),
             style=wx.DEFAULT_DIALOG_STYLE | wx.DIALOG_NO_PARENT,
         )
-        dialog_alive = [True]
+        actions: _DrcDialogActions | None = None
         try:
             dialog.SetMinSize((640, 440))
             panel = wx.Panel(dialog)
@@ -626,21 +725,7 @@ class CompanionFrame(wx.Frame):
                 12,
             )
             table = wx.ListCtrl(panel, style=wx.LC_REPORT | wx.LC_SINGLE_SEL)
-            for index, (title, width) in enumerate(
-                (("Severity", 95), ("DRC check", 205), ("Reported location", 175))
-            ):
-                table.InsertColumn(index, title, width=width)
-            for index, finding in enumerate(result.findings):
-                row = table.InsertItem(index, finding.severity.upper())
-                table.SetItem(row, 1, _friendly_rule_name(finding.check_type))
-                if finding.location is not None:
-                    coordinates = (
-                        f"{finding.location[0]:.2f}, {finding.location[1]:.2f} "
-                        f"{result.coordinate_units}"
-                    )
-                else:
-                    coordinates = "Not reported"
-                table.SetItem(row, 2, coordinates)
+            _populate_drc_table(table, result)
             layout.Add(table, 1, wx.EXPAND | wx.BOTTOM, 10)
             details = wx.TextCtrl(
                 panel,
@@ -648,82 +733,21 @@ class CompanionFrame(wx.Frame):
                 style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP,
                 size=(-1, 112),
             )
-            current = [0]
-
-            def update_details(event: wx.ListEvent) -> None:
-                index = event.GetIndex()
-                if 0 <= index < len(result.findings):
-                    current[0] = index
-                    details.SetValue(
-                        _finding_detail(result.findings[index], result.coordinate_units)
-                    )
-
             table.Select(0)
             layout.Add(details, 0, wx.EXPAND | wx.BOTTOM, 10)
             controls = wx.BoxSizer(wx.HORIZONTAL)
             copy_btn = wx.Button(panel, label="Copy selected finding")
             clipboard_status = _text(panel, "", size=9, color=SECONDARY)
-
-            def copy_selected(_event: wx.CommandEvent) -> None:
-                try:
-                    copied = _copy_finding_to_clipboard(
-                        result.findings[current[0]], result.coordinate_units
-                    )
-                except Exception:
-                    copied = False
-                clipboard_status.SetLabel("Finding copied" if copied else "Clipboard unavailable")
-
-            copy_btn.Bind(wx.EVT_BUTTON, copy_selected)
-            controls.Add(copy_btn, 0, wx.RIGHT, 9)
             select_btn = wx.Button(panel, label="Select exact items in KiCad")
             selection_status = _text(panel, "", size=9, color=SECONDARY)
-            selection_running = [False]
-
-            def update_select_availability() -> None:
-                permitted = current[0] in result.live_selectable_indices
-                select_btn.Show(permitted)
-                select_btn.Enable(permitted and not selection_running[0])
-                if not permitted:
-                    selection_status.SetLabel("Selection unavailable · use Copy")
-                elif not selection_running[0]:
-                    selection_status.SetLabel("")
-                controls.Layout()
-
-            def select_exact(_event: wx.CommandEvent) -> None:
-                if selection_running[0] or current[0] not in result.live_selectable_indices:
-                    return
-                selection_running[0] = True
-                select_btn.Enable(False)
-                selection_status.SetLabel("Verifying live IDs…")
-                chosen = result.findings[current[0]]
-
-                def worker() -> None:
-                    try:
-                        count = select_verified_saved_drc_items(result, chosen)
-                    except Exception:
-                        count = 0
-                    wx.CallAfter(selection_done, count)
-
-                def selection_done(count: int) -> None:
-                    if not dialog_alive[0]:
-                        return
-                    selection_running[0] = False
-                    update_select_availability()
-                    selection_status.SetLabel(
-                        f"Selected {count} IDs · DRC may be stale"
-                        if count
-                        else "No exact live match · nothing selected"
-                    )
-
-                threading.Thread(target=worker, daemon=True, name="kicad-mcp-drc-select").start()
-
-            def choose_row(event: wx.ListEvent) -> None:
-                update_details(event)
-                update_select_availability()
-
-            table.Bind(wx.EVT_LIST_ITEM_SELECTED, choose_row)
-            select_btn.Bind(wx.EVT_BUTTON, select_exact)
-            update_select_availability()
+            actions = _DrcDialogActions(
+                result, table, details, controls, select_btn, clipboard_status, selection_status
+            )
+            table.Bind(wx.EVT_LIST_ITEM_SELECTED, actions.choose_row)
+            copy_btn.Bind(wx.EVT_BUTTON, actions.copy_selected)
+            select_btn.Bind(wx.EVT_BUTTON, actions.select_exact)
+            actions.update_select_availability()
+            controls.Add(copy_btn, 0, wx.RIGHT, 9)
             controls.Add(select_btn, 0, wx.RIGHT, 9)
             controls.Add(clipboard_status, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 8)
             controls.Add(selection_status, 1, wx.ALIGN_CENTER_VERTICAL)
@@ -739,11 +763,16 @@ class CompanionFrame(wx.Frame):
             # one-shot GUI timer places it after that step, inside this monitor.
             wx.CallLater(
                 180,
-                lambda: self._place_dialog_on_same_display(dialog) if dialog_alive[0] else None,
+                lambda: (
+                    self._place_dialog_on_same_display(dialog)
+                    if actions is not None and actions.alive
+                    else None
+                ),
             )
             dialog.ShowModal()
         finally:
-            dialog_alive[0] = False
+            if actions is not None:
+                actions.alive = False
             dialog.Destroy()
 
     def _update_connection_indicator(self) -> None:

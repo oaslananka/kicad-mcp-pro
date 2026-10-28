@@ -266,10 +266,12 @@ def test_saved_drc_uses_private_snapshot_no_cli_write_to_original(
         assert kwargs["shell"] is False
         assert kwargs["timeout"] == 45
         copied = Path(argv[-1])
-        assert copied != board and copied.read_bytes() == b"board-bytes"
+        assert copied != board
+        assert copied.read_bytes() == b"board-bytes"
         assert (copied.parent / "safe.kicad_pro").read_bytes() == b"project-rules"
         assert (copied.parent / "safe.kicad_dru").read_bytes() == b"custom-rules"
-        assert "--save-board" not in argv and "--refill-zones" not in argv
+        assert "--save-board" not in argv
+        assert "--refill-zones" not in argv
         report = {
             "source": "safe.kicad_pcb",
             "kicad_version": "10.0.7",

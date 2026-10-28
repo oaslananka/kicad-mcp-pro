@@ -43,6 +43,8 @@ def test_editor_identity_requires_one_same_user_matching_pcb(
     windows = (101, 102, 103)
     probe = tile._X11.__new__(tile._X11)
     probe.root = 1
+    # Mock Linux procfs ownership: runners on Windows/macOS have no /proc.
+    monkeypatch.setattr(tile, "_pid_is_current_user", lambda pid: pid == os.getpid())
     monkeypatch.setattr(
         probe,
         "property",
@@ -65,6 +67,28 @@ def test_editor_identity_requires_one_same_user_matching_pcb(
     assert probe.editor("board.kicad_pcb") == 101
     with pytest.raises(RuntimeError, match="one verified"):
         probe.editor("different.kicad_pcb")
+
+
+def test_missing_or_foreign_proc_owner_never_selects_editor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    probe = tile._X11.__new__(tile._X11)
+    probe.root = 1
+    monkeypatch.setattr(
+        probe,
+        "property",
+        lambda window, name: (
+            (32, (101,))
+            if name == "_NET_CLIENT_LIST"
+            else (8, b"board \xe2\x80\x94 PCB Editor")
+            if name == "_NET_WM_NAME"
+            else (32, (12345,))
+        ),
+    )
+    monkeypatch.setattr(probe, "window_class", lambda window: "pcbnew")
+    monkeypatch.setattr(tile, "_pid_is_current_user", lambda pid: False)
+    with pytest.raises(RuntimeError, match="one verified"):
+        probe.editor("board.kicad_pcb")
 
 
 def test_tile_restores_maximize_if_window_manager_ignores_geometry(

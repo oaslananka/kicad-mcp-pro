@@ -54,6 +54,14 @@ class _XEvent(ctypes.Union):
     _fields_ = [("client", _ClientMessage), ("pad", ctypes.c_long * 24)]
 
 
+def _pid_is_current_user(pid: int) -> bool:
+    """Fail closed unless Linux procfs confirms the KiCad client's UID."""
+    try:
+        return Path(f"/proc/{pid}").stat().st_uid == os.getuid()
+    except OSError:
+        return False
+
+
 class _X11:
     """One short-lived connection to the actual GNOME XWayland/X11 server."""
 
@@ -251,11 +259,7 @@ class _X11:
                 or name.split(" — PCB Editor")[0] != Path(board_name).stem
             ):
                 continue
-            try:
-                owner = Path(f"/proc/{pids[0]}").stat().st_uid
-            except OSError:
-                continue
-            if owner == os.getuid():
+            if _pid_is_current_user(pids[0]):
                 candidates.append(window)
         if len(candidates) != 1:
             raise RuntimeError("Expected one verified local KiCad PCB Editor; nothing arranged.")
