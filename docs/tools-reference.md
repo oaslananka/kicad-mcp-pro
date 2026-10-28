@@ -67,6 +67,24 @@ Current intent fields:
 - RF keepout regions
 - manufacturer / manufacturer tier
 
+## Schematic Authoring Tools
+
+Basic authoring writes symbols, wiring, and labels into the active `.kicad_sch`:
+
+- `sch_add_symbol(library, symbol_name, x_mm, y_mm, reference, value, footprint="", rotation=0, snap_to_grid=True, unit=1, sheet=None, sheet_file=None)` places a symbol at an absolute coordinate and returns a status string. `library` and `symbol_name` select the source symbol; `reference` and `value` set the instance fields; `footprint` is optional and can be filled later by `lib_assign_footprint()`.
+- `sch_add_wire(x1_mm, y1_mm, x2_mm, y2_mm, snap_to_grid=True, sheet=None, sheet_file=None)` draws one wire segment between two points.
+- `sch_add_label(name=None, x_mm=0.0, y_mm=0.0, rotation=0, snap_to_grid=True, text=None, justify=None, sheet=None, sheet_file=None)` places a label. Supply either `name` or `text`; if both are omitted the tool raises a validation error. `justify` overrides KiCad's centered default and is rarely needed for local labels.
+
+All three snap to the 1.27 mm / 50 mil grid by default. Set `snap_to_grid=False`
+only for an intentional off-grid coordinate. Pass `sheet` or `sheet_file` to
+target a specific hierarchy sheet; otherwise the root sheet is used.
+
+A refused or invalid write returns an error result with `isError: true` and
+`error_code`, `message`, and `hint`. Connective-mutation tools can refuse a write
+that would drop structure (`SCHEMATIC_WRITE_UNSAFE`) or fail to verify a route
+(`SCHEMATIC_ROUTING_UNSAFE`); in both cases nothing is written, so correct the
+input and retry. See the [Error Catalog](errors.md) for the full code list.
+
 ## Schematic Safety Tools
 
 Generated schematics should run these checks before PCB transfer:
@@ -77,6 +95,16 @@ Generated schematics should run these checks before PCB transfer:
 
 `pcb_sync_from_schematic(force=False, auto_place=True)` now runs the pre-sync gate by
 default. Use `force=True` only for debugging known-bad intermediate states.
+
+`pcb_sync_from_schematic()` is a file-based bring-up operation that adds missing
+footprint instances to the `.kicad_pcb` using schematic references, values,
+rotations, and assigned `Library:Footprint` names. Placement is controlled by
+`origin_x_mm` and `origin_y_mm` (default `20.0`), `grid_mm` (default `2.54`), and
+`auto_place` (default `True`). `replace_mismatched=True` replaces an existing
+footprint whose reference no longer matches its assigned footprint name;
+`use_net_names` (default `True`) transfers schematic net names onto pads. It
+blocks a dirty schematic transfer unless `force=True`, and refuses an
+unexpectedly open board unless `allow_open_board=True`.
 
 ## Placement, Routing, and Power Tools
 
