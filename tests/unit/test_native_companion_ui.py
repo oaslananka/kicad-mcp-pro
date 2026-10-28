@@ -535,6 +535,7 @@ def test_exact_live_selection_needs_persisted_ids_and_explicit_click(
         str(tmp_path / "board.kicad_pcb"),
         "a" * 64,
         (uid,),
+        (0,),  # read-only live IPC preflight confirmed selectable for this test
     )
     frame._drc_done(report, (frame.board.name, frame.board.project_path))
     select = Mock(return_value=1)
@@ -570,6 +571,39 @@ def test_exact_live_selection_needs_persisted_ids_and_explicit_click(
     wx.Dialog.return_value.ShowModal.side_effect = simulate_owner_click
     frame.show_drc_findings(None)
 
+    # After read-only live preflight excludes the second row (e.g. a KiCad
+    # text Field), switching rows disables the action before user clicks.
+    second = module.DrcFinding(
+        "warning", "silk_over_copper", "Reference field", item_ids=(uid,), reported_item_count=1
+    )
+    report_two = module.SavedDrcResult(
+        1,
+        1,
+        0,
+        0,
+        "10.0.7",
+        (finding, second),
+        "mm",
+        str(tmp_path / "board.kicad_pcb"),
+        "a" * 64,
+        (uid,),
+        (0,),
+    )
+    frame._drc_done(report_two, (frame.board.name, frame.board.project_path))
+
+    def select_unsupported_row() -> int:
+        row_event = Mock()
+        row_event.GetIndex.return_value = 1
+        wx.ListCtrl.return_value.Bind.call_args.args[1](row_event)
+        buttons["Select exact items in KiCad"].Enable.assert_called_with(False)
+        buttons["Select exact items in KiCad"].Show.assert_called_with(False)
+        return 1
+
+    select.reset_mock()
+    wx.Dialog.return_value.ShowModal.side_effect = select_unsupported_row
+    frame.show_drc_findings(None)
+    select.assert_not_called()
+
     # Same GUI but no persistent UUIDs: the selection button must be disabled.
     frame._drc_done(
         module.SavedDrcResult(1, 0, 0, 0, "10.0.7", (finding,)),
@@ -579,7 +613,39 @@ def test_exact_live_selection_needs_persisted_ids_and_explicit_click(
     wx.Dialog.return_value.ShowModal.side_effect = lambda: 1
     frame.show_drc_findings(None)
     buttons["Select exact items in KiCad"].Enable.assert_called_with(False)
+    buttons["Select exact items in KiCad"].Show.assert_called_with(False)
     select.assert_not_called()
+
+
+def test_manual_drc_populates_live_verified_action_rows_in_worker(
+    ui: tuple[types.ModuleType, types.ModuleType], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module, _wx = ui
+    frame = _ready(ui, monkeypatch)
+    finding = module.DrcFinding(
+        "error",
+        "shorting_items",
+        "DRC",
+        item_ids=("71617dd7-0e7e-436f-af97-312daa1427d3",),
+        reported_item_count=1,
+    )
+    report = module.SavedDrcResult(1, 0, 0, 0, "10.0.7", (finding,))
+    run = Mock(return_value=report)
+    verify = Mock(return_value=(0,))
+    monkeypatch.setattr(module, "run_saved_board_drc", run)
+    monkeypatch.setattr(module, "inspect_live_drc_selectability", verify)
+    monkeypatch.setattr(module, "board_summary", lambda: frame.board)
+    monkeypatch.setattr(
+        module,
+        "threading",
+        types.SimpleNamespace(Thread=lambda **kwargs: Mock(start=kwargs["target"])),
+    )
+    verify.assert_not_called()
+    frame.check_saved_drc(None)
+    run.assert_called_once_with(frame.board)
+    verify.assert_called_once_with(report)
+    assert frame._drc_result is not None
+    assert frame._drc_result.live_selectable_indices == (0,)
 
 
 def test_saved_drc_failure_never_displays_false_success(

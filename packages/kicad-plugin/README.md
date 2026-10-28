@@ -66,8 +66,12 @@ item by a unique persisted UUID. On explicit click it rechecks the saved board
 hash and active KiCad project identity, then resolves every reported UUID to
 exactly one selectable live `BoardItem` before changing only the editor
 selection. If any ID is missing, ambiguous, unsupported (such as a text field),
-or the saved file changed, it selects nothing. This is **not** proof that the
-saved DRC issue remains valid in unsaved editor changes, and it never scrolls,
+or the saved file changed, it selects nothing. After DRC finishes, a bounded
+read-only live IPC preflight also filters out nonselectable fields before
+enabling each finding's action; selection click revalidates all IDs again.
+The dialog always warns that unsaved edits may invalidate the saved DRC
+snapshot. This is **not** proof that the saved DRC issue remains valid
+in unsaved editor changes, and it never scrolls,
 zooms, modifies, or saves the PCB.
 The KiCad CLI must be on the companion's PATH; missing/unusable CLI,
 unsupported reports or source file changes fail closed as **DRC unavailable**. Local temporary reports are

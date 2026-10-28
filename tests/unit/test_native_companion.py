@@ -158,6 +158,92 @@ def test_saved_drc_selection_rejects_ephemeral_ids_and_unmatched_editor(
     board.clear_selection.assert_not_called()
 
 
+def test_live_drc_preflight_disables_text_fields_without_mutating_editor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import hashlib
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    import companion_core
+
+    track = "71617dd7-0e7e-436f-af97-312daa1427d3"
+    field = "0cf535e6-08f4-4505-ac7e-2ece4a97f5da"
+    saved = tmp_path / "board.kicad_pcb"
+    saved.write_text(f'(uuid "{track}")\n(uuid "{field}")', encoding="utf-8")
+    first = companion_core.DrcFinding(
+        "error", "shorting_items", "track", item_ids=(track,), reported_item_count=1
+    )
+    second = companion_core.DrcFinding(
+        "warning", "silk_over_copper", "ref text", item_ids=(field,), reported_item_count=1
+    )
+    report = companion_core.SavedDrcResult(
+        1,
+        1,
+        0,
+        0,
+        "10.0.7",
+        (first, second),
+        "mm",
+        str(saved),
+        hashlib.sha256(saved.read_bytes()).hexdigest(),
+        (field, track),
+    )
+
+    class BoardItem:
+        def __init__(self, id_value: str) -> None:
+            self.id = SimpleNamespace(value=id_value)
+
+    class Field:
+        def __init__(self) -> None:
+            self.id = SimpleNamespace(value=1)
+
+    board = Mock()
+    board.name = saved.name
+    board.get_project.return_value.path = str(tmp_path)
+    board.get_items_by_id.side_effect = lambda key: (
+        [BoardItem(track)] if key.value == track else [Field()]
+    )
+    client = Mock()
+    client.get_board.return_value = board
+    kiid = ModuleType("kipy.common_types")
+    kiid.KIID = lambda *, value: SimpleNamespace(value=value)
+    model = ModuleType("kipy.board_types")
+    model.BoardItem = BoardItem
+    monkeypatch.setitem(sys.modules, "kipy.common_types", kiid)
+    monkeypatch.setitem(sys.modules, "kipy.board_types", model)
+    assert companion_core.inspect_live_drc_selectability(report, lambda: client) == (0,)
+    board.clear_selection.assert_not_called()
+    board.add_to_selection.assert_not_called()
+
+    saved.write_text("changed", encoding="utf-8")
+    assert companion_core.inspect_live_drc_selectability(report, lambda: client) == ()
+    board.clear_selection.assert_not_called()
+
+
+def test_live_drc_preflight_unavailable_ipc_fails_closed(tmp_path: Path) -> None:
+    import companion_core
+
+    report = companion_core.SavedDrcResult(
+        1,
+        0,
+        0,
+        0,
+        "10.0.7",
+        (
+            companion_core.DrcFinding(
+                "error", "short", "bad", item_ids=("abc",), reported_item_count=1
+            ),
+        ),
+    )
+    assert (
+        companion_core.inspect_live_drc_selectability(
+            report, lambda: (_ for _ in ()).throw(ConnectionError("IPC gone"))
+        )
+        == ()
+    )
+
+
 def test_saved_drc_uses_private_snapshot_no_cli_write_to_original(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -9,6 +9,7 @@ from __future__ import annotations
 import sys
 import threading
 import webbrowser
+from dataclasses import replace
 
 try:
     import wx
@@ -25,8 +26,8 @@ from companion_core import (
     SavedDrcResult,
     backend_status,
     board_summary,
-    can_select_saved_drc_finding,
     dashboard_url,
+    inspect_live_drc_selectability,
     repair_ipc_dependencies,
     run_saved_board_drc,
     select_verified_saved_drc_items,
@@ -382,6 +383,8 @@ class CompanionFrame(wx.Frame):
             try:
                 current = board_summary()
                 result = run_saved_board_drc(current)
+                selected_rows = inspect_live_drc_selectability(result)
+                result = replace(result, live_selectable_indices=selected_rows)
             except Exception:
                 wx.CallAfter(self._drc_done, None, None)
             else:
@@ -449,9 +452,9 @@ class CompanionFrame(wx.Frame):
             layout.Add(
                 _text(
                     panel,
-                    "Saved-board DRC · selecting exact IDs changes editor selection only.",
+                    "Saved PCB only · unsaved KiCad edits may make findings stale.",
                     size=9,
-                    color=SECONDARY,
+                    color=WARNING,
                 ),
                 0,
                 wx.EXPAND | wx.BOTTOM,
@@ -512,17 +515,17 @@ class CompanionFrame(wx.Frame):
             selection_running = [False]
 
             def update_select_availability() -> None:
-                permitted = can_select_saved_drc_finding(result, result.findings[current[0]])
+                permitted = current[0] in result.live_selectable_indices
+                select_btn.Show(permitted)
                 select_btn.Enable(permitted and not selection_running[0])
                 if not permitted:
-                    selection_status.SetLabel("No persistent IDs; copy instead")
+                    selection_status.SetLabel("Selection unavailable · use Copy")
                 elif not selection_running[0]:
                     selection_status.SetLabel("")
+                controls.Layout()
 
             def select_exact(_event: wx.CommandEvent) -> None:
-                if selection_running[0] or not can_select_saved_drc_finding(
-                    result, result.findings[current[0]]
-                ):
+                if selection_running[0] or current[0] not in result.live_selectable_indices:
                     return
                 selection_running[0] = True
                 select_btn.Enable(False)
@@ -542,7 +545,7 @@ class CompanionFrame(wx.Frame):
                     selection_running[0] = False
                     update_select_availability()
                     selection_status.SetLabel(
-                        f"Selected {count} items · saved DRC only"
+                        f"Selected {count} IDs · DRC may be stale"
                         if count
                         else "No exact live match · nothing selected"
                     )

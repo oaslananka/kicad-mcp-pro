@@ -67,6 +67,7 @@ class SavedDrcResult:
     saved_file: str = ""
     board_sha256: str = ""
     persisted_item_ids: tuple[str, ...] = ()
+    live_selectable_indices: tuple[int, ...] = ()
 
 
 def _read_drc_finding(entry: dict[str, Any]) -> DrcFinding:
@@ -234,12 +235,12 @@ def can_select_saved_drc_finding(report: SavedDrcResult, finding: DrcFinding) ->
     )
 
 
-def select_verified_saved_drc_items(
+def _resolve_verified_saved_drc_items(
     report: SavedDrcResult,
     finding: DrcFinding,
     kicad_factory: Callable[[], Any] | None = None,
-) -> int:
-    """Explicitly select only exact persisted KiCad IDs. Never jump by proximity.
+) -> tuple[Any, list[Any]]:
+    """Validate a saved finding against live KiCad without changing selection.
 
     This changes editor *selection* only, not PCB data or DRC result validity.
     Snapshot hash/path + every ID must be verified before altering selection.
@@ -301,10 +302,47 @@ def select_verified_saved_drc_items(
         matched.append(items[0])
     if hashlib.sha256(path.read_bytes()).hexdigest() != report.board_sha256:
         raise RuntimeError("Saved board changed during validation; nothing selected.")
-    # All preflight checks complete. Explicit user action now changes selection.
+    return board, matched
+
+
+def select_verified_saved_drc_items(
+    report: SavedDrcResult,
+    finding: DrcFinding,
+    kicad_factory: Callable[[], Any] | None = None,
+) -> int:
+    """On explicit click, revalidate all live IDs, then alter only selection."""
+    board, matched = _resolve_verified_saved_drc_items(report, finding, kicad_factory)
     board.clear_selection()
     board.add_to_selection(matched)
     return len(matched)
+
+
+def inspect_live_drc_selectability(
+    report: SavedDrcResult, kicad_factory: Callable[[], Any] | None = None
+) -> tuple[int, ...]:
+    """Read-only, bounded live checks for whether a DRC row offers selection.
+
+    This does not prove unsaved live PCB geometry still matches saved DRC.
+    Selection time always performs a second independent validation.
+    """
+    if kicad_factory is None:
+        from kipy import KiCad
+
+        kicad_factory = KiCad
+    try:
+        client = kicad_factory()
+        available: list[int] = []
+        for index, finding in enumerate(report.findings[:128]):
+            if not can_select_saved_drc_finding(report, finding):
+                continue
+            try:
+                _resolve_verified_saved_drc_items(report, finding, lambda: client)
+            except (OSError, ValueError, RuntimeError, AttributeError, TypeError):
+                continue
+            available.append(index)
+        return tuple(available)
+    except Exception:
+        return ()  # unavailable KiCad IPC: show read-only results, not actions
 
 
 def _footprint_ref(item: object) -> str:
