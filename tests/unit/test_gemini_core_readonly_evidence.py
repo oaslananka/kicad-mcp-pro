@@ -66,15 +66,16 @@ def test_tool_inventory_and_annotation_mismatch_rejected() -> None:
     assert checker.check(observed)
 
 
-def test_gemini_probe_has_only_narrowly_scoped_file_path_audit_annotations() -> None:
+def test_gemini_probe_uses_verified_regular_file_handles_not_scanner_exemptions() -> None:
     script = (ROOT / "scripts/probe_gemini_core_readonly.mjs").read_text(encoding="utf-8")
-    annotated_lines = [line for line in script.splitlines() if "nosemgrep" in line]
-    assert len(annotated_lines) == 9
-    assert all(
-        line.endswith("// nosemgrep: javascript.pathtraversal.rule-non-literal-fs-filename")
-        for line in annotated_lines
+    assert "nosemgrep" not in script
+    assert "O_NOFOLLOW" in script
+    assert "after.dev !== before.dev || after.ino !== before.ino" in script
+    assert "after.size > MAX_FILE_BYTES" in script
+    assert "const bytes = await readVerifiedFile(corePath)" in script
+    assert script.index("const bytes = await readVerifiedFile(corePath)") < script.index(
+        "const core = await import(pathToFileURL(corePath))"
     )
-    assert all("fs." in line for line in annotated_lines)
 
 
 def test_no_duplicate_json_keys_in_observation(tmp_path: Path) -> None:

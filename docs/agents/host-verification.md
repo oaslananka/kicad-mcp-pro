@@ -140,15 +140,15 @@ The [sanitized result](../evidence/agent-host/2026-10-28-linux-gemini-core-reado
 includes the installed core module SHA-256 and discovered tool names. The
 probe verifies the pinned SHA-256 **before importing any Gemini core module**,
 refuses symlinked core files, and does not import unknown sibling core files.
-Path-related analyzer findings are restricted to an explicitly operator-supplied
-installed CLI path, a fixed source manifest, and freshly generated temporary
-paths. The nine deliberately reviewed filesystem operations each carry a
-**same-line, exact-rule** Semgrep annotation for
-`javascript.pathtraversal.rule-non-literal-fs-filename` (not a blanket tool or
-repository exemption); a regression test limits these annotations to those
-nine reviewed `fs.*` operations. Test-only subprocesses use fixed argv, no
-shell and bounded timeouts. The reviewed path operations do **not** attest
-every transitive bundled module. Review the evidence against the same-source operating-mode catalog with:
+Path-related analysis is handled without suppressing scanner rules: the
+operator explicitly chooses the installed CLI entrypoint, the extension
+manifest path is fixed to this source checkout, and discovered core filenames
+must be single regex-validated basenames. All package, manifest and core reads
+use bounded regular-file handles with a symlink-resistant `O_NOFOLLOW` open
+where supported, plus pre-open file identity checks. The installed core module
+SHA-256 is verified **before it is imported**. Test-only subprocesses use
+fixed argv, no shell and bounded timeouts. These controls do **not** attest
+every transitive bundled module or eliminate every possible filesystem race. Review the evidence against the same-source operating-mode catalog with:
 
 ```bash
 PYTHONPATH=src python scripts/check_gemini_core_readonly_evidence.py
