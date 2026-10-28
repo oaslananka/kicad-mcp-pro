@@ -99,6 +99,91 @@ pinning is **not** independent attestation verification, an exact transitive
 lock, a native Gemini diagnostic call or a full compatibility smoke. No host
 catalog status is promoted by the artifact review.
 
+## Linux Gemini CLI 0.60.0 pinned-PyPI native connection — 2026-10-28 (#1219)
+
+The real Gemini CLI — **not an MCP SDK client** — reported a
+`kicad` **Connected** stdio server with the reviewed published-version
+launch (`uvx --from kicad-mcp-pro==4.4.0`), using a temporary
+`readonly/default` configuration and no provider credentials or KiCad IPC.
+An independent PyPI PEP 740 publisher-verification check passed for both
+4.4.0 artifacts. Two disposable uv cache copies matched the checked wheel's
+460 selected files each, excluding installer-generated `RECORD`.
+
+The [dated partial Gemini observation](../evidence/agent-host/2026-10-28-linux-gemini-pinned-stdio-partial.json)
+is **not** a full native-host smoke report: the settings were recreated from
+the reviewed extension, the raw logs were not retained, and no model-free
+Gemini-originated `kicad_get_server_info` / `tools/call`, readonly write-tool
+absence or independent running-process attestation was established. It does
+not pass the strict native smoke validator. This observation must **not**
+change the six-host `repository-static` / `not-run` catalog or close #1219.
+
+## Installed Gemini CLI core model-free MCP diagnostic — 2026-10-28 (#1219)
+
+A **separate** isolated Linux probe loaded the real installed Gemini CLI
+**0.60.0 core** `McpClient` and `DiscoveredMCPToolInvocation` implementations,
+rather than directly constructing a generic MCP SDK client. With the
+published-version-pinned 4.4.0 `uvx` stdio launcher, temporary HOME/workspace,
+empty inherited provider-credential environment, unbound KiCad IPC socket and
+`readonly/default`, this Gemini **core** path:
+
+- Discovered 24 named tools, all recognized by the **same source revision's**
+  `tool_required_mode()` as `readonly`, with no unknown tools.
+- Invoked **only** `kicad_get_server_info` via
+  `DiscoveredMCPToolInvocation.execute()`, with empty arguments and a
+  nonempty, non-error result. Neither the raw response nor private paths were
+  retained. Temporary cache/workspace were deleted.
+- Observed **six tools without `readOnlyHint: true` annotations** in Gemini
+  metadata despite their readonly source-policy classification. This is an
+  annotation/UX ambiguity and **not evidence that write tools were executed**.
+
+The [sanitized result](../evidence/agent-host/2026-10-28-linux-gemini-core-readonly.json)
+includes the installed core module SHA-256 and discovered tool names. The
+probe verifies the pinned SHA-256 **before importing any Gemini core module**,
+refuses symlinked core files, and does not import unknown sibling core files.
+Path-related analysis is handled without suppressing scanner rules: the
+operator explicitly chooses the installed CLI entrypoint, the extension
+manifest path is fixed to this source checkout, and discovered core filenames
+must be single regex-validated basenames. All package, manifest and core reads
+use bounded regular-file handles with a symlink-resistant `O_NOFOLLOW` open
+where supported, plus pre-open file identity checks. The installed core module
+SHA-256 is verified **before it is imported**. For portable test subprocesses
+with a replacement environment, the probe accepts only a numeric macOS
+CoreFoundation `__CF_USER_TEXT_ENCODING` marker on macOS or an absolute Windows
+`SystemRoot` directory on Windows; credential/project environment variables
+remain prohibited. The Windows test passes `SystemRoot` explicitly so Node/V8
+can start. Candidate core file checks run in a bounded group (at most six)
+without serial `await` in a loop. Test subprocesses use fixed argv, no shell
+and bounded timeouts. These controls do **not** attest every transitive bundled
+module or eliminate every possible filesystem race. Review the evidence against the same-source operating-mode catalog with:
+
+```bash
+PYTHONPATH=src python scripts/check_gemini_core_readonly_evidence.py
+```
+
+On a trusted isolated Linux machine with locally installed Gemini CLI 0.60.0,
+Node.js 24+, `uvx` and installed Python 3.13+, run the reviewed, **model-free**
+probe from that same source checkout using a minimal environment:
+
+```bash
+env -i PATH="$PATH" HOME="$(mktemp -d)" UV_PYTHON=/absolute/path/to/python3.13   node scripts/probe_gemini_core_readonly.mjs   --gemini-entry "$(readlink -f "$(command -v gemini)")"
+```
+
+The command prints sanitized JSON only; use a disposable HOME and remove it
+afterward. It refuses inherited provider credentials and any manifest that
+enables trusted tools or unpinned versions. Only the named diagnostic can be
+called, and no model turn or live KiCad project is involved.
+
+**Evidence boundary:** This is a programmatic invocation of the installed
+**Gemini CLI core library**, **not** an actual interactive Gemini CLI session,
+host-originated model tool selection, extension-precedence validation,
+independently attested running executable, reproducible source build or
+complete host acceptance. The temporary folder is explicitly considered
+trusted only to start the reviewed stdio command; tool trust remains false.
+The script executes an operator-approved diagnostic without Gemini UI consent.
+Missing MCP readonly annotations also prevent asserting that every discovered
+tool advertises itself as readonly. All six compatibility catalog entries
+remain `repository-static/not-run`; #1219 is still open.
+
 ## Native Codex 0.163.0 model-free readonly tool smoke — 2026-10-26 (#1219)
 
 A real **Codex app-server 0.163.0** on AMD2700X Linux was launched with

@@ -50,7 +50,7 @@ def test_osv_weekly_inventory_is_pinned_and_uploads_all_findings() -> None:
 
     reporter = steps["Produce SARIF without hiding reviewed Rust findings"]
     assert reporter["uses"] == (
-        "google/osv-scanner-action/osv-reporter-action@0a65f82af05cd58cf587827b0bb0489548c18346"
+        "google/osv-scanner-action/osv-reporter-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347"
     )
     assert "--fail-on-vuln=false" in reporter["with"]["scan-args"]
     assert "--new=results.json" in reporter["with"]["scan-args"]
