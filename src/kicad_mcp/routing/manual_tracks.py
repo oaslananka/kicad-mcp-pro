@@ -80,7 +80,12 @@ class RoutingManualTrackService:
             net_name=net_name,
         )
         self.write_tracks("route_single_track", [_spec_from_payload(payload)])
-        return "Single track routed successfully."
+        # A completed write call is not independent board read-back or DRC.
+        # Do not claim the electrical route is complete from this operation.
+        return (
+            "Track segment write submitted. Board persistence and electrical connectivity "
+            "UNVERIFIED; verify with DRC and project_quality_gate."
+        )
 
     def route_pad_to_pad(
         self,
@@ -125,6 +130,8 @@ class RoutingManualTrackService:
         ]
         self.write_tracks("route_from_pad_to_pad", specs)
         return (
-            f"Created an orthogonal two-segment route from {ref1}:{pad1} to {ref2}:{pad2}. "
-            "Run DRC to verify the path."
+            f"Orthogonal two-segment track write submitted for "
+            f"{ref1}:{pad1} -> {ref2}:{pad2}. "
+            "Board persistence and electrical connectivity UNVERIFIED; "
+            "verify with DRC and project_quality_gate."
         )
