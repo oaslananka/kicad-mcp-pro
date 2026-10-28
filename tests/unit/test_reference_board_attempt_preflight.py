@@ -64,6 +64,76 @@ def test_chatgpt_ops_requires_independent_exact_sha_pin(
         assert "source_revision_not_reviewed" in refused["blocking_reasons"]
 
 
+@pytest.mark.parametrize("remaining_bytes", [0, 128 * 1024**2, 1024**3 - 1])
+def test_preflight_blocks_low_disk_without_reserving_attempt(
+    monkeypatch: pytest.MonkeyPatch, remaining_bytes: int
+) -> None:
+    _safe_checks(monkeypatch)
+    monkeypatch.setattr(
+        cli.shutil, "disk_usage", lambda _: type("Usage", (), {"free": remaining_bytes})()
+    )
+    result = cli.preflight(
+        root=ROOT, board_id="esp32-c6-usbc", attempt_number=901, phase_name="schematic"
+    )
+    assert result["status"] == "blocked"
+    assert "insufficient_scratch_capacity" in result["blocking_reasons"]
+    assert result["minimum_scratch_free_bytes"] == 1024**3
+    assert result["executes_agent"] is False
+    assert result["counts_as_task_success"] is False
+
+
+def test_preflight_fails_closed_when_disk_usage_cannot_be_verified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _safe_checks(monkeypatch)
+
+    def unavailable(_: Path) -> None:
+        raise OSError("private filesystem path")
+
+    monkeypatch.setattr(cli.shutil, "disk_usage", unavailable)
+    result = cli.preflight(
+        root=ROOT, board_id="stm32f072-usbc", attempt_number=901, phase_name="schematic"
+    )
+    assert result["status"] == "blocked"
+    assert result["blocking_reasons"] == ["insufficient_scratch_capacity"]
+    assert "private filesystem path" not in json.dumps(result)
+
+
+def test_preflight_rejects_symlinked_scratch_parent_without_execution(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _safe_checks(monkeypatch)
+    root = tmp_path / "checkout"
+    reviewed = root / "docs/evidence/reference-boards/esp32-c6-usbc/v1"
+    reviewed.mkdir(parents=True)
+    for name in cli._INPUTS:
+        (reviewed / name).write_bytes(
+            (ROOT / "docs/evidence/reference-boards/esp32-c6-usbc/v1" / name).read_bytes()
+        )
+    foreign = tmp_path / "unrelated"
+    foreign.mkdir()
+    (root / ".dev-tools").symlink_to(foreign, target_is_directory=True)
+
+    outcome = cli.preflight(
+        root=root, board_id="esp32-c6-usbc", attempt_number=901, phase_name="schematic"
+    )
+    assert outcome["status"] == "blocked"
+    assert outcome["blocking_reasons"] == ["unsafe_scratch_path"]
+    assert outcome["counts_as_task_success"] is False
+    assert list(foreign.iterdir()) == []
+
+
+def test_preflight_allows_exact_capacity_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
+    _safe_checks(monkeypatch)
+    monkeypatch.setattr(cli.shutil, "disk_usage", lambda _: type("Usage", (), {"free": 1024**3})())
+    result = cli.preflight(
+        root=ROOT, board_id="rp2350-usbc", attempt_number=901, phase_name="schematic"
+    )
+    assert result["status"] == "ready"
+    assert result["blocking_reasons"] == []
+    assert result["counts_as_task_success"] is False
+
+
 def test_missing_source_retains_existing_failure_reason_with_sha_pin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

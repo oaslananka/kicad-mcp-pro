@@ -28,6 +28,7 @@ from scripts.check_reference_live_gui_readiness import probe_live_gui
 ROOT = Path(__file__).resolve().parents[1]
 BOARD_IDS = ("esp32-c6-usbc", "stm32f072-usbc", "rp2350-usbc")
 SCHEMA = "reference-agent-preflight.v1"
+_MIN_SCRATCH_FREE_BYTES = 1024**3  # 1 GiB minimum before reserving a benchmark attempt.
 _BENCHMARK_METADATA = "benchmark.json"
 _INPUTS = ("original-prompt.md", "specification.md", _BENCHMARK_METADATA, "quality-gates.json")
 
@@ -235,6 +236,26 @@ def _live_gui_gate(
     return False, set(measured["blocking_reasons"])
 
 
+def _safe_scratch_path(root: Path, workspace: ReferenceAgentWorkspace) -> bool:
+    """Reject redirects from the exact reviewed .dev-tools attempt directory."""
+    parts = (
+        root / ".dev-tools",
+        root / ".dev-tools/reference-agent-runs",
+        root / ".dev-tools/reference-agent-runs" / workspace.board_id,
+        workspace.scratch_dir.parent,
+        workspace.scratch_dir,
+    )
+    return not any(path.is_symlink() for path in parts)
+
+
+def _scratch_capacity_available(root: Path) -> bool:
+    """Require bounded free space on the checkout filesystem, without writing."""
+    try:
+        return shutil.disk_usage(root).free >= _MIN_SCRATCH_FREE_BYTES
+    except OSError:
+        return False
+
+
 def preflight(
     *,
     root: Path,
@@ -258,6 +279,10 @@ def preflight(
     attempt_dir = workspace.agent_log_path.parent
     if attempt_dir.is_symlink() or attempt_dir.exists() or workspace.scratch_dir.exists():
         blocking.add("attempt_identity_already_used")
+    if not _safe_scratch_path(root.resolve(), workspace):
+        blocking.add("unsafe_scratch_path")
+    if not _scratch_capacity_available(root):
+        blocking.add("insufficient_scratch_capacity")
     source_revision: str | None = None
     try:
         source_revision = discover_reference_source_revision(root)
@@ -317,6 +342,7 @@ def preflight(
         "live_gui_attestation_requested": require_live_gui,
         "live_gui_attested": live_gui_attested,
         "recorded_event_log_required": agent_runtime == "chatgpt-ops",
+        "minimum_scratch_free_bytes": _MIN_SCRATCH_FREE_BYTES,
         "source_revision": source_revision,
         "reviewed_input_sha256": dict(sorted(hashes.items())),
         "blocking_reasons": sorted(blocking),

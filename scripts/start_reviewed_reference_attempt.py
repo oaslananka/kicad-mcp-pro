@@ -20,7 +20,12 @@ from typing import Any
 
 from kicad_mcp.evals.reference_agent_runner import ReferenceAgentWorkspace
 from kicad_mcp.evals.reference_corpus import _parse_agent_log
-from scripts.check_reference_board_attempt_readiness import BOARD_IDS, ROOT, preflight
+from scripts.check_reference_board_attempt_readiness import (
+    BOARD_IDS,
+    ROOT,
+    _safe_scratch_path,
+    preflight,
+)
 
 _SCHEMA = "reference-initial-phase-execution.v1"
 _RECEIPT = "schematic-execution-receipt.json"
@@ -47,18 +52,6 @@ def _result(
         "counts_as_task_success": False,
         "published_attempt_record": False,
     }
-
-
-def _safe_scratch_path(root: Path, workspace: ReferenceAgentWorkspace) -> bool:
-    """Block symlink escapes even for previously-created parent directories."""
-    parts = (
-        root / ".dev-tools",
-        root / ".dev-tools/reference-agent-runs",
-        root / ".dev-tools/reference-agent-runs" / workspace.board_id,
-        workspace.scratch_dir.parent,
-        workspace.scratch_dir,
-    )
-    return not any(path.is_symlink() for path in parts)
 
 
 def start_reviewed_attempt(

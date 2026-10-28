@@ -6,15 +6,19 @@ operator entry point to connect the already-reviewed preflight to the executor:
 
 ```sh
 # Non-executing preview. Never reserves an ID or starts a provider session.
-uv run --all-extras --frozen python scripts/start_reviewed_reference_attempt.py \
+uv run --all-extras --frozen python -m scripts.start_reviewed_reference_attempt \
   --board-id esp32-c6-usbc --attempt-number 4
 
 # Only on a trusted machine after reviewing the provider account, token limits,
 # project, expected expenses, and a clean preflight result:
-uv run --all-extras --frozen python scripts/start_reviewed_reference_attempt.py \
+uv run --all-extras --frozen python -m scripts.start_reviewed_reference_attempt \
   --board-id esp32-c6-usbc --attempt-number 4 \
   --execute --acknowledge-provider-cost
 ```
+
+The read-only preflight blocks a scratch directory redirected through a symlink,
+or less than **1 GiB free space** on the checkout filesystem (including a
+failed space probe). This does not reserve an attempt or alter KPI counts.
 
 The executing invocation reserves the attempt's private `.dev-tools` directory
 **exclusively before** the provider is called and creates a `started` receipt
