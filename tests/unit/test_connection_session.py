@@ -319,3 +319,93 @@ def test_connection_epoch_reports_absent_and_live_session_generation(
 
     monkeypatch.setattr(connection, "_session", FakeSession())
     assert connection.get_connection_epoch() == (generation, 7)
+
+
+def test_session_retry_logging_and_reset_preserve_disconnect_recovery(fake_cli: Path) -> None:
+    """A disconnected board invalidates the old client before a retry."""
+    cfg = KiCadMCPConfig(kicad_cli=fake_cli, ipc_retries=2)
+    events: list[tuple[str, str, dict[str, object]]] = []
+    sleep_calls: list[float] = []
+
+    class Logger:
+        def debug(self, event: str, **kwargs: object) -> None:
+            events.append(("debug", event, kwargs))
+
+        def warning(self, event: str, **kwargs: object) -> None:
+            events.append(("warning", event, kwargs))
+
+    clients = 0
+
+    class FakeClient:
+        def __init__(self, identity: int) -> None:
+            self.identity = identity
+            self.closed = False
+
+        def get_board(self) -> str:
+            if self.identity == 1:
+                raise ConnectionResetError("KiCad IPC connection reset")
+            return "reconnected-board"
+
+        def close(self) -> None:
+            self.closed = True
+
+    instances: list[FakeClient] = []
+
+    def factory(**_kwargs: object) -> FakeClient:
+        nonlocal clients
+        clients += 1
+        client = FakeClient(clients)
+        instances.append(client)
+        return client
+
+    session = KiCadSession(
+        client_factory=factory,
+        config_factory=lambda: cfg,
+        logger=Logger(),
+        sleep=sleep_calls.append,
+    )
+    assert "reconnected-board" == session.board()
+    assert 2 == clients
+    assert True is instances[0].closed
+    assert False is instances[1].closed
+    assert 1 == session.continuity_generation
+    assert [0.2] == sleep_calls
+    assert ["kicad_get_board_failed"] == [
+        event for severity, event, _kwargs in events if severity == "warning"
+    ]
+    assert 2 == len([event for _severity, event, _kwargs in events if event == "kicad_connect"])
+
+
+def test_session_connection_failure_log_retains_attempt_and_socket(fake_cli: Path) -> None:
+    cfg = KiCadMCPConfig(kicad_cli=fake_cli, ipc_retries=1)
+    events: list[tuple[str, dict[str, object]]] = []
+
+    class Logger:
+        def debug(self, event: str, **kwargs: object) -> None:
+            events.append((event, kwargs))
+
+        def warning(self, event: str, **kwargs: object) -> None:
+            events.append((event, kwargs))
+
+    attempts = 0
+
+    def factory(**_kwargs: object) -> object:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("KiCad not ready")
+        return object()
+
+    session = KiCadSession(
+        client_factory=factory,
+        config_factory=lambda: cfg,
+        logger=Logger(),
+        sleep=lambda _seconds: None,
+    )
+    assert object is type(session.client())
+    assert 2 == attempts
+    warnings = [kwargs for event, kwargs in events if event == "kicad_connect_failed"]
+    assert 1 == len(warnings)
+    assert 1 == warnings[0]["attempt"]
+    assert 2 == warnings[0]["max_attempts"]
+    assert "KiCad not ready" == warnings[0]["error"]
