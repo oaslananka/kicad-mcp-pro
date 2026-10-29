@@ -225,3 +225,66 @@ def test_teardrop_rejects_zero_length_or_unconnected_tracks(
         layer="F.Cu",
     )
     assert [] == pcb._collect_teardrop_zones([pad], [far], AddTeardropsInput())
+
+
+def test_file_backed_ratsnest_preserves_fail_closed_diagnostics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reason = OSError("KiCad unavailable")
+    monkeypatch.setattr(pcb, "_load_file_backed_board", lambda exc: "No board file")
+    assert "No board file" == pcb._file_backed_ratsnest_report(reason)
+    monkeypatch.setattr(
+        pcb, "_load_file_backed_board", lambda exc: (object(), "(kicad_pcb)", ["file-backed"])
+    )
+    monkeypatch.setattr(pcb, "_board_file_nets", lambda content: [])
+    assert (
+        "The file-backed board has no nets to analyze.\nfile-backed"
+        == pcb._file_backed_ratsnest_report(reason)
+    )
+    monkeypatch.setattr(pcb, "_board_file_nets", lambda content: ["GND"])
+    text = pcb._file_backed_ratsnest_report(reason)
+    assert "File-backed ratsnest extraction requires a DRC report" in text
+    assert "run_drc()" in text and "file-backed" in text
+
+
+def test_alignment_replacements_preserve_axis_and_rotation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp.models.pcb import AlignFootprintsInput
+
+    placements: list[tuple[str, float, float, int]] = []
+
+    def replace(block: str, *, x_mm: float, y_mm: float, rotation: int) -> str:
+        placements.append((block, x_mm, y_mm, rotation))
+        return f"placed:{block}"
+
+    monkeypatch.setattr(pcb, "_replace_root_at", replace)
+    existing = {
+        "U1": {"x_mm": 10, "y_mm": 20, "rotation": 90, "block": "U1 block"},
+        "U2": {"x_mm": 50, "y_mm": 60, "rotation": 180, "block": "U2 block"},
+    }
+    for axis, second in (
+        ("x", ("U2 block", 12.5, 20.0, 180)),
+        ("y", ("U2 block", 10.0, 22.5, 180)),
+    ):
+        placements.clear()
+        result = pcb._aligned_footprint_replacements(
+            existing,
+            ["U1", "U2"],
+            AlignFootprintsInput(refs=["U1", "U2"], axis=axis, spacing_mm=2.5),
+        )
+        assert {"U1": "placed:U1 block", "U2": "placed:U2 block"} == result
+        assert [("U1 block", 10.0, 20.0, 90), second] == placements
+
+
+def test_unique_copper_zone_points_drop_repeats_and_closing_point() -> None:
+    from kicad_mcp.models.pcb import ZoneCornerInput
+
+    def corner(x: float, y: float) -> ZoneCornerInput:
+        return ZoneCornerInput(x_mm=x, y_mm=y)
+
+    assert [(0.0, 0.0), (4.0, 0.0), (4.0, 3.0)] == pcb._unique_copper_zone_points(
+        [corner(0, 0), corner(4, 0), corner(4, 3), corner(4, 0), corner(0, 0)]
+    )
+    assert [] == pcb._unique_copper_zone_points([])
+    assert [(1.0, 1.0)] == pcb._unique_copper_zone_points([corner(1, 1), corner(1, 1)])

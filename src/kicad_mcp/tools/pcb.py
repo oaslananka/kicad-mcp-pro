@@ -63,6 +63,7 @@ from ..models.pcb import (
     SetDesignRulesInput,
     StackupLayerSpec,
     SyncPcbFromSchematicInput,
+    ZoneCornerInput,
 )
 from ..models.verdict import Finding, SuggestedFix, VerdictReport, stable_finding_id
 from ..operating_modes import OperatingMode, active_operating_mode
@@ -2713,6 +2714,28 @@ def _register_impedance_and_creepage_tools(mcp: FastMCP) -> None:
         )
 
 
+def _file_backed_ratsnest_report(exc: Exception) -> str:
+    loaded = _load_file_backed_board(exc)
+    if isinstance(loaded, str):
+        return loaded
+    _, content, diagnostics = loaded
+    file_nets = _board_file_nets(content)
+    if not file_nets:
+        return "\n".join(
+            [
+                "The file-backed board has no nets to analyze.",
+                *diagnostics,
+            ]
+        )
+    return "\n".join(
+        [
+            ("File-backed ratsnest extraction requires a DRC report to list open connections."),
+            "Run `get_unconnected_nets()` or `run_drc()` for an actionable list.",
+            *diagnostics,
+        ]
+    )
+
+
 def _register_board_rules_inspection_tools(mcp: FastMCP) -> None:
     """Register the board rules inspection tools."""
 
@@ -2724,28 +2747,7 @@ def _register_board_rules_inspection_tools(mcp: FastMCP) -> None:
             board = get_board()
             nets = board_nets_filtered(board, netclass_filter=None)
         except (KiCadConnectionError, BoardAccessError, OSError) as exc:
-            loaded = _load_file_backed_board(exc)
-            if isinstance(loaded, str):
-                return loaded
-            _, content, diagnostics = loaded
-            file_nets = _board_file_nets(content)
-            if not file_nets:
-                return "\n".join(
-                    [
-                        "The file-backed board has no nets to analyze.",
-                        *diagnostics,
-                    ]
-                )
-            return "\n".join(
-                [
-                    (
-                        "File-backed ratsnest extraction requires a DRC report "
-                        "to list open connections."
-                    ),
-                    "Run `get_unconnected_nets()` or `run_drc()` for an actionable list.",
-                    *diagnostics,
-                ]
-            )
+            return _file_backed_ratsnest_report(exc)
         if not nets:
             return "The active board has no nets to analyze."
         return (
@@ -4287,6 +4289,26 @@ def _register_placement_automation_tools(mcp: FastMCP) -> None:
         return _group_by_function_impl(payload)
 
 
+def _aligned_footprint_replacements(
+    existing: dict[str, dict[str, Any]], ordered_refs: list[str], payload: AlignFootprintsInput
+) -> dict[str, str]:
+    anchor = existing[ordered_refs[0]]
+    anchor_x_mm = float(anchor["x_mm"] or 0.0)
+    anchor_y_mm = float(anchor["y_mm"] or 0.0)
+    replacements: dict[str, str] = {}
+    for index, reference in enumerate(ordered_refs):
+        entry = existing[reference]
+        x_mm = anchor_x_mm + (index * payload.spacing_mm) if payload.axis == "x" else anchor_x_mm
+        y_mm = anchor_y_mm if payload.axis == "x" else anchor_y_mm + (index * payload.spacing_mm)
+        replacements[reference] = _replace_root_at(
+            str(entry["block"]),
+            x_mm=x_mm,
+            y_mm=y_mm,
+            rotation=int(entry["rotation"]),
+        )
+    return replacements
+
+
 def _register_footprint_alignment_tools(mcp: FastMCP) -> None:
     """Register the footprint alignment tools."""
 
@@ -4318,25 +4340,7 @@ def _register_footprint_alignment_tools(mcp: FastMCP) -> None:
         if len(ordered_refs) < 2:
             return "At least two existing footprint references are required for alignment."
 
-        anchor = existing[ordered_refs[0]]
-        anchor_x_mm = float(anchor["x_mm"] or 0.0)
-        anchor_y_mm = float(anchor["y_mm"] or 0.0)
-        replacements: dict[str, str] = {}
-
-        for index, reference in enumerate(ordered_refs):
-            entry = existing[reference]
-            x_mm = (
-                anchor_x_mm + (index * payload.spacing_mm) if payload.axis == "x" else anchor_x_mm
-            )
-            y_mm = (
-                anchor_y_mm if payload.axis == "x" else anchor_y_mm + (index * payload.spacing_mm)
-            )
-            replacements[reference] = _replace_root_at(
-                str(entry["block"]),
-                x_mm=x_mm,
-                y_mm=y_mm,
-                rotation=int(entry["rotation"]),
-            )
+        replacements = _aligned_footprint_replacements(existing, ordered_refs, payload)
 
         _transactional_board_write(lambda current: _replace_board_blocks(current, replacements, []))
         lines = [
@@ -4348,6 +4352,19 @@ def _register_footprint_alignment_tools(mcp: FastMCP) -> None:
             lines.extend(f"- {reference}" for reference in missing_refs[:20])
         lines.append(_finalize_file_based_board_edit(payload.allow_open_board))
         return "\n".join(lines)
+
+
+def _unique_copper_zone_points(corners: Sequence[ZoneCornerInput]) -> list[tuple[float, float]]:
+    unique_points: list[tuple[float, float]] = []
+    seen_points: set[tuple[float, float]] = set()
+    for corner in corners:
+        point = (float(corner.x_mm), float(corner.y_mm))
+        if point not in seen_points:
+            unique_points.append(point)
+            seen_points.add(point)
+    if len(unique_points) >= 2 and unique_points[0] == unique_points[-1]:
+        unique_points.pop()
+    return unique_points
 
 
 def _register_copper_zone_tools(mcp: FastMCP) -> None:
@@ -4384,15 +4401,7 @@ def _register_copper_zone_tools(mcp: FastMCP) -> None:
         if "_Cu" not in BoardLayer.Name(layer_value):
             return "Copper zones can only be added to copper layers."
 
-        unique_points: list[tuple[float, float]] = []
-        seen_points: set[tuple[float, float]] = set()
-        for corner in payload.corners:
-            point = (float(corner.x_mm), float(corner.y_mm))
-            if point not in seen_points:
-                unique_points.append(point)
-                seen_points.add(point)
-        if len(unique_points) >= 2 and unique_points[0] == unique_points[-1]:
-            unique_points.pop()
+        unique_points = _unique_copper_zone_points(payload.corners)
         if len(unique_points) < 3:
             return "Copper zones require at least three unique polygon corners."
 
