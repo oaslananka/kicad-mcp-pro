@@ -91,3 +91,110 @@ async def test_baseline_tools_reject_bad_dpi(sample_project: Path) -> None:
         payload = json.loads(raw)
         assert payload["status"] == "error"
         assert "dpi" in payload["message"]
+
+
+def test_baseline_metadata_falls_back_safely(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from kicad_mcp.tools import visual_baseline
+
+    meta = tmp_path / "sample.json"
+    monkeypatch.setattr(visual_baseline, "_baseline_meta", lambda _stem: meta)
+    assert visual_baseline._read_visual_baseline_metadata("sample") == {}
+
+    meta.write_text("{invalid-json", encoding="utf-8")
+    assert visual_baseline._read_visual_baseline_metadata("sample") == {}
+
+    meta.write_text('{"dpi": 240, "sheet": "sample"}', encoding="utf-8")
+    assert visual_baseline._read_visual_baseline_metadata("sample") == {
+        "dpi": 240,
+        "sheet": "sample",
+    }
+
+
+def test_render_comparison_passes_baseline_options(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from kicad_mcp.tools import visual_baseline
+
+    source = tmp_path / "sample.kicad_sch"
+    baseline = tmp_path / "sample.png"
+    captured: dict[str, object] = {}
+
+    def fake_render(path: Path, output: Path, **kwargs: object) -> tuple[Path, dict]:
+        captured.update({"path": path, "output": output, **kwargs})
+        return output, {}
+
+    def fake_diff(base: Path, current: Path, diff: Path) -> dict[str, int]:
+        assert (base, current, diff) == (
+            baseline,
+            tmp_path / "sample.current.png",
+            tmp_path / "sample.drift.png",
+        )
+        return {"width_px": 20, "height_px": 20, "changed_pixels": 4}
+
+    monkeypatch.setattr(visual_baseline, "_baseline_dir", lambda: tmp_path)
+    monkeypatch.setattr(visual_baseline, "_render_schematic_png_artifact", fake_render)
+    monkeypatch.setattr(visual_baseline, "_render_png_visual_diff", fake_diff)
+    current, diff, evidence = visual_baseline._render_visual_baseline_comparison(
+        source, "sample", baseline, 180, False
+    )
+    assert current == tmp_path / "sample.current.png"
+    assert diff == tmp_path / "sample.drift.png"
+    assert evidence["changed_pixels"] == 4
+    assert captured == {
+        "path": source,
+        "output": current,
+        "dpi": 180,
+        "crop_to_content": True,
+        "include_title_block": False,
+    }
+
+
+def test_compare_existing_baseline_obeys_stored_dpi(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp.tools import visual_baseline
+
+    class Collector:
+        tools: dict[str, object]
+
+        def __init__(self) -> None:
+            self.tools = {}
+
+        def tool(self):
+            def record(fn):
+                self.tools[fn.__name__] = fn
+                return fn
+
+            return record
+
+    target = tmp_path / "sample.kicad_sch"
+    baseline = tmp_path / "sample.png"
+    baseline.touch()
+    current = tmp_path / "sample.current.png"
+    diff = tmp_path / "sample.drift.png"
+    seen: list[tuple] = []
+
+    monkeypatch.setattr(
+        visual_baseline, "_resolve_schematic_target", lambda **_kwargs: SimpleNamespace(path=target)
+    )
+    monkeypatch.setattr(visual_baseline, "_baseline_png", lambda _stem: baseline)
+    monkeypatch.setattr(
+        visual_baseline, "_read_visual_baseline_metadata", lambda _stem: {"dpi": 180}
+    )
+
+    def fake_comparison(*args: object) -> tuple[Path, Path, dict[str, int]]:
+        seen.append(args)
+        return current, diff, {"width_px": 10, "height_px": 10, "changed_pixels": 5}
+
+    monkeypatch.setattr(visual_baseline, "_render_visual_baseline_comparison", fake_comparison)
+    collector = Collector()
+    visual_baseline.register(collector)  # type: ignore[arg-type]
+    compare = collector.tools["sch_visual_baseline_compare"]
+    result = json.loads(compare(dpi=200, threshold_pct=2.0))  # type: ignore[operator]
+    assert seen == [(target, "sample", baseline, 180, True)]
+    assert result["status"] == "DRIFT"
+    assert result["drift_pct"] == 5.0
