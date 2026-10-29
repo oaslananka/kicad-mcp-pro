@@ -66,6 +66,90 @@ class CircuitLike(Protocol):
     def interface_count(self) -> int: ...
 
 
+def _render_component_section(circuit: CircuitLike) -> list[str]:
+    lines: list[str] = []
+    if circuit.components:
+        lines += ["", f"## Components ({circuit.component_count()})"]
+        for reference in sorted(circuit.components):
+            component = circuit.components[reference]
+            flags = ""
+            if component.dnp:
+                flags += " [DNP]"
+            if not component.in_bom:
+                flags += " [NoBOM]"
+            lines.append(
+                f"- {reference}: {component.lib_id} = {component.value} "
+                f"({component.footprint}){flags}  ({len(component.pins)} pins)"
+            )
+
+    return lines
+
+
+def _render_net_section(circuit: CircuitLike) -> list[str]:
+    lines: list[str] = []
+    if circuit.nets:
+        power_nets = sum(1 for net in circuit.nets.values() if net.is_power)
+        signal_nets = circuit.net_count() - power_nets
+        lines += [
+            "",
+            f"## Nets ({circuit.net_count()} total: {signal_nets} signal, {power_nets} power)",
+        ]
+        for name in sorted(circuit.nets):
+            net = circuit.nets[name]
+            pin_count = len(tuple(net.connections))
+            power_tag = " [POWER]" if net.is_power else ""
+            voltage_tag = f" {net.voltage}V" if net.voltage is not None else ""
+            lines.append(f"- `{name}`{power_tag}{voltage_tag} ({pin_count} connections)")
+
+    return lines
+
+
+def _render_power_rail_section(circuit: CircuitLike) -> list[str]:
+    lines: list[str] = []
+    if circuit.power_rails:
+        lines += ["", f"## Power Rails ({len(circuit.power_rails)})"]
+        for name in sorted(circuit.power_rails):
+            rail = circuit.power_rails[name]
+            net_names = sorted(rail.net_names)
+            nets_text = ", ".join(net_names[:5])
+            if len(net_names) > 5:
+                nets_text += f" … (+{len(net_names) - 5} more)"
+            source = f" from {rail.source_ref}.{rail.source_pin}" if rail.source_ref else ""
+            lines.append(f"- {name}: {rail.voltage}V{source}  nets=[{nets_text}]")
+
+    return lines
+
+
+def _render_interface_section(circuit: CircuitLike) -> list[str]:
+    lines: list[str] = []
+    if circuit.interfaces:
+        lines += ["", f"## Interfaces ({circuit.interface_count()})"]
+        for name in sorted(circuit.interfaces):
+            interface = circuit.interfaces[name]
+            refs = ", ".join(sorted(interface.refs)[:3])
+            roles = ", ".join(
+                f"{role}={net_name}" for role, net_name in interface.net_roles.items()
+            )
+            lines.append(f"- {name} ({interface.kind}): [{roles}]  refs=[{refs}]")
+
+    return lines
+
+
+def _render_findings_section(findings: list[FindingLike]) -> list[str]:
+    lines: list[str] = []
+    if findings:
+        lines += ["", f"## IR Lint Findings ({len(findings)})"]
+        for finding in findings:
+            subject_tag = f" ({finding.subject})" if finding.subject else ""
+            detail_tag = f" — {finding.detail}" if finding.detail else ""
+            lines.append(
+                f"- [{finding.severity.value.upper()}] {finding.rule_id}"
+                f"{subject_tag}: {finding.message}{detail_tag}"
+            )
+
+    return lines
+
+
 @dataclass(frozen=True)
 class SchematicSemanticIRService:
     """Parse and render a semantic circuit IR summary."""
@@ -96,64 +180,10 @@ class SchematicSemanticIRService:
             f"{circuit.interface_count()} interfaces",
         ]
 
-        if circuit.components:
-            lines += ["", f"## Components ({circuit.component_count()})"]
-            for reference in sorted(circuit.components):
-                component = circuit.components[reference]
-                flags = ""
-                if component.dnp:
-                    flags += " [DNP]"
-                if not component.in_bom:
-                    flags += " [NoBOM]"
-                lines.append(
-                    f"- {reference}: {component.lib_id} = {component.value} "
-                    f"({component.footprint}){flags}  ({len(component.pins)} pins)"
-                )
-
-        if circuit.nets:
-            power_nets = sum(1 for net in circuit.nets.values() if net.is_power)
-            signal_nets = circuit.net_count() - power_nets
-            lines += [
-                "",
-                f"## Nets ({circuit.net_count()} total: {signal_nets} signal, {power_nets} power)",
-            ]
-            for name in sorted(circuit.nets):
-                net = circuit.nets[name]
-                pin_count = len(tuple(net.connections))
-                power_tag = " [POWER]" if net.is_power else ""
-                voltage_tag = f" {net.voltage}V" if net.voltage is not None else ""
-                lines.append(f"- `{name}`{power_tag}{voltage_tag} ({pin_count} connections)")
-
-        if circuit.power_rails:
-            lines += ["", f"## Power Rails ({len(circuit.power_rails)})"]
-            for name in sorted(circuit.power_rails):
-                rail = circuit.power_rails[name]
-                net_names = sorted(rail.net_names)
-                nets_text = ", ".join(net_names[:5])
-                if len(net_names) > 5:
-                    nets_text += f" … (+{len(net_names) - 5} more)"
-                source = f" from {rail.source_ref}.{rail.source_pin}" if rail.source_ref else ""
-                lines.append(f"- {name}: {rail.voltage}V{source}  nets=[{nets_text}]")
-
-        if circuit.interfaces:
-            lines += ["", f"## Interfaces ({circuit.interface_count()})"]
-            for name in sorted(circuit.interfaces):
-                interface = circuit.interfaces[name]
-                refs = ", ".join(sorted(interface.refs)[:3])
-                roles = ", ".join(
-                    f"{role}={net_name}" for role, net_name in interface.net_roles.items()
-                )
-                lines.append(f"- {name} ({interface.kind}): [{roles}]  refs=[{refs}]")
-
-        findings = list(self.lint_circuit(circuit))
-        if findings:
-            lines += ["", f"## IR Lint Findings ({len(findings)})"]
-            for finding in findings:
-                subject_tag = f" ({finding.subject})" if finding.subject else ""
-                detail_tag = f" — {finding.detail}" if finding.detail else ""
-                lines.append(
-                    f"- [{finding.severity.value.upper()}] {finding.rule_id}"
-                    f"{subject_tag}: {finding.message}{detail_tag}"
-                )
+        lines.extend(_render_component_section(circuit))
+        lines.extend(_render_net_section(circuit))
+        lines.extend(_render_power_rail_section(circuit))
+        lines.extend(_render_interface_section(circuit))
+        lines.extend(_render_findings_section(list(self.lint_circuit(circuit))))
 
         return "\n".join(lines)

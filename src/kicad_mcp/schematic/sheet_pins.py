@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Final
 
 PIN_TYPES: Final[tuple[str, ...]] = (
@@ -246,6 +246,70 @@ def _validate_sheet_completeness(
     return f"it has no {' and no '.join(missing)}"
 
 
+@dataclass
+class _SheetChildren:
+    """Mutable parsing state for children of one sheet S-expression."""
+
+    name: str = ""
+    filename: str = ""
+    origin: tuple[float, float] | None = None
+    at_span: tuple[int, int] | None = None
+    size: tuple[float, float] | None = None
+    size_span: tuple[int, int] | None = None
+    pins: list[SheetPinRecord] = field(default_factory=list)
+    pin_spans: list[tuple[int, int]] = field(default_factory=list)
+    pin_at_spans: list[tuple[int, int]] = field(default_factory=list)
+    instances_start: int | None = None
+
+
+def _scan_sheet_child_geometry(
+    children: _SheetChildren, tag: str, text: str, start: int, end: int
+) -> None:
+    if tag == "at" and children.origin is None:
+        children.origin = _two_floats(text, start, end)
+        if children.origin is not None:
+            children.at_span = (start, end)
+    elif tag == "size" and children.size is None:
+        children.size = _two_floats(text, start, end)
+        if children.size is not None:
+            children.size_span = (start, end)
+
+
+def _scan_sheet_child_property(children: _SheetChildren, text: str, start: int) -> None:
+    property_match = _PROPERTY_RE.match(text, start)
+    if property_match is None:
+        return
+    key = _unescape(property_match.group(1))
+    value = _unescape(property_match.group(2))
+    if key == "Sheetname":
+        children.name = value
+    elif key == "Sheetfile":
+        children.filename = value
+
+
+def _scan_sheet_child_pin(children: _SheetChildren, text: str, start: int, end: int) -> None:
+    pin_data = _parse_sheet_pin(text, start, end)
+    if pin_data is not None:
+        pin, span, p_at_span = pin_data
+        children.pins.append(pin)
+        children.pin_spans.append(span)
+        children.pin_at_spans.append(p_at_span)
+
+
+def _scan_sheet_children(text: str, start: int, end: int) -> _SheetChildren:
+    children = _SheetChildren()
+    for tag, child_start, child_end in _children(text, start, end):
+        if tag in ("at", "size"):
+            _scan_sheet_child_geometry(children, tag, text, child_start, child_end)
+        elif tag == "property":
+            _scan_sheet_child_property(children, text, child_start)
+        elif tag == "pin":
+            _scan_sheet_child_pin(children, text, child_start, child_end)
+        elif tag == "instances" and children.instances_start is None:
+            children.instances_start = child_start
+    return children
+
+
 def _scan_sheet_blocks(text: str) -> Iterator[SheetBlock | SkippedSheetBlock]:
     """Yield one result per ``(sheet ...)`` match: an addressable block or a skip."""
     for match in _SHEET_RE.finditer(text):
@@ -260,44 +324,17 @@ def _scan_sheet_blocks(text: str) -> Iterator[SheetBlock | SkippedSheetBlock]:
             )
             continue
 
-        name = ""
-        filename = ""
-        origin: tuple[float, float] | None = None
-        at_span: tuple[int, int] | None = None
-        size: tuple[float, float] | None = None
-        size_span: tuple[int, int] | None = None
-        pins: list[SheetPinRecord] = []
-        pin_spans: list[tuple[int, int]] = []
-        pin_at_spans: list[tuple[int, int]] = []
-        instances_start: int | None = None
-
-        for tag, child_start, child_end in _children(text, start, end):
-            if tag == "at" and origin is None:
-                origin = _two_floats(text, child_start, child_end)
-                if origin is not None:
-                    at_span = (child_start, child_end)
-            elif tag == "size" and size is None:
-                size = _two_floats(text, child_start, child_end)
-                if size is not None:
-                    size_span = (child_start, child_end)
-            elif tag == "property":
-                property_match = _PROPERTY_RE.match(text, child_start)
-                if property_match is not None:
-                    key = _unescape(property_match.group(1))
-                    value = _unescape(property_match.group(2))
-                    if key == "Sheetname":
-                        name = value
-                    elif key == "Sheetfile":
-                        filename = value
-            elif tag == "pin":
-                pin_data = _parse_sheet_pin(text, child_start, child_end)
-                if pin_data is not None:
-                    pin, span, p_at_span = pin_data
-                    pins.append(pin)
-                    pin_spans.append(span)
-                    pin_at_spans.append(p_at_span)
-            elif tag == "instances" and instances_start is None:
-                instances_start = child_start
+        children = _scan_sheet_children(text, start, end)
+        name = children.name
+        filename = children.filename
+        origin = children.origin
+        at_span = children.at_span
+        size = children.size
+        size_span = children.size_span
+        pins = children.pins
+        pin_spans = children.pin_spans
+        pin_at_spans = children.pin_at_spans
+        instances_start = children.instances_start
 
         skip_reason = _validate_sheet_completeness(name, origin, at_span, size, size_span)
         if (

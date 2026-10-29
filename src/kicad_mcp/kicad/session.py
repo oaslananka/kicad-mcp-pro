@@ -237,6 +237,46 @@ class KiCadSession:
 
             return self._client
 
+    def _log_connect_attempt(self, attempt: int, total_attempts: int, kwargs: KiCadKwargs) -> None:
+        if self._logger is not None:
+            self._logger.debug(
+                "kicad_connect",
+                attempt=attempt,
+                max_attempts=total_attempts,
+                kwargs=list(kwargs.keys()),
+            )
+
+    def _log_connect_failure(
+        self, attempt: int, total_attempts: int, exc: Exception, cfg: SessionConfig
+    ) -> None:
+        if self._logger is not None:
+            self._logger.warning(
+                "kicad_connect_failed",
+                attempt=attempt,
+                max_attempts=total_attempts,
+                error=str(exc),
+                socket_path=str(cfg.kicad_socket_path) if cfg.kicad_socket_path else None,
+            )
+
+    def _should_retry_board(
+        self, exc: Exception, kind: IpcErrorKind, attempt: int, attempts: int
+    ) -> bool:
+        if self._logger is not None:
+            self._logger.warning(
+                "kicad_get_board_failed",
+                attempt=attempt,
+                attempts=attempts,
+                error=str(exc),
+                kind=kind,
+            )
+        if kind == "disconnected":
+            # The board belongs to a different KiCad instance after a restart.
+            self.reset()
+        if kind in ("busy", "disconnected") and attempt < attempts:
+            self._sleep(min(0.2 * attempt, 1.0))
+            return True
+        return False
+
     def _connect_with_retry(self) -> object:
         """Attempt to connect with exponential backoff.
 
@@ -256,27 +296,14 @@ class KiCadSession:
             # Sleep *before* every attempt except the first
             if attempt > 1 and backoff_times:
                 self._sleep(backoff_times[attempt - 2])
-            if self._logger is not None:
-                self._logger.debug(
-                    "kicad_connect",
-                    attempt=attempt,
-                    max_attempts=total_attempts,
-                    kwargs=list(kwargs.keys()),
-                )
+            self._log_connect_attempt(attempt, total_attempts, kwargs)
             try:
                 client = self._client_factory(**kwargs)
                 self._last_connect_time = time.monotonic()
                 return client
             except Exception as exc:
                 last_error = exc
-                if self._logger is not None:
-                    self._logger.warning(
-                        "kicad_connect_failed",
-                        attempt=attempt,
-                        max_attempts=total_attempts,
-                        error=str(exc),
-                        socket_path=str(cfg.kicad_socket_path) if cfg.kicad_socket_path else None,
-                    )
+                self._log_connect_failure(attempt, total_attempts, exc, cfg)
 
         if last_error is not None and _classify_ipc_error(last_error) == "timeout":
             raise KiCadConnectionTimeoutError(
@@ -310,20 +337,7 @@ class KiCadSession:
             except Exception as exc:
                 last_error = exc
                 kind = _classify_ipc_error(exc)
-                if self._logger is not None:
-                    self._logger.warning(
-                        "kicad_get_board_failed",
-                        attempt=attempt,
-                        attempts=attempts,
-                        error=str(exc),
-                        kind=kind,
-                    )
-                if kind == "disconnected":
-                    # KiCad went away or restarted — drop the stale client so the
-                    # next attempt reconnects rather than reusing a dead session.
-                    self.reset()
-                if kind in ("busy", "disconnected") and attempt < attempts:
-                    self._sleep(min(0.2 * attempt, 1.0))
+                if self._should_retry_board(exc, kind, attempt, attempts):
                     continue
                 break
 
