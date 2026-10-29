@@ -364,16 +364,16 @@ def test_session_retry_logging_and_reset_preserve_disconnect_recovery(fake_cli: 
         logger=Logger(),
         sleep=sleep_calls.append,
     )
-    assert "reconnected-board" == session.board()
-    assert 2 == clients
-    assert True is instances[0].closed
-    assert False is instances[1].closed
-    assert 1 == session.continuity_generation
-    assert [0.2] == sleep_calls
-    assert ["kicad_get_board_failed"] == [
-        event for severity, event, _kwargs in events if severity == "warning"
+    assert session.board() == "reconnected-board"
+    assert clients == 2
+    assert instances[0].closed is True
+    assert instances[1].closed is False
+    assert session.continuity_generation == 1
+    assert sleep_calls == [0.2]
+    assert [event for severity, event, _kwargs in events if severity == "warning"] == [
+        "kicad_get_board_failed"
     ]
-    assert 2 == len([event for _severity, event, _kwargs in events if event == "kicad_connect"])
+    assert len([event for _severity, event, _kwargs in events if event == "kicad_connect"]) == 2
 
 
 def test_session_connection_failure_log_retains_attempt_and_socket(fake_cli: Path) -> None:
@@ -402,10 +402,10 @@ def test_session_connection_failure_log_retains_attempt_and_socket(fake_cli: Pat
         logger=Logger(),
         sleep=lambda _seconds: None,
     )
-    assert object is type(session.client())
-    assert 2 == attempts
+    assert type(session.client()) is object
+    assert attempts == 2
     warnings = [kwargs for event, kwargs in events if event == "kicad_connect_failed"]
-    assert 1 == len(warnings)
-    assert 1 == warnings[0]["attempt"]
-    assert 2 == warnings[0]["max_attempts"]
-    assert "KiCad not ready" == warnings[0]["error"]
+    assert len(warnings) == 1
+    assert warnings[0]["attempt"] == 1
+    assert warnings[0]["max_attempts"] == 2
+    assert warnings[0]["error"] == "KiCad not ready"

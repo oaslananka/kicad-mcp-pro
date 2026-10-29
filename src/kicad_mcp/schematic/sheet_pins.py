@@ -262,33 +262,49 @@ class _SheetChildren:
     instances_start: int | None = None
 
 
+def _scan_sheet_child_geometry(
+    children: _SheetChildren, tag: str, text: str, start: int, end: int
+) -> None:
+    if tag == "at" and children.origin is None:
+        children.origin = _two_floats(text, start, end)
+        if children.origin is not None:
+            children.at_span = (start, end)
+    elif tag == "size" and children.size is None:
+        children.size = _two_floats(text, start, end)
+        if children.size is not None:
+            children.size_span = (start, end)
+
+
+def _scan_sheet_child_property(children: _SheetChildren, text: str, start: int) -> None:
+    property_match = _PROPERTY_RE.match(text, start)
+    if property_match is None:
+        return
+    key = _unescape(property_match.group(1))
+    value = _unescape(property_match.group(2))
+    if key == "Sheetname":
+        children.name = value
+    elif key == "Sheetfile":
+        children.filename = value
+
+
+def _scan_sheet_child_pin(children: _SheetChildren, text: str, start: int, end: int) -> None:
+    pin_data = _parse_sheet_pin(text, start, end)
+    if pin_data is not None:
+        pin, span, p_at_span = pin_data
+        children.pins.append(pin)
+        children.pin_spans.append(span)
+        children.pin_at_spans.append(p_at_span)
+
+
 def _scan_sheet_children(text: str, start: int, end: int) -> _SheetChildren:
     children = _SheetChildren()
     for tag, child_start, child_end in _children(text, start, end):
-        if tag == "at" and children.origin is None:
-            children.origin = _two_floats(text, child_start, child_end)
-            if children.origin is not None:
-                children.at_span = (child_start, child_end)
-        elif tag == "size" and children.size is None:
-            children.size = _two_floats(text, child_start, child_end)
-            if children.size is not None:
-                children.size_span = (child_start, child_end)
+        if tag in ("at", "size"):
+            _scan_sheet_child_geometry(children, tag, text, child_start, child_end)
         elif tag == "property":
-            property_match = _PROPERTY_RE.match(text, child_start)
-            if property_match is not None:
-                key = _unescape(property_match.group(1))
-                value = _unescape(property_match.group(2))
-                if key == "Sheetname":
-                    children.name = value
-                elif key == "Sheetfile":
-                    children.filename = value
+            _scan_sheet_child_property(children, text, child_start)
         elif tag == "pin":
-            pin_data = _parse_sheet_pin(text, child_start, child_end)
-            if pin_data is not None:
-                pin, span, p_at_span = pin_data
-                children.pins.append(pin)
-                children.pin_spans.append(span)
-                children.pin_at_spans.append(p_at_span)
+            _scan_sheet_child_pin(children, text, child_start, child_end)
         elif tag == "instances" and children.instances_start is None:
             children.instances_start = child_start
     return children
