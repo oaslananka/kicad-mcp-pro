@@ -515,4 +515,4 @@ def test_refill_probe_leaves_the_original_board_and_project_files_byte_identical
 
     validation._refill_probe_report(board)
 
-    assert before == (board.read_bytes(), project.read_bytes())
+    assert (board.read_bytes(), project.read_bytes()) == before

@@ -63,6 +63,7 @@ from ..models.pcb import (
     SetDesignRulesInput,
     StackupLayerSpec,
     SyncPcbFromSchematicInput,
+    ZoneCornerInput,
 )
 from ..models.verdict import Finding, SuggestedFix, VerdictReport, stable_finding_id
 from ..operating_modes import OperatingMode, active_operating_mode
@@ -2575,6 +2576,62 @@ def _planned_board_positions(
     return positions
 
 
+def _creepage_candidate_for_pad_pair(
+    right_pad: _PadLike,
+    left_net: str,
+    left_radius_mm: float,
+    left_x_mm: float,
+    left_y_mm: float,
+    left_ref: str,
+    left_pin: str,
+) -> tuple[float, str, str, str, str] | None:
+    right_net = str(getattr(getattr(right_pad, "net", None), "name", "") or "")
+    if not right_net or right_net == left_net:
+        return None
+    right_size = getattr(right_pad, "size", Vector2.from_xy_mm(1.0, 1.0))
+    right_radius_mm = nm_to_mm(max(_coord_nm(right_size, "x"), _coord_nm(right_size, "y"))) / 2
+    right_x_mm = nm_to_mm(_coord_nm(right_pad.position, "x"))
+    right_y_mm = nm_to_mm(_coord_nm(right_pad.position, "y"))
+    center_distance_mm = math.hypot(left_x_mm - right_x_mm, left_y_mm - right_y_mm)
+    edge_distance_mm = max(0.0, center_distance_mm - left_radius_mm - right_radius_mm)
+    right_ref = str(right_pad.parent.reference_field.text.value)
+    right_pin = str(right_pad.number)
+    return (
+        edge_distance_mm,
+        f"{left_ref}.{left_pin}",
+        left_net,
+        f"{right_ref}.{right_pin}",
+        right_net,
+    )
+
+
+def _closest_named_net_pad_pair(pads: list[_PadLike]) -> tuple[float, str, str, str, str] | None:
+    worst_pair: tuple[float, str, str, str, str] | None = None
+    for left_index, left_pad in enumerate(pads):
+        left_net = str(getattr(getattr(left_pad, "net", None), "name", "") or "")
+        if not left_net:
+            continue
+        left_size = getattr(left_pad, "size", Vector2.from_xy_mm(1.0, 1.0))
+        left_radius_mm = nm_to_mm(max(_coord_nm(left_size, "x"), _coord_nm(left_size, "y"))) / 2
+        left_x_mm = nm_to_mm(_coord_nm(left_pad.position, "x"))
+        left_y_mm = nm_to_mm(_coord_nm(left_pad.position, "y"))
+        left_ref = str(left_pad.parent.reference_field.text.value)
+        left_pin = str(left_pad.number)
+        for right_pad in pads[left_index + 1 :]:
+            candidate = _creepage_candidate_for_pad_pair(
+                right_pad,
+                left_net,
+                left_radius_mm,
+                left_x_mm,
+                left_y_mm,
+                left_ref,
+                left_pin,
+            )
+            if candidate is not None and (worst_pair is None or candidate[0] < worst_pair[0]):
+                worst_pair = candidate
+    return worst_pair
+
+
 def _register_impedance_and_creepage_tools(mcp: FastMCP) -> None:
     """Register impedance and creepage analysis tools."""
 
@@ -2636,45 +2693,7 @@ def _register_impedance_and_creepage_tools(mcp: FastMCP) -> None:
             payload.pollution_degree,
             payload.material_group,
         )
-        worst_pair: tuple[float, str, str, str, str] | None = None
-
-        for left_index, left_pad in enumerate(pads):
-            left_net = str(getattr(getattr(left_pad, "net", None), "name", "") or "")
-            if not left_net:
-                continue
-            left_size = getattr(left_pad, "size", Vector2.from_xy_mm(1.0, 1.0))
-            left_radius_mm = nm_to_mm(max(_coord_nm(left_size, "x"), _coord_nm(left_size, "y"))) / 2
-            left_x_mm = nm_to_mm(_coord_nm(left_pad.position, "x"))
-            left_y_mm = nm_to_mm(_coord_nm(left_pad.position, "y"))
-            left_ref = str(left_pad.parent.reference_field.text.value)
-            left_pin = str(left_pad.number)
-
-            for right_pad in pads[left_index + 1 :]:
-                right_net = str(getattr(getattr(right_pad, "net", None), "name", "") or "")
-                if not right_net or right_net == left_net:
-                    continue
-                right_size = getattr(right_pad, "size", Vector2.from_xy_mm(1.0, 1.0))
-                right_radius_mm = (
-                    nm_to_mm(max(_coord_nm(right_size, "x"), _coord_nm(right_size, "y"))) / 2
-                )
-                right_x_mm = nm_to_mm(_coord_nm(right_pad.position, "x"))
-                right_y_mm = nm_to_mm(_coord_nm(right_pad.position, "y"))
-                center_distance_mm = math.hypot(left_x_mm - right_x_mm, left_y_mm - right_y_mm)
-                edge_distance_mm = max(
-                    0.0,
-                    center_distance_mm - left_radius_mm - right_radius_mm,
-                )
-                right_ref = str(right_pad.parent.reference_field.text.value)
-                right_pin = str(right_pad.number)
-                candidate = (
-                    edge_distance_mm,
-                    f"{left_ref}.{left_pin}",
-                    left_net,
-                    f"{right_ref}.{right_pin}",
-                    right_net,
-                )
-                if worst_pair is None or candidate[0] < worst_pair[0]:
-                    worst_pair = candidate
+        worst_pair = _closest_named_net_pad_pair(pads)
 
         if worst_pair is None:
             return "No pad pairs on different named nets were available for creepage analysis."
@@ -2695,8 +2714,30 @@ def _register_impedance_and_creepage_tools(mcp: FastMCP) -> None:
         )
 
 
-def _register_board_rules_tools(mcp: FastMCP) -> None:
-    """Register ratsnest and design-rule tools."""
+def _file_backed_ratsnest_report(exc: Exception) -> str:
+    loaded = _load_file_backed_board(exc)
+    if isinstance(loaded, str):
+        return loaded
+    _, content, diagnostics = loaded
+    file_nets = _board_file_nets(content)
+    if not file_nets:
+        return "\n".join(
+            [
+                "The file-backed board has no nets to analyze.",
+                *diagnostics,
+            ]
+        )
+    return "\n".join(
+        [
+            ("File-backed ratsnest extraction requires a DRC report to list open connections."),
+            "Run `get_unconnected_nets()` or `run_drc()` for an actionable list.",
+            *diagnostics,
+        ]
+    )
+
+
+def _register_board_rules_inspection_tools(mcp: FastMCP) -> None:
+    """Register the board rules inspection tools."""
 
     @mcp.tool()
     @headless_compatible
@@ -2706,28 +2747,7 @@ def _register_board_rules_tools(mcp: FastMCP) -> None:
             board = get_board()
             nets = board_nets_filtered(board, netclass_filter=None)
         except (KiCadConnectionError, BoardAccessError, OSError) as exc:
-            loaded = _load_file_backed_board(exc)
-            if isinstance(loaded, str):
-                return loaded
-            _, content, diagnostics = loaded
-            file_nets = _board_file_nets(content)
-            if not file_nets:
-                return "\n".join(
-                    [
-                        "The file-backed board has no nets to analyze.",
-                        *diagnostics,
-                    ]
-                )
-            return "\n".join(
-                [
-                    (
-                        "File-backed ratsnest extraction requires a DRC report "
-                        "to list open connections."
-                    ),
-                    "Run `get_unconnected_nets()` or `run_drc()` for an actionable list.",
-                    *diagnostics,
-                ]
-            )
+            return _file_backed_ratsnest_report(exc)
         if not nets:
             return "The active board has no nets to analyze."
         return (
@@ -2775,6 +2795,10 @@ def _register_board_rules_tools(mcp: FastMCP) -> None:
                 content,
             ]
         )
+
+
+def _register_board_rules_mutation_tools(mcp: FastMCP) -> None:
+    """Register the board rules mutation tools."""
 
     @mcp.tool()
     @headless_compatible
@@ -2863,8 +2887,15 @@ def _register_board_rules_tools(mcp: FastMCP) -> None:
         )
 
 
-def _register_routing_authoring_tools(mcp: FastMCP) -> None:
-    """Register track, via, and segment authoring tools."""
+def _register_board_rules_tools(mcp: FastMCP) -> None:
+    """Register ratsnest and design-rule tools."""
+
+    _register_board_rules_inspection_tools(mcp)
+    _register_board_rules_mutation_tools(mcp)
+
+
+def _register_track_authoring_tools(mcp: FastMCP) -> None:
+    """Register the track authoring tools."""
 
     @mcp.tool()
     @requires_kicad_running
@@ -2972,6 +3003,10 @@ def _register_routing_authoring_tools(mcp: FastMCP) -> None:
         )
         return f"Added {len(created)} tracks."
 
+
+def _register_standard_via_tools(mcp: FastMCP) -> None:
+    """Register the standard via tools."""
+
     @mcp.tool()
     @requires_kicad_running
     def pcb_add_via(
@@ -3020,6 +3055,10 @@ def _register_routing_authoring_tools(mcp: FastMCP) -> None:
             return _staged_message("Via")
         return "Via added successfully."
 
+
+def _register_blind_via_tools(mcp: FastMCP) -> None:
+    """Register the blind via tools."""
+
     @mcp.tool()
     def pcb_add_blind_via(
         x_mm: float,
@@ -3063,6 +3102,10 @@ def _register_routing_authoring_tools(mcp: FastMCP) -> None:
         from_name = resolve_layer_name(payload.from_layer)
         to_name = resolve_layer_name(payload.to_layer)
         return f"Blind or buried via added successfully from {from_name} to {to_name}."
+
+
+def _register_microvia_tools(mcp: FastMCP) -> None:
+    """Register the microvia tools."""
 
     @mcp.tool()
     def pcb_add_microvia(
@@ -3108,6 +3151,10 @@ def _register_routing_authoring_tools(mcp: FastMCP) -> None:
         to_name = resolve_layer_name(payload.to_layer)
         return f"Microvia added successfully from {from_name} to {to_name}."
 
+
+def _register_track_segment_tools(mcp: FastMCP) -> None:
+    """Register the track segment tools."""
+
     @mcp.tool()
     def pcb_add_segment(
         x1_mm: float,
@@ -3137,6 +3184,16 @@ def _register_routing_authoring_tools(mcp: FastMCP) -> None:
             verifier=None,
         )
         return "Graphic segment added successfully."
+
+
+def _register_routing_authoring_tools(mcp: FastMCP) -> None:
+    """Register track, via, and segment authoring tools."""
+
+    _register_track_authoring_tools(mcp)
+    _register_standard_via_tools(mcp)
+    _register_blind_via_tools(mcp)
+    _register_microvia_tools(mcp)
+    _register_track_segment_tools(mcp)
 
 
 def _apply_board_outline_if_safe(board: Board, rectangle: BoardRectangle) -> str:
@@ -3368,8 +3425,8 @@ def _register_board_graphics_tools(mcp: FastMCP) -> None:
         )
 
 
-def _register_board_mutation_tools(mcp: FastMCP) -> None:
-    """Register board mutation and basic placement tools."""
+def _register_board_deletion_tools(mcp: FastMCP) -> None:
+    """Register the board deletion tools."""
 
     @mcp.tool()
     @requires_kicad_running
@@ -3401,6 +3458,10 @@ def _register_board_mutation_tools(mcp: FastMCP) -> None:
     def pcb_delete_object(object_id: str) -> str:
         """Delete a single PCB object by UUID through KiCad IPC."""
         return str(pcb_delete_items([object_id]))
+
+
+def _register_board_state_tools(mcp: FastMCP) -> None:
+    """Register the board state tools."""
 
     @mcp.tool()
     def pcb_save() -> str:
@@ -3442,6 +3503,10 @@ def _register_board_mutation_tools(mcp: FastMCP) -> None:
             "Direct net class assignment is not exposed as a stable KiCad 10.x IPC operation. "
             f"Update the project rules for net '{net_name}' to use class '{class_name}'."
         )
+
+
+def _register_footprint_placement_tools(mcp: FastMCP) -> None:
+    """Register the footprint placement tools."""
 
     @mcp.tool()
     @requires_kicad_running
@@ -3524,6 +3589,10 @@ def _register_board_mutation_tools(mcp: FastMCP) -> None:
             f"with verified rotation {actual_rotation:.3f} degrees."
         )
 
+
+def _register_footprint_layer_tools(mcp: FastMCP) -> None:
+    """Register the footprint layer tools."""
+
     @mcp.tool()
     @requires_kicad_running
     def pcb_set_footprint_layer(reference: str, layer: str) -> str:
@@ -3546,6 +3615,10 @@ def _register_board_mutation_tools(mcp: FastMCP) -> None:
         if _native_live_transaction_active():
             return _staged_message(f"Footprint layer update for '{reference}'")
         return f"Updated footprint '{reference}' to layer '{layer}'."
+
+
+def _register_inner_layer_graphic_tools(mcp: FastMCP) -> None:
+    """Register the inner layer graphic tools."""
 
     @mcp.tool()
     @headless_compatible
@@ -3606,6 +3679,16 @@ def _register_board_mutation_tools(mcp: FastMCP) -> None:
             f"Added {shape_type} inner-layer graphic to footprint '{reference}' "
             f"on {canonical_layer}."
         )
+
+
+def _register_board_mutation_tools(mcp: FastMCP) -> None:
+    """Register board mutation and basic placement tools."""
+
+    _register_board_deletion_tools(mcp)
+    _register_board_state_tools(mcp)
+    _register_footprint_placement_tools(mcp)
+    _register_footprint_layer_tools(mcp)
+    _register_inner_layer_graphic_tools(mcp)
 
 
 def _validate_pcb_sync_preconditions(
@@ -3753,6 +3836,52 @@ def _format_pcb_sync_report(
     return "\n".join(lines)
 
 
+def _pcb_sync_mismatched_assignments(
+    components: list[dict[str, Any]],
+    existing: dict[str, dict[str, Any]],
+) -> tuple[list[str], list[str]]:
+    expected_names = {
+        str(component["reference"]): _split_footprint_assignment(str(component["footprint"]))[1]
+        for component in components
+    }
+    mismatched_references = [
+        reference
+        for reference, entry in existing.items()
+        if reference in expected_names and entry["name"] != expected_names[reference]
+    ]
+    mismatches = [
+        (
+            f"{reference}: board has {existing[reference]['name']}, "
+            f"schematic expects {expected_names[reference]}"
+        )
+        for reference in mismatched_references
+    ]
+    return mismatched_references, mismatches
+
+
+def _pcb_sync_additions_for_board(
+    components: list[dict[str, Any]],
+    existing: dict[str, dict[str, Any]],
+    payload: SyncPcbFromSchematicInput,
+    net_map: dict[tuple[str, str], str],
+) -> list[str]:
+    occupied_boxes = [
+        {
+            "x_mm": float(entry["x_mm"]),
+            "y_mm": float(entry["y_mm"]),
+            "width_mm": float(entry["width_mm"]),
+            "height_mm": float(entry["height_mm"]),
+        }
+        for entry in existing.values()
+        if entry["x_mm"] is not None and entry["y_mm"] is not None
+    ]
+    components_to_add = [
+        component for component in components if str(component["reference"]) not in existing
+    ]
+    placements = _planned_board_positions(components_to_add, payload, occupied_boxes)
+    return _build_sync_additions(components_to_add, placements, net_map)
+
+
 def _register_schematic_sync_tools(mcp: FastMCP) -> None:
     """Register schematic-to-PCB synchronization tools."""
 
@@ -3803,22 +3932,7 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
             str(component["reference"]): component for component in components
         }
 
-        expected_names = {
-            str(component["reference"]): _split_footprint_assignment(str(component["footprint"]))[1]
-            for component in components
-        }
-        mismatched_references = [
-            reference
-            for reference, entry in existing.items()
-            if reference in expected_names and entry["name"] != expected_names[reference]
-        ]
-        mismatches = [
-            (
-                f"{reference}: board has {existing[reference]['name']}, "
-                f"schematic expects {expected_names[reference]}"
-            )
-            for reference in mismatched_references
-        ]
+        mismatched_references, mismatches = _pcb_sync_mismatched_assignments(components, existing)
 
         net_map: dict[tuple[str, str], str] = {}
         net_note = ""
@@ -3826,21 +3940,7 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
             net_map, net_note = _export_schematic_net_map()
         pad_summary = _schematic_pad_net_summary(components, net_map)
 
-        occupied_boxes = [
-            {
-                "x_mm": float(entry["x_mm"]),
-                "y_mm": float(entry["y_mm"]),
-                "width_mm": float(entry["width_mm"]),
-                "height_mm": float(entry["height_mm"]),
-            }
-            for entry in existing.values()
-            if entry["x_mm"] is not None and entry["y_mm"] is not None
-        ]
-        components_to_add = [
-            component for component in components if str(component["reference"]) not in existing
-        ]
-        placements = _planned_board_positions(components_to_add, payload, occupied_boxes)
-        additions = _build_sync_additions(components_to_add, placements, net_map)
+        additions = _pcb_sync_additions_for_board(components, existing, payload, net_map)
         replacements: dict[str, str] = {}
         if payload.replace_mismatched:
             replacements = _build_sync_replacements(
@@ -4189,8 +4289,28 @@ def _register_placement_automation_tools(mcp: FastMCP) -> None:
         return _group_by_function_impl(payload)
 
 
-def _register_zone_authoring_tools(mcp: FastMCP) -> None:
-    """Register alignment and zone authoring tools."""
+def _aligned_footprint_replacements(
+    existing: dict[str, dict[str, Any]], ordered_refs: list[str], payload: AlignFootprintsInput
+) -> dict[str, str]:
+    anchor = existing[ordered_refs[0]]
+    anchor_x_mm = float(anchor["x_mm"] or 0.0)
+    anchor_y_mm = float(anchor["y_mm"] or 0.0)
+    replacements: dict[str, str] = {}
+    for index, reference in enumerate(ordered_refs):
+        entry = existing[reference]
+        x_mm = anchor_x_mm + (index * payload.spacing_mm) if payload.axis == "x" else anchor_x_mm
+        y_mm = anchor_y_mm if payload.axis == "x" else anchor_y_mm + (index * payload.spacing_mm)
+        replacements[reference] = _replace_root_at(
+            str(entry["block"]),
+            x_mm=x_mm,
+            y_mm=y_mm,
+            rotation=int(entry["rotation"]),
+        )
+    return replacements
+
+
+def _register_footprint_alignment_tools(mcp: FastMCP) -> None:
+    """Register the footprint alignment tools."""
 
     @mcp.tool()
     @headless_compatible
@@ -4220,25 +4340,7 @@ def _register_zone_authoring_tools(mcp: FastMCP) -> None:
         if len(ordered_refs) < 2:
             return "At least two existing footprint references are required for alignment."
 
-        anchor = existing[ordered_refs[0]]
-        anchor_x_mm = float(anchor["x_mm"] or 0.0)
-        anchor_y_mm = float(anchor["y_mm"] or 0.0)
-        replacements: dict[str, str] = {}
-
-        for index, reference in enumerate(ordered_refs):
-            entry = existing[reference]
-            x_mm = (
-                anchor_x_mm + (index * payload.spacing_mm) if payload.axis == "x" else anchor_x_mm
-            )
-            y_mm = (
-                anchor_y_mm if payload.axis == "x" else anchor_y_mm + (index * payload.spacing_mm)
-            )
-            replacements[reference] = _replace_root_at(
-                str(entry["block"]),
-                x_mm=x_mm,
-                y_mm=y_mm,
-                rotation=int(entry["rotation"]),
-            )
+        replacements = _aligned_footprint_replacements(existing, ordered_refs, payload)
 
         _transactional_board_write(lambda current: _replace_board_blocks(current, replacements, []))
         lines = [
@@ -4250,6 +4352,23 @@ def _register_zone_authoring_tools(mcp: FastMCP) -> None:
             lines.extend(f"- {reference}" for reference in missing_refs[:20])
         lines.append(_finalize_file_based_board_edit(payload.allow_open_board))
         return "\n".join(lines)
+
+
+def _unique_copper_zone_points(corners: Sequence[ZoneCornerInput]) -> list[tuple[float, float]]:
+    unique_points: list[tuple[float, float]] = []
+    seen_points: set[tuple[float, float]] = set()
+    for corner in corners:
+        point = (float(corner.x_mm), float(corner.y_mm))
+        if point not in seen_points:
+            unique_points.append(point)
+            seen_points.add(point)
+    if len(unique_points) >= 2 and unique_points[0] == unique_points[-1]:
+        unique_points.pop()
+    return unique_points
+
+
+def _register_copper_zone_tools(mcp: FastMCP) -> None:
+    """Register the copper zone tools."""
 
     @mcp.tool()
     @requires_kicad_running
@@ -4282,15 +4401,7 @@ def _register_zone_authoring_tools(mcp: FastMCP) -> None:
         if "_Cu" not in BoardLayer.Name(layer_value):
             return "Copper zones can only be added to copper layers."
 
-        unique_points: list[tuple[float, float]] = []
-        seen_points: set[tuple[float, float]] = set()
-        for corner in payload.corners:
-            point = (float(corner.x_mm), float(corner.y_mm))
-            if point not in seen_points:
-                unique_points.append(point)
-                seen_points.add(point)
-        if len(unique_points) >= 2 and unique_points[0] == unique_points[-1]:
-            unique_points.pop()
+        unique_points = _unique_copper_zone_points(payload.corners)
         if len(unique_points) < 3:
             return "Copper zones require at least three unique polygon corners."
 
@@ -4358,6 +4469,10 @@ def _register_zone_authoring_tools(mcp: FastMCP) -> None:
             )
         )
 
+
+def _register_keepout_zone_tools(mcp: FastMCP) -> None:
+    """Register the keepout zone tools."""
+
     @mcp.tool()
     @requires_kicad_running
     def pcb_set_keepout_zone(
@@ -4407,8 +4522,16 @@ def _register_zone_authoring_tools(mcp: FastMCP) -> None:
         )
 
 
-def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
-    """Register mechanical and reusable block tools."""
+def _register_zone_authoring_tools(mcp: FastMCP) -> None:
+    """Register alignment and zone authoring tools."""
+
+    _register_footprint_alignment_tools(mcp)
+    _register_copper_zone_tools(mcp)
+    _register_keepout_zone_tools(mcp)
+
+
+def _register_mechanical_hole_tools(mcp: FastMCP) -> None:
+    """Register the mechanical hole tools."""
 
     @mcp.tool()
     @headless_compatible
@@ -4495,6 +4618,10 @@ def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
             ]
         )
 
+
+def _register_fiducial_tools(mcp: FastMCP) -> None:
+    """Register the fiducial tools."""
+
     @mcp.tool()
     @headless_compatible
     def pcb_add_fiducial_marks(
@@ -4542,6 +4669,10 @@ def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
                 _finalize_file_based_board_edit(payload.allow_open_board),
             ]
         )
+
+
+def _register_reusable_board_block_tools(mcp: FastMCP) -> None:
+    """Register the reusable board block tools."""
 
     @mcp.tool()
     @headless_compatible
@@ -4646,6 +4777,139 @@ def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
         )
 
 
+def _register_mechanical_and_block_tools(mcp: FastMCP) -> None:
+    """Register mechanical and reusable block tools."""
+
+    _register_mechanical_hole_tools(mcp)
+    _register_fiducial_tools(mcp)
+    _register_reusable_board_block_tools(mcp)
+
+
+def _teardrop_zone_for_track(
+    pad: _PadLike,
+    track: Track,
+    payload: AddTeardropsInput,
+    pad_x_nm: int,
+    pad_y_nm: int,
+    pad_radius_nm: float,
+    track_net_name: str,
+) -> Zone | None:
+    start_dx = _coord_nm(track.start, "x") - pad_x_nm
+    start_dy = _coord_nm(track.start, "y") - pad_y_nm
+    end_dx = _coord_nm(track.end, "x") - pad_x_nm
+    end_dy = _coord_nm(track.end, "y") - pad_y_nm
+    start_distance = math.hypot(start_dx, start_dy)
+    end_distance = math.hypot(end_dx, end_dy)
+    tolerance_nm = max(pad_radius_nm * 1.2, track.width * 2)
+
+    if start_distance > tolerance_nm and end_distance > tolerance_nm:
+        return None
+
+    _, _, far_x_nm, far_y_nm = (
+        (
+            _coord_nm(track.start, "x"),
+            _coord_nm(track.start, "y"),
+            _coord_nm(track.end, "x"),
+            _coord_nm(track.end, "y"),
+        )
+        if start_distance <= end_distance
+        else (
+            _coord_nm(track.end, "x"),
+            _coord_nm(track.end, "y"),
+            _coord_nm(track.start, "x"),
+            _coord_nm(track.start, "y"),
+        )
+    )
+    vector_x_nm = far_x_nm - pad_x_nm
+    vector_y_nm = far_y_nm - pad_y_nm
+    vector_length_nm = math.hypot(vector_x_nm, vector_y_nm)
+    if vector_length_nm == 0:
+        return None
+    unit_x = vector_x_nm / vector_length_nm
+    unit_y = vector_y_nm / vector_length_nm
+    perp_x = -unit_y
+    perp_y = unit_x
+    base_half_nm = max((track.width * payload.width_ratio) / 2, track.width / 2)
+    tip_distance_nm = min(
+        pad_radius_nm * payload.length_ratio,
+        vector_length_nm * 0.9,
+    )
+    base_center_x_nm = pad_x_nm + int(round(unit_x * (pad_radius_nm * 0.6)))
+    base_center_y_nm = pad_y_nm + int(round(unit_y * (pad_radius_nm * 0.6)))
+    tip_center_x_nm = pad_x_nm + int(round(unit_x * tip_distance_nm))
+    tip_center_y_nm = pad_y_nm + int(round(unit_y * tip_distance_nm))
+    polygon = _polygon_from_points(
+        [
+            (
+                int(round(base_center_x_nm + (perp_x * pad_radius_nm * 0.7))),
+                int(round(base_center_y_nm + (perp_y * pad_radius_nm * 0.7))),
+            ),
+            (
+                int(round(tip_center_x_nm + (perp_x * base_half_nm))),
+                int(round(tip_center_y_nm + (perp_y * base_half_nm))),
+            ),
+            (
+                int(round(tip_center_x_nm - (perp_x * base_half_nm))),
+                int(round(tip_center_y_nm - (perp_y * base_half_nm))),
+            ),
+            (
+                int(round(base_center_x_nm - (perp_x * pad_radius_nm * 0.7))),
+                int(round(base_center_y_nm - (perp_y * pad_radius_nm * 0.7))),
+            ),
+        ]
+    )
+    zone = Zone()
+    zone.name = f"MCP_Teardrop_{getattr(pad.parent.reference_field.text, 'value', 'PAD')}"
+    zone.layers = [track.layer]
+    zone.net = track.net if hasattr(track.net, "proto") else _find_net(track_net_name)
+    zone.outline = polygon
+    return zone
+
+
+def _teardrop_zones_for_pad(
+    pad: _PadLike,
+    tracks: list[Track],
+    payload: AddTeardropsInput,
+    remaining: int,
+) -> list[Zone]:
+    net_name = str(getattr(getattr(pad, "net", None), "name", ""))
+    net_class_name = str(
+        getattr(getattr(pad, "net", None), "netclass_name", "")
+        or getattr(getattr(pad, "net", None), "class_name", "")
+        or net_name
+    )
+    if payload.net_classes and net_class_name not in payload.net_classes:
+        return []
+    pad_x_nm = _coord_nm(pad.position, "x")
+    pad_y_nm = _coord_nm(pad.position, "y")
+    size_vector = getattr(pad, "size", Vector2.from_xy_mm(1.0, 1.0))
+    pad_radius_nm = max(_coord_nm(size_vector, "x"), _coord_nm(size_vector, "y")) / 2
+    found: list[Zone] = []
+    for track in tracks:
+        track_net_name = str(getattr(getattr(track, "net", None), "name", ""))
+        if track_net_name != net_name:
+            continue
+        zone = _teardrop_zone_for_track(
+            pad, track, payload, pad_x_nm, pad_y_nm, pad_radius_nm, track_net_name
+        )
+        if zone is not None:
+            found.append(zone)
+            if len(found) >= remaining:
+                break
+    return found
+
+
+def _collect_teardrop_zones(
+    pads: list[_PadLike], tracks: list[Track], payload: AddTeardropsInput
+) -> list[Zone]:
+    zones: list[Zone] = []
+    for pad in pads:
+        zones.extend(_teardrop_zones_for_pad(pad, tracks, payload, payload.max_count - len(zones)))
+        if len(zones) >= payload.max_count and zones:
+            break
+    return zones
+
+
 def _register_teardrop_tools(mcp: FastMCP) -> None:
     """Register teardrop authoring tools."""
 
@@ -4673,104 +4937,7 @@ def _register_teardrop_tools(mcp: FastMCP) -> None:
         board = get_board()
         pads = cast(list[_PadLike], board_pads(board))
         tracks = cast(list[Track], board_tracks(board))
-        zones: list[Zone] = []
-        created = 0
-
-        for pad in pads:
-            net_name = str(getattr(getattr(pad, "net", None), "name", ""))
-            net_class_name = str(
-                getattr(getattr(pad, "net", None), "netclass_name", "")
-                or getattr(getattr(pad, "net", None), "class_name", "")
-                or net_name
-            )
-            if payload.net_classes and net_class_name not in payload.net_classes:
-                continue
-            pad_x_nm = _coord_nm(pad.position, "x")
-            pad_y_nm = _coord_nm(pad.position, "y")
-            size_vector = getattr(pad, "size", Vector2.from_xy_mm(1.0, 1.0))
-            pad_radius_nm = max(_coord_nm(size_vector, "x"), _coord_nm(size_vector, "y")) / 2
-
-            for track in tracks:
-                track_net_name = str(getattr(getattr(track, "net", None), "name", ""))
-                if track_net_name != net_name:
-                    continue
-                start_dx = _coord_nm(track.start, "x") - pad_x_nm
-                start_dy = _coord_nm(track.start, "y") - pad_y_nm
-                end_dx = _coord_nm(track.end, "x") - pad_x_nm
-                end_dy = _coord_nm(track.end, "y") - pad_y_nm
-                start_distance = math.hypot(start_dx, start_dy)
-                end_distance = math.hypot(end_dx, end_dy)
-                tolerance_nm = max(pad_radius_nm * 1.2, track.width * 2)
-
-                if start_distance > tolerance_nm and end_distance > tolerance_nm:
-                    continue
-
-                _, _, far_x_nm, far_y_nm = (
-                    (
-                        _coord_nm(track.start, "x"),
-                        _coord_nm(track.start, "y"),
-                        _coord_nm(track.end, "x"),
-                        _coord_nm(track.end, "y"),
-                    )
-                    if start_distance <= end_distance
-                    else (
-                        _coord_nm(track.end, "x"),
-                        _coord_nm(track.end, "y"),
-                        _coord_nm(track.start, "x"),
-                        _coord_nm(track.start, "y"),
-                    )
-                )
-                vector_x_nm = far_x_nm - pad_x_nm
-                vector_y_nm = far_y_nm - pad_y_nm
-                vector_length_nm = math.hypot(vector_x_nm, vector_y_nm)
-                if vector_length_nm == 0:
-                    continue
-                unit_x = vector_x_nm / vector_length_nm
-                unit_y = vector_y_nm / vector_length_nm
-                perp_x = -unit_y
-                perp_y = unit_x
-                base_half_nm = max((track.width * payload.width_ratio) / 2, track.width / 2)
-                tip_distance_nm = min(
-                    pad_radius_nm * payload.length_ratio,
-                    vector_length_nm * 0.9,
-                )
-                base_center_x_nm = pad_x_nm + int(round(unit_x * (pad_radius_nm * 0.6)))
-                base_center_y_nm = pad_y_nm + int(round(unit_y * (pad_radius_nm * 0.6)))
-                tip_center_x_nm = pad_x_nm + int(round(unit_x * tip_distance_nm))
-                tip_center_y_nm = pad_y_nm + int(round(unit_y * tip_distance_nm))
-                polygon = _polygon_from_points(
-                    [
-                        (
-                            int(round(base_center_x_nm + (perp_x * pad_radius_nm * 0.7))),
-                            int(round(base_center_y_nm + (perp_y * pad_radius_nm * 0.7))),
-                        ),
-                        (
-                            int(round(tip_center_x_nm + (perp_x * base_half_nm))),
-                            int(round(tip_center_y_nm + (perp_y * base_half_nm))),
-                        ),
-                        (
-                            int(round(tip_center_x_nm - (perp_x * base_half_nm))),
-                            int(round(tip_center_y_nm - (perp_y * base_half_nm))),
-                        ),
-                        (
-                            int(round(base_center_x_nm - (perp_x * pad_radius_nm * 0.7))),
-                            int(round(base_center_y_nm - (perp_y * pad_radius_nm * 0.7))),
-                        ),
-                    ]
-                )
-                zone = Zone()
-                zone.name = (
-                    f"MCP_Teardrop_{getattr(pad.parent.reference_field.text, 'value', 'PAD')}"
-                )
-                zone.layers = [track.layer]
-                zone.net = track.net if hasattr(track.net, "proto") else _find_net(track_net_name)
-                zone.outline = polygon
-                zones.append(zone)
-                created += 1
-                if created >= payload.max_count:
-                    break
-            if created >= payload.max_count:
-                break
+        zones = _collect_teardrop_zones(pads, tracks, payload)
 
         if not zones:
             return "No simple pad-to-track teardrop candidates were found on the active board."
