@@ -106,7 +106,7 @@ def test_creepage_chooses_closest_differently_named_net_and_skips_unnamed() -> N
     result = pcb._closest_named_net_pad_pair(pads)
     assert result is not None
     assert ("J2.1", "GND", "U1.1", "VCC") == result[1:]
-    assert result[0] == pytest.approx(0.8)
+    assert pytest.approx(0.8) == result[0]
     assert None is pcb._closest_named_net_pad_pair([_pad("GND", "A", 0, 0), _pad("GND", "B", 1, 1)])
     assert None is pcb._closest_named_net_pad_pair([_pad("", "A", 0, 0)])
 
@@ -244,7 +244,8 @@ def test_file_backed_ratsnest_preserves_fail_closed_diagnostics(
     monkeypatch.setattr(pcb, "_board_file_nets", lambda content: ["GND"])
     text = pcb._file_backed_ratsnest_report(reason)
     assert "File-backed ratsnest extraction requires a DRC report" in text
-    assert "run_drc()" in text and "file-backed" in text
+    assert "run_drc()" in text
+    assert "file-backed" in text
 
 
 def test_alignment_replacements_preserve_axis_and_rotation(
