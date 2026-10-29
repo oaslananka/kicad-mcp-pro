@@ -3815,6 +3815,25 @@ def _pin_alias_positions(
     return merged
 
 
+def _child_units_from_block(block_name: str, block: str) -> tuple[set[int], bool]:
+    """Read unit suffixes and detect unit-zero shared pins without losing fallback."""
+    units: set[int] = set()
+    has_shared_pins = False
+    prefix = f"{block_name}_"
+    for child_name, child_block in _extract_child_symbol_blocks(block):
+        if not child_name.startswith(prefix):
+            continue
+        unit_str, _, _ = child_name[len(prefix) :].partition("_")
+        if not unit_str.isdigit():
+            continue
+        unit_value = int(unit_str)
+        if unit_value >= 1:
+            units.add(unit_value)
+        elif _extract_pin_definitions(child_block):
+            has_shared_pins = True
+    return units, has_shared_pins
+
+
 def _available_units_from_blocks(blocks: list[str]) -> set[int]:
     units: set[int] = set()
     has_pins = False
@@ -3824,19 +3843,9 @@ def _available_units_from_blocks(blocks: list[str]) -> set[int]:
         block_name = _symbol_block_name(block)
         if block_name is None:
             continue
-        prefix = f"{block_name}_"
-        for child_name, child_block in _extract_child_symbol_blocks(block):
-            if not child_name.startswith(prefix):
-                continue
-            unit_str, _, _ = child_name[len(prefix) :].partition("_")
-            if unit_str.isdigit():
-                unit_value = int(unit_str)
-                if unit_value >= 1:
-                    units.add(unit_value)
-                elif _extract_pin_definitions(child_block):
-                    # Unit-0 sub-symbol holds pins common to all units, e.g.
-                    # single-unit easyeda2kicad imports place every pin there.
-                    has_pins = True
+        block_units, shared_pins = _child_units_from_block(block_name, block)
+        units.update(block_units)
+        has_pins = has_pins or shared_pins
     if not units and has_pins:
         units.add(1)
     return units
@@ -3958,6 +3967,22 @@ def get_pin_metadata(
     return meta
 
 
+def _column_stub_direction(
+    px: float, py: float, ox: float, oy: float, edge_tol: float
+) -> tuple[float, float]:
+    if abs(ox - px) <= edge_tol:
+        return (0.0, (1.0 if py >= oy else -1.0))
+    return ((1.0 if px >= ox else -1.0), 0.0)
+
+
+def _row_stub_direction(
+    px: float, py: float, ox: float, oy: float, edge_tol: float
+) -> tuple[float, float]:
+    if abs(oy - py) <= edge_tol:
+        return ((1.0 if px >= ox else -1.0), 0.0)
+    return (0.0, (1.0 if py >= oy else -1.0))
+
+
 def _degenerate_stub_direction(
     px: float,
     py: float,
@@ -3968,13 +3993,9 @@ def _degenerate_stub_direction(
     edge_tol: float,
 ) -> tuple[float, float] | None:
     if x_span <= edge_tol and y_span > edge_tol:
-        if abs(ox - px) <= edge_tol:
-            return (0.0, (1.0 if py >= oy else -1.0))
-        return ((1.0 if px >= ox else -1.0), 0.0)
+        return _column_stub_direction(px, py, ox, oy, edge_tol)
     if y_span <= edge_tol and x_span > edge_tol:
-        if abs(oy - py) <= edge_tol:
-            return ((1.0 if px >= ox else -1.0), 0.0)
-        return (0.0, (1.0 if py >= oy else -1.0))
+        return _row_stub_direction(px, py, ox, oy, edge_tol)
     return None
 
 
@@ -6634,6 +6655,35 @@ def _symbol_body_and_pins(parsed: dict[str, Any]) -> tuple[GeoBox, list[tuple[fl
     return body, pin_points
 
 
+def _autoplace_visible_fields_for_ref(
+    content: str,
+    ref: str,
+    bodies: dict[str, GeoBox],
+    body_pins: dict[str, tuple[GeoBox, list[tuple[float, float]]]],
+) -> tuple[str, bool]:
+    match = _find_placed_symbol_block(content, ref)
+    if match is None:
+        return content, False
+    block, start, end, parsed = match
+    body, pins = body_pins.get(ref, _symbol_body_and_pins(parsed))
+    obstacles = [box for other, box in bodies.items() if other != ref]
+    specs = [
+        FieldSpec("Reference", str(parsed.get("reference", ""))),
+        FieldSpec("Value", str(parsed.get("value", ""))),
+    ]
+    placements = autoplace_fields(body, pins, obstacles, specs)
+    new_block = block
+    for spec, placement in zip(specs, placements, strict=True):
+        if not spec.text:
+            continue
+        new_block = _set_property_position(
+            new_block, spec.name, placement.x, placement.y, placement.angle
+        )
+    if new_block == block:
+        return content, False
+    return content[:start] + new_block + content[end:], True
+
+
 def _build_autoplace_fields_mutator(
     sch_file: Path,
     references: list[str] | None = None,
@@ -6667,26 +6717,10 @@ def _build_autoplace_fields_mutator(
     def mutator(content: str) -> str:
         new_content = content
         for ref in targets:
-            match = _find_placed_symbol_block(new_content, ref)
-            if match is None:
-                continue
-            block, start, end, parsed = match
-            body, pins = body_pins.get(ref, _symbol_body_and_pins(parsed))
-            obstacles = [b for other, b in bodies.items() if other != ref]
-            specs = [
-                FieldSpec("Reference", str(parsed.get("reference", ""))),
-                FieldSpec("Value", str(parsed.get("value", ""))),
-            ]
-            placements = autoplace_fields(body, pins, obstacles, specs)
-            new_block = block
-            for spec, placement in zip(specs, placements, strict=True):
-                if not spec.text:
-                    continue
-                new_block = _set_property_position(
-                    new_block, spec.name, placement.x, placement.y, placement.angle
-                )
-            if new_block != block:
-                new_content = new_content[:start] + new_block + new_content[end:]
+            new_content, changed = _autoplace_visible_fields_for_ref(
+                new_content, ref, bodies, body_pins
+            )
+            if changed:
                 updated.append(ref)
         return new_content
 
@@ -6764,6 +6798,30 @@ def _shift_at_in_block(block: str, dx: float, dy: float) -> str:
     return re.sub(r"\(at\s+(-?[\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)\)", repl, block)
 
 
+def _respace_symbol_positions(
+    content: str,
+    old_pos: dict[str, tuple[float, float]],
+    new_pos: dict[str, tuple[float, float]],
+    moved: list[str],
+) -> str:
+    """Relocate drafted symbol blocks, retaining the transaction caller's list."""
+    new_content = content
+    for ref in sorted(new_pos):
+        match = _find_placed_symbol_block(new_content, ref)
+        if match is None:
+            continue
+        block, start, end, _parsed = match
+        ox, oy = old_pos[ref]
+        nx, ny = new_pos[ref]
+        dx, dy = nx - ox, ny - oy
+        if abs(dx) < 1e-6 and abs(dy) < 1e-6:
+            continue
+        new_block = _shift_at_in_block(block, dx, dy)
+        new_content = new_content[:start] + new_block + new_content[end:]
+        moved.append(ref)
+    return new_content
+
+
 def _respace_symbols_apply(sch_file: Path) -> list[str]:
     """Re-space all symbols onto a body-sized, page-bounded grid; return moved refs.
 
@@ -6810,21 +6868,7 @@ def _respace_symbols_apply(sch_file: Path) -> list[str]:
     moved: list[str] = []
 
     def mutator(content: str) -> str:
-        new_content = content
-        for ref in sorted(new_pos):
-            match = _find_placed_symbol_block(new_content, ref)
-            if match is None:
-                continue
-            block, start, end, _parsed = match
-            ox, oy = old_pos[ref]
-            nx, ny = new_pos[ref]
-            dx, dy = nx - ox, ny - oy
-            if abs(dx) < 1e-6 and abs(dy) < 1e-6:
-                continue
-            new_block = _shift_at_in_block(block, dx, dy)
-            new_content = new_content[:start] + new_block + new_content[end:]
-            moved.append(ref)
-        return new_content
+        return _respace_symbol_positions(content, old_pos, new_pos, moved)
 
     if not new_pos:
         return []
@@ -6860,6 +6904,31 @@ def update_symbol_property(reference: str, field: str, value: str) -> str:
     return get_schematic_backend().update_symbol_property(reference, field, value)
 
 
+def _set_native_dnp_flag(block: str, native_value: str, reference: str) -> str:
+    dnp_pattern = re.compile(r"(\n\s*\(dnp\s+)(yes|no)(\)?)")
+    if dnp_pattern.search(block):
+        return dnp_pattern.sub(
+            lambda match: f"{match.group(1)}{native_value}{match.group(3)}",
+            block,
+            count=1,
+        )
+
+    insert_match = re.search(r"\n\s*\(on_board\s+(?:yes|no)\)", block)
+    if insert_match is not None:
+        return (
+            block[: insert_match.end()]
+            + f"\n\t\t(dnp {native_value})"
+            + block[insert_match.end() :]
+        )
+
+    insert_point = block.rfind("\t\t(instances")
+    if insert_point == -1:
+        insert_point = block.rfind("\n\t)")
+    if insert_point == -1:
+        raise ValueError(f"Could not update native DNP on '{reference}' in the schematic.")
+    return block[:insert_point] + f"\t\t(dnp {native_value})\n" + block[insert_point:]
+
+
 def _set_symbol_dnp_text_fallback(
     reference: str,
     enabled: bool,
@@ -6874,30 +6943,6 @@ def _set_symbol_dnp_text_fallback(
     native_value = "yes" if enabled else "no"
     updated_count = 0
 
-    def _set_dnp_flag(block: str) -> str:
-        dnp_pattern = re.compile(r"(\n\s*\(dnp\s+)(yes|no)(\)?)")
-        if dnp_pattern.search(block):
-            return dnp_pattern.sub(
-                lambda match: f"{match.group(1)}{native_value}{match.group(3)}",
-                block,
-                count=1,
-            )
-
-        insert_match = re.search(r"\n\s*\(on_board\s+(?:yes|no)\)", block)
-        if insert_match is not None:
-            return (
-                block[: insert_match.end()]
-                + f"\n\t\t(dnp {native_value})"
-                + block[insert_match.end() :]
-            )
-
-        insert_point = block.rfind("\t\t(instances")
-        if insert_point == -1:
-            insert_point = block.rfind("\n\t)")
-        if insert_point == -1:
-            raise ValueError(f"Could not update native DNP on '{reference}' in the schematic.")
-        return block[:insert_point] + f"\t\t(dnp {native_value})\n" + block[insert_point:]
-
     def mutator(current: str) -> str:
         nonlocal updated_count
         matches = _find_placed_symbol_blocks(current, reference)
@@ -6906,7 +6951,7 @@ def _set_symbol_dnp_text_fallback(
         updated_count = len(matches)
         updated = current
         for block, start, end, parsed in reversed(matches):
-            new_block = _set_dnp_flag(block)
+            new_block = _set_native_dnp_flag(block, native_value, reference)
             if reason is not None:
                 new_block = _update_symbol_property_block(
                     new_block, parsed, DNP_REASON_PROPERTY, reason
