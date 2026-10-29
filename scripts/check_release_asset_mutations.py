@@ -222,16 +222,23 @@ def _tokens(segment: str) -> list[str]:
     return tokens
 
 
+def _attached_flag_value(token: str, short: str | None, long: str) -> str | None:
+    if token.startswith(f"{long}="):
+        return token.split("=", 1)[1]
+    if short is not None and token.startswith(short) and len(token) > len(short):
+        if not token.startswith("--"):
+            return token[len(short) :]
+    return None
+
+
 def _flag_value(tokens: list[str], short: str | None, long: str) -> str | None:
     for index, token in enumerate(tokens):
         if token == long or (short is not None and token == short):
             if index + 1 < len(tokens):
                 return tokens[index + 1]
-        if token.startswith(f"{long}="):
-            return token.split("=", 1)[1]
-        if short is not None and token.startswith(short) and len(token) > len(short):
-            if not token.startswith("--"):
-                return token[len(short) :]
+        attached = _attached_flag_value(token, short, long)
+        if attached is not None:
+            return attached
     return None
 
 
@@ -271,40 +278,52 @@ class _Match:
     tag: str | None = None
 
 
+def _classify_gh_release(tokens: list[str], segment: str) -> _Match | None:
+    if len(tokens) < 3:
+        return None
+    kind = _GH_RELEASE_KINDS.get(tokens[2])
+    if kind is None:
+        return None
+    rest = tokens[3:]
+    tag = rest[0] if rest and not rest[0].startswith("-") else None
+    return _Match(kind, "--clobber" in rest, _draft_flag(rest), segment, tag)
+
+
+def _classify_gh_api(rest: list[str], segment: str) -> _Match | None:
+    if not any("releases" in token for token in rest):
+        return None
+    method = _flag_value(rest, "-X", "--method")
+    if method is None:
+        method = "POST" if _has_payload_flag(rest, _GH_API_BODY_FLAGS) else "GET"
+    return _Match("api_write", False, None, segment) if method.upper() in _WRITE_METHODS else None
+
+
+def _classify_curl(rest: list[str], segment: str) -> _Match | None:
+    if any(_url_host(token) == "uploads.github.com" for token in rest):
+        return _Match("upload_asset", False, None, segment)
+    if not any("/releases" in token for token in rest):
+        return None
+    method = _flag_value(rest, "-X", "--request")
+    if method is None and any(flag in {"-G", "--get"} for flag in rest):
+        method = "GET"
+    if method is None and _has_payload_flag(rest, _CURL_BODY_FLAGS):
+        method = "POST"
+    if method is not None and method.upper() in _WRITE_METHODS:
+        return _Match("api_write", False, None, segment)
+    return None
+
+
 def _classify_segment(segment: str) -> _Match | None:
     tokens = _tokens(segment)
     if len(tokens) < 2:
         return None
     program = tokens[0].rsplit("/", 1)[-1]
-    if program == "gh" and tokens[1] == "release" and len(tokens) >= 3:
-        kind = _GH_RELEASE_KINDS.get(tokens[2])
-        if kind is None:
-            return None
-        rest = tokens[3:]
-        tag = rest[0] if rest and not rest[0].startswith("-") else None
-        return _Match(kind, "--clobber" in rest, _draft_flag(rest), segment, tag)
+    if program == "gh" and tokens[1] == "release":
+        return _classify_gh_release(tokens, segment)
     if program == "gh" and tokens[1] == "api":
-        rest = tokens[2:]
-        if not any("releases" in token for token in rest):
-            return None
-        method = _flag_value(rest, "-X", "--method")
-        if method is None:
-            method = "POST" if _has_payload_flag(rest, _GH_API_BODY_FLAGS) else "GET"
-        if method.upper() in _WRITE_METHODS:
-            return _Match("api_write", False, None, segment)
-        return None
+        return _classify_gh_api(tokens[2:], segment)
     if program == "curl":
-        rest = tokens[1:]
-        if any(_url_host(token) == "uploads.github.com" for token in rest):
-            return _Match("upload_asset", False, None, segment)
-        if any("/releases" in token for token in rest):
-            method = _flag_value(rest, "-X", "--request")
-            if method is None and any(flag in {"-G", "--get"} for flag in rest):
-                method = "GET"
-            if method is None and _has_payload_flag(rest, _CURL_BODY_FLAGS):
-                method = "POST"
-            if method is not None and method.upper() in _WRITE_METHODS:
-                return _Match("api_write", False, None, segment)
+        return _classify_curl(tokens[1:], segment)
     return None
 
 
@@ -538,13 +557,9 @@ def _allowlist_key(index: int, item: object, errors: list[str]) -> tuple[_Key, i
     return key, int(count)
 
 
-def validate(entries: Iterable[ReleaseMutation], allowlist: object) -> list[str]:
-    """Return ratchet errors for post-publication mutations versus the allowlist."""
-
-    if not isinstance(allowlist, list):
-        return [f"actions-policy.json: {POLICY_KEY} must be a list"]
-
-    errors: list[str] = []
+def _validated_allowlist(
+    allowlist: list[object], errors: list[str]
+) -> tuple[dict[_Key, int], dict[_Key, int]]:
     allowed: dict[_Key, int] = {}
     expected_counts: dict[_Key, int] = {}
     for index, item in enumerate(allowlist):
@@ -560,6 +575,12 @@ def validate(entries: Iterable[ReleaseMutation], allowlist: object) -> list[str]
         allowed[key] = index
         expected_counts[key] = count
 
+    return allowed, expected_counts
+
+
+def _match_release_mutations(
+    entries: Iterable[ReleaseMutation], allowed: dict[_Key, int], errors: list[str]
+) -> dict[_Key, int]:
     matched: dict[_Key, int] = {}
     for entry in entries:
         if entry.target_state != "published":
@@ -581,6 +602,15 @@ def validate(entries: Iterable[ReleaseMutation], allowlist: object) -> list[str]
             f"{DOC_PATH}. Command: {entry.command}"
         )
 
+    return matched
+
+
+def _check_allowlist_counts(
+    allowed: dict[_Key, int],
+    expected_counts: dict[_Key, int],
+    matched: dict[_Key, int],
+    errors: list[str],
+) -> None:
     for key, index in sorted(allowed.items(), key=lambda pair: pair[1]):
         workflow, job, step, kind, uses_clobber = key
         clobber_text = str(uses_clobber).lower()
@@ -600,6 +630,16 @@ def validate(entries: Iterable[ReleaseMutation], allowlist: object) -> list[str]
             f"mutation matches {workflow}:{job}:{step} ({kind}, clobber={clobber_text}). "
             f"Remove the entry once the step is migrated ({ISSUE} ratchet)."
         )
+
+
+def validate(entries: Iterable[ReleaseMutation], allowlist: object) -> list[str]:
+    """Return ratchet errors for post-publication mutations versus the allowlist."""
+    if not isinstance(allowlist, list):
+        return [f"actions-policy.json: {POLICY_KEY} must be a list"]
+    errors: list[str] = []
+    allowed, expected_counts = _validated_allowlist(allowlist, errors)
+    matched = _match_release_mutations(entries, allowed, errors)
+    _check_allowlist_counts(allowed, expected_counts, matched, errors)
     return errors
 
 

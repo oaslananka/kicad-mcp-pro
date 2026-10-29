@@ -96,10 +96,9 @@ def _preflight_mirror_paths(expected: dict[Path, bytes]) -> None:
                     _reject_linked_path(item)
 
 
-def run(*, write: bool) -> int:
-    expected = expected_skill_files()
-    _preflight_mirror_paths(expected)
-    discrepancies: list[str] = []
+def _sync_expected_files(
+    expected: dict[Path, bytes], discrepancies: list[str], *, write: bool
+) -> None:
     for target, content in expected.items():
         if target.is_symlink():
             raise ValueError(f"Generated skill target symlink not permitted: {target}")
@@ -108,6 +107,11 @@ def run(*, write: bool) -> int:
             if write:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(content)
+
+
+def _remove_stale_files(
+    expected: dict[Path, bytes], discrepancies: list[str], *, write: bool
+) -> None:
     for root in HOST_ROOTS:
         for name in SKILLS:
             target_dir = root / name
@@ -122,17 +126,29 @@ def run(*, write: bool) -> int:
                     discrepancies.append(str(existing.relative_to(ROOT)))
                     if write:
                         existing.unlink()
+
+
+def _remove_empty_skill_dirs() -> None:
+    for root in HOST_ROOTS:
+        for name in SKILLS:
+            directory = root / name
+            if directory.exists():
+                # Remove empty abandoned directories after generated files are removed.
+                for child in sorted(directory.rglob("*"), reverse=True):
+                    if child.is_dir() and not any(child.iterdir()):
+                        child.rmdir()
+
+
+def run(*, write: bool) -> int:
+    expected = expected_skill_files()
+    _preflight_mirror_paths(expected)
+    discrepancies: list[str] = []
+    _sync_expected_files(expected, discrepancies, write=write)
+    _remove_stale_files(expected, discrepancies, write=write)
     if discrepancies:
         print("Agent Skills mirror drift: " + ", ".join(discrepancies[:12]))
     if write:
-        for root in HOST_ROOTS:
-            for name in SKILLS:
-                directory = root / name
-                if directory.exists():
-                    # Remove empty abandoned directories after generated files are removed.
-                    for child in sorted(directory.rglob("*"), reverse=True):
-                        if child.is_dir() and not any(child.iterdir()):
-                            child.rmdir()
+        _remove_empty_skill_dirs()
         return 0
     return 1 if discrepancies else 0
 
