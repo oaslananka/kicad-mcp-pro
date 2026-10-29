@@ -109,34 +109,43 @@ def _sync_expected_files(
                 target.write_bytes(content)
 
 
+def _remove_stale_for_skill(
+    target_dir: Path, expected: dict[Path, bytes], discrepancies: list[str], *, write: bool
+) -> None:
+    if target_dir.is_symlink():
+        raise ValueError(f"Generated skill directory symlink not permitted: {target_dir}")
+    if not target_dir.exists():
+        return
+    for existing in target_dir.rglob("*"):
+        if existing.is_symlink():
+            raise ValueError(f"Generated skill path symlink not permitted: {existing}")
+        if existing.is_file() and existing not in expected:
+            discrepancies.append(str(existing.relative_to(ROOT)))
+            if write:
+                existing.unlink()
+
+
 def _remove_stale_files(
     expected: dict[Path, bytes], discrepancies: list[str], *, write: bool
 ) -> None:
     for root in HOST_ROOTS:
         for name in SKILLS:
-            target_dir = root / name
-            if target_dir.is_symlink():
-                raise ValueError(f"Generated skill directory symlink not permitted: {target_dir}")
-            if not target_dir.exists():
-                continue
-            for existing in target_dir.rglob("*"):
-                if existing.is_symlink():
-                    raise ValueError(f"Generated skill path symlink not permitted: {existing}")
-                if existing.is_file() and existing not in expected:
-                    discrepancies.append(str(existing.relative_to(ROOT)))
-                    if write:
-                        existing.unlink()
+            _remove_stale_for_skill(root / name, expected, discrepancies, write=write)
+
+
+def _prune_empty_skill_directory(directory: Path) -> None:
+    if not directory.exists():
+        return
+    # Remove empty abandoned directories after generated files are removed.
+    for child in sorted(directory.rglob("*"), reverse=True):
+        if child.is_dir() and not any(child.iterdir()):
+            child.rmdir()
 
 
 def _remove_empty_skill_dirs() -> None:
     for root in HOST_ROOTS:
         for name in SKILLS:
-            directory = root / name
-            if directory.exists():
-                # Remove empty abandoned directories after generated files are removed.
-                for child in sorted(directory.rglob("*"), reverse=True):
-                    if child.is_dir() and not any(child.iterdir()):
-                        child.rmdir()
+            _prune_empty_skill_directory(root / name)
 
 
 def run(*, write: bool) -> int:

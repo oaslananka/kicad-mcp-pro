@@ -436,6 +436,27 @@ def _check_adapter_sources(detail: dict[str, Any], errors: list[str]) -> None:
         errors.append("kicadAdapterMatrix.sources values must be HTTPS URLs")
 
 
+def _check_generated_adapter_contract(generated: dict[str, Any], errors: list[str]) -> None:
+    from kicad_mcp.adapter_matrix import build_adapter_matrix_payload
+    from kicad_mcp.tools.router import TOOL_CATEGORIES
+
+    expected = build_adapter_matrix_payload()
+    if generated != expected:
+        errors.append("kicadAdapterMatrix.generatedJson drift: run adapter-matrix:build")
+    categories = generated.get("categories")
+    if not isinstance(categories, dict) or set(categories) != set(TOOL_CATEGORIES):
+        errors.append("kicadAdapterMatrix.generatedJson must cover every routed category")
+    tool_rows = generated.get("tools")
+    routed_tools = {tool for category in TOOL_CATEGORIES.values() for tool in category["tools"]}
+    matrix_tools = (
+        {row.get("tool") for row in tool_rows if isinstance(row, dict)}
+        if isinstance(tool_rows, list)
+        else set()
+    )
+    if matrix_tools != routed_tools:
+        errors.append("kicadAdapterMatrix.generatedJson must cover every routed tool exactly once")
+
+
 def _check_adapter_generated(resolved_paths: dict[str, Path], errors: list[str]) -> None:
     generated_path = resolved_paths.get("generatedJson")
     if generated_path and generated_path.exists():
@@ -445,28 +466,7 @@ def _check_adapter_generated(resolved_paths: dict[str, Path], errors: list[str])
             errors.append(f"kicadAdapterMatrix.generatedJson is invalid: {exc}")
         else:
             sys.path.insert(0, str(MCP_ROOT / "src"))
-            from kicad_mcp.adapter_matrix import build_adapter_matrix_payload
-            from kicad_mcp.tools.router import TOOL_CATEGORIES
-
-            expected = build_adapter_matrix_payload()
-            if generated != expected:
-                errors.append("kicadAdapterMatrix.generatedJson drift: run adapter-matrix:build")
-            categories = generated.get("categories")
-            if not isinstance(categories, dict) or set(categories) != set(TOOL_CATEGORIES):
-                errors.append("kicadAdapterMatrix.generatedJson must cover every routed category")
-            tool_rows = generated.get("tools")
-            routed_tools = {
-                tool for category in TOOL_CATEGORIES.values() for tool in category["tools"]
-            }
-            matrix_tools = (
-                {row.get("tool") for row in tool_rows if isinstance(row, dict)}
-                if isinstance(tool_rows, list)
-                else set()
-            )
-            if matrix_tools != routed_tools:
-                errors.append(
-                    "kicadAdapterMatrix.generatedJson must cover every routed tool exactly once"
-                )
+            _check_generated_adapter_contract(generated, errors)
 
 
 def _check_adapter_workflow(resolved_paths: dict[str, Path], errors: list[str]) -> None:
