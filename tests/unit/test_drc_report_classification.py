@@ -23,13 +23,13 @@ def test_courtyard_violations_reads_kicad_10_general_violations() -> None:
         ]
     }
 
-    assert [entry["uuid"] for entry in courtyard_violations(report)] == ["c1", "c2", "c3"]
+    assert ["c1", "c2", "c3"] == [entry["uuid"] for entry in courtyard_violations(report)]
 
 
 def test_courtyard_violations_supports_legacy_report_field() -> None:
     legacy = {"uuid": "legacy", "description": "Legacy courtyard issue"}
 
-    assert courtyard_violations({"items_not_passing_courtyard": [legacy]}) == [legacy]
+    assert [legacy] == courtyard_violations({"items_not_passing_courtyard": [legacy]})
 
 
 def test_courtyard_violations_deduplicates_current_and_legacy_entries_by_uuid() -> None:
@@ -40,32 +40,26 @@ def test_courtyard_violations_deduplicates_current_and_legacy_entries_by_uuid() 
     }
     legacy = {"uuid": "same", "description": "Courtyards overlap"}
 
-    assert courtyard_violations(
-        {
-            "violations": [current],
-            "items_not_passing_courtyard": [legacy],
-        }
-    ) == [current]
+    assert [current] == courtyard_violations(
+        {"violations": [current], "items_not_passing_courtyard": [legacy]}
+    )
 
 
 def test_courtyard_violations_ignores_malformed_report_values() -> None:
-    assert courtyard_violations(
+    assert [{"type": "courtyards_overlap", "uuid": "ok"}] == courtyard_violations(
         {
             "violations": [None, "invalid", {"type": "courtyards_overlap", "uuid": "ok"}],
             "items_not_passing_courtyard": "invalid",
         }
-    ) == [{"type": "courtyards_overlap", "uuid": "ok"}]
+    )
 
 
 def test_courtyard_violations_deduplicates_uuid_less_identical_entries() -> None:
     entry = {"type": "courtyards_overlap", "description": "Courtyards overlap"}
 
-    assert courtyard_violations(
-        {
-            "violations": [entry],
-            "items_not_passing_courtyard": [dict(entry)],
-        }
-    ) == [entry]
+    assert [entry] == courtyard_violations(
+        {"violations": [entry], "items_not_passing_courtyard": [dict(entry)]}
+    )
 
 
 def test_unconnected_nets_keeps_unique_names_and_unparsed_findings() -> None:
