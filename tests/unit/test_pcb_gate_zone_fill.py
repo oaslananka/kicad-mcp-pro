@@ -70,22 +70,22 @@ def _board(*parts: str) -> str:
 def test_scan_reports_nothing_for_a_board_without_zones() -> None:
     scan = scan_zone_fill(_board())
 
-    assert scan.copper_zones == 0
-    assert scan.unfilled == []
+    assert 0 == scan.copper_zones
+    assert [] == scan.unfilled
 
 
 def test_scan_accepts_a_filled_zone() -> None:
     scan = scan_zone_fill(_board(FILLED_ZONE))
 
-    assert scan.copper_zones == 1
-    assert scan.unfilled == []
+    assert 1 == scan.copper_zones
+    assert [] == scan.unfilled
 
 
 def test_scan_flags_a_copper_zone_without_filled_polygons() -> None:
     scan = scan_zone_fill(_board(FILLED_ZONE, UNFILLED_ZONE))
 
-    assert scan.copper_zones == 2
-    assert len(scan.unfilled) == 1
+    assert 2 == scan.copper_zones
+    assert 1 == len(scan.unfilled)
     assert "+3V3" in scan.unfilled[0]
     assert "F.Cu" in scan.unfilled[0]
 
@@ -105,8 +105,8 @@ PARTLY_FILLED_ZONE = """
 def test_scan_flags_a_multi_layer_zone_filled_on_only_one_of_its_layers() -> None:
     scan = scan_zone_fill(_board(PARTLY_FILLED_ZONE))
 
-    assert scan.copper_zones == 1
-    assert len(scan.unfilled) == 1
+    assert 1 == scan.copper_zones
+    assert 1 == len(scan.unfilled)
     assert "B.Cu" in scan.unfilled[0]
     assert "no stored fill on B.Cu" in scan.unfilled[0]
 
@@ -116,7 +116,7 @@ def test_scan_flags_the_f_and_b_shorthand_filled_on_only_one_layer() -> None:
 
     scan = scan_zone_fill(_board(shorthand))
 
-    assert len(scan.unfilled) == 1
+    assert 1 == len(scan.unfilled)
     assert "no stored fill on B.Cu" in scan.unfilled[0]
     assert "F.Cu" not in scan.unfilled[0].split("no stored fill on")[1]
 
@@ -126,7 +126,7 @@ def test_scan_flags_a_shorthand_zone_with_no_fill_on_either_layer() -> None:
 
     scan = scan_zone_fill(_board(bare))
 
-    assert len(scan.unfilled) == 1
+    assert 1 == len(scan.unfilled)
     assert "no stored fill on F.Cu, B.Cu" in scan.unfilled[0]
 
 
@@ -135,20 +135,20 @@ def test_scan_accepts_a_multi_layer_zone_filled_on_every_layer() -> None:
         "\n\t)", '\n\t\t(filled_polygon (layer "B.Cu") (pts (xy 1 1) (xy 9 1) (xy 9 9)))\n\t)'
     )
 
-    assert scan_zone_fill(_board(both)).unfilled == []
+    assert [] == scan_zone_fill(_board(both)).unfilled
 
 
 def test_scan_only_requires_fill_on_the_copper_layers_of_a_mixed_layer_zone() -> None:
     mixed = PARTLY_FILLED_ZONE.replace('(layers "F.Cu" "B.Cu")', '(layers "F.Cu" "F.Mask")')
 
-    assert scan_zone_fill(_board(mixed)).unfilled == []
+    assert [] == scan_zone_fill(_board(mixed)).unfilled
 
 
 def test_scan_ignores_rule_areas_and_non_copper_zones_and_zone_connect() -> None:
     scan = scan_zone_fill(_board(KEEPOUT_ZONE, SILK_ZONE, PAD_WITH_ZONE_CONNECT))
 
-    assert scan.copper_zones == 0
-    assert scan.unfilled == []
+    assert 0 == scan.copper_zones
+    assert [] == scan.unfilled
 
 
 def test_scan_reads_the_net_from_the_quoted_net_token_of_newer_boards() -> None:
@@ -164,7 +164,7 @@ def test_scan_reports_a_zone_whose_fill_is_disabled() -> None:
 
     scan = scan_zone_fill(_board(disabled))
 
-    assert len(scan.unfilled) == 1
+    assert 1 == len(scan.unfilled)
 
 
 def test_drc_outcome_changes_is_empty_for_identical_reports() -> None:
@@ -173,7 +173,7 @@ def test_drc_outcome_changes_is_empty_for_identical_reports() -> None:
         "unconnected_items": [{"type": "unconnected_items", "items": [{"description": "Pad [A]"}]}],
     }
 
-    assert drc_outcome_changes(report, json.loads(json.dumps(report))) == []
+    assert [] == drc_outcome_changes(report, json.loads(json.dumps(report)))
 
 
 def test_drc_outcome_changes_describes_what_a_refill_changes() -> None:
@@ -239,8 +239,8 @@ def test_gate_passes_without_zones_and_never_runs_the_refill_probe(
 
     outcome = validation._evaluate_pcb_gate()
 
-    assert outcome.status == "PASS"
-    assert calls == []
+    assert "PASS" == outcome.status
+    assert [] == calls
 
 
 def test_gate_passes_when_a_fresh_refill_agrees_with_the_stored_fill(
@@ -250,8 +250,8 @@ def test_gate_passes_when_a_fresh_refill_agrees_with_the_stored_fill(
 
     outcome = validation._evaluate_pcb_gate()
 
-    assert outcome.status == "PASS"
-    assert calls == ["demo.kicad_pcb"]
+    assert "PASS" == outcome.status
+    assert ["demo.kicad_pcb"] == calls
     assert any("Zone fill: 1 copper zone(s) filled and current" in d for d in outcome.details)
 
 
@@ -262,8 +262,8 @@ def test_gate_is_blocked_when_a_copper_zone_is_not_filled(
 
     outcome = validation._evaluate_pcb_gate()
 
-    assert outcome.status == "BLOCKED"
-    assert calls == []
+    assert "BLOCKED" == outcome.status
+    assert [] == calls
     assert any(d.startswith("BLOCKED: ") and "+3V3" in d for d in outcome.details)
     assert any("pcb_refill_zones" in d for d in outcome.details)
 
@@ -285,7 +285,7 @@ def test_gate_is_blocked_when_the_stored_fill_is_stale(
 
     outcome = validation._evaluate_pcb_gate()
 
-    assert outcome.status == "BLOCKED"
+    assert "BLOCKED" == outcome.status
     assert any("stale" in d and "unconnected_items 1 -> 0" in d for d in outcome.details)
     # The connectivity findings from the stored fill stay visible next to the block.
     assert any(d.startswith("FAIL: net GND") for d in outcome.details)
@@ -298,7 +298,7 @@ def test_gate_is_blocked_when_the_refill_probe_cannot_run(
 
     outcome = validation._evaluate_pcb_gate()
 
-    assert outcome.status == "BLOCKED"
+    assert "BLOCKED" == outcome.status
     assert any("could not be verified" in d and "timed out" in d for d in outcome.details)
 
 
@@ -309,7 +309,7 @@ def test_gate_is_blocked_when_the_board_file_cannot_be_read(
 
     outcome = validation._evaluate_pcb_gate()
 
-    assert outcome.status == "BLOCKED"
+    assert "BLOCKED" == outcome.status
     assert any("zone fill" in d.lower() for d in outcome.details)
 
 
@@ -323,7 +323,7 @@ def test_gate_is_blocked_when_no_pcb_file_is_configured(
 
     monkeypatch.setattr(validation, "_get_pcb_file", missing)
 
-    assert validation._evaluate_pcb_gate().status == "BLOCKED"
+    assert "BLOCKED" == validation._evaluate_pcb_gate().status
 
 
 def test_gate_keeps_fail_semantics_for_real_violations_on_a_filled_board(
@@ -333,7 +333,7 @@ def test_gate_keeps_fail_semantics_for_real_violations_on_a_filled_board(
     report["violations"] = [{"type": "clearance", "severity": "error", "description": "x"}]
     _wire(monkeypatch, tmp_path, _board(FILLED_ZONE), report=report)
 
-    assert validation._evaluate_pcb_gate().status == "FAIL"
+    assert "FAIL" == validation._evaluate_pcb_gate().status
 
 
 # ---- the refill probe itself ----------------------------------------------------------
@@ -355,7 +355,7 @@ def test_refill_probe_saves_the_refilled_copy_and_never_touches_the_board(
         out = Path(args[args.index("--output") + 1])
         copy = Path(args[-1])
         assert copy != board
-        assert copy.read_bytes() == before
+        assert before == copy.read_bytes()
         assert (copy.parent / "demo.kicad_pro").is_file()
         assert (copy.parent / "fp-lib-table").is_file()
         out.write_text(json.dumps(_clean_report()), encoding="utf-8")
@@ -367,13 +367,13 @@ def test_refill_probe_saves_the_refilled_copy_and_never_touches_the_board(
     report, refilled_text, error = validation._refill_probe_report(board)
 
     assert error is None
-    assert report == _clean_report()
+    assert _clean_report() == report
     assert refilled_text is not None
     assert refilled_text.endswith("; saved by kicad-cli")
     (args,) = seen
     assert "--refill-zones" in args
     assert "--save-board" in args
-    assert board.read_bytes() == before
+    assert before == board.read_bytes()
     assert not Path(args[-1]).parent.exists()
 
 
@@ -444,7 +444,7 @@ def test_gate_is_blocked_when_different_fills_give_identical_drc_output(
 
     outcome = validation._evaluate_pcb_gate()
 
-    assert outcome.status == "BLOCKED"
+    assert "BLOCKED" == outcome.status
     assert any("stale" in d and "fill geometry" in d for d in outcome.details)
     assert not any("filled and current" in d for d in outcome.details)
 
@@ -456,7 +456,7 @@ def test_gate_is_blocked_when_the_refilled_copy_was_not_saved(
 
     outcome = validation._evaluate_pcb_gate()
 
-    assert outcome.status == "BLOCKED"
+    assert "BLOCKED" == outcome.status
     assert any("could not be verified as current" in d for d in outcome.details)
 
 
@@ -474,7 +474,7 @@ def test_gate_accepts_the_same_fill_written_in_another_vertex_order(
         probe=(_clean_report(), _board(reordered), None),
     )
 
-    assert validation._evaluate_pcb_gate().status == "PASS"
+    assert "PASS" == validation._evaluate_pcb_gate().status
 
 
 def test_fill_geometry_changes_pinpoints_the_zone_and_layer() -> None:
@@ -485,10 +485,10 @@ def test_fill_geometry_changes_pinpoints_the_zone_and_layer() -> None:
 
     changes = fill_geometry_changes(_board(FILLED_ZONE), _board(moved))
 
-    assert len(changes) == 1
+    assert 1 == len(changes)
     assert "11111111-1111-1111-1111-111111111111" in changes[0]
     assert "B.Cu" in changes[0]
-    assert fill_geometry_changes(_board(FILLED_ZONE), _board(FILLED_ZONE)) == []
+    assert [] == fill_geometry_changes(_board(FILLED_ZONE), _board(FILLED_ZONE))
 
 
 def test_refill_probe_leaves_the_original_board_and_project_files_byte_identical(
@@ -515,4 +515,4 @@ def test_refill_probe_leaves_the_original_board_and_project_files_byte_identical
 
     validation._refill_probe_report(board)
 
-    assert (board.read_bytes(), project.read_bytes()) == before
+    assert before == (board.read_bytes(), project.read_bytes())

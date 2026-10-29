@@ -1697,7 +1697,7 @@ def _zone_fill_check(report: dict[str, object]) -> tuple[list[str], list[str]]:
     try:
         pcb_file = _get_pcb_file()
         board_text = pcb_file.read_text(encoding="utf-8")
-    except (ValueError, OSError, UnicodeError) as exc:
+    except (ValueError, OSError) as exc:
         return [f"Zone fill could not be verified: the board file is unavailable ({exc})."], []
 
     scan = scan_zone_fill(board_text)
@@ -1883,6 +1883,23 @@ def _group_spread_mm(
     return max_spread, present_refs
 
 
+def _nearest_unvisited_manhattan(
+    points: list[tuple[float, float]], visited: set[int]
+) -> tuple[int | None, float | None]:
+    best_distance: float | None = None
+    best_index: int | None = None
+    for left_index in visited:
+        left_point = points[left_index]
+        for right_index, right_point in enumerate(points):
+            if right_index in visited:
+                continue
+            distance = abs(left_point[0] - right_point[0]) + abs(left_point[1] - right_point[1])
+            if best_distance is None or distance < best_distance:
+                best_distance = distance
+                best_index = right_index
+    return best_index, best_distance
+
+
 def _manhattan_mst_length(points: list[tuple[float, float]]) -> float:
     """Approximate a ratsnest length using Manhattan-distance MST wiring."""
     if len(points) < 2:
@@ -1891,17 +1908,7 @@ def _manhattan_mst_length(points: list[tuple[float, float]]) -> float:
     visited = {0}
     total = 0.0
     while len(visited) < len(points):
-        best_distance: float | None = None
-        best_index: int | None = None
-        for left_index in visited:
-            left_point = points[left_index]
-            for right_index, right_point in enumerate(points):
-                if right_index in visited:
-                    continue
-                distance = abs(left_point[0] - right_point[0]) + abs(left_point[1] - right_point[1])
-                if best_distance is None or distance < best_distance:
-                    best_distance = distance
-                    best_index = right_index
+        best_index, best_distance = _nearest_unvisited_manhattan(points, visited)
         if best_distance is None or best_index is None:
             break
         visited.add(best_index)
@@ -2778,41 +2785,43 @@ def _evaluate_manufacturing_gate(
     )
 
 
-def _is_project_empty() -> bool:
-    from .board_file import _edge_cuts_bounds, _parse_board_footprint_blocks
+def _has_schematic_contents() -> bool:
     from .schematic import parse_schematic_file, project_schematic_files
 
-    # Check schematic
     try:
         sch_files = project_schematic_files()
         if sch_files:
             for sch_file in sch_files:
                 if sch_file.exists():
                     data = parse_schematic_file(sch_file)
-                    if (
-                        data.get("symbols")
-                        or data.get("power_symbols")
-                        or data.get("wires")
-                        or data.get("labels")
+                    if any(
+                        data.get(key) for key in ("symbols", "power_symbols", "wires", "labels")
                     ):
-                        return False
-    except Exception:  # noqa: S110
+                        return True
+    except Exception:  # noqa: S110 - preserve conservative onboarding fallback
         pass
+    return False
 
-    # Check PCB
+
+def _has_pcb_contents() -> bool:
+    from .board_file import _edge_cuts_bounds, _parse_board_footprint_blocks
+
     try:
         pcb_file = _get_pcb_file()
         if pcb_file.exists():
             content = pcb_file.read_text(encoding="utf-8", errors="ignore")
-            footprints = _parse_board_footprint_blocks(content)
-            if footprints:
-                return False
+            if _parse_board_footprint_blocks(content):
+                return True
             if _edge_cuts_bounds(content) is not None:
-                return False
-    except Exception:  # noqa: S110
+                return True
+    except Exception:  # noqa: S110 - preserve conservative onboarding fallback
         pass
+    return False
 
-    return True
+
+def _is_project_empty() -> bool:
+    """Preserve the independent best-effort schematic and PCB emptiness checks."""
+    return not (_has_schematic_contents() or _has_pcb_contents())
 
 
 def _empty_project_onboarding_outcome() -> GateOutcome:
@@ -4072,7 +4081,7 @@ def _build_constraint_node(
     return node
 
 
-def _register_drc_rule_tools(mcp: FastMCP) -> None:
+def _register_drc_rule_query_tools(mcp: FastMCP) -> None:
     """Register custom DRC rule management tools."""
 
     @mcp.tool()
@@ -4128,6 +4137,10 @@ def _register_drc_rule_tools(mcp: FastMCP) -> None:
             indent=2,
         )
 
+
+def _register_drc_rule_edit_tools(mcp: FastMCP) -> None:
+    """Register DRC create and delete operations."""
+
     @mcp.tool()
     @headless_compatible
     def drc_rule_create(
@@ -4179,6 +4192,10 @@ def _register_drc_rule_tools(mcp: FastMCP) -> None:
         cast(dict[str, str], state.setdefault("severity", {})).pop(rule_name, None)
         _save_drc_state(state)
         return f"Deleted custom DRC rule '{rule_name}' from {path}."
+
+
+def _register_drc_rule_toggle_export_tools(mcp: FastMCP) -> None:
+    """Register DRC toggle and export operations."""
 
     @mcp.tool()
     @headless_compatible
@@ -4234,6 +4251,13 @@ def _register_drc_rule_tools(mcp: FastMCP) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
         return f"Custom DRC rules exported to {target}."
+
+
+def _register_drc_rule_tools(mcp: FastMCP) -> None:
+    """Register custom DRC rule management tools in their original order."""
+    _register_drc_rule_query_tools(mcp)
+    _register_drc_rule_edit_tools(mcp)
+    _register_drc_rule_toggle_export_tools(mcp)
 
 
 def _execute_validate_design() -> str:
@@ -4506,7 +4530,7 @@ def _register_validation_gate_tools(mcp: FastMCP) -> None:
     _register_project_bundle_gate_tools(mcp)
 
 
-def _register_targeted_validation_tools(mcp: FastMCP) -> None:
+def _register_targeted_drc_read_tools(mcp: FastMCP) -> None:
     """Register targeted DFM and violation-reporting tools."""
 
     @mcp.tool()
@@ -4545,6 +4569,10 @@ def _register_targeted_validation_tools(mcp: FastMCP) -> None:
             return "No courtyard violations were reported."
         return _format_violations("Courtyard violations", entries)
 
+
+def _register_targeted_other_tools(mcp: FastMCP) -> None:
+    """Register other targeted report and parity tools."""
+
     @mcp.tool()
     @headless_compatible
     def get_silk_to_pad_violations() -> str:
@@ -4575,6 +4603,12 @@ def _register_targeted_validation_tools(mcp: FastMCP) -> None:
         ]
         lines.extend(f"- {detail}" for detail in outcome.details)
         return "\n".join(lines)
+
+
+def _register_targeted_validation_tools(mcp: FastMCP) -> None:
+    """Register targeted DFM and violation-reporting tools in order."""
+    _register_targeted_drc_read_tools(mcp)
+    _register_targeted_other_tools(mcp)
 
 
 def register(mcp: FastMCP) -> None:

@@ -85,6 +85,20 @@ def bracketed_net(description: object) -> str | None:
     return None
 
 
+def _entry_net_names(entry: ReportEntry) -> list[str]:
+    """Find unique, ordered net names on a DRC unconnected item."""
+    items = entry.get("items")
+    nets: list[str] = []
+    if isinstance(items, list):
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            name = bracketed_net(item.get("description"))
+            if name is not None and name not in nets:
+                nets.append(name)
+    return nets
+
+
 def unconnected_nets(
     entries: list[ReportEntry],
 ) -> tuple[dict[str, list[ReportEntry]], int]:
@@ -97,15 +111,7 @@ def unconnected_nets(
     by_net: dict[str, list[ReportEntry]] = {}
     unparsed = 0
     for entry in entries:
-        items = entry.get("items")
-        nets: list[str] = []
-        if isinstance(items, list):
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                name = bracketed_net(item.get("description"))
-                if name is not None and name not in nets:
-                    nets.append(name)
+        nets = _entry_net_names(entry)
         if not nets:
             unparsed += 1
             continue

@@ -71,30 +71,55 @@ def _intended_copper_layers(layers: list[str]) -> list[str]:
     return expanded
 
 
+def _filled_polygon_body(block: str, start: int) -> str | None:
+    """Return a complete balanced polygon expression, if one is present."""
+    depth = 0
+    for token in _TOKEN.finditer(block, start):
+        if token.group() == "(":
+            depth += 1
+        elif token.group() == ")":
+            depth -= 1
+            if depth == 0:
+                return block[start : token.end()]
+    return None
+
+
+def _filled_polygon_data(body: str, zone_layers: list[str]) -> tuple[str, tuple[int, ...]]:
+    layer_match = _FILL_LAYER.search(body)
+    layer = layer_match.group(1) if layer_match else ""
+    if not layer and len(zone_layers) == 1:
+        layer = zone_layers[0]
+    coords = tuple(
+        round(float(value) * _GEOMETRY_SCALE)
+        for pair in _POINT.finditer(body)
+        for value in pair.groups()
+    )
+    return layer, coords
+
+
 def _filled_polygons(block: str, zone_layers: list[str]) -> list[tuple[str, tuple[int, ...]]]:
     """Return ``(layer, flattened coordinates)`` for every ``filled_polygon`` of a zone."""
     polygons: list[tuple[str, tuple[int, ...]]] = []
     for start in _FILLED_START.finditer(block):
-        depth = 0
-        for token in _TOKEN.finditer(block, start.start()):
-            if token.group() == "(":
-                depth += 1
-            elif token.group() == ")":
-                depth -= 1
-                if depth == 0:
-                    body = block[start.start() : token.end()]
-                    layer_match = _FILL_LAYER.search(body)
-                    layer = layer_match.group(1) if layer_match else ""
-                    if not layer and len(zone_layers) == 1:
-                        layer = zone_layers[0]
-                    coords = tuple(
-                        round(float(value) * _GEOMETRY_SCALE)
-                        for pair in _POINT.finditer(body)
-                        for value in pair.groups()
-                    )
-                    polygons.append((layer, coords))
-                    break
+        body = _filled_polygon_body(block, start.start())
+        if body is not None:
+            polygons.append(_filled_polygon_data(body, zone_layers))
     return polygons
+
+
+def _missing_filled_layers(block: str, intended: list[str]) -> list[str]:
+    filled = {layer for layer, _ in _filled_polygons(block, intended)}
+    if _WILDCARD_COPPER in intended:
+        # "*.Cu" cannot be expanded without the stackup: require some fill at least.
+        return [] if filled else [_WILDCARD_COPPER]
+    return [layer for layer in intended if layer not in filled]
+
+
+def _unfilled_zone_description(block: str, layers: list[str], missing: list[str]) -> str:
+    name_match = _NAME.search(block)
+    name = name_match.group(1) if name_match and name_match.group(1) else "(no net)"
+    reason = "no stored fill" if _FILL_ENABLED.search(block) else "fill disabled"
+    return f"zone on net {name} ({', '.join(layers)}): {reason} on {', '.join(missing)}"
 
 
 def scan_zone_fill(board_text: str) -> ZoneFillScan:
@@ -115,20 +140,9 @@ def scan_zone_fill(board_text: str) -> ZoneFillScan:
         if not intended:
             continue
         copper += 1
-        filled = {layer for layer, _ in _filled_polygons(block, intended)}
-        if _WILDCARD_COPPER in intended:
-            # "*.Cu" cannot be expanded without the stackup: require some fill at least.
-            missing = [] if filled else [_WILDCARD_COPPER]
-        else:
-            missing = [layer for layer in intended if layer not in filled]
-        if not missing:
-            continue
-        name_match = _NAME.search(block)
-        name = name_match.group(1) if name_match and name_match.group(1) else "(no net)"
-        reason = "no stored fill" if _FILL_ENABLED.search(block) else "fill disabled"
-        unfilled.append(
-            f"zone on net {name} ({', '.join(layers)}): {reason} on {', '.join(missing)}"
-        )
+        missing = _missing_filled_layers(block, intended)
+        if missing:
+            unfilled.append(_unfilled_zone_description(block, layers, missing))
     return ZoneFillScan(copper_zones=copper, unfilled=unfilled)
 
 

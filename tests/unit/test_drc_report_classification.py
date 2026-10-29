@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kicad_mcp.validation.drc_report import courtyard_violations
+from kicad_mcp.validation.drc_report import courtyard_violations, unconnected_nets
 
 
 def test_courtyard_violations_reads_kicad_10_general_violations() -> None:
@@ -66,3 +66,18 @@ def test_courtyard_violations_deduplicates_uuid_less_identical_entries() -> None
             "items_not_passing_courtyard": [dict(entry)],
         }
     ) == [entry]
+
+
+def test_unconnected_nets_keeps_unique_names_and_unparsed_findings() -> None:
+    multi_net = {
+        "items": [
+            {"description": "Pad 1 [GND] of R1"},
+            {"description": "Pad 2 [GND] of R2"},
+            {"description": "Pad 3 [DATA[0]] of U1"},
+        ]
+    }
+    malformed = {"items": [None, {"description": "No bracketed net"}, "unknown"]}
+    grouped, unparsed = unconnected_nets([multi_net, malformed])
+    assert [multi_net] == grouped["GND"]
+    assert [multi_net] == grouped["DATA[0]"]
+    assert 1 == unparsed
