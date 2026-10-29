@@ -1134,6 +1134,126 @@ class DesignIntentParams:
     thermal: dict[str, Any] | None = None
 
 
+def _design_intent_base_fields(
+    existing: ProjectDesignIntent, params: DesignIntentParams
+) -> dict[str, Any]:
+    return {
+        "connector_refs": (
+            existing.connector_refs
+            if params.connector_refs is None
+            else _normalized_unique(params.connector_refs)
+        ),
+        "decoupling_pairs": (
+            existing.decoupling_pairs
+            if params.decoupling_pairs is None
+            else [DecouplingPairIntent.model_validate(p) for p in params.decoupling_pairs]
+        ),
+        "critical_nets": (
+            existing.critical_nets
+            if params.critical_nets is None
+            else _normalized_unique(params.critical_nets)
+        ),
+        "power_tree_refs": (
+            existing.power_tree_refs
+            if params.power_tree_refs is None
+            else _normalized_unique(params.power_tree_refs)
+        ),
+        "analog_refs": (
+            existing.analog_refs
+            if params.analog_refs is None
+            else _normalized_unique(params.analog_refs)
+        ),
+        "digital_refs": (
+            existing.digital_refs
+            if params.digital_refs is None
+            else _normalized_unique(params.digital_refs)
+        ),
+        "sensor_cluster_refs": (
+            existing.sensor_cluster_refs
+            if params.sensor_cluster_refs is None
+            else _normalized_unique(params.sensor_cluster_refs)
+        ),
+    }
+
+
+def _design_intent_layout_fields(
+    existing: ProjectDesignIntent, params: DesignIntentParams
+) -> dict[str, Any]:
+    return {
+        "required_sheets": (
+            existing.required_sheets
+            if params.required_sheets is None
+            else _normalized_unique(params.required_sheets)
+        ),
+        "optional_sheets": (
+            existing.optional_sheets
+            if params.optional_sheets is None
+            else _normalized_unique(params.optional_sheets)
+        ),
+        "rf_keepout_regions": (
+            existing.rf_keepout_regions
+            if params.rf_keepout_regions is None
+            else [RFKeepoutIntent.model_validate(r) for r in params.rf_keepout_regions]
+        ),
+        "manufacturer": (
+            existing.manufacturer if params.manufacturer is None else params.manufacturer.strip()
+        ),
+        "manufacturer_tier": (
+            existing.manufacturer_tier
+            if params.manufacturer_tier is None
+            else params.manufacturer_tier.strip().lower()
+        ),
+        "functional_spacing_mm": (
+            existing.functional_spacing_mm
+            if params.functional_spacing_mm is None
+            else params.functional_spacing_mm
+        ),
+        "thermal_hotspots": (
+            existing.thermal_hotspots
+            if params.thermal_hotspots is None
+            else _normalized_unique(params.thermal_hotspots)
+        ),
+    }
+
+
+def _design_intent_requirements_fields(
+    existing: ProjectDesignIntent, params: DesignIntentParams
+) -> dict[str, Any]:
+    return {
+        "critical_frequencies_mhz": (
+            existing.critical_frequencies_mhz
+            if params.critical_frequencies_mhz is None
+            else sorted(set(params.critical_frequencies_mhz))
+        ),
+        "power_rails": (
+            existing.power_rails
+            if params.power_rails is None
+            else [PowerRailSpec.model_validate(p) for p in params.power_rails]
+        ),
+        "interfaces": (
+            existing.interfaces
+            if params.interfaces is None
+            else [InterfaceSpec.model_validate(i) for i in params.interfaces]
+        ),
+        "mechanical": (
+            existing.mechanical
+            if params.mechanical is None
+            else MechanicalConstraint.model_validate(params.mechanical)
+        ),
+        "compliance": (
+            existing.compliance
+            if params.compliance is None
+            else [ComplianceTarget.model_validate(c) for c in params.compliance]
+        ),
+        "cost": (existing.cost if params.cost is None else CostTarget.model_validate(params.cost)),
+        "thermal": (
+            existing.thermal
+            if params.thermal is None
+            else ThermalEnvelope.model_validate(params.thermal)
+        ),
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectDesignSpecService:
     """Domain service for project design spec management."""
@@ -1146,107 +1266,9 @@ class ProjectDesignSpecService:
         params = intent or DesignIntentParams(**kwargs)  # type: ignore[arg-type]
         existing = load_design_intent()
         updated = ProjectDesignIntent(
-            connector_refs=(
-                existing.connector_refs
-                if params.connector_refs is None
-                else _normalized_unique(params.connector_refs)
-            ),
-            decoupling_pairs=(
-                existing.decoupling_pairs
-                if params.decoupling_pairs is None
-                else [DecouplingPairIntent.model_validate(p) for p in params.decoupling_pairs]
-            ),
-            critical_nets=(
-                existing.critical_nets
-                if params.critical_nets is None
-                else _normalized_unique(params.critical_nets)
-            ),
-            power_tree_refs=(
-                existing.power_tree_refs
-                if params.power_tree_refs is None
-                else _normalized_unique(params.power_tree_refs)
-            ),
-            analog_refs=(
-                existing.analog_refs
-                if params.analog_refs is None
-                else _normalized_unique(params.analog_refs)
-            ),
-            digital_refs=(
-                existing.digital_refs
-                if params.digital_refs is None
-                else _normalized_unique(params.digital_refs)
-            ),
-            sensor_cluster_refs=(
-                existing.sensor_cluster_refs
-                if params.sensor_cluster_refs is None
-                else _normalized_unique(params.sensor_cluster_refs)
-            ),
-            required_sheets=(
-                existing.required_sheets
-                if params.required_sheets is None
-                else _normalized_unique(params.required_sheets)
-            ),
-            optional_sheets=(
-                existing.optional_sheets
-                if params.optional_sheets is None
-                else _normalized_unique(params.optional_sheets)
-            ),
-            rf_keepout_regions=(
-                existing.rf_keepout_regions
-                if params.rf_keepout_regions is None
-                else [RFKeepoutIntent.model_validate(r) for r in params.rf_keepout_regions]
-            ),
-            manufacturer=(
-                existing.manufacturer
-                if params.manufacturer is None
-                else params.manufacturer.strip()
-            ),
-            manufacturer_tier=(
-                existing.manufacturer_tier
-                if params.manufacturer_tier is None
-                else params.manufacturer_tier.strip().lower()
-            ),
-            functional_spacing_mm=(
-                existing.functional_spacing_mm
-                if params.functional_spacing_mm is None
-                else params.functional_spacing_mm
-            ),
-            thermal_hotspots=(
-                existing.thermal_hotspots
-                if params.thermal_hotspots is None
-                else _normalized_unique(params.thermal_hotspots)
-            ),
-            critical_frequencies_mhz=(
-                existing.critical_frequencies_mhz
-                if params.critical_frequencies_mhz is None
-                else sorted(set(params.critical_frequencies_mhz))
-            ),
-            power_rails=(
-                existing.power_rails
-                if params.power_rails is None
-                else [PowerRailSpec.model_validate(p) for p in params.power_rails]
-            ),
-            interfaces=(
-                existing.interfaces
-                if params.interfaces is None
-                else [InterfaceSpec.model_validate(i) for i in params.interfaces]
-            ),
-            mechanical=(
-                existing.mechanical
-                if params.mechanical is None
-                else MechanicalConstraint.model_validate(params.mechanical)
-            ),
-            compliance=(
-                existing.compliance
-                if params.compliance is None
-                else [ComplianceTarget.model_validate(c) for c in params.compliance]
-            ),
-            cost=(existing.cost if params.cost is None else CostTarget.model_validate(params.cost)),
-            thermal=(
-                existing.thermal
-                if params.thermal is None
-                else ThermalEnvelope.model_validate(params.thermal)
-            ),
+            **_design_intent_base_fields(existing, params),
+            **_design_intent_layout_fields(existing, params),
+            **_design_intent_requirements_fields(existing, params),
         )
         path = save_design_intent(updated)
         return (

@@ -6,7 +6,7 @@ get an honest answer grounded in the machine-readable parity matrix.
 
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
 from mcp.server.mcpserver import MCPServer as FastMCP
 
@@ -18,6 +18,90 @@ _NO_TOOL_LABEL = "(no tool)"
 
 def _pct(value: float) -> str:
     return f"{value:.1f}%"
+
+
+def _render_capability_matches(query: str, matrix: dict[str, Any]) -> str:
+    hits = find_capabilities(query, matrix)
+    if not hits:
+        return f"No capabilities match '{query}'."
+    lines = [f"# Capabilities matching '{query}'", ""]
+    for hit in hits:
+        tool = f"`{hit['mcp_tool']}`" if hit["mcp_tool"] else _NO_TOOL_LABEL
+        lines.append(
+            f"- **{hit['capability']}** [`{hit['domain']}`] — {tool}, "
+            f"status `{hit['status']}`, channel `{hit['kicad_channel']}`."
+        )
+        if hit["notes"]:
+            lines.append(f"  - {hit['notes']}")
+    return "\n".join(lines)
+
+
+def _render_capability_domain(domain: str, matrix: dict[str, Any]) -> str:
+    domains = matrix["domains"]
+    info = domains.get(domain)
+    if info is None:
+        available = ", ".join(sorted(domains))
+        return f"Unknown domain '{domain}'. Available: {available}"
+    stats = coverage_summary(matrix)["domains"][domain]
+    lines = [
+        f"# Capability parity — `{domain}`",
+        str(info.get("description", "")),
+        "",
+        (
+            f"Coverage: {_pct(stats['coverage_pct'])} "
+            f"({stats['covered']} covered, {stats['partial']} partial, "
+            f"{stats['gap']} gap, {stats['gui_only_no_api']} GUI-only)."
+        ),
+        "",
+    ]
+    for cap in info["capabilities"]:
+        tool = f"`{cap['mcp_tool']}`" if cap["mcp_tool"] else _NO_TOOL_LABEL
+        lines.append(
+            f"- [`{cap['status']}`] **{cap['capability']}** — {tool} via `{cap['kicad_channel']}`."
+        )
+        if cap["notes"]:
+            lines.append(f"  - {cap['notes']}")
+    return "\n".join(lines)
+
+
+def _render_capability_overview(matrix: dict[str, Any]) -> str:
+    summary = coverage_summary(matrix)
+    overall = summary["overall"]
+    metadata = metadata_coverage()
+    lines = [
+        "# KiCad capability parity",
+        f"KiCad baseline `{summary['kicad_baseline']}` · updated {summary['updated']}.",
+        "",
+        (
+            f"**Overall {_pct(overall['coverage_pct'])}** — {overall['covered']} of "
+            f"{overall['denominator']} programmatically-reachable capabilities driven "
+            f"({overall['partial']} partial, {overall['gap']} gap; "
+            f"{overall['gui_only_no_api']} GUI-only with no KiCad API)."
+        ),
+        "",
+        (
+            "Tool metadata coverage: "
+            f"{metadata['registered_tools']}/{metadata['routed_tools']} routed tools "
+            f"({metadata['coverage_pct']:.1f}%)."
+        ),
+        "",
+        "## By domain",
+    ]
+    missing = cast(list[str], metadata["missing_tools"])
+    if missing:
+        lines.extend(["## Metadata gaps", *[f"- `{name}`" for name in missing]])
+        lines.append("")
+    for name, stats in summary["domains"].items():
+        lines.append(
+            f"- `{name}`: {_pct(stats['coverage_pct'])} ({stats['covered']}/{stats['denominator']})"
+        )
+    lines.extend(["", "## Biggest open gaps"])
+    for row in opportunities(matrix, limit=8):
+        tool = f"`{row['mcp_tool']}`" if row["mcp_tool"] else _NO_TOOL_LABEL
+        lines.append(f"- [`{row['status']}`] {row['capability']} [`{row['domain']}`] — {tool}")
+    lines.append("")
+    lines.append("Query a domain with domain=<name> or search with query=<text>.")
+    return "\n".join(lines)
 
 
 def register(mcp: FastMCP) -> None:
@@ -34,85 +118,9 @@ def register(mcp: FastMCP) -> None:
         KiCad API limits, not gaps in this server.
         """
         matrix = get_matrix()
-        domains = matrix["domains"]
 
         if query:
-            hits = find_capabilities(query, matrix)
-            if not hits:
-                return f"No capabilities match '{query}'."
-            lines = [f"# Capabilities matching '{query}'", ""]
-            for hit in hits:
-                tool = f"`{hit['mcp_tool']}`" if hit["mcp_tool"] else _NO_TOOL_LABEL
-                lines.append(
-                    f"- **{hit['capability']}** [`{hit['domain']}`] — {tool}, "
-                    f"status `{hit['status']}`, channel `{hit['kicad_channel']}`."
-                )
-                if hit["notes"]:
-                    lines.append(f"  - {hit['notes']}")
-            return "\n".join(lines)
-
+            return _render_capability_matches(query, matrix)
         if domain:
-            info = domains.get(domain)
-            if info is None:
-                available = ", ".join(sorted(domains))
-                return f"Unknown domain '{domain}'. Available: {available}"
-            stats = coverage_summary(matrix)["domains"][domain]
-            lines = [
-                f"# Capability parity — `{domain}`",
-                str(info.get("description", "")),
-                "",
-                (
-                    f"Coverage: {_pct(stats['coverage_pct'])} "
-                    f"({stats['covered']} covered, {stats['partial']} partial, "
-                    f"{stats['gap']} gap, {stats['gui_only_no_api']} GUI-only)."
-                ),
-                "",
-            ]
-            for cap in info["capabilities"]:
-                tool = f"`{cap['mcp_tool']}`" if cap["mcp_tool"] else _NO_TOOL_LABEL
-                lines.append(
-                    f"- [`{cap['status']}`] **{cap['capability']}** — {tool} "
-                    f"via `{cap['kicad_channel']}`."
-                )
-                if cap["notes"]:
-                    lines.append(f"  - {cap['notes']}")
-            return "\n".join(lines)
-
-        summary = coverage_summary(matrix)
-        overall = summary["overall"]
-        metadata = metadata_coverage()
-        lines = [
-            "# KiCad capability parity",
-            f"KiCad baseline `{summary['kicad_baseline']}` · updated {summary['updated']}.",
-            "",
-            (
-                f"**Overall {_pct(overall['coverage_pct'])}** — {overall['covered']} of "
-                f"{overall['denominator']} programmatically-reachable capabilities driven "
-                f"({overall['partial']} partial, {overall['gap']} gap; "
-                f"{overall['gui_only_no_api']} GUI-only with no KiCad API)."
-            ),
-            "",
-            (
-                "Tool metadata coverage: "
-                f"{metadata['registered_tools']}/{metadata['routed_tools']} routed tools "
-                f"({metadata['coverage_pct']:.1f}%)."
-            ),
-            "",
-            "## By domain",
-        ]
-        missing = cast(list[str], metadata["missing_tools"])
-        if missing:
-            lines.extend(["## Metadata gaps", *[f"- `{name}`" for name in missing]])
-            lines.append("")
-        for name, stats in summary["domains"].items():
-            lines.append(
-                f"- `{name}`: {_pct(stats['coverage_pct'])} "
-                f"({stats['covered']}/{stats['denominator']})"
-            )
-        lines.extend(["", "## Biggest open gaps"])
-        for row in opportunities(matrix, limit=8):
-            tool = f"`{row['mcp_tool']}`" if row["mcp_tool"] else _NO_TOOL_LABEL
-            lines.append(f"- [`{row['status']}`] {row['capability']} [`{row['domain']}`] — {tool}")
-        lines.append("")
-        lines.append("Query a domain with domain=<name> or search with query=<text>.")
-        return "\n".join(lines)
+            return _render_capability_domain(domain, matrix)
+        return _render_capability_overview(matrix)

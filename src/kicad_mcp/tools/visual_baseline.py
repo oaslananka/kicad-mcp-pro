@@ -64,6 +64,37 @@ def _drift_from_diff(diff_meta: dict[str, Any]) -> tuple[float, int, int]:
     return round(drift_pct, 3), changed, total
 
 
+def _read_visual_baseline_metadata(stem: str) -> dict[str, Any]:
+    baseline_meta: dict[str, Any] = {}
+    meta_path = _baseline_meta(stem)
+    if meta_path.is_file():
+        try:
+            baseline_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            baseline_meta = {}
+    return baseline_meta
+
+
+def _render_visual_baseline_comparison(
+    target_path: Path,
+    stem: str,
+    baseline_png: Path,
+    render_dpi: int,
+    include_title_block: bool,
+) -> tuple[Path, Path, dict[str, Any]]:
+    current_png = _baseline_dir() / f"{stem}.current.png"
+    diff_png = _baseline_dir() / f"{stem}.drift.png"
+    _, _ = _render_schematic_png_artifact(
+        target_path,
+        current_png,
+        dpi=render_dpi,
+        crop_to_content=True,
+        include_title_block=include_title_block,
+    )
+    diff_meta = _render_png_visual_diff(baseline_png, current_png, diff_png)
+    return current_png, diff_png, diff_meta
+
+
 def register(mcp: FastMCP) -> None:
     """Register schematic visual-baseline tools."""
 
@@ -159,27 +190,13 @@ def register(mcp: FastMCP) -> None:
                 }
             )
 
-        baseline_meta: dict[str, Any] = {}
-        meta_path = _baseline_meta(stem)
-        if meta_path.is_file():
-            try:
-                baseline_meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                baseline_meta = {}
+        baseline_meta = _read_visual_baseline_metadata(stem)
         # Render at the baseline's dpi when known, so pixel counts are comparable.
         render_dpi = int(baseline_meta.get("dpi", dpi) or dpi)
-
-        current_png = _baseline_dir() / f"{stem}.current.png"
-        diff_png = _baseline_dir() / f"{stem}.drift.png"
         try:
-            _, _ = _render_schematic_png_artifact(
-                target.path,
-                current_png,
-                dpi=render_dpi,
-                crop_to_content=True,
-                include_title_block=include_title_block,
+            current_png, diff_png, diff_meta = _render_visual_baseline_comparison(
+                target.path, stem, baseline_png, render_dpi, include_title_block
             )
-            diff_meta = _render_png_visual_diff(baseline_png, current_png, diff_png)
         except RuntimeError as exc:
             return json.dumps({"status": "error", "message": f"Baseline compare failed: {exc}"})
 

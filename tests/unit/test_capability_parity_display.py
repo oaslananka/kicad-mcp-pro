@@ -23,8 +23,9 @@ class _ToolCollector:
 
 
 @pytest.mark.parametrize("view", ["query", "domain", "summary"])
+@pytest.mark.parametrize("notes", ["", "Source lacks a native API"])
 def test_unmapped_capabilities_report_no_tool_in_every_view(
-    monkeypatch: pytest.MonkeyPatch, view: str
+    monkeypatch: pytest.MonkeyPatch, view: str, notes: str
 ) -> None:
     """Gaps must never appear as connected or registered MCP tools."""
     missing: dict[str, Any] = {
@@ -33,7 +34,7 @@ def test_unmapped_capabilities_report_no_tool_in_every_view(
         "mcp_tool": None,
         "status": "gap",
         "kicad_channel": "gui-only",
-        "notes": "",
+        "notes": notes,
     }
     monkeypatch.setattr(
         capability_parity,
@@ -95,3 +96,56 @@ def test_unmapped_capabilities_report_no_tool_in_every_view(
     assert "Unmapped test feature" in output
     assert "(no tool)" in output
     assert "`gap`" in output
+    if notes and view != "summary":
+        assert notes in output
+
+
+def test_capability_reports_unknown_queries_and_domains(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(capability_parity, "find_capabilities", lambda *_args: [])
+    matrix: dict[str, Any] = {"domains": {"pcb": {"capabilities": []}}}
+    assert capability_parity._render_capability_matches("no-match", matrix) == (
+        "No capabilities match 'no-match'."
+    )
+    assert capability_parity._render_capability_domain("unknown", matrix) == (
+        "Unknown domain 'unknown'. Available: pcb"
+    )
+
+
+def test_capability_summary_reports_missing_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    summary = {
+        "kicad_baseline": "10",
+        "updated": "2026-10-29",
+        "overall": {
+            "coverage_pct": 50.0,
+            "covered": 1,
+            "denominator": 2,
+            "partial": 0,
+            "gap": 1,
+            "gui_only_no_api": 0,
+        },
+        "domains": {
+            "pcb": {
+                "coverage_pct": 50.0,
+                "covered": 1,
+                "denominator": 2,
+            }
+        },
+    }
+    monkeypatch.setattr(capability_parity, "coverage_summary", lambda *_args: summary)
+    monkeypatch.setattr(
+        capability_parity,
+        "metadata_coverage",
+        lambda: {
+            "registered_tools": 1,
+            "routed_tools": 2,
+            "coverage_pct": 50.0,
+            "missing_tools": ["pcb_missing_tool"],
+        },
+    )
+    monkeypatch.setattr(capability_parity, "opportunities", lambda *_args, **_kwargs: [])
+    output = capability_parity._render_capability_overview({})
+    assert "## Metadata gaps" in output
+    assert "`pcb_missing_tool`" in output
+    assert "`pcb`: 50.0% (1/2)" in output
