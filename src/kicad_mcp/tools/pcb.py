@@ -3882,6 +3882,50 @@ def _pcb_sync_additions_for_board(
     return _build_sync_additions(components_to_add, placements, net_map)
 
 
+def _pcb_sync_net_data(
+    components: list[dict[str, Any]], payload: SyncPcbFromSchematicInput
+) -> tuple[dict[tuple[str, str], str], str, dict[str, Any]]:
+    net_map: dict[tuple[str, str], str] = {}
+    net_note = ""
+    if payload.use_net_names:
+        net_map, net_note = _export_schematic_net_map()
+    return net_map, net_note, _schematic_pad_net_summary(components, net_map)
+
+
+def _pcb_sync_replacements(
+    components: list[dict[str, Any]],
+    mismatched_references: list[str],
+    existing: dict[str, dict[str, Any]],
+    net_map: dict[tuple[str, str], str],
+    payload: SyncPcbFromSchematicInput,
+) -> dict[str, str]:
+    if not payload.replace_mismatched:
+        return {}
+    by_reference = {str(component["reference"]): component for component in components}
+    return _build_sync_replacements(mismatched_references, by_reference, existing, net_map, payload)
+
+
+def _apply_pcb_sync_changes(
+    payload: SyncPcbFromSchematicInput,
+    additions: list[str],
+    replacements: dict[str, str],
+) -> tuple[str, str]:
+    if not (additions or replacements):
+        return "", ""
+    _transactional_board_write(
+        lambda current: _replace_board_blocks(current, replacements, additions)
+    )
+    auto_place_note = (
+        _auto_place_force_directed_board_file(grid_mm=1.0) if payload.auto_place else ""
+    )
+    reload_note = (
+        _reload_board_after_file_sync()
+        if payload.allow_open_board
+        else _MANUAL_BOARD_RELOAD_MESSAGE
+    )
+    return auto_place_note, reload_note
+
+
 def _register_schematic_sync_tools(mcp: FastMCP) -> None:
     """Register schematic-to-PCB synchronization tools."""
 
@@ -3928,48 +3972,17 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
             board_file.read_text(encoding="utf-8", errors="ignore")
         )
         existing = _parse_board_footprint_blocks(board_content)
-        components_by_reference = {
-            str(component["reference"]): component for component in components
-        }
-
         mismatched_references, mismatches = _pcb_sync_mismatched_assignments(components, existing)
-
-        net_map: dict[tuple[str, str], str] = {}
-        net_note = ""
-        if payload.use_net_names:
-            net_map, net_note = _export_schematic_net_map()
-        pad_summary = _schematic_pad_net_summary(components, net_map)
-
+        net_map, net_note, pad_summary = _pcb_sync_net_data(components, payload)
         additions = _pcb_sync_additions_for_board(components, existing, payload, net_map)
-        replacements: dict[str, str] = {}
-        if payload.replace_mismatched:
-            replacements = _build_sync_replacements(
-                mismatched_references,
-                components_by_reference,
-                existing,
-                net_map,
-                payload,
-            )
+        replacements = _pcb_sync_replacements(
+            components, mismatched_references, existing, net_map, payload
+        )
 
         if not additions and not mismatches:
             return "The PCB already contains all schematic footprint assignments."
 
-        if additions or replacements:
-            _transactional_board_write(
-                lambda current: _replace_board_blocks(current, replacements, additions)
-            )
-
-        auto_place_note = ""
-        if (additions or replacements) and payload.auto_place:
-            auto_place_note = _auto_place_force_directed_board_file(grid_mm=1.0)
-
-        reload_note = ""
-        if additions or replacements:
-            reload_note = (
-                _reload_board_after_file_sync()
-                if payload.allow_open_board
-                else _MANUAL_BOARD_RELOAD_MESSAGE
-            )
+        auto_place_note, reload_note = _apply_pcb_sync_changes(payload, additions, replacements)
 
         return _format_pcb_sync_report(
             components=components,

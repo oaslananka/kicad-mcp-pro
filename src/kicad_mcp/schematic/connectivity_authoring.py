@@ -543,6 +543,29 @@ class SchematicConnectivityAuthoringService:
         stacked_terminals[stack_key] = (ex, ey)
         results.append(msg)
 
+    def _insert_pin_label_blocks(self, current: str, state: _PinLabelBatch) -> str:
+        """Insert a pin-label batch without changing its transaction boundary."""
+        updated = current
+        for net_name, lib_def in state.power_lib_defs.items():
+            lib_id = f"power:{net_name}"
+            if f'(symbol "{lib_id}"' in updated:
+                continue
+            if "(lib_symbols)" in updated:
+                updated = updated.replace(
+                    "(lib_symbols)",
+                    f"(lib_symbols\n\t{lib_def}\n\t)",
+                    1,
+                )
+            else:
+                updated = updated.replace(
+                    "\t(lib_symbols\n",
+                    f"\t(lib_symbols\n\t{lib_def}\n",
+                    1,
+                )
+        for block in (*state.wire_blocks, *state.terminal_blocks):
+            updated = self.append_before_sheet_instances(updated, block)
+        return updated
+
     def add_pin_labels(
         self,
         connections: list[dict[str, Any]],
@@ -578,7 +601,6 @@ class SchematicConnectivityAuthoringService:
         state = _PinLabelBatch()
         wire_blocks = state.wire_blocks
         terminal_blocks = state.terminal_blocks
-        power_lib_defs = state.power_lib_defs
         results = state.results
         dense_terminal_mode = len(connections) >= 12
         terminal_clearance_mm = self.snap_tolerance_mm if dense_terminal_mode else 6.0
@@ -607,29 +629,9 @@ class SchematicConnectivityAuthoringService:
         if not (wire_blocks or terminal_blocks):
             return "No pin labels were added.\n" + "\n".join(results)
 
-        def mutator(current: str) -> str:
-            updated = current
-            for net_name, lib_def in power_lib_defs.items():
-                lib_id = f"power:{net_name}"
-                if f'(symbol "{lib_id}"' in updated:
-                    continue
-                if "(lib_symbols)" in updated:
-                    updated = updated.replace(
-                        "(lib_symbols)",
-                        f"(lib_symbols\n\t{lib_def}\n\t)",
-                        1,
-                    )
-                else:
-                    updated = updated.replace(
-                        "\t(lib_symbols\n",
-                        f"\t(lib_symbols\n\t{lib_def}\n",
-                        1,
-                    )
-            for block in (*wire_blocks, *terminal_blocks):
-                updated = self.append_before_sheet_instances(updated, block)
-            return updated
-
-        self.transactional_write(mutator, target.path)
+        self.transactional_write(
+            lambda current: self._insert_pin_label_blocks(current, state), target.path
+        )
         return (
             f"{self.reload_schematic()}\n{self.format_target_detail(target)}\n"
             f"Added {len(wire_blocks)} pin terminal(s) with stubs:\n" + "\n".join(results)

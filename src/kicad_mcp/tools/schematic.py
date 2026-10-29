@@ -556,6 +556,57 @@ def _api_labels(schematic: _LoadedSchematicLike) -> list[dict[str, Any]]:
     return labels
 
 
+def _api_components_by_power_flag(
+    components: list[_PlacedComponentLike], power_flags: dict[str, bool]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    symbols: list[dict[str, Any]] = []
+    power_symbols: list[dict[str, Any]] = []
+    for component in components:
+        parsed = _component_to_symbol_dict(component)
+        # The embedded power flag also covers nonstandard power libraries.
+        is_power = power_flags.get(parsed["lib_id"])
+        if is_power is None:
+            is_power = parsed["lib_id"].startswith(_POWER_LIB_PREFIX)
+        if is_power:
+            power_symbols.append(parsed)
+        else:
+            symbols.append(parsed)
+    return symbols, power_symbols
+
+
+def _merged_api_schematic_wires(
+    api_wires: list[_WireLike], compatibility_wires: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    wires: list[dict[str, Any]] = []
+    compatibility_lookup = {
+        _wire_signature(wire["x1"], wire["y1"], wire["x2"], wire["y2"]): wire
+        for wire in compatibility_wires
+    }
+    seen_wire_signatures: set[tuple[tuple[float, float], tuple[float, float]]] = set()
+    for wire in api_wires:
+        parsed_wire = {
+            "x1": round(float(wire.start.x), 4),
+            "y1": round(float(wire.start.y), 4),
+            "x2": round(float(wire.end.x), 4),
+            "y2": round(float(wire.end.y), 4),
+        }
+        signature = _wire_signature(
+            parsed_wire["x1"], parsed_wire["y1"], parsed_wire["x2"], parsed_wire["y2"]
+        )
+        seen_wire_signatures.add(signature)
+        compatibility_wire = compatibility_lookup.get(signature)
+        if compatibility_wire is not None and compatibility_wire.get("uuid"):
+            parsed_wire["uuid"] = compatibility_wire["uuid"]
+        wires.append(parsed_wire)
+    for compat_wire in compatibility_wires:
+        signature = _wire_signature(
+            compat_wire["x1"], compat_wire["y1"], compat_wire["x2"], compat_wire["y2"]
+        )
+        if signature not in seen_wire_signatures:
+            wires.append(compat_wire)
+    return wires
+
+
 @dataclass(frozen=True)
 class _KicadSchApiBackend:
     name: str = "kicad_sch_api"
@@ -574,20 +625,10 @@ class _KicadSchApiBackend:
         compatibility = _read_schematic_compatibility_data(sch_file)
 
         try:
-            symbols: list[dict[str, Any]] = []
-            power_symbols: list[dict[str, Any]] = []
-            power_flags = cast(dict[str, bool], compatibility["lib_symbol_power_flags"])
-            for component in cast(list[_PlacedComponentLike], list(schematic.components.all())):
-                parsed = _component_to_symbol_dict(component)
-                # Power symbols are identified by the (power) flag of their embedded
-                # definition; project libraries such as "ecc83-pp:GND" carry it too.
-                is_power = power_flags.get(parsed["lib_id"])
-                if is_power is None:
-                    is_power = parsed["lib_id"].startswith(_POWER_LIB_PREFIX)
-                if is_power:
-                    power_symbols.append(parsed)
-                else:
-                    symbols.append(parsed)
+            symbols, power_symbols = _api_components_by_power_flag(
+                cast(list[_PlacedComponentLike], list(schematic.components.all())),
+                cast(dict[str, bool], compatibility["lib_symbol_power_flags"]),
+            )
 
             labels = compatibility["labels"]
             seen_labels = {
@@ -609,41 +650,10 @@ class _KicadSchApiBackend:
                 if key not in seen_labels:
                     labels.append(label)
 
-            wires: list[dict[str, Any]] = []
-            compatibility_wires = list(cast(list[dict[str, Any]], compatibility["wires"]))
-            compatibility_lookup = {
-                _wire_signature(wire["x1"], wire["y1"], wire["x2"], wire["y2"]): wire
-                for wire in compatibility_wires
-            }
-            seen_wire_signatures: set[tuple[tuple[float, float], tuple[float, float]]] = set()
-            for wire in cast(list[_WireLike], list(schematic.wires.all())):
-                parsed_wire = {
-                    "x1": round(float(wire.start.x), 4),
-                    "y1": round(float(wire.start.y), 4),
-                    "x2": round(float(wire.end.x), 4),
-                    "y2": round(float(wire.end.y), 4),
-                }
-                signature = _wire_signature(
-                    parsed_wire["x1"],
-                    parsed_wire["y1"],
-                    parsed_wire["x2"],
-                    parsed_wire["y2"],
-                )
-                seen_wire_signatures.add(signature)
-                compatibility_wire = compatibility_lookup.get(signature)
-                if compatibility_wire is not None and compatibility_wire.get("uuid"):
-                    parsed_wire["uuid"] = compatibility_wire["uuid"]
-                wires.append(parsed_wire)
-
-            for compat_wire in compatibility_wires:
-                signature = _wire_signature(
-                    compat_wire["x1"],
-                    compat_wire["y1"],
-                    compat_wire["x2"],
-                    compat_wire["y2"],
-                )
-                if signature not in seen_wire_signatures:
-                    wires.append(compat_wire)
+            wires = _merged_api_schematic_wires(
+                cast(list[_WireLike], list(schematic.wires.all())),
+                list(cast(list[dict[str, Any]], compatibility["wires"])),
+            )
 
             return {
                 "uuid": compatibility["uuid"],
@@ -3667,26 +3677,30 @@ def _symbol_block_name(block: str) -> str | None:
     return match.group(1) if match else None
 
 
+def _skip_quoted_symbol_text(block: str, cursor: int) -> int:
+    """Move past a quoted S-expression string, including escaped quote characters."""
+    cursor += 1
+    escaped = False
+    while cursor < len(block):
+        char = block[cursor]
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == '"':
+            return cursor + 1
+        cursor += 1
+    return cursor
+
+
 def _extract_child_symbol_blocks(block: str) -> list[tuple[str, str]]:
     children: list[tuple[str, str]] = []
     depth = 0
-    in_string = False
-    escaped = False
     cursor = 0
     while cursor < len(block):
         char = block[cursor]
-        if in_string:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == '"':
-                in_string = False
-            cursor += 1
-            continue
         if char == '"':
-            in_string = True
-            cursor += 1
+            cursor = _skip_quoted_symbol_text(block, cursor)
             continue
         if char == "(":
             if depth == 1 and block.startswith('(symbol "', cursor):
@@ -5639,6 +5653,49 @@ def _plan_netlist_wires(
     return routed_segments, unresolved_nets, resolution_stats
 
 
+def _validate_build_circuit_units(symbols: list[AddSymbolInput]) -> None:
+    for symbol in symbols:
+        _validate_symbol_resolves(symbol.library, symbol.symbol_name)
+        available_units = get_symbol_available_units(symbol.library, symbol.symbol_name)
+        if available_units and symbol.unit not in available_units:
+            raise ValueError(
+                f"Symbol '{symbol.library}:{symbol.symbol_name}' does not support unit "
+                f"{symbol.unit}. Available units: {_format_available_units(available_units)}."
+            )
+
+
+def _plan_build_circuit_net_wiring(
+    symbols: list[AddSymbolInput],
+    powers: list[PowerSymbolInput],
+    labels: list[AddLabelInput],
+    raw_nets: list[dict[str, Any]],
+    snap_to_grid: bool,
+    unsafe_routed_wires: bool,
+) -> tuple[list[dict[str, float | bool]], list[dict[str, Any]], dict[str, int]]:
+    if not raw_nets:
+        return (
+            [],
+            [],
+            {
+                "resolved_endpoints": 0,
+                "unresolved_endpoints": 0,
+                "pin_alias_resolutions": 0,
+                "symbol_center_resolutions": 0,
+            },
+        )
+    if unsafe_routed_wires:
+        # Explicitly unsafe geometric routing remains opt-in.
+        return _plan_netlist_wires(symbols, powers, labels, raw_nets, snap_to_grid)
+
+    # Collision-safe default: short outward stubs connected by named terminals.
+    generated_wires, generated_powers, generated_labels, unresolved_nets, stats = (
+        _plan_netlist_pin_terminals(symbols, powers, labels, raw_nets, snap_to_grid)
+    )
+    powers.extend(PowerSymbolInput.model_validate(item) for item in generated_powers)
+    labels.extend(AddLabelInput.model_validate(item) for item in generated_labels)
+    return generated_wires, unresolved_nets, stats
+
+
 def _prepare_build_circuit_inputs(
     *,
     symbols: list[dict[str, Any]] | None = None,
@@ -5695,60 +5752,16 @@ def _prepare_build_circuit_inputs(
     validated_powers = [PowerSymbolInput.model_validate(item) for item in raw_powers]
     validated_wires = [AddWireInput.model_validate(item) for item in raw_wires]
     validated_labels = [AddLabelInput.model_validate(item) for item in raw_labels]
-    for symbol in validated_symbols:
-        _validate_symbol_resolves(symbol.library, symbol.symbol_name)
-        available_units = get_symbol_available_units(symbol.library, symbol.symbol_name)
-        if available_units and symbol.unit not in available_units:
-            raise ValueError(
-                f"Symbol '{symbol.library}:{symbol.symbol_name}' does not support unit "
-                f"{symbol.unit}. Available units: {_format_available_units(available_units)}."
-            )
-
-    generated_wires: list[dict[str, float | bool]] = []
-    unresolved_nets: list[dict[str, Any]] = []
-    resolution_stats = {
-        "resolved_endpoints": 0,
-        "unresolved_endpoints": 0,
-        "pin_alias_resolutions": 0,
-        "symbol_center_resolutions": 0,
-    }
+    _validate_build_circuit_units(validated_symbols)
+    generated_wires, unresolved_nets, resolution_stats = _plan_build_circuit_net_wiring(
+        validated_symbols,
+        validated_powers,
+        validated_labels,
+        raw_nets,
+        snap_to_grid,
+        unsafe_routed_wires,
+    )
     if raw_nets:
-        if not unsafe_routed_wires:
-            # Default, collision-safe path: each pin endpoint gets a short outward
-            # stub plus a same-named terminal (global label / power symbol), so nets
-            # connect by name rather than by accidental wire geometry. This is the
-            # default regardless of auto_layout — only the explicit opt-in below
-            # falls back to routed wires that can short by crossing geometry.
-            generated_powers: list[dict[str, Any]]
-            generated_labels: list[dict[str, Any]]
-            (
-                generated_wires,
-                generated_powers,
-                generated_labels,
-                unresolved_nets,
-                resolution_stats,
-            ) = _plan_netlist_pin_terminals(
-                validated_symbols,
-                validated_powers,
-                validated_labels,
-                raw_nets,
-                snap_to_grid,
-            )
-            validated_powers.extend(
-                PowerSymbolInput.model_validate(item) for item in generated_powers
-            )
-            validated_labels.extend(AddLabelInput.model_validate(item) for item in generated_labels)
-        else:
-            # Opt-in only: routed Manhattan star wires. These can cross unrelated
-            # pins/labels and merge by geometry into silent shorts, so this path is
-            # gated behind unsafe_routed_wires=True.
-            generated_wires, unresolved_nets, resolution_stats = _plan_netlist_wires(
-                validated_symbols,
-                validated_powers,
-                validated_labels,
-                raw_nets,
-                snap_to_grid,
-            )
         validated_wires.extend(AddWireInput.model_validate(item) for item in generated_wires)
 
     return (
