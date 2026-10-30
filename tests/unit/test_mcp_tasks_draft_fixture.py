@@ -318,6 +318,50 @@ def test_tool_result_errors_are_completed_not_failed() -> None:
     assert "error" not in observed
 
 
+@pytest.mark.parametrize("invalid_id", [True, False, None, 1.5, {}, []])
+def test_invalid_jsonrpc_ids_never_allocate_synthetic_tasks(invalid_id: object) -> None:
+    fixture = TaskFixture(ManualClock())
+    call = request("tools/call", params={"name": "synthetic_erc_review", "arguments": {}})
+    call["id"] = invalid_id
+    result = fixture.dispatch(call, caller="client-a")
+    assert result["error"]["code"] == -32600
+    assert fixture.retained_count == 0
+
+
+def test_request_limit_is_enforced_before_dispatch_and_malformed_json_fails_closed() -> None:
+    import json
+
+    fixture = TaskFixture(ManualClock())
+    call = request("tools/call", params={"name": "synthetic_erc_review", "arguments": {}})
+    call["padding"] = ""
+    call["padding"] = "x" * (MAX_REQUEST_BYTES - len(json.dumps(call)))
+    assert len(json.dumps(call)) == MAX_REQUEST_BYTES
+
+    accepted = fixture.dispatch(call, caller="client-a")
+    assert accepted["result"]["resultType"] == "task"
+    assert fixture.retained_count == 1
+
+    call["padding"] += "x"
+    oversized = fixture.dispatch(call, caller="client-a")
+    assert oversized["error"]["code"] == -32600
+    assert fixture.retained_count == 1
+
+    for bad_value in (float("nan"), object()):
+        malformed = request(
+            "tools/call",
+            params={"name": "synthetic_erc_review", "arguments": {}},
+        )
+        malformed["padding"] = bad_value
+        result = fixture.dispatch(malformed, caller="client-a")
+        assert result["error"]["code"] == -32600
+        assert fixture.retained_count == 1
+
+    circular = request("tools/call", params={"name": "synthetic_erc_review", "arguments": {}})
+    circular["padding"] = circular
+    assert fixture.dispatch(circular, caller="client-a")["error"]["code"] == -32600
+    assert fixture.retained_count == 1
+
+
 def test_existing_production_2026_capability_fixtures_do_not_advertise_tasks() -> None:
     import json
     from pathlib import Path
