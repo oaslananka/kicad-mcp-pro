@@ -103,7 +103,7 @@ async function verifyManifest() {
   // The probe keeps its historical 4.4.0 runtime pin; only the checked-in
   // extension metadata advances when preparing a new release candidate.
   if (typeof currentVersion !== 'string' ||
-      !/^[0-9]+\.[0-9]+\.[0-9]+$/.test(currentVersion) ||
+      !/^\d+\.\d+\.\d+$/.test(currentVersion) ||
       manifest.version !== currentVersion || server?.command !== 'uvx' ||
       JSON.stringify(server.args) !== JSON.stringify(currentArgs) ||
       server.env?.KICAD_MCP_PROFILE !== 'default' ||
