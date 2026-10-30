@@ -6,10 +6,10 @@ import argparse
 import asyncio
 import hashlib
 import json
+import multiprocessing
 import os
 import re
 import select
-import signal
 import sys
 import threading
 import time
@@ -115,46 +115,39 @@ def test_terminal_consent_rejects_noninteractive_or_declined_requests(
         cloud_once._confirm_local_read(options)
 
 
-def test_same_uid_pty_is_not_independent_human_approval(tmp_path: Path) -> None:
-    """Threat-model evidence, not a passing security acceptance for Cloud.
+def _same_uid_pty_child(terminal: str, arguments: list[str]) -> None:
+    """Attach a fresh Python test process to an actual pseudo-terminal."""
+    fd = os.open(terminal, os.O_RDWR | os.O_NOCTTY)
+    try:
+        for stdfd in (0, 1, 2):
+            os.dup2(fd, stdfd)
+    finally:
+        os.close(fd)
+    sys.stdin = os.fdopen(0, "r", closefd=False)
+    sys.stdout = os.fdopen(1, "w", buffering=1, closefd=False)
+    sys.stderr = os.fdopen(2, "w", buffering=1, closefd=False)
+    options = cloud_once._parser().parse_args(arguments)
+    options.project_directory = Path.cwd()
+    options.private_key_file = Path.cwd() / "synthetic.pem"
+    options.filename_stem = "demo"
+    cloud_once._confirm_local_read(options)
+    print("SYNTHETIC_PTY_CONSENT_PASSED", flush=True)
 
-    A same-UID automation process can create its own real PTY, read a fresh
-    challenge and satisfy the CLI without a human. Exercise the actual
-    terminal checks in a separate child process: no monkeypatch, key or WSS.
-    Revisit this characterization when a separate owner authority exists.
+
+def test_same_uid_pty_is_not_independent_human_approval(tmp_path: Path) -> None:
+    """Prove that a separate same-UID process can satisfy the real PTY prompt.
+
+    This is a threat-model finding, NOT proof of human authorization.
+    No monkeypatch, private key, Cloud connection, or shell execution.
     """
     master_fd, slave_fd = os.openpty()
-    # The executed code and interpreter are fixed test assets. argv is passed
-    # directly to posix_spawn with no shell and the child gets only PTY stdio.
-    child_code = (
-        "import sys\n"
-        "from kicad_mcp import cloud_once\n"
-        "args = cloud_once._parser().parse_args(sys.argv[1:])\n"
-        "from pathlib import Path\n"
-        "args.project_directory = Path.cwd()\n"
-        "args.private_key_file = Path.cwd() / 'synthetic.pem'\n"
-        "args.filename_stem = 'demo'\n"
-        "cloud_once._confirm_local_read(args)\n"
-        "print('SYNTHETIC_PTY_CONSENT_PASSED', flush=True)\n"
+    child = multiprocessing.get_context("spawn").Process(
+        target=_same_uid_pty_child,
+        args=(os.ttyname(slave_fd), _args(tmp_path, tmp_path / "no-owner-key.pem")),
     )
-    argv = [sys.executable, "-c", child_code, *_args(tmp_path, tmp_path / "no-owner-key.pem")]
-    try:
-        pid = os.posix_spawn(
-            sys.executable,
-            argv,
-            os.environ,
-            file_actions=(
-                (os.POSIX_SPAWN_DUP2, slave_fd, 0),
-                (os.POSIX_SPAWN_DUP2, slave_fd, 1),
-                (os.POSIX_SPAWN_DUP2, slave_fd, 2),
-                (os.POSIX_SPAWN_CLOSE, master_fd),
-                (os.POSIX_SPAWN_CLOSE, slave_fd),
-            ),
-        )
-    finally:
-        os.close(slave_fd)
-
-    reaped = False
+    # Keep the slave endpoint open until the spawned child attaches; closing
+    # it immediately can make the PTY master return EIO before startup.
+    child.start()
     observed = b""
     try:
         deadline = time.monotonic() + 6.0
@@ -169,22 +162,15 @@ def test_same_uid_pty_is_not_independent_human_approval(tmp_path: Path) -> None:
                 )
         assert challenge is not None, observed.decode("utf-8", errors="replace")
         os.write(master_fd, b"APPROVE " + challenge.group(1) + b"\n")
-        exit_deadline = time.monotonic() + 5.0
-        while time.monotonic() < exit_deadline:
-            finished, status = os.waitpid(pid, os.WNOHANG)
-            if finished == pid:
-                reaped = True
-                assert os.waitstatus_to_exitcode(status) == 0
-                break
-            time.sleep(0.02)
-        assert reaped, "synthetic PTY child must exit promptly"
-        # A same-user process satisfied the prompt without a human.
-        # This remains evidence of a trust gap, not security acceptance.
+        child.join(timeout=5)
+        assert child.exitcode == 0
+        # The CLI accepted same-user PTY input without a real human.
         assert not (tmp_path / "no-owner-key.pem").exists()
     finally:
-        if not reaped:
-            os.kill(pid, signal.SIGKILL)
-            os.waitpid(pid, 0)
+        if child.is_alive():
+            child.kill()
+        child.join(timeout=3)
+        os.close(slave_fd)
         os.close(master_fd)
 
 
