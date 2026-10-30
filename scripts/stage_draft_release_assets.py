@@ -251,7 +251,13 @@ def stage(
     missing = fresh["uploadMissingOnly"]
     if not isinstance(missing, list):
         raise ValueError("invalid draft upload plan")
-    for name in missing:
+    for index, name in enumerate(missing):
+        if index:
+            # Never continue a batch from an earlier draft snapshot. This
+            # narrows the race window but does NOT replace an exclusive lock.
+            current = client.release(repo, release_id)
+            current_tag_sha = client.tag_commit(repo, tag)
+            _draft_metadata(current, repo, tag, source_commit, current_tag_sha)
         if not isinstance(name, str) or name not in approved:
             raise ValueError("invalid draft asset name in upload plan")
         item = approved[name]
