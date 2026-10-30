@@ -219,6 +219,13 @@ jobs:
             --artifact-dir release-assets \
             --evidence-dir release-evidence/gui
 
+      # CycloneDX SBOM attestation has a different predicate from SLSA
+      # provenance; sign both separately against the same installer digests.
+      - name: Attest GUI SLSA build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-checksums: release-evidence/gui/kicad-mcp-pro-gui-SHA256SUMS.txt
+
       - name: Attest GUI installers
         id: attest-gui
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
