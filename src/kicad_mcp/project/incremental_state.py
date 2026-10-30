@@ -81,6 +81,45 @@ def _step_child_name(
     return False, child_name == b"sheet"
 
 
+@dataclass
+class _NativeSheetScanState:
+    depth: int = 0
+    quoted: bool = False
+    escaped: bool = False
+    child_name: bytearray = field(default_factory=bytearray)
+    reading_child_name: bool = False
+
+
+def _step_native_sheet_scan(
+    state: _NativeSheetScanState,
+    byte: int,
+    whitespace: frozenset[int],
+    delimiters: frozenset[int],
+) -> None:
+    if state.quoted:
+        state.quoted, state.escaped = _handle_quoted_byte(byte, state.escaped)
+        return
+    if state.reading_child_name:
+        state.reading_child_name, is_sheet = _step_child_name(
+            byte, state.child_name, whitespace, delimiters
+        )
+        if is_sheet:
+            raise StateRebuildRequiredError(
+                "native hierarchical sheet present; root-only graph is incomplete"
+            )
+    if byte == 34:
+        state.quoted = True
+    elif byte == 40:
+        state.depth += 1
+        if state.depth == 2:
+            state.reading_child_name = True
+            state.child_name.clear()
+    elif byte == 41:
+        state.depth -= 1
+        if state.depth < 0:
+            raise StateRebuildRequiredError("invalid native schematic structure")
+
+
 def _require_no_native_child_sheets(stream: BinaryIO) -> None:
     """Reject root-level KiCad sheet nodes in the IRCircuit-only cache pilot.
 
@@ -88,38 +127,13 @@ def _require_no_native_child_sheets(stream: BinaryIO) -> None:
     caller-supplied hierarchy metadata. Strings and nested library data are
     not native sheet instances. Streaming bounds additional memory usage.
     """
-    depth = 0
-    quoted = False
-    escaped = False
-    child_name = bytearray()
-    reading_child_name = False
+    state = _NativeSheetScanState()
     whitespace = frozenset((9, 10, 13, 32))
     delimiters = whitespace | {34, 40, 41}
     for chunk in iter(lambda: stream.read(65536), b""):
         for byte in chunk:
-            if quoted:
-                quoted, escaped = _handle_quoted_byte(byte, escaped)
-                continue
-            if reading_child_name:
-                reading_child_name, is_sheet = _step_child_name(
-                    byte, child_name, whitespace, delimiters
-                )
-                if is_sheet:
-                    raise StateRebuildRequiredError(
-                        "native hierarchical sheet present; root-only graph is incomplete"
-                    )
-            if byte == 34:
-                quoted = True
-            elif byte == 40:
-                depth += 1
-                if depth == 2:
-                    reading_child_name = True
-                    child_name.clear()
-            elif byte == 41:
-                depth -= 1
-                if depth < 0:
-                    raise StateRebuildRequiredError("invalid native schematic structure")
-    if quoted or depth != 0:
+            _step_native_sheet_scan(state, byte, whitespace, delimiters)
+    if state.quoted or state.depth != 0:
         raise StateRebuildRequiredError("invalid native schematic structure")
 
 

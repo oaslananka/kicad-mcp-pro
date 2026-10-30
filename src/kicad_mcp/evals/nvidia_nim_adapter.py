@@ -1119,6 +1119,41 @@ def _selected_tools_are_read_only_inspection_tools(
     return True
 
 
+def _more_specific_read_only_inspection_scores(
+    *,
+    catalog: Sequence[Mapping[str, object]],
+    selected_name: str,
+    selected_matches: frozenset[str],
+    selected_score: int,
+    prompt_objects: frozenset[str],
+) -> list[tuple[int, str]]:
+    scored: list[tuple[int, str]] = []
+    for item in catalog:
+        name = str(item.get("name", ""))
+        if name == selected_name:
+            continue
+        summary = str(item.get("summary", ""))
+        tool_tokens = _inspection_tokens(f"{name} {summary}")
+        if tool_tokens & _MUTATING_TOOL_TERMS:
+            continue
+        if not tool_tokens & _INSPECTION_TOOL_TERMS:
+            continue
+        candidate_domains = tool_tokens & _DIRECT_DOMAIN_TERMS
+        prompt_domains = prompt_objects & _DIRECT_DOMAIN_TERMS
+        if candidate_domains - prompt_domains:
+            continue
+        matched_objects = tool_tokens & prompt_objects
+        if not matched_objects or not (matched_objects - selected_matches):
+            continue
+        score = (
+            len(matched_objects - _DIRECT_DOMAIN_TERMS) * 100
+            + len(matched_objects & _DIRECT_DOMAIN_TERMS) * 10
+        )
+        if score > selected_score:
+            scored.append((score, name))
+    return scored
+
+
 def _unique_more_specific_read_only_inspection_match(
     observation: Mapping[str, object],
     *,
@@ -1153,30 +1188,13 @@ def _unique_more_specific_read_only_inspection_match(
         + len(selected_matches & _DIRECT_DOMAIN_TERMS) * 10
     )
 
-    scored: list[tuple[int, str]] = []
-    for item in catalog:
-        name = str(item.get("name", ""))
-        if name == selected_name:
-            continue
-        summary = str(item.get("summary", ""))
-        tool_tokens = _inspection_tokens(f"{name} {summary}")
-        if tool_tokens & _MUTATING_TOOL_TERMS:
-            continue
-        if not tool_tokens & _INSPECTION_TOOL_TERMS:
-            continue
-        candidate_domains = tool_tokens & _DIRECT_DOMAIN_TERMS
-        prompt_domains = prompt_objects & _DIRECT_DOMAIN_TERMS
-        if candidate_domains - prompt_domains:
-            continue
-        matched_objects = tool_tokens & prompt_objects
-        if not matched_objects or not (matched_objects - selected_matches):
-            continue
-        score = (
-            len(matched_objects - _DIRECT_DOMAIN_TERMS) * 100
-            + len(matched_objects & _DIRECT_DOMAIN_TERMS) * 10
-        )
-        if score > selected_score:
-            scored.append((score, name))
+    scored = _more_specific_read_only_inspection_scores(
+        catalog=catalog,
+        selected_name=selected_name,
+        selected_matches=selected_matches,
+        selected_score=selected_score,
+        prompt_objects=prompt_objects,
+    )
     if not scored:
         return None
     best_score = max(score for score, _name in scored)

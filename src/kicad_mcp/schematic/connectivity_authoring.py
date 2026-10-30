@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -147,6 +147,20 @@ def _assert_route_geometry_safe(
             f"{payload.ref2}:{payload.pin2}: {reason}. "
             "No schematic changes were made."
         )
+
+
+@dataclass
+class _PinLabelBatch:
+    """Mutable wire/terminal drafts collected before one guarded schematic write."""
+
+    wire_blocks: list[str] = field(default_factory=list)
+    terminal_blocks: list[str] = field(default_factory=list)
+    power_lib_defs: dict[str, str] = field(default_factory=dict)
+    occupied_terminals: list[tuple[float, float]] = field(default_factory=list)
+    stacked_terminals: dict[tuple[float, float, str], tuple[float, float]] = field(
+        default_factory=dict
+    )
+    results: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -420,6 +434,138 @@ class SchematicConnectivityAuthoringService:
         msg = f"{ref}.{pin} -> {net} @ ({ex}, {ey}){suffix}"
         return block, msg, None
 
+    def _append_pin_label_connection(
+        self,
+        conn: dict[str, Any],
+        placed: dict[str, list[dict[str, Any]]],
+        placed_kind: dict[str, str],
+        state: _PinLabelBatch,
+        stub_mm: float,
+        terminal_clearance_mm: float,
+        stagger_step_mm: float,
+        max_stagger_steps: int,
+        block_kind: str,
+        project_name: str,
+        root_uuid: str,
+    ) -> None:
+        wire_blocks = state.wire_blocks
+        terminal_blocks = state.terminal_blocks
+        power_lib_defs = state.power_lib_defs
+        occupied_terminals = state.occupied_terminals
+        stacked_terminals = state.stacked_terminals
+        results = state.results
+        ref = str(conn.get("reference", ""))
+        pin = str(conn.get("pin", ""))
+        net = str(conn.get("net", conn.get("name", "")))
+        if not (ref and pin and net):
+            results.append(f"SKIP {conn}: needs reference, pin, net")
+            return
+        blocks = placed.get(ref)
+        if not blocks:
+            results.append(f"{ref}.{pin}: reference not found")
+            return
+        candidates = self._resolve_connection_candidates(blocks, conn.get("unit"))
+        if not candidates:
+            results.append(f"{ref}.{pin}: unit {conn.get('unit')} not found")
+            return
+
+        (
+            sym,
+            point,
+            pin_positions,
+            _library,
+            _symbol_name,
+            _is_power_symbol,
+            unresolved_lib_id,
+        ) = self._find_pin_in_candidates(candidates, pin, ref)
+        ox, oy = float(sym.get("x", 0.0)), float(sym.get("y", 0.0))
+        point, pin_positions, err = self._resolve_pin_point(
+            point=point,
+            pin_positions=pin_positions,
+            sym=sym,
+            pin=pin,
+            ref=ref,
+            ox=ox,
+            oy=oy,
+            is_power_symbol_ref=(placed_kind.get(ref) == "power_symbol"),
+            unresolved_lib_id=unresolved_lib_id,
+        )
+        if err is not None or point is None:
+            results.append(err or f"{ref}.{pin}: pin not found")
+            return
+
+        px, py = point
+        stack_key = (round(px, 4), round(py, 4), net)
+        shared_terminal = stacked_terminals.get(stack_key)
+        if shared_terminal is not None:
+            sx, sy = shared_terminal
+            results.append(f"{ref}.{pin} -> {net} (stacked on shared terminal @ ({sx}, {sy}))")
+            return
+
+        ux, uy = self.pin_label_stub_direction(point, (ox, oy), pin_positions.values())
+        ex, ey, stagger_steps = self._compute_staggered_terminal(
+            px,
+            py,
+            ux,
+            uy,
+            stub_mm,
+            occupied_terminals,
+            terminal_clearance_mm,
+            stagger_step_mm,
+            max_stagger_steps,
+        )
+        occupied_terminals.append((ex, ey))
+        wire_blocks.append(self.wire_block(px, py, ex, ey))
+        suffix = f"; staggered {stagger_steps} step(s)" if stagger_steps else ""
+
+        block, msg, block_err = self._emit_terminal_block(
+            conn=conn,
+            net=net,
+            ex=ex,
+            ey=ey,
+            ux=ux,
+            uy=uy,
+            ref=ref,
+            pin=pin,
+            suffix=suffix,
+            block_kind=block_kind,
+            project_name=project_name,
+            root_uuid=root_uuid,
+            power_lib_defs=power_lib_defs,
+        )
+        if block_err is not None:
+            results.append(block_err)
+            wire_blocks.pop()
+            occupied_terminals.pop()
+            return
+
+        terminal_blocks.append(block)
+        stacked_terminals[stack_key] = (ex, ey)
+        results.append(msg)
+
+    def _insert_pin_label_blocks(self, current: str, state: _PinLabelBatch) -> str:
+        """Insert a pin-label batch without changing its transaction boundary."""
+        updated = current
+        for net_name, lib_def in state.power_lib_defs.items():
+            lib_id = f"power:{net_name}"
+            if f'(symbol "{lib_id}"' in updated:
+                continue
+            if "(lib_symbols)" in updated:
+                updated = updated.replace(
+                    "(lib_symbols)",
+                    f"(lib_symbols\n\t{lib_def}\n\t)",
+                    1,
+                )
+            else:
+                updated = updated.replace(
+                    "\t(lib_symbols\n",
+                    f"\t(lib_symbols\n\t{lib_def}\n",
+                    1,
+                )
+        for block in (*state.wire_blocks, *state.terminal_blocks):
+            updated = self.append_before_sheet_instances(updated, block)
+        return updated
+
     def add_pin_labels(
         self,
         connections: list[dict[str, Any]],
@@ -452,138 +598,40 @@ class SchematicConnectivityAuthoringService:
 
         project_name = self.project_name()
         root_uuid = str(data.get("uuid") or self.new_uuid())
-        wire_blocks: list[str] = []
-        terminal_blocks: list[str] = []
-        power_lib_defs: dict[str, str] = {}
-        occupied_terminals: list[tuple[float, float]] = []
-        stacked_terminals: dict[tuple[float, float, str], tuple[float, float]] = {}
+        state = _PinLabelBatch()
+        wire_blocks = state.wire_blocks
+        terminal_blocks = state.terminal_blocks
+        results = state.results
         dense_terminal_mode = len(connections) >= 12
         terminal_clearance_mm = self.snap_tolerance_mm if dense_terminal_mode else 6.0
         stagger_step_mm = 2.54
         max_stagger_steps = 12 if dense_terminal_mode else 5
-        results: list[str] = []
         if dense_terminal_mode:
             results.append(
                 "dense terminal mode: preserving each pin's natural row/column; "
                 "only exact terminal-coordinate collisions are staggered"
             )
-
         for conn in connections:
-            ref = str(conn.get("reference", ""))
-            pin = str(conn.get("pin", ""))
-            net = str(conn.get("net", conn.get("name", "")))
-            if not (ref and pin and net):
-                results.append(f"SKIP {conn}: needs reference, pin, net")
-                continue
-            blocks = placed.get(ref)
-            if not blocks:
-                results.append(f"{ref}.{pin}: reference not found")
-                continue
-            candidates = self._resolve_connection_candidates(blocks, conn.get("unit"))
-            if not candidates:
-                results.append(f"{ref}.{pin}: unit {conn.get('unit')} not found")
-                continue
-
-            (
-                sym,
-                point,
-                pin_positions,
-                _library,
-                _symbol_name,
-                _is_power_symbol,
-                unresolved_lib_id,
-            ) = self._find_pin_in_candidates(candidates, pin, ref)
-            ox, oy = float(sym.get("x", 0.0)), float(sym.get("y", 0.0))
-            point, pin_positions, err = self._resolve_pin_point(
-                point=point,
-                pin_positions=pin_positions,
-                sym=sym,
-                pin=pin,
-                ref=ref,
-                ox=ox,
-                oy=oy,
-                is_power_symbol_ref=(placed_kind.get(ref) == "power_symbol"),
-                unresolved_lib_id=unresolved_lib_id,
-            )
-            if err is not None or point is None:
-                results.append(err or f"{ref}.{pin}: pin not found")
-                continue
-
-            px, py = point
-            stack_key = (round(px, 4), round(py, 4), net)
-            shared_terminal = stacked_terminals.get(stack_key)
-            if shared_terminal is not None:
-                sx, sy = shared_terminal
-                results.append(f"{ref}.{pin} -> {net} (stacked on shared terminal @ ({sx}, {sy}))")
-                continue
-
-            ux, uy = self.pin_label_stub_direction(point, (ox, oy), pin_positions.values())
-            ex, ey, stagger_steps = self._compute_staggered_terminal(
-                px,
-                py,
-                ux,
-                uy,
+            self._append_pin_label_connection(
+                conn,
+                placed,
+                placed_kind,
+                state,
                 stub_mm,
-                occupied_terminals,
                 terminal_clearance_mm,
                 stagger_step_mm,
                 max_stagger_steps,
+                block_kind,
+                project_name,
+                root_uuid,
             )
-            occupied_terminals.append((ex, ey))
-            wire_blocks.append(self.wire_block(px, py, ex, ey))
-            suffix = f"; staggered {stagger_steps} step(s)" if stagger_steps else ""
-
-            block, msg, block_err = self._emit_terminal_block(
-                conn=conn,
-                net=net,
-                ex=ex,
-                ey=ey,
-                ux=ux,
-                uy=uy,
-                ref=ref,
-                pin=pin,
-                suffix=suffix,
-                block_kind=block_kind,
-                project_name=project_name,
-                root_uuid=root_uuid,
-                power_lib_defs=power_lib_defs,
-            )
-            if block_err is not None:
-                results.append(block_err)
-                wire_blocks.pop()
-                occupied_terminals.pop()
-                continue
-
-            terminal_blocks.append(block)
-            stacked_terminals[stack_key] = (ex, ey)
-            results.append(msg)
 
         if not (wire_blocks or terminal_blocks):
             return "No pin labels were added.\n" + "\n".join(results)
 
-        def mutator(current: str) -> str:
-            updated = current
-            for net_name, lib_def in power_lib_defs.items():
-                lib_id = f"power:{net_name}"
-                if f'(symbol "{lib_id}"' in updated:
-                    continue
-                if "(lib_symbols)" in updated:
-                    updated = updated.replace(
-                        "(lib_symbols)",
-                        f"(lib_symbols\n\t{lib_def}\n\t)",
-                        1,
-                    )
-                else:
-                    updated = updated.replace(
-                        "\t(lib_symbols\n",
-                        f"\t(lib_symbols\n\t{lib_def}\n",
-                        1,
-                    )
-            for block in (*wire_blocks, *terminal_blocks):
-                updated = self.append_before_sheet_instances(updated, block)
-            return updated
-
-        self.transactional_write(mutator, target.path)
+        self.transactional_write(
+            lambda current: self._insert_pin_label_blocks(current, state), target.path
+        )
         return (
             f"{self.reload_schematic()}\n{self.format_target_detail(target)}\n"
             f"Added {len(wire_blocks)} pin terminal(s) with stubs:\n" + "\n".join(results)

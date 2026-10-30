@@ -24,6 +24,31 @@ def test_checked_in_gemini_core_observation_matches_readonly_source_policy() -> 
     assert checker.check(_observed()) == []
 
 
+@pytest.mark.parametrize("candidate_version", ["4.4.0", "4.5.0"])
+def test_historical_gemini_observation_remains_bound_to_published_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, candidate_version: str
+) -> None:
+    # Preparing 4.5.0 updates the extension manifest, not the captured
+    # evidence for the published 4.4.0 Gemini core observation.
+    package = json.loads(checker.PACKAGE.read_text(encoding="utf-8"))
+    package["version"] = candidate_version
+    package_path = tmp_path / "package.json"
+    package_path.write_text(json.dumps(package), encoding="utf-8")
+
+    extension = json.loads(checker.EXTENSION.read_text(encoding="utf-8"))
+    extension["version"] = candidate_version
+    extension["mcpServers"]["kicad"]["args"][1] = f"kicad-mcp-pro=={candidate_version}"
+    extension_path = tmp_path / "gemini-extension.json"
+    extension_path.write_text(json.dumps(extension), encoding="utf-8")
+    monkeypatch.setattr(checker, "PACKAGE", package_path)
+    monkeypatch.setattr(checker, "EXTENSION", extension_path)
+
+    assert checker.check(_observed()) == []
+    extension["mcpServers"]["kicad"]["args"][1] = "kicad-mcp-pro==unreviewed"
+    extension_path.write_text(json.dumps(extension), encoding="utf-8")
+    assert "current extension version/pin" in checker.check(_observed())
+
+
 @pytest.mark.parametrize(
     ("field", "invalid"),
     [

@@ -293,10 +293,12 @@ async def test_pcb_add_text_uses_kicad_compatible_alignment(mock_board) -> None:
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("schematic_version", [20250316, 20260306])
 async def test_pcb_sync_from_schematic_adds_missing_footprints(
     sample_project,
     mock_kicad,
     monkeypatch: pytest.MonkeyPatch,
+    schematic_version: int,
 ) -> None:
     _allow_schematic_sync(monkeypatch)
     monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
@@ -341,6 +343,14 @@ async def test_pcb_sync_from_schematic_adds_missing_footprints(
         },
     )
 
+    schematic_file = sample_project / "demo.kicad_sch"
+    schematic_text = schematic_file.read_text(encoding="utf-8")
+    assert '(property "Datasheet" "~"' in schematic_text
+    schematic_file.write_text(
+        schematic_text.replace("(version 20250316)", f"(version {schematic_version})", 1),
+        encoding="utf-8",
+    )
+
     result = await call_tool_text(server, "pcb_sync_from_schematic", {})
     pcb_text = (sample_project / "demo.kicad_pcb").read_text(encoding="utf-8")
 
@@ -356,8 +366,8 @@ async def test_pcb_sync_from_schematic_adds_missing_footprints(
     assert pcb_text.count('(footprint "Resistor_SMD:R_0805"') == 2
     assert '(property "Reference" "R1"' in pcb_text
     assert '(property "Reference" "R2"' in pcb_text
-    assert pcb_text.count('(property "Datasheet" ""') == 2
-    assert '(property "Datasheet" "~"' not in pcb_text
+    expected_value = "" if schematic_version < 20250318 else "~"
+    assert pcb_text.count(f'(property "Datasheet" "{expected_value}"') == 2
     assert '(net "VIN")' in pcb_text
     assert '(net "MID")' in pcb_text
     assert '(net "GND")' in pcb_text

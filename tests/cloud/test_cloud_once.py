@@ -9,7 +9,7 @@ import json
 import os
 import re
 import select
-import subprocess
+import signal
 import sys
 import threading
 import time
@@ -124,6 +124,8 @@ def test_same_uid_pty_is_not_independent_human_approval(tmp_path: Path) -> None:
     Revisit this characterization when a separate owner authority exists.
     """
     master_fd, slave_fd = os.openpty()
+    # The executed code and interpreter are fixed test assets. argv is passed
+    # directly to posix_spawn with no shell and the child gets only PTY stdio.
     child_code = (
         "import sys\n"
         "from kicad_mcp import cloud_once\n"
@@ -135,14 +137,24 @@ def test_same_uid_pty_is_not_independent_human_approval(tmp_path: Path) -> None:
         "cloud_once._confirm_local_read(args)\n"
         "print('SYNTHETIC_PTY_CONSENT_PASSED', flush=True)\n"
     )
-    child = subprocess.Popen(
-        [sys.executable, "-c", child_code, *_args(tmp_path, tmp_path / "no-owner-key.pem")],
-        stdin=slave_fd,
-        stdout=slave_fd,
-        stderr=slave_fd,
-        close_fds=True,
-    )
-    os.close(slave_fd)
+    argv = [sys.executable, "-c", child_code, *_args(tmp_path, tmp_path / "no-owner-key.pem")]
+    try:
+        pid = os.posix_spawn(
+            sys.executable,
+            argv,
+            os.environ,
+            file_actions=(
+                (os.POSIX_SPAWN_DUP2, slave_fd, 0),
+                (os.POSIX_SPAWN_DUP2, slave_fd, 1),
+                (os.POSIX_SPAWN_DUP2, slave_fd, 2),
+                (os.POSIX_SPAWN_CLOSE, master_fd),
+                (os.POSIX_SPAWN_CLOSE, slave_fd),
+            ),
+        )
+    finally:
+        os.close(slave_fd)
+
+    reaped = False
     observed = b""
     try:
         deadline = time.monotonic() + 6.0
@@ -157,14 +169,22 @@ def test_same_uid_pty_is_not_independent_human_approval(tmp_path: Path) -> None:
                 )
         assert challenge is not None, observed.decode("utf-8", errors="replace")
         os.write(master_fd, b"APPROVE " + challenge.group(1) + b"\n")
-        assert child.wait(timeout=5) == 0
-        # The CLI accepted synthetic same-user input, not human identity.
-        # This is intentionally evidence of a RELEASE BLOCKER, not a fix.
+        exit_deadline = time.monotonic() + 5.0
+        while time.monotonic() < exit_deadline:
+            finished, status = os.waitpid(pid, os.WNOHANG)
+            if finished == pid:
+                reaped = True
+                assert os.waitstatus_to_exitcode(status) == 0
+                break
+            time.sleep(0.02)
+        assert reaped, "synthetic PTY child must exit promptly"
+        # A same-user process satisfied the prompt without a human.
+        # This remains evidence of a trust gap, not security acceptance.
         assert not (tmp_path / "no-owner-key.pem").exists()
     finally:
-        if child.poll() is None:
-            child.kill()
-            child.wait(timeout=3)
+        if not reaped:
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
         os.close(master_fd)
 
 

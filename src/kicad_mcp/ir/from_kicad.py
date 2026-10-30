@@ -270,6 +270,42 @@ def _pin_sort_key(pin_number: str) -> tuple[int, int | str]:
         return (1, pin_number)
 
 
+def _net_group_connections(pins: list[dict[str, Any]]) -> set[tuple[str, str]]:
+    """Preserve only addressable reference/pin pairs in a connectivity group."""
+    connections: set[tuple[str, str]] = set()
+    for pin_info in pins:
+        ref: str = pin_info.get("reference", "")
+        pin_num: str = str(pin_info.get("pin", ""))
+        if ref and pin_num:
+            connections.add((ref, pin_num))
+    return connections
+
+
+def _store_ir_net_group(
+    ir: IRCircuit,
+    net_name: str,
+    connections: set[tuple[str, str]],
+    is_power: bool,
+) -> None:
+    """Merge duplicate net groups without losing existing voltage or net class."""
+    if net_name in ir.nets:
+        existing = ir.nets[net_name]
+        ir.nets[net_name] = IRNet(
+            name=net_name,
+            connections=existing.connections | frozenset(connections),
+            is_power=existing.is_power or is_power,
+            voltage=existing.voltage,
+            net_class=existing.net_class,
+        )
+    else:
+        ir.nets[net_name] = IRNet(
+            name=net_name,
+            connections=frozenset(connections),
+            is_power=is_power,
+            voltage=_rail_name_and_voltage(net_name)[1] if is_power else None,
+        )
+
+
 def _populate_nets(
     ir: IRCircuit,
     connectivity_groups: list[dict[str, Any]],
@@ -284,45 +320,17 @@ def _populate_nets(
     for group in connectivity_groups:
         names: list[str] = group.get("names", [])
         pins: list[dict[str, Any]] = group.get("pins", [])
-
-        # Determine net name
         if names:
             net_name = names[0]
         else:
             unnamed_counter += 1
             net_name = f"~N{unnamed_counter}"
 
-        # Build connection tuples (reference, pin_number)
-        connections: set[tuple[str, str]] = set()
-        for pin_info in pins:
-            ref: str = pin_info.get("reference", "")
-            pin_num: str = str(pin_info.get("pin", ""))
-            if ref and pin_num:
-                connections.add((ref, pin_num))
-
-        # Determine if this is a power net
+        connections = _net_group_connections(pins)
         is_power = bool(power_symbol_values & set(names)) or bool(
             names and names[0].upper() in _COMMON_POWER_TYPES
         )
-
-        # Skip duplicates (same named net appearing in multiple groups is merged
-        # by _build_connectivity_groups, but let's be safe)
-        if net_name in ir.nets:
-            existing = ir.nets[net_name]
-            ir.nets[net_name] = IRNet(
-                name=net_name,
-                connections=existing.connections | frozenset(connections),
-                is_power=existing.is_power or is_power,
-                voltage=existing.voltage,
-                net_class=existing.net_class,
-            )
-        else:
-            ir.nets[net_name] = IRNet(
-                name=net_name,
-                connections=frozenset(connections),
-                is_power=is_power,
-                voltage=_rail_name_and_voltage(net_name)[1] if is_power else None,
-            )
+        _store_ir_net_group(ir, net_name, connections, is_power)
 
 
 def _detect_power_rails(

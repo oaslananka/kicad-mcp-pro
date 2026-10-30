@@ -365,12 +365,9 @@ def _validate_ipc_readiness(
     return errors
 
 
-def _validate_kicad_adapter_matrix(matrix: dict[str, Any]) -> list[str]:
-    detail = matrix.get("kicadAdapterMatrix")
-    if not isinstance(detail, dict):
-        return ["compatibility.yaml missing top-level 'kicadAdapterMatrix'"]
-
-    errors: list[str] = []
+def _check_adapter_baselines(
+    detail: dict[str, Any], matrix: dict[str, Any], errors: list[str]
+) -> None:
     if detail.get("schemaVersion") != "1.0.0":
         errors.append("kicadAdapterMatrix.schemaVersion must be '1.0.0'")
     if detail.get("stableBaseline") != matrix.get("kicad", {}).get("primary"):
@@ -380,6 +377,8 @@ def _validate_kicad_adapter_matrix(matrix: dict[str, Any]) -> list[str]:
     if set(detail.get("surfaces", [])) != {"read", "write", "export"}:
         errors.append("kicadAdapterMatrix.surfaces must contain read, write, and export")
 
+
+def _adapter_resolved_paths(detail: dict[str, Any], errors: list[str]) -> dict[str, Path]:
     path_fields = (
         "generatedJson",
         "generatedDocumentation",
@@ -400,6 +399,10 @@ def _validate_kicad_adapter_matrix(matrix: dict[str, Any]) -> list[str]:
             if not resolved.exists():
                 errors.append(f"{label} does not exist: {value!r}")
 
+    return resolved_paths
+
+
+def _check_adapter_mutation_evidence(detail: dict[str, Any], errors: list[str]) -> None:
     mutation_evidence = detail.get("mutationEvidence")
     if not isinstance(mutation_evidence, dict):
         errors.append("kicadAdapterMatrix.mutationEvidence must be a mapping")
@@ -422,6 +425,8 @@ def _validate_kicad_adapter_matrix(matrix: dict[str, Any]) -> list[str]:
             if isinstance(value, str) and not field_errors and not (REPO_ROOT / value).exists():
                 errors.append(f"{label} does not exist: {value!r}")
 
+
+def _check_adapter_sources(detail: dict[str, Any], errors: list[str]) -> None:
     sources = detail.get("sources")
     if not isinstance(sources, dict) or set(sources) != {"cli", "ipcApi", "pcbnewRetirement"}:
         errors.append("kicadAdapterMatrix.sources must define cli, ipcApi, and pcbnewRetirement")
@@ -430,6 +435,29 @@ def _validate_kicad_adapter_matrix(matrix: dict[str, Any]) -> list[str]:
     ):
         errors.append("kicadAdapterMatrix.sources values must be HTTPS URLs")
 
+
+def _check_generated_adapter_contract(generated: dict[str, Any], errors: list[str]) -> None:
+    from kicad_mcp.adapter_matrix import build_adapter_matrix_payload
+    from kicad_mcp.tools.router import TOOL_CATEGORIES
+
+    expected = build_adapter_matrix_payload()
+    if generated != expected:
+        errors.append("kicadAdapterMatrix.generatedJson drift: run adapter-matrix:build")
+    categories = generated.get("categories")
+    if not isinstance(categories, dict) or set(categories) != set(TOOL_CATEGORIES):
+        errors.append("kicadAdapterMatrix.generatedJson must cover every routed category")
+    tool_rows = generated.get("tools")
+    routed_tools = {tool for category in TOOL_CATEGORIES.values() for tool in category["tools"]}
+    matrix_tools = (
+        {row.get("tool") for row in tool_rows if isinstance(row, dict)}
+        if isinstance(tool_rows, list)
+        else set()
+    )
+    if matrix_tools != routed_tools:
+        errors.append("kicadAdapterMatrix.generatedJson must cover every routed tool exactly once")
+
+
+def _check_adapter_generated(resolved_paths: dict[str, Path], errors: list[str]) -> None:
     generated_path = resolved_paths.get("generatedJson")
     if generated_path and generated_path.exists():
         try:
@@ -438,29 +466,10 @@ def _validate_kicad_adapter_matrix(matrix: dict[str, Any]) -> list[str]:
             errors.append(f"kicadAdapterMatrix.generatedJson is invalid: {exc}")
         else:
             sys.path.insert(0, str(MCP_ROOT / "src"))
-            from kicad_mcp.adapter_matrix import build_adapter_matrix_payload
-            from kicad_mcp.tools.router import TOOL_CATEGORIES
+            _check_generated_adapter_contract(generated, errors)
 
-            expected = build_adapter_matrix_payload()
-            if generated != expected:
-                errors.append("kicadAdapterMatrix.generatedJson drift: run adapter-matrix:build")
-            categories = generated.get("categories")
-            if not isinstance(categories, dict) or set(categories) != set(TOOL_CATEGORIES):
-                errors.append("kicadAdapterMatrix.generatedJson must cover every routed category")
-            tool_rows = generated.get("tools")
-            routed_tools = {
-                tool for category in TOOL_CATEGORIES.values() for tool in category["tools"]
-            }
-            matrix_tools = (
-                {row.get("tool") for row in tool_rows if isinstance(row, dict)}
-                if isinstance(tool_rows, list)
-                else set()
-            )
-            if matrix_tools != routed_tools:
-                errors.append(
-                    "kicadAdapterMatrix.generatedJson must cover every routed tool exactly once"
-                )
 
+def _check_adapter_workflow(resolved_paths: dict[str, Path], errors: list[str]) -> None:
     workflow_path = resolved_paths.get("workflow")
     if workflow_path and workflow_path.exists():
         workflow = workflow_path.read_text(encoding="utf-8")
@@ -474,6 +483,8 @@ def _validate_kicad_adapter_matrix(matrix: dict[str, Any]) -> list[str]:
         if "scripts/kicad11_headless_canary.py" not in workflow:
             errors.append("kicadAdapterMatrix.workflow must run the headless canary")
 
+
+def _check_adapter_decision(resolved_paths: dict[str, Path], errors: list[str]) -> None:
     decision_path = resolved_paths.get("decisionRecord")
     if decision_path and decision_path.exists():
         decision = decision_path.read_text(encoding="utf-8")
@@ -487,6 +498,19 @@ def _validate_kicad_adapter_matrix(matrix: dict[str, Any]) -> list[str]:
             if statement.casefold() not in decision.casefold():
                 errors.append(f"kicadAdapterMatrix.decisionRecord must document {statement!r}")
 
+
+def _validate_kicad_adapter_matrix(matrix: dict[str, Any]) -> list[str]:
+    detail = matrix.get("kicadAdapterMatrix")
+    if not isinstance(detail, dict):
+        return ["compatibility.yaml missing top-level 'kicadAdapterMatrix'"]
+    errors: list[str] = []
+    _check_adapter_baselines(detail, matrix, errors)
+    resolved_paths = _adapter_resolved_paths(detail, errors)
+    _check_adapter_mutation_evidence(detail, errors)
+    _check_adapter_sources(detail, errors)
+    _check_adapter_generated(resolved_paths, errors)
+    _check_adapter_workflow(resolved_paths, errors)
+    _check_adapter_decision(resolved_paths, errors)
     return errors
 
 

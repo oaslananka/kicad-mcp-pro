@@ -64,6 +64,140 @@ def _drift_from_diff(diff_meta: dict[str, Any]) -> tuple[float, int, int]:
     return round(drift_pct, 3), changed, total
 
 
+def _read_visual_baseline_metadata(stem: str) -> dict[str, Any]:
+    baseline_meta: dict[str, Any] = {}
+    meta_path = _baseline_meta(stem)
+    if meta_path.is_file():
+        try:
+            baseline_meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            baseline_meta = {}
+    return baseline_meta
+
+
+def _render_visual_baseline_comparison(
+    target_path: Path,
+    stem: str,
+    baseline_png: Path,
+    render_dpi: int,
+    include_title_block: bool,
+) -> tuple[Path, Path, dict[str, Any]]:
+    current_png = _baseline_dir() / f"{stem}.current.png"
+    diff_png = _baseline_dir() / f"{stem}.drift.png"
+    _, _ = _render_schematic_png_artifact(
+        target_path,
+        current_png,
+        dpi=render_dpi,
+        crop_to_content=True,
+        include_title_block=include_title_block,
+    )
+    diff_meta = _render_png_visual_diff(baseline_png, current_png, diff_png)
+    return current_png, diff_png, diff_meta
+
+
+def _capture_visual_baseline(
+    sheet: str | None,
+    sheet_file: str | None,
+    dpi: int,
+    include_title_block: bool,
+) -> str:
+    if dpi < 72 or dpi > 600:
+        return json.dumps({"status": "error", "message": "dpi must be between 72 and 600."})
+
+    try:
+        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
+    except ValueError as exc:
+        return json.dumps({"status": "error", "message": str(exc)})
+
+    stem = target.path.stem
+    png_path = _baseline_png(stem)
+    try:
+        _, image_metadata = _render_schematic_png_artifact(
+            target.path,
+            png_path,
+            dpi=dpi,
+            crop_to_content=True,
+            include_title_block=include_title_block,
+        )
+    except RuntimeError as exc:
+        return json.dumps({"status": "error", "message": f"Baseline render failed: {exc}"})
+
+    metadata: dict[str, Any] = {
+        "sheet": stem,
+        "sheet_path": str(target.path),
+        "dpi": dpi,
+        "include_title_block": include_title_block,
+        "source_sha256": _sheet_sha256(target.path),
+        "render": image_metadata,
+    }
+    _baseline_meta(stem).write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+
+    return json.dumps(
+        {
+            "status": "captured",
+            "baseline_png": str(png_path),
+            "baseline_meta": str(_baseline_meta(stem)),
+            **metadata,
+        },
+        indent=2,
+    )
+
+
+def _compare_visual_baseline(
+    sheet: str | None,
+    sheet_file: str | None,
+    dpi: int,
+    include_title_block: bool,
+    threshold_pct: float,
+) -> str:
+    if dpi < 72 or dpi > 600:
+        return json.dumps({"status": "error", "message": "dpi must be between 72 and 600."})
+
+    try:
+        target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
+    except ValueError as exc:
+        return json.dumps({"status": "error", "message": str(exc)})
+
+    stem = target.path.stem
+    baseline_png = _baseline_png(stem)
+    if not baseline_png.is_file():
+        return json.dumps(
+            {
+                "status": "no_baseline",
+                "sheet": stem,
+                "message": (f"No visual baseline for '{stem}'. Run sch_visual_baseline_set first."),
+            }
+        )
+
+    baseline_meta = _read_visual_baseline_metadata(stem)
+    # Render at the baseline's dpi when known, so pixel counts are comparable.
+    render_dpi = int(baseline_meta.get("dpi", dpi) or dpi)
+    try:
+        current_png, diff_png, diff_meta = _render_visual_baseline_comparison(
+            target.path, stem, baseline_png, render_dpi, include_title_block
+        )
+    except RuntimeError as exc:
+        return json.dumps({"status": "error", "message": f"Baseline compare failed: {exc}"})
+
+    drift_pct, changed_pixels, total_pixels = _drift_from_diff(diff_meta)
+    status = "PASS" if drift_pct <= threshold_pct else "DRIFT"
+    return json.dumps(
+        {
+            "status": status,
+            "sheet": stem,
+            "drift_pct": drift_pct,
+            "threshold_pct": threshold_pct,
+            "changed_pixels": changed_pixels,
+            "total_pixels": total_pixels,
+            "changed_bbox_px": diff_meta.get("changed_bbox_px"),
+            "baseline_png": str(baseline_png),
+            "current_png": str(current_png),
+            "diff_png": str(diff_png),
+        },
+        indent=2,
+    )
+
+
 def register(mcp: FastMCP) -> None:
     """Register schematic visual-baseline tools."""
 
@@ -81,46 +215,7 @@ def register(mcp: FastMCP) -> None:
         hash) under ``.kicad-mcp/visual_baselines/``. Call this once a sheet looks
         right; ``sch_visual_baseline_compare`` then flags any later visual drift.
         """
-        if dpi < 72 or dpi > 600:
-            return json.dumps({"status": "error", "message": "dpi must be between 72 and 600."})
-
-        try:
-            target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        except ValueError as exc:
-            return json.dumps({"status": "error", "message": str(exc)})
-
-        stem = target.path.stem
-        png_path = _baseline_png(stem)
-        try:
-            _, image_metadata = _render_schematic_png_artifact(
-                target.path,
-                png_path,
-                dpi=dpi,
-                crop_to_content=True,
-                include_title_block=include_title_block,
-            )
-        except RuntimeError as exc:
-            return json.dumps({"status": "error", "message": f"Baseline render failed: {exc}"})
-
-        metadata: dict[str, Any] = {
-            "sheet": stem,
-            "sheet_path": str(target.path),
-            "dpi": dpi,
-            "include_title_block": include_title_block,
-            "source_sha256": _sheet_sha256(target.path),
-            "render": image_metadata,
-        }
-        _baseline_meta(stem).write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-
-        return json.dumps(
-            {
-                "status": "captured",
-                "baseline_png": str(png_path),
-                "baseline_meta": str(_baseline_meta(stem)),
-                **metadata,
-            },
-            indent=2,
-        )
+        return _capture_visual_baseline(sheet, sheet_file, dpi, include_title_block)
 
     @mcp.tool()
     @headless_compatible
@@ -138,68 +233,7 @@ def register(mcp: FastMCP) -> None:
         Status is ``PASS`` when drift is within ``threshold_pct``, else ``DRIFT``.
         Reports ``no_baseline`` if the sheet was never captured.
         """
-        if dpi < 72 or dpi > 600:
-            return json.dumps({"status": "error", "message": "dpi must be between 72 and 600."})
-
-        try:
-            target = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file)
-        except ValueError as exc:
-            return json.dumps({"status": "error", "message": str(exc)})
-
-        stem = target.path.stem
-        baseline_png = _baseline_png(stem)
-        if not baseline_png.is_file():
-            return json.dumps(
-                {
-                    "status": "no_baseline",
-                    "sheet": stem,
-                    "message": (
-                        f"No visual baseline for '{stem}'. Run sch_visual_baseline_set first."
-                    ),
-                }
-            )
-
-        baseline_meta: dict[str, Any] = {}
-        meta_path = _baseline_meta(stem)
-        if meta_path.is_file():
-            try:
-                baseline_meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                baseline_meta = {}
-        # Render at the baseline's dpi when known, so pixel counts are comparable.
-        render_dpi = int(baseline_meta.get("dpi", dpi) or dpi)
-
-        current_png = _baseline_dir() / f"{stem}.current.png"
-        diff_png = _baseline_dir() / f"{stem}.drift.png"
-        try:
-            _, _ = _render_schematic_png_artifact(
-                target.path,
-                current_png,
-                dpi=render_dpi,
-                crop_to_content=True,
-                include_title_block=include_title_block,
-            )
-            diff_meta = _render_png_visual_diff(baseline_png, current_png, diff_png)
-        except RuntimeError as exc:
-            return json.dumps({"status": "error", "message": f"Baseline compare failed: {exc}"})
-
-        drift_pct, changed_pixels, total_pixels = _drift_from_diff(diff_meta)
-        status = "PASS" if drift_pct <= threshold_pct else "DRIFT"
-        return json.dumps(
-            {
-                "status": status,
-                "sheet": stem,
-                "drift_pct": drift_pct,
-                "threshold_pct": threshold_pct,
-                "changed_pixels": changed_pixels,
-                "total_pixels": total_pixels,
-                "changed_bbox_px": diff_meta.get("changed_bbox_px"),
-                "baseline_png": str(baseline_png),
-                "current_png": str(current_png),
-                "diff_png": str(diff_png),
-            },
-            indent=2,
-        )
+        return _compare_visual_baseline(sheet, sheet_file, dpi, include_title_block, threshold_pct)
 
 
 __all__ = ["register"]

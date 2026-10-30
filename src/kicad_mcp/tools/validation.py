@@ -6,7 +6,10 @@ import hashlib
 import json
 import math
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from html import escape
@@ -39,11 +42,14 @@ from ..utils.dru import (
 from ..utils.schematic_rules import rail_voltage
 from ..validation import drc_runner
 from ..validation.drc_report import (
+    connectivity_evidence_problems,
     courtyard_violations,
     normalize_report_severity,
     report_entries,
+    unconnected_nets,
 )
 from ..validation.policy_state import ValidationPolicyStateService
+from ..validation.zone_fill import drc_outcome_changes, fill_geometry_changes, scan_zone_fill
 from . import validation_policy_state
 from .export_support import _ensure_output_dir, _get_pcb_file, _get_sch_file, _run_cli_variants
 from .gates import GateOutcome, GateStatus, _combined_status
@@ -58,6 +64,7 @@ if TYPE_CHECKING:
 _PCB_TRANSFER_GATE = "PCB transfer"
 _STACKUP_CONSISTENCY_GATE = "Stackup consistency"
 _WARNING_PREFIX = "WARN: "
+_MAX_UNCONNECTED_NET_LINES = 25
 _ROUTE_CORNER_STYLE_GATE = "Route corner style"
 _FOOTPRINT_PARITY_GATE = "Footprint parity"
 _SCHEMATIC_CONNECTIVITY_GATE = "Schematic connectivity"
@@ -1625,6 +1632,139 @@ def _evaluate_pre_sync_gate() -> GateOutcome:
     )
 
 
+_ZONE_PROBE_SIBLINGS = ("fp-lib-table", "sym-lib-table")
+_MAX_UNFILLED_ZONE_LINES = 10
+
+
+def _refill_probe_report(
+    pcb_file: Path,
+) -> tuple[dict[str, object] | None, str | None, str | None]:
+    """Refill zones on a throwaway copy of the board, save it and run DRC on it.
+
+    Returns ``(drc_report, refilled_board_text, error)``. ``--save-board`` is passed so the
+    freshly computed fill can be compared with the stored one; it only ever writes the
+    scratch copy. Working on a copy keeps the original board and project directory
+    untouched, including the sidecar files kicad-cli may create next to its input.
+    """
+    with tempfile.TemporaryDirectory(prefix="kicad-mcp-zone-probe-") as scratch:
+        work = Path(scratch)
+        try:
+            copy = work / pcb_file.name
+            shutil.copyfile(pcb_file, copy)
+            for sibling in (
+                pcb_file.with_suffix(".kicad_pro"),
+                pcb_file.with_suffix(".kicad_dru"),
+                *(pcb_file.parent / name for name in _ZONE_PROBE_SIBLINGS),
+            ):
+                if sibling.is_file():
+                    shutil.copyfile(sibling, work / sibling.name)
+        except OSError as exc:
+            return None, None, f"could not prepare a scratch copy of the board ({exc})"
+
+        out_file = work / "zone_probe_drc.json"
+        command = ["pcb", "drc", "--output", str(out_file), "--format", "json", "--severity-all"]
+        command += ["--refill-zones", "--save-board", str(copy)]
+        try:
+            code, _stdout, stderr = _run_cli_variants([command])
+        except (OSError, subprocess.SubprocessError) as exc:
+            return None, None, str(exc)
+        if not out_file.is_file():
+            detail = stderr.strip() or f"exit code {code}"
+            return None, None, f"kicad-cli produced no DRC report with --refill-zones ({detail})"
+        try:
+            parsed = json.loads(out_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return None, None, f"the refill DRC report could not be read ({exc})"
+        status, schema_error = drc_runner.classify_drc_report(parsed)
+        if status == "malformed":
+            return None, None, f"the refill DRC report is malformed ({schema_error})"
+        try:
+            refilled_text = copy.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            return None, None, f"the refilled board copy could not be read ({exc})"
+        return cast(dict[str, object], parsed), refilled_text, None
+
+
+def _zone_fill_check(report: dict[str, object]) -> tuple[list[str], list[str]]:
+    """Check that copper-zone fill is present and current. Returns ``(blockers, info)``.
+
+    Read-only: the board file is only read, and staleness is judged by a refill on a scratch
+    copy (see ``_refill_probe_report``). Anything that cannot be established is a blocker.
+    """
+    hint = (
+        "Refill zones (pcb_refill_zones) and re-run this gate; the gate never modifies the board."
+    )
+    try:
+        pcb_file = _get_pcb_file()
+        board_text = pcb_file.read_text(encoding="utf-8")
+    except (ValueError, OSError) as exc:
+        return [f"Zone fill could not be verified: the board file is unavailable ({exc})."], []
+
+    scan = scan_zone_fill(board_text)
+    if scan.copper_zones == 0:
+        return [], ["Zone fill: no copper zones"]
+    if scan.unfilled:
+        blockers = [
+            f"Copper zone fill is missing for {len(scan.unfilled)} of {scan.copper_zones} zone(s)."
+        ]
+        blockers += [f"Unfilled {zone}." for zone in scan.unfilled[:_MAX_UNFILLED_ZONE_LINES]]
+        if len(scan.unfilled) > _MAX_UNFILLED_ZONE_LINES:
+            blockers.append(
+                f"{len(scan.unfilled) - _MAX_UNFILLED_ZONE_LINES} more unfilled zone(s) not listed."
+            )
+        blockers.append(hint)
+        return blockers, []
+
+    refilled, refilled_text, error = _refill_probe_report(pcb_file)
+    if refilled is None or refilled_text is None:
+        return [f"Zone fill could not be verified as current: {error or 'no refilled copy'}."], []
+    stale: list[str] = []
+    changes = drc_outcome_changes(report, refilled)
+    if changes:
+        stale.append(f"a fresh refill changes the DRC result ({'; '.join(changes)})")
+    geometry = fill_geometry_changes(board_text, refilled_text)
+    if geometry:
+        shown = "; ".join(geometry[:_MAX_UNFILLED_ZONE_LINES])
+        more = len(geometry) - _MAX_UNFILLED_ZONE_LINES
+        suffix = f"; {more} more" if more > 0 else ""
+        stale.append(
+            f"the fill geometry differs from a fresh refill in {len(geometry)} "
+            f"zone layer(s) ({shown}{suffix})"
+        )
+    if stale:
+        return [f"Stored zone fill is stale: {'; and '.join(stale)}.", hint], []
+    return [], [
+        f"Zone fill: {scan.copper_zones} copper zone(s) filled and current "
+        "(a fresh refill reproduces the stored fill geometry and DRC result)"
+    ]
+
+
+def _unconnected_net_details(unconnected: list[dict[str, object]]) -> list[str]:
+    """Render one actionable ``FAIL:`` line per net that still has open connections."""
+    by_net, unparsed = unconnected_nets(unconnected)
+    ordered = sorted(by_net.items(), key=lambda item: (-len(item[1]), item[0]))
+    details = [f"Unconnected nets: {len(by_net)}"]
+    for name, entries in ordered[:_MAX_UNCONNECTED_NET_LINES]:
+        example = _first_item_description(entries[0])
+        suffix = f"; e.g. {example}" if example else ""
+        details.append(f"FAIL: net {name}: {len(entries)} unconnected connection(s){suffix}")
+    if len(ordered) > _MAX_UNCONNECTED_NET_LINES:
+        remaining = len(ordered) - _MAX_UNCONNECTED_NET_LINES
+        details.append(f"FAIL: {remaining} more net(s) with unconnected connections not listed")
+    if unparsed:
+        details.append(
+            f"FAIL: {unparsed} unconnected item(s) have no parsable net in the DRC report"
+        )
+    return details
+
+
+def _first_item_description(entry: dict[str, object]) -> str:
+    items = entry.get("items")
+    if isinstance(items, list) and items and isinstance(items[0], dict):
+        return str(items[0].get("description") or "")
+    return ""
+
+
 def _evaluate_pcb_gate() -> GateOutcome:
     _, report, error = _run_drc_report("pcb_quality_gate.json")
     if report is None:
@@ -1639,6 +1779,7 @@ def _evaluate_pcb_gate() -> GateOutcome:
     courtyard = courtyard_violations(report)
     legacy_only_courtyard = [entry for entry in courtyard if entry not in violations]
     blocking_count = len(violations) + len(unconnected) + len(legacy_only_courtyard)
+    evidence_problems = connectivity_evidence_problems(report)
     status: GateStatus = "PASS" if blocking_count == 0 else "FAIL"
     details = [
         f"DRC violations: {len(violations)}",
@@ -1647,6 +1788,23 @@ def _evaluate_pcb_gate() -> GateOutcome:
     ]
     if violations:
         details.append(f"DRC types: {_type_breakdown(violations)}")
+    zone_blockers, zone_info = _zone_fill_check(report)
+    blockers = [*evidence_problems, *zone_blockers]
+    # Blockers come before the (possibly long) per-net list so that consumers which only
+    # show the first few detail lines still see why the gate is BLOCKED.
+    details.extend(f"BLOCKED: {problem}" for problem in blockers)
+    details.extend(zone_info)
+    details.extend(_unconnected_net_details(unconnected))
+    if blockers:
+        return GateOutcome(
+            name="PCB",
+            status="BLOCKED",
+            summary=(
+                "PCB connectivity or copper-zone fill could not be verified; "
+                "the DRC result is not sufficient evidence."
+            ),
+            details=details,
+        )
     return GateOutcome(
         name="PCB",
         status=status,
@@ -1725,6 +1883,23 @@ def _group_spread_mm(
     return max_spread, present_refs
 
 
+def _nearest_unvisited_manhattan(
+    points: list[tuple[float, float]], visited: set[int]
+) -> tuple[int | None, float | None]:
+    best_distance: float | None = None
+    best_index: int | None = None
+    for left_index in visited:
+        left_point = points[left_index]
+        for right_index, right_point in enumerate(points):
+            if right_index in visited:
+                continue
+            distance = abs(left_point[0] - right_point[0]) + abs(left_point[1] - right_point[1])
+            if best_distance is None or distance < best_distance:
+                best_distance = distance
+                best_index = right_index
+    return best_index, best_distance
+
+
 def _manhattan_mst_length(points: list[tuple[float, float]]) -> float:
     """Approximate a ratsnest length using Manhattan-distance MST wiring."""
     if len(points) < 2:
@@ -1733,17 +1908,7 @@ def _manhattan_mst_length(points: list[tuple[float, float]]) -> float:
     visited = {0}
     total = 0.0
     while len(visited) < len(points):
-        best_distance: float | None = None
-        best_index: int | None = None
-        for left_index in visited:
-            left_point = points[left_index]
-            for right_index, right_point in enumerate(points):
-                if right_index in visited:
-                    continue
-                distance = abs(left_point[0] - right_point[0]) + abs(left_point[1] - right_point[1])
-                if best_distance is None or distance < best_distance:
-                    best_distance = distance
-                    best_index = right_index
+        best_index, best_distance = _nearest_unvisited_manhattan(points, visited)
         if best_distance is None or best_index is None:
             break
         visited.add(best_index)
@@ -2620,41 +2785,43 @@ def _evaluate_manufacturing_gate(
     )
 
 
-def _is_project_empty() -> bool:
-    from .board_file import _edge_cuts_bounds, _parse_board_footprint_blocks
+def _has_schematic_contents() -> bool:
     from .schematic import parse_schematic_file, project_schematic_files
 
-    # Check schematic
     try:
         sch_files = project_schematic_files()
         if sch_files:
             for sch_file in sch_files:
                 if sch_file.exists():
                     data = parse_schematic_file(sch_file)
-                    if (
-                        data.get("symbols")
-                        or data.get("power_symbols")
-                        or data.get("wires")
-                        or data.get("labels")
+                    if any(
+                        data.get(key) for key in ("symbols", "power_symbols", "wires", "labels")
                     ):
-                        return False
-    except Exception:  # noqa: S110
+                        return True
+    except Exception:  # noqa: S110 - preserve conservative onboarding fallback
         pass
+    return False
 
-    # Check PCB
+
+def _has_pcb_contents() -> bool:
+    from .board_file import _edge_cuts_bounds, _parse_board_footprint_blocks
+
     try:
         pcb_file = _get_pcb_file()
         if pcb_file.exists():
             content = pcb_file.read_text(encoding="utf-8", errors="ignore")
-            footprints = _parse_board_footprint_blocks(content)
-            if footprints:
-                return False
+            if _parse_board_footprint_blocks(content):
+                return True
             if _edge_cuts_bounds(content) is not None:
-                return False
-    except Exception:  # noqa: S110
+                return True
+    except Exception:  # noqa: S110 - preserve conservative onboarding fallback
         pass
+    return False
 
-    return True
+
+def _is_project_empty() -> bool:
+    """Preserve the independent best-effort schematic and PCB emptiness checks."""
+    return not (_has_schematic_contents() or _has_pcb_contents())
 
 
 def _empty_project_onboarding_outcome() -> GateOutcome:
@@ -3914,7 +4081,7 @@ def _build_constraint_node(
     return node
 
 
-def _register_drc_rule_tools(mcp: FastMCP) -> None:
+def _register_drc_rule_query_tools(mcp: FastMCP) -> None:
     """Register custom DRC rule management tools."""
 
     @mcp.tool()
@@ -3970,6 +4137,10 @@ def _register_drc_rule_tools(mcp: FastMCP) -> None:
             indent=2,
         )
 
+
+def _register_drc_rule_edit_tools(mcp: FastMCP) -> None:
+    """Register DRC create and delete operations."""
+
     @mcp.tool()
     @headless_compatible
     def drc_rule_create(
@@ -4021,6 +4192,10 @@ def _register_drc_rule_tools(mcp: FastMCP) -> None:
         cast(dict[str, str], state.setdefault("severity", {})).pop(rule_name, None)
         _save_drc_state(state)
         return f"Deleted custom DRC rule '{rule_name}' from {path}."
+
+
+def _register_drc_rule_toggle_export_tools(mcp: FastMCP) -> None:
+    """Register DRC toggle and export operations."""
 
     @mcp.tool()
     @headless_compatible
@@ -4076,6 +4251,13 @@ def _register_drc_rule_tools(mcp: FastMCP) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
         return f"Custom DRC rules exported to {target}."
+
+
+def _register_drc_rule_tools(mcp: FastMCP) -> None:
+    """Register custom DRC rule management tools in their original order."""
+    _register_drc_rule_query_tools(mcp)
+    _register_drc_rule_edit_tools(mcp)
+    _register_drc_rule_toggle_export_tools(mcp)
 
 
 def _execute_validate_design() -> str:
@@ -4348,7 +4530,7 @@ def _register_validation_gate_tools(mcp: FastMCP) -> None:
     _register_project_bundle_gate_tools(mcp)
 
 
-def _register_targeted_validation_tools(mcp: FastMCP) -> None:
+def _register_targeted_drc_read_tools(mcp: FastMCP) -> None:
     """Register targeted DFM and violation-reporting tools."""
 
     @mcp.tool()
@@ -4387,6 +4569,10 @@ def _register_targeted_validation_tools(mcp: FastMCP) -> None:
             return "No courtyard violations were reported."
         return _format_violations("Courtyard violations", entries)
 
+
+def _register_targeted_other_tools(mcp: FastMCP) -> None:
+    """Register other targeted report and parity tools."""
+
     @mcp.tool()
     @headless_compatible
     def get_silk_to_pad_violations() -> str:
@@ -4417,6 +4603,12 @@ def _register_targeted_validation_tools(mcp: FastMCP) -> None:
         ]
         lines.extend(f"- {detail}" for detail in outcome.details)
         return "\n".join(lines)
+
+
+def _register_targeted_validation_tools(mcp: FastMCP) -> None:
+    """Register targeted DFM and violation-reporting tools in order."""
+    _register_targeted_drc_read_tools(mcp)
+    _register_targeted_other_tools(mcp)
 
 
 def register(mcp: FastMCP) -> None:

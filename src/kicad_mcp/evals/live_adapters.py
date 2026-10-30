@@ -245,6 +245,30 @@ def _optional_number(
     return float(value)
 
 
+def _parse_adapter_error(raw: dict[str, Any]) -> AdapterObservation:
+    if set(raw) not in {_ERROR_KEYS, _ERROR_DETAIL_KEYS, _ERROR_RETRY_KEYS}:
+        raise ValueError("Error adapter response contains unsupported fields.")
+    failure_raw = raw.get("failure_kind")
+    if failure_raw not in _FAILURE_KINDS:
+        raise ValueError("Adapter response has an unsupported failure_kind.")
+    failure_detail: FailureDetail | None = None
+    if "failure_detail" in raw:
+        detail_raw = raw.get("failure_detail")
+        allowed_details = _DETAILS_BY_FAILURE_KIND.get(failure_raw, frozenset())
+        if detail_raw not in allowed_details:
+            raise ValueError("Adapter response has an unsupported failure_detail.")
+        failure_detail = cast(FailureDetail, detail_raw)
+    retry_after_seconds: float | None = None
+    if "retry_after_seconds" in raw:
+        retry_raw = _optional_number(raw, "retry_after_seconds", integer=False)
+        retry_after_seconds = cast(float, retry_raw)
+    return _failure(
+        cast(FailureKind, failure_raw),
+        failure_detail,
+        retry_after_seconds=retry_after_seconds,
+    )
+
+
 def _parse_adapter_payload(value: object) -> AdapterObservation:
     if not isinstance(value, dict):
         raise ValueError("Adapter response must be a JSON object.")
@@ -253,27 +277,7 @@ def _parse_adapter_payload(value: object) -> AdapterObservation:
         raise ValueError("Adapter response schema_version must be 1.")
     status = raw.get("status")
     if status == "error":
-        if set(raw) not in {_ERROR_KEYS, _ERROR_DETAIL_KEYS, _ERROR_RETRY_KEYS}:
-            raise ValueError("Error adapter response contains unsupported fields.")
-        failure_raw = raw.get("failure_kind")
-        if failure_raw not in _FAILURE_KINDS:
-            raise ValueError("Adapter response has an unsupported failure_kind.")
-        failure_detail: FailureDetail | None = None
-        if "failure_detail" in raw:
-            detail_raw = raw.get("failure_detail")
-            allowed_details = _DETAILS_BY_FAILURE_KIND.get(failure_raw, frozenset())
-            if detail_raw not in allowed_details:
-                raise ValueError("Adapter response has an unsupported failure_detail.")
-            failure_detail = cast(FailureDetail, detail_raw)
-        retry_after_seconds: float | None = None
-        if "retry_after_seconds" in raw:
-            retry_raw = _optional_number(raw, "retry_after_seconds", integer=False)
-            retry_after_seconds = cast(float, retry_raw)
-        return _failure(
-            cast(FailureKind, failure_raw),
-            failure_detail,
-            retry_after_seconds=retry_after_seconds,
-        )
+        return _parse_adapter_error(raw)
     if status != "ok":
         raise ValueError("Adapter response status must be 'ok' or 'error'.")
     if set(raw) - _SUCCESS_KEYS:

@@ -602,6 +602,30 @@ class SchematicHierarchyAuthoringService:
         item = (block.name, self._stamp_uuids(plan), block.origin, block.size)
         return lines, item
 
+    @staticmethod
+    def _apply_import_sheet_pin_plans(
+        current: str,
+        pending: list[tuple[str, SheetPinPlan, tuple[float, float], tuple[float, float]]],
+    ) -> str:
+        for name, plan, origin, size in pending:
+            block = next(
+                (candidate for candidate in parse_sheet_blocks(current) if candidate.name == name),
+                None,
+            )
+            if block is None:
+                raise ValueError(
+                    f"Sheet '{name}' disappeared between the read and the write, so its "
+                    "pins were not applied. Re-run sch_import_sheet_pins."
+                )
+            if block.origin != origin or block.size != size:
+                raise ValueError(
+                    f"Sheet '{name}' moved or resized since it was read "
+                    f"(origin {origin} -> {block.origin}, size {size} -> {block.size}); "
+                    "refusing to overwrite it. Re-run sch_import_sheet_pins."
+                )
+            current = apply_plan(current, block, plan)
+        return current
+
     def import_sheet_pins(
         self,
         sheet: str | None,
@@ -633,28 +657,7 @@ class SchematicHierarchyAuthoringService:
             return "\n".join(["No sheet pins could be imported.", *lines])
 
         def mutator(current: str) -> str:
-            for name, plan, origin, size in pending:
-                block = next(
-                    (
-                        candidate
-                        for candidate in parse_sheet_blocks(current)
-                        if candidate.name == name
-                    ),
-                    None,
-                )
-                if block is None:
-                    raise ValueError(
-                        f"Sheet '{name}' disappeared between the read and the write, so its "
-                        "pins were not applied. Re-run sch_import_sheet_pins."
-                    )
-                if block.origin != origin or block.size != size:
-                    raise ValueError(
-                        f"Sheet '{name}' moved or resized since it was read "
-                        f"(origin {origin} -> {block.origin}, size {size} -> {block.size}); "
-                        "refusing to overwrite it. Re-run sch_import_sheet_pins."
-                    )
-                current = apply_plan(current, block, plan)
-            return current
+            return self._apply_import_sheet_pin_plans(current, pending)
 
         try:
             mutated = mutator(root_text)

@@ -518,6 +518,72 @@ def _export_report(
     )
 
 
+def _report_missing_headless_inputs(
+    artifacts: Path, unavailable_reason: str | None, require_ready: bool
+) -> int:
+    reason = unavailable_reason or "KiCad nightly CLI or fixture is unavailable."
+    for surface in SURFACES:
+        _write_report(
+            artifacts,
+            SurfaceReport(surface, "blocked", None, reason, [], "unavailable"),
+        )
+    return 1 if require_ready else 0
+
+
+def _report_unready_headless_ipc(
+    *,
+    artifacts: Path,
+    kicad_cli: Path,
+    project_or_file: Path,
+    version: str | None,
+    version_evidence: list[str],
+    api_evidence: list[str],
+    api_advertised: bool,
+    require_ready: bool,
+) -> int:
+    reason = (
+        f"KiCad 11+ headless IPC is not ready (version={version!r}, "
+        f"apiServerAdvertised={api_advertised})."
+    )
+    for surface in ("read", "write"):
+        _write_report(
+            artifacts,
+            SurfaceReport(
+                surface,
+                "blocked",
+                version,
+                reason,
+                [*version_evidence, *api_evidence],
+                "unavailable",
+            ),
+        )
+    export = _export_report(
+        cli=kicad_cli,
+        project_or_file=project_or_file,
+        artifacts=artifacts,
+        version=version,
+    )
+    _write_report(artifacts, export)
+    if version is not None:
+        _write_live_identity_differential(
+            artifacts=artifacts,
+            project_or_file=project_or_file,
+            kicad_version=version,
+            probe=None,
+            authority_available=False,
+            reason=reason,
+        )
+        _write_roundtrip_differential(
+            artifacts=artifacts,
+            project_or_file=project_or_file,
+            kicad_version=version,
+            probe=None,
+            authority_available=False,
+            reason=reason,
+        )
+    return 1 if require_ready else 0
+
+
 def run_canary(
     *,
     artifacts: Path,
@@ -530,13 +596,7 @@ def run_canary(
     artifacts = approved_runtime_path(artifacts)
     artifacts.mkdir(parents=True, exist_ok=True)
     if kicad_cli is None or project_or_file is None:
-        reason = unavailable_reason or "KiCad nightly CLI or fixture is unavailable."
-        for surface in SURFACES:
-            _write_report(
-                artifacts,
-                SurfaceReport(surface, "blocked", None, reason, [], "unavailable"),
-            )
-        return 1 if require_ready else 0
+        return _report_missing_headless_inputs(artifacts, unavailable_reason, require_ready)
 
     kicad_cli = _validated_kicad_cli(kicad_cli)
     project_or_file = _validated_project_or_file(project_or_file)
@@ -545,47 +605,16 @@ def run_canary(
     api_advertised, api_evidence = _api_server_help(kicad_cli)
     major = _major(version)
     if major is None or major < 11 or not api_advertised:
-        reason = (
-            f"KiCad 11+ headless IPC is not ready (version={version!r}, "
-            f"apiServerAdvertised={api_advertised})."
-        )
-        for surface in ("read", "write"):
-            _write_report(
-                artifacts,
-                SurfaceReport(
-                    surface,
-                    "blocked",
-                    version,
-                    reason,
-                    [*version_evidence, *api_evidence],
-                    "unavailable",
-                ),
-            )
-        export = _export_report(
-            cli=kicad_cli,
-            project_or_file=project_or_file,
+        return _report_unready_headless_ipc(
             artifacts=artifacts,
+            kicad_cli=kicad_cli,
+            project_or_file=project_or_file,
             version=version,
+            version_evidence=version_evidence,
+            api_evidence=api_evidence,
+            api_advertised=api_advertised,
+            require_ready=require_ready,
         )
-        _write_report(artifacts, export)
-        if version is not None:
-            _write_live_identity_differential(
-                artifacts=artifacts,
-                project_or_file=project_or_file,
-                kicad_version=version,
-                probe=None,
-                authority_available=False,
-                reason=reason,
-            )
-            _write_roundtrip_differential(
-                artifacts=artifacts,
-                project_or_file=project_or_file,
-                kicad_version=version,
-                probe=None,
-                authority_available=False,
-                reason=reason,
-            )
-        return 1 if require_ready else 0
 
     read, write, identity_probe, identity_error = _headless_read_write(
         cli=kicad_cli,

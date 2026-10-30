@@ -84,6 +84,55 @@ class SchematicLayoutAutomationService:
     auto_layout_row_spacing_mm: float
     warn: Callable[..., object]
 
+    def _strategy_position(
+        self,
+        strategy: LayoutStrategy,
+        index: int,
+        count: int,
+        occupied: set[tuple[int, int]],
+    ) -> tuple[float, float]:
+        radius_mm = self.auto_layout_column_spacing_mm * 2
+        center_x = self.auto_layout_origin_x_mm + self.auto_layout_column_spacing_mm
+        center_y = self.auto_layout_origin_y_mm + self.auto_layout_row_spacing_mm
+        if strategy == "linear":
+            x, y = self.next_free_cell(
+                occupied,
+                start_col=index,
+                start_row=0,
+                max_cols=24,
+            )
+        elif strategy == "star":
+            if index == 0:
+                x = center_x
+                y = center_y
+                col = int(
+                    round((x - self.auto_layout_origin_x_mm) / self.auto_layout_column_spacing_mm)
+                )
+                row = int(
+                    round((y - self.auto_layout_origin_y_mm) / self.auto_layout_row_spacing_mm)
+                )
+                occupied.add((col, row))
+            else:
+                angle = ((index - 1) / max(count - 1, 1)) * (2 * math.pi)
+                raw_x = center_x + (radius_mm * math.cos(angle))
+                raw_y = center_y + (radius_mm * math.sin(angle))
+                col = int(
+                    round(
+                        (raw_x - self.auto_layout_origin_x_mm) / self.auto_layout_column_spacing_mm
+                    )
+                )
+                row = int(
+                    round((raw_y - self.auto_layout_origin_y_mm) / self.auto_layout_row_spacing_mm)
+                )
+                x, y = self.next_free_cell(occupied, start_col=col, start_row=row)
+        elif strategy == "grid":
+            grid_cols = max(1, math.ceil(math.sqrt(count)))
+            x, y = self.next_free_cell(occupied, max_cols=grid_cols)
+        else:
+            x, y = self.next_free_cell(occupied)
+
+        return x, y
+
     def auto_place_symbols(
         self,
         symbol_list: list[str] | None = None,
@@ -122,9 +171,6 @@ class SchematicLayoutAutomationService:
         placed = 0
         moved_refs: set[str] = set()
         missing: list[str] = []
-        radius_mm = self.auto_layout_column_spacing_mm * 2
-        center_x = self.auto_layout_origin_x_mm + self.auto_layout_column_spacing_mm
-        center_y = self.auto_layout_origin_y_mm + self.auto_layout_row_spacing_mm
 
         for index, reference in enumerate(requested):
             component = schematic.components.get(reference)
@@ -132,48 +178,7 @@ class SchematicLayoutAutomationService:
                 missing.append(reference)
                 continue
 
-            if payload.strategy == "linear":
-                x, y = self.next_free_cell(
-                    occupied,
-                    start_col=index,
-                    start_row=0,
-                    max_cols=24,
-                )
-            elif payload.strategy == "star":
-                if index == 0:
-                    x = center_x
-                    y = center_y
-                    col = int(
-                        round(
-                            (x - self.auto_layout_origin_x_mm) / self.auto_layout_column_spacing_mm
-                        )
-                    )
-                    row = int(
-                        round((y - self.auto_layout_origin_y_mm) / self.auto_layout_row_spacing_mm)
-                    )
-                    occupied.add((col, row))
-                else:
-                    angle = ((index - 1) / max(len(requested) - 1, 1)) * (2 * math.pi)
-                    raw_x = center_x + (radius_mm * math.cos(angle))
-                    raw_y = center_y + (radius_mm * math.sin(angle))
-                    col = int(
-                        round(
-                            (raw_x - self.auto_layout_origin_x_mm)
-                            / self.auto_layout_column_spacing_mm
-                        )
-                    )
-                    row = int(
-                        round(
-                            (raw_y - self.auto_layout_origin_y_mm) / self.auto_layout_row_spacing_mm
-                        )
-                    )
-                    x, y = self.next_free_cell(occupied, start_col=col, start_row=row)
-            elif payload.strategy == "grid":
-                grid_cols = max(1, math.ceil(math.sqrt(len(requested))))
-                x, y = self.next_free_cell(occupied, max_cols=grid_cols)
-            else:
-                x, y = self.next_free_cell(occupied)
-
+            x, y = self._strategy_position(payload.strategy, index, len(requested), occupied)
             snapped_x, snapped_y = self.snap_point(x, y, True)
             component.move(snapped_x, snapped_y)
             placed += 1
@@ -374,6 +379,76 @@ class SchematicLayoutAutomationService:
         is_overflow = col >= max_cols or row >= max_rows
         return col, row, is_overflow
 
+    def _place_functional_references(
+        self,
+        schematic: SchematicLike,
+        requested: list[str],
+        anchor_set: set[str],
+        sym_meta: dict[str, dict[str, str]],
+        functional_spacing_mm: float,
+        max_cols: int,
+        max_rows: int,
+        global_occupied: set[tuple[int, int]],
+        zone_occupied: dict[str, set[tuple[int, int]]],
+        paper: str,
+    ) -> tuple[int, set[str], int, list[str], dict[str, int]]:
+        placed = 0
+        moved_refs: set[str] = set()
+        overflow_count = 0
+        missing: list[str] = []
+        zone_counts: dict[str, int] = {}
+
+        for reference in requested:
+            if reference in anchor_set:
+                continue
+            component = schematic.components.get(reference)
+            if component is None:
+                missing.append(reference)
+                continue
+
+            meta = sym_meta.get(reference, {})
+            category = self.classify_symbol(
+                ref=reference,
+                value=meta.get("value", ""),
+                lib_id=meta.get("lib_id", ""),
+            )
+
+            zone_col, zone_row = self.functional_zone_origin(
+                category,
+                max_cols=max_cols,
+                max_rows=max_rows,
+                spacing_mm=functional_spacing_mm,
+            )
+
+            placed_in_zone = zone_occupied.setdefault(category, set())
+            col, row, is_overflow = self._find_functional_cell(
+                zone_col,
+                zone_row,
+                max_cols,
+                max_rows,
+                global_occupied,
+                placed_in_zone,
+                paper,
+            )
+            if is_overflow:
+                overflow_count += 1
+
+            x = self.auto_layout_origin_x_mm + col * self.auto_layout_column_spacing_mm
+            y = self.auto_layout_origin_y_mm + row * self.auto_layout_row_spacing_mm
+            snapped_x, snapped_y = self.snap_point(x, y, True)
+
+            component.move(snapped_x, snapped_y)
+            placed += 1
+            moved_refs.add(reference)
+
+            for dc in (-1, 0, 1):
+                for dr in (-1, 0, 1):
+                    global_occupied.add((col + dc, row + dr))
+            placed_in_zone.add((col, row))
+            zone_counts[category] = zone_counts.get(category, 0) + 1
+
+        return placed, moved_refs, overflow_count, missing, zone_counts
+
     def auto_place_functional(
         self,
         symbol_list: list[str] | None = None,
@@ -433,60 +508,20 @@ class SchematicLayoutAutomationService:
         ]
         self._populate_initial_zone_occupancy(fixed_syms, sym_meta, zone_occupied)
 
-        placed = 0
-        moved_refs: set[str] = set()
-        overflow_count = 0
-        missing: list[str] = []
-        zone_counts: dict[str, int] = {}
-
-        for reference in requested:
-            if reference in anchor_set:
-                continue
-            component = schematic.components.get(reference)
-            if component is None:
-                missing.append(reference)
-                continue
-
-            meta = sym_meta.get(reference, {})
-            category = self.classify_symbol(
-                ref=reference,
-                value=meta.get("value", ""),
-                lib_id=meta.get("lib_id", ""),
-            )
-
-            zone_col, zone_row = self.functional_zone_origin(
-                category,
-                max_cols=max_cols,
-                max_rows=max_rows,
-                spacing_mm=functional_spacing_mm,
-            )
-
-            placed_in_zone = zone_occupied.setdefault(category, set())
-            col, row, is_overflow = self._find_functional_cell(
-                zone_col,
-                zone_row,
+        placed, moved_refs, overflow_count, missing, zone_counts = (
+            self._place_functional_references(
+                schematic,
+                requested,
+                anchor_set,
+                sym_meta,
+                functional_spacing_mm,
                 max_cols,
                 max_rows,
                 global_occupied,
-                placed_in_zone,
+                zone_occupied,
                 paper,
             )
-            if is_overflow:
-                overflow_count += 1
-
-            x = self.auto_layout_origin_x_mm + col * self.auto_layout_column_spacing_mm
-            y = self.auto_layout_origin_y_mm + row * self.auto_layout_row_spacing_mm
-            snapped_x, snapped_y = self.snap_point(x, y, True)
-
-            component.move(snapped_x, snapped_y)
-            placed += 1
-            moved_refs.add(reference)
-
-            for dc in (-1, 0, 1):
-                for dr in (-1, 0, 1):
-                    global_occupied.add((col + dc, row + dr))
-            placed_in_zone.add((col, row))
-            zone_counts[category] = zone_counts.get(category, 0) + 1
+        )
 
         if placed == 0:
             missing_suffix = f" Missing refs: {', '.join(missing)}." if missing else ""

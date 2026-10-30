@@ -376,7 +376,13 @@ async def test_pcb_and_routing_surface(
     ]
 
     assert any("successfully" in result.lower() for result in add_results)
-    assert any("route from" in result.lower() for result in add_results)
+    # Track insertion is not proof that a net is fully routed or DRC-clean.
+    # Both routing tools must make their unverified status explicit.
+    routing_responses = add_results[-2:]
+    assert len(routing_responses) == 2
+    assert all("UNVERIFIED" in response for response in routing_responses)
+    assert all("project_quality_gate" in response for response in routing_responses)
+    assert all("routed successfully" not in response.lower() for response in routing_responses)
     assert mock_board.create_items.called
     assert mock_board.remove_items_by_id.called
     assert mock_board.save.called

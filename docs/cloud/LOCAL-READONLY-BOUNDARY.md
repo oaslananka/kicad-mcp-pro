@@ -131,16 +131,20 @@ The command reads the owner-private project record, selects its validated
 existing owner-binding fingerprint, origin, device, session and consent
 checks pass. An AI-supplied project UUID is never sufficient by itself.
 
-The separately authorized AI client must call
-`POST /api/v1/connector/project-summary` with its valid OAuth Bearer token,
-`Content-Type: application/json`, and **only** `deviceId` and `projectId`
-as JSON fields while the one-shot session is active. The token must not
-be pasted in logs, shell history, PR comments or documentation. The Cloud
-server performs a fresh grant/session check before forwarding and a second
-grant/token check before delivering a response. Successful output contains
-only `projectPresent`, `boardPresent` and `schematicPresent` booleans;
-a local filename, project content and private key never become response
-fields. Failure is a generic denial; no remote fallback tool is offered.
+For the minimal presence-only pilot, the separately authorized AI client
+invokes the Cloud MCP tool `get_project_presence(project_id)` while the
+one-shot local session is active. Cloud derives the owner, OAuth client and
+device from the verified bearer and existing project grant; it does not
+accept caller-supplied local paths or device identity. The older
+`POST /api/v1/connector/project-summary` two-step review route belongs
+to the separate higher-assurance owner-consent flow, not this pilot.
+
+Never paste the bearer token into logs, shell history, PR comments or
+documentation. The Cloud checks token/grant/session state before dispatch
+and again before the response. The only returned data are
+`projectPresent`, `boardPresent` and `schematicPresent` booleans;
+no local filename, project contents or private key leave the device.
+Denied or unavailable reads reveal no private project data.
 
 ## Security boundary and evidence
 
