@@ -69,8 +69,26 @@ def test_gemini_pinned_pypi_connection_remains_partial_not_host_acceptance() -> 
     assert observed["host"]["id"] == "gemini-cli"
     assert observed["host"]["version"] == "0.60.0"
     assert observed["host"]["mcpServerStatus"] == "connected"
-    assert observed["serverLaunchArgs"] == extension["mcpServers"]["kicad"]["args"]
-    assert observed["serverVersion"] == extension["version"]
+    # The observation attests the published 4.4.0 runtime, not the version
+    # currently being prepared by Release Please.
+    assert observed["serverVersion"] == "4.4.0"
+    assert observed["serverLaunchArgs"] == [
+        "--from",
+        f"kicad-mcp-pro=={observed['serverVersion']}",
+        "kicad-mcp-pro",
+        "--transport",
+        "stdio",
+    ]
+    # Independently keep the checked-in extension pinned to the current
+    # package version; neither check upgrades historical host evidence.
+    assert extension["version"] == metadata_sync._project_metadata()["version"]
+    assert extension["mcpServers"]["kicad"]["args"] == [
+        "--from",
+        f"kicad-mcp-pro=={extension['version']}",
+        "kicad-mcp-pro",
+        "--transport",
+        "stdio",
+    ]
     assert (
         observed["serverOperatingMode"]
         == extension["mcpServers"]["kicad"]["env"]["KICAD_MCP_OPERATING_MODE"]
