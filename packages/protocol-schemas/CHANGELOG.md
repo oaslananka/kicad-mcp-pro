@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.1](https://github.com/oaslananka/kicad-mcp-pro/compare/protocol-schemas-v2.0.0...protocol-schemas-v2.0.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **deps:** update pinned pnpm 11 to 11.28.6 ([#1460](https://github.com/oaslananka/kicad-mcp-pro/issues/1460)) ([c2dd91e](https://github.com/oaslananka/kicad-mcp-pro/commit/c2dd91ebb78fa7c46afa5a0b94da738e8dd0ccd4))
+* **security:** pin Node.js 24.22.1 across toolchain ([#1461](https://github.com/oaslananka/kicad-mcp-pro/issues/1461)) ([8c04842](https://github.com/oaslananka/kicad-mcp-pro/commit/8c04842e5300e801f28db6f70ce429842ff0c830))
+
 ## [2.0.0](https://github.com/oaslananka/kicad-mcp-pro/compare/protocol-schemas-v1.6.0...protocol-schemas-v2.0.0) (2026-10-05)
 
 
