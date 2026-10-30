@@ -61,7 +61,7 @@ backend**, whose creation must guarantee availability after disconnection.
 | Guard | Bound / behavior |
 |---|---|
 | Global retained records | 8 (allocation fails closed when full) |
-| Inbound JSON message | 4096 bytes maximum |
+| Inbound JSON message | 4096 encoded bytes maximum, counted incrementally; invalid/non-finite JSON and invalid JSON-RPC request IDs fail closed |
 | Identity length | 1–128 characters supplied by trusted transport |
 | Synthetic deadline | 15 s, terminal `failed` with JSON-RPC error `-32603` |
 | TTL | 60,000 ms, expired handles purged on access/create |
