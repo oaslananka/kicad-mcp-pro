@@ -2251,11 +2251,6 @@ def _apply_schematic_footprint_fields(block: str, properties: dict[str, str]) ->
     for name, value in properties.items():
         if name in {"Reference", "Value", "Footprint"}:
             continue
-        # KiCad normalizes the schematic Datasheet placeholder "~" to an
-        # empty field in its exported netlist/parity model. Copying "~"
-        # verbatim to PCB creates a false footprint_symbol_field_mismatch.
-        if name == "Datasheet" and value == "~":
-            value = ""
         existing = re.search(rf"\(property\s+{re.escape(_sexpr_string(name))}\s+", block)
         if existing is not None:
             block = _replace_property_value(block, name, value)
@@ -2453,6 +2448,10 @@ def _schematic_files_for_pcb_sync() -> list[Path]:
 def _placed_schematic_properties_for_sync(sch_file: Path) -> dict[str, dict[str, str]]:
     """Recover per-instance fields which kicad-sch-api does not expose yet."""
     content = sch_file.read_text(encoding="utf-8", errors="ignore")
+    version_match = re.search(r"\(kicad_sch\s+\(version\s+(\d+)\)", content)
+    # KiCad's schematic reader treats "~" as empty only before 20250318.
+    # Modern schematics preserve it literally; PCB properties always do.
+    legacy_placeholders = version_match is not None and int(version_match.group(1)) < 20250318
     result: dict[str, dict[str, str]] = {}
     for match in re.finditer(r"\(symbol\s+\(lib_id\s+", content):
         block, _ = _extract_block(content, match.start())
@@ -2463,7 +2462,7 @@ def _placed_schematic_properties_for_sync(sch_file: Path) -> dict[str, dict[str,
         if reference:
             values = result.setdefault(reference, {})
             for name, value in properties.items():
-                values.setdefault(name, value)
+                values.setdefault(name, "" if legacy_placeholders and value == "~" else value)
     return result
 
 
