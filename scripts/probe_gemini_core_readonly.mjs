@@ -95,8 +95,17 @@ async function verifyManifest() {
   );
   const manifest = JSON.parse((await readVerifiedFile(manifestPath)).toString('utf8'));
   const server = manifest.mcpServers?.kicad;
-  if (manifest.version !== '4.4.0' || server?.command !== 'uvx' ||
-      JSON.stringify(server.args) !== JSON.stringify(REQUIRED_ARGS) ||
+  const pkg = JSON.parse((await readVerifiedFile(path.join(SOURCE, 'package.json'))).toString('utf8'));
+  const currentVersion = pkg.version;
+  const currentArgs = [
+    '--from', `kicad-mcp-pro==${currentVersion}`, 'kicad-mcp-pro', '--transport', 'stdio',
+  ];
+  // The probe keeps its historical 4.4.0 runtime pin; only the checked-in
+  // extension metadata advances when preparing a new release candidate.
+  if (typeof currentVersion !== 'string' ||
+      !/^[0-9]+\.[0-9]+\.[0-9]+$/.test(currentVersion) ||
+      manifest.version !== currentVersion || server?.command !== 'uvx' ||
+      JSON.stringify(server.args) !== JSON.stringify(currentArgs) ||
       server.env?.KICAD_MCP_PROFILE !== 'default' ||
       server.env?.KICAD_MCP_OPERATING_MODE !== 'readonly' ||
       server.trust === true) {
