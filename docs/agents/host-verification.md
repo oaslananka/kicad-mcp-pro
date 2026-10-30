@@ -379,3 +379,31 @@ could require login or incur provider usage and was deliberately not
 attempted. The strict native evidence validator intentionally rejects this
 partial record, and `integrations/common/agent-host-evidence.json` remains
 `not-run` for every host. No compatibility promotion is authorized.
+
+
+## Codex 0.163.0 read-only host replay on v4.5.0 — 2026-10-31 (#1219)
+
+On an isolated Linux process with ephemeral home, an actual Codex app-server
+0.163.0 (prechecked executable SHA-256) connected to the **v4.5.0 release-tagged
+source** at `9aa519b1bb82b3907eefedbba26285cf4431d856`, not a published-wheel
+installation. It discovered all seven source-owned KiCad Skills, inventoried 24
+default-profile tools, and invoked `kicad_get_server_info` through the native
+`mcpServer/tool/call` interface. The complete discovered tool-name set matches
+the reviewed read-only source policy. No model/agent turn, user project, GUI
+IPC socket, or write operation was used.
+
+The new source SHA was accepted **only after** reviewing the versioned
+`capabilities.py`, `operating_modes.py` and `tools/router.py` against the prior
+pinned source: the operating-mode implementation is unchanged; a single newly
+registered `pcb_add_track_segment` tool is WRITE-tier, not part of the default
+24 read-only tools. The stored log and report are redacted, digest-bound, and
+checked by `scripts/check_agent_native_smoke_evidence.py` (fixed archive and
+bounded stdin paths). The original unpinned evidence was correctly rejected
+until this source-policy review.
+
+Evidence: `docs/evidence/agent-host/2026-10-31-linux-codex-native-smoke.json`
+and its same-stem `sanitized-log.json`. The structural result remains
+`structurally_complete_not_attested`. This replay does **not** establish
+independent executable provenance, macOS/Windows applicability, verified PyPI
+wheel execution, actual graphical KiCad integration, or full real-host
+compatibility. The six-host catalog remains `repository-static/not-run`.

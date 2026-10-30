@@ -63,6 +63,35 @@ def altered(
     return next_report, new_raw
 
 
+def test_published_v450_codex_observation_is_bound_but_not_attested(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    report_path = EVIDENCE / "2026-10-31-linux-codex-native-smoke.json"
+    log_path = EVIDENCE / "2026-10-31-linux-codex-native-sanitized-log.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    raw = log_path.read_bytes()
+    log = json.loads(raw)
+
+    assert report["source_revision"] == "9aa519b1bb82b3907eefedbba26285cf4431d856"
+    assert report["server_version"] == "4.5.0"
+    assert report["observed_on"] == "2026-10-31"
+    assert hashlib.sha256(raw).hexdigest() == report["sanitized_log_sha256"]
+    assert log["native_tool_count"] == 24
+    assert log["model_or_agent_turn_started"] is False
+    assert log["full_native_host_smoke_independently_attested"] is False
+    assert validate_sanitized_log(report, raw) == []
+
+    assert main(["--report", str(report_path), "--verify-sanitized-log"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "structurally_complete_not_attested"
+    assert result["establishes_real_host_compatibility"] is False
+
+    # A recomputed digest cannot silently approve an unreviewed source.
+    unknown, tampered = altered(report, raw, {"source_revision": "a" * 40})
+    unknown["source_revision"] = "a" * 40
+    assert validate_sanitized_log(unknown, tampered) == ["unreviewed_source_capability_policy"]
+
+
 @pytest.mark.parametrize("platform", ["linux", "windows"])
 def test_existing_observations_have_sha_bound_sanitized_logs(platform: str) -> None:
     report, raw = observation(platform)
