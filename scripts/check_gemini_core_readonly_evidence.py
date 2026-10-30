@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = ROOT / "docs/evidence/agent-host/2026-10-28-linux-gemini-core-readonly.json"
 EXTENSION = ROOT / "integrations/gemini-cli/kicad-mcp-pro/gemini-extension.json"
 CATALOG = ROOT / "integrations/common/agent-host-evidence.json"
+PACKAGE = ROOT / "package.json"
 
 GEMINI_VERSION = "0.60.0"
 REVIEWED_CORE_SHA256 = "82bbf0bd5c3c0040b6b454d7977a0c03c4fee6ae7b8891f282c7e7c896567ab5"
@@ -48,6 +49,7 @@ def check(report: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     manifest = _read(EXTENSION)
     catalog = _read(CATALOG)
+    package = _read(PACKAGE)
     server = manifest["mcpServers"]["kicad"]
 
     def ensure(condition: bool, what: str) -> None:
@@ -65,13 +67,23 @@ def check(report: dict[str, Any]) -> list[str]:
         == "McpClient.discoverTools/DiscoveredMCPToolInvocation.execute",
         "core native invocation path",
     )
+    # This observation concerns a published 4.4.0 runtime at the recorded
+    # source revision. A future release candidate must not retroactively
+    # claim that its version was tested by this historical observation.
     ensure(
         report.get("launchArgs")
-        == server.get("args")
         == ["--from", "kicad-mcp-pro==4.4.0", "kicad-mcp-pro", "--transport", "stdio"],
         "published-version launch pin",
     )
-    ensure(manifest["version"] == "4.4.0" and server.get("command") == "uvx", "extension version")
+    current_version = package.get("version")
+    ensure(
+        isinstance(current_version, str)
+        and manifest.get("version") == current_version
+        and server.get("args")
+        == ["--from", f"kicad-mcp-pro=={current_version}", "kicad-mcp-pro", "--transport", "stdio"],
+        "current extension version/pin",
+    )
+    ensure(server.get("command") == "uvx", "extension command")
     ensure(
         report.get("operatingMode")
         == server.get("env", {}).get("KICAD_MCP_OPERATING_MODE")
