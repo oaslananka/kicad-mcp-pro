@@ -1,0 +1,102 @@
+name: Published PyPI OS Smoke
+
+# Manual acceptance of the already-published Python package on fresh OS runners.
+# Do not make this an always-on PR gate or run a KiCad GUI installer here.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-os-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clean-published-install:
+    name: PyPI 4.5.0 clean MCP (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, macos-15]
+    steps:
+      - name: Checkout public test fixture only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          version-file: uv.toml
+          enable-cache: false
+
+      - name: Clean PyPI install and real MCP read-only diagnostic
+        shell: bash
+        env:
+          UV_NO_CACHE: '1'
+          UV_NO_PROGRESS: '1'
+        run: |
+          set -euo pipefail
+          uv python install 3.13
+          venv="$RUNNER_TEMP/kicad-pypi-clean"
+          uv venv --python 3.13 "$venv"
+          uv pip install --python "$venv" 'kicad-mcp-pro==4.5.0'
+          uv run --no-project --python "$venv" python - <<'PYSMOKE'
+          import asyncio
+          import hashlib
+          import importlib.metadata
+          import os
+          import shutil
+          import sys
+          import tempfile
+          from pathlib import Path
+
+          from mcp import ClientSession
+          from mcp.client.stdio import StdioServerParameters, stdio_client
+
+          assert importlib.metadata.version('kicad-mcp-pro') == '4.5.0'
+          root = Path('tests/fixtures/benchmark_projects/pass_minimal_mcu_board')
+          filenames = ('demo.kicad_pro', 'demo.kicad_sch', 'demo.kicad_pcb')
+          before = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
+                    for name in filenames}
+
+          async def check_project(project: Path) -> None:
+              env = dict(os.environ)
+              env.update(KICAD_MCP_PROJECT_DIR=str(project),
+                         KICAD_MCP_PROFILE='review',
+                         KICAD_MCP_OPERATING_MODE='readonly')
+              parameters = StdioServerParameters(
+                  command=sys.executable,
+                  args=['-m', 'kicad_mcp.server', '--transport', 'stdio',
+                        '--profile', 'review', '--mode', 'readonly',
+                        '--project-dir', str(project)],
+                  env=env,
+              )
+              async with stdio_client(parameters) as streams:
+                  async with ClientSession(*streams) as client:
+                      info = await asyncio.wait_for(client.initialize(), timeout=45)
+                      assert info.server_info.version == '4.5.0'
+                      tools = await asyncio.wait_for(client.list_tools(), timeout=45)
+                      names = {tool.name for tool in tools.tools}
+                      for tool_name in ('kicad_get_version', 'pcb_get_board_summary'):
+                          assert tool_name in names, tool_name
+                          response = await asyncio.wait_for(
+                              client.call_tool(tool_name, {}), timeout=45)
+                          assert not response.is_error, tool_name
+                          assert response.content or response.structured_content, tool_name
+                      print('PUBLISHED_PYPI_MCP_READONLY=PASS',
+                            'platform=' + sys.platform,
+                            'version=' + info.server_info.version)
+
+          with tempfile.TemporaryDirectory(prefix='kicad-pypi-accept-') as tmp:
+              project = Path(tmp)
+              for name in filenames:
+                  shutil.copyfile(root / name, project / name)
+              asyncio.run(check_project(project))
+              assert all(hashlib.sha256((root / name).read_bytes()).hexdigest()
+                         == before[name] for name in filenames)
+          print('ORIGINAL_FIXTURE_UNCHANGED=PASS')
+          PYSMOKE
