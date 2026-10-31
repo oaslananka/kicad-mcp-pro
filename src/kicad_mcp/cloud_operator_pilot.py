@@ -1,0 +1,91 @@
+"""Explicit owner-operated project-presence pilot, not remote KiCad execution.
+
+This lower-assurance path is separate from the independent-owner WebAuthn
+release gate in cloud_once. A same-UID process can spoof a terminal prompt,
+so this is never suitable for unattended or public agent execution.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import sys
+import time
+from argparse import Namespace
+
+from kicad_mcp import cloud_once
+from kicad_mcp.cloud_local_registry import resolve_registered_read
+from kicad_mcp.cloud_outbound_handshake import HandshakeReceipt
+from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
+from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
+
+
+async def _single_presence(options: Namespace, lease: tuple[int, int]) -> HandshakeReceipt:
+    wall_cutoff_ms, monotonic_cutoff_ns = lease
+    if (
+        not options.allow_once
+        or not options.project_directory.is_absolute()
+        or time.monotonic_ns() >= monotonic_cutoff_ns
+    ):
+        raise cloud_once.LocalApprovalDeniedError("local approval denied")
+
+    key = cloud_once._load_bound_owner_key(
+        options.private_key_file, options.cloud_origin, options.device_id
+    )
+
+    def dispatch(receipt: HandshakeReceipt) -> LocalReadDispatch:
+        if time.monotonic_ns() >= monotonic_cutoff_ns:
+            raise cloud_once.LocalApprovalDeniedError("local approval denied")
+        return LocalReadDispatch(
+            verified=VerifiedLocalBinding(
+                device_id=receipt.device_id,
+                project_id=options.project_id,
+                operations=frozenset({"project_summary"}),
+                session_id=receipt.session_id,
+                session_expires_unix_ms=wall_cutoff_ms,
+            ),
+            operator_project=OperatorProject(
+                device_id=options.device_id,
+                project_id=options.project_id,
+                directory=options.project_directory,
+                filename_stem=options.filename_stem,
+            ),
+            current_authorization=lambda: time.monotonic_ns() < monotonic_cutoff_ns,
+            max_reads=1,
+        )
+
+    return await cloud_once.execute_single_approved_read(
+        origin=options.cloud_origin,
+        trusted_origin=options.cloud_origin,
+        owner_sub=options.owner_sub,
+        device_id=options.device_id,
+        signing_key=key,
+        dispatcher_factory=dispatch,
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    options = cloud_once._parser().parse_args(argv)
+    try:
+        # Headless callers are denied before owner registry/key access.
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            raise cloud_once.LocalApprovalDeniedError("local approval denied")
+        selected = resolve_registered_read(
+            owner_sub=options.owner_sub,
+            origin=options.cloud_origin,
+            device_id=options.device_id,
+            project_id=options.project_id,
+        )
+        options.project_directory = selected.project_directory
+        options.filename_stem = selected.filename_stem
+        options.private_key_file = selected.key_file
+        lease = cloud_once._confirm_local_read(options)
+        asyncio.run(_single_presence(options, lease))
+    except (ValueError, OSError, EOFError, KeyboardInterrupt):
+        print("Local Cloud pilot denied", file=sys.stderr)
+        return 1
+    print("One owner-operated project-presence read completed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
