@@ -318,7 +318,12 @@ def _wire_owner_callees(root: Path) -> None:
     owner = root / ".github" / "workflows" / "publish-release.yml"
     with owner.open("a", encoding="utf-8") as stream:
         for index, publisher in enumerate(_PUBLISHERS, 1):
-            stream.write(f"  draft-family-{index}:\n    uses: ./.github/workflows/{publisher}\n")
+            stream.write(
+                f"  draft-family-{index}:\n"
+                f"    needs: authorize\n"
+                f"    if: needs.authorize.outputs.approved == 'true'\n"
+                f"    uses: ./.github/workflows/{publisher}\n"
+            )
 
 
 def test_draft_cutover_rejects_owner_with_no_family_calls(tmp_path: Path) -> None:
@@ -361,3 +366,92 @@ def test_draft_cutover_rejects_incorrect_owner_family_calls(tmp_path: Path, drif
         "owner must call" in problem
         for problem in validate_cutover(root, {"release_asset_mutations": []})
     )
+
+
+@pytest.mark.parametrize(
+    "drift",
+    [
+        "missing-needs",
+        "other-needs",
+        "no-condition",
+        "always-true",
+        "wrong-output",
+        "inverted-output",
+    ],
+)
+def test_draft_cutover_rejects_unauthorized_family_job(tmp_path: Path, drift: str) -> None:
+    """No reusable publisher may run before the owner's explicit gate."""
+    root = _fixture(tmp_path)
+    _draft(root)
+    _ready_owner(root)
+    _safe_release_please_owner(root)
+    for publisher in _PUBLISHERS:
+        (root / ".github" / "workflows" / publisher).write_text(
+            "on:\n  workflow_call:\n", encoding="utf-8"
+        )
+    _wire_owner_callees(root)
+    owner = root / ".github" / "workflows" / "publish-release.yml"
+    before, marker, remainder = owner.read_text().partition("  draft-family-1:\n")
+    assert marker
+    segment, next_marker, after = remainder.partition("  draft-family-2:\n")
+    assert next_marker
+    workflow = marker + segment
+    if drift == "missing-needs":
+        workflow = workflow.replace("    needs: authorize\n", "", 1)
+    elif drift == "other-needs":
+        workflow = workflow.replace("    needs: authorize\n", "    needs: publish\n", 1)
+    elif drift == "no-condition":
+        workflow = workflow.replace("    if: needs.authorize.outputs.approved == 'true'\n", "", 1)
+    elif drift == "always-true":
+        workflow = workflow.replace(
+            "    if: needs.authorize.outputs.approved == 'true'\n",
+            "    if: always()\n",
+            1,
+        )
+    elif drift == "wrong-output":
+        workflow = workflow.replace(
+            "    if: needs.authorize.outputs.approved == 'true'\n",
+            "    if: needs.publish.outputs.approved == 'true'\n",
+            1,
+        )
+    else:
+        workflow = workflow.replace(
+            "    if: needs.authorize.outputs.approved == 'true'\n",
+            "    if: needs.authorize.outputs.approved != 'true'\n",
+            1,
+        )
+    owner.write_text(before + workflow + next_marker + after)
+    assert any(
+        "owner must gate" in problem
+        for problem in validate_cutover(root, {"release_asset_mutations": []})
+    )
+
+
+@pytest.mark.parametrize(
+    ("needs", "condition"),
+    [
+        ("[authorize, source-check]", "needs.authorize.outputs.approved == 'true'"),
+        ("authorize", "${{ needs.authorize.outputs.approved == 'true' }}"),
+    ],
+)
+def test_draft_cutover_accepts_gated_owner_family_calls(
+    tmp_path: Path, needs: str, condition: str
+) -> None:
+    root = _fixture(tmp_path)
+    _draft(root)
+    _ready_owner(root)
+    _safe_release_please_owner(root)
+    for publisher in _PUBLISHERS:
+        (root / ".github" / "workflows" / publisher).write_text(
+            "on:\n  workflow_call:\n", encoding="utf-8"
+        )
+    _wire_owner_callees(root)
+    owner = root / ".github" / "workflows" / "publish-release.yml"
+    source = owner.read_text()
+    source = source.replace(
+        "  draft-family-1:\n    needs: authorize\n"
+        "    if: needs.authorize.outputs.approved == 'true'\n",
+        "  draft-family-1:\n    needs: " + needs + "\n    if: " + condition + "\n",
+    )
+    owner.write_text(source)
+    assert validate_cutover(root, {"release_asset_mutations": []}) == []

@@ -91,27 +91,48 @@ def _owner_concurrency_errors(root: Path) -> list[str]:
     return _owner_release_please_errors(jobs) + _owner_callee_errors(jobs)
 
 
-def _owner_callee_errors(jobs: object) -> list[str]:
-    """Require each reviewed family be invoked exactly once by the owner.
+def _authorized_reusable_call(job: dict[str, Any]) -> bool:
+    """Require the owner's positive gate before executing a child publisher."""
+    needs = job.get("needs")
+    if isinstance(needs, str):
+        dependencies = {needs}
+    elif isinstance(needs, list) and all(isinstance(item, str) for item in needs):
+        dependencies = set(needs)
+    else:
+        return False
+    condition = job.get("if")
+    approved = "needs.authorize.outputs.approved == 'true'"
+    return (
+        "authorize" in dependencies
+        and isinstance(condition, str)
+        and condition.strip() in (approved, "${{ " + approved + " }}")
+    )
 
-    Local reusable calls are necessary, but do not prove sequencing,
-    registry receipts, exclusive runtime ownership or publish readiness.
+
+def _owner_callee_errors(jobs: object) -> list[str]:
+    """Require each reviewed family call to depend on owner approval.
+
+    This is a necessary offline cutover gate, not a runtime lock or proof
+    that a privileged publication actually completed.
     """
     if not isinstance(jobs, dict):
         return ["publish-release.yml: owner must call all draft family workflows"]
-    calls: dict[str, int] = {}
+    calls: dict[str, list[dict[str, Any]]] = {}
     for job in jobs.values():
-        if not isinstance(job, dict):
-            continue
-        target = job.get("uses")
-        if isinstance(target, str):
-            calls[target] = calls.get(target, 0) + 1
+        if isinstance(job, dict) and isinstance(job.get("uses"), str):
+            calls.setdefault(job["uses"], []).append(job)
     errors: list[str] = []
     for publisher in _PUBLISHERS:
         ref = f"./.github/workflows/{publisher}"
-        if calls.get(ref) != 1:
+        matches = calls.get(ref, [])
+        if len(matches) != 1:
             errors.append(
                 f"publish-release.yml: owner must call {ref} exactly once during draft cutover"
+            )
+        elif not _authorized_reusable_call(matches[0]):
+            errors.append(
+                f"publish-release.yml: owner must gate {ref} on "
+                "needs.authorize.outputs.approved == 'true'"
             )
     return errors
 
