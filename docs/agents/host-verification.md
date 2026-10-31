@@ -23,6 +23,31 @@ examples changes its local `kicad` stdio command, arguments, or explicit
 `readonly/default` environment. This checks repository configuration, **not**
 a genuine host-originated tool call or agent Skill discovery.
 
+## Reviewed native-host observation catalog — 2026-10-31 (#1219)
+
+The source catalog now binds exactly one **reviewed Codex/Linux/stdio** observation
+to `docs/evidence/agent-host/2026-10-31-linux-codex-native-smoke.json`
+and its sanitized log. The repository CI checks the archive's bounded files,
+source/version/OS/transport identity, complete sanitized native tool inventory,
+Skill origins and SHA-256 digest. Changed, missing, linked or unreviewed files
+fail closed. The snapshot used Codex CLI **0.163.0**, published server
+**4.5.0**, and source tag `9aa519b1bb82b3907eefedbba26285cf4431d856`.
+
+The evidence observed the **real Codex MCP host** calling a readonly diagnostic
+and discovering source-owned Skills without initiating a model turn, but is **not
+an independently attested host binary or full compatibility pass**. The catalog
+therefore retains `evidenceScope=repository-static` and every host's
+`smokeStatus=not-run` (no independently accepted full smoke). Its separate
+`reviewedNativeObservations` list communicates what *was* witnessed. A
+successful generic MCP SDK session, including an isolated published-package
+board/DRC test, cannot be substituted for a model-originated client call.
+Claude, Cursor, Copilot, Gemini and OpenCode receive no new compatibility claim.
+
+Native binary installation in ordinary untrusted PR CI remains prohibited.
+Promoting a host to validated compatibility requires a separately reviewed,
+reproducible native run under the real host with dated OS/transport/provenance
+and a deliberate new catalog contract, not a boolean flip.
+
 ## Manual smoke checklist (trusted sandbox only)
 
 1. Record host + version, OS, Python/uvx/KiCad versions, repository SHA and
