@@ -249,6 +249,36 @@ def test_downloaded_file_missing_rejected(tmp_path: Path) -> None:
         check_readiness(client, **args)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("id", RELEASE_ID + 1),
+        ("tag_name", "mcp-npm-v99.0.0"),
+        ("draft", False),
+        ("url", f"https://api.github.com/repos/{REPO}/releases/{RELEASE_ID + 1}"),
+    ],
+)
+def test_midpoint_release_identity_rejected_before_download(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, field: str, value: object
+) -> None:
+    """The independent asset read may not switch drafts between owner checks."""
+    client, args = _setup(tmp_path)
+    original_release = client.release
+
+    def swapped_release(repo: str, release_id: int) -> dict[str, Any]:
+        result = original_release(repo, release_id)
+        if client.requests.count("release") == 2:
+            result[field] = value
+            if field == "id":
+                result["url"] = f"https://api.github.com/repos/{REPO}/releases/{value}"
+        return result
+
+    monkeypatch.setattr(client, "release", swapped_release)
+    with pytest.raises(ValueError, match="draft|release|Release"):
+        check_readiness(client, **args)
+    assert "download" not in client.requests
+
+
 def test_publication_between_reads_rejected(tmp_path: Path) -> None:
     client, args = _setup(tmp_path)
     client.late_published = True

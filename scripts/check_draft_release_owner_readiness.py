@@ -13,7 +13,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Protocol
 
-from scripts.check_draft_release_inventory import verify
+from scripts.check_draft_release_inventory import _draft_release, verify
 from scripts.check_draft_release_owner import OwnerClient, OwnerGitHubCLI, verify_owner
 from scripts.check_release_family_inventory import verify_family
 from scripts.stage_draft_release_assets import DraftClient, _downloaded_snapshot
@@ -59,6 +59,11 @@ def check_readiness(
     initial = check_owner()
     release = client.release(repo, release_id)
     protected_tag_sha = client.tag_commit(repo, tag)
+    # The inventory read is independent of the owner checks. Do not download
+    # assets from a different or retargeted draft even if the outer checks pass.
+    _draft_release(release, repo, tag, source_commit, protected_tag_sha)
+    if release["id"] != release_id:
+        raise ValueError("intermediate draft release ID differs from requested release")
     with TemporaryDirectory(prefix="kicad-owner-readiness-1179-") as temporary:
         downloaded_assets = Path(temporary)
         _downloaded_snapshot(client, repo, release, downloaded_assets, set(family["assetNames"]))
