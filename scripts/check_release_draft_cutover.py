@@ -59,7 +59,9 @@ def _events(workflow: Path) -> dict[str, Any]:
 def _publisher_trigger_errors(root: Path) -> list[str]:
     """Require one explicit draft owner instead of automatic publisher events."""
     errors: list[str] = []
-    allowed_events = {"workflow_call", "workflow_dispatch", "pull_request"}
+    # In draft-first mode a callee must not have its own manual publish entry
+    # point. The trusted owner workflow owns manual recovery and serialization.
+    allowed_events = {"workflow_call", "pull_request"}
     for filename in _PUBLISHERS:
         path = root / ".github" / "workflows" / filename
         try:
