@@ -13,7 +13,7 @@ from typing import Any, BinaryIO, cast
 import pytest
 
 from scripts.check_draft_release_inventory import digest, manifest_for
-from scripts.stage_draft_release_assets import GitHubCLI, stage
+from scripts.stage_draft_release_assets import GitHubCLI, _check_intermediate_inventory, stage
 
 REPO = "oaslananka/kicad-mcp-pro"
 TAG = "mcp-server-v4.4.0"
@@ -331,6 +331,79 @@ def test_draft_rechecked_between_sequential_uploads(
         stage(client, **args, execute_uploads=True)
     assert client.upload_calls == ["A.whl"]
     assert sorted(client.remote) == ["A.whl"]
+
+
+@pytest.mark.parametrize(
+    "alteration",
+    [
+        {"name": "outside-approved.zip"},
+        {"id": True},
+        {"id": 0},
+        {"state": "starter"},
+        {"size": False},
+        {"size": 999},
+        {"digest": "sha256:" + "f" * 64},
+    ],
+)
+def test_intermediate_inventory_rejects_bad_asset_metadata(
+    tmp_path: Path, alteration: dict[str, object]
+) -> None:
+    client, args = _case(tmp_path, existing=("A.whl",))
+    release = client.release(REPO, client.id)
+    release["assets"][0].update(alteration)
+    manifest = json.loads(args["manifest_path"].read_text())
+    approved = {item["name"]: item for item in manifest["assets"]}
+    with pytest.raises(ValueError, match="inventory changed"):
+        _check_intermediate_inventory(release, {"A.whl"}, approved)
+
+
+@pytest.mark.parametrize("assets", [None, {}, [None], []])
+def test_intermediate_inventory_rejects_invalid_or_missing_asset_list(
+    tmp_path: Path, assets: object
+) -> None:
+    client, args = _case(tmp_path)
+    approved = {
+        item["name"]: item for item in json.loads(args["manifest_path"].read_text())["assets"]
+    }
+    with pytest.raises(ValueError, match="inventory changed"):
+        _check_intermediate_inventory({"assets": assets}, {"A.whl"}, approved)
+
+
+def test_intermediate_inventory_allows_missing_remote_digest(
+    tmp_path: Path,
+) -> None:
+    client, args = _case(tmp_path, existing=("A.whl",))
+    release = client.release(REPO, client.id)
+    release["assets"][0]["digest"] = None
+    approved = {
+        item["name"]: item for item in json.loads(args["manifest_path"].read_text())["assets"]
+    }
+    _check_intermediate_inventory(release, {"A.whl"}, approved)
+
+
+@pytest.mark.parametrize("drift", ["unreviewed-asset", "changed-bytes", "next-asset-race"])
+def test_batch_aborts_before_second_write_on_concurrent_asset_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, drift: str
+) -> None:
+    """A competing draft writer must not be followed by another upload."""
+    client, args = _case(tmp_path)
+    original_upload = client.upload_asset
+
+    def competing_writer(repo: str, release_id: int, path: Path) -> None:
+        original_upload(repo, release_id, path)
+        if len(client.upload_calls) == 1:
+            if drift == "unreviewed-asset":
+                client.extra_asset = "unreviewed-evidence.zip"
+            elif drift == "changed-bytes":
+                client.remote["A.whl"] = b"x" * len(client.files["A.whl"])
+            else:
+                client.remote["B.tar.gz"] = client.files["B.tar.gz"]
+
+    monkeypatch.setattr(client, "upload_asset", competing_writer)
+    with pytest.raises(ValueError, match="inventory changed"):
+        stage(client, **args, execute_uploads=True)
+    assert client.upload_calls == ["A.whl"]
+    assert not client.published
 
 
 def test_never_replaces_corrupted_existing_asset(tmp_path: Path) -> None:
