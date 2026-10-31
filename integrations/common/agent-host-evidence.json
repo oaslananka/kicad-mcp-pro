@@ -46,5 +46,17 @@
       "capability": "local-mcp",
       "smokeStatus": "not-run"
     }
+  ],
+  "reviewedNativeObservations": [
+    {
+      "host": "codex",
+      "hostVersion": "0.163.0",
+      "os": "linux",
+      "transport": "stdio",
+      "sourceRevision": "9aa519b1bb82b3907eefedbba26285cf4431d856",
+      "serverVersion": "4.5.0",
+      "report": "2026-10-31-linux-codex-native-smoke.json",
+      "verification": "structurally-complete-not-independently-attested"
+    }
   ]
 }
