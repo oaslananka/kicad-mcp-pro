@@ -67,10 +67,60 @@ def test_pairing_browser_confirmation_permits_foreground_terminal(
         observed.append(prompt)
         return ""
 
+    opened: list[str] = []
+    monkeypatch.setattr(
+        cloud_pair.webbrowser, "open", lambda url, **_options: opened.append(url) or True
+    )
     monkeypatch.setattr("builtins.input", acknowledge)
     cloud_pair._approval("https://localhost/devices/pairing", CHALLENGE, "ABCDEF-123456")
+    assert opened == [
+        f"https://localhost/devices/pairing#challenge={CHALLENGE}&code=ABCDEF-123456"
+    ]
     assert len(observed) == 1
     assert "browser" in observed[0]
+
+
+def test_pairing_browser_unavailable_shows_safe_fallback(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cloud_pair.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(cloud_pair.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(cloud_pair.webbrowser, "open", lambda *_args, **_kw: False)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+    cloud_pair._approval("https://localhost/devices/pairing", CHALLENGE, "ABCDEF-123456")
+    output = capsys.readouterr().out
+    assert f"#challenge={CHALLENGE}&code=ABCDEF-123456" in output
+    assert SECRET not in output
+
+
+def test_pairing_refuses_untrusted_browser_link_before_owner_review(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    keyfile = tmp_path / "owner.pem"
+    seen: list[str] = []
+
+    def fake_post(_origin: tuple[str, int, str], path: str, data: dict, _status: int) -> dict:
+        seen.append(path)
+        if not path.endswith("/challenge"):
+            pytest.fail("invalid pairing link must not reach redeem")
+        der = base64.b64decode(data["publicKeyDer"], validate=True)
+        return {
+            "challengeId": CHALLENGE,
+            "userCode": "ABCDEF-123456",
+            "deviceCode": SECRET,
+            "deviceFingerprint": hashlib.sha256(der).hexdigest(),
+            "expiresAtMs": time.time_ns() // 1_000_000 + 60_000,
+            "verificationUriComplete": "https://attacker.example/devices/pairing",
+        }
+
+    monkeypatch.setattr(cloud_pair, "_post", fake_post)
+
+    def forbidden_review(*_args: object) -> None:
+        pytest.fail("untrusted URL must never reach browser review")
+
+    with pytest.raises(cloud_pair.CloudPairingError):
+        cloud_pair.enroll("https://localhost", "Approved Fixture", keyfile, forbidden_review)
+    assert seen == ["/api/v1/pairing/device/challenge"]
 
 
 def test_pairing_exact_payload_and_owner_review(
@@ -94,6 +144,9 @@ def test_pairing_exact_payload_and_owner_review(
                 "deviceCode": SECRET,
                 "deviceFingerprint": hashlib.sha256(der).hexdigest(),
                 "expiresAtMs": time.time_ns() // 1_000_000 + 60_000,
+                "verificationUriComplete": (
+                    f"https://localhost/devices/pairing#challenge={CHALLENGE}&code=ABCDEF-123456"
+                ),
             }
         assert path.endswith("/redeem")
         assert status == 200
