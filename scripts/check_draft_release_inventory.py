@@ -137,7 +137,7 @@ def _verify_asset(name: str, item: dict[str, Any], remote: dict[str, Any], path:
         raise ValueError(f"invalid trusted asset metadata: {name}")
     if path.stat().st_size != size or digest(path) != sha:
         raise ValueError(f"downloaded draft asset does not match manifest: {name}")
-    if remote.get("size") != size or remote.get("state", "uploaded") != "uploaded":
+    if remote.get("size") != size or remote.get("state") != "uploaded":
         raise ValueError(f"draft asset size or upload state mismatch: {name}")
     if remote.get("digest") not in (None, f"sha256:{sha}"):
         raise ValueError(f"GitHub draft asset digest mismatch: {name}")
