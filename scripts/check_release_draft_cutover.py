@@ -87,7 +87,40 @@ def _owner_concurrency_errors(root: Path) -> list[str]:
             "publish-release.yml: owner concurrency requires a repository-wide "
             "stable publish-release group, cancel-in-progress=false and queue=max"
         ]
-    return []
+    return _owner_release_please_errors(document.get("jobs"))
+
+
+def _release_please_step_error(step: object) -> str | None:
+    if not isinstance(step, dict):
+        return "publish-release.yml: invalid owner step"
+    action = step.get("uses")
+    if not isinstance(action, str) or action.split("@", 1)[0] != "googleapis/release-please-action":
+        return None
+    options = step.get("with")
+    setting = options.get("skip-github-release") if isinstance(options, dict) else None
+    if setting is True or setting == "true":
+        return None
+    return (
+        "publish-release.yml: draft-first Release Please must disable "
+        "early publish with skip-github-release=true"
+    )
+
+
+def _owner_release_please_errors(jobs: object) -> list[str]:
+    """Reject early publication; tag creation needs separate owner acceptance."""
+    if not isinstance(jobs, dict):
+        return ["publish-release.yml: owner jobs must be a mapping"]
+    errors: list[str] = []
+    for job in jobs.values():
+        if not isinstance(job, dict):
+            return ["publish-release.yml: invalid owner job definition"]
+        steps = job.get("steps", [])
+        if not isinstance(steps, list):
+            return ["publish-release.yml: owner job steps must be a list"]
+        for step in steps:
+            if error := _release_please_step_error(step):
+                errors.append(error)
+    return errors
 
 
 def _publisher_trigger_errors(root: Path) -> list[str]:
