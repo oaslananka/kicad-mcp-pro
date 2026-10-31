@@ -73,9 +73,7 @@ def test_pairing_browser_confirmation_permits_foreground_terminal(
     )
     monkeypatch.setattr("builtins.input", acknowledge)
     cloud_pair._approval("https://localhost/devices/pairing", CHALLENGE, "ABCDEF-123456")
-    assert opened == [
-        f"https://localhost/devices/pairing#challenge={CHALLENGE}&code=ABCDEF-123456"
-    ]
+    assert opened == [f"https://localhost/devices/pairing#challenge={CHALLENGE}&code=ABCDEF-123456"]
     assert len(observed) == 1
     assert "browser" in observed[0]
 
