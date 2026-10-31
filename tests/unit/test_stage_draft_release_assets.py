@@ -21,7 +21,10 @@ SHA = "a" * 40
 
 
 class FakeGitHub:
-    def __init__(self, file_bytes: dict[str, bytes], *, existing: tuple[str, ...] = ()) -> None:
+    def __init__(
+        self, file_bytes: dict[str, bytes], *, existing: tuple[str, ...] = (), tag: str = TAG
+    ) -> None:
+        self.tag = tag
         self.files = file_bytes.copy()
         self.remote = {name: file_bytes[name] for name in existing}
         self.commit_sha = SHA
@@ -60,7 +63,7 @@ class FakeGitHub:
         return {
             "id": self.id,
             "url": f"https://api.github.com/repos/{repo}/releases/{self.id}",
-            "tag_name": TAG,
+            "tag_name": self.tag,
             "draft": not self.published,
             "published_at": "2026-10-24T00:00:00Z" if self.published else None,
             "assets": assets,
@@ -68,7 +71,7 @@ class FakeGitHub:
 
     def tag_commit(self, repo: str, tag: str) -> str:
         assert repo == REPO
-        assert tag == TAG
+        assert tag == self.tag
         self.tag_calls += 1
         return self.commit_sha
 
@@ -111,6 +114,119 @@ def _case(tmp_path: Path, *, existing: tuple[str, ...] = ()) -> tuple[FakeGitHub
         "manifest_sha256": digest(pinned),
     }
     return fake, kwargs
+
+
+# Offline family inventories: complete role sets, not package signatures.
+_FAMILY_ASSETS = {
+    "mcp-server-v4.4.0": (
+        "kicad_mcp_pro-4.4.0-py3-none-any.whl",
+        "kicad_mcp_pro-4.4.0.tar.gz",
+        "kicad-mcp-pro-python-SHA256SUMS.txt",
+        "kicad-mcp-pro-python-sbom.cdx.json",
+        "kicad-mcp-pro-python-release-evidence.json",
+        "kicad-mcp-pro-4.4.0.mcpb",
+        "kicad-mcp-pro-mcpb-SHA256SUMS.txt",
+        "kicad-mcp-pro-mcpb-release-evidence.json",
+        "kicad-mcp-pro-pcm-4.4.0.zip",
+        "kicad-mcp-pro-pcm-SHA256SUMS.txt",
+        "kicad-mcp-pro-pcm-release-evidence.json",
+    ),
+    "mcp-npm-v4.4.0": (
+        "kicad-mcp-pro-4.4.0.tgz",
+        "mcp-npm-SHA256SUMS.txt",
+        "mcp-npm-sbom.cdx.json",
+        "npm-published-digest.json",
+    ),
+    "protocol-schemas-v2.0.0": (
+        "oaslananka-kicad-protocol-schemas-2.0.0.tgz",
+        "protocol-schemas-SHA256SUMS.txt",
+        "protocol-schemas-sbom.cdx.json",
+    ),
+    "kicad-mcp-gui-v4.4.0": (
+        "linux_KiCad-MCP-Pro-4.4.0-1.x86_64.rpm",
+        "linux_KiCad-MCP-Pro_4.4.0_amd64.AppImage",
+        "linux_KiCad-MCP-Pro_4.4.0_amd64.deb",
+        "macos_KiCad-MCP-Pro_4.4.0_aarch64.dmg",
+        "windows_KiCad-MCP-Pro_4.4.0_x64-setup.exe",
+        "windows_KiCad-MCP-Pro_4.4.0_x64_en-US.msi",
+        "kicad-mcp-pro-gui-SHA256SUMS.txt",
+        "kicad-mcp-pro-gui-sbom.cdx.json",
+        "kicad-mcp-pro-gui-release-evidence.json",
+    ),
+}
+
+
+def _family_case(tmp_path: Path, tag: str) -> tuple[FakeGitHub, dict[str, Any]]:
+    from scripts.check_release_family_inventory import verify_family
+
+    approved = tmp_path / "approved"
+    approved.mkdir()
+    files = {name: name.encode("utf-8") for name in _FAMILY_ASSETS[tag]}
+    for name, content in files.items():
+        (approved / name).write_bytes(content)
+    manifest_path = tmp_path / "pinned.json"
+    manifest_path.write_text(json.dumps(manifest_for(approved, tag, SHA)))
+    manifest_sha256 = digest(manifest_path)
+    family = verify_family(manifest_path, manifest_sha256, tag, SHA)
+    assert family["familyAssetNamesVerified"] is True
+    assert family["publicationAuthorized"] is False
+    client = FakeGitHub(files, tag=tag)
+    return client, {
+        "repo": REPO,
+        "release_id": client.id,
+        "tag": tag,
+        "source_commit": SHA,
+        "approved_dir": approved,
+        "manifest_path": manifest_path,
+        "manifest_sha256": manifest_sha256,
+    }
+
+
+@pytest.mark.parametrize("tag", tuple(_FAMILY_ASSETS))
+def test_all_family_drafts_readback_and_idempotent_retry(tmp_path: Path, tag: str) -> None:
+    """No network: complete role set, partial upload, resume, download and digest."""
+    client, args = _family_case(tmp_path, tag)
+    first_asset = sorted(client.files)[0]
+    upload = client.upload_asset
+
+    def interrupt_after_first(repo: str, release_id: int, path: Path) -> None:
+        if client.upload_calls:
+            raise ValueError("simulated transport interruption")
+        upload(repo, release_id, path)
+
+    client.upload_asset = interrupt_after_first
+    with pytest.raises(ValueError, match="interruption"):
+        stage(client, **args, execute_uploads=True)
+    assert client.upload_calls == [first_asset]
+    assert client.remote == {first_asset: client.files[first_asset]}
+    assert not client.published
+
+    # Resume against a fresh, independently downloaded remote snapshot.
+    client.upload_asset = upload
+    read_only = stage(client, **args)
+    assert read_only["uploadMissingOnly"] == sorted(set(client.files) - {first_asset})
+    assert read_only["mode"] == "read-only"
+    assert client.remote == {first_asset: client.files[first_asset]}
+    result = stage(client, **args, execute_uploads=True)
+    assert result["readyForFinalInventoryCheck"] is True
+    assert result["uploadMissingOnly"] == []
+    assert client.remote == client.files
+    assert client.upload_calls.count(first_asset) == 1
+    assert not client.published
+    assert stage(client, **args)["readyForFinalInventoryCheck"] is True
+
+
+@pytest.mark.parametrize("tag", tuple(_FAMILY_ASSETS))
+def test_all_family_drafts_reject_corrupted_existing_bytes_before_write(
+    tmp_path: Path, tag: str
+) -> None:
+    client, args = _family_case(tmp_path, tag)
+    first_asset = sorted(client.files)[0]
+    client.remote[first_asset] = b"tampered fixture"
+    with pytest.raises(ValueError, match="size|digest|bytes"):
+        stage(client, **args, execute_uploads=True)
+    assert not client.upload_calls
+    assert not client.published
 
 
 @pytest.mark.parametrize("existing", [(), ("A.whl",), ("A.whl", "B.tar.gz")])
