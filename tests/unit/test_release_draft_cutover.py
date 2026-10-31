@@ -191,10 +191,60 @@ def test_draft_cutover_requires_serialized_non_lossy_owner(tmp_path: Path, mutat
     assert any("owner concurrency" in error for error in errors)
 
 
+def _safe_release_please_owner(root: Path) -> Path:
+    """Model the future owner where Release Please cannot publish before staging."""
+    path = root / ".github" / "workflows" / "publish-release.yml"
+    original = path.read_text(encoding="utf-8")
+    assert "skip-github-release: false" in original
+    path.write_text(
+        original.replace("skip-github-release: false", "skip-github-release: true"),
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.mark.parametrize("setting", ["false", "'false'", "missing", "numeric-true"])
+def test_draft_cutover_rejects_early_release_please_publication(
+    tmp_path: Path, setting: str
+) -> None:
+    root = _fixture(tmp_path)
+    _draft(root)
+    owner = _ready_owner(root)
+    source = owner.read_text(encoding="utf-8")
+    if setting == "missing":
+        source = source.replace("          skip-github-release: false\n", "")
+    elif setting == "'false'":
+        source = source.replace("skip-github-release: false", "skip-github-release: 'false'")
+    elif setting == "numeric-true":
+        source = source.replace("skip-github-release: false", "skip-github-release: 1")
+    owner.write_text(source, encoding="utf-8")
+    for publisher in _PUBLISHERS:
+        (root / ".github" / "workflows" / publisher).write_text(
+            "on:\n  workflow_call:\n", encoding="utf-8"
+        )
+    problems = validate_cutover(root, {"release_asset_mutations": []})
+    assert any("Release Please" in problem and "publish" in problem for problem in problems)
+
+
+def test_draft_cutover_accepts_owner_that_blocks_release_please_early_publish(
+    tmp_path: Path,
+) -> None:
+    root = _fixture(tmp_path)
+    _draft(root)
+    _ready_owner(root)
+    _safe_release_please_owner(root)
+    for publisher in _PUBLISHERS:
+        (root / ".github" / "workflows" / publisher).write_text(
+            "on:\n  workflow_call:\n", encoding="utf-8"
+        )
+    assert validate_cutover(root, {"release_asset_mutations": []}) == []
+
+
 def test_cutover_uses_supplied_policy_not_an_unrelated_disk_copy(tmp_path: Path) -> None:
     root = _fixture(tmp_path)
     _draft(root)
     _ready_owner(root)
+    _safe_release_please_owner(root)
     for filename in _PUBLISHERS:
         (root / ".github" / "workflows" / filename).write_text(
             "on:\n  workflow_call:\n", encoding="utf-8"
@@ -216,6 +266,7 @@ def test_cutover_can_check_the_necessary_post_migration_conditions(tmp_path: Pat
     root = _fixture(tmp_path)
     _draft(root)
     _ready_owner(root)
+    _safe_release_please_owner(root)
     for filename in _PUBLISHERS:
         (root / ".github" / "workflows" / filename).write_text(
             "on:\n  workflow_call:\n", encoding="utf-8"
