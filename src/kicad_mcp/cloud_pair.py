@@ -16,6 +16,7 @@ import re
 import ssl
 import sys
 import time
+import webbrowser
 from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -189,7 +190,8 @@ def _load_or_create(path: Path) -> Ed25519PrivateKey:
 
 
 def _challenge(result: dict[str, object], key: Ed25519PrivateKey) -> tuple[str, str, str, str, int]:
-    if set(result) != {"challengeId", "userCode", "deviceCode", "deviceFingerprint", "expiresAtMs"}:
+    expected = {"challengeId", "userCode", "deviceCode", "deviceFingerprint", "expiresAtMs"}
+    if set(result) not in (expected, expected | {"verificationUriComplete"}):
         raise CloudPairingError(_PAIRING_DENIED)
     challenge, code, secret, fingerprint, expiry = (
         result["challengeId"],
@@ -271,6 +273,11 @@ def enroll(
         201,
     )
     challenge, code, device_secret, fingerprint, expiry = _challenge(result, key)
+    review_url = f"{target[2]}/devices/pairing#challenge={challenge}&code={code}"
+    # Never open an untrusted Cloud-supplied link or a link carrying deviceCode.
+    supplied_url = result.get("verificationUriComplete")
+    if supplied_url is not None and supplied_url != review_url:
+        raise CloudPairingError(_PAIRING_DENIED)
     approval(target[2] + "/devices/pairing", challenge, code)
     if time.time_ns() // 1_000_000 >= expiry:
         raise CloudPairingError(_PAIRING_DENIED)
@@ -308,8 +315,17 @@ def enroll(
 def _approval(page: str, challenge: str, code: str) -> None:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise CloudPairingError(_PAIRING_DENIED)
-    print(f"Open {page} in your signed-in browser; approve challenge {challenge} with code {code}.")
-    input("After approving in the browser, press Enter to redeem (Ctrl-C cancels): ")
+    review_url = f"{page}#challenge={challenge}&code={code}"
+    try:
+        opened = webbrowser.open(review_url, new=2, autoraise=True)
+    except (OSError, webbrowser.Error):
+        opened = False
+    if opened:
+        print(f"Check that the code in the browser matches: {code}")
+    else:
+        # GUI-less devices retain an explicit fallback, never automatic approval.
+        print(f"Open this device approval link in your signed-in browser: {review_url}")
+    input("After approving in the browser, press Enter to finish (Ctrl-C cancels): ")
 
 
 def main(argv: list[str] | None = None) -> int:
