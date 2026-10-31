@@ -115,7 +115,7 @@ def test_pilot_one_shot_only_three_flags(
         dispatch.close()
         return HandshakeReceipt(DEVICE, SESSION)
 
-    monkeypatch.setattr(cloud_once, "execute_single_approved_read", fake_transport)
+    monkeypatch.setattr(cloud_operator_pilot, "execute_single_approved_read", fake_transport)
     asyncio.run(
         cloud_operator_pilot._single_presence(
             options, (int(time.time() * 1000) + 30_000, time.monotonic_ns() + 30_000_000_000)

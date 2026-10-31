@@ -14,7 +14,8 @@ from argparse import Namespace
 
 from kicad_mcp import cloud_once
 from kicad_mcp.cloud_local_registry import resolve_registered_read
-from kicad_mcp.cloud_outbound_handshake import HandshakeReceipt
+from kicad_mcp.cloud_outbound_handshake import HandshakeReceipt, execute_single_approved_read
+from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
 
@@ -26,7 +27,7 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
         or not options.project_directory.is_absolute()
         or time.monotonic_ns() >= monotonic_cutoff_ns
     ):
-        raise cloud_once.LocalApprovalDeniedError("local approval denied")
+        raise LocalApprovalDeniedError("local approval denied")
 
     key = cloud_once._load_bound_owner_key(
         options.private_key_file, options.cloud_origin, options.device_id
@@ -34,7 +35,7 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
 
     def dispatch(receipt: HandshakeReceipt) -> LocalReadDispatch:
         if time.monotonic_ns() >= monotonic_cutoff_ns:
-            raise cloud_once.LocalApprovalDeniedError("local approval denied")
+            raise LocalApprovalDeniedError("local approval denied")
         return LocalReadDispatch(
             verified=VerifiedLocalBinding(
                 device_id=receipt.device_id,
@@ -53,7 +54,7 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
             max_reads=1,
         )
 
-    return await cloud_once.execute_single_approved_read(
+    return await execute_single_approved_read(
         origin=options.cloud_origin,
         trusted_origin=options.cloud_origin,
         owner_sub=options.owner_sub,
@@ -68,7 +69,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         # Headless callers are denied before owner registry/key access.
         if not sys.stdin.isatty() or not sys.stdout.isatty():
-            raise cloud_once.LocalApprovalDeniedError("local approval denied")
+            raise LocalApprovalDeniedError("local approval denied")
         selected = resolve_registered_read(
             owner_sub=options.owner_sub,
             origin=options.cloud_origin,
