@@ -217,7 +217,9 @@ async def _scenario(tmp_path: Path, mode: str = "success") -> list[str]:
 
                 # This is synthetic transport acceptance, not real owner consent.
                 with patch.object(
-                    cloud_outbound_handshake, "_require_independent_read_authority", lambda: None
+                    cloud_outbound_handshake,
+                    "_require_independent_read_authority",
+                    return_value=None,
                 ):
                     receipt = await execute_single_approved_read(
                         origin=origin,
