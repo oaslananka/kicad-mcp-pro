@@ -452,17 +452,15 @@ def _generate_remote_config(agent_key: str, url: str) -> str:
 
 def _generate_codex_toml(project_dir: str, mode: str) -> str:
     """Generate Codex TOML config fragment."""
-    profile = "analysis"
+    profile = "default"
     operating_mode = mode
     lines = [
         "[mcp_servers.kicad]",
         "enabled = true",
         'command = "uvx"',
-        'args = ["kicad-mcp-pro"]',
-        'cwd = "."',
+        'args = ["kicad-mcp-pro", "--transport", "stdio"]',
         "startup_timeout_sec = 20",
         "tool_timeout_sec = 120",
-        'default_tools_approval_mode = "prompt"',
         "",
         "[mcp_servers.kicad.env]",
         f'KICAD_MCP_PROJECT_DIR = "{project_dir}"',
