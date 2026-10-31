@@ -18,8 +18,8 @@ SUITES = {
     "full": [
         "tests/unit/",
         "tests/integration/",
-        "tests/cloud/test_cloud_pair.py",
         "tests/e2e/",
+        "tests/cloud/",
         "-q",
         "-m",
         "not benchmark",
