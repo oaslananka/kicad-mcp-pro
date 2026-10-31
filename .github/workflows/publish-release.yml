@@ -13,6 +13,7 @@ permissions:
 concurrency:
   group: publish-release-${{ github.repository }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   authorize:
