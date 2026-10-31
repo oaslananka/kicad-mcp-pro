@@ -143,6 +143,47 @@ def test_execute_only_missing_and_verify_fresh_draft(
     assert not client.published
 
 
+@pytest.mark.parametrize("execute_uploads", [False, True])
+def test_draft_response_must_match_requested_numeric_release_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, execute_uploads: bool
+) -> None:
+    """A valid-looking draft for a different numeric ID is not our draft."""
+    client, args = _case(tmp_path)
+    release = client.release
+
+    def unrelated_release(repo: str, release_id: int) -> dict[str, Any]:
+        response = release(repo, release_id)
+        response["id"] = 43
+        response["url"] = f"https://api.github.com/repos/{repo}/releases/43"
+        return response
+
+    monkeypatch.setattr(client, "release", unrelated_release)
+    with pytest.raises(ValueError, match="requested release ID"):
+        stage(client, **args, execute_uploads=execute_uploads)
+    assert client.upload_calls == []
+
+
+def test_numeric_release_id_is_rechecked_between_uploads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cross-ID response between the first and second upload must stop writes."""
+    client, args = _case(tmp_path)
+    release = client.release
+
+    def swapped_mid_batch(repo: str, release_id: int) -> dict[str, Any]:
+        response = release(repo, release_id)
+        if client.upload_calls:
+            response["id"] = 43
+            response["url"] = f"https://api.github.com/repos/{repo}/releases/43"
+        return response
+
+    monkeypatch.setattr(client, "release", swapped_mid_batch)
+    with pytest.raises(ValueError, match="requested release ID"):
+        stage(client, **args, execute_uploads=True)
+    assert client.upload_calls == ["A.whl"]
+    assert sorted(client.remote) == ["A.whl"]
+
+
 @pytest.mark.parametrize("published_on", [1, 2, 3])
 def test_publication_at_any_check_aborts(tmp_path: Path, published_on: int) -> None:
     client, args = _case(tmp_path, existing=("A.whl",))
