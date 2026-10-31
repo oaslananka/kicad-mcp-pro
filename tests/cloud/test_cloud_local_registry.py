@@ -183,7 +183,7 @@ def test_registered_local_key_fingerprint_is_bound_to_device(tmp_path: Path) -> 
     keyfile.unlink()
     signing_key = cloud_pair._create_private_key(keyfile)
     der = signing_key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
-    cloud_once._save_owner_binding(
+    cloud_pair._save_owner_binding(
         keyfile, origin=ORIGIN, device_id=DEVICE, fingerprint=hashlib.sha256(der).hexdigest()
     )
     profile = _resolve(root)

@@ -31,12 +31,6 @@ from kicad_mcp.cloud_pair_keys import (
     _load_owner_key,
     _read_owner_binding,
 )
-from kicad_mcp.cloud_pair_keys import (
-    _open_owner_private_dir as _open_owner_private_dir,
-)
-from kicad_mcp.cloud_pair_keys import (
-    _save_owner_binding as _save_owner_binding,
-)
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 from kicad_mcp.cloud_readonly_boundary import (
     OperatorProject,
