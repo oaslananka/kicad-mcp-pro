@@ -133,7 +133,9 @@ def test_owner_status_expires_without_redeeming(monkeypatch: pytest.MonkeyPatch)
     assert calls == ["/api/v1/pairing/device/status"]
 
 
-@pytest.mark.parametrize("reply", [{"approved": "true"}, {"approved": True, "token": "bad"}, {}])
+@pytest.mark.parametrize(
+    "reply", [{"approved": "true"}, {"approved": True, "unexpectedField": "extra"}, {}]
+)
 def test_owner_status_malformed_reply_fails_closed(
     monkeypatch: pytest.MonkeyPatch,
     reply: dict,

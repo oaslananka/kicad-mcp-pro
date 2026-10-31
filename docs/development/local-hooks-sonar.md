@@ -45,6 +45,52 @@ Do **not** add full SonarScanner analysis to either hook: it depends on a
 server profile, coverage, analyzer runtimes, remote connectivity and tokens,
 and can make every push slow or non-reproducible offline.
 
+## Pre-PR local Codacy diff scan (manual, not a push hook)
+
+For changes that are ready for review, run the same Codacy project rules
+**before the first push**, in addition to the fast Lefthook checks. This
+is a bounded, change-scoped optional preflight; do not make every push
+download analyzers, contact Codacy or rerun the entire repository.
+
+The Codacy Analysis CLI is different from the Codacy Cloud CLI. With an
+existing Codacy account login (`codacy-analysis login` is a one-time
+interactive setup), run these commands from the worktree root:
+
+```sh
+mkdir -p "$HOME/.cache/kicad-mcp-pro"
+config="$HOME/.cache/kicad-mcp-pro/codacy.config.json"
+npm exec --yes --package=@codacy/analysis-cli@0.26.0 -- \
+  codacy-analysis init --remote gh oaslananka kicad-mcp-pro \
+  --config-file "$config"
+npm exec --yes --package=@codacy/analysis-cli@0.26.0 -- \
+  codacy-analysis analyze . --config-file "$config" \
+  --diff origin/main --tool Ruff --tool Bandit \
+  --tool PyLintPython3 --tool Semgrep --install-dependencies
+```
+
+The initialization downloads the project's current analysis settings;
+`analyze` checks only files changed against `origin/main`. Results
+stay on the workstation; **do not use `upload`** as part of this check.
+Run again after relevant fixes, with a clean result before pushing.
+If an analyzer is unavailable or configuration cannot be fetched,
+record that limitation instead of presenting a partial scan as passing.
+
+The SonarQube CLI can separately check changed files for hardcoded secrets
+with `sonar analyze secrets path/to/file.py`; that does not exercise the
+server-side quality rules. Agentic/Vortex analysis requires organization
+entitlement and may return HTTP 403; do not enable paid services just to
+run this preflight.
+
+This is not a local SonarCloud Quality Gate. The SonarQube for IDE
+connected mode below gives early rule feedback; SonarScanner requires
+server-side analysis, compatible coverage, tokens and a correctly
+identified branch/PR. The exact-head CI SonarCloud analysis and the
+repository's stronger **zero-new-Code-Smells** rule remain authoritative.
+In particular, Sonar Python S5778 may detect nested function calls
+inside `pytest.raises` that Ruff does not flag; compute ancillary
+values before entering that context, leaving one exception-producing
+invocation inside.
+
 ## SonarQube for IDE connected mode
 
 The tracked .vscode/extensions.json recommends SonarQube for IDE
