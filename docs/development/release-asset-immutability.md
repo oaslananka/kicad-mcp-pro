@@ -242,8 +242,9 @@ unchanged. If any Release Please package switches to `draft: true`, the policy
 check requires draft and `force-tag-creation` for every release-producing package,
 owner-invoked `workflow_call` publishers instead of autonomous
 `push`, `release`, `schedule`, `workflow_run` or `repository_dispatch`
-writers. Only `workflow_call`, `workflow_dispatch` and PR validation events
-remain permitted for migrated publishers. The check also requires retirement
+writers. Only `workflow_call` and PR validation events remain permitted
+for migrated publishers; manual recovery dispatch belongs to the owner.
+The check also requires retirement
 of the existing published-release mutation allowlist, using exactly the same
 effective policy supplied to the GitHub Actions checker (including overrides).
 The check is enforced by the existing GitHub Actions policy
@@ -329,6 +330,19 @@ The upstream Release Please manifest documentation explicitly supports
 both draft and force-tag-creation for safe tag creation. This is static
 classification only, not a live release lifecycle test:
 https://github.com/googleapis/release-please/blob/main/docs/manifest-releaser.md
+
+At the future draft-first cutover, the owner workflow must also preserve its
+repository-wide `publish-release` concurrency group with
+`cancel-in-progress: false` and `queue: max`. Without the stable group,
+runs may overlap; with cancellation, an in-progress release may be interrupted;
+with the default single pending slot, a newer run replaces a waiting release.
+The static cutover check now requires all three conditions. The existing
+published-first workflow remains unchanged, and no live writer lock or
+end-to-end release serialization has been attested. Reusable callees must not
+define a conflicting copy of the owner's group.
+
+See GitHub's workflow concurrency reference:
+https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency
 
 When cutover is enabled, each family publisher must be invoked by the
 single owner via `workflow_call`; a separate `workflow_dispatch` on any family

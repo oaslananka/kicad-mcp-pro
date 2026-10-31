@@ -12,10 +12,36 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from kicad_mcp import cloud_once, cloud_pair
-from kicad_mcp.cloud_once import LocalApprovalDeniedError, _load_owner_key
+from kicad_mcp import cloud_pair
+from kicad_mcp import cloud_pair_keys as cloud_once
+from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError, _load_owner_key
 
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="Owner-key persistence needs POSIX")
+
+
+def test_pairing_import_graph_excludes_unapproved_remote_read_code() -> None:
+    """Pairing needs only owner-key storage, never project/WS read modules."""
+    import ast
+
+    modules = (cloud_pair, cloud_once)
+    for module in modules:
+        module_path = Path(module.__file__)
+        tree = ast.parse(module_path.read_text())
+        external_imports = {
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+            and node.module
+            and node.module.startswith("kicad_mcp.")
+        }
+        assert external_imports <= {"kicad_mcp.cloud_pair_keys"}
+        assert not any(
+            module_name.startswith("kicad_mcp.cloud_")
+            and module_name != "kicad_mcp.cloud_pair_keys"
+            for module_name in external_imports
+        )
+
+
 CHALLENGE = "11111111-1111-4111-8111-111111111111"
 DEVICE = "22222222-2222-4222-8222-222222222222"
 SECRET = base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("=")
@@ -839,9 +865,7 @@ def test_cli_requires_explicit_consent_and_reports_disabled_device(
         received.extend([origin, alias, keyfile])
         return DEVICE, "e" * 64
 
-    from kicad_mcp import cloud_local_registry
-
-    monkeypatch.setattr(cloud_local_registry, "default_registry_root", lambda: tmp_path / "profile")
+    monkeypatch.setattr(cloud_pair, "default_registry_root", lambda: tmp_path / "profile")
     monkeypatch.setattr(cloud_pair, "enroll", authorized)
     monkeypatch.setattr(cloud_pair.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(cloud_pair.sys.stdout, "isatty", lambda: True)

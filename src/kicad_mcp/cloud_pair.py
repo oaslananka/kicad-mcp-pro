@@ -30,7 +30,7 @@ from cryptography.hazmat.primitives.serialization import (
     PublicFormat,
 )
 
-from kicad_mcp.cloud_once import (
+from kicad_mcp.cloud_pair_keys import (
     _load_owner_key,
     _open_owner_private_dir,
     _read_owner_binding,
@@ -48,6 +48,11 @@ _FINGERPRINT = re.compile(r"[a-f0-9]{64}")
 
 class CloudPairingError(ValueError):
     """Do not leak credentials, internal errors, or private filesystem details."""
+
+
+def default_registry_root() -> Path:
+    """Same owner-private key root used by the non-released read prototype."""
+    return Path.home() / ".local" / "share" / "kicad-mcp-cloud"
 
 
 def _origin(value: str) -> tuple[str, int, str]:
@@ -392,8 +397,6 @@ def main(argv: list[str] | None = None) -> int:
         if not sys.stdin.isatty() or not sys.stdout.isatty():
             raise CloudPairingError(_PAIRING_DENIED)
         from uuid import uuid4
-
-        from kicad_mcp.cloud_local_registry import default_registry_root
 
         root = default_registry_root()
         keys = root / "keys"

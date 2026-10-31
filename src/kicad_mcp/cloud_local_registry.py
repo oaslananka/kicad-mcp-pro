@@ -14,7 +14,7 @@ import stat
 from dataclasses import dataclass
 from pathlib import Path
 
-from kicad_mcp.cloud_once import LocalApprovalDeniedError, _open_owner_private_dir
+from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError, _open_owner_private_dir
 from kicad_mcp.cloud_readonly_boundary import _open_operator_directory
 
 _DENIED = "local approval denied"
