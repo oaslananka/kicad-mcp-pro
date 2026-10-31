@@ -172,6 +172,16 @@ async def _complete_authorized_read(
         dispatcher.close()
 
 
+def _require_independent_read_authority() -> None:
+    """Deny read-capable transport until a separate owner verifier is accepted.
+
+    This transport is also callable without the guarded cloud_once CLI. An
+    owner key and caller-supplied dispatcher never prove a human approved a
+    read. Only isolated protocol fixtures may replace this fail-closed gate.
+    """
+    raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+
+
 async def _perform_outbound_session(
     *,
     origin: str,
@@ -189,6 +199,10 @@ async def _perform_outbound_session(
     trust roots or isolated tests; disabling certificate/hostname verification
     is forbidden. No on-disk key management or actual KiCad project reads.
     """
+    # Reject both direct public read calls and private session-helper calls
+    # before TLS setup or a WebSocket. Proof-only sessions stay available.
+    if dispatcher_factory is not None:
+        _require_independent_read_authority()
     endpoint = _endpoint(origin=origin, trusted_origin=trusted_origin)
     if (
         not isinstance(owner_sub, str)

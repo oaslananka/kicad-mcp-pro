@@ -24,7 +24,7 @@ from test_isolated_tls_websocket_handshake import _synthetic_tls
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
-from kicad_mcp import cloud_once, cloud_pair
+from kicad_mcp import cloud_once, cloud_outbound_handshake, cloud_pair
 from kicad_mcp.cloud_outbound_handshake import HandshakeReceipt, execute_single_approved_read
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 
@@ -311,6 +311,10 @@ async def _scenario(
                 tls_context=trust,
             )
 
+        # Isolated real-WSS fixture: no independent human owner verifier exists.
+        monkeypatch.setattr(
+            cloud_outbound_handshake, "_require_independent_read_authority", lambda: None
+        )
         # Synthetic acceptance only; the real CLI denies without an owner authority.
         monkeypatch.setattr(cloud_once, "_require_independent_owner_authority", lambda: None)
         monkeypatch.setattr(cloud_once, "execute_single_approved_read", use_real_verified_transport)

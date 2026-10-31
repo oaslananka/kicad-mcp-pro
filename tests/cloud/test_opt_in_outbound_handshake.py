@@ -8,6 +8,7 @@ import json
 import ssl
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -15,6 +16,7 @@ from test_isolated_tls_websocket_handshake import _synthetic_tls
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
+from kicad_mcp import cloud_outbound_handshake
 from kicad_mcp.cloud_outbound_handshake import (
     CloudHandshakeDeniedError,
     _endpoint,
@@ -34,6 +36,30 @@ NONCE = base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("=")
 BINDING = base64.urlsafe_b64encode(bytes(range(32, 64))).decode().rstrip("=")
 PROJECT = "66666666-6666-4666-8666-666666666666"
 READ = "77777777-7777-4777-8777-777777777777"
+
+
+@pytest.mark.parametrize(
+    "entrypoint", ["execute_single_approved_read", "_perform_outbound_session"]
+)
+def test_unverified_direct_read_transport_denies_before_any_network(
+    monkeypatch: pytest.MonkeyPatch, entrypoint: str
+) -> None:
+    """Even callers bypassing the CLI must not open a read-capable WSS."""
+    monkeypatch.setattr(
+        cloud_outbound_handshake,
+        "connect",
+        lambda *_args, **_kwargs: pytest.fail("ownerless read reached a socket"),
+    )
+    runner = getattr(cloud_outbound_handshake, entrypoint)(
+        origin="https://localhost",
+        trusted_origin="https://localhost",
+        owner_sub=OWNER,
+        device_id=DEVICE,
+        signing_key=Ed25519PrivateKey.generate(),
+        dispatcher_factory=lambda *_: None,
+    )
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        asyncio.run(runner)
 
 
 def _sig(reply: dict[str, object]) -> bytes:
@@ -189,15 +215,19 @@ async def _scenario(tmp_path: Path, mode: str = "success") -> list[str]:
                         current_authorization=lambda: mode != "revoked",
                     )
 
-                receipt = await execute_single_approved_read(
-                    origin=origin,
-                    trusted_origin=origin,
-                    owner_sub=OWNER,
-                    device_id=DEVICE,
-                    signing_key=signing_key,
-                    tls_context=trust,
-                    dispatcher_factory=local_dispatcher,
-                )
+                # This is synthetic transport acceptance, not real owner consent.
+                with patch.object(
+                    cloud_outbound_handshake, "_require_independent_read_authority", lambda: None
+                ):
+                    receipt = await execute_single_approved_read(
+                        origin=origin,
+                        trusted_origin=origin,
+                        owner_sub=OWNER,
+                        device_id=DEVICE,
+                        signing_key=signing_key,
+                        tls_context=trust,
+                        dispatcher_factory=local_dispatcher,
+                    )
             else:
                 receipt = await establish_proof_only_handshake(
                     origin=origin,
