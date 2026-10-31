@@ -58,7 +58,9 @@ def test_source_guard_before_installs() -> None:
     setup = next(
         i for i, s in enumerate(steps) if s.get("uses", "").startswith("astral-sh/setup-uv@")
     )
-    assert checkout == 0 and guard == 1 and setup > guard
+    assert checkout == 0
+    assert guard == 1
+    assert setup > guard
     assert steps[checkout]["with"] == {
         "fetch-depth": 0,
         "persist-credentials": False,
