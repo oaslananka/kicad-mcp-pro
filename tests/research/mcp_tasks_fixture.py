@@ -75,6 +75,19 @@ class TaskFixture:
         return task
 
     @staticmethod
+    def _within_request_budget(request: dict[str, Any]) -> bool:
+        """Bound encoded JSON incrementally and reject non-wire values."""
+        size = 0
+        try:
+            for chunk in json.JSONEncoder(allow_nan=False).iterencode(request):
+                size += len(chunk.encode("ascii"))
+                if size > MAX_REQUEST_BYTES:
+                    return False
+        except (TypeError, ValueError, RecursionError):
+            return False
+        return True
+
+    @staticmethod
     def _supports_tasks(params: dict[str, Any]) -> bool:
         meta = params.get("_meta")
         if not isinstance(meta, dict):
@@ -141,8 +154,8 @@ class TaskFixture:
             not isinstance(caller, str)
             or not 1 <= len(caller) <= 128
             or request.get("jsonrpc") != "2.0"
-            or not isinstance(request_id, (str, int))
-            or len(json.dumps(request)) > MAX_REQUEST_BYTES
+            or type(request_id) not in (str, int)
+            or not self._within_request_budget(request)
         ):
             return self._error(request_id, -32600, "Invalid or oversized request")
         method = request.get("method")

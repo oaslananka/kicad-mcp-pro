@@ -51,8 +51,14 @@ def test_pypdf_security_floor_blocks_known_dependabot_regressions() -> None:
     uv_lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
 
     dev_dependencies = pyproject["project"]["optional-dependencies"]["dev"]
-    assert "pypdf==6.21.2" in dev_dependencies
+    pinned = [
+        item.removeprefix("pypdf==") for item in dev_dependencies if item.startswith("pypdf==")
+    ]
+    assert len(pinned) == 1, "pypdf must have exactly one explicit dev pin"
+    assert Version(pinned[0]) >= Version("6.21.2")
     _assert_all_locked_versions_patched(uv_lock["package"], "pypdf", "6.21.2")
+    locked = [package["version"] for package in uv_lock["package"] if package["name"] == "pypdf"]
+    assert locked == pinned, "resolved pypdf must match the reviewed dev pin"
 
 
 def test_opentelemetry_otlp_exporters_share_patched_runtime_floor() -> None:

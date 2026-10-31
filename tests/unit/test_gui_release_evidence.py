@@ -209,6 +209,38 @@ def test_gui_release_workflow_attests_and_verifies_published_installer_inventory
     ]
 
 
+def test_gui_release_attests_slsa_provenance_separately_from_sbom() -> None:
+    """A CycloneDX predicate alone does not establish SLSA build provenance."""
+    import yaml
+
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "gui-release.yml").read_text(encoding="utf-8")
+    )
+    job = workflow["jobs"]["create-release"]
+    steps = job["steps"]
+    names = [step.get("name") for step in steps]
+    provenance = next(
+        step for step in steps if step.get("name") == "Attest GUI SLSA build provenance"
+    )
+    sbom = next(step for step in steps if step.get("name") == "Attest GUI installers")
+    upload_index = names.index("Upload installers and evidence to GitHub Release")
+    assert (
+        names.index("Verify GUI release evidence before publication")
+        < names.index("Attest GUI SLSA build provenance")
+        < names.index("Attest GUI installers")
+        < upload_index
+    )
+
+    expected_subjects = f"release-evidence/gui/{CHECKSUM_NAME}"
+    assert provenance["with"]["subject-checksums"] == expected_subjects
+    assert "sbom-path" not in provenance["with"]
+    assert sbom["with"]["subject-checksums"] == expected_subjects
+    assert sbom["with"]["sbom-path"] == f"release-evidence/gui/{SBOM_NAME}"
+    assert provenance["uses"] == sbom["uses"]
+    assert provenance["uses"].startswith("actions/attest@")
+    assert len(provenance["uses"].split("@", 1)[1]) == 40
+
+
 def test_verify_local_accepts_generated_inventory_and_rejects_tamper(tmp_path: Path) -> None:
     module, artifact_dir, output_dir, installers = _generate_fixture(tmp_path)
 

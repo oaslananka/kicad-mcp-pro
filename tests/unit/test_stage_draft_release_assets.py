@@ -139,8 +139,49 @@ def test_execute_only_missing_and_verify_fresh_draft(
     assert result["readyForFinalInventoryCheck"]
     assert client.upload_calls == sorted(set(client.files) - set(existing))
     assert client.remote == client.files
-    assert client.release_calls == 3
+    assert client.release_calls == 3 + max(0, len(client.files) - len(existing) - 1)
     assert not client.published
+
+
+@pytest.mark.parametrize("execute_uploads", [False, True])
+def test_draft_response_must_match_requested_numeric_release_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, execute_uploads: bool
+) -> None:
+    """A valid-looking draft for a different numeric ID is not our draft."""
+    client, args = _case(tmp_path)
+    release = client.release
+
+    def unrelated_release(repo: str, release_id: int) -> dict[str, Any]:
+        response = release(repo, release_id)
+        response["id"] = 43
+        response["url"] = f"https://api.github.com/repos/{repo}/releases/43"
+        return response
+
+    monkeypatch.setattr(client, "release", unrelated_release)
+    with pytest.raises(ValueError, match="requested release ID"):
+        stage(client, **args, execute_uploads=execute_uploads)
+    assert client.upload_calls == []
+
+
+def test_numeric_release_id_is_rechecked_between_uploads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cross-ID response between the first and second upload must stop writes."""
+    client, args = _case(tmp_path)
+    release = client.release
+
+    def swapped_mid_batch(repo: str, release_id: int) -> dict[str, Any]:
+        response = release(repo, release_id)
+        if client.upload_calls:
+            response["id"] = 43
+            response["url"] = f"https://api.github.com/repos/{repo}/releases/43"
+        return response
+
+    monkeypatch.setattr(client, "release", swapped_mid_batch)
+    with pytest.raises(ValueError, match="requested release ID"):
+        stage(client, **args, execute_uploads=True)
+    assert client.upload_calls == ["A.whl"]
+    assert sorted(client.remote) == ["A.whl"]
 
 
 @pytest.mark.parametrize("published_on", [1, 2, 3])
@@ -151,6 +192,29 @@ def test_publication_at_any_check_aborts(tmp_path: Path, published_on: int) -> N
         stage(client, **args, execute_uploads=True)
     if published_on <= 2:
         assert client.upload_calls == []
+
+
+@pytest.mark.parametrize("concurrent_change", ["published", "retargeted-tag"])
+def test_draft_rechecked_between_sequential_uploads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, concurrent_change: str
+) -> None:
+    """A change after the first upload must block any second write."""
+    client, args = _case(tmp_path)
+    upload = client.upload_asset
+
+    def change_after_first(repo: str, release_id: int, path: Path) -> None:
+        upload(repo, release_id, path)
+        if len(client.upload_calls) == 1:
+            if concurrent_change == "published":
+                client.published = True
+            else:
+                client.commit_sha = "b" * 40
+
+    monkeypatch.setattr(client, "upload_asset", change_after_first)
+    with pytest.raises(ValueError, match="draft|published|tag commit"):
+        stage(client, **args, execute_uploads=True)
+    assert client.upload_calls == ["A.whl"]
+    assert sorted(client.remote) == ["A.whl"]
 
 
 def test_never_replaces_corrupted_existing_asset(tmp_path: Path) -> None:

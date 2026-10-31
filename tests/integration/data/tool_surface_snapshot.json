@@ -112,7 +112,7 @@
     "destructive": false,
     "experimental": false,
     "headless": true,
-    "idempotent": false,
+    "idempotent": true,
     "name": "dfm_run_manufacturer_check",
     "open_world": false,
     "profiles": [
@@ -129,7 +129,7 @@
       "release_manager",
       "review"
     ],
-    "read_only": false,
+    "read_only": true,
     "requires_kicad_running": false
   },
   {
@@ -2386,7 +2386,7 @@
     "destructive": false,
     "experimental": false,
     "headless": true,
-    "idempotent": false,
+    "idempotent": true,
     "name": "lib_verify_component_contract",
     "open_world": false,
     "profiles": [
@@ -2401,7 +2401,7 @@
       "schematic_only",
       "simulation"
     ],
-    "read_only": false,
+    "read_only": true,
     "requires_kicad_running": false
   },
   {
@@ -4673,7 +4673,7 @@
     "destructive": false,
     "experimental": false,
     "headless": true,
-    "idempotent": false,
+    "idempotent": true,
     "name": "pcb_visual_qa",
     "open_world": false,
     "profiles": [
@@ -4697,7 +4697,7 @@
       "release_manager",
       "review"
     ],
-    "read_only": false,
+    "read_only": true,
     "requires_kicad_running": false
   },
   {
@@ -4876,7 +4876,7 @@
     "destructive": false,
     "experimental": false,
     "headless": true,
-    "idempotent": false,
+    "idempotent": true,
     "name": "project_design_workflow",
     "open_world": false,
     "profiles": [
@@ -4905,7 +4905,7 @@
       "schematic_only",
       "simulation"
     ],
-    "read_only": false,
+    "read_only": true,
     "requires_kicad_running": false
   },
   {
@@ -7741,7 +7741,7 @@
     "destructive": false,
     "experimental": false,
     "headless": true,
-    "idempotent": false,
+    "idempotent": true,
     "name": "sch_visual_qa",
     "open_world": false,
     "profiles": [
@@ -7759,7 +7759,7 @@
       "schematic_only",
       "simulation"
     ],
-    "read_only": false,
+    "read_only": true,
     "requires_kicad_running": false
   },
   {

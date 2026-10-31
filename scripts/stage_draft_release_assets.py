@@ -164,6 +164,20 @@ def _downloaded_snapshot(
         client.download_asset(repo, asset["id"], destination / asset["name"])
 
 
+def _checked_target_draft(
+    release: dict[str, Any],
+    *,
+    repo: str,
+    release_id: int,
+    tag: str,
+    source_commit: str,
+    tag_commit: str,
+) -> None:
+    _draft_metadata(release, repo, tag, source_commit, tag_commit)
+    if release["id"] != release_id:
+        raise ValueError("draft response differs from requested release ID")
+
+
 def _reconcile_snapshot(
     client: DraftClient,
     *,
@@ -178,7 +192,14 @@ def _reconcile_snapshot(
 ) -> tuple[dict[str, Any], dict[str, object]]:
     release = client.release(repo, release_id)
     tag_sha = client.tag_commit(repo, tag)
-    _draft_metadata(release, repo, tag, source_commit, tag_sha)
+    _checked_target_draft(
+        release,
+        repo=repo,
+        release_id=release_id,
+        tag=tag,
+        source_commit=source_commit,
+        tag_commit=tag_sha,
+    )
     with tempfile.TemporaryDirectory(prefix="kicad-draft-1179-") as scratch:
         downloaded_dir = Path(scratch)
         _downloaded_snapshot(client, repo, release, downloaded_dir, approved)
@@ -251,7 +272,20 @@ def stage(
     missing = fresh["uploadMissingOnly"]
     if not isinstance(missing, list):
         raise ValueError("invalid draft upload plan")
-    for name in missing:
+    for index, name in enumerate(missing):
+        if index:
+            # Never continue a batch from an earlier draft snapshot. This
+            # narrows the race window but does NOT replace an exclusive lock.
+            current = client.release(repo, release_id)
+            current_tag_sha = client.tag_commit(repo, tag)
+            _checked_target_draft(
+                current,
+                repo=repo,
+                release_id=release_id,
+                tag=tag,
+                source_commit=source_commit,
+                tag_commit=current_tag_sha,
+            )
         if not isinstance(name, str) or name not in approved:
             raise ValueError("invalid draft asset name in upload plan")
         item = approved[name]

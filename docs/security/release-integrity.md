@@ -142,14 +142,20 @@ kicad-mcp-pro-gui-release-evidence.json
 
 The evidence JSON records the source commit, release tag, normalized installer inventory, platform classification, size, SHA-256 digest, and the actual platform-signing status. The CycloneDX 1.6 SBOM is generated deterministically from the committed `src-tauri/Cargo.lock`. Before publication the workflow verifies the installer directory against the generated evidence; after upload it downloads the GitHub Release assets and requires the published inventory and installer digests to match exactly.
 
-Verify a downloaded GUI installer with the published checksum file and GitHub attestation:
+Verify a downloaded GUI installer with the published checksum file and the correct signed predicate type:
 
 ```bash
 sha256sum --check kicad-mcp-pro-gui-SHA256SUMS.txt
-gh attestation verify <installer-file> --repo oaslananka/kicad-mcp-pro
+# SLSA provenance and CycloneDX SBOM are separate attestations.
+gh attestation verify <installer-file> --repo oaslananka/kicad-mcp-pro \
+  --predicate-type https://slsa.dev/provenance/v1
+gh attestation verify <installer-file> --repo oaslananka/kicad-mcp-pro \
+  --predicate-type https://cyclonedx.org/bom
 ```
 
-The GitHub attestation proves CI/source provenance for the installer digest; it is not a substitute for platform code signing. Windows Authenticode, Apple code signing/notarization, and Linux package signing remain separately reported and must not be inferred from the GitHub attestation.
+**Historical release limit:** GUI v4.5.0 has a signed CycloneDX SBOM for its installers, but no SLSA provenance attestation. The separate SLSA signing step applies only to **future GUI release runs** after this workflow change; it does not retroactively sign existing installers. Missing SLSA must be treated as missing evidence, not inferred from the SBOM.
+
+Both predicates bind to the installer SHA-256 digest but make different claims. Require the expected signer workflow, release tag/source SHA and verified subject digest when assessing a specific release. Neither signed attestation replaces platform code signing. Windows Authenticode, Apple code signing/notarization, and Linux package signing remain separately reported and must not be inferred from GitHub attestations.
 
 ## PyPI Trusted Publishing
 

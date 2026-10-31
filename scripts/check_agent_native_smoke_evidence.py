@@ -65,6 +65,9 @@ _PINNED_SOURCE_REVISIONS = frozenset(
     {
         "57c0efb1f072f5fffbf1f527ee2348448705e32d",
         "f9a21b4e7fad0267bc162b864faea7be1081acbe",
+        # v4.5.0 release: readonly mode unchanged; new pcb_add_track_segment
+        # is WRITE-tier and excluded from the same 24-tool default inventory.
+        "9aa519b1bb82b3907eefedbba26285cf4431d856",
     }
 )
 _PINNED_SOURCE_READONLY_TOOLS = frozenset(
@@ -362,6 +365,7 @@ _REVIEWED_ARCHIVE_DIR = Path(__file__).resolve().parents[1] / "docs/evidence/age
 _REVIEWED_ARCHIVE_NAMES = (
     "2026-10-26-linux-codex-native-smoke.json",
     "2026-10-27-linux-codex-native-smoke.json",
+    "2026-10-31-linux-codex-native-smoke.json",
     "2026-10-26-windows-codex-native-smoke.json",
 )
 _REVIEWED_ARCHIVE_REPORTS: dict[str, Path] = {}

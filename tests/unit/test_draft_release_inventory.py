@@ -143,6 +143,14 @@ def test_remote_asset_metadata_checked(tmp_path: Path, key: str) -> None:
         verify(**case)
 
 
+def test_missing_remote_upload_state_must_not_be_assumed_uploaded(tmp_path: Path) -> None:
+    """Independent bytes are insufficient when GitHub has not confirmed upload state."""
+    case = _case(tmp_path)
+    case["release"]["assets"][0].pop("state")
+    with pytest.raises(ValueError, match="upload state mismatch"):
+        verify(**case)
+
+
 def test_symlink_asset_rejected(tmp_path: Path) -> None:
     case = _case(tmp_path)
     (case["directory"] / "malicious.whl").symlink_to(tmp_path / "outside.whl")
