@@ -23,6 +23,27 @@ class DownloadableOwnerClient(OwnerClient, DraftClient, Protocol):
     """Read-only code consumes only the download side of this API client."""
 
 
+def _asset_inventory(release: dict[str, Any]) -> dict[int, tuple[object, ...]]:
+    """Compare stable GitHub asset metadata, ignoring download counters/order."""
+    assets = release.get("assets")
+    if not isinstance(assets, list):
+        raise ValueError("draft asset inventory must be a list")
+    snapshot: dict[int, tuple[object, ...]] = {}
+    for asset in assets:
+        if not isinstance(asset, dict):
+            raise ValueError("invalid draft asset inventory entry")
+        asset_id = asset.get("id")
+        if type(asset_id) is not int or asset_id <= 0 or asset_id in snapshot:
+            raise ValueError("invalid or duplicate draft asset inventory ID")
+        snapshot[asset_id] = (
+            asset.get("name"),
+            asset.get("size"),
+            asset.get("state"),
+            asset.get("digest"),
+        )
+    return snapshot
+
+
 def check_readiness(
     client: DownloadableOwnerClient,
     *,
@@ -80,6 +101,13 @@ def check_readiness(
     final = check_owner()
     if final != initial:
         raise ValueError("owner identity changed during readiness check")
+    # The owner read validates draft/tag identity but deliberately does not
+    # return an asset list. Recheck that independently verified bytes still
+    # describe the current draft inventory; this is not an exclusive lock.
+    latest = client.release(repo, release_id)
+    _draft_release(latest, repo, tag, source_commit, protected_tag_sha)
+    if latest.get("id") != release_id or _asset_inventory(latest) != _asset_inventory(release):
+        raise ValueError("draft asset inventory changed during readiness check")
     return {
         "repository": repo,
         "releaseId": release_id,
