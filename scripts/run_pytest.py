@@ -14,9 +14,11 @@ SUITES = {
     "benchmark": ["tests/unit/test_regression_zoo.py", "-q", "-m", "benchmark"],
     "transport-contract": ["tests/unit/test_mcp_protocol_contract.py", "-q"],
     "gui": ["tests/gui/", "-q"],
+    "cloud-pairing": ["tests/cloud/test_cloud_pair.py", "-q"],
     "full": [
         "tests/unit/",
         "tests/integration/",
+        "tests/cloud/test_cloud_pair.py",
         "tests/e2e/",
         "-q",
         "-m",
