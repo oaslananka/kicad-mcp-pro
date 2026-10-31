@@ -141,8 +141,9 @@ def test_direct_one_shot_helper_denies_unverified_owner_before_key_or_socket(
         lambda **_: pytest.fail("direct helper must not open a socket"),
     )
     lease = (time.time_ns() // 1_000_000 + 20_000, time.monotonic_ns() + 20_000_000_000)
+    connection = cloud_once._connect(options, lease)
     with pytest.raises(cloud_once.LocalApprovalDeniedError):
-        asyncio.run(cloud_once._connect(options, lease))
+        asyncio.run(connection)
 
 
 def test_no_consent_flag_never_loads_a_key_or_connects(tmp_path: Path) -> None:
