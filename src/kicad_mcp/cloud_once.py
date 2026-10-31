@@ -102,6 +102,8 @@ def _confirm_local_read(options: argparse.Namespace) -> tuple[int, int]:
 async def _connect(
     options: argparse.Namespace, authorization_window: tuple[int, int]
 ) -> HandshakeReceipt:
+    # Internal direct callers must not bypass the CLI's independent-owner stop.
+    _require_independent_owner_authority()
     wall_cutoff_ms, monotonic_cutoff_ns = authorization_window
     if (
         not options.allow_once

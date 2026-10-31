@@ -120,6 +120,31 @@ def test_unverified_owner_gate_denies_before_registry_key_or_network(
     assert "denied" in capsys.readouterr().err
 
 
+def test_direct_one_shot_helper_denies_unverified_owner_before_key_or_socket(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Calling the internal coroutine directly must not bypass the CLI stop gate."""
+    options = cloud_once._parser().parse_args(_args(tmp_path, tmp_path / "owner.pem"))
+    options.project_directory = tmp_path
+    options.private_key_file = tmp_path / "owner.pem"
+    monkeypatch.setattr(
+        cloud_once, "_require_independent_owner_authority", _REAL_OWNER_AUTHORITY_GATE
+    )
+    monkeypatch.setattr(
+        cloud_once,
+        "_load_bound_owner_key",
+        lambda *_: pytest.fail("direct helper must not load an owner key"),
+    )
+    monkeypatch.setattr(
+        cloud_once,
+        "execute_single_approved_read",
+        lambda **_: pytest.fail("direct helper must not open a socket"),
+    )
+    lease = (time.time_ns() // 1_000_000 + 20_000, time.monotonic_ns() + 20_000_000_000)
+    with pytest.raises(cloud_once.LocalApprovalDeniedError):
+        asyncio.run(cloud_once._connect(options, lease))
+
+
 def test_no_consent_flag_never_loads_a_key_or_connects(tmp_path: Path) -> None:
     _raise_argument_1 = _args(tmp_path, tmp_path / "not-a-key")[:-1]
     with pytest.raises(SystemExit) as denied:
