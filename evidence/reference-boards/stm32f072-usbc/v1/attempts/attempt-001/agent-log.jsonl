@@ -1,0 +1,2 @@
+{"schema_version":"pcb-reference-agent-log.v1","attempt_id":"attempt-001","sequence":1,"timestamp":"2026-09-04T01:11:16.054882Z","event_type":"workflow","name":"claude_session","status":"started","details":{}}
+{"schema_version":"pcb-reference-agent-log.v1","attempt_id":"attempt-001","sequence":2,"timestamp":"2026-09-04T01:11:22.529294Z","event_type":"workflow","name":"claude_session","status":"failed","details":{"exit_code":1}}

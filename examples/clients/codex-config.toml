@@ -1,0 +1,14 @@
+# Canonical Codex CLI MCP connection. Copy this section into
+# ~/.codex/config.toml (or your trusted project's .codex/config.toml).
+# The local Python server controls mutating tools with a read-only default.
+[mcp_servers.kicad]
+command = "uvx"
+args = ["kicad-mcp-pro", "--transport", "stdio"]
+startup_timeout_sec = 20
+tool_timeout_sec = 120
+
+[mcp_servers.kicad.env]
+KICAD_MCP_PROFILE = "default"
+KICAD_MCP_OPERATING_MODE = "readonly"
+# Set an absolute KiCad project path when needed:
+# KICAD_MCP_PROJECT_DIR = "/absolute/path/to/kicad-project"
