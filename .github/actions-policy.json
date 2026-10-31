@@ -109,6 +109,13 @@
         "id-token"
       ]
     },
+    "prepare-npm.yml": {
+      "prepare": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
+      ]
+    },
     "publish-npm.yml": {
       "publish": [
         "artifact-metadata",
