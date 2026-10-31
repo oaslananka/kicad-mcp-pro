@@ -146,13 +146,14 @@ def test_owner_status_malformed_reply_fails_closed(
         return reply
 
     monkeypatch.setattr(cloud_pair, "_post", malformed)
+    expires_at_ms = time.time_ns() // 1_000_000 + 10_000
     with pytest.raises(cloud_pair.CloudPairingError):
         cloud_pair._wait_for_owner_approval(
             ("localhost", 443, "https://localhost"),
             CHALLENGE,
             SECRET,
             key,
-            time.time_ns() // 1_000_000 + 10_000,
+            expires_at_ms,
         )
     assert calls == ["/api/v1/pairing/device/status"]
 
