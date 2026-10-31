@@ -311,6 +311,8 @@ async def _scenario(
                 tls_context=trust,
             )
 
+        # Synthetic acceptance only; the real CLI denies without an owner authority.
+        monkeypatch.setattr(cloud_once, "_require_independent_owner_authority", lambda: None)
         monkeypatch.setattr(cloud_once, "execute_single_approved_read", use_real_verified_transport)
         monkeypatch.setattr(cloud_once.sys.stdin, "isatty", lambda: True)
         monkeypatch.setattr(cloud_once.sys.stdout, "isatty", lambda: True)

@@ -60,6 +60,9 @@ def _keyfile(path: Path, *, other: bool = False) -> Path:
 _CURRENT_LOCAL_FIXTURE: tuple[Path, Path] | None = None
 
 
+_REAL_OWNER_AUTHORITY_GATE = cloud_once._require_independent_owner_authority
+
+
 @pytest.fixture(autouse=True)
 def _synthetic_registered_profile(monkeypatch: pytest.MonkeyPatch) -> None:
     # Unit tests of legacy auth/deadline logic use a test-only resolver.
@@ -71,6 +74,8 @@ def _synthetic_registered_profile(monkeypatch: pytest.MonkeyPatch) -> None:
         return cloud_local_registry.LocalRegisteredRead(key, folder, "demo")
 
     monkeypatch.setattr(cloud_local_registry, "resolve_registered_read", fixture_resolve)
+    # Legacy isolated unit cases use a synthetic authority; NEVER a real grant.
+    monkeypatch.setattr(cloud_once, "_require_independent_owner_authority", lambda: None)
 
 
 def _args(folder: Path, key: Path) -> list[str]:
@@ -87,6 +92,32 @@ def _args(folder: Path, key: Path) -> list[str]:
         PROJECT,
         "--allow-once",
     ]
+
+
+def test_unverified_owner_gate_denies_before_registry_key_or_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A local PTY flag is not a remote-read authorization assertion."""
+    args = _args(tmp_path, tmp_path / "enrolled.pem")
+    monkeypatch.setattr(
+        cloud_once, "_require_independent_owner_authority", _REAL_OWNER_AUTHORITY_GATE
+    )
+    monkeypatch.setattr(
+        cloud_local_registry,
+        "resolve_registered_read",
+        lambda **_: pytest.fail("unverified read must not resolve owner files"),
+    )
+    monkeypatch.setattr(cloud_once, "_confirm_local_read", lambda *_: pytest.fail("do not prompt"))
+    monkeypatch.setattr(
+        cloud_once, "_load_bound_owner_key", lambda *_: pytest.fail("do not load key")
+    )
+    monkeypatch.setattr(
+        cloud_once,
+        "execute_single_approved_read",
+        lambda **_: pytest.fail("do not connect"),
+    )
+    assert cloud_once.main(args) == 1
+    assert "denied" in capsys.readouterr().err
 
 
 def test_no_consent_flag_never_loads_a_key_or_connects(tmp_path: Path) -> None:

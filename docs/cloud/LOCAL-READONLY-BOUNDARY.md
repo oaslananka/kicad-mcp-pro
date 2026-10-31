@@ -9,6 +9,14 @@ production reports `remoteConnector=not_implemented` and both pairing and
 connector feature flags remain OFF. Do not merge or enable these features
 without independent security review and genuine owner acceptance.
 
+**Current local executable stop gate:** `cloud_once --allow-once` always
+returns a denial before accessing owner-private project records or keys and
+before opening WSS. A terminal prompt is not independent human authorization.
+The one-shot protocol examples below describe **isolated synthetic/test-only
+acceptance**, not a command to run against production or a completed owner
+approval. The stop gate must remain until separate verified owner consent and
+server-side grant checks are implemented and genuinely accepted.
+
 ## What works in an approved isolated environment
 
 The local operator can explicitly invoke two commands:
@@ -21,12 +29,11 @@ The local operator can explicitly invoke two commands:
   The resulting device is **enrolled but disabled**. No private-key bytes are
   uploaded. The local key directory must exist, be owned by the same POSIX
   user, have no symlink substitution and forbid group/other access.
-- `python -m kicad_mcp.cloud_once --allow-once` opens an authenticated
-  HTTPS/WSS session with an already enrolled and explicitly enabled device
-  and independently chosen local KiCad project. It permits **one** owner-approved
-  `project_summary` presence-only read, with a 30-second local lease; it
-  closes the session on completion or denial. It does not start automatically
-  or require the existing local KiCad MCP service to be restarted.
+- The **test-only** `cloud_once --allow-once` protocol exercise models a
+  verified HTTPS/WSS session and one metadata-only `project_summary` read
+  with a 30-second local lease. The real CLI does **not** connect or read
+  until an independent user-verifying owner authority is integrated and
+  accepted. No background service or local KiCad MCP restart is required.
 
 The Cloud's actual OAuth JWT verifier and PostgreSQL gates require a
 `projects:read` client consent, an enabled unrevoked owner device, an enabled
@@ -121,8 +128,10 @@ cross-owner/device/project/origin record denies the read. This manual
 record is **not** independent human authorization: a same-UID or sudo-capable
 agent can still modify it. Do not enable production with this DRAFT.
 
-The one-shot read CLI now accepts **identifiers only**, never the project
-directory, filename stem or PEM path:
+The one-shot read CLI accepts **identifiers only**, never the project
+directory, filename stem or PEM path. This invocation is retained solely to
+document the proposed contract; it **currently exits denied** before
+reading any registered project or opening a socket:
 
 ```sh
 uv run --all-extras python -m kicad_mcp.cloud_once \
@@ -134,10 +143,10 @@ uv run --all-extras python -m kicad_mcp.cloud_once \
 ```
 
 There is no legacy CLI path fallback. Old path arguments fail at parsing.
-The command reads the owner-private project record, selects its validated
-`keySlot` under the fixed private key directory, and continues only if the
-existing owner-binding fingerprint, origin, device, session and consent
-checks pass. An AI-supplied project UUID is never sufficient by itself.
+The dormant implementation contains owner-private project record and
+`keySlot` validation, but the executable stops before using either until
+independent consent is verified. A caller-supplied UUID, terminal response
+or owner key is never sufficient to lift that stop gate.
 
 For the minimal presence-only pilot, the separately authorized AI client
 invokes the Cloud MCP tool `get_project_presence(project_id)` while the

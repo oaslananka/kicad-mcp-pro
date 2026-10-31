@@ -147,9 +147,24 @@ async def _connect(
     )
 
 
+def _require_independent_owner_authority() -> None:
+    """Deny real reads until a separate user-verifying authority is wired in.
+
+    This is a deployment stop gate, not a standalone authentication scheme.
+    A local terminal response, the device signing key and owner-only file
+    permissions cannot establish independent human consent. Do not offer
+    a CLI flag, environment override or same-user fallback for this check.
+    The isolated protocol tests explicitly replace this check with a
+    synthetic fixture; no production verifier has been accepted yet.
+    """
+    raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+
+
 def main(argv: list[str] | None = None) -> int:
     options = _parser().parse_args(argv)
     try:
+        # Reject before loading registered project paths, owner keys or sockets.
+        _require_independent_owner_authority()
         from kicad_mcp.cloud_local_registry import resolve_registered_read
 
         selected = resolve_registered_read(

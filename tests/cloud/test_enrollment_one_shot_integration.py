@@ -161,6 +161,8 @@ def test_browser_paired_identity_completes_only_one_local_project_summary(
         events.append("one-local-summary")
         return HandshakeReceipt(DEVICE, SESSION)
 
+    # Synthetic acceptance only; the real executable has a hard owner-authority stop gate.
+    monkeypatch.setattr(cloud_once, "_require_independent_owner_authority", lambda: None)
     monkeypatch.setattr(cloud_once, "execute_single_approved_read", synthetic_one_shot_transport)
     monkeypatch.setattr(cloud_once.sys.stdin, "isatty", lambda: True)
     monkeypatch.setattr(cloud_once.sys.stdout, "isatty", lambda: True)

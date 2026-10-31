@@ -2,6 +2,8 @@
 
 **Status (2026-10-31): independent per-read approval NOT implemented or release-authorized.** Local [PR #1513](https://github.com/oaslananka/kicad-mcp-pro/pull/1513) remains DRAFT. Cloud [PR #64](https://github.com/oaslananka/kicad-mcp-pro-cloud/pull/64) merged into Cloud main on 2026-10-30, but production still reports `remoteConnector=not_implemented` and the remote-read feature remains OFF. A source merge is not a deployment or read authorization.
 
+**Current local enforcement:** The `cloud_once` executable now fails closed **before** resolving registered owner projects, opening private keys, presenting a terminal prompt, or establishing WSS until an independently user-verifying owner authority is actually integrated and accepted. `--allow-once` alone cannot unlock it. No environment override or same-user fallback exists. Synthetic protocol tests use an explicit test-only authority stub; these tests cannot be presented as real human authorization or production acceptance. This is a temporary launch safety gate, **not** the missing owner authentication service or server-side grant verification.
+
 ## Reproduced root cause
 
 `test_same_uid_pty_is_not_independent_human_approval` launches a separate same-UID process with a genuine PTY, reads the fresh CLI challenge and replies `APPROVE` automatically. No human, private key or Cloud connection is involved. This shows that the foreground prompt is an *invocation check*, not independent human authentication.
