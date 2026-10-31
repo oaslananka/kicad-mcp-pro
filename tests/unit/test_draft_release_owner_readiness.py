@@ -35,6 +35,8 @@ class FakeClient:
             "head_repository": {"full_name": REPO},
             "path": ".github/workflows/publish-release.yml",
             "event": "workflow_dispatch",
+            "actor": {"login": "oaslananka"},
+            "triggering_actor": {"login": "oaslananka"},
             "head_branch": "main",
             "head_sha": SHA,
             "run_attempt": 1,

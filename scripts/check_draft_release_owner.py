@@ -14,6 +14,9 @@ from scripts.check_draft_release_inventory import _draft_release
 from scripts.stage_draft_release_assets import _SHA, GitHubCLI, _valid_inputs
 
 _OWNER_PATH = ".github/workflows/publish-release.yml"
+# Only the reviewed personal repository owner may initiate or re-run
+# a release-authorizing workflow_dispatch; repository write access is broader.
+_TRUSTED_DISPATCH_OWNER = {"oaslananka/kicad-mcp-pro": "oaslananka"}
 
 
 class OwnerClient(Protocol):
@@ -57,6 +60,10 @@ def verify_owner(
     if owner_head_sha != source_commit:
         raise ValueError("owner main commit differs from protected release source")
 
+    expected_actor = _TRUSTED_DISPATCH_OWNER.get(repo)
+    if expected_actor is None:
+        raise ValueError("no trusted owner dispatch principal for repository")
+
     run = client.workflow_run(repo, owner_run_id)
     if not isinstance(run, dict):
         raise ValueError("GitHub owner workflow response is invalid")
@@ -73,6 +80,16 @@ def verify_owner(
         or head_repo.get("full_name") != repo
     ):
         raise ValueError("workflow run belongs to an unexpected repository")
+    actor = run.get("actor")
+    triggering_actor = run.get("triggering_actor")
+    if (
+        not isinstance(actor, dict)
+        or actor.get("login") != expected_actor
+        or not isinstance(triggering_actor, dict)
+        or triggering_actor.get("login") != expected_actor
+    ):
+        raise ValueError("workflow run actor is not the trusted owner")
+
     if (
         run.get("path") != _OWNER_PATH
         or run.get("event") != "workflow_dispatch"
