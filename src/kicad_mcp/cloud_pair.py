@@ -190,8 +190,8 @@ def _load_or_create(path: Path) -> Ed25519PrivateKey:
 
 
 def _challenge(result: dict[str, object], key: Ed25519PrivateKey) -> tuple[str, str, str, str, int]:
-    expected = {"challengeId", "userCode", "deviceCode", "deviceFingerprint", "expiresAtMs"}
-    if set(result) not in (expected, expected | {"verificationUriComplete"}):
+    required_fields = {"challengeId", "userCode", "deviceCode", "deviceFingerprint", "expiresAtMs"}
+    if set(result) not in (required_fields, required_fields | {"verificationUriComplete"}):
         raise CloudPairingError(_PAIRING_DENIED)
     challenge, code, secret, fingerprint, expiry = (
         result["challengeId"],
