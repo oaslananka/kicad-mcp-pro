@@ -26,6 +26,8 @@ class FakeOwnerClient:
             "head_repository": {"full_name": REPO},
             "path": ".github/workflows/publish-release.yml",
             "event": "workflow_dispatch",
+            "actor": {"login": "oaslananka"},
+            "triggering_actor": {"login": "oaslananka"},
             "head_branch": "main",
             "head_sha": HEAD,
             "run_attempt": 2,
@@ -173,3 +175,35 @@ def test_invalid_cli_identity_never_queries_api(field: str, value: object) -> No
     with pytest.raises(ValueError):
         verify_owner(client, **args)
     assert not client.calls
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("actor", {"login": "untrusted-contributor"}),
+        ("triggering_actor", {"login": "untrusted-contributor"}),
+        ("actor", None),
+        ("triggering_actor", None),
+        ("actor", {"login": "oaslananka[bot]"}),
+        ("triggering_actor", {"login": "another-owner"}),
+    ],
+)
+def test_owner_dispatch_does_not_accept_untrusted_actor(field: str, value: object) -> None:
+    client = FakeOwnerClient()
+    client.run_data[field] = value
+    args = _args()
+    with pytest.raises(ValueError, match="workflow run"):
+        verify_owner(client, **args)
+    assert client.calls == ["run"]
+
+
+def test_unrecognized_repository_has_no_default_owner_authorization() -> None:
+    client = FakeOwnerClient()
+    other = "other-owner/kicad-mcp-pro"
+    client.run_data["repository"]["full_name"] = other
+    client.run_data["head_repository"]["full_name"] = other
+    client.run_data["url"] = f"https://api.github.com/repos/{other}/actions/runs/{RUN}"
+    args = {**_args(), "repo": other}
+    with pytest.raises(ValueError, match="trusted owner"):
+        verify_owner(client, **args)
+    assert client.calls == []
