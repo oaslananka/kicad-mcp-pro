@@ -76,7 +76,7 @@ dev = [
   "mutmut>=3.0.0",
   "mypy>=1.10.0",
   "Pillow>=13.0.0,<14.0.0",
-  "pypdf==6.21.2",
+  "pypdf==6.21.4",
   "properdocs>=1.6.7",
   "pytest>=8.2.0",
   "pytest-asyncio>=0.25.0",
