@@ -1,6 +1,6 @@
 # Independent owner approval — Cloud read trust boundary
 
-**Status: acceptance design, NOT implemented or release-authorized.** Local [PR #1513](https://github.com/oaslananka/kicad-mcp-pro/pull/1513) and Cloud [PR #64](https://github.com/oaslananka/kicad-mcp-pro-cloud/pull/64) remain DRAFT; production connector remains disabled.
+**Status (2026-10-31): independent per-read approval NOT implemented or release-authorized.** Local [PR #1513](https://github.com/oaslananka/kicad-mcp-pro/pull/1513) remains DRAFT. Cloud [PR #64](https://github.com/oaslananka/kicad-mcp-pro-cloud/pull/64) merged into Cloud main on 2026-10-30, but production still reports `remoteConnector=not_implemented` and the remote-read feature remains OFF. A source merge is not a deployment or read authorization.
 
 ## Reproduced root cause
 
@@ -8,7 +8,7 @@
 
 Owner directory mode `0700`, PEM mode `0600` and `O_NOFOLLOW` help defend against filesystem errors and other unprivileged UIDs, **not** a same-UID agent or root escalation. A disposable-file host probe demonstrated that a different unprivileged user could not read the fixture, while a passwordless-sudo-capable process could read it as root. No owner key was touched. A different UID by itself fails when the agent retains sudo, Docker-host access, privileged sockets or access to the owner session/approval endpoint.
 
-## Required trust boundary (before either PR can merge)
+## Required trust boundary (before remote-read approval or activation)
 
 1. **Confine automation:** Isolate its principal from owner key, owner project, GUI/browser session, approval endpoint, sudo/root, container-admin groups and privileged IPC. Verify the *actual* host and loopback privileges, not just UID names. Do not change current host sudoers, users or services as part of this DRAFT.
 2. **Independent owner authenticator:** Use a trusted user-verifying device/channel whose signing key the agent cannot access, ideally hardware-backed on a separately controlled device. Device-transport Ed25519 signing keys are *not* owner-consent keys. Neither a PTY response, a reusable browser cookie nor a service listening only on localhost suffices.
@@ -34,6 +34,6 @@ Owner directory mode `0700`, PEM mode `0600` and `O_NOFOLLOW` help defend agains
 
 ## Delivery order
 
-Prove actual non-admin agent confinement and inaccessible localhost/IPC first. Implement independent owner-key enrollment and per-read server challenge verification second. Then add cross-principal, replay, race, mismatch, revocation and real owner OAuth/TLS acceptance evidence. Review the five OPEN Sonar `pythonsecurity:S8707` CLI-path findings independently; **documentation does not resolve them**, and scanner suppression or gate bypass is forbidden. Require separate release/deployment authorization.
+Prove actual non-admin agent confinement and inaccessible localhost/IPC first. Implement independent owner-key enrollment and per-read server challenge verification second. Then add cross-principal, replay, race, mismatch, revocation and real owner OAuth/TLS acceptance evidence. The nine PR #1513 Sonar `pythonsecurity:S8707` issues are now **CLOSED/FIXED** in the 2026-10-31 public analyzer result, with Quality Gate OK; this fixes analyzer findings, **not** the independent human-authorization requirement. Never suppress or bypass the scanner gate. Require separate release/deployment authorization.
 
-No email, external support request, device enrollment, credentials or production configuration change is authorized by a generic “continue.”
+No email, external support request, additional device enrollment, credential disclosure or production configuration change is authorized by a generic “continue.”
