@@ -140,13 +140,12 @@ def _ready_owner(root: Path) -> Path:
     path = root / ".github" / "workflows" / "publish-release.yml"
     source = path.read_text(encoding="utf-8")
     assert source.count("  cancel-in-progress: false\n") == 1
-    path.write_text(
-        source.replace(
+    if "  queue: max\n" not in source:
+        source = source.replace(
             "  cancel-in-progress: false\n",
             "  cancel-in-progress: false\n  queue: max\n",
-        ),
-        encoding="utf-8",
-    )
+        )
+        path.write_text(source, encoding="utf-8")
     return path
 
 
