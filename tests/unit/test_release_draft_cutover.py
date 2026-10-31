@@ -114,12 +114,33 @@ def test_cutover_rejects_any_autonomous_event(tmp_path: Path, trigger: str) -> N
     assert any(f"{_PUBLISHERS[0]}: remove autonomous" in e for e in validate_cutover(root))
 
 
+@pytest.mark.parametrize("filename", _PUBLISHERS)
+def test_cutover_rejects_independent_manual_publisher_dispatch(
+    tmp_path: Path, filename: str
+) -> None:
+    """The owner workflow must be the sole writer when draft cutover is active."""
+    root = _fixture(tmp_path)
+    _draft(root)
+    for publisher in _PUBLISHERS:
+        (root / ".github" / "workflows" / publisher).write_text(
+            "on:\n  workflow_call:\n", encoding="utf-8"
+        )
+    (root / ".github" / "workflows" / filename).write_text(
+        "on:\n  workflow_call:\n  workflow_dispatch:\n",
+        encoding="utf-8",
+    )
+    errors = validate_cutover(root, {"release_asset_mutations": []})
+    assert any(
+        error.startswith(f"{filename}:") and "workflow_dispatch" in error for error in errors
+    )
+
+
 def test_cutover_uses_supplied_policy_not_an_unrelated_disk_copy(tmp_path: Path) -> None:
     root = _fixture(tmp_path)
     _draft(root)
     for filename in _PUBLISHERS:
         (root / ".github" / "workflows" / filename).write_text(
-            "on:\n  workflow_call:\n  workflow_dispatch:\n", encoding="utf-8"
+            "on:\n  workflow_call:\n", encoding="utf-8"
         )
     disk_policy = root / ".github" / "actions-policy.json"
     disk_policy.write_text(json.dumps({"release_asset_mutations": []}), encoding="utf-8")
@@ -139,7 +160,7 @@ def test_cutover_can_check_the_necessary_post_migration_conditions(tmp_path: Pat
     _draft(root)
     for filename in _PUBLISHERS:
         (root / ".github" / "workflows" / filename).write_text(
-            "on:\n  workflow_call:\n  workflow_dispatch:\n", encoding="utf-8"
+            "on:\n  workflow_call:\n", encoding="utf-8"
         )
     (root / ".github" / "actions-policy.json").write_text(
         json.dumps({"release_asset_mutations": []}), encoding="utf-8"

@@ -330,6 +330,15 @@ both draft and force-tag-creation for safe tag creation. This is static
 classification only, not a live release lifecycle test:
 https://github.com/googleapis/release-please/blob/main/docs/manifest-releaser.md
 
+When cutover is enabled, each family publisher must be invoked by the
+single owner via `workflow_call`; a separate `workflow_dispatch` on any family
+publisher fails the static cutover gate, even if it is described as a manual
+recovery route. Recovery dispatch belongs on the owner orchestrator, not on
+an independently writable family callee. `pull_request` validation may remain,
+subject to existing untrusted-code permission controls. This is a necessary
+structural check, **not** proof of exclusive writer ownership or authorization
+to enable draft mode.
+
 The production publisher and all nine legacy post-publication mutation
 allowlist entries are unchanged. No releases, tags or registry artifacts were
 created or modified.
