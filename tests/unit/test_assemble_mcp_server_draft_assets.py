@@ -34,7 +34,22 @@ def _fixture(tmp_path: Path) -> dict[str, object]:
         "".join(f"{_sha(data)}  {name}\n" for name, data in py_artifacts.items())
     )
     (dirs["python_evidence"] / "sbom.cdx.json").write_text('{"bomFormat":"CycloneDX"}')
-    (dirs["python_evidence"] / "release-evidence.json").write_text('{"schemaVersion":1}')
+    (dirs["python_evidence"] / "release-evidence.json").write_text(
+        json.dumps(
+            {
+                "product": "kicad-mcp-pro",
+                "surface": "python",
+                "package": "kicad-mcp-pro",
+                "version": VERSION,
+                "checksums": "SHA256SUMS.txt",
+                "sbom": "sbom.cdx.json",
+                "artifacts": [
+                    {"name": name, "sha256": _sha(data), "size": len(data)}
+                    for name, data in sorted(py_artifacts.items())
+                ],
+            }
+        )
+    )
     for kind in ("mcpb", "pcm"):
         name = (
             f"kicad-mcp-pro-{VERSION}.mcpb"
@@ -54,7 +69,16 @@ def _fixture(tmp_path: Path) -> dict[str, object]:
         if kind == "mcpb":
             evidence.update({"schemaVersion": 1, "sourceTag": TAG, "sourceCommit": SOURCE})
         else:
-            evidence["schema_version"] = "kicad-pcm-release-evidence.v1"
+            evidence.update(
+                {
+                    "schema_version": "kicad-pcm-release-evidence.v1",
+                    "package_identifier": "com.github.oaslananka.kicad-mcp-pro",
+                    "download_size": len(payload),
+                    "install_size": 100,
+                    "runtime": "ipc",
+                    "minimum_kicad_version": "10.0",
+                }
+            )
         (dirs[kind] / f"kicad-mcp-pro-{kind}-release-evidence.json").write_text(
             json.dumps(evidence)
         )
@@ -199,3 +223,69 @@ def test_output_inside_input_does_not_create_new_directory(tmp_path: Path, folde
     kwargs["output"] = tmp_path / "out"
     result = assemble(**kwargs)
     assert result["publicationAuthorized"] is False
+
+
+@pytest.mark.parametrize(
+    ("folder", "filename", "key", "value"),
+    [
+        ("python_evidence", "release-evidence.json", "version", "0.0.0"),
+        ("python_evidence", "release-evidence.json", "package", "different-project"),
+        ("python_evidence", "release-evidence.json", "surface", "mcpb"),
+        ("python_evidence", "release-evidence.json", "artifacts", []),
+        (
+            "pcm",
+            "kicad-mcp-pro-pcm-release-evidence.json",
+            "package_identifier",
+            "com.attacker.plugin",
+        ),
+        ("pcm", "kicad-mcp-pro-pcm-release-evidence.json", "download_size", -1),
+        ("pcm", "kicad-mcp-pro-pcm-release-evidence.json", "runtime", "swig"),
+    ],
+)
+def test_forged_family_evidence_is_rejected_before_staging(
+    tmp_path: Path, folder: str, filename: str, key: str, value: object
+) -> None:
+    kwargs = _fixture(tmp_path)
+    evidence = kwargs[folder] / filename
+    current = json.loads(evidence.read_text(encoding="utf-8"))
+    current[key] = value
+    evidence.write_text(json.dumps(current), encoding="utf-8")
+    with pytest.raises(ValueError, match="evidence"):
+        assemble(**kwargs)
+    assert not kwargs["output"].exists()
+
+
+def test_python_evidence_asset_digest_must_match_assembled_distribution(tmp_path: Path) -> None:
+    kwargs = _fixture(tmp_path)
+    evidence = kwargs["python_evidence"] / "release-evidence.json"
+    current = json.loads(evidence.read_text(encoding="utf-8"))
+    current["artifacts"][0]["sha256"] = "f" * 64
+    evidence.write_text(json.dumps(current), encoding="utf-8")
+    with pytest.raises(ValueError, match="evidence"):
+        assemble(**kwargs)
+    assert not kwargs["output"].exists()
+
+
+def test_python_evidence_race_cannot_accept_invalid_staged_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    kwargs = _fixture(tmp_path)
+    import scripts.assemble_mcp_server_draft_assets as module
+
+    original_copy = module.shutil.copyfile
+    corrupted = False
+
+    def race_copy(source: Path, destination: Path, **options: object) -> str:
+        nonlocal corrupted
+        if source.name == "release-evidence.json" and not corrupted:
+            corrupted = True
+            value = json.loads(source.read_text(encoding="utf-8"))
+            value["version"] = "0.0.0"
+            source.write_text(json.dumps(value), encoding="utf-8")
+        return str(original_copy(source, destination, **options))
+
+    monkeypatch.setattr(module.shutil, "copyfile", race_copy)
+    with pytest.raises(ValueError, match="Python evidence"):
+        assemble(**kwargs)
+    assert corrupted
+    assert not kwargs["output"].exists()
