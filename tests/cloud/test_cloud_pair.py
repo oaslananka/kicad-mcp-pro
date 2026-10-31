@@ -203,13 +203,58 @@ def test_pairing_refuses_untrusted_browser_link_before_owner_review(
     assert seen == ["/api/v1/pairing/device/challenge"]
 
 
+@pytest.mark.parametrize("unsupported", ["missing_status", "already_approved"])
+def test_missing_or_premature_cloud_status_never_opens_browser(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, unsupported: str
+) -> None:
+    """Do not waste a real human approval against an incompatible Cloud deploy."""
+    keyfile = tmp_path / "owner.pem"
+    requests: list[str] = []
+    browser_visits: list[str] = []
+
+    def fake_post(_origin: tuple[str, int, str], path: str, data: dict, status: int) -> dict:
+        requests.append(path)
+        if path.endswith("/challenge"):
+            der = base64.b64decode(data["publicKeyDer"], validate=True)
+            return {
+                "challengeId": CHALLENGE,
+                "userCode": "ABCDEF-123456",
+                "deviceCode": SECRET,
+                "deviceFingerprint": hashlib.sha256(der).hexdigest(),
+                "expiresAtMs": time.time_ns() // 1_000_000 + 60_000,
+            }
+        assert path.endswith("/status")
+        assert status == 200
+        if unsupported == "missing_status":
+            raise cloud_pair.CloudPairingError("pairing denied")
+        return {"approved": True}
+
+    monkeypatch.setattr(cloud_pair, "_post", fake_post)
+    with pytest.raises(cloud_pair.CloudPairingError):
+        cloud_pair.enroll(
+            "https://localhost",
+            "Approved Fixture",
+            keyfile,
+            lambda *_: browser_visits.append("opened"),
+        )
+    assert requests == [
+        "/api/v1/pairing/device/challenge",
+        "/api/v1/pairing/device/status",
+    ]
+    assert browser_visits == []
+    assert not keyfile.with_name(keyfile.name + ".cloud-binding-v1.json").exists()
+
+
 def test_pairing_exact_payload_and_owner_review(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     keyfile = tmp_path / "owner.pem"
     seen: list[str] = []
+    status_checks = 0
+    monkeypatch.setattr(cloud_pair.time, "sleep", lambda _: None)
 
     def simulate_post(origin: tuple[str, int, str], path: str, data: dict, status: int) -> dict:
+        nonlocal status_checks
         assert origin == ("localhost", 443, "https://localhost")
         if path.endswith("/challenge"):
             assert status == 201
@@ -237,12 +282,13 @@ def test_pairing_exact_payload_and_owner_review(
                 b"kicad-cloud-pairing-status-v1\0" + CHALLENGE.encode() + b"\0" + SECRET.encode()
             )
             _load_owner_key(keyfile).public_key().verify(signed, proof)
-            seen.append("approval_verified")
-            return {"approved": True}
+            status_checks += 1
+            seen.append("status_ready" if status_checks == 1 else "approval_verified")
+            return {"approved": status_checks == 2}
         assert path.endswith("/redeem")
         assert status == 200
 
-        assert seen == ["challenge", "browser_approved", "approval_verified"]
+        assert seen == ["challenge", "status_ready", "browser_approved", "approval_verified"]
         assert data["challengeId"] == CHALLENGE
         assert data["deviceCode"] == SECRET
         key = _load_owner_key(keyfile)
@@ -269,7 +315,7 @@ def test_pairing_exact_payload_and_owner_review(
         "https://localhost", "Approved Fixture", keyfile, approve
     )
     assert device == DEVICE
-    assert seen == ["challenge", "browser_approved", "approval_verified", "redeem"]
+    assert seen == ["challenge", "status_ready", "browser_approved", "approval_verified", "redeem"]
     assert len(fingerprint) == 64
     assert keyfile.stat().st_mode & 0o777 == 0o600
     # A successfully redeemed, browser-approved device must pin its origin
@@ -838,6 +884,8 @@ def test_successful_challenge_but_missing_browser_approval_never_redeems(
                 "deviceFingerprint": hashlib.sha256(der).hexdigest(),
                 "expiresAtMs": time.time_ns() // 1_000_000 + 50_000,
             }
+        if path.endswith("/status"):
+            return {"approved": False}
         raise AssertionError("Redeemed without approval")
 
     def cancel(*_: object) -> None:
@@ -846,4 +894,7 @@ def test_successful_challenge_but_missing_browser_approval_never_redeems(
     monkeypatch.setattr(cloud_pair, "_post", fake_post)
     with pytest.raises(cloud_pair.CloudPairingError):
         cloud_pair.enroll("https://localhost", "Fixture", keyfile, cancel)
-    assert visits == ["/api/v1/pairing/device/challenge"]
+    assert visits == [
+        "/api/v1/pairing/device/challenge",
+        "/api/v1/pairing/device/status",
+    ]

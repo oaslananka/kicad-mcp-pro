@@ -68,12 +68,16 @@ uv run --all-extras python -m kicad_mcp.cloud_pair \
 In a browser **signed in as the intended owner of that isolated Cloud**,
 inspect the first-party device approval page opened by the client. Verify
 that its short code matches the one in the terminal, and explicitly select
-**Approve device** before the five-minute challenge expires. The client
-checks only a read-only approval flag using an independent Ed25519-signed
-proof at most once every eight seconds, then automatically attempts one
-separate signed redemption. **No terminal Enter is required.** If the owner
-denies approval, the deadline expires or the status endpoint is unavailable,
-enrollment fails closed. The command still requires stdin and stdout attached
+**Approve device** before the five-minute challenge expires. **Before showing
+the owner the browser page**, the client must first verify that the separate
+Ed25519-signed, read-only status endpoint works and that the fresh challenge
+is still pending. If that endpoint is unavailable (for example, the deployed
+Cloud version is too old), no approval page is opened and the attempt fails
+closed without wasting a human click. After the browser is shown, the client
+polls no faster than once every eight seconds and automatically attempts one
+separately signed redemption only after actual owner approval.
+**No terminal Enter is required.** If the owner denies approval or the deadline
+expires, enrollment fails closed. The command still requires stdin and stdout attached
 to a real foreground terminal; redirected or piped invocation is rejected
 before key creation or issuing a challenge. An agent-owned PTY under the same
 OS user is not independent human approval.

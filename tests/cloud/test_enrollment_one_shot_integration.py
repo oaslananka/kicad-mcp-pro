@@ -41,11 +41,13 @@ def test_browser_paired_identity_completes_only_one_local_project_summary(
     (selected_project / "board.kicad_pro").touch()
     events: list[str] = []
     enrolled_fingerprint = ""
+    status_checks = 0
+    monkeypatch.setattr(cloud_pair.time, "sleep", lambda _: None)
 
     def synthetic_pairing_http(
         origin: tuple[str, int, str], path: str, body: dict[str, object], expected_status: int
     ) -> dict[str, object]:
-        nonlocal enrolled_fingerprint
+        nonlocal enrolled_fingerprint, status_checks
         assert origin == ("cloud.example", 443, ORIGIN)
         if path.endswith("/challenge"):
             assert expected_status == 201
@@ -61,7 +63,11 @@ def test_browser_paired_identity_completes_only_one_local_project_summary(
             }
         if path.endswith("/status"):
             assert expected_status == 200
-            assert events == ["challenge", "owner-consented"]
+            assert events == (
+                ["challenge"]
+                if status_checks == 0
+                else ["challenge", "status-ready", "owner-consented"]
+            )
             proof = (
                 b"kicad-cloud-pairing-status-v1\0"
                 + CHALLENGE.encode()
@@ -70,11 +76,17 @@ def test_browser_paired_identity_completes_only_one_local_project_summary(
             )
             signed = base64.urlsafe_b64decode(str(body["signature"]) + "==")
             cloud_once._load_owner_key(private_key_path).public_key().verify(signed, proof)
-            events.append("approval-status-verified")
-            return {"approved": True}
+            status_checks += 1
+            events.append("status-ready" if status_checks == 1 else "approval-status-verified")
+            return {"approved": status_checks == 2}
         assert path.endswith("/redeem")
         assert expected_status == 200
-        assert events == ["challenge", "owner-consented", "approval-status-verified"]
+        assert events == [
+            "challenge",
+            "status-ready",
+            "owner-consented",
+            "approval-status-verified",
+        ]
         assert body["challengeId"] == CHALLENGE
         assert body["deviceCode"] == DEVICE_SECRET
         proof = (
@@ -101,7 +113,13 @@ def test_browser_paired_identity_completes_only_one_local_project_summary(
     )
     assert device == DEVICE
     assert fingerprint == enrolled_fingerprint
-    assert events == ["challenge", "owner-consented", "approval-status-verified", "redeemed"]
+    assert events == [
+        "challenge",
+        "status-ready",
+        "owner-consented",
+        "approval-status-verified",
+        "redeemed",
+    ]
 
     binding = cloud_once._read_owner_binding(private_key_path)
     assert binding == {"origin": ORIGIN, "deviceId": DEVICE, "fingerprint": fingerprint}
@@ -171,6 +189,7 @@ def test_browser_paired_identity_completes_only_one_local_project_summary(
     assert cloud_once.main(options) == 0
     assert events == [
         "challenge",
+        "status-ready",
         "owner-consented",
         "approval-status-verified",
         "redeemed",

@@ -249,8 +249,9 @@ def _wait_for_owner_approval(
     device_code: str,
     signing_key: Ed25519PrivateKey,
     expiry_ms: int,
+    start_owner_review: Callable[[], None] | None = None,
 ) -> None:
-    """Read only the device-signed approval bit before single-use redemption."""
+    """Require a working signed status endpoint before opening owner approval."""
     proof = (
         b"kicad-cloud-pairing-status-v1\x00"
         + challenge.encode("ascii")
@@ -270,7 +271,14 @@ def _wait_for_owner_approval(
         response = _post(origin, "/api/v1/pairing/device/status", body, 200)
         if set(response) != {"approved"} or type(response["approved"]) is not bool:
             raise CloudPairingError(_PAIRING_DENIED)
-        if response["approved"]:
+        if start_owner_review is not None:
+            # A new challenge must be pending before inviting a human to click.
+            # This also rejects older Cloud versions with no signed status API.
+            if response["approved"]:
+                raise CloudPairingError(_PAIRING_DENIED)
+            start_owner_review()
+            start_owner_review = None
+        elif response["approved"]:
             return
         time.sleep(min(8.0, remaining / 1000))
 
@@ -310,8 +318,14 @@ def enroll(
     supplied_url = result.get("verificationUriComplete")
     if supplied_url is not None and supplied_url != review_url:
         raise CloudPairingError(_PAIRING_DENIED)
-    approval(target[2] + "/devices/pairing", challenge, code)
-    _wait_for_owner_approval(target, challenge, device_secret, key, expiry)
+    _wait_for_owner_approval(
+        target,
+        challenge,
+        device_secret,
+        key,
+        expiry,
+        lambda: approval(target[2] + "/devices/pairing", challenge, code),
+    )
     if time.time_ns() // 1_000_000 >= expiry:
         raise CloudPairingError(_PAIRING_DENIED)
     proof = (

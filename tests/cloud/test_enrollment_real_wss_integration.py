@@ -208,11 +208,13 @@ async def _scenario(
         port = server.sockets[0].getsockname()[1]
         origin = f"https://localhost:{port}"
         fingerprint = ""
+        status_checks = 0
+        monkeypatch.setattr(cloud_pair.time, "sleep", lambda _: None)
 
         def local_enrollment_http(
             destination: tuple[str, int, str], endpoint: str, body: dict[str, object], status: int
         ) -> dict[str, object]:
-            nonlocal accepted_public_key, fingerprint
+            nonlocal accepted_public_key, fingerprint, status_checks
             assert destination == ("localhost", port, origin)
             if endpoint.endswith("/challenge"):
                 assert status == 201
@@ -235,7 +237,11 @@ async def _scenario(
                 }
             if endpoint.endswith("/status"):
                 assert status == 200
-                assert observations == ["pairing-challenge", "browser-approved"]
+                assert observations == (
+                    ["pairing-challenge"]
+                    if status_checks == 0
+                    else ["pairing-challenge", "status-ready", "browser-approved"]
+                )
                 assert accepted_public_key is not None
                 proof = (
                     b"kicad-cloud-pairing-status-v1\0"
@@ -244,12 +250,16 @@ async def _scenario(
                     + DEVICE_SECRET.encode()
                 )
                 accepted_public_key.verify(_signature(body), proof)
-                observations.append("approval-status-verified")
-                return {"approved": True}
+                status_checks += 1
+                observations.append(
+                    "status-ready" if status_checks == 1 else "approval-status-verified"
+                )
+                return {"approved": status_checks == 2}
             assert endpoint.endswith("/redeem")
             assert status == 200
             assert observations == [
                 "pairing-challenge",
+                "status-ready",
                 "browser-approved",
                 "approval-status-verified",
             ]
@@ -335,6 +345,7 @@ def test_browser_enrollment_then_real_tls_wss_single_summary(
 ) -> None:
     assert asyncio.run(_scenario(tmp_path, monkeypatch)) == [
         "pairing-challenge",
+        "status-ready",
         "browser-approved",
         "approval-status-verified",
         "pairing-redeemed",
@@ -350,6 +361,7 @@ def test_real_tls_wss_expired_foreground_consent_never_sends_project_summary(
 ) -> None:
     assert asyncio.run(_scenario(tmp_path, monkeypatch, expire_during_proof=True)) == [
         "pairing-challenge",
+        "status-ready",
         "browser-approved",
         "approval-status-verified",
         "pairing-redeemed",
@@ -365,6 +377,7 @@ def test_real_tls_wss_expiry_between_read_and_delivery_denies_result(
 ) -> None:
     assert asyncio.run(_scenario(tmp_path, monkeypatch, expire_after_inspection=True)) == [
         "pairing-challenge",
+        "status-ready",
         "browser-approved",
         "approval-status-verified",
         "pairing-redeemed",
