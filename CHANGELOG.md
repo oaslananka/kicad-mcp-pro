@@ -10,6 +10,19 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.5.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.5.0...mcp-server-v4.5.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **mcp:** annotate reviewed read-only discovery tools ([#1538](https://github.com/oaslananka/kicad-mcp-pro/issues/1538)) ([dd9a343](https://github.com/oaslananka/kicad-mcp-pro/commit/dd9a343c1d15bb24077fca82112f052297353f6a))
+* **release:** attest GUI SLSA provenance separately from SBOM ([#1536](https://github.com/oaslananka/kicad-mcp-pro/issues/1536)) ([88c30a1](https://github.com/oaslananka/kicad-mcp-pro/commit/88c30a1c5b8f6d29886bdb361bb0ce751101b17f))
+* **release:** bind draft identity to requested numeric release ([#1539](https://github.com/oaslananka/kicad-mcp-pro/issues/1539)) ([0205826](https://github.com/oaslananka/kicad-mcp-pro/commit/02058265b9b25bd450e3ca9fa4a486a69d381426))
+* **release:** recheck draft identity between asset uploads ([#1537](https://github.com/oaslananka/kicad-mcp-pro/issues/1537)) ([6bcbe41](https://github.com/oaslananka/kicad-mcp-pro/commit/6bcbe41723972dce2b004421254c68f8a74b2069))
+* **release:** reject independent dispatch after draft cutover ([#1541](https://github.com/oaslananka/kicad-mcp-pro/issues/1541)) ([902a54b](https://github.com/oaslananka/kicad-mcp-pro/commit/902a54bba65b00e737a96cf54744de207f4f95c6))
+* **release:** require explicit uploaded draft asset state ([#1540](https://github.com/oaslananka/kicad-mcp-pro/issues/1540)) ([41ec08d](https://github.com/oaslananka/kicad-mcp-pro/commit/41ec08d8914957026c2eb8d1c4246bf0c7f71a23))
+* **release:** validate intermediate draft before asset download ([#1542](https://github.com/oaslananka/kicad-mcp-pro/issues/1542)) ([b676800](https://github.com/oaslananka/kicad-mcp-pro/commit/b67680009151959bc4e6cc984b179ec86fc090e8))
+
 ## [4.5.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.4.0...mcp-server-v4.5.0) (2026-10-30)
 
 
