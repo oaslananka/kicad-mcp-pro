@@ -20,6 +20,8 @@ def _temp_host_repo(tmp_path: Path) -> Path:
         "integrations/common/agent-host-evidence.json",
         "integrations/gemini-cli/kicad-mcp-pro/gemini-extension.json",
         "packages/mcp-npm/package.json",
+        "docs/evidence/agent-host/2026-10-31-linux-codex-native-smoke.json",
+        "docs/evidence/agent-host/2026-10-31-linux-codex-native-sanitized-log.json",
     }
     for row in catalog["hosts"]:
         paths.add(row["configuration"])

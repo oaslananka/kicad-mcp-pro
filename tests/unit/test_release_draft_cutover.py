@@ -140,13 +140,12 @@ def _ready_owner(root: Path) -> Path:
     path = root / ".github" / "workflows" / "publish-release.yml"
     source = path.read_text(encoding="utf-8")
     assert source.count("  cancel-in-progress: false\n") == 1
-    path.write_text(
-        source.replace(
+    if "  queue: max\n" not in source:
+        source = source.replace(
             "  cancel-in-progress: false\n",
             "  cancel-in-progress: false\n  queue: max\n",
-        ),
-        encoding="utf-8",
-    )
+        )
+        path.write_text(source, encoding="utf-8")
     return path
 
 
@@ -191,10 +190,61 @@ def test_draft_cutover_requires_serialized_non_lossy_owner(tmp_path: Path, mutat
     assert any("owner concurrency" in error for error in errors)
 
 
+def _safe_release_please_owner(root: Path) -> Path:
+    """Model the future owner where Release Please cannot publish before staging."""
+    path = root / ".github" / "workflows" / "publish-release.yml"
+    original = path.read_text(encoding="utf-8")
+    assert "skip-github-release: false" in original
+    path.write_text(
+        original.replace("skip-github-release: false", "skip-github-release: true"),
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.mark.parametrize("setting", ["false", "'false'", "missing", "numeric-true"])
+def test_draft_cutover_rejects_early_release_please_publication(
+    tmp_path: Path, setting: str
+) -> None:
+    root = _fixture(tmp_path)
+    _draft(root)
+    owner = _ready_owner(root)
+    source = owner.read_text(encoding="utf-8")
+    if setting == "missing":
+        source = source.replace("          skip-github-release: false\n", "")
+    elif setting == "'false'":
+        source = source.replace("skip-github-release: false", "skip-github-release: 'false'")
+    elif setting == "numeric-true":
+        source = source.replace("skip-github-release: false", "skip-github-release: 1")
+    owner.write_text(source, encoding="utf-8")
+    for publisher in _PUBLISHERS:
+        (root / ".github" / "workflows" / publisher).write_text(
+            "on:\n  workflow_call:\n", encoding="utf-8"
+        )
+    problems = validate_cutover(root, {"release_asset_mutations": []})
+    assert any("Release Please" in problem and "publish" in problem for problem in problems)
+
+
+def test_draft_cutover_accepts_owner_that_blocks_release_please_early_publish(
+    tmp_path: Path,
+) -> None:
+    root = _fixture(tmp_path)
+    _draft(root)
+    _ready_owner(root)
+    _safe_release_please_owner(root)
+    for publisher in _PUBLISHERS:
+        (root / ".github" / "workflows" / publisher).write_text(
+            "on:\n  workflow_call:\n", encoding="utf-8"
+        )
+    _wire_owner_callees(root)
+    assert validate_cutover(root, {"release_asset_mutations": []}) == []
+
+
 def test_cutover_uses_supplied_policy_not_an_unrelated_disk_copy(tmp_path: Path) -> None:
     root = _fixture(tmp_path)
     _draft(root)
     _ready_owner(root)
+    _safe_release_please_owner(root)
     for filename in _PUBLISHERS:
         (root / ".github" / "workflows" / filename).write_text(
             "on:\n  workflow_call:\n", encoding="utf-8"
@@ -209,6 +259,7 @@ def test_cutover_uses_supplied_policy_not_an_unrelated_disk_copy(tmp_path: Path)
     disk_policy.write_text(
         json.dumps({"release_asset_mutations": [{"issue": "#1179"}]}), encoding="utf-8"
     )
+    _wire_owner_callees(root)
     assert validate_cutover(root, {"release_asset_mutations": []}) == []
 
 
@@ -216,6 +267,7 @@ def test_cutover_can_check_the_necessary_post_migration_conditions(tmp_path: Pat
     root = _fixture(tmp_path)
     _draft(root)
     _ready_owner(root)
+    _safe_release_please_owner(root)
     for filename in _PUBLISHERS:
         (root / ".github" / "workflows" / filename).write_text(
             "on:\n  workflow_call:\n", encoding="utf-8"
@@ -223,6 +275,7 @@ def test_cutover_can_check_the_necessary_post_migration_conditions(tmp_path: Pat
     (root / ".github" / "actions-policy.json").write_text(
         json.dumps({"release_asset_mutations": []}), encoding="utf-8"
     )
+    _wire_owner_callees(root)
     assert validate_cutover(root) == []  # Necessary static conditions, NOT publish approval.
 
 
@@ -259,3 +312,146 @@ def test_cutover_rejects_duplicate_workflow_event_keys(tmp_path: Path, event_map
         error.startswith(f"{filename}:") and "duplicate" in error
         for error in validate_cutover(root)
     )
+
+
+def _wire_owner_callees(root: Path) -> None:
+    owner = root / ".github" / "workflows" / "publish-release.yml"
+    with owner.open("a", encoding="utf-8") as stream:
+        for index, publisher in enumerate(_PUBLISHERS, 1):
+            stream.write(
+                f"  draft-family-{index}:\n"
+                f"    needs: authorize\n"
+                f"    if: needs.authorize.outputs.approved == 'true'\n"
+                f"    uses: ./.github/workflows/{publisher}\n"
+            )
+
+
+def test_draft_cutover_rejects_owner_with_no_family_calls(tmp_path: Path) -> None:
+    root = _fixture(tmp_path)
+    _draft(root)
+    _ready_owner(root)
+    _safe_release_please_owner(root)
+    for publisher in _PUBLISHERS:
+        (root / ".github" / "workflows" / publisher).write_text(
+            "on:\n  workflow_call:\n", encoding="utf-8"
+        )
+    assert any(
+        "owner must call" in problem
+        for problem in validate_cutover(root, {"release_asset_mutations": []})
+    )
+
+
+@pytest.mark.parametrize("drift", ["missing", "duplicate", "untrusted"])
+def test_draft_cutover_rejects_incorrect_owner_family_calls(tmp_path: Path, drift: str) -> None:
+    root = _fixture(tmp_path)
+    _draft(root)
+    _ready_owner(root)
+    _safe_release_please_owner(root)
+    for publisher in _PUBLISHERS:
+        (root / ".github" / "workflows" / publisher).write_text(
+            "on:\n  workflow_call:\n", encoding="utf-8"
+        )
+    _wire_owner_callees(root)
+    owner = root / ".github" / "workflows" / "publish-release.yml"
+    source = owner.read_text()
+    target = f"./.github/workflows/{_PUBLISHERS[0]}"
+    if drift == "missing":
+        source = source.replace(f"uses: {target}", "uses: ./.github/workflows/ci.yml")
+    elif drift == "duplicate":
+        source += f"  duplicate-family:\n    uses: {target}\n"
+    else:
+        source = source.replace(f"uses: {target}", f"uses: other-org/repo/{_PUBLISHERS[0]}@main")
+    owner.write_text(source)
+    assert any(
+        "owner must call" in problem
+        for problem in validate_cutover(root, {"release_asset_mutations": []})
+    )
+
+
+@pytest.mark.parametrize(
+    "drift",
+    [
+        "missing-needs",
+        "other-needs",
+        "no-condition",
+        "always-true",
+        "wrong-output",
+        "inverted-output",
+    ],
+)
+def test_draft_cutover_rejects_unauthorized_family_job(tmp_path: Path, drift: str) -> None:
+    """No reusable publisher may run before the owner's explicit gate."""
+    root = _fixture(tmp_path)
+    _draft(root)
+    _ready_owner(root)
+    _safe_release_please_owner(root)
+    for publisher in _PUBLISHERS:
+        (root / ".github" / "workflows" / publisher).write_text(
+            "on:\n  workflow_call:\n", encoding="utf-8"
+        )
+    _wire_owner_callees(root)
+    owner = root / ".github" / "workflows" / "publish-release.yml"
+    before, marker, remainder = owner.read_text().partition("  draft-family-1:\n")
+    assert marker
+    segment, next_marker, after = remainder.partition("  draft-family-2:\n")
+    assert next_marker
+    workflow = marker + segment
+    if drift == "missing-needs":
+        workflow = workflow.replace("    needs: authorize\n", "", 1)
+    elif drift == "other-needs":
+        workflow = workflow.replace("    needs: authorize\n", "    needs: publish\n", 1)
+    elif drift == "no-condition":
+        workflow = workflow.replace("    if: needs.authorize.outputs.approved == 'true'\n", "", 1)
+    elif drift == "always-true":
+        workflow = workflow.replace(
+            "    if: needs.authorize.outputs.approved == 'true'\n",
+            "    if: always()\n",
+            1,
+        )
+    elif drift == "wrong-output":
+        workflow = workflow.replace(
+            "    if: needs.authorize.outputs.approved == 'true'\n",
+            "    if: needs.publish.outputs.approved == 'true'\n",
+            1,
+        )
+    else:
+        workflow = workflow.replace(
+            "    if: needs.authorize.outputs.approved == 'true'\n",
+            "    if: needs.authorize.outputs.approved != 'true'\n",
+            1,
+        )
+    owner.write_text(before + workflow + next_marker + after)
+    assert any(
+        "owner must gate" in problem
+        for problem in validate_cutover(root, {"release_asset_mutations": []})
+    )
+
+
+@pytest.mark.parametrize(
+    ("needs", "condition"),
+    [
+        ("[authorize, source-check]", "needs.authorize.outputs.approved == 'true'"),
+        ("authorize", "${{ needs.authorize.outputs.approved == 'true' }}"),
+    ],
+)
+def test_draft_cutover_accepts_gated_owner_family_calls(
+    tmp_path: Path, needs: str, condition: str
+) -> None:
+    root = _fixture(tmp_path)
+    _draft(root)
+    _ready_owner(root)
+    _safe_release_please_owner(root)
+    for publisher in _PUBLISHERS:
+        (root / ".github" / "workflows" / publisher).write_text(
+            "on:\n  workflow_call:\n", encoding="utf-8"
+        )
+    _wire_owner_callees(root)
+    owner = root / ".github" / "workflows" / "publish-release.yml"
+    source = owner.read_text()
+    source = source.replace(
+        "  draft-family-1:\n    needs: authorize\n"
+        "    if: needs.authorize.outputs.approved == 'true'\n",
+        "  draft-family-1:\n    needs: " + needs + "\n    if: " + condition + "\n",
+    )
+    owner.write_text(source)
+    assert validate_cutover(root, {"release_asset_mutations": []}) == []

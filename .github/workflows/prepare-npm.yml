@@ -1,0 +1,113 @@
+name: Prepare npm launcher (non-publishing)
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing protected mcp-npm-vX.Y.Z tag to prepare.
+        required: true
+        type: string
+      source_commit:
+        description: Exact reviewed main source SHA for this tag.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: >-
+      github.repository == 'oaslananka/kicad-mcp-pro' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.source_commit != '' &&
+      startsWith(inputs.tag, 'mcp-npm-v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    defaults:
+      run:
+        working-directory: packages/mcp-npm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Verify reusable npm source identity
+        working-directory: ${{ github.workspace }}
+        shell: bash
+        env:
+          EXPECTED_TAG: ${{ inputs.tag }}
+          EXPECTED_SOURCE: ${{ inputs.source_commit }}
+          CALLER_SHA: ${{ github.sha }}
+          CALLER_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_TAG" =~ ^mcp-npm-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          [[ "$EXPECTED_SOURCE" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$CALLER_REF" == "refs/heads/main" ]] || exit 1
+          [[ "$CALLER_SHA" == "$EXPECTED_SOURCE" ]] || exit 1
+          checked_out="$(git rev-parse HEAD)" || exit 1
+          [[ "$checked_out" == "$EXPECTED_SOURCE" ]] || exit 1
+          tagged_source="$(git rev-list -n 1 "refs/tags/${EXPECTED_TAG}^{commit}")" || exit 1
+          [[ "$tagged_source" == "$EXPECTED_SOURCE" ]] || exit 1
+          expected_version="$(python -c 'import json; print(json.load(open("packages/mcp-npm/package.json"))["version"])')" || exit 1
+          [[ "$EXPECTED_TAG" == "mcp-npm-v$expected_version" ]] || exit 1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          enable-cache: false
+          version-file: uv.toml
+      - name: Install release-readiness dependencies
+        working-directory: ${{ github.workspace }}
+        run: uv sync --all-extras --frozen
+      - name: Enforce live-model release readiness
+        working-directory: ${{ github.workspace }}
+        run: uv run --all-extras python scripts/check_live_model_release_policy.py --require-ready release --ref HEAD
+      - name: Verify publication README and metadata are synchronized
+        working-directory: ${{ github.workspace }}
+        run: uv run --all-extras python scripts/sync_mcp_metadata.py --check
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .node-version
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts=false
+      - name: Pack npm launcher and generate evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm pack --json > npm-pack.json
+          tarball="$(node -e "const fs = require('node:fs'); const packs = JSON.parse(fs.readFileSync('npm-pack.json', 'utf8')); if (packs.length !== 1) process.exit(2); console.log(packs[0].filename);")"
+          [[ "$tarball" == *.tgz && "$tarball" == "$(basename "$tarball")" ]] || exit 1
+          test -f "$tarball" || exit 1
+          evidence_dir="../../release-assets/mcp-npm"
+          draft_dir="../../release-assets/draft/mcp-npm"
+          mkdir -p "$evidence_dir" "$draft_dir"
+          cp -- "$tarball" "$evidence_dir/"
+          (cd "$evidence_dir" && sha256sum -- "$(basename "$tarball")" > SHA256SUMS.txt)
+          npm sbom --sbom-format cyclonedx --sbom-type application > "$evidence_dir/sbom.cdx.json"
+          (cd "$evidence_dir" && sha256sum --check SHA256SUMS.txt)
+          cp -- "$evidence_dir/$(basename "$tarball")" "$draft_dir/"
+          cp -- "$evidence_dir/SHA256SUMS.txt" "$draft_dir/mcp-npm-SHA256SUMS.txt"
+          cp -- "$evidence_dir/sbom.cdx.json" "$draft_dir/mcp-npm-sbom.cdx.json"
+      # Separate SLSA and CycloneDX predicates for the same local tarball.
+      - name: Attest npm SLSA build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-checksums: release-assets/mcp-npm/SHA256SUMS.txt
+      - name: Attest npm launcher tarball
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-checksums: release-assets/mcp-npm/SHA256SUMS.txt
+          sbom-path: release-assets/mcp-npm/sbom.cdx.json
+      - name: Store npm draft preparation
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: npm-draft-release-evidence
+          path: release-assets/draft/mcp-npm/
+          if-no-files-found: error
+          retention-days: 14

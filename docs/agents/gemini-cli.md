@@ -6,6 +6,11 @@
 kicad-mcp-pro setup gemini
 ```
 
+To install only for one trusted project, use
+`kicad-mcp-pro setup gemini --project-dir /path/to/project --scope project --write`.
+This merges the read-only KiCad server into `<project>/.gemini/settings.json`
+without changing your user-wide Gemini settings or other MCP servers.
+
 Or manually add to `~/.gemini/settings.json`:
 
 ```json

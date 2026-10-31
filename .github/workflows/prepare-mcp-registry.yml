@@ -1,0 +1,88 @@
+name: Prepare MCP Registry manifest (non-publishing)
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing protected mcp-server-vX.Y.Z source tag.
+        required: true
+        type: string
+      source_commit:
+        description: Exact reviewed main source SHA for this tag.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: >-
+      github.repository == 'oaslananka/kicad-mcp-pro' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.source_commit != '' &&
+      startsWith(inputs.tag, 'mcp-server-v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Verify reusable registry source identity
+        shell: bash
+        env:
+          EXPECTED_TAG: ${{ inputs.tag }}
+          EXPECTED_SOURCE: ${{ inputs.source_commit }}
+          CALLER_SHA: ${{ github.sha }}
+          CALLER_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_TAG" =~ ^mcp-server-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          [[ "$EXPECTED_SOURCE" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$CALLER_REF" == "refs/heads/main" ]] || exit 1
+          [[ "$CALLER_SHA" == "$EXPECTED_SOURCE" ]] || exit 1
+          checked_out="$(git rev-parse HEAD)" || exit 1
+          [[ "$checked_out" == "$EXPECTED_SOURCE" ]] || exit 1
+          tagged_source="$(git rev-list -n 1 "refs/tags/${EXPECTED_TAG}^{commit}")" || exit 1
+          [[ "$tagged_source" == "$EXPECTED_SOURCE" ]] || exit 1
+          expected_version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')" || exit 1
+          [[ "$EXPECTED_TAG" == "mcp-server-v$expected_version" ]] || exit 1
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        with:
+          enable-cache: false
+          version-file: uv.toml
+      - name: Install manifest validation dependencies
+        run: uv sync --all-extras --frozen
+      - name: Enforce live-model release readiness
+        run: uv run --all-extras python scripts/check_live_model_release_policy.py --require-ready release --ref HEAD
+      - name: Validate and stage registry manifest
+        shell: bash
+        env:
+          MCP_REGISTRY_TARGET: official
+          MCP_REGISTRY_DRY_RUN: "true"
+        run: |
+          set -euo pipefail
+          uv run --all-extras python scripts/validate_mcp_manifest.py server.json
+          mkdir -p release-assets/mcp-registry
+          cp -- server.json release-assets/mcp-registry/server.json
+          uv run --all-extras python scripts/publish_mcp_registry.py --dry-run > release-assets/mcp-registry/registry-dry-run.json
+          uv run --all-extras python -c 'import json; from pathlib import Path; root=Path("release-assets/mcp-registry"); manifest=json.loads((root/"server.json").read_text()); payload=json.loads((root/"registry-dry-run.json").read_text()); assert payload["dry_run"] is True and payload["target"] == "official" and payload["manifest"] == manifest'
+          (cd release-assets/mcp-registry && sha256sum -- server.json registry-dry-run.json > SHA256SUMS.txt)
+          (cd release-assets/mcp-registry && sha256sum --check SHA256SUMS.txt)
+      - name: Attest registry manifest provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-checksums: release-assets/mcp-registry/SHA256SUMS.txt
+      - name: Store registry draft preparation
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: mcp-registry-draft-evidence
+          path: release-assets/mcp-registry/
+          if-no-files-found: error
+          retention-days: 14

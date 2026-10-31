@@ -87,7 +87,87 @@ def _owner_concurrency_errors(root: Path) -> list[str]:
             "publish-release.yml: owner concurrency requires a repository-wide "
             "stable publish-release group, cancel-in-progress=false and queue=max"
         ]
-    return []
+    jobs = document.get("jobs")
+    return _owner_release_please_errors(jobs) + _owner_callee_errors(jobs)
+
+
+def _authorized_reusable_call(job: dict[str, Any]) -> bool:
+    """Require the owner's positive gate before executing a child publisher."""
+    needs = job.get("needs")
+    if isinstance(needs, str):
+        dependencies = {needs}
+    elif isinstance(needs, list) and all(isinstance(item, str) for item in needs):
+        dependencies = set(needs)
+    else:
+        return False
+    condition = job.get("if")
+    approved = "needs.authorize.outputs.approved == 'true'"
+    return (
+        "authorize" in dependencies
+        and isinstance(condition, str)
+        and condition.strip() in (approved, "${{ " + approved + " }}")
+    )
+
+
+def _owner_callee_errors(jobs: object) -> list[str]:
+    """Require each reviewed family call to depend on owner approval.
+
+    This is a necessary offline cutover gate, not a runtime lock or proof
+    that a privileged publication actually completed.
+    """
+    if not isinstance(jobs, dict):
+        return ["publish-release.yml: owner must call all draft family workflows"]
+    calls: dict[str, list[dict[str, Any]]] = {}
+    for job in jobs.values():
+        if isinstance(job, dict) and isinstance(job.get("uses"), str):
+            calls.setdefault(job["uses"], []).append(job)
+    errors: list[str] = []
+    for publisher in _PUBLISHERS:
+        ref = f"./.github/workflows/{publisher}"
+        matches = calls.get(ref, [])
+        if len(matches) != 1:
+            errors.append(
+                f"publish-release.yml: owner must call {ref} exactly once during draft cutover"
+            )
+        elif not _authorized_reusable_call(matches[0]):
+            errors.append(
+                f"publish-release.yml: owner must gate {ref} on "
+                "needs.authorize.outputs.approved == 'true'"
+            )
+    return errors
+
+
+def _release_please_step_error(step: object) -> str | None:
+    if not isinstance(step, dict):
+        return "publish-release.yml: invalid owner step"
+    action = step.get("uses")
+    if not isinstance(action, str) or action.split("@", 1)[0] != "googleapis/release-please-action":
+        return None
+    options = step.get("with")
+    setting = options.get("skip-github-release") if isinstance(options, dict) else None
+    if setting is True or setting == "true":
+        return None
+    return (
+        "publish-release.yml: draft-first Release Please must disable "
+        "early publish with skip-github-release=true"
+    )
+
+
+def _owner_release_please_errors(jobs: object) -> list[str]:
+    """Reject early publication; tag creation needs separate owner acceptance."""
+    if not isinstance(jobs, dict):
+        return ["publish-release.yml: owner jobs must be a mapping"]
+    errors: list[str] = []
+    for job in jobs.values():
+        if not isinstance(job, dict):
+            return ["publish-release.yml: invalid owner job definition"]
+        steps = job.get("steps", [])
+        if not isinstance(steps, list):
+            return ["publish-release.yml: owner job steps must be a list"]
+        for step in steps:
+            if error := _release_please_step_error(step):
+                errors.append(error)
+    return errors
 
 
 def _publisher_trigger_errors(root: Path) -> list[str]:

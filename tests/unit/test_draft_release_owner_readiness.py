@@ -35,6 +35,8 @@ class FakeClient:
             "head_repository": {"full_name": REPO},
             "path": ".github/workflows/publish-release.yml",
             "event": "workflow_dispatch",
+            "actor": {"login": "oaslananka"},
+            "triggering_actor": {"login": "oaslananka"},
             "head_branch": "main",
             "head_sha": SHA,
             "run_attempt": 1,
@@ -165,6 +167,7 @@ def test_complete_draft_verifies_all_three_layers_but_never_authorizes(
         "run",
         "release",
         "tag",
+        "release",
     ]
 
 
@@ -343,3 +346,49 @@ def test_remote_asset_download_error_fails_closed(tmp_path: Path) -> None:
     del client.content[1]
     with pytest.raises(KeyError):
         check_readiness(client, **args)
+
+
+@pytest.mark.parametrize("mutation", ["replacement-id", "altered-digest", "extra-asset"])
+def test_inventory_changes_after_verified_download_are_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    """Owner remains valid, but an asset changes at the final inventory read."""
+    client, args = _setup(tmp_path)
+    original_release = client.release
+
+    def racing_release(repo: str, release_id: int) -> dict[str, Any]:
+        release = original_release(repo, release_id)
+        if client.requests.count("release") >= 4:
+            if mutation == "replacement-id":
+                release["assets"][0]["id"] = 999
+            elif mutation == "altered-digest":
+                release["assets"][0]["digest"] = "sha256:" + "b" * 64
+            else:
+                release["assets"].append(
+                    {"id": 999, "name": "unexpected.zip", "state": "uploaded", "size": 1}
+                )
+        return release
+
+    monkeypatch.setattr(client, "release", racing_release)
+    with pytest.raises(ValueError, match="inventory changed"):
+        check_readiness(client, **args)
+
+
+def test_final_draft_read_ignores_order_and_download_counts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, args = _setup(tmp_path)
+    original_release = client.release
+
+    def reordered_release(repo: str, release_id: int) -> dict[str, Any]:
+        release = original_release(repo, release_id)
+        if client.requests.count("release") >= 4:
+            release["assets"].reverse()
+            for asset in release["assets"]:
+                asset["download_count"] = 42
+        return release
+
+    monkeypatch.setattr(client, "release", reordered_release)
+    result = check_readiness(client, **args)
+    assert result["draftAssetsVerified"] is True
+    assert result["publicationAuthorized"] is False

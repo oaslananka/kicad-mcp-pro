@@ -7,6 +7,7 @@ private credentials. Real-host smoke evidence must be reviewed separately.
 from __future__ import annotations
 
 import json
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any, TypeGuard
@@ -14,6 +15,11 @@ from typing import Any, TypeGuard
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE = ROOT / "integrations" / "common" / "agent-host-evidence.json"
 EXTENSION = ROOT / "integrations" / "gemini-cli" / "kicad-mcp-pro"
+
+# CI invokes this checker as a file, not a package. Resolve its own trusted
+# checkout root before importing the pinned native-evidence validator.
+if __name__ == "__main__":
+    sys.path.insert(0, str(ROOT))
 
 # Each maintained host has a different native configuration container.
 _HOST_CONFIGS = {
@@ -149,6 +155,72 @@ def _check_local_server(
         problems.append(f"Unsafe kicad MCP profile/mode for {name}: expected readonly/default")
 
 
+# Only explicitly reviewed, fixed archives can appear in the catalog.
+# Their native host execution is an observation, not independent attestation.
+_CODEX_OBSERVATION = {
+    "host": "codex",
+    "hostVersion": "0.163.0",
+    "os": "linux",
+    "transport": "stdio",
+    "sourceRevision": "9aa519b1bb82b3907eefedbba26285cf4431d856",
+    "serverVersion": "4.5.0",
+    "report": "2026-10-31-linux-codex-native-smoke.json",
+    "verification": "structurally-complete-not-independently-attested",
+}
+
+
+def _check_reviewed_native_observation(
+    root: Path, catalog: dict[str, Any], problems: list[str]
+) -> None:
+    """Bind one reviewed native Codex observation to its immutable log bytes.
+
+    Never promote a structural observation into a compatibility claim.
+    Missing, modified, symlinked, or unreviewed evidence fails closed in CI.
+    """
+    if catalog.get("reviewedNativeObservations") != [_CODEX_OBSERVATION]:
+        problems.append("Invalid or unreviewed native observation catalog")
+        return
+
+    from scripts.check_agent_native_smoke_evidence import (  # noqa: PLC0415
+        _read_bounded_regular_file,
+        _unique_json_object,
+        validate_report,
+        validate_sanitized_log,
+    )
+
+    folder = root / "docs/evidence/agent-host"
+    try:
+        report_bytes = _read_bounded_regular_file(folder / _CODEX_OBSERVATION["report"], 16_384)
+        log_bytes = _read_bounded_regular_file(
+            folder / "2026-10-31-linux-codex-native-sanitized-log.json", 32_768
+        )
+        report = json.loads(report_bytes, object_pairs_hook=_unique_json_object)
+    except (OSError, ValueError, RecursionError):
+        problems.append("Invalid or missing reviewed native observation evidence")
+        return
+
+    if not isinstance(report, dict):
+        problems.append("Invalid reviewed native observation report")
+        return
+
+    fields = {
+        "host": "host_id",
+        "hostVersion": "host_version",
+        "os": "os",
+        "transport": "transport",
+        "sourceRevision": "source_revision",
+        "serverVersion": "server_version",
+    }
+    if any(report.get(field) != _CODEX_OBSERVATION[key] for key, field in fields.items()):
+        problems.append("Mismatched reviewed native observation identity")
+        return
+    if validate_report(report, known_hosts=set(_HOST_CONFIGS)):
+        problems.append("Invalid reviewed native observation report")
+        return
+    if validate_sanitized_log(report, log_bytes):
+        problems.append("Invalid reviewed native observation log or digest")
+
+
 def _check_host_row(root: Path, item: object, ids: set[str], problems: list[str]) -> None:
     if not isinstance(item, dict):
         problems.append("Host row is not an object")
@@ -206,6 +278,7 @@ def check(root: Path = ROOT) -> list[str]:
         _check_host_row(root, item, ids, problems)
     if ids != set(_HOST_CONFIGS):
         problems.append("Missing or unreviewed agent host in catalog")
+    _check_reviewed_native_observation(root, catalog, problems)
     _check_extension(root, problems)
     return problems
 

@@ -724,7 +724,25 @@ def test_workflow_lint_uses_locked_actionlint_binary(
     module.main()
 
     assert module.ACTIONLINT_COMMAND == ["actionlint"]
-    assert commands == [["actionlint"]]
+    assert commands == [
+        ["actionlint", "-ignore", 'unexpected key "queue" for "concurrency" section']
+    ]
+
+
+def test_workflow_lint_rejects_unapproved_queue_even_with_legacy_actionlint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_script("check_workflows.py")
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "unrelated.yml").write_text(
+        "name: Test\nconcurrency:\n  group: other\n  queue: max\njobs: {}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(sys, "argv", ["check_workflows.py", "--actionlint"])
+    with pytest.raises(ValueError, match="unapproved concurrency queue"):
+        module.main()
 
 
 def test_workflow_lint_has_no_workspace_specific_fallback() -> None:

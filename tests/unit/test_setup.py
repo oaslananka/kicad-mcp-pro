@@ -63,6 +63,30 @@ class TestResolvePath:
         finally:
             __import__("os").chdir(str(old_cwd))
 
+    def test_gemini_project_scope_resolves_local_settings(self, tmp_path: Path) -> None:
+        path = resolve_path("gemini", "project", project_dir=tmp_path)
+        assert path == tmp_path / ".gemini" / "settings.json"
+        assert "user" in AGENTS["gemini"].supports_scope
+
+    def test_gemini_project_setup_preserves_unrelated_settings(self, tmp_path: Path) -> None:
+        settings = tmp_path / ".gemini" / "settings.json"
+        settings.parent.mkdir(parents=True)
+        settings.write_text(
+            json.dumps(
+                {
+                    "theme": "dark",
+                    "mcpServers": {"other": {"command": "other-mcp"}},
+                }
+            )
+        )
+        output = setup_agent("gemini", str(tmp_path), mode="readonly", write=True, scope="project")
+        assert "Config written" in output
+        result = json.loads(settings.read_text())
+        assert result["theme"] == "dark"
+        assert result["mcpServers"]["other"]["command"] == "other-mcp"
+        assert result["mcpServers"]["kicad"]["command"] == "uvx"
+        assert result["mcpServers"]["kicad"]["env"]["KICAD_MCP_OPERATING_MODE"] == "readonly"
+
     def test_claude_desktop_windows_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(sys, "platform", "win32")
         monkeypatch.setenv("APPDATA", "C:\\Users\\Test\\AppData\\Roaming")

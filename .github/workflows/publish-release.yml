@@ -13,6 +13,7 @@ permissions:
 concurrency:
   group: publish-release-${{ github.repository }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   authorize:
@@ -38,11 +39,20 @@ jobs:
           REPOSITORY_NAME: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
           CI_HEAD_SHA: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          TRIGGERING_ACTOR: ${{ github.triggering_actor }}
         run: |
           set -euo pipefail
           echo 'approved=false' >> "$GITHUB_OUTPUT"
           if [[ "$EVENT_NAME" == 'workflow_dispatch' ]]; then
-            echo 'Explicit maintainer dispatch on main; allow recovery publish.'
+            # A GitHub Actions re-run retains the original actor's privileges;
+            # both the original initiator and the re-run initiator must be the
+            # explicitly trusted personal release owner before minting a token.
+            if [[ "$ACTOR" != 'oaslananka' || "$TRIGGERING_ACTOR" != 'oaslananka' ]]; then
+              echo '::error::manual release recovery requires the repository owner for original and re-run actors.'
+              exit 1
+            fi
+            echo 'Explicit owner dispatch on main; allow recovery publish.'
             echo 'approved=true' >> "$GITHUB_OUTPUT"
             exit 0
           fi
