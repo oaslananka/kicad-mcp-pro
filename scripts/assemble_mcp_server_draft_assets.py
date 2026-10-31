@@ -23,6 +23,8 @@ from scripts.runtime_path_safety import approved_runtime_path
 _VERSION = re.compile(r"^mcp-server-v(\d+\.\d+\.\d+)$", re.ASCII)
 _SHA = re.compile(r"^[0-9a-f]{40}$")
 _PYTHON_SUMS = "SHA256SUMS.txt"
+_PYTHON_SBOM = "sbom.cdx.json"
+_PYTHON_EVIDENCE = "release-evidence.json"
 
 
 def _expected(version: str) -> dict[str, set[str]]:
@@ -33,8 +35,8 @@ def _expected(version: str) -> dict[str, set[str]]:
         },
         "python_evidence": {
             _PYTHON_SUMS,
-            "sbom.cdx.json",
-            "release-evidence.json",
+            _PYTHON_SBOM,
+            _PYTHON_EVIDENCE,
         },
         "mcpb": {
             f"kicad-mcp-pro-{version}.mcpb",
@@ -92,7 +94,7 @@ def _check_python_evidence(path: Path, artifacts: dict[str, Path], version: str)
             "package": "kicad-mcp-pro",
             "version": version,
             "checksums": _PYTHON_SUMS,
-            "sbom": "sbom.cdx.json",
+            "sbom": _PYTHON_SBOM,
         }.items()
     ):
         raise ValueError("Python evidence identity mismatch")
@@ -152,7 +154,7 @@ def _check_source_evidence(
     """Check all source family checksums and identity-bearing sidecars."""
     _check_hashes(source["python_evidence"][_PYTHON_SUMS], source["python_dist"])
     _check_python_evidence(
-        source["python_evidence"]["release-evidence.json"], source["python_dist"], version
+        source["python_evidence"][_PYTHON_EVIDENCE], source["python_dist"], version
     )
     for kind in ("mcpb", "pcm"):
         archive = next(p for p in source[kind].values() if p.suffix in (".mcpb", ".zip"))
@@ -212,8 +214,8 @@ def assemble(
         assets.mkdir()
         rename = {
             _PYTHON_SUMS: "kicad-mcp-pro-python-SHA256SUMS.txt",
-            "sbom.cdx.json": "kicad-mcp-pro-python-sbom.cdx.json",
-            "release-evidence.json": "kicad-mcp-pro-python-release-evidence.json",
+            _PYTHON_SBOM: "kicad-mcp-pro-python-sbom.cdx.json",
+            _PYTHON_EVIDENCE: "kicad-mcp-pro-python-release-evidence.json",
         }
         for group in source.values():
             for name, path in group.items():
