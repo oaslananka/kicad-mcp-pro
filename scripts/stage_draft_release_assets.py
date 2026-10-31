@@ -22,6 +22,7 @@ from scripts.plan_draft_release_retry import _approved_manifest, _draft_metadata
 
 _REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
+_INTERMEDIATE_INVENTORY_CHANGED = "draft asset inventory changed during upload"
 
 
 class DraftClient(Protocol):
@@ -228,6 +229,48 @@ def _reconcile_snapshot(
     return release, result
 
 
+def _check_intermediate_inventory(
+    release: dict[str, Any],
+    expected_names: set[str],
+    approved: dict[str, dict[str, Any]],
+) -> None:
+    """Fail before the next write if another writer changed the draft.
+
+    This is a metadata snapshot check, not a substitute for exclusive
+    ownership or the final independent asset downloads.
+    """
+    assets = release.get("assets")
+    if not isinstance(assets, list):
+        raise ValueError(_INTERMEDIATE_INVENTORY_CHANGED)
+    names: set[str] = set()
+    ids: set[int] = set()
+    for asset in assets:
+        if not isinstance(asset, dict):
+            raise ValueError(_INTERMEDIATE_INVENTORY_CHANGED)
+        name, asset_id = asset.get("name"), asset.get("id")
+        if (
+            not isinstance(name, str)
+            or name not in expected_names
+            or name in names
+            or type(asset_id) is not int
+            or asset_id <= 0
+            or asset_id in ids
+        ):
+            raise ValueError(_INTERMEDIATE_INVENTORY_CHANGED)
+        expected = approved[name]
+        if (
+            asset.get("state") != "uploaded"
+            or type(asset.get("size")) is not int
+            or asset.get("size") != expected["size"]
+            or asset.get("digest") not in (None, f"sha256:{expected['sha256']}")
+        ):
+            raise ValueError(_INTERMEDIATE_INVENTORY_CHANGED)
+        names.add(name)
+        ids.add(asset_id)
+    if names != expected_names:
+        raise ValueError(_INTERMEDIATE_INVENTORY_CHANGED)
+
+
 def stage(
     client: DraftClient,
     *,
@@ -285,6 +328,11 @@ def stage(
                 tag=tag,
                 source_commit=source_commit,
                 tag_commit=current_tag_sha,
+            )
+            _check_intermediate_inventory(
+                current,
+                set(fresh["preserveExisting"]) | set(missing[:index]),
+                approved,
             )
         if not isinstance(name, str) or name not in approved:
             raise ValueError("invalid draft asset name in upload plan")
