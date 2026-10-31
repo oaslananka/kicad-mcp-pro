@@ -81,6 +81,40 @@ def _check_hashes(path: Path, values: dict[str, Path]) -> None:
         raise ValueError("incomplete artifact checksum file")
 
 
+def _check_python_evidence(path: Path, artifacts: dict[str, Path], version: str) -> None:
+    """Bind the Python producer's sidecar to both approved distributions."""
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or any(
+        value.get(key) != expected
+        for key, expected in {
+            "product": "kicad-mcp-pro",
+            "surface": "python",
+            "package": "kicad-mcp-pro",
+            "version": version,
+            "checksums": _PYTHON_SUMS,
+            "sbom": "sbom.cdx.json",
+        }.items()
+    ):
+        raise ValueError("Python evidence identity mismatch")
+    actual = value.get("artifacts")
+    expected = sorted(
+        (
+            {"name": name, "sha256": digest(path), "size": path.stat().st_size}
+            for name, path in artifacts.items()
+        ),
+        key=lambda item: item["name"],
+    )
+    if (
+        not isinstance(actual, list)
+        or len(actual) != len(expected)
+        or any(
+            not isinstance(item, dict) or not isinstance(item.get("name"), str) for item in actual
+        )
+        or sorted(actual, key=lambda item: item["name"]) != expected
+    ):
+        raise ValueError("Python evidence artifact inventory mismatch")
+
+
 def _check_evidence(
     path: Path, artifact: Path, *, version: str, tag: str, source_commit: str, kind: str
 ) -> None:
@@ -99,8 +133,17 @@ def _check_evidence(
         or value.get("sourceCommit") != source_commit
     ):
         raise ValueError("MCPB evidence source identity mismatch")
-    if kind == "pcm" and value.get("schema_version") != "kicad-pcm-release-evidence.v1":
-        raise ValueError("PCM evidence format mismatch")
+    if kind == "pcm" and (
+        value.get("schema_version") != "kicad-pcm-release-evidence.v1"
+        or value.get("package_identifier") != "com.github.oaslananka.kicad-mcp-pro"
+        or value.get("runtime") != "ipc"
+        or value.get("minimum_kicad_version") != "10.0"
+        or type(value.get("download_size")) is not int
+        or value["download_size"] != artifact.stat().st_size
+        or type(value.get("install_size")) is not int
+        or value["install_size"] <= 0
+    ):
+        raise ValueError("PCM evidence package identity or size mismatch")
 
 
 def _check_source_evidence(
@@ -108,6 +151,9 @@ def _check_source_evidence(
 ) -> None:
     """Check all source family checksums and identity-bearing sidecars."""
     _check_hashes(source["python_evidence"][_PYTHON_SUMS], source["python_dist"])
+    _check_python_evidence(
+        source["python_evidence"]["release-evidence.json"], source["python_dist"], version
+    )
     for kind in ("mcpb", "pcm"):
         archive = next(p for p in source[kind].values() if p.suffix in (".mcpb", ".zip"))
         checksums = source[kind][f"kicad-mcp-pro-{kind}-SHA256SUMS.txt"]
@@ -181,6 +227,11 @@ def assemble(
         _check_hashes(
             assets / "kicad-mcp-pro-python-SHA256SUMS.txt",
             {name: assets / name for name in expected["python_dist"]},
+        )
+        _check_python_evidence(
+            assets / "kicad-mcp-pro-python-release-evidence.json",
+            {name: assets / name for name in expected["python_dist"]},
+            version,
         )
         for kind in ("mcpb", "pcm"):
             archive = next(
