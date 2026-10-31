@@ -82,6 +82,13 @@
         "id-token"
       ]
     },
+    "prepare-mcp-container.yml": {
+      "prepare": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
+      ]
+    },
     "publish-mcp-container.yml": {
       "publish": [
         "attestations",
