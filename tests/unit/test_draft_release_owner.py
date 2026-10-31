@@ -191,8 +191,9 @@ def test_invalid_cli_identity_never_queries_api(field: str, value: object) -> No
 def test_owner_dispatch_does_not_accept_untrusted_actor(field: str, value: object) -> None:
     client = FakeOwnerClient()
     client.run_data[field] = value
+    args = _args()
     with pytest.raises(ValueError, match="workflow run"):
-        verify_owner(client, **_args())
+        verify_owner(client, **args)
     assert client.calls == ["run"]
 
 
@@ -202,6 +203,7 @@ def test_unrecognized_repository_has_no_default_owner_authorization() -> None:
     client.run_data["repository"]["full_name"] = other
     client.run_data["head_repository"]["full_name"] = other
     client.run_data["url"] = f"https://api.github.com/repos/{other}/actions/runs/{RUN}"
+    args = {**_args(), "repo": other}
     with pytest.raises(ValueError, match="trusted owner"):
-        verify_owner(client, **{**_args(), "repo": other})
+        verify_owner(client, **args)
     assert client.calls == []
