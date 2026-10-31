@@ -59,9 +59,22 @@ def test_browser_paired_identity_completes_only_one_local_project_summary(
                 "deviceFingerprint": enrolled_fingerprint,
                 "expiresAtMs": time.time_ns() // 1_000_000 + 60_000,
             }
+        if path.endswith("/status"):
+            assert expected_status == 200
+            assert events == ["challenge", "owner-consented"]
+            proof = (
+                b"kicad-cloud-pairing-status-v1\0"
+                + CHALLENGE.encode()
+                + b"\0"
+                + DEVICE_SECRET.encode()
+            )
+            signed = base64.urlsafe_b64decode(str(body["signature"]) + "==")
+            cloud_once._load_owner_key(private_key_path).public_key().verify(signed, proof)
+            events.append("approval-status-verified")
+            return {"approved": True}
         assert path.endswith("/redeem")
         assert expected_status == 200
-        assert events == ["challenge", "owner-consented"]
+        assert events == ["challenge", "owner-consented", "approval-status-verified"]
         assert body["challengeId"] == CHALLENGE
         assert body["deviceCode"] == DEVICE_SECRET
         proof = (
@@ -88,7 +101,7 @@ def test_browser_paired_identity_completes_only_one_local_project_summary(
     )
     assert device == DEVICE
     assert fingerprint == enrolled_fingerprint
-    assert events == ["challenge", "owner-consented", "redeemed"]
+    assert events == ["challenge", "owner-consented", "approval-status-verified", "redeemed"]
 
     binding = cloud_once._read_owner_binding(private_key_path)
     assert binding == {"origin": ORIGIN, "deviceId": DEVICE, "fingerprint": fingerprint}
@@ -156,4 +169,10 @@ def test_browser_paired_identity_completes_only_one_local_project_summary(
         "--allow-once",
     ]
     assert cloud_once.main(options) == 0
-    assert events == ["challenge", "owner-consented", "redeemed", "one-local-summary"]
+    assert events == [
+        "challenge",
+        "owner-consented",
+        "approval-status-verified",
+        "redeemed",
+        "one-local-summary",
+    ]

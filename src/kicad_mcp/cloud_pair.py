@@ -243,6 +243,38 @@ def _require_unused_binding_path(keyfile: Path) -> None:
         raise CloudPairingError(_PAIRING_DENIED) from exc
 
 
+def _wait_for_owner_approval(
+    origin: tuple[str, int, str],
+    challenge: str,
+    device_code: str,
+    signing_key: Ed25519PrivateKey,
+    expiry_ms: int,
+) -> None:
+    """Read only the device-signed approval bit before single-use redemption."""
+    proof = (
+        b"kicad-cloud-pairing-status-v1\x00"
+        + challenge.encode("ascii")
+        + b"\x00"
+        + device_code.encode("ascii")
+    )
+    signature = base64.urlsafe_b64encode(signing_key.sign(proof)).decode("ascii").rstrip("=")
+    body: dict[str, object] = {
+        "challengeId": challenge,
+        "deviceCode": device_code,
+        "signature": signature,
+    }
+    while True:
+        remaining = expiry_ms - time.time_ns() // 1_000_000
+        if remaining <= 0:
+            raise CloudPairingError(_PAIRING_DENIED)
+        response = _post(origin, "/api/v1/pairing/device/status", body, 200)
+        if set(response) != {"approved"} or type(response["approved"]) is not bool:
+            raise CloudPairingError(_PAIRING_DENIED)
+        if response["approved"]:
+            return
+        time.sleep(min(8.0, remaining / 1000))
+
+
 def enroll(
     origin: str, alias: str, keyfile: Path, approval: Callable[[str, str, str], None]
 ) -> tuple[str, str]:
@@ -279,6 +311,7 @@ def enroll(
     if supplied_url is not None and supplied_url != review_url:
         raise CloudPairingError(_PAIRING_DENIED)
     approval(target[2] + "/devices/pairing", challenge, code)
+    _wait_for_owner_approval(target, challenge, device_secret, key, expiry)
     if time.time_ns() // 1_000_000 >= expiry:
         raise CloudPairingError(_PAIRING_DENIED)
     proof = (
@@ -325,7 +358,7 @@ def _approval(page: str, challenge: str, code: str) -> None:
     else:
         # GUI-less devices retain an explicit fallback, never automatic approval.
         print(f"Open this device approval link in your signed-in browser: {review_url}")
-    input("After approving in the browser, press Enter to finish (Ctrl-C cancels): ")
+    print("Approve in your browser. This terminal completes pairing automatically after approval.")
 
 
 def main(argv: list[str] | None = None) -> int:

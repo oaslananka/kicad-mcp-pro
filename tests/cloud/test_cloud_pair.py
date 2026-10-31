@@ -71,11 +71,90 @@ def test_pairing_browser_confirmation_permits_foreground_terminal(
     monkeypatch.setattr(
         cloud_pair.webbrowser, "open", lambda url, **_options: opened.append(url) or True
     )
-    monkeypatch.setattr("builtins.input", acknowledge)
+    monkeypatch.setattr(
+        "builtins.input",
+        lambda _prompt: pytest.fail("Owner browser click must not require terminal Enter"),
+    )
     cloud_pair._approval("https://localhost/devices/pairing", CHALLENGE, "ABCDEF-123456")
     assert opened == [f"https://localhost/devices/pairing#challenge={CHALLENGE}&code=ABCDEF-123456"]
-    assert len(observed) == 1
-    assert "browser" in observed[0]
+    assert observed == []
+
+
+def test_owner_status_is_signed_and_polls_only_until_real_approval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = cloud_pair.Ed25519PrivateKey.generate()
+    observed: list[str] = []
+    delays: list[float] = []
+    count = 0
+
+    def reply(_origin: tuple[str, int, str], path: str, body: dict, status: int) -> dict:
+        nonlocal count
+        assert path == "/api/v1/pairing/device/status"
+        assert status == 200
+        assert body["challengeId"] == CHALLENGE
+        assert body["deviceCode"] == SECRET
+        signature = base64.urlsafe_b64decode(body["signature"] + "==")
+        proof = b"kicad-cloud-pairing-status-v1\0" + CHALLENGE.encode() + b"\0" + SECRET.encode()
+        key.public_key().verify(signature, proof)
+        count += 1
+        observed.append(path)
+        return {"approved": count == 2}
+
+    monkeypatch.setattr(cloud_pair, "_post", reply)
+    monkeypatch.setattr(cloud_pair.time, "sleep", lambda seconds: delays.append(seconds))
+    cloud_pair._wait_for_owner_approval(
+        ("localhost", 443, "https://localhost"),
+        CHALLENGE,
+        SECRET,
+        key,
+        time.time_ns() // 1_000_000 + 45_000,
+    )
+    assert observed == ["/api/v1/pairing/device/status"] * 2
+    assert delays == [8.0]
+
+
+def test_owner_status_expires_without_redeeming(monkeypatch: pytest.MonkeyPatch) -> None:
+    key = cloud_pair.Ed25519PrivateKey.generate()
+    calls: list[str] = []
+    tick = iter([100_000, 109_000])
+
+    def waiting(_origin: tuple[str, int, str], path: str, _body: dict, _status: int) -> dict:
+        calls.append(path)
+        return {"approved": False}
+
+    monkeypatch.setattr(cloud_pair, "_post", waiting)
+    monkeypatch.setattr(cloud_pair.time, "time_ns", lambda: next(tick) * 1_000_000)
+    monkeypatch.setattr(cloud_pair.time, "sleep", lambda _seconds: None)
+    with pytest.raises(cloud_pair.CloudPairingError):
+        cloud_pair._wait_for_owner_approval(
+            ("localhost", 443, "https://localhost"), CHALLENGE, SECRET, key, 108_000
+        )
+    assert calls == ["/api/v1/pairing/device/status"]
+
+
+@pytest.mark.parametrize("reply", [{"approved": "true"}, {"approved": True, "token": "bad"}, {}])
+def test_owner_status_malformed_reply_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    reply: dict,
+) -> None:
+    key = cloud_pair.Ed25519PrivateKey.generate()
+    calls: list[str] = []
+
+    def malformed(_origin: tuple[str, int, str], path: str, _body: dict, _status: int) -> dict:
+        calls.append(path)
+        return reply
+
+    monkeypatch.setattr(cloud_pair, "_post", malformed)
+    with pytest.raises(cloud_pair.CloudPairingError):
+        cloud_pair._wait_for_owner_approval(
+            ("localhost", 443, "https://localhost"),
+            CHALLENGE,
+            SECRET,
+            key,
+            time.time_ns() // 1_000_000 + 10_000,
+        )
+    assert calls == ["/api/v1/pairing/device/status"]
 
 
 def test_pairing_browser_unavailable_shows_safe_fallback(
@@ -146,10 +225,21 @@ def test_pairing_exact_payload_and_owner_review(
                     f"https://localhost/devices/pairing#challenge={CHALLENGE}&code=ABCDEF-123456"
                 ),
             }
+        if path.endswith("/status"):
+            assert status == 200
+            assert data["challengeId"] == CHALLENGE
+            assert data["deviceCode"] == SECRET
+            signed = base64.urlsafe_b64decode(data["signature"] + "==")
+            proof = (
+                b"kicad-cloud-pairing-status-v1\0" + CHALLENGE.encode() + b"\0" + SECRET.encode()
+            )
+            _load_owner_key(keyfile).public_key().verify(signed, proof)
+            seen.append("approval_verified")
+            return {"approved": True}
         assert path.endswith("/redeem")
         assert status == 200
 
-        assert seen == ["challenge", "browser_approved"]
+        assert seen == ["challenge", "browser_approved", "approval_verified"]
         assert data["challengeId"] == CHALLENGE
         assert data["deviceCode"] == SECRET
         key = _load_owner_key(keyfile)
@@ -176,7 +266,7 @@ def test_pairing_exact_payload_and_owner_review(
         "https://localhost", "Approved Fixture", keyfile, approve
     )
     assert device == DEVICE
-    assert seen == ["challenge", "browser_approved", "redeem"]
+    assert seen == ["challenge", "browser_approved", "approval_verified", "redeem"]
     assert len(fingerprint) == 64
     assert keyfile.stat().st_mode & 0o777 == 0o600
     # A successfully redeemed, browser-approved device must pin its origin

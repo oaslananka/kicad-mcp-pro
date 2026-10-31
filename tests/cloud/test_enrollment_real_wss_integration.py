@@ -233,9 +233,26 @@ async def _scenario(
                     "deviceFingerprint": fingerprint,
                     "expiresAtMs": time.time_ns() // 1_000_000 + 25_000,
                 }
+            if endpoint.endswith("/status"):
+                assert status == 200
+                assert observations == ["pairing-challenge", "browser-approved"]
+                assert accepted_public_key is not None
+                proof = (
+                    b"kicad-cloud-pairing-status-v1\0"
+                    + CHALLENGE.encode()
+                    + b"\0"
+                    + DEVICE_SECRET.encode()
+                )
+                accepted_public_key.verify(_signature(body), proof)
+                observations.append("approval-status-verified")
+                return {"approved": True}
             assert endpoint.endswith("/redeem")
             assert status == 200
-            assert observations == ["pairing-challenge", "browser-approved"]
+            assert observations == [
+                "pairing-challenge",
+                "browser-approved",
+                "approval-status-verified",
+            ]
             expected = (
                 b"kicad-cloud-pairing-proof-v1\0"
                 + CHALLENGE.encode()
@@ -319,6 +336,7 @@ def test_browser_enrollment_then_real_tls_wss_single_summary(
     assert asyncio.run(_scenario(tmp_path, monkeypatch)) == [
         "pairing-challenge",
         "browser-approved",
+        "approval-status-verified",
         "pairing-redeemed",
         "device-hello",
         "device-proof",
@@ -333,6 +351,7 @@ def test_real_tls_wss_expired_foreground_consent_never_sends_project_summary(
     assert asyncio.run(_scenario(tmp_path, monkeypatch, expire_during_proof=True)) == [
         "pairing-challenge",
         "browser-approved",
+        "approval-status-verified",
         "pairing-redeemed",
         "device-hello",
         "device-proof",
@@ -347,6 +366,7 @@ def test_real_tls_wss_expiry_between_read_and_delivery_denies_result(
     assert asyncio.run(_scenario(tmp_path, monkeypatch, expire_after_inspection=True)) == [
         "pairing-challenge",
         "browser-approved",
+        "approval-status-verified",
         "pairing-redeemed",
         "device-hello",
         "device-proof",
