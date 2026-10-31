@@ -89,6 +89,13 @@
         "packages"
       ]
     },
+    "prepare-mcp-registry.yml": {
+      "prepare": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
+      ]
+    },
     "publish-mcp-registry.yml": {
       "publish": [
         "id-token"
