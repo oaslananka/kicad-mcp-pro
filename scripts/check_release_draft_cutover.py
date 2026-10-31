@@ -13,6 +13,8 @@ from typing import Any
 
 import yaml
 
+_GITHUB_DIR = ".github"
+
 # These jobs currently publish via release:published or tag push. In draft-first
 # mode they must become owner-invoked reusable workflows, not autonomous writers.
 _PUBLISHERS = (
@@ -61,7 +63,7 @@ def _owner_concurrency_errors(root: Path) -> list[str]:
 
     This validates configuration, not ownership of a live Actions lock.
     """
-    path = root / ".github" / "workflows" / "publish-release.yml"
+    path = root / _GITHUB_DIR / "workflows" / "publish-release.yml"
     try:
         loader = _UniqueMappingLoader(path.read_text(encoding="utf-8"))
         try:
@@ -95,7 +97,7 @@ def _publisher_trigger_errors(root: Path) -> list[str]:
     # point. The trusted owner workflow owns manual recovery and serialization.
     allowed_events = {"workflow_call", "pull_request"}
     for filename in _PUBLISHERS:
-        path = root / ".github" / "workflows" / filename
+        path = root / _GITHUB_DIR / "workflows" / filename
         try:
             events = _events(path)
         except (OSError, ValueError, yaml.YAMLError) as exc:
@@ -113,7 +115,7 @@ def _legacy_mutation_errors(root: Path, policy: dict[str, Any] | None) -> list[s
     if policy is None:
         try:
             policy = json.loads(
-                (root / ".github" / "actions-policy.json").read_text(encoding="utf-8")
+                (root / _GITHUB_DIR / "actions-policy.json").read_text(encoding="utf-8")
             )
         except (OSError, ValueError) as exc:
             return [f"draft cutover cannot read release mutation policy: {exc}"]
