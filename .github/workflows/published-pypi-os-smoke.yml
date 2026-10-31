@@ -43,13 +43,8 @@ jobs:
           uv python install 3.13
           venv="$RUNNER_TEMP/kicad-pypi-clean"
           uv venv --python 3.13 "$venv"
-          case "$RUNNER_OS" in
-            Windows) python_bin="$venv/Scripts/python.exe" ;;
-            macOS) python_bin="$venv/bin/python" ;;
-            *) echo 'Unsupported test OS' >&2; exit 1 ;;
-          esac
-          uv pip install --python "$python_bin" 'kicad-mcp-pro==4.5.0'
-          "$python_bin" - <<'PYSMOKE'
+          uv pip install --python "$venv" 'kicad-mcp-pro==4.5.0'
+          uv run --no-project --python "$venv" python - <<'PYSMOKE'
           import asyncio
           import hashlib
           import importlib.metadata
