@@ -87,6 +87,16 @@ jobs:
                               client.call_tool(tool_name, {}), timeout=45)
                           assert not response.is_error, tool_name
                           assert response.content or response.structured_content, tool_name
+                          if tool_name == 'pcb_get_board_summary':
+                              # Tool-level success can still wrap a FAIL verdict.
+                              report = response.structured_content
+                              assert isinstance(report, dict), 'Missing structured board report'
+                              metadata = report.get('metadata')
+                              assert isinstance(metadata, dict), 'Missing board metadata'
+                              assert report.get('verdict') in ('PASS', 'WARN'), report.get('verdict')
+                              assert metadata.get('available') is True, 'PCB summary unavailable'
+                              assert metadata.get('source') == 'file-backed', 'Unexpected board source'
+                              assert metadata.get('footprints') == 3, 'Wrong fixture board'
                       print('PUBLISHED_PYPI_MCP_READONLY=PASS',
                             'platform=' + sys.platform,
                             'version=' + info.server_info.version)
