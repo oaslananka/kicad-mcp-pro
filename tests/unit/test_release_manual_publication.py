@@ -260,3 +260,49 @@ def test_release_gate_authorizes_only_exact_reviewed_release_merge(
     )
     assert result.returncode == 0, result.stderr
     assert ("approved=true" in output.read_text()) is expected_approval
+
+
+@pytest.mark.parametrize(
+    ("actor", "triggering_actor", "expected_approval"),
+    [
+        ("oaslananka", "oaslananka", True),
+        ("other-writer", "oaslananka", False),
+        ("oaslananka", "other-writer", False),
+        ("oaslananka[bot]", "oaslananka", False),
+        ("oaslananka", "oaslananka[bot]", False),
+        ("", "oaslananka", False),
+        ("oaslananka", "", False),
+    ],
+)
+def test_manual_publish_recovery_requires_original_and_rerun_owner(
+    tmp_path: Path, actor: str, triggering_actor: str, expected_approval: bool
+) -> None:
+    """Execute the actual authorization shell with no GitHub/network dependency."""
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("Bash is not installed on this platform")
+    output = tmp_path / "output"
+    gate = _workflow("publish-release.yml")["jobs"]["authorize"]["steps"][0]
+    assert gate["env"]["ACTOR"] == "${{ github.actor }}"
+    assert gate["env"]["TRIGGERING_ACTOR"] == "${{ github.triggering_actor }}"
+    result = subprocess.run(
+        [bash, "-e", "-o", "pipefail", "-c", gate["run"]],
+        env={
+            **os.environ,
+            "GITHUB_OUTPUT": str(output),
+            "EVENT_NAME": "workflow_dispatch",
+            "REPOSITORY_NAME": "oaslananka/kicad-mcp-pro",
+            "CI_HEAD_SHA": "a" * 40,
+            "ACTOR": actor,
+            "TRIGGERING_ACTOR": triggering_actor,
+        },
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert (result.returncode == 0) is expected_approval
+    assert "approved=false" in output.read_text()
+    assert ("approved=true" in output.read_text()) is expected_approval
+    if not expected_approval:
+        assert "manual release recovery requires the repository owner" in result.stdout
