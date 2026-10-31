@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 import yaml
+from packaging.version import Version
 
 import scripts.kicad_107_flat_root_pdf as probe
 
@@ -112,8 +114,13 @@ def test_audited_runner_executes_version_then_isolated_two_root_pdf(monkeypatch)
 
 
 def test_workflow_uses_locked_pypdf_and_preserves_gui_manual_boundary() -> None:
-    project = (ROOT / "pyproject.toml").read_text()
-    assert '"pypdf==6.21.2"' in project
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    dev_dependencies = project["project"]["optional-dependencies"]["dev"]
+    pins = [item.removeprefix("pypdf==") for item in dev_dependencies if item.startswith("pypdf==")]
+    assert len(pins) == 1
+    assert Version(pins[0]) >= Version("6.21.2")
+    assert [item["version"] for item in lock["package"] if item["name"] == "pypdf"] == pins
     workflow = yaml.safe_load(
         (ROOT / ".github/workflows/kicad-10-0-7-windows-qualification.yml").read_text()
     )
