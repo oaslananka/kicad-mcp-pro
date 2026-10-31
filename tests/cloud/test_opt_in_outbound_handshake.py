@@ -8,17 +8,20 @@ import json
 import ssl
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from test_isolated_tls_websocket_handshake import _synthetic_tls
+from websockets.asyncio.client import ClientConnection
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
 from kicad_mcp import cloud_outbound_handshake
 from kicad_mcp.cloud_outbound_handshake import (
     CloudHandshakeDeniedError,
+    HandshakeReceipt,
     _endpoint,
     establish_proof_only_handshake,
     execute_single_approved_read,
@@ -60,6 +63,20 @@ def test_unverified_direct_read_transport_denies_before_any_network(
     )
     with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
         asyncio.run(runner)
+
+
+def test_direct_read_completion_requires_independent_owner_before_dispatch() -> None:
+    """A ready-socket helper must not bypass the read transport owner gate."""
+    receipt = HandshakeReceipt(device_id=DEVICE, session_id=SESSION)
+
+    def unauthorized_dispatcher(_: HandshakeReceipt) -> LocalReadDispatch:
+        pytest.fail("unverified owner caused a dispatcher invocation")
+
+    task = cloud_outbound_handshake._complete_authorized_read(
+        cast(ClientConnection, None), receipt, unauthorized_dispatcher
+    )
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        asyncio.run(task)
 
 
 def _sig(reply: dict[str, object]) -> bytes:

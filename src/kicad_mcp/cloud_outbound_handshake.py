@@ -110,6 +110,8 @@ async def _complete_authorized_read(
     if dispatcher_factory is None:
         # Proof-only mode retains its original no-command behavior.
         return receipt
+    # Direct callers of this lower helper must not bypass the owner gate.
+    _require_independent_read_authority()
     # The caller, not Cloud wire claims, supplies this independent
     # local authorization and owner-approved project selection.
     dispatcher = dispatcher_factory(receipt)
