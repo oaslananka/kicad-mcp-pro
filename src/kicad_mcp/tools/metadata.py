@@ -41,6 +41,18 @@ _READ_ONLY_PREFIXES = (
     "lib_find_",
     "mfg_check_",
 )
+# Independently reviewed file-backed analysis tools whose names are not
+# covered by the read-only verb prefixes. Do not infer this from the broader
+# readonly operating-mode tier: kicad_set_project changes session state.
+_READ_ONLY_TOOL_NAMES = frozenset(
+    {
+        "dfm_run_manufacturer_check",
+        "lib_verify_component_contract",
+        "pcb_visual_qa",
+        "project_design_workflow",
+        "sch_visual_qa",
+    }
+)
 _WRITE_PREFIXES = (
     "add_",
     "set_",
@@ -135,7 +147,8 @@ _IDEMPOTENT_TOOL_NAMES = {"sch_spread_sheets", "sch_wire_sheet_pins"}
 
 def _is_read_only_name(normalized: str) -> bool:
     return (
-        normalized.startswith(_READ_ONLY_PREFIXES)
+        normalized in _READ_ONLY_TOOL_NAMES
+        or normalized.startswith(_READ_ONLY_PREFIXES)
         or normalized.startswith("lib_search_")
         or normalized.startswith("pcb_get_")
         or normalized.startswith("sch_get_")
