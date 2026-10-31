@@ -1,13 +1,13 @@
 # KiCad Cloud — owner-controlled local project summary (pre-production)
 
-**Status: implementation in two DRAFT pull requests, not deployed.** The local
-client is [KiCad MCP Pro PR #1513](https://github.com/oaslananka/kicad-mcp-pro/pull/1513)
-and the compatible Cloud pairing, browser authorization and read relay is
-[KiCad Cloud PR #64](https://github.com/oaslananka/kicad-mcp-pro-cloud/pull/64).
-Neither PR is a live production connection. The existing Cloud deployment
-reports `remoteConnector=not_implemented`; `PAIRING_DEVICE_API_ENABLED` and
-`CONNECTOR_WS_ENABLED` remain OFF. Do not merge or enable these features
-without an independent security and owner acceptance.
+**Status: paired implementation remains DRAFT and production pairing OFF.** The
+local client is [KiCad MCP Pro PR #1513](https://github.com/oaslananka/kicad-mcp-pro/pull/1513)
+and the signed approval-state API is
+[KiCad Cloud PR #75](https://github.com/oaslananka/kicad-mcp-pro-cloud/pull/75).
+Earlier Cloud infrastructure PR #64 and browser UX PR #73 have merged, but
+production reports `remoteConnector=not_implemented` and both pairing and
+connector feature flags remain OFF. Do not merge or enable these features
+without independent security review and genuine owner acceptance.
 
 ## What works in an approved isolated environment
 
@@ -66,13 +66,17 @@ uv run --all-extras python -m kicad_mcp.cloud_pair \
 ```
 
 In a browser **signed in as the intended owner of that isolated Cloud**,
-open the exact `/devices/pairing` URL printed by the client and approve
-its challenge UUID with the displayed short code. Return to the terminal
-and press Enter before the challenge expires. The pairing command
-requires both stdin and stdout to be connected to a foreground terminal;
-redirected or piped invocation is rejected **before** a key is created
-or a Cloud pairing challenge is requested. A PTY owned by an agent
-running as the same OS user is not independent human approval.
+inspect the first-party device approval page opened by the client. Verify
+that its short code matches the one in the terminal, and explicitly select
+**Approve device** before the five-minute challenge expires. The client
+checks only a read-only approval flag using an independent Ed25519-signed
+proof at most once every eight seconds, then automatically attempts one
+separate signed redemption. **No terminal Enter is required.** If the owner
+denies approval, the deadline expires or the status endpoint is unavailable,
+enrollment fails closed. The command still requires stdin and stdout attached
+to a real foreground terminal; redirected or piped invocation is rejected
+before key creation or issuing a challenge. An agent-owned PTY under the same
+OS user is not independent human approval.
 Save the printed `deviceId` and `Local key slot` UUID as non-secret
 identifiers. A fresh owner-only key is created at the fixed application path
 `~/.local/share/kicad-mcp-cloud/keys/<keySlot>.pem`; neither the LLM nor
