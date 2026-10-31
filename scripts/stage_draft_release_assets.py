@@ -22,6 +22,7 @@ from scripts.plan_draft_release_retry import _approved_manifest, _draft_metadata
 
 _REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _SHA = re.compile(r"^[0-9a-f]{40}$")
+_INTERMEDIATE_INVENTORY_CHANGED = "draft asset inventory changed during upload"
 
 
 class DraftClient(Protocol):
@@ -240,12 +241,12 @@ def _check_intermediate_inventory(
     """
     assets = release.get("assets")
     if not isinstance(assets, list):
-        raise ValueError("draft asset inventory changed during upload")
+        raise ValueError(_INTERMEDIATE_INVENTORY_CHANGED)
     names: set[str] = set()
     ids: set[int] = set()
     for asset in assets:
         if not isinstance(asset, dict):
-            raise ValueError("draft asset inventory changed during upload")
+            raise ValueError(_INTERMEDIATE_INVENTORY_CHANGED)
         name, asset_id = asset.get("name"), asset.get("id")
         if (
             not isinstance(name, str)
@@ -255,7 +256,7 @@ def _check_intermediate_inventory(
             or asset_id <= 0
             or asset_id in ids
         ):
-            raise ValueError("draft asset inventory changed during upload")
+            raise ValueError(_INTERMEDIATE_INVENTORY_CHANGED)
         expected = approved[name]
         if (
             asset.get("state") != "uploaded"
@@ -263,11 +264,11 @@ def _check_intermediate_inventory(
             or asset.get("size") != expected["size"]
             or asset.get("digest") not in (None, f"sha256:{expected['sha256']}")
         ):
-            raise ValueError("draft asset inventory changed during upload")
+            raise ValueError(_INTERMEDIATE_INVENTORY_CHANGED)
         names.add(name)
         ids.add(asset_id)
     if names != expected_names:
-        raise ValueError("draft asset inventory changed during upload")
+        raise ValueError(_INTERMEDIATE_INVENTORY_CHANGED)
 
 
 def stage(
