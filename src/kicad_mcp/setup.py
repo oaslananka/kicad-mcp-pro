@@ -81,7 +81,7 @@ AGENTS: dict[str, AgentInfo] = {
         display="Gemini CLI (cloud.google.com/gemini-cli)",
         kind="local",
         format="json",
-        supports_scope=["user"],
+        supports_scope=["project", "user"],
         doc_url="docs/agents/gemini-cli.md",
     ),
     "opencode": AgentInfo(
@@ -158,6 +158,7 @@ _CONFIG_PATHS: dict[str, dict[Scope, str]] = {
     },
     # ── Gemini CLI ──
     "gemini": {
+        "project": ".gemini/settings.json",
         "user": "~/.gemini/settings.json",
     },
     # ── OpenCode ──
