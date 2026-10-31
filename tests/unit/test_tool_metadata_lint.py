@@ -108,6 +108,32 @@ def test_read_only_prefix_takes_precedence_over_write_infix() -> None:
         )
 
 
+@pytest.mark.anyio
+async def test_reviewed_file_backed_readonly_tools_have_mcp_discovery_hints() -> None:
+    """Real Gemini 0.60.0 discovery exposed five safe queries without readOnlyHint."""
+    names = {
+        "dfm_run_manufacturer_check",
+        "lib_verify_component_contract",
+        "pcb_visual_qa",
+        "project_design_workflow",
+        "sch_visual_qa",
+    }
+    published = {tool.name: tool for tool in await build_server("default").list_tools()}
+    assert names <= published.keys()
+    for name in names:
+        annotations = published[name].annotations
+        assert annotations is not None, name
+        assert annotations.read_only_hint is True, name
+        assert annotations.idempotent_hint is True, name
+        assert annotations.destructive_hint is not True, name
+
+    # This changes the active project and resets session caches/connections.
+    # Its readonly *operating-mode* tier does not justify an MCP readOnlyHint.
+    project = published["kicad_set_project"].annotations
+    assert project is not None
+    assert project.read_only_hint is not True
+
+
 def test_sheet_wiring_mutations_are_destructive_and_idempotent() -> None:
     for tool_name in ("sch_spread_sheets", "sch_wire_sheet_pins"):
         annotations = infer_tool_annotations(tool_name).model_dump(exclude_none=True, by_alias=True)
