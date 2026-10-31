@@ -236,6 +236,7 @@ def test_draft_cutover_accepts_owner_that_blocks_release_please_early_publish(
         (root / ".github" / "workflows" / publisher).write_text(
             "on:\n  workflow_call:\n", encoding="utf-8"
         )
+    _wire_owner_callees(root)
     assert validate_cutover(root, {"release_asset_mutations": []}) == []
 
 
@@ -258,6 +259,7 @@ def test_cutover_uses_supplied_policy_not_an_unrelated_disk_copy(tmp_path: Path)
     disk_policy.write_text(
         json.dumps({"release_asset_mutations": [{"issue": "#1179"}]}), encoding="utf-8"
     )
+    _wire_owner_callees(root)
     assert validate_cutover(root, {"release_asset_mutations": []}) == []
 
 
@@ -273,6 +275,7 @@ def test_cutover_can_check_the_necessary_post_migration_conditions(tmp_path: Pat
     (root / ".github" / "actions-policy.json").write_text(
         json.dumps({"release_asset_mutations": []}), encoding="utf-8"
     )
+    _wire_owner_callees(root)
     assert validate_cutover(root) == []  # Necessary static conditions, NOT publish approval.
 
 
@@ -308,4 +311,53 @@ def test_cutover_rejects_duplicate_workflow_event_keys(tmp_path: Path, event_map
     assert any(
         error.startswith(f"{filename}:") and "duplicate" in error
         for error in validate_cutover(root)
+    )
+
+
+def _wire_owner_callees(root: Path) -> None:
+    owner = root / ".github" / "workflows" / "publish-release.yml"
+    with owner.open("a", encoding="utf-8") as stream:
+        for index, publisher in enumerate(_PUBLISHERS, 1):
+            stream.write(f"  draft-family-{index}:\n    uses: ./.github/workflows/{publisher}\n")
+
+
+def test_draft_cutover_rejects_owner_with_no_family_calls(tmp_path: Path) -> None:
+    root = _fixture(tmp_path)
+    _draft(root)
+    _ready_owner(root)
+    _safe_release_please_owner(root)
+    for publisher in _PUBLISHERS:
+        (root / ".github" / "workflows" / publisher).write_text(
+            "on:\n  workflow_call:\n", encoding="utf-8"
+        )
+    assert any(
+        "owner must call" in problem
+        for problem in validate_cutover(root, {"release_asset_mutations": []})
+    )
+
+
+@pytest.mark.parametrize("drift", ["missing", "duplicate", "untrusted"])
+def test_draft_cutover_rejects_incorrect_owner_family_calls(tmp_path: Path, drift: str) -> None:
+    root = _fixture(tmp_path)
+    _draft(root)
+    _ready_owner(root)
+    _safe_release_please_owner(root)
+    for publisher in _PUBLISHERS:
+        (root / ".github" / "workflows" / publisher).write_text(
+            "on:\n  workflow_call:\n", encoding="utf-8"
+        )
+    _wire_owner_callees(root)
+    owner = root / ".github" / "workflows" / "publish-release.yml"
+    source = owner.read_text()
+    target = f"./.github/workflows/{_PUBLISHERS[0]}"
+    if drift == "missing":
+        source = source.replace(f"uses: {target}", "uses: ./.github/workflows/ci.yml")
+    elif drift == "duplicate":
+        source += f"  duplicate-family:\n    uses: {target}\n"
+    else:
+        source = source.replace(f"uses: {target}", f"uses: other-org/repo/{_PUBLISHERS[0]}@main")
+    owner.write_text(source)
+    assert any(
+        "owner must call" in problem
+        for problem in validate_cutover(root, {"release_asset_mutations": []})
     )

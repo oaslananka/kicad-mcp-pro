@@ -87,7 +87,33 @@ def _owner_concurrency_errors(root: Path) -> list[str]:
             "publish-release.yml: owner concurrency requires a repository-wide "
             "stable publish-release group, cancel-in-progress=false and queue=max"
         ]
-    return _owner_release_please_errors(document.get("jobs"))
+    jobs = document.get("jobs")
+    return _owner_release_please_errors(jobs) + _owner_callee_errors(jobs)
+
+
+def _owner_callee_errors(jobs: object) -> list[str]:
+    """Require each reviewed family be invoked exactly once by the owner.
+
+    Local reusable calls are necessary, but do not prove sequencing,
+    registry receipts, exclusive runtime ownership or publish readiness.
+    """
+    if not isinstance(jobs, dict):
+        return ["publish-release.yml: owner must call all draft family workflows"]
+    calls: dict[str, int] = {}
+    for job in jobs.values():
+        if not isinstance(job, dict):
+            continue
+        target = job.get("uses")
+        if isinstance(target, str):
+            calls[target] = calls.get(target, 0) + 1
+    errors: list[str] = []
+    for publisher in _PUBLISHERS:
+        ref = f"./.github/workflows/{publisher}"
+        if calls.get(ref) != 1:
+            errors.append(
+                f"publish-release.yml: owner must call {ref} exactly once during draft cutover"
+            )
+    return errors
 
 
 def _release_please_step_error(step: object) -> str | None:
