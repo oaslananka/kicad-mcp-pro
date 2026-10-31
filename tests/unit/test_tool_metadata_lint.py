@@ -130,7 +130,8 @@ async def test_reviewed_file_backed_readonly_tools_have_mcp_discovery_hints() ->
     # This changes the active project and resets session caches/connections.
     # Its readonly *operating-mode* tier does not justify an MCP readOnlyHint.
     project = published["kicad_set_project"].annotations
-    assert project is not None and project.read_only_hint is not True
+    assert project is not None
+    assert project.read_only_hint is not True
 
 
 def test_sheet_wiring_mutations_are_destructive_and_idempotent() -> None:
