@@ -24,6 +24,7 @@ from kicad_mcp.cloud_outbound_handshake import (
     HandshakeReceipt,
     _endpoint,
     establish_proof_only_handshake,
+    execute_operator_presence_once,
     execute_single_approved_read,
 )
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
@@ -85,7 +86,7 @@ def _sig(reply: dict[str, object]) -> bytes:
     return base64.urlsafe_b64decode(value + "==")
 
 
-async def _scenario(tmp_path: Path, mode: str = "success") -> list[str]:
+async def _scenario(tmp_path: Path, mode: str = "success", *, pilot: bool = False) -> list[str]:
     tls, pem = _synthetic_tls(tmp_path)
     signing_key = Ed25519PrivateKey.generate()
     observations: list[str] = []
@@ -232,13 +233,10 @@ async def _scenario(tmp_path: Path, mode: str = "success") -> list[str]:
                         current_authorization=lambda: mode != "revoked",
                     )
 
-                # This is synthetic transport acceptance, not real owner consent.
-                with patch.object(
-                    cloud_outbound_handshake,
-                    "_require_independent_read_authority",
-                    return_value=None,
-                ):
-                    receipt = await execute_single_approved_read(
+                # A pilot can exercise actual TLS/WSS without disabling the
+                # stricter independent-authority reader. This is synthetic.
+                if pilot:
+                    receipt = await execute_operator_presence_once(
                         origin=origin,
                         trusted_origin=origin,
                         owner_sub=OWNER,
@@ -247,6 +245,21 @@ async def _scenario(tmp_path: Path, mode: str = "success") -> list[str]:
                         tls_context=trust,
                         dispatcher_factory=local_dispatcher,
                     )
+                else:
+                    with patch.object(
+                        cloud_outbound_handshake,
+                        "_require_independent_read_authority",
+                        return_value=None,
+                    ):
+                        receipt = await execute_single_approved_read(
+                            origin=origin,
+                            trusted_origin=origin,
+                            owner_sub=OWNER,
+                            device_id=DEVICE,
+                            signing_key=signing_key,
+                            tls_context=trust,
+                            dispatcher_factory=local_dispatcher,
+                        )
             else:
                 receipt = await establish_proof_only_handshake(
                     origin=origin,
@@ -396,6 +409,28 @@ def test_refuse_invalid_local_identity_before_network(owner: str, device: str) -
     )
     with pytest.raises(CloudHandshakeDeniedError):
         asyncio.run(_raise_argument_3)
+
+
+@pytest.mark.skipif(__import__("os").name != "posix", reason="POSIX no-follow required")
+def test_operator_pilot_real_tls_presence_without_changing_strict_gate(tmp_path: Path) -> None:
+    got = asyncio.run(_scenario(tmp_path, "approved-read", pilot=True))
+    answer = next(item for item in got if item.startswith("answer:"))
+    result = json.loads(answer.removeprefix("answer:"))
+    assert result["result"]["files"] == {
+        "projectPresent": True,
+        "boardPresent": False,
+        "schematicPresent": False,
+    }
+    assert "private contents" not in answer
+    assert "approved-project" not in answer
+
+
+@pytest.mark.skipif(__import__("os").name != "posix", reason="POSIX no-follow required")
+@pytest.mark.parametrize("mode", ["denied-operation", "revoked", "wrong-session"])
+def test_operator_pilot_denies_other_commands_or_expired_grants(tmp_path: Path, mode: str) -> None:
+    got = asyncio.run(_scenario(tmp_path, mode, pilot=True))
+    assert "read_denied" in got
+    assert not any(item.startswith("answer:") for item in got)
 
 
 @pytest.mark.skipif(__import__("os").name != "posix", reason="POSIX no-follow required")

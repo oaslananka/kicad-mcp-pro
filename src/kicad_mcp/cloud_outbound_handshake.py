@@ -103,15 +103,20 @@ async def _complete_authorized_read(
     socket: ClientConnection,
     receipt: HandshakeReceipt,
     dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch] | None,
+    *,
+    operator_presence_pilot: bool = False,
 ) -> HandshakeReceipt:
-    """Complete exactly one owner-approved read, or exit after proof-only mode."""
+    """Complete one bounded presence read, or exit after proof-only mode."""
     device_id = receipt.device_id
     session_id = receipt.session_id
     if dispatcher_factory is None:
         # Proof-only mode retains its original no-command behavior.
         return receipt
-    # Direct callers of this lower helper must not bypass the owner gate.
-    _require_independent_read_authority()
+    # The independent-authority reader remains strict. A separately named
+    # owner-operated presence pilot may use the same bounded presence wire,
+    # never native commands or an unattended general connector.
+    if not operator_presence_pilot:
+        _require_independent_read_authority()
     # The caller, not Cloud wire claims, supplies this independent
     # local authorization and owner-approved project selection.
     dispatcher = dispatcher_factory(receipt)
@@ -193,6 +198,7 @@ async def _perform_outbound_session(
     signing_key: Ed25519PrivateKey,
     tls_context: ssl.SSLContext | None = None,
     dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch] | None = None,
+    operator_presence_pilot: bool = False,
 ) -> HandshakeReceipt:
     """Perform the Cloud v1 proof order; optionally handle one approved read.
 
@@ -203,7 +209,7 @@ async def _perform_outbound_session(
     """
     # Reject both direct public read calls and private session-helper calls
     # before TLS setup or a WebSocket. Proof-only sessions stay available.
-    if dispatcher_factory is not None:
+    if dispatcher_factory is not None and not operator_presence_pilot:
         _require_independent_read_authority()
     endpoint = _endpoint(origin=origin, trusted_origin=trusted_origin)
     if (
@@ -288,7 +294,12 @@ async def _perform_outbound_session(
             ):
                 raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
             receipt = HandshakeReceipt(device_id=device_id, session_id=session_id)
-            return await _complete_authorized_read(socket, receipt, dispatcher_factory)
+            return await _complete_authorized_read(
+                socket,
+                receipt,
+                dispatcher_factory,
+                operator_presence_pilot=operator_presence_pilot,
+            )
     except (OSError, ValueError, WebSocketException) as exc:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED) from exc
 
@@ -310,6 +321,36 @@ async def establish_proof_only_handshake(
         device_id=device_id,
         signing_key=signing_key,
         tls_context=tls_context,
+    )
+
+
+async def execute_operator_presence_once(
+    *,
+    origin: str,
+    trusted_origin: str,
+    owner_sub: str,
+    device_id: str,
+    signing_key: Ed25519PrivateKey,
+    dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch],
+    tls_context: ssl.SSLContext | None = None,
+) -> HandshakeReceipt:
+    """Manual lower-assurance presence pilot; no independent owner UV claim.
+
+    The caller must obtain a fresh foreground operator decision. The
+    LocalReadDispatch only admits project_summary presence booleans and
+    cannot route native KiCad operations or return project contents.
+    """
+    if not callable(dispatcher_factory):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    return await _perform_outbound_session(
+        origin=origin,
+        trusted_origin=trusted_origin,
+        owner_sub=owner_sub,
+        device_id=device_id,
+        signing_key=signing_key,
+        tls_context=tls_context,
+        dispatcher_factory=dispatcher_factory,
+        operator_presence_pilot=True,
     )
 
 

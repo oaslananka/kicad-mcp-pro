@@ -14,7 +14,7 @@ from argparse import Namespace
 
 from kicad_mcp import cloud_once
 from kicad_mcp.cloud_local_registry import resolve_registered_read
-from kicad_mcp.cloud_outbound_handshake import HandshakeReceipt, execute_single_approved_read
+from kicad_mcp.cloud_outbound_handshake import HandshakeReceipt, execute_operator_presence_once
 from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
@@ -54,7 +54,7 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
             max_reads=1,
         )
 
-    return await execute_single_approved_read(
+    return await execute_operator_presence_once(
         origin=options.cloud_origin,
         trusted_origin=options.cloud_origin,
         owner_sub=options.owner_sub,
