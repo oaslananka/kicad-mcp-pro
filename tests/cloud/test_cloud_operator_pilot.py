@@ -63,12 +63,11 @@ def test_pilot_rejects_expired_consent_before_key(
         "_load_bound_owner_key",
         lambda *_: pytest.fail("expired approval must not read owner key"),
     )
+    denied_read = cloud_operator_pilot._single_presence(
+        options, (int(time.time() * 1000) + 1000, time.monotonic_ns() - 1)
+    )
     with pytest.raises(cloud_once.LocalApprovalDeniedError):
-        asyncio.run(
-            cloud_operator_pilot._single_presence(
-                options, (int(time.time() * 1000) + 1000, time.monotonic_ns() - 1)
-            )
-        )
+        asyncio.run(denied_read)
 
 
 def test_pilot_one_shot_only_three_flags(

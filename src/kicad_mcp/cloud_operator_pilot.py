@@ -19,6 +19,8 @@ from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
 
+_LOCAL_APPROVAL_DENIED = "local approval denied"
+
 
 async def _single_presence(options: Namespace, lease: tuple[int, int]) -> HandshakeReceipt:
     wall_cutoff_ms, monotonic_cutoff_ns = lease
@@ -27,7 +29,7 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
         or not options.project_directory.is_absolute()
         or time.monotonic_ns() >= monotonic_cutoff_ns
     ):
-        raise LocalApprovalDeniedError("local approval denied")
+        raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
 
     key = cloud_once._load_bound_owner_key(
         options.private_key_file, options.cloud_origin, options.device_id
@@ -35,7 +37,7 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
 
     def dispatch(receipt: HandshakeReceipt) -> LocalReadDispatch:
         if time.monotonic_ns() >= monotonic_cutoff_ns:
-            raise LocalApprovalDeniedError("local approval denied")
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
         return LocalReadDispatch(
             verified=VerifiedLocalBinding(
                 device_id=receipt.device_id,
@@ -69,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         # Headless callers are denied before owner registry/key access.
         if not sys.stdin.isatty() or not sys.stdout.isatty():
-            raise LocalApprovalDeniedError("local approval denied")
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
         selected = resolve_registered_read(
             owner_sub=options.owner_sub,
             origin=options.cloud_origin,

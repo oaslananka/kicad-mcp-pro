@@ -189,6 +189,15 @@ def _require_independent_read_authority() -> None:
     raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
 
 
+def _check_read_transport_gate(
+    dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch] | None,
+    operator_presence_pilot: bool,
+) -> None:
+    """Keep the independent-owner gate on all non-pilot read entrypoints."""
+    if dispatcher_factory is not None and not operator_presence_pilot:
+        _require_independent_read_authority()
+
+
 async def _perform_outbound_session(
     *,
     origin: str,
@@ -209,8 +218,7 @@ async def _perform_outbound_session(
     """
     # Reject both direct public read calls and private session-helper calls
     # before TLS setup or a WebSocket. Proof-only sessions stay available.
-    if dispatcher_factory is not None and not operator_presence_pilot:
-        _require_independent_read_authority()
+    _check_read_transport_gate(dispatcher_factory, operator_presence_pilot)
     endpoint = _endpoint(origin=origin, trusted_origin=trusted_origin)
     if (
         not isinstance(owner_sub, str)
