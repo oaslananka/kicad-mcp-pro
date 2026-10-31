@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -139,8 +140,14 @@ class TestGenerateConfig:
 
     def test_generate_codex_toml(self) -> None:
         toml_str = _generate_codex_toml("/home/user/project", "readonly")
-        assert "[mcp_servers.kicad]" in toml_str
-        assert 'command = "uvx"' in toml_str
+        server = tomllib.loads(toml_str)["mcp_servers"]["kicad"]
+        assert server["command"] == "uvx"
+        assert server["args"] == ["kicad-mcp-pro", "--transport", "stdio"]
+        assert server["env"]["KICAD_MCP_PROFILE"] == "default"
+        assert server["env"]["KICAD_MCP_OPERATING_MODE"] == "readonly"
+        assert server["env"]["KICAD_MCP_PROJECT_DIR"] == "/home/user/project"
+        assert "cwd" not in server
+        assert "default_tools_approval_mode" not in server
 
     def test_generate_vscode(self) -> None:
         config, fmt = generate_config("vscode", "/home/user/project", "readonly")
