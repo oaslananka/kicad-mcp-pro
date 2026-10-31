@@ -20,7 +20,7 @@ def _fixture(tmp_path: Path) -> Path:
         json.dumps({"release_asset_mutations": [{"issue": "#1179"}]}), encoding="utf-8"
     )
     shutil.copy2(ROOT / "release-please-config.json", tmp_path / "release-please-config.json")
-    for filename in _PUBLISHERS:
+    for filename in (*_PUBLISHERS, "publish-release.yml"):
         shutil.copy2(
             ROOT / ".github" / "workflows" / filename,
             tmp_path / ".github" / "workflows" / filename,
@@ -135,9 +135,66 @@ def test_cutover_rejects_independent_manual_publisher_dispatch(
     )
 
 
+def _ready_owner(root: Path) -> Path:
+    """The future draft-first owner must preserve and queue release writes."""
+    path = root / ".github" / "workflows" / "publish-release.yml"
+    source = path.read_text(encoding="utf-8")
+    assert source.count("  cancel-in-progress: false\n") == 1
+    path.write_text(
+        source.replace(
+            "  cancel-in-progress: false\n",
+            "  cancel-in-progress: false\n  queue: max\n",
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing",
+        "run-specific-group",
+        "cancel-running",
+        "drop-pending",
+        "remove-cancel",
+        "remove-queue",
+    ],
+)
+def test_draft_cutover_requires_serialized_non_lossy_owner(tmp_path: Path, mutation: str) -> None:
+    root = _fixture(tmp_path)
+    _draft(root)
+    path = _ready_owner(root)
+    valid = path.read_text(encoding="utf-8")
+    group = "publish-release-${{ github.repository }}"
+    if mutation == "missing":
+        changed = valid.replace(
+            "concurrency:\n  group: " + group + "\n  cancel-in-progress: false\n  queue: max\n",
+            "",
+        )
+    elif mutation == "run-specific-group":
+        changed = valid.replace(
+            group,
+            "publish-release-${{ github.run_id }}",
+        )
+    elif mutation == "cancel-running":
+        changed = valid.replace("cancel-in-progress: false", "cancel-in-progress: true")
+    elif mutation == "drop-pending":
+        changed = valid.replace("queue: max", "queue: single")
+    elif mutation == "remove-cancel":
+        changed = valid.replace("  cancel-in-progress: false\n", "")
+    else:
+        changed = valid.replace("  queue: max\n", "")
+    assert changed != valid
+    path.write_text(changed, encoding="utf-8")
+    errors = validate_cutover(root, {"release_asset_mutations": []})
+    assert any("owner concurrency" in error for error in errors)
+
+
 def test_cutover_uses_supplied_policy_not_an_unrelated_disk_copy(tmp_path: Path) -> None:
     root = _fixture(tmp_path)
     _draft(root)
+    _ready_owner(root)
     for filename in _PUBLISHERS:
         (root / ".github" / "workflows" / filename).write_text(
             "on:\n  workflow_call:\n", encoding="utf-8"
@@ -158,6 +215,7 @@ def test_cutover_uses_supplied_policy_not_an_unrelated_disk_copy(tmp_path: Path)
 def test_cutover_can_check_the_necessary_post_migration_conditions(tmp_path: Path) -> None:
     root = _fixture(tmp_path)
     _draft(root)
+    _ready_owner(root)
     for filename in _PUBLISHERS:
         (root / ".github" / "workflows" / filename).write_text(
             "on:\n  workflow_call:\n", encoding="utf-8"

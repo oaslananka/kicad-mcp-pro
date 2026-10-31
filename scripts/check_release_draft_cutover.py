@@ -13,6 +13,8 @@ from typing import Any
 
 import yaml
 
+_GITHUB_DIR = ".github"
+
 # These jobs currently publish via release:published or tag push. In draft-first
 # mode they must become owner-invoked reusable workflows, not autonomous writers.
 _PUBLISHERS = (
@@ -56,6 +58,38 @@ def _events(workflow: Path) -> dict[str, Any]:
     return events
 
 
+def _owner_concurrency_errors(root: Path) -> list[str]:
+    """Require one non-cancelling owner queue across release attempts.
+
+    This validates configuration, not ownership of a live Actions lock.
+    """
+    path = root / _GITHUB_DIR / "workflows" / "publish-release.yml"
+    try:
+        loader = _UniqueMappingLoader(path.read_text(encoding="utf-8"))
+        try:
+            document = loader.get_single_data()
+        finally:
+            loader.dispose()
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        return [f"publish-release.yml: owner concurrency cannot be verified: {exc}"]
+    if not isinstance(document, dict):
+        return ["publish-release.yml: owner concurrency requires a workflow mapping"]
+
+    concurrency = document.get("concurrency")
+    required_group = "publish-release-${{ github.repository }}"
+    if (
+        not isinstance(concurrency, dict)
+        or concurrency.get("group") != required_group
+        or concurrency.get("cancel-in-progress") is not False
+        or concurrency.get("queue") != "max"
+    ):
+        return [
+            "publish-release.yml: owner concurrency requires a repository-wide "
+            "stable publish-release group, cancel-in-progress=false and queue=max"
+        ]
+    return []
+
+
 def _publisher_trigger_errors(root: Path) -> list[str]:
     """Require one explicit draft owner instead of automatic publisher events."""
     errors: list[str] = []
@@ -63,7 +97,7 @@ def _publisher_trigger_errors(root: Path) -> list[str]:
     # point. The trusted owner workflow owns manual recovery and serialization.
     allowed_events = {"workflow_call", "pull_request"}
     for filename in _PUBLISHERS:
-        path = root / ".github" / "workflows" / filename
+        path = root / _GITHUB_DIR / "workflows" / filename
         try:
             events = _events(path)
         except (OSError, ValueError, yaml.YAMLError) as exc:
@@ -81,7 +115,7 @@ def _legacy_mutation_errors(root: Path, policy: dict[str, Any] | None) -> list[s
     if policy is None:
         try:
             policy = json.loads(
-                (root / ".github" / "actions-policy.json").read_text(encoding="utf-8")
+                (root / _GITHUB_DIR / "actions-policy.json").read_text(encoding="utf-8")
             )
         except (OSError, ValueError) as exc:
             return [f"draft cutover cannot read release mutation policy: {exc}"]
@@ -130,6 +164,7 @@ def validate_cutover(root: Path, policy: dict[str, Any] | None = None) -> list[s
             "for every release-producing package, with no mixed-mode releases"
         )
 
+    errors.extend(_owner_concurrency_errors(root))
     errors.extend(_publisher_trigger_errors(root))
     errors.extend(_legacy_mutation_errors(root, policy))
 
