@@ -128,7 +128,7 @@ def summarize_native_pcb_drc(policy: OperatorProject) -> dict[str, int]:
             if not isinstance(violations, list) or not isinstance(unconnected, list):
                 raise LocalReadDeniedError(_DENIED)
             return {"violations": len(violations), "unconnectedItems": len(unconnected)}
-    except (OSError, ValueError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
         raise LocalReadDeniedError(_DENIED) from exc
     finally:
         if fd is not None:

@@ -74,8 +74,9 @@ def test_explicit_native_drc_returns_only_counts_and_consumes_one_read(
     }
     assert len(calls) == 1
     assert "TEST" not in json.dumps(result)
+    repeated = frame()
     with pytest.raises(LocalReadDeniedError):
-        reader.read(frame(), sequence=2)
+        reader.read(repeated, sequence=2)
 
 
 @pytest.mark.parametrize(
@@ -100,8 +101,9 @@ def test_operation_downgrade_or_cross_mode_never_runs_native(
         lambda _: pytest.fail("native operation must not be invoked"),
     )
     reader = dispatcher(tmp_path, native_drc=native, operations=ops)
+    disallowed = frame(operation)
     with pytest.raises(LocalReadDeniedError):
-        reader.read(frame(operation), sequence=1)
+        reader.read(disallowed, sequence=1)
 
 
 @pytest.mark.parametrize(
@@ -124,8 +126,9 @@ def test_invalid_binding_or_deadline_denied(
         lambda _: pytest.fail("native operation must not be invoked"),
     )
     reader = dispatcher(tmp_path, native_drc=True)
+    invalid = frame(**change)
     with pytest.raises(LocalReadDeniedError):
-        reader.read(frame(**change), sequence=1)
+        reader.read(invalid, sequence=1)
 
 
 def test_native_transport_requires_separate_explicit_pilot_flag(
@@ -180,10 +183,9 @@ def test_native_transport_requires_separate_explicit_pilot_flag(
         return dispatcher(tmp_path, native_drc=True)
 
     socket = TestSocket()
+    forbidden = _complete_authorized_read(socket, receipt, factory, operator_presence_pilot=True)
     with pytest.raises(CloudHandshakeDeniedError):
-        asyncio.run(
-            _complete_authorized_read(socket, receipt, factory, operator_presence_pilot=True)
-        )
+        asyncio.run(forbidden)
     assert socket.sent == []
 
     socket = TestSocket()

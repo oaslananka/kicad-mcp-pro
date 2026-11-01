@@ -37,10 +37,13 @@ def _fake_success(monkeypatch: pytest.MonkeyPatch, selected: OperatorProject) ->
 
     def native(argv: list[str], **kwargs: object) -> SimpleNamespace:
         assert argv[1:4] == ["pcb", "drc", "--format"]
-        assert argv[4] == "json" and argv[5] == "--output"
-        assert kwargs["timeout"] == 40 and kwargs["check"] is False
+        assert argv[4] == "json"
+        assert argv[5] == "--output"
+        assert kwargs["timeout"] == 40
+        assert kwargs["check"] is False
         assert kwargs["cwd"] == Path(argv[6]).parent
-        assert original is not None and Path(argv[7]).read_bytes() == original
+        assert original is not None
+        assert Path(argv[7]).read_bytes() == original
         assert Path(argv[7]) != selected.directory / "TEST.kicad_pcb"
         Path(argv[6]).write_text(
             json.dumps({"violations": [{}, {}], "unconnected_items": [{}]}),
