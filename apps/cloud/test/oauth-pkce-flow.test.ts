@@ -5,8 +5,9 @@ import {test} from "node:test";
 import type {AddressInfo} from "node:net";
 import {request as nodeRequest,type Server} from "node:http";
 import pg from "pg";
-import {decodeJwt,exportJWK,generateKeyPair,SignJWT} from "jose";
+import {createLocalJWKSet,decodeJwt,exportJWK,generateKeyPair,SignJWT} from "jose";
 import {createIdentity} from "../src/identity.js";
+import {createVerifier,type Verifier} from "../src/auth.js";
 import {createHttpServer} from "../src/http.js";
 import {PgGrantManagement} from "../src/grants.js";
 import type {Config} from "../src/config.js";
@@ -39,7 +40,11 @@ test("real MCP OAuth server: authorize redirect, session consent and PKCE code e
     const conf:Config={host:"127.0.0.1",port:0,publicOrigin,issuer:publicOrigin+"/api/auth",
       jwksUrl:publicOrigin+"/api/auth/jwks",audience:publicOrigin+"/mcp",
       databaseUrl:scoped,allowedOrigins:[],managementClientId:"portal"};
-    server=createHttpServer(conf, grants, async()=>{throw new Error("unexpected resource access")}, {grants:grants, identity:identity});
+    let actualVerifier:Verifier|undefined;
+    server=createHttpServer(conf, grants, async token=>{
+      if(!actualVerifier)throw new Error("issuer not yet initialized");
+      return actualVerifier(token);
+    }, {grants:grants, identity:identity});
     await new Promise<void>(resolve=>server!.listen(0,"127.0.0.1",resolve));
     const address="http://127.0.0.1:"+(server.address() as AddressInfo).port;
     const now=new Date(),expire=new Date(now.getTime()+60*60*1000);
@@ -141,6 +146,63 @@ test("real MCP OAuth server: authorize redirect, session consent and PKCE code e
     assert.equal(typeof tokens.refresh_token,"string");
     assert.ok([decodeJwt(tokens.access_token as string).aud].flat().includes(publicOrigin+"/mcp"),
       "access tokens must be bound to the requested MCP resource");
+    // Resolve the actual issuer's JWKS through the HTTP server, then use
+    // the same resource-server verifier as the production MCP endpoint.
+    const jwksResponse=await fetch(address+"/api/auth/jwks");
+    assert.equal(jwksResponse.status,200);
+    const jwks=await jwksResponse.json();
+    actualVerifier=createVerifier(conf,createLocalJWKSet(jwks));
+    const authenticatedActor=await actualVerifier(tokens.access_token as string);
+    assert.equal(authenticatedActor.sub,"owner-pkce");
+    assert.equal(authenticatedActor.clientId,"fixture-mcp-client");
+    assert.ok(authenticatedActor.scopes.has("projects:read"));
+    const mcp=async(method:string,token:string,params:Record<string,unknown>={})=>
+      fetch(address+"/mcp",{
+        method:"POST",
+        headers:{"Authorization":"Bearer "+token,
+          "Content-Type":"application/json",
+          "Accept":"application/json, text/event-stream",
+          "MCP-Protocol-Version":"2026-07-28",
+          "Mcp-Method":method,
+          ...(typeof params.name==="string"?{"Mcp-Name":params.name}:{})},
+        body:JSON.stringify({jsonrpc:"2.0",id:1,method,params:{
+          ...params,
+          _meta:{"io.modelcontextprotocol/clientInfo":{name:"real-oauth-test",version:"1.0.0"},
+            "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+            "io.modelcontextprotocol/clientCapabilities":{}}
+        }})
+      });
+    const verifiedTools=await mcp("tools/list",tokens.access_token as string);
+    assert.equal(verifiedTools.status,200,await verifiedTools.clone().text());
+    const toolResponse=await verifiedTools.json() as {result?:{tools?:{name:string}[]}};
+    const names=(toolResponse.result?.tools??[]).map(t=>t.name);
+    assert.ok(names.includes("list_projects"));
+    assert.ok(names.includes("get_service_status"));
+    assert.ok(!names.includes("pcb_delete_items"));
+    const projects=await mcp("tools/call",tokens.access_token as string,{
+      name:"list_projects",arguments:{}
+    });
+    assert.equal(projects.status,200,await projects.clone().text());
+    const inventory=await projects.json() as {
+      result?:{structuredContent?:{projects?:unknown[]}}
+    };
+    assert.deepEqual(inventory.result?.structuredContent?.projects,[],
+      "OAuth login alone never grants access to a local KiCad project");
+    const service=await mcp("tools/call",tokens.access_token as string,{
+      name:"get_service_status",arguments:{}
+    });
+    assert.equal(service.status,200,await service.clone().text());
+    const serviceBody=await service.json() as {
+      result?:{structuredContent?:{status?:string;remoteKiCadExecution?:boolean}}
+    };
+    assert.equal(serviceBody.result?.structuredContent?.status,"foundation_only");
+    assert.equal(serviceBody.result?.structuredContent?.remoteKiCadExecution,false);
+    const withoutBearer=await fetch(address+"/mcp",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({jsonrpc:"2.0",id:2,method:"tools/list"})});
+    assert.equal(withoutBearer.status,401);
+    const invalidBearer=await mcp("tools/list","not-a-valid-bearer");
+    assert.equal(invalidBearer.status,401);
     const wrong=await exchange("wrong-verifier-not-valid-but-long-enough-string-00000");
     assert.notEqual(wrong.status,200,"invalid verifier must not issue tokens");
     const reuse=await exchange(verifier);
@@ -228,6 +290,19 @@ test("real MCP OAuth server: authorize redirect, session consent and PKCE code e
     assert.equal(typeof issued.access_token,"string");
     assert.equal(typeof issued.refresh_token,"string");
     assert.ok([decodeJwt(issued.access_token).aud].flat().includes(publicOrigin+"/mcp"));
+    const realConfidentialActor=await actualVerifier(issued.access_token);
+    assert.equal(realConfidentialActor.sub,"owner-pkce");
+    assert.equal(realConfidentialActor.clientId,confidentialId);
+    const confidentialTools=await mcp("tools/list",issued.access_token);
+    assert.equal(confidentialTools.status,200,await confidentialTools.clone().text());
+    const revoked=await grants.revokeClient("owner-pkce","fixture-mcp-client");
+    assert.equal(revoked,0,"No project grant was ever created for this client");
+    const noLongerAuthorized=await mcp("tools/list",tokens.access_token as string);
+    assert.equal(noLongerAuthorized.status,401,
+      "Revoked OAuth client must not retain MCP access even if JWT signature is valid");
+    const otherClientUnaffected=await mcp("tools/list",issued.access_token);
+    assert.equal(otherClientUnaffected.status,200,
+      "Revocation of one OAuth client must not affect another authorized client");
   }finally{
     if(server) await new Promise<void>(resolve=>server!.close(()=>resolve()));
     await grants?.close();
