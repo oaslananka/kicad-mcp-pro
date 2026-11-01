@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -10,6 +13,31 @@ import pytest
 from scripts import check_reference_board_attempt_readiness as cli
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.parametrize(
+    "entrypoint",
+    [
+        ["-m", "scripts.check_reference_board_attempt_readiness"],
+        ["scripts/check_reference_board_attempt_readiness.py"],
+    ],
+    ids=["module", "documented-script"],
+)
+def test_preflight_cli_help_without_pythonpath(entrypoint: list[str]) -> None:
+    """Both supported launch forms must work without an ambient repo import path."""
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [sys.executable, *entrypoint, "--help"],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--agent-runtime" in result.stdout
 
 
 def _safe_checks(monkeypatch: pytest.MonkeyPatch) -> None:

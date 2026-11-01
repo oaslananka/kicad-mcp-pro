@@ -23,7 +23,12 @@ from kicad_mcp.evals.reference_agent_runner import (
     ReferenceAgentWorkspace,
     discover_reference_source_revision,
 )
-from scripts.check_reference_live_gui_readiness import probe_live_gui
+
+# Support both the documented direct script invocation and python -m usage.
+if __package__:
+    from scripts.check_reference_live_gui_readiness import probe_live_gui
+else:
+    from check_reference_live_gui_readiness import probe_live_gui
 
 ROOT = Path(__file__).resolve().parents[1]
 BOARD_IDS = ("esp32-c6-usbc", "stm32f072-usbc", "rp2350-usbc")
