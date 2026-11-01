@@ -6,6 +6,11 @@
 import {createPrivateKey,createPublicKey,randomBytes,sign} from "node:crypto";
 import {readFileSync} from "node:fs";
 import {createServer} from "node:https";
+import {createLocalJWKSet,exportJWK,generateKeyPair,SignJWT} from "jose";
+import {createHttpServer} from "../src/http.js";
+import {createVerifier} from "../src/auth.js";
+import {PgInventory} from "../src/store.js";
+import type {Config} from "../src/config.js";
 import type {AddressInfo} from "node:net";
 import {PgPairingChallenges} from "../src/pairing-store.js";
 import {redemptionProof} from "../src/device-pairing.js";
@@ -50,11 +55,40 @@ async function main():Promise<void>{
       "VALUES($1,$2,$3,'Local board',true,'readonly')",[project,owner,device]);
     await db.query("INSERT INTO project_client_grants(project_id,owner_sub,client_id,enabled,max_mode) "+
       "VALUES($1,$2,$3,true,'readonly')",[project,owner,clientId]);
+    // Real Cloud HTTP MCP and WSS share the same ephemeral HTTPS listener.
+    // No public listener and no production OAuth provider is involved.
+    let cloudHttp:ReturnType<typeof createHttpServer>|null=null;
     const server=createServer({
       cert:readFileSync(cert),key:readFileSync(key)
-    },(_req,res)=>{res.writeHead(404);res.end();});
+    },(req,res)=>{
+      if(cloudHttp)cloudHttp.emit("request",req,res);
+      else {res.writeHead(503);res.end();}
+    });
     await new Promise<void>(resolve=>server.listen(0,"localhost",resolve));
     const origin="https://localhost:"+(server.address() as AddressInfo).port;
+    const {publicKey:tokenPublic,privateKey:tokenPrivate}=await generateKeyPair("RS256");
+    const jwk=await exportJWK(tokenPublic);
+    const jwks=createLocalJWKSet({keys:[{...jwk,kid:"fixture-jwt",alg:"RS256",use:"sig"}]});
+    const jwt=await new SignJWT({
+      iss:origin, aud:origin+"/mcp", sub:owner,
+      scope:"projects:read",client_id:clientId
+    }).setProtectedHeader({alg:"RS256",kid:"fixture-jwt"})
+      .setIssuedAt().setExpirationTime("3m").sign(tokenPrivate);
+    const foreignJwt=await new SignJWT({
+      iss:origin,aud:origin+"/mcp",sub:"unrelated-owner",
+      scope:"projects:read",client_id:clientId
+    }).setProtectedHeader({alg:"RS256",kid:"fixture-jwt"})
+      .setIssuedAt().setExpirationTime("3m").sign(tokenPrivate);
+    const config:Config={
+      host:"localhost",port:0,publicOrigin:origin,
+      issuer:origin,jwksUrl:origin+"/jwks",audience:origin+"/mcp",
+      databaseUrl:url!,allowedOrigins:[],managementClientId:"fixture-portal"
+    };
+    // Reuse the actual PostgreSQL inventory implementation against the
+    // current test's isolated schema, not a synthetic grant lookup.
+    const scopedUrl=db.options.connectionString;
+    if(!scopedUrl)throw Error("TEST_SCHEMA_URL_MISSING");
+    const inventory=new PgInventory(scopedUrl);
     const connector=attachConnectorWebSocket(server,{
       publicOrigin:origin,sourceOf:()=>"127.0.0.1",
       operatorLocalOnce:true,operatorInspectionOnce:true,
@@ -62,26 +96,50 @@ async function main():Promise<void>{
       connections:new BoundConnectorConnections(
         new PgConnectorSessions(db),new PgConnectorReadGate(db))
     });
+    cloudHttp=createHttpServer(config,inventory,createVerifier(config,jwks),{
+      summaryRelay:()=>connector,
+      mcpProjectInspectionEnabled:true
+    });
     try{
-      process.stdout.write(JSON.stringify({origin,device,project,owner})+"\n");
-      const oauth={ownerSub:owner,clientId,
-        accessTokenIssuedAtSeconds:Math.floor(Date.now()/1000)};
-      let intent:ReturnType<typeof connector.prepareOwnerInspection>=null;
-      for(let i=0;i<130&&!intent;i++){
-        intent=connector.prepareOwnerInspection(oauth,device,project);
-        if(!intent)await new Promise(resolve=>setTimeout(resolve,100));
+      process.stdout.write(JSON.stringify({origin,device,project,owner,jwt,foreignJwt})+"\n");
+      // Session database activation is a read-only readiness signal:
+      // never reserve the owner intent before the real SDK tool call.
+      let active=false;
+      for(let i=0;i<130&&!active;i++){
+        const state=await db.query<{state:string}>(
+          "SELECT state FROM connector_sessions WHERE device_id=$1 "+
+          "ORDER BY created_at DESC LIMIT 1",[device]);
+        active=state.rows[0]?.state==="active";
+        if(!active)await new Promise(resolve=>setTimeout(resolve,100));
       }
-      if(!intent)throw Error("TEST_CONNECTOR_SESSION_NOT_READY");
-      const result=await connector.requestInspection(oauth,device,project,intent);
-      if(!result)throw Error("TEST_INSPECTION_NOT_DELIVERED");
-      process.stdout.write(JSON.stringify({result})+"\n");
+      if(!active)throw Error("TEST_CONNECTOR_SESSION_NOT_READY");
+      process.stdout.write(JSON.stringify({connectorReady:true})+"\n");
+      // Test process confirms the real SDK call completed via stdin. No
+      // fixture-made MCP tool call or extra public test route.
+      await new Promise<void>((resolve,reject)=>{
+        const watchdog=setTimeout(()=>reject(Error("TEST_SDK_CALL_NOT_COMPLETED")),35_000);
+        process.stdin.once("data",data=>{
+          clearTimeout(watchdog);
+          // A flowing PIPE can otherwise keep the Node fixture alive even
+          // after HTTPS, WSS and PostgreSQL have all closed successfully.
+          process.stdin.pause();
+          if(data.toString("utf8").trim()==="done")resolve();
+          else reject(Error("TEST_SDK_COMPLETION_INVALID"));
+        });
+      });
     }finally{
       await connector.close();
+      await inventory.close();
       await new Promise<void>(resolve=>server.close(()=>resolve()));
     }
   });
 }
-await main().catch(error=>{
+await main().then(()=>{
+  // Fixture-only process: main() has already closed the HTTPS/WSS listener,
+  // database inventory, and isolated PostgreSQL schema. MCP SDK timers
+  // must not keep this one-shot child alive after accepted completion.
+  process.exit(0);
+}).catch(error=>{
   process.stderr.write("FIXTURE_FAILED:"+String(error)+"\n");
-  process.exitCode=1;
+  process.exit(1);
 });

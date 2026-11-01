@@ -14,9 +14,13 @@ import ssl
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import httpx2
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
+from mcp.shared.exceptions import MCPError
 from test_isolated_tls_websocket_handshake import _synthetic_tls
 
 from kicad_mcp.cloud_outbound_handshake import execute_operator_inspection_once
@@ -68,6 +72,7 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(tmp_path: Pa
         str(key),
         cwd=str(APP),
         env=os.environ.copy(),
+        stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -99,28 +104,85 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(tmp_path: Pa
                 current_authorization=lambda: True,
             )
 
-        receipt = await asyncio.wait_for(
-            execute_operator_inspection_once(
-                origin=readiness["origin"],
-                trusted_origin=readiness["origin"],
-                owner_sub=readiness["owner"],
-                device_id=readiness["device"],
-                signing_key=signer,
-                tls_context=context,
-                inspector_factory=factory,
-            ),
-            timeout=35,
-        )
-        assert receipt.device_id == readiness["device"]
-        response = json.loads(await asyncio.wait_for(peer.stdout.readline(), timeout=20))
-        status = response["result"]["status"]
-        assert isinstance(status["engineVersion"], str)
-        assert type(status["cliAvailable"]) is bool
-        assert type(status["ipcAvailable"]) is bool
-        assert "DESIGN_NOT_FOR_CLOUD" not in json.dumps(response)
-        assert str(project_dir) not in json.dumps(response)
-        assert "cliPath" not in json.dumps(response)
-        await asyncio.wait_for(peer.wait(), timeout=12)
+        async with asyncio.TaskGroup() as tasks:
+            outbound = tasks.create_task(
+                execute_operator_inspection_once(
+                    origin=readiness["origin"],
+                    trusted_origin=readiness["origin"],
+                    owner_sub=readiness["owner"],
+                    device_id=readiness["device"],
+                    signing_key=signer,
+                    tls_context=context,
+                    inspector_factory=factory,
+                )
+            )
+            ready = json.loads(await asyncio.wait_for(peer.stdout.readline(), timeout=25))
+            assert ready == {"connectorReady": True}
+            # A correctly signed JWT for a different owner must not consume
+            # the bound project's one-shot worker session.
+            async with (
+                httpx2.AsyncClient(
+                    verify=context,
+                    headers={"Authorization": "Bearer " + readiness["foreignJwt"]},
+                    timeout=15.0,
+                ) as outsider_http,
+                streamable_http_client(
+                    readiness["origin"] + "/mcp", http_client=outsider_http
+                ) as outsider_streams,
+                ClientSession(*outsider_streams) as outsider,
+            ):
+                await outsider.initialize()
+                foreign = await outsider.call_tool(
+                    "get_project_engine_status", {"project_id": readiness["project"]}
+                )
+                assert foreign.structured_content == {
+                    "available": False,
+                    "selectionRequired": False,
+                }
+            # This is an actual, unmodified Python MCP SDK client over the
+            # real Cloud HTTP path, not an ad-hoc JSON-RPC test request.
+            async with (
+                httpx2.AsyncClient(
+                    verify=context,
+                    headers={"Authorization": "Bearer " + readiness["jwt"]},
+                    timeout=25.0,
+                ) as http,
+                streamable_http_client(readiness["origin"] + "/mcp", http_client=http) as streams,
+                ClientSession(*streams) as mcp,
+            ):
+                await mcp.initialize()
+                available = await mcp.list_tools()
+                names = {tool.name for tool in available.tools}
+                assert "get_project_engine_status" in names
+                assert "get_project_drc_counts" not in names
+                assert "kicad_set_project" not in names
+                # A cloud caller cannot switch the local KiCad project, even
+                # by asking for a hidden local-only tool by exact name.
+                with pytest.raises(MCPError, match="not found"):
+                    await mcp.call_tool(
+                        "kicad_set_project", {"project_dir": str(tmp_path / "different")}
+                    )
+                response = await mcp.call_tool(
+                    "get_project_engine_status",
+                    {"project_id": readiness["project"]},
+                    read_timeout_seconds=22,
+                )
+                assert response.is_error is not True
+                assert response.structured_content is not None
+                assert response.structured_content["available"] is True
+                status = response.structured_content["status"]
+                assert isinstance(status["engineVersion"], str)
+                assert type(status["cliAvailable"]) is bool
+                assert type(status["ipcAvailable"]) is bool
+                assert "DESIGN_NOT_FOR_CLOUD" not in str(response.structured_content)
+                assert str(project_dir) not in str(response.structured_content)
+                assert "cliPath" not in str(response.structured_content)
+            receipt = await asyncio.wait_for(outbound, timeout=10)
+            assert receipt.device_id == readiness["device"]
+        assert peer.stdin is not None
+        peer.stdin.write(b"done\n")
+        await peer.stdin.drain()
+        await asyncio.wait_for(peer.wait(), timeout=14)
         assert peer.returncode == 0
     finally:
         if peer.returncode is None:
