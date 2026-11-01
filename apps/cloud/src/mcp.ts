@@ -1,7 +1,7 @@
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import type { Actor } from "./auth.js";
-import type { Inventory } from "./store.js";
+import type { Inventory, Project } from "./store.js";
 
 const text = (value: object) => ({
   content: [{ type: "text" as const, text: JSON.stringify(value) }],
@@ -17,6 +17,27 @@ export type ProjectPresenceReader =
 export type DrcCounts=Readonly<{violations:number;unconnectedItems:number}>;
 export type ProjectDrcReader =
   (deviceId:string,projectId:string)=>Promise<DrcCounts|null>;
+
+// The local device owns the actual project. This Cloud lookup only resolves
+// an already granted opaque project ID for the current OAuth client. A lone
+// project can be selected implicitly; multiple projects require an explicit ID.
+async function resolveScopedProject(
+  inventory: Inventory, actor: Actor, projectId: string | undefined
+): Promise<{project: Project | null; selectionRequired: boolean}> {
+  if (projectId !== undefined) {
+    return {project: await inventory.getProject(actor.sub, actor.clientId, projectId), selectionRequired: false};
+  }
+  const projects = await inventory.listProjects(actor.sub, actor.clientId);
+  if (projects.length !== 1) {
+    return {project: null, selectionRequired: projects.length > 1};
+  }
+  // The list is a hint, NOT a lasting grant. Revalidate against current
+  // device/project permissions before allowing the relay to run.
+  return {
+    project: await inventory.getProject(actor.sub, actor.clientId, projects[0]!.id),
+    selectionRequired: false
+  };
+}
 
 export function createCloudMcpHandler(
   inventory: Inventory, actor: Actor, projectPresence?:ProjectPresenceReader,
@@ -58,15 +79,15 @@ export function createCloudMcpHandler(
     // file contents, local paths, or editing tools are exposed over MCP.
     if(projectPresence){
       mcp.registerTool("get_project_presence",{
-        description:"Read only the three presence booleans for one already granted KiCad project. Requires an explicitly started, one-shot local device session. No board contents or commands.",
-        inputSchema:z.object({project_id:z.string().uuid()}),annotations:readonly
+        description:"Read project presence from one granted local KiCad project. When only one project is accessible its ID is optional; otherwise use list_projects and provide project_id. Requires one active owner-started session.",
+        inputSchema:z.object({project_id:z.string().uuid().optional()}),annotations:readonly
       },async ({project_id})=>{
-        const project=await inventory.getProject(actor.sub,actor.clientId,project_id);
-        if(!project)return text({available:false});
+        const {project, selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
+        if(!project)return text({available:false,selectionRequired});
         // A disconnected device or failed authorization is unavailable.
         // Do not leak backend diagnostics through a public MCP tool.
         let files:ProjectPresenceFiles|null=null;
-        try{files=await projectPresence(project.deviceId,project_id);}
+        try{files=await projectPresence(project.deviceId,project.id);}
         catch{files=null;}
         return text(files?{available:true,files}:{available:false});
       });
@@ -75,13 +96,13 @@ export function createCloudMcpHandler(
     // No board data, paths, command strings, writes or report excerpts.
     if(projectDrc){
       mcp.registerTool("get_project_drc_counts",{
-        description:"Run one owner-foreground, read-only native KiCad PCB DRC on a private temporary copy. Returns only violation/unconnected counts. Requires one active one-shot device session.",
-        inputSchema:z.object({project_id:z.string().uuid()}),annotations:readonly
+        description:"Run owner-foreground, read-only native KiCad PCB DRC for one granted local project. project_id is optional only when exactly one project is accessible; otherwise select from list_projects. Returns counts only.",
+        inputSchema:z.object({project_id:z.string().uuid().optional()}),annotations:readonly
       },async ({project_id})=>{
-        const project=await inventory.getProject(actor.sub,actor.clientId,project_id);
-        if(!project)return text({available:false});
+        const {project, selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
+        if(!project)return text({available:false,selectionRequired});
         let counts:DrcCounts|null=null;
-        try{counts=await projectDrc(project.deviceId,project_id);}
+        try{counts=await projectDrc(project.deviceId,project.id);}
         catch{counts=null;}
         return text(counts?{available:true,counts}:{available:false});
       });

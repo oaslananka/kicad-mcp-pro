@@ -716,6 +716,12 @@ test("MCP one-shot presence pilot denies foreign and revoked project access",asy
     assert.match(JSON.stringify(present.data),/"boardPresent":true/);
     assert.doesNotMatch(JSON.stringify(present.data),/USB-C Controller|\/home\/|localPath|run_drc/);
     assert.equal(reads,1);
+    const implicit=await invoke("tools/call",{
+      name:"get_project_presence",arguments:{}
+    },"test-user-a","get_project_presence");
+    assert.equal(implicit.status,200);
+    assert.match(JSON.stringify(implicit.data),/"projectPresent":true/);
+    assert.equal(reads,2,"single granted project should be selected implicitly");
     revokeDuringRead=true;
     const revoked=await invoke("tools/call",{
       name:"get_project_presence",arguments:{project_id:id}
@@ -723,13 +729,13 @@ test("MCP one-shot presence pilot denies foreign and revoked project access",asy
     assert.equal(revoked.status,200);
     assert.doesNotMatch(JSON.stringify(revoked.data),/boardPresent/);
     assert.match(JSON.stringify(revoked.data),/"available":false/);
-    assert.equal(reads,2);
+    assert.equal(reads,3);
     grantActive=true;revokeDuringRead=false;accessAllowed=false;
     const cutoff=await invoke("tools/call",{
       name:"get_project_presence",arguments:{project_id:id}
     },"test-user-a","get_project_presence");
     assert.equal(cutoff.status,401);
-    assert.equal(reads,2);
+    assert.equal(reads,3);
   }finally{
     grantActive=true;revokeDuringRead=false;accessAllowed=true;
     await new Promise<void>(resolve=>proxy.close(()=>resolve()));
@@ -803,6 +809,12 @@ test("native DRC count tool is separate, scoped, revocable and OFF unless opted 
       assert.match(JSON.stringify(accepted.data),/"unconnectedItems":0/);
       assert.doesNotMatch(JSON.stringify(accepted.data),/USB-C Controller|localPath|\.kicad_pcb/);
       assert.equal(reads,1);
+      const implicit=await invoke("tools/call",{
+        name:"get_project_drc_counts",arguments:{}
+      },"test-user-a","get_project_drc_counts");
+      assert.equal(implicit.status,200);
+      assert.match(JSON.stringify(implicit.data),/"violations":2/);
+      assert.equal(reads,2);
       revokeDuringRead=true;
       const revoked=await invoke("tools/call",{
         name:"get_project_drc_counts",arguments:{project_id:id}
@@ -810,7 +822,7 @@ test("native DRC count tool is separate, scoped, revocable and OFF unless opted 
       assert.equal(revoked.status,200);
       assert.match(JSON.stringify(revoked.data),/"available":false/);
       assert.doesNotMatch(JSON.stringify(revoked.data),/"violations"/);
-      assert.equal(reads,2);
+      assert.equal(reads,3);
     }
   }finally{
     grantActive=true;
@@ -818,5 +830,92 @@ test("native DRC count tool is separate, scoped, revocable and OFF unless opted 
     for(const proxy of [disabled,enabled]){
       if(proxy.listening)await new Promise<void>(resolve=>proxy.close(()=>resolve()));
     }
+  }
+});
+
+
+test("Cloud presence selects only unambiguous granted projects",async()=>{
+  const another={...mockProject,id:randomUUID(),alias:"Sensor Board"};
+  let relayed=0;
+  const scoped:Inventory={
+    ...inventory,
+    async listProjects(owner,clientId){
+      return owner==="user-a"&&clientId==="test-client" ? [mockProject,another] : [];
+    },
+    async getProject(owner,clientId,projectId){
+      return owner==="user-a"&&clientId==="test-client"
+        ? [mockProject,another].find(project=>project.id===projectId)??null : null;
+    }
+  };
+  const relay={
+    prepareOwnerSummary:testPrepared,
+    async requestSummary(_oauth:unknown,_device:string,projectId:string,
+      prepared:PreparedOwnerSummary){
+      relayed++;
+      return {kind:"connector.local_read_preview" as const,version:1 as const,
+        requestId:prepared.requestId,projectId,operation:"project_summary" as const,
+        files:{projectPresent:true,boardPresent:true,schematicPresent:false}};
+    }
+  };
+  const proxy=createHttpServer(config,scoped,verify,{
+    summaryRelay:()=>relay,mcpProjectPresenceEnabled:true
+  });
+  await new Promise<void>(done=>proxy.listen(0,"127.0.0.1",done));
+  const origin="http://127.0.0.1:"+(proxy.address() as AddressInfo).port;
+  const invoke=async(token:string,args:object)=>{
+    const response=await fetch(origin+"/mcp",{
+      method:"POST",headers:headers(token,"tools/call","get_project_presence"),
+      body:payload("tools/call",{name:"get_project_presence",arguments:args})
+    });
+    return {status:response.status,body:JSON.stringify(await response.json())};
+  };
+  try{
+    const ambiguous=await invoke("test-user-a",{});
+    assert.equal(ambiguous.status,200);
+    assert.match(ambiguous.body,/"selectionRequired":true/);
+    assert.doesNotMatch(ambiguous.body,/boardPresent/);
+    const foreign=await invoke("test-user-b",{});
+    assert.equal(foreign.status,200);
+    assert.doesNotMatch(foreign.body,/selectionRequired":true/);
+    assert.equal(relayed,0,"ambiguous and foreign calls must not reach the device");
+    const selected=await invoke("test-user-a",{project_id:another.id});
+    assert.equal(selected.status,200);
+    assert.match(selected.body,/"boardPresent":true/);
+    assert.equal(relayed,1);
+  }finally{
+    await new Promise<void>(done=>proxy.close(()=>done()));
+  }
+});
+
+
+test("implicit project selection rechecks a grant after listing",async()=>{
+  let projectLookups=0,relayed=0;
+  const stale:Inventory={
+    ...inventory,
+    async listProjects(){return [mockProject];},
+    async getProject(){projectLookups++;return null;}
+  };
+  const relay={
+    prepareOwnerSummary:testPrepared,
+    async requestSummary(){relayed++;return null;}
+  };
+  const proxy=createHttpServer(config,stale,verify,{
+    summaryRelay:()=>relay,mcpProjectPresenceEnabled:true
+  });
+  await new Promise<void>(done=>proxy.listen(0,"127.0.0.1",done));
+  const origin="http://127.0.0.1:"+(proxy.address() as AddressInfo).port;
+  try{
+    const response=await fetch(origin+"/mcp",{
+      method:"POST",headers:headers("test-user-a","tools/call","get_project_presence"),
+      body:payload("tools/call",{name:"get_project_presence",arguments:{}})
+    });
+    assert.equal(response.status,200);
+    const output=JSON.stringify(await response.json());
+    assert.match(output,/"available":false/);
+    assert.doesNotMatch(output,/boardPresent/);
+    assert.equal(projectLookups,1);
+    assert.equal(relayed,0);
+  }finally{
+    await new Promise<void>(done=>proxy.close(()=>done()));
   }
 });

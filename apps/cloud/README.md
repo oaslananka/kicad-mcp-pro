@@ -34,6 +34,12 @@ database migration ownership and public OAuth endpoint requires a separate,
 verified cutover with rollback. Do not treat a local build as deployment
 acceptance.
 
+With exactly one accessible project, the Cloud MCP presence and DRC-count
+pilot tools may omit `project_id`: the Cloud service resolves the sole granted
+project and rechecks authorization before routing. If multiple projects are
+granted, the AI client must call `list_projects` and supply an explicit
+`project_id`. An absent or revoked grant never falls back to a local path.
+
 The local stdio/HTTP MCP engine and dashboard remain usable without a cloud
 account. Keep project paths on-device and preserve the existing owner/device
 authorization checks across remote connections.
