@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {generateKeyPairSync,randomBytes,sign} from "node:crypto";
+import {generateKeyPairSync,randomBytes,randomUUID,sign} from "node:crypto";
 import {createServer} from "node:http";
 import type {AddressInfo} from "node:net";
 import {test} from "node:test";
@@ -148,11 +148,15 @@ test("outbound local WebSocket proves enrolled device identity then binds signed
         keys.privateKey).toString("base64url");
       const ready=await send(ws,{kind:"connector.session_proof",version:1,signature:second});
       assert.equal(ready.kind,"connector.ready");
+      assert.equal(attached.isDeviceConnected(owner,device),true);
+      assert.equal(attached.isDeviceConnected("another-owner",device),false);
+      assert.equal(attached.isDeviceConnected(owner,randomUUID()),false);
       assert.equal((await db.query("SELECT state FROM connector_sessions WHERE id=$1",
         [id])).rows[0].state,"active");
       const close=waitClose(ws);
       ws.send(JSON.stringify({kind:"connector.execute",operation:"run_drc"}));
       assert.equal(await close,1008); // No native KiCad relay.
+      assert.equal(attached.isDeviceConnected(owner,device),false);
       // Closure should fence the persistent session as well.
       let state="active";
       for(let i=0;i<35;i++){

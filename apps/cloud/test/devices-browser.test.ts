@@ -60,6 +60,38 @@ test("device owner listing requires a browser session and escapes device metadat
   assert.doesNotMatch(html,/secret|private_key|public_key_der/);
   assert.deepEqual(f.calls,["list:owner-a"]);
 });
+test("authenticated devices page reports only actual owner-bound connector sessions",async()=>{
+  const f=fixture();
+  const checks:string[]=[];
+  const connected=(owner:string,device:string)=>{
+    checks.push(owner+":"+device);
+    return owner==="owner-a"&&device===f.ownId;
+  };
+  const page=await devicesResponse(
+    new Request(origin+"/devices"),f.identity,origin,f.devices,true,undefined,connected);
+  assert.equal(page?.status,200);
+  const html=await page!.text();
+  assert.match(html,/Connector connected now \(temporary session; not proof of KiCad activity\)/);
+  assert.deepEqual(checks,["owner-a:"+f.ownId]);
+  const offline=await devicesResponse(
+    new Request(origin+"/devices"),f.identity,origin,f.devices,true,undefined,()=>false);
+  assert.match(await offline!.text(),/Connector not connected now/);
+  const anonymous=fixture(null);
+  let called=false;
+  const unauthenticated=await devicesResponse(
+    new Request(origin+"/devices"),anonymous.identity,origin,anonymous.devices,true,
+    undefined,()=>{called=true;return true;});
+  assert.equal(unauthenticated?.status,303);
+  assert.equal(called,false,"anonymous view must never query any device connection");
+  const other=fixture("owner-b");
+  const outsider=await devicesResponse(
+    new Request(origin+"/devices"),other.identity,origin,other.devices,true,
+    undefined,()=>{called=true;return true;});
+  assert.equal(outsider?.status,200);
+  assert.doesNotMatch(await outsider!.text(),/Connector connected now/);
+  assert.equal(called,false,"foreign account cannot enumerate ready sockets");
+});
+
 test("valid owner-bound CSRF revokes exactly the selected device",async()=>{
   const f=fixture();
   const response=await view(f);

@@ -5,6 +5,7 @@ import type {PgDeviceManagement} from "./device-management.js";
 import {renderDevicesPage} from "./devices-ui.js";
 import type {GrantManagement} from "./grants.js";
 
+export type DeviceConnectionLookup=(ownerSub:string,deviceId:string)=>boolean;
 export type DeviceManagementPort=Pick<PgDeviceManagement,"list"|"revokeDevice"> &
   Partial<Pick<PgDeviceManagement,"enableDevice"|"createProject"|"listProjects">>;
 const FIVE_MINUTES=300_000;
@@ -80,7 +81,8 @@ async function checkCsrf(req:Request,origin:string,secret:string,
 }
 async function list(req:Request,identity:BrowserIdentity,origin:string,
   devices:DeviceManagementPort,enrollmentAvailable=true,
-  grants?:Pick<GrantManagement,"setBrowserGrant">):Promise<Response>{
+  grants?:Pick<GrantManagement,"setBrowserGrant">,
+  deviceConnection?:DeviceConnectionLookup):Promise<Response>{
   if(!identity.api||!identity.$context)return error(503);
   const who=userOf(await identity.api.getSession({headers:req.headers}));
   if(!who)return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});
@@ -99,7 +101,9 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
     enableCsrf:devices.enableDevice?
       await csrf(secret,who.user,who.session,d.id,stamp,nonce,"device-enable-v1"):undefined,
     projectCsrf:devices.createProject?
-      await csrf(secret,who.user,who.session,d.id,stamp,nonce,"project-create-v1"):undefined
+      await csrf(secret,who.user,who.session,d.id,stamp,nonce,"project-create-v1"):undefined,
+    connectionState: deviceConnection&&d.enabled&&!d.revoked?
+      (deviceConnection(who.user,d.id)?"connected" as const:"disconnected" as const):undefined
   })));
   const note=new URL(req.url).searchParams.has("revoked")?
     "Device key revoked; its sessions and associated project/client permissions were disabled.":undefined;
@@ -220,13 +224,15 @@ async function ownerGrant(req:Request,identity:BrowserIdentity,origin:string,
 /** Authenticated browser-only management, never usable in external auth mode. */
 export async function devicesResponse(req:Request,identity:BrowserIdentity,origin:string,
   devices?:DeviceManagementPort,enrollmentAvailable=true,
-  grants?:Pick<GrantManagement,"setBrowserGrant">):Promise<Response|null>{
+  grants?:Pick<GrantManagement,"setBrowserGrant">,
+  deviceConnection?:DeviceConnectionLookup):Promise<Response|null>{
   const path=new URL(req.url).pathname;
   if(!["/devices","/devices/revoke","/devices/enable","/devices/projects/create",
     "/devices/projects/grant"].includes(path))
     return null;
   if(!devices)return error(503);
-  if(path==="/devices"&&req.method==="GET")return list(req,identity,origin,devices,enrollmentAvailable,grants);
+  if(path==="/devices"&&req.method==="GET")
+    return list(req,identity,origin,devices,enrollmentAvailable,grants,deviceConnection);
   if(path==="/devices/revoke"&&req.method==="POST")return revoke(req,identity,origin,devices);
   if(enrollmentAvailable && req.method==="POST"){
     if(path==="/devices/enable")return activate(req,identity,origin,devices,"device-enable-v1");

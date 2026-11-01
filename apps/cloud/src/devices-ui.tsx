@@ -2,7 +2,8 @@ import {renderPage} from "./ui-shell.js";
 import {Icon} from "./ui-icons.js";
 import type {ManagedDevice} from "./device-management.js";
 export function renderDevicesPage(
-  devices:ReadonlyArray<ManagedDevice & {csrf:string;enableCsrf?:string;projectCsrf?:string}>,
+  devices:ReadonlyArray<ManagedDevice & {csrf:string;enableCsrf?:string;projectCsrf?:string;
+    connectionState?:"connected"|"disconnected"}>,
   notice?:string,enrollmentAvailable=true,
   projects:ReadonlyArray<{id:string;deviceId:string;alias:string;enabled:boolean;grantCsrf?:string}>=[],
   ownerSub?:string,clients:ReadonlyArray<string>=[]
@@ -27,7 +28,11 @@ export function renderDevicesPage(
           </div></div>:
             <ul className="connections-list">{devices.map(d=><li className="connection-item" key={d.id}>
               <div><h3>{d.alias}</h3><p>Credential fingerprint: {d.fingerprint.slice(0,16)}…</p>
-                <p>{d.revoked?"Revoked":d.enabled?"Enabled (not proof of online status)":"Disabled"}</p></div>
+                <p>{d.revoked?"Revoked":!d.enabled?"Disabled":
+                  d.connectionState==="connected"?
+                    "Connector connected now (temporary session; not proof of KiCad activity)":
+                  d.connectionState==="disconnected"?"Connector not connected now":
+                    "Enabled (not proof of online status)"}</p></div>
               {enrollmentAvailable&&!d.revoked&&!d.enabled&&d.enableCsrf?
                 <form action="/devices/enable" method="post">
                   <input type="hidden" name="device_id" value={d.id}/>

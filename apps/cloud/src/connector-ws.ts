@@ -232,7 +232,8 @@ export function attachConnectorWebSocket(
   prepareOwnerSchematicCounts:(oauth:TrustedOAuthReadIdentity,deviceId:string,
     projectId:string)=>PreparedOwnerSchematicCounts|null;
   requestSchematicCounts:(oauth:TrustedOAuthReadIdentity,deviceId:string,
-    projectId:string,prepared?:PreparedOwnerSchematicCounts)=>Promise<SchematicCountsReadResult|null>}{
+    projectId:string,prepared?:PreparedOwnerSchematicCounts)=>Promise<SchematicCountsReadResult|null>;
+  isDeviceConnected:(ownerSub:string,deviceId:string)=>boolean}{
   // Never let a lightweight pilot setting downgrade an independent owner
   // approval dependency, even when used outside the production entrypoint.
   if(options.operatorLocalOnce&&options.ownerConsent)
@@ -713,9 +714,16 @@ export function attachConnectorWebSocket(
     const result=await requestRead(oauth,deviceId,projectId,prepared,"project_schematic_counts");
     return result?.operation==="project_schematic_counts"?result:null;
   }
+  function isDeviceConnected(ownerSub:string,deviceId:string):boolean{
+    if(stopped)return false;
+    const ready=readyDevices.get(socketKey(ownerSub,deviceId));
+    return Boolean(ready&&ready.entry.phase==="ready"&&
+      ready.socket.readyState===WebSocket.OPEN&&
+      (ready.entry.sessionDeadline??0)>performance.now());
+  }
   return {prepareOwnerSummary,requestSummary,prepareOwnerDrc,requestDrc,
     prepareOwnerInspection,requestInspection,prepareOwnerBoardCounts,requestBoardCounts,
-    prepareOwnerSchematicCounts,requestSchematicCounts,
+    prepareOwnerSchematicCounts,requestSchematicCounts,isDeviceConnected,
     close:async()=>{
     if(stopped)return;
     stopped=true;

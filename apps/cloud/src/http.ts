@@ -26,6 +26,7 @@ import type {PreparedOwnerSummary,SummaryReadResult,PreparedOwnerDrc,DrcReadResu
 import {OwnerSummaryHttpPreparations} from "./owner-summary-http-preparations.js";
 
 type SummaryRelay={
+  isDeviceConnected?:(ownerSub:string,deviceId:string)=>boolean;
   prepareOwnerSummary:(oauth:TrustedOAuthReadIdentity,deviceId:string,
     projectId:string)=>PreparedOwnerSummary|null;
   requestSummary:(oauth:TrustedOAuthReadIdentity,deviceId:string,
@@ -170,7 +171,9 @@ async function handleRequest(
         } else if (path==="/connections" || path==="/connections/revoke") {
           answer=await connectionsResponse(browserRequest,identity,config.publicOrigin,grants);
         } else if(path==="/devices" || path==="/devices/revoke" || path==="/devices/enable" || path==="/devices/projects/create" || path==="/devices/projects/grant"){
-          answer=await devicesResponse(browserRequest,identity,config.publicOrigin,devices,Boolean(pairingDevice),grants);
+          answer=await devicesResponse(browserRequest,identity,config.publicOrigin,
+            devices,Boolean(pairingDevice),grants,
+            summaryRelay?.()?.isDeviceConnected);
         } else if(path==="/devices/pairing" || path==="/devices/pairing/review"){
           answer=await pairingBrowserResponse(browserRequest,identity,config.publicOrigin,pairings);
         } else {

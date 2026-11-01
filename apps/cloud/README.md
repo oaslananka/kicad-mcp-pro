@@ -8,6 +8,16 @@ connection status and remote request routing. Engineering tools execute in the
 local KiCad MCP engine; the cloud service does not store native KiCad project
 files or provide an AI chat/model runtime.
 
+## Device connection status
+
+The signed-in **Devices** page shows whether the device has a currently
+authenticated, open Cloud Connector WebSocket session. It is scoped to the
+current account, updates when the page is refreshed, and does not imply KiCad
+GUI/IPC availability or permission to operate on a project. An enabled
+device with no open session is shown as disconnected; if the Connector service
+is disabled, the portal does not claim to know whether a device is online.
+No periodic device polling or database status table is required.
+
 ## Development
 
 Requires Node.js 24 or newer. From this directory:
