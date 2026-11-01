@@ -26,6 +26,16 @@ dedicated `stdio` instances). This interim binding does **not** provide
 multiple independently selectable projects inside one shared HTTP process;
 do not use it as a multi-tenant KiCad editing engine.
 
+The internal `project.stdio_worker` helper supports a different approach:
+trusted local code can map approved opaque project identifiers to separate
+`stdio` MCP worker processes. Each process keeps its own project and
+read-only tool settings, without changing the shared HTTP server's state.
+The initial worker interface exposes only a bounded local inspection surface;
+it is **not** a remotely accessible Connector or general Cloud tool dispatcher.
+Remote identity, current grants and operation permissions must be validated
+before any future integration, and raw local project paths must not be
+forwarded to Cloud.
+
 ## Operating Modes
 
 `KICAD_MCP_OPERATING_MODE` controls the risk level of the advertised and executable
