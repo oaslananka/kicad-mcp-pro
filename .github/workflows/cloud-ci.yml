@@ -1,0 +1,43 @@
+name: Cloud CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/cloud/**"
+      - ".github/workflows/cloud-ci.yml"
+  pull_request:
+    paths:
+      - "apps/cloud/**"
+      - ".github/workflows/cloud-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Keep exact-main evidence; only superseded pull-request checks are cancelled.
+concurrency:
+  group: cloud-ci-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' }}
+
+jobs:
+  cloud:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/cloud
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: apps/cloud/package-lock.json
+      - name: Install Cloud dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Validate Cloud types, build and tests
+        run: npm run check
+      - name: Validate Cloudflare edge contracts
+        run: node --test scripts/test-cloudflare-edge.mjs
