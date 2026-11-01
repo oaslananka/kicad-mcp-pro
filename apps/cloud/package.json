@@ -1,0 +1,49 @@
+{
+  "name": "kicad-mcp-pro-cloud",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test --test-concurrency=1 test/*.test.ts",
+    "bench": "vitest bench --run",
+    "check": "npm run typecheck && npm run build && npm test",
+    "config:check": "node dist/config-check.js",
+    "build": "tsc -p tsconfig.build.json && cp src/owner-read-enrollment-client.js dist/owner-read-enrollment-client.js && cp src/owner-read-review-client.js dist/owner-read-review-client.js",
+    "owner:acceptance": "node dist/owner-acceptance-cli.js",
+    "owner:issuer": "node dist/owner-review-cli.js",
+    "db:migrate": "node dist/migrations-cli.js",
+    "db:prune": "node dist/retention-cli.js",
+    "ingress:preflight": "node dist/ingress-topology-cli.js"
+  },
+  "dependencies": {
+    "@better-auth/cimd": "1.7.13",
+    "@better-auth/mcp": "1.7.13",
+    "@better-auth/oauth-provider": "1.7.13",
+    "@modelcontextprotocol/server": "2.4.0",
+    "@simplewebauthn/server": "14.0.3",
+    "better-auth": "1.7.13",
+    "jose": "^6.1.0",
+    "pg": "^8.16.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "ws": "8.22.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.9.1",
+    "@types/pg": "^8.15.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@types/ws": "8.18.1",
+    "playwright": "1.64.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.12"
+  }
+}

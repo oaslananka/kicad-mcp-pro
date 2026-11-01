@@ -1,0 +1,39 @@
+# KiCad MCP Pro Cloud service
+
+This directory contains the existing cloud-side TypeScript application, now
+maintained alongside the local Python KiCad MCP engine in the same repository.
+
+**Role:** Browser identity, account/device pairing, MCP client authorization,
+connection status and remote request routing. Engineering tools execute in the
+local KiCad MCP engine; the cloud service does not store native KiCad project
+files or provide an AI chat/model runtime.
+
+## Development
+
+Requires Node.js 24 or newer. From this directory:
+
+```sh
+npm ci
+npm run check
+```
+
+The service has its own `package-lock.json` and can be tested or built without
+installing the root Python application. Tests that need a PostgreSQL integration
+fixture or an external host may be skipped locally; the integration and release
+acceptance gates still apply.
+
+Container builds use this directory as the context:
+
+```sh
+docker build -f apps/cloud/Dockerfile apps/cloud
+```
+
+The existing production service is **not** deployed from this directory merely
+because the source was copied here. Switching the production build origin,
+database migration ownership and public OAuth endpoint requires a separate,
+verified cutover with rollback. Do not treat a local build as deployment
+acceptance.
+
+The local stdio/HTTP MCP engine and dashboard remain usable without a cloud
+account. Keep project paths on-device and preserve the existing owner/device
+authorization checks across remote connections.

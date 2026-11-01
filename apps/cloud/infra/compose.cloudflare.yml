@@ -1,0 +1,21 @@
+# Optional, dedicated remotely-managed Cloudflare Tunnel for a NEW VPS.
+# Do not attach to a shared existing production Tunnel; use compose.production.yml alone there.
+name: kicad-cloud-edge
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.0
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?Doppler Tunnel token required}
+    networks:
+      - ingress
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+networks:
+  ingress:
+    external: true
+    name: ${KICAD_TUNNEL_NETWORK:?Dedicated ingress network required}
