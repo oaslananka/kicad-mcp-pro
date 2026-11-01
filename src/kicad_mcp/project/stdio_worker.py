@@ -82,7 +82,11 @@ class ProjectInspectionSession:
         session: ClientSession,
         project_id: str,
         current_authorization: Callable[[str], bool],
+        timeout_seconds: float = 12,
     ) -> None:
+        if not isinstance(timeout_seconds, (int, float)) or not 0 < timeout_seconds <= 30:
+            raise ValueError("Invalid project inspection timeout")
+        self._timeout_seconds = timeout_seconds
         self._session = session
         self._project_id = project_id
         self._authorized = current_authorization
@@ -100,7 +104,8 @@ class ProjectInspectionSession:
         if name not in _SCOPED_INSPECTION_TOOLS:
             raise ProjectWorkerDeniedError("tool not authorized")
         self._check_grant()
-        response = await self._session.call_tool(name, arguments={})
+        async with asyncio.timeout(self._timeout_seconds):
+            response = await self._session.call_tool(name, arguments={})
         self._check_grant()
         return response
 

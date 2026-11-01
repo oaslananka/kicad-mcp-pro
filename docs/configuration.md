@@ -36,6 +36,15 @@ Remote identity, current grants and operation permissions must be validated
 before any future integration, and raw local project paths must not be
 forwarded to Cloud.
 
+The local `cloud_project_worker_bridge` accepts an already verified
+device/project/session binding and owner-approved project directory, and
+rechecks grants before/after bounded read-only MCP inspection. Its distinct
+`project_worker_inspection` capability is **not issued** by the existing
+one-shot Cloud Connector: the current `project_summary` and `run_drc`
+permissions cannot enable it. The bridge has no WebSocket listener, no
+authorization endpoint and no general tool forwarding; a future transport
+integration must preserve the existing owner's explicit operation choice.
+
 ## Operating Modes
 
 `KICAD_MCP_OPERATING_MODE` controls the risk level of the advertised and executable

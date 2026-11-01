@@ -138,3 +138,37 @@ def test_project_worker_refuses_untrusted_paths(tmp_path: Path) -> None:
     filename.write_text("not a project", encoding="utf-8")
     with pytest.raises(ValueError):
         project_worker_parameters(filename)
+
+
+@pytest.mark.anyio
+async def test_inspection_timeout_cancels_stalled_tool_call() -> None:
+    """Slow or orphaned workers cannot occupy a request forever."""
+    from kicad_mcp.project.stdio_worker import ProjectInspectionSession
+
+    cancelled = False
+
+    class UnresponsiveSession:
+        async def call_tool(self, name: str, arguments: dict[str, object]) -> object:
+            nonlocal cancelled
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled = True
+                raise
+
+    worker = ProjectInspectionSession(  # type: ignore[arg-type]
+        UnresponsiveSession(), "project-a", lambda _project: True, timeout_seconds=0.02
+    )
+    with pytest.raises(TimeoutError):
+        await worker.inspect("kicad_get_version")
+    assert cancelled
+
+
+def test_inspection_timeout_rejects_invalid_limits() -> None:
+    from kicad_mcp.project.stdio_worker import ProjectInspectionSession
+
+    for value in (0, -5, 31, float("inf"), float("nan")):
+        with pytest.raises(ValueError):
+            ProjectInspectionSession(  # type: ignore[arg-type]
+                object(), "a", lambda _: True, timeout_seconds=value
+            )
