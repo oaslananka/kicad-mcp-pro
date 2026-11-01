@@ -35,7 +35,10 @@ def _copy_bound_file(
         info = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > limit:
             raise LocalReadDeniedError(_DENIED)
-        fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
+        nofollow = getattr(os, "O_NOFOLLOW", None)
+        if type(nofollow) is not int:
+            raise LocalReadDeniedError(_DENIED)
+        fd = os.open(name, os.O_RDONLY | nofollow, dir_fd=dir_fd)
     except FileNotFoundError as exc:
         if required:
             raise LocalReadDeniedError(_DENIED) from exc
