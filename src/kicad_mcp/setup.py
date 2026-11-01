@@ -338,8 +338,8 @@ def _opencode_uses_v2() -> bool:
     if executable is None:
         return True
     try:
-        result = subprocess.run(  # nosec B603 -- version only; shell=False, bounded
-            [executable, "--version"],
+        result = subprocess.run(  # nosec B603 -- static argv, shell=False, bounded
+            ["opencode", "--version"],  # noqa: S607 -- present on PATH via shutil.which
             capture_output=True,
             text=True,
             timeout=3,
