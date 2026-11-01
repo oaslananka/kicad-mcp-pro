@@ -188,6 +188,17 @@ def test_docker_image_builds_and_exposes_stdio_cli_smoke() -> None:
         )
 
 
+def test_docker_runtime_removes_unused_pip_vendor_dependencies() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    # The runtime has uv during installation; remove pip before uv itself.
+    # Vendored pip libraries must not remain in the final server image.
+    assert (
+        dockerfile.index("uv pip install --system --no-cache --no-deps")
+        < dockerfile.index("uv pip uninstall --system pip")
+        < dockerfile.index("rm -f /usr/local/bin/uv")
+    )
+
+
 def test_docker_healthcheck_uses_machine_readable_health_endpoint() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     health_path = "/api" + "/health"

@@ -66,6 +66,7 @@ COPY docker-entrypoint.sh /usr/local/bin/kicad-mcp-pro-entrypoint
 # fails hash-mode validation; splitting the steps keeps the supply-chain pinning intact.
 RUN uv pip install --system --no-cache --require-hashes --requirement /tmp/dist/requirements.txt \
   && uv pip install --system --no-cache --no-deps /tmp/dist/*.whl \
+  && uv pip uninstall --system pip \
   && rm -rf /tmp/dist \
   && rm -f /usr/local/bin/uv \
   && chmod 0755 /usr/local/bin/kicad-mcp-pro-entrypoint
