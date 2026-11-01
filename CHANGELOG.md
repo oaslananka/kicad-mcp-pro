@@ -10,6 +10,18 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.7.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.6.1...mcp-server-v4.7.0) (2026-11-01)
+
+
+### Features
+
+* **cloud:** stage signed one-shot owner read and native DRC counts ([#1513](https://github.com/oaslananka/kicad-mcp-pro/issues/1513)) ([65c7d2b](https://github.com/oaslananka/kicad-mcp-pro/commit/65c7d2b3f9ffe615b3c0d94177c30df550979962))
+
+
+### Bug Fixes
+
+* **opencode:** support v2 MCP setup and retain v1 configs ([#1567](https://github.com/oaslananka/kicad-mcp-pro/issues/1567)) ([f208e80](https://github.com/oaslananka/kicad-mcp-pro/commit/f208e8083920ba0775663c1a300a7573a717956d))
+
 ## [4.6.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.6.0...mcp-server-v4.6.1) (2026-11-01)
 
 
