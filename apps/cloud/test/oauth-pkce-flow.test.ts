@@ -197,6 +197,42 @@ test("real MCP OAuth server: authorize redirect, session consent and PKCE code e
     };
     assert.equal(serviceBody.result?.structuredContent?.status,"foundation_only");
     assert.equal(serviceBody.result?.structuredContent?.remoteKiCadExecution,false);
+    // An owner-controlled project grant is a separate step after OAuth
+    // consent. Exercise the *same issued bearer* against a real PG inventory.
+    const deviceId="44d77915-37b7-4d7b-a049-e426a23291c1";
+    const projectId="f5274b18-163b-480f-b231-ed55bf3ab6ef";
+    await pool.query("INSERT INTO devices(id,owner_sub,alias,enabled) "+
+      "VALUES($1,$2,'Private workstation',true)",[deviceId,"owner-pkce"]);
+    await pool.query("INSERT INTO projects(id,owner_sub,device_id,alias,enabled,max_mode) "+
+      "VALUES($1,$2,$3,'Local fixture board',true,'readonly')",
+      [projectId,"owner-pkce",deviceId]);
+    const stillUngranted=await mcp("tools/call",tokens.access_token as string,{
+      name:"get_project",arguments:{project_id:projectId}
+    });
+    assert.equal(stillUngranted.status,200);
+    assert.equal((await stillUngranted.json() as {
+      result?:{structuredContent?:{found?:boolean}}
+    }).result?.structuredContent?.found,false);
+    assert.equal(await grants.setGrant("owner-pkce","owner-browser",projectId,{
+      clientId:"fixture-mcp-client",enabled:true,maxMode:"readonly"
+    }),true);
+    const granted=await mcp("tools/call",tokens.access_token as string,{
+      name:"list_projects",arguments:{}
+    });
+    assert.equal(granted.status,200,await granted.clone().text());
+    const grantedInventory=await granted.json() as {
+      result?:{structuredContent?:{projects?:{id:string;alias:string}[]}}
+    };
+    assert.deepEqual(grantedInventory.result?.structuredContent?.projects?.map(
+      p=>({id:p.id,alias:p.alias})),[{id:projectId,alias:"Local fixture board"}]);
+    const grantedProject=await mcp("tools/call",tokens.access_token as string,{
+      name:"get_project",arguments:{project_id:projectId}
+    });
+    assert.equal((await grantedProject.json() as {
+      result?:{structuredContent?:{project?:{id:string}}}
+    }).result?.structuredContent?.project?.id,projectId);
+    assert.ok(!JSON.stringify(grantedInventory).includes(".kicad_pcb"),
+      "Cloud project inventory must not include local file paths");
     const withoutBearer=await fetch(address+"/mcp",{method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({jsonrpc:"2.0",id:2,method:"tools/list"})});
@@ -295,8 +331,15 @@ test("real MCP OAuth server: authorize redirect, session consent and PKCE code e
     assert.equal(realConfidentialActor.clientId,confidentialId);
     const confidentialTools=await mcp("tools/list",issued.access_token);
     assert.equal(confidentialTools.status,200,await confidentialTools.clone().text());
+    const confidentialWithoutGrant=await mcp("tools/call",issued.access_token,{
+      name:"list_projects",arguments:{}
+    });
+    assert.equal((await confidentialWithoutGrant.json() as {
+      result?:{structuredContent?:{projects?:unknown[]}}
+    }).result?.structuredContent?.projects?.length,0,
+      "A different OAuth client for the same owner must not inherit the grant");
     const revoked=await grants.revokeClient("owner-pkce","fixture-mcp-client");
-    assert.equal(revoked,0,"No project grant was ever created for this client");
+    assert.equal(revoked,1,"Project grant must be removed with client revocation");
     const noLongerAuthorized=await mcp("tools/list",tokens.access_token as string);
     assert.equal(noLongerAuthorized.status,401,
       "Revoked OAuth client must not retain MCP access even if JWT signature is valid");
