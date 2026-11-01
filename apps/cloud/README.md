@@ -40,6 +40,19 @@ project and rechecks authorization before routing. If multiple projects are
 granted, the AI client must call `list_projects` and supply an explicit
 `project_id`. An absent or revoked grant never falls back to a local path.
 
+The separately gated `get_project_engine_status` MCP tool is a manual
+**one-shot** outbound Connector test. It requires both
+`CONNECTOR_OPERATOR_ONESHOT_ENABLED=true` and
+`CONNECTOR_OPERATOR_INSPECTION_ENABLED=true` on the Cloud service, plus a
+locally initiated operator-approved `--inspection-once` session. It returns
+only engine version, KiCad CLI availability and IPC availability — never
+the raw `kicad_get_server_info` result, native files or local paths.
+
+This is not automatic remote KiCad editing or general MCP tool forwarding.
+The existing project-presence and DRC-count-only consent paths cannot enable
+this additional operation. Keep the feature off in existing production until
+the reviewed connector/device acceptance and separate deployment cutover.
+
 The local stdio/HTTP MCP engine and dashboard remain usable without a cloud
 account. Keep project paths on-device and preserve the existing owner/device
 authorization checks across remote connections.

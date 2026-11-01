@@ -919,3 +919,87 @@ test("implicit project selection rechecks a grant after listing",async()=>{
     await new Promise<void>(done=>proxy.close(()=>done()));
   }
 });
+
+test("manual project-engine status tool is explicit, scoped, path-free and revocable",async()=>{
+  let reads=0,grantActive=true,revokeDuringRead=false;
+  const scoped:Inventory={
+    ...inventory,
+    async getProject(owner,clientId,projectId){
+      if(!grantActive)return null;
+      return inventory.getProject(owner,clientId,projectId);
+    }
+  };
+  const relay={
+    prepareOwnerSummary:testPrepared,
+    async requestSummary(){return null;},
+    prepareOwnerInspection(oauth:TrustedOAuthReadIdentity,deviceId:string,projectId:string){
+      if(oauth.ownerSub!=="user-a"||oauth.clientId!=="test-client"||
+        deviceId!==mockProject.deviceId||projectId!==id)return null;
+      return {...testPrepared(oauth,deviceId,projectId),
+        operation:"project_worker_inspection" as const};
+    },
+    async requestInspection(_oauth:TrustedOAuthReadIdentity,_deviceId:string,
+      projectId:string,prepared:{requestId:string}){
+      reads++;
+      if(revokeDuringRead)grantActive=false;
+      return {kind:"connector.local_worker_inspection" as const,version:1 as const,
+        requestId:prepared.requestId,projectId,operation:"project_worker_inspection" as const,
+        status:{engineVersion:"4.6.1",cliAvailable:true,ipcAvailable:false}};
+    }
+  };
+  const disabled=createHttpServer(config,scoped,verify,{
+    summaryRelay:()=>relay,mcpProjectPresenceEnabled:true
+  });
+  const enabled=createHttpServer(config,scoped,verify,{
+    summaryRelay:()=>relay,mcpProjectPresenceEnabled:true,
+    mcpProjectInspectionEnabled:true
+  });
+  try{
+    for(const [proxy,isEnabled] of [[disabled,false],[enabled,true]] as const){
+      await new Promise<void>(done=>proxy.listen(0,"127.0.0.1",done));
+      const origin="http://127.0.0.1:"+(proxy.address() as AddressInfo).port;
+      const invoke=async(method:string,params:object,token="test-user-a",name?:string)=>{
+        const result=await fetch(origin+"/mcp",{
+          method:"POST",headers:headers(token,method,name),body:payload(method,params)
+        });
+        return {status:result.status,data:await result.json() as Record<string,any>};
+      };
+      const list=await invoke("tools/list",{});
+      const names=(list.data.result?.tools??[]).map((t:{name:string})=>t.name);
+      assert.equal(names.includes("get_project_engine_status"),isEnabled);
+      if(!isEnabled)continue;
+      const foreign=await invoke("tools/call",{
+        name:"get_project_engine_status",arguments:{project_id:id}
+      },"test-user-b","get_project_engine_status");
+      assert.equal(foreign.status,200);
+      assert.doesNotMatch(JSON.stringify(foreign.data),/engineVersion/);
+      assert.equal(reads,0);
+      const accepted=await invoke("tools/call",{
+        name:"get_project_engine_status",arguments:{project_id:id}
+      },"test-user-a","get_project_engine_status");
+      assert.equal(accepted.status,200);
+      assert.match(JSON.stringify(accepted.data),/"engineVersion":"4\.6\.1"/);
+      assert.match(JSON.stringify(accepted.data),/"cliAvailable":true/);
+      assert.doesNotMatch(JSON.stringify(accepted.data),/localPath|kicad_pcb|PRIVATE/);
+      assert.equal(reads,1);
+      const implicit=await invoke("tools/call",{
+        name:"get_project_engine_status",arguments:{}
+      },"test-user-a","get_project_engine_status");
+      assert.equal(implicit.status,200);
+      assert.match(JSON.stringify(implicit.data),/"ipcAvailable":false/);
+      assert.equal(reads,2);
+      revokeDuringRead=true;
+      const revoked=await invoke("tools/call",{
+        name:"get_project_engine_status",arguments:{project_id:id}
+      },"test-user-a","get_project_engine_status");
+      assert.equal(revoked.status,200);
+      assert.match(JSON.stringify(revoked.data),/"available":false/);
+      assert.doesNotMatch(JSON.stringify(revoked.data),/engineVersion/);
+      assert.equal(reads,3);
+    }
+  }finally{
+    revokeDuringRead=false;grantActive=true;
+    await new Promise<void>(done=>disabled.close(()=>done()));
+    await new Promise<void>(done=>enabled.close(()=>done()));
+  }
+});

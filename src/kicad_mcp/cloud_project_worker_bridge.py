@@ -69,6 +69,18 @@ class BoundConnectorProjectWorker:
         self, *, device_id: str, project_id: str, session_id: str
     ) -> AsyncIterator[ProjectInspectionSession]:
         """Refuse any mismatched/revoked/expired session before worker startup."""
+        self.assert_session_authorized(
+            device_id=device_id, project_id=project_id, session_id=session_id
+        )
+        async with self._router.connect(self._verified.project_id) as worker:
+            if not self._current_grant():
+                raise ProjectWorkerDeniedError("project not authorized")
+            yield worker
+
+    def assert_session_authorized(
+        self, *, device_id: str, project_id: str, session_id: str
+    ) -> None:
+        """Revalidate exact local binding before dispatch and result delivery."""
         if (
             device_id != self._verified.device_id
             or project_id != self._verified.project_id
@@ -76,7 +88,3 @@ class BoundConnectorProjectWorker:
             or not self._current_grant()
         ):
             raise ProjectWorkerDeniedError("project not authorized")
-        async with self._router.connect(self._verified.project_id) as worker:
-            if not self._current_grant():
-                raise ProjectWorkerDeniedError("project not authorized")
-            yield worker

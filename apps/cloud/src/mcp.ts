@@ -17,6 +17,11 @@ export type ProjectPresenceReader =
 export type DrcCounts=Readonly<{violations:number;unconnectedItems:number}>;
 export type ProjectDrcReader =
   (deviceId:string,projectId:string)=>Promise<DrcCounts|null>;
+export type ProjectInspectionStatus=Readonly<{
+  engineVersion:string;cliAvailable:boolean;ipcAvailable:boolean;
+}>;
+export type ProjectInspectionReader=
+  (deviceId:string,projectId:string)=>Promise<ProjectInspectionStatus|null>;
 
 // The local device owns the actual project. This Cloud lookup only resolves
 // an already granted opaque project ID for the current OAuth client. A lone
@@ -41,7 +46,7 @@ async function resolveScopedProject(
 
 export function createCloudMcpHandler(
   inventory: Inventory, actor: Actor, projectPresence?:ProjectPresenceReader,
-  projectDrc?:ProjectDrcReader
+  projectDrc?:ProjectDrcReader, projectInspection?:ProjectInspectionReader
 ) {
   return createMcpHandler(() => {
     const mcp = new McpServer({ name: "kicad-mcp-pro-cloud", version: "0.1.0" });
@@ -49,16 +54,19 @@ export function createCloudMcpHandler(
       description: "Describe Cloud connectivity limits and current feature availability. No local KiCad operation is performed.",
       inputSchema: z.object({}), annotations: readonly
     }, async () => text({
-      status: projectDrc ? "local_native_drc_pilot" :
+      status: projectInspection ? "local_engine_inspection_pilot" :
+        projectDrc ? "local_native_drc_pilot" :
         projectPresence ? "local_presence_pilot" : "foundation_only",
-      remoteKiCadExecution: Boolean(projectDrc),
-      devicePairing: Boolean(projectPresence),
+      remoteKiCadExecution: Boolean(projectDrc || projectInspection),
+      devicePairing: Boolean(projectPresence || projectInspection),
       projectManagementWrites: false,
-      message: projectDrc
-        ? "Owner-operated one-shot native DRC counts only; no board contents, file paths or arbitrary commands."
-        : projectPresence
-          ? "Only one-shot, owner-granted project presence flags are available; no KiCad commands or file contents."
-          : "Cloud inventory is read-only. A local connector is not yet available."
+      message: projectInspection
+        ? "One owner-operated, read-only local MCP engine inspection only; no design data, file paths or arbitrary tools."
+        : projectDrc
+          ? "Owner-operated one-shot native DRC counts only; no board contents, file paths or arbitrary commands."
+          : projectPresence
+            ? "Only one-shot, owner-granted project presence flags are available; no KiCad commands or file contents."
+            : "Cloud inventory is read-only. A local connector is not yet available."
     }));
     mcp.registerTool("list_devices", {
       description: "List the authenticated user's registered device metadata. Connected always false until a verified device relay exists.",
@@ -105,6 +113,21 @@ export function createCloudMcpHandler(
         try{counts=await projectDrc(project.deviceId,project.id);}
         catch{counts=null;}
         return text(counts?{available:true,counts}:{available:false});
+      });
+    }
+    // Explicitly opt-in only: the manual local inspection pilot must be
+    // enabled independently of the existing presence and DRC capabilities.
+    if(projectInspection){
+      mcp.registerTool("get_project_engine_status",{
+        description:"Inspect bounded KiCad engine availability for one owner-granted project via a manually started local MCP worker. Does not return design contents or paths.",
+        inputSchema:z.object({project_id:z.string().uuid().optional()}),annotations:readonly
+      },async ({project_id})=>{
+        const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
+        if(!project)return text({available:false,selectionRequired});
+        let status:ProjectInspectionStatus|null=null;
+        try{status=await projectInspection(project.deviceId,project.id);}
+        catch{status=null;}
+        return text(status?{available:true,status}:{available:false});
       });
     }
     return mcp;

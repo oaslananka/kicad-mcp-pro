@@ -8,7 +8,8 @@ export const MAX_READ_DEADLINE_MS = 30_000;
 export const ReadOperationSchema = z.enum([
   "project_summary",
   "run_drc",
-  "run_erc"
+  "run_erc",
+  "project_worker_inspection"
 ]);
 export type ReadOperation = z.infer<typeof ReadOperationSchema>;
 
@@ -18,7 +19,7 @@ export const ConnectorHelloSchema = z.strictObject({
   deviceId: z.uuid(),
   instanceId: z.uuid(),
   engineVersion: z.string().min(1).max(80).regex(/^[a-zA-Z0-9][a-zA-Z0-9.+_-]*$/),
-  capabilities: z.array(ReadOperationSchema).max(3).refine(
+  capabilities: z.array(ReadOperationSchema).max(4).refine(
     items => new Set(items).size === items.length,
     "duplicate capability"
   )

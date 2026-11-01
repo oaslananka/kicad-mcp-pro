@@ -30,8 +30,11 @@ export type PreparedOwnerSummary=Readonly<{
 export type PreparedOwnerDrc=Omit<PreparedOwnerSummary,"operation">&{
   operation:"run_drc";
 };
-type PreparedRead=PreparedOwnerSummary|PreparedOwnerDrc;
-type ReadOperation="project_summary"|"run_drc";
+export type PreparedOwnerInspection=Omit<PreparedOwnerSummary,"operation">&{
+  operation:"project_worker_inspection";
+};
+type PreparedRead=PreparedOwnerSummary|PreparedOwnerDrc|PreparedOwnerInspection;
+type ReadOperation="project_summary"|"run_drc"|"project_worker_inspection";
 type State="new"|"device_challenge"|"session_challenge"|"ready"|"closed";
 export type SummaryReadResult={
   kind:"connector.local_read_preview";version:1;requestId:string;
@@ -43,7 +46,12 @@ export type DrcReadResult={
   projectId:string;operation:"run_drc";
   counts:{violations:number;unconnectedItems:number};
 };
-type ReadResult=SummaryReadResult|DrcReadResult;
+export type InspectionReadResult={
+  kind:"connector.local_worker_inspection";version:1;requestId:string;
+  projectId:string;operation:"project_worker_inspection";
+  status:{engineVersion:string;cliAvailable:boolean;ipcAvailable:boolean};
+};
+type ReadResult=SummaryReadResult|DrcReadResult|InspectionReadResult;
 type PendingRead={requestId:string;projectId:string;operation:ReadOperation;
   deadline:number;monotonicDeadline:number;
   resolve:(value:ReadResult|null)=>void;timer:NodeJS.Timeout};
@@ -78,7 +86,16 @@ const readResult=z.strictObject({
         unconnectedItems:z.number().int().nonnegative().max(1000000)
       })
     })
-  ])
+,
+    z.strictObject({
+      kind:z.literal("connector.local_worker_inspection"),version:z.literal(1),
+      requestId:z.uuid(),projectId:z.uuid(),operation:z.literal("project_worker_inspection"),
+      status:z.strictObject({
+        engineVersion:z.string().regex(/^[0-9A-Za-z][0-9A-Za-z.+_-]{0,79}$/),
+        cliAvailable:z.boolean(),
+        ipcAvailable:z.boolean()
+      })
+    })  ])
 });
 const CLOSE_POLICY=1008;
 const MAX_SOCKETS=96;
@@ -136,6 +153,8 @@ export function attachConnectorWebSocket(
     // Separate opt-in flag for foreground owner-operated native DRC counts.
     // Without this flag even the local one-shot pilot cannot run KiCad.
     operatorNativeDrcOnce?:boolean;
+    // Separate manually started, one-shot project worker inspection.
+    operatorInspectionOnce?:boolean;
     maxConnections?:number;
     sourceOf:RequestSourceResolver;
   }
@@ -147,13 +166,19 @@ export function attachConnectorWebSocket(
   prepareOwnerDrc:(oauth:TrustedOAuthReadIdentity,deviceId:string,
     projectId:string)=>PreparedOwnerDrc|null;
   requestDrc:(oauth:TrustedOAuthReadIdentity,deviceId:string,
-    projectId:string,prepared?:PreparedOwnerDrc)=>Promise<DrcReadResult|null>}{
+    projectId:string,prepared?:PreparedOwnerDrc)=>Promise<DrcReadResult|null>;
+  prepareOwnerInspection:(oauth:TrustedOAuthReadIdentity,deviceId:string,
+    projectId:string)=>PreparedOwnerInspection|null;
+  requestInspection:(oauth:TrustedOAuthReadIdentity,deviceId:string,
+    projectId:string,prepared?:PreparedOwnerInspection)=>Promise<InspectionReadResult|null>}{
   // Never let a lightweight pilot setting downgrade an independent owner
   // approval dependency, even when used outside the production entrypoint.
   if(options.operatorLocalOnce&&options.ownerConsent)
     throw Error("Conflicting owner approval modes");
   if(options.operatorNativeDrcOnce&&!options.operatorLocalOnce)
     throw Error("Native DRC pilot requires explicit local one-shot mode");
+  if(options.operatorInspectionOnce&&!options.operatorLocalOnce)
+    throw Error("Project inspection requires explicit local one-shot mode");
   const wss=new WebSocketServer({noServer:true,perMessageDeflate:false,
     maxPayload:1024,clientTracking:true});
   const sockets=new Set<WebSocket>();
@@ -398,6 +423,8 @@ export function attachConnectorWebSocket(
     deviceId:string,projectId:string,operation:ReadOperation):PreparedRead|null{
     if(operation==="run_drc"&&!(options.operatorLocalOnce&&options.operatorNativeDrcOnce))
       return null;
+    if(operation==="project_worker_inspection"&&
+       !(options.operatorLocalOnce&&options.operatorInspectionOnce))return null;
     if(stopped||(!options.ownerConsent&&!options.operatorLocalOnce)||!oauth||
        typeof oauth.ownerSub!=="string"||!oauth.ownerSub||
        typeof oauth.clientId!=="string"||!oauth.clientId||
@@ -435,12 +462,19 @@ export function attachConnectorWebSocket(
     deviceId:string,projectId:string):PreparedOwnerDrc|null{
     return prepareRead(oauth,deviceId,projectId,"run_drc") as PreparedOwnerDrc|null;
   }
+  function prepareOwnerInspection(oauth:TrustedOAuthReadIdentity,
+    deviceId:string,projectId:string):PreparedOwnerInspection|null{
+    return prepareRead(oauth,deviceId,projectId,
+      "project_worker_inspection") as PreparedOwnerInspection|null;
+  }
 
   async function requestRead(oauth:TrustedOAuthReadIdentity,deviceId:string,
     projectId:string,prepared:PreparedRead|undefined,
     operation:ReadOperation):Promise<ReadResult|null>{
     if(operation==="run_drc"&&!(options.operatorLocalOnce&&options.operatorNativeDrcOnce))
       return null;
+    if(operation==="project_worker_inspection"&&
+       !(options.operatorLocalOnce&&options.operatorInspectionOnce))return null;
     if(stopped||(!options.ownerConsent&&!options.operatorLocalOnce)||!oauth||typeof oauth.ownerSub!=="string"||
       !/^[0-9a-f-]{36}$/i.test(deviceId)||
       !/^[0-9a-f-]{36}$/i.test(projectId))return null;
@@ -578,8 +612,15 @@ export function attachConnectorWebSocket(
     const result=await requestRead(oauth,deviceId,projectId,prepared,"run_drc");
     return result?.operation==="run_drc"?result:null;
   }
+  async function requestInspection(oauth:TrustedOAuthReadIdentity,deviceId:string,
+    projectId:string,prepared?:PreparedOwnerInspection):Promise<InspectionReadResult|null>{
+    const result=await requestRead(oauth,deviceId,projectId,prepared,
+      "project_worker_inspection");
+    return result?.operation==="project_worker_inspection"?result:null;
+  }
 
-  return {prepareOwnerSummary,requestSummary,prepareOwnerDrc,requestDrc,close:async()=>{
+  return {prepareOwnerSummary,requestSummary,prepareOwnerDrc,requestDrc,
+    prepareOwnerInspection,requestInspection,close:async()=>{
     if(stopped)return;
     stopped=true;
     clearInterval(heartbeat);

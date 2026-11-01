@@ -61,7 +61,9 @@ function field(obj:Record<string,unknown>,key:string):string{
   return obj[key] as string;
 }
 
-async function startFixtureServer(db:Pool,operatorLocalOnce=false,nativeDrcOnce=false){
+async function startFixtureServer(
+  db:Pool,operatorLocalOnce=false,nativeDrcOnce=false,inspectionOnce=false
+){
   const server=createServer((_req,res)=>{res.writeHead(404);res.end();});
   await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
   const port=(server.address() as AddressInfo).port;
@@ -69,7 +71,11 @@ async function startFixtureServer(db:Pool,operatorLocalOnce=false,nativeDrcOnce=
     publicOrigin:"http://127.0.0.1:"+port,
     sourceOf:()=>"127.0.0.1",
     proofs:new PgDeviceHandshakes(db),
-    ...(operatorLocalOnce?{operatorLocalOnce:true,operatorNativeDrcOnce:nativeDrcOnce}:
+    ...(operatorLocalOnce?{
+      operatorLocalOnce:true,
+      operatorNativeDrcOnce:nativeDrcOnce,
+      operatorInspectionOnce:inspectionOnce
+    }:
       {ownerConsent:{consume:async()=>true}}), // Synthetic, not human approval.
     connections:new BoundConnectorConnections(
       new PgConnectorSessions(db),new PgConnectorReadGate(db))
@@ -410,6 +416,94 @@ test("signed one-shot WSS admits only explicit native DRC count results",
         }else{
           assert.equal(result,null,"No counts after revocation or operation confusion");
         }
+      }finally{
+        ws?.terminate();
+        await attached.close();
+        await new Promise<void>(resolve=>server.close(()=>resolve()));
+      }
+    });
+  }
+});
+
+test("manual WSS project inspection uses exact grant and discards invalid typed outputs",
+  {skip:!url,timeout:90_000},async()=>{
+  for(const behavior of ["allowed","wrong_result","revoked","flag_off"] as const){
+    await inIsolatedDatabase(url!,migrations,async db=>{
+      const owner="inspect-owner",clientId="inspect-client";
+      const keys=generateKeyPairSync("ed25519");
+      const der=keys.publicKey.export({format:"der",type:"spki"}) as Buffer;
+      const pair=new PgPairingChallenges(db,randomBytes(32));
+      const challenge=await pair.issue("Inspection project",der);
+      assert.equal(await pair.review(challenge.id,owner,challenge.userCode,"approve"),"approved");
+      const enrolled=await pair.enroll(challenge.id,challenge.deviceCode,
+        sign(null,redemptionProof(challenge.id,challenge.deviceCode),keys.privateKey));
+      assert.equal(enrolled.kind,"enrolled");
+      if(enrolled.kind!=="enrolled")return;
+      const device=enrolled.deviceId,project="77777777-7777-4777-8777-777777777777";
+      await db.query("UPDATE devices SET enabled=true WHERE id=$1",[device]);
+      await db.query("INSERT INTO projects(id,owner_sub,device_id,alias,enabled,max_mode) "+
+        "VALUES($1,$2,$3,'Inspection',true,'readonly')",[project,owner,device]);
+      await db.query("INSERT INTO project_client_grants(project_id,owner_sub,client_id,enabled,max_mode) "+
+        "VALUES($1,$2,$3,true,'readonly')",[project,owner,clientId]);
+      const {server,port,attached}=await startFixtureServer(
+        db,true,false,behavior!=="flag_off");
+      let ws:WebSocket|undefined;
+      try{
+        ws=await connect("ws://127.0.0.1:"+port+"/api/v1/connector/ws");
+        const hello=await send(ws,{kind:"device.hello",version:1,ownerSub:owner,deviceId:device});
+        const signed=sign(null,deviceHandshakeProof(
+          field(hello,"challengeId"),device,field(hello,"nonce")),keys.privateKey
+        ).toString("base64url");
+        const session=await send(ws,{
+          kind:"device.proof",version:1,signature:signed
+        });
+        const proof=sign(null,connectorSessionProof(
+          field(session,"sessionId"),field(session,"challengeId"),device,
+          field(session,"nonce"),field(session,"binding")),keys.privateKey
+        ).toString("base64url");
+        const ready=await send(ws,{
+          kind:"connector.session_proof",version:1,signature:proof
+        });
+        assert.equal(ready.kind,"connector.ready");
+        const oauth={ownerSub:owner,clientId,
+          accessTokenIssuedAtSeconds:Math.floor(Date.now()/1000)};
+        const intent=attached.prepareOwnerInspection(oauth,device,project);
+        if(behavior==="flag_off"){
+          assert.equal(intent,null,"Old Cloud grants cannot activate inspection");
+          return;
+        }
+        assert.ok(intent);
+        assert.equal(intent.operation,"project_worker_inspection");
+        const outbound=waitMessage(ws);
+        const pending=attached.requestInspection(oauth,device,project,intent);
+        const sent=await outbound;
+        assert.equal(sent.kind,"connector.authorized_read");
+        const request=sent.request as Record<string,unknown>;
+        assert.equal(request.operation,"project_worker_inspection");
+        assert.equal(request.projectId,project);
+        assert.equal(await attached.requestInspection(oauth,device,project,intent),null);
+        if(behavior==="revoked")
+          await db.query("UPDATE project_client_grants SET enabled=false WHERE project_id=$1",
+            [project]);
+        const good={
+          kind:"connector.local_worker_inspection",version:1,
+          requestId:request.requestId,projectId:project,
+          operation:"project_worker_inspection",
+          status:{engineVersion:"4.6.1",cliAvailable:true,ipcAvailable:false}
+        };
+        const result=behavior==="wrong_result"?
+          {...good,status:{...good.status,localPath:"/private/board"}}:good;
+        const ack=behavior==="allowed"?waitMessage(ws):null;
+        ws.send(JSON.stringify({
+          kind:"connector.read_result",version:1,sequence:1,result
+        }));
+        const response=await pending;
+        if(behavior==="allowed"){
+          assert.deepEqual(response,good);
+          const confirmed=await ack!;
+          assert.equal(confirmed.kind,"connector.read_ack");
+          assert.equal(confirmed.requestId,request.requestId);
+        }else assert.equal(response,null);
       }finally{
         ws?.terminate();
         await attached.close();

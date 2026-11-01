@@ -41,9 +41,12 @@ device/project/session binding and owner-approved project directory, and
 rechecks grants before/after bounded read-only MCP inspection. Its distinct
 `project_worker_inspection` capability is **not issued** by the existing
 one-shot Cloud Connector: the current `project_summary` and `run_drc`
-permissions cannot enable it. The bridge has no WebSocket listener, no
-authorization endpoint and no general tool forwarding; a future transport
-integration must preserve the existing owner's explicit operation choice.
+permissions cannot enable it. The bridge has no WebSocket listener or independent authorization endpoint.
+The Cloud Connector now has an independently opt-in one-shot
+`get_project_engine_status` tool using the bridge and an owner-started local
+`--inspection-once` client. The response is restricted to engine version
+and boolean CLI/IPC availability (not raw MCP output or filesystem data).
+All other project tools remain local and unexposed by this Cloud operation.
 
 ## Operating Modes
 
