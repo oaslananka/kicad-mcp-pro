@@ -6,7 +6,6 @@ import json
 import sys
 import tomllib
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -179,18 +178,18 @@ class TestGenerateConfig:
         assert server["enabled"] is True
 
     @pytest.mark.parametrize(
-        ("version", "expected"),
-        [("opencode v1.18.31", False), ("opencode v2.1.2", True)],
+        ("setting", "expected"),
+        [("1", False), ("2", True), ("unexpected", True)],
     )
-    def test_detect_opencode_major(
-        self, monkeypatch: pytest.MonkeyPatch, version: str, expected: bool
+    def test_opencode_explicit_legacy_selection(
+        self, monkeypatch: pytest.MonkeyPatch, setting: str, expected: bool
     ) -> None:
-        monkeypatch.setattr("kicad_mcp.setup.shutil.which", lambda _name: "/usr/local/bin/opencode")
-        monkeypatch.setattr(
-            "kicad_mcp.setup.subprocess.run",
-            lambda *_args, **_kwargs: SimpleNamespace(stdout=version),
-        )
+        monkeypatch.setenv("KICAD_MCP_OPENCODE_CONFIG_VERSION", setting)
         assert _opencode_uses_v2() is expected
+
+    def test_opencode_default_v2(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("KICAD_MCP_OPENCODE_CONFIG_VERSION", raising=False)
+        assert _opencode_uses_v2()
 
     def test_generate_opencode_v2_remote(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("kicad_mcp.setup._opencode_uses_v2", lambda: True)

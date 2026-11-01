@@ -34,7 +34,7 @@ Use `.vscode/mcp.example.json` as a workspace MCP configuration example. If your
 
 ## OpenCode
 
-For OpenCode **2.x**, use `integrations/opencode/opencode.example.json` as a project-level MCP example; it uses `mcp.servers.kicad`. Copy it to `opencode.json` or merge only its `mcp.servers.kicad` entry into existing settings. The CLI `kicad-mcp-pro setup opencode` detects the installed major version. For OpenCode **1.x**, use `integrations/opencode/opencode.v1.example.json` (legacy `mcp.kicad`). Do not mix these server schemas when migrating a client.
+For OpenCode **2.x**, use `integrations/opencode/opencode.example.json` as a project-level MCP example; it uses `mcp.servers.kicad`. Copy it to `opencode.json` or merge only its `mcp.servers.kicad` entry into existing settings. The CLI `kicad-mcp-pro setup opencode` defaults to 2.x without running the host CLI. For OpenCode **1.x**, set `KICAD_MCP_OPENCODE_CONFIG_VERSION=1` for that setup command or use `integrations/opencode/opencode.v1.example.json` (legacy `mcp.kicad`). Do not mix these server schemas when migrating a client.
 
 OpenCode discovers project-local skills from `.opencode/skills/<name>/SKILL.md`.
 These and the cross-client `.agents/skills/<name>/SKILL.md` copies are generated

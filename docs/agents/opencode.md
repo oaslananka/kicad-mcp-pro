@@ -10,7 +10,8 @@ kicad-mcp-pro setup opencode
 ```
 
 On OpenCode 2.x, use the following minimal manual configuration (OpenCode
-1.x uses `integrations/opencode/opencode.v1.example.json`):
+1.x uses `integrations/opencode/opencode.v1.example.json`, or set
+`KICAD_MCP_OPENCODE_CONFIG_VERSION=1` when running `setup opencode`):
 
 ```json
 {

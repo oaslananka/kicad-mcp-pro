@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
 import subprocess  # nosec B404 - fixed CLI argv, shell=False, bounded timeout
 import sys
@@ -333,22 +332,8 @@ def _make_mcp_servers_block(
 
 
 def _opencode_uses_v2() -> bool:
-    """Choose the installed OpenCode schema; default to current V2 if absent."""
-    executable = shutil.which("opencode")
-    if executable is None:
-        return True
-    try:
-        result = subprocess.run(  # nosec B603 -- static argv, shell=False, bounded
-            ["opencode", "--version"],  # noqa: S607 -- present on PATH via shutil.which
-            capture_output=True,
-            text=True,
-            timeout=3,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return True
-    match = re.search(r"\bv?(\d+)\.\d+\.\d+\b", result.stdout)
-    return match is None or int(match.group(1)) >= 2
+    """Use current V2 config unless the user explicitly opts into legacy V1."""
+    return os.environ.get("KICAD_MCP_OPENCODE_CONFIG_VERSION") != "1"
 
 
 def _generate_local_config(

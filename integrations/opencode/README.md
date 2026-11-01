@@ -31,8 +31,10 @@ For OpenCode 2.x, add this local server to `opencode.json`:
 }
 ```
 
-`setup opencode` detects the installed OpenCode major version (defaulting to 2.x
-when absent). OpenCode 1.x uses the preserved `opencode.v1.example.json` schema.
+`setup opencode` generates the current 2.x schema by default. To generate the
+legacy 1.x format instead, set `KICAD_MCP_OPENCODE_CONFIG_VERSION=1` for that
+setup command (or copy `opencode.v1.example.json`). No OpenCode CLI process is
+executed just to inspect a version.
 
 OpenCode permissions support wildcard matching against tool names, including MCP
 tools. A conservative default is to deny the KiCad tool family globally and allow
