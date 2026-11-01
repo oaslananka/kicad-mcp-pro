@@ -153,9 +153,30 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(tmp_path: Pa
                 await mcp.initialize()
                 available = await mcp.list_tools()
                 names = {tool.name for tool in available.tools}
+                assert "discover_project_workflow" in names
                 assert "get_project_engine_status" in names
                 assert "get_project_drc_counts" not in names
                 assert "kicad_set_project" not in names
+                guide = await mcp.call_tool(
+                    "discover_project_workflow",
+                    {"task": "inspect_engine", "project_id": readiness["project"]},
+                )
+                assert guide.structured_content == {
+                    "available": True,
+                    "selectionRequired": False,
+                    "tools": ["get_project_engine_status"],
+                    "requiresOwnerSession": True,
+                }
+                unexposed = await mcp.call_tool(
+                    "discover_project_workflow",
+                    {"task": "check_board_drc", "project_id": readiness["project"]},
+                )
+                assert unexposed.structured_content == {
+                    "available": False,
+                    "selectionRequired": False,
+                    "tools": [],
+                    "reason": "cloud_operation_not_enabled",
+                }
                 # A cloud caller cannot switch the local KiCad project, even
                 # by asking for a hidden local-only tool by exact name.
                 with pytest.raises(MCPError, match="not found"):

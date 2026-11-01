@@ -34,6 +34,15 @@ database migration ownership and public OAuth endpoint requires a separate,
 verified cutover with rollback. Do not treat a local build as deployment
 acceptance.
 
+For task-first MCP discovery, call `discover_project_workflow` with
+`task=inspect_engine`, `check_project_files`, or `check_board_drc`.
+The response identifies an actually enabled, project-granted Cloud MCP tool,
+or reports the operation unavailable without invoking a local KiCad command.
+It never exports raw local tool catalogs, filesystem paths or designs; any
+returned operation still requires an explicit owner-started session and
+normal project/device authorization. This is task guidance, not a generic
+remote tool executor.
+
 With exactly one accessible project, the Cloud MCP presence and DRC-count
 pilot tools may omit `project_id`: the Cloud service resolves the sole granted
 project and rechecks authorization before routing. If multiple projects are

@@ -83,6 +83,41 @@ export function createCloudMcpHandler(
       const project = await inventory.getProject(actor.sub,actor.clientId,project_id);
       return text(project ? { project } : { found: false, message: "Project not found or not accessible" });
     });
+    // Task-first discovery describes the CURRENT Cloud MCP surface, not
+    // the much broader local KiCad tool registry. Never claim availability
+    // for a feature that was not explicitly enabled on this Cloud instance.
+    const workflows = {
+      inspect_engine: {
+        tool: "get_project_engine_status",
+        enabled: Boolean(projectInspection)
+      },
+      check_board_drc: {
+        tool: "get_project_drc_counts",
+        enabled: Boolean(projectDrc)
+      },
+      check_project_files: {
+        tool: "get_project_presence",
+        enabled: Boolean(projectPresence)
+      }
+    } as const;
+    mcp.registerTool("discover_project_workflow",{
+      description:"Find the currently enabled, project-authorized Cloud MCP tool for a read-only KiCad task. Reports missing capabilities without executing KiCad, switching projects or revealing local paths.",
+      inputSchema:z.object({
+        task:z.enum(["inspect_engine","check_board_drc","check_project_files"]),
+        project_id:z.string().uuid().optional()
+      }),annotations:readonly
+    },async ({task,project_id})=>{
+      const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
+      if(!project)return text({available:false,selectionRequired,tools:[]});
+      const chosen=workflows[task];
+      return text(chosen.enabled ? {
+        available:true,selectionRequired:false,
+        tools:[chosen.tool],requiresOwnerSession:true
+      } : {
+        available:false,selectionRequired:false,tools:[],
+        reason:"cloud_operation_not_enabled"
+      });
+    });
     // Pilot presence read is an opt-in Cloud capability. No native commands,
     // file contents, local paths, or editing tools are exposed over MCP.
     if(projectPresence){

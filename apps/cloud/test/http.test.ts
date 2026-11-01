@@ -107,9 +107,89 @@ test("MCP tools/list advertises only bounded Cloud inventory tools", async () =>
   const out = await call("tools/list");
   assert.equal(out.status,200,JSON.stringify(out.data));
   const names=(out.data.result?.tools??[]).map((t:{name:string})=>t.name);
-  assert.deepEqual(names.sort(), ["get_project","get_service_status","list_devices","list_projects"]);
+  assert.deepEqual(names.sort(), ["discover_project_workflow","get_project","get_service_status","list_devices","list_projects"]);
   assert.equal(names.includes("pcb_delete_items"), false);
 });
+test("task discovery reports only enabled, granted Cloud operations",async()=>{
+  const inspect=async(token:string,task:string,projectId?:string)=>{
+    const args={task,...(projectId?{project_id:projectId}:{})};
+    const response=await call("tools/call",{
+      name:"discover_project_workflow",arguments:args
+    },token,"discover_project_workflow");
+    assert.equal(response.status,200);
+    return response.data.result.structuredContent as Record<string,unknown>;
+  };
+  // The default Cloud instance only lists metadata. No native operations
+  // may appear in task discovery if the corresponding reader is not enabled.
+  for(const task of ["inspect_engine","check_board_drc","check_project_files"]){
+    const disabled=await inspect("test-user-a",task,id);
+    assert.equal(disabled.available,false);
+    assert.equal(disabled.reason,"cloud_operation_not_enabled");
+    assert.deepEqual(disabled.tools,[]);
+  }
+  const foreign=await inspect("test-user-b","inspect_engine",id);
+  assert.deepEqual(foreign,{available:false,selectionRequired:false,tools:[]});
+  const unknown=await inspect("test-user-a","inspect_engine",randomUUID());
+  assert.deepEqual(unknown,{available:false,selectionRequired:false,tools:[]});
+  const invalid=await call("tools/call",{
+    name:"discover_project_workflow",arguments:{task:"edit_pcb",project_id:id}
+  },"test-user-a","discover_project_workflow");
+  assert.equal(invalid.status,200);
+  assert.match(JSON.stringify(invalid.data),/isError|invalid/i);
+});
+
+test("task discovery respects enabled operation and ambiguous project selection",async()=>{
+  const another:Project={...mockProject,id:randomUUID(),alias:"Second board"};
+  const scoped:Inventory={
+    ...inventory,
+    async listProjects(owner,client){
+      return owner==="user-a"&&client==="test-client"?[mockProject,another]:[];
+    },
+    async getProject(owner,client,projectId){
+      return owner==="user-a"&&client==="test-client"?
+        [mockProject,another].find(p=>p.id===projectId)??null:null;
+    }
+  };
+  const proxy=createHttpServer(config,scoped,verify,{
+    mcpProjectInspectionEnabled:true,
+    summaryRelay:()=>({
+      prepareOwnerInspection:()=>null,
+      requestInspection:async()=>null,
+      prepareOwnerSummary:()=>null,
+      requestSummary:async()=>null
+    })
+  });
+  await new Promise<void>(done=>proxy.listen(0,"127.0.0.1",done));
+  const origin="http://127.0.0.1:"+(proxy.address() as AddressInfo).port;
+  async function discover(args:object,token="test-user-a"){
+    const reply=await fetch(origin+"/mcp",{
+      method:"POST",headers:headers(token,"tools/call","discover_project_workflow"),
+      body:payload("tools/call",{name:"discover_project_workflow",arguments:args})
+    });
+    assert.equal(reply.status,200);
+    return ((await reply.json()) as any).result.structuredContent;
+  }
+  try{
+    const ambiguous=await discover({task:"inspect_engine"});
+    assert.deepEqual(ambiguous,{
+      available:false,selectionRequired:true,tools:[]
+    });
+    assert.deepEqual(await discover({task:"inspect_engine",project_id:another.id}),{
+      available:true,selectionRequired:false,
+      tools:["get_project_engine_status"],requiresOwnerSession:true
+    });
+    const drc=await discover({task:"check_board_drc",project_id:another.id});
+    assert.equal(drc.available,false);
+    assert.deepEqual(drc.tools,[]);
+    assert.equal(drc.reason,"cloud_operation_not_enabled");
+    const foreign=await discover({task:"inspect_engine",project_id:another.id},"test-user-b");
+    assert.equal(foreign.available,false);
+    assert.deepEqual(foreign.tools,[]);
+  }finally{
+    await new Promise<void>(done=>proxy.close(()=>done()));
+  }
+});
+
 test("MCP calls are owner scoped; other users cannot discover projects", async () => {
   const a = await call("tools/call",{name:"list_projects",arguments:{}},"test-user-a","list_projects");
   assert.equal(a.status,200,JSON.stringify(a.data));
