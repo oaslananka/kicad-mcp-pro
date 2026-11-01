@@ -195,6 +195,15 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(tmp_path: Pa
                 assert isinstance(status["engineVersion"], str)
                 assert type(status["cliAvailable"]) is bool
                 assert type(status["ipcAvailable"]) is bool
+                caps = status["capabilities"]
+                assert set(caps) == {
+                    "fileBackedDrc",
+                    "fileBackedErc",
+                    "livePcbRead",
+                    "liveSchematicRead",
+                }
+                assert all(type(value) is bool for value in caps.values())
+                assert "cliPath" not in str(status)
                 assert "DESIGN_NOT_FOR_CLOUD" not in str(response.structured_content)
                 assert str(project_dir) not in str(response.structured_content)
                 assert "cliPath" not in str(response.structured_content)

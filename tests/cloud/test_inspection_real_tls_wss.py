@@ -155,6 +155,9 @@ async def test_signed_real_tls_wss_reaches_scoped_mcp_without_exposing_paths(
         assert isinstance(payload["status"]["engineVersion"], str)
         assert type(payload["status"]["cliAvailable"]) is bool
         assert type(payload["status"]["ipcAvailable"]) is bool
+        caps = payload["status"]["capabilities"]
+        assert set(caps) == {"fileBackedDrc", "fileBackedErc", "livePcbRead", "liveSchematicRead"}
+        assert all(type(value) is bool for value in caps.values())
         assert str(project_dir) not in json.dumps(response)
         assert "BOARD_SECRET" not in json.dumps(response)
         assert "cliPath" not in json.dumps(response)

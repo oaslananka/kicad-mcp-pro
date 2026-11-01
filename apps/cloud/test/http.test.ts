@@ -1024,7 +1024,9 @@ test("manual project-engine status tool is explicit, scoped, path-free and revoc
       if(revokeDuringRead)grantActive=false;
       return {kind:"connector.local_worker_inspection" as const,version:1 as const,
         requestId:prepared.requestId,projectId,operation:"project_worker_inspection" as const,
-        status:{engineVersion:"4.6.1",cliAvailable:true,ipcAvailable:false}};
+        status:{engineVersion:"4.6.1",cliAvailable:true,ipcAvailable:false,
+          capabilities:{fileBackedDrc:true,fileBackedErc:true,
+            livePcbRead:false,liveSchematicRead:false}}};
     }
   };
   const disabled=createHttpServer(config,scoped,verify,{
@@ -1060,6 +1062,8 @@ test("manual project-engine status tool is explicit, scoped, path-free and revoc
       assert.equal(accepted.status,200);
       assert.match(JSON.stringify(accepted.data),/"engineVersion":"4\.6\.1"/);
       assert.match(JSON.stringify(accepted.data),/"cliAvailable":true/);
+      assert.match(JSON.stringify(accepted.data),/"fileBackedDrc":true/);
+      assert.match(JSON.stringify(accepted.data),/"liveSchematicRead":false/);
       assert.doesNotMatch(JSON.stringify(accepted.data),/localPath|kicad_pcb|PRIVATE/);
       assert.equal(reads,1);
       const implicit=await invoke("tools/call",{

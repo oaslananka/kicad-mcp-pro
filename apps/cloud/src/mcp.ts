@@ -19,6 +19,10 @@ export type ProjectDrcReader =
   (deviceId:string,projectId:string)=>Promise<DrcCounts|null>;
 export type ProjectInspectionStatus=Readonly<{
   engineVersion:string;cliAvailable:boolean;ipcAvailable:boolean;
+  capabilities:Readonly<{
+    fileBackedDrc:boolean;fileBackedErc:boolean;
+    livePcbRead:boolean;liveSchematicRead:boolean;
+  }>;
 }>;
 export type ProjectInspectionReader=
   (deviceId:string,projectId:string)=>Promise<ProjectInspectionStatus|null>;

@@ -54,7 +54,8 @@ The separately gated `get_project_engine_status` MCP tool is a manual
 `CONNECTOR_OPERATOR_ONESHOT_ENABLED=true` and
 `CONNECTOR_OPERATOR_INSPECTION_ENABLED=true` on the Cloud service, plus a
 locally initiated operator-approved `--inspection-once` session. It returns
-only engine version, KiCad CLI availability and IPC availability — never
+only engine version, KiCad CLI/IPC availability and four typed
+readiness flags (file-backed DRC/ERC and live PCB/schematic read) — never
 the raw `kicad_get_server_info` result, native files or local paths.
 
 This is not automatic remote KiCad editing or general MCP tool forwarding.

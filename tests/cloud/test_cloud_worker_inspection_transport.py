@@ -96,6 +96,9 @@ async def test_real_local_inspection_returns_only_typed_engine_status(tmp_path: 
     assert isinstance(result["status"]["engineVersion"], str)
     assert type(result["status"]["cliAvailable"]) is bool
     assert type(result["status"]["ipcAvailable"]) is bool
+    caps = result["status"]["capabilities"]
+    assert set(caps) == {"fileBackedDrc", "fileBackedErc", "livePcbRead", "liveSchematicRead"}
+    assert all(type(value) is bool for value in caps.values())
     payload = json.dumps(body)
     assert "PRIVATE_DESIGN" not in payload
     assert str(root) not in payload

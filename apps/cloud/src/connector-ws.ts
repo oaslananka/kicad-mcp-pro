@@ -49,7 +49,11 @@ export type DrcReadResult={
 export type InspectionReadResult={
   kind:"connector.local_worker_inspection";version:1;requestId:string;
   projectId:string;operation:"project_worker_inspection";
-  status:{engineVersion:string;cliAvailable:boolean;ipcAvailable:boolean};
+  status:{
+    engineVersion:string;cliAvailable:boolean;ipcAvailable:boolean;
+    capabilities:{fileBackedDrc:boolean;fileBackedErc:boolean;
+      livePcbRead:boolean;liveSchematicRead:boolean};
+  };
 };
 type ReadResult=SummaryReadResult|DrcReadResult|InspectionReadResult;
 type PendingRead={requestId:string;projectId:string;operation:ReadOperation;
@@ -93,7 +97,11 @@ const readResult=z.strictObject({
       status:z.strictObject({
         engineVersion:z.string().regex(/^[0-9A-Za-z][0-9A-Za-z.+_-]{0,79}$/),
         cliAvailable:z.boolean(),
-        ipcAvailable:z.boolean()
+        ipcAvailable:z.boolean(),
+        capabilities:z.strictObject({
+          fileBackedDrc:z.boolean(),fileBackedErc:z.boolean(),
+          livePcbRead:z.boolean(),liveSchematicRead:z.boolean()
+        })
       })
     })  ])
 });

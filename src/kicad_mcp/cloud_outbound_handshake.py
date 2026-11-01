@@ -246,6 +246,12 @@ async def _complete_authorized_inspection(
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     version = raw_status.get("version")
     kicad = raw_status.get("kicad")
+    capabilities = raw_status.get("capabilities")
+    allowed_capabilities = ("fileBackedDrc", "fileBackedErc", "livePcbRead", "liveSchematicRead")
+    if not isinstance(capabilities, dict) or any(
+        type(capabilities.get(name)) is not bool for name in allowed_capabilities
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     if (
         not isinstance(version, str)
         or re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z.+_-]{0,79}", version) is None
@@ -269,6 +275,7 @@ async def _complete_authorized_inspection(
             "engineVersion": version,
             "cliAvailable": kicad["cliFound"],
             "ipcAvailable": kicad["ipcAvailable"],
+            "capabilities": {name: capabilities[name] for name in allowed_capabilities},
         },
     }
     await socket.send(

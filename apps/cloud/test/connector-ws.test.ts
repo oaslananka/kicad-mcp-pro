@@ -489,10 +489,13 @@ test("manual WSS project inspection uses exact grant and discards invalid typed 
           kind:"connector.local_worker_inspection",version:1,
           requestId:request.requestId,projectId:project,
           operation:"project_worker_inspection",
-          status:{engineVersion:"4.6.1",cliAvailable:true,ipcAvailable:false}
+          status:{engineVersion:"4.6.1",cliAvailable:true,ipcAvailable:false,
+          capabilities:{fileBackedDrc:true,fileBackedErc:true,
+            livePcbRead:false,liveSchematicRead:false}}
         };
         const result=behavior==="wrong_result"?
-          {...good,status:{...good.status,localPath:"/private/board"}}:good;
+          {...good,status:{...good.status,capabilities:{
+              ...good.status.capabilities,localPath:"/private/board"}}}:good;
         const ack=behavior==="allowed"?waitMessage(ws):null;
         ws.send(JSON.stringify({
           kind:"connector.read_result",version:1,sequence:1,result

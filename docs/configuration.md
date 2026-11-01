@@ -45,7 +45,9 @@ permissions cannot enable it. The bridge has no WebSocket listener or independen
 The Cloud Connector now has an independently opt-in one-shot
 `get_project_engine_status` tool using the bridge and an owner-started local
 `--inspection-once` client. The response is restricted to engine version
-and boolean CLI/IPC availability (not raw MCP output or filesystem data).
+and boolean CLI/IPC availability plus four bounded read capability flags
+(file-backed DRC/ERC and live PCB/schematic read). Raw MCP output,
+filesystem data, project files and local paths remain on the device.
 All other project tools remain local and unexposed by this Cloud operation.
 
 ## Operating Modes
