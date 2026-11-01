@@ -17,8 +17,9 @@ function readCookie(request:Request,origin:string):string|null {
   return (request.headers.get("cookie")??"").split(";").map(v=>v.trim())
     .find(v=>v.startsWith(name+"="))?.slice(name.length+1)??null;
 }
-function page(connections:DisplayConnection[],status=200,extraCookie?:string,notice?:string):Response {
-  const response = new Response(renderConnectionsPage(connections,notice),{status});
+function page(connections:DisplayConnection[],status=200,extraCookie?:string,
+  notice?:string,publicOrigin?:string):Response {
+  const response = new Response(renderConnectionsPage(connections,notice,publicOrigin),{status});
   response.headers.set("Content-Type","text/html; charset=utf-8");
   response.headers.set("Cache-Control","no-store");
   // Same-origin form POSTs must retain the real Origin; no-referrer sends Origin: null.
@@ -84,7 +85,7 @@ async function list(request:Request,identity:BrowserIdentity,origin:string):Prom
       csrf:await token(secret,owner.user,owner.session,consent.id,clientId,stamp,nonce)};
   }));
   const notice=new URL(request.url).searchParams.has("removed") ? "Connection access was removed. Project grants were disabled." : undefined;
-  return page(rows,200,cookie(stamp+"."+nonce,origin,300),notice);
+  return page(rows,200,cookie(stamp+"."+nonce,origin,300),notice,origin);
 }
 async function revoke(request:Request,identity:BrowserIdentity,origin:string,grants:Pick<GrantManagement,"revokeClient">):Promise<Response> {
   if(!identity.api || !identity.$context) return failure(503);

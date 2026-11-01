@@ -100,6 +100,13 @@ h3{font-size:16px;line-height:1.35;font-weight:670;letter-spacing:-.02em;margin:
 .security-note{margin-top:22px;padding:17px 19px;border-radius:11px;border:1px solid #354a61;background:#141f2d;color:#b9cde1;font-size:12px;line-height:1.75}
 .connection-item{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:22px;background:#141f2d;border:1px solid #2c4055;border-radius:13px;min-width:0}
 .connection-item h3{margin:0 0 8px;overflow-wrap:anywhere}.connection-item .connection-name{margin-top:12px}.connection-item p{font-size:12px;overflow-wrap:anywhere}
+.mcp-endpoint{padding:14px 16px;margin:14px 0!important;border-radius:10px;
+  background:#101c2b;border:1px solid #385574;overflow-wrap:anywhere}
+.mcp-endpoint code{font-size:13px;color:#c0dcff;user-select:all}
+.mcp-client-guides{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin:20px 0}
+.mcp-client-guides>div{border:1px solid #354b62;border-radius:12px;background:#172433;padding:17px}
+.mcp-client-guides .text-link{margin-top:12px;font-size:12px}
+@media(max-width:700px){.mcp-client-guides{grid-template-columns:1fr}}
 .connection-item form{flex-shrink:0}.permission-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:15px}
 .permission-tag{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;border:1px solid #38516a;background:#202f42;padding:6px 9px;border-radius:7px;color:#c0d8f4;font-size:11px;overflow-wrap:anywhere}
 .empty-state{display:flex;align-items:flex-start;gap:17px;padding:26px;background:#111b28;border:1px dashed #475f7c;border-radius:12px}

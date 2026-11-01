@@ -85,3 +85,30 @@ test("signed-in console has real navigation, clear states and readable consent",
   assert.match(uiCss,/@media\(max-width:560px\)/);
   assert.match(uiCss,/:focus-visible/);
 });
+
+
+test("remote MCP host guidance uses configured HTTPS origin and never implies a live KiCad device",()=>{
+  const html=renderConnectionsPage([],undefined,"https://cloud.example.test");
+  assert.match(html,/https:\/\/cloud\.example\.test\/mcp/);
+  assert.match(html,/Open Plugins, choose Add custom MCP server/);
+  assert.match(html,/Open Customize \/ Connectors/);
+  assert.match(html,/href="\/devices"/);
+  assert.match(html,/endpoint alone does not grant project access/);
+  assert.match(html,/not imply a running KiCad engine/);
+  assert.match(html,/help\.openai\.com\/en\/articles\/12584461-connecting-custom-mcp-servers-in-chatgpt/);
+  assert.match(html,/support\.claude\.com\/en\/articles\/11175166-get-started-with-custom-connectors-using-remote-mcp/);
+  assert.doesNotMatch(html,/api[_-]?key|<script[\s>]/i);
+  assert.match(uiCss,/\.mcp-client-guides/);
+  const dev=renderConnectionsPage([],undefined,"http://127.0.0.1:8787");
+  assert.match(dev,/not public HTTPS/);
+  assert.doesNotMatch(dev,/Open Plugins, choose Add custom MCP server/);
+  assert.doesNotMatch(dev,/https:\/\/cloud\.example\.test\/mcp/);
+  const noOrigin=renderConnectionsPage([]);
+  assert.doesNotMatch(noOrigin,/id="mcp-setup"/);
+});
+
+test("configured MCP endpoint in guidance is HTML escaped, no raw attributes injected",()=>{
+  const html=renderConnectionsPage([],undefined,"https://example.test/?x=<unsafe>&y=1");
+  assert.match(html,/https:\/\/example\.test\/mcp/);
+  assert.doesNotMatch(html,/<unsafe>|https:\/\/example\.test\/\?x=/);
+});

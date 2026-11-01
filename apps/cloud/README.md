@@ -8,6 +8,22 @@ connection status and remote request routing. Engineering tools execute in the
 local KiCad MCP engine; the cloud service does not store native KiCad project
 files or provide an AI chat/model runtime.
 
+## Remote AI client setup (development)
+
+When Cloud identity is configured, signed-in users can open **Connections**
+for the exact `PUBLIC_ORIGIN/mcp` endpoint and current ChatGPT and Claude
+setup links. The endpoint must be publicly reachable over HTTPS for hosted
+AI clients; a localhost development URL cannot be used by a remote host.
+Availability and OAuth registration support depend on the specific client
+and its workspace configuration. Hosted AI-client authentication has not yet
+been accepted against the production deployment.
+
+An account login authorizes only the Cloud account. The owner must also
+grant that OAuth client access to an eligible project under **Devices**,
+then start the separately enabled local one-shot Connector operation. The
+Cloud portal does not proxy arbitrary local tools or store KiCad design
+content. Existing account-free local MCP clients remain supported.
+
 ## Device connection status
 
 The signed-in **Devices** page shows whether the device has a currently

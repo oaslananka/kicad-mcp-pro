@@ -118,3 +118,12 @@ test("authenticated consent of another owner cannot be revoked even with a forge
   assert.equal((await connectionsResponse(post({...form,id:"consent-b"},state),f.auth,origin,f.grants))?.status,403);
   assert.deepEqual(f.calls,[]);
 });
+
+
+test("browser connections guidance does not expose an external endpoint to an anonymous visitor",async()=>{
+  const guest=fixture({user:null});
+  const result=await connectionsResponse(
+    new Request(origin+"/connections"),guest.auth,origin,guest.grants);
+  assert.equal(result?.status,303);
+  assert.equal(result.headers.get("Location"),"/sign-in");
+});
