@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.6.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.6.0...mcp-server-v4.6.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **container:** remove unused pip from runtime image ([#1565](https://github.com/oaslananka/kicad-mcp-pro/issues/1565)) ([64abc91](https://github.com/oaslananka/kicad-mcp-pro/commit/64abc911f9e672aafc32215397eca7a319639ae3))
+
 ## [4.6.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.5.0...mcp-server-v4.6.0) (2026-11-01)
 
 
