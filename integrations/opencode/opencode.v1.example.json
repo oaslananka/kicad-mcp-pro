@@ -1,0 +1,36 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "kicad": {
+      "type": "local",
+      "command": ["uvx", "kicad-mcp-pro"],
+      "enabled": true,
+      "timeout": 30000,
+      "environment": {
+        "KICAD_MCP_PROJECT_DIR": ".",
+        "KICAD_MCP_PROFILE": "default",
+        "KICAD_MCP_OPERATING_MODE": "readonly"
+      }
+    }
+  },
+  "permission": {
+    "kicad_*": "deny",
+    "edit": "ask",
+    "bash": "ask"
+  },
+  "agent": {
+    "pcb-review": {
+      "description": "KiCad PCB review and manufacturing readiness agent",
+      "mode": "primary",
+      "permission": {
+        "kicad_*": "allow",
+        "edit": "deny",
+        "bash": "ask"
+      }
+    }
+  },
+  "instructions": [
+    "AGENTS.md",
+    ".opencode/kicad-instructions.md"
+  ]
+}

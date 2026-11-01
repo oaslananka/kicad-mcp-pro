@@ -145,7 +145,45 @@ def test_untrusted_paths_and_missing_schema_are_rejected(tmp_path: Path) -> None
     assert any("Invalid configuration path" in item for item in failures)
 
 
-def test_gemini_extension_must_remain_statically_readonly(tmp_path: Path) -> None:
+def test_opencode_v2_default_example_is_readonly_and_static() -> None:
+    config = json.loads(
+        (ROOT / "integrations/opencode/opencode.example.json").read_text(encoding="utf-8")
+    )
+    entry = config["mcp"]["servers"]["kicad"]
+    assert entry["codemode"] is False
+    assert "enabled" not in entry
+    assert entry["environment"]["KICAD_MCP_OPERATING_MODE"] == "readonly"
+    assert verifier.check() == []
+
+
+@pytest.mark.parametrize(
+    ("changed", "diagnostic"),
+    [
+        ({"codemode": True}, "Unsafe or unexpected kicad MCP launch"),
+        ({"enabled": True}, "Unsafe or unexpected kicad MCP launch"),
+        ({"args": ["--unsafe"]}, "Unsafe or unexpected kicad MCP launch"),
+        ({"command": ["sh", "-c", "echo unsafe"]}, "Unsafe or unexpected kicad MCP launch"),
+        (
+            {"environment": {"KICAD_MCP_PROFILE": "full", "KICAD_MCP_OPERATING_MODE": "write"}},
+            "readonly/default",
+        ),
+    ],
+)
+def test_unreviewed_opencode_v2_changes_fail_closed(
+    changed: dict[str, object], diagnostic: str, tmp_path: Path
+) -> None:
+    repo = _temp_host_repo(tmp_path)
+    relative = "integrations/opencode/opencode.example.json"
+    _update_json(repo, relative, lambda d: d["mcp"]["servers"]["kicad"].update(changed))
+    assert any(diagnostic in message for message in verifier.check(repo))
+
+
+def test_legacy_opencode_v1_shape_cannot_replace_default_v2_catalog(tmp_path: Path) -> None:
+    repo = _temp_host_repo(tmp_path)
+    relative = "integrations/opencode/opencode.example.json"
+    _update_json(repo, relative, lambda d: d.update(mcp={"kicad": d["mcp"]["servers"]["kicad"]}))
+    assert any("No MCP servers defined for opencode" in msg for msg in verifier.check(repo))
+
     repo = _temp_host_repo(tmp_path)
     relative = "integrations/gemini-cli/kicad-mcp-pro/gemini-extension.json"
     _update_json(
@@ -343,7 +381,10 @@ def _alter_host_server(repo: Path, host: str, container: str, change) -> None:
         path.write_text(replaced, encoding="utf-8")
     else:
         data = json.loads(path.read_text(encoding="utf-8"))
-        change(data[container]["kicad"])
+        servers = data[container]
+        if host == "opencode":
+            servers = servers["servers"]
+        change(servers["kicad"])
         path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 

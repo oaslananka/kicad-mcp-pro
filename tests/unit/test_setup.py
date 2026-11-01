@@ -15,6 +15,7 @@ from kicad_mcp.setup import (
     AGENTS,
     _env_for_mode,
     _generate_codex_toml,
+    _opencode_uses_v2,
     backup_config,
     check_agent_config,
     check_all_agent_configs,
@@ -156,12 +157,47 @@ class TestGenerateConfig:
         assert "servers" in data
         assert "${workspaceFolder}" in config
 
-    def test_generate_opencode(self) -> None:
+    def test_generate_opencode(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("kicad_mcp.setup._opencode_uses_v2", lambda: True)
         config, fmt = generate_config("opencode", "/home/user/project", "write")
         assert fmt == "json"
-        data = json.loads(config)
-        assert "mcp" in data
-        assert data["mcp"]["kicad"]["type"] == "local"
+        server = json.loads(config)["mcp"]["servers"]["kicad"]
+        assert server["type"] == "local"
+        assert server["command"] == ["uvx", "kicad-mcp-pro", "--transport", "stdio"]
+        assert server["environment"]["KICAD_MCP_OPERATING_MODE"] == "write"
+        assert server["codemode"] is False
+        assert "enabled" not in server
+
+    def test_generate_opencode_v1(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("kicad_mcp.setup._opencode_uses_v2", lambda: False)
+        config, _ = generate_config("opencode", "/home/user/project")
+        server = json.loads(config)["mcp"]["kicad"]
+        assert server["type"] == "local"
+        assert server["command"] == "uvx"
+        assert server["args"] == ["kicad-mcp-pro"]
+        assert server["enabled"] is True
+
+    @pytest.mark.parametrize(
+        ("setting", "expected"),
+        [("1", False), ("2", True), ("unexpected", True)],
+    )
+    def test_opencode_explicit_legacy_selection(
+        self, monkeypatch: pytest.MonkeyPatch, setting: str, expected: bool
+    ) -> None:
+        monkeypatch.setenv("KICAD_MCP_OPENCODE_CONFIG_VERSION", setting)
+        assert _opencode_uses_v2() is expected
+
+    def test_opencode_default_v2(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("KICAD_MCP_OPENCODE_CONFIG_VERSION", raising=False)
+        assert _opencode_uses_v2()
+
+    def test_generate_opencode_v2_remote(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("kicad_mcp.setup._opencode_uses_v2", lambda: True)
+        config, _ = generate_config("opencode", "/home/user/project", transport="http")
+        server = json.loads(config)["mcp"]["servers"]["kicad-cloud"]
+        assert server["type"] == "remote"
+        assert server["url"].startswith("http://127.0.0.1:")
+        assert "enabled" not in server
 
     def test_generate_remote_chatgpt(self) -> None:
         config, fmt = generate_config("chatgpt", "", url="https://example.com/mcp")
@@ -222,6 +258,12 @@ class TestValidateConfig:
         config = json.dumps({"mcp": {"kicad": {"type": "local"}}})
         issues = validate_config(config, "opencode", "json")
         assert issues == []
+
+    def test_opencode_v2_invalid_server_map(self) -> None:
+        config = json.dumps({"mcp": {"servers": []}})
+        assert validate_config(config, "opencode", "json") == [
+            'OpenCode V2 "mcp.servers" must be an object.'
+        ]
 
     def test_codex_toml_validation(self, tmp_path: Path) -> None:
         toml = _generate_codex_toml(str(tmp_path), "readonly")
@@ -297,6 +339,32 @@ class TestWriteConfig:
             assert Path(path_str).exists()
         finally:
             __import__("os").chdir(str(old_cwd))
+
+    def test_opencode_v2_merge_preserves_unrelated_servers(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("kicad_mcp.setup._opencode_uses_v2", lambda: True)
+        target = tmp_path / "opencode.json"
+        target.write_text(
+            json.dumps(
+                {
+                    "theme": "dark",
+                    "mcp": {
+                        "servers": {"other": {"type": "remote", "url": "https://example.com/mcp"}},
+                        "legacy-server": {"type": "local"},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        config, _ = generate_config("opencode", str(tmp_path))
+        path, ok = write_config("opencode", config, "project", backup=False, project_dir=tmp_path)
+        assert ok, path
+        merged = json.loads(target.read_text(encoding="utf-8"))
+        assert merged["theme"] == "dark"
+        assert merged["mcp"]["servers"]["other"]["type"] == "remote"
+        assert merged["mcp"]["servers"]["kicad"]["type"] == "local"
+        assert merged["mcp"]["legacy-server"]["type"] == "local"
 
     def test_write_remote_agent_fails(self) -> None:
         path_str, ok = write_config("chatgpt", "{}", "project")

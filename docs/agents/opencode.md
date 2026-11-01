@@ -9,21 +9,24 @@ maintainer-triggered pull-request repair agent.
 kicad-mcp-pro setup opencode
 ```
 
-A minimal manual configuration is:
+On OpenCode 2.x, use the following minimal manual configuration (OpenCode
+1.x uses `integrations/opencode/opencode.v1.example.json`, or set
+`KICAD_MCP_OPENCODE_CONFIG_VERSION=1` when running `setup opencode`):
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "kicad": {
-      "type": "local",
-      "command": ["uvx", "kicad-mcp-pro"],
-      "enabled": true,
-      "timeout": 30000,
-      "environment": {
-        "KICAD_MCP_PROJECT_DIR": ".",
-        "KICAD_MCP_PROFILE": "default",
-        "KICAD_MCP_OPERATING_MODE": "readonly"
+    "servers": {
+      "kicad": {
+        "type": "local",
+        "command": ["uvx", "kicad-mcp-pro", "--transport", "stdio"],
+        "codemode": false,
+        "environment": {
+          "KICAD_MCP_PROJECT_DIR": ".",
+          "KICAD_MCP_PROFILE": "default",
+          "KICAD_MCP_OPERATING_MODE": "readonly"
+        }
       }
     }
   }
