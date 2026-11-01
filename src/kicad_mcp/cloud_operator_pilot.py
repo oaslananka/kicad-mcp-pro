@@ -1,8 +1,9 @@
-"""Explicit owner-operated project-presence pilot, not remote KiCad execution.
+"""Explicit owner-operated presence or bounded native DRC count pilot.
 
-This lower-assurance path is separate from the independent-owner WebAuthn
-release gate in cloud_once. A same-UID process can spoof a terminal prompt,
-so this is never suitable for unattended or public agent execution.
+This lower-assurance, manual foreground path is separate from the independent
+owner WebAuthn release gate in cloud_once. A same-UID process can spoof a
+terminal prompt, so this cannot authorize unattended/public native execution.
+No file contents, arbitrary commands or writes are sent to Cloud.
 """
 
 from __future__ import annotations
@@ -14,7 +15,11 @@ from argparse import Namespace
 
 from kicad_mcp import cloud_once
 from kicad_mcp.cloud_local_registry import resolve_registered_read
-from kicad_mcp.cloud_outbound_handshake import HandshakeReceipt, execute_operator_presence_once
+from kicad_mcp.cloud_outbound_handshake import (
+    HandshakeReceipt,
+    execute_operator_native_drc_once,
+    execute_operator_presence_once,
+)
 from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
@@ -31,6 +36,7 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
     ):
         raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
 
+    native_drc = bool(getattr(options, "native_drc_once", False))
     key = cloud_once._load_bound_owner_key(
         options.private_key_file, options.cloud_origin, options.device_id
     )
@@ -42,7 +48,7 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
             verified=VerifiedLocalBinding(
                 device_id=receipt.device_id,
                 project_id=options.project_id,
-                operations=frozenset({"project_summary"}),
+                operations=frozenset({"run_drc" if native_drc else "project_summary"}),
                 session_id=receipt.session_id,
                 session_expires_unix_ms=wall_cutoff_ms,
             ),
@@ -54,9 +60,11 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
             ),
             current_authorization=lambda: time.monotonic_ns() < monotonic_cutoff_ns,
             max_reads=1,
+            native_drc=native_drc,
         )
 
-    return await execute_operator_presence_once(
+    transport = execute_operator_native_drc_once if native_drc else execute_operator_presence_once
+    return await transport(
         origin=options.cloud_origin,
         trusted_origin=options.cloud_origin,
         owner_sub=options.owner_sub,
@@ -67,7 +75,13 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
 
 
 def main(argv: list[str] | None = None) -> int:
-    options = cloud_once._parser().parse_args(argv)
+    parser = cloud_once._parser()
+    parser.add_argument(
+        "--native-drc-once",
+        action="store_true",
+        help="Explicit foreground one-shot DRC counts, requires separate Cloud opt-in",
+    )
+    options = parser.parse_args(argv)
     try:
         # Headless callers are denied before owner registry/key access.
         if not sys.stdin.isatty() or not sys.stdout.isatty():
@@ -86,7 +100,10 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, OSError, EOFError, KeyboardInterrupt):
         print("Local Cloud pilot denied", file=sys.stderr)
         return 1
-    print("One owner-operated project-presence read completed")
+    if options.native_drc_once:
+        print("One owner-operated native DRC count completed")
+    else:
+        print("One owner-operated project-presence read completed")
     return 0
 
 

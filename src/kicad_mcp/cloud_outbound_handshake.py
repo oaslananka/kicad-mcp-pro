@@ -105,6 +105,7 @@ async def _complete_authorized_read(
     dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch] | None,
     *,
     operator_presence_pilot: bool = False,
+    operator_native_drc_pilot: bool = False,
 ) -> HandshakeReceipt:
     """Complete one bounded presence read, or exit after proof-only mode."""
     device_id = receipt.device_id
@@ -112,15 +113,22 @@ async def _complete_authorized_read(
     if dispatcher_factory is None:
         # Proof-only mode retains its original no-command behavior.
         return receipt
-    # The independent-authority reader remains strict. A separately named
-    # owner-operated presence pilot may use the same bounded presence wire,
-    # never native commands or an unattended general connector.
+    # The independent-authority reader remains strict. Separately named,
+    # manually operated pilots may use presence flags or native DRC counts,
+    # never arbitrary commands or an unattended general connector.
     if not operator_presence_pilot:
         _require_independent_read_authority()
+    # A presence-only entrypoint can never become a native command relay
+    # through a caller-supplied dispatcher.
+    if dispatcher_factory is None:
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     # The caller, not Cloud wire claims, supplies this independent
     # local authorization and owner-approved project selection.
     dispatcher = dispatcher_factory(receipt)
-    if not isinstance(dispatcher, LocalReadDispatch):
+    if (
+        not isinstance(dispatcher, LocalReadDispatch)
+        or dispatcher.native_drc != operator_native_drc_pilot
+    ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     try:
         dispatcher.assert_transport_session(device_id=device_id, session_id=session_id)
@@ -208,6 +216,7 @@ async def _perform_outbound_session(
     tls_context: ssl.SSLContext | None = None,
     dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch] | None = None,
     operator_presence_pilot: bool = False,
+    operator_native_drc_pilot: bool = False,
 ) -> HandshakeReceipt:
     """Perform the Cloud v1 proof order; optionally handle one approved read.
 
@@ -307,6 +316,7 @@ async def _perform_outbound_session(
                 receipt,
                 dispatcher_factory,
                 operator_presence_pilot=operator_presence_pilot,
+                operator_native_drc_pilot=operator_native_drc_pilot,
             )
     except (OSError, ValueError, WebSocketException) as exc:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED) from exc
@@ -359,6 +369,36 @@ async def execute_operator_presence_once(
         tls_context=tls_context,
         dispatcher_factory=dispatcher_factory,
         operator_presence_pilot=True,
+    )
+
+
+async def execute_operator_native_drc_once(
+    *,
+    origin: str,
+    trusted_origin: str,
+    owner_sub: str,
+    device_id: str,
+    signing_key: Ed25519PrivateKey,
+    dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch],
+    tls_context: ssl.SSLContext | None = None,
+) -> HandshakeReceipt:
+    """Explicit lower-assurance foreground DRC-count pilot only.
+
+    Not a native public/unattended command authority. It requires the
+    separate remote Cloud native DRC opt-in flag and an approved dispatcher.
+    """
+    if not callable(dispatcher_factory):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    return await _perform_outbound_session(
+        origin=origin,
+        trusted_origin=trusted_origin,
+        owner_sub=owner_sub,
+        device_id=device_id,
+        signing_key=signing_key,
+        tls_context=tls_context,
+        dispatcher_factory=dispatcher_factory,
+        operator_presence_pilot=True,
+        operator_native_drc_pilot=True,
     )
 
 

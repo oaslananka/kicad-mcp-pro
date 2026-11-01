@@ -29,7 +29,8 @@ _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", re.ASCII)
 _FIELDS = frozenset(
     {"kind", "version", "requestId", "deviceId", "projectId", "operation", "deadlineUnixMs"}
 )
-# No DRC/ERC, writes, exports, native execution, file contents or remote paths.
+# Normal presence-only entrypoints reject all native operations. A separately
+# gated owner-foreground DRC preview can explicitly opt in during validation.
 _SUPPORTED = frozenset({"project_summary"})
 
 
@@ -73,7 +74,12 @@ def _reject_constant(_: str) -> None:
 
 
 def _validate_frame(
-    frame: bytes, boundary: VerifiedLocalBinding, policy: OperatorProject, now_ms: int
+    frame: bytes,
+    boundary: VerifiedLocalBinding,
+    policy: OperatorProject,
+    now_ms: int,
+    *,
+    allow_native_drc: bool = False,
 ) -> dict[str, object]:
     if not isinstance(frame, bytes) or not (1 <= len(frame) <= MAX_FRAME_BYTES):
         raise LocalReadDeniedError(_READ_DENIED)
@@ -107,7 +113,7 @@ def _validate_frame(
         or type(boundary.session_expires_unix_ms) is not int
         or not (now_ms < boundary.session_expires_unix_ms <= now_ms + MAX_SESSION_REMAINING_MS)
         or not isinstance(operation, str)
-        or operation not in _SUPPORTED
+        or (operation not in _SUPPORTED and not (allow_native_drc and operation == "run_drc"))
         or operation not in boundary.operations
         or type(deadline) is not int
         or not (
