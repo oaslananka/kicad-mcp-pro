@@ -8,10 +8,16 @@ export function renderDevicesPage(
   projects:ReadonlyArray<{id:string;deviceId:string;alias:string;enabled:boolean;grantCsrf?:string}>=[],
   ownerSub?:string,clients:ReadonlyArray<string>=[]
 ):string {
+  // Opaque identifiers remain in form fields for the existing backend
+  // contract; the owner-facing page uses human-readable aliases instead.
+  const deviceNames=new Map(devices.map(d=>[d.id,d.alias]));
   return renderPage({title:"Devices",kind:"devices",eyebrow:"Workspace / Devices",
     summary:"Device availability and access management for local KiCad integrations.",
     children:<div className="page-stack"><section className="card detail-card">
-      {enrollmentAvailable&&ownerSub?<p>Your account subject for local connector: <code>{ownerSub}</code></p>:null}
+      {enrollmentAvailable&&ownerSub?<details className="advanced-identity">
+        <summary>Advanced: local Connector account ID</summary>
+        <p>Only needed when configuring the local Connector manually: <code>{ownerSub}</code></p>
+      </details>:null}
       {notice?<output className="output-notice">{notice}</output>:null}
       {!enrollmentAvailable && devices.length===0?<div className="status-card"><div>
         <span className="status-pill pending">Not enabled</span>
@@ -27,7 +33,7 @@ export function renderDevicesPage(
             <h3>No enrolled devices</h3><p>No devices are currently registered to this account.</p>
           </div></div>:
             <ul className="connections-list">{devices.map(d=><li className="connection-item" key={d.id}>
-              <div><h3>{d.alias}</h3><p>Credential fingerprint: {d.fingerprint.slice(0,16)}…</p>
+              <div><h3>{d.alias}</h3>
                 <p>{d.revoked?"Revoked":!d.enabled?"Disabled":
                   d.connectionState==="connected"?
                     "Connector connected now (temporary session; not proof of KiCad activity)":
@@ -54,10 +60,11 @@ export function renderDevicesPage(
                   <button className="button danger" type="submit">Revoke device</button>
                 </form>}
             </li>)}</ul>}
-          {projects.length>0?<><h3>Registered project IDs</h3>
+          {projects.length>0?<><h3>Registered projects</h3>
             <ul className="connections-list">{projects.map(project=><li key={project.id}>
-              <strong>{project.alias}</strong> — <code>{project.id}</code>
-              <p>Device: {project.deviceId}; {project.enabled?"Read-only metadata registered":"Disabled"}.
+              <strong>{project.alias}</strong>
+              <p>On device: {deviceNames.get(project.deviceId)??"Previously registered device"}.
+                {project.enabled?" Read-only metadata registered.":" Disabled."}{" "}
                 Local folder must be selected separately on the device. Per-client access is denied until granted.</p>
               {project.enabled&&project.grantCsrf&&clients.length>0?
                 <form method="post" action="/devices/projects/grant">

@@ -146,7 +146,10 @@ test("owner device activation and read-only project creation are disabled by def
     assert.equal(created.status,303);
     assert.equal(registeredProjects.at(-1)?.alias,"Approved Demo");
     const refreshed=await (await fetch(enabled.origin+"/devices")).text();
-    assert.match(refreshed,/77777777-7777-4777-8777-777777777777/);
+    assert.match(refreshed,/Approved Demo/);
+    assert.match(refreshed,/On device: My KiCad/);
+    assert.doesNotMatch(refreshed,/Registered project IDs/);
+    assert.doesNotMatch(refreshed,/<code>77777777-7777-4777-8777-777777777777<\/code>/);
     assert.doesNotMatch(refreshed,/local file path/i);
   }finally{await enabled.close();}
 });

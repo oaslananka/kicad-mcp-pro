@@ -44,6 +44,10 @@ h3{font-size:16px;line-height:1.35;font-weight:670;letter-spacing:-.02em;margin:
 .button.primary:hover{background:#d5e6ff;border-color:#d5e6ff}.button.secondary{background:#243449}.button.disabled{color:#a0afc0;background:#252d38;cursor:not-allowed;opacity:.8}
 .button.reject{background:#1d2937}.button.danger{background:#37272f;color:#ffd0c9;border-color:#795761}.button.danger:hover{background:#50313c}
 [hidden]{display:none!important}
+/* Technical identity is available on demand, not part of the default device view. */
+.advanced-identity{margin:0 0 18px;border-bottom:1px solid var(--line);padding-bottom:12px}
+.advanced-identity summary{cursor:pointer;color:var(--muted);font-size:12px}
+.advanced-identity p{margin:10px 0 0!important;overflow-wrap:anywhere}
 #pairing-manual{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
 #pairing-manual summary{cursor:pointer;color:var(--muted);font-size:12px;margin-bottom:12px}
 .pairing-code{display:inline-block;letter-spacing:.09em;font-family:ui-monospace,monospace;font-size:15px;color:var(--blue)}

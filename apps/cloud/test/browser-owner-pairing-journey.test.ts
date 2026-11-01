@@ -179,7 +179,12 @@ test("real HTTP owner journey: DB pairing, browser consent gates, project grant 
       const grantHtml=await grantPage.text();
       assert.match(grantHtml,/Allow read-only metadata/);
       assert.match(grantHtml,/journey-oauth-client/);
-      assert.ok(grantHtml.includes(projectId));
+      assert.match(grantHtml,/Registered projects/);
+      assert.match(grantHtml,/Test PCB/);
+      assert.match(grantHtml,/On device: Owner approved local test/);
+      assert.doesNotMatch(grantHtml,/Credential fingerprint|Registered project IDs/);
+      assert.doesNotMatch(grantHtml,new RegExp("<code>"+projectId+"</code>"));
+      assert.match(grantHtml,new RegExp('name="project_id" value="'+projectId+'"'));
       const grantCsrf=htmlCsrf(grantHtml,"/devices/projects/grant");
       const grantCookie=pageCookie(grantPage)+"; "+ownerCookie;
       assert.equal((await postForm("grant",{

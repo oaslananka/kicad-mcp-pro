@@ -112,3 +112,38 @@ test("configured MCP endpoint in guidance is HTML escaped, no raw attributes inj
   assert.match(html,/https:\/\/example\.test\/mcp/);
   assert.doesNotMatch(html,/<unsafe>|https:\/\/example\.test\/\?x=/);
 });
+
+test("device and project controls show aliases while keeping opaque IDs in forms",()=>{
+  const deviceId="11111111-1111-4111-8111-111111111111";
+  const projectId="22222222-2222-4222-8222-222222222222";
+  const deviceName="Main Lab";
+  const html=renderDevicesPage(
+    [{id:deviceId,alias:deviceName,enabled:true,revoked:false,
+      fingerprint:"secret-test-fingerprint-42",createdAt:new Date(),
+      csrf:"device-csrf",projectCsrf:"project-csrf",connectionState:"connected"}],
+    undefined,true,
+    [{id:projectId,deviceId,alias:"Controller PCB",enabled:true,grantCsrf:"grant-csrf"}],
+    "private-account-id",["authorized-client"]);
+  assert.match(html,/>Main Lab</);
+  assert.match(html,/>Controller PCB</);
+  assert.match(html,/On device: Main Lab/);
+  assert.match(html,/Registered projects/);
+  assert.match(html,/Advanced: local Connector account ID/);
+  assert.match(html,/<details class="advanced-identity"/);
+  assert.doesNotMatch(html,/Credential fingerprint|secret-test-fingerprint-42/);
+  assert.doesNotMatch(html,/Registered project IDs/);
+  assert.doesNotMatch(html,/<code>22222222-2222-4222-8222-222222222222<\/code>/);
+  assert.doesNotMatch(html,/Device: 11111111-1111-4111-8111-111111111111/);
+  assert.match(html,/name="project_id" value="22222222-2222-4222-8222-222222222222"/);
+  assert.match(html,/name="device_id" value="11111111-1111-4111-8111-111111111111"/);
+  assert.match(html,/name="client_id"/);
+  assert.match(html,/name="csrf"/);
+  const escaped=renderDevicesPage(
+    [{id:deviceId,alias:"<script>device</script>",enabled:true,revoked:false,
+      fingerprint:"secret",createdAt:new Date(),csrf:"csrf"}],
+    undefined,true,
+    [{id:projectId,deviceId,alias:"<svg onload=bad>",enabled:false}]);
+  assert.doesNotMatch(escaped,/<script>|<svg onload/);
+  assert.match(escaped,/&lt;script&gt;device&lt;\/script&gt;/);
+  assert.match(escaped,/&lt;svg onload=bad&gt;/);
+});
