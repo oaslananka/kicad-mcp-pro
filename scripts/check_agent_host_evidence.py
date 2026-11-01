@@ -103,6 +103,8 @@ def _check_host_configuration(
         return
 
     servers = config.get(container)
+    if name == "opencode" and isinstance(servers, dict):
+        servers = servers.get("servers")
     if not isinstance(servers, dict) or not servers:
         problems.append(f"No MCP servers defined for {name}")
         return
@@ -127,7 +129,9 @@ def _check_local_server(
             server.get("type") == "local"
             and server.get("command")
             in (["uvx", "kicad-mcp-pro"], ["uvx", "kicad-mcp-pro", "--transport", "stdio"])
-            and server.get("enabled") is True
+            and server.get("codemode") is False
+            and "enabled" not in server
+            and "args" not in server
         )
         env = server.get("environment")
     elif name == "gemini-cli":

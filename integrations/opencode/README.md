@@ -9,25 +9,32 @@ MCP server.
 kicad-mcp-pro setup opencode
 ```
 
-Or add a local server to `opencode.json`:
+For OpenCode 2.x, add this local server to `opencode.json`:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "kicad": {
-      "type": "local",
-      "command": ["uvx", "kicad-mcp-pro"],
-      "enabled": true,
-      "environment": {
-        "KICAD_MCP_PROJECT_DIR": ".",
-        "KICAD_MCP_PROFILE": "default",
-        "KICAD_MCP_OPERATING_MODE": "readonly"
+    "servers": {
+      "kicad": {
+        "type": "local",
+        "command": ["uvx", "kicad-mcp-pro", "--transport", "stdio"],
+        "codemode": false,
+        "environment": {
+          "KICAD_MCP_PROJECT_DIR": ".",
+          "KICAD_MCP_PROFILE": "default",
+          "KICAD_MCP_OPERATING_MODE": "readonly"
+        }
       }
     }
   }
 }
 ```
+
+`setup opencode` generates the current 2.x schema by default. To generate the
+legacy 1.x format instead, set `KICAD_MCP_OPENCODE_CONFIG_VERSION=1` for that
+setup command (or copy `opencode.v1.example.json`). No OpenCode CLI process is
+executed just to inspect a version.
 
 OpenCode permissions support wildcard matching against tool names, including MCP
 tools. A conservative default is to deny the KiCad tool family globally and allow
@@ -54,19 +61,21 @@ it only for a dedicated agent:
 }
 ```
 
-See `opencode.example.json` for the complete example.
+See `opencode.example.json` for the 2.x example and
+`opencode.v1.example.json` for the older 1.x format.
 
 ## Remote server
 
 ```json
 {
   "mcp": {
-    "kicad-cloud": {
-      "type": "remote",
-      "url": "https://mcp.kicad.example.com/mcp",
-      "enabled": true,
-      "headers": {
-        "Authorization": "Bearer {env:KICAD_MCP_TOKEN}"
+    "servers": {
+      "kicad-cloud": {
+        "type": "remote",
+        "url": "https://mcp.kicad.example.com/mcp",
+        "headers": {
+          "Authorization": "Bearer {env:KICAD_MCP_TOKEN}"
+        }
       }
     }
   }

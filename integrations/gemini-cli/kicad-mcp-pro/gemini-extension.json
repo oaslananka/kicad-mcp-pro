@@ -1,13 +1,13 @@
 {
   "name": "kicad-mcp-pro",
-  "version": "4.5.0",
+  "version": "4.6.1",
   "description": "Read-only KiCad MCP Pro server and portable PCB review skills for Gemini CLI.",
   "mcpServers": {
     "kicad": {
       "command": "uvx",
       "args": [
         "--from",
-        "kicad-mcp-pro==4.5.0",
+        "kicad-mcp-pro==4.6.1",
         "kicad-mcp-pro",
         "--transport",
         "stdio"

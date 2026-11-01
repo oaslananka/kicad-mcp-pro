@@ -10,6 +10,46 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.6.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.6.0...mcp-server-v4.6.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **container:** remove unused pip from runtime image ([#1565](https://github.com/oaslananka/kicad-mcp-pro/issues/1565)) ([64abc91](https://github.com/oaslananka/kicad-mcp-pro/commit/64abc911f9e672aafc32215397eca7a319639ae3))
+
+## [4.6.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.5.0...mcp-server-v4.6.0) (2026-11-01)
+
+
+### Features
+
+* **cloud:** isolate owner-verified device pairing from remote reads ([#1546](https://github.com/oaslananka/kicad-mcp-pro/issues/1546)) ([357adc4](https://github.com/oaslananka/kicad-mcp-pro/commit/357adc433d2a8173bced62064804e980b24f2116))
+* **release:** prepare signed container build-source evidence ([#1559](https://github.com/oaslananka/kicad-mcp-pro/issues/1559)) ([8f9299c](https://github.com/oaslananka/kicad-mcp-pro/commit/8f9299c1b271185a7b59704546e8d74fcd7f5cb7))
+* **release:** prepare signed MCP Registry evidence without publishing ([#1558](https://github.com/oaslananka/kicad-mcp-pro/issues/1558)) ([f368127](https://github.com/oaslananka/kicad-mcp-pro/commit/f368127aa4694516bf0a77f6c319e23c9e760e3f))
+* **release:** prepare signed npm draft artifacts without publishing ([#1557](https://github.com/oaslananka/kicad-mcp-pro/issues/1557)) ([dfea0e7](https://github.com/oaslananka/kicad-mcp-pro/commit/dfea0e7b853aa207377044c44e16c04e8cd85206))
+
+
+### Bug Fixes
+
+* **mcp:** annotate reviewed read-only discovery tools ([#1538](https://github.com/oaslananka/kicad-mcp-pro/issues/1538)) ([dd9a343](https://github.com/oaslananka/kicad-mcp-pro/commit/dd9a343c1d15bb24077fca82112f052297353f6a))
+* **release:** attest GUI SLSA provenance separately from SBOM ([#1536](https://github.com/oaslananka/kicad-mcp-pro/issues/1536)) ([88c30a1](https://github.com/oaslananka/kicad-mcp-pro/commit/88c30a1c5b8f6d29886bdb361bb0ce751101b17f))
+* **release:** bind draft identity to requested numeric release ([#1539](https://github.com/oaslananka/kicad-mcp-pro/issues/1539)) ([0205826](https://github.com/oaslananka/kicad-mcp-pro/commit/02058265b9b25bd450e3ca9fa4a486a69d381426))
+* **release:** bind draft owner evidence to dispatch actor ([#1552](https://github.com/oaslananka/kicad-mcp-pro/issues/1552)) ([e3c3dd6](https://github.com/oaslananka/kicad-mcp-pro/commit/e3c3dd62406935f019cbd17b9bf2c1529d083915))
+* **release:** gate draft family calls on owner approval ([#1556](https://github.com/oaslananka/kicad-mcp-pro/issues/1556)) ([fdcd234](https://github.com/oaslananka/kicad-mcp-pro/commit/fdcd23457ddf673225d05927735987c45bc4fbee))
+* **release:** preserve pending requests in owner queue ([#1550](https://github.com/oaslananka/kicad-mcp-pro/issues/1550)) ([c72f8bb](https://github.com/oaslananka/kicad-mcp-pro/commit/c72f8bb71f4d5af58b12d915112db411401fe630))
+* **release:** prevent early Release Please publication in draft mode ([#1548](https://github.com/oaslananka/kicad-mcp-pro/issues/1548)) ([bed225b](https://github.com/oaslananka/kicad-mcp-pro/commit/bed225b0d7bc5e9d726b223c0af8476bdbd4dd10))
+* **release:** recheck draft identity between asset uploads ([#1537](https://github.com/oaslananka/kicad-mcp-pro/issues/1537)) ([6bcbe41](https://github.com/oaslananka/kicad-mcp-pro/commit/6bcbe41723972dce2b004421254c68f8a74b2069))
+* **release:** recheck draft inventory after owner evidence ([#1551](https://github.com/oaslananka/kicad-mcp-pro/issues/1551)) ([98c363f](https://github.com/oaslananka/kicad-mcp-pro/commit/98c363f6ff291a37d58b6c79fdd8ab32bf56916a))
+* **release:** reject draft asset drift between uploads ([#1554](https://github.com/oaslananka/kicad-mcp-pro/issues/1554)) ([7460fa4](https://github.com/oaslananka/kicad-mcp-pro/commit/7460fa4f3f139b4db6934bfdf12e811cc384b19a))
+* **release:** reject independent dispatch after draft cutover ([#1541](https://github.com/oaslananka/kicad-mcp-pro/issues/1541)) ([902a54b](https://github.com/oaslananka/kicad-mcp-pro/commit/902a54bba65b00e737a96cf54744de207f4f95c6))
+* **release:** require durable owner concurrency at draft cutover ([#1545](https://github.com/oaslananka/kicad-mcp-pro/issues/1545)) ([331a82c](https://github.com/oaslananka/kicad-mcp-pro/commit/331a82c116036558da3b61f7c5acaa47c43f9346))
+* **release:** require explicit uploaded draft asset state ([#1540](https://github.com/oaslananka/kicad-mcp-pro/issues/1540)) ([41ec08d](https://github.com/oaslananka/kicad-mcp-pro/commit/41ec08d8914957026c2eb8d1c4246bf0c7f71a23))
+* **release:** restrict manual publication recovery to owner ([#1553](https://github.com/oaslananka/kicad-mcp-pro/issues/1553)) ([e436a0f](https://github.com/oaslananka/kicad-mcp-pro/commit/e436a0f123a520f787628be90e7b88c427284f54))
+* **release:** validate intermediate draft before asset download ([#1542](https://github.com/oaslananka/kicad-mcp-pro/issues/1542)) ([b676800](https://github.com/oaslananka/kicad-mcp-pro/commit/b67680009151959bc4e6cc984b179ec86fc090e8))
+* **release:** validate Python and PCM evidence before draft assembly ([#1547](https://github.com/oaslananka/kicad-mcp-pro/issues/1547)) ([dab4d77](https://github.com/oaslananka/kicad-mcp-pro/commit/dab4d77a854110193237f6799c9515615c4abddd))
+* **release:** verify draft owner calls every publisher ([#1555](https://github.com/oaslananka/kicad-mcp-pro/issues/1555)) ([1339b71](https://github.com/oaslananka/kicad-mcp-pro/commit/1339b71d3eed1c23607c5afce77b72138f545f43))
+* **setup:** align generated Codex config with readonly default ([#1564](https://github.com/oaslananka/kicad-mcp-pro/issues/1564)) ([fb4fa8a](https://github.com/oaslananka/kicad-mcp-pro/commit/fb4fa8a90eebfc558c1fd2c15a763ee16afdfed8))
+* **setup:** support Gemini CLI project-local MCP configuration ([#1560](https://github.com/oaslananka/kicad-mcp-pro/issues/1560)) ([3d30d96](https://github.com/oaslananka/kicad-mcp-pro/commit/3d30d96220ce9fab0db95b3006463aa7c076b3c9))
+
 ## [4.5.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.4.0...mcp-server-v4.5.0) (2026-10-30)
 
 
