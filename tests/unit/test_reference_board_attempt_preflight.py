@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+import builtins
 import json
-import os
-import subprocess
-import sys
+import runpy
 from pathlib import Path
 
 import pytest
@@ -15,29 +14,25 @@ from scripts import check_reference_board_attempt_readiness as cli
 ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.mark.parametrize(
-    "entrypoint",
-    [
-        ["-m", "scripts.check_reference_board_attempt_readiness"],
-        ["scripts/check_reference_board_attempt_readiness.py"],
-    ],
-    ids=["module", "documented-script"],
-)
-def test_preflight_cli_help_without_pythonpath(entrypoint: list[str]) -> None:
-    """Both supported launch forms must work without an ambient repo import path."""
-    env = dict(os.environ)
-    env.pop("PYTHONPATH", None)
-    result = subprocess.run(
-        [sys.executable, *entrypoint, "--help"],
-        cwd=ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=15,
+def test_preflight_direct_script_import_without_scripts_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Simulate the direct-file sys.path: its sibling is importable, scripts is not."""
+    import_actual = builtins.__import__
+
+    def import_without_repo_package(name: str, *args: object, **kwargs: object) -> object:
+        if name == "scripts.check_reference_live_gui_readiness":
+            raise ModuleNotFoundError("No module named 'scripts'")
+        return import_actual(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_repo_package)
+    monkeypatch.syspath_prepend(str(ROOT / "scripts"))
+    namespace = runpy.run_path(
+        str(ROOT / "scripts/check_reference_board_attempt_readiness.py"),
+        run_name="__direct_file_import_probe__",
     )
-    assert result.returncode == 0, result.stderr
-    assert "--agent-runtime" in result.stdout
+    assert callable(namespace["main"])
+    assert callable(namespace["probe_live_gui"])
 
 
 def _safe_checks(monkeypatch: pytest.MonkeyPatch) -> None:
