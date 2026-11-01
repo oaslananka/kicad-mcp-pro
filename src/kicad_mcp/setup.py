@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess  # nosec B404 - fixed CLI argv, shell=False, bounded timeout
 import sys
@@ -331,6 +332,25 @@ def _make_mcp_servers_block(
     return {"mcpServers": {server_id: entry}}
 
 
+def _opencode_uses_v2() -> bool:
+    """Choose the installed OpenCode schema; default to current V2 if absent."""
+    executable = shutil.which("opencode")
+    if executable is None:
+        return True
+    try:
+        result = subprocess.run(  # nosec B603 -- version only; shell=False, bounded
+            [executable, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+    match = re.search(r"\bv?(\d+)\.\d+\.\d+\b", result.stdout)
+    return match is None or int(match.group(1)) >= 2
+
+
 def _generate_local_config(
     agent_key: str,
     project_dir: str,
@@ -360,20 +380,22 @@ def _generate_local_config(
         return configs[agent_key]
 
     if agent_key == "opencode":
-        return json.dumps(
-            {
-                "mcp": {
-                    "kicad": {
-                        "type": "local",
-                        "command": stdio_cmd,
-                        "args": list(stdio_args),
-                        "enabled": True,
-                        "environment": env,
-                    }
-                }
-            },
-            indent=2,
-        )
+        if _opencode_uses_v2():
+            entry = {
+                "type": "local",
+                "command": [stdio_cmd, *stdio_args, "--transport", "stdio"],
+                "environment": env,
+                "codemode": False,
+            }
+            return json.dumps({"mcp": {"servers": {"kicad": entry}}}, indent=2)
+        entry = {
+            "type": "local",
+            "command": stdio_cmd,
+            "args": list(stdio_args),
+            "enabled": True,
+            "environment": env,
+        }
+        return json.dumps({"mcp": {"kicad": entry}}, indent=2)
 
     if agent_key == "vscode":
         vscode_env = {
@@ -416,16 +438,11 @@ def _generate_http_config(agent_key: str, url: str, env: dict[str, str]) -> str:
             indent=2,
         )
     if agent_key == "opencode":
+        server = {"type": "remote", "url": url}
+        if _opencode_uses_v2():
+            return json.dumps({"mcp": {"servers": {"kicad-cloud": server}}}, indent=2)
         return json.dumps(
-            {
-                "mcp": {
-                    "kicad-cloud": {
-                        "type": "remote",
-                        "url": url,
-                        "enabled": True,
-                    }
-                }
-            },
+            {"mcp": {"kicad-cloud": {**server, "enabled": True}}},
             indent=2,
         )
     return json.dumps(
@@ -548,9 +565,10 @@ def _validate_json_agent_entry(data: dict[str, dict[str, object]], agent_key: st
     elif agent_key == "opencode":
         if "mcp" not in data:
             issues.append('Missing top-level "mcp" key (expected for OpenCode).')
-        elif "kicad" not in data.get("mcp", {}):
-            # A remote server can be registered under a different name.
-            pass
+        elif not isinstance(data["mcp"], dict):
+            issues.append('OpenCode "mcp" must be an object.')
+        elif "servers" in data["mcp"] and not isinstance(data["mcp"]["servers"], dict):
+            issues.append('OpenCode V2 "mcp.servers" must be an object.')
     else:
         if "mcpServers" not in data:
             issues.append('Missing top-level "mcpServers" key.')
@@ -618,7 +636,13 @@ def _merge_json_config(existing: str, generated: str, agent_key: str) -> str:
     if not isinstance(current_servers, dict):
         raise ConfigValidationError(f'Existing key "{root_key}" must be an object.')
     merged_servers = dict(current_servers)
-    merged_servers.update(desired_servers)
+    if agent_key == "opencode" and isinstance(desired_servers.get("servers"), dict):
+        existing_v2 = merged_servers.get("servers", {})
+        if not isinstance(existing_v2, dict):
+            raise ConfigValidationError('Existing OpenCode "mcp.servers" must be an object.')
+        merged_servers["servers"] = {**existing_v2, **desired_servers["servers"]}
+    else:
+        merged_servers.update(desired_servers)
     merged[root_key] = merged_servers
     return json.dumps(merged, indent=2, ensure_ascii=False) + "\n"
 
