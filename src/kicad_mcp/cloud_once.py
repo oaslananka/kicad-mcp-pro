@@ -82,8 +82,14 @@ def _confirm_local_read(options: argparse.Namespace) -> tuple[int, int]:
         or not options.project_directory.is_absolute()
     ):
         raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+    native_drc = getattr(options, "native_drc_once", False) is True
     challenge = secrets.token_hex(4).upper()
-    print("One-time metadata-only KiCad Cloud read (no project contents).")
+    if native_drc:
+        print("One-time read-only native KiCad PCB DRC on a temporary copy.")
+        print("Only violation/unconnected counts are returned, not board contents or paths.")
+        print("KiCad CLI runs locally; the original board is not edited.")
+    else:
+        print("One-time metadata-only KiCad Cloud read (no project contents).")
     print(f"Cloud origin: {options.cloud_origin!r}")
     print(f"Owner account: {options.owner_sub!r}")
     print(f"Device UUID: {options.device_id!r}")
@@ -91,8 +97,10 @@ def _confirm_local_read(options: argparse.Namespace) -> tuple[int, int]:
     print(f"Local directory: {str(options.project_directory)!r}")
     print(f"Local project stem: {options.filename_stem!r}")
     print(f"Owner key file: {str(options.private_key_file)!r}")
-    answer = input(f"Type APPROVE {challenge} to authorize exactly one read: ")
-    if answer != f"APPROVE {challenge}":
+    required = f"APPROVE DRC {challenge}" if native_drc else f"APPROVE {challenge}"
+    action_label = "DRC operation" if native_drc else "read"
+    answer = input(f"Type {required} to authorize exactly one {action_label}: ")
+    if answer != required:
         raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
     # Start both deadlines at the actual foreground approval, never after
     # a potentially slow remote device/session handshake.

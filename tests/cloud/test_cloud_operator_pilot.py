@@ -131,3 +131,41 @@ def test_pilot_one_shot_only_three_flags(
 def test_higher_assurance_command_remains_hard_stopped() -> None:
     with pytest.raises(cloud_once.LocalApprovalDeniedError):
         cloud_once._require_independent_owner_authority()
+
+
+def test_native_drc_operator_approval_is_operation_specific(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    options = Namespace(
+        allow_once=True,
+        native_drc_once=True,
+        project_directory=tmp_path,
+        filename_stem="TEST",
+        private_key_file=tmp_path / "owner-key",
+        cloud_origin="https://cloud.example",
+        owner_sub="owner-fixture",
+        device_id=DEVICE,
+        project_id=PROJECT,
+    )
+    monkeypatch.setattr(cloud_once.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(cloud_once.sys.stdout, "isatty", lambda: True)
+    monkeypatch.setattr(cloud_once.secrets, "token_hex", lambda _: "abcd1234")
+    captured: list[str] = []
+
+    def wrong(prompt: str) -> str:
+        captured.append(prompt)
+        return "APPROVE ABCD1234"
+
+    monkeypatch.setattr("builtins.input", wrong)
+    with pytest.raises(cloud_once.LocalApprovalDeniedError):
+        cloud_once._confirm_local_read(options)
+    output = capsys.readouterr().out
+    assert "native KiCad PCB DRC" in output
+    assert "temporary copy" in output
+    assert "original board is not edited" in output
+    assert "APPROVE DRC ABCD1234" in captured[-1]
+
+    monkeypatch.setattr("builtins.input", lambda _: "APPROVE DRC ABCD1234")
+    wall, mono = cloud_once._confirm_local_read(options)
+    assert wall > time.time_ns() // 1_000_000
+    assert mono > time.monotonic_ns()
