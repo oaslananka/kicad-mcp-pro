@@ -192,7 +192,10 @@ async function handleRequest(
       }
       if (path === "/health" && req.method === "GET") {
         json(res, 200, { status: "ok", mcp: "/mcp", remoteConnector: services.mcpProjectPresenceEnabled
-          ? "operator_one_shot_presence" : "not_implemented",
+          ? "operator_one_shot_presence" :
+          (services.mcpProjectNativeDrcEnabled||services.mcpProjectInspectionEnabled||
+           services.mcpProjectBoardCountsEnabled||services.mcpProjectSchematicCountsEnabled)
+          ? "operator_one_shot_read" : "not_implemented",
           revision: /^[0-9a-f]{40}$/.test(process.env.APP_REVISION ?? "") ? process.env.APP_REVISION : "unknown" });
         return;
       }
@@ -576,7 +579,8 @@ async function handleRequest(
           return result.counts;
         } : undefined;
       const handler=createCloudMcpHandler(
-        inventory,actor,presenceReader,drcReader,inspectionReader,boardReader,schematicReader);
+        inventory,actor,presenceReader,drcReader,inspectionReader,boardReader,schematicReader,
+        summaryRelay?.()?.isDeviceConnected);
       let output: Response;
       try {
         output = await handler.fetch(request);

@@ -15,7 +15,7 @@ const id = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
 const mockProject: Project = {
   id, alias: "USB-C Controller", deviceId: "d108b5f4-22f2-4b3c-b62d-55163fa34814",
   enabled: true, maxMode: "readonly", available: false,
-  reason: "remote_connector_not_implemented"
+  reason: "cloud_read_not_enabled"
 };
 let accessAllowed = true;
 const inventory: Inventory = {
@@ -110,6 +110,96 @@ test("MCP tools/list advertises only bounded Cloud inventory tools", async () =>
   assert.deepEqual(names.sort(), ["discover_project_workflow","get_project","get_service_status","list_devices","list_projects"]);
   assert.equal(names.includes("pcb_delete_items"), false);
 });
+test("MCP inventory reflects only the real owner-scoped signed Connector session",async()=>{
+  let ready=false;
+  const observations:string[]=[];
+  const relay={
+    prepareOwnerSummary:testPrepared,
+    async requestSummary(){return null;},
+    isDeviceConnected(owner:string,deviceId:string){
+      observations.push(owner+":"+deviceId);
+      return ready&&owner==="user-a"&&deviceId===mockProject.deviceId;
+    }
+  };
+  const proxy=createHttpServer(config,inventory,verify,{
+    summaryRelay:()=>relay,mcpProjectPresenceEnabled:true
+  });
+  await new Promise<void>(resolve=>proxy.listen(0,"127.0.0.1",resolve));
+  const base="http://127.0.0.1:"+(proxy.address() as AddressInfo).port;
+  const callTool=async(token:string,name:string,args:object={})=>{
+    const response=await fetch(base+"/mcp",{
+      method:"POST",headers:headers(token,"tools/call",name),
+      body:payload("tools/call",{name,arguments:args})
+    });
+    return {status:response.status,
+      value:(await response.json() as Record<string,any>).result?.structuredContent};
+  };
+  try{
+    const offlineDevice=await callTool("test-user-a","list_devices");
+    assert.equal(offlineDevice.value.devices[0].connected,false);
+    const offlineProjects=await callTool("test-user-a","list_projects");
+    assert.equal(offlineProjects.value.projects[0].connectorConnected,false);
+    assert.equal(offlineProjects.value.projects[0].available,false);
+    assert.equal(offlineProjects.value.projects[0].reason,"device_not_connected");
+    ready=true;
+    const onlineDevice=await callTool("test-user-a","list_devices");
+    assert.equal(onlineDevice.value.devices[0].connected,true);
+    const grantedProjects=await callTool("test-user-a","list_projects");
+    assert.equal(grantedProjects.value.projects[0].connectorConnected,true);
+    assert.equal(grantedProjects.value.projects[0].available,false,
+      "Open socket cannot grant a new KiCad operation");
+    assert.equal(grantedProjects.value.projects[0].reason,"owner_operation_required");
+    const direct=await callTool("test-user-a","get_project",{project_id:id});
+    assert.equal(direct.value.project.connectorConnected,true);
+    assert.equal(direct.value.project.reason,"owner_operation_required");
+    const foreign=await callTool("test-user-b","list_devices");
+    assert.deepEqual(foreign.value.devices,[]);
+    const forbidden=await callTool("test-user-b","get_project",{project_id:id});
+    assert.equal(forbidden.value.found,false);
+    const service=await callTool("test-user-a","get_service_status");
+    assert.equal(service.value.status,"local_presence_pilot");
+    assert.equal(service.value.remoteKiCadExecution,false);
+    assert.ok(observations.every(item=>item==="user-a:"+mockProject.deviceId),
+      "Never inspect another owner's socket from a foreign OAuth account");
+    ready=false;
+    assert.equal((await callTool("test-user-a","list_devices")).value.devices[0].connected,false);
+  }finally{
+    await new Promise<void>(resolve=>proxy.close(()=>resolve()));
+  }
+});
+
+test("Cloud status distinguishes bounded local counts from an unimplemented connector",async()=>{
+  const relay={
+    prepareOwnerSummary:testPrepared,
+    async requestSummary(){return null;}
+  };
+  const proxy=createHttpServer(config,inventory,verify,{
+    summaryRelay:()=>relay,mcpProjectBoardCountsEnabled:true
+  });
+  await new Promise<void>(resolve=>proxy.listen(0,"127.0.0.1",resolve));
+  const origin="http://127.0.0.1:"+(proxy.address() as AddressInfo).port;
+  try{
+    const health=await fetch(origin+"/health");
+    assert.equal((await health.json()).remoteConnector,"operator_one_shot_read");
+    const response=await fetch(origin+"/mcp",{
+      method:"POST",headers:headers("test-user-a","tools/call","get_service_status"),
+      body:payload("tools/call",{name:"get_service_status",arguments:{}})
+    });
+    const data=await response.json() as Record<string,any>;
+    assert.equal(data.result.structuredContent.status,"local_project_read_pilot");
+    assert.equal(data.result.structuredContent.remoteKiCadExecution,true);
+    assert.equal(data.result.structuredContent.devicePairing,true);
+    const list=await fetch(origin+"/mcp",{
+      method:"POST",headers:headers("test-user-a","tools/call","list_projects"),
+      body:payload("tools/call",{name:"list_projects",arguments:{}})
+    });
+    assert.equal((await list.json() as Record<string,any>).result.structuredContent
+      .projects[0].reason,"device_not_connected");
+  }finally{
+    await new Promise<void>(resolve=>proxy.close(()=>resolve()));
+  }
+});
+
 test("task discovery reports only enabled, granted Cloud operations",async()=>{
   const inspect=async(token:string,task:string,projectId?:string)=>{
     const args={task,...(projectId?{project_id:projectId}:{})};

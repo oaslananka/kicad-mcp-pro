@@ -63,42 +63,61 @@ export function createCloudMcpHandler(
   inventory: Inventory, actor: Actor, projectPresence?:ProjectPresenceReader,
   projectDrc?:ProjectDrcReader, projectInspection?:ProjectInspectionReader,
   boardCounts?:ProjectBoardCountsReader,
-  schematicCounts?:ProjectSchematicCountsReader
+  schematicCounts?:ProjectSchematicCountsReader,
+  isDeviceConnected?:(ownerSub:string,deviceId:string)=>boolean
 ) {
   return createMcpHandler(() => {
     const mcp = new McpServer({ name: "kicad-mcp-pro-cloud", version: "0.1.0" });
+    // Reporting must describe the deployed read surface, not old
+    // foundation-only placeholders. A signed WebSocket indicates an
+    // authenticated device connection, NOT a KiCad GUI or operation grant.
+    const localReadEnabled=Boolean(projectPresence||projectDrc||projectInspection||
+      boardCounts||schematicCounts);
+    const nativeReadEnabled=Boolean(projectDrc||projectInspection||
+      boardCounts||schematicCounts);
+    const connected=(deviceId:string)=>Boolean(
+      isDeviceConnected?.(actor.sub,deviceId));
+    const describeProject=(project:Project)=>{
+      const connectorConnected=connected(project.deviceId);
+      return {
+        ...project,available:false,
+        reason:!localReadEnabled?"cloud_read_not_enabled":
+          !connectorConnected?"device_not_connected":"owner_operation_required",
+        connectorConnected
+      };
+    };
     mcp.registerTool("get_service_status", {
-      description: "Describe Cloud connectivity limits and current feature availability. No local KiCad operation is performed.",
+      description: "Describe current Cloud read features without claiming a local KiCad action or GUI session.",
       inputSchema: z.object({}), annotations: readonly
     }, async () => text({
       status: projectInspection ? "local_engine_inspection_pilot" :
+        boardCounts||schematicCounts ? "local_project_read_pilot" :
         projectDrc ? "local_native_drc_pilot" :
         projectPresence ? "local_presence_pilot" : "foundation_only",
-      remoteKiCadExecution: Boolean(projectDrc || projectInspection),
-      devicePairing: Boolean(projectPresence || projectInspection),
+      remoteKiCadExecution: nativeReadEnabled,
+      devicePairing: localReadEnabled,
       projectManagementWrites: false,
-      message: projectInspection
-        ? "One owner-operated, read-only local MCP engine inspection only; no design data, file paths or arbitrary tools."
-        : projectDrc
-          ? "Owner-operated one-shot native DRC counts only; no board contents, file paths or arbitrary commands."
-          : projectPresence
-            ? "Only one-shot, owner-granted project presence flags are available; no KiCad commands or file contents."
-            : "Cloud inventory is read-only. A local connector is not yet available."
+      message: localReadEnabled
+        ? "Only enabled, project-granted owner-foreground read operations are available. Device connection is not proof of KiCad GUI, project contents or permission to execute."
+        : "Cloud inventory is read-only. No owner-operated remote reads are enabled."
     }));
     mcp.registerTool("list_devices", {
-      description: "List the authenticated user's registered device metadata. Connected always false until a verified device relay exists.",
+      description: "List only the authenticated client's granted device metadata, with current signed Connector session state; never infer KiCad GUI readiness.",
       inputSchema: z.object({}), annotations: readonly
-    }, async () => text({ devices: await inventory.listDevices(actor.sub,actor.clientId) }));
+    }, async () => text({ devices: (await inventory.listDevices(actor.sub,actor.clientId))
+      .map(d=>({...d,connected:connected(d.id)})) }));
     mcp.registerTool("list_projects", {
-      description: "List only enabled KiCad project aliases owned by the authenticated user. No local paths or design contents.",
+      description: "List only enabled granted project aliases and current owner-session readiness. No local paths or design contents.",
       inputSchema: z.object({}), annotations: readonly
-    }, async () => text({ projects: await inventory.listProjects(actor.sub,actor.clientId) }));
+    }, async () => text({ projects: (await inventory.listProjects(actor.sub,actor.clientId))
+      .map(describeProject) }));
     mcp.registerTool("get_project", {
-      description: "Find an enabled project by opaque UUID within the authenticated user's inventory; never returns paths or KiCad data.",
+      description: "Find an enabled granted project by opaque UUID with session status, never local paths or KiCad data.",
       inputSchema: z.object({ project_id: z.string().uuid() }), annotations: readonly
     }, async ({ project_id }) => {
       const project = await inventory.getProject(actor.sub,actor.clientId,project_id);
-      return text(project ? { project } : { found: false, message: "Project not found or not accessible" });
+      return text(project ? { project:describeProject(project) }
+        : { found:false, message:"Project not found or not accessible" });
     });
     // Task-first discovery describes the CURRENT Cloud MCP surface, not
     // the much broader local KiCad tool registry. Never claim availability

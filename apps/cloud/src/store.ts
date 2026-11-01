@@ -14,7 +14,7 @@ export interface Project {
   enabled: boolean;
   maxMode: "readonly" | "write" | "manufacturing";
   available: false;
-  reason: "remote_connector_not_implemented";
+  reason: "cloud_read_not_enabled";
 }
 export interface Inventory {
   isAccessTokenAllowed(ownerSub:string,clientId:string,issuedAt:number):Promise<boolean>;
@@ -70,6 +70,6 @@ function toProject(p: ProjectRow): Project {
   return {
     id:p.id, deviceId:p.device_id, alias:p.alias,
     enabled:p.enabled, maxMode:p.max_mode,
-    available:false, reason:"remote_connector_not_implemented"
+    available:false, reason:"cloud_read_not_enabled"
   };
 }
