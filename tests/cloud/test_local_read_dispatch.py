@@ -348,3 +348,57 @@ def test_revoke_after_inspection_but_before_reply_denies(
         with pytest.raises(LocalReadDeniedError):
             subject.read(_raise_argument_12, sequence=1)
     assert grants_checked == 2
+
+
+def test_parallel_project_sessions_do_not_share_local_project_state(tmp_path: Path) -> None:
+    """Two concurrent Cloud reads must remain bound to their own local PCB."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    second_project = "77777777-7777-4777-8777-777777777777"
+    second_session = "88888888-8888-4888-8888-888888888888"
+    roots = [tmp_path / "board_a", tmp_path / "board_b"]
+    for root in roots:
+        root.mkdir()
+    (roots[0] / "alpha.kicad_pro").write_text("", encoding="utf-8")
+    (roots[0] / "alpha.kicad_pcb").write_text("", encoding="utf-8")
+    (roots[1] / "beta.kicad_pro").write_text("", encoding="utf-8")
+    sessions = [
+        LocalReadDispatch(
+            verified=VerifiedLocalBinding(
+                DEVICE, project_id, frozenset({"project_summary"}), session_id, NOW + 60_000
+            ),
+            operator_project=OperatorProject(DEVICE, project_id, root, stem),
+            current_authorization=lambda: True,
+            clock_ms=lambda: NOW,
+        )
+        for project_id, session_id, root, stem in [
+            (PROJECT, SESSION, roots[0], "alpha"),
+            (second_project, second_session, roots[1], "beta"),
+        ]
+    ]
+    for session, other_project, other_session in [
+        (sessions[0], second_project, second_session),
+        (sessions[1], PROJECT, SESSION),
+    ]:
+        with pytest.raises(LocalReadDeniedError):
+            session.assert_transport_session(device_id=DEVICE, session_id=other_session)
+        with pytest.raises(LocalReadDeniedError):
+            session.read(packet(project=other_project), sequence=1)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(
+            executor.map(
+                lambda pair: pair[0].read(
+                    packet(
+                        request_id="99999999-9999-4999-8999-999999999999",
+                        project=pair[1],
+                    ),
+                    sequence=2,
+                ),
+                [(sessions[0], PROJECT), (sessions[1], second_project)],
+            )
+        )
+    assert responses[0]["projectId"] == PROJECT
+    assert responses[1]["projectId"] == second_project
+    assert responses[0]["files"]["boardPresent"] is True
+    assert responses[1]["files"]["boardPresent"] is False
