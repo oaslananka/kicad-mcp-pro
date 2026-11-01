@@ -63,7 +63,7 @@ function field(obj:Record<string,unknown>,key:string):string{
 
 async function startFixtureServer(
   db:Pool,operatorLocalOnce=false,nativeDrcOnce=false,inspectionOnce=false,
-  boardCountsOnce=false
+  boardCountsOnce=false,schematicCountsOnce=false
 ){
   const server=createServer((_req,res)=>{res.writeHead(404);res.end();});
   await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
@@ -76,7 +76,8 @@ async function startFixtureServer(
       operatorLocalOnce:true,
       operatorNativeDrcOnce:nativeDrcOnce,
       operatorInspectionOnce:inspectionOnce,
-      operatorBoardCountsOnce:boardCountsOnce
+      operatorBoardCountsOnce:boardCountsOnce,
+      operatorSchematicCountsOnce:schematicCountsOnce
     }:
       {ownerConsent:{consume:async()=>true}}), // Synthetic, not human approval.
     connections:new BoundConnectorConnections(
@@ -429,7 +430,7 @@ test("signed one-shot WSS admits only explicit native DRC count results",
 
 test("manual WSS project inspection uses exact grant and discards invalid typed outputs",
   {skip:!url,timeout:90_000},async()=>{
-  for(const operation of ["inspection","board_counts"] as const){
+  for(const operation of ["inspection","board_counts","schematic_counts"] as const){
   for(const behavior of ["allowed","wrong_result","revoked","flag_off"] as const){
     await inIsolatedDatabase(url!,migrations,async db=>{
       const owner="inspect-owner",clientId="inspect-client";
@@ -450,7 +451,8 @@ test("manual WSS project inspection uses exact grant and discards invalid typed 
         "VALUES($1,$2,$3,true,'readonly')",[project,owner,clientId]);
       const {server,port,attached}=await startFixtureServer(
         db,true,false,operation==="inspection"&&behavior!=="flag_off",
-        operation==="board_counts"&&behavior!=="flag_off");
+        operation==="board_counts"&&behavior!=="flag_off",
+        operation==="schematic_counts"&&behavior!=="flag_off");
       let ws:WebSocket|undefined;
       try{
         ws=await connect("ws://127.0.0.1:"+port+"/api/v1/connector/ws");
@@ -473,37 +475,47 @@ test("manual WSS project inspection uses exact grant and discards invalid typed 
           accessTokenIssuedAtSeconds:Math.floor(Date.now()/1000)};
         // A granted engine-status operation cannot authorize PCB inspection.
         assert.equal(
-          operation==="inspection"?attached.prepareOwnerBoardCounts(oauth,device,project)
+          operation==="inspection"?attached.prepareOwnerSchematicCounts(oauth,device,project)
             :attached.prepareOwnerInspection(oauth,device,project),
           null
         );
         const intent=operation==="inspection"?
           attached.prepareOwnerInspection(oauth,device,project):
-          attached.prepareOwnerBoardCounts(oauth,device,project);
+          operation==="board_counts"?
+          attached.prepareOwnerBoardCounts(oauth,device,project):
+          attached.prepareOwnerSchematicCounts(oauth,device,project);
         if(behavior==="flag_off"){
           assert.equal(intent,null,"Old Cloud grants cannot activate a new operation");
           return;
         }
         assert.ok(intent);
         assert.equal(intent.operation,operation==="inspection"?
-          "project_worker_inspection":"project_board_counts");
+          "project_worker_inspection":operation==="board_counts"?
+          "project_board_counts":"project_schematic_counts");
         const outbound=waitMessage(ws);
         const pending=operation==="inspection"?
           attached.requestInspection(oauth,device,project,
             intent as NonNullable<ReturnType<typeof attached.prepareOwnerInspection>>):
+          operation==="board_counts"?
           attached.requestBoardCounts(oauth,device,project,
-            intent as NonNullable<ReturnType<typeof attached.prepareOwnerBoardCounts>>);
+            intent as NonNullable<ReturnType<typeof attached.prepareOwnerBoardCounts>>):
+          attached.requestSchematicCounts(oauth,device,project,
+            intent as NonNullable<ReturnType<typeof attached.prepareOwnerSchematicCounts>>);
         const sent=await outbound;
         assert.equal(sent.kind,"connector.authorized_read");
         const request=sent.request as Record<string,unknown>;
         assert.equal(request.operation,operation==="inspection"?
-          "project_worker_inspection":"project_board_counts");
+          "project_worker_inspection":operation==="board_counts"?
+          "project_board_counts":"project_schematic_counts");
         assert.equal(request.projectId,project);
         assert.equal(operation==="inspection"?
           await attached.requestInspection(oauth,device,project,
             intent as NonNullable<ReturnType<typeof attached.prepareOwnerInspection>>):
+          operation==="board_counts"?
           await attached.requestBoardCounts(oauth,device,project,
-            intent as NonNullable<ReturnType<typeof attached.prepareOwnerBoardCounts>>),null);
+            intent as NonNullable<ReturnType<typeof attached.prepareOwnerBoardCounts>>):
+          await attached.requestSchematicCounts(oauth,device,project,
+            intent as NonNullable<ReturnType<typeof attached.prepareOwnerSchematicCounts>>),null);
         if(behavior==="revoked")
           await db.query("UPDATE project_client_grants SET enabled=false WHERE project_id=$1",
             [project]);
@@ -521,13 +533,23 @@ test("manual WSS project inspection uses exact grant and discards invalid typed 
           operation:"project_board_counts",source:"file-backed",
           counts:{tracks:1,vias:2,footprints:3,zones:4,nets:5,shapes:6}
         };
-        const goodResult=operation==="inspection"?good:boardResult;
+        const schematicResult={
+          kind:"connector.local_schematic_counts",version:1,
+          requestId:request.requestId,projectId:project,
+          operation:"project_schematic_counts",
+          counts:{components:3,populated:2,dnp:1,inBom:2}
+        };
+        const goodResult=operation==="inspection"?good:
+          operation==="board_counts"?boardResult:schematicResult;
         const result=behavior==="wrong_result"?
           operation==="inspection"?
             {...good,status:{...good.status,capabilities:{
                 ...good.status.capabilities,localPath:"/private/board"}}}:
-            {...boardResult,counts:{...boardResult.counts,
-              localPath:"/private/board"}}:goodResult;
+            operation==="board_counts"?
+              {...boardResult,counts:{...boardResult.counts,
+                localPath:"/private/board"}}:
+              {...schematicResult,counts:{...schematicResult.counts,
+                sheet_file:"/private/board"}}:goodResult;
         const ack=behavior==="allowed"?waitMessage(ws):null;
         ws.send(JSON.stringify({
           kind:"connector.read_result",version:1,sequence:1,result

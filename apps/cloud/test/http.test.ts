@@ -1148,3 +1148,63 @@ test("board-count MCP tool stays absent unless opted in and rechecks owner grant
     await new Promise<void>(resolve=>enabled.close(()=>resolve()));
   }
 });
+
+
+test("schematic counts read obeys project grant and hides identifiers",async()=>{
+  let calls=0,active=true;
+  const scoped:Inventory={
+    ...inventory,
+    async getProject(owner,client,projectId){
+      if(!active)return null;
+      return inventory.getProject(owner,client,projectId);
+    }
+  };
+  const relay={
+    prepareOwnerSummary:testPrepared,
+    async requestSummary(){return null;},
+    prepareOwnerSchematicCounts:(_oauth:TrustedOAuthReadIdentity,_device:string,
+      projectId:string)=>({...testPrepared(
+        {ownerSub:"user-a",clientId:"test-client",accessTokenIssuedAtSeconds:0},
+        mockProject.deviceId,projectId),operation:"project_schematic_counts" as const}),
+    async requestSchematicCounts(_oauth:TrustedOAuthReadIdentity,_device:string,
+      projectId:string,intent:{requestId:string}){
+      calls++;
+      return {kind:"connector.local_schematic_counts" as const,version:1 as const,
+        requestId:intent.requestId,projectId,operation:"project_schematic_counts" as const,
+        counts:{components:5,populated:4,dnp:1,inBom:4}};
+    }
+  };
+  const enabled=createHttpServer(config,scoped,verify,{
+    summaryRelay:()=>relay,mcpProjectSchematicCountsEnabled:true
+  });
+  await new Promise<void>(resolve=>enabled.listen(0,"127.0.0.1",resolve));
+  const origin="http://127.0.0.1:"+(enabled.address() as AddressInfo).port;
+  const invoke=async(token:string,projectId=id)=>{
+    const res=await fetch(origin+"/mcp",{
+      method:"POST",headers:headers(token,"tools/call","get_project_schematic_counts"),
+      body:payload("tools/call",{
+        name:"get_project_schematic_counts",arguments:{project_id:projectId}
+      })
+    });
+    return {status:res.status,text:JSON.stringify(await res.json())};
+  };
+  try{
+    const outsider=await invoke("test-user-b");
+    assert.equal(outsider.status,200);
+    assert.match(outsider.text,/"available":false/);
+    assert.equal(calls,0);
+    const granted=await invoke("test-user-a");
+    assert.equal(granted.status,200);
+    assert.match(granted.text,/"available":true/);
+    assert.match(granted.text,/"components":5/);
+    assert.doesNotMatch(granted.text,/localPath|reference|sheet_file/);
+    assert.equal(calls,1);
+    active=false;
+    const revoked=await invoke("test-user-a");
+    assert.match(revoked.text,/"available":false/);
+    assert.doesNotMatch(revoked.text,/"components"/);
+    assert.equal(calls,1);
+  }finally{
+    await new Promise<void>(resolve=>enabled.close(()=>resolve()));
+  }
+});

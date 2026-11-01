@@ -36,8 +36,12 @@ export type PreparedOwnerInspection=Omit<PreparedOwnerSummary,"operation">&{
 export type PreparedOwnerBoardCounts=Omit<PreparedOwnerSummary,"operation">&{
   operation:"project_board_counts";
 };
-type PreparedRead=PreparedOwnerSummary|PreparedOwnerDrc|PreparedOwnerInspection|PreparedOwnerBoardCounts;
-type ReadOperation="project_summary"|"run_drc"|"project_worker_inspection"|"project_board_counts";
+export type PreparedOwnerSchematicCounts=Omit<PreparedOwnerSummary,"operation">&{
+  operation:"project_schematic_counts";
+};
+type PreparedRead=PreparedOwnerSummary|PreparedOwnerDrc|PreparedOwnerInspection|
+  PreparedOwnerBoardCounts|PreparedOwnerSchematicCounts;
+type ReadOperation="project_summary"|"run_drc"|"project_worker_inspection"|"project_board_counts"|"project_schematic_counts";
 type State="new"|"device_challenge"|"session_challenge"|"ready"|"closed";
 export type SummaryReadResult={
   kind:"connector.local_read_preview";version:1;requestId:string;
@@ -64,7 +68,13 @@ export type BoardCountsReadResult={
   source:"live-gui"|"file-backed";
   counts:{tracks:number;vias:number;footprints:number;zones:number;nets:number;shapes:number};
 };
-type ReadResult=SummaryReadResult|DrcReadResult|InspectionReadResult|BoardCountsReadResult;
+export type SchematicCountsReadResult={
+  kind:"connector.local_schematic_counts";version:1;requestId:string;
+  projectId:string;operation:"project_schematic_counts";
+  counts:{components:number;populated:number;dnp:number;inBom:number};
+};
+type ReadResult=SummaryReadResult|DrcReadResult|InspectionReadResult|
+  BoardCountsReadResult|SchematicCountsReadResult;
 type PendingRead={requestId:string;projectId:string;operation:ReadOperation;
   deadline:number;monotonicDeadline:number;
   resolve:(value:ReadResult|null)=>void;timer:NodeJS.Timeout};
@@ -125,6 +135,18 @@ const readResult=z.strictObject({
         nets:z.number().int().nonnegative().max(1_000_000),
         shapes:z.number().int().nonnegative().max(1_000_000)
       })
+    }),
+    z.strictObject({
+      kind:z.literal("connector.local_schematic_counts"),version:z.literal(1),
+      requestId:z.uuid(),projectId:z.uuid(),operation:z.literal("project_schematic_counts"),
+      counts:z.strictObject({
+        components:z.number().int().nonnegative().max(1_000_000),
+        populated:z.number().int().nonnegative().max(1_000_000),
+        dnp:z.number().int().nonnegative().max(1_000_000),
+        inBom:z.number().int().nonnegative().max(1_000_000)
+      }).refine(
+        counts=>counts.populated<=counts.components&&counts.dnp<=counts.components&&
+          counts.inBom<=counts.components,"Invalid schematic counts")
     })  ])
 });
 const CLOSE_POLICY=1008;
@@ -186,6 +208,7 @@ export function attachConnectorWebSocket(
     // Separate manually started, one-shot project worker inspection.
     operatorInspectionOnce?:boolean;
     operatorBoardCountsOnce?:boolean;
+    operatorSchematicCountsOnce?:boolean;
     maxConnections?:number;
     sourceOf:RequestSourceResolver;
   }
@@ -205,7 +228,11 @@ export function attachConnectorWebSocket(
   prepareOwnerBoardCounts:(oauth:TrustedOAuthReadIdentity,deviceId:string,
     projectId:string)=>PreparedOwnerBoardCounts|null;
   requestBoardCounts:(oauth:TrustedOAuthReadIdentity,deviceId:string,
-    projectId:string,prepared?:PreparedOwnerBoardCounts)=>Promise<BoardCountsReadResult|null>}{
+    projectId:string,prepared?:PreparedOwnerBoardCounts)=>Promise<BoardCountsReadResult|null>;
+  prepareOwnerSchematicCounts:(oauth:TrustedOAuthReadIdentity,deviceId:string,
+    projectId:string)=>PreparedOwnerSchematicCounts|null;
+  requestSchematicCounts:(oauth:TrustedOAuthReadIdentity,deviceId:string,
+    projectId:string,prepared?:PreparedOwnerSchematicCounts)=>Promise<SchematicCountsReadResult|null>}{
   // Never let a lightweight pilot setting downgrade an independent owner
   // approval dependency, even when used outside the production entrypoint.
   if(options.operatorLocalOnce&&options.ownerConsent)
@@ -216,6 +243,8 @@ export function attachConnectorWebSocket(
     throw Error("Project inspection requires explicit local one-shot mode");
   if(options.operatorBoardCountsOnce&&!options.operatorLocalOnce)
     throw Error("PCB counts require explicit local one-shot mode");
+  if(options.operatorSchematicCountsOnce&&!options.operatorLocalOnce)
+    throw Error("Schematic counts require explicit local one-shot mode");
   const wss=new WebSocketServer({noServer:true,perMessageDeflate:false,
     maxPayload:1024,clientTracking:true});
   const sockets=new Set<WebSocket>();
@@ -464,6 +493,8 @@ export function attachConnectorWebSocket(
        !(options.operatorLocalOnce&&options.operatorInspectionOnce))return null;
     if(operation==="project_board_counts"&&
        !(options.operatorLocalOnce&&options.operatorBoardCountsOnce))return null;
+    if(operation==="project_schematic_counts"&&
+       !(options.operatorLocalOnce&&options.operatorSchematicCountsOnce))return null;
     if(stopped||(!options.ownerConsent&&!options.operatorLocalOnce)||!oauth||
        typeof oauth.ownerSub!=="string"||!oauth.ownerSub||
        typeof oauth.clientId!=="string"||!oauth.clientId||
@@ -511,6 +542,11 @@ export function attachConnectorWebSocket(
     return prepareRead(oauth,deviceId,projectId,
       "project_board_counts") as PreparedOwnerBoardCounts|null;
   }
+  function prepareOwnerSchematicCounts(oauth:TrustedOAuthReadIdentity,
+    deviceId:string,projectId:string):PreparedOwnerSchematicCounts|null{
+    return prepareRead(oauth,deviceId,projectId,
+      "project_schematic_counts") as PreparedOwnerSchematicCounts|null;
+  }
 
   async function requestRead(oauth:TrustedOAuthReadIdentity,deviceId:string,
     projectId:string,prepared:PreparedRead|undefined,
@@ -521,6 +557,8 @@ export function attachConnectorWebSocket(
        !(options.operatorLocalOnce&&options.operatorInspectionOnce))return null;
     if(operation==="project_board_counts"&&
        !(options.operatorLocalOnce&&options.operatorBoardCountsOnce))return null;
+    if(operation==="project_schematic_counts"&&
+       !(options.operatorLocalOnce&&options.operatorSchematicCountsOnce))return null;
     if(stopped||(!options.ownerConsent&&!options.operatorLocalOnce)||!oauth||typeof oauth.ownerSub!=="string"||
       !/^[0-9a-f-]{36}$/i.test(deviceId)||
       !/^[0-9a-f-]{36}$/i.test(projectId))return null;
@@ -670,8 +708,14 @@ export function attachConnectorWebSocket(
     const result=await requestRead(oauth,deviceId,projectId,prepared,"project_board_counts");
     return result?.operation==="project_board_counts"?result:null;
   }
+  async function requestSchematicCounts(oauth:TrustedOAuthReadIdentity,deviceId:string,
+    projectId:string,prepared?:PreparedOwnerSchematicCounts):Promise<SchematicCountsReadResult|null>{
+    const result=await requestRead(oauth,deviceId,projectId,prepared,"project_schematic_counts");
+    return result?.operation==="project_schematic_counts"?result:null;
+  }
   return {prepareOwnerSummary,requestSummary,prepareOwnerDrc,requestDrc,
     prepareOwnerInspection,requestInspection,prepareOwnerBoardCounts,requestBoardCounts,
+    prepareOwnerSchematicCounts,requestSchematicCounts,
     close:async()=>{
     if(stopped)return;
     stopped=true;

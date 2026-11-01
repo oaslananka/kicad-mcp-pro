@@ -166,6 +166,49 @@ async def test_real_board_counts_never_transmit_raw_board_contents(tmp_path: Pat
 
 
 @pytest.mark.anyio
+async def test_schematic_counts_only_transmit_bounded_population_totals(tmp_path: Path) -> None:
+    from shutil import copyfile
+
+    root = tmp_path / "private-project"
+    root.mkdir()
+    (root / "board.kicad_pro").write_text("{}")
+    source = Path(__file__).resolve().parents[1] / (
+        "fixtures/benchmark_projects/pass_minimal_mcu_board/demo.kicad_sch"
+    )
+    copyfile(source, root / "board.kicad_sch")
+    socket = RecordingSocket(frame(operation="project_schematic_counts"))
+    await _complete_authorized_inspection(
+        socket,
+        HandshakeReceipt(DEVICE, SESSION),
+        lambda _receipt: bound_worker(root, "project_schematic_counts"),
+        schematic_counts=True,
+    )
+    result = socket.sent[0]["result"]
+    assert result["kind"] == "connector.local_schematic_counts"
+    assert result["counts"] == {"components": 2, "populated": 2, "dnp": 0, "inBom": 2}
+    payload = json.dumps(socket.sent)
+    assert str(root) not in payload
+    assert "Resistor_SMD" not in payload
+    assert ".kicad_sch" not in payload
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("operation", ["project_worker_inspection", "project_board_counts"])
+async def test_other_one_shot_grant_cannot_read_schematic_counts(
+    tmp_path: Path, operation: str
+) -> None:
+    socket = RecordingSocket(frame(operation="project_schematic_counts"))
+    with pytest.raises((CloudHandshakeDeniedError, ValueError)):
+        await _complete_authorized_inspection(
+            socket,
+            HandshakeReceipt(DEVICE, SESSION),
+            lambda _receipt: bound_worker(tmp_path, operation),
+            schematic_counts=True,
+        )
+    assert socket.sent == []
+
+
+@pytest.mark.anyio
 async def test_engine_status_consent_cannot_read_board_counts(tmp_path: Path) -> None:
     socket = RecordingSocket(frame(operation="project_board_counts"))
     with pytest.raises((CloudHandshakeDeniedError, ValueError)):

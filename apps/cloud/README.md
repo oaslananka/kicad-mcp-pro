@@ -34,6 +34,10 @@ database migration ownership and public OAuth endpoint requires a separate,
 verified cutover with rollback. Do not treat a local build as deployment
 acceptance.
 
+For task-first MCP discovery, `inspect_schematic` selects the schematic
+counts tool only if the Cloud operation is enabled and the project grant
+is current; it does not remotely list schematic symbols or net names.
+
 For task-first MCP discovery, call `discover_project_workflow` with
 `task=inspect_engine`, `check_project_files`, or `check_board_drc`.
 The response identifies an actually enabled, project-granted Cloud MCP tool,
@@ -48,6 +52,16 @@ pilot tools may omit `project_id`: the Cloud service resolves the sole granted
 project and rechecks authorization before routing. If multiple projects are
 granted, the AI client must call `list_projects` and supply an explicit
 `project_id`. An absent or revoked grant never falls back to a local path.
+
+The independent, default-off `get_project_schematic_counts` operation
+uses the local project-bound `sch_get_population_status` MCP tool, but
+returns **only** total components, populated, DNP, and BOM counts. The raw
+symbol records, component references, local schematic file paths, and design
+details remain on the user's machine. It requires the independent Cloud
+`CONNECTOR_OPERATOR_SCHEMATIC_COUNTS_ENABLED` flag together with
+`CONNECTOR_OPERATOR_ONESHOT_ENABLED`, plus a local owner-started
+`--schematic-counts-once` foreground session. It cannot be authorized by
+the engine-status, PCB-count, DRC, or presence-only operation.
 
 The separate, default-off `get_project_board_counts` operation exposes
 only numeric tracks, vias, footprints, zones, nets, and shapes plus the

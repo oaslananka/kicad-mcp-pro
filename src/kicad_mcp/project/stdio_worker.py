@@ -75,6 +75,7 @@ _SCOPED_INSPECTION_TOOLS = frozenset(
         "kicad_get_project_info",
         "kicad_get_server_info",
         "pcb_get_board_summary",
+        "sch_get_population_status",
     }
 )
 

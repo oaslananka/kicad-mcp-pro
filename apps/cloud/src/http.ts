@@ -21,7 +21,8 @@ import {pairingReviewClient} from "./pairing-review-client.js";
 import type {TrustedOAuthReadIdentity} from "./connector-read-gate.js";
 import type {PreparedOwnerSummary,SummaryReadResult,PreparedOwnerDrc,DrcReadResult,
   PreparedOwnerInspection,InspectionReadResult,
-  PreparedOwnerBoardCounts,BoardCountsReadResult} from "./connector-ws.js";
+  PreparedOwnerBoardCounts,BoardCountsReadResult,
+  PreparedOwnerSchematicCounts,SchematicCountsReadResult} from "./connector-ws.js";
 import {OwnerSummaryHttpPreparations} from "./owner-summary-http-preparations.js";
 
 type SummaryRelay={
@@ -41,6 +42,10 @@ type SummaryRelay={
     projectId:string)=>PreparedOwnerBoardCounts|null;
   requestBoardCounts?:(oauth:TrustedOAuthReadIdentity,deviceId:string,
     projectId:string,prepared:PreparedOwnerBoardCounts)=>Promise<BoardCountsReadResult|null>;
+  prepareOwnerSchematicCounts?:(oauth:TrustedOAuthReadIdentity,deviceId:string,
+    projectId:string)=>PreparedOwnerSchematicCounts|null;
+  requestSchematicCounts?:(oauth:TrustedOAuthReadIdentity,deviceId:string,
+    projectId:string,prepared:PreparedOwnerSchematicCounts)=>Promise<SchematicCountsReadResult|null>;
 };
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -97,6 +102,7 @@ export type CloudHttpServices={
   mcpProjectNativeDrcEnabled?:boolean;
   mcpProjectInspectionEnabled?:boolean;
   mcpProjectBoardCountsEnabled?:boolean;
+  mcpProjectSchematicCountsEnabled?:boolean;
   // Trusted Cloud-to-owner HTTPS delivery only. If absent, /prepare
   // cannot claim success; a bearer client must never self-register scope.
   ownerIntentDelivery?:(scope:PreparedOwnerSummary)=>Promise<string|null>;
@@ -542,8 +548,32 @@ async function handleRequest(
             return null;
           return {...result.counts,source:result.source};
         } : undefined;
+      const schematicReader=services.mcpProjectSchematicCountsEnabled&&summaryRelay?.()
+        ? async(deviceId:string,projectId:string)=>{
+          const project=await inventory.getProject(actor.sub,actor.clientId,projectId);
+          if(!project||project.deviceId!==deviceId)return null;
+          if(!await inventory.isAccessTokenAllowed(actor.sub,actor.clientId,actor.issuedAt))
+            return null;
+          try{await verify(matched[1]);}catch{return null;}
+          const relay=summaryRelay();
+          if(!relay?.prepareOwnerSchematicCounts||!relay.requestSchematicCounts)return null;
+          const oauth={ownerSub:actor.sub,clientId:actor.clientId,
+            accessTokenIssuedAtSeconds:actor.issuedAt};
+          const intent=relay.prepareOwnerSchematicCounts(oauth,deviceId,projectId);
+          if(!intent)return null;
+          const result=await relay.requestSchematicCounts(oauth,deviceId,projectId,intent);
+          if(!result||result.requestId!==intent.requestId||
+             result.projectId!==projectId||result.operation!=="project_schematic_counts")
+            return null;
+          const current=await inventory.getProject(actor.sub,actor.clientId,projectId);
+          if(!current||current.deviceId!==deviceId)return null;
+          try{await verify(matched[1]);}catch{return null;}
+          if(!await inventory.isAccessTokenAllowed(actor.sub,actor.clientId,actor.issuedAt))
+            return null;
+          return result.counts;
+        } : undefined;
       const handler=createCloudMcpHandler(
-        inventory,actor,presenceReader,drcReader,inspectionReader,boardReader);
+        inventory,actor,presenceReader,drcReader,inspectionReader,boardReader,schematicReader);
       let output: Response;
       try {
         output = await handler.fetch(request);

@@ -21,7 +21,9 @@ from kicad_mcp.project.stdio_worker import (
 # This capability is deliberately NOT issued by the present one-shot Cloud
 # connector. Existing project_summary/run_drc consent cannot be reused to
 # authorize an additional native MCP operation.
-_LOCAL_INSPECTION_CAPABILITIES = frozenset({"project_worker_inspection", "project_board_counts"})
+_LOCAL_INSPECTION_CAPABILITIES = frozenset(
+    {"project_worker_inspection", "project_board_counts", "project_schematic_counts"}
+)
 
 
 class BoundConnectorProjectWorker:

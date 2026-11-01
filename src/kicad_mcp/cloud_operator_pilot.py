@@ -21,6 +21,7 @@ from kicad_mcp.cloud_outbound_handshake import (
     execute_operator_inspection_once,
     execute_operator_native_drc_once,
     execute_operator_presence_once,
+    execute_operator_schematic_counts_once,
 )
 from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
 from kicad_mcp.cloud_project_worker_bridge import BoundConnectorProjectWorker
@@ -42,7 +43,8 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
     native_drc = bool(getattr(options, "native_drc_once", False))
     inspection = bool(getattr(options, "inspection_once", False))
     board_counts = bool(getattr(options, "board_counts_once", False))
-    if sum((inspection, native_drc, board_counts)) > 1:
+    schematic_counts = bool(getattr(options, "schematic_counts_once", False))
+    if sum((inspection, native_drc, board_counts, schematic_counts)) > 1:
         raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
     key = cloud_once._load_bound_owner_key(
         options.private_key_file, options.cloud_origin, options.device_id
@@ -70,7 +72,7 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
             native_drc=native_drc,
         )
 
-    if inspection or board_counts:
+    if inspection or board_counts or schematic_counts:
 
         def factory(receipt: HandshakeReceipt) -> BoundConnectorProjectWorker:
             return BoundConnectorProjectWorker(
@@ -78,7 +80,15 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
                     device_id=receipt.device_id,
                     project_id=options.project_id,
                     operations=frozenset(
-                        {"project_board_counts" if board_counts else "project_worker_inspection"}
+                        {
+                            (
+                                "project_board_counts"
+                                if board_counts
+                                else "project_schematic_counts"
+                                if schematic_counts
+                                else "project_worker_inspection"
+                            )
+                        }
                     ),
                     session_id=receipt.session_id,
                     session_expires_unix_ms=wall_cutoff_ms,
@@ -93,7 +103,11 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
             )
 
         inspection_transport = (
-            execute_operator_board_counts_once if board_counts else execute_operator_inspection_once
+            execute_operator_board_counts_once
+            if board_counts
+            else execute_operator_schematic_counts_once
+            if schematic_counts
+            else execute_operator_inspection_once
         )
         return await inspection_transport(
             origin=options.cloud_origin,
@@ -132,6 +146,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Foreground one-shot PCB counts, requires a distinct Cloud opt-in",
     )
+    parser.add_argument(
+        "--schematic-counts-once",
+        action="store_true",
+        help="Foreground schematic component counts, requires separate Cloud opt-in",
+    )
     options = parser.parse_args(argv)
     try:
         # Headless callers are denied before owner registry/key access.
@@ -151,7 +170,9 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, OSError, EOFError, KeyboardInterrupt):
         print("Local Cloud pilot denied", file=sys.stderr)
         return 1
-    if options.board_counts_once:
+    if options.schematic_counts_once:
+        print("One owner-operated schematic component summary completed")
+    elif options.board_counts_once:
         print("One owner-operated PCB summary completed")
     elif options.inspection_once:
         print("One owner-operated KiCad engine inspection completed")

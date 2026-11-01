@@ -49,12 +49,15 @@ const operatorLocalOnce=process.env.CONNECTOR_OPERATOR_ONESHOT_ENABLED==="true";
 const operatorNativeDrc=process.env.CONNECTOR_OPERATOR_NATIVE_DRC_ENABLED==="true";
 const operatorInspection=process.env.CONNECTOR_OPERATOR_INSPECTION_ENABLED==="true";
 const operatorBoardCounts=process.env.CONNECTOR_OPERATOR_BOARD_COUNTS_ENABLED==="true";
+const operatorSchematicCounts=process.env.CONNECTOR_OPERATOR_SCHEMATIC_COUNTS_ENABLED==="true";
 if(operatorNativeDrc&&!operatorLocalOnce)
   throw Error("Native DRC requires the manually operated one-shot pilot");
 if(operatorInspection&&!operatorLocalOnce)
   throw Error("Project inspection requires the manually operated one-shot pilot");
 if(operatorBoardCounts&&!operatorLocalOnce)
   throw Error("PCB counts require the manually operated one-shot pilot");
+if(operatorSchematicCounts&&!operatorLocalOnce)
+  throw Error("Schematic counts require the manually operated one-shot pilot");
 if(operatorLocalOnce&&(!wsEnabled||!pairingDeviceEnabled||!identity||
     ownerConsentRuntime||process.env.OWNER_READ_CONSUMER_ENABLED==="true")){
   throw Error("Local one-shot pilot needs built-in identity, pairing and WS only");
@@ -77,7 +80,8 @@ const server=createHttpServer(config, inventory, createVerifier(config), {grants
   mcpProjectPresenceEnabled:operatorLocalOnce,
   mcpProjectNativeDrcEnabled:operatorNativeDrc,
   mcpProjectInspectionEnabled:operatorInspection,
-  mcpProjectBoardCountsEnabled:operatorBoardCounts,summaryRelay:()=>connectorRelay,
+  mcpProjectBoardCountsEnabled:operatorBoardCounts,
+  mcpProjectSchematicCountsEnabled:operatorSchematicCounts,summaryRelay:()=>connectorRelay,
   ...(ownerIntentDelivery?{ownerIntentDelivery}:{})});
 const connectorWs=wsEnabled&&connectorPool?attachConnectorWebSocket(server,{
   publicOrigin:config.publicOrigin,
@@ -87,6 +91,7 @@ const connectorWs=wsEnabled&&connectorPool?attachConnectorWebSocket(server,{
   operatorLocalOnce,operatorNativeDrcOnce:operatorNativeDrc,
   operatorInspectionOnce:operatorInspection,
   operatorBoardCountsOnce:operatorBoardCounts,
+  operatorSchematicCountsOnce:operatorSchematicCounts,
   connections:new BoundConnectorConnections(
     new PgConnectorSessions(connectorPool),
     new PgConnectorReadGate(connectorPool))

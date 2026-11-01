@@ -194,12 +194,15 @@ async def _complete_authorized_inspection(
     inspector_factory: Callable[[HandshakeReceipt], BoundConnectorProjectWorker],
     *,
     board_counts: bool = False,
+    schematic_counts: bool = False,
 ) -> HandshakeReceipt:
     """One explicit, manually started project-bound MCP inspection only.
 
     Never forwards remote-supplied tool names, arguments, file paths, raw MCP
     results, or project configuration strings over Cloud.
     """
+    if board_counts and schematic_counts:
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     inspector = inspector_factory(receipt)
     if not isinstance(inspector, BoundConnectorProjectWorker):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
@@ -226,7 +229,13 @@ async def _complete_authorized_inspection(
         or not isinstance(frame.get("requestId"), str)
         or _DEVICE_UUID.fullmatch(frame["requestId"]) is None
         or frame.get("operation")
-        != ("project_board_counts" if board_counts else "project_worker_inspection")
+        != (
+            "project_board_counts"
+            if board_counts
+            else "project_schematic_counts"
+            if schematic_counts
+            else "project_worker_inspection"
+        )
         or type(frame.get("deadlineUnixMs")) is not int
         or not (now_ms := int(datetime.now(UTC).timestamp() * 1000))
         < frame["deadlineUnixMs"]
@@ -235,9 +244,14 @@ async def _complete_authorized_inspection(
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     device_id = frame["deviceId"]
     project_id = frame["projectId"]
-    inspector.assert_operation_authorized(
-        "project_board_counts" if board_counts else "project_worker_inspection"
+    operation = (
+        "project_board_counts"
+        if board_counts
+        else "project_schematic_counts"
+        if schematic_counts
+        else "project_worker_inspection"
     )
+    inspector.assert_operation_authorized(operation)
     inspector.assert_session_authorized(
         device_id=device_id, project_id=project_id, session_id=receipt.session_id
     )
@@ -245,14 +259,56 @@ async def _complete_authorized_inspection(
         device_id=device_id, project_id=project_id, session_id=receipt.session_id
     ) as worker:
         result = await worker.inspect(
-            "pcb_get_board_summary" if board_counts else "kicad_get_server_info"
+            "pcb_get_board_summary"
+            if board_counts
+            else "sch_get_population_status"
+            if schematic_counts
+            else "kicad_get_server_info"
         )
     # Parse the typed MCP result. Never send full text/structuredContent:
     # both can include local paths, environment details, or design data.
     raw_status = result.structured_content
     if result.is_error or not isinstance(raw_status, dict):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
-    if board_counts:
+    if schematic_counts:
+        # FastMCP wraps this existing tool's JSON string in structured
+        # content as {result: "..."}; it includes private file paths and
+        # references, none of which may leave the device.
+        if set(raw_status) != {"result"} or not isinstance(raw_status["result"], str):
+            raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+        try:
+            report = json.loads(raw_status["result"])
+        except (TypeError, ValueError) as exc:
+            raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED) from exc
+        if (
+            not isinstance(report, dict)
+            or set(report) != {"count", "components"}
+            or type(report["count"]) is not int
+            or not 0 <= report["count"] <= 1_000_000
+            or not isinstance(report["components"], list)
+            or len(report["components"]) != report["count"]
+            or any(
+                not isinstance(item, dict)
+                or any(type(item.get(key)) is not bool for key in ("populated", "dnp", "in_bom"))
+                for item in report["components"]
+            )
+        ):
+            raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+        counts = {
+            "components": report["count"],
+            "populated": sum(item["populated"] for item in report["components"]),
+            "dnp": sum(item["dnp"] for item in report["components"]),
+            "inBom": sum(item["in_bom"] for item in report["components"]),
+        }
+        answer = {
+            "kind": "connector.local_schematic_counts",
+            "version": 1,
+            "requestId": frame["requestId"],
+            "projectId": project_id,
+            "operation": "project_schematic_counts",
+            "counts": counts,
+        }
+    elif board_counts:
         metadata = raw_status.get("metadata")
         fields = ("tracks", "vias", "footprints", "zones", "nets", "shapes")
         if (
@@ -375,6 +431,7 @@ async def _perform_outbound_session(
     inspection_factory: Callable[[HandshakeReceipt], BoundConnectorProjectWorker] | None = None,
     operator_inspection_pilot: bool = False,
     board_counts_pilot: bool = False,
+    schematic_counts_pilot: bool = False,
 ) -> HandshakeReceipt:
     """Perform the Cloud v1 proof order; optionally handle one approved read.
 
@@ -479,7 +536,11 @@ async def _perform_outbound_session(
             receipt = HandshakeReceipt(device_id=device_id, session_id=session_id)
             if inspection_factory is not None:
                 return await _complete_authorized_inspection(
-                    socket, receipt, inspection_factory, board_counts=board_counts_pilot
+                    socket,
+                    receipt,
+                    inspection_factory,
+                    board_counts=board_counts_pilot,
+                    schematic_counts=schematic_counts_pilot,
                 )
             return await _complete_authorized_read(
                 socket,
@@ -569,6 +630,32 @@ async def execute_operator_native_drc_once(
         dispatcher_factory=dispatcher_factory,
         operator_presence_pilot=True,
         operator_native_drc_pilot=True,
+    )
+
+
+async def execute_operator_schematic_counts_once(
+    *,
+    origin: str,
+    trusted_origin: str,
+    owner_sub: str,
+    device_id: str,
+    signing_key: Ed25519PrivateKey,
+    inspector_factory: Callable[[HandshakeReceipt], BoundConnectorProjectWorker],
+    tls_context: ssl.SSLContext | None = None,
+) -> HandshakeReceipt:
+    """Owner-started, separately approved schematic counts; never raw symbols."""
+    if not callable(inspector_factory):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    return await _perform_outbound_session(
+        origin=origin,
+        trusted_origin=trusted_origin,
+        owner_sub=owner_sub,
+        device_id=device_id,
+        signing_key=signing_key,
+        tls_context=tls_context,
+        inspection_factory=inspector_factory,
+        operator_inspection_pilot=True,
+        schematic_counts_pilot=True,
     )
 
 

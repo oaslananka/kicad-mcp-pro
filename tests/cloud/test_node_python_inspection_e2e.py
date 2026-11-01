@@ -26,6 +26,7 @@ from test_isolated_tls_websocket_handshake import _synthetic_tls
 from kicad_mcp.cloud_outbound_handshake import (
     execute_operator_board_counts_once,
     execute_operator_inspection_once,
+    execute_operator_schematic_counts_once,
 )
 from kicad_mcp.cloud_project_worker_bridge import BoundConnectorProjectWorker
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
@@ -37,7 +38,7 @@ TSX = APP / "node_modules" / ".bin" / "tsx"
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("mode", ["inspection", "board_counts"])
+@pytest.mark.parametrize("mode", ["inspection", "board_counts", "schematic_counts"])
 async def test_real_node_cloud_python_signed_wss_project_inspection(
     tmp_path: Path, mode: str
 ) -> None:
@@ -68,11 +69,12 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(
     project_dir = tmp_path / "private-design"
     project_dir.mkdir()
     (project_dir / "board.kicad_pro").write_text('{"private":"DESIGN_NOT_FOR_CLOUD"}')
-    if mode == "board_counts":
+    if mode in {"board_counts", "schematic_counts"}:
         from shutil import copyfile
 
-        source = ROOT / "tests/fixtures/benchmark_projects/pass_minimal_mcu_board/demo.kicad_pcb"
-        copyfile(source, project_dir / "board.kicad_pcb")
+        ext = "kicad_pcb" if mode == "board_counts" else "kicad_sch"
+        source = ROOT / f"tests/fixtures/benchmark_projects/pass_minimal_mcu_board/demo.{ext}"
+        copyfile(source, project_dir / f"board.{ext}")
     cert_file = tmp_path / "temporary-test-server.crt"
     tls_key = tmp_path / "temporary-test-server.key"
     peer = await asyncio.create_subprocess_exec(
@@ -106,6 +108,8 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(
                         {
                             "project_board_counts"
                             if mode == "board_counts"
+                            else "project_schematic_counts"
+                            if mode == "schematic_counts"
                             else "project_worker_inspection"
                         }
                     ),
@@ -126,6 +130,8 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(
                 (
                     execute_operator_board_counts_once
                     if mode == "board_counts"
+                    else execute_operator_schematic_counts_once
+                    if mode == "schematic_counts"
                     else execute_operator_inspection_once
                 )(
                     origin=readiness["origin"],
@@ -177,6 +183,7 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(
                 assert "discover_project_workflow" in names
                 assert "get_project_engine_status" in names
                 assert "get_project_board_counts" in names
+                assert "get_project_schematic_counts" in names
                 assert "get_project_drc_counts" not in names
                 assert "kicad_set_project" not in names
                 board_guide = await mcp.call_tool(
@@ -184,6 +191,13 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(
                     {"task": "inspect_board", "project_id": readiness["project"]},
                 )
                 assert board_guide.structured_content["tools"] == ["get_project_board_counts"]
+                schematic_guide = await mcp.call_tool(
+                    "discover_project_workflow",
+                    {"task": "inspect_schematic", "project_id": readiness["project"]},
+                )
+                assert schematic_guide.structured_content["tools"] == [
+                    "get_project_schematic_counts"
+                ]
                 guide = await mcp.call_tool(
                     "discover_project_workflow",
                     {"task": "inspect_engine", "project_id": readiness["project"]},
@@ -213,6 +227,8 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(
                 response = await mcp.call_tool(
                     "get_project_board_counts"
                     if mode == "board_counts"
+                    else "get_project_schematic_counts"
+                    if mode == "schematic_counts"
                     else "get_project_engine_status",
                     {"project_id": readiness["project"]},
                     read_timeout_seconds=22,
@@ -220,7 +236,10 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(
                 assert response.is_error is not True
                 assert response.structured_content is not None
                 assert response.structured_content["available"] is True
-                if mode == "board_counts":
+                if mode == "schematic_counts":
+                    counts = response.structured_content["counts"]
+                    assert counts == {"components": 2, "populated": 2, "dnp": 0, "inBom": 2}
+                elif mode == "board_counts":
                     board = response.structured_content["board"]
                     assert board["source"] == "file-backed"
                     assert set(board) == {

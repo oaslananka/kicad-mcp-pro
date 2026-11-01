@@ -32,6 +32,11 @@ export type ProjectBoardCounts=Readonly<{
 }>;
 export type ProjectBoardCountsReader=
   (deviceId:string,projectId:string)=>Promise<ProjectBoardCounts|null>;
+export type ProjectSchematicCounts=Readonly<{
+  components:number;populated:number;dnp:number;inBom:number;
+}>;
+export type ProjectSchematicCountsReader=
+  (deviceId:string,projectId:string)=>Promise<ProjectSchematicCounts|null>;
 
 // The local device owns the actual project. This Cloud lookup only resolves
 // an already granted opaque project ID for the current OAuth client. A lone
@@ -57,7 +62,8 @@ async function resolveScopedProject(
 export function createCloudMcpHandler(
   inventory: Inventory, actor: Actor, projectPresence?:ProjectPresenceReader,
   projectDrc?:ProjectDrcReader, projectInspection?:ProjectInspectionReader,
-  boardCounts?:ProjectBoardCountsReader
+  boardCounts?:ProjectBoardCountsReader,
+  schematicCounts?:ProjectSchematicCountsReader
 ) {
   return createMcpHandler(() => {
     const mcp = new McpServer({ name: "kicad-mcp-pro-cloud", version: "0.1.0" });
@@ -113,12 +119,16 @@ export function createCloudMcpHandler(
       inspect_board: {
         tool: "get_project_board_counts",
         enabled: Boolean(boardCounts)
+      },
+      inspect_schematic: {
+        tool: "get_project_schematic_counts",
+        enabled: Boolean(schematicCounts)
       }
     } as const;
     mcp.registerTool("discover_project_workflow",{
       description:"Find the currently enabled, project-authorized Cloud MCP tool for a read-only KiCad task. Reports missing capabilities without executing KiCad, switching projects or revealing local paths.",
       inputSchema:z.object({
-        task:z.enum(["inspect_engine","check_board_drc","check_project_files","inspect_board"]),
+        task:z.enum(["inspect_engine","check_board_drc", "check_project_files","inspect_board","inspect_schematic"]),
         project_id:z.string().uuid().optional()
       }),annotations:readonly
     },async ({task,project_id})=>{
@@ -191,6 +201,19 @@ export function createCloudMcpHandler(
         try{counts=await boardCounts(project.deviceId,project.id);}
         catch{counts=null;}
         return text(counts?{available:true,board:counts}:{available:false});
+      });
+    }
+    if(schematicCounts){
+      mcp.registerTool("get_project_schematic_counts",{
+        description:"Read bounded component, population, DNP and BOM counts from one granted local schematic. Never return symbols, names, file paths or design contents.",
+        inputSchema:z.object({project_id:z.string().uuid().optional()}),annotations:readonly
+      },async ({project_id})=>{
+        const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
+        if(!project)return text({available:false,selectionRequired});
+        let counts:ProjectSchematicCounts|null=null;
+        try{counts=await schematicCounts(project.deviceId,project.id);}
+        catch{counts=null;}
+        return text(counts?{available:true,counts}:{available:false});
       });
     }
     return mcp;

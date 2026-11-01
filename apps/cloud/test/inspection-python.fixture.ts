@@ -39,7 +39,8 @@ const privateKey=createPrivateKey(readFileSync(signerFile));
 const publicDer=createPublicKey(privateKey).export({format:"der",type:"spki"}) as Buffer;
 const owner="local-fixture-owner",clientId="local-fixture-client";
 const project="77777777-7777-4777-8777-777777777777";
-const mode=process.env.TEST_CONNECTOR_OPERATION==="board_counts"?
+const mode=process.env.TEST_CONNECTOR_OPERATION==="schematic_counts"?
+  "schematic_counts":process.env.TEST_CONNECTOR_OPERATION==="board_counts"?
   "board_counts":"inspection";
 
 async function main():Promise<void>{
@@ -95,6 +96,7 @@ async function main():Promise<void>{
       publicOrigin:origin,sourceOf:()=>"127.0.0.1",
       operatorLocalOnce:true,operatorInspectionOnce:true,
       operatorBoardCountsOnce:true,
+      operatorSchematicCountsOnce:true,
       proofs:new PgDeviceHandshakes(db),
       connections:new BoundConnectorConnections(
         new PgConnectorSessions(db),new PgConnectorReadGate(db))
@@ -102,7 +104,8 @@ async function main():Promise<void>{
     cloudHttp=createHttpServer(config,inventory,createVerifier(config,jwks),{
       summaryRelay:()=>connector,
       mcpProjectInspectionEnabled:true,
-      mcpProjectBoardCountsEnabled:true
+      mcpProjectBoardCountsEnabled:true,
+      mcpProjectSchematicCountsEnabled:true
     });
     try{
       process.stdout.write(JSON.stringify({origin,device,project,owner,jwt,foreignJwt,mode})+"\n");
