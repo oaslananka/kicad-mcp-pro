@@ -23,7 +23,10 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.exceptions import MCPError
 from test_isolated_tls_websocket_handshake import _synthetic_tls
 
-from kicad_mcp.cloud_outbound_handshake import execute_operator_inspection_once
+from kicad_mcp.cloud_outbound_handshake import (
+    execute_operator_board_counts_once,
+    execute_operator_inspection_once,
+)
 from kicad_mcp.cloud_project_worker_bridge import BoundConnectorProjectWorker
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
 
@@ -34,7 +37,10 @@ TSX = APP / "node_modules" / ".bin" / "tsx"
 
 
 @pytest.mark.anyio
-async def test_real_node_cloud_python_signed_wss_project_inspection(tmp_path: Path) -> None:
+@pytest.mark.parametrize("mode", ["inspection", "board_counts"])
+async def test_real_node_cloud_python_signed_wss_project_inspection(
+    tmp_path: Path, mode: str
+) -> None:
     raw_db = os.environ.get("TEST_DATABASE_URL")
     if not raw_db:
         pytest.skip("Disposable TEST_DATABASE_URL required for cross-language integration")
@@ -62,6 +68,11 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(tmp_path: Pa
     project_dir = tmp_path / "private-design"
     project_dir.mkdir()
     (project_dir / "board.kicad_pro").write_text('{"private":"DESIGN_NOT_FOR_CLOUD"}')
+    if mode == "board_counts":
+        from shutil import copyfile
+
+        source = ROOT / "tests/fixtures/benchmark_projects/pass_minimal_mcu_board/demo.kicad_pcb"
+        copyfile(source, project_dir / "board.kicad_pcb")
     cert_file = tmp_path / "temporary-test-server.crt"
     tls_key = tmp_path / "temporary-test-server.key"
     peer = await asyncio.create_subprocess_exec(
@@ -71,7 +82,7 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(tmp_path: Pa
         str(tls_key),
         str(key),
         cwd=str(APP),
-        env=os.environ.copy(),
+        env={**os.environ, "TEST_CONNECTOR_OPERATION": mode},
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -91,7 +102,13 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(tmp_path: Pa
                 verified=VerifiedLocalBinding(
                     device_id=receipt.device_id,
                     project_id=readiness["project"],
-                    operations=frozenset({"project_worker_inspection"}),
+                    operations=frozenset(
+                        {
+                            "project_board_counts"
+                            if mode == "board_counts"
+                            else "project_worker_inspection"
+                        }
+                    ),
                     session_id=receipt.session_id,
                     session_expires_unix_ms=expires,
                 ),
@@ -106,7 +123,11 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(tmp_path: Pa
 
         async with asyncio.TaskGroup() as tasks:
             outbound = tasks.create_task(
-                execute_operator_inspection_once(
+                (
+                    execute_operator_board_counts_once
+                    if mode == "board_counts"
+                    else execute_operator_inspection_once
+                )(
                     origin=readiness["origin"],
                     trusted_origin=readiness["origin"],
                     owner_sub=readiness["owner"],
@@ -155,8 +176,14 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(tmp_path: Pa
                 names = {tool.name for tool in available.tools}
                 assert "discover_project_workflow" in names
                 assert "get_project_engine_status" in names
+                assert "get_project_board_counts" in names
                 assert "get_project_drc_counts" not in names
                 assert "kicad_set_project" not in names
+                board_guide = await mcp.call_tool(
+                    "discover_project_workflow",
+                    {"task": "inspect_board", "project_id": readiness["project"]},
+                )
+                assert board_guide.structured_content["tools"] == ["get_project_board_counts"]
                 guide = await mcp.call_tool(
                     "discover_project_workflow",
                     {"task": "inspect_engine", "project_id": readiness["project"]},
@@ -184,26 +211,45 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(tmp_path: Pa
                         "kicad_set_project", {"project_dir": str(tmp_path / "different")}
                     )
                 response = await mcp.call_tool(
-                    "get_project_engine_status",
+                    "get_project_board_counts"
+                    if mode == "board_counts"
+                    else "get_project_engine_status",
                     {"project_id": readiness["project"]},
                     read_timeout_seconds=22,
                 )
                 assert response.is_error is not True
                 assert response.structured_content is not None
                 assert response.structured_content["available"] is True
-                status = response.structured_content["status"]
-                assert isinstance(status["engineVersion"], str)
-                assert type(status["cliAvailable"]) is bool
-                assert type(status["ipcAvailable"]) is bool
-                caps = status["capabilities"]
-                assert set(caps) == {
-                    "fileBackedDrc",
-                    "fileBackedErc",
-                    "livePcbRead",
-                    "liveSchematicRead",
-                }
-                assert all(type(value) is bool for value in caps.values())
-                assert "cliPath" not in str(status)
+                if mode == "board_counts":
+                    board = response.structured_content["board"]
+                    assert board["source"] == "file-backed"
+                    assert set(board) == {
+                        "source",
+                        "tracks",
+                        "vias",
+                        "footprints",
+                        "zones",
+                        "nets",
+                        "shapes",
+                    }
+                    assert board["footprints"] >= 1
+                    assert all(
+                        type(v) is int and v >= 0 for key, v in board.items() if key != "source"
+                    )
+                else:
+                    status = response.structured_content["status"]
+                    assert isinstance(status["engineVersion"], str)
+                    assert type(status["cliAvailable"]) is bool
+                    assert type(status["ipcAvailable"]) is bool
+                    caps = status["capabilities"]
+                    assert set(caps) == {
+                        "fileBackedDrc",
+                        "fileBackedErc",
+                        "livePcbRead",
+                        "liveSchematicRead",
+                    }
+                    assert all(type(value) is bool for value in caps.values())
+                    assert "cliPath" not in str(status)
                 assert "DESIGN_NOT_FOR_CLOUD" not in str(response.structured_content)
                 assert str(project_dir) not in str(response.structured_content)
                 assert "cliPath" not in str(response.structured_content)

@@ -60,12 +60,14 @@ def frame(**changes: object) -> dict[str, object]:
     return request
 
 
-def bound_worker(root: Path) -> BoundConnectorProjectWorker:
+def bound_worker(
+    root: Path, operation: str = "project_worker_inspection"
+) -> BoundConnectorProjectWorker:
     return BoundConnectorProjectWorker(
         verified=VerifiedLocalBinding(
             device_id=DEVICE,
             project_id=PROJECT,
-            operations=frozenset({"project_worker_inspection"}),
+            operations=frozenset({operation}),
             session_id=SESSION,
             session_expires_unix_ms=int(time.time() * 1000) + 80_000,
         ),
@@ -133,3 +135,44 @@ async def test_invalid_cloud_operation_never_launches_project_worker(
     # Wrong IDs may be checked by the bound local worker, which still cannot dispatch.
     if "operation" in change or "arguments" in change or "deadlineUnixMs" in change:
         assert not invoked or socket.sent == []
+
+
+@pytest.mark.anyio
+async def test_real_board_counts_never_transmit_raw_board_contents(tmp_path: Path) -> None:
+    from shutil import copyfile
+
+    root = tmp_path / "private-board"
+    root.mkdir()
+    (root / "board.kicad_pro").write_text("{}")
+    source = Path(__file__).resolve().parents[1] / (
+        "fixtures/benchmark_projects/pass_minimal_mcu_board/demo.kicad_pcb"
+    )
+    copyfile(source, root / "board.kicad_pcb")
+    socket = RecordingSocket(frame(operation="project_board_counts"))
+    await _complete_authorized_inspection(
+        socket,
+        HandshakeReceipt(DEVICE, SESSION),
+        lambda _receipt: bound_worker(root, "project_board_counts"),
+        board_counts=True,
+    )
+    result = socket.sent[0]["result"]
+    assert result["kind"] == "connector.local_board_counts"
+    assert result["source"] == "file-backed"
+    assert set(result["counts"]) == {"tracks", "vias", "footprints", "zones", "nets", "shapes"}
+    assert result["counts"]["footprints"] > 0
+    assert all(type(n) is int and n >= 0 for n in result["counts"].values())
+    assert str(root) not in json.dumps(socket.sent)
+    assert "fp_lib_table" not in json.dumps(socket.sent)
+
+
+@pytest.mark.anyio
+async def test_engine_status_consent_cannot_read_board_counts(tmp_path: Path) -> None:
+    socket = RecordingSocket(frame(operation="project_board_counts"))
+    with pytest.raises((CloudHandshakeDeniedError, ValueError)):
+        await _complete_authorized_inspection(
+            socket,
+            HandshakeReceipt(DEVICE, SESSION),
+            lambda _receipt: bound_worker(tmp_path),
+            board_counts=True,
+        )
+    assert socket.sent == []

@@ -48,10 +48,13 @@ const operatorLocalOnce=process.env.CONNECTOR_OPERATOR_ONESHOT_ENABLED==="true";
 // Separate owner-operated native DRC **count-only** pilot, OFF by default.
 const operatorNativeDrc=process.env.CONNECTOR_OPERATOR_NATIVE_DRC_ENABLED==="true";
 const operatorInspection=process.env.CONNECTOR_OPERATOR_INSPECTION_ENABLED==="true";
+const operatorBoardCounts=process.env.CONNECTOR_OPERATOR_BOARD_COUNTS_ENABLED==="true";
 if(operatorNativeDrc&&!operatorLocalOnce)
   throw Error("Native DRC requires the manually operated one-shot pilot");
 if(operatorInspection&&!operatorLocalOnce)
   throw Error("Project inspection requires the manually operated one-shot pilot");
+if(operatorBoardCounts&&!operatorLocalOnce)
+  throw Error("PCB counts require the manually operated one-shot pilot");
 if(operatorLocalOnce&&(!wsEnabled||!pairingDeviceEnabled||!identity||
     ownerConsentRuntime||process.env.OWNER_READ_CONSUMER_ENABLED==="true")){
   throw Error("Local one-shot pilot needs built-in identity, pairing and WS only");
@@ -73,7 +76,8 @@ let connectorRelay:ReturnType<typeof attachConnectorWebSocket>|null=null;
 const server=createHttpServer(config, inventory, createVerifier(config), {grants:inventory, identity:identity, devices:deviceManagement, pairings:pairingReview, pairingDevice:pairingDevice, deviceSource:deviceSource,
   mcpProjectPresenceEnabled:operatorLocalOnce,
   mcpProjectNativeDrcEnabled:operatorNativeDrc,
-  mcpProjectInspectionEnabled:operatorInspection,summaryRelay:()=>connectorRelay,
+  mcpProjectInspectionEnabled:operatorInspection,
+  mcpProjectBoardCountsEnabled:operatorBoardCounts,summaryRelay:()=>connectorRelay,
   ...(ownerIntentDelivery?{ownerIntentDelivery}:{})});
 const connectorWs=wsEnabled&&connectorPool?attachConnectorWebSocket(server,{
   publicOrigin:config.publicOrigin,
@@ -82,6 +86,7 @@ const connectorWs=wsEnabled&&connectorPool?attachConnectorWebSocket(server,{
   ...(ownerConsentRuntime?{ownerConsent:ownerConsentRuntime.consent}:{}),
   operatorLocalOnce,operatorNativeDrcOnce:operatorNativeDrc,
   operatorInspectionOnce:operatorInspection,
+  operatorBoardCountsOnce:operatorBoardCounts,
   connections:new BoundConnectorConnections(
     new PgConnectorSessions(connectorPool),
     new PgConnectorReadGate(connectorPool))

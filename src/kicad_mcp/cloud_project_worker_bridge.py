@@ -21,7 +21,7 @@ from kicad_mcp.project.stdio_worker import (
 # This capability is deliberately NOT issued by the present one-shot Cloud
 # connector. Existing project_summary/run_drc consent cannot be reused to
 # authorize an additional native MCP operation.
-_LOCAL_INSPECTION_CAPABILITY = "project_worker_inspection"
+_LOCAL_INSPECTION_CAPABILITIES = frozenset({"project_worker_inspection", "project_board_counts"})
 
 
 class BoundConnectorProjectWorker:
@@ -43,7 +43,8 @@ class BoundConnectorProjectWorker:
             not callable(current_authorization)
             or verified.device_id != operator_project.device_id
             or verified.project_id != operator_project.project_id
-            or verified.operations != frozenset({_LOCAL_INSPECTION_CAPABILITY})
+            or len(verified.operations) != 1
+            or not verified.operations.issubset(_LOCAL_INSPECTION_CAPABILITIES)
         ):
             raise ProjectWorkerDeniedError("project not authorized")
         # Resolve only the out-of-band, locally selected project. Cloud has no
@@ -76,6 +77,10 @@ class BoundConnectorProjectWorker:
             if not self._current_grant():
                 raise ProjectWorkerDeniedError("project not authorized")
             yield worker
+
+    def assert_operation_authorized(self, operation: str) -> None:
+        if self._verified.operations != frozenset({operation}) or not self._current_grant():
+            raise ProjectWorkerDeniedError("project not authorized")
 
     def assert_session_authorized(
         self, *, device_id: str, project_id: str, session_id: str

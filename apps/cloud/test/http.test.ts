@@ -1087,3 +1087,64 @@ test("manual project-engine status tool is explicit, scoped, path-free and revoc
     await new Promise<void>(done=>enabled.close(()=>done()));
   }
 });
+
+
+test("board-count MCP tool stays absent unless opted in and rechecks owner grants",async()=>{
+  let calls=0,active=true;
+  const scoped:Inventory={
+    ...inventory,
+    async getProject(owner,client,projectId){
+      if(!active)return null;
+      return inventory.getProject(owner,client,projectId);
+    }
+  };
+  const relay={
+    prepareOwnerSummary:testPrepared,
+    async requestSummary(){return null;},
+    prepareOwnerBoardCounts:(_oauth:TrustedOAuthReadIdentity,_device:string,
+      projectId:string)=>({...testPrepared(
+        {ownerSub:"user-a",clientId:"test-client",accessTokenIssuedAtSeconds:0},
+        mockProject.deviceId,projectId),operation:"project_board_counts" as const}),
+    async requestBoardCounts(_oauth:TrustedOAuthReadIdentity,_device:string,
+      projectId:string,intent:{requestId:string}){
+      calls++;
+      return {kind:"connector.local_board_counts" as const,version:1 as const,
+        requestId:intent.requestId,projectId,operation:"project_board_counts" as const,
+        source:"file-backed" as const,
+        counts:{tracks:2,vias:3,footprints:4,zones:5,nets:6,shapes:7}};
+    }
+  };
+  const enabled=createHttpServer(config,scoped,verify,{
+    summaryRelay:()=>relay,mcpProjectBoardCountsEnabled:true
+  });
+  await new Promise<void>(resolve=>enabled.listen(0,"127.0.0.1",resolve));
+  const origin="http://127.0.0.1:"+(enabled.address() as AddressInfo).port;
+  const invoke=async(token:string,projectId=id)=>{
+    const res=await fetch(origin+"/mcp",{
+      method:"POST",headers:headers(token,"tools/call","get_project_board_counts"),
+      body:payload("tools/call",{
+        name:"get_project_board_counts",arguments:{project_id:projectId}
+      })
+    });
+    return {status:res.status,text:JSON.stringify(await res.json())};
+  };
+  try{
+    const other=await invoke("test-user-b");
+    assert.equal(other.status,200);
+    assert.match(other.text,/"available":false/);
+    assert.equal(calls,0);
+    const granted=await invoke("test-user-a");
+    assert.equal(granted.status,200);
+    assert.match(granted.text,/"available":true/);
+    assert.match(granted.text,/"footprints":4/);
+    assert.doesNotMatch(granted.text,/localPath|board\.kicad_pcb/);
+    assert.equal(calls,1);
+    active=false;
+    const revoked=await invoke("test-user-a");
+    assert.match(revoked.text,/"available":false/);
+    assert.doesNotMatch(revoked.text,/"footprints"/);
+    assert.equal(calls,1);
+  }finally{
+    await new Promise<void>(resolve=>enabled.close(()=>resolve()));
+  }
+});

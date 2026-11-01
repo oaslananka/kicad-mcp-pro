@@ -70,7 +70,12 @@ class ProjectWorkerDeniedError(ValueError):
 # Explicitly approved local inspection tools; general remote MCP tool
 # forwarding requires a separate, verified operation-level contract.
 _SCOPED_INSPECTION_TOOLS = frozenset(
-    {"kicad_get_version", "kicad_get_project_info", "kicad_get_server_info"}
+    {
+        "kicad_get_version",
+        "kicad_get_project_info",
+        "kicad_get_server_info",
+        "pcb_get_board_summary",
+    }
 )
 
 

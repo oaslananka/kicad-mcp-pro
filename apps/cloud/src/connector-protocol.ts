@@ -9,7 +9,8 @@ export const ReadOperationSchema = z.enum([
   "project_summary",
   "run_drc",
   "run_erc",
-  "project_worker_inspection"
+  "project_worker_inspection",
+  "project_board_counts"
 ]);
 export type ReadOperation = z.infer<typeof ReadOperationSchema>;
 
@@ -19,7 +20,7 @@ export const ConnectorHelloSchema = z.strictObject({
   deviceId: z.uuid(),
   instanceId: z.uuid(),
   engineVersion: z.string().min(1).max(80).regex(/^[a-zA-Z0-9][a-zA-Z0-9.+_-]*$/),
-  capabilities: z.array(ReadOperationSchema).max(4).refine(
+  capabilities: z.array(ReadOperationSchema).max(5).refine(
     items => new Set(items).size === items.length,
     "duplicate capability"
   )

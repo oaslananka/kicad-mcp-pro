@@ -49,6 +49,15 @@ project and rechecks authorization before routing. If multiple projects are
 granted, the AI client must call `list_projects` and supply an explicit
 `project_id`. An absent or revoked grant never falls back to a local path.
 
+The separate, default-off `get_project_board_counts` operation exposes
+only numeric tracks, vias, footprints, zones, nets, and shapes plus the
+`live-gui` or `file-backed` source label. It reuses the existing project-local
+`pcb_get_board_summary` tool without forwarding its text, findings, file
+paths or design contents. Cloud requires both `CONNECTOR_OPERATOR_ONESHOT_ENABLED`
+and `CONNECTOR_OPERATOR_BOARD_COUNTS_ENABLED`; the local owner must start
+`--board-counts-once` explicitly for that project. The engine-status,
+presence and DRC grants do not authorize this operation.
+
 The separately gated `get_project_engine_status` MCP tool is a manual
 **one-shot** outbound Connector test. It requires both
 `CONNECTOR_OPERATOR_ONESHOT_ENABLED=true` and

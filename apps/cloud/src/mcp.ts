@@ -26,6 +26,12 @@ export type ProjectInspectionStatus=Readonly<{
 }>;
 export type ProjectInspectionReader=
   (deviceId:string,projectId:string)=>Promise<ProjectInspectionStatus|null>;
+export type ProjectBoardCounts=Readonly<{
+  source:"live-gui"|"file-backed";
+  tracks:number;vias:number;footprints:number;zones:number;nets:number;shapes:number;
+}>;
+export type ProjectBoardCountsReader=
+  (deviceId:string,projectId:string)=>Promise<ProjectBoardCounts|null>;
 
 // The local device owns the actual project. This Cloud lookup only resolves
 // an already granted opaque project ID for the current OAuth client. A lone
@@ -50,7 +56,8 @@ async function resolveScopedProject(
 
 export function createCloudMcpHandler(
   inventory: Inventory, actor: Actor, projectPresence?:ProjectPresenceReader,
-  projectDrc?:ProjectDrcReader, projectInspection?:ProjectInspectionReader
+  projectDrc?:ProjectDrcReader, projectInspection?:ProjectInspectionReader,
+  boardCounts?:ProjectBoardCountsReader
 ) {
   return createMcpHandler(() => {
     const mcp = new McpServer({ name: "kicad-mcp-pro-cloud", version: "0.1.0" });
@@ -102,12 +109,16 @@ export function createCloudMcpHandler(
       check_project_files: {
         tool: "get_project_presence",
         enabled: Boolean(projectPresence)
+      },
+      inspect_board: {
+        tool: "get_project_board_counts",
+        enabled: Boolean(boardCounts)
       }
     } as const;
     mcp.registerTool("discover_project_workflow",{
       description:"Find the currently enabled, project-authorized Cloud MCP tool for a read-only KiCad task. Reports missing capabilities without executing KiCad, switching projects or revealing local paths.",
       inputSchema:z.object({
-        task:z.enum(["inspect_engine","check_board_drc","check_project_files"]),
+        task:z.enum(["inspect_engine","check_board_drc","check_project_files","inspect_board"]),
         project_id:z.string().uuid().optional()
       }),annotations:readonly
     },async ({task,project_id})=>{
@@ -167,6 +178,19 @@ export function createCloudMcpHandler(
         try{status=await projectInspection(project.deviceId,project.id);}
         catch{status=null;}
         return text(status?{available:true,status}:{available:false});
+      });
+    }
+    if(boardCounts){
+      mcp.registerTool("get_project_board_counts",{
+        description:"Read only aggregate footprint, net, track, via, zone and shape counts from one owner-approved local PCB; no board contents or local paths.",
+        inputSchema:z.object({project_id:z.string().uuid().optional()}),annotations:readonly
+      },async ({project_id})=>{
+        const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
+        if(!project)return text({available:false,selectionRequired});
+        let counts:ProjectBoardCounts|null=null;
+        try{counts=await boardCounts(project.deviceId,project.id);}
+        catch{counts=null;}
+        return text(counts?{available:true,board:counts}:{available:false});
       });
     }
     return mcp;

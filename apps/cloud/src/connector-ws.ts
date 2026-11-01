@@ -33,8 +33,11 @@ export type PreparedOwnerDrc=Omit<PreparedOwnerSummary,"operation">&{
 export type PreparedOwnerInspection=Omit<PreparedOwnerSummary,"operation">&{
   operation:"project_worker_inspection";
 };
-type PreparedRead=PreparedOwnerSummary|PreparedOwnerDrc|PreparedOwnerInspection;
-type ReadOperation="project_summary"|"run_drc"|"project_worker_inspection";
+export type PreparedOwnerBoardCounts=Omit<PreparedOwnerSummary,"operation">&{
+  operation:"project_board_counts";
+};
+type PreparedRead=PreparedOwnerSummary|PreparedOwnerDrc|PreparedOwnerInspection|PreparedOwnerBoardCounts;
+type ReadOperation="project_summary"|"run_drc"|"project_worker_inspection"|"project_board_counts";
 type State="new"|"device_challenge"|"session_challenge"|"ready"|"closed";
 export type SummaryReadResult={
   kind:"connector.local_read_preview";version:1;requestId:string;
@@ -55,7 +58,13 @@ export type InspectionReadResult={
       livePcbRead:boolean;liveSchematicRead:boolean};
   };
 };
-type ReadResult=SummaryReadResult|DrcReadResult|InspectionReadResult;
+export type BoardCountsReadResult={
+  kind:"connector.local_board_counts";version:1;requestId:string;
+  projectId:string;operation:"project_board_counts";
+  source:"live-gui"|"file-backed";
+  counts:{tracks:number;vias:number;footprints:number;zones:number;nets:number;shapes:number};
+};
+type ReadResult=SummaryReadResult|DrcReadResult|InspectionReadResult|BoardCountsReadResult;
 type PendingRead={requestId:string;projectId:string;operation:ReadOperation;
   deadline:number;monotonicDeadline:number;
   resolve:(value:ReadResult|null)=>void;timer:NodeJS.Timeout};
@@ -102,6 +111,19 @@ const readResult=z.strictObject({
           fileBackedDrc:z.boolean(),fileBackedErc:z.boolean(),
           livePcbRead:z.boolean(),liveSchematicRead:z.boolean()
         })
+      })
+    }),
+    z.strictObject({
+      kind:z.literal("connector.local_board_counts"),version:z.literal(1),
+      requestId:z.uuid(),projectId:z.uuid(),operation:z.literal("project_board_counts"),
+      source:z.enum(["live-gui","file-backed"]),
+      counts:z.strictObject({
+        tracks:z.number().int().nonnegative().max(1_000_000),
+        vias:z.number().int().nonnegative().max(1_000_000),
+        footprints:z.number().int().nonnegative().max(1_000_000),
+        zones:z.number().int().nonnegative().max(1_000_000),
+        nets:z.number().int().nonnegative().max(1_000_000),
+        shapes:z.number().int().nonnegative().max(1_000_000)
       })
     })  ])
 });
@@ -163,6 +185,7 @@ export function attachConnectorWebSocket(
     operatorNativeDrcOnce?:boolean;
     // Separate manually started, one-shot project worker inspection.
     operatorInspectionOnce?:boolean;
+    operatorBoardCountsOnce?:boolean;
     maxConnections?:number;
     sourceOf:RequestSourceResolver;
   }
@@ -178,7 +201,11 @@ export function attachConnectorWebSocket(
   prepareOwnerInspection:(oauth:TrustedOAuthReadIdentity,deviceId:string,
     projectId:string)=>PreparedOwnerInspection|null;
   requestInspection:(oauth:TrustedOAuthReadIdentity,deviceId:string,
-    projectId:string,prepared?:PreparedOwnerInspection)=>Promise<InspectionReadResult|null>}{
+    projectId:string,prepared?:PreparedOwnerInspection)=>Promise<InspectionReadResult|null>;
+  prepareOwnerBoardCounts:(oauth:TrustedOAuthReadIdentity,deviceId:string,
+    projectId:string)=>PreparedOwnerBoardCounts|null;
+  requestBoardCounts:(oauth:TrustedOAuthReadIdentity,deviceId:string,
+    projectId:string,prepared?:PreparedOwnerBoardCounts)=>Promise<BoardCountsReadResult|null>}{
   // Never let a lightweight pilot setting downgrade an independent owner
   // approval dependency, even when used outside the production entrypoint.
   if(options.operatorLocalOnce&&options.ownerConsent)
@@ -187,6 +214,8 @@ export function attachConnectorWebSocket(
     throw Error("Native DRC pilot requires explicit local one-shot mode");
   if(options.operatorInspectionOnce&&!options.operatorLocalOnce)
     throw Error("Project inspection requires explicit local one-shot mode");
+  if(options.operatorBoardCountsOnce&&!options.operatorLocalOnce)
+    throw Error("PCB counts require explicit local one-shot mode");
   const wss=new WebSocketServer({noServer:true,perMessageDeflate:false,
     maxPayload:1024,clientTracking:true});
   const sockets=new Set<WebSocket>();
@@ -433,6 +462,8 @@ export function attachConnectorWebSocket(
       return null;
     if(operation==="project_worker_inspection"&&
        !(options.operatorLocalOnce&&options.operatorInspectionOnce))return null;
+    if(operation==="project_board_counts"&&
+       !(options.operatorLocalOnce&&options.operatorBoardCountsOnce))return null;
     if(stopped||(!options.ownerConsent&&!options.operatorLocalOnce)||!oauth||
        typeof oauth.ownerSub!=="string"||!oauth.ownerSub||
        typeof oauth.clientId!=="string"||!oauth.clientId||
@@ -475,6 +506,11 @@ export function attachConnectorWebSocket(
     return prepareRead(oauth,deviceId,projectId,
       "project_worker_inspection") as PreparedOwnerInspection|null;
   }
+  function prepareOwnerBoardCounts(oauth:TrustedOAuthReadIdentity,
+    deviceId:string,projectId:string):PreparedOwnerBoardCounts|null{
+    return prepareRead(oauth,deviceId,projectId,
+      "project_board_counts") as PreparedOwnerBoardCounts|null;
+  }
 
   async function requestRead(oauth:TrustedOAuthReadIdentity,deviceId:string,
     projectId:string,prepared:PreparedRead|undefined,
@@ -483,6 +519,8 @@ export function attachConnectorWebSocket(
       return null;
     if(operation==="project_worker_inspection"&&
        !(options.operatorLocalOnce&&options.operatorInspectionOnce))return null;
+    if(operation==="project_board_counts"&&
+       !(options.operatorLocalOnce&&options.operatorBoardCountsOnce))return null;
     if(stopped||(!options.ownerConsent&&!options.operatorLocalOnce)||!oauth||typeof oauth.ownerSub!=="string"||
       !/^[0-9a-f-]{36}$/i.test(deviceId)||
       !/^[0-9a-f-]{36}$/i.test(projectId))return null;
@@ -627,8 +665,14 @@ export function attachConnectorWebSocket(
     return result?.operation==="project_worker_inspection"?result:null;
   }
 
+  async function requestBoardCounts(oauth:TrustedOAuthReadIdentity,deviceId:string,
+    projectId:string,prepared?:PreparedOwnerBoardCounts):Promise<BoardCountsReadResult|null>{
+    const result=await requestRead(oauth,deviceId,projectId,prepared,"project_board_counts");
+    return result?.operation==="project_board_counts"?result:null;
+  }
   return {prepareOwnerSummary,requestSummary,prepareOwnerDrc,requestDrc,
-    prepareOwnerInspection,requestInspection,close:async()=>{
+    prepareOwnerInspection,requestInspection,prepareOwnerBoardCounts,requestBoardCounts,
+    close:async()=>{
     if(stopped)return;
     stopped=true;
     clearInterval(heartbeat);

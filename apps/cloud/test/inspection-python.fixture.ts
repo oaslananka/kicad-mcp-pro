@@ -39,6 +39,8 @@ const privateKey=createPrivateKey(readFileSync(signerFile));
 const publicDer=createPublicKey(privateKey).export({format:"der",type:"spki"}) as Buffer;
 const owner="local-fixture-owner",clientId="local-fixture-client";
 const project="77777777-7777-4777-8777-777777777777";
+const mode=process.env.TEST_CONNECTOR_OPERATION==="board_counts"?
+  "board_counts":"inspection";
 
 async function main():Promise<void>{
   await inIsolatedDatabase(url!,names,async db=>{
@@ -92,16 +94,18 @@ async function main():Promise<void>{
     const connector=attachConnectorWebSocket(server,{
       publicOrigin:origin,sourceOf:()=>"127.0.0.1",
       operatorLocalOnce:true,operatorInspectionOnce:true,
+      operatorBoardCountsOnce:true,
       proofs:new PgDeviceHandshakes(db),
       connections:new BoundConnectorConnections(
         new PgConnectorSessions(db),new PgConnectorReadGate(db))
     });
     cloudHttp=createHttpServer(config,inventory,createVerifier(config,jwks),{
       summaryRelay:()=>connector,
-      mcpProjectInspectionEnabled:true
+      mcpProjectInspectionEnabled:true,
+      mcpProjectBoardCountsEnabled:true
     });
     try{
-      process.stdout.write(JSON.stringify({origin,device,project,owner,jwt,foreignJwt})+"\n");
+      process.stdout.write(JSON.stringify({origin,device,project,owner,jwt,foreignJwt,mode})+"\n");
       // Session database activation is a read-only readiness signal:
       // never reserve the owner intent before the real SDK tool call.
       let active=false;
