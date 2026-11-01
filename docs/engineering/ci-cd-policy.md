@@ -25,6 +25,13 @@ categories.
 | Category | File Patterns |
 |----------|--------------|
 | **docs** | `docs/**`, `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `CODE_OF_CONDUCT.md`, `GOVERNANCE.md`, `MAINTAINERS.md`, `ROADMAP.md`, `SECURITY.md`, `SUPPORT.md`, `ARCHITECTURE.md`, `CITATION.cff`, `LICENSE`, `mkdocs.yml`, `assets/**` |
+
+The Cloud service lives under `apps/cloud/` and has a dedicated **Cloud CI**
+workflow. Changes to its runtime lockfile and Dockerfile also enter the
+repository's dependency and tooling classification, so dependency review and
+filesystem scanning cannot silently ignore the moved runtime. The Cloud CI
+workflow runs its full Node suite against a disposable PostgreSQL 17 service;
+its separate build does not publish or deploy the Cloud image.
 | **python** | `src/**`, `tests/**`, `pyproject.toml`, `uv.lock`, `uv.toml`, `scripts/**`, `conftest.py`, `pyrightconfig.json`, `.python-version`, `performance/**`, `evals/**` |
 | **repo_tooling** | `package.json`, `pnpm-workspace.yaml`, `Dockerfile`, `docker-compose.yml`, `lefthook.yml`, `.pre-commit-config.yaml`, `Taskfile.yml`, `.mergify.yml`, `.github/dependabot.yml`, `.github/rulesets/**`, `sonar-project.properties`, `AGENTS.md`, `**/AGENTS.md` |
 | **npm** | `packages/**`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.node-version`, `.npmrc`, `commitlint.config.cjs`, `.commitlintrc.json` |

@@ -23,6 +23,24 @@ concurrency:
 jobs:
   cloud:
     runs-on: ubuntu-24.04
+    # Disposable PostgreSQL fixture runs all DB/connector integration tests.
+    # The credentials below are isolated CI-only values, never production data.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: kicad_test
+          POSTGRES_PASSWORD: local_ci_fixture_only
+          POSTGRES_DB: kicad_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kicad_test -d kicad_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://kicad_test:local_ci_fixture_only@127.0.0.1:5432/kicad_test
     defaults:
       run:
         working-directory: apps/cloud
