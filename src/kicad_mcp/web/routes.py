@@ -179,20 +179,34 @@ def _mcp_snippet_for_client(client: str) -> tuple[object, str]:
     """Build a client-specific MCP config snippet and format label."""
     cfg = get_config()
     server_name = "kicad-mcp-pro"
+    # These snippets start a dedicated local MCP process using stdio.
+    # Inheriting the dashboard's HTTP transport would attempt to bind its
+    # port again and would not speak MCP over the client's stdin/stdout.
     args = [f"{server_name}@{__version__}"]
-    if cfg.transport != "stdio":
-        args.extend(["--transport", cfg.transport, "--port", str(cfg.port)])
-    stdio_server = {"command": "uvx", "args": args, "env": {}}
+    # A generated client config launches a NEW process. Without carrying the
+    # dashboard's project/profile selection, that process silently reverts to
+    # its own working directory and default tool surface.
+    env = {
+        "KICAD_MCP_PROFILE": cfg.profile,
+        "KICAD_MCP_OPERATING_MODE": active_operating_mode(cfg).value,
+    }
+    if cfg.project_dir is not None:
+        env["KICAD_MCP_PROJECT_DIR"] = str(cfg.project_dir)
+    stdio_server = {"command": "uvx", "args": args, "env": env}
 
     if client == "vscode":
         return {"servers": {server_name: {"type": "stdio", **stdio_server}}}, "json"
     if client == "codex":
+        env_values = ", ".join(
+            f"{name} = {json.dumps(value, ensure_ascii=False)}" for name, value in env.items()
+        )
         return (
             "\n".join(
                 [
                     f"[mcp_servers.{server_name}]",
                     'command = "uvx"',
                     f"args = {json.dumps(args)}",
+                    f"env = {{ {env_values} }}",
                 ]
             ),
             "toml",
@@ -403,6 +417,22 @@ async def api_config_post(request: Request) -> JSONResponse:
 
     # Filter body to only contain safe config keys
     safe_body = {k: v for k, v in body.items() if k in ALLOWED_CONFIG_KEYS}
+
+    # The onboarding wizard exports this path to an independent local MCP
+    # process. Reject a mistyped folder before changing the active project.
+    if "project_dir" in safe_body and safe_body["project_dir"] != "":
+        raw_project = safe_body["project_dir"]
+        if not isinstance(raw_project, str) or len(raw_project) > 4096:
+            return JSONResponse(
+                {"error": "Project must be an existing local folder."}, status_code=400
+            )
+        candidate = Path(raw_project).expanduser()
+        if not candidate.is_absolute() or not candidate.is_dir():
+            return JSONResponse(
+                {"error": "Project must be an existing absolute local folder."},
+                status_code=400,
+            )
+        safe_body["project_dir"] = str(candidate.resolve())
 
     with _config_post_lock:
         for key, value in safe_body.items():
