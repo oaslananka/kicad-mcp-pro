@@ -8,14 +8,23 @@ Configuration is resolved in this order:
 4. `~/.config/kicad-mcp-pro/config.toml`
 5. Built-in defaults
 
-The active project can also be changed at runtime with `kicad_set_project()`.
+The active project can also be changed at runtime with `kicad_set_project()`
+in a dedicated local `stdio` MCP process.
 
-**One active project per server process:** project selection is process-wide, not
-scoped to an HTTP request or MCP session. Run separate server processes (and
-project-specific workspace roots) for independent projects or users. Do not
-use one shared HTTP server as a multi-tenant editing service. For a single
-local trusted client, switching the active project intentionally changes which
-project subsequent tool calls operate on.
+**One active project per server process:** project selection is process-wide,
+not scoped to an HTTP request or MCP session. A shared Streamable HTTP server
+pins the selected project at the first tool call. Calls to
+`kicad_set_project` and `kicad_create_new_project` over that HTTP endpoint
+are rejected, and the browser dashboard cannot change the active project's
+paths after an HTTP tool call has started. A change made outside the dashboard
+is detected and later HTTP calls fail rather than silently targeting it.
+
+Choose the project before connecting HTTP clients, or restart the HTTP server
+to select another project. For independent projects or users, launch separate
+MCP processes (the generated local client configurations already launch
+dedicated `stdio` instances). This interim binding does **not** provide
+multiple independently selectable projects inside one shared HTTP process;
+do not use it as a multi-tenant KiCad editing engine.
 
 ## Operating Modes
 

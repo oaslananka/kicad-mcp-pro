@@ -98,6 +98,7 @@ from .operating_modes import (
     filter_tools_for_mode,
     is_tool_allowed_in_mode,
 )
+from .project.http_binding import PROJECT_SELECTION_TOOLS, HttpProjectBinding
 from .tools import footprint as _footprint
 from .tools import jobset as _jobset
 from .tools import router
@@ -1197,8 +1198,14 @@ class KiCadFastMCP(FastMCP):
             host=resolved_host,
         )
         cfg = get_config()
+        project_binding = HttpProjectBinding()
+        app.state.http_project_binding = project_binding
         app.add_middleware(_DashboardAuthMiddleware)
-        app.add_middleware(_StreamableHttpContractMiddleware, max_sessions=max_sessions)
+        app.add_middleware(
+            _StreamableHttpContractMiddleware,
+            max_sessions=max_sessions,
+            project_binding=project_binding,
+        )
         if cfg.legacy_sse:
             sse_routes = (
                 super()
@@ -1466,13 +1473,19 @@ class _McpPostBodyLimitMiddleware:
 class _StreamableHttpContractMiddleware:
     """Normalize the public Streamable HTTP contract before FastMCP handles it."""
 
-    def __init__(self, app: ASGIApp, max_sessions: int | None = 10_000) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        max_sessions: int | None = 10_000,
+        project_binding: HttpProjectBinding | None = None,
+    ) -> None:
         if max_sessions is not None and max_sessions <= 0:
             raise ValueError("max_sessions must be positive or None")
         self.app = app
         self._session_cache_limit = max_sessions
         self._session_ids: set[str] = set()
         self._session_order: deque[str] = deque()
+        self._project_binding = project_binding
 
     async def _handle_delete(
         self,
@@ -1651,6 +1664,36 @@ class _StreamableHttpContractMiddleware:
         ):
             return
 
+        if rpc_method == "tools/call" and self._project_binding is not None:
+            if not self._project_binding.check_and_pin(get_config()):
+                await _streamable_http_error_response(
+                    code=-32009,
+                    message=(
+                        "The shared HTTP project's configuration changed; restart this MCP server."
+                    ),
+                    rpc_id=rpc_id,
+                    status_code=409,
+                    scope=scope,
+                    receive=replay_receive,
+                    send=send_proc,
+                )
+                return
+            if _json_rpc_tool_name(body) in PROJECT_SELECTION_TOOLS:
+                await _streamable_http_error_response(
+                    code=-32009,
+                    message=(
+                        "A shared HTTP process cannot switch the active KiCad project. "
+                        "Choose the project before connecting, or use a separate local "
+                        "stdio MCP process for another project."
+                    ),
+                    rpc_id=rpc_id,
+                    status_code=409,
+                    scope=scope,
+                    receive=replay_receive,
+                    send=send_proc,
+                )
+                return
+
         session_id = headers.get("mcp-session-id", "")
 
         async def send_wrapper(message: Message) -> None:
@@ -1780,6 +1823,21 @@ def _json_rpc_metadata(body: bytes) -> tuple[object | None, str | None]:
     rpc_id = payload.get("id")
     rpc_method = payload.get("method")
     return rpc_id, rpc_method if isinstance(rpc_method, str) else None
+
+
+def _json_rpc_tool_name(body: bytes) -> str | None:
+    """Inspect the JSON-RPC payload rather than trusting a spoofable tool header."""
+    try:
+        payload = json.loads(body)
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    params = payload.get("params")
+    if not isinstance(params, dict):
+        return None
+    name = params.get("name")
+    return name if isinstance(name, str) else None
 
 
 def _json_rpc_protocol_version(body: bytes) -> str | None:

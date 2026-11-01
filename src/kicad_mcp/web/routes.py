@@ -29,6 +29,7 @@ from ..ipc.capabilities import get_ipc_capability_state
 from ..models.live_preview import LivePreviewManifest
 from ..operating_modes import active_operating_mode
 from ..path_safety import resolve_under
+from ..project.http_binding import PROJECT_CONFIG_FIELDS, HttpProjectBinding
 from ..tools.router import available_profiles, tool_count_for_profile
 from .dashboard import DASHBOARD_HTML
 from .state import get_metrics_snapshot, get_server_handle, get_start_time
@@ -418,6 +419,10 @@ async def api_config_post(request: Request) -> JSONResponse:
     # Filter body to only contain safe config keys
     safe_body = {k: v for k, v in body.items() if k in ALLOWED_CONFIG_KEYS}
 
+    # Once shared HTTP clients are using this engine, the selected project
+    # cannot change underneath another client's in-flight operation.
+    boundary = getattr(getattr(request, "app", None), "state", None)
+    binding = getattr(boundary, "http_project_binding", None)
     # The onboarding wizard exports this path to an independent local MCP
     # process. Reject a mistyped folder before changing the active project.
     if "project_dir" in safe_body and safe_body["project_dir"] != "":
@@ -434,15 +439,26 @@ async def api_config_post(request: Request) -> JSONResponse:
             )
         safe_body["project_dir"] = str(candidate.resolve())
 
-    with _config_post_lock:
-        for key, value in safe_body.items():
-            env_key = f"KICAD_MCP_{key.upper()}"
-            os.environ[env_key] = str(value)
-            applied.append(key)
+    def apply_settings() -> None:
+        with _config_post_lock:
+            for key, value in safe_body.items():
+                env_key = f"KICAD_MCP_{key.upper()}"
+                os.environ[env_key] = str(value)
+                applied.append(key)
+            if applied:
+                reset_config()
+                logger.info("config_updated_via_api", keys=applied)
 
-        if applied:
-            reset_config()
-            logger.info("config_updated_via_api", keys=applied)
+    if isinstance(binding, HttpProjectBinding):
+        with binding.configuration_update() as can_select:
+            if not can_select and PROJECT_CONFIG_FIELDS.intersection(safe_body):
+                return JSONResponse(
+                    {"error": "The HTTP project is active. Restart to select another project."},
+                    status_code=409,
+                )
+            apply_settings()
+    else:
+        apply_settings()
 
     payload = _config_public_payload()
     result = {
