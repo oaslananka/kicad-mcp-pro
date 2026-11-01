@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 from pathlib import Path
+from subprocess import TimeoutExpired  # nosec B404
 from types import SimpleNamespace
 
 import pytest
@@ -111,7 +111,8 @@ def test_fail_closed_on_native_or_output_failure(
 
     def fail(argv: list[str], **kwargs: object) -> SimpleNamespace:
         if mode == "timeout":
-            raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+            # A mocked exception is not a process spawn.
+            raise TimeoutExpired(argv, kwargs["timeout"])
         if mode == "bad_json":
             Path(argv[6]).write_text('{"violations":[]}', encoding="utf-8")
         if mode == "failure":

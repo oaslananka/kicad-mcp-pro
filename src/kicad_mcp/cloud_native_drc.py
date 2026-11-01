@@ -1,7 +1,7 @@
 """Opt-in local-only native KiCad DRC counts on an isolated project copy.
 
-NOT wired to Cloud transport/MCP. A future native remote operation needs
-a separately reviewed owner approval and authenticated request boundary.
+Cloud dispatch exposes this only after a separately authorized signed,
+single-project, one-use device session. No arbitrary subprocess input.
 """
 
 from __future__ import annotations
@@ -10,7 +10,9 @@ import json
 import os
 import shutil
 import stat
-import subprocess
+
+# Only KiCad CLI is permitted, with no shell and an immutable argument layout.
+import subprocess  # nosec B404
 import tempfile
 from pathlib import Path
 
@@ -98,7 +100,12 @@ def summarize_native_pcb_drc(policy: OperatorProject) -> dict[str, int]:
             output = folder / "drc.json"
             _copy_bound_file(fd, board.name, board, _MAX_PCB_BYTES, required=True)
             _copy_bound_file(fd, project.name, project, _MAX_PROJECT_BYTES, required=False)
-            completed = subprocess.run(
+            # Owner-selected project stem is validated, and source files are
+            # copied without symlinks/hardlinks into a private scratch folder.
+            # Executable is resolved from the owner process PATH; shell=False,
+            # arguments are fixed and not interpolated as a command string.
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit  # noqa: E501
+            completed = subprocess.run(  # nosec B603
                 [
                     executable,
                     "pcb",
