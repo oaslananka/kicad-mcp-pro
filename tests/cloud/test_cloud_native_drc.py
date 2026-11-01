@@ -111,8 +111,8 @@ def test_fail_closed_on_native_or_output_failure(
 
     def fail(argv: list[str], **kwargs: object) -> SimpleNamespace:
         if mode == "timeout":
-            # A mocked exception is not a process spawn.
-            raise TimeoutExpired(argv, kwargs["timeout"])
+            # Model KiCad CLI timing out with a fixed command and time limit.
+            raise TimeoutExpired("kicad-cli", 40)
         if mode == "bad_json":
             Path(argv[6]).write_text('{"violations":[]}', encoding="utf-8")
         if mode == "failure":
