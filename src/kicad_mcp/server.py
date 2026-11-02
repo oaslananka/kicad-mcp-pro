@@ -1652,12 +1652,7 @@ class _StreamableHttpContractMiddleware:
             await original_send(message)
 
         send_proc = post_request_send
-        if rpc_method == "initialize" and cfg.protocol_lane == "stable":
-            logger.info(
-                "mcp_transport_initialize",
-                request_id=rpc_id,
-                mcp_session_id=headers.get("mcp-session-id") or None,
-            )
+        _log_stable_http_initialize(rpc_method, cfg, rpc_id, headers)
 
         if not await self._validate_post_headers(
             headers, body, rpc_id, rpc_method, cfg, scope, replay_receive, send_proc
@@ -1760,6 +1755,21 @@ class _StreamableHttpContractMiddleware:
             otel.record_session_delta(-1)
         with contextlib.suppress(ValueError):
             self._session_order.remove(session_id)
+
+
+def _log_stable_http_initialize(
+    rpc_method: str | None,
+    cfg: KiCadMCPConfig,
+    rpc_id: object | None,
+    headers: Mapping[str, str],
+) -> None:
+    """Report stable initialization without changing any HTTP response flow."""
+    if rpc_method == "initialize" and cfg.protocol_lane == "stable":
+        logger.info(
+            "mcp_transport_initialize",
+            request_id=rpc_id,
+            mcp_session_id=headers.get("mcp-session-id") or None,
+        )
 
 
 async def _buffer_request_body(receive: Receive) -> tuple[bytes, Receive]:
