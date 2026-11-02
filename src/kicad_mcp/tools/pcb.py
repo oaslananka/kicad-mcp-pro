@@ -81,6 +81,7 @@ from ..pcb.footprint_transform import (
     FootprintRotationError,
     RotationAttribute,
     apply_footprint_rotation,
+    get_current_footprint_rotation,
     verify_footprint_rotation,
 )
 from ..pcb.groups_inspection import PcbGroupsInspectionService
@@ -3525,9 +3526,9 @@ def _register_footprint_placement_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     @requires_kicad_running
     def pcb_move_component(
-        reference: str, x_mm: float, y_mm: float, rotation_deg: float = 0.0
+        reference: str, x_mm: float, y_mm: float, rotation_deg: float | None = None
     ) -> str:
-        """Move a PCB component by reference using the live footprint operation."""
+        """Move a component, preserving its angle unless rotation_deg is explicitly provided."""
         return str(
             pcb_move_footprint(
                 reference=reference,
@@ -3540,15 +3541,19 @@ def _register_footprint_placement_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     @requires_kicad_running
     def pcb_move_footprint(
-        reference: str, x_mm: float, y_mm: float, rotation_deg: float = 0.0
+        reference: str, x_mm: float, y_mm: float, rotation_deg: float | None = None
     ) -> str:
-        """Move a footprint to an absolute location."""
+        """Move a footprint, preserving its angle unless rotation_deg is explicitly provided."""
         footprint = _find_footprint_by_reference(reference)
         if footprint is None:
             return f"Footprint '{reference}' was not found on the active board."
 
         footprint.position = Vector2.from_xy_mm(x_mm, y_mm)
-        rotation_attribute = apply_footprint_rotation(footprint, rotation_deg)
+        if rotation_deg is None:
+            rotation_attribute, expected_rotation = get_current_footprint_rotation(footprint)
+        else:
+            rotation_attribute = apply_footprint_rotation(footprint, rotation_deg)
+            expected_rotation = rotation_deg
         transaction_active = _native_live_transaction_active()
         execute_live_board_mutation(
             "pcb_move_footprint",
@@ -3562,7 +3567,7 @@ def _register_footprint_placement_tools(mcp: FastMCP) -> None:
                         x_mm=x_mm,
                         y_mm=y_mm,
                         rotation_attribute=rotation_attribute,
-                        rotation_deg=rotation_deg,
+                        rotation_deg=expected_rotation,
                     )
                 )
                 if transaction_active
@@ -3581,7 +3586,7 @@ def _register_footprint_placement_tools(mcp: FastMCP) -> None:
         actual_rotation = verify_footprint_rotation(
             refreshed,
             rotation_attribute,
-            rotation_deg,
+            expected_rotation,
         )
         return (
             f"Moved footprint '{reference}' to ({x_mm}, {y_mm}) mm "
