@@ -1,0 +1,9 @@
+PCB Task Outcome — native-live-transaction-example v1
+Attempts: 1 total; 1 valid; 0 infrastructure-invalid; 1 successful; 0 failed
+PCB Design Task Success Rate: 100.0% (1/1; target >=95.0%; insufficient_evidence)
+Mutation Recovery: 100.0% (1/1; target >=99.0%; insufficient_evidence)
+File Corruption: 0 incidents (insufficient_evidence)
+Required DRC Execution: 100.0% (1/1; target >=100.0%; insufficient_evidence)
+Manufacturing Reproducibility: n/a (0/0; target >=100.0%; insufficient_evidence)
+Integrity: 0 duplicate applications; 0 state divergences
+Failure Categories: none

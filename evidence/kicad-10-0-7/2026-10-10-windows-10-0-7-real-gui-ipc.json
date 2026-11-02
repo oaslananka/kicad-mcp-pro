@@ -1,0 +1,28 @@
+{
+  "desktop": {
+    "explorerPresent": true,
+    "sessionZero": false,
+    "userInteractive": true
+  },
+  "editorReadiness": null,
+  "evidenceSource": {
+    "artifactId": 11666787882,
+    "recordDate": "2026-10-11",
+    "summarySha256": "e894a16ca119859f4b9a38bc70f3ce458d330a0da631e572ac40135722818ff9",
+    "workflowRun": 38045310304
+  },
+  "failures": 0,
+  "guiRenderer": "cairo",
+  "kicadVersion": "10.0.7",
+  "runner": "windows-2025",
+  "schemaVersion": "windows-kicad-107-gui-ipc-qualification.v1",
+  "scope": "actual PCB Editor GUI IPC / four live MCP tools and project switch only; no manufacturing success",
+  "skips": 0,
+  "sourceRevision": "e82432c81ba2ae31b04d2780c43971ac87aff7cb",
+  "testCount": 2,
+  "tests": [
+    "test_gui_closed_reports_structured_file_backed_fallback[asyncio]",
+    "test_open_pcb_editor_uses_live_board_context_and_project_switches[asyncio]"
+  ],
+  "verdict": "pass"
+}

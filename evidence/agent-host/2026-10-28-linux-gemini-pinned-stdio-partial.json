@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "agent-native-host-partial.v1",
+  "observedOn": "2026-10-28",
+  "platform": "linux",
+  "reviewedManifestRevision": "7d63fda6c112397f95b7c976e53f0ca0c967a450",
+  "host": {
+    "id": "gemini-cli",
+    "version": "0.60.0",
+    "command": "gemini mcp list",
+    "exitCode": 0,
+    "mcpServerStatus": "connected"
+  },
+  "transport": "stdio",
+  "configurationOrigin": "disposable-settings-mirrors-reviewed-extension",
+  "serverVersion": "4.4.0",
+  "serverLaunchArgs": [
+    "--from",
+    "kicad-mcp-pro==4.4.0",
+    "kicad-mcp-pro",
+    "--transport",
+    "stdio"
+  ],
+  "serverOperatingMode": "readonly",
+  "serverProfile": "default",
+  "environment": {
+    "disposableHomeXdgAndUvCache": true,
+    "inheritedEnvironmentCleared": true,
+    "providerModelInvocation": false,
+    "kiCadIpcSocketMaterialized": false,
+    "userProjectAccessed": false,
+    "temporaryFilesRemoved": true
+  },
+  "publishedWheel": {
+    "filename": "kicad_mcp_pro-4.4.0-py3-none-any.whl",
+    "sha256": "3717a59c083925179d14fe2721b32c237702d8e5825786fb6310bcc2896c7240",
+    "matchingUvCacheCopies": 2,
+    "matchingWheelMemberFilesPerCopy": 460,
+    "excludedMutableInstallMetadata": [
+      "kicad_mcp_pro-4.4.0.dist-info/RECORD"
+    ]
+  },
+  "publishedSourceDistribution": {
+    "filename": "kicad_mcp_pro-4.4.0.tar.gz",
+    "sha256": "de13429f6baeb3fda6b17fe909b7796b891b25dab92c569e8586c0faea5e0862"
+  },
+  "publisherProvenance": {
+    "independentPep740Verification": "passed-for-wheel-and-sdist",
+    "verifierVersion": "pypi-attestations==0.0.30",
+    "expectedPublisherRepository": "oaslananka/kicad-mcp-pro"
+  },
+  "hostSkillDiscoveryDuringThisProbe": "not-run",
+  "nativeToolCall": "not-run",
+  "readonlyWriteToolAbsence": "not-run",
+  "independentRunningProcessBinaryAttestation": false,
+  "transitiveDependenciesLocked": false,
+  "sourceToWheelReproducibleBuildProved": false,
+  "fullNativeHostSmokeAttested": false,
+  "catalogPromotionAuthorized": false,
+  "rawNativeHostOutputRetained": false,
+  "sanitizedNativeHostLogSha256": null
+}
