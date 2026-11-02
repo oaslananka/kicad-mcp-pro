@@ -2,15 +2,15 @@
 
 Machine-generated from `docs/compatibility/capability-parity-matrix.yaml`. Refresh with `uv run python scripts/build_parity_matrix.py`.
 
-KiCad baseline: `10.0.x` · Updated: 2026-10-20
+KiCad baseline: `10.0.x` · Updated: 2026-11-03
 
-**Overall: 66 / 77 programmatically-reachable capabilities driven = 85.7%** (11 partial, 0 gap; 4 GUI-only with no KiCad API, excluded from the denominator).
+**Overall: 65 / 77 programmatically-reachable capabilities driven = 84.4%** (12 partial, 0 gap; 4 GUI-only with no KiCad API, excluded from the denominator).
 
 ## Coverage by domain
 
 | Domain | Coverage | Covered | Partial | Gap | GUI-only (no API) |
 |---|---:|---:|---:|---:|---:|
-| `schematic_edit` | 100.0% | 13 | 0 | 0 | 1 |
+| `schematic_edit` | 92.3% | 12 | 1 | 0 | 1 |
 | `pcb_edit` | 100.0% | 17 | 0 | 0 | 1 |
 | `routing` | 66.7% | 4 | 2 | 0 | 1 |
 | `library` | 100.0% | 7 | 0 | 0 | 0 |
@@ -18,7 +18,7 @@ KiCad baseline: `10.0.x` · Updated: 2026-10-20
 | `export` | 100.0% | 9 | 0 | 0 | 0 |
 | `project` | 100.0% | 5 | 0 | 0 | 0 |
 | `cosmetics` | 100.0% | 7 | 0 | 0 | 1 |
-| **Overall** | **85.7%** | 66 | 11 | 0 | 4 |
+| **Overall** | **84.4%** | 65 | 12 | 0 | 4 |
 
 ## Closeable surface (gap, then partial)
 
@@ -35,6 +35,7 @@ KiCad baseline: `10.0.x` · Updated: 2026-10-20
 | `analysis` | Thermal via / copper-pour sizing | `partial` | `file` | `thermal_calculate_via_count` | thermal_check_copper_pour; first-order theta_JA / via-count rule of thumb labeled honestly via the solver seam (utils/solver_seams.thermal_method); for distributed spreading use thermal_simulate_plane_spreading. |
 | `routing` | Export Specctra DSN / import routed SES | `partial` | `cli` | `route_export_dsn` | route_export_dsn attempts headless kicad-cli specctra export, else a clear human-gated manual step; the routed SES is applied fully headlessly by route_apply_ses (deterministic, idempotent, round-trip-safe via utils/router_core, P4-T1) -- no GUI import. Export side stays partial when kicad-cli lacks headless specctra export. |
 | `routing` | Full autoroute (FreeRouting orchestration) | `partial` | `cli` | `route_autoroute_freerouting` | Routes headlessly (Docker/JAR); the routed SES is now applied headlessly by route_apply_ses (utils/router_core writes segments/vias into the .kicad_pcb), closing the former GUI step (P4-T1). Status stays partial: FreeRouting's own determinism is bounded and the SES coordinate transform assumes KiCad's standard Specctra export convention (verified end-to-end only in the KiCad CI job). |
+| `schematic_edit` | Swap pins / gates | `partial` | `file` | `sch_swap_pins` | sch_swap_pins and sch_swap_gates validate candidates and record deferred intent in .kicad-mcp/pin_swaps.json / gate_swaps.json only. No consumer applies the requested pin or unit swap to .kicad_sch; a recorded intent is not a completed electrical or graphical swap. |
 
 ## Full matrix
 
@@ -56,7 +57,7 @@ Symbol/wire/label/bus/hierarchy/power/no-connect/annotate/ERC editing of .kicad_
 | Annotate references | `file` | `sch_annotate` | `covered` | 10.0.x |  |
 | Run ERC and inspect violations | `cli` | `run_erc` | `covered` | 10.0.x | erc_set_rule_severity / erc_list_rules tune severities. |
 | Modify a symbol property by reference | `file` | `sch_modify_property` | `covered` | 10.0.x | Deterministic in-place property update via transactional write with structural-loss guard, safely preserving global labels, hierarchical sheets, and netlist integrity. |
-| Swap pins / gates | `file` | `sch_swap_pins` | `covered` | 10.0.x | Deterministic back-annotation intent recorded headlessly into project state (.kicad-mcp/pin_swaps.json and gate_swaps.json) with validation of swappable pins and units from symbol library via sch_list_swappable_pins. |
+| Swap pins / gates | `file` | `sch_swap_pins` | `partial` | 10.0.x | sch_swap_pins and sch_swap_gates validate candidates and record deferred intent in .kicad-mcp/pin_swaps.json / gate_swaps.json only. No consumer applies the requested pin or unit swap to .kicad_sch; a recorded intent is not a completed electrical or graphical swap. |
 | Interactive symbol graphic drawing in the editor | `gui-only` | — | `gui-only-no-api` | 10.0.x | Custom symbol bodies are created via lib_create_custom_symbol; freehand editor drawing is GUI-only. |
 
 ### `pcb_edit`

@@ -80,6 +80,16 @@ def test_status_tool_invariants(matrix: dict[str, Any], registered_tool_names: s
             )
 
 
+def test_pin_and_gate_swap_intents_are_not_reported_as_fully_applied(
+    matrix: dict[str, Any],
+) -> None:
+    schematic = matrix["domains"]["schematic_edit"]["capabilities"]
+    swap = next(row for row in schematic if row["capability"] == "Swap pins / gates")
+    assert swap["status"] == "partial"
+    assert swap["mcp_tool"] == "sch_swap_pins"
+    assert "No consumer applies" in swap["notes"]
+
+
 def test_coverage_math(matrix: dict[str, Any]) -> None:
     summary = coverage_summary(matrix)
     for name, stats in summary["domains"].items():
