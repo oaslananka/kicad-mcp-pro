@@ -122,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     try:
         record = _single_registered_identity(default_registry_root())
-    except (LocalApprovalDeniedError, OSError, ValueError):
+    except (OSError, ValueError):
         print(_DENIED, file=sys.stderr)
         return 1
     return cloud_operator_pilot.main(
