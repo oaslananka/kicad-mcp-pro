@@ -1,5 +1,27 @@
 # Production deployment: CI-gated, VPS-executed, audited in Actions
 
+## Existing Cloud origin — unified repository handoff
+
+The owner-approved existing production host now runs the unified app from
+`oaslananka/kicad-mcp-pro`, with the Cloud application in `apps/cloud`.
+The previous standalone Cloud release timer must stay **disabled** while this
+source integration is still a draft PR. Do not deploy an unmerged PR through
+the release timer or enable the old repository's watcher.
+
+After exact-head source integration is accepted and merged into `main`,
+prepare a clean, dedicated worktree of **this repository** at the reviewed
+remote-main SHA. Run the release-watcher installer from `apps/cloud`,
+using the existing VPS, existing Doppler settings, existing private ingress
+network and the original production hostname. The installer requires the
+explicit cutover confirmation, rejects active legacy timers, and refuses
+unmerged or stale checkouts. Main releases require a successful exact-SHA
+`cloud-ci.yml` push run before application-only deployment.
+
+The owner-approved production database, OAuth provider registrations and
+Cloudflare Tunnel are reused. This handoff is not permission to install a
+second public endpoint or to apply outstanding SQL migrations.
+
+
 This file describes the **existing** VPS's current legacy network and production
 rollout. For a fresh VPS/domain, use [PORTABLE-DEPLOY.md](PORTABLE-DEPLOY.md).
 Current app/Tunnel source and GitHub workflow preserve existing behavior.

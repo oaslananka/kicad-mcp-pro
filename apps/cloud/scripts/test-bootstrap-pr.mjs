@@ -4,7 +4,7 @@ import {verifyAcceptance} from "./verify-bootstrap-pr.mjs";
 
 const head="b189aeaadef23f226e6438d00655922484c46143";
 const base="1697bf37f689aac3f16eca2dc0b5827f055e9795";
-const repository={full_name:"oaslananka/kicad-mcp-pro-cloud"};
+const repository={full_name:"oaslananka/kicad-mcp-pro"};
 const required=[
   "check","SonarCloud Code Analysis","Codacy Static Code Analysis",
   "CodeQL","semgrep-cloud-platform/scan","GitGuardian Security Checks",

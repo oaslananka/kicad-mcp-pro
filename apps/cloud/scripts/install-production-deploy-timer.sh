@@ -3,7 +3,7 @@
 # on an unmerged PR acceptance checkout or before a reviewed VPS cutover.
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
-[[ $(git -C "$root" remote get-url origin) == 'https://github.com/oaslananka/kicad-mcp-pro-cloud.git' ]] || {
+[[ $(git -C "$root" remote get-url origin) == 'https://github.com/oaslananka/kicad-mcp-pro.git' ]] || {
   echo 'Unexpected deployment repository' >&2; exit 2
 }
 [[ -z $(git -C "$root" status --porcelain) ]] || { echo 'Deployment worktree must be clean' >&2; exit 2; }
@@ -16,13 +16,14 @@ main_head=$(git -C "$root" ls-remote origin refs/heads/main | awk '{print $1}')
   exit 2
 }
 [[ "$root" != *[[:space:]]* ]] || { echo 'Worktree path must not contain whitespace for systemd unit' >&2; exit 2; }
+# Release-watcher ownership may change only as a deliberate, verified handoff.
+# This also applies to the existing VPS using the default Doppler selector.
+[[ "${KICAD_WATCHER_CUTOVER_CONFIRMED:-}" == "old-watcher-disabled-and-destination-verified" ]] || {
+  echo 'New VPS watcher requires explicit old-watcher cutover confirmation' >&2
+  exit 2
+}
 case "${KICAD_DOPPLER_SCOPED:-false}" in
   true)
-    # A separate owner-approved cutover must stop and verify the old watcher.
-    # Do not silently enable two VPS watchers for a single main branch.
-    [[ "${KICAD_WATCHER_CUTOVER_CONFIRMED:-}" == "old-watcher-disabled-and-destination-verified" ]] || {
-      echo 'New VPS release watcher requires explicit old-watcher cutover confirmation' >&2; exit 2
-    }
     [[ $(loginctl show-user "$(id -un)" --property=Linger --value) == yes ]] || {
       echo 'Enable systemd user lingering on the new VPS before watcher setup' >&2; exit 2
     }
@@ -32,6 +33,13 @@ case "${KICAD_DOPPLER_SCOPED:-false}" in
     ;;
   false) ;;
   *) echo 'KICAD_DOPPLER_SCOPED must be true or false' >&2; exit 2 ;;
+esac
+# Never rewrite user units while an existing release timer is running.
+case "$(systemctl --user is-active kicad-cloud-production.timer 2>/dev/null || true)" in
+  active|activating)
+    echo 'Existing release timer is still active; stop it before installing the new watcher' >&2
+    exit 2
+    ;;
 esac
 units="$HOME/.config/systemd/user"
 mkdir -p "$units"

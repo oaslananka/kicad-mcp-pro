@@ -81,7 +81,7 @@ public hostname.
    `https://YOUR_DOMAIN/api/auth/callback/github`. Update/rotate the provider
    credential pairs in Doppler; changing `PUBLIC_ORIGIN` alone **does not**
    update the external provider registration or the DNS/Tunnel route.
-5. Clone `oaslananka/kicad-mcp-pro-cloud` from reviewed `main` into a fresh
+5. Clone `oaslananka/kicad-mcp-pro` from reviewed `main` into a fresh
    **dedicated, clean deployment worktree** (not a shared active development
    checkout). From that directory, run
    `bash scripts/setup-vps-doppler.sh YOUR_DOPPLER_PROJECT YOUR_DOPPLER_CONFIG`.
@@ -94,7 +94,7 @@ public hostname.
 ## Independent, unmerged PR acceptance (before any production release)
 
 **The acceptance order matters:** merging this PR into `main` before the
-independent VPS trial would trigger the existing production watcher. To test
+independent VPS trial could trigger a release watcher if one is installed. To test
 the PR code *before merging*, the installer has two explicit,
 non-production-watcher modes: `preflight-pr` and `install-pr`. They require
 an **exact full commit SHA** and a real, same-repository GitHub PR number, and
@@ -110,8 +110,8 @@ HTTPS hostname, dedicated Tunnel and Doppler config, clone from the canonical
 repository and explicitly check out the reviewed PR SHA:
 
 ```bash
-git clone https://github.com/oaslananka/kicad-mcp-pro-cloud.git kicad-cloud-acceptance
-cd kicad-cloud-acceptance
+git clone https://github.com/oaslananka/kicad-mcp-pro.git kicad-cloud-acceptance
+cd kicad-cloud-acceptance/apps/cloud
 git fetch origin refs/pull/63/head
 reviewed_sha=$(git rev-parse FETCH_HEAD)
 git show --no-patch --format='%H %s' "$reviewed_sha"

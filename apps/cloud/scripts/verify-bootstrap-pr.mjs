@@ -5,7 +5,7 @@
 import {readFileSync} from "node:fs";
 
 export function verifyAcceptance(pr,checks,runs,{number,head,base}) {
-  const repository="oaslananka/kicad-mcp-pro-cloud";
+  const repository="oaslananka/kicad-mcp-pro";
   if(!Number.isSafeInteger(number)||number<1||!(/^[a-f0-9]{40}$/.test(head))||
      !(/^[a-f0-9]{40}$/.test(base)))return false;
   if(pr?.number!==number||pr?.state!=="open"||

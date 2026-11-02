@@ -9,7 +9,7 @@ exec 9>"${XDG_RUNTIME_DIR:-/tmp}/kicad-cloud-production.lock"
 flock -n 9 || { echo 'Previous deployment still active; skipping'; exit 0; }
 
 [[ -z "$(git status --porcelain)" ]] || { echo 'Dirty deployment checkout; refusing'; exit 1; }
-[[ $(git remote get-url origin) == 'https://github.com/oaslananka/kicad-mcp-pro-cloud.git' ]] || {
+[[ $(git remote get-url origin) == 'https://github.com/oaslananka/kicad-mcp-pro.git' ]] || {
   echo 'Unexpected repository remote'; exit 1;
 }
 
@@ -25,7 +25,7 @@ current=$(curl --fail --silent --show-error --max-time 10 \
 # Public metadata API, called only when main differs; cannot deploy PR runs.
 ci=$(curl --fail --silent --show-error --max-time 15 \
   --header 'Accept: application/vnd.github+json' \
-  'https://api.github.com/repos/oaslananka/kicad-mcp-pro-cloud/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=10')
+  'https://api.github.com/repos/oaslananka/kicad-mcp-pro/actions/workflows/cloud-ci.yml/runs?branch=main&event=push&per_page=10')
 verified=$(python3 -c '
 import json,sys
 sha=sys.argv[1]

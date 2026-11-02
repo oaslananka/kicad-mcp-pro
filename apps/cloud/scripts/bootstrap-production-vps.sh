@@ -23,7 +23,7 @@ cd "$root"
 for command in docker git node doppler curl; do
   command -v "$command" >/dev/null || { echo "Missing required command: $command" >&2; exit 2; }
 done
-[[ $(git remote get-url origin) == 'https://github.com/oaslananka/kicad-mcp-pro-cloud.git' ]] || { echo 'Unexpected source repository' >&2; exit 2; }
+[[ $(git remote get-url origin) == 'https://github.com/oaslananka/kicad-mcp-pro.git' ]] || { echo 'Unexpected source repository' >&2; exit 2; }
 [[ -z $(git status --porcelain) ]] || { echo 'Refusing dirty checkout' >&2; exit 2; }
 remote_main=$(git ls-remote origin refs/heads/main | awk '{print $1}')
 [[ "$remote_main" =~ ^[a-f0-9]{40}$ ]] || { echo 'Current main SHA unavailable' >&2; exit 2; }
@@ -37,13 +37,13 @@ if [[ "$acceptance" == true ]]; then
   [[ "$advertised" == "$revision" ]] || { echo 'PR ref does not match reviewed checkout' >&2; exit 2; }
   pr_payload=$(curl --fail --silent --show-error --max-time 15 \
     --header 'Accept: application/vnd.github+json' \
-    "https://api.github.com/repos/oaslananka/kicad-mcp-pro-cloud/pulls/$2")
+    "https://api.github.com/repos/oaslananka/kicad-mcp-pro/pulls/$2")
   checks_payload=$(curl --fail --silent --show-error --max-time 15 \
     --header 'Accept: application/vnd.github+json' \
-    "https://api.github.com/repos/oaslananka/kicad-mcp-pro-cloud/commits/$revision/check-runs?per_page=100")
+    "https://api.github.com/repos/oaslananka/kicad-mcp-pro/commits/$revision/check-runs?per_page=100")
   runs_payload=$(curl --fail --silent --show-error --max-time 15 \
     --header 'Accept: application/vnd.github+json' \
-    "https://api.github.com/repos/oaslananka/kicad-mcp-pro-cloud/actions/workflows/ci.yml/runs?head_sha=$revision&event=pull_request&per_page=20")
+    "https://api.github.com/repos/oaslananka/kicad-mcp-pro/actions/workflows/cloud-ci.yml/runs?head_sha=$revision&event=pull_request&per_page=20")
   printf '%s\0%s\0%s' "$pr_payload" "$checks_payload" "$runs_payload" |
     node scripts/verify-bootstrap-pr.mjs "$2" "$revision" "$remote_main"
 else
@@ -96,7 +96,7 @@ revision=$(git rev-parse HEAD)
 if [[ "$acceptance" == false ]]; then
 ci_payload=$(curl --fail --silent --show-error --max-time 15 \
   --header 'Accept: application/vnd.github+json' \
-  'https://api.github.com/repos/oaslananka/kicad-mcp-pro-cloud/actions/workflows/ci.yml/runs?branch=main&event=push&per_page=20')
+  'https://api.github.com/repos/oaslananka/kicad-mcp-pro/actions/workflows/cloud-ci.yml/runs?branch=main&event=push&per_page=20')
 if ! printf '%s' "$ci_payload" | node -e '
 let body=""; process.stdin.on("data",part=>body+=part);
 process.stdin.on("end",()=>{
@@ -129,13 +129,13 @@ assert_reviewed_source_still_current() {
     [[ "$latest_pr" == "$revision" ]] || {
       echo 'Reviewed PR head changed during installation; abort before database start' >&2; return 1
     }
-    latest_payload=$(curl --fail --silent --show-error --max-time 15       --header 'Accept: application/vnd.github+json'       "https://api.github.com/repos/oaslananka/kicad-mcp-pro-cloud/pulls/$pr_number")
+    latest_payload=$(curl --fail --silent --show-error --max-time 15       --header 'Accept: application/vnd.github+json'       "https://api.github.com/repos/oaslananka/kicad-mcp-pro/pulls/$pr_number")
     if ! printf '%s' "$latest_payload" | node -e '
       let input="";process.stdin.on("data",b=>input+=b);
       process.stdin.on("end",()=>{
         try{
           const p=JSON.parse(input),sha=process.argv[1],main=process.argv[2],
-            num=Number(process.argv[3]),repo="oaslananka/kicad-mcp-pro-cloud";
+            num=Number(process.argv[3]),repo="oaslananka/kicad-mcp-pro";
           if(p.number!==num||p.state!=="open"||p.head?.sha!==sha||
              p.base?.sha!==main||p.base?.ref!=="main"||
              p.head?.repo?.full_name!==repo||p.base?.repo?.full_name!==repo)

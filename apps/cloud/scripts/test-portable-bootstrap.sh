@@ -17,7 +17,7 @@ cat > "$bin/git" <<'MOCK'
 #!/usr/bin/env bash
 set -eu
 case "$*" in
-  'remote get-url origin') echo 'https://github.com/oaslananka/kicad-mcp-pro-cloud.git';;
+  'remote get-url origin') echo 'https://github.com/oaslananka/kicad-mcp-pro.git';;
   'status --porcelain')
     if [[ "${MOCK_DIRTY_AFTER_BUILD:-}" == yes ]] && grep -q '^docker build ' "$MOCK_LOG"; then
       echo ' M scripts/bootstrap-production-vps.sh'
@@ -71,7 +71,7 @@ cat > "$bin/curl" <<'MOCK'
 #!/usr/bin/env bash
 set -eu
 printf 'curl %s\n' "$*" >> "$MOCK_LOG"
-if [[ "$*" == *'actions/workflows/ci.yml/runs'* ]]; then
+if [[ "$*" == *'actions/workflows/cloud-ci.yml/runs'* ]]; then
   if [[ "$MOCK_CI_PASS" == yes ]]; then
     if [[ "$*" == *'event=pull_request'* ]]; then
       printf '{"workflow_runs":[{"head_sha":"%s","event":"pull_request","status":"completed","conclusion":"success"}]}' "$MOCK_HEAD"
@@ -86,7 +86,7 @@ elif [[ "$*" == *'/pulls/63'* ]]; then
   if [[ "${MOCK_CLOSE_AFTER_BUILD:-}" == yes ]] && grep -q '^docker build ' "$MOCK_LOG"; then
     state=closed
   fi
-  printf '{"number":63,"state":"%s","head":{"sha":"%s","repo":{"full_name":"oaslananka/kicad-mcp-pro-cloud"}},"base":{"sha":"%s","ref":"main","repo":{"full_name":"oaslananka/kicad-mcp-pro-cloud"}}}' "$state" "$MOCK_HEAD" "$MOCK_BASE"
+  printf '{"number":63,"state":"%s","head":{"sha":"%s","repo":{"full_name":"oaslananka/kicad-mcp-pro"}},"base":{"sha":"%s","ref":"main","repo":{"full_name":"oaslananka/kicad-mcp-pro"}}}' "$state" "$MOCK_HEAD" "$MOCK_BASE"
 elif [[ "$*" == *'/check-runs?per_page=100'* ]]; then
   if [[ "$MOCK_CI_PASS" == yes ]]; then
     printf '{"check_runs":['
