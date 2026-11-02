@@ -5,7 +5,7 @@ Connect [Claude Desktop](https://claude.ai/desktop) to your local KiCad projects
 ## Quick Install
 
 ```bash
-kicad-mcp-pro setup claude-desktop
+uvx kicad-mcp-pro quickstart --agent claude-desktop
 ```
 
 Or manually:
@@ -26,7 +26,7 @@ Config path: `~/.config/Claude/claude_desktop_config.json`
 ## Verification
 
 ```bash
-kicad-mcp-pro doctor --agent claude-desktop
+kicad-mcp-pro doctor
 ```
 
 In Claude Desktop, ask: *"Use the kicad MCP server to inspect the current project."*

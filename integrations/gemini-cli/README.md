@@ -5,12 +5,12 @@ Connect [Gemini CLI](https://cloud.google.com/gemini-cli) to your local KiCad pr
 ## Quick Install
 
 ```bash
-kicad-mcp-pro setup gemini
+uvx kicad-mcp-pro quickstart --agent gemini
 ```
 
 Or manually:
 
-1. Copy `settings.example.json` to `~/.gemini/settings.json`.
+1. Merge only `mcpServers.kicad` from `settings.example.json` into `~/.gemini/settings.json`; preserve other settings.
 2. Ensure `KICAD_MCP_PROJECT_DIR` points to your project.
 3. Start Gemini CLI and run `/mcp` to verify the `kicad` server is connected.
 4. Try: `Use the kicad MCP server to inspect this project.`
@@ -20,7 +20,7 @@ Or manually:
 | Mode | Config | Behavior |
 |------|--------|----------|
 | **Read-only** (default) | `"includeTools": [...]` | Inspect, validate, run DRC/ERC |
-| **Write** | Remove `includeTools` | Full tool access with confirmation |
+| **Write** | Explicit `build` profile and `write` mode | Bounded edit tools with human review |
 
 ## Local vs Remote
 
@@ -40,7 +40,7 @@ Or manually:
 ## Verification
 
 ```bash
-kicad-mcp-pro doctor --agent gemini
+kicad-mcp-pro doctor
 ```
 
 ## Security

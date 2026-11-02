@@ -3,7 +3,7 @@
 ## Quick Start
 
 ```bash
-kicad-mcp-pro setup cursor
+uvx kicad-mcp-pro quickstart --agent cursor
 ```
 
 Or manually:

@@ -572,6 +572,34 @@ def _planned_updates() -> dict[Path, str]:
         "stdio",
     ]
     return {
+        ROOT / "plugin.json": _dump_json(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                "name": "kicad-pro",
+                "version": metadata["version"],
+                "description": "Local KiCad MCP server and portable engineering workflow skills.",
+                "author": {"name": "oaslananka", "url": metadata["repository_url"]},
+                "repository": metadata["repository_url"],
+                "license": metadata["license"],
+            }
+        ),
+        ROOT / "mcp.json": _dump_json(
+            {
+                "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+                "mcpServers": {
+                    "kicad": {
+                        "type": "stdio",
+                        "command": "uvx",
+                        "args": gemini["mcpServers"]["kicad"]["args"],
+                        "env": {
+                            "KICAD_MCP_TRANSPORT": "stdio",
+                            "KICAD_MCP_PROFILE": "default",
+                            "KICAD_MCP_OPERATING_MODE": "readonly",
+                        },
+                    }
+                },
+            }
+        ),
         GEMINI_EXTENSION: _dump_json(gemini),
         NPM_WRAPPER_README: _render_npm_wrapper_readme(metadata, compatibility, npm_package),
         PACKAGE_INIT: _updated_init(metadata, PACKAGE_INIT.read_text(encoding="utf-8")),
@@ -593,7 +621,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def _apply_or_detect_drift(updates: dict[Path, str], *, write: bool) -> list[Path]:
     drift: list[Path] = []
     for path, rendered in updates.items():
-        if path.read_text(encoding="utf-8") != rendered:
+        if not path.is_file() or path.read_text(encoding="utf-8") != rendered:
             drift.append(path)
             if write:
                 with path.open("w", encoding="utf-8", newline="\n") as manifest:

@@ -38,8 +38,8 @@ kicad-mcp-pro doctor
 # Generate config for your agent
 kicad-mcp-pro mcp-config generate --client claude
 
-# Or use the setup wizard
-kicad-mcp-pro setup
+# Or configure MCP and bundled skills together from a KiCad project directory
+uvx kicad-mcp-pro quickstart
 ```
 
 ## Architecture Overview

@@ -11,6 +11,7 @@ import io
 import json
 import os
 import secrets
+import shutil
 import subprocess
 import sys
 import threading
@@ -2816,6 +2817,50 @@ def setup(
         raise typer.Exit(code=1)
 
 
+def _quickstart_agent(agent: str | None) -> str:
+    from .setup import AGENTS, detect_installed_agents
+
+    if agent is None:
+        detected = detect_installed_agents()
+        if len(detected) == 1:
+            agent = detected[0]
+        elif detected:
+            typer.echo("Detected agents: " + ", ".join(detected))
+            agent = typer.prompt("Which agent should be configured?", default=detected[0])
+        else:
+            typer.echo("No supported agent CLI was detected.")
+            agent = typer.prompt("Agent", default="claude-code")
+    if agent not in AGENTS or AGENTS[agent].kind != "local":
+        typer.echo(
+            "Choose a supported local agent: "
+            + ", ".join(key for key, info in AGENTS.items() if info.kind == "local"),
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    return agent
+
+
+def _quickstart_project(project_dir: str | None) -> Path:
+    from .setup import detect_kicad_project_directory
+
+    project = detect_kicad_project_directory(project_dir)
+    if project is not None:
+        return project
+    if project_dir is not None:
+        typer.echo(
+            "The selected directory does not contain a KiCad project "
+            "(.kicad_pro, .kicad_pcb or .kicad_sch).",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    entered = typer.prompt("KiCad project directory", default=os.getcwd())
+    project = detect_kicad_project_directory(entered)
+    if project is None:
+        typer.echo("No KiCad project was found. No agent config was changed.", err=True)
+        raise typer.Exit(code=2)
+    return project
+
+
 @app.command()
 def quickstart(
     agent: str | None = typer.Option(
@@ -2825,7 +2870,12 @@ def quickstart(
         None, "--project-dir", help="Existing KiCad project directory."
     ),
     scope: str | None = typer.Option(
-        None, "--scope", help="Config scope: user or project (default: user where supported)."
+        None, "--scope", help="Config scope: project where supported, otherwise user."
+    ),
+    skills: bool = typer.Option(
+        True,
+        "--skills/--no-skills",
+        help="Install bundled KiCad skills where the host supports them.",
     ),
 ) -> None:
     """Install local, read-only KiCad MCP for an agent and verify a real stdio call.
@@ -2836,51 +2886,34 @@ def quickstart(
     """
     from .setup import (
         AGENTS,
-        detect_installed_agents,
-        detect_kicad_project_directory,
         run_local_mcp_smoke,
         setup_agent,
     )
+    from .skill_installation import install_agent_skills
 
-    selected_agent = agent
-    if selected_agent is None:
-        detected = detect_installed_agents()
-        if len(detected) == 1:
-            selected_agent = detected[0]
-        elif detected:
-            typer.echo("Detected agents: " + ", ".join(detected))
-            selected_agent = typer.prompt("Which agent should be configured?", default=detected[0])
-        else:
-            typer.echo("No supported agent CLI was detected.")
-            selected_agent = typer.prompt("Agent", default="claude-code")
-    if selected_agent not in AGENTS or AGENTS[selected_agent].kind != "local":
-        typer.echo(
-            "Choose a supported local agent: "
-            + ", ".join(key for key, info in AGENTS.items() if info.kind == "local"),
-            err=True,
-        )
-        raise typer.Exit(code=2)
-
-    project = detect_kicad_project_directory(project_dir)
-    if project is None:
-        if project_dir is not None:
-            typer.echo(
-                "The selected directory does not contain a KiCad project "
-                "(.kicad_pro, .kicad_pcb or .kicad_sch).",
-                err=True,
-            )
-            raise typer.Exit(code=2)
-        entered = typer.prompt("KiCad project directory", default=os.getcwd())
-        project = detect_kicad_project_directory(entered)
-        if project is None:
-            typer.echo("No KiCad project was found. No agent config was changed.", err=True)
-            raise typer.Exit(code=2)
+    selected_agent = _quickstart_agent(agent)
+    project = _quickstart_project(project_dir)
 
     supported_scopes = AGENTS[selected_agent].supports_scope
     selected_scope = scope or ("project" if "project" in supported_scopes else "user")
     if selected_scope not in supported_scopes:
         typer.echo(f"{selected_agent} supports: {', '.join(supported_scopes)}", err=True)
         raise typer.Exit(code=2)
+
+    launcher = shutil.which("uvx")
+    if launcher is None:
+        typer.echo(
+            "Install uv first (https://docs.astral.sh/uv/), then rerun quickstart.", err=True
+        )
+        raise typer.Exit(code=1)
+    if skills:
+        try:
+            install_agent_skills(selected_agent, selected_scope, project, write=False)
+        except (OSError, ValueError) as exc:
+            typer.echo(
+                f"Skill setup blocked: {exc}. Use --no-skills to keep existing skills.", err=True
+            )
+            raise typer.Exit(code=1) from exc
 
     typer.echo(f"Agent: {selected_agent}")
     typer.echo(f"KiCad project: {project}")
@@ -2892,13 +2925,16 @@ def quickstart(
         write=True,
         scope=selected_scope,
         transport="stdio",
+        stdio_command=launcher,
     )
     if not result.startswith("✓ Config written to "):
         typer.echo(result, err=True)
         raise typer.Exit(code=1)
     typer.echo(result.splitlines()[0])
     typer.echo("Checking the installed MCP server over stdio…")
-    ok, message = asyncio.run(run_local_mcp_smoke(project))
+    ok, message = asyncio.run(
+        run_local_mcp_smoke(project, agent=selected_agent, scope=selected_scope)
+    )
     typer.echo(("✓ " if ok else "✗ ") + message)
     if not ok:
         typer.echo(
@@ -2907,8 +2943,56 @@ def quickstart(
         )
         typer.echo("Run 'kicad-mcp-pro doctor' for diagnostics.", err=True)
         raise typer.Exit(code=1)
-    typer.echo("Local KiCad MCP is ready. Restart/reload the selected agent to discover its tools.")
+    if skills:
+        try:
+            installed = install_agent_skills(selected_agent, selected_scope, project)
+        except (OSError, ValueError) as exc:
+            typer.echo(f"MCP config saved; skill installation failed: {exc}", err=True)
+            raise typer.Exit(code=1) from exc
+        typer.echo(installed.message)
+    typer.echo("MCP launch verified. Restart/reload the selected agent to discover its tools.")
+    typer.echo("In the actual agent, ask: Inspect this KiCad project without modifying files.")
+    typer.echo("Agent skill discovery and native KiCad readiness still need that first inspection.")
     typer.echo("Cloud remains optional; connect it later only when remote access is needed.")
+
+
+@app.command("skills")
+def skills_command(
+    action: str = typer.Argument("status", help="Skill action: install, status, remove."),
+    agent: str = typer.Option(..., "--agent", help="Local agent whose skill directory to manage."),
+    scope: str | None = typer.Option(
+        None, "--scope", help="Project scope where supported, else user."
+    ),
+    project_dir: str = typer.Option(".", "--project-dir", help="Local project directory."),
+) -> None:
+    """Manage only the bundled KiCad skills; preserve unrelated or edited skills."""
+    from .setup import AGENTS
+    from .skill_installation import (
+        check_agent_skills,
+        install_agent_skills,
+        remove_agent_skills,
+    )
+
+    if agent not in AGENTS or AGENTS[agent].kind != "local":
+        typer.echo("Choose a supported local agent.", err=True)
+        raise typer.Exit(code=2)
+    actions = {
+        "install": install_agent_skills,
+        "status": check_agent_skills,
+        "remove": remove_agent_skills,
+    }
+    if action not in actions:
+        typer.echo("Use skills install, status, or remove.", err=True)
+        raise typer.Exit(code=2)
+    selected_scope = scope or ("project" if "project" in AGENTS[agent].supports_scope else "user")
+    try:
+        result = actions[action](agent, selected_scope, Path(project_dir))
+    except (OSError, ValueError) as exc:
+        typer.echo(f"Skill {action} failed: {exc}", err=True)
+        raise typer.Exit(code=1) from exc
+    typer.echo(result.message)
+    if result.root is None:
+        raise typer.Exit(code=2)
 
 
 @app.command()

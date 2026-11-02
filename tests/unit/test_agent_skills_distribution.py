@@ -85,7 +85,7 @@ def test_codex_examples_have_valid_map_named_mcp_servers() -> None:
 
 def test_claude_manifest_and_copilot_instructions_match_installed_features() -> None:
     plugin = json.loads((ROOT / ".claude-plugin/plugin.json").read_text(encoding="utf-8"))
-    assert "mcpServers" not in plugin  # A skill-only manifest does NOT install an MCP server.
+    assert plugin["mcpServers"] == "./.mcp.json"
     for name in plugin["skills"]:
         assert (ROOT / name / "SKILL.md").is_file()
     assert (ROOT / ".mcp.json").is_file()
@@ -93,6 +93,19 @@ def test_claude_manifest_and_copilot_instructions_match_installed_features() -> 
     assert "AGENTS.md" in entry
     assert ".agents/skills/" in entry
     assert "Do not" in entry
+
+
+def test_portable_plugin_bundles_the_same_skills_and_versioned_readonly_server() -> None:
+    plugin = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+    config = json.loads((ROOT / "mcp.json").read_text(encoding="utf-8"))
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    assert plugin["name"] == "kicad-pro"
+    assert plugin["version"] == project["version"]
+    assert (ROOT / "skills/pcb-design/SKILL.md").is_file()
+    server = config["mcpServers"]["kicad"]
+    assert server["type"] == "stdio"
+    assert server["args"][:2] == ["--from", f"kicad-mcp-pro=={project['version']}"]
+    assert server["env"]["KICAD_MCP_OPERATING_MODE"] == "readonly"
 
 
 def test_portable_skill_manifest_is_valid_yaml_and_distinct() -> None:
@@ -219,14 +232,15 @@ def test_cli_requires_explicit_mode(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert skill_sync.main() == 0
 
 
+@pytest.mark.parametrize("base", ["skills", "src/kicad_mcp/data/agent_skills"])
 def test_availability_helper_does_not_execute_discovered_binary(
-    monkeypatch: pytest.MonkeyPatch, capsys
+    monkeypatch: pytest.MonkeyPatch, capsys, base: str
 ) -> None:
     """Skill discovery preflight must not execute a PATH-resolved program."""
     import importlib.util
     import shutil
 
-    path = ROOT / "skills/kicad-design-review/scripts/check_mcp_available.py"
+    path = ROOT / base / "kicad-design-review/scripts/check_mcp_available.py"
     spec = importlib.util.spec_from_file_location("kicad_skill_availability", path)
     assert spec is not None
     assert spec.loader is not None

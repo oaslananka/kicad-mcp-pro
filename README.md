@@ -101,7 +101,7 @@ backend version and verify its desktop compatibility handshake before use; see
 ### CLI
 
 ```bash
-uvx kicad-mcp-pro init
+uvx kicad-mcp-pro quickstart
 uvx kicad-mcp-pro tray
 uvx kicad-mcp-pro dashboard --open
 uvx kicad-mcp-pro --transport streamable-http --port 3334
@@ -204,7 +204,8 @@ uvx kicad-mcp-pro quickstart
 ```
 
 This detects a supported local agent, configures its MCP entry in read-only mode,
-backs up existing settings, and verifies a real local stdio MCP call. Cloud login
+installs bundled skills where supported, backs up existing settings, and verifies
+the saved launch command over stdio. Cloud login
 is optional and is not required for local use. See the [installation guide](docs/agents/install.md)
 for details and explicit agent selection.
 
@@ -225,6 +226,7 @@ here so they stay synchronized with the actual MCP server tools.
 
 | File | Purpose |
 | --- | --- |
+| [`plugin.json`](plugin.json), [`mcp.json`](mcp.json) | Generated portable plugin package with canonical skills and a version-pinned local MCP launcher. |
 | [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) | Product-level plugin manifest for compatible agent runtimes and marketplace catalogs. |
 | [`.mcp.json`](.mcp.json) | Claude Code project-local MCP server configuration. |
 | [`.codex/config.example.toml`](.codex/config.example.toml) | Codex CLI MCP configuration example. |
