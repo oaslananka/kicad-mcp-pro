@@ -140,8 +140,9 @@ async def test_signed_real_tls_wss_reaches_scoped_mcp_without_exposing_paths(
             )
         )
         if operation != "project_worker_inspection":
+            receive = ws.recv()
             with pytest.raises(ConnectionClosed):
-                await asyncio.wait_for(ws.recv(), 8)
+                await asyncio.wait_for(receive, 8)
             seen.append("operation-denied")
             return
         response = json.loads(await ws.recv())

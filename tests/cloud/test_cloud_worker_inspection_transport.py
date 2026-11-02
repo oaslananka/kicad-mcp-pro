@@ -129,8 +129,9 @@ async def test_invalid_cloud_operation_never_launches_project_worker(
         invoked = True
         return bound_worker(tmp_path)
 
+    receipt = HandshakeReceipt(DEVICE, SESSION)
     with pytest.raises((CloudHandshakeDeniedError, ValueError)):
-        await _complete_authorized_inspection(socket, HandshakeReceipt(DEVICE, SESSION), factory)
+        await _complete_authorized_inspection(socket, receipt, factory)
     assert socket.sent == []
     # Wrong IDs may be checked by the bound local worker, which still cannot dispatch.
     if "operation" in change or "arguments" in change or "deadlineUnixMs" in change:
@@ -198,24 +199,24 @@ async def test_other_one_shot_grant_cannot_read_schematic_counts(
     tmp_path: Path, operation: str
 ) -> None:
     socket = RecordingSocket(frame(operation="project_schematic_counts"))
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+
+    def factory(_receipt: HandshakeReceipt) -> BoundConnectorProjectWorker:
+        return bound_worker(tmp_path, operation)
+
     with pytest.raises((CloudHandshakeDeniedError, ValueError)):
-        await _complete_authorized_inspection(
-            socket,
-            HandshakeReceipt(DEVICE, SESSION),
-            lambda _receipt: bound_worker(tmp_path, operation),
-            schematic_counts=True,
-        )
+        await _complete_authorized_inspection(socket, receipt, factory, schematic_counts=True)
     assert socket.sent == []
 
 
 @pytest.mark.anyio
 async def test_engine_status_consent_cannot_read_board_counts(tmp_path: Path) -> None:
     socket = RecordingSocket(frame(operation="project_board_counts"))
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+
+    def factory(_receipt: HandshakeReceipt) -> BoundConnectorProjectWorker:
+        return bound_worker(tmp_path)
+
     with pytest.raises((CloudHandshakeDeniedError, ValueError)):
-        await _complete_authorized_inspection(
-            socket,
-            HandshakeReceipt(DEVICE, SESSION),
-            lambda _receipt: bound_worker(tmp_path),
-            board_counts=True,
-        )
+        await _complete_authorized_inspection(socket, receipt, factory, board_counts=True)
     assert socket.sent == []

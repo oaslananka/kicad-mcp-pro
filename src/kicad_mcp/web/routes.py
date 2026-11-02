@@ -404,6 +404,28 @@ ALLOWED_CONFIG_KEYS = {
 _config_post_lock = threading.Lock()
 
 
+def _validate_config_project_directory(
+    safe_body: dict[str, object],
+) -> JSONResponse | None:
+    # The onboarding wizard exports this path to an independent local MCP
+    # process. Reject a mistyped folder before changing the active project.
+    if "project_dir" in safe_body and safe_body["project_dir"] != "":
+        raw_project = safe_body["project_dir"]
+        if not isinstance(raw_project, str) or len(raw_project) > 4096:
+            return JSONResponse(
+                {"error": "Project must be an existing local folder."}, status_code=400
+            )
+        candidate = Path(raw_project).expanduser()
+        if not candidate.is_absolute() or not candidate.is_dir():
+            return JSONResponse(
+                {"error": "Project must be an existing absolute local folder."},
+                status_code=400,
+            )
+        safe_body["project_dir"] = str(candidate.resolve())
+
+    return None
+
+
 async def api_config_post(request: Request) -> JSONResponse:
     """Update the server configuration at runtime via environment overrides."""
     try:
@@ -423,21 +445,9 @@ async def api_config_post(request: Request) -> JSONResponse:
     # cannot change underneath another client's in-flight operation.
     boundary = getattr(getattr(request, "app", None), "state", None)
     binding = getattr(boundary, "http_project_binding", None)
-    # The onboarding wizard exports this path to an independent local MCP
-    # process. Reject a mistyped folder before changing the active project.
-    if "project_dir" in safe_body and safe_body["project_dir"] != "":
-        raw_project = safe_body["project_dir"]
-        if not isinstance(raw_project, str) or len(raw_project) > 4096:
-            return JSONResponse(
-                {"error": "Project must be an existing local folder."}, status_code=400
-            )
-        candidate = Path(raw_project).expanduser()
-        if not candidate.is_absolute() or not candidate.is_dir():
-            return JSONResponse(
-                {"error": "Project must be an existing absolute local folder."},
-                status_code=400,
-            )
-        safe_body["project_dir"] = str(candidate.resolve())
+    invalid_project = _validate_config_project_directory(safe_body)
+    if invalid_project is not None:
+        return invalid_project
 
     def apply_settings() -> None:
         with _config_post_lock:

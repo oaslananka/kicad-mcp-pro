@@ -112,12 +112,10 @@ def test_one_shot_rejects_combined_scopes_before_reading_owner_key(
         lambda *_: pytest.fail("combined scope must not access credentials"),
     )
     lease = (int(time.time() * 1000) + 60_000, time.monotonic_ns() + 60_000_000_000)
+    options = _options(tmp_path, inspection_once=True, board_counts_once=True)
+    denied = cloud_operator_pilot._single_presence(options, lease)
     with pytest.raises(LocalApprovalDeniedError):
-        asyncio.run(
-            cloud_operator_pilot._single_presence(
-                _options(tmp_path, inspection_once=True, board_counts_once=True), lease
-            )
-        )
+        asyncio.run(denied)
 
 
 @pytest.mark.parametrize(
@@ -264,8 +262,9 @@ def test_bound_worker_fail_closed_on_faulty_clock_and_grant(tmp_path: Path) -> N
 
 
 def test_router_fails_closed_when_authorization_is_unavailable(tmp_path: Path) -> None:
+    unavailable_authorization = cast(Callable[[str], bool], None)
     with pytest.raises(ValueError):
-        LocalProjectWorkerRouter({}, current_authorization=cast(Callable[[str], bool], None))
+        LocalProjectWorkerRouter({}, current_authorization=unavailable_authorization)
 
     def failed_auth(_: str) -> bool:
         raise RuntimeError("authorization unavailable")
@@ -277,8 +276,9 @@ def test_router_fails_closed_when_authorization_is_unavailable(tmp_path: Path) -
             pytest.fail("untrusted request spawned local MCP subprocess")
 
     for project_id in [None, "allowed"]:
+        attempt = denied(project_id)
         with pytest.raises(ProjectWorkerDeniedError):
-            asyncio.run(denied(project_id))
+            asyncio.run(attempt)
 
 
 def test_inspection_session_rejects_authorization_exceptions() -> None:

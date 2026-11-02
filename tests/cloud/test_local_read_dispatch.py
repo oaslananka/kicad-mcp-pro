@@ -382,8 +382,9 @@ def test_parallel_project_sessions_do_not_share_local_project_state(tmp_path: Pa
     ]:
         with pytest.raises(LocalReadDeniedError):
             session.assert_transport_session(device_id=DEVICE, session_id=other_session)
+        wrong_project_request = packet(project=other_project)
         with pytest.raises(LocalReadDeniedError):
-            session.read(packet(project=other_project), sequence=1)
+            session.read(wrong_project_request, sequence=1)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         responses = list(

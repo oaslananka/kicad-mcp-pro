@@ -69,6 +69,8 @@ class ProjectWorkerDeniedError(ValueError):
 
 # Explicitly approved local inspection tools; general remote MCP tool
 # forwarding requires a separate, verified operation-level contract.
+_PROJECT_NOT_AUTHORIZED = "project not authorized"
+
 _SCOPED_INSPECTION_TOOLS = frozenset(
     {
         "kicad_get_version",
@@ -101,9 +103,9 @@ class ProjectInspectionSession:
         try:
             accepted = self._authorized(self._project_id)
         except Exception as exc:
-            raise ProjectWorkerDeniedError("project not authorized") from exc
+            raise ProjectWorkerDeniedError(_PROJECT_NOT_AUTHORIZED) from exc
         if accepted is not True:
-            raise ProjectWorkerDeniedError("project not authorized")
+            raise ProjectWorkerDeniedError(_PROJECT_NOT_AUTHORIZED)
 
     async def inspect(self, name: str) -> CallToolResult:
         """Execute only an explicit read-only project inspection operation."""
@@ -143,16 +145,16 @@ class LocalProjectWorkerRouter:
     async def connect(self, project_id: str) -> AsyncIterator[ProjectInspectionSession]:
         """Connect to a fresh project-local stdio engine, never a shared singleton."""
         if not isinstance(project_id, str):
-            raise ProjectWorkerDeniedError("project not authorized")
+            raise ProjectWorkerDeniedError(_PROJECT_NOT_AUTHORIZED)
         directory = self._projects.get(project_id)
         if directory is None:
-            raise ProjectWorkerDeniedError("project not authorized")
+            raise ProjectWorkerDeniedError(_PROJECT_NOT_AUTHORIZED)
         try:
             granted = self._authorized(project_id)
         except Exception as exc:
-            raise ProjectWorkerDeniedError("project not authorized") from exc
+            raise ProjectWorkerDeniedError(_PROJECT_NOT_AUTHORIZED) from exc
         if granted is not True:
-            raise ProjectWorkerDeniedError("project not authorized")
+            raise ProjectWorkerDeniedError(_PROJECT_NOT_AUTHORIZED)
         async with project_stdio_worker(directory) as session:
             worker = ProjectInspectionSession(session, project_id, self._authorized)
             worker._check_grant()

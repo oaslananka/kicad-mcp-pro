@@ -21,6 +21,8 @@ from kicad_mcp.project.stdio_worker import (
 # This capability is deliberately NOT issued by the present one-shot Cloud
 # connector. Existing project_summary/run_drc consent cannot be reused to
 # authorize an additional native MCP operation.
+_PROJECT_NOT_AUTHORIZED = "project not authorized"
+
 _LOCAL_INSPECTION_CAPABILITIES = frozenset(
     {"project_worker_inspection", "project_board_counts", "project_schematic_counts"}
 )
@@ -48,7 +50,7 @@ class BoundConnectorProjectWorker:
             or len(verified.operations) != 1
             or not verified.operations.issubset(_LOCAL_INSPECTION_CAPABILITIES)
         ):
-            raise ProjectWorkerDeniedError("project not authorized")
+            raise ProjectWorkerDeniedError(_PROJECT_NOT_AUTHORIZED)
         # Resolve only the out-of-band, locally selected project. Cloud has no
         # opportunity to send a path or name a different project directory.
         self._router = LocalProjectWorkerRouter(
@@ -77,12 +79,12 @@ class BoundConnectorProjectWorker:
         )
         async with self._router.connect(self._verified.project_id) as worker:
             if not self._current_grant():
-                raise ProjectWorkerDeniedError("project not authorized")
+                raise ProjectWorkerDeniedError(_PROJECT_NOT_AUTHORIZED)
             yield worker
 
     def assert_operation_authorized(self, operation: str) -> None:
         if self._verified.operations != frozenset({operation}) or not self._current_grant():
-            raise ProjectWorkerDeniedError("project not authorized")
+            raise ProjectWorkerDeniedError(_PROJECT_NOT_AUTHORIZED)
 
     def assert_session_authorized(
         self, *, device_id: str, project_id: str, session_id: str
@@ -94,4 +96,4 @@ class BoundConnectorProjectWorker:
             or session_id != self._verified.session_id
             or not self._current_grant()
         ):
-            raise ProjectWorkerDeniedError("project not authorized")
+            raise ProjectWorkerDeniedError(_PROJECT_NOT_AUTHORIZED)

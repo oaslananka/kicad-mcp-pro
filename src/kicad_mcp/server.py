@@ -1664,35 +1664,10 @@ class _StreamableHttpContractMiddleware:
         ):
             return
 
-        if rpc_method == "tools/call" and self._project_binding is not None:
-            if not self._project_binding.check_and_pin(get_config()):
-                await _streamable_http_error_response(
-                    code=-32009,
-                    message=(
-                        "The shared HTTP project's configuration changed; restart this MCP server."
-                    ),
-                    rpc_id=rpc_id,
-                    status_code=409,
-                    scope=scope,
-                    receive=replay_receive,
-                    send=send_proc,
-                )
-                return
-            if _json_rpc_tool_name(body) in PROJECT_SELECTION_TOOLS:
-                await _streamable_http_error_response(
-                    code=-32009,
-                    message=(
-                        "A shared HTTP process cannot switch the active KiCad project. "
-                        "Choose the project before connecting, or use a separate local "
-                        "stdio MCP process for another project."
-                    ),
-                    rpc_id=rpc_id,
-                    status_code=409,
-                    scope=scope,
-                    receive=replay_receive,
-                    send=send_proc,
-                )
-                return
+        if await self._reject_invalid_shared_project_call(
+            rpc_method, body, rpc_id, scope, replay_receive, send_proc
+        ):
+            return
 
         session_id = headers.get("mcp-session-id", "")
 
@@ -1720,6 +1695,48 @@ class _StreamableHttpContractMiddleware:
             ):
                 await self.app(scope, replay_receive, send_wrapper)
             otel.finish_mcp_request_span(request_span, status_code=post_response_status)
+
+    async def _reject_invalid_shared_project_call(
+        self,
+        rpc_method: str | None,
+        body: bytes,
+        rpc_id: object | None,
+        scope: Scope,
+        replay_receive: Receive,
+        send_proc: Send,
+    ) -> bool:
+        if rpc_method != "tools/call" or self._project_binding is None:
+            return False
+        if not self._project_binding.check_and_pin(get_config()):
+            await _streamable_http_error_response(
+                code=-32009,
+                message=(
+                    "The shared HTTP project's configuration changed; restart this MCP server."
+                ),
+                rpc_id=rpc_id,
+                status_code=409,
+                scope=scope,
+                receive=replay_receive,
+                send=send_proc,
+            )
+            return True
+        if _json_rpc_tool_name(body) in PROJECT_SELECTION_TOOLS:
+            await _streamable_http_error_response(
+                code=-32009,
+                message=(
+                    "A shared HTTP process cannot switch the active KiCad project. "
+                    "Choose the project before connecting, or use a separate local "
+                    "stdio MCP process for another project."
+                ),
+                rpc_id=rpc_id,
+                status_code=409,
+                scope=scope,
+                receive=replay_receive,
+                send=send_proc,
+            )
+            return True
+
+        return False
 
     def _has_session(self, session_id: str) -> bool:
         return session_id in self._session_ids
@@ -1829,7 +1846,7 @@ def _json_rpc_tool_name(body: bytes) -> str | None:
     """Inspect the JSON-RPC payload rather than trusting a spoofable tool header."""
     try:
         payload = json.loads(body)
-    except (ValueError, UnicodeDecodeError):
+    except ValueError:
         return None
     if not isinstance(payload, dict):
         return None

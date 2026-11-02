@@ -13,6 +13,8 @@ import sys
 import time
 from argparse import Namespace
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from kicad_mcp import cloud_once
 from kicad_mcp.cloud_local_registry import resolve_registered_read
 from kicad_mcp.cloud_outbound_handshake import (
@@ -73,49 +75,8 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
         )
 
     if inspection or board_counts or schematic_counts:
-
-        def factory(receipt: HandshakeReceipt) -> BoundConnectorProjectWorker:
-            return BoundConnectorProjectWorker(
-                verified=VerifiedLocalBinding(
-                    device_id=receipt.device_id,
-                    project_id=options.project_id,
-                    operations=frozenset(
-                        {
-                            (
-                                "project_board_counts"
-                                if board_counts
-                                else "project_schematic_counts"
-                                if schematic_counts
-                                else "project_worker_inspection"
-                            )
-                        }
-                    ),
-                    session_id=receipt.session_id,
-                    session_expires_unix_ms=wall_cutoff_ms,
-                ),
-                operator_project=OperatorProject(
-                    device_id=options.device_id,
-                    project_id=options.project_id,
-                    directory=options.project_directory,
-                    filename_stem=options.filename_stem,
-                ),
-                current_authorization=lambda: time.monotonic_ns() < monotonic_cutoff_ns,
-            )
-
-        inspection_transport = (
-            execute_operator_board_counts_once
-            if board_counts
-            else execute_operator_schematic_counts_once
-            if schematic_counts
-            else execute_operator_inspection_once
-        )
-        return await inspection_transport(
-            origin=options.cloud_origin,
-            trusted_origin=options.cloud_origin,
-            owner_sub=options.owner_sub,
-            device_id=options.device_id,
-            signing_key=key,
-            inspector_factory=factory,
+        return await _dispatch_inspection_once(
+            options, lease, key, board_counts=board_counts, schematic_counts=schematic_counts
         )
 
     transport = execute_operator_native_drc_once if native_drc else execute_operator_presence_once
@@ -126,6 +87,53 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
         device_id=options.device_id,
         signing_key=key,
         dispatcher_factory=dispatch,
+    )
+
+
+async def _dispatch_inspection_once(
+    options: Namespace,
+    lease: tuple[int, int],
+    key: Ed25519PrivateKey,
+    *,
+    board_counts: bool,
+    schematic_counts: bool,
+) -> HandshakeReceipt:
+    wall_cutoff_ms, monotonic_cutoff_ns = lease
+    if board_counts:
+        operation = "project_board_counts"
+        transport = execute_operator_board_counts_once
+    elif schematic_counts:
+        operation = "project_schematic_counts"
+        transport = execute_operator_schematic_counts_once
+    else:
+        operation = "project_worker_inspection"
+        transport = execute_operator_inspection_once
+
+    def factory(receipt: HandshakeReceipt) -> BoundConnectorProjectWorker:
+        return BoundConnectorProjectWorker(
+            verified=VerifiedLocalBinding(
+                device_id=receipt.device_id,
+                project_id=options.project_id,
+                operations=frozenset({operation}),
+                session_id=receipt.session_id,
+                session_expires_unix_ms=wall_cutoff_ms,
+            ),
+            operator_project=OperatorProject(
+                device_id=options.device_id,
+                project_id=options.project_id,
+                directory=options.project_directory,
+                filename_stem=options.filename_stem,
+            ),
+            current_authorization=lambda: time.monotonic_ns() < monotonic_cutoff_ns,
+        )
+
+    return await transport(
+        origin=options.cloud_origin,
+        trusted_origin=options.cloud_origin,
+        owner_sub=options.owner_sub,
+        device_id=options.device_id,
+        signing_key=key,
+        inspector_factory=factory,
     )
 
 
