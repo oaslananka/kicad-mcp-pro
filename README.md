@@ -101,7 +101,7 @@ backend version and verify its desktop compatibility handshake before use; see
 ### CLI
 
 ```bash
-uvx kicad-mcp-pro init
+uvx kicad-mcp-pro quickstart
 uvx kicad-mcp-pro tray
 uvx kicad-mcp-pro dashboard --open
 uvx kicad-mcp-pro --transport streamable-http --port 3334
@@ -195,6 +195,20 @@ for `--core-only`, `--check`, cleanup, upgrade, and KiCad capability modes.
 
 The canonical metadata inputs are `pyproject.toml` for package version and repository identity, and `compatibility.yaml` for KiCad and MCP support policy. `server.json` is the generated registry manifest. `pnpm run metadata:sync` renders the public surfaces, and `pnpm run metadata:check` verifies them in CI and release validation.
 
+## Fast local setup
+
+Open a terminal in a KiCad project directory and run:
+
+```bash
+uvx kicad-mcp-pro quickstart
+```
+
+This detects a supported local agent, configures its MCP entry in read-only mode,
+installs bundled skills where supported, backs up existing settings, and verifies
+the saved launch command over stdio. Cloud login
+is optional and is not required for local use. See the [installation guide](docs/agents/install.md)
+for details and explicit agent selection.
+
 ## Usage
 
 Use `kicad-mcp-pro --help` to inspect CLI commands and
@@ -212,6 +226,7 @@ here so they stay synchronized with the actual MCP server tools.
 
 | File | Purpose |
 | --- | --- |
+| [`plugin.json`](plugin.json), [`mcp.json`](mcp.json) | Generated portable plugin package with canonical skills and a version-pinned local MCP launcher. |
 | [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) | Product-level plugin manifest for compatible agent runtimes and marketplace catalogs. |
 | [`.mcp.json`](.mcp.json) | Claude Code project-local MCP server configuration. |
 | [`.codex/config.example.toml`](.codex/config.example.toml) | Codex CLI MCP configuration example. |

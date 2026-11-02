@@ -6,7 +6,7 @@ maintainer-triggered pull-request repair agent.
 ## MCP quick start
 
 ```bash
-kicad-mcp-pro setup opencode
+uvx kicad-mcp-pro quickstart --agent opencode
 ```
 
 On OpenCode 2.x, use the following minimal manual configuration (OpenCode
@@ -61,7 +61,7 @@ OpenCode permissions match tool names and support wildcards. Prefer the current
 
 ```bash
 opencode mcp list
-kicad-mcp-pro doctor --agent opencode
+kicad-mcp-pro doctor
 ```
 
 ## Experimental plugin

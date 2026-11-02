@@ -5,12 +5,12 @@ Connect [Codex CLI](https://github.com/openai/codex) to your local KiCad project
 ## Quick Install
 
 ```bash
-kicad-mcp-pro setup codex
+uvx kicad-mcp-pro quickstart --agent codex
 ```
 
 Or manually:
 
-1. Copy `config.toml.example` to `~/.codex/config.toml`.
+1. Merge only the `[mcp_servers.kicad]` and environment tables from `config.toml.example` into `~/.codex/config.toml`; preserve other settings.
 2. Edit `KICAD_MCP_PROJECT_DIR` to match your KiCad project root.
 3. Start Codex CLI — the `kicad` MCP server appears automatically.
 
@@ -34,7 +34,7 @@ Never run destructive tools without explicit user confirmation.
 ## Verification
 
 ```bash
-kicad-mcp-pro doctor --agent codex
+kicad-mcp-pro doctor
 ```
 
 ## Security

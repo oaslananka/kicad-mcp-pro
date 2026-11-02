@@ -40,7 +40,7 @@ kept in sync with the package version by release-please, so it never drifts.
 ## Verification
 
 ```bash
-kicad-mcp-pro doctor --agent claude-desktop
+kicad-mcp-pro doctor
 ```
 
 Then ask the agent: *"Use the kicad MCP server to inspect the current project."*

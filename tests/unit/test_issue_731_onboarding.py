@@ -32,10 +32,10 @@ def test_claude_code_preview_never_writes_configuration(monkeypatch: pytest.Monk
 def test_init_defaults_to_preview_without_explicit_write(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    calls: list[bool] = []
+    calls: list[tuple[bool, str]] = []
 
     def fake_setup_agent(*args: object, **kwargs: object) -> str:
-        calls.append(bool(kwargs["write"]))
+        calls.append((bool(kwargs["write"]), str(kwargs["mode"])))
         return "preview"
 
     monkeypatch.setattr("kicad_mcp.setup.setup_agent", fake_setup_agent)
@@ -52,7 +52,7 @@ def test_init_defaults_to_preview_without_explicit_write(
     )
 
     assert result.exit_code == 0, result.output
-    assert calls == [False]
+    assert calls == [(False, "readonly")]
     assert "Config:  Generated" in result.output
 
 
