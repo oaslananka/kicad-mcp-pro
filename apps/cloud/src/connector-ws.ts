@@ -11,6 +11,10 @@ import type {PgDeviceHandshakes} from "./device-handshake.js";
 import type {RequestSourceResolver} from "./trusted-ingress.js";
 
 export type DeviceProofPort=Pick<PgDeviceHandshakes,"issue"|"verify"|"cancel">;
+export type ManagedReadGrantPort={
+  isEnabled:(oauth:TrustedOAuthReadIdentity,deviceId:string,projectId:string,
+    operation:"project_summary")=>Promise<boolean>;
+};
 /**
  * High-assurance mode: a separately verified owner approval must be consumed.
  * The explicit presence-only local pilot is lower assurance; it relies on
@@ -196,6 +200,9 @@ export function attachConnectorWebSocket(
     connections:BoundConnectorConnections;
     /** No production owner-consent verifier has been provisioned. Fail closed. */
     ownerConsent?:OwnerReadConsentPort;
+    /** Separate default-OFF owner-managed project switch; original OAuth and
+     * signed device/session authorization remain mandatory for every read. */
+    managedGrant?:ManagedReadGrantPort;
     /**
      * Explicit no-customer metadata pilot: the owner already granted the
      * OAuth client/project in Cloud and manually started a one-shot device
@@ -240,6 +247,8 @@ export function attachConnectorWebSocket(
   // approval dependency, even when used outside the production entrypoint.
   if(options.operatorLocalOnce&&options.ownerConsent)
     throw Error("Conflicting owner approval modes");
+  if(options.managedGrant&&(options.operatorLocalOnce||options.ownerConsent))
+    throw Error("Managed Connector cannot share one-shot approval modes");
   if(options.operatorNativeDrcOnce&&!options.operatorLocalOnce)
     throw Error("Native DRC pilot requires explicit local one-shot mode");
   if(options.operatorInspectionOnce&&!options.operatorLocalOnce)
@@ -295,7 +304,7 @@ export function attachConnectorWebSocket(
         ipOpen.set(ip,(ipOpen.get(ip)??0)+1);
         const entry:Entry={phase:"new",owner:"",device:"",challenge:"",
           nonce:"",queued:0,pending:Promise.resolve(),timer:null,lastPong:Date.now(),
-          readSequence:new ConnectorReadSequence(1)};
+          readSequence:new ConnectorReadSequence(options.managedGrant?16:1)};
         function expire(ms:number):void{
           if(entry.timer)clearTimeout(entry.timer);
           entry.timer=setTimeout(()=>{entry.phase="closed";reject(ws);},ms);
@@ -412,7 +421,9 @@ export function attachConnectorWebSocket(
             // Revocation between request and result must discard the answer.
             // The OAuth authority is bound in the pending closure below.
             const allowed=await options.connections.authorizeOutgoingSummary(
-              ws,waitingOAuth.get(pending)!,pending.projectId);
+              ws,waitingOAuth.get(pending)!,pending.projectId) &&
+              (!options.managedGrant||await options.managedGrant.isEnabled(
+                waitingOAuth.get(pending)!,entry.device,pending.projectId,"project_summary"));
             entry.validating=undefined;
             clearTimeout(pending.timer);
             // The database grant check is asynchronous. Neither its start
@@ -430,7 +441,7 @@ export function attachConnectorWebSocket(
             send({kind:"connector.read_ack",version:1,sequence:pending.sequence,
               requestId:pending.requestId});
             pending.resolve(decoded.data.result);
-            ws.close(1000,"read_completed");
+            if(!options.managedGrant)ws.close(1000,"read_completed");
             return;
           }
           // No native operation, unsolicited result, or arbitrary frame.
@@ -505,13 +516,14 @@ export function attachConnectorWebSocket(
        !(options.operatorLocalOnce&&options.operatorBoardCountsOnce))return null;
     if(operation==="project_schematic_counts"&&
        !(options.operatorLocalOnce&&options.operatorSchematicCountsOnce))return null;
-    if(stopped||(!options.ownerConsent&&!options.operatorLocalOnce)||!oauth||
+    if(stopped||(!options.ownerConsent&&!options.operatorLocalOnce&&!options.managedGrant)||!oauth||
        typeof oauth.ownerSub!=="string"||!oauth.ownerSub||
        typeof oauth.clientId!=="string"||!oauth.clientId||
        !/^[0-9a-f-]{36}$/i.test(deviceId)||
        !/^[0-9a-f-]{36}$/i.test(projectId))return null;
     const active=readyDevices.get(socketKey(oauth.ownerSub,deviceId));
-    if(!active||active.entry.phase!=="ready"||active.entry.readSent||
+    if(!active||active.entry.phase!=="ready"||
+       (active.entry.readSent&&!options.managedGrant)||active.entry.validating||
        active.entry.awaiting||active.socket.readyState!==WebSocket.OPEN||
        (active.entry.sessionDeadline??0)-performance.now()<40_000||
        reservedSockets.has(active.socket))return null;
@@ -569,7 +581,7 @@ export function attachConnectorWebSocket(
        !(options.operatorLocalOnce&&options.operatorBoardCountsOnce))return null;
     if(operation==="project_schematic_counts"&&
        !(options.operatorLocalOnce&&options.operatorSchematicCountsOnce))return null;
-    if(stopped||(!options.ownerConsent&&!options.operatorLocalOnce)||!oauth||typeof oauth.ownerSub!=="string"||
+    if(stopped||(!options.ownerConsent&&!options.operatorLocalOnce&&!options.managedGrant)||!oauth||typeof oauth.ownerSub!=="string"||
       !/^[0-9a-f-]{36}$/i.test(deviceId)||
       !/^[0-9a-f-]{36}$/i.test(projectId))return null;
     const active=readyDevices.get(socketKey(oauth.ownerSub,deviceId));
@@ -598,12 +610,13 @@ export function attachConnectorWebSocket(
     const requestId=prepared.requestId;
     const ownerExpiresAtUnixMs=prepared.expiresAtUnixMs;
     const ownerExpiresAtMonotonic=reserved.deadline;
-    if(entry.phase!=="ready"||entry.readSent||entry.awaiting||
+    if(entry.phase!=="ready"||(entry.readSent&&!options.managedGrant)||
+       entry.awaiting||entry.validating||
       socket.readyState!==WebSocket.OPEN||
       (entry.sessionDeadline??0)-performance.now()<10_000)return null;
     const sequence=entry.readSequence.reserve();
     if(sequence===null)return null;
-    entry.readSent=true; // Reserve before any async authorization awaits.
+    if(!options.managedGrant)entry.readSent=true; // Preserve original one-shot semantics.
     // A registered verifier must consume a freshly owner-authenticated,
     // one-shot assertion; OAuth and device signatures cannot replace it.
     let consentTimer:ReturnType<typeof setTimeout>|undefined;
@@ -616,6 +629,8 @@ export function attachConnectorWebSocket(
     let consented:boolean;
     try{
       consented=await Promise.race([
+        options.managedGrant ?
+          options.managedGrant.isEnabled(oauth,deviceId,projectId,"project_summary") :
         options.operatorLocalOnce ? Promise.resolve(true) :
           options.ownerConsent!.consume({oauth,deviceId,projectId,requestId,
             origin:options.publicOrigin,operation:"project_summary",

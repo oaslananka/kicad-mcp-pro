@@ -24,6 +24,27 @@ then start the separately enabled local one-shot Connector operation. The
 Cloud portal does not proxy arbitrary local tools or store KiCad design
 content. Existing account-free local MCP clients remain supported.
 
+## Owner-managed read-only Connector (development; default OFF)
+
+A separate, opt-in `CONNECTOR_MANAGED_READ_ENABLED=true` Cloud mode permits
+serial `project_summary` reads over an authenticated device WebSocket, without
+asking the owner to approve each read. It requires the existing signed WSS
+transport, built-in identity and device pairing; it does **not** coexist with
+the per-read approval or manual one-shot modes. It is not deployed by default.
+
+The signed-in owner controls a separate per-project **Turn Connector On / Off**
+switch under **Devices**. Missing database switch rows are OFF; enabling checks
+enrolled device and read-only project ownership. The usual OAuth client/project
+grant, access-token revocation and signed device session checks remain
+mandatory **for every read**; disabling access discards in-flight results.
+No arbitrary native commands, project content, local paths or private keys
+cross this interface.
+
+This is **Cloud-side protocol/owner-control groundwork**. A durable local
+Connector with automatic reconnect, restart recovery and native current-device
+acceptance is not yet complete. A Cloud test passing does not demonstrate an
+end-to-end continuously running local client.
+
 ## Device connection status
 
 The signed-in **Devices** page shows whether the device has a currently

@@ -5,7 +5,8 @@ export function renderDevicesPage(
   devices:ReadonlyArray<ManagedDevice & {csrf:string;enableCsrf?:string;projectCsrf?:string;
     connectionState?:"connected"|"disconnected"}>,
   notice?:string,enrollmentAvailable=true,
-  projects:ReadonlyArray<{id:string;deviceId:string;alias:string;enabled:boolean;grantCsrf?:string}>=[],
+  projects:ReadonlyArray<{id:string;deviceId:string;alias:string;enabled:boolean;grantCsrf?:string;
+    managedEnabled?:boolean;managedCsrf?:string}>=[],
   ownerSub?:string,clients:ReadonlyArray<string>=[]
 ):string {
   // Opaque identifiers remain in form fields for the existing backend
@@ -66,6 +67,17 @@ export function renderDevicesPage(
               <p>On device: {deviceNames.get(project.deviceId)??"Previously registered device"}.
                 {project.enabled?" Read-only metadata registered.":" Disabled."}{" "}
                 Local folder must be selected separately on the device. Per-client access is denied until granted.</p>
+              {project.enabled&&project.managedCsrf?<>
+                <p>Managed Connector: {project.managedEnabled?"On (read-only project summary)":"Off"}. Per-client access is controlled separately.</p>
+                <form method="post" action="/devices/projects/managed">
+                  <input type="hidden" name="project_id" value={project.id}/>
+                  <input type="hidden" name="device_id" value={project.deviceId}/>
+                  <input type="hidden" name="csrf" value={project.managedCsrf}/>
+                  <button name="enabled" value={project.managedEnabled?"false":"true"} type="submit">
+                    {project.managedEnabled?"Turn Connector Off":"Turn Connector On"}
+                  </button>
+                </form>
+              </>:null}
               {project.enabled&&project.grantCsrf&&clients.length>0?
                 <form method="post" action="/devices/projects/grant">
                   <input type="hidden" name="project_id" value={project.id}/>

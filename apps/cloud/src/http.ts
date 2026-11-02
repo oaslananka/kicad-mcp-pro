@@ -8,7 +8,7 @@ import type { Identity } from "./identity.js";
 import { browserResponse } from "./browser.js";
 import { consentResponse } from "./consent.js";
 import { connectionsResponse } from "./connections.js";
-import {devicesResponse,type DeviceManagementPort} from "./devices.js";
+import {devicesResponse,type DeviceManagementPort,type ManagedReadPort} from "./devices.js";
 import {pairingBrowserResponse} from "./pairing-browser.js";
 import type {PairingReviewPort} from "./pairing-review.js";
 import {handlePairingDeviceRequest} from "./pairing-device-http.js";
@@ -92,6 +92,7 @@ export type CloudHttpServices={
   grants?:GrantManagement;
   identity?:Pick<Identity,"handler">;
   devices?:DeviceManagementPort;
+  managedRead?:ManagedReadPort;
   pairings?:PairingReviewPort;
   pairingDevice?:PairingDevicePort;
   deviceSource?:RequestSourceResolver;
@@ -153,7 +154,7 @@ async function handleRequest(
         res.end(uiCss);
         return;
       }
-      if (identity && (path === "/sign-in" || path === "/account" || path === "/consent" || path === "/connections" || path === "/connections/revoke" || path === "/devices" || path === "/devices/revoke" || path === "/devices/enable" || path === "/devices/projects/create" || path === "/devices/projects/grant" || path === "/devices/pairing" || path === "/devices/pairing/review" || path.startsWith("/auth/start/"))) {
+      if (identity && (path === "/sign-in" || path === "/account" || path === "/consent" || path === "/connections" || path === "/connections/revoke" || path === "/devices" || path === "/devices/revoke" || path === "/devices/enable" || path === "/devices/projects/create" || path === "/devices/projects/grant" || path === "/devices/projects/managed" || path === "/devices/pairing" || path === "/devices/pairing/review" || path.startsWith("/auth/start/"))) {
         const method=req.method??"GET";
         const headers=new Headers();
         for (const [name,value] of Object.entries(req.headers)) {
@@ -170,10 +171,10 @@ async function handleRequest(
           answer=await consentResponse(browserRequest,identity,config.publicOrigin,config.managementClientId);
         } else if (path==="/connections" || path==="/connections/revoke") {
           answer=await connectionsResponse(browserRequest,identity,config.publicOrigin,grants);
-        } else if(path==="/devices" || path==="/devices/revoke" || path==="/devices/enable" || path==="/devices/projects/create" || path==="/devices/projects/grant"){
+        } else if(path==="/devices" || path==="/devices/revoke" || path==="/devices/enable" || path==="/devices/projects/create" || path==="/devices/projects/grant" || path==="/devices/projects/managed"){
           answer=await devicesResponse(browserRequest,identity,config.publicOrigin,
             devices,Boolean(pairingDevice),grants,
-            summaryRelay?.()?.isDeviceConnected);
+            summaryRelay?.()?.isDeviceConnected,services.managedRead);
         } else if(path==="/devices/pairing" || path==="/devices/pairing/review"){
           answer=await pairingBrowserResponse(browserRequest,identity,config.publicOrigin,pairings);
         } else {
@@ -406,6 +407,20 @@ async function handleRequest(
         if(!await inventory.isAccessTokenAllowed(actor.sub,actor.clientId,actor.issuedAt)){
           deny(res,403,"forbidden");return;
         }
+        if(services.managedRead&&!await services.managedRead.isEnabled(
+          oauth,fields.deviceId,fields.projectId,"project_summary")){
+          deny(res,403,"forbidden");return;
+        }
+        if(services.managedRead &&
+          !await services.managedRead.isEnabled(oauth,fields.deviceId,fields.projectId,"project_summary")){
+          deny(res,403,"forbidden");return;
+        }
+        // A revoke can race the final SQL switch lookup as well.
+        try{await verify(matched[1]);}
+        catch{deny(res,403,"forbidden");return;}
+        if(!await inventory.isAccessTokenAllowed(actor.sub,actor.clientId,actor.issuedAt)){
+          deny(res,403,"forbidden");return;
+        }
         json(res,200,result);return;
       }
       if (path !== "/mcp") {
@@ -478,6 +493,13 @@ async function handleRequest(
           try{await verify(matched[1]);}catch{return null;}
           if(!await inventory.isAccessTokenAllowed(
             actor.sub,actor.clientId,actor.issuedAt))return null;
+          if(services.managedRead&&!await services.managedRead.isEnabled(
+            oauth,deviceId,projectId,"project_summary"))return null;
+          if(services.managedRead &&
+            !await services.managedRead.isEnabled(oauth,deviceId,projectId,"project_summary"))
+            return null;
+          try{await verify(matched[1]);}catch{return null;}
+          if(!await inventory.isAccessTokenAllowed(actor.sub,actor.clientId,actor.issuedAt))return null;
           const {projectPresent,boardPresent,schematicPresent}=result.files;
           return {projectPresent,boardPresent,schematicPresent};
         } : undefined;

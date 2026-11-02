@@ -4,7 +4,9 @@ import type {BrowserIdentity} from "./browser.js";
 import type {PgDeviceManagement} from "./device-management.js";
 import {renderDevicesPage} from "./devices-ui.js";
 import type {GrantManagement} from "./grants.js";
+import type {PgManagedReadAccess} from "./connector-managed-read-access.js";
 
+export type ManagedReadPort=Pick<PgManagedReadAccess,"enabledProjectIds"|"setEnabled"|"isEnabled">;
 export type DeviceConnectionLookup=(ownerSub:string,deviceId:string)=>boolean;
 export type DeviceManagementPort=Pick<PgDeviceManagement,"list"|"revokeDevice"> &
   Partial<Pick<PgDeviceManagement,"enableDevice"|"createProject"|"listProjects">>;
@@ -28,7 +30,7 @@ type DeviceReply={
   message?:string;
   stateCookie?:string;
   enrollmentAvailable?:boolean;
-  projects?:ReadonlyArray<{id:string;deviceId:string;alias:string;enabled:boolean;grantCsrf?:string}>;
+  projects?:Parameters<typeof renderDevicesPage>[3];
   ownerSub?:string;
   clients?:ReadonlyArray<string>;
 };
@@ -82,7 +84,7 @@ async function checkCsrf(req:Request,origin:string,secret:string,
 async function list(req:Request,identity:BrowserIdentity,origin:string,
   devices:DeviceManagementPort,enrollmentAvailable=true,
   grants?:Pick<GrantManagement,"setBrowserGrant">,
-  deviceConnection?:DeviceConnectionLookup):Promise<Response>{
+  deviceConnection?:DeviceConnectionLookup,managedRead?:ManagedReadPort):Promise<Response>{
   if(!identity.api||!identity.$context)return error(503);
   const who=userOf(await identity.api.getSession({headers:req.headers}));
   if(!who)return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});
@@ -121,7 +123,11 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
       }
     }catch{return error(503);}
   }
+  const managedIds=new Set(managedRead?await managedRead.enabledProjectIds(who.user):[]);
   const scoped=await Promise.all(projects.map(async project=>({...project,
+    managedEnabled:managedRead?managedIds.has(project.id):undefined,
+    managedCsrf:managedRead?
+      await csrf(secret,who.user,who.session,project.id,stamp,nonce,"project-managed-read-v1"):undefined,
     grantCsrf:grants?.setBrowserGrant?
       await csrf(secret,who.user,who.session,project.id,stamp,nonce,"project-browser-grant-v1"):
       undefined
@@ -221,23 +227,55 @@ async function ownerGrant(req:Request,identity:BrowserIdentity,origin:string,
     "Cache-Control":"no-store","Set-Cookie":cookie("",origin,0)}});
 }
 
+
+async function ownerManagedRead(req:Request,identity:BrowserIdentity,origin:string,
+  managedRead:ManagedReadPort):Promise<Response>{
+  if(!identity.api||!identity.$context)return error(503);
+  if(req.headers.get("origin")!==origin)return error(403);
+  if(req.headers.get("content-type")?.split(";")[0].trim()!=="application/x-www-form-urlencoded")
+    return error(415);
+  const raw=await req.text();
+  if(raw.length>2048)return error(413);
+  const fields=new URLSearchParams(raw);
+  const names=["project_id","device_id","enabled","csrf"];
+  if([...fields.keys()].length!==names.length||
+    names.some(name=>fields.getAll(name).length!==1))return error(400);
+  const project=fields.get("project_id")??"",device=fields.get("device_id")??"";
+  const enabled=fields.get("enabled"),proof=fields.get("csrf")??"";
+  if(!DEVICE_ID.test(project)||!DEVICE_ID.test(device)||
+    (enabled!=="true"&&enabled!=="false"))return error(400);
+  const who=userOf(await identity.api.getSession({headers:req.headers}));
+  if(!who)return error(401);
+  const {secret}=await identity.$context;
+  if(!await checkCsrf(req,origin,secret,who,project,proof,"project-managed-read-v1"))
+    return error(403);
+  let updated:boolean;
+  try{updated=await managedRead.setEnabled(who.user,device,project,enabled==="true");}
+  catch{return error(503);}
+  if(!updated)return error(404);
+  return new Response(null,{status:303,headers:{Location:"/devices",
+    "Cache-Control":"no-store","Set-Cookie":cookie("",origin,0)}});
+}
+
 /** Authenticated browser-only management, never usable in external auth mode. */
 export async function devicesResponse(req:Request,identity:BrowserIdentity,origin:string,
   devices?:DeviceManagementPort,enrollmentAvailable=true,
   grants?:Pick<GrantManagement,"setBrowserGrant">,
-  deviceConnection?:DeviceConnectionLookup):Promise<Response|null>{
+  deviceConnection?:DeviceConnectionLookup,managedRead?:ManagedReadPort):Promise<Response|null>{
   const path=new URL(req.url).pathname;
   if(!["/devices","/devices/revoke","/devices/enable","/devices/projects/create",
-    "/devices/projects/grant"].includes(path))
+    "/devices/projects/grant","/devices/projects/managed"].includes(path))
     return null;
   if(!devices)return error(503);
   if(path==="/devices"&&req.method==="GET")
-    return list(req,identity,origin,devices,enrollmentAvailable,grants,deviceConnection);
+    return list(req,identity,origin,devices,enrollmentAvailable,grants,deviceConnection,managedRead);
   if(path==="/devices/revoke"&&req.method==="POST")return revoke(req,identity,origin,devices);
   if(enrollmentAvailable && req.method==="POST"){
     if(path==="/devices/enable")return activate(req,identity,origin,devices,"device-enable-v1");
     if(path==="/devices/projects/create")return activate(req,identity,origin,devices,"project-create-v1");
     if(path==="/devices/projects/grant"&&grants)return ownerGrant(req,identity,origin,grants);
+    if(path==="/devices/projects/managed"&&managedRead)
+      return ownerManagedRead(req,identity,origin,managedRead);
   }
   return error(405);
 }

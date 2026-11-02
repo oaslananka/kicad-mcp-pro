@@ -11,6 +11,7 @@ import {deviceHandshakeProof,PgDeviceHandshakes} from "../src/device-handshake.j
 import {redemptionProof} from "../src/device-pairing.js";
 import {connectorSessionProof,PgConnectorSessions} from "../src/connector-session.js";
 import {PgConnectorReadGate} from "../src/connector-read-gate.js";
+import {PgManagedReadAccess} from "../src/connector-managed-read-access.js";
 import {BoundConnectorConnections} from "../src/connector-transport-binding.js";
 import {attachConnectorWebSocket} from "../src/connector-ws.js";
 
@@ -18,7 +19,8 @@ const url=process.env.TEST_DATABASE_URL;
 const migrations=[
   "001_inventory.pgsql","002_client_grants.pgsql","005_token_cutoff.pgsql",
   "007_device_pairing.pgsql","008_device_credentials.pgsql",
-  "009_device_handshake.pgsql","010_connector_sessions.pgsql"
+  "009_device_handshake.pgsql","010_connector_sessions.pgsql",
+  "019_connector_managed_read_access.pgsql"
 ];
 
 function waitMessage(ws:WebSocket):Promise<Record<string,unknown>>{
@@ -63,7 +65,7 @@ function field(obj:Record<string,unknown>,key:string):string{
 
 async function startFixtureServer(
   db:Pool,operatorLocalOnce=false,nativeDrcOnce=false,inspectionOnce=false,
-  boardCountsOnce=false,schematicCountsOnce=false
+  boardCountsOnce=false,schematicCountsOnce=false,managedMode=false
 ){
   const server=createServer((_req,res)=>{res.writeHead(404);res.end();});
   await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
@@ -72,7 +74,7 @@ async function startFixtureServer(
     publicOrigin:"http://127.0.0.1:"+port,
     sourceOf:()=>"127.0.0.1",
     proofs:new PgDeviceHandshakes(db),
-    ...(operatorLocalOnce?{
+    ...(managedMode?{managedGrant:new PgManagedReadAccess(db)}:operatorLocalOnce?{
       operatorLocalOnce:true,
       operatorNativeDrcOnce:nativeDrcOnce,
       operatorInspectionOnce:inspectionOnce,
@@ -332,6 +334,90 @@ test("authenticated Cloud socket rejects revocation and expired reads after wall
       }
     });
   }
+});
+
+
+test("managed WSS performs two successful sequential reads and discards a third revoked response",
+  {skip:!url,timeout:40_000},async()=>{
+  await inIsolatedDatabase(url!,migrations,async db=>{
+    const owner="managed-owner",clientId="managed-client";
+    const keys=generateKeyPairSync("ed25519");
+    const publicDer=keys.publicKey.export({format:"der",type:"spki"}) as Buffer;
+    const pair=new PgPairingChallenges(db,randomBytes(32));
+    const issued=await pair.issue("Managed test",publicDer);
+    await pair.review(issued.id,owner,issued.userCode,"approve");
+    const enrolled=await pair.enroll(issued.id,issued.deviceCode,
+      sign(null,redemptionProof(issued.id,issued.deviceCode),keys.privateKey));
+    assert.equal(enrolled.kind,"enrolled");
+    if(enrolled.kind!=="enrolled")return;
+    const device=enrolled.deviceId;
+    const project="88888888-8888-4888-8888-888888888888";
+    await db.query("UPDATE devices SET enabled=true WHERE id=$1",[device]);
+    await db.query("INSERT INTO projects(id,owner_sub,device_id,alias,enabled,max_mode) "+
+      "VALUES($1,$2,$3,'Managed',true,'readonly')",[project,owner,device]);
+    await db.query("INSERT INTO project_client_grants(project_id,owner_sub,client_id,enabled,max_mode) "+
+      "VALUES($1,$2,$3,true,'readonly')",[project,owner,clientId]);
+    const managed=new PgManagedReadAccess(db);
+    const oauth={ownerSub:owner,clientId,accessTokenIssuedAtSeconds:Math.floor(Date.now()/1000)};
+    assert.equal(await managed.isEnabled(oauth,device,project,"project_summary"),false,
+      "Unknown grant is OFF");
+    assert.equal(await managed.setEnabled("other-owner",device,project,true),false);
+    assert.equal(await managed.setEnabled(owner,device,project,true),true);
+    const {server,port,attached}=await startFixtureServer(
+      db,false,false,false,false,false,true);
+    let ws:WebSocket|undefined;
+    try{
+      ws=await connect("ws://127.0.0.1:"+port+"/api/v1/connector/ws");
+      const challenge=await send(ws,{kind:"device.hello",version:1,ownerSub:owner,deviceId:device});
+      const signed=sign(null,deviceHandshakeProof(field(challenge,"challengeId"),
+        device,field(challenge,"nonce")),keys.privateKey).toString("base64url");
+      const session=await send(ws,{kind:"device.proof",version:1,signature:signed});
+      const signature=sign(null,connectorSessionProof(field(session,"sessionId"),
+        field(session,"challengeId"),device,field(session,"nonce"),
+        field(session,"binding")),keys.privateKey).toString("base64url");
+      const ready=await send(ws,{kind:"connector.session_proof",version:1,signature});
+      assert.equal(ready.kind,"connector.ready");
+      for(const sequence of [1,2,3]){
+        const intent=attached.prepareOwnerSummary(oauth,device,project);
+        assert.ok(intent,"Server prepares each read on the same authenticated socket");
+        const outgoing=waitMessage(ws);
+        const pending=attached.requestSummary(oauth,device,project,intent);
+        const frame=await outgoing;
+        assert.equal(frame.kind,"connector.authorized_read");
+        assert.equal(frame.sequence,sequence);
+        const request=frame.request as Record<string,unknown>;
+        const reply={kind:"connector.local_read_preview",version:1,
+          requestId:request.requestId,projectId:project,operation:"project_summary",
+          files:{projectPresent:true,boardPresent:true,schematicPresent:false}};
+        if(sequence===3){
+          assert.equal(await managed.setEnabled(owner,device,project,false),true,
+            "Owner Off must revoke an in-flight request");
+        }
+        const receipt:Promise<Record<string,unknown>>|null=sequence<3?waitMessage(ws):null;
+        const closed:Promise<number>|null=sequence===3?waitClose(ws):null;
+        ws.send(JSON.stringify({kind:"connector.read_result",version:1,
+          sequence,result:reply}));
+        const result=await pending;
+        if(sequence<3){
+          assert.deepEqual(result,reply);
+          assert.equal((await receipt!).kind,"connector.read_ack");
+          assert.equal(ws.readyState,WebSocket.OPEN,
+            "Managed mode retains the same WSS for a second read");
+        }else{
+          assert.equal(result,null,"Off suppresses response data after revocation");
+          assert.equal(await closed,1008,"Revoked WSS must close without an ACK");
+        }
+      }
+      assert.equal(await managed.isEnabled(oauth,device,project,"project_summary"),false,
+        "Revoked managed access stays OFF");
+      assert.equal(attached.prepareOwnerSummary(oauth,device,project),null,
+        "Off cannot prepare another read on the closed socket");
+    }finally{
+      ws?.terminate();
+      await attached.close();
+      await new Promise<void>(resolve=>server.close(()=>resolve()));
+    }
+  });
 });
 
 // Local integration-only: real cryptographic WSS challenges, isolated SQL

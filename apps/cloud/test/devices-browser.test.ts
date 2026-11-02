@@ -170,3 +170,65 @@ test("schema-ready inventory remains disabled without explicitly enabled device 
   assert.match(detail,/Revoke device/);
   assert.doesNotMatch(detail,/href="\/devices\/pairing"/);
 });
+
+test("owner-managed Connector On/Off stays session-bound and CSRF protected",async()=>{
+  const f=fixture();
+  const project=randomUUID();
+  const requests:Array<{owner:string;device:string;project:string;enabled:boolean}>=[];
+  let enabled=false;
+  const devices:DeviceManagementPort={...f.devices,
+    listProjects:async()=>[{id:project,deviceId:f.ownId,alias:"PCB demo",enabled:true}]
+  };
+  const managed={
+    enabledProjectIds:async(owner:string)=>owner==="owner-a"&&enabled?[project]:[],
+    isEnabled:async()=>enabled,
+    setEnabled:async(owner:string,device:string,id:string,setting:boolean)=>{
+      requests.push({owner,device,project:id,enabled:setting});
+      if(owner!=="owner-a"||device!==f.ownId||id!==project)return false;
+      enabled=setting;return true;
+    }
+  };
+  const get=()=>devicesResponse(new Request(origin+"/devices"),f.identity,origin,
+    devices,true,undefined,undefined,managed);
+  const first=await get();
+  assert.equal(first?.status,200);
+  const html=await first!.text();
+  assert.match(html,/Managed Connector: Off/);
+  const token=/action="\/devices\/projects\/managed"[\s\S]*?name="csrf" value="([^"]+)"/.exec(html)?.[1]??"";
+  assert.ok(token);
+  const cookie=(first!.headers.get("set-cookie")??"").split(";")[0];
+  const submit=(setting:boolean,submittedToken=token,submittedOrigin=origin)=>{
+    return new Request(origin+"/devices/projects/managed",{
+      method:"POST",
+      headers:{Origin:submittedOrigin,"Content-Type":"application/x-www-form-urlencoded",Cookie:cookie},
+      body:new URLSearchParams({project_id:project,device_id:f.ownId,
+        enabled:String(setting),csrf:submittedToken})
+    });
+  };
+  assert.equal((await devicesResponse(submit(true,token,"https://evil.invalid"),
+    f.identity,origin,devices,true,undefined,undefined,managed))?.status,403);
+  assert.equal((await devicesResponse(submit(true,"invalid"),
+    f.identity,origin,devices,true,undefined,undefined,managed))?.status,403);
+  assert.equal(requests.length,0);
+  assert.equal((await devicesResponse(submit(true),f.identity,origin,devices,true,
+    undefined,undefined,managed))?.status,303);
+  assert.equal(requests.length,1);
+  assert.deepEqual(requests[0],{owner:"owner-a",device:f.ownId,project,enabled:true});
+  const refreshed=await get();
+  assert.match(await refreshed!.text(),/Managed Connector: On/);
+  const offToken=/action="\/devices\/projects\/managed"[\s\S]*?name="csrf" value="([^"]+)"/
+    .exec(await (await get())!.text())?.[1]??"";
+  const newest=await get();
+  const newestToken=/action="\/devices\/projects\/managed"[\s\S]*?name="csrf" value="([^"]+)"/
+    .exec(await newest!.text())?.[1]??"";
+  const newestCookie=(newest!.headers.get("set-cookie")??"").split(";")[0];
+  const offRequest=new Request(origin+"/devices/projects/managed",{
+    method:"POST",headers:{Origin:origin,"Content-Type":"application/x-www-form-urlencoded",Cookie:newestCookie},
+    body:new URLSearchParams({project_id:project,device_id:f.ownId,
+      enabled:"false",csrf:newestToken})
+  });
+  assert.ok(offToken&&newestToken);
+  assert.equal((await devicesResponse(offRequest,f.identity,origin,devices,true,
+    undefined,undefined,managed))?.status,303);
+  assert.equal(requests.at(-1)?.enabled,false);
+});

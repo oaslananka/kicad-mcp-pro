@@ -3,6 +3,7 @@ import {Pool} from "pg";
 import {PgDeviceHandshakes} from "./device-handshake.js";
 import {PgConnectorSessions} from "./connector-session.js";
 import {PgConnectorReadGate} from "./connector-read-gate.js";
+import {PgManagedReadAccess} from "./connector-managed-read-access.js";
 import {BoundConnectorConnections} from "./connector-transport-binding.js";
 import {attachConnectorWebSocket} from "./connector-ws.js";
 import {openOwnerConsentRuntime} from "./owner-read-consumer-runtime.js";
@@ -22,6 +23,8 @@ const inventory = new PgGrantManagement(config.databaseUrl,Boolean(identity));
 // Deliberately disabled until trusted WSS ingress, device onboarding and
 // real local connector acceptance have been verified.
 const wsEnabled=process.env.CONNECTOR_WS_ENABLED==="true";
+// Managed mode is OFF unless explicitly enabled by the Cloud operator.
+const managedReadEnabled=process.env.CONNECTOR_MANAGED_READ_ENABLED==="true";
 if(wsEnabled&&!config.publicOrigin.startsWith("https://")){
   throw new Error("Connector WebSocket requires externally terminated HTTPS");
 }
@@ -39,12 +42,18 @@ const deviceManagement=identity&&connectorPool?new PgDeviceManagement(connectorP
 const pairingReview=identity&&connectorPool?
   new PgPairingReview(connectorPool,process.env.BETTER_AUTH_SECRET??""):undefined;
 const pairingDeviceEnabled=process.env.PAIRING_DEVICE_API_ENABLED==="true";
+if(managedReadEnabled&&!pairingDeviceEnabled)
+  throw Error("Managed Connector requires enrolled signed devices");
 // No additional issuer, OAuth App or domain for the optional presence-only
 // pilot. It is deliberately OFF unless the owner explicitly opts in.
 // Local user presence is weaker than independent WebAuthn. It must never
 // authorize file contents, writes or arbitrary commands. Native DRC counts
 // require a separate explicit one-shot flag and remain a limited pilot.
 const operatorLocalOnce=process.env.CONNECTOR_OPERATOR_ONESHOT_ENABLED==="true";
+if(managedReadEnabled&&(!wsEnabled||!identity||operatorLocalOnce||ownerConsentRuntime||
+  process.env.OWNER_READ_CONSUMER_ENABLED==="true"))
+  throw Error("Managed Connector requires signed WSS and built-in identity, without one-shot modes");
+const managedRead=managedReadEnabled&&connectorPool?new PgManagedReadAccess(connectorPool):undefined;
 // Separate owner-operated native DRC **count-only** pilot, OFF by default.
 const operatorNativeDrc=process.env.CONNECTOR_OPERATOR_NATIVE_DRC_ENABLED==="true";
 const operatorInspection=process.env.CONNECTOR_OPERATOR_INSPECTION_ENABLED==="true";
@@ -76,8 +85,8 @@ const deviceSource=(wsEnabled||pairingDeviceEnabled)?
   configuredDeviceSource(process.env):undefined;
 // Lazy binding keeps all read surfaces absent when connector WS is disabled.
 let connectorRelay:ReturnType<typeof attachConnectorWebSocket>|null=null;
-const server=createHttpServer(config, inventory, createVerifier(config), {grants:inventory, identity:identity, devices:deviceManagement, pairings:pairingReview, pairingDevice:pairingDevice, deviceSource:deviceSource,
-  mcpProjectPresenceEnabled:operatorLocalOnce,
+const server=createHttpServer(config, inventory, createVerifier(config), {grants:inventory, identity:identity, devices:deviceManagement, managedRead, pairings:pairingReview, pairingDevice:pairingDevice, deviceSource:deviceSource,
+  mcpProjectPresenceEnabled:operatorLocalOnce||managedReadEnabled,
   mcpProjectNativeDrcEnabled:operatorNativeDrc,
   mcpProjectInspectionEnabled:operatorInspection,
   mcpProjectBoardCountsEnabled:operatorBoardCounts,
@@ -88,6 +97,7 @@ const connectorWs=wsEnabled&&connectorPool?attachConnectorWebSocket(server,{
   sourceOf:deviceSource!,
   proofs:new PgDeviceHandshakes(connectorPool),
   ...(ownerConsentRuntime?{ownerConsent:ownerConsentRuntime.consent}:{}),
+  ...(managedRead?{managedGrant:managedRead}:{}),
   operatorLocalOnce,operatorNativeDrcOnce:operatorNativeDrc,
   operatorInspectionOnce:operatorInspection,
   operatorBoardCountsOnce:operatorBoardCounts,
