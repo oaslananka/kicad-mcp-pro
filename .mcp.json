@@ -8,7 +8,9 @@
         "stdio"
       ],
       "env": {
-        "KICAD_MCP_TRANSPORT": "stdio"
+        "KICAD_MCP_TRANSPORT": "stdio",
+        "KICAD_MCP_PROFILE": "default",
+        "KICAD_MCP_OPERATING_MODE": "readonly"
       }
     }
   }

@@ -6,7 +6,7 @@ MCP server.
 ## Quick install
 
 ```bash
-kicad-mcp-pro setup opencode
+uvx kicad-mcp-pro quickstart --agent opencode
 ```
 
 For OpenCode 2.x, add this local server to `opencode.json`:
@@ -85,7 +85,7 @@ See `opencode.example.json` for the 2.x example and
 ## Verification
 
 ```bash
-kicad-mcp-pro doctor --agent opencode
+kicad-mcp-pro doctor
 opencode mcp list
 ```
 

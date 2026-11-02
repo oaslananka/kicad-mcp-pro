@@ -132,6 +132,52 @@ class TestResolvePath:
 
 
 class TestGenerateConfig:
+    @pytest.mark.parametrize(
+        ("agent", "opencode_version"),
+        [
+            ("claude-code", "2"),
+            ("codex", "2"),
+            ("gemini", "2"),
+            ("opencode", "1"),
+            ("opencode", "2"),
+            ("cursor", "2"),
+            ("vscode", "2"),
+            ("claude-desktop", "2"),
+            ("antigravity", "2"),
+        ],
+    )
+    def test_custom_stdio_launcher_preserves_native_config(
+        self, monkeypatch: pytest.MonkeyPatch, agent: str, opencode_version: str
+    ) -> None:
+        monkeypatch.setenv("KICAD_MCP_OPENCODE_CONFIG_VERSION", opencode_version)
+        project = r"C:\Boards\My Project"
+        launcher = r"C:\Program Files\uv\uvx.exe"
+        original, fmt = generate_config(agent, project)
+        overridden, actual_format = generate_config(agent, project, stdio_command=launcher)
+        assert actual_format == fmt
+        parse = tomllib.loads if fmt == "toml" else json.loads
+        expected = parse(original)
+        if agent == "codex":
+            entry = expected["mcp_servers"]["kicad"]
+        elif agent == "opencode":
+            servers = expected["mcp"].get("servers", expected["mcp"])
+            entry = servers["kicad"]
+        else:
+            entry = expected["servers" if agent == "vscode" else "mcpServers"]["kicad"]
+        if isinstance(entry["command"], list):
+            entry["command"][0] = launcher
+        else:
+            entry["command"] = launcher
+        assert parse(overridden) == expected
+
+    @pytest.mark.parametrize("agent", ["cursor", "codex", "opencode", "chatgpt"])
+    def test_stdio_launcher_override_does_not_change_http_config(self, agent: str) -> None:
+        options = {"transport": "http", "url": "https://example.test/mcp"}
+        baseline = generate_config(agent, "/project", **options)
+        assert (
+            generate_config(agent, "/project", stdio_command="/custom/uvx", **options) == baseline
+        )
+
     def test_generate_claude_code(self) -> None:
         config, fmt = generate_config("claude-code", "/home/user/project", "readonly")
         assert fmt == "json"
