@@ -195,6 +195,19 @@ for `--core-only`, `--check`, cleanup, upgrade, and KiCad capability modes.
 
 The canonical metadata inputs are `pyproject.toml` for package version and repository identity, and `compatibility.yaml` for KiCad and MCP support policy. `server.json` is the generated registry manifest. `pnpm run metadata:sync` renders the public surfaces, and `pnpm run metadata:check` verifies them in CI and release validation.
 
+## Fast local setup
+
+Open a terminal in a KiCad project directory and run:
+
+```bash
+uvx kicad-mcp-pro quickstart
+```
+
+This detects a supported local agent, configures its MCP entry in read-only mode,
+backs up existing settings, and verifies a real local stdio MCP call. Cloud login
+is optional and is not required for local use. See the [installation guide](docs/agents/install.md)
+for details and explicit agent selection.
+
 ## Usage
 
 Use `kicad-mcp-pro --help` to inspect CLI commands and

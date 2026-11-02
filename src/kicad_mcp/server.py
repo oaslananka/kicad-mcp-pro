@@ -2817,6 +2817,101 @@ def setup(
 
 
 @app.command()
+def quickstart(
+    agent: str | None = typer.Option(
+        None, "--agent", help="Agent to configure; auto-detected when possible."
+    ),
+    project_dir: str | None = typer.Option(
+        None, "--project-dir", help="Existing KiCad project directory."
+    ),
+    scope: str | None = typer.Option(
+        None, "--scope", help="Config scope: user or project (default: user where supported)."
+    ),
+) -> None:
+    """Install local, read-only KiCad MCP for an agent and verify a real stdio call.
+
+    No Cloud account, OAuth login, API key or remote service is required.
+    Existing agent settings are merged and backed up before the owned MCP entry
+    is replaced. Cloud can be connected separately later.
+    """
+    from .setup import (
+        AGENTS,
+        detect_installed_agents,
+        detect_kicad_project_directory,
+        run_local_mcp_smoke,
+        setup_agent,
+    )
+
+    selected_agent = agent
+    if selected_agent is None:
+        detected = detect_installed_agents()
+        if len(detected) == 1:
+            selected_agent = detected[0]
+        elif detected:
+            typer.echo("Detected agents: " + ", ".join(detected))
+            selected_agent = typer.prompt("Which agent should be configured?", default=detected[0])
+        else:
+            typer.echo("No supported agent CLI was detected.")
+            selected_agent = typer.prompt("Agent", default="claude-code")
+    if selected_agent not in AGENTS or AGENTS[selected_agent].kind != "local":
+        typer.echo(
+            "Choose a supported local agent: "
+            + ", ".join(key for key, info in AGENTS.items() if info.kind == "local"),
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    project = detect_kicad_project_directory(project_dir)
+    if project is None:
+        if project_dir is not None:
+            typer.echo(
+                "The selected directory does not contain a KiCad project "
+                "(.kicad_pro, .kicad_pcb or .kicad_sch).",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        entered = typer.prompt("KiCad project directory", default=os.getcwd())
+        project = detect_kicad_project_directory(entered)
+        if project is None:
+            typer.echo("No KiCad project was found. No agent config was changed.", err=True)
+            raise typer.Exit(code=2)
+
+    supported_scopes = AGENTS[selected_agent].supports_scope
+    selected_scope = scope or ("project" if "project" in supported_scopes else "user")
+    if selected_scope not in supported_scopes:
+        typer.echo(f"{selected_agent} supports: {', '.join(supported_scopes)}", err=True)
+        raise typer.Exit(code=2)
+
+    typer.echo(f"Agent: {selected_agent}")
+    typer.echo(f"KiCad project: {project}")
+    typer.echo("Mode: readonly (local stdio; Cloud is not required)")
+    result = setup_agent(
+        selected_agent,
+        project_dir=str(project),
+        mode="readonly",
+        write=True,
+        scope=selected_scope,
+        transport="stdio",
+    )
+    if not result.startswith("✓ Config written to "):
+        typer.echo(result, err=True)
+        raise typer.Exit(code=1)
+    typer.echo(result.splitlines()[0])
+    typer.echo("Checking the installed MCP server over stdio…")
+    ok, message = asyncio.run(run_local_mcp_smoke(project))
+    typer.echo(("✓ " if ok else "✗ ") + message)
+    if not ok:
+        typer.echo(
+            "The agent config was saved with a backup, but the MCP smoke test did not pass.",
+            err=True,
+        )
+        typer.echo("Run 'kicad-mcp-pro doctor' for diagnostics.", err=True)
+        raise typer.Exit(code=1)
+    typer.echo("Local KiCad MCP is ready. Restart/reload the selected agent to discover its tools.")
+    typer.echo("Cloud remains optional; connect it later only when remote access is needed.")
+
+
+@app.command()
 def bridge(
     action: str = typer.Argument("start", help="Bridge action: start, stop, status."),
     port: int = typer.Option(9090, "--port", "-p", help="Port for the TCP bridge listener."),
@@ -2981,7 +3076,7 @@ def init(
         ),
     ),
     mode: str = typer.Option(
-        "write", "--mode", help=option_help("Operating mode: readonly, write, manufacturing.")
+        "readonly", "--mode", help=option_help("Operating mode: readonly, write, manufacturing.")
     ),
     write_config: bool = typer.Option(
         False,

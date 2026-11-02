@@ -11,6 +11,7 @@ Phase 2 deliverables:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -141,6 +142,95 @@ AGENTS: dict[str, AgentInfo] = {
         doc_url="docs/agents/claude-ai.md",
     ),
 }
+
+
+_AGENT_EXECUTABLES: dict[str, tuple[str, ...]] = {
+    "claude-code": ("claude",),
+    "codex": ("codex",),
+    "gemini": ("gemini",),
+    "opencode": ("opencode",),
+    "cursor": ("cursor",),
+    "vscode": ("code",),
+    "antigravity": ("agy", "antigravity"),
+}
+
+
+def detect_installed_agents() -> list[str]:
+    """Return local agents with an executable discoverable on PATH."""
+    detected = [
+        key
+        for key, names in _AGENT_EXECUTABLES.items()
+        if any(shutil.which(name) for name in names)
+    ]
+    active_environment = (
+        ("OPENCODE", "opencode"),
+        ("CLAUDE_CODE", "claude-code"),
+        ("CURSOR", "cursor"),
+        ("VSCODE_MCP", "vscode"),
+        ("CODEX", "codex"),
+        ("GEMINI_CLI", "gemini"),
+    )
+    active = next((key for variable, key in active_environment if variable in os.environ), None)
+    if active in AGENTS and AGENTS[active].kind == "local" and active not in detected:
+        detected.insert(0, active)
+    return detected
+
+
+def detect_kicad_project_directory(start: str | Path | None = None) -> Path | None:
+    """Detect a project in one directory without recursively scanning user files."""
+    candidate = Path(start or os.environ.get("KICAD_MCP_PROJECT_DIR") or os.getcwd()).expanduser()
+    try:
+        candidate = candidate.resolve(strict=True)
+    except OSError:
+        return None
+    if not candidate.is_dir():
+        return None
+    if (
+        any(candidate.glob("*.kicad_pro"))
+        or any(candidate.glob("*.kicad_pcb"))
+        or any(candidate.glob("*.kicad_sch"))
+    ):
+        return candidate
+    return None
+
+
+async def run_local_mcp_smoke(project_dir: str | Path) -> tuple[bool, str]:
+    """Start this installed package over stdio and call a harmless server-info tool."""
+    from mcp import ClientSession, Implementation, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    env = {
+        **os.environ,
+        "KICAD_MCP_TRANSPORT": "stdio",
+        "KICAD_MCP_PROJECT_DIR": str(Path(project_dir).expanduser().resolve()),
+        "KICAD_MCP_PROFILE": "default",
+        "KICAD_MCP_OPERATING_MODE": "readonly",
+        "KICAD_MCP_LOG_LEVEL": "ERROR",
+    }
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "kicad_mcp.server"],
+        env=env,
+    )
+    try:
+        async with asyncio.timeout(35):
+            async with stdio_client(params) as (read_stream, write_stream):
+                async with ClientSession(
+                    read_stream,
+                    write_stream,
+                    client_info=Implementation(name="kicad-mcp-pro-quickstart", version="1"),
+                ) as session:
+                    await session.initialize()
+                    available = {tool.name for tool in (await session.list_tools()).tools}
+                    if "kicad_get_server_info" not in available:
+                        return False, "MCP connected, but the server-info tool was not advertised."
+                    result = await session.call_tool("kicad_get_server_info", {})
+                    if result.is_error or not result.content:
+                        return False, "MCP connected, but the read-only server-info call failed."
+                    return True, "MCP stdio initialized; kicad_get_server_info succeeded."
+    except (TimeoutError, OSError, RuntimeError, ValueError) as exc:
+        return False, f"MCP smoke test failed: {type(exc).__name__}: {exc}"
+
 
 # ---------------------------------------------------------------------------
 # Platform-aware config paths

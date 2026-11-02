@@ -30,6 +30,31 @@ uvx kicad-mcp-pro
 pip install kicad-mcp-pro
 ```
 
+## Fast local setup
+
+For the shortest local-first path, open a terminal in the KiCad project folder and run:
+
+```bash
+uvx kicad-mcp-pro quickstart
+```
+
+The command detects supported agent CLIs on `PATH` and the current KiCad project.
+When a choice is ambiguous it asks which agent/project to use. It writes only the
+selected agent's KiCad MCP entry, defaults to **read-only**, merges existing settings,
+and creates a restorable backup. It then starts the installed package as a local
+stdio MCP server and calls `kicad_get_server_info` to verify the protocol end to end.
+
+No Cloud login, account, API key, browser session or remote service is used. Restart
+or reload the selected agent after a successful setup. To choose explicitly:
+
+```bash
+uvx kicad-mcp-pro quickstart --agent codex --project-dir /path/to/kicad-project
+```
+
+Use `kicad-mcp-pro setup-backups <agent>` and `kicad-mcp-pro setup-restore <agent>`
+to inspect or restore a previous configuration. Cloud access is a separate,
+optional setup and is never required for local stdio use.
+
 ## Configure an agent without losing existing settings
 
 **Recommended (single supported writer):** the Python CLI merges only KiCad MCP
