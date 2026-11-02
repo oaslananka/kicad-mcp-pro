@@ -43,19 +43,30 @@ def _single_registered_identity(root: Path) -> dict[str, str]:
     if len(names) != 1 or names[0].suffix != ".json" or _UUID.fullmatch(names[0].stem) is None:
         raise LocalApprovalDeniedError(_DENIED)
 
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    nonblock = getattr(os, "O_NONBLOCK", None)
+    getuid = getattr(os, "getuid", None)
+    if (
+        os.name != "posix"
+        or type(nofollow) is not int
+        or type(nonblock) is not int
+        or not callable(getuid)
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+
     fd = -1
     directory_fd = -1
     try:
         directory_fd = _open_owner_private_dir(names[0])
         fd = os.open(
             names[0].name,
-            os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0),
+            os.O_RDONLY | nofollow | nonblock | getattr(os, "O_CLOEXEC", 0),
             dir_fd=directory_fd,
         )
         info = os.fstat(fd)
         if (
             not stat.S_ISREG(info.st_mode)
-            or info.st_uid != os.getuid()
+            or info.st_uid != getuid()
             or info.st_nlink != 1
             or info.st_mode & 0o077
             or not 1 <= info.st_size <= 2048
@@ -82,7 +93,7 @@ def _single_registered_identity(root: Path) -> dict[str, str]:
         key_info = selected.key_file.lstat()
         if (
             not stat.S_ISREG(key_info.st_mode)
-            or key_info.st_uid != os.getuid()
+            or key_info.st_uid != getuid()
             or key_info.st_nlink != 1
             or key_info.st_mode & 0o077
         ):
