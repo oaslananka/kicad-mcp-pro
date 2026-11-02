@@ -116,18 +116,17 @@ def _single_registered_identity(root: Path) -> dict[str, str]:
 async def _check_transport(origin: str) -> None:
     """Check only the TLS WebSocket upgrade; never send device identity or proof."""
     endpoint = _endpoint(origin=origin, trusted_origin=origin)
-    async with (
-        asyncio.timeout(8),
-        connect(
-            endpoint,
-            origin=None,
-            compression=None,
-            max_size=1024,
-            max_queue=2,
-            open_timeout=5,
-            close_timeout=2,
-        ) as socket,
-    ):
+    # Both connection setup and shutdown are individually bounded; no extra
+    # cancellation scope is needed for a handshake-only probe.
+    async with connect(
+        endpoint,
+        origin=None,
+        compression=None,
+        max_size=1024,
+        max_queue=2,
+        open_timeout=5,
+        close_timeout=2,
+    ) as socket:
         if socket.transport.get_extra_info("ssl_object") is None:
             raise ValueError("unverified Cloud TLS")
 
@@ -149,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             record = _single_registered_identity(default_registry_root())
             asyncio.run(_check_transport(record["cloudOrigin"]))
-        except (OSError, ValueError, TimeoutError, WebSocketException):
+        except (OSError, ValueError, WebSocketException):
             print("Cloud Connector transport is unavailable", file=sys.stderr)
             return 1
         print("Cloud Connector TLS/WebSocket ingress reachable; device not connected")
