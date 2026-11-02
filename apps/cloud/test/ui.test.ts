@@ -62,7 +62,7 @@ test("signed-in console has real navigation, clear states and readable consent",
   const account=renderAccount("Engineer");
   assert.match(account,/nav class="sidebar-links" aria-label="Workspace"/);
   assert.match(account,/aria-current="page"/);
-  assert.match(account,/Local KiCad connection not enabled/);
+  assert.doesNotMatch(account,/Local KiCad connection not enabled/);
   assert.match(account,/Manage connections/);
   const devices=renderDevicesPage([],undefined,false);
   assert.match(devices,/Not enabled/);
@@ -84,6 +84,34 @@ test("signed-in console has real navigation, clear states and readable consent",
   assert.match(uiCss,/\.workspace-sidebar/);
   assert.match(uiCss,/@media\(max-width:560px\)/);
   assert.match(uiCss,/:focus-visible/);
+});
+
+test("shared navigation never contradicts a live device or invents an account-wide device state",()=>{
+  const device={id:"fixture",alias:"Lab computer",enabled:true,revoked:false,
+    fingerprint:"private",createdAt:new Date(),csrf:"csrf",connectionState:"connected" as const};
+  const page=renderDevicesPage([device]);
+  assert.match(page,/Connector connected now/);
+  assert.doesNotMatch(page,/Local KiCad connection not enabled|Local KiCad control not enabled/);
+  const overview=renderAccount("Engineer");
+  assert.doesNotMatch(overview,/KiCad device execution|Local KiCad connection not enabled/);
+  assert.match(overview,/href="\/devices/);
+});
+
+test("project shortcut has one destination in empty, unavailable and registered device states",()=>{
+  const device={id:"device",alias:"Lab",enabled:true,revoked:false,
+    fingerprint:"private",createdAt:new Date(),csrf:"csrf"};
+  const pages=[renderDevicesPage([],undefined,false),renderDevicesPage([]),
+    renderDevicesPage([device],undefined,true,[{id:"project",deviceId:"device",alias:"Board",enabled:true}])];
+  for(const page of pages)assert.equal((page.match(/id="registered-projects"/g)??[]).length,1);
+  assert.match(renderAccount("Engineer"),/href="\/devices#registered-projects"/);
+});
+
+test("unknown permission names cannot resolve inherited object properties",()=>{
+  const page=renderConnectionsPage([{id:"one",clientId:"client",csrf:"csrf",name:"Example",
+    scopes:["constructor","__proto__","toString"]}]);
+  assert.match(page,/title="constructor">constructor<\/span>/);
+  assert.match(page,/title="__proto__">__proto__<\/span>/);
+  assert.match(page,/title="toString">toString<\/span>/);
 });
 
 

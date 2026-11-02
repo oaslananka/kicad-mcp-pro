@@ -12,15 +12,11 @@ export function renderDevicesPage(
   // Opaque identifiers remain in form fields for the existing backend
   // contract; the owner-facing page uses human-readable aliases instead.
   const deviceNames=new Map(devices.map(d=>[d.id,d.alias]));
-  return renderPage({title:"Devices",kind:"devices",eyebrow:"Workspace / Devices",
-    summary:"Device availability and access management for local KiCad integrations.",
+  return renderPage({title:"Devices & projects",kind:"devices",eyebrow:"Workspace / Devices & projects",
+    summary:"Check your computer's connection, then manage access to its registered projects.",
     children:<div className="page-stack"><section className="card detail-card">
-      {enrollmentAvailable&&ownerSub?<details className="advanced-identity">
-        <summary>Advanced: local Connector account ID</summary>
-        <p>Only needed when configuring the local Connector manually: <code>{ownerSub}</code></p>
-      </details>:null}
       {notice?<output className="output-notice">{notice}</output>:null}
-      {!enrollmentAvailable && devices.length===0?<div className="status-card"><div>
+      {!enrollmentAvailable && devices.length===0?<div className="status-card" id="registered-projects"><div>
         <span className="status-pill pending">Not enabled</span>
         <h2>Local KiCad devices aren't available yet</h2>
         <p>Device enrollment and management are not enabled on this deployment. No pairing or local project control is available. The device schema and recovery checks must be approved before activation.</p>
@@ -61,8 +57,8 @@ export function renderDevicesPage(
                   <button className="button danger" type="submit">Revoke device</button>
                 </form>}
             </li>)}</ul>}
-          {projects.length>0?<><h3>Registered projects</h3>
-            <ul className="connections-list">{projects.map(project=><li key={project.id}>
+          {projects.length>0?<><h3 id="registered-projects" className="project-section-heading">Registered projects</h3>
+            <ul className="connections-list">{projects.map(project=><li className="project-item" key={project.id}>
               <strong>{project.alias}</strong>
               <p>On device: {deviceNames.get(project.deviceId)??"Previously registered device"}.
                 {project.enabled?" Read-only metadata registered.":" Disabled."}{" "}
@@ -73,7 +69,7 @@ export function renderDevicesPage(
                   <input type="hidden" name="project_id" value={project.id}/>
                   <input type="hidden" name="device_id" value={project.deviceId}/>
                   <input type="hidden" name="csrf" value={project.managedCsrf}/>
-                  <button name="enabled" value={project.managedEnabled?"false":"true"} type="submit">
+                  <button className="button secondary" name="enabled" value={project.managedEnabled?"false":"true"} type="submit">
                     {project.managedEnabled?"Turn Connector Off":"Turn Connector On"}
                   </button>
                 </form>
@@ -87,13 +83,20 @@ export function renderDevicesPage(
                       {clients.map(client=><option value={client} key={client}>{client}</option>)}
                     </select>
                   </label>
-                  <button name="enabled" value="true" type="submit">Allow read-only metadata</button>
-                  <button name="enabled" value="false" type="submit">Revoke this project's access</button>
+                  <div className="action-row"><button className="button primary" name="enabled" value="true" type="submit">Allow read-only metadata</button>
+                  <button className="button danger" name="enabled" value="false" type="submit">Revoke this project's access</button></div>
                 </form>:null}
-            </li>)}</ul></>:null}
+            </li>)}</ul></>:<div id="registered-projects" className="project-empty">
+              <div className="card-kicker">PROJECT ACCESS</div><h3>No registered projects yet</h3>
+              <p>Register a project under an enabled device above. Each AI client's access is granted separately.</p>
+            </div>}
           <div className="security-note"><Icon name="shield" size={17}/>Revoked keys cannot authenticate, even if a device flag is later changed. No KiCad project files or paths are stored in Cloud.</div>
           {enrollmentAvailable?<div className="action-row"><a className="button secondary" href="/devices/pairing">Review device pairing →</a></div>:null}
         </>}
+      {enrollmentAvailable&&ownerSub?<details className="advanced-identity">
+        <summary>Advanced: local Connector account ID</summary>
+        <p>Only needed when configuring the local Connector manually: <code>{ownerSub}</code></p>
+      </details>:null}
     </section></div>
   });
 }

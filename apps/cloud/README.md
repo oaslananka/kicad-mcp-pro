@@ -10,7 +10,7 @@ files or provide an AI chat/model runtime.
 
 ## Remote AI client setup (development)
 
-When Cloud identity is configured, signed-in users can open **Connections**
+When Cloud identity is configured, signed-in users can open **AI connections**
 for the exact `PUBLIC_ORIGIN/mcp` endpoint and current ChatGPT and Claude
 setup links. The endpoint must be publicly reachable over HTTPS for hosted
 AI clients; a localhost development URL cannot be used by a remote host.
@@ -19,7 +19,7 @@ and its workspace configuration. Hosted AI-client authentication has not yet
 been accepted against the production deployment.
 
 An account login authorizes only the Cloud account. The owner must also
-grant that OAuth client access to an eligible project under **Devices**,
+grant that OAuth client access to an eligible project under **Devices & projects**,
 then start the separately enabled local one-shot Connector operation. The
 Cloud portal does not proxy arbitrary local tools or store KiCad design
 content. Existing account-free local MCP clients remain supported.
@@ -33,7 +33,7 @@ transport, built-in identity and device pairing; it does **not** coexist with
 the per-read approval or manual one-shot modes. It is not deployed by default.
 
 The signed-in owner controls a separate per-project **Turn Connector On / Off**
-switch under **Devices**. Missing database switch rows are OFF; enabling checks
+switch under **Devices & projects**. Missing database switch rows are OFF; enabling checks
 enrolled device and read-only project ownership. The usual OAuth client/project
 grant, access-token revocation and signed device session checks remain
 mandatory **for every read**; disabling access discards in-flight results.

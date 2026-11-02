@@ -1,12 +1,12 @@
 import {renderPage} from "./ui-shell.js";
 import {Icon} from "./ui-icons.js";
 export type DisplayConnection={id:string;name:string;scopes:string[];clientId:string;csrf:string};
-const scopesInfo:Record<string,string>={
-  "openid":"Identify your account",
-  "profile":"View your basic profile",
-  "offline_access":"Keep a connection without signing in each time",
-  "projects:read":"List projects you separately allow"
-};
+const scopesInfo=new Map<string,string>([
+  ["openid","Identify your account"],
+  ["profile","View your basic profile"],
+  ["offline_access","Keep a connection without signing in each time"],
+  ["projects:read","List projects you separately allow"]
+]);
 export function renderConnectionsPage(
   connections:DisplayConnection[],notice?:string,publicOrigin?:string
 ):string {
@@ -20,12 +20,13 @@ export function renderConnectionsPage(
       {notice?<output className="output-notice">{notice}</output>:null}
       {connections.length===0?<div className="empty-state"><div className="empty-icon"><Icon name="connections" size={21}/></div><div>
         <h3>No AI apps connected yet</h3><p>Start a connection from your AI client and review the permission request here.</p>
+        {publicEndpoint?<a className="text-link" href="#mcp-setup">Open the connection guide <Icon name="arrow" size={15}/></a>:null}
       </div></div>:
         <ul className="connections-list">{connections.map(c=><li className="connection-item" key={c.id}>
           <div><span className="status-pill ready"><span className="status-dot" aria-hidden="true"/> Authorized</span>
             <h3 className="connection-name">{c.name}</h3><p>Account access is active. Project access is granted separately.</p>
             <div className="permission-tags" aria-label={`Permissions for ${c.name}`}>
-              {c.scopes.map(scope=><span className="permission-tag" key={scope} title={scope}>{scopesInfo[scope]??scope}</span>)}
+              {c.scopes.map(scope=><span className="permission-tag" key={scope} title={scope}>{scopesInfo.get(scope)??scope}</span>)}
             </div></div>
           <form method="post" action="/connections/revoke">
             <input type="hidden" name="id" value={c.id}/>
