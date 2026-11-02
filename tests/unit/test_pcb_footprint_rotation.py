@@ -151,6 +151,63 @@ async def test_move_footprint_applies_and_reports_verified_rotation(mock_board: 
 
 @pytest.mark.anyio
 @pytest.mark.mcp_mode("write")
+async def test_move_footprint_without_rotation_preserves_existing_angle(mock_board: object) -> None:
+    footprint = _LiveFootprint(initial_degrees=90.0)
+    mock_board.get_footprints.return_value = [footprint]
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_move_footprint",
+        {"reference": "X2", "x_mm": 10.0, "y_mm": 20.0},
+    )
+
+    assert footprint.assigned_values == []
+    assert footprint.orientation.degrees == pytest.approx(90.0)
+    assert "verified rotation 90.000 degrees" in result
+    mock_board.update_items.assert_called_once()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_move_footprint_explicit_zero_resets_existing_angle(mock_board: object) -> None:
+    footprint = _LiveFootprint(initial_degrees=90.0)
+    mock_board.get_footprints.return_value = [footprint]
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_move_footprint",
+        {"reference": "X2", "x_mm": 10.0, "y_mm": 20.0, "rotation_deg": 0.0},
+    )
+
+    assert len(footprint.assigned_values) == 1
+    assert footprint.orientation.degrees == pytest.approx(0.0)
+    assert "verified rotation 0.000 degrees" in result
+    mock_board.update_items.assert_called_once()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_move_component_without_rotation_preserves_existing_angle(mock_board: object) -> None:
+    footprint = _LiveFootprint(initial_degrees=90.0)
+    mock_board.get_footprints.return_value = [footprint]
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_move_component",
+        {"reference": "X2", "x_mm": 10.0, "y_mm": 20.0},
+    )
+
+    assert footprint.assigned_values == []
+    assert footprint.orientation.degrees == pytest.approx(90.0)
+    assert "verified rotation 90.000 degrees" in result
+    mock_board.update_items.assert_called_once()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
 async def test_move_footprint_fails_when_rotation_setter_rejects_angle(mock_board: object) -> None:
     footprint = _LiveFootprint(reject=True)
     mock_board.get_footprints.return_value = [footprint]
@@ -277,3 +334,14 @@ def test_verify_footprint_rotation_allows_ipc_round_trip_tolerance() -> None:
     footprint = _StrictRotationSurface("orientation", initial_degrees=180.0005)
 
     assert verify_footprint_rotation(footprint, "orientation", 180.0) == pytest.approx(180.0005)
+
+
+@pytest.mark.parametrize("attribute", ["angle", "orientation"])
+def test_get_current_footprint_rotation_reads_without_assigning(attribute: str) -> None:
+    from kicad_mcp.pcb.footprint_transform import get_current_footprint_rotation
+
+    footprint = _StrictRotationSurface(attribute, initial_degrees=90.0)
+    selected, degrees = get_current_footprint_rotation(footprint)
+    assert selected == attribute
+    assert degrees == pytest.approx(90.0)
+    assert footprint.assigned_values == []
