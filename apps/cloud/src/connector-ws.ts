@@ -6,6 +6,7 @@ import type {Socket} from "node:net";
 import {WebSocket,WebSocketServer} from "ws";
 import {z} from "zod";
 import {BoundConnectorConnections} from "./connector-transport-binding.js";
+import {ConnectorReadSequence} from "./connector-read-sequence.js";
 import type {PgDeviceHandshakes} from "./device-handshake.js";
 import type {RequestSourceResolver} from "./trusted-ingress.js";
 
@@ -75,13 +76,14 @@ export type SchematicCountsReadResult={
 };
 type ReadResult=SummaryReadResult|DrcReadResult|InspectionReadResult|
   BoardCountsReadResult|SchematicCountsReadResult;
-type PendingRead={requestId:string;projectId:string;operation:ReadOperation;
+type PendingRead={requestId:string;projectId:string;operation:ReadOperation;sequence:number;
   deadline:number;monotonicDeadline:number;
   resolve:(value:ReadResult|null)=>void;timer:NodeJS.Timeout};
 type Entry={
   phase:State; owner:string; device:string; challenge:string; nonce:string;
   queued:number; pending:Promise<void>; timer:NodeJS.Timeout | null;
   lastPong:number; sessionDeadline?:number; readSent?:boolean;
+  readSequence:ConnectorReadSequence;
   awaiting?:PendingRead; validating?:PendingRead;
 };
 const hello=z.strictObject({
@@ -94,7 +96,7 @@ const sessionProof=z.strictObject({kind:z.literal("connector.session_proof"),ver
   signature:z.string().regex(/^[A-Za-z0-9_-]{86}$/)});
 const readResult=z.strictObject({
   kind:z.literal("connector.read_result"),version:z.literal(1),
-  sequence:z.literal(1),result:z.discriminatedUnion("operation",[
+  sequence:z.number().int().min(1).max(16),result:z.discriminatedUnion("operation",[
     z.strictObject({
       kind:z.literal("connector.local_read_preview"),version:z.literal(1),
       requestId:z.uuid(),projectId:z.uuid(),operation:z.literal("project_summary"),
@@ -292,7 +294,8 @@ export function attachConnectorWebSocket(
         sockets.add(ws);
         ipOpen.set(ip,(ipOpen.get(ip)??0)+1);
         const entry:Entry={phase:"new",owner:"",device:"",challenge:"",
-          nonce:"",queued:0,pending:Promise.resolve(),timer:null,lastPong:Date.now()};
+          nonce:"",queued:0,pending:Promise.resolve(),timer:null,lastPong:Date.now(),
+          readSequence:new ConnectorReadSequence(1)};
         function expire(ms:number):void{
           if(entry.timer)clearTimeout(entry.timer);
           entry.timer=setTimeout(()=>{entry.phase="closed";reject(ws);},ms);
@@ -301,6 +304,7 @@ export function attachConnectorWebSocket(
         function closed():boolean{return entry.phase==="closed";}
         function fail():void{
           entry.phase="closed";
+          entry.readSequence.close();
           if(entry.awaiting){
             clearTimeout(entry.awaiting.timer);
             entry.awaiting.resolve(null);
@@ -397,6 +401,7 @@ export function attachConnectorWebSocket(
             const decoded=readResult.safeParse(raw);
             if(!decoded.success||Date.now()>=pending.deadline||
                performance.now()>=pending.monotonicDeadline||
+               decoded.data.sequence!==pending.sequence||
                decoded.data.result.requestId!==pending.requestId||
                decoded.data.result.projectId!==pending.projectId||
                decoded.data.result.operation!==pending.operation){
@@ -419,7 +424,10 @@ export function attachConnectorWebSocket(
                performance.now()>=(entry.sessionDeadline??0)){
               pending.resolve(null);fail();return;
             }
-            send({kind:"connector.read_ack",version:1,sequence:1,
+            if(!entry.readSequence.complete(decoded.data.sequence)){
+              pending.resolve(null);fail();return;
+            }
+            send({kind:"connector.read_ack",version:1,sequence:pending.sequence,
               requestId:pending.requestId});
             pending.resolve(decoded.data.result);
             ws.close(1000,"read_completed");
@@ -440,6 +448,7 @@ export function attachConnectorWebSocket(
         });
         ws.on("close",()=>{
           entry.phase="closed";
+          entry.readSequence.close();
           if(entry.timer)clearTimeout(entry.timer);
           sockets.delete(ws);
           const key=socketKey(entry.owner,entry.device);
@@ -592,6 +601,8 @@ export function attachConnectorWebSocket(
     if(entry.phase!=="ready"||entry.readSent||entry.awaiting||
       socket.readyState!==WebSocket.OPEN||
       (entry.sessionDeadline??0)-performance.now()<10_000)return null;
+    const sequence=entry.readSequence.reserve();
+    if(sequence===null)return null;
     entry.readSent=true; // Reserve before any async authorization awaits.
     // A registered verifier must consume a freshly owner-authenticated,
     // one-shot assertion; OAuth and device signatures cannot replace it.
@@ -673,12 +684,12 @@ export function attachConnectorWebSocket(
       if(deadline<=Date.now()||monotonicDeadline<=performance.now()){
         clearTimeout(timer);resolve(null);reject(socket);return;
       }
-      const pending:PendingRead={requestId,projectId,operation,
+      const pending:PendingRead={requestId,projectId,operation,sequence,
         deadline,monotonicDeadline,resolve,timer};
       waitingOAuth.set(pending,oauth);
       entry.awaiting=pending;
       try{socket.send(JSON.stringify({
-        kind:"connector.authorized_read",version:1,sequence:1,
+        kind:"connector.authorized_read",version:1,sequence,
         request:{kind:"connector.read_request",version:1,requestId,
           deviceId,projectId,operation,deadlineUnixMs:deadline}
       }));}catch{

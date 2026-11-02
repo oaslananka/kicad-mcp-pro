@@ -212,7 +212,7 @@ test("invalid device signature never starts an authenticated connector session",
 
 test("authenticated Cloud socket rejects revocation and expired reads after wall-clock rollback",
   {skip:!url,timeout:90_000},async()=>{
-  for(const revocation of ["none","local_once","grant","device","token","clock_rollback"] as const){
+  for(const revocation of ["none","local_once","grant","device","token","clock_rollback","wrong_sequence"] as const){
     await inIsolatedDatabase(url!,migrations,async db=>{
       const owner="summary-owner",clientId="approved-client";
       const keys=generateKeyPairSync("ed25519");
@@ -313,7 +313,7 @@ test("authenticated Cloud socket rejects revocation and expired reads after wall
         const ack=success ? waitMessage(ws) : null;
         const close=success ? null : waitClose(ws);
         ws.send(JSON.stringify({kind:"connector.read_result",version:1,
-          sequence:1,result:reply}));
+          sequence:revocation==="wrong_sequence"?2:1,result:reply}));
         const result=await pending;
         if(!success){
           assert.equal(result,null,"Must not return private project metadata after "+revocation);
