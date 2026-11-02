@@ -11,6 +11,7 @@ from kipy.geometry import Angle
 from kicad_mcp.pcb.footprint_transform import (
     FootprintRotationError,
     apply_footprint_rotation,
+    get_current_footprint_rotation,
     verify_footprint_rotation,
 )
 from kicad_mcp.server import build_server
@@ -338,10 +339,20 @@ def test_verify_footprint_rotation_allows_ipc_round_trip_tolerance() -> None:
 
 @pytest.mark.parametrize("attribute", ["angle", "orientation"])
 def test_get_current_footprint_rotation_reads_without_assigning(attribute: str) -> None:
-    from kicad_mcp.pcb.footprint_transform import get_current_footprint_rotation
-
     footprint = _StrictRotationSurface(attribute, initial_degrees=90.0)
     selected, degrees = get_current_footprint_rotation(footprint)
     assert selected == attribute
     assert degrees == pytest.approx(90.0)
     assert footprint.assigned_values == []
+
+
+def test_get_current_footprint_rotation_rejects_missing_surfaces() -> None:
+    with pytest.raises(FootprintRotationError, match="does not expose"):
+        get_current_footprint_rotation(object())
+
+
+def test_get_current_footprint_rotation_rejects_unreadable_surfaces() -> None:
+    footprint = SimpleNamespace(angle=object(), orientation=object())
+
+    with pytest.raises(FootprintRotationError, match="could not be read"):
+        get_current_footprint_rotation(footprint)
