@@ -356,3 +356,25 @@ def test_get_current_footprint_rotation_rejects_unreadable_surfaces() -> None:
 
     with pytest.raises(FootprintRotationError, match="could not be read"):
         get_current_footprint_rotation(footprint)
+
+
+def test_kicad_10_0_8_symbol_units_unknown_field_survives_rotation_round_trip() -> None:
+    # KiCad 10.0.8 adds FootprintInstance.symbol_units as protobuf field 21.
+    # kicad-python 0.8.0 does not expose it as a typed attribute, so inject the
+    # wire payload and assert it survives wrapper conversion and rotation.
+    unit_info = bytes([0x0A, 0x01, ord("A"), 0x12, 0x01, ord("1")])
+    symbol_units_field = bytes([0xAA, 0x01, len(unit_info)]) + unit_info
+
+    original = FootprintInstance()
+    proto_with_unit_metadata = type(original.proto)()
+    proto_with_unit_metadata.ParseFromString(
+        original.proto.SerializeToString() + symbol_units_field
+    )
+    footprint = FootprintInstance(proto=proto_with_unit_metadata)
+
+    assert symbol_units_field in footprint.proto.SerializeToString()
+    assert apply_footprint_rotation(footprint, 90.0) == "orientation"
+
+    round_trip = FootprintInstance(proto=footprint.proto)
+    assert round_trip.orientation.degrees == pytest.approx(90.0)
+    assert symbol_units_field in round_trip.proto.SerializeToString()
