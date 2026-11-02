@@ -469,10 +469,20 @@ def _validated_outbound_connection(
     operator_presence_pilot: bool,
     inspection_factory: Callable[[HandshakeReceipt], BoundConnectorProjectWorker] | None,
     operator_inspection_pilot: bool,
+    owner_managed_read: bool = False,
 ) -> tuple[str, ssl.SSLContext]:
     # Reject both direct public read calls and private session-helper calls
     # before TLS setup or a WebSocket. Proof-only sessions stay available.
-    _check_read_transport_gate(dispatcher_factory, operator_presence_pilot)
+    if owner_managed_read:
+        if (
+            dispatcher_factory is None
+            or inspection_factory is not None
+            or operator_presence_pilot
+            or operator_inspection_pilot
+        ):
+            raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    else:
+        _check_read_transport_gate(dispatcher_factory, operator_presence_pilot)
     if inspection_factory is not None and not operator_inspection_pilot:
         _require_independent_read_authority()
     if inspection_factory is not None and dispatcher_factory is not None:
@@ -512,6 +522,8 @@ async def _perform_outbound_session(
     operator_inspection_pilot: bool = False,
     board_counts_pilot: bool = False,
     schematic_counts_pilot: bool = False,
+    owner_managed_read: bool = False,
+    managed_max_reads: int = 16,
 ) -> HandshakeReceipt:
     """Perform the Cloud v1 proof order; optionally handle one approved read.
 
@@ -531,7 +543,16 @@ async def _perform_outbound_session(
         operator_presence_pilot=operator_presence_pilot,
         inspection_factory=inspection_factory,
         operator_inspection_pilot=operator_inspection_pilot,
+        owner_managed_read=owner_managed_read,
     )
+    if owner_managed_read and (
+        operator_native_drc_pilot
+        or board_counts_pilot
+        or schematic_counts_pilot
+        or type(managed_max_reads) is not int
+        or not 1 <= managed_max_reads <= 16
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
 
     def now_ms() -> int:
         return int(datetime.now(UTC).timestamp() * 1000)
@@ -539,7 +560,9 @@ async def _perform_outbound_session(
     try:
         async with (
             asyncio.timeout(
-                HANDSHAKE_TIMEOUT_SECONDS
+                299
+                if owner_managed_read
+                else HANDSHAKE_TIMEOUT_SECONDS
                 if dispatcher_factory is None and inspection_factory is None
                 else 40
             ),
@@ -602,6 +625,17 @@ async def _perform_outbound_session(
             ):
                 raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
             receipt = HandshakeReceipt(device_id=device_id, session_id=session_id)
+            if owner_managed_read:
+                # Avoid a circular module dependency. This code only receives
+                # an already-signed socket; the independent local grant is
+                # supplied by the owner-selected dispatcher factory.
+                from kicad_mcp.cloud_managed_read_transport import serve_authenticated_reads
+
+                if dispatcher_factory is None:
+                    raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+                return await serve_authenticated_reads(
+                    socket, receipt, dispatcher_factory, max_reads=managed_max_reads
+                )
             if inspection_factory is not None:
                 return await _complete_authorized_inspection(
                     socket,
@@ -804,4 +838,38 @@ async def execute_single_approved_read(
         signing_key=signing_key,
         tls_context=tls_context,
         dispatcher_factory=dispatcher_factory,
+    )
+
+
+async def execute_owner_managed_read_session(
+    *,
+    origin: str,
+    trusted_origin: str,
+    owner_sub: str,
+    device_id: str,
+    signing_key: Ed25519PrivateKey,
+    dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch],
+    tls_context: ssl.SSLContext | None = None,
+    max_reads: int = 16,
+) -> HandshakeReceipt:
+    """One signed, owner-managed read-only session; no key loading or persistence.
+
+    The caller must provide the *already-authorized* enrolled signing identity
+    and a dispatcher whose independent, current local permission is checked
+    before every result. Cloud separately verifies owner On/Off, OAuth client,
+    project grant, device signature and revocation. This function does NOT
+    enroll a device, install a service, or grant unattended signer access.
+    """
+    if not callable(dispatcher_factory):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    return await _perform_outbound_session(
+        origin=origin,
+        trusted_origin=trusted_origin,
+        owner_sub=owner_sub,
+        device_id=device_id,
+        signing_key=signing_key,
+        tls_context=tls_context,
+        dispatcher_factory=dispatcher_factory,
+        owner_managed_read=True,
+        managed_max_reads=max_reads,
     )

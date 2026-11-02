@@ -18,15 +18,13 @@ from uuid import uuid4
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from test_isolated_tls_websocket_handshake import _synthetic_tls
-from websockets.asyncio.client import connect
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
-from kicad_mcp.cloud_device_proofs import sign_device_challenge, sign_session_challenge
-from kicad_mcp.cloud_managed_read_transport import serve_authenticated_reads
 from kicad_mcp.cloud_outbound_handshake import (
     CloudHandshakeDeniedError,
     HandshakeReceipt,
+    execute_owner_managed_read_session,
 )
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 from kicad_mcp.cloud_readonly_boundary import (
@@ -175,74 +173,73 @@ async def test_signed_tls_wss_two_reads_and_owner_off(
     ) as listener:
         assert listener.sockets
         port = listener.sockets[0].getsockname()[1]
-        async with connect(
-            f"wss://localhost:{port}/api/v1/connector/ws",
-            ssl=client_context,
-            compression=None,
-            max_size=1024,
-        ) as socket:
-            await socket.send(
-                json.dumps(
-                    {
-                        "kind": "device.hello",
-                        "version": 1,
-                        "ownerSub": "fixture-owner",
-                        "deviceId": DEVICE,
-                    }
-                )
-            )
-            challenge = await socket.recv()
-            assert isinstance(challenge, str)
-            device_proof = sign_device_challenge(
-                challenge.encode(),
-                expected_device_id=DEVICE,
-                now_unix_ms=int(time.time() * 1000),
-                signing_key=signer,
-            )
-            await socket.send(json.dumps(device_proof))
-            session = await socket.recv()
-            assert isinstance(session, str)
-            session_proof = sign_session_challenge(
-                session.encode(),
-                expected_device_id=DEVICE,
-                now_unix_ms=int(time.time() * 1000),
-                signing_key=signer,
-            )
-            await socket.send(json.dumps(session_proof))
-            ready = json.loads(await socket.recv())
-            assert ready == {"kind": "connector.ready", "version": 1}
+        origin = f"https://localhost:{port}"
 
-            def dispatcher_factory(receipt: HandshakeReceipt) -> LocalReadDispatch:
-                return LocalReadDispatch(
-                    verified=VerifiedLocalBinding(
-                        device_id=receipt.device_id,
-                        project_id=PROJECT,
-                        operations=frozenset({"project_summary"}),
-                        session_id=receipt.session_id,
-                        session_expires_unix_ms=int(time.time() * 1000) + 180_000,
-                    ),
-                    operator_project=OperatorProject(
-                        device_id=DEVICE,
-                        project_id=PROJECT,
-                        directory=root,
-                        filename_stem="board",
-                    ),
-                    current_authorization=lambda: grant[0],
-                    max_reads=2,
-                )
-
-            client = serve_authenticated_reads(
-                socket,
-                HandshakeReceipt(DEVICE, SESSION),
-                dispatcher_factory,
-                max_reads=2,
+        def dispatcher_factory(receipt: HandshakeReceipt) -> LocalReadDispatch:
+            return LocalReadDispatch(
+                verified=VerifiedLocalBinding(
+                    device_id=receipt.device_id,
+                    project_id=PROJECT,
+                    operations=frozenset({"project_summary"}),
+                    session_id=receipt.session_id,
+                    session_expires_unix_ms=int(time.time() * 1000) + 180_000,
+                ),
+                operator_project=OperatorProject(
+                    device_id=DEVICE,
+                    project_id=PROJECT,
+                    directory=root,
+                    filename_stem="board",
+                ),
+                current_authorization=lambda: grant[0],
+                max_reads=16,
             )
-            if revoke_after_first:
-                with pytest.raises((CloudHandshakeDeniedError, LocalReadDeniedError)):
-                    await client
-            else:
-                assert await client == HandshakeReceipt(DEVICE, SESSION)
+
+        operation = execute_owner_managed_read_session(
+            origin=origin,
+            trusted_origin=origin,
+            owner_sub="fixture-owner",
+            device_id=DEVICE,
+            signing_key=signer,
+            dispatcher_factory=dispatcher_factory,
+            tls_context=client_context,
+            max_reads=2,
+        )
+        if revoke_after_first:
+            with pytest.raises((CloudHandshakeDeniedError, LocalReadDeniedError)):
+                await operation
+        else:
+            assert await operation == HandshakeReceipt(DEVICE, SESSION)
 
     assert event_order == ["device-verified", "session-verified"]
     assert len(responses) == (1 if revoke_after_first else 2)
     assert hashlib.sha256(original_file.read_bytes()).hexdigest() == original_sha
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("max_reads", [-1, 0, 17, True, 1.5])
+async def test_managed_read_budget_rejected_before_connect(max_reads: object) -> None:
+    """Even the signed-session entrypoint rejects invalid read budgets."""
+    signer = Ed25519PrivateKey.generate()
+    with pytest.raises(CloudHandshakeDeniedError):
+        await execute_owner_managed_read_session(
+            origin="https://localhost:9",
+            trusted_origin="https://localhost:9",
+            owner_sub="fixture-owner",
+            device_id=DEVICE,
+            signing_key=signer,
+            dispatcher_factory=lambda _: None,  # type: ignore[return-value]
+            max_reads=max_reads,  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.anyio
+async def test_managed_read_cannot_start_without_a_dispatcher() -> None:
+    with pytest.raises(CloudHandshakeDeniedError):
+        await execute_owner_managed_read_session(
+            origin="https://localhost:9",
+            trusted_origin="https://localhost:9",
+            owner_sub="fixture-owner",
+            device_id=DEVICE,
+            signing_key=Ed25519PrivateKey.generate(),
+            dispatcher_factory=None,  # type: ignore[arg-type]
+        )
