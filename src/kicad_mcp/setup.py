@@ -40,6 +40,8 @@ ConfigFormat = Literal["json", "toml"]
 AgentKind = Literal["local", "remote"]
 """Whether the agent runs locally or requires a remote server."""
 
+_WORKSPACE_FOLDER = "${workspaceFolder}"
+
 # ---------------------------------------------------------------------------
 # Agent metadata
 # ---------------------------------------------------------------------------
@@ -233,7 +235,7 @@ def configured_stdio_parameters(
         raise ValueError("The saved uvx launcher is unavailable; install uv and reload the agent")
     args = command[1:] if isinstance(command, list) else actual["args"]
     env = actual.get("environment", actual.get("env", {}))
-    env = {key: value.replace("${workspaceFolder}", str(project_dir)) for key, value in env.items()}
+    env = {key: value.replace(_WORKSPACE_FOLDER, str(project_dir)) for key, value in env.items()}
     return StdioServerParameters(
         command=resolved,
         args=args,
@@ -249,21 +251,24 @@ async def run_local_mcp_smoke(project_dir: Path, *, agent: str, scope: str) -> t
 
     try:
         params = configured_stdio_parameters(project_dir, agent=agent, scope=scope)
-        async with asyncio.timeout(35):
-            async with stdio_client(params) as (read_stream, write_stream):
-                async with ClientSession(
-                    read_stream,
-                    write_stream,
-                    client_info=Implementation(name="kicad-mcp-pro-quickstart", version="1"),
-                ) as session:
-                    await session.initialize()
-                    available = {tool.name for tool in (await session.list_tools()).tools}
-                    if "kicad_get_server_info" not in available:
-                        return False, "MCP connected, but the server-info tool was not advertised."
-                    result = await session.call_tool("kicad_get_server_info", {})
-                    if result.is_error or not result.content:
-                        return False, "MCP connected, but the read-only server-info call failed."
-                    return True, "Saved MCP launch initialized; kicad_get_server_info succeeded."
+        async with (
+            asyncio.timeout(35),
+            stdio_client(params) as streams,
+        ):
+            read_stream, write_stream = streams
+            async with ClientSession(
+                read_stream,
+                write_stream,
+                client_info=Implementation(name="kicad-mcp-pro-quickstart", version="1"),
+            ) as session:
+                await session.initialize()
+                available = {tool.name for tool in (await session.list_tools()).tools}
+                if "kicad_get_server_info" not in available:
+                    return False, "MCP connected, but the server-info tool was not advertised."
+                result = await session.call_tool("kicad_get_server_info", {})
+                if result.is_error or not result.content:
+                    return False, "MCP connected, but the read-only server-info call failed."
+                return True, "Saved MCP launch initialized; kicad_get_server_info succeeded."
     except (OSError, ValueError, KeyError) as exc:
         return False, f"Saved MCP launch failed: {exc}"
     except Exception as exc:
@@ -421,6 +426,22 @@ def _env_for_mode(mode: str, project_dir: str) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
+def _override_stdio_command(text: str, agent_key: str, fmt: ConfigFormat, command: str) -> str:
+    """Replace only the launcher in a native host's generated stdio entry."""
+    if fmt == "toml":
+        return text.replace('command = "uvx"', f"command = {json.dumps(command)}")
+    data = json.loads(text)
+    if agent_key == "opencode":
+        entry = data["mcp"].get("servers", data["mcp"])["kicad"]
+    else:
+        entry = data["servers" if agent_key == "vscode" else "mcpServers"]["kicad"]
+    if isinstance(entry["command"], list):
+        entry["command"][0] = command
+    else:
+        entry["command"] = command
+    return json.dumps(data, indent=2)
+
+
 def generate_config(
     agent_key: str,
     project_dir: str,
@@ -444,19 +465,7 @@ def generate_config(
 
     text = _generate_local_config(agent_key, project_dir, mode, transport)
     if stdio_command is not None and transport == "stdio":
-        if info.format == "toml":
-            text = text.replace('command = "uvx"', f"command = {json.dumps(stdio_command)}")
-        else:
-            data = json.loads(text)
-            if agent_key == "opencode":
-                entry = data["mcp"].get("servers", data["mcp"])["kicad"]
-            else:
-                entry = data["servers" if agent_key == "vscode" else "mcpServers"]["kicad"]
-            if isinstance(entry["command"], list):
-                entry["command"][0] = stdio_command
-            else:
-                entry["command"] = stdio_command
-            text = json.dumps(data, indent=2)
+        text = _override_stdio_command(text, agent_key, info.format, stdio_command)
     return text, info.format
 
 
@@ -532,7 +541,7 @@ def _generate_local_config(
 
     if agent_key == "vscode":
         vscode_env = {
-            k: ("${workspaceFolder}" if k == "KICAD_MCP_PROJECT_DIR" else v) for k, v in env.items()
+            k: (_WORKSPACE_FOLDER if k == "KICAD_MCP_PROJECT_DIR" else v) for k, v in env.items()
         }
         return json.dumps(
             {
@@ -541,7 +550,7 @@ def _generate_local_config(
                         "type": "stdio",
                         "command": stdio_cmd,
                         "args": stdio_args,
-                        "cwd": "${workspaceFolder}",
+                        "cwd": _WORKSPACE_FOLDER,
                         "env": vscode_env,
                     }
                 }

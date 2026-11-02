@@ -175,9 +175,12 @@ def test_failed_owned_update_restores_previous_skill(tmp_path: Path, monkeypatch
     assert (result.root / "pcb-design/SKILL.md").read_bytes() == old
 
 
-def test_invalid_ownership_marker_cannot_authorize_overwrite(tmp_path: Path, payload) -> None:
+@pytest.mark.parametrize("marker", [b"not json", b"\xff\xfe"])
+def test_invalid_ownership_marker_cannot_authorize_overwrite(
+    tmp_path: Path, payload, marker: bytes
+) -> None:
     result = skills.install_agent_skills("cursor", "project", tmp_path)
-    (result.root / "pcb-design/.kicad-mcp-pro.json").write_text("not json")
+    (result.root / "pcb-design/.kicad-mcp-pro.json").write_bytes(marker)
     payload["pcb-design/SKILL.md"] += b"New upstream version\n"
     with pytest.raises(ValueError, match="conflict"):
         skills.install_agent_skills("cursor", "project", tmp_path)

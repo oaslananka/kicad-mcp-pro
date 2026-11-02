@@ -117,7 +117,7 @@ def _owned(directory: Path, actual: dict[str, bytes]) -> bool:
         return False
     try:
         data = json.loads(marker.read_text(encoding="utf-8"))
-    except (ValueError, UnicodeError):
+    except ValueError:
         return False
     return (
         isinstance(data, dict)

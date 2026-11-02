@@ -150,6 +150,7 @@ _HELP_PROJECT_DIR = "Active KiCad project directory"
 _HELP_LOG_LEVEL = "Log level"
 _HELP_OPERATING_MODE = "Operating mode: readonly, write, manufacturing, experimental"
 _HELP_EXPERIMENTAL = "Enable experimental tools"
+_CONFIG_WRITTEN_PREFIX = "✓ Config written to "
 
 # Reuse the same Typer metadata across the default and explicit serve entrypoints.
 _CliTransport = Annotated[str | None, typer.Option(help=option_help(_HELP_TRANSPORT))]
@@ -2811,7 +2812,7 @@ def setup(
     except Exception as exc:
         raise typer.Exit(code=1) from exc
     typer.echo(result)
-    if write_config and not result.startswith("✓ Config written to "):
+    if write_config and not result.startswith(_CONFIG_WRITTEN_PREFIX):
         # setup_agent historically returned human-readable failures instead of
         # raising; do not report a failed write as CLI success.
         raise typer.Exit(code=1)
@@ -2927,7 +2928,7 @@ def quickstart(
         transport="stdio",
         stdio_command=launcher,
     )
-    if not result.startswith("✓ Config written to "):
+    if not result.startswith(_CONFIG_WRITTEN_PREFIX):
         typer.echo(result, err=True)
         raise typer.Exit(code=1)
     typer.echo(result.splitlines()[0])
@@ -3116,7 +3117,7 @@ def _init_run_setup(
             mode=mode,
             write=write_config,
         )
-        if write_config and not result.startswith("✓ Config written to "):
+        if write_config and not result.startswith(_CONFIG_WRITTEN_PREFIX):
             typer.echo("\n  Config:  Failed — no confirmed config write", err=True)
             raise typer.Exit(code=1)
         typer.echo(f"\n  Config:  {'Written' if write_config else 'Generated'}")

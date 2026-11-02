@@ -32,6 +32,7 @@ MCP_SERVER_NAME = "io.github.oaslananka/kicad-mcp-pro"
 WEBSITE = "https://oaslananka.github.io/kicad-mcp-pro"
 GHCR_IMAGE = "ghcr.io/oaslananka/kicad-mcp-pro"
 REGISTRY_META_KEY = "io.github.oaslananka/kicad-mcp-pro"
+SCHEMA_KEY = "$schema"
 FAQ_SUPPORT_START = "<!-- public-metadata:kicad-support:start -->"
 FAQ_SUPPORT_END = "<!-- public-metadata:kicad-support:end -->"
 ROADMAP_RUNTIME_START = "<!-- public-metadata:runtime-policy:start -->"
@@ -354,7 +355,7 @@ def _registry_metadata(metadata: dict[str, Any], compatibility: dict[str, Any]) 
     changelog_url = f"{repository_url}/blob/main/CHANGELOG.md"
     tools_reference_url = f"{repository_url}/blob/main/docs/tools-reference.generated.md"
     return {
-        "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+        SCHEMA_KEY: "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
         "name": MCP_SERVER_NAME,
         "title": "KiCad MCP Pro",
         "description": SERVER_DESCRIPTION,
@@ -574,7 +575,7 @@ def _planned_updates() -> dict[Path, str]:
     return {
         ROOT / "plugin.json": _dump_json(
             {
-                "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+                SCHEMA_KEY: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
                 "name": "kicad-pro",
                 "version": metadata["version"],
                 "description": "Local KiCad MCP server and portable engineering workflow skills.",
@@ -585,7 +586,7 @@ def _planned_updates() -> dict[Path, str]:
         ),
         ROOT / "mcp.json": _dump_json(
             {
-                "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+                SCHEMA_KEY: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
                 "mcpServers": {
                     "kicad": {
                         "type": "stdio",
