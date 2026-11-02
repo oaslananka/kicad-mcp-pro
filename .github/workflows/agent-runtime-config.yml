@@ -5,6 +5,12 @@ on:
     paths:
       - ".claude-plugin/plugin.json"
       - ".mcp.json"
+      - "plugin.json"
+      - "mcp.json"
+      - "scripts/sync_agent_skills.py"
+      - "scripts/sync_mcp_metadata.py"
+      - "src/kicad_mcp/data/agent_skills/**"
+      - "tests/unit/test_agent_runtime_workflow.py"
       - ".vscode/mcp.example.json"
       - ".codex/config.example.toml"
       - "opencode.example.jsonc"
@@ -19,6 +25,12 @@ on:
     paths:
       - ".claude-plugin/plugin.json"
       - ".mcp.json"
+      - "plugin.json"
+      - "mcp.json"
+      - "scripts/sync_agent_skills.py"
+      - "scripts/sync_mcp_metadata.py"
+      - "src/kicad_mcp/data/agent_skills/**"
+      - "tests/unit/test_agent_runtime_workflow.py"
       - ".vscode/mcp.example.json"
       - ".codex/config.example.toml"
       - "opencode.example.jsonc"
@@ -41,6 +53,8 @@ jobs:
         run: |
           python3 -m json.tool .claude-plugin/plugin.json >/dev/null
           python3 -m json.tool .mcp.json >/dev/null
+          python3 -m json.tool plugin.json >/dev/null
+          python3 -m json.tool mcp.json >/dev/null
           python3 -m json.tool .vscode/mcp.example.json >/dev/null
       - name: Validate agent runtime references
         run: |
@@ -50,8 +64,24 @@ jobs:
 
           plugin = json.loads(Path('.claude-plugin/plugin.json').read_text(encoding='utf-8'))
           assert plugin.get('$schema') == 'https://anthropic.com/claude-code/plugin.schema.json'
-          # The Claude plugin ships skills; the MCP server is connected through .mcp.json.
-          assert 'mcpServers' not in plugin
+          assert plugin.get('mcpServers') == './.mcp.json'
+          claude_mcp = json.loads(Path('.mcp.json').read_text(encoding='utf-8'))
+          claude_server = claude_mcp['mcpServers']['kicad-mcp-pro']
+          assert claude_server['command'] == 'uvx'
+          assert claude_server['args'] == ['kicad-mcp-pro', '--transport', 'stdio']
+          assert claude_server['env']['KICAD_MCP_OPERATING_MODE'] == 'readonly'
+          assert claude_server['env']['KICAD_MCP_PROFILE'] == 'default'
+          assert claude_server['env']['KICAD_MCP_TRANSPORT'] == 'stdio'
+          version = tomllib.loads(Path('pyproject.toml').read_text(encoding='utf-8'))['project']['version']
+          portable = json.loads(Path('plugin.json').read_text(encoding='utf-8'))
+          assert portable['name'] == plugin['name'] == 'kicad-pro'
+          assert portable['version'] == plugin['version'] == version
+          portable_mcp = json.loads(Path('mcp.json').read_text(encoding='utf-8'))
+          portable_server = portable_mcp['mcpServers']['kicad']
+          assert portable_server['type'] == 'stdio'
+          assert portable_server['command'] == 'uvx'
+          assert portable_server['args'] == ['--from', f'kicad-mcp-pro=={version}', 'kicad-mcp-pro', '--transport', 'stdio']
+          assert portable_server['env'] == claude_server['env']
           skills = plugin.get('skills')
           assert isinstance(skills, list) and len(skills) == 7
           for entry in skills:
@@ -61,7 +91,7 @@ jobs:
               text = canonical.read_text(encoding='utf-8')
               assert text.startswith('---\n'), canonical
               assert f'name: {Path(entry).name}' in text, canonical
-              for root in (Path('.opencode/skills'), Path('.agents/skills')):
+              for root in (Path('.opencode/skills'), Path('.agents/skills'), Path('integrations/gemini-cli/kicad-mcp-pro/skills'), Path('src/kicad_mcp/data/agent_skills')):
                   mirror = root / Path(entry).name / 'SKILL.md'
                   assert mirror.is_file(), mirror
                   assert mirror.read_text(encoding='utf-8') == text, mirror
