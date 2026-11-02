@@ -13,7 +13,7 @@ from typing import Any
 _RAW = r"""
 {
   "schemaVersion": 1,
-  "updated": "2026-10-20",
+  "updated": "2026-11-03",
   "kicad_baseline": "10.0.x",
   "status_vocabulary": {
     "covered": "A registered MCP tool fully drives this capability.",
@@ -131,9 +131,9 @@ _RAW = r"""
           "capability": "Swap pins / gates",
           "kicad_channel": "file",
           "mcp_tool": "sch_swap_pins",
-          "status": "covered",
+          "status": "partial",
           "kicad_version_introduced": "10.0.x",
-          "notes": "Deterministic back-annotation intent recorded headlessly into project state (.kicad-mcp/pin_swaps.json and gate_swaps.json) with validation of swappable pins and units from symbol library via sch_list_swappable_pins."
+          "notes": "sch_swap_pins and sch_swap_gates validate candidates and record deferred intent in .kicad-mcp/pin_swaps.json / gate_swaps.json only. No consumer applies the requested pin or unit swap to .kicad_sch; a recorded intent is not a completed electrical or graphical swap."
         },
         {
           "capability": "Interactive symbol graphic drawing in the editor",
