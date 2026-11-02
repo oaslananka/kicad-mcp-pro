@@ -1,0 +1,222 @@
+"""Bound, one-shot transport into a real local MCP engine, without Cloud networking."""
+
+from __future__ import annotations
+
+import json
+import time
+from pathlib import Path
+
+import pytest
+
+from kicad_mcp.cloud_outbound_handshake import (
+    CloudHandshakeDeniedError,
+    HandshakeReceipt,
+    _complete_authorized_inspection,
+)
+from kicad_mcp.cloud_project_worker_bridge import BoundConnectorProjectWorker
+from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
+
+DEVICE = "11111111-1111-4111-8111-111111111111"
+PROJECT = "22222222-2222-4222-8222-222222222222"
+SESSION = "33333333-3333-4333-8333-333333333333"
+REQUEST = "44444444-4444-4444-8444-444444444444"
+
+
+class RecordingSocket:
+    def __init__(self, request: dict[str, object]) -> None:
+        self.inbound = [
+            json.dumps(
+                {
+                    "kind": "connector.authorized_read",
+                    "version": 1,
+                    "sequence": 1,
+                    "request": request,
+                }
+            ),
+            json.dumps(
+                {"kind": "connector.read_ack", "version": 1, "sequence": 1, "requestId": REQUEST}
+            ),
+        ]
+        self.sent: list[dict[str, object]] = []
+
+    async def recv(self) -> str:
+        return self.inbound.pop(0)
+
+    async def send(self, value: str) -> None:
+        self.sent.append(json.loads(value))
+
+
+def frame(**changes: object) -> dict[str, object]:
+    request: dict[str, object] = {
+        "kind": "connector.read_request",
+        "version": 1,
+        "requestId": REQUEST,
+        "deviceId": DEVICE,
+        "projectId": PROJECT,
+        "operation": "project_worker_inspection",
+        "deadlineUnixMs": int(time.time() * 1000) + 30_000,
+    }
+    request.update(changes)
+    return request
+
+
+def bound_worker(
+    root: Path, operation: str = "project_worker_inspection"
+) -> BoundConnectorProjectWorker:
+    return BoundConnectorProjectWorker(
+        verified=VerifiedLocalBinding(
+            device_id=DEVICE,
+            project_id=PROJECT,
+            operations=frozenset({operation}),
+            session_id=SESSION,
+            session_expires_unix_ms=int(time.time() * 1000) + 80_000,
+        ),
+        operator_project=OperatorProject(
+            device_id=DEVICE, project_id=PROJECT, directory=root, filename_stem="board"
+        ),
+        current_authorization=lambda: True,
+    )
+
+
+@pytest.mark.anyio
+async def test_real_local_inspection_returns_only_typed_engine_status(tmp_path: Path) -> None:
+    root = tmp_path / "private-board"
+    root.mkdir()
+    (root / "board.kicad_pro").write_text('{"secret": "PRIVATE_DESIGN"}', encoding="utf-8")
+    socket = RecordingSocket(frame())
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    assert (
+        await _complete_authorized_inspection(socket, receipt, lambda _receipt: bound_worker(root))
+        == receipt
+    )
+    assert len(socket.sent) == 1
+    body = socket.sent[0]
+    assert body["kind"] == "connector.read_result"
+    result = body["result"]
+    assert result["operation"] == "project_worker_inspection"
+    assert result["projectId"] == PROJECT
+    assert isinstance(result["status"]["engineVersion"], str)
+    assert type(result["status"]["cliAvailable"]) is bool
+    assert type(result["status"]["ipcAvailable"]) is bool
+    caps = result["status"]["capabilities"]
+    assert set(caps) == {"fileBackedDrc", "fileBackedErc", "livePcbRead", "liveSchematicRead"}
+    assert all(type(value) is bool for value in caps.values())
+    payload = json.dumps(body)
+    assert "PRIVATE_DESIGN" not in payload
+    assert str(root) not in payload
+    assert "cliPath" not in payload
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"operation": "run_drc"},
+        {"projectId": "55555555-5555-4555-8555-555555555555"},
+        {"deviceId": "66666666-6666-4666-8666-666666666666"},
+        {"deadlineUnixMs": 1},
+        {"arguments": {"tool": "kicad_set_project"}},
+    ],
+)
+async def test_invalid_cloud_operation_never_launches_project_worker(
+    tmp_path: Path, change: dict[str, object]
+) -> None:
+    socket = RecordingSocket(frame(**change))
+    invoked = False
+
+    def factory(_receipt: HandshakeReceipt) -> BoundConnectorProjectWorker:
+        nonlocal invoked
+        invoked = True
+        return bound_worker(tmp_path)
+
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    with pytest.raises((CloudHandshakeDeniedError, ValueError)):
+        await _complete_authorized_inspection(socket, receipt, factory)
+    assert socket.sent == []
+    # Wrong IDs may be checked by the bound local worker, which still cannot dispatch.
+    if "operation" in change or "arguments" in change or "deadlineUnixMs" in change:
+        assert not invoked or socket.sent == []
+
+
+@pytest.mark.anyio
+async def test_real_board_counts_never_transmit_raw_board_contents(tmp_path: Path) -> None:
+    from shutil import copyfile
+
+    root = tmp_path / "private-board"
+    root.mkdir()
+    (root / "board.kicad_pro").write_text("{}")
+    source = Path(__file__).resolve().parents[1] / (
+        "fixtures/benchmark_projects/pass_minimal_mcu_board/demo.kicad_pcb"
+    )
+    copyfile(source, root / "board.kicad_pcb")
+    socket = RecordingSocket(frame(operation="project_board_counts"))
+    await _complete_authorized_inspection(
+        socket,
+        HandshakeReceipt(DEVICE, SESSION),
+        lambda _receipt: bound_worker(root, "project_board_counts"),
+        board_counts=True,
+    )
+    result = socket.sent[0]["result"]
+    assert result["kind"] == "connector.local_board_counts"
+    assert result["source"] == "file-backed"
+    assert set(result["counts"]) == {"tracks", "vias", "footprints", "zones", "nets", "shapes"}
+    assert result["counts"]["footprints"] > 0
+    assert all(type(n) is int and n >= 0 for n in result["counts"].values())
+    assert str(root) not in json.dumps(socket.sent)
+    assert "fp_lib_table" not in json.dumps(socket.sent)
+
+
+@pytest.mark.anyio
+async def test_schematic_counts_only_transmit_bounded_population_totals(tmp_path: Path) -> None:
+    from shutil import copyfile
+
+    root = tmp_path / "private-project"
+    root.mkdir()
+    (root / "board.kicad_pro").write_text("{}")
+    source = Path(__file__).resolve().parents[1] / (
+        "fixtures/benchmark_projects/pass_minimal_mcu_board/demo.kicad_sch"
+    )
+    copyfile(source, root / "board.kicad_sch")
+    socket = RecordingSocket(frame(operation="project_schematic_counts"))
+    await _complete_authorized_inspection(
+        socket,
+        HandshakeReceipt(DEVICE, SESSION),
+        lambda _receipt: bound_worker(root, "project_schematic_counts"),
+        schematic_counts=True,
+    )
+    result = socket.sent[0]["result"]
+    assert result["kind"] == "connector.local_schematic_counts"
+    assert result["counts"] == {"components": 2, "populated": 2, "dnp": 0, "inBom": 2}
+    payload = json.dumps(socket.sent)
+    assert str(root) not in payload
+    assert "Resistor_SMD" not in payload
+    assert ".kicad_sch" not in payload
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("operation", ["project_worker_inspection", "project_board_counts"])
+async def test_other_one_shot_grant_cannot_read_schematic_counts(
+    tmp_path: Path, operation: str
+) -> None:
+    socket = RecordingSocket(frame(operation="project_schematic_counts"))
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+
+    def factory(_receipt: HandshakeReceipt) -> BoundConnectorProjectWorker:
+        return bound_worker(tmp_path, operation)
+
+    with pytest.raises((CloudHandshakeDeniedError, ValueError)):
+        await _complete_authorized_inspection(socket, receipt, factory, schematic_counts=True)
+    assert socket.sent == []
+
+
+@pytest.mark.anyio
+async def test_engine_status_consent_cannot_read_board_counts(tmp_path: Path) -> None:
+    socket = RecordingSocket(frame(operation="project_board_counts"))
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+
+    def factory(_receipt: HandshakeReceipt) -> BoundConnectorProjectWorker:
+        return bound_worker(tmp_path)
+
+    with pytest.raises((CloudHandshakeDeniedError, ValueError)):
+        await _complete_authorized_inspection(socket, receipt, factory, board_counts=True)
+    assert socket.sent == []

@@ -16,6 +16,7 @@ import os
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -666,6 +667,62 @@ class TestDashboardSPA:
         assert "KiCad CLI found" in body_text
         assert "Version" in body_text
         assert "IPC Status" in body_text
+
+    def test_setup_wizard_saves_project_before_export(
+        self, page: Page, dashboard_url: str, tmp_path: Path
+    ) -> None:
+        """The chosen local folder must be saved before the next setup step."""
+        project = str(tmp_path / "PCB Example")
+        saved: list[dict[str, str]] = []
+
+        def _handle_config(route: Route) -> None:
+            if route.request.method == "POST":
+                saved.append(route.request.post_data_json)
+                route.fulfill(
+                    status=200,
+                    content_type="application/json",
+                    body=json.dumps({"applied": ["project_dir"]}),
+                )
+            else:
+                route.fulfill(status=200, content_type="application/json", body="{}")
+
+        page.route("**/api/config", _handle_config)
+        page.goto(dashboard_url)
+        page.evaluate('window.location.hash = "#setup-wizard"')
+        page.click('button:has-text("Next")')
+        page.wait_for_selector("#wizProjectDir")
+        page.fill("#wizProjectDir", project)
+        page.click('button:has-text("Next")')
+        page.wait_for_selector("#wizTransport")
+        assert saved == [{"project_dir": project}]
+
+    def test_setup_wizard_blocks_invalid_project_selection(
+        self, page: Page, dashboard_url: str
+    ) -> None:
+        """A rejected project path must not advance to client setup."""
+
+        def _reject_config(route: Route) -> None:
+            if route.request.method == "POST":
+                route.fulfill(
+                    status=400,
+                    content_type="application/json",
+                    body=json.dumps({"error": "Project folder not found."}),
+                )
+            else:
+                route.fulfill(status=200, content_type="application/json", body="{}")
+
+        page.route("**/api/config", _reject_config)
+        page.goto(dashboard_url)
+        page.evaluate('window.location.hash = "#setup-wizard"')
+        page.click('button:has-text("Next")')
+        page.wait_for_selector("#wizProjectDir")
+        page.fill("#wizProjectDir", "/missing/board")
+        page.click('button:has-text("Next")')
+        page.wait_for_function(
+            '() => document.getElementById("wizardMsg").textContent.includes("Project folder")'
+        )
+        assert page.is_visible("#wizProjectDir")
+        assert not page.is_visible("#wizTransport")
 
     def test_setup_wizard_transport_step(self, page: Page, dashboard_url: str) -> None:
         """Setup wizard step 2 shows transport selection."""

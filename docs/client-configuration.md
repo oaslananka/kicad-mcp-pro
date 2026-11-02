@@ -3,6 +3,15 @@
 KiCad MCP Pro works with MCP clients that can start a local `stdio` server or connect to a
 Streamable HTTP endpoint. The most portable setup is local `stdio` with `uvx`.
 
+For a guided local setup, open the local dashboard (`kicad-mcp-pro dashboard --open`),
+choose your existing KiCad project folder in **Setup**, and preview/copy the
+configuration for your AI client. The generated client configuration includes
+your selected project, tool profile and operating mode, and starts its own
+`stdio` MCP process rather than competing with the dashboard's HTTP port.
+The installed desktop app can browse for a folder; a regular browser cannot
+read its full absolute path from a directory picker, so enter the folder path
+in that case. No Cloud account or OAuth login is required for local use.
+
 Replace `/absolute/path/to/your/kicad-project` with your KiCad project directory. You can
 omit `KICAD_MCP_PROJECT_DIR` and call `kicad_set_project()` from the client instead, but
 setting it once in the client config gives you a persistent default project.

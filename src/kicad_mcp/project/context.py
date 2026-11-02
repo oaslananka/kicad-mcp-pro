@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from ..path_safety import resolve_under
+
 
 class ApplyProjectProtocol(Protocol):
     def __call__(
@@ -44,8 +46,10 @@ class ProjectContextService:
             return "Project directory does not exist or is not a directory."
 
         scan = self.scan_project_dir(project_path)
-        selected_pcb = Path(pcb_file).expanduser().resolve() if pcb_file else scan.get("pcb")
-        selected_sch = Path(sch_file).expanduser().resolve() if sch_file else scan.get("schematic")
+        # File overrides are relative to the selected KiCad project, not the
+        # server's cwd. Reject another project's paths before changing state.
+        selected_pcb = resolve_under(project_path, pcb_file) if pcb_file else scan.get("pcb")
+        selected_sch = resolve_under(project_path, sch_file) if sch_file else scan.get("schematic")
         selected_project = scan.get("project")
         if selected_project is not None and selected_pcb is None and selected_sch is None:
             return (

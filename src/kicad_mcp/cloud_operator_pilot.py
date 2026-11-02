@@ -13,14 +13,20 @@ import sys
 import time
 from argparse import Namespace
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from kicad_mcp import cloud_once
 from kicad_mcp.cloud_local_registry import resolve_registered_read
 from kicad_mcp.cloud_outbound_handshake import (
     HandshakeReceipt,
+    execute_operator_board_counts_once,
+    execute_operator_inspection_once,
     execute_operator_native_drc_once,
     execute_operator_presence_once,
+    execute_operator_schematic_counts_once,
 )
 from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
+from kicad_mcp.cloud_project_worker_bridge import BoundConnectorProjectWorker
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
 
@@ -37,6 +43,11 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
         raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
 
     native_drc = bool(getattr(options, "native_drc_once", False))
+    inspection = bool(getattr(options, "inspection_once", False))
+    board_counts = bool(getattr(options, "board_counts_once", False))
+    schematic_counts = bool(getattr(options, "schematic_counts_once", False))
+    if sum((inspection, native_drc, board_counts, schematic_counts)) > 1:
+        raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
     key = cloud_once._load_bound_owner_key(
         options.private_key_file, options.cloud_origin, options.device_id
     )
@@ -63,6 +74,11 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
             native_drc=native_drc,
         )
 
+    if inspection or board_counts or schematic_counts:
+        return await _dispatch_inspection_once(
+            options, lease, key, board_counts=board_counts, schematic_counts=schematic_counts
+        )
+
     transport = execute_operator_native_drc_once if native_drc else execute_operator_presence_once
     return await transport(
         origin=options.cloud_origin,
@@ -74,12 +90,74 @@ async def _single_presence(options: Namespace, lease: tuple[int, int]) -> Handsh
     )
 
 
+async def _dispatch_inspection_once(
+    options: Namespace,
+    lease: tuple[int, int],
+    key: Ed25519PrivateKey,
+    *,
+    board_counts: bool,
+    schematic_counts: bool,
+) -> HandshakeReceipt:
+    wall_cutoff_ms, monotonic_cutoff_ns = lease
+    if board_counts:
+        operation = "project_board_counts"
+        transport = execute_operator_board_counts_once
+    elif schematic_counts:
+        operation = "project_schematic_counts"
+        transport = execute_operator_schematic_counts_once
+    else:
+        operation = "project_worker_inspection"
+        transport = execute_operator_inspection_once
+
+    def factory(receipt: HandshakeReceipt) -> BoundConnectorProjectWorker:
+        return BoundConnectorProjectWorker(
+            verified=VerifiedLocalBinding(
+                device_id=receipt.device_id,
+                project_id=options.project_id,
+                operations=frozenset({operation}),
+                session_id=receipt.session_id,
+                session_expires_unix_ms=wall_cutoff_ms,
+            ),
+            operator_project=OperatorProject(
+                device_id=options.device_id,
+                project_id=options.project_id,
+                directory=options.project_directory,
+                filename_stem=options.filename_stem,
+            ),
+            current_authorization=lambda: time.monotonic_ns() < monotonic_cutoff_ns,
+        )
+
+    return await transport(
+        origin=options.cloud_origin,
+        trusted_origin=options.cloud_origin,
+        owner_sub=options.owner_sub,
+        device_id=options.device_id,
+        signing_key=key,
+        inspector_factory=factory,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = cloud_once._parser()
     parser.add_argument(
         "--native-drc-once",
         action="store_true",
         help="Explicit foreground one-shot DRC counts, requires separate Cloud opt-in",
+    )
+    parser.add_argument(
+        "--inspection-once",
+        action="store_true",
+        help="Foreground one-shot KiCad engine status; requires matching Cloud opt-in",
+    )
+    parser.add_argument(
+        "--board-counts-once",
+        action="store_true",
+        help="Foreground one-shot PCB counts, requires a distinct Cloud opt-in",
+    )
+    parser.add_argument(
+        "--schematic-counts-once",
+        action="store_true",
+        help="Foreground schematic component counts, requires separate Cloud opt-in",
     )
     options = parser.parse_args(argv)
     try:
@@ -100,7 +178,13 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, OSError, EOFError, KeyboardInterrupt):
         print("Local Cloud pilot denied", file=sys.stderr)
         return 1
-    if options.native_drc_once:
+    if options.schematic_counts_once:
+        print("One owner-operated schematic component summary completed")
+    elif options.board_counts_once:
+        print("One owner-operated PCB summary completed")
+    elif options.inspection_once:
+        print("One owner-operated KiCad engine inspection completed")
+    elif options.native_drc_once:
         print("One owner-operated native DRC count completed")
     else:
         print("One owner-operated project-presence read completed")

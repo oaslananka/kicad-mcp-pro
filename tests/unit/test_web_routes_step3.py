@@ -6,6 +6,7 @@ These cover the 6 new endpoints added in Step 3 of the GUI spec.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -400,9 +401,117 @@ class TestAPIConfig:
         assert response.status_code == 200
         assert data["applied"] == []
 
+    @pytest.mark.anyio
+    async def test_config_post_project_selection_is_used_by_export(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Selecting a folder in the dashboard makes new client configs use it."""
+        from kicad_mcp.web.routes import api_config_export, api_config_post
+
+        project = tmp_path / "KiCad Project"
+        project.mkdir()
+        request = MagicMock()
+
+        async def _selected_project() -> dict[str, str]:
+            return {"project_dir": str(project)}
+
+        request.json = _selected_project
+        response = await api_config_post(request)
+        assert response.status_code == 200
+        assert json.loads(response.body)["project_dir"] == str(project)
+
+        request.path_params = {"client": "claude"}
+        exported = await api_config_export(request)
+        entry = json.loads(exported.body)["snippet"]["mcpServers"]["kicad-mcp-pro"]
+        assert entry["env"]["KICAD_MCP_PROJECT_DIR"] == str(project)
+        assert entry["env"]["KICAD_MCP_OPERATING_MODE"] == "readonly"
+        monkeypatch.delenv("KICAD_MCP_PROJECT_DIR", raising=False)
+
+    @pytest.mark.anyio
+    async def test_config_post_rejects_invalid_project_without_changing_selection(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Nonexistent or relative folder input cannot silently change project."""
+        from kicad_mcp.web.routes import api_config_post
+
+        project = tmp_path / "existing"
+        project.mkdir()
+        monkeypatch.setenv("KICAD_MCP_PROJECT_DIR", str(project))
+        for bad in ("relative/project", str(tmp_path / "missing")):
+            request = MagicMock()
+
+            async def _bad_project(bad: str = bad) -> dict[str, str]:
+                return {"project_dir": bad}
+
+            request.json = _bad_project
+            response = await api_config_post(request)
+            assert response.status_code == 400
+            assert "project" in json.loads(response.body)["error"].lower()
+            assert os.environ["KICAD_MCP_PROJECT_DIR"] == str(project)
+
 
 class TestAPIConfigExport:
     """Test GET /api/config/export/{client}."""
+
+    @pytest.mark.parametrize("client", ["claude", "cursor", "vscode", "codex"])
+    @pytest.mark.anyio
+    async def test_export_uses_selected_local_project_and_mode(
+        self, client: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """An independent MCP process must receive the dashboard's selected project."""
+        import tomllib
+
+        from kicad_mcp.config import reset_config
+        from kicad_mcp.web.routes import api_config_export
+
+        project = tmp_path / "PCB board 01"
+        project.mkdir()
+        monkeypatch.setenv("KICAD_MCP_PROJECT_DIR", str(project))
+        monkeypatch.setenv("KICAD_MCP_PROFILE", "review")
+        monkeypatch.setenv("KICAD_MCP_OPERATING_MODE", "readonly")
+        reset_config()
+
+        request = MagicMock()
+        request.path_params = {"client": client}
+        response = await api_config_export(request)
+        assert response.status_code == 200
+        result = json.loads(response.body)
+
+        if client == "codex":
+            entry = tomllib.loads(result["config"])["mcp_servers"]["kicad-mcp-pro"]
+        elif client == "vscode":
+            entry = result["snippet"]["servers"]["kicad-mcp-pro"]
+        else:
+            entry = result["snippet"]["mcpServers"]["kicad-mcp-pro"]
+
+        assert entry["command"] == "uvx"
+        assert entry["env"] == {
+            "KICAD_MCP_PROJECT_DIR": str(project),
+            "KICAD_MCP_PROFILE": "review",
+            "KICAD_MCP_OPERATING_MODE": "readonly",
+        }
+        assert result["config"]
+        assert "GOOGLE_CLIENT_SECRET" not in result["config"]
+
+    @pytest.mark.anyio
+    async def test_export_always_starts_local_stdio_even_when_dashboard_is_http(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A new client process must not compete for the dashboard HTTP port."""
+        from kicad_mcp.config import reset_config
+        from kicad_mcp.web.routes import api_config_export
+
+        monkeypatch.setenv("KICAD_MCP_TRANSPORT", "streamable-http")
+        monkeypatch.setenv("KICAD_MCP_HOST", "127.0.0.1")
+        monkeypatch.setenv("KICAD_MCP_PORT", "3334")
+        reset_config()
+
+        request = MagicMock()
+        request.path_params = {"client": "claude"}
+        result = json.loads((await api_config_export(request)).body)
+        entry = result["snippet"]["mcpServers"]["kicad-mcp-pro"]
+        assert entry["args"] == [f"kicad-mcp-pro@{__import__('kicad_mcp').__version__}"]
+        assert "--transport" not in entry["args"]
 
     @pytest.mark.anyio
     async def test_export_invalid_client(self) -> None:

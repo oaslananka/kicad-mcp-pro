@@ -145,3 +145,52 @@ def test_get_project_info_delegates_to_renderer() -> None:
     )
 
     assert service.get_project_info() == "current-project-info"
+
+
+def test_relative_project_file_overrides_resolve_inside_selected_project(tmp_path: Path) -> None:
+    root = tmp_path / "board_a"
+    root.mkdir()
+    (root / "my.kicad_pcb").write_text("", encoding="utf-8")
+    (root / "my.kicad_sch").write_text("", encoding="utf-8")
+    captured: list[dict[str, Path | None]] = []
+    service = _service_type()(
+        scan_project_dir=lambda _path: {"project": None, "pcb": None, "schematic": None},
+        apply_project=lambda _project_dir, **kwargs: captured.append(kwargs),
+        clear_cache=lambda: None,
+        reset_connection=lambda: None,
+        reset_live_edit=lambda: None,
+        render_project_info=lambda: "ready",
+    )
+    assert (
+        service.set_project(str(root), pcb_file="my.kicad_pcb", sch_file="my.kicad_sch") == "ready"
+    )
+    assert captured[0]["pcb_file"] == root / "my.kicad_pcb"
+    assert captured[0]["sch_file"] == root / "my.kicad_sch"
+
+
+def test_explicit_project_files_cannot_escape_into_other_project(tmp_path: Path) -> None:
+    import pytest
+
+    from kicad_mcp.path_safety import UnsafePathError
+
+    first = tmp_path / "board_a"
+    second = tmp_path / "board_b"
+    first.mkdir()
+    second.mkdir()
+    (second / "board.kicad_pcb").write_text("", encoding="utf-8")
+    changes: list[str] = []
+    service = _service_type()(
+        scan_project_dir=lambda _path: {"project": None, "pcb": None, "schematic": None},
+        apply_project=lambda *_args, **_kwargs: changes.append("applied"),
+        clear_cache=lambda: changes.append("cache"),
+        reset_connection=lambda: changes.append("connection"),
+        reset_live_edit=lambda: changes.append("edit"),
+        render_project_info=lambda: "ready",
+    )
+    for path in ("../board_b/board.kicad_pcb", str(second / "board.kicad_pcb")):
+        with pytest.raises(UnsafePathError):
+            service.set_project(str(first), pcb_file=path)
+    (first / "linked.kicad_pcb").symlink_to(second / "board.kicad_pcb")
+    with pytest.raises(UnsafePathError):
+        service.set_project(str(first), pcb_file="linked.kicad_pcb")
+    assert changes == []

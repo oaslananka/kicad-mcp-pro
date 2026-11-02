@@ -59,6 +59,7 @@ jobs:
               - 'package.json'
               - 'pnpm-workspace.yaml'
               - 'Dockerfile'
+              - 'apps/cloud/Dockerfile'
               - 'docker-compose.yml'
               - 'lefthook.yml'
               - '.pre-commit-config.yaml'
@@ -72,6 +73,8 @@ jobs:
             npm:
               - 'packages/**'
               - 'package.json'
+              - 'apps/cloud/package.json'
+              - 'apps/cloud/package-lock.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - '.node-version'
@@ -99,6 +102,9 @@ jobs:
               - '.github/workflows/ci.yml'
             dependencies:
               - 'package.json'
+              - 'apps/cloud/package.json'
+              - 'apps/cloud/package-lock.json'
+              - 'apps/cloud/Dockerfile'
               - 'pnpm-lock.yaml'
               - 'pyproject.toml'
               - 'uv.lock'

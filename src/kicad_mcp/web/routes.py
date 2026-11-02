@@ -29,6 +29,7 @@ from ..ipc.capabilities import get_ipc_capability_state
 from ..models.live_preview import LivePreviewManifest
 from ..operating_modes import active_operating_mode
 from ..path_safety import resolve_under
+from ..project.http_binding import PROJECT_CONFIG_FIELDS, HttpProjectBinding
 from ..tools.router import available_profiles, tool_count_for_profile
 from .dashboard import DASHBOARD_HTML
 from .state import get_metrics_snapshot, get_server_handle, get_start_time
@@ -179,20 +180,34 @@ def _mcp_snippet_for_client(client: str) -> tuple[object, str]:
     """Build a client-specific MCP config snippet and format label."""
     cfg = get_config()
     server_name = "kicad-mcp-pro"
+    # These snippets start a dedicated local MCP process using stdio.
+    # Inheriting the dashboard's HTTP transport would attempt to bind its
+    # port again and would not speak MCP over the client's stdin/stdout.
     args = [f"{server_name}@{__version__}"]
-    if cfg.transport != "stdio":
-        args.extend(["--transport", cfg.transport, "--port", str(cfg.port)])
-    stdio_server = {"command": "uvx", "args": args, "env": {}}
+    # A generated client config launches a NEW process. Without carrying the
+    # dashboard's project/profile selection, that process silently reverts to
+    # its own working directory and default tool surface.
+    env = {
+        "KICAD_MCP_PROFILE": cfg.profile,
+        "KICAD_MCP_OPERATING_MODE": active_operating_mode(cfg).value,
+    }
+    if cfg.project_dir is not None:
+        env["KICAD_MCP_PROJECT_DIR"] = str(cfg.project_dir)
+    stdio_server = {"command": "uvx", "args": args, "env": env}
 
     if client == "vscode":
         return {"servers": {server_name: {"type": "stdio", **stdio_server}}}, "json"
     if client == "codex":
+        env_values = ", ".join(
+            f"{name} = {json.dumps(value, ensure_ascii=False)}" for name, value in env.items()
+        )
         return (
             "\n".join(
                 [
                     f"[mcp_servers.{server_name}]",
                     'command = "uvx"',
                     f"args = {json.dumps(args)}",
+                    f"env = {{ {env_values} }}",
                 ]
             ),
             "toml",
@@ -389,6 +404,28 @@ ALLOWED_CONFIG_KEYS = {
 _config_post_lock = threading.Lock()
 
 
+def _validate_config_project_directory(
+    safe_body: dict[str, object],
+) -> JSONResponse | None:
+    # The onboarding wizard exports this path to an independent local MCP
+    # process. Reject a mistyped folder before changing the active project.
+    if "project_dir" in safe_body and safe_body["project_dir"] != "":
+        raw_project = safe_body["project_dir"]
+        if not isinstance(raw_project, str) or len(raw_project) > 4096:
+            return JSONResponse(
+                {"error": "Project must be an existing local folder."}, status_code=400
+            )
+        candidate = Path(raw_project).expanduser()
+        if not candidate.is_absolute() or not candidate.is_dir():
+            return JSONResponse(
+                {"error": "Project must be an existing absolute local folder."},
+                status_code=400,
+            )
+        safe_body["project_dir"] = str(candidate.resolve())
+
+    return None
+
+
 async def api_config_post(request: Request) -> JSONResponse:
     """Update the server configuration at runtime via environment overrides."""
     try:
@@ -404,15 +441,34 @@ async def api_config_post(request: Request) -> JSONResponse:
     # Filter body to only contain safe config keys
     safe_body = {k: v for k, v in body.items() if k in ALLOWED_CONFIG_KEYS}
 
-    with _config_post_lock:
-        for key, value in safe_body.items():
-            env_key = f"KICAD_MCP_{key.upper()}"
-            os.environ[env_key] = str(value)
-            applied.append(key)
+    # Once shared HTTP clients are using this engine, the selected project
+    # cannot change underneath another client's in-flight operation.
+    boundary = getattr(getattr(request, "app", None), "state", None)
+    binding = getattr(boundary, "http_project_binding", None)
+    invalid_project = _validate_config_project_directory(safe_body)
+    if invalid_project is not None:
+        return invalid_project
 
-        if applied:
-            reset_config()
-            logger.info("config_updated_via_api", keys=applied)
+    def apply_settings() -> None:
+        with _config_post_lock:
+            for key, value in safe_body.items():
+                env_key = f"KICAD_MCP_{key.upper()}"
+                os.environ[env_key] = str(value)
+                applied.append(key)
+            if applied:
+                reset_config()
+                logger.info("config_updated_via_api", keys=applied)
+
+    if isinstance(binding, HttpProjectBinding):
+        with binding.configuration_update() as can_select:
+            if not can_select and PROJECT_CONFIG_FIELDS.intersection(safe_body):
+                return JSONResponse(
+                    {"error": "The HTTP project is active. Restart to select another project."},
+                    status_code=409,
+                )
+            apply_settings()
+    else:
+        apply_settings()
 
     payload = _config_public_payload()
     result = {

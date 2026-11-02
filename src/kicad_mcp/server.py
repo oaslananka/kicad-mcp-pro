@@ -98,6 +98,7 @@ from .operating_modes import (
     filter_tools_for_mode,
     is_tool_allowed_in_mode,
 )
+from .project.http_binding import PROJECT_SELECTION_TOOLS, HttpProjectBinding
 from .tools import footprint as _footprint
 from .tools import jobset as _jobset
 from .tools import router
@@ -1197,8 +1198,14 @@ class KiCadFastMCP(FastMCP):
             host=resolved_host,
         )
         cfg = get_config()
+        project_binding = HttpProjectBinding()
+        app.state.http_project_binding = project_binding
         app.add_middleware(_DashboardAuthMiddleware)
-        app.add_middleware(_StreamableHttpContractMiddleware, max_sessions=max_sessions)
+        app.add_middleware(
+            _StreamableHttpContractMiddleware,
+            max_sessions=max_sessions,
+            project_binding=project_binding,
+        )
         if cfg.legacy_sse:
             sse_routes = (
                 super()
@@ -1466,13 +1473,19 @@ class _McpPostBodyLimitMiddleware:
 class _StreamableHttpContractMiddleware:
     """Normalize the public Streamable HTTP contract before FastMCP handles it."""
 
-    def __init__(self, app: ASGIApp, max_sessions: int | None = 10_000) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        max_sessions: int | None = 10_000,
+        project_binding: HttpProjectBinding | None = None,
+    ) -> None:
         if max_sessions is not None and max_sessions <= 0:
             raise ValueError("max_sessions must be positive or None")
         self.app = app
         self._session_cache_limit = max_sessions
         self._session_ids: set[str] = set()
         self._session_order: deque[str] = deque()
+        self._project_binding = project_binding
 
     async def _handle_delete(
         self,
@@ -1639,15 +1652,15 @@ class _StreamableHttpContractMiddleware:
             await original_send(message)
 
         send_proc = post_request_send
-        if rpc_method == "initialize" and cfg.protocol_lane == "stable":
-            logger.info(
-                "mcp_transport_initialize",
-                request_id=rpc_id,
-                mcp_session_id=headers.get("mcp-session-id") or None,
-            )
+        _log_stable_http_initialize(rpc_method, cfg, rpc_id, headers)
 
         if not await self._validate_post_headers(
             headers, body, rpc_id, rpc_method, cfg, scope, replay_receive, send_proc
+        ):
+            return
+
+        if await self._reject_invalid_shared_project_call(
+            rpc_method, body, rpc_id, scope, replay_receive, send_proc
         ):
             return
 
@@ -1678,6 +1691,48 @@ class _StreamableHttpContractMiddleware:
                 await self.app(scope, replay_receive, send_wrapper)
             otel.finish_mcp_request_span(request_span, status_code=post_response_status)
 
+    async def _reject_invalid_shared_project_call(
+        self,
+        rpc_method: str | None,
+        body: bytes,
+        rpc_id: object | None,
+        scope: Scope,
+        replay_receive: Receive,
+        send_proc: Send,
+    ) -> bool:
+        if rpc_method != "tools/call" or self._project_binding is None:
+            return False
+        if not self._project_binding.check_and_pin(get_config()):
+            await _streamable_http_error_response(
+                code=-32009,
+                message=(
+                    "The shared HTTP project's configuration changed; restart this MCP server."
+                ),
+                rpc_id=rpc_id,
+                status_code=409,
+                scope=scope,
+                receive=replay_receive,
+                send=send_proc,
+            )
+            return True
+        if _json_rpc_tool_name(body) in PROJECT_SELECTION_TOOLS:
+            await _streamable_http_error_response(
+                code=-32009,
+                message=(
+                    "A shared HTTP process cannot switch the active KiCad project. "
+                    "Choose the project before connecting, or use a separate local "
+                    "stdio MCP process for another project."
+                ),
+                rpc_id=rpc_id,
+                status_code=409,
+                scope=scope,
+                receive=replay_receive,
+                send=send_proc,
+            )
+            return True
+
+        return False
+
     def _has_session(self, session_id: str) -> bool:
         return session_id in self._session_ids
 
@@ -1700,6 +1755,21 @@ class _StreamableHttpContractMiddleware:
             otel.record_session_delta(-1)
         with contextlib.suppress(ValueError):
             self._session_order.remove(session_id)
+
+
+def _log_stable_http_initialize(
+    rpc_method: str | None,
+    cfg: KiCadMCPConfig,
+    rpc_id: object | None,
+    headers: Mapping[str, str],
+) -> None:
+    """Report stable initialization without changing any HTTP response flow."""
+    if rpc_method == "initialize" and cfg.protocol_lane == "stable":
+        logger.info(
+            "mcp_transport_initialize",
+            request_id=rpc_id,
+            mcp_session_id=headers.get("mcp-session-id") or None,
+        )
 
 
 async def _buffer_request_body(receive: Receive) -> tuple[bytes, Receive]:
@@ -1780,6 +1850,21 @@ def _json_rpc_metadata(body: bytes) -> tuple[object | None, str | None]:
     rpc_id = payload.get("id")
     rpc_method = payload.get("method")
     return rpc_id, rpc_method if isinstance(rpc_method, str) else None
+
+
+def _json_rpc_tool_name(body: bytes) -> str | None:
+    """Inspect the JSON-RPC payload rather than trusting a spoofable tool header."""
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    params = payload.get("params")
+    if not isinstance(params, dict):
+        return None
+    name = params.get("name")
+    return name if isinstance(name, str) else None
 
 
 def _json_rpc_protocol_version(body: bytes) -> str | None:
