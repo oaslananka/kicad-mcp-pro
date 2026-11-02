@@ -118,3 +118,85 @@ def test_registered_pilot_denies_ambiguous_or_unsafe_registry(
         lambda _: pytest.fail("unsafe registration must not reach signing"),
     )
     assert cloud_registered_pilot.main([]) == 1
+
+
+class _FakeTransport:
+    def __init__(self, *, tls: bool) -> None:
+        self.tls = tls
+
+    def get_extra_info(self, name: str) -> object | None:
+        return object() if self.tls and name == "ssl_object" else None
+
+
+class _FakeSocket:
+    def __init__(self, *, tls: bool) -> None:
+        self.transport = _FakeTransport(tls=tls)
+
+    async def __aenter__(self) -> _FakeSocket:
+        return self
+
+    async def __aexit__(self, *_args: object) -> None:
+        return None
+
+
+def test_transport_preflight_checks_websocket_without_a_device_proof(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _registered(tmp_path)
+    monkeypatch.setattr(cloud_registered_pilot, "default_registry_root", lambda: root)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    captured: list[tuple[str, dict[str, object]]] = []
+
+    def open_connection(uri: str, **kwargs: object) -> _FakeSocket:
+        captured.append((uri, kwargs))
+        return _FakeSocket(tls=True)
+
+    monkeypatch.setattr(cloud_registered_pilot, "connect", open_connection)
+    monkeypatch.setattr(
+        cloud_operator_pilot,
+        "main",
+        lambda _: pytest.fail("transport preflight must not invoke device signing"),
+    )
+    assert cloud_registered_pilot.main(["--check-transport"]) == 0
+    assert len(captured) == 1
+    uri, opts = captured[0]
+    assert uri == "wss://cloud.example/api/v1/connector/ws"
+    assert opts["origin"] is None
+    assert opts["compression"] is None
+    assert "reachable; device not connected" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("failure", ["tls", "refused", "origin"])
+def test_transport_preflight_fails_closed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: str
+) -> None:
+    root = _registered(tmp_path)
+    monkeypatch.setattr(cloud_registered_pilot, "default_registry_root", lambda: root)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+
+    def open_connection(_uri: str, **_kwargs: object) -> _FakeSocket:
+        if failure == "refused":
+            raise OSError("unreachable")
+        return _FakeSocket(tls=False)
+
+    monkeypatch.setattr(cloud_registered_pilot, "connect", open_connection)
+    if failure == "origin":
+        original = cloud_registered_pilot._single_registered_identity
+
+        def untrusted(registry: Path) -> dict[str, str]:
+            entry = original(registry)
+            entry["cloudOrigin"] = "http://cloud.example"
+            return entry
+
+        monkeypatch.setattr(cloud_registered_pilot, "_single_registered_identity", untrusted)
+    monkeypatch.setattr(
+        cloud_operator_pilot,
+        "main",
+        lambda _: pytest.fail("preflight failure must not reach device key"),
+    )
+    assert cloud_registered_pilot.main(["--check-transport"]) == 1
+
+
+def test_preflight_never_combines_with_native_operation() -> None:
+    with pytest.raises(SystemExit, match="2"):
+        cloud_registered_pilot.main(["--check-transport", "--mode", "native-drc"])

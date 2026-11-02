@@ -28,6 +28,18 @@ and do NOT create a persistent Connector session. Native DRC requires its
 own explicit approval text and uses the original read-only temporary-copy
 boundary. If the project is not already registered, do not auto-enroll it.
 
+For a **non-authenticating** diagnostics check after a reboot or network
+failure, run:
+
+    python -m kicad_mcp.cloud_registered_pilot --check-transport
+
+This uses the existing registered Cloud origin to test the verified-TLS
+WebSocket upgrade only. It sends **no device hello**, does not load or sign
+with the device key, does not request a project read or require terminal
+approval, and does not keep a session alive. A success means only that the
+Cloud ingress is reachable; it must **not** be displayed as device connected,
+an authenticated handshake, or native KiCad tool acceptance.
+
 The original explicit-selector form remains available:
 
     python -m kicad_mcp.cloud_operator_pilot --cloud-origin https://CLOUD-ORIGIN --owner-sub OWNER --device-id ENROLLED-DEVICE-UUID --project-id REGISTERED-PROJECT-UUID --allow-once

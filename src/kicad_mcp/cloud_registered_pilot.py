@@ -7,11 +7,15 @@ authorization path. The existing operator pilot owns all consent and signing.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import stat
 import sys
 from pathlib import Path
+
+from websockets.asyncio.client import connect
+from websockets.exceptions import WebSocketException
 
 from kicad_mcp import cloud_operator_pilot
 from kicad_mcp.cloud_local_registry import (
@@ -22,6 +26,7 @@ from kicad_mcp.cloud_local_registry import (
     default_registry_root,
     resolve_registered_read,
 )
+from kicad_mcp.cloud_outbound_handshake import _endpoint
 from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError, _open_owner_private_dir
 
 _DENIED = "Registered Cloud pilot unavailable; check local registration and owner terminal."
@@ -108,12 +113,47 @@ def _single_registered_identity(root: Path) -> dict[str, str]:
             os.close(directory_fd)
 
 
+async def _check_transport(origin: str) -> None:
+    """Check only the TLS WebSocket upgrade; never send device identity or proof."""
+    endpoint = _endpoint(origin=origin, trusted_origin=origin)
+    async with (
+        asyncio.timeout(8),
+        connect(
+            endpoint,
+            origin=None,
+            compression=None,
+            max_size=1024,
+            max_queue=2,
+            open_timeout=5,
+            close_timeout=2,
+        ) as socket,
+    ):
+        if socket.transport.get_extra_info("ssl_object") is None:
+            raise ValueError("unverified Cloud TLS")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Foreground one-shot KiCad Cloud operation for one pre-registered local project"
     )
     parser.add_argument("--mode", choices=tuple(_MODE_FLAGS), default="presence")
+    parser.add_argument(
+        "--check-transport",
+        action="store_true",
+        help="Check Cloud TLS/WebSocket ingress without sending device credentials",
+    )
     options = parser.parse_args(argv)
+    if options.check_transport:
+        if options.mode != "presence":
+            parser.error("--check-transport cannot be combined with an operation mode")
+        try:
+            record = _single_registered_identity(default_registry_root())
+            asyncio.run(_check_transport(record["cloudOrigin"]))
+        except (OSError, ValueError, TimeoutError, WebSocketException):
+            print("Cloud Connector transport is unavailable", file=sys.stderr)
+            return 1
+        print("Cloud Connector TLS/WebSocket ingress reachable; device not connected")
+        return 0
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         print(
             "An interactive owner terminal is required; no unattended Cloud access.",
