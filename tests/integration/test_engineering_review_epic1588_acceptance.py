@@ -29,12 +29,14 @@ from kicad_mcp.models.placement_topology import (
 from kicad_mcp.models.review import (
     AssessmentStatus,
     EvaluationMethod,
+    ResolvedReviewRule,
     ReviewAssessment,
     ReviewContext,
     ReviewDomain,
     ReviewFinding,
     ReviewRule,
     ReviewSnapshot,
+    RuleApplicability,
 )
 from kicad_mcp.review.catalog import (
     ReviewRuleCatalog,
@@ -633,3 +635,48 @@ def test_unified_report_cannot_claim_pass_when_real_stage_decision_is_blocked() 
     assert report.verdict == "BLOCKED"
     assert report.missing_evidence_count == 1
     assert "production authorization missing" in report.markdown_text
+
+
+def test_unresolved_mandatory_applicability_cannot_be_waived_by_assessment_pass() -> None:
+    """A claimed assessment PASS is not proof that an unresolved rule applies."""
+    context = ReviewContext(project_name="board", project_source_sha256="e" * 64)
+    rule = ReviewRule(
+        rule_id="safety.unresolved_design_limit",
+        revision=1,
+        domain=ReviewDomain.SAFETY,
+        title="Mandatory safety limits",
+        source_doc="design validation",
+        source_revision="1",
+        required_inputs=["operating_voltage_v"],
+        method=EvaluationMethod.ANALYTICAL,
+        is_mandatory=True,
+    )
+    resolved = [
+        ResolvedReviewRule(
+            rule=rule,
+            status=RuleApplicability.UNDETERMINED,
+            rationale="Active supply rating missing.",
+            missing_inputs=["operating_voltage_v"],
+        )
+    ]
+    assessments = [
+        ReviewAssessment(
+            rule_id=rule.rule_id,
+            status=AssessmentStatus.PASS,
+            method=EvaluationMethod.ANALYTICAL,
+            summary="Out-of-context claimed pass.",
+        )
+    ]
+    snapshot = ReviewSnapshot(
+        project_key="board",
+        project_source_sha256=context.project_source_sha256,
+        rule_catalog_revision="1",
+        context=context,
+        resolved_rules=resolved,
+        assessments=assessments,
+        coverage=compute_coverage(resolved, assessments),
+    )
+    report = generate_unified_review_report(snapshot)
+    assert report.verdict == "BLOCKED"
+    assert report.is_ready_for_stage is False
+    assert "operating_voltage_v" in report.markdown_text

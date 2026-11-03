@@ -131,17 +131,16 @@ def _unassessed_mandatory_rule_actions(
     actions = []
     for resolved in snapshot.resolved_rules:
         rule = resolved.rule
-        if (
-            not rule.is_mandatory
-            or rule.rule_id in assessed_ids
-            or resolved.status
-            not in {
-                RuleApplicability.APPLICABLE,
-                RuleApplicability.UNDETERMINED,
-            }
-        ):
+        if not rule.is_mandatory or resolved.status not in {
+            RuleApplicability.APPLICABLE,
+            RuleApplicability.UNDETERMINED,
+        }:
+            continue
+        applicability_unknown = resolved.status == RuleApplicability.UNDETERMINED
+        if not applicability_unknown and rule.rule_id in assessed_ids:
             continue
         missing = resolved.missing_inputs or rule.required_inputs
+        reason = "applicability unresolved" if applicability_unknown else "has no assessment"
         actions.append(
             PrioritizedActionItem(
                 priority=2,
@@ -149,7 +148,7 @@ def _unassessed_mandatory_rule_actions(
                 rule_id=rule.rule_id,
                 title=f"Missing Evidence: {rule.title}",
                 description=(
-                    f"Mandatory review {rule.rule_id} has no assessment; "
+                    f"Mandatory review {rule.rule_id} {reason}; "
                     f"missing inputs: {', '.join(missing) or 'review execution'}."
                 ),
                 remediation=rule.remediation or "Execute the mandatory review with current inputs.",
