@@ -159,6 +159,26 @@ def _unassessed_mandatory_rule_actions(
     return actions
 
 
+def _stage_gate_blockers(
+    stage_decision: StageGateDecision | None,
+) -> list[PrioritizedActionItem]:
+    """Never render a denied stage-gate authorization as engineering PASS."""
+    if stage_decision is None or stage_decision.approved:
+        return []
+    explanation = "; ".join(stage_decision.blocking_reasons) or stage_decision.summary
+    return [
+        PrioritizedActionItem(
+            priority=2,
+            category=ReviewActionCategory.MISSING_EVIDENCE,
+            rule_id="stage.authorization",
+            title="Stage authorization blocked",
+            description=explanation,
+            remediation="Resolve the stage-gate blocking reasons and obtain approval.",
+            is_blocking=True,
+        )
+    ]
+
+
 def _is_report_ready(
     actions: list[PrioritizedActionItem],
     stage_decision: StageGateDecision | None,
@@ -189,6 +209,7 @@ def generate_unified_review_report(
 
     rule_map = {r.rule.rule_id: r.rule for r in snapshot.resolved_rules}
     actions: list[PrioritizedActionItem] = _unassessed_mandatory_rule_actions(snapshot)
+    actions.extend(_stage_gate_blockers(stage_decision))
 
     # 1. Collect missing evidence items
     for assessment in snapshot.assessments:

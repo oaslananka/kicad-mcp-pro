@@ -31,7 +31,9 @@ from kicad_mcp.models.review import (
     EvaluationMethod,
     ReviewAssessment,
     ReviewContext,
+    ReviewDomain,
     ReviewFinding,
+    ReviewRule,
     ReviewSnapshot,
 )
 from kicad_mcp.review.catalog import (
@@ -578,3 +580,56 @@ def test_empty_review_catalog_does_not_claim_engineering_pass() -> None:
     report = generate_unified_review_report(snapshot)
     assert report.is_ready_for_stage is False
     assert report.verdict == "BLOCKED"
+
+
+def test_unified_report_cannot_claim_pass_when_real_stage_decision_is_blocked() -> None:
+    """A declined stage gate must remain visible even when rule assessments PASS."""
+    context = ReviewContext(
+        project_name="accepted-board",
+        project_source_sha256="d" * 64,
+    )
+    rule = ReviewRule(
+        rule_id="review.complete",
+        revision=1,
+        domain=ReviewDomain.PCB,
+        title="Measured design review rule",
+        source_doc="test acceptance contract",
+        source_revision="1",
+        required_inputs=[],
+        method=EvaluationMethod.ANALYTICAL,
+        is_mandatory=True,
+    )
+    resolved = ReviewRuleCatalog([rule]).resolve(context)
+    assessments = [
+        ReviewAssessment(
+            rule_id=rule.rule_id,
+            rule_revision=1,
+            status=AssessmentStatus.PASS,
+            method=EvaluationMethod.ANALYTICAL,
+            summary="Verified from supplied test evidence.",
+        )
+    ]
+    snapshot = ReviewSnapshot(
+        project_key=context.project_name,
+        project_source_sha256=context.project_source_sha256,
+        rule_catalog_revision="1",
+        context=context,
+        resolved_rules=resolved,
+        assessments=assessments,
+        coverage=compute_coverage(resolved, assessments),
+    )
+    stage = StageGateDecision(
+        stage=ReviewStage.PRODUCTION_ACCEPTANCE,
+        approved=False,
+        summary="Required manufacturing authorization was withheld.",
+        blocking_reasons=["production authorization missing"],
+    )
+    report = generate_unified_review_report(
+        snapshot,
+        stage=ReviewStage.PRODUCTION_ACCEPTANCE,
+        stage_decision=stage,
+    )
+    assert report.is_ready_for_stage is False
+    assert report.verdict == "BLOCKED"
+    assert report.missing_evidence_count == 1
+    assert "production authorization missing" in report.markdown_text
