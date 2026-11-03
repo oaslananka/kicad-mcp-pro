@@ -12,12 +12,15 @@ Validates:
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 import pytest
 from pydantic import ValidationError
 
 from kicad_mcp.models.review import (
     AssessmentStatus,
     EvaluationMethod,
+    ResolvedReviewRule,
     ReviewAssessment,
     ReviewContext,
     ReviewDomain,
@@ -380,3 +383,201 @@ def test_legacy_verdict_roundtrip_compatibility() -> None:
     assert reloaded.verdict == "WARN"
     assert reloaded.findings[0].id == "f_annular_01"
     assert reloaded.metadata["rule_id"] == "dfm.circular_pth_annular_ring"
+
+
+def test_catalog_constructor_with_rules_and_get() -> None:
+    """Verifies constructor pre-population and get() behaviors including error paths."""
+    r1_v1 = ReviewRule(
+        rule_id="pcb.clearance",
+        revision=1,
+        domain=ReviewDomain.PCB,
+        title="PCB Clearance v1",
+        source_doc="Doc",
+        source_revision="1",
+        method=EvaluationMethod.ANALYTICAL,
+    )
+    r1_v2 = ReviewRule(
+        rule_id="pcb.clearance",
+        revision=2,
+        domain=ReviewDomain.PCB,
+        title="PCB Clearance v2",
+        source_doc="Doc",
+        source_revision="2",
+        method=EvaluationMethod.ANALYTICAL,
+    )
+    r2 = ReviewRule(
+        rule_id="routing.orthogonal_corners",
+        revision=1,
+        domain=ReviewDomain.ROUTING,
+        title="Orthogonal Corners",
+        source_doc="Doc",
+        source_revision="1",
+        method=EvaluationMethod.HEURISTIC,
+    )
+
+    catalog = ReviewRuleCatalog(rules=[r1_v1, r1_v2, r2])
+
+    # get without revision returns latest revision (2)
+    assert catalog.get("pcb.clearance").revision == 2
+    # get with specific revision returns that revision
+    assert catalog.get("pcb.clearance", revision=1).revision == 1
+
+    # Unknown rule_id raises KeyError
+    with pytest.raises(KeyError, match="not found in catalog"):
+        catalog.get("nonexistent.rule")
+
+    # Unknown revision for existing rule raises KeyError
+    with pytest.raises(KeyError, match="revision 99 was not found"):
+        catalog.get("pcb.clearance", revision=99)
+
+    # list_rules domain filter
+    pcb_rules = catalog.list_rules(domain=ReviewDomain.PCB)
+    assert len(pcb_rules) == 2
+    assert all(r.domain == ReviewDomain.PCB for r in pcb_rules)
+
+
+def test_context_keys_and_coverage_branches() -> None:
+    """Exercises additional context fields and coverage calculation statuses."""
+    catalog = build_standard_rule_catalog()
+    ctx = ReviewContext(
+        operating_voltage_v=12.0,
+        operating_current_a=3.5,
+        selected_mfg_profile="JLCPCB",
+        has_kicad_cli=True,
+        has_3d_models=True,
+    )
+    resolved = catalog.resolve(ctx)
+    assert len(resolved) > 0
+
+    # Test adapt_assessment_to_verdict with net/layer metadata, NOT_APPLICABLE, and FAIL
+    f_detailed = ReviewFinding(
+        id="f_detail_01",
+        rule_id="routing.orthogonal_corners",
+        severity="error",
+        object_ref="track_12",
+        net="+5V",
+        layer="B.Cu",
+        description="Corner violation on layer B.Cu",
+    )
+    fail_assessment = ReviewAssessment(
+        rule_id="routing.orthogonal_corners",
+        status=AssessmentStatus.FAIL,
+        method=EvaluationMethod.HEURISTIC,
+        summary="90 degree corner detected.",
+        findings=[f_detailed],
+    )
+    v_fail = adapt_assessment_to_verdict(fail_assessment)
+    assert v_fail.verdict == "FAIL"
+    assert v_fail.findings[0].metadata["net"] == "+5V"
+    assert v_fail.findings[0].metadata["layer"] == "B.Cu"
+
+    na_assessment = ReviewAssessment(
+        rule_id="safety.hazardous_mains_clearance",
+        status=AssessmentStatus.NOT_APPLICABLE,
+        method=EvaluationMethod.ANALYTICAL,
+        summary="Not a high-voltage board.",
+    )
+    v_na = adapt_assessment_to_verdict(na_assessment)
+    assert v_na.verdict == "PASS"
+    assert "NOT APPLICABLE" in v_na.summary
+
+    # Unhandled status raises ValueError
+    mock_bad_enum = MagicMock()
+    mock_bad_enum.value = "CUSTOM_UNKNOWN"
+    mock_assessment = MagicMock()
+    mock_assessment.status = mock_bad_enum
+    mock_assessment.rule_id = "test.rule"
+    mock_assessment.rule_revision = 1
+    mock_assessment.method = EvaluationMethod.ANALYTICAL
+    mock_assessment.metadata = {}
+    mock_assessment.findings = []
+
+    with pytest.raises(ValueError, match="Unhandled assessment status"):
+        adapt_assessment_to_verdict(mock_assessment)
+
+
+def test_snapshot_warn_and_pass_branches() -> None:
+    """Verifies adapt_snapshot_to_verdict when WARN or PASS overall."""
+    ctx = ReviewContext(project_name="all_clean")
+    r1 = ReviewRule(
+        rule_id="test.clean_rule",
+        revision=1,
+        domain=ReviewDomain.PCB,
+        title="Clean Rule",
+        source_doc="Doc",
+        source_revision="1",
+        method=EvaluationMethod.ANALYTICAL,
+        is_mandatory=False,
+    )
+    cat = ReviewRuleCatalog(rules=[r1])
+    resolved = cat.resolve(ctx)
+
+    # 1. WARN snapshot
+    warn_assessment = ReviewAssessment(
+        rule_id="test.clean_rule",
+        status=AssessmentStatus.WARN,
+        method=EvaluationMethod.ANALYTICAL,
+        summary="Advisory warning.",
+    )
+    cov_warn = compute_coverage(resolved, [warn_assessment])
+    snap_warn = ReviewSnapshot(
+        project_key="clean_board",
+        project_source_sha256="0" * 64,
+        rule_catalog_revision="2026.1",
+        context=ctx,
+        resolved_rules=resolved,
+        assessments=[warn_assessment],
+        coverage=cov_warn,
+    )
+    v_snap_warn = adapt_snapshot_to_verdict(snap_warn)
+    assert v_snap_warn.verdict == "WARN"
+    assert "warnings" in v_snap_warn.summary
+
+    # 2. PASS snapshot
+    pass_assessment = ReviewAssessment(
+        rule_id="test.clean_rule",
+        status=AssessmentStatus.PASS,
+        method=EvaluationMethod.ANALYTICAL,
+        summary="All clear.",
+    )
+    cov_pass = compute_coverage(resolved, [pass_assessment])
+    snap_pass = ReviewSnapshot(
+        project_key="clean_board",
+        project_source_sha256="0" * 64,
+        rule_catalog_revision="2026.1",
+        context=ctx,
+        resolved_rules=resolved,
+        assessments=[pass_assessment],
+        coverage=cov_pass,
+    )
+    v_snap_pass = adapt_snapshot_to_verdict(snap_pass)
+    assert v_snap_pass.verdict == "PASS"
+    assert "verified" in v_snap_pass.summary
+
+    # 3. compute_coverage branches: UNDETERMINED resolved rule and BLOCKED assessment
+    blocked_assessment = ReviewAssessment(
+        rule_id="test.clean_rule",
+        status=AssessmentStatus.BLOCKED,
+        method=EvaluationMethod.ANALYTICAL,
+        summary="Blocked run.",
+    )
+    fail_assessment = ReviewAssessment(
+        rule_id="test.clean_rule",
+        status=AssessmentStatus.FAIL,
+        method=EvaluationMethod.ANALYTICAL,
+        summary="Fail run.",
+    )
+    cov_blocked = compute_coverage(resolved, [blocked_assessment])
+    assert cov_blocked.blocked_count == 1
+    cov_fail = compute_coverage(resolved, [fail_assessment])
+    assert cov_fail.failed_count == 1
+
+    # compute_coverage branches: UNDETERMINED resolved rule
+    undetermined_resolved = ResolvedReviewRule(
+        rule=r1,
+        status=RuleApplicability.UNDETERMINED,
+        rationale="Missing inputs",
+        missing_inputs=["unknown_param"],
+    )
+    cov_undetermined = compute_coverage([undetermined_resolved], [])
+    assert cov_undetermined.undetermined_count == 1
