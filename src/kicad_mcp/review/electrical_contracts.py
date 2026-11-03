@@ -67,6 +67,11 @@ def _invalid_component_limits(contract: ComponentStressContract) -> bool:
     )
 
 
+def _has_no_operating_point(contract: ComponentStressContract) -> bool:
+    """Require at least a nominal or a worst-case measured operating point."""
+    return contract.worst_case_operating is None and contract.nominal_operating is None
+
+
 def _derated_operating_limit(contract: ComponentStressContract) -> float | None:
     """Use the recommended operating maximum or a bounded fraction of AMR."""
     if contract.recommended_max is not None:
@@ -114,9 +119,8 @@ def evaluate_component_stress(
 
     # Check for missing operating conditions
     has_worst_case = contract.worst_case_operating is not None
-    has_nominal = contract.nominal_operating is not None
 
-    if not has_worst_case and not has_nominal:
+    if _has_no_operating_point(contract):
         return (
             AssessmentStatus.NOT_ASSESSED,
             f"Component '{contract.reference}' {contract.parameter} has no operating value.",
@@ -171,21 +175,19 @@ def evaluate_component_stress(
 
     if derated_limit is not None:
         meta["derated_limit"] = derated_limit
-        if operating_val > derated_limit:
-            util_pct = (
-                (operating_val / contract.rated_value) * 100.0 if contract.rated_value else 100.0
-            )
-            meta["utilization_pct"] = round(util_pct, 1)
-            return (
-                AssessmentStatus.WARN,
-                (
-                    f"Component '{contract.reference}' {contract.parameter} "
-                    f"({operating_val:g} {contract.units}) exceeds safe derating limit "
-                    f"({derated_limit:g} {contract.units}) — reliability/lifecycle risk."
-                ),
-                "derating_exceeded",
-                meta,
-            )
+    if derated_limit is not None and operating_val > derated_limit:
+        util_pct = (operating_val / contract.rated_value) * 100.0 if contract.rated_value else 100.0
+        meta["utilization_pct"] = round(util_pct, 1)
+        return (
+            AssessmentStatus.WARN,
+            (
+                f"Component '{contract.reference}' {contract.parameter} "
+                f"({operating_val:g} {contract.units}) exceeds safe derating limit "
+                f"({derated_limit:g} {contract.units}) — reliability/lifecycle risk."
+            ),
+            "derating_exceeded",
+            meta,
+        )
 
     return (
         AssessmentStatus.PASS,
