@@ -33,6 +33,7 @@ def adapt_finding(finding: ReviewFinding) -> Finding:
     metadata: dict[str, Any] = {
         "rule_id": finding.rule_id,
         "rule_revision": finding.rule_revision,
+        **finding.metadata,
     }
     if finding.net:
         metadata["net"] = finding.net

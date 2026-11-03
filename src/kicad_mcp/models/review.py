@@ -215,6 +215,7 @@ class ReviewFinding(BaseModel):
     units: str | None = None
     evidence_refs: list[str] = Field(default_factory=list)
     remediation: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def check_unit_consistency(self) -> ReviewFinding:

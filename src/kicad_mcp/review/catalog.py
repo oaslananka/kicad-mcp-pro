@@ -130,6 +130,24 @@ class ReviewRuleCatalog:
                         )
                     )
                     continue
+                if context.declared_routing_style in (
+                    "strict_45",
+                    "require_chamfer",
+                    "chamfer_required",
+                ):
+                    resolved.append(
+                        ResolvedReviewRule(
+                            rule=rule,
+                            status=RuleApplicability.APPLICABLE,
+                            rationale=(
+                                f"Enforcing explicit project routing style policy: "
+                                f"'{context.declared_routing_style}'."
+                            ),
+                            applied_threshold=0,
+                            threshold_unit="count",
+                        )
+                    )
+                    continue
                 if (
                     context.declared_routing_style is None
                     and "high_speed" not in context.technical_domains
