@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from typer.testing import CliRunner
 
@@ -377,3 +379,318 @@ def test_cloud_companion_commands_delegate(monkeypatch, cmd: str, expected_arg: 
     result = CliRunner().invoke(app, ["cloud", cmd])
     assert result.exit_code == 0, result.output
     assert calls == [[expected_arg]]
+
+
+def test_find_kicad_project_edge_cases(tmp_path: Path) -> None:
+    import typer
+
+    from kicad_mcp.cloud_user_cli import _discover_kicad_project
+
+    # Not a directory
+    not_a_dir = tmp_path / "file.txt"
+    not_a_dir.write_text("test")
+    with pytest.raises(typer.BadParameter, match="Project path is not a directory"):
+        _discover_kicad_project(not_a_dir)
+
+    # Only .kicad_sch
+    dir_sch = tmp_path / "sch_only"
+    dir_sch.mkdir()
+    (dir_sch / "schematic.kicad_sch").touch()
+    assert _discover_kicad_project(dir_sch) == (dir_sch.resolve(), "schematic")
+
+    # Only .kicad_pcb
+    dir_pcb = tmp_path / "pcb_only"
+    dir_pcb.mkdir()
+    (dir_pcb / "layout.kicad_pcb").touch()
+    assert _discover_kicad_project(dir_pcb) == (dir_pcb.resolve(), "layout")
+
+    # Subfolder with .kicad_pro
+    dir_sub = tmp_path / "nested"
+    dir_sub.mkdir()
+    sub_child = dir_sub / "child"
+    sub_child.mkdir()
+    (sub_child / "board.kicad_pro").touch()
+    assert _discover_kicad_project(dir_sub) == (sub_child.resolve(), "board")
+
+    # Empty dir fallback
+    dir_empty = tmp_path / "empty"
+    dir_empty.mkdir()
+    assert _discover_kicad_project(dir_empty) == (dir_empty.resolve(), "empty")
+
+    # Non-alphanumeric stem fallback
+    dir_special = tmp_path / "---"
+    dir_special.mkdir()
+    assert _discover_kicad_project(dir_special) == (dir_special.resolve(), "project")
+
+
+def test_archive_existing_active_collision(tmp_path: Path) -> None:
+    from kicad_mcp.cloud_user_cli import _write_project_record
+
+    projects = tmp_path / "projects"
+    archive = tmp_path / "archived-project-registrations"
+    projects.mkdir(parents=True)
+    archive.mkdir(parents=True)
+
+    (projects / "old.json").write_text('{"projectId": "old"}')
+    (archive / "old.json").write_text('{"projectId": "older"}')
+
+    record = {"projectId": "new-proj"}
+    _write_project_record(tmp_path, record)
+
+    archived_files = list(archive.glob("old*.json"))
+    assert len(archived_files) == 2
+    assert (projects / "new-proj.json").exists()
+
+
+def test_setup_invalid_device_alias(tmp_path: Path) -> None:
+    args = ["cloud", "setup", "--alias", "inv@lid!", "--project-dir", str(tmp_path)]
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code != 0
+    assert "Device alias must be 1 to 64 alphanumeric characters" in result.output
+
+
+def test_setup_different_origin_already_registered(tmp_path: Path, monkeypatch) -> None:
+    fake_reg = {
+        "cloudOrigin": "https://other-cloud.example.com",
+        "deviceId": "dev-1",
+        "projectId": "proj-1",
+        "keySlot": "slot-1",
+        "directory": str(tmp_path),
+        "filenameStem": "demo",
+    }
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: tmp_path)
+    projects_dir = tmp_path / "projects"
+    projects_dir.mkdir(parents=True, exist_ok=True)
+    (projects_dir / "p.json").touch()
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_registered_pilot._single_registered_identity",
+        lambda root: fake_reg,
+    )
+
+    result = CliRunner().invoke(app, ["cloud", "connect"])
+    assert result.exit_code != 0
+    assert "A different Cloud origin is already registered" in result.output
+
+
+def test_setup_oserror_inspect_active(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: tmp_path)
+    projects_dir = tmp_path / "projects"
+    projects_dir.mkdir(parents=True, exist_ok=True)
+    (projects_dir / "p.json").touch()
+
+    def raise_err(root: Path) -> dict[str, str]:
+        raise OSError("Disk read fault")
+
+    monkeypatch.setattr("kicad_mcp.cloud_registered_pilot._single_registered_identity", raise_err)
+
+    result = CliRunner().invoke(app, ["cloud", "connect"])
+    assert result.exit_code != 0
+    assert "Existing Cloud registration needs local repair" in result.output
+
+
+def test_status_with_active_registration(tmp_path: Path, monkeypatch) -> None:
+    fake_reg = {
+        "cloudOrigin": "https://kicad-mcp-pro.oaslananka.dev",
+        "deviceId": "dev-uuid-1234",
+        "projectId": "proj-uuid-5678",
+        "directory": "/home/user/my_board",
+        "filenameStem": "main_pcb",
+    }
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_registered_pilot._single_registered_identity",
+        lambda root: fake_reg,
+    )
+    monkeypatch.setattr("kicad_mcp.cloud_managed_connector.main", lambda args: 0)
+
+    result = CliRunner().invoke(app, ["cloud", "status"])
+    assert result.exit_code == 0
+    assert "Cloud Origin:    https://kicad-mcp-pro.oaslananka.dev" in result.output
+    assert "Device ID:       dev-uuid-1234" in result.output
+    assert "Project ID:      proj-uuid-5678" in result.output
+    assert "Local Directory: /home/user/my_board (main_pcb)" in result.output
+
+
+def test_projects_corrupt_archive(tmp_path: Path, monkeypatch) -> None:
+    reg_root = tmp_path / "reg"
+    projects = reg_root / "projects"
+    archive = reg_root / "archived-project-registrations"
+    projects.mkdir(parents=True)
+    archive.mkdir(parents=True)
+    (projects / "p1.json").touch()
+    (archive / "corrupted.json").write_text("not-valid-json")
+
+    fake_reg = {
+        "filenameStem": "board",
+        "projectId": "pid",
+        "directory": "/path",
+        "deviceId": "did",
+        "cloudOrigin": "https://example.com",
+    }
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: reg_root)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_registered_pilot._single_registered_identity",
+        lambda root: fake_reg,
+    )
+    result = CliRunner().invoke(app, ["cloud", "projects"])
+    assert result.exit_code == 0
+    assert "corrupted.json" in result.output
+
+
+def test_cloud_pair_main(tmp_path: Path, monkeypatch) -> None:
+    import kicad_mcp.cloud_pair as cloud_pair
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    monkeypatch.setattr(cloud_pair, "default_registry_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        cloud_pair, "enroll", lambda origin, alias, keyfile, approval: ("dev-1", "fp-1")
+    )
+
+    ret = cloud_pair.main(
+        [
+            "--cloud-origin",
+            "https://kicad-mcp-pro.oaslananka.dev",
+            "--alias",
+            "test-device",
+            "--begin-pairing",
+        ]
+    )
+    assert ret == 0
+
+    def raise_interrupt(*args: object) -> None:
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(cloud_pair, "enroll", raise_interrupt)
+    ret_err = cloud_pair.main(
+        [
+            "--cloud-origin",
+            "https://kicad-mcp-pro.oaslananka.dev",
+            "--alias",
+            "test-device",
+            "--begin-pairing",
+        ]
+    )
+    assert ret_err == 1
+
+
+def test_cloud_pair_keys_owner_sub_validation(tmp_path: Path) -> None:
+    from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError, _save_owner_binding
+
+    keyfile = tmp_path / "test.pem"
+    keyfile.write_text("dummy-pem")
+
+    uuid_str = "00000000-0000-4000-8000-000000000000"
+    with pytest.raises(LocalApprovalDeniedError):
+        _save_owner_binding(
+            keyfile,
+            origin="https://example.com",
+            device_id=uuid_str,
+            fingerprint="fp",
+            owner_sub=123,  # type: ignore
+        )
+
+    with pytest.raises(LocalApprovalDeniedError):
+        _save_owner_binding(
+            keyfile,
+            origin="https://example.com",
+            device_id=uuid_str,
+            fingerprint="fp",
+            owner_sub="x" * 300,
+        )
+
+
+def test_setup_browser_approval_and_service_fallback(tmp_path: Path, monkeypatch) -> None:
+    (tmp_path / "board.kicad_pro").touch()
+    keys_dir = tmp_path / "keys"
+    projects_dir = tmp_path / "projects"
+    keys_dir.mkdir(parents=True)
+    projects_dir.mkdir(parents=True)
+
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: tmp_path)
+    monkeypatch.setattr("kicad_mcp.cloud_pair.default_registry_root", lambda: tmp_path)
+
+    browser_opened: list[str] = []
+
+    def mock_open(url: str, **kwargs: object) -> bool:
+        browser_opened.append(url)
+        return True
+
+    monkeypatch.setattr("webbrowser.open", mock_open)
+
+    def mock_enroll(origin: str, alias: str, keyfile: Path, approval: object) -> tuple[str, str]:
+        approval("https://kicad-mcp-pro.oaslananka.dev/devices/pair", "chal-1", "CODE-42")  # type: ignore
+        return "dev-uuid-42", "fp-42"
+
+    monkeypatch.setattr("kicad_mcp.cloud_pair.enroll", mock_enroll)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair_keys._read_owner_binding",
+        lambda keyfile: {
+            "origin": "https://kicad-mcp-pro.oaslananka.dev",
+            "deviceId": "dev-uuid-42",
+            "ownerSub": "sub-42",
+        },
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair.register_device_project",
+        lambda origin, keyfile, alias: {"projectId": "proj-uuid-42", "alias": "My Project"},
+    )
+
+    def mock_enable_fail() -> None:
+        raise RuntimeError("systemd unavailable")
+
+    monkeypatch.setattr("kicad_mcp.cloud_managed_connector._enable", mock_enable_fail)
+
+    result = CliRunner().invoke(app, ["cloud", "setup", "--project-dir", str(tmp_path)])
+    assert result.exit_code == 0
+    assert "Browser opened for approval" in result.output
+    assert "Background service start notice: systemd unavailable" in result.output
+    assert "Connector:       Enabled (Foreground ready)" in result.output
+
+
+def test_setup_owner_sub_missing_and_pairing_error(tmp_path: Path, monkeypatch) -> None:
+    from kicad_mcp.cloud_pair import CloudPairingError
+
+    (tmp_path / "board.kicad_pro").touch()
+    keys_dir = tmp_path / "keys"
+    projects_dir = tmp_path / "projects"
+    keys_dir.mkdir(parents=True)
+    projects_dir.mkdir(parents=True)
+
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: tmp_path)
+    monkeypatch.setattr("kicad_mcp.cloud_pair.default_registry_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair.enroll",
+        lambda origin, alias, keyfile, approval: ("dev-1", "fp-1"),
+    )
+
+    # 1. Missing ownerSub
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair_keys._read_owner_binding",
+        lambda keyfile: {"origin": "https://kicad-mcp-pro.oaslananka.dev", "deviceId": "dev-1"},
+    )
+    res1 = CliRunner().invoke(
+        app, ["cloud", "setup", "--no-browser", "--project-dir", str(tmp_path)]
+    )
+    assert res1.exit_code != 0
+    assert "Owner identity missing from device binding" in res1.output
+
+    # 2. CloudPairingError on register_device_project
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair_keys._read_owner_binding",
+        lambda keyfile: {
+            "origin": "https://kicad-mcp-pro.oaslananka.dev",
+            "deviceId": "dev-1",
+            "ownerSub": "sub-1",
+        },
+    )
+
+    def mock_reg_fail(*args: object, **kwargs: object) -> tuple[str, str]:
+        raise CloudPairingError("Signature rejected")
+
+    monkeypatch.setattr("kicad_mcp.cloud_pair.register_device_project", mock_reg_fail)
+    res2 = CliRunner().invoke(
+        app, ["cloud", "setup", "--no-browser", "--project-dir", str(tmp_path)]
+    )
+    assert res2.exit_code != 0
+    assert "Project registration failed on Cloud" in res2.output
