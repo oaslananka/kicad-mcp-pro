@@ -133,7 +133,11 @@ export function SignIn({query,providers,pairing=false}:{readonly query:string;re
     <div className="auth-footnote"><Icon name="shield" size={19}/><p>Signing in doesn't share your KiCad projects. AI client permissions and project access require separate approval.</p></div>
   </section>;
 }
-export function Account({name}:{readonly name:string}){
+export function Account({name,providers=["google","github"],linked=[]}:{
+  readonly name:string;
+  readonly providers?:ReadonlyArray<"google"|"github">;
+  readonly linked?:ReadonlyArray<"google"|"github">;
+}){
   return <div className="page-stack">
     <script defer={true} src="/assets/pairing-login-continuation.js"></script>
     <section className="account-welcome" aria-label="Account status"><div className="account-banner">
@@ -141,6 +145,20 @@ export function Account({name}:{readonly name:string}){
       <div><div className="card-kicker">YOUR ACCOUNT</div>
         <h2>{name}</h2><p>Review your computers, project access and AI connections below.</p></div>
     </div><span className="status-pill ready"><Icon name="check" size={14}/> Signed in</span></section>
+    <section className="card" aria-labelledby="sign-in-methods">
+      <div className="section-head"><div><div className="card-kicker">ACCOUNT SECURITY</div>
+        <h2 id="sign-in-methods">Sign-in methods</h2></div></div>
+      <p>Link another sign-in provider only after signing in to this account.
+        Accounts are never merged automatically just because emails match.</p>
+      <div className="providers">{providers.map(provider=><div key={provider}>
+        {linked.includes(provider)
+          ? <p><strong>{provider==="google"?"Google":"GitHub"}</strong> — Connected</p>
+          : <form action={"/auth/link/"+provider} method="post">
+            <button className="button provider" type="submit">
+              Connect {provider==="google"?"Google":"GitHub"} to this account
+            </button></form>}
+      </div>)}</div>
+    </section>
     <section className="card setup-checklist" aria-labelledby="connection-checklist">
       <div className="section-head"><div><div className="card-kicker">GET CONNECTED</div>
         <h2 id="connection-checklist">Your connection checklist</h2></div><span className="section-note">Review each layer independently</span></div>

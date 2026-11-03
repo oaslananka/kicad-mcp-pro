@@ -107,7 +107,35 @@ async function startSocialLogin(request:Request,identity:BrowserIdentity,
 async function accountPage(request:Request,identity:BrowserIdentity):Promise<Response> {
   const session=await identity.api?.getSession({headers:request.headers});
   if(!session?.user) return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});
-  return new Response(renderAccount(session.user.name??"User"),{status:200,headers:htmlHeaders});
+  const linked=await identity.api?.listUserAccounts?.({headers:request.headers});
+  const names=(linked??[]).map(account=>account.providerId)
+    .filter((provider):provider is SocialName=>provider==="google"||provider==="github");
+  return new Response(renderAccount(session.user.name??"User",availableProviders(identity),names),{
+    status:200,headers:htmlHeaders
+  });
+}
+
+async function startSocialLink(request:Request,identity:BrowserIdentity,
+  publicOrigin:string,provider:SocialName):Promise<Response> {
+  // A link modifies authentication authority and must be a first-party action
+  // from an already authenticated account, never an implicit email match.
+  if(request.headers.get("origin")!==publicOrigin)
+    return page("Forbidden","Start from your account page.",403);
+  if(request.headers.get("content-type")?.split(";")[0].trim()!=="application/x-www-form-urlencoded")
+    return page("Unsupported request","Invalid account link request.",415);
+  if((await request.text()).length)
+    return page("Invalid request","Unexpected account link fields.",400);
+  const session=await identity.api?.getSession({headers:request.headers});
+  if(!session?.user) return page("Sign in required","Sign in before connecting another provider.",401);
+  const reply=await identity.handler(new Request(publicOrigin+"/api/auth/link-social",{
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json","Origin":publicOrigin,
+      ...(request.headers.get("cookie")?{"Cookie":request.headers.get("cookie")!}:{})
+    },
+    body:JSON.stringify({provider,callbackURL:publicOrigin+"/account",disableRedirect:true})
+  }));
+  return approvedProviderRedirect(reply,provider);
 }
 
 export async function browserResponse(request:Request,identity:BrowserIdentity,publicOrigin:string):Promise<Response|null> {
@@ -126,6 +154,18 @@ export async function browserResponse(request:Request,identity:BrowserIdentity,p
       return page("Sign-in unavailable","This provider is not enabled.",404);
     }
     return startSocialLogin(request,identity,publicOrigin,provider);
+  }
+  let linkProvider:SocialName|null=null;
+  if(url.pathname==="/auth/link/google")linkProvider="google";
+  else if(url.pathname==="/auth/link/github")linkProvider="github";
+  if(linkProvider && request.method==="GET"){
+    return new Response(null,{status:303,headers:{"Location":"/account","Cache-Control":"no-store"}});
+  }
+  if(linkProvider && request.method==="POST"){
+    if(!availableProviders(identity).includes(linkProvider)){
+      return page("Sign-in unavailable","This provider is not enabled.",404);
+    }
+    return startSocialLink(request,identity,publicOrigin,linkProvider);
   }
   if(url.pathname==="/account" && request.method==="GET") return accountPage(request,identity);
   return null;

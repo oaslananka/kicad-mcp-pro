@@ -110,3 +110,104 @@ test("account page requires session; escaped account display has no HTML injecti
   assert.match(text,/&lt;script&gt;/);
   assert.match(response?.headers.get("content-security-policy")??"",/default-src 'none'/);
 });
+
+test("account linking is explicit, displays only enabled and linked providers",async()=>{
+  const identity=mock() as BrowserIdentity & {api:any;options:any};
+  identity.options={socialProviders:{google:{},github:{}}};
+  identity.api={
+    getSession:async()=>({user:{name:"Ada"}}),
+    listUserAccounts:async()=>[{providerId:"google",id:"linked-google"}]
+  };
+  const account=await browserResponse(new Request(origin+"/account"),identity,origin);
+  assert.equal(account?.status,200);
+  const page=await account!.text();
+  assert.match(page,/Google<\/strong> — Connected/);
+  assert.match(page,/Connect GitHub to this account/);
+  assert.doesNotMatch(page,/Connect Google to this account/);
+  assert.match(page,/action="\/auth\/link\/github"/);
+  assert.match(page,/Accounts are never merged automatically/);
+  assert.doesNotMatch(page,/linked-google/,"Account identifiers must not leak to HTML");
+});
+
+test("linking requires an already signed in owner and rejects forged request data",async()=>{
+  const identity=mock() as BrowserIdentity & {api:any};
+  const calls:string[]=[];
+  identity.handler=async req=>{calls.push(req.url);return new Response(JSON.stringify({
+    url:"https://github.com/login/oauth/authorize",redirect:true
+  }),{status:200,headers:{"content-type":"application/json"}})};
+  identity.api={getSession:async()=>null};
+
+  const request=(path:string,headers:Record<string,string>,body="")=>
+    new Request(origin+path,{method:"POST",headers,body});
+  const formHeaders={"Origin":origin,"Content-Type":"application/x-www-form-urlencoded"};
+  const anonymous=await browserResponse(request("/auth/link/github",formHeaders),identity,origin);
+  assert.equal(anonymous?.status,401);
+  assert.equal(calls.length,0,"No anonymous attempt may start a provider OAuth flow");
+
+  identity.api.getSession=async()=>({user:{id:"owner"}});
+
+  const get=await browserResponse(new Request(origin+"/auth/link/github"),identity,origin);
+  assert.equal(get?.status,303);
+  assert.equal(get?.headers.get("location"),"/account");
+
+  const cross=await browserResponse(request("/auth/link/github",
+    {...formHeaders,Origin:"https://attacker.invalid"}),identity,origin);
+  assert.equal(cross?.status,403);
+
+  const extra=await browserResponse(request("/auth/link/github",formHeaders,
+    "callbackURL=https%3A%2F%2Fattacker.invalid"),identity,origin);
+  assert.equal(extra?.status,400);
+
+  const badContent=await browserResponse(request("/auth/link/github",
+    {"Origin":origin,"Content-Type":"application/json"},"{}"),identity,origin);
+  assert.equal(badContent?.status,415);
+  assert.equal(calls.length,0,"Rejected requests must not invoke provider flows");
+});
+
+test("explicit provider linking forwards only signed-in session, uses allowlisted destination",async()=>{
+  let payload:any,authCookie:string|null=null;
+  const linked=mock() as BrowserIdentity & {api:any};
+  linked.api={getSession:async()=>({user:{id:"owner"}})};
+  linked.handler=async req=>{
+    payload=await req.json();
+    authCookie=req.headers.get("cookie");
+    return new Response(JSON.stringify({
+      url:"https://github.com/login/oauth/authorize",redirect:true
+    }),{status:200,headers:{
+      "content-type":"application/json",
+      "set-cookie":"ba-state=opaque; Path=/; HttpOnly; SameSite=Lax"
+    }});
+  };
+  const reply=await browserResponse(new Request(origin+"/auth/link/github",{
+    method:"POST",headers:{
+      "Origin":origin,"Cookie":"better-auth.session_token=opaque-session",
+      "Content-Type":"application/x-www-form-urlencoded"
+    },body:""
+  }),linked,origin);
+  assert.equal(reply?.status,303);
+  assert.equal(reply?.headers.get("location"),"https://github.com/login/oauth/authorize");
+  assert.match(reply?.headers.get("set-cookie")??"",/HttpOnly/);
+  assert.equal(reply?.headers.get("cache-control"),"no-store");
+  assert.equal(authCookie,"better-auth.session_token=opaque-session");
+  assert.deepEqual(payload,{
+    provider:"github",callbackURL:origin+"/account",disableRedirect:true
+  });
+  linked.handler=async()=>new Response(JSON.stringify({
+    url:"https://attacker.invalid/redirect",redirect:true
+  }),{status:200,headers:{"content-type":"application/json"}});
+  const forged=await browserResponse(new Request(origin+"/auth/link/github",{
+    method:"POST",headers:{Origin:origin,"Content-Type":"application/x-www-form-urlencoded"},
+    body:""
+  }),linked,origin);
+  assert.equal(forged?.status,502);
+});
+
+test("unconfigured providers cannot be linked",async()=>{
+  const onlyGithub=mock() as BrowserIdentity & {api:any;options:any};
+  onlyGithub.options={socialProviders:{github:{}}};
+  onlyGithub.api={getSession:async()=>({user:{id:"owner"}})};
+  const forbidden=await browserResponse(new Request(origin+"/auth/link/google",{
+    method:"POST",headers:{"Origin":origin,"Content-Type":"application/x-www-form-urlencoded"},body:""
+  }),onlyGithub,origin);
+  assert.equal(forbidden?.status,404);
+});

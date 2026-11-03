@@ -9,9 +9,12 @@ export function renderSignIn(query:string,providers:ReadonlyArray<"google"|"gith
     summary:"Use an account to manage AI connections and permissions.",
     children:<SignIn query={query} providers={providers} pairing={pairing}/>});
 }
-export function renderAccount(name:string){
+export function renderAccount(name:string,
+  providers:ReadonlyArray<"google"|"github">=["google","github"],
+  linked:ReadonlyArray<"google"|"github">=[]){
   return renderPage({title:"Workspace overview",kind:"account",eyebrow:"Workspace / Overview",
-    summary:"Your account, connected AI apps, and device availability in one place.",children:<Account name={name}/>});
+    summary:"Your account, connected AI apps, and device availability in one place.",
+    children:<Account name={name} providers={providers} linked={linked}/>});
 }
 export function renderNotice(title:string,message:string){
   return renderPage({title,kind:"notice",eyebrow:"Account access",children:<Notice message={message}/>});
