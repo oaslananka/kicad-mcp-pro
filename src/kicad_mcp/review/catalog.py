@@ -83,6 +83,22 @@ def _resolve_routing_rule(rule: ReviewRule, context: ReviewContext) -> ResolvedR
             rationale="Project explicitly declares orthogonal routing is allowed.",
         )
 
+    if context.declared_routing_style in (
+        "strict_45",
+        "require_chamfer",
+        "chamfer_required",
+    ):
+        return ResolvedReviewRule(
+            rule=rule,
+            status=RuleApplicability.APPLICABLE,
+            rationale=(
+                f"Enforcing explicit project routing style policy: "
+                f"'{context.declared_routing_style}'."
+            ),
+            applied_threshold=0,
+            threshold_unit="count",
+        )
+
     if context.declared_routing_style is None and "high_speed" not in context.technical_domains:
         return ResolvedReviewRule(
             rule=rule,

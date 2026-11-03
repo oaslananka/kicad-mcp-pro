@@ -10,6 +10,7 @@ from .catalog import (
     build_standard_rule_catalog,
     compute_coverage,
 )
+from .routing_style import evaluate_routing_style
 from .stage_gate import (
     ReviewStage,
     StageGateDecision,
@@ -29,5 +30,6 @@ __all__ = [
     "build_standard_rule_catalog",
     "build_verified_design_workflow",
     "compute_coverage",
+    "evaluate_routing_style",
     "evaluate_stage_readiness",
 ]

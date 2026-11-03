@@ -394,6 +394,13 @@ def _finding_for_gate_detail(outcome: GateOutcome, detail: str) -> Finding:
         if suggested_fix is not None
         else "Inspect this gate and re-run it after remediation."
     )
+    is_style_gate = outcome.name == _ROUTE_CORNER_STYLE_GATE
+    finding_metadata: dict[str, Any] = {}
+    if is_style_gate:
+        finding_metadata = {
+            "defect_category": "cosmetic_style",
+            "electrical_defect": False,
+        }
     return Finding(
         id=stable_finding_id("gate", outcome.name, outcome.status, description),
         severity=severity,
@@ -404,6 +411,7 @@ def _finding_for_gate_detail(outcome: GateOutcome, detail: str) -> Finding:
         retryable=False,
         failure_mode="configuration" if outcome.status == "BLOCKED" else "design",
         suggested_fix=suggested_fix,
+        metadata=finding_metadata,
     )
 
 
@@ -440,6 +448,14 @@ def _gate_report(outcome: GateOutcome) -> VerdictReport:
     failure_mode = "none" if verdict == "PASS" else "design"
     if verdict != "PASS" and outcome.status == "BLOCKED":
         failure_mode = "configuration"
+    report_metadata: dict[str, Any] = {
+        "gate": outcome.name,
+        "status": outcome.status,
+        "details": outcome.details,
+    }
+    if outcome.name == _ROUTE_CORNER_STYLE_GATE:
+        report_metadata["defect_category"] = "cosmetic_style"
+        report_metadata["electrical_defect"] = False
     return VerdictReport(
         text=_format_gate(outcome),
         summary=outcome.summary,
@@ -450,7 +466,7 @@ def _gate_report(outcome: GateOutcome) -> VerdictReport:
         remediation="" if verdict == "PASS" else next_action,
         findings=findings,
         next_action=next_action,
-        metadata={"gate": outcome.name, "status": outcome.status, "details": outcome.details},
+        metadata=report_metadata,
     )
 
 
@@ -3649,6 +3665,18 @@ class _PcbTrackSegment:
     width_mm: float
 
 
+@dataclass(slots=True)
+class _PcbTrackArc:
+    """Small file-level representation of a PCB arc track for quality gates."""
+
+    net: str
+    layer: str
+    start: tuple[float, float]
+    mid: tuple[float, float]
+    end: tuple[float, float]
+    width_mm: float
+
+
 def _balanced_blocks(text: str, atom: str) -> list[str]:
     """Return top-level-ish S-expression blocks whose first atom matches ``atom``.
 
@@ -3726,6 +3754,27 @@ def _pcb_track_segments_from_text(pcb_text: str) -> list[_PcbTrackSegment]:
     return segments
 
 
+def _pcb_track_arcs_from_text(pcb_text: str) -> list[_PcbTrackArc]:
+    arcs: list[_PcbTrackArc] = []
+    for block in _balanced_blocks(pcb_text, "arc"):
+        start = _pcb_point_from_block(block, "start")
+        mid = _pcb_point_from_block(block, "mid")
+        end = _pcb_point_from_block(block, "end")
+        if start is None or end is None:
+            continue
+        arcs.append(
+            _PcbTrackArc(
+                net=_pcb_net_name_from_block(block),
+                layer=_pcb_layer_from_block(block),
+                start=start,
+                mid=mid if mid is not None else start,
+                end=end,
+                width_mm=_pcb_width_from_block(block),
+            )
+        )
+    return arcs
+
+
 def _segment_length_mm(segment: _PcbTrackSegment) -> float:
     return math.hypot(segment.end[0] - segment.start[0], segment.end[1] - segment.start[1])
 
@@ -3766,41 +3815,53 @@ def _find_corner_findings_at_point(
     key: tuple[str, str, tuple[float, float]],
     connected: list[_PcbTrackSegment],
     seen: set[tuple[int, int, tuple[str, str, tuple[float, float]]]],
+    arc_points: set[tuple[str, str, tuple[float, float]]] | None = None,
 ) -> list[str]:
-    findings: list[str] = []
-    for left_index, left in enumerate(connected):
-        for right in connected[left_index + 1 :]:
-            axes = {_segment_axis(left), _segment_axis(right)}
-            if axes != {"horizontal", "vertical"}:
-                continue
-            pair_key = (id(left), id(right), key)
-            if pair_key in seen:
-                continue
-            seen.add(pair_key)
-            net, layer, point = key
-            findings.append(
-                f"{net} on {layer} has a 90° corner at ({point[0]:.3f}, {point[1]:.3f})"
-            )
-    return findings
+    # A true route corner bend is formed by exactly two connected segments.
+    # Three or more segments meeting at a point form a T-junction or branching node,
+    # not a simple route corner bend.
+    if len(connected) != 2:
+        return []
+    # If an arc track attaches at this point, this is an arc transition/fillet.
+    if arc_points and key in arc_points:
+        return []
+    left, right = connected[0], connected[1]
+    axes = {_segment_axis(left), _segment_axis(right)}
+    if axes != {"horizontal", "vertical"}:
+        return []
+    pair_key = (id(left), id(right), key)
+    if pair_key in seen:
+        return []
+    seen.add(pair_key)
+    net, layer, point = key
+    return [f"{net} on {layer} has a 90° corner at ({point[0]:.3f}, {point[1]:.3f})"]
 
 
 def _route_90_degree_corners(
     segments: list[_PcbTrackSegment],
     *,
     min_segment_length_mm: float = 0.25,
+    arcs: list[_PcbTrackArc] | None = None,
 ) -> list[str]:
     """Return descriptions of orthogonal H/V corners that should be chamfered.
 
-    We only flag corners formed by two real segments on the same net/layer that
-    meet at an endpoint. Pad-entry stubs shorter than ``min_segment_length_mm``
-    are ignored to avoid noisy reports around QFN/THT pin escapes.
+    We only flag true corners formed by two real segments on the same net/layer
+    that meet at an endpoint. Pad-entry stubs shorter than ``min_segment_length_mm``,
+    T-junctions (3+ segments meeting at a point), and arc transitions are excluded.
     """
     by_point = _index_segments_by_endpoint(segments, min_segment_length_mm)
+    arc_points: set[tuple[str, str, tuple[float, float]]] = set()
+    if arcs:
+        for arc in arcs:
+            if arc.net:
+                arc_points.add((arc.net, arc.layer, _point_key(arc.start)))
+                arc_points.add((arc.net, arc.layer, _point_key(arc.end)))
+
     findings: list[str] = []
     seen: set[tuple[int, int, tuple[str, str, tuple[float, float]]]] = set()
     for key, connected in by_point.items():
-        if len(connected) >= 2:
-            findings.extend(_find_corner_findings_at_point(key, connected, seen))
+        if len(connected) == 2:
+            findings.extend(_find_corner_findings_at_point(key, connected, seen, arc_points))
     return sorted(findings)
 
 
@@ -3901,12 +3962,15 @@ def _evaluate_route_corner_style_gate(
             summary=f"Could not read PCB file: {exc}",
         )
     segments = _pcb_track_segments_from_text(pcb_text)
+    arcs = _pcb_track_arcs_from_text(pcb_text)
     corners = _route_90_degree_corners(
         segments,
         min_segment_length_mm=min_segment_length_mm,
+        arcs=arcs,
     )
     details = [
         f"Track segments scanned: {len(segments)}",
+        f"Track arcs scanned: {len(arcs)}",
         f"90° route corners found: {len(corners)}",
         f"Allowed 90° route corners: {max_90_degree_corners}",
         *corners[:30],
@@ -3916,8 +3980,8 @@ def _evaluate_route_corner_style_gate(
             name=_ROUTE_CORNER_STYLE_GATE,
             status="FAIL",
             summary=(
-                "PCB routing contains right-angle corners that should be "
-                "refactored to chamfered or rounded geometry."
+                "PCB routing contains right-angle corners that violate "
+                "the cosmetic 45°/rounded-corner style policy."
             ),
             details=details,
         )
