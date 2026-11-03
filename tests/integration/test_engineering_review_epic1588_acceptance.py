@@ -65,6 +65,8 @@ from kicad_mcp.review.placement_connectivity import (
     evaluate_decoupling_connectivity,
 )
 from kicad_mcp.review.reporter import (
+    ReviewActionCategory,
+    _classify_finding_category,
     generate_unified_review_report,
 )
 from kicad_mcp.review.routing_style import evaluate_routing_style
@@ -684,3 +686,187 @@ def test_unresolved_mandatory_applicability_cannot_be_waived_by_assessment_pass(
     assert report.verdict == "BLOCKED"
     assert report.is_ready_for_stage is False
     assert "operating_voltage_v" in report.markdown_text
+
+
+def test_unified_report_clean_pass_and_explicit_coverage() -> None:
+    context = ReviewContext(project_name="clean-board", has_3d_models=True)
+    rule = ReviewRule(
+        rule_id="safety.clearance",
+        revision=1,
+        domain=ReviewDomain.SAFETY,
+        title="Creepage & clearance",
+        source_doc="spec",
+        source_revision="1",
+        method=EvaluationMethod.ANALYTICAL,
+        is_mandatory=True,
+    )
+    resolved = [
+        ResolvedReviewRule(
+            rule=rule,
+            status=RuleApplicability.APPLICABLE,
+            rationale="Standard power safety check",
+        )
+    ]
+    assessments = [
+        ReviewAssessment(
+            rule_id=rule.rule_id,
+            status=AssessmentStatus.PASS,
+            method=EvaluationMethod.ANALYTICAL,
+            summary="Clearance within bounds",
+        )
+    ]
+    custom_coverage = compute_coverage(resolved, assessments)
+    snapshot = ReviewSnapshot(
+        project_key="clean-board",
+        project_source_sha256=context.project_source_sha256,
+        rule_catalog_revision="1",
+        context=context,
+        resolved_rules=resolved,
+        assessments=assessments,
+        coverage=custom_coverage,
+    )
+    report = generate_unified_review_report(
+        snapshot,
+        coverage=custom_coverage,
+        stage=ReviewStage.PRODUCTION_ACCEPTANCE,
+    )
+    assert report.verdict == "PASS"
+    assert report.is_ready_for_stage is True
+    assert "All stage checks passed" in report.markdown_text
+
+
+def test_unified_report_advisory_warn_verdict() -> None:
+    context = ReviewContext(project_name="advisory-board", has_3d_models=True)
+    rule = ReviewRule(
+        rule_id="bom.stock_availability",
+        revision=1,
+        domain=ReviewDomain.BOM,
+        title="BOM stock availability",
+        source_doc="mfg",
+        source_revision="1",
+        method=EvaluationMethod.ANALYTICAL,
+        is_mandatory=False,
+    )
+    resolved = [
+        ResolvedReviewRule(
+            rule=rule,
+            status=RuleApplicability.APPLICABLE,
+            rationale="Stock check",
+        )
+    ]
+    assessments = [
+        ReviewAssessment(
+            rule_id=rule.rule_id,
+            status=AssessmentStatus.WARN,
+            method=EvaluationMethod.ANALYTICAL,
+            summary="Low distributor stock",
+            findings=[
+                ReviewFinding(
+                    id="F_WARN_1",
+                    rule_id=rule.rule_id,
+                    rule_revision=1,
+                    severity="warning",
+                    description="Available stock < 100",
+                    remediation="Select second-source alternative",
+                )
+            ],
+        )
+    ]
+    snapshot = ReviewSnapshot(
+        project_key="advisory-board",
+        project_source_sha256=context.project_source_sha256,
+        rule_catalog_revision="1",
+        context=context,
+        resolved_rules=resolved,
+        assessments=assessments,
+        coverage=compute_coverage(resolved, assessments),
+    )
+    report = generate_unified_review_report(snapshot)
+    assert report.verdict == "WARN"
+    assert report.advisory_recommendations_count == 1
+    assert "Review advisory recommendations" in report.markdown_text
+
+
+def test_unified_report_external_physical_review_blocking_failure() -> None:
+    context = ReviewContext(project_name="rf-board", has_3d_models=True)
+    rule = ReviewRule(
+        rule_id="bringup.s_parameters",
+        revision=1,
+        domain=ReviewDomain.SIGNAL_INTEGRITY,
+        title="S-parameter return loss",
+        source_doc="spec",
+        source_revision="1",
+        method=EvaluationMethod.PHYSICAL_MEASUREMENT,
+        is_mandatory=True,
+    )
+    resolved = [
+        ResolvedReviewRule(
+            rule=rule,
+            status=RuleApplicability.APPLICABLE,
+            rationale="RF return loss measurement",
+        )
+    ]
+    assessments = [
+        ReviewAssessment(
+            rule_id=rule.rule_id,
+            status=AssessmentStatus.FAIL,
+            method=EvaluationMethod.PHYSICAL_MEASUREMENT,
+            summary="S11 exceeded -10dB target",
+            findings=[
+                ReviewFinding(
+                    id="F_ERR_1",
+                    rule_id=rule.rule_id,
+                    rule_revision=1,
+                    severity="error",
+                    description="S11 measured at -6dB",
+                    remediation="Tune matching network",
+                )
+            ],
+        )
+    ]
+    snapshot = ReviewSnapshot(
+        project_key="rf-board",
+        project_source_sha256=context.project_source_sha256,
+        rule_catalog_revision="1",
+        context=context,
+        resolved_rules=resolved,
+        assessments=assessments,
+        coverage=compute_coverage(resolved, assessments),
+    )
+    report = generate_unified_review_report(snapshot)
+    assert report.verdict == "FAIL"
+    assert report.is_ready_for_stage is False
+    assert report.external_physical_review_count == 1
+    assert "external solver or bring-up verification violation" in report.markdown_text
+
+
+def test_classify_finding_category_branches() -> None:
+    cat, pri, blk = _classify_finding_category(
+        "layout.trace_spacing",
+        domain=ReviewDomain.PCB,
+        method=EvaluationMethod.ANALYTICAL,
+        severity="error",
+    )
+    assert cat == ReviewActionCategory.CRITICAL_DEFECT
+    assert pri == 1
+    assert blk is True
+
+    cat, pri, blk = _classify_finding_category(
+        "layout.trace_spacing",
+        domain=ReviewDomain.PCB,
+        method=EvaluationMethod.ANALYTICAL,
+        severity="warning",
+    )
+    assert cat == ReviewActionCategory.ADVISORY_RECOMMENDATION
+    assert pri == 4
+    assert blk is False
+
+    cat, pri, blk = _classify_finding_category(
+        "bringup.power_rail_voltage",
+        domain=ReviewDomain.POWER_INTEGRITY,
+        method=EvaluationMethod.PHYSICAL_MEASUREMENT,
+        severity="warning",
+    )
+    assert cat == ReviewActionCategory.EXTERNAL_PHYSICAL_REVIEW
+    assert pri == 3
+    assert blk is False
