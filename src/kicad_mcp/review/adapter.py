@@ -59,6 +59,58 @@ def adapt_finding(finding: ReviewFinding) -> Finding:
     )
 
 
+def _adapt_not_assessed(
+    assessment: ReviewAssessment, is_mandatory: bool, metadata: dict[str, Any]
+) -> VerdictReport:
+    """Adapt a NOT_ASSESSED review to VerdictReport (mandatory fails, advisory warns)."""
+    verdict: Verdict = "FAIL" if is_mandatory else "WARN"
+    severity = "error" if is_mandatory else "warning"
+    synthetic_id = stable_finding_id(assessment.rule_id, "not_assessed")
+    unassessed_finding = Finding(
+        id=synthetic_id,
+        severity=severity,
+        location=assessment.rule_id,
+        description=f"Rule '{assessment.rule_id}' was NOT ASSESSED: {assessment.summary}",
+        remediation="Provide required inputs or execute necessary verification step.",
+        failure_mode="manual_review",
+        metadata=metadata,
+    )
+    return VerdictReport(
+        verdict=verdict,
+        severity=severity,
+        failure_mode="manual_review",
+        summary=f"[NOT ASSESSED] {assessment.summary}",
+        text=f"NOT ASSESSED: {assessment.summary}",
+        findings=[unassessed_finding],
+        remediation=unassessed_finding.remediation,
+        metadata=metadata,
+    )
+
+
+def _adapt_blocked(assessment: ReviewAssessment, metadata: dict[str, Any]) -> VerdictReport:
+    """Adapt a BLOCKED review to VerdictReport (hard environment failure)."""
+    synthetic_id = stable_finding_id(assessment.rule_id, "blocked")
+    blocked_finding = Finding(
+        id=synthetic_id,
+        severity="error",
+        location=assessment.rule_id,
+        description=f"Evaluation BLOCKED: {assessment.summary}",
+        remediation="Resolve prerequisites or tool environment to unblock assessment.",
+        failure_mode="environment",
+        metadata=metadata,
+    )
+    return VerdictReport(
+        verdict="FAIL",
+        severity="error",
+        failure_mode="environment",
+        summary=f"[BLOCKED] {assessment.summary}",
+        text=f"BLOCKED: {assessment.summary}",
+        findings=[blocked_finding],
+        remediation=blocked_finding.remediation,
+        metadata=metadata,
+    )
+
+
 def adapt_assessment_to_verdict(
     assessment: ReviewAssessment,
     rule: ReviewRule | None = None,
@@ -105,26 +157,15 @@ def adapt_assessment_to_verdict(
             metadata=metadata,
         )
 
-    if assessment.status == AssessmentStatus.WARN:
+    if assessment.status in (AssessmentStatus.WARN, AssessmentStatus.FAIL):
+        verdict: Verdict = "WARN" if assessment.status == AssessmentStatus.WARN else "FAIL"
+        severity = "warning" if assessment.status == AssessmentStatus.WARN else "error"
         return VerdictReport(
-            verdict="WARN",
-            severity="warning",
+            verdict=verdict,
+            severity=severity,
             failure_mode="design",
             summary=assessment.summary,
-            text=f"WARN: {assessment.summary}",
-            findings=legacy_findings,
-            evidence=[{"ref": ref} for ref in assessment.evidence_refs],
-            remediation=legacy_findings[0].remediation if legacy_findings else "",
-            metadata=metadata,
-        )
-
-    if assessment.status == AssessmentStatus.FAIL:
-        return VerdictReport(
-            verdict="FAIL",
-            severity="error",
-            failure_mode="design",
-            summary=assessment.summary,
-            text=f"FAIL: {assessment.summary}",
+            text=f"{verdict}: {assessment.summary}",
             findings=legacy_findings,
             evidence=[{"ref": ref} for ref in assessment.evidence_refs],
             remediation=legacy_findings[0].remediation if legacy_findings else "",
@@ -132,52 +173,10 @@ def adapt_assessment_to_verdict(
         )
 
     if assessment.status == AssessmentStatus.NOT_ASSESSED:
-        # Mandatory check that was not assessed must fail; non-mandatory warns. NEVER PASS.
-        verdict: Verdict = "FAIL" if is_mandatory else "WARN"
-        severity = "error" if is_mandatory else "warning"
-        synthetic_id = stable_finding_id(assessment.rule_id, "not_assessed")
-        unassessed_finding = Finding(
-            id=synthetic_id,
-            severity=severity,
-            location=assessment.rule_id,
-            description=f"Rule '{assessment.rule_id}' was NOT ASSESSED: {assessment.summary}",
-            remediation="Provide required inputs or execute necessary verification step.",
-            failure_mode="manual_review",
-            metadata=metadata,
-        )
-        return VerdictReport(
-            verdict=verdict,
-            severity=severity,
-            failure_mode="manual_review",
-            summary=f"[NOT ASSESSED] {assessment.summary}",
-            text=f"NOT ASSESSED: {assessment.summary}",
-            findings=[unassessed_finding],
-            remediation=unassessed_finding.remediation,
-            metadata=metadata,
-        )
+        return _adapt_not_assessed(assessment, is_mandatory, metadata)
 
     if assessment.status == AssessmentStatus.BLOCKED:
-        # Blocked evaluation is a hard failure (cannot proceed). NEVER PASS.
-        synthetic_id = stable_finding_id(assessment.rule_id, "blocked")
-        blocked_finding = Finding(
-            id=synthetic_id,
-            severity="error",
-            location=assessment.rule_id,
-            description=f"Evaluation BLOCKED: {assessment.summary}",
-            remediation="Resolve prerequisites or tool environment to unblock assessment.",
-            failure_mode="environment",
-            metadata=metadata,
-        )
-        return VerdictReport(
-            verdict="FAIL",
-            severity="error",
-            failure_mode="environment",
-            summary=f"[BLOCKED] {assessment.summary}",
-            text=f"BLOCKED: {assessment.summary}",
-            findings=[blocked_finding],
-            remediation=blocked_finding.remediation,
-            metadata=metadata,
-        )
+        return _adapt_blocked(assessment, metadata)
 
     raise ValueError(f"Unhandled assessment status: {assessment.status}")
 
