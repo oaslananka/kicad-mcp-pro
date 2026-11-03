@@ -74,6 +74,7 @@ class ReviewDomain(StrEnum):
     ROUTING = "routing"
     PLACEMENT = "placement"
     SIGNAL_INTEGRITY = "signal_integrity"
+    ELECTRICAL = "electrical"
     POWER_INTEGRITY = "power_integrity"
     THERMAL = "thermal"
     EMC = "emc"

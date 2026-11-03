@@ -367,4 +367,43 @@ def build_standard_rule_catalog() -> ReviewRuleCatalog:
         )
     )
 
+    catalog.register(
+        ReviewRule(
+            rule_id="electrical.component_derating",
+            revision=1,
+            domain=ReviewDomain.ELECTRICAL,
+            title="Component Operating Stress Derating and Ratings Verification",
+            source_doc="Component Reliability Derating Guidelines",
+            source_revision="2026.01",
+            required_inputs=["component_operating_points", "component_ratings"],
+            units="pct",
+            method=EvaluationMethod.ANALYTICAL,
+            severity="error",
+            rationale=(
+                "Components must operate below absolute maximum ratings and within "
+                "safe reliability derating limits."
+            ),
+            remediation="Select higher rated component or reduce operating voltage/current/power.",
+            is_mandatory=True,
+        )
+    )
+
+    catalog.register(
+        ReviewRule(
+            rule_id="thermal.plane_operating_temperature",
+            revision=1,
+            domain=ReviewDomain.THERMAL,
+            title="Copper Plane Steady-State Peak Temperature",
+            source_doc="KiCad MCP Thermal Solver Specification",
+            source_revision="2026.04",
+            required_inputs=["thermal_plane_spec"],
+            units="C",
+            method=EvaluationMethod.ANALYTICAL,
+            severity="error",
+            rationale="Peak copper temperature must remain below maximum board/component limit.",
+            remediation="Increase copper thickness, expand plane area, or add thermal vias.",
+            is_mandatory=True,
+        )
+    )
+
     return catalog

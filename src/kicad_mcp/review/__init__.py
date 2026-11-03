@@ -10,6 +10,14 @@ from .catalog import (
     build_standard_rule_catalog,
     compute_coverage,
 )
+from .electrical_contracts import (
+    ComponentStressContract,
+    evaluate_component_derating,
+    evaluate_component_stress,
+    evaluate_specialist_safety_review,
+    evaluate_thermal_spreading,
+    evaluate_trace_dc_loss,
+)
 from .mechanical_acceptance import (
     check_rectangular_outline,
     evaluate_connector_mating_orientation,
@@ -43,6 +51,7 @@ from .visual_quality import (
 
 __all__ = [
     "ComponentRotationState",
+    "ComponentStressContract",
     "CosmeticTransactionPlan",
     "ReviewRuleCatalog",
     "ReviewStage",
@@ -58,6 +67,8 @@ __all__ = [
     "check_rectangular_outline",
     "compute_coverage",
     "detect_pin1_marker_visibility",
+    "evaluate_component_derating",
+    "evaluate_component_stress",
     "evaluate_connector_mating_orientation",
     "evaluate_crystal_placement",
     "evaluate_decoupling_connectivity",
@@ -65,7 +76,10 @@ __all__ = [
     "evaluate_pcb_visual_quality",
     "evaluate_routing_style",
     "evaluate_schematic_visual_quality",
+    "evaluate_specialist_safety_review",
     "evaluate_stage_readiness",
+    "evaluate_thermal_spreading",
+    "evaluate_trace_dc_loss",
     "evaluate_visual_quality",
     "is_connector_footprint",
     "plan_cosmetic_transaction",
