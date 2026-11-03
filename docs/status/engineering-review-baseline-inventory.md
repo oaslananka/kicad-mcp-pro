@@ -146,17 +146,17 @@ Six suspected false-PASS paths were statically identified and reproduced determi
 
 | Task / Domain | Issue | Scope Boundary | Existing Work to Reuse |
 |---|---|---|---|
-| **T0 (Envanter)** | [#1578](https://github.com/oaslananka/kicad-mcp-pro/issues/1578) | Map all existing controls, evidence, methods, and false-PASS paths. | This document and [`test_engineering_review_baseline_false_pass.py`](file:///home/amd/Desktop/OPS_WORKSPACE/GITHUB/oaslananka/kicad-mcp-pro/tests/unit/test_engineering_review_baseline_false_pass.py). |
+| **T0 (Inventory)** | [#1578](https://github.com/oaslananka/kicad-mcp-pro/issues/1578) | Map all existing controls, evidence, methods, and false-PASS paths. | This document and [`test_engineering_review_baseline_false_pass.py`](file:///home/amd/Desktop/OPS_WORKSPACE/GITHUB/oaslananka/kicad-mcp-pro/tests/unit/test_engineering_review_baseline_false_pass.py). |
 | **T1 (Model)** | [#1579](https://github.com/oaslananka/kicad-mcp-pro/issues/1579) | Versioned `ReviewRule`, `ReviewContext`, `ReviewAssessment`, `ReviewCoverage`. | Extends `src/kicad_mcp/models/verdict.py` and `intent.py`; pure domain logic. |
-| **T2 (Tazelik)** | [#1580](https://github.com/oaslananka/kicad-mcp-pro/issues/1580) | Bind coverage and freshness to workflow decisions; prevent fake PASS. | Uses `project/evidence_freshness.py` and `project/release_approval_audit.py`. |
+| **T2 (Freshness)** | [#1580](https://github.com/oaslananka/kicad-mcp-pro/issues/1580) | Bind coverage and freshness to workflow decisions; prevent fake PASS. | Uses `project/evidence_freshness.py` and `project/release_approval_audit.py`. |
 | **T3 (Routing)** | [#1581](https://github.com/oaslananka/kicad-mcp-pro/issues/1581) | Separate routing style policy from electrical defects. | Reuses `_route_90_degree_corners()`; does not replace #1394 path planning. |
-| **T4 (Yerleşim)** | [#1582](https://github.com/oaslananka/kicad-mcp-pro/issues/1582) | Net- and pin-aware decoupling and placement verification. | Reuses `_matching_supply_pad_distance()` and `EngineeringGraph` topology. |
-| **T5 (Kozmetik)** | [#1583](https://github.com/oaslananka/kicad-mcp-pro/issues/1583) | Safe visual QA and schematic/PCB readability review. | Reuses `models/visual_qa.py` and `schematic_cosmetics.py` invariant guards. |
-| **T6 (Mekanik)** | [#1393](https://github.com/oaslananka/kicad-mcp-pro/issues/1393) | Connector mating direction and board-edge alignment. | Reuses `project/connector_mating_review.py`; avoids duplicating #1393. |
-| **T7 (Elektrik)** | [#1584](https://github.com/oaslananka/kicad-mcp-pro/issues/1584) | Derating, voltage drop, power budgets, thermal boundary contracts. | Connects existing analytical formulas to explicit requirements. |
-| **T8 (Dış Delil)** | [#1585](https://github.com/oaslananka/kicad-mcp-pro/issues/1585) | Safe local file import of external solver reports. | Downstream of #947 (SolverProvider v1); safe ingestion first. |
+| **T4 (Placement)** | [#1582](https://github.com/oaslananka/kicad-mcp-pro/issues/1582) | Net- and pin-aware decoupling and placement verification. | Reuses `_matching_supply_pad_distance()` and `EngineeringGraph` topology. |
+| **T5 (Cosmetics)** | [#1583](https://github.com/oaslananka/kicad-mcp-pro/issues/1583) | Safe visual QA and schematic/PCB readability review. | Reuses `models/visual_qa.py` and `schematic_cosmetics.py` invariant guards. |
+| **T6 (Mechanical)** | [#1393](https://github.com/oaslananka/kicad-mcp-pro/issues/1393) | Connector mating direction and board-edge alignment. | Reuses `project/connector_mating_review.py`; avoids duplicating #1393. |
+| **T7 (Electrical)** | [#1584](https://github.com/oaslananka/kicad-mcp-pro/issues/1584) | Derating, voltage drop, power budgets, thermal boundary contracts. | Connects existing analytical formulas to explicit requirements. |
+| **T8 (External Evidence)** | [#1585](https://github.com/oaslananka/kicad-mcp-pro/issues/1585) | Safe local file import of external solver reports. | Downstream of #947 (SolverProvider v1); safe ingestion first. |
 | **T9 (DFM/BOM)** | [#1586](https://github.com/oaslananka/kicad-mcp-pro/issues/1586) | Versioned fabricator profiles, assembly polarity, BOM alternates. | Reuses `tools/dfm.py`, `pth_annular_audit.py`, `manufacturing_cpl_rotation.py`. |
-| **T10 (Raporlama)**| [#1587](https://github.com/oaslananka/kicad-mcp-pro/issues/1587) | Integrated reporting across project reports and agent skills. | Integrates incrementally with T1–T9; updates canonical skills. |
+| **T10 (Reporting)**| [#1587](https://github.com/oaslananka/kicad-mcp-pro/issues/1587) | Integrated reporting across project reports and agent skills. | Integrates incrementally with T1–T9; updates canonical skills. |
 | **Epic** | [#1588](https://github.com/oaslananka/kicad-mcp-pro/issues/1588) | Milestone container and exit criteria tracking. | Closes after all tasks satisfy acceptance criteria. |
 
 ---
