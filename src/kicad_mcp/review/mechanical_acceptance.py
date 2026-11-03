@@ -72,11 +72,12 @@ def _resolve_board_inputs(
     frame: tuple[float, float, float, float] | None,
 ) -> tuple[dict[str, dict[str, Any]], tuple[float, float, float, float] | None]:
     """Resolve real footprint entries and board bounds, without asserting outline shape."""
-    entries = (
-        {ref: dict(entry) for ref, entry in footprints.items()}
-        if footprints is not None
-        else (_parse_board_footprint_blocks(pcb_text) if pcb_text is not None else {})
-    )
+    if footprints is not None:
+        entries = {ref: dict(entry) for ref, entry in footprints.items()}
+    elif pcb_text is not None:
+        entries = _parse_board_footprint_blocks(pcb_text)
+    else:
+        entries = {}
     bounds = _board_frame_mm(pcb_text, entries) if frame is None and pcb_text is not None else frame
     return entries, bounds
 
