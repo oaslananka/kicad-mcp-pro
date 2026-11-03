@@ -50,6 +50,12 @@ from .placement_connectivity import (
     evaluate_crystal_placement,
     evaluate_decoupling_connectivity,
 )
+from .reporter import (
+    PrioritizedActionItem,
+    ReviewActionCategory,
+    UnifiedReviewReport,
+    generate_unified_review_report,
+)
 from .routing_style import evaluate_routing_style
 from .stage_gate import (
     ReviewStage,
@@ -83,10 +89,13 @@ __all__ = [
     "DFTTestabilitySpec",
     "ExternalAnalysisReport",
     "FabricationProfile",
+    "PrioritizedActionItem",
+    "ReviewActionCategory",
     "ReviewRuleCatalog",
     "ReviewStage",
     "StageAuthorizationInput",
     "StageGateDecision",
+    "UnifiedReviewReport",
     "adapt_assessment_to_verdict",
     "adapt_finding",
     "adapt_snapshot_to_verdict",
@@ -119,6 +128,7 @@ __all__ = [
     "evaluate_thermal_spreading",
     "evaluate_trace_dc_loss",
     "evaluate_visual_quality",
+    "generate_unified_review_report",
     "is_connector_footprint",
     "load_external_analysis_report",
     "plan_cosmetic_transaction",
