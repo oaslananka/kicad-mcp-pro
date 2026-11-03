@@ -39,8 +39,10 @@ SESSION = "33333333-3333-4333-8333-333333333333"
 
 
 def _proof_signature(proof: object) -> bytes:
-    assert isinstance(proof, dict) and isinstance(proof.get("signature"), str)
-    return base64.urlsafe_b64decode(proof["signature"] + "==")
+    assert isinstance(proof, dict)
+    signature = proof.get("signature")
+    assert isinstance(signature, str)
+    return base64.urlsafe_b64decode(signature + "==")
 
 
 def _request(sequence: int) -> dict[str, object]:
@@ -234,12 +236,13 @@ async def test_managed_read_budget_rejected_before_connect(max_reads: object) ->
 
 @pytest.mark.anyio
 async def test_managed_read_cannot_start_without_a_dispatcher() -> None:
+    signing_key = Ed25519PrivateKey.generate()
     with pytest.raises(CloudHandshakeDeniedError):
         await execute_owner_managed_read_session(
             origin="https://localhost:9",
             trusted_origin="https://localhost:9",
             owner_sub="fixture-owner",
             device_id=DEVICE,
-            signing_key=Ed25519PrivateKey.generate(),
+            signing_key=signing_key,
             dispatcher_factory=None,  # type: ignore[arg-type]
         )

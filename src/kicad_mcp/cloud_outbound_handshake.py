@@ -51,6 +51,21 @@ class HandshakeReceipt:
     session_id: str
 
 
+@dataclass(frozen=True)
+class OutboundSessionOptions:
+    """Explicit operation mode layered onto the shared signed handshake."""
+
+    dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch] | None = None
+    operator_presence_pilot: bool = False
+    operator_native_drc_pilot: bool = False
+    inspection_factory: Callable[[HandshakeReceipt], BoundConnectorProjectWorker] | None = None
+    operator_inspection_pilot: bool = False
+    board_counts_pilot: bool = False
+    schematic_counts_pilot: bool = False
+    owner_managed_read: bool = False
+    managed_max_reads: int = 16
+
+
 def _endpoint(*, origin: str, trusted_origin: str) -> str:
     """Require exact independently configured HTTPS Cloud origin."""
     if (
@@ -507,6 +522,59 @@ def _validated_outbound_connection(
     return endpoint, context
 
 
+def _validate_outbound_options(options: OutboundSessionOptions) -> None:
+    if options.owner_managed_read and (
+        options.dispatcher_factory is None
+        or options.inspection_factory is not None
+        or options.operator_presence_pilot
+        or options.operator_inspection_pilot
+        or options.operator_native_drc_pilot
+        or options.board_counts_pilot
+        or options.schematic_counts_pilot
+        or type(options.managed_max_reads) is not int
+        or not 1 <= options.managed_max_reads <= 16
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+
+
+def _outbound_session_timeout(options: OutboundSessionOptions) -> int:
+    if options.owner_managed_read:
+        return 299
+    if options.dispatcher_factory is None and options.inspection_factory is None:
+        return HANDSHAKE_TIMEOUT_SECONDS
+    return 40
+
+
+async def _complete_outbound_operation(
+    socket: ClientConnection, receipt: HandshakeReceipt, options: OutboundSessionOptions
+) -> HandshakeReceipt:
+    if options.owner_managed_read:
+        # Avoid a circular module dependency. This code only receives an
+        # already-signed socket; local authority is supplied by the dispatcher.
+        from kicad_mcp.cloud_managed_read_transport import serve_authenticated_reads
+
+        if options.dispatcher_factory is None:
+            raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+        return await serve_authenticated_reads(
+            socket, receipt, options.dispatcher_factory, max_reads=options.managed_max_reads
+        )
+    if options.inspection_factory is not None:
+        return await _complete_authorized_inspection(
+            socket,
+            receipt,
+            options.inspection_factory,
+            board_counts=options.board_counts_pilot,
+            schematic_counts=options.schematic_counts_pilot,
+        )
+    return await _complete_authorized_read(
+        socket,
+        receipt,
+        options.dispatcher_factory,
+        operator_presence_pilot=options.operator_presence_pilot,
+        operator_native_drc_pilot=options.operator_native_drc_pilot,
+    )
+
+
 async def _perform_outbound_session(
     *,
     origin: str,
@@ -515,15 +583,7 @@ async def _perform_outbound_session(
     device_id: str,
     signing_key: Ed25519PrivateKey,
     tls_context: ssl.SSLContext | None = None,
-    dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch] | None = None,
-    operator_presence_pilot: bool = False,
-    operator_native_drc_pilot: bool = False,
-    inspection_factory: Callable[[HandshakeReceipt], BoundConnectorProjectWorker] | None = None,
-    operator_inspection_pilot: bool = False,
-    board_counts_pilot: bool = False,
-    schematic_counts_pilot: bool = False,
-    owner_managed_read: bool = False,
-    managed_max_reads: int = 16,
+    options: OutboundSessionOptions | None = None,
 ) -> HandshakeReceipt:
     """Perform the Cloud v1 proof order; optionally handle one approved read.
 
@@ -532,6 +592,7 @@ async def _perform_outbound_session(
     trust roots or isolated tests; disabling certificate/hostname verification
     is forbidden. No on-disk key management or actual KiCad project reads.
     """
+    session_options = options if options is not None else OutboundSessionOptions()
     endpoint, context = _validated_outbound_connection(
         origin=origin,
         trusted_origin=trusted_origin,
@@ -539,33 +600,20 @@ async def _perform_outbound_session(
         device_id=device_id,
         signing_key=signing_key,
         tls_context=tls_context,
-        dispatcher_factory=dispatcher_factory,
-        operator_presence_pilot=operator_presence_pilot,
-        inspection_factory=inspection_factory,
-        operator_inspection_pilot=operator_inspection_pilot,
-        owner_managed_read=owner_managed_read,
+        dispatcher_factory=session_options.dispatcher_factory,
+        operator_presence_pilot=session_options.operator_presence_pilot,
+        inspection_factory=session_options.inspection_factory,
+        operator_inspection_pilot=session_options.operator_inspection_pilot,
+        owner_managed_read=session_options.owner_managed_read,
     )
-    if owner_managed_read and (
-        operator_native_drc_pilot
-        or board_counts_pilot
-        or schematic_counts_pilot
-        or type(managed_max_reads) is not int
-        or not 1 <= managed_max_reads <= 16
-    ):
-        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    _validate_outbound_options(session_options)
 
     def now_ms() -> int:
         return int(datetime.now(UTC).timestamp() * 1000)
 
     try:
         async with (
-            asyncio.timeout(
-                299
-                if owner_managed_read
-                else HANDSHAKE_TIMEOUT_SECONDS
-                if dispatcher_factory is None and inspection_factory is None
-                else 40
-            ),
+            asyncio.timeout(_outbound_session_timeout(session_options)),
             connect(
                 endpoint,
                 ssl=context,
@@ -625,32 +673,7 @@ async def _perform_outbound_session(
             ):
                 raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
             receipt = HandshakeReceipt(device_id=device_id, session_id=session_id)
-            if owner_managed_read:
-                # Avoid a circular module dependency. This code only receives
-                # an already-signed socket; the independent local grant is
-                # supplied by the owner-selected dispatcher factory.
-                from kicad_mcp.cloud_managed_read_transport import serve_authenticated_reads
-
-                if dispatcher_factory is None:
-                    raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
-                return await serve_authenticated_reads(
-                    socket, receipt, dispatcher_factory, max_reads=managed_max_reads
-                )
-            if inspection_factory is not None:
-                return await _complete_authorized_inspection(
-                    socket,
-                    receipt,
-                    inspection_factory,
-                    board_counts=board_counts_pilot,
-                    schematic_counts=schematic_counts_pilot,
-                )
-            return await _complete_authorized_read(
-                socket,
-                receipt,
-                dispatcher_factory,
-                operator_presence_pilot=operator_presence_pilot,
-                operator_native_drc_pilot=operator_native_drc_pilot,
-            )
+            return await _complete_outbound_operation(socket, receipt, session_options)
     except (OSError, ValueError, WebSocketException) as exc:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED) from exc
 
@@ -672,6 +695,7 @@ async def establish_proof_only_handshake(
         device_id=device_id,
         signing_key=signing_key,
         tls_context=tls_context,
+        options=OutboundSessionOptions(),
     )
 
 
@@ -700,8 +724,9 @@ async def execute_operator_presence_once(
         device_id=device_id,
         signing_key=signing_key,
         tls_context=tls_context,
-        dispatcher_factory=dispatcher_factory,
-        operator_presence_pilot=True,
+        options=OutboundSessionOptions(
+            dispatcher_factory=dispatcher_factory, operator_presence_pilot=True
+        ),
     )
 
 
@@ -729,9 +754,11 @@ async def execute_operator_native_drc_once(
         device_id=device_id,
         signing_key=signing_key,
         tls_context=tls_context,
-        dispatcher_factory=dispatcher_factory,
-        operator_presence_pilot=True,
-        operator_native_drc_pilot=True,
+        options=OutboundSessionOptions(
+            dispatcher_factory=dispatcher_factory,
+            operator_presence_pilot=True,
+            operator_native_drc_pilot=True,
+        ),
     )
 
 
@@ -755,9 +782,11 @@ async def execute_operator_schematic_counts_once(
         device_id=device_id,
         signing_key=signing_key,
         tls_context=tls_context,
-        inspection_factory=inspector_factory,
-        operator_inspection_pilot=True,
-        schematic_counts_pilot=True,
+        options=OutboundSessionOptions(
+            inspection_factory=inspector_factory,
+            operator_inspection_pilot=True,
+            schematic_counts_pilot=True,
+        ),
     )
 
 
@@ -781,9 +810,11 @@ async def execute_operator_board_counts_once(
         device_id=device_id,
         signing_key=signing_key,
         tls_context=tls_context,
-        inspection_factory=inspector_factory,
-        operator_inspection_pilot=True,
-        board_counts_pilot=True,
+        options=OutboundSessionOptions(
+            inspection_factory=inspector_factory,
+            operator_inspection_pilot=True,
+            board_counts_pilot=True,
+        ),
     )
 
 
@@ -807,8 +838,9 @@ async def execute_operator_inspection_once(
         device_id=device_id,
         signing_key=signing_key,
         tls_context=tls_context,
-        inspection_factory=inspector_factory,
-        operator_inspection_pilot=True,
+        options=OutboundSessionOptions(
+            inspection_factory=inspector_factory, operator_inspection_pilot=True
+        ),
     )
 
 
@@ -837,7 +869,7 @@ async def execute_single_approved_read(
         device_id=device_id,
         signing_key=signing_key,
         tls_context=tls_context,
-        dispatcher_factory=dispatcher_factory,
+        options=OutboundSessionOptions(dispatcher_factory=dispatcher_factory),
     )
 
 
@@ -869,7 +901,9 @@ async def execute_owner_managed_read_session(
         device_id=device_id,
         signing_key=signing_key,
         tls_context=tls_context,
-        dispatcher_factory=dispatcher_factory,
-        owner_managed_read=True,
-        managed_max_reads=max_reads,
+        options=OutboundSessionOptions(
+            dispatcher_factory=dispatcher_factory,
+            owner_managed_read=True,
+            managed_max_reads=max_reads,
+        ),
     )

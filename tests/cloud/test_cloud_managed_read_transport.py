@@ -117,13 +117,14 @@ async def test_owner_off_blocks_next_read_without_delivering_anything(tmp_path: 
     grant = [True]
     socket = Socket([request(1), request(2)], revoke_after=1, grant=grant)
     dispatcher = build_dispatcher(tmp_path, grant)
+    receipt = HandshakeReceipt(DEVICE, SESSION)
     with pytest.raises((LocalReadDeniedError, CloudHandshakeDeniedError)):
-        await serve_authenticated_reads(
-            socket, HandshakeReceipt(DEVICE, SESSION), lambda _: dispatcher, max_reads=2
-        )
+        await serve_authenticated_reads(socket, receipt, lambda _: dispatcher, max_reads=2)
     assert [item["sequence"] for item in socket.sent] == [1]
+    post_revoke_frame = json.loads(request(3))["request"]
+    post_revoke_payload = json.dumps(post_revoke_frame).encode()
     with pytest.raises(LocalReadDeniedError):
-        dispatcher.read(json.dumps(json.loads(request(3))["request"]).encode(), sequence=3)
+        dispatcher.read(post_revoke_payload, sequence=3)
 
 
 @pytest.mark.anyio
@@ -134,11 +135,13 @@ async def test_replay_out_of_order_or_invalid_sequences_fail_closed(
     raw = json.loads(request(2))
     raw["sequence"] = second
     socket = Socket([request(1), json.dumps(raw)])
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    dispatcher = build_dispatcher(tmp_path, [True])
     with pytest.raises((LocalReadDeniedError, CloudHandshakeDeniedError)):
         await serve_authenticated_reads(
             socket,
-            HandshakeReceipt(DEVICE, SESSION),
-            lambda _: build_dispatcher(tmp_path, [True]),
+            receipt,
+            lambda _: dispatcher,
             max_reads=2,
         )
     assert len(socket.sent) == 1
@@ -161,11 +164,13 @@ async def test_rejects_unexpected_ack_without_next_response(tmp_path: Path) -> N
             )
 
     socket = InvalidAck([request(1), request(2)])
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    dispatcher = build_dispatcher(tmp_path, [True])
     with pytest.raises(CloudHandshakeDeniedError):
         await serve_authenticated_reads(
             socket,
-            HandshakeReceipt(DEVICE, SESSION),
-            lambda _: build_dispatcher(tmp_path, [True]),
+            receipt,
+            lambda _: dispatcher,
             max_reads=2,
         )
     assert len(socket.sent) == 1
@@ -174,11 +179,13 @@ async def test_rejects_unexpected_ack_without_next_response(tmp_path: Path) -> N
 @pytest.mark.anyio
 async def test_cross_session_receipt_is_not_authority(tmp_path: Path) -> None:
     socket = Socket([request(1)])
+    receipt = HandshakeReceipt(DEVICE, "99999999-9999-4999-8999-999999999999")
+    dispatcher = build_dispatcher(tmp_path, [True])
     with pytest.raises(LocalReadDeniedError):
         await serve_authenticated_reads(
             socket,
-            HandshakeReceipt(DEVICE, "99999999-9999-4999-8999-999999999999"),
-            lambda _: build_dispatcher(tmp_path, [True]),
+            receipt,
+            lambda _: dispatcher,
             max_reads=1,
         )
     assert socket.sent == []
@@ -223,11 +230,13 @@ async def test_revocation_while_local_inspection_is_running_drops_result(
 @pytest.mark.anyio
 async def test_native_read_is_rejected_even_on_authenticated_socket(tmp_path: Path) -> None:
     socket = Socket([request(1, operation="run_drc")])
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    dispatcher = build_dispatcher(tmp_path, [True])
     with pytest.raises(LocalReadDeniedError):
         await serve_authenticated_reads(
             socket,
-            HandshakeReceipt(DEVICE, SESSION),
-            lambda _: build_dispatcher(tmp_path, [True]),
+            receipt,
+            lambda _: dispatcher,
             max_reads=1,
         )
     assert socket.sent == []
@@ -236,10 +245,13 @@ async def test_native_read_is_rejected_even_on_authenticated_socket(tmp_path: Pa
 @pytest.mark.anyio
 @pytest.mark.parametrize("max_reads", [0, 17, True, 1.0, -1])
 async def test_invalid_session_read_budgets_are_rejected(tmp_path: Path, max_reads: object) -> None:
+    socket = Socket([request(1)])
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    dispatcher = build_dispatcher(tmp_path, [True])
     with pytest.raises(CloudHandshakeDeniedError):
         await serve_authenticated_reads(
-            Socket([request(1)]),
-            HandshakeReceipt(DEVICE, SESSION),
-            lambda _: build_dispatcher(tmp_path, [True]),
+            socket,
+            receipt,
+            lambda _: dispatcher,
             max_reads=max_reads,  # type: ignore[arg-type]
         )
