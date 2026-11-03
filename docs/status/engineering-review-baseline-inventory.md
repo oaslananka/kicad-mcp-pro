@@ -3,7 +3,7 @@
 Date: 2026-11-03
 Milestone: M18 — Engineering Review & Visual Quality
 Issue: [#1578](https://github.com/oaslananka/kicad-mcp-pro/issues/1578) (T0 — Baseline Inventory)
-Reproduction Suite: [`tests/unit/test_engineering_review_baseline_false_pass.py`](../../tests/unit/test_engineering_review_baseline_false_pass.py)
+Reproduction Suite: [`tests/unit/test_engineering_review_baseline_false_pass.py`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/tests/unit/test_engineering_review_baseline_false_pass.py)
 
 ---
 
@@ -25,7 +25,7 @@ This inventory maps all existing engineering controls, validation gates, critics
 
 ## 1. Verified False-PASS Reproductions
 
-Six suspected false-PASS paths were statically identified and reproduced deterministically in [`test_engineering_review_baseline_false_pass.py`](../../tests/unit/test_engineering_review_baseline_false_pass.py):
+Six suspected false-PASS paths were statically identified and reproduced deterministically in [`test_engineering_review_baseline_false_pass.py`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/tests/unit/test_engineering_review_baseline_false_pass.py):
 
 | # | Suspected Path | Owning Service / Function | Real Mechanism | Reproduction Status |
 |---|---|---|---|---|
@@ -150,7 +150,7 @@ merely to keep a historical reproduction green.
 
 | Task / Domain | Issue | Scope Boundary | Existing Work to Reuse |
 |---|---|---|---|
-| **T0 (Envanter)** | [#1578](https://github.com/oaslananka/kicad-mcp-pro/issues/1578) | Map all existing controls, evidence, methods, and false-PASS paths. | This document and [`test_engineering_review_baseline_false_pass.py`](../../tests/unit/test_engineering_review_baseline_false_pass.py). |
+| **T0 (Envanter)** | [#1578](https://github.com/oaslananka/kicad-mcp-pro/issues/1578) | Map all existing controls, evidence, methods, and false-PASS paths. | This document and [`test_engineering_review_baseline_false_pass.py`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/tests/unit/test_engineering_review_baseline_false_pass.py). |
 | **T1 (Model)** | [#1579](https://github.com/oaslananka/kicad-mcp-pro/issues/1579) | Versioned `ReviewRule`, `ReviewContext`, `ReviewAssessment`, `ReviewCoverage`. | Extends `src/kicad_mcp/models/verdict.py` and `intent.py`; pure domain logic. |
 | **T2 (Tazelik)** | [#1580](https://github.com/oaslananka/kicad-mcp-pro/issues/1580) | Bind coverage and freshness to workflow decisions; prevent fake PASS. | Uses `project/evidence_freshness.py` and `project/release_approval_audit.py`. |
 | **T3 (Routing)** | [#1581](https://github.com/oaslananka/kicad-mcp-pro/issues/1581) | Separate routing style policy from electrical defects. | Reuses `_route_90_degree_corners()`; does not replace #1394 path planning. |
