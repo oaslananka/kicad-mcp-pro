@@ -47,19 +47,24 @@ class RegistrationHandoff:
 
 
 def _regular_private(file: Path) -> None:
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    nonblock = getattr(os, "O_NONBLOCK", None)
+    getuid = getattr(os, "getuid", None)
+    if type(nofollow) is not int or type(nonblock) is not int or not callable(getuid):
+        raise LocalApprovalDeniedError(_DENIED)
     try:
         fd_parent = _open_owner_private_dir(file)
         fd = -1
         try:
             fd = os.open(
                 file.name,
-                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0),
+                os.O_RDONLY | nofollow | nonblock | getattr(os, "O_CLOEXEC", 0),
                 dir_fd=fd_parent,
             )
             info = os.fstat(fd)
             if (
                 not stat.S_ISREG(info.st_mode)
-                or info.st_uid != os.getuid()
+                or info.st_uid != getuid()
                 or info.st_nlink != 1
                 or info.st_mode & 0o077
             ):
@@ -181,13 +186,16 @@ def activate_handoff(plan: RegistrationHandoff) -> None:
             raise LocalApprovalDeniedError(_DENIED)
         # The temporary record is created in the target directory itself,
         # O_EXCL + nofollow; never overwrite an existing project record.
+        nofollow = getattr(os, "O_NOFOLLOW", None)
+        if type(nofollow) is not int:
+            raise LocalApprovalDeniedError(_DENIED)
         temp = ".registration-" + uuid.uuid4().hex + ".tmp"
         payload = json.dumps(newer, separators=(",", ":"), sort_keys=True).encode()
         if not 1 <= len(payload) <= 2048:
             raise LocalApprovalDeniedError(_DENIED)
         fd = os.open(
             temp,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | nofollow,
             0o600,
             dir_fd=project_fd,
         )
