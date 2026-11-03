@@ -50,6 +50,9 @@ from ..utils.pcb_readability import (
     run_pcb_readability,
 )
 
+SCHEMATIC_VISUAL_RULE = "cosmetics.schematic_visual_readability"
+PCB_VISUAL_RULE = "cosmetics.pcb_visual_presentation"
+
 
 @dataclass(frozen=True, slots=True)
 class ComponentRotationState:
@@ -243,74 +246,111 @@ def apply_cosmetic_transaction(
     )
 
 
-def detect_pin1_marker_visibility(footprints: FootprintMap) -> list[PcbFinding]:
-    """Detect missing or occluded pin 1 silkscreen markers on ICs and polarized components."""
-    findings: list[PcbFinding] = []
-    for ref, entry in sorted(footprints.items()):
-        block = str(entry.get("block", ""))
-        if not block:
-            continue
-
-        pad1_match = re.search(
-            r'\(pad\s+"?1"?\s+\S+\s+\S+\s*\(at\s+([-\d.]+)\s+([-\d.]+)(?:\s+([-\d.]+))?\)',
+def _pin1_finding_for_footprint(ref: str, entry: dict[str, Any]) -> PcbFinding | None:
+    """Inspect one footprint without mistaking generic silk graphics for electrical evidence."""
+    block = str(entry.get("block", ""))
+    if not block:
+        return None
+    pad1_match = re.search(
+        r'\(pad\s+"?1"?\s+\S+\s+\S+\s*\(at\s+([-\d.]+)\s+([-\d.]+)(?:\s+([-\d.]+))?\)',
+        block,
+    )
+    if not pad1_match:
+        return None
+    is_polarized_target = (
+        ref.startswith(("U", "D", "Q", "J")) or len(re.findall(r"\(pad\s+", block)) >= 3
+    )
+    if not is_polarized_target:
+        return None
+    has_silk_graphics = bool(
+        re.search(
+            r'\(fp_(?:circle|line|arc|poly)\b[\s\S]*?\(layer\s+"[FB]\.SilkS"\)',
             block,
         )
-        if not pad1_match:
-            continue
-
-        is_polarized_target = (
-            ref.startswith("U")
-            or ref.startswith("D")
-            or ref.startswith("Q")
-            or ref.startswith("J")
-            or len(re.findall(r"\(pad\s+", block)) >= 3
+    )
+    if not has_silk_graphics:
+        return PcbFinding(
+            level="WARN",
+            code="pin1_marker_missing",
+            message=f"Footprint {ref} has pin 1 but lacks visible pin-1 silkscreen marker.",
+            ref=ref,
+            x=float(entry.get("x_mm", 0.0) or 0.0),
+            y=float(entry.get("y_mm", 0.0) or 0.0),
         )
-        if not is_polarized_target:
-            continue
+    ref_box = _reference_silk_box(ref, entry)
+    if ref_box is None:
+        return None
+    p1_dx = float(pad1_match.group(1))
+    p1_dy = float(pad1_match.group(2))
+    foot_rot = float(entry.get("rotation", 0) or 0)
+    rp1_dx, rp1_dy = _rotate(p1_dx, p1_dy, foot_rot)
+    p1_abs_x = float(entry.get("x_mm", 0.0) or 0.0) + rp1_dx
+    p1_abs_y = float(entry.get("y_mm", 0.0) or 0.0) + rp1_dy
+    if not ref_box.contains_point(p1_abs_x, p1_abs_y):
+        return None
+    return PcbFinding(
+        level="WARN",
+        code="pin1_marker_occluded",
+        message=f"Footprint {ref} silkscreen reference text occludes pin-1 marker.",
+        ref=ref,
+        x=p1_abs_x,
+        y=p1_abs_y,
+    )
 
-        has_silk_graphics = bool(
-            re.search(
-                r'\(fp_(?:circle|line|arc|poly)\b[\s\S]*?\(layer\s+"[FB]\.SilkS"\)',
-                block,
-            )
-        )
-        if not has_silk_graphics:
-            findings.append(
-                PcbFinding(
-                    level="WARN",
-                    code="pin1_marker_missing",
-                    message=f"Footprint {ref} has pin 1 but lacks visible pin-1 silkscreen marker.",
-                    ref=ref,
-                    x=float(entry.get("x_mm", 0.0) or 0.0),
-                    y=float(entry.get("y_mm", 0.0) or 0.0),
-                )
-            )
-            continue
 
-        ref_box = _reference_silk_box(ref, entry)
-        if ref_box is not None:
-            p1_dx = float(pad1_match.group(1))
-            p1_dy = float(pad1_match.group(2))
-            foot_rot = float(entry.get("rotation", 0) or 0)
-            rp1_dx, rp1_dy = _rotate(p1_dx, p1_dy, foot_rot)
-            fx = float(entry.get("x_mm", 0.0) or 0.0)
-            fy = float(entry.get("y_mm", 0.0) or 0.0)
-            p1_abs_x = fx + rp1_dx
-            p1_abs_y = fy + rp1_dy
-
-            if ref_box.contains_point(p1_abs_x, p1_abs_y):
-                findings.append(
-                    PcbFinding(
-                        level="WARN",
-                        code="pin1_marker_occluded",
-                        message=f"Footprint {ref} silkscreen reference text occludes pin-1 marker.",
-                        ref=ref,
-                        x=p1_abs_x,
-                        y=p1_abs_y,
-                    )
-                )
-
+def detect_pin1_marker_visibility(footprints: FootprintMap) -> list[PcbFinding]:
+    """Detect missing or occluded pin-1 markers on polarized and multi-pin parts."""
+    findings: list[PcbFinding] = []
+    for ref, entry in sorted(footprints.items()):
+        finding = _pin1_finding_for_footprint(ref, entry)
+        if finding is not None:
+            findings.append(finding)
     return findings
+
+
+def _visual_location(position: object) -> tuple[float, float] | None:
+    if not isinstance(position, (list, tuple)) or len(position) < 2:
+        return None
+    try:
+        return float(position[0]), float(position[1])
+    except (ValueError, TypeError):
+        return None
+
+
+def _schematic_visual_finding(
+    idx: int, raw: object, *, strict_policy: bool
+) -> ReviewFinding | None:
+    if not isinstance(raw, dict):
+        return None
+    level = str(raw.get("level", "INFO")).upper()
+    code = str(raw.get("code", "unknown"))
+    is_readability_defect = code in {
+        "label_collision",
+        "symbol_overlap",
+        "text_overlap",
+        "offsheet_box",
+        "offsheet_symbol",
+    }
+    if is_readability_defect:
+        severity = "error" if strict_policy else "warning"
+    else:
+        severity = "warning" if strict_policy and level == "WARN" else "info"
+    if severity == "info":
+        return None
+    return ReviewFinding(
+        id=f"SCH_VIS_{idx + 1:03d}",
+        rule_id=SCHEMATIC_VISUAL_RULE,
+        rule_revision=1,
+        severity=severity,
+        object_ref=str(raw.get("ref", "")),
+        location_mm=_visual_location(raw.get("position")),
+        description=str(raw.get("message", "")),
+        metadata={
+            "defect_category": "readability" if is_readability_defect else "cosmetic_style",
+            "electrical_defect": False,
+            "code": code,
+        },
+    )
 
 
 def evaluate_schematic_visual_quality(
@@ -320,7 +360,7 @@ def evaluate_schematic_visual_quality(
     """Evaluate schematic readability and cosmetic quality without electrical conflation."""
     if sch_text is None:
         return ReviewAssessment(
-            rule_id="cosmetics.schematic_visual_readability",
+            rule_id=SCHEMATIC_VISUAL_RULE,
             rule_revision=1,
             status=AssessmentStatus.BLOCKED,
             method=EvaluationMethod.HEURISTIC,
@@ -335,7 +375,7 @@ def evaluate_schematic_visual_quality(
     stripped = sch_text.strip()
     if not stripped:
         return ReviewAssessment(
-            rule_id="cosmetics.schematic_visual_readability",
+            rule_id=SCHEMATIC_VISUAL_RULE,
             rule_revision=1,
             status=AssessmentStatus.NOT_ASSESSED,
             method=EvaluationMethod.HEURISTIC,
@@ -356,7 +396,7 @@ def evaluate_schematic_visual_quality(
     # Empty sheet check: zero symbols and zero wires must NOT pass
     if len(symbols) == 0 and len(wires) == 0:
         return ReviewAssessment(
-            rule_id="cosmetics.schematic_visual_readability",
+            rule_id=SCHEMATIC_VISUAL_RULE,
             rule_revision=1,
             status=AssessmentStatus.NOT_ASSESSED,
             method=EvaluationMethod.HEURISTIC,
@@ -382,54 +422,10 @@ def evaluate_schematic_visual_quality(
     review_findings: list[ReviewFinding] = []
     strict_policy = bool(context.explicit_requirements.get("strict_schematic_cosmetics", False))
 
-    for idx, f in enumerate(raw_findings):
-        if not isinstance(f, dict):
-            continue
-        level = str(f.get("level", "INFO")).upper()
-        code = str(f.get("code", "unknown"))
-        message = str(f.get("message", ""))
-        ref = str(f.get("ref", ""))
-        pos = f.get("position")
-        loc: tuple[float, float] | None = None
-        if isinstance(pos, (list, tuple)) and len(pos) >= 2:
-            try:
-                loc = (float(pos[0]), float(pos[1]))
-            except (ValueError, TypeError):
-                loc = None
-
-        is_readability_defect = code in {
-            "label_collision",
-            "symbol_overlap",
-            "text_overlap",
-            "offsheet_box",
-            "offsheet_symbol",
-        }
-
-        finding_severity: Any = "warning"
-        if is_readability_defect:
-            finding_severity = "error" if strict_policy else "warning"
-        else:
-            finding_severity = "warning" if (strict_policy and level == "WARN") else "info"
-
-        if finding_severity in {"warning", "error"}:
-            review_findings.append(
-                ReviewFinding(
-                    id=f"SCH_VIS_{idx + 1:03d}",
-                    rule_id="cosmetics.schematic_visual_readability",
-                    rule_revision=1,
-                    severity=finding_severity,
-                    object_ref=ref,
-                    location_mm=loc,
-                    description=message,
-                    metadata={
-                        "defect_category": "readability"
-                        if is_readability_defect
-                        else "cosmetic_style",
-                        "electrical_defect": False,
-                        "code": code,
-                    },
-                )
-            )
+    for idx, raw in enumerate(raw_findings):
+        finding = _schematic_visual_finding(idx, raw, strict_policy=strict_policy)
+        if finding is not None:
+            review_findings.append(finding)
 
     has_error = any(rf.severity == "error" for rf in review_findings)
     has_warning = any(rf.severity == "warning" for rf in review_findings)
@@ -452,7 +448,7 @@ def evaluate_schematic_visual_quality(
         )
 
     return ReviewAssessment(
-        rule_id="cosmetics.schematic_visual_readability",
+        rule_id=SCHEMATIC_VISUAL_RULE,
         rule_revision=1,
         status=status,
         method=EvaluationMethod.HEURISTIC,
@@ -469,6 +465,60 @@ def evaluate_schematic_visual_quality(
     )
 
 
+def _coerce_readability_findings(raw: object) -> list[PcbFinding]:
+    if not isinstance(raw, list):
+        return []
+    findings: list[PcbFinding] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        position = item.get("position")
+        location = (
+            (float(position[0]), float(position[1]))
+            if isinstance(position, (list, tuple)) and len(position) >= 2
+            else (None, None)
+        )
+        findings.append(
+            PcbFinding(
+                level=str(item.get("level", "WARN")),
+                code=str(item.get("code", "unknown")),
+                message=str(item.get("message", "")),
+                ref=str(item.get("ref", "")),
+                x=location[0],
+                y=location[1],
+            )
+        )
+    return findings
+
+
+def _pcb_visual_finding(
+    idx: int, finding: PcbFinding, *, strict_policy: bool
+) -> ReviewFinding | None:
+    if finding.level == "INFO" and not strict_policy:
+        return None
+    if finding.level in {"FAIL", "WARN"}:
+        severity = "error" if strict_policy else "warning"
+    else:
+        severity = "warning" if strict_policy else "info"
+    if severity == "info":
+        return None
+    location = (finding.x, finding.y) if finding.x is not None and finding.y is not None else None
+    return ReviewFinding(
+        id=f"PCB_VIS_{idx + 1:03d}",
+        rule_id=PCB_VISUAL_RULE,
+        rule_revision=1,
+        severity=severity,
+        object_ref=finding.ref,
+        location_mm=location,
+        description=finding.message,
+        metadata={
+            "defect_category": "cosmetic_style",
+            "electrical_defect": False,
+            "code": finding.code,
+        },
+    )
+
+
 def evaluate_pcb_visual_quality(
     context: ReviewContext,
     *,
@@ -478,7 +528,7 @@ def evaluate_pcb_visual_quality(
     """Evaluate PCB silkscreen presentation, component bounds, and pin-1 marker visibility."""
     if footprints is None:
         return ReviewAssessment(
-            rule_id="cosmetics.pcb_visual_presentation",
+            rule_id=PCB_VISUAL_RULE,
             rule_revision=1,
             status=AssessmentStatus.BLOCKED,
             method=EvaluationMethod.HEURISTIC,
@@ -492,7 +542,7 @@ def evaluate_pcb_visual_quality(
 
     if len(footprints) == 0:
         return ReviewAssessment(
-            rule_id="cosmetics.pcb_visual_presentation",
+            rule_id=PCB_VISUAL_RULE,
             rule_revision=1,
             status=AssessmentStatus.NOT_ASSESSED,
             method=EvaluationMethod.HEURISTIC,
@@ -512,59 +562,14 @@ def evaluate_pcb_visual_quality(
     readability_rep = run_pcb_readability(footprints, bounds)
     pin1_findings = detect_pin1_marker_visibility(footprints)
 
-    all_findings: list[PcbFinding] = []
-    raw_read_findings = readability_rep.get("findings", [])
-    if isinstance(raw_read_findings, list):
-        for rf in raw_read_findings:
-            if isinstance(rf, dict):
-                pos = rf.get("position")
-                px = float(pos[0]) if isinstance(pos, (list, tuple)) and len(pos) >= 2 else None
-                py = float(pos[1]) if isinstance(pos, (list, tuple)) and len(pos) >= 2 else None
-                all_findings.append(
-                    PcbFinding(
-                        level=str(rf.get("level", "WARN")),
-                        code=str(rf.get("code", "unknown")),
-                        message=str(rf.get("message", "")),
-                        ref=str(rf.get("ref", "")),
-                        x=px,
-                        y=py,
-                    )
-                )
-
+    all_findings = _coerce_readability_findings(readability_rep.get("findings", []))
     all_findings.extend(pin1_findings)
-
     review_findings: list[ReviewFinding] = []
     strict_policy = bool(context.explicit_requirements.get("strict_pcb_presentation", False))
-
-    for idx, pf in enumerate(all_findings):
-        # Ignore body_overlap INFO findings from creating warnings unless strict
-        if pf.level == "INFO" and not strict_policy:
-            continue
-
-        sev: Any = "warning"
-        if strict_policy:
-            sev = "error" if pf.level in {"FAIL", "WARN"} else "warning"
-        else:
-            sev = "warning" if pf.level in {"FAIL", "WARN"} else "info"
-
-        if sev in {"warning", "error"}:
-            loc = (pf.x, pf.y) if (pf.x is not None and pf.y is not None) else None
-            review_findings.append(
-                ReviewFinding(
-                    id=f"PCB_VIS_{idx + 1:03d}",
-                    rule_id="cosmetics.pcb_visual_presentation",
-                    rule_revision=1,
-                    severity=sev,
-                    object_ref=pf.ref,
-                    location_mm=loc,
-                    description=pf.message,
-                    metadata={
-                        "defect_category": "cosmetic_style",
-                        "electrical_defect": False,
-                        "code": pf.code,
-                    },
-                )
-            )
+    for idx, item in enumerate(all_findings):
+        finding = _pcb_visual_finding(idx, item, strict_policy=strict_policy)
+        if finding is not None:
+            review_findings.append(finding)
 
     has_error = any(rf.severity == "error" for rf in review_findings)
     has_warning = any(rf.severity == "warning" for rf in review_findings)
@@ -587,7 +592,7 @@ def evaluate_pcb_visual_quality(
         )
 
     return ReviewAssessment(
-        rule_id="cosmetics.pcb_visual_presentation",
+        rule_id=PCB_VISUAL_RULE,
         rule_revision=1,
         status=status,
         method=EvaluationMethod.HEURISTIC,

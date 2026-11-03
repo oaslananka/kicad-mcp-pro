@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, field_validator
 
 from ..models.review import (
     SUPPORTED_REVIEW_UNITS,
@@ -52,7 +52,7 @@ class ExternalAnalysisReport(BaseModel):
     analysis_type: str = Field(min_length=1, max_length=50)
     method: EvaluationMethod = EvaluationMethod.ANALYTICAL
     project_key: str = Field(min_length=1, max_length=120)
-    source_sha256: str = Field(min_length=64, max_length=64)
+    source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     stackup_id: str | None = None
     material_group: str | None = None
     convergence_status: Literal["converged", "diverged", "truncated", "aborted"] = "converged"
@@ -60,11 +60,21 @@ class ExternalAnalysisReport(BaseModel):
     assumptions: dict[str, Any] = Field(default_factory=dict)
     boundary_conditions: dict[str, Any] = Field(default_factory=dict)
     validity_range: dict[str, Any] = Field(default_factory=dict)
-    metrics: dict[str, float] = Field(default_factory=dict)
+    metrics: dict[str, FiniteFloat] = Field(default_factory=dict)
     metric_units: dict[str, str] = Field(default_factory=dict)
     violations: list[str] = Field(default_factory=list)
     artifact_hashes: dict[str, str] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("artifact_hashes")
+    @classmethod
+    def validate_artifact_hashes(cls, values: dict[str, str]) -> dict[str, str]:
+        import re
+
+        for digest in values.values():
+            if re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+                raise ValueError("Artifact digest must be a lowercase SHA-256 hex string.")
+        return values
 
 
 def load_external_analysis_report(
@@ -112,26 +122,94 @@ def load_external_analysis_report(
         return None, f"Report schema validation failed: {exc}"
 
 
-def evaluate_external_evidence(
+def _missing_verification_context(
     context: ReviewContext,
-    report: ExternalAnalysisReport | None,
-    *,
-    rule_id: str = "analysis.external_simulation",
-) -> ReviewAssessment:
-    """Evaluate external analysis evidence against active project context and validity bounds."""
-    if report is None:
-        return ReviewAssessment(
-            rule_id=rule_id,
-            rule_revision=1,
-            status=AssessmentStatus.NOT_ASSESSED,
-            method=EvaluationMethod.ANALYTICAL,
-            summary=(
-                "External analysis report not provided; local review remains offline and active."
-            ),
-            missing_inputs=["external_analysis_report"],
-            metadata={"defect_category": "analysis", "optional_external": True},
-        )
+    report: ExternalAnalysisReport,
+    rule_id: str,
+) -> ReviewAssessment | None:
+    """Never accept a self-declared report without an independently known design."""
+    missing = []
+    if not context.project_name:
+        missing.append("active_project_name")
+    if not context.project_source_sha256:
+        missing.append("active_project_source_sha256")
+    if (
+        not missing
+        and report.stackup_id
+        and not context.explicit_requirements.get("expected_stackup_id")
+    ):
+        missing.append("expected_stackup_id")
+    if not missing:
+        return None
+    return ReviewAssessment(
+        rule_id=rule_id,
+        rule_revision=1,
+        status=AssessmentStatus.NOT_ASSESSED,
+        method=EvaluationMethod.ANALYTICAL,
+        summary="Active project provenance or stackup evidence missing; report not verified.",
+        missing_inputs=missing,
+        metadata={"defect_category": "analysis", "report_id": report.report_id},
+    )
 
+
+def _metric_units_blocker(
+    context: ReviewContext,
+    report: ExternalAnalysisReport,
+    rule_id: str,
+) -> ReviewAssessment | None:
+    """Reject unknown or dimensionally incompatible units without guessing conversions."""
+    for metric_name, actual_unit in report.metric_units.items():
+        if actual_unit not in SUPPORTED_REVIEW_UNITS:
+            return ReviewAssessment(
+                rule_id=rule_id,
+                rule_revision=1,
+                status=AssessmentStatus.NOT_ASSESSED,
+                method=EvaluationMethod.ANALYTICAL,
+                summary=f"Incompatible unit '{actual_unit}' declared for metric '{metric_name}'.",
+                missing_inputs=["compatible_metric_units"],
+                metadata={
+                    "defect_category": "analysis",
+                    "invalid_unit": actual_unit,
+                    "metric": metric_name,
+                },
+            )
+    expected = context.explicit_requirements.get("expected_metric_units")
+    if expected is None:
+        return None
+    if not isinstance(expected, dict):
+        invalid = "Expected metric units must be a mapping."
+    else:
+        invalid = ""
+        for metric_name, expected_unit in expected.items():
+            unit_for_metric = report.metric_units.get(metric_name)
+            if (
+                not isinstance(expected_unit, str)
+                or expected_unit not in SUPPORTED_REVIEW_UNITS
+                or unit_for_metric is None
+                or metric_name not in report.metrics
+                or SUPPORTED_REVIEW_UNITS[unit_for_metric] != SUPPORTED_REVIEW_UNITS[expected_unit]
+            ):
+                invalid = f"Metric '{metric_name}' is missing or dimensionally incompatible."
+                break
+    if not invalid:
+        return None
+    return ReviewAssessment(
+        rule_id=rule_id,
+        rule_revision=1,
+        status=AssessmentStatus.NOT_ASSESSED,
+        method=EvaluationMethod.ANALYTICAL,
+        summary=invalid,
+        missing_inputs=["compatible_metric_units"],
+        metadata={"defect_category": "analysis", "report_id": report.report_id},
+    )
+
+
+def _external_provenance_findings(
+    context: ReviewContext,
+    report: ExternalAnalysisReport,
+    rule_id: str,
+) -> list[ReviewFinding]:
+    """Collect foreign-board, stale-source, stackup and solver evidence defects."""
     findings: list[ReviewFinding] = []
     finding_idx = 1
 
@@ -219,22 +297,40 @@ def evaluate_external_evidence(
         )
         finding_idx += 1
 
+    return findings
+
+
+def evaluate_external_evidence(
+    context: ReviewContext,
+    report: ExternalAnalysisReport | None,
+    *,
+    rule_id: str = "analysis.external_simulation",
+) -> ReviewAssessment:
+    """Evaluate external analysis evidence against active project context and validity bounds."""
+    if report is None:
+        return ReviewAssessment(
+            rule_id=rule_id,
+            rule_revision=1,
+            status=AssessmentStatus.NOT_ASSESSED,
+            method=EvaluationMethod.ANALYTICAL,
+            summary=(
+                "External analysis report not provided; local review remains offline and active."
+            ),
+            missing_inputs=["external_analysis_report"],
+            metadata={"defect_category": "analysis", "optional_external": True},
+        )
+
+    provenance_blocker = _missing_verification_context(context, report, rule_id)
+    if provenance_blocker is not None:
+        return provenance_blocker
+
+    findings = _external_provenance_findings(context, report, rule_id)
+    finding_idx = len(findings) + 1
+
     # 5. Incompatible or unrecognized units check
-    for metric_name, unit_str in report.metric_units.items():
-        if unit_str not in SUPPORTED_REVIEW_UNITS:
-            return ReviewAssessment(
-                rule_id=rule_id,
-                rule_revision=1,
-                status=AssessmentStatus.NOT_ASSESSED,
-                method=EvaluationMethod.ANALYTICAL,
-                summary=f"Incompatible unit '{unit_str}' declared for metric '{metric_name}'.",
-                missing_inputs=["compatible_metric_units"],
-                metadata={
-                    "defect_category": "analysis",
-                    "invalid_unit": unit_str,
-                    "metric": metric_name,
-                },
-            )
+    units_blocker = _metric_units_blocker(context, report, rule_id)
+    if units_blocker is not None:
+        return units_blocker
 
     # 6. Violations reported by external tool
     for viol in report.violations:

@@ -236,3 +236,109 @@ def test_stage_distinction_plan_vs_production() -> None:
     prod_decision = evaluate_stage_readiness(snapshot, ReviewStage.PRODUCTION_ACCEPTANCE)
     assert not prod_decision.approved
     assert any("manufacturing profile" in r.lower() for r in prod_decision.blocking_reasons)
+
+
+def test_stage_readiness_prototype_test() -> None:
+    """Verifies prototype test stage thresholds on unresolved warnings."""
+    snap_ok = _sample_snapshot()
+    snap_ok.coverage.warned_count = 3
+    dec_ok = evaluate_stage_readiness(snap_ok, ReviewStage.PROTOTYPE_TEST)
+    assert dec_ok.approved
+
+    snap_warn = _sample_snapshot()
+    snap_warn.coverage.warned_count = 6
+    dec_warn = evaluate_stage_readiness(snap_warn, ReviewStage.PROTOTYPE_TEST)
+    assert not dec_warn.approved
+    assert any("too many unresolved warnings" in r.lower() for r in dec_warn.blocking_reasons)
+
+
+def test_stage_readiness_production_undetermined() -> None:
+    """Verifies production acceptance rejects undetermined rules."""
+    snap = _sample_snapshot()
+    rule = ReviewRule(
+        rule_id="custom.undetermined_rule",
+        revision=1,
+        domain=ReviewDomain.PCB,
+        title="Custom",
+        source_doc="Doc",
+        source_revision="1",
+        method=EvaluationMethod.HUMAN_REVIEW,
+    )
+    snap.resolved_rules.append(
+        ResolvedReviewRule(
+            rule=rule,
+            status=RuleApplicability.UNDETERMINED,
+            rationale="Needs investigation",
+        )
+    )
+    dec = evaluate_stage_readiness(snap, ReviewStage.PRODUCTION_ACCEPTANCE)
+    assert not dec.approved
+    assert any("undetermined" in r.lower() for r in dec.blocking_reasons)
+
+
+def test_stage_readiness_design_review_missing_domains() -> None:
+    """Verifies design review requires both schematic and PCB domains."""
+    snap = _sample_snapshot(domains=[ReviewDomain.SCHEMATIC])
+    dec = evaluate_stage_readiness(snap, ReviewStage.DESIGN_REVIEW)
+    assert not dec.approved
+    assert any("schematic and pcb" in r.lower() for r in dec.blocking_reasons)
+
+
+def test_freshness_recheck_without_explicit_reasons() -> None:
+    """Verifies fallback reason string when freshness assessment reasons tuple is empty."""
+    snap = _sample_snapshot(evidence_refs=["ev-fallback-01"])
+    freshness_map = {
+        "ev-fallback-01": FreshnessAssessment(
+            evidence_id="ev-fallback-01",
+            state=EvidenceFreshnessState.REQUIRES_RECHECK,
+            reasons=(),
+        )
+    }
+    dec = evaluate_stage_readiness(
+        snap, ReviewStage.DESIGN_REVIEW, freshness_assessments=freshness_map
+    )
+    assert not dec.approved
+    assert any("input digest mismatch" in r.lower() for r in dec.blocking_reasons)
+
+
+def test_bind_snapshot_to_evidence_default_inputs() -> None:
+    """Verifies bind_snapshot_to_evidence works cleanly without extra inputs."""
+    snap = _sample_snapshot()
+    record = bind_snapshot_to_evidence(snap)
+    assert record.producer == "kicad_mcp_pro"
+    assert len(record.inputs) == 2
+
+
+def test_workflow_gated_phases_verification_warnings() -> None:
+    """Verifies each gated phase blocks when review snapshot fails stage gates."""
+    failing_snap = _sample_snapshot(failed_count=2)
+
+    for phase_name in [
+        "schematic_verification",
+        "full_verification",
+        "fix_loop",
+        "manufacturing_release",
+    ]:
+        wf = build_verified_design_workflow([phase_name], snapshot=failing_snap)
+        p_state = next(p for p in wf.phases if p.phase == phase_name)
+        assert p_state.status != "COMPLETE"
+        assert "unverified" in p_state.next_action.lower()
+
+
+def test_workflow_all_phases_complete_verified() -> None:
+    """Verifies workflow advances to overall COMPLETE when all phases are verified."""
+    from kicad_mcp.project.workflow import AGENT_WORKFLOW_PHASES
+
+    all_phase_names = [str(spec["phase"]) for spec in AGENT_WORKFLOW_PHASES]
+    valid_snap = _sample_snapshot()
+    wf = build_verified_design_workflow(all_phase_names, snapshot=valid_snap)
+    assert wf.overall_status == "COMPLETE"
+    assert all(p.status == "COMPLETE" for p in wf.phases)
+
+
+def test_coverage_blocked_count_blocks_stage() -> None:
+    """Verifies review rules blocked by missing tools block stage approval."""
+    snap = _sample_snapshot(blocked_count=2)
+    dec = evaluate_stage_readiness(snap, ReviewStage.PLAN_COMPLETION)
+    assert not dec.approved
+    assert any("blocked" in r.lower() for r in dec.blocking_reasons)
