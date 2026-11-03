@@ -10,6 +10,12 @@ from .catalog import (
     build_standard_rule_catalog,
     compute_coverage,
 )
+from .mechanical_acceptance import (
+    check_rectangular_outline,
+    evaluate_connector_mating_orientation,
+    evaluate_mechanical_stage_gate,
+    is_connector_footprint,
+)
 from .placement_connectivity import (
     evaluate_crystal_placement,
     evaluate_decoupling_connectivity,
@@ -49,15 +55,19 @@ __all__ = [
     "build_standard_rule_catalog",
     "build_verified_design_workflow",
     "calculate_cpl_rotation",
+    "check_rectangular_outline",
     "compute_coverage",
     "detect_pin1_marker_visibility",
+    "evaluate_connector_mating_orientation",
     "evaluate_crystal_placement",
     "evaluate_decoupling_connectivity",
+    "evaluate_mechanical_stage_gate",
     "evaluate_pcb_visual_quality",
     "evaluate_routing_style",
     "evaluate_schematic_visual_quality",
     "evaluate_stage_readiness",
     "evaluate_visual_quality",
+    "is_connector_footprint",
     "plan_cosmetic_transaction",
     "verify_rotation_independence",
 ]
