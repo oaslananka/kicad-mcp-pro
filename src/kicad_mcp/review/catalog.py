@@ -344,4 +344,27 @@ def build_standard_rule_catalog() -> ReviewRuleCatalog:
         )
     )
 
+    catalog.register(
+        ReviewRule(
+            rule_id="cosmetics.pcb_visual_presentation",
+            revision=1,
+            domain=ReviewDomain.PCB,
+            title="PCB Silkscreen Readability, Component Clearance and Pin-1 Indication",
+            source_doc="KiCad MCP Visual QA Standard",
+            source_revision="2026.08",
+            required_inputs=["board_footprints", "board_outline"],
+            units="mm",
+            method=EvaluationMethod.HEURISTIC,
+            severity="warning",
+            rationale=(
+                "Silkscreen text, component bodies, and pin-1 markers must remain "
+                "legible and unclipped."
+            ),
+            remediation=(
+                "Relocate overlapping silkscreen designators and align components within board."
+            ),
+            is_mandatory=False,
+        )
+    )
+
     return catalog
