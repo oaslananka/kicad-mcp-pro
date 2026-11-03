@@ -606,3 +606,11 @@ async def test_disable_racing_key_loading_prevents_new_handshake(
     )
     assert result == 0
     assert session_calls == []
+
+
+def test_connector_uid_lookup_fails_closed_without_posix_getuid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delattr(os, "getuid")
+    with pytest.raises(LocalApprovalDeniedError):
+        connector._current_uid()

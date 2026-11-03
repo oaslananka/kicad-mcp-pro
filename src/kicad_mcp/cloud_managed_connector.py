@@ -63,8 +63,19 @@ def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return dict(pairs)
 
 
+def _current_uid() -> int:
+    getuid = getattr(os, "getuid", None)
+    if not callable(getuid):
+        raise LocalApprovalDeniedError(_DENIED)
+    uid = getuid()
+    if type(uid) is not int:
+        raise LocalApprovalDeniedError(_DENIED)
+    return uid
+
+
 def _read_private_json(root: Path, name: str) -> dict[str, Any]:
     folder_fd = _open_owner_private_dir(root / name)
+    owner_uid = _current_uid()
     fd = -1
     try:
         flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -72,7 +83,7 @@ def _read_private_json(root: Path, name: str) -> dict[str, Any]:
         info = os.fstat(fd)
         if (
             not stat.S_ISREG(info.st_mode)
-            or info.st_uid != os.getuid()
+            or info.st_uid != owner_uid
             or info.st_nlink != 1
             or info.st_mode & 0o077
             or not 1 <= info.st_size <= _MAX_STATE_BYTES
@@ -217,7 +228,7 @@ def _install_user_service() -> None:
     service_dir = target.parent
     service_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     info = service_dir.lstat()
-    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022:
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != _current_uid() or info.st_mode & 0o022:
         raise LocalApprovalDeniedError(_DENIED)
     unit = (
         "[Unit]\n"
