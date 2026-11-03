@@ -99,7 +99,7 @@ class AssessmentStatus(StrEnum):
     never PASS.
     """
 
-    PASS = "PASS"  # noqa: S105
+    PASS = "PASS"  # nosec B105  # noqa: S105
     WARN = "WARN"
     FAIL = "FAIL"
     NOT_APPLICABLE = "NOT_APPLICABLE"
