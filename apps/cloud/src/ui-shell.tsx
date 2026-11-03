@@ -3,62 +3,64 @@ import {renderToStaticMarkup} from "react-dom/server";
 import {Icon} from "./ui-icons.js";
 
 export type PageKind="home"|"sign-in"|"account"|"consent"|"connections"|"devices"|"notice";
-type Props={title:string;eyebrow?:string;summary?:string;kind:PageKind;children:ReactNode;navEnabled?:boolean};
+type Props={title:string;eyebrow?:string;summary?:string;kind:PageKind;children:ReactNode;navEnabled?:boolean;actions?:ReactNode};
 const workspacePages=new Set<PageKind>(["account","connections","devices"]);
 function NavLink({href,current,children}:{href:string;current:boolean;children:ReactNode}){
   return <a href={href} aria-current={current?"page":undefined}>{children}</a>;
 }
+function Brand(){
+  return <a href="/" className="brand" aria-label="KiCad MCP Cloud home">
+    <span className="brand-mark"><Icon name="logo" size={24}/></span>
+    <span className="brand-title">KiCad MCP<small>Cloud workspace</small></span>
+  </a>;
+}
 function WorkspaceNav({kind}:{kind:PageKind}){
   return <aside className="workspace-sidebar" aria-label="Workspace navigation">
-    <div className="sidebar-label">YOUR WORKSPACE</div>
+    <Brand/>
     <nav className="sidebar-links" aria-label="Workspace">
-      <NavLink href="/account" current={kind==="account"}><Icon name="overview" size={18}/> Overview</NavLink>
       <NavLink href="/devices" current={kind==="devices"}><Icon name="devices" size={18}/> Devices &amp; projects</NavLink>
       <NavLink href="/connections" current={kind==="connections"}><Icon name="connections" size={18}/> AI connections</NavLink>
+      <NavLink href="/account" current={kind==="account"}><Icon name="overview" size={18}/> Overview</NavLink>
     </nav>
-    <div className="sidebar-note"><Icon name="shield" size={20}/><strong>Local by design</strong>
-      <p>Your KiCad files stay on your computer. You choose each project's access.</p>
+    <div className="sidebar-note"><strong>Connect your workspace</strong>
+      <p>Set up your AI client and choose which projects it can access.</p>
+      <a className="button secondary" href="/connections">Connection guide <Icon name="arrow" size={14}/></a>
     </div>
-    <div className="sidebar-footer"><span>NEED A HAND?</span>
-      <a href="/connections">Connection setup <Icon name="arrow" size={15}/></a>
-      <small>Live device status is shown under Devices &amp; projects.</small>
+    <div className="sidebar-footer">
+      <a href="/account"><Icon name="shield" size={16}/> Your account</a>
+      <small>KiCad files stay on your computer.</small>
     </div>
   </aside>;
 }
-export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true}:Props):string{
+export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,actions}:Props):string{
   const workspace=workspacePages.has(kind);
   return "<!doctype html>"+renderToStaticMarkup(
     <html lang="en"><head>
       <meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
-      <meta name="theme-color" content="#f4f6f3"/>
+      <meta name="theme-color" content="#0b0b0d"/>
       <meta name="description" content="Manage KiCad MCP Cloud connections and access."/>
       <link rel="stylesheet" href="/assets/ui.css"/><title>{title+" — KiCad MCP Cloud"}</title>
-    </head><body><div className="app-shell">
+    </head><body><div className={workspace?"app-shell workspace-app":"app-shell"}>
       <a href="#main-content" className="skip-link">Skip to content</a>
-      <header className="site-header"><div className="header-inner">
-        <a href="/" className="brand" aria-label="KiCad MCP Cloud home">
-          <span className="brand-mark"><Icon name="logo" size={27}/></span>
-          <span className="brand-title">KiCad <b>MCP</b><small>Cloud workspace</small></span>
-        </a>
+      {workspace?<WorkspaceNav kind={kind}/>:<header className="site-header"><div className="header-inner">
+        <Brand/>
         <div className="header-right">
           <span className="release-label"><Icon name="shield" size={15}/> Your projects. Your permissions.</span>
-          {workspace?<a className="header-account" href="/account">My workspace <Icon name="arrow" size={15}/></a>:
-            <nav className="public-nav" aria-label="Primary"><NavLink href="/" current={kind==="home"}>Overview</NavLink>
-              {navEnabled?<NavLink href="/account" current={false}>Workspace</NavLink>:null}</nav>}
+          <nav className="public-nav" aria-label="Primary"><NavLink href="/" current={kind==="home"}>Overview</NavLink>
+            {navEnabled?<NavLink href="/account" current={false}>Workspace</NavLink>:null}</nav>
         </div>
-      </div></header>
+      </div></header>}
       <main id="main-content" className={"site-main page-"+kind}>
         <div className={workspace?"workspace-layout":"content-wrap"}>
-          {workspace?<WorkspaceNav kind={kind}/>:null}
           <div className="main-content">
-            <div className="page-heading"><div className="eyebrow">{eyebrow??"KiCad MCP Cloud"}</div>
-              <h1>{title}</h1>{summary?<p className="summary">{summary}</p>:null}</div>
+            <div className="page-heading"><div><div className="eyebrow">{eyebrow??"KiCad MCP Cloud"}</div>
+              <h1>{title}</h1>{summary?<p className="summary">{summary}</p>:null}</div>{actions}</div>
             {children}
           </div>
         </div>
       </main>
-      <footer className="site-footer"><div className="footer-inner"><span>© KiCad MCP Cloud</span>
-        <span>Local files <span className="footer-separator">/</span> Explicit project access <span className="footer-separator">/</span> Your control</span></div></footer>
+      {workspace?null:<footer className="site-footer"><div className="footer-inner"><span>© KiCad MCP Cloud</span>
+        <span>Local files <span className="footer-separator">/</span> Explicit project access <span className="footer-separator">/</span> Your control</span></div></footer>}
     </div></body></html>
   );
 }
