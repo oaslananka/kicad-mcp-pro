@@ -10,6 +10,8 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from kicad_mcp.manufacturing.release_evidence import _evaluate_hv_safety_gate
 from kicad_mcp.models.visual_qa import run_cosmetic_qa
 from kicad_mcp.project.workflow import build_design_workflow
@@ -59,7 +61,9 @@ def test_reproduce_empty_schematic_cosmetic_score_passes_without_circuit() -> No
     assert blank_qa["cosmetic_score"] >= 95.0
 
 
-def test_reproduce_missing_power_pin_fallback_to_footprint_centre() -> None:
+def test_reproduce_missing_power_pin_fallback_to_footprint_centre(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Proves that missing power pin silently falls back to footprint origin."""
     fp_u1 = MagicMock()
     fp_u1.reference_field.text.value = "U1"
@@ -71,30 +75,21 @@ def test_reproduce_missing_power_pin_fallback_to_footprint_centre() -> None:
     pad1.number = "1"
     pad1.position = MagicMock(x=15_000_000, y=26_000_000)
 
-    orig_footprints = sidp.board_footprints
-    orig_pads = sidp.board_pads
-    orig_get_board = sidp.get_board
-    orig_point_xy_mm = sidp.point_xy_mm
+    monkeypatch.setattr(sidp, "board_footprints", MagicMock(return_value=[fp_u1]))
+    monkeypatch.setattr(sidp, "board_pads", MagicMock(return_value=[pad1]))
+    monkeypatch.setattr(sidp, "get_board", MagicMock())
+    monkeypatch.setattr(sidp, "point_xy_mm", lambda pos: (pos.x / 1_000_000, pos.y / 1_000_000))
 
-    try:
-        sidp.board_footprints = MagicMock(return_value=[fp_u1])
-        sidp.board_pads = MagicMock(return_value=[pad1])
-        sidp.get_board = MagicMock()
-        sidp.point_xy_mm = lambda pos: (pos.x / 1_000_000, pos.y / 1_000_000)
+    # Query for non-existent power pin "VCC_PIN_99"
+    anchor_xy = sidp._find_power_anchor("U1", "VCC_PIN_99")
 
-        # Query for non-existent power pin "VCC_PIN_99"
-        anchor_xy = sidp._find_power_anchor("U1", "VCC_PIN_99")
-
-        # Gap/Bug: returns (15.0, 25.0) which is footprint center, rather than raising/NOT_ASSESSED
-        assert anchor_xy == (15.0, 25.0)
-    finally:
-        sidp.board_footprints = orig_footprints
-        sidp.board_pads = orig_pads
-        sidp.get_board = orig_get_board
-        sidp.point_xy_mm = orig_point_xy_mm
+    # Gap/Bug: returns (15.0, 25.0) which is footprint center, rather than raising/NOT_ASSESSED
+    assert anchor_xy == (15.0, 25.0)
 
 
-def test_reproduce_near_wrong_net_capacitor_passes_decoupling() -> None:
+def test_reproduce_near_wrong_net_capacitor_passes_decoupling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Proves that EMC decoupling check ignores nets and passes wrong-rail capacitors."""
     fp_u1 = MagicMock()
     fp_u1.reference_field.text.value = "U1"
@@ -105,24 +100,15 @@ def test_reproduce_near_wrong_net_capacitor_passes_decoupling() -> None:
     fp_c1.reference_field.text.value = "C1"
     fp_c1.position = MagicMock(x=11_000_000, y=10_000_000)
 
-    orig_footprints = emc.board_footprints
-    orig_get_board = emc.get_board
-    orig_point_xy_mm = emc.point_xy_mm
+    monkeypatch.setattr(emc, "board_footprints", MagicMock(return_value=[fp_u1, fp_c1]))
+    monkeypatch.setattr(emc, "get_board", MagicMock())
+    monkeypatch.setattr(emc, "point_xy_mm", lambda pos: (pos.x / 1_000_000, pos.y / 1_000_000))
 
-    try:
-        emc.board_footprints = MagicMock(return_value=[fp_u1, fp_c1])
-        emc.get_board = MagicMock()
-        emc.point_xy_mm = lambda pos: (pos.x / 1_000_000, pos.y / 1_000_000)
+    verdict, detail = emc._emc_check_decoupling_text(max_distance_mm=3.0)
 
-        verdict, detail = emc._emc_check_decoupling_text(max_distance_mm=3.0)
-
-        # Gap/Bug: passes without verifying that C1 is on the same supply net as U1
-        assert verdict == "PASS"
-        assert "within 3.0 mm" in detail
-    finally:
-        emc.board_footprints = orig_footprints
-        emc.get_board = orig_get_board
-        emc.point_xy_mm = orig_point_xy_mm
+    # Gap/Bug: passes without verifying that C1 is on the same supply net as U1
+    assert verdict == "PASS"
+    assert "within 3.0 mm" in detail
 
 
 def test_reproduce_generic_90_degree_style_treated_as_electrical_defect() -> None:
