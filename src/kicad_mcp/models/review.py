@@ -153,6 +153,7 @@ class ReviewContext(BaseModel):
 
     schema_version: Literal[1] = 1
     project_name: str = ""
+    project_source_sha256: str = ""
     maturity: Literal["concept", "development", "prototype", "production"] = "development"
     technical_domains: list[str] = Field(default_factory=list)
     operating_voltage_v: float | None = None
