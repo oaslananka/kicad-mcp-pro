@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Sequence
+from typing import NamedTuple
 
 from ..models.placement_topology import (
     PlacementBoardTopology,
@@ -282,6 +283,49 @@ def _evaluate_pin_decoupling(
     return finding, False, None, None
 
 
+class _PinScanResult(NamedTuple):
+    findings: list[ReviewFinding]
+    missing_inputs: list[str]
+    checked_pins: int
+    passed_pins: int
+    error: ReviewAssessment | None
+
+
+def _scan_decoupling_pins(
+    ics_to_check: Sequence[PlacementComponentTopology],
+    topology: PlacementBoardTopology,
+    target_power_pin: str | None,
+    all_caps: Sequence[PlacementComponentTopology],
+    max_distance_mm: float,
+) -> _PinScanResult:
+    """Accumulate pin-level evidence, preserving fail-closed early errors."""
+    findings: list[ReviewFinding] = []
+    missing_inputs: list[str] = []
+    checked_pins = 0
+    passed_pins = 0
+
+    for ic in ics_to_check:
+        pins_to_eval, pin_err = _resolve_pins_to_evaluate(ic, target_power_pin)
+        if pin_err:
+            return _PinScanResult(findings, missing_inputs, checked_pins, passed_pins, pin_err)
+
+        for p in pins_to_eval:
+            checked_pins += 1
+            finding, passed, missing_loc, err = _evaluate_pin_decoupling(
+                ic, p, topology, all_caps, max_distance_mm
+            )
+            if err:
+                return _PinScanResult(findings, missing_inputs, checked_pins, passed_pins, err)
+            if missing_loc:
+                missing_inputs.append(missing_loc)
+            elif passed:
+                passed_pins += 1
+            elif finding:
+                findings.append(finding)
+
+    return _PinScanResult(findings, missing_inputs, checked_pins, passed_pins, None)
+
+
 def evaluate_decoupling_connectivity(
     context: ReviewContext,
     topology: PlacementBoardTopology,
@@ -312,29 +356,15 @@ def evaluate_decoupling_connectivity(
         if c.component_type == "capacitor" or c.reference.upper().startswith("C")
     ]
 
-    findings: list[ReviewFinding] = []
-    missing_inputs: list[str] = []
-    checked_pins = 0
-    passed_pins = 0
-
-    for ic in ics_to_check:
-        pins_to_eval, pin_err = _resolve_pins_to_evaluate(ic, target_power_pin)
-        if pin_err:
-            return pin_err
-
-        for p in pins_to_eval:
-            checked_pins += 1
-            finding, passed, missing_loc, err = _evaluate_pin_decoupling(
-                ic, p, topology, all_caps, max_distance_mm
-            )
-            if err:
-                return err
-            if missing_loc:
-                missing_inputs.append(missing_loc)
-            elif passed:
-                passed_pins += 1
-            elif finding:
-                findings.append(finding)
+    scan = _scan_decoupling_pins(
+        ics_to_check, topology, target_power_pin, all_caps, max_distance_mm
+    )
+    if scan.error:
+        return scan.error
+    findings = scan.findings
+    missing_inputs = scan.missing_inputs
+    checked_pins = scan.checked_pins
+    passed_pins = scan.passed_pins
 
     if missing_inputs:
         return ReviewAssessment(
