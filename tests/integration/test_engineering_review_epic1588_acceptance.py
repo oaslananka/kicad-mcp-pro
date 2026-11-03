@@ -186,6 +186,8 @@ def test_adversarial_pair_decoupling_wrong_net_vs_matching_net() -> None:
 def test_adversarial_pair_connector_mating_inward_vs_outward() -> None:
     context = ReviewContext(project_name="usb-device", has_3d_models=True)
     frame = (0.0, 0.0, 60.0, 36.0)
+    # Ground the test in an explicit rectangular Edge.Cuts primitive, not frame bounds alone.
+    pcb_text = '(kicad_pcb (gr_rect (start 0 0) (end 60 36) (layer "Edge.Cuts")))'
     fp_name = "Connector_USB:USB_C_Receptacle_GCT_USB4085"
     spec = ConnectorMatingSpec(
         ref="J1",
@@ -213,6 +215,7 @@ def test_adversarial_pair_connector_mating_inward_vs_outward() -> None:
         context,
         footprints=inward_footprints,
         frame=frame,
+        pcb_text=pcb_text,
         specs=[spec],
     )
     assert inward_assessment.status == AssessmentStatus.FAIL
@@ -233,6 +236,7 @@ def test_adversarial_pair_connector_mating_inward_vs_outward() -> None:
         context,
         footprints=outward_footprints,
         frame=frame,
+        pcb_text=pcb_text,
         specs=[spec],
     )
     assert outward_assessment.status == AssessmentStatus.PASS

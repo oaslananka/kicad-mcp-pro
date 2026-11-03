@@ -257,3 +257,37 @@ def test_adapted_verdict_preserves_style_metadata() -> None:
     assert verdict.metadata["review_status"] == "FAIL"
     assert verdict.findings[0].metadata["defect_category"] == "cosmetic_style"
     assert verdict.findings[0].metadata["electrical_defect"] is False
+
+
+def test_unparseable_corner_string_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    from kicad_mcp.review import routing_style
+
+    monkeypatch.setattr(
+        routing_style,
+        "_route_90_degree_corners",
+        lambda *args, **kwargs: ["invalid_corner_format_without_structure"],
+    )
+    context = ReviewContext(project_name="BadCornerBoard")
+    assessment = evaluate_routing_style(context, "(kicad_pcb)")
+    assert len(assessment.findings) == 1
+    f = assessment.findings[0]
+    assert f.object_ref == "route"
+    assert f.location_mm is None
+
+
+def test_parse_corner_line_edge_cases() -> None:
+    from kicad_mcp.review.routing_style import _parse_corner_line
+
+    assert _parse_corner_line("invalid") is None
+    assert _parse_corner_line("NET on LAYER has a 90° corner at (10, 20") is None
+    assert _parse_corner_line(" on LAYER has a 90° corner at (10, 20)") is None
+    assert _parse_corner_line("NET on  has a 90° corner at (10, 20)") is None
+    assert _parse_corner_line("NET on LAYER has a 90° corner at (10, 20, 30)") is None
+    assert _parse_corner_line("NET on LAYER has a 90° corner at (invalid, 20)") is None
+
+
+def test_detect_ambiguous_geometry_curve() -> None:
+    pcb_text = '(kicad_pcb (segment (start 0 0) (end 1 1) (layer "F.Cu")) (curve (layer "F.Cu")))'
+    context = ReviewContext()
+    assessment = evaluate_routing_style(context, pcb_text)
+    assert assessment.status == AssessmentStatus.NOT_ASSESSED

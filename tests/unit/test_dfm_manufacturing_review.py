@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import math
+
 import pytest
+from pydantic import ValidationError
 
 from kicad_mcp.models.review import (
     AssessmentStatus,
@@ -334,3 +337,409 @@ def test_stage_authorization_separation() -> None:
         "Production release cannot be authorized without completed" in f.description
         for f in assessment.findings
     )
+
+
+def test_dfm_missing_profile_measurements_is_unassessed(
+    jlcpcb_2layer_profile: FabricationProfile,
+) -> None:
+    """A selected vendor profile is not evidence that the PCB measurements pass."""
+    result = evaluate_dfm_fabrication_limits(
+        jlcpcb_2layer_profile,
+        BoardDFMInput(copper_layers=2),
+        ReviewContext(project_name="board"),
+    )
+    assert result.status == AssessmentStatus.NOT_ASSESSED
+    assert "min_trace_width_mm" in result.missing_inputs
+    assert "min_drill_mm" in result.missing_inputs
+
+
+def test_empty_dft_cannot_be_certified_as_testable() -> None:
+    result = evaluate_dft_testability(DFTTestabilitySpec(), ReviewContext())
+    assert result.status == AssessmentStatus.NOT_ASSESSED
+    assert "testpoint_coverage" in result.missing_inputs
+
+
+def test_empty_bringup_plan_cannot_be_certified() -> None:
+    result = evaluate_bringup_measurements(
+        [],
+        StageAuthorizationInput(power_on_authorized=True, power_on_authorizer="owner"),
+        ReviewContext(),
+    )
+    assert result.status == AssessmentStatus.NOT_ASSESSED
+    assert "bringup_test_plan" in result.missing_inputs
+
+
+def test_bom_without_stock_evidence_does_not_claim_verified_stock() -> None:
+    item = BOMItemInput(reference="U1", mpn="test-ic", footprint="SOIC8")
+    assert item.stock_status == "UNVERIFIED"
+    result = evaluate_bom_and_lifecycle([item], ReviewContext())
+    assert result.status == AssessmentStatus.WARN
+    assert any("unverified" in finding.description.lower() for finding in result.findings)
+
+
+def test_fabrication_profile_digest_changes_with_rules_even_when_source_digest_same(
+    jlcpcb_2layer_profile: FabricationProfile,
+) -> None:
+    """Supplier source checksums do not replace immutable profile-revision hashes."""
+    source_digest = "a" * 64
+    first = jlcpcb_2layer_profile.model_copy(update={"source_sha256": source_digest})
+    updated = first.model_copy(update={"version": "2026.11"})
+    assert first.profile_sha256() != updated.profile_sha256()
+    changed_rule = first.model_copy(update={"rules": {"min_trace_width_mm": 0.25}})
+    assert first.profile_sha256() != changed_rule.profile_sha256()
+
+
+def test_assembly_profile_digest_changes_with_parameters_even_if_source_unchanged(
+    smt_assembly_profile: AssemblyProfile,
+) -> None:
+    old = smt_assembly_profile.model_copy(update={"source_sha256": "b" * 64})
+    new = old.model_copy(update={"min_fiducials": 3})
+    assert old.profile_sha256() != new.profile_sha256()
+
+
+@pytest.mark.parametrize("bad_value", [math.nan, math.inf, -math.inf])
+def test_nonfinite_bringup_measurement_rejected(bad_value: float) -> None:
+    with pytest.raises(ValidationError):
+        BringupPlanInput(
+            item_id="PWR_01",
+            description="rail measured",
+            measured_value=bad_value,
+            acceptance_min=3.1,
+            acceptance_max=3.5,
+        )
+
+
+def test_nonfinite_supplier_rule_rejected(jlcpcb_2layer_profile: FabricationProfile) -> None:
+    invalid_profile = {
+        **jlcpcb_2layer_profile.model_dump(),
+        "rules": {"min_trace_width_mm": math.nan},
+    }
+    with pytest.raises(ValidationError):
+        FabricationProfile(**invalid_profile)
+
+
+def test_bringup_without_acceptance_bounds_is_not_a_pass() -> None:
+    result = evaluate_bringup_measurements(
+        [
+            BringupPlanInput(
+                item_id="PWR_01",
+                description="power-on test",
+                measured_value=3.3,
+                measurement_unit="V",
+                instrument_id="DMM001",
+                environmental_temp_c=22.0,
+            )
+        ],
+        StageAuthorizationInput(power_on_authorized=True, power_on_authorizer="owner"),
+        ReviewContext(),
+    )
+    assert result.status != AssessmentStatus.PASS
+
+
+def test_empty_fabricator_exception_cannot_waive_usb4085(
+    jlcpcb_2layer_profile: FabricationProfile,
+) -> None:
+    board = BoardDFMInput(
+        copper_layers=2,
+        pth_annular_rings=[{"ref": "J1", "pad_number": "A1", "nominal_ring_mm": 0.125}],
+    )
+    context = ReviewContext(explicit_requirements={"fabricator_exceptions": {"J1": ""}})
+    result = evaluate_dfm_fabrication_limits(jlcpcb_2layer_profile, board, context)
+    assert result.status == AssessmentStatus.FAIL
+    assert any("#1381" in finding.description for finding in result.findings)
+
+
+def _passing_dfm_board(**updates: object) -> BoardDFMInput:
+    values = {
+        "copper_layers": 2,
+        "min_trace_width_mm": 0.20,
+        "min_trace_clearance_mm": 0.20,
+        "min_drill_mm": 0.40,
+        "min_annular_ring_mm": 0.20,
+        "copper_to_edge_mm": 0.50,
+        "aspect_ratio": 6.0,
+    }
+    values.update(updates)
+    return BoardDFMInput(**values)
+
+
+def test_dfm_complete_profile_verification_and_pending_slots(
+    jlcpcb_2layer_profile: FabricationProfile,
+) -> None:
+    context = ReviewContext(project_name="board")
+    passing = evaluate_dfm_fabrication_limits(jlcpcb_2layer_profile, _passing_dfm_board(), context)
+    assert passing.status == AssessmentStatus.PASS
+    assert not passing.missing_inputs
+
+    incomplete_pth = evaluate_dfm_fabrication_limits(
+        jlcpcb_2layer_profile, _passing_dfm_board(unmeasured_pth_count=2), context
+    )
+    assert incomplete_pth.status == AssessmentStatus.WARN
+    assert any("unmeasured" in x.description for x in incomplete_pth.findings)
+
+
+def test_dfm_profile_without_capability_rules_is_unassessed(
+    jlcpcb_2layer_profile: FabricationProfile,
+) -> None:
+    source = jlcpcb_2layer_profile.model_copy(update={"rules": {}})
+    result = evaluate_dfm_fabrication_limits(
+        source, _passing_dfm_board(), ReviewContext(project_name="board")
+    )
+    assert result.status == AssessmentStatus.NOT_ASSESSED
+    assert "manufacturer_capability_rules" in result.missing_inputs
+
+
+def test_dft_missing_spec_does_not_pass() -> None:
+    result = evaluate_dft_testability(None, ReviewContext())
+    assert result.status == AssessmentStatus.NOT_ASSESSED
+    assert "testpoint_coverage" in result.missing_inputs
+
+
+def test_bom_nrnd_out_of_stock_and_alternate_incompatibilities() -> None:
+    item = BOMItemInput(
+        reference="U1",
+        mpn="candidate",
+        footprint="SOIC8",
+        lifecycle_status="NRND",
+        stock_status="OUT_OF_STOCK",
+        alternates=[
+            {
+                "alt_mpn": "alternative",
+                "footprint_compatible": False,
+                "pin_compatible": True,
+                "electrical_compatible": False,
+                "firmware_compatible": False,
+                "lifecycle_status": "OBSOLETE",
+            }
+        ],
+    )
+    result = evaluate_bom_and_lifecycle([item], ReviewContext())
+    assert result.status == AssessmentStatus.FAIL
+    all_findings = " ".join(x.description for x in result.findings)
+    for reason in (
+        "NRND",
+        "OUT_OF_STOCK",
+        "footprint incompatible",
+        "electrical rating incompatible",
+        "firmware/register incompatible",
+        "lifecycle OBSOLETE",
+    ):
+        assert reason in all_findings
+
+
+def test_bom_missing_entries_not_assessed() -> None:
+    result = evaluate_bom_and_lifecycle(None, ReviewContext())
+    assert result.status == AssessmentStatus.NOT_ASSESSED
+    assert "bom_items" in result.missing_inputs
+
+
+def _measured_bringup(**updates: object) -> BringupPlanInput:
+    values = {
+        "item_id": "PWR_01",
+        "description": "power supply rail",
+        "measured_value": 3.3,
+        "acceptance_min": 3.1,
+        "acceptance_max": 3.5,
+        "measurement_unit": "V",
+        "instrument_id": "DMM-001",
+        "environmental_temp_c": 22.0,
+        "evidence_link": "local-measurement-001",
+    }
+    values.update(updates)
+    return BringupPlanInput(**values)
+
+
+def test_bringup_limits_and_missing_environment_are_recorded() -> None:
+    result = evaluate_bringup_measurements(
+        [
+            _measured_bringup(measured_value=2.5, instrument_id=None),
+            _measured_bringup(item_id="PWR_02", measured_value=3.9, environmental_temp_c=None),
+        ],
+        None,
+        ReviewContext(project_name="board"),
+    )
+    assert result.status == AssessmentStatus.FAIL
+    desc = " ".join(x.description for x in result.findings)
+    for reason in (
+        "below minimum",
+        "exceeds maximum",
+        "lacks instrument",
+        "lacks environmental",
+        "authorization record not provided",
+    ):
+        assert reason in desc
+
+
+def test_bringup_valid_measurement_and_power_on_authorization_pass() -> None:
+    result = evaluate_bringup_measurements(
+        [_measured_bringup()],
+        StageAuthorizationInput(power_on_authorized=True, power_on_authorizer="owner"),
+        ReviewContext(project_name="board"),
+    )
+    assert result.status == AssessmentStatus.PASS
+
+
+def test_bringup_missing_authorization_record_is_warning() -> None:
+    result = evaluate_bringup_measurements(
+        [_measured_bringup()],
+        None,
+        ReviewContext(project_name="board"),
+    )
+    assert result.status == AssessmentStatus.WARN
+    assert any("authorization record not provided" in x.description for x in result.findings)
+
+
+def test_unknown_alternate_compatibility_does_not_pass() -> None:
+    """Unverified alternate pin/footprint/electrical equivalence is not approval."""
+    item = BOMItemInput(
+        reference="U1",
+        mpn="original",
+        footprint="SOIC8",
+        stock_status="VERIFIED_IN_STOCK",
+        stock_as_of="2026-11-03",
+        alternates=[{"alt_mpn": "suggested"}],
+    )
+    result = evaluate_bom_and_lifecycle([item], ReviewContext())
+    assert result.status == AssessmentStatus.FAIL
+    assert any("footprint incompatible" in x.description for x in result.findings)
+    assert any("pinout incompatible" in x.description for x in result.findings)
+
+
+def test_undated_verified_stock_claim_requires_evidence() -> None:
+    item = BOMItemInput(
+        reference="U1",
+        mpn="normal",
+        footprint="SOIC8",
+        stock_status="VERIFIED_IN_STOCK",
+    )
+    unproven = evaluate_bom_and_lifecycle([item], ReviewContext())
+    assert unproven.status == AssessmentStatus.WARN
+    dated = evaluate_bom_and_lifecycle(
+        [item.model_copy(update={"stock_as_of": "2026-11-03"})], ReviewContext()
+    )
+    assert dated.status == AssessmentStatus.PASS
+
+
+@pytest.mark.parametrize("unverified_ring", [math.nan, "invalid"])
+def test_nonfinite_or_invalid_pth_ring_never_passes(
+    jlcpcb_2layer_profile: FabricationProfile,
+    unverified_ring: object,
+) -> None:
+    board = _passing_dfm_board(
+        pth_annular_rings=[{"ref": "J1", "pad_number": "A1", "nominal_ring_mm": unverified_ring}]
+    )
+    result = evaluate_dfm_fabrication_limits(jlcpcb_2layer_profile, board, ReviewContext())
+    assert result.status == AssessmentStatus.FAIL
+    assert any("#1381" in x.description for x in result.findings)
+
+
+def test_missing_supplier_specific_ring_floor_stays_unassessed(
+    jlcpcb_2layer_profile: FabricationProfile,
+) -> None:
+    missing_rule = {
+        name: value
+        for name, value in jlcpcb_2layer_profile.rules.items()
+        if name != "min_pth_annular_ring_2layer_1oz_mm"
+    }
+    profile = jlcpcb_2layer_profile.model_copy(update={"rules": missing_rule})
+    board = _passing_dfm_board(
+        pth_annular_rings=[{"ref": "J1", "pad_number": "A1", "nominal_ring_mm": 0.2}]
+    )
+    result = evaluate_dfm_fabrication_limits(profile, board, ReviewContext())
+    assert result.status == AssessmentStatus.NOT_ASSESSED
+    assert "min_pth_annular_ring_2layer_1oz_mm" in result.missing_inputs
+
+
+def test_power_on_without_named_authorizer_cannot_pass() -> None:
+    result = evaluate_bringup_measurements(
+        [_measured_bringup()],
+        StageAuthorizationInput(power_on_authorized=True),
+        ReviewContext(),
+    )
+    assert result.status != AssessmentStatus.PASS
+    assert any("authorizer" in x.description.lower() for x in result.findings)
+
+
+def test_bringup_measurement_without_evidence_reference_cannot_pass() -> None:
+    result = evaluate_bringup_measurements(
+        [_measured_bringup(evidence_link=None)],
+        StageAuthorizationInput(power_on_authorized=True, power_on_authorizer="owner"),
+        ReviewContext(),
+    )
+    assert result.status != AssessmentStatus.PASS
+    assert any("evidence" in x.description.lower() for x in result.findings)
+
+
+def test_measured_bringup_without_power_on_permission_cannot_pass() -> None:
+    result = evaluate_bringup_measurements(
+        [_measured_bringup()],
+        StageAuthorizationInput(power_on_authorized=False),
+        ReviewContext(),
+    )
+    assert result.status != AssessmentStatus.PASS
+
+
+def test_dft_probe_to_component_clearance_violation_blocks() -> None:
+    spec = DFTTestabilitySpec(
+        power_rail_testpoints={"+3V3": True},
+        probe_component_clearances=[
+            {
+                "testpoint": "TP1",
+                "component": "U1",
+                "clearance_mm": 0.3,
+                "min_required_mm": 0.8,
+            }
+        ],
+    )
+    result = evaluate_dft_testability(spec, ReviewContext())
+    assert result.status == AssessmentStatus.FAIL
+    assert any("TP1" in f.description and "U1" in f.description for f in result.findings)
+
+
+def test_dft_probe_clearance_without_measured_geometry_is_unassessed() -> None:
+    spec = DFTTestabilitySpec(
+        power_rail_testpoints={"+3V3": True},
+        probe_component_clearances=[
+            {"testpoint": "TP1", "component": "U1", "min_required_mm": 0.8}
+        ],
+    )
+    result = evaluate_dft_testability(spec, ReviewContext())
+    assert result.status == AssessmentStatus.NOT_ASSESSED
+    assert "probe_component_clearances" in result.missing_inputs
+
+
+def test_dft_probe_clearance_measurements_pass_with_explicit_process_limit() -> None:
+    spec = DFTTestabilitySpec(
+        power_rail_testpoints={"+3V3": True},
+        probe_component_clearances=[
+            {
+                "testpoint": "TP1",
+                "component": "U1",
+                "clearance_mm": 1.0,
+                "min_required_mm": 0.8,
+            }
+        ],
+    )
+    result = evaluate_dft_testability(spec, ReviewContext())
+    assert result.status == AssessmentStatus.PASS
+
+
+def test_dft_probe_pitch_without_explicit_process_limit_is_unassessed() -> None:
+    spec = DFTTestabilitySpec(
+        power_rail_testpoints={"+3V3": True},
+        testpoint_probe_pitches=[{"tp1": "TP1", "tp2": "TP2", "pitch_mm": 1.5}],
+    )
+    result = evaluate_dft_testability(spec, ReviewContext())
+    assert result.status == AssessmentStatus.NOT_ASSESSED
+    assert "testpoint_probe_pitches" in result.missing_inputs
+
+
+def test_dft_invalid_probe_pitch_is_unassessed() -> None:
+    spec = DFTTestabilitySpec(
+        power_rail_testpoints={"+3V3": True},
+        testpoint_probe_pitches=[
+            {"tp1": "TP1", "tp2": "TP2", "pitch_mm": float("nan"), "min_required_mm": 1.0}
+        ],
+    )
+    result = evaluate_dft_testability(spec, ReviewContext())
+    assert result.status == AssessmentStatus.NOT_ASSESSED
