@@ -5,19 +5,19 @@ import {renderSignIn,renderAccount,renderNotice} from "./browser-ui.js";
 export type BrowserIdentity =
   Pick<Identity,"handler"> & Partial<Pick<Identity,"$context"|"api"|"options">>;
 type SocialName="google"|"github";
-function availableProviders(identity:BrowserIdentity):SocialName[]{
+export function availableProviders(identity:BrowserIdentity):SocialName[]{
   const social=identity.options?.socialProviders;
   if(!social)return ["google","github"]; // test-only handler mocks
   return (["google","github"] as const).filter(name=>Boolean(social[name]));
 }
-const htmlHeaders = {
+export const htmlHeaders = {
   "Content-Type":"text/html; charset=utf-8",
   "Cache-Control":"no-store",
   "X-Content-Type-Options":"nosniff",
   // HTML form navigations with no-referrer transmit Origin: null in Chrome;
   // same-origin preserves the verified Origin for first-party OAuth POSTs.
   "Referrer-Policy":"same-origin",
-  "Content-Security-Policy":"default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self' https://github.com https://accounts.google.com; style-src 'self'"
+  "Content-Security-Policy":"default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self' https://github.com https://accounts.google.com; style-src 'self'; script-src 'self'"
 };
 
 function page(title:string,message:string,status=200):Response {

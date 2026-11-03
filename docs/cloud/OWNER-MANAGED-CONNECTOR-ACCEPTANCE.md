@@ -10,7 +10,8 @@ currently deployed unified Cloud before this contract is complete.
 
 1. Reuse the existing enrolled device and exactly one registered project; no
    second account, OAuth app, domain, pairing or project discovery.
-2. The owner enables the local Connector once from their normal user session:
+2. The owner enables the local Connector once from their normal user session
+   using either `kicad-mcp-pro cloud enable` or the existing command:
 
    `kicad-mcp-cloud-connector enable`
 

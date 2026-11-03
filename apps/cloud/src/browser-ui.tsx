@@ -4,10 +4,10 @@ export function renderLanding(identityEnabled:boolean){
     eyebrow:"Cloud console",summary:"Manage AI account access today. Device pairing and local KiCad control are not enabled yet.",
     children:<Landing identityEnabled={identityEnabled}/>});
 }
-export function renderSignIn(query:string,providers:ReadonlyArray<"google"|"github">=["google","github"]){
+export function renderSignIn(query:string,providers:ReadonlyArray<"google"|"github">=["google","github"],pairing=false){
   return renderPage({title:"Sign in",kind:"sign-in",eyebrow:"Account access",
     summary:"Use an account to manage AI connections and permissions.",
-    children:<SignIn query={query} providers={providers}/>});
+    children:<SignIn query={query} providers={providers} pairing={pairing}/>});
 }
 export function renderAccount(name:string){
   return renderPage({title:"Workspace overview",kind:"account",eyebrow:"Workspace / Overview",

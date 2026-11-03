@@ -55,6 +55,50 @@ device with no open session is shown as disconnected; if the Connector service
 is disabled, the portal does not claim to know whether a device is online.
 No periodic device polling or database status table is required.
 
+## One-command Cloud onboarding (after the unified CLI release)
+
+Users can start with the existing KiCad MCP Pro installation rather than
+manually copying OAuth keys or editing application configuration:
+
+```sh
+kicad-mcp-pro cloud login
+kicad-mcp-pro cloud connect --alias "My workstation"
+kicad-mcp-pro cloud status
+# Optional, only after registering exactly one local project:
+kicad-mcp-pro cloud enable
+# Revoke local permission and stop the background service:
+kicad-mcp-pro cloud disable
+```
+
+`cloud login` opens the **first-party website in the system browser**. Users
+choose Google or GitHub if that provider has been configured in Cloud; first-time
+social sign-in also creates the Cloud account. The browser session is **not**
+misrepresented as a locally stored CLI OAuth access token. On headless/SSH
+machines, use `cloud login --no-browser` and open the displayed HTTPS link on
+the computer where you want to sign in.
+
+`cloud connect` uses the existing five-minute, signed, one-use device
+enrollment: it opens a first-party approval link; a signed-out browser can
+complete Google/GitHub sign-in and return automatically to the exact pending
+approval page in the **same tab**. The short visible pairing code is kept
+temporarily in that tab's session storage, removed after use or expiry, and
+never sent as an HTTP query, cookie, OAuth callback value or client secret.
+The user must explicitly approve the matching code. The private device key
+remains local, and a newly paired device is **disabled** by default. If a
+browser blocks same-tab storage or the tab changes, restart pairing rather
+than weakening approval checks.
+
+`cloud enable` only starts the optional owner-managed read-only Connector
+for one **already registered** project. It does not enable the separate Cloud
+Devices-page switch or grant any OAuth client permission. The default local
+MCP experience remains account-free and requires no Cloud sign-in.
+
+For production operators, Google sign-in requires a complete
+`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` pair and Google provider
+redirect registration; GitHub sign-in likewise requires its own complete
+provider credentials. The UI lists only configured providers. No additional
+identity provider or shared OAuth client is created for this flow.
+
 ## Development
 
 Requires Node.js 24 or newer. From this directory:

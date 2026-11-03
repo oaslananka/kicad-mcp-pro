@@ -35,7 +35,12 @@ function form(
   });
 }
 test("pairing review requires session and escapes injected content",async()=>{
-  assert.equal((await get(fixture(null)))?.status,303);
+  const signedOut=await get(fixture(null));
+  assert.equal(signedOut?.status,200);
+  const signedOutHtml=await signedOut!.text();
+  assert.match(signedOutHtml,/Continue with GitHub/);
+  assert.match(signedOutHtml,/pairing-login-continuation\.js/);
+  assert.doesNotMatch(signedOutHtml,/name="csrf"/);
   const f=fixture(),res=await get(f);
   assert.equal(res?.status,200);
   assert.equal(res?.headers.get("referrer-policy"),"same-origin");

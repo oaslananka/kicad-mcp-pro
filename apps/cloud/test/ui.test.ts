@@ -47,8 +47,11 @@ test("user, client and scope content cannot inject HTML into premium pages",()=>
   const connections=renderConnectionsPage([{
     id:"fixture",name:attack,scopes:[attack],clientId:"fixture-client",csrf:"csrf"
   }]);
+  assert.match(account,/src="\/assets\/pairing-login-continuation\.js"/);
   for(const page of [account,consent,connections]){
-    assert.doesNotMatch(page,/<script[\s>]/i);
+    const safeHtml=page.replace(
+      '<script defer="" src="/assets/pairing-login-continuation.js"></script>',"");
+    assert.doesNotMatch(safeHtml,/<script[\s>]/i);
     assert.match(page,/&lt;script&gt;/);
     assert.match(page,/href="\/assets\/ui.css"/);
   }

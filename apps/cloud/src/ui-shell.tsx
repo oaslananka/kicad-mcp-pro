@@ -117,10 +117,11 @@ export function Notice({message}:{readonly message:string}){
   return <section className="card detail-card"><div className="notice-icon"><Icon name="warning" size={22}/></div>
     <h2>We couldn't complete that action</h2><p>{message}</p><a href="/" className="text-link">Return to overview <Icon name="arrow" size={16}/></a></section>;
 }
-export function SignIn({query,providers}:{readonly query:string;readonly providers:ReadonlyArray<"google"|"github">}){
+export function SignIn({query,providers,pairing=false}:{readonly query:string;readonly providers:ReadonlyArray<"google"|"github">;readonly pairing?:boolean}){
   return <section className="card auth-card">
     <div className="panel-heading"><div className="panel-icon"><Icon name="lock" size={21}/></div>
       <div><h2>Your workspace starts here</h2><p>Choose an available account to continue.</p></div></div>
+    {pairing?<p>Sign in or create an account to approve the device connection you just started from the CLI. This does not grant project access.</p>:null}
     <div className="providers">{providers.includes("google")&&<form action="/auth/start/google" method="post">
       <input type="hidden" name="oauth_query" value={query}/><button className="button provider" type="submit">
         <span className="provider-logo">G</span> Continue with Google <Icon name="arrow" size={17} className="provider-arrow"/></button>
@@ -128,11 +129,13 @@ export function SignIn({query,providers}:{readonly query:string;readonly provide
       <input type="hidden" name="oauth_query" value={query}/><button className="button provider" type="submit">
         <span className="provider-logo github"><Icon name="github" size={21}/></span> Continue with GitHub <Icon name="arrow" size={17} className="provider-arrow"/></button>
     </form>}</div>
+    {pairing?<script defer={true} src="/assets/pairing-login-continuation.js"></script>:null}
     <div className="auth-footnote"><Icon name="shield" size={19}/><p>Signing in doesn't share your KiCad projects. AI client permissions and project access require separate approval.</p></div>
   </section>;
 }
 export function Account({name}:{readonly name:string}){
   return <div className="page-stack">
+    <script defer={true} src="/assets/pairing-login-continuation.js"></script>
     <section className="account-welcome" aria-label="Account status"><div className="account-banner">
       <span className="avatar" aria-hidden="true">{name.trim().slice(0,1).toUpperCase()||"U"}</span>
       <div><div className="card-kicker">YOUR ACCOUNT</div>

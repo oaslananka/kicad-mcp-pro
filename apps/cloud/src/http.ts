@@ -18,6 +18,7 @@ import { oauthProviderResponse } from "./oauth-error.js";
 import { renderLanding } from "./browser-ui.js";
 import { uiCss } from "./ui-styles.js";
 import {pairingReviewClient} from "./pairing-review-client.js";
+import {pairingLoginContinuationClient} from "./pairing-login-continuation.js";
 import type {TrustedOAuthReadIdentity} from "./connector-read-gate.js";
 import type {PreparedOwnerSummary,SummaryReadResult,PreparedOwnerDrc,DrcReadResult,
   PreparedOwnerInspection,InspectionReadResult,
@@ -143,6 +144,12 @@ async function handleRequest(
       }
       if(pairingDevice&&await handlePairingDeviceRequest(req,res,pairingDevice,
         deviceSource??(()=>null),config.publicOrigin))return;
+      if (path === "/assets/pairing-login-continuation.js" && req.method === "GET") {
+        res.writeHead(200,{...noCache,"Content-Type":"text/javascript; charset=utf-8",
+          "Referrer-Policy":"no-referrer"});
+        res.end(pairingLoginContinuationClient);
+        return;
+      }
       if (path === "/assets/pairing-review.js" && req.method === "GET") {
         res.writeHead(200,{...noCache,"Content-Type":"text/javascript; charset=utf-8",
           "Referrer-Policy":"no-referrer"});

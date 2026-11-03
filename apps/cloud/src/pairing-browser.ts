@@ -1,6 +1,7 @@
 import {randomBytes,timingSafeEqual} from "node:crypto";
 import {makeSignature} from "better-auth/crypto";
-import type {BrowserIdentity} from "./browser.js";
+import {availableProviders,htmlHeaders,type BrowserIdentity} from "./browser.js";
+import {renderSignIn} from "./browser-ui.js";
 import type {PairingReviewPort} from "./pairing-review.js";
 import {renderPairingReviewPage} from "./pairing-review-ui.js";
 
@@ -65,9 +66,9 @@ export async function pairingBrowserResponse(
   if(!pairings||!identity.api||!identity.$context)return denied(503);
   if(path==="/devices/pairing"&&req.method==="GET"){
     const actor=user(await identity.api.getSession({headers:req.headers}));
-    if(!actor)return new Response(null,{status:303,headers:{
-      Location:"/sign-in","Cache-Control":"no-store"
-    }});
+    if(!actor)return new Response(renderSignIn("",availableProviders(identity),true),{
+      status:200,headers:htmlHeaders
+    });
     const {secret}=await identity.$context;
     const stamp=String(Date.now()),nonce=randomBytes(16).toString("base64url");
     const proof=stamp+"."+nonce+"."+

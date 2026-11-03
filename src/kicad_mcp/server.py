@@ -75,6 +75,7 @@ from typer.models import OptionInfo
 from . import __version__
 from .capabilities import AccessTier, RuntimeRequirement, all_protocol_metadata
 from .capabilities import get as get_capability_record
+from .cloud_user_cli import cloud_app
 from .compatibility import MCP_PROTOCOL_VERSION
 from .config import LOOPBACK_HOSTS, KiCadMCPConfig, get_config, reset_config
 from .connection import KiCadConnectionError, get_board
@@ -185,6 +186,7 @@ tools_app = typer.Typer(help=localize("Inspect registered MCP tools."))
 mcp_config_app = typer.Typer(help=localize("Generate MCP client configuration snippets."))
 app.add_typer(tools_app, name="tools")
 app.add_typer(mcp_config_app, name="mcp-config")
+app.add_typer(cloud_app, name="cloud")
 DOCTOR_BUNDLE_OPTION = cast(
     Path | None,
     typer.Option(

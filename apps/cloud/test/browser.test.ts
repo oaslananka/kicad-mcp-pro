@@ -105,7 +105,8 @@ test("account page requires session; escaped account display has no HTML injecti
   const response=await browserResponse(new Request(origin+"/account"),user,origin);
   assert.equal(response?.status,200);
   const text=await response!.text();
-  assert.equal(text.toLowerCase().includes("<script"),false);
+  assert.equal(text.toLowerCase().includes("<script>alert(1)</script>"),false);
+  assert.match(text,/pairing-login-continuation\.js/);
   assert.match(text,/&lt;script&gt;/);
   assert.match(response?.headers.get("content-security-policy")??"",/default-src 'none'/);
 });

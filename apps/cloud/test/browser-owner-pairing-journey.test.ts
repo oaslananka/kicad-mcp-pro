@@ -110,7 +110,9 @@ test("real HTTP owner journey: DB pairing, browser consent gates, project grant 
           fetch(base+"/api/v1/pairing/device/challenge",init):
           fetch(base+"/api/v1/pairing/device/redeem",init);
       }
-      assert.equal((await fetch(base+"/devices/pairing",{redirect:"manual"})).status,303);
+      const signedOutPairing=await fetch(base+"/devices/pairing",{redirect:"manual"});
+      assert.equal(signedOutPairing.status,200);
+      assert.match(await signedOutPairing.text(),/Continue with GitHub/);
       const keys=generateKeyPairSync("ed25519");
       const publicKeyDer=keys.publicKey.export({format:"der",type:"spki"}) as Buffer;
       const issued=await devicePost("challenge",{
