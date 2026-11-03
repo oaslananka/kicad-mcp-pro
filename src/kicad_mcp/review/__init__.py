@@ -18,6 +18,12 @@ from .electrical_contracts import (
     evaluate_thermal_spreading,
     evaluate_trace_dc_loss,
 )
+from .external_evidence import (
+    ExternalAnalysisReport,
+    evaluate_external_evidence,
+    load_external_analysis_report,
+    report_to_evidence_record,
+)
 from .mechanical_acceptance import (
     check_rectangular_outline,
     evaluate_connector_mating_orientation,
@@ -69,6 +75,7 @@ __all__ = [
     "evaluate_connector_mating_orientation",
     "evaluate_crystal_placement",
     "evaluate_decoupling_connectivity",
+    "evaluate_external_evidence",
     "evaluate_mechanical_stage_gate",
     "evaluate_pcb_visual_quality",
     "evaluate_routing_style",
@@ -78,8 +85,11 @@ __all__ = [
     "evaluate_thermal_spreading",
     "evaluate_trace_dc_loss",
     "evaluate_visual_quality",
+    "ExternalAnalysisReport",
     "is_connector_footprint",
+    "load_external_analysis_report",
     "plan_cosmetic_transaction",
+    "report_to_evidence_record",
     "ReviewRuleCatalog",
     "ReviewStage",
     "StageGateDecision",

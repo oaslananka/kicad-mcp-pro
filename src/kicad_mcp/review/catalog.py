@@ -427,4 +427,27 @@ def build_standard_rule_catalog() -> ReviewRuleCatalog:
         )
     )
 
+    catalog.register(
+        ReviewRule(
+            rule_id="analysis.external_simulation",
+            revision=1,
+            domain=ReviewDomain.SIGNAL_INTEGRITY,
+            title="External Simulation and Numerical Solver Evidence",
+            source_doc="External Solver Provenance and Ingestion Contract",
+            source_revision="2026.11",
+            required_inputs=["external_analysis_report"],
+            units=None,
+            method=EvaluationMethod.ANALYTICAL,
+            severity="error",
+            rationale=(
+                "External analysis reports must be schema-validated, match current design "
+                "revision and stackup, and demonstrate convergence without violations."
+            ),
+            remediation=(
+                "Re-run external simulation with matching source hash and resolve violations."
+            ),
+            is_mandatory=False,
+        )
+    )
+
     return catalog
