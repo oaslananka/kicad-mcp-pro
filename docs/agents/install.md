@@ -30,6 +30,80 @@ uvx kicad-mcp-pro
 pip install kicad-mcp-pro
 ```
 
+## Fast local setup
+
+For the shortest local-first path, open a terminal in the KiCad project folder and run:
+
+```bash
+uvx kicad-mcp-pro quickstart
+```
+
+The command detects supported agent CLIs on `PATH` and a KiCad project directory.
+It asks which agent to use when multiple are found, or asks for a project directory
+when none is found in the current folder. It checks `uvx` before writing, merges
+only the selected agent's KiCad MCP entry in **read-only** mode, and backs up
+existing settings. The absolute launcher path is saved so GUI PATH differences
+do not silently select another executable. It then reads that saved entry and
+verifies its actual command over stdio with `kicad_get_server_info`.
+
+On supported hosts it also installs the seven bundled KiCad skills, including
+their references and scripts. Claude Code, Codex, Gemini, OpenCode, Cursor and
+VS Code have explicit discovery locations. Claude Desktop and Antigravity report
+that portable skill installation is unavailable; their MCP setup still works.
+Edited or conflicting skills are preserved and block skill installation before
+the MCP config is written. Use `--no-skills` when a native plugin/extension
+already supplies the skills or when you want MCP configuration only.
+
+No Cloud login, account, API key, browser session or remote service is used. Restart
+or reload the selected agent after a successful setup. To choose explicitly:
+
+```bash
+uvx kicad-mcp-pro quickstart --agent codex --project-dir /path/to/kicad-project
+```
+
+This verifies the saved launch command, not the actual agent's skill discovery
+or native KiCad availability. In the selected agent, ask: **Inspect this KiCad
+project without modifying files.** Review the project identity, CLI/IPC readiness
+and actual tool response before starting work. Missing IPC does not imply that
+file-backed KiCad CLI operations are unavailable.
+
+Manage the bundled skills separately:
+
+```bash
+uvx kicad-mcp-pro skills status --agent cursor --project-dir /path/to/kicad-project
+uvx kicad-mcp-pro skills install --agent cursor --project-dir /path/to/kicad-project
+uvx kicad-mcp-pro skills remove --agent cursor --project-dir /path/to/kicad-project
+```
+
+Installation is repeatable. Matching existing skills are reused. Updates to
+unchanged installer-owned skills keep backups under the host configuration
+directory's `.kicad-mcp-pro-skill-backups/`, outside skill discovery. Removal
+preserves unrelated, unowned and edited workflows, as well as backups. These
+commands manage skill files only; MCP configuration and Cloud permissions have
+their own lifecycle. Native plugins should be updated or removed in the host's
+plugin manager instead of being installed a second time through quickstart.
+Skill commands use the resources bundled with the CLI version you run. Update
+that package through your installation manager before refreshing skills; the
+installer does not download independent, unversioned workflow instructions.
+
+Use `kicad-mcp-pro setup-backups <agent>` and `kicad-mcp-pro setup-restore <agent>`
+to inspect or restore a previous configuration. Cloud access is a separate,
+optional setup and is never required for local stdio use.
+
+## Native plugin or extension alternative
+
+For a trusted source checkout, Claude Code can validate and load the bundled
+skills and MCP server with `claude plugin validate .` and `claude --plugin-dir .`.
+Portable Agent Plugins hosts can import the root `plugin.json`, `mcp.json`, and
+`skills/` package. The portable MCP launcher pins the matching published server
+version; `uv` and KiCad are prerequisites. This source package is not evidence
+of public marketplace approval or real-host compatibility.
+
+Gemini users can choose the [native extension pilot](https://github.com/oaslananka/kicad-mcp-pro/tree/main/integrations/gemini-cli/kicad-mcp-pro).
+Choose either a native package or quickstart for the same host to avoid duplicate
+servers and skills. A plugin installed on your computer does not automatically
+become available in a remote AI execution environment.
+
 ## Configure an agent without losing existing settings
 
 **Recommended (single supported writer):** the Python CLI merges only KiCad MCP

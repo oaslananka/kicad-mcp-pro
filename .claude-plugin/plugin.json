@@ -3,6 +3,7 @@
   "name": "kicad-pro",
   "version": "4.6.1",
   "description": "KiCad MCP Pro plugin for schematic review, PCB design assistance, DRC/ERC validation, DFM checks, and manufacturing release workflows.",
+  "mcpServers": "./.mcp.json",
   "skills": [
     "./skills/kicad-design-review",
     "./skills/pcb-design",

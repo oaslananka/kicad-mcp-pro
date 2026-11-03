@@ -6,11 +6,17 @@ This document gives copyable configuration examples for running KiCad MCP Pro fr
 
 The repository includes both:
 
-- `.claude-plugin/plugin.json`, which declares the **seven skills** but does
-  **not** embed an MCP server configuration.
-- `.mcp.json`, which separately configures the **project-local MCP server**.
-  Installing/loading a skill does not install `uvx`, Python, or KiCad and does
-  not automatically connect the MCP server. Verify both steps independently.
+- `.claude-plugin/plugin.json`, which declares the **seven skills** and references
+  the bundled `.mcp.json` server configuration.
+- `.mcp.json`, which launches the local server in `readonly/default` mode.
+  Loading the plugin does not install `uvx`, Python, or KiCad. Verify both host
+  discovery and the actual MCP connection after loading it.
+
+Portable Agent Plugins hosts can use the generated root `plugin.json` and
+`mcp.json` alongside the same canonical `skills/`. The launcher is version-pinned
+to the package release. No marketplace publication is implied. For installed
+Python packages, [quickstart](agents/install.md#fast-local-setup) merges MCP
+configuration and installs the bundled skills without cloning this repository.
 
 Validate the plugin locally:
 

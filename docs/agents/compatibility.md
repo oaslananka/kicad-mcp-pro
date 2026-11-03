@@ -5,7 +5,7 @@
 | Agent | Local STDIO | Remote HTTP | Skills/AGENTS.md | App UI | OAuth | Tool Filtering |
 |-------|------------|-------------|-----------------|--------|-------|----------------|
 | Claude Code | ✅ | ✅ | ✅ | — | ✅ | ✅ include/exclude |
-| Codex CLI | ✅ | ✅ | ✅ AGENTS.md + Agent Skills | — | — | ✅ enabled/disabled |
+| Codex CLI | ✅ | ✅ | ✅ AGENTS.md + Agent Skills | — | ✅ | ✅ enabled/disabled |
 | Gemini CLI | ✅ | ✅ | ✅ Agent Skills (host-dependent) | — | ✅ | ✅ include/exclude |
 | OpenCode | ✅ | ✅ | ✅ AGENTS.md | ✅ Plugin | ✅ | ✅ glob patterns |
 | VS Code/Copilot | ✅ | ✅ | ✅ Copilot instructions + Agent Skills | ⚠️ Experimental | ✅ | ✅ sandbox |
@@ -52,3 +52,7 @@ not be read as a claim that every host has been independently installed and
 exercised in CI. The machine-validated **static** host catalog lives in
 `integrations/common/agent-host-evidence.json`. Actual supported build and
 runtime smoke evidence follows [host verification](host-verification.md).
+
+Client capability reference: [Codex MCP and OAuth](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+OAuth support in a client does not establish successful authentication against
+this product Cloud deployment; real-host acceptance remains separate.

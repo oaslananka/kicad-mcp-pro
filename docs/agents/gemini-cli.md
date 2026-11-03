@@ -3,7 +3,7 @@
 ## Quick Start
 
 ```bash
-kicad-mcp-pro setup gemini
+uvx kicad-mcp-pro quickstart --agent gemini
 ```
 
 To install only for one trusted project, use

@@ -11,17 +11,21 @@ Phase 2 deliverables:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
-import subprocess  # nosec B404 - fixed CLI argv, shell=False, bounded timeout
+import subprocess  # nosec B404  # Fixed CLI argv, shell=False, bounded timeout.
 import sys
 import tempfile
 import tomllib
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from mcp import StdioServerParameters
 
 # ---------------------------------------------------------------------------
 # Types
@@ -35,6 +39,8 @@ ConfigFormat = Literal["json", "toml"]
 
 AgentKind = Literal["local", "remote"]
 """Whether the agent runs locally or requires a remote server."""
+
+_WORKSPACE_FOLDER = "${workspaceFolder}"
 
 # ---------------------------------------------------------------------------
 # Agent metadata
@@ -141,6 +147,135 @@ AGENTS: dict[str, AgentInfo] = {
         doc_url="docs/agents/claude-ai.md",
     ),
 }
+
+
+_AGENT_EXECUTABLES: dict[str, tuple[str, ...]] = {
+    "claude-code": ("claude",),
+    "codex": ("codex",),
+    "gemini": ("gemini",),
+    "opencode": ("opencode",),
+    "cursor": ("cursor",),
+    "vscode": ("code",),
+    "antigravity": ("agy", "antigravity"),
+}
+
+
+def detect_installed_agents() -> list[str]:
+    """Return local agents with an executable discoverable on PATH."""
+    detected = [
+        key
+        for key, names in _AGENT_EXECUTABLES.items()
+        if any(shutil.which(name) for name in names)
+    ]
+    active_environment = (
+        ("OPENCODE", "opencode"),
+        ("CLAUDE_CODE", "claude-code"),
+        ("CURSOR", "cursor"),
+        ("VSCODE_MCP", "vscode"),
+        ("CODEX", "codex"),
+        ("GEMINI_CLI", "gemini"),
+    )
+    active = next((key for variable, key in active_environment if variable in os.environ), None)
+    if active in AGENTS and AGENTS[active].kind == "local" and active not in detected:
+        detected.insert(0, active)
+    return detected
+
+
+def detect_kicad_project_directory(start: str | Path | None = None) -> Path | None:
+    """Detect a project in one directory without recursively scanning user files."""
+    candidate = Path(start or os.environ.get("KICAD_MCP_PROJECT_DIR") or os.getcwd()).expanduser()
+    try:
+        candidate = candidate.resolve(strict=True)
+    except OSError:
+        return None
+    if not candidate.is_dir():
+        return None
+    if (
+        any(candidate.glob("*.kicad_pro"))
+        or any(candidate.glob("*.kicad_pcb"))
+        or any(candidate.glob("*.kicad_sch"))
+    ):
+        return candidate
+    return None
+
+
+def _stdio_entry(data: dict[str, Any], agent: str) -> dict[str, Any]:
+    if agent == "codex":
+        return dict(data["mcp_servers"]["kicad"])
+    if agent == "vscode":
+        return dict(data["servers"]["kicad"])
+    if agent == "opencode":
+        servers = data["mcp"].get("servers", data["mcp"])
+        return dict(servers["kicad"])
+    return dict(data["mcpServers"]["kicad"])
+
+
+def configured_stdio_parameters(
+    project_dir: Path, *, agent: str, scope: str
+) -> StdioServerParameters:
+    """Validate and execute exactly the owned entry saved for the selected host."""
+    from mcp import StdioServerParameters
+
+    text = resolve_path(agent, scope, project_dir).read_text(encoding="utf-8")
+    expected, fmt = generate_config(agent, str(project_dir), "readonly")
+    parse = tomllib.loads if fmt == "toml" else json.loads
+    actual = _stdio_entry(parse(text), agent)
+    baseline = _stdio_entry(parse(expected), agent)
+    command = actual["command"]
+    executable = command[0] if isinstance(command, list) else command
+    launcher = shutil.which("uvx")
+    if executable not in {"uvx", launcher}:
+        raise ValueError("The saved MCP launch command changed")
+    normalized = dict(actual)
+    normalized["command"] = ["uvx", *command[1:]] if isinstance(command, list) else "uvx"
+    if normalized != baseline:
+        raise ValueError("The saved MCP entry does not match the selected read-only project")
+    resolved = shutil.which(executable)
+    if resolved is None:
+        raise ValueError("The saved uvx launcher is unavailable; install uv and reload the agent")
+    args = command[1:] if isinstance(command, list) else actual["args"]
+    env = actual.get("environment", actual.get("env", {}))
+    env = {key: value.replace(_WORKSPACE_FOLDER, str(project_dir)) for key, value in env.items()}
+    return StdioServerParameters(
+        command=resolved,
+        args=args,
+        env={**os.environ, **env},
+        cwd=str(project_dir),
+    )
+
+
+async def run_local_mcp_smoke(project_dir: Path, *, agent: str, scope: str) -> tuple[bool, str]:
+    """Verify the saved agent launch, not a different Python environment."""
+    from mcp import ClientSession, Implementation
+    from mcp.client.stdio import stdio_client
+
+    try:
+        params = configured_stdio_parameters(project_dir, agent=agent, scope=scope)
+        async with (
+            asyncio.timeout(35),
+            stdio_client(params) as streams,
+        ):
+            read_stream, write_stream = streams
+            async with ClientSession(
+                read_stream,
+                write_stream,
+                client_info=Implementation(name="kicad-mcp-pro-quickstart", version="1"),
+            ) as session:
+                await session.initialize()
+                available = {tool.name for tool in (await session.list_tools()).tools}
+                if "kicad_get_server_info" not in available:
+                    return False, "MCP connected, but the server-info tool was not advertised."
+                result = await session.call_tool("kicad_get_server_info", {})
+                if result.is_error or not result.content:
+                    return False, "MCP connected, but the read-only server-info call failed."
+                return True, "Saved MCP launch initialized; kicad_get_server_info succeeded."
+    except (OSError, ValueError, KeyError) as exc:
+        return False, f"Saved MCP launch failed: {exc}"
+    except Exception as exc:
+        # SDK transport errors may arrive in an ExceptionGroup. Report failure
+        # without dumping child-process credentials or a confusing traceback.
+        return False, f"Saved MCP protocol check failed ({type(exc).__name__}); run doctor."
+
 
 # ---------------------------------------------------------------------------
 # Platform-aware config paths
@@ -291,6 +426,22 @@ def _env_for_mode(mode: str, project_dir: str) -> dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
+def _override_stdio_command(text: str, agent_key: str, fmt: ConfigFormat, command: str) -> str:
+    """Replace only the launcher in a native host's generated stdio entry."""
+    if fmt == "toml":
+        return text.replace('command = "uvx"', f"command = {json.dumps(command)}")
+    data = json.loads(text)
+    if agent_key == "opencode":
+        entry = data["mcp"].get("servers", data["mcp"])["kicad"]
+    else:
+        entry = data["servers" if agent_key == "vscode" else "mcpServers"]["kicad"]
+    if isinstance(entry["command"], list):
+        entry["command"][0] = command
+    else:
+        entry["command"] = command
+    return json.dumps(data, indent=2)
+
+
 def generate_config(
     agent_key: str,
     project_dir: str,
@@ -298,6 +449,7 @@ def generate_config(
     *,
     transport: str = "stdio",
     url: str = "",
+    stdio_command: str | None = None,
 ) -> tuple[str, ConfigFormat]:
     """Generate a configuration snippet for the specified agent.
 
@@ -311,7 +463,10 @@ def generate_config(
     if info.kind == "remote":
         return _generate_remote_config(agent_key, url), info.format
 
-    return _generate_local_config(agent_key, project_dir, mode, transport), info.format
+    text = _generate_local_config(agent_key, project_dir, mode, transport)
+    if stdio_command is not None and transport == "stdio":
+        text = _override_stdio_command(text, agent_key, info.format, stdio_command)
+    return text, info.format
 
 
 def _make_stdio_server(command: str, args: list[str], env: dict[str, str]) -> dict[str, object]:
@@ -349,6 +504,8 @@ def _generate_local_config(
         url = os.environ.get("KICAD_MCP_URL", "http://127.0.0.1:8765/mcp")
         return _generate_http_config(agent_key, url, env)
 
+    env["KICAD_MCP_TRANSPORT"] = "stdio"
+
     stdio_cmd = "uvx"
     stdio_args = ["kicad-mcp-pro"]
     server = _make_stdio_server(stdio_cmd, stdio_args, env)
@@ -384,7 +541,7 @@ def _generate_local_config(
 
     if agent_key == "vscode":
         vscode_env = {
-            k: ("${workspaceFolder}" if k == "KICAD_MCP_PROJECT_DIR" else v) for k, v in env.items()
+            k: (_WORKSPACE_FOLDER if k == "KICAD_MCP_PROJECT_DIR" else v) for k, v in env.items()
         }
         return json.dumps(
             {
@@ -393,7 +550,7 @@ def _generate_local_config(
                         "type": "stdio",
                         "command": stdio_cmd,
                         "args": stdio_args,
-                        "cwd": "${workspaceFolder}",
+                        "cwd": _WORKSPACE_FOLDER,
                         "env": vscode_env,
                     }
                 }
@@ -465,7 +622,8 @@ def _generate_codex_toml(project_dir: str, mode: str) -> str:
         "tool_timeout_sec = 120",
         "",
         "[mcp_servers.kicad.env]",
-        f'KICAD_MCP_PROJECT_DIR = "{project_dir}"',
+        f"KICAD_MCP_PROJECT_DIR = {json.dumps(project_dir)}",
+        'KICAD_MCP_TRANSPORT = "stdio"',
         f'KICAD_MCP_PROFILE = "{profile}"',
         f'KICAD_MCP_OPERATING_MODE = "{operating_mode}"',
         "",
@@ -945,6 +1103,7 @@ def setup_agent(
     scope: str = "project",
     url: str = "",
     transport: str = "stdio",
+    stdio_command: str | None = None,
 ) -> str:
     """Configure kicad-mcp for a specific agent.
 
@@ -961,7 +1120,9 @@ def setup_agent(
     info = AGENTS[agent]
     project = project_dir or os.environ.get("KICAD_MCP_PROJECT_DIR", os.getcwd())
 
-    config_str, fmt = generate_config(agent, project, mode, transport=transport, url=url)
+    config_str, fmt = generate_config(
+        agent, project, mode, transport=transport, url=url, stdio_command=stdio_command
+    )
 
     if write:
         if info.kind == "remote":

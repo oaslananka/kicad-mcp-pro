@@ -3,7 +3,7 @@
 ## Quick Start
 
 ```bash
-kicad-mcp-pro setup antigravity
+uvx kicad-mcp-pro quickstart --agent antigravity
 ```
 
 Or manually add to `~/.gemini/config/mcp_config.json`:

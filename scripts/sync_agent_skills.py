@@ -18,6 +18,7 @@ HOST_ROOTS = (
     ROOT / ".opencode" / "skills",
     ROOT / ".agents" / "skills",
     ROOT / "integrations" / "gemini-cli" / "kicad-mcp-pro" / "skills",
+    ROOT / "src" / "kicad_mcp" / "data" / "agent_skills",
 )
 SKILLS = (
     "drc-check",
@@ -119,6 +120,8 @@ def _remove_stale_for_skill(
     for existing in target_dir.rglob("*"):
         if existing.is_symlink():
             raise ValueError(f"Generated skill path symlink not permitted: {existing}")
+        if "__pycache__" in existing.relative_to(target_dir).parts:
+            continue
         if existing.is_file() and existing not in expected:
             discrepancies.append(str(existing.relative_to(ROOT)))
             if write:

@@ -37,6 +37,28 @@ def _restore_missing_3d_models(definition: object | None, original_models: list[
         preserved.items = [*preserved.items, *missing]
 
 
+def get_current_footprint_rotation(footprint: object) -> tuple[RotationAttribute, float]:
+    """Read the existing writable rotation surface without assigning a new angle."""
+    failures: list[str] = []
+    available: list[RotationAttribute] = []
+    for attribute in _SUPPORTED_ROTATION_ATTRIBUTES:
+        try:
+            value = getattr(footprint, attribute)
+        except AttributeError:
+            continue
+        available.append(attribute)
+        try:
+            return attribute, _rotation_degrees(value)
+        except FootprintRotationError as exc:
+            failures.append(f"{attribute}: {exc}")
+    if not available:
+        raise FootprintRotationError(
+            "Footprint does not expose a supported angle or orientation surface."
+        )
+    detail = ", ".join(failures) if failures else ", ".join(available)
+    raise FootprintRotationError(f"Current footprint rotation could not be read ({detail}).")
+
+
 def apply_footprint_rotation(footprint: object, rotation_deg: float) -> RotationAttribute:
     """Assign a KiCad ``Angle`` through the first writable rotation surface."""
     if not math.isfinite(rotation_deg):

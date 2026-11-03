@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "kicad": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--from",
+        "kicad-mcp-pro==4.6.1",
+        "kicad-mcp-pro",
+        "--transport",
+        "stdio"
+      ],
+      "env": {
+        "KICAD_MCP_TRANSPORT": "stdio",
+        "KICAD_MCP_PROFILE": "default",
+        "KICAD_MCP_OPERATING_MODE": "readonly"
+      }
+    }
+  }
+}

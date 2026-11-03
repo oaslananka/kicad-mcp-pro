@@ -5,7 +5,7 @@ Connect [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to KiCad v
 ## Quick Install (One Command)
 
 ```bash
-kicad-mcp-pro setup claude-code
+uvx kicad-mcp-pro quickstart --agent claude-code
 ```
 
 Or manually:
@@ -32,23 +32,27 @@ claude mcp add --transport http --scope user kicad-cloud https://mcp.kicad.examp
 
 ## Project Config
 
-Copy `.mcp.json.example` to `.mcp.json` in your project root. Claude Code detects it automatically.
+Merge only `mcpServers.kicad` from `.mcp.json.example` into your project `.mcp.json`.
+Preserve other servers and approve the new entry in Claude Code when prompted.
 
-## Skill Paketi
+## Skills and plugin
 
-The `kicad-pcb-review-skill/` directory contains a Claude Code Skill for PCB review workflows:
+Quickstart installs the seven bundled KiCad skills into the chosen scope and
+preserves conflicting or edited workflows. Use `--no-skills` if your native
+plugin already supplies them. To manage just the skills, use
+`kicad-mcp-pro skills status --agent claude-code` with the same project directory
+and scope. Replace `status` with `install` or `remove` for those actions.
 
-```bash
-# Install the skill
-cp -r kicad-pcb-review-skill ~/.claude/skills/
-```
-
-The skill auto-loads when KiCad projects are detected. See `kicad-pcb-review-skill/SKILL.md` for the full workflow.
+For a trusted source checkout, `claude plugin validate .` and
+`claude --plugin-dir .` validate/load the product plugin with its bundled MCP
+configuration and canonical skills. Verify actual host discovery after loading.
+See the [installation guide](../../docs/agents/install.md) for prerequisites and
+the distinction between saved configuration and a real agent tool call.
 
 ## Verification
 
 ```bash
-kicad-mcp-pro doctor --agent claude-code
+kicad-mcp-pro doctor
 ```
 
 In Claude Code: `/mcp` to verify the kicad server is connected.
