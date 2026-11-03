@@ -678,3 +678,69 @@ def test_measured_bringup_without_power_on_permission_cannot_pass() -> None:
         ReviewContext(),
     )
     assert result.status != AssessmentStatus.PASS
+
+
+def test_dft_probe_to_component_clearance_violation_blocks() -> None:
+    spec = DFTTestabilitySpec(
+        power_rail_testpoints={"+3V3": True},
+        probe_component_clearances=[
+            {
+                "testpoint": "TP1",
+                "component": "U1",
+                "clearance_mm": 0.3,
+                "min_required_mm": 0.8,
+            }
+        ],
+    )
+    result = evaluate_dft_testability(spec, ReviewContext())
+    assert result.status == AssessmentStatus.FAIL
+    assert any("TP1" in f.description and "U1" in f.description for f in result.findings)
+
+
+def test_dft_probe_clearance_without_measured_geometry_is_unassessed() -> None:
+    spec = DFTTestabilitySpec(
+        power_rail_testpoints={"+3V3": True},
+        probe_component_clearances=[
+            {"testpoint": "TP1", "component": "U1", "min_required_mm": 0.8}
+        ],
+    )
+    result = evaluate_dft_testability(spec, ReviewContext())
+    assert result.status == AssessmentStatus.NOT_ASSESSED
+    assert "probe_component_clearances" in result.missing_inputs
+
+
+def test_dft_probe_clearance_measurements_pass_with_explicit_process_limit() -> None:
+    spec = DFTTestabilitySpec(
+        power_rail_testpoints={"+3V3": True},
+        probe_component_clearances=[
+            {
+                "testpoint": "TP1",
+                "component": "U1",
+                "clearance_mm": 1.0,
+                "min_required_mm": 0.8,
+            }
+        ],
+    )
+    result = evaluate_dft_testability(spec, ReviewContext())
+    assert result.status == AssessmentStatus.PASS
+
+
+def test_dft_probe_pitch_without_explicit_process_limit_is_unassessed() -> None:
+    spec = DFTTestabilitySpec(
+        power_rail_testpoints={"+3V3": True},
+        testpoint_probe_pitches=[{"tp1": "TP1", "tp2": "TP2", "pitch_mm": 1.5}],
+    )
+    result = evaluate_dft_testability(spec, ReviewContext())
+    assert result.status == AssessmentStatus.NOT_ASSESSED
+    assert "testpoint_probe_pitches" in result.missing_inputs
+
+
+def test_dft_invalid_probe_pitch_is_unassessed() -> None:
+    spec = DFTTestabilitySpec(
+        power_rail_testpoints={"+3V3": True},
+        testpoint_probe_pitches=[
+            {"tp1": "TP1", "tp2": "TP2", "pitch_mm": float("nan"), "min_required_mm": 1.0}
+        ],
+    )
+    result = evaluate_dft_testability(spec, ReviewContext())
+    assert result.status == AssessmentStatus.NOT_ASSESSED

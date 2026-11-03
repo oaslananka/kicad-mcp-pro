@@ -654,6 +654,71 @@ def evaluate_dfa_assembly(
     )
 
 
+def _dft_probe_geometry_findings(
+    spec: DFTTestabilitySpec,
+    rule_id: str,
+    first_index: int,
+) -> tuple[list[ReviewFinding], list[str]]:
+    """Only assess probe geometry with explicit finite measurements and limits."""
+    findings: list[ReviewFinding] = []
+    missing_inputs: list[str] = []
+    contracts = (
+        (
+            spec.testpoint_probe_pitches,
+            "pitch_mm",
+            "min_required_mm",
+            "testpoint_probe_pitches",
+        ),
+        (
+            spec.probe_component_clearances,
+            "clearance_mm",
+            "min_required_mm",
+            "probe_component_clearances",
+        ),
+    )
+    for entries, measured_key, threshold_key, input_name in contracts:
+        for item in entries:
+            try:
+                measured = float(item[measured_key])
+                minimum = float(item[threshold_key])
+            except (KeyError, TypeError, ValueError, OverflowError):
+                if input_name not in missing_inputs:
+                    missing_inputs.append(input_name)
+                continue
+            if (
+                not math.isfinite(measured)
+                or not math.isfinite(minimum)
+                or measured < 0
+                or minimum <= 0
+            ):
+                if input_name not in missing_inputs:
+                    missing_inputs.append(input_name)
+                continue
+            if measured >= minimum:
+                continue
+            if measured_key == "pitch_mm":
+                target = f"between {item.get('tp1', 'TP1')} and {item.get('tp2', 'TP2')}"
+            else:
+                target = (
+                    f"between {item.get('testpoint', 'TP1')} "
+                    f"and component {item.get('component', 'unknown')}"
+                )
+            findings.append(
+                ReviewFinding(
+                    id=f"DFT_{first_index + len(findings):03d}",
+                    rule_id=rule_id,
+                    rule_revision=1,
+                    severity="error",
+                    description=(
+                        f"Test probe {target} measured {measured:.3f} mm, "
+                        f"below selected process minimum {minimum:.3f} mm."
+                    ),
+                    remediation="Increase test-point pitch or probe-to-component clearance.",
+                )
+            )
+    return findings, missing_inputs
+
+
 def evaluate_dft_testability(
     spec: DFTTestabilitySpec | None,
     context: ReviewContext,
@@ -722,35 +787,20 @@ def evaluate_dft_testability(
             )
             finding_idx += 1
 
-    # 3. Probe pitch / clearance
-    for pitch_item in spec.testpoint_probe_pitches:
-        tp1 = pitch_item.get("tp1", "TP1")
-        tp2 = pitch_item.get("tp2", "TP2")
-        pitch = float(pitch_item.get("pitch_mm", 0.0))
-        min_pitch = float(pitch_item.get("min_required_mm", 1.27))
-        if pitch < min_pitch:
-            findings.append(
-                ReviewFinding(
-                    id=f"DFT_{finding_idx:03d}",
-                    rule_id=rule_id,
-                    rule_revision=1,
-                    severity="error",
-                    description=(
-                        f"Test point pitch between {tp1} and {tp2} ({pitch:.3f} mm) is below "
-                        f"minimum fixture probe clearance {min_pitch:.3f} mm."
-                    ),
-                    remediation="Increase spacing between adjacent test points.",
-                )
-            )
-            finding_idx += 1
+    # 3. Probe pitch and probe-to-component clearance require measured evidence.
+    geometry_findings, missing_inputs = _dft_probe_geometry_findings(spec, rule_id, finding_idx)
+    findings.extend(geometry_findings)
 
     errors = [f for f in findings if f.severity == "error"]
-    status = AssessmentStatus.FAIL if errors else AssessmentStatus.PASS
-    summary = (
-        f"DFT testability review failed with {len(errors)} error(s)."
-        if errors
-        else "DFT testability review passed with all required test points accessible."
-    )
+    if errors:
+        status = AssessmentStatus.FAIL
+        summary = f"DFT testability review failed with {len(errors)} error(s)."
+    elif missing_inputs:
+        status = AssessmentStatus.NOT_ASSESSED
+        summary = "DFT probe geometry measurements or selected process limits are missing."
+    else:
+        status = AssessmentStatus.PASS
+        summary = "DFT testability review passed with all supplied probes accessible."
 
     return ReviewAssessment(
         rule_id=rule_id,
@@ -759,6 +809,7 @@ def evaluate_dft_testability(
         method=EvaluationMethod.ANALYTICAL,
         summary=summary,
         findings=findings,
+        missing_inputs=missing_inputs,
     )
 
 
