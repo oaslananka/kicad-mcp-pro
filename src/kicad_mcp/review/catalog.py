@@ -429,4 +429,122 @@ def build_standard_rule_catalog() -> ReviewRuleCatalog:
         )
     )
 
+    catalog.register(
+        ReviewRule(
+            rule_id="mfg.dfm_profile_compliance",
+            revision=1,
+            domain=ReviewDomain.DFM,
+            title="Fabrication Profile DFM Compliance (Trace, Space, Drill, Ring, Edge)",
+            source_doc="Fabricator Capability Specification and Process Contract",
+            source_revision="2026.10",
+            required_inputs=["dfm_profile", "board_dfm_measurements"],
+            units="mm",
+            method=EvaluationMethod.ANALYTICAL,
+            severity="error",
+            rationale=(
+                "PCB features must strictly satisfy selected fabricator process capability limits."
+            ),
+            remediation=(
+                "Adjust trace width, clearance, drill, or annular ring, or select "
+                "qualified advanced process."
+            ),
+            is_mandatory=True,
+        )
+    )
+
+    catalog.register(
+        ReviewRule(
+            rule_id="mfg.dfa_assembly_rules",
+            revision=1,
+            domain=ReviewDomain.ASSEMBLY,
+            title="Assembly DFA Verification (Courtyards, Fiducials, Pin-1, Thermal, CPL)",
+            source_doc="PCBA SMT Assembly Capability Specification",
+            source_revision="2026.10",
+            required_inputs=["assembly_profile", "board_assembly_input"],
+            units=None,
+            method=EvaluationMethod.ANALYTICAL,
+            severity="error",
+            rationale=(
+                "Board assembly requires optical fiducials, collision-free courtyards, "
+                "verified CPL rotation, and balanced thermal pads."
+            ),
+            remediation=(
+                "Add fiducials, resolve courtyard collisions, add pin-1 indicators, "
+                "or correct CPL rotation offset."
+            ),
+            is_mandatory=True,
+        )
+    )
+
+    catalog.register(
+        ReviewRule(
+            rule_id="mfg.dft_testability",
+            revision=1,
+            domain=ReviewDomain.DFT,
+            title="DFT Testability and Probe Access Review",
+            source_doc="KiCad MCP Manufacturing Testability Standard",
+            source_revision="2026.05",
+            required_inputs=["testpoint_coverage"],
+            units="mm",
+            method=EvaluationMethod.ANALYTICAL,
+            severity="error",
+            rationale=(
+                "All power rails and reset lines must have accessible test points "
+                "meeting minimum probe pitch."
+            ),
+            remediation=(
+                "Add test points to unprobed power rails and reset nets; increase probe spacing."
+            ),
+            is_mandatory=False,
+        )
+    )
+
+    catalog.register(
+        ReviewRule(
+            rule_id="mfg.bom_lifecycle_alternates",
+            revision=1,
+            domain=ReviewDomain.BOM,
+            title="BOM Sourcing, Lifecycle Status and Alternate Qualification",
+            source_doc="BOM Engineering and Component Lifecycle Policy",
+            source_revision="2026.09",
+            required_inputs=["bom_items"],
+            units=None,
+            method=EvaluationMethod.ANALYTICAL,
+            severity="error",
+            rationale=(
+                "BOM parts must be active and qualified; alternates must verify "
+                "electrical, footprint, pin, and firmware compatibility."
+            ),
+            remediation=(
+                "Replace EOL/obsolete parts with fully compatible qualified alternates; "
+                "label offline stock."
+            ),
+            is_mandatory=True,
+        )
+    )
+
+    catalog.register(
+        ReviewRule(
+            rule_id="mfg.bringup_evidence_verification",
+            revision=1,
+            domain=ReviewDomain.MANUFACTURING,
+            title="Hardware Bring-Up Measurement Verification and Authorization Seam",
+            source_doc="Hardware Bring-Up and Stage-Gate Verification Standard",
+            source_revision="2026.11",
+            required_inputs=["bringup_test_plan"],
+            units=None,
+            method=EvaluationMethod.PHYSICAL_MEASUREMENT,
+            severity="error",
+            rationale=(
+                "Bring-up requires recorded physical measurements against acceptance limits; "
+                "checklist alone is not measurement evidence."
+            ),
+            remediation=(
+                "Record measured values with instrument identity and environmental conditions; "
+                "obtain independent power-on authorization."
+            ),
+            is_mandatory=True,
+        )
+    )
+
     return catalog
