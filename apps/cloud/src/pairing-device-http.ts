@@ -17,6 +17,11 @@ const redeemSchema=z.strictObject({
   deviceCode:z.string().regex(/^[A-Za-z0-9_-]{43}$/),
   signature:z.string().regex(/^[A-Za-z0-9_-]{86}$/)
 });
+const projectSchema=z.strictObject({
+  deviceId:z.string().uuid(),
+  alias:z.string().min(1).max(64),
+  signature:z.string().regex(/^[A-Za-z0-9_-]{86}$/)
+});
 function reply(res:ServerResponse,code:number,data:object):void{
   res.writeHead(code,{"Content-Type":"application/json; charset=utf-8",
     "Cache-Control":"no-store","Referrer-Policy":"no-referrer",
@@ -56,7 +61,8 @@ export async function handlePairingDeviceRequest(
   const path=(req.url??"").split("?")[0];
   if(path!=="/api/v1/pairing/device/challenge"&&
      path!=="/api/v1/pairing/device/status"&&
-     path!=="/api/v1/pairing/device/redeem")return false;
+     path!=="/api/v1/pairing/device/redeem"&&
+     path!=="/api/v1/pairing/device/project")return false;
   if(req.method!=="POST"){reply(res,405,{error:"method_not_allowed"});return true;}
   if(req.url!==path||req.headers.origin!==undefined||
      req.headers.cookie!==undefined||req.headers.authorization!==undefined||
@@ -103,16 +109,38 @@ export async function handlePairingDeviceRequest(
     if(result.kind!=="ok"){reply(res,400,{error:"unavailable"});return true;}
     reply(res,200,{approved:result.data.approved});return true;
   }
-  const fields=redeemSchema.safeParse(parsed);
-  if(!fields.success){reply(res,400,{error:"invalid_request"});return true;}
-  const secret=canonicalUrlB64(fields.data.deviceCode,32);
-  const sig=canonicalUrlB64(fields.data.signature,64);
-  if(!secret||!sig){reply(res,400,{error:"invalid_request"});return true;}
-  const result=await api.enroll(source,fields.data.challengeId,fields.data.deviceCode,sig);
-  if(result.kind==="throttled"){reply(res,429,{error:"rate_limited"});return true;}
-  if(result.kind!=="ok"||result.data.kind!=="enrolled"){
-    reply(res,400,{error:"unavailable"});return true;
+  if(path.endsWith("/redeem")){
+    const fields=redeemSchema.safeParse(parsed);
+    if(!fields.success){reply(res,400,{error:"invalid_request"});return true;}
+    const secret=canonicalUrlB64(fields.data.deviceCode,32);
+    const sig=canonicalUrlB64(fields.data.signature,64);
+    if(!secret||!sig){reply(res,400,{error:"invalid_request"});return true;}
+    const result=await api.enroll(source,fields.data.challengeId,fields.data.deviceCode,sig);
+    if(result.kind==="throttled"){reply(res,429,{error:"rate_limited"});return true;}
+    if(result.kind!=="ok"||result.data.kind!=="enrolled"){
+      reply(res,400,{error:"unavailable"});return true;
+    }
+    reply(res,200,{
+      deviceId:result.data.deviceId,
+      deviceFingerprint:result.data.deviceFingerprint,
+      ownerSub:result.data.ownerSub,
+      enabled:true
+    });
+    return true;
   }
-  reply(res,200,{deviceId:result.data.deviceId,deviceFingerprint:result.data.deviceFingerprint,
-    enabled:false});return true;
+  const fields=projectSchema.safeParse(parsed);
+  if(!fields.success){reply(res,400,{error:"invalid_request"});return true;}
+  const signature=canonicalUrlB64(fields.data.signature,64);
+  if(!signature){reply(res,400,{error:"invalid_request"});return true;}
+  if(!api.registerProject){reply(res,400,{error:"unavailable"});return true;}
+  const result=await api.registerProject(source,fields.data.deviceId,fields.data.alias,signature);
+  if(result.kind==="throttled"){reply(res,429,{error:"rate_limited"});return true;}
+  if(result.kind!=="ok"){reply(res,400,{error:"unavailable"});return true;}
+  reply(res,200,{
+    projectId:result.data.projectId,
+    alias:result.data.alias,
+    ownerSub:result.data.ownerSub,
+    enabled:result.data.enabled
+  });
+  return true;
 }

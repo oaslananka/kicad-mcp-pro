@@ -1,4 +1,4 @@
-import {randomUUID} from "node:crypto";
+import {createPublicKey, randomUUID, verify} from "node:crypto";
 import type {Pool,PoolClient} from "pg";
 import {PgDeviceManagement} from "./device-management.js";
 import {issuePairing,reviewPairing,redeemPairing,pairingApprovalState,
@@ -106,7 +106,7 @@ export class PgPairingChallenges {
       if(proof.kind!=="redeemed")return {kind:"unavailable"};
       const deviceId=randomUUID();
       await db.query(
-        "INSERT INTO devices(id,owner_sub,alias,enabled) VALUES($1,$2,$3,false)",
+        "INSERT INTO devices(id,owner_sub,alias,enabled) VALUES($1,$2,$3,true)",
         [deviceId,proof.ownerSub,r.deviceAlias]);
       await db.query(
         "INSERT INTO device_credentials "+
@@ -116,6 +116,58 @@ export class PgPairingChallenges {
       await save(db,proof.record);
       return {kind:"enrolled",deviceId,ownerSub:proof.ownerSub,deviceFingerprint:r.deviceFingerprint};
     });
+  }
+
+  /**
+   * Device-signed initial project registration without manual UI copying.
+   * Requires proof of possession of the enrolled device's Ed25519 private key.
+   */
+  async registerProject(deviceId:string,alias:string,signature:Buffer):Promise<{
+    kind:"ok";projectId:string;alias:string;ownerSub:string;enabled:boolean;
+  }|{kind:"unavailable"}>{
+    if(!UUID.test(deviceId)||typeof alias!=="string"||
+       !/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/.test(alias)||
+       !Buffer.isBuffer(signature)||signature.length!==64)return {kind:"unavailable"};
+    const db=await this.pool.connect();
+    try{
+      await db.query("BEGIN");
+      const cred=await db.query<{public_key_der:string;owner_sub:string}>(
+        "SELECT c.public_key_der,d.owner_sub FROM devices d "+
+        "JOIN device_credentials c ON c.device_id=d.id AND c.owner_sub=d.owner_sub "+
+        "WHERE d.id=$1 AND d.enabled=true AND c.revoked_at IS NULL FOR UPDATE OF d,c",[deviceId]);
+      if(!cred.rows[0]){await db.query("ROLLBACK");return {kind:"unavailable"};}
+      const {public_key_der,owner_sub}=cred.rows[0];
+      const proof=Buffer.from("kicad-cloud-device-project-v1\0"+deviceId+"\0"+alias,"utf8");
+      try{
+        const key=createPublicKey({key:Buffer.from(public_key_der,"base64"),format:"der",type:"spki"});
+        if(key.asymmetricKeyType!=="ed25519"||!verify(null,proof,key,signature)){
+          await db.query("ROLLBACK");
+          return {kind:"unavailable"};
+        }
+      }catch{
+        await db.query("ROLLBACK");
+        return {kind:"unavailable"};
+      }
+      const existing=await db.query<{id:string;alias:string;enabled:boolean}>(
+        "SELECT id,alias,enabled FROM projects WHERE device_id=$1 AND owner_sub=$2 AND alias=$3",[deviceId,owner_sub,alias]);
+      let projectId:string;
+      if(existing.rows[0]){
+        projectId=existing.rows[0].id;
+      }else{
+        projectId=randomUUID();
+        await db.query(
+          "INSERT INTO projects(id,owner_sub,device_id,alias,enabled,max_mode) VALUES($1,$2,$3,$4,true,'readonly')",[projectId,owner_sub,deviceId,alias]);
+      }
+      await db.query(
+        "INSERT INTO connector_managed_read_access(project_id,enabled) VALUES($1,true) ON CONFLICT(project_id) DO UPDATE SET enabled=true,updated_at=now()",[projectId]);
+      await db.query("COMMIT");
+      return {kind:"ok",projectId,alias,ownerSub:owner_sub,enabled:true};
+    }catch(e){
+      try{await db.query("ROLLBACK");}catch{}
+      throw e;
+    }finally{
+      db.release();
+    }
   }
 
   /** Read-only; no public state enumeration without 256-bit code AND private-key proof. */

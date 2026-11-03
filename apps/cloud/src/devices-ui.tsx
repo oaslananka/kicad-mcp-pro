@@ -25,7 +25,17 @@ export function renderDevicesPage(
           <div><span>Device enrollment</span><small>Not enabled</small></div>
           <div><span>Remote KiCad execution</span><small>Not enabled</small></div></div>
       </div></section>:
-        <><section className="card device-card"><div className="card-header"><h2>Your devices</h2>
+        <>
+          <section className="card quickstart-card">
+            <div className="card-kicker"><Icon name="cpu" size={15}/> SINGLE COMMAND ONBOARDING</div>
+            <h2>Connect your computer in seconds</h2>
+            <p>Run this single command in your local terminal to pair your device, select a project, and establish secure read-only MCP access automatically:</p>
+            <div className="local-setup-command">
+              <code>kicad-mcp-pro cloud setup</code>
+            </div>
+            <p className="field-help">The terminal will open your browser for one-click approval. No technical IDs or manual keys required.</p>
+          </section>
+          <section className="card device-card"><div className="card-header"><h2>Your devices</h2>
           <span className="list-count">{devices.length===1?"1 enrolled device":`${devices.length} enrolled devices`}</span></div>
           {devices.length===0?<div className="empty-state"><div className="empty-icon"><Icon name="devices" size={21}/></div><div>
             <h3>No enrolled devices</h3><p>No devices are currently registered to this account.</p>

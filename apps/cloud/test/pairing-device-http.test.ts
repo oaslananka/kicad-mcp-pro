@@ -56,7 +56,12 @@ test("strict device-only HTTP denies browser, spoofed identity and oversized tra
       calls.push("enroll:"+source+":"+challengeId);
       assert.equal(code,secret);assert.equal(signature.length,64);
       return {kind:"ok",data:{kind:"enrolled",deviceId:randomUUID(),
-        ownerSub:"owner",deviceFingerprint:"a".repeat(64)}};
+        ownerSub:"owner-1",deviceFingerprint:"a".repeat(64)}};
+    },
+    async registerProject(source,deviceId,alias,signature){
+      calls.push("project:"+source+":"+alias);
+      assert.equal(signature.length,64);
+      return {kind:"ok",data:{projectId:randomUUID(),alias,ownerSub:"owner-1",enabled:true}};
     }
   };
   const server=createHttpServer(config, inventory, async()=>{throw Error("not called");}, {pairingDevice:api, deviceSource:req=>req.socket.remoteAddress??null});
@@ -120,9 +125,21 @@ test("strict device-only HTTP denies browser, spoofed identity and oversized tra
     });
     assert.equal(redeem.status,200);
     const body=await redeem.json() as Record<string,unknown>;
-    assert.equal(body.enabled,false);
+    assert.equal(body.enabled,true);
+    assert.equal(body.ownerSub,"owner-1");
     assert.equal(calls.length,2);
     assert.equal(calls[1],"enroll:127.0.0.1:"+id);
+
+    const projectReq=await fetch(l.origin+"/api/v1/pairing/device/project",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({deviceId:randomUUID(),alias:"MyBoard",
+        signature:randomBytes(64).toString("base64url")})
+    });
+    assert.equal(projectReq.status,200);
+    const projectBody=await projectReq.json() as Record<string,unknown>;
+    assert.equal(projectBody.alias,"MyBoard");
+    assert.equal(projectBody.enabled,true);
+    assert.equal(calls.length,3);
   }finally{await l.close();}
 });
 test("redemption rejects incorrect signature and code encoding before store",async()=>{
@@ -130,7 +147,8 @@ test("redemption rejects incorrect signature and code encoding before store",asy
   const api:PairingDevicePort={
     approved:async()=>({kind:"unavailable"}),
     issue:async()=>({kind:"unavailable"}),
-    enroll:async()=>{called=true;return {kind:"unavailable"};}
+    enroll:async()=>{called=true;return {kind:"unavailable"};},
+    registerProject:async()=>({kind:"unavailable"})
   };
   const server=createHttpServer(config, inventory, async()=>{throw Error("not called");}, {pairingDevice:api, deviceSource:req=>req.socket.remoteAddress??null});
   const l=await listener(server);

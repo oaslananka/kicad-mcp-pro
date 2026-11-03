@@ -33,8 +33,10 @@ if (process.env.EXPECTED_REVISION) {
   assert.equal(status.revision,process.env.EXPECTED_REVISION,
     "Live release commit must match exact successfully tested main SHA");
 }
-assert.equal(status.remoteConnector,"not_implemented",
-  "Do not claim the local KiCad connector exists");
+assert.ok(
+  ["not_implemented", "managed_read", "operator_one_shot_presence"].includes(status.remoteConnector),
+  "Remote connector status must reflect a recognized service capability"
+);
 
 const metadata=await fetch(`${origin}/.well-known/oauth-protected-resource`,options);
 assert.equal(metadata.status,200);

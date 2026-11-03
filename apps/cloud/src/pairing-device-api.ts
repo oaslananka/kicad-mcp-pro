@@ -5,12 +5,15 @@ import {pairingServerKey} from "./pairing-review.js";
 
 type IssueResult=Awaited<ReturnType<PgPairingChallenges["issue"]>>;
 export type PairingDeviceOutcome<T>={kind:"ok";data:T}|{kind:"throttled"}|{kind:"unavailable"};
+export type RegisteredProject={projectId:string;alias:string;ownerSub:string;enabled:boolean};
 export interface PairingDevicePort {
   issue(source:string,alias:string,publicKeyDer:Buffer):Promise<PairingDeviceOutcome<IssueResult>>;
   enroll(source:string,id:string,deviceCode:string,signature:Buffer):
     Promise<PairingDeviceOutcome<Enrollment>>;
   approved(source:string,id:string,deviceCode:string,signature:Buffer):
     Promise<PairingDeviceOutcome<{approved:boolean}>>;
+  registerProject?(source:string,deviceId:string,alias:string,signature:Buffer):
+    Promise<PairingDeviceOutcome<RegisteredProject>>;
 }
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 // Keep all counters saturated inside the schema's 1..41 bound.
@@ -83,6 +86,17 @@ export class PgPairingDeviceAPI implements PairingDevicePort {
     if(!await this.take("enroll-challenge",id,8))return {kind:"throttled"};
     const result=await this.store.enroll(id,deviceCode,signature);
     return result.kind==="enrolled"?{kind:"ok",data:result}:{kind:"unavailable"};
+  }
+  async registerProject(source:string,deviceId:string,alias:string,signature:Buffer):
+    Promise<PairingDeviceOutcome<RegisteredProject>>{
+    if(!source||source.length>256||typeof deviceId!=="string"||!UUID.test(deviceId)||
+       typeof alias!=="string"||alias.length<1||alias.length>64||
+       !Buffer.isBuffer(signature)||signature.length!==64)
+      return {kind:"unavailable"};
+    if(!await this.take("project-source",source,40))return {kind:"throttled"};
+    if(!await this.take("project-device",deviceId,20))return {kind:"throttled"};
+    const result=await this.store.registerProject(deviceId,alias,signature);
+    return result.kind==="ok"?{kind:"ok",data:result}:{kind:"unavailable"};
   }
 }
 

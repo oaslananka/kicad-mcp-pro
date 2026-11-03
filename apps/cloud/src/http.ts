@@ -199,7 +199,8 @@ async function handleRequest(
         }
       }
       if (path === "/health" && req.method === "GET") {
-        json(res, 200, { status: "ok", mcp: "/mcp", remoteConnector: services.mcpProjectPresenceEnabled
+        json(res, 200, { status: "ok", mcp: "/mcp", remoteConnector: services.managedRead
+          ? "managed_read" : services.mcpProjectPresenceEnabled
           ? "operator_one_shot_presence" :
           (services.mcpProjectNativeDrcEnabled||services.mcpProjectInspectionEnabled||
            services.mcpProjectBoardCountsEnabled||services.mcpProjectSchematicCountsEnabled)
