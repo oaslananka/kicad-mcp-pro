@@ -137,8 +137,28 @@ def _check_decap_distance(
     if not decaps or not ics:
         return findings
     for cap_ref, cap_fp in decaps.items():
-        nearest_ref = _nearest_ic(cap_fp, ics)
-        d = _dist(cap_fp, ics[nearest_ref])
+        cap_supply_nets = {
+            n.lstrip("/").upper()
+            for n in cap_fp.get("net_names", [])
+            if not n.upper().startswith(("GND", "VSS", "UNCONNECTED"))
+        }
+        eligible_ics = ics
+        if cap_supply_nets:
+            matched_ics = {
+                r: ifp
+                for r, ifp in ics.items()
+                if cap_supply_nets
+                & {
+                    n.lstrip("/").upper()
+                    for n in ifp.get("net_names", [])
+                    if not n.upper().startswith(("GND", "VSS", "UNCONNECTED"))
+                }
+            }
+            if matched_ics:
+                eligible_ics = matched_ics
+
+        nearest_ref = _nearest_ic(cap_fp, eligible_ics)
+        d = _dist(cap_fp, eligible_ics[nearest_ref])
         if d > cfg.decap_max_distance_mm:
             findings.append(
                 PlacementFinding(
@@ -168,15 +188,30 @@ def _check_crystal_distance(
     if not crystals or not ics:
         return findings
     for xtal_ref, xtal_fp in crystals.items():
-        nearest_ref = _nearest_ic(xtal_fp, ics)
-        d = _dist(xtal_fp, ics[nearest_ref])
+        xtal_osc_nets = {
+            n.lstrip("/").upper()
+            for n in xtal_fp.get("net_names", [])
+            if any(token in n.upper() for token in ("OSC", "XTAL", "CLK", "XI", "XO"))
+        }
+        eligible_ics = ics
+        if xtal_osc_nets:
+            matched_ics = {
+                r: ifp
+                for r, ifp in ics.items()
+                if xtal_osc_nets & {n.lstrip("/").upper() for n in ifp.get("net_names", [])}
+            }
+            if matched_ics:
+                eligible_ics = matched_ics
+
+        nearest_ref = _nearest_ic(xtal_fp, eligible_ics)
+        d = _dist(xtal_fp, eligible_ics[nearest_ref])
         if d > cfg.crystal_max_distance_mm:
             findings.append(
                 PlacementFinding(
                     rule_id="PLR-002",
                     severity="warning",
                     message=(
-                        f"Crystal {xtal_ref} is {d:.1f} mm from nearest IC {nearest_ref} "
+                        f"Crystal {xtal_ref} is {d:.1f} mm from companion IC {nearest_ref} "
                         f"(threshold {cfg.crystal_max_distance_mm} mm). "
                         "Long crystal traces add parasitic inductance"
                         " and hurt oscillator stability."

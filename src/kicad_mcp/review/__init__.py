@@ -10,6 +10,10 @@ from .catalog import (
     build_standard_rule_catalog,
     compute_coverage,
 )
+from .placement_connectivity import (
+    evaluate_crystal_placement,
+    evaluate_decoupling_connectivity,
+)
 from .routing_style import evaluate_routing_style
 from .stage_gate import (
     ReviewStage,
@@ -30,6 +34,8 @@ __all__ = [
     "build_standard_rule_catalog",
     "build_verified_design_workflow",
     "compute_coverage",
+    "evaluate_crystal_placement",
+    "evaluate_decoupling_connectivity",
     "evaluate_routing_style",
     "evaluate_stage_readiness",
 ]
