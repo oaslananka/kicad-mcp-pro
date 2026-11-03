@@ -566,8 +566,9 @@ def test_dispatcher_factory_refuses_a_locally_disabled_project(
 ) -> None:
     root, project = _root(tmp_path)
     factory = connector._dispatcher_factory(root, RECORD, project)
+    receipt = HandshakeReceipt(DEVICE, SESSION)
     with pytest.raises(LocalApprovalDeniedError):
-        factory(HandshakeReceipt(DEVICE, SESSION))
+        factory(receipt)
 
 
 @pytest.mark.anyio

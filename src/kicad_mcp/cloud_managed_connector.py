@@ -33,7 +33,6 @@ from kicad_mcp.cloud_local_registry import (
 )
 from kicad_mcp.cloud_once import _load_bound_owner_key
 from kicad_mcp.cloud_outbound_handshake import (
-    CloudHandshakeDeniedError,
     HandshakeReceipt,
     execute_owner_managed_read_session,
 )
@@ -177,7 +176,7 @@ def _is_enabled(root: Path, record: dict[str, str]) -> bool:
         return False
     try:
         current = _single_registered_identity(root)
-    except (LocalApprovalDeniedError, OSError, ValueError):
+    except (OSError, ValueError):
         return False
     return all(
         current.get(key) == record.get(key)
@@ -417,6 +416,54 @@ async def _session_until_stopped(
         await asyncio.gather(stop_task, return_exceptions=True)
 
 
+async def _run_registered_session(
+    *,
+    registry: Path,
+    stop: asyncio.Event,
+    identity_loader: Callable[[Path], dict[str, str]],
+    project_resolver: Callable[..., LocalRegisteredRead],
+    key_loader: Callable[..., Ed25519PrivateKey],
+    session_runner: Callable[..., Awaitable[HandshakeReceipt]],
+) -> bool:
+    # Revalidate the unique registration and key binding before each reconnect.
+    record = identity_loader(registry)
+    if not _is_enabled(registry, record):
+        return False
+    project = project_resolver(
+        owner_sub=record["ownerSub"],
+        origin=record["cloudOrigin"],
+        device_id=record["deviceId"],
+        project_id=record["projectId"],
+        registry_root=registry,
+    )
+    signing_key = key_loader(project.key_file, record["cloudOrigin"], record["deviceId"])
+    # A local disable racing registration/key loading must prevent a new
+    # outbound handshake after the owner removes the enable marker.
+    if stop.is_set() or not _is_enabled(registry, record):
+        return False
+    _write_status(registry, "connecting")
+    await _session_until_stopped(
+        stop_event=stop,
+        root=registry,
+        record=record,
+        project=project,
+        signing_key=signing_key,
+        session_runner=session_runner,
+    )
+    return True
+
+
+async def _wait_before_reconnect(stop: asyncio.Event, registry: Path, failures: int) -> None:
+    if stop.is_set() or not _enabled_record(registry):
+        return
+    delay = reconnect_delay_seconds(failures, secrets.randbelow(1001) / 1000)
+    _write_status(registry, "unavailable")
+    try:
+        await asyncio.wait_for(stop.wait(), timeout=delay)
+    except TimeoutError:
+        pass
+
+
 async def _run_connector(
     *,
     root: Path | None = None,
@@ -434,54 +481,23 @@ async def _run_connector(
     failures = 0
     while not stop.is_set() and _enabled_record(registry):
         try:
-            # Revalidate the unique registration and key binding before each
-            # reconnect. The key is loaded only after the local enable marker.
-            record = identity_loader(registry)
-            if not _is_enabled(registry, record):
-                break
-            project = project_resolver(
-                owner_sub=record["ownerSub"],
-                origin=record["cloudOrigin"],
-                device_id=record["deviceId"],
-                project_id=record["projectId"],
-                registry_root=registry,
-            )
-            signing_key = key_loader(project.key_file, record["cloudOrigin"], record["deviceId"])
-            # A local disable racing registration/key loading must prevent a
-            # new outbound handshake after the owner removes the enable marker.
-            if stop.is_set() or not _is_enabled(registry, record):
-                break
-            _write_status(registry, "connecting")
-            await _session_until_stopped(
-                stop_event=stop,
-                root=registry,
-                record=record,
-                project=project,
-                signing_key=signing_key,
+            connected = await _run_registered_session(
+                registry=registry,
+                stop=stop,
+                identity_loader=identity_loader,
+                project_resolver=project_resolver,
+                key_loader=key_loader,
                 session_runner=session_runner,
             )
+            if not connected:
+                break
             failures = 0
         except asyncio.CancelledError:
             raise
-        except (
-            CloudHandshakeDeniedError,
-            LocalApprovalDeniedError,
-            OSError,
-            ValueError,
-            WebSocketException,
-            TimeoutError,
-        ):
+        except (OSError, ValueError, WebSocketException):
             _write_status(registry, "unavailable")
             failures += 1
-
-        if stop.is_set() or not _enabled_record(registry):
-            break
-        delay = reconnect_delay_seconds(failures, secrets.randbelow(1001) / 1000)
-        _write_status(registry, "unavailable")
-        try:
-            await asyncio.wait_for(stop.wait(), timeout=delay)
-        except TimeoutError:
-            pass
+        await _wait_before_reconnect(stop, registry, failures)
 
     return 0
 
@@ -517,14 +533,7 @@ def main(argv: list[str] | None = None) -> int:
             print(_status())
             return 0
         return asyncio.run(_run_service())
-    except (
-        CloudHandshakeDeniedError,
-        LocalApprovalDeniedError,
-        OSError,
-        RuntimeError,
-        ValueError,
-        subprocess.SubprocessError,
-    ):
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
         print(_DENIED, file=sys.stderr)
         return 1
 
