@@ -99,6 +99,44 @@ redirect registration; GitHub sign-in likewise requires its own complete
 provider credentials. The UI lists only configured providers. No additional
 identity provider or shared OAuth client is created for this flow.
 
+## Existing-host Coolify deployment (one canonical Git repo)
+
+The source of truth is `oaslananka/kicad-mcp-pro` and the cloud build
+context is `apps/cloud`. For an existing VPS with a separately managed
+PostgreSQL database and dedicated Cloudflare Tunnel, configure the Git-based
+Coolify Application with:
+
+- Build strategy: **Docker Compose**; Base Directory: `/apps/cloud`;
+  Docker Compose Location: `/compose.coolify.yml`
+- One `api` service, no embedded database or Cloudflare connector, and **no
+  published host ports** or extra public proxies
+- Existing Docker `coolify` network for the isolated PostgreSQL dependency
+  and existing dedicated private ingress Docker network for the Tunnel
+- `KICAD_INGRESS_NETWORK`: the name of that already-created private network;
+  `KICAD_INGRESS_APP_IP`: an available IP reserved for the new API
+- Existing Coolify environment variables, preferably resolved from scoped
+  Doppler secret references for OAuth and the PostgreSQL connection URL
+
+Only the private ingress network gets the fixed API address. Keep the
+Tunnel's approved Cloudflare route and old target intact until the new API
+has passed Compose health, migrations, both OAuth starts, and explicit
+rollback checks. After cutover, update exactly one Tunnel ingress target to
+the reserved address; rollback restores the previous target. Do **not**
+attach the dedicated Tunnel to the entire shared Coolify network.
+
+Never enable concurrent PR previews for this Compose stack: previews
+would contend for the single reserved ingress IP. The app's existing
+Dockerfile `HEALTHCHECK` is authoritative; do not configure a second
+Coolify HTTP probe that injects `curl` or `wget` into the minimal image.
+
+A newly provisioned PostgreSQL database must run the reviewed
+`node dist/migrations-cli.js --apply` exactly once after confirming the
+target connection. The application should then be restarted and health,
+sign-in initiation, session cookies and anonymous MCP denial checked.
+Normal deployments reuse the already-migrated database. Keep the old
+service and database as rollback until real Google/GitHub login and
+owner-managed Connector acceptance succeed.
+
 ## Development
 
 Requires Node.js 24 or newer. From this directory:
