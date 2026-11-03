@@ -337,3 +337,118 @@ def test_emc_check_decoupling_wrong_rail_returns_warn(
     # Must NOT return PASS when capacitor is on wrong rail
     assert verdict == "WARN"
     assert "Missing local capacitors" in detail or "different" in detail
+
+
+def test_placement_decoupling_edge_cases() -> None:
+    context = ReviewContext()
+
+    # Unsupported geometry
+    top_unsupp = PlacementBoardTopology(unsupported_geometry=True)
+    assert (
+        evaluate_decoupling_connectivity(context, top_unsupp).status
+        == AssessmentStatus.NOT_ASSESSED
+    )
+
+    # Target IC not found
+    top_empty = PlacementBoardTopology()
+    assert (
+        evaluate_decoupling_connectivity(context, top_empty, target_ic="U99").status
+        == AssessmentStatus.BLOCKED
+    )
+
+    # No ICs
+    assert (
+        evaluate_decoupling_connectivity(context, top_empty).status
+        == AssessmentStatus.NOT_APPLICABLE
+    )
+
+    # IC with no power pins
+    u_no_pwr = PlacementComponentTopology(reference="U1", component_type="ic", pins=[])
+    top_no_pwr = PlacementBoardTopology(components={"U1": u_no_pwr})
+    assert (
+        evaluate_decoupling_connectivity(context, top_no_pwr).status
+        == AssessmentStatus.NOT_ASSESSED
+    )
+
+    # Pin location is None
+    u_none_loc = PlacementComponentTopology(
+        reference="U1",
+        component_type="ic",
+        pins=[
+            PlacementPinTopology(
+                pin_number="1", net_name="+3V3", pin_type="power_input", location_mm=None
+            )
+        ],
+    )
+    top_none_loc = PlacementBoardTopology(components={"U1": u_none_loc})
+    assert (
+        evaluate_decoupling_connectivity(context, top_none_loc).status
+        == AssessmentStatus.NOT_ASSESSED
+    )
+
+    # Same rail capacitor farther than threshold
+    u1 = PlacementComponentTopology(
+        reference="U1",
+        component_type="ic",
+        pins=[
+            PlacementPinTopology(
+                pin_number="1", net_name="+3.3V", pin_type="power_input", location_mm=(0.0, 0.0)
+            ),
+            PlacementPinTopology(
+                pin_number="2", net_name="GND", pin_type="ground", location_mm=(0.0, 1.0)
+            ),
+        ],
+    )
+    c_far = PlacementComponentTopology(
+        reference="C1",
+        component_type="capacitor",
+        location_mm=(10.0, 10.0),
+        pins=[
+            PlacementPinTopology(
+                pin_number="1", net_name="+3.3V", pin_type="passive", location_mm=(10.0, 10.0)
+            ),
+            PlacementPinTopology(
+                pin_number="2", net_name="GND", pin_type="ground", location_mm=(10.0, 11.0)
+            ),
+        ],
+    )
+    top_far = PlacementBoardTopology(components={"U1": u1, "C1": c_far}, has_ground_plane=True)
+    res_far = evaluate_decoupling_connectivity(context, top_far, max_distance_mm=3.0)
+    assert res_far.status == AssessmentStatus.FAIL
+    assert len(res_far.findings) == 1
+    assert "is 14.14 mm from pin" in res_far.findings[0].description
+
+
+def test_placement_crystal_edge_cases() -> None:
+    context = ReviewContext()
+
+    # No crystals
+    top_empty = PlacementBoardTopology()
+    assert evaluate_crystal_placement(context, top_empty).status == AssessmentStatus.NOT_APPLICABLE
+
+    # Crystal with declared companion_refs and excessive distance
+    mcu = PlacementComponentTopology(reference="U1", component_type="ic", location_mm=(0.0, 0.0))
+    y1_far = PlacementComponentTopology(
+        reference="Y1",
+        component_type="crystal",
+        location_mm=(20.0, 0.0),
+        companion_refs=["U1"],
+    )
+    top_xtal_far = PlacementBoardTopology(components={"U1": mcu, "Y1": y1_far})
+    res_xtal_far = evaluate_crystal_placement(context, top_xtal_far, max_distance_mm=5.0)
+    assert res_xtal_far.status == AssessmentStatus.FAIL
+    assert len(res_xtal_far.findings) == 1
+    assert "is 20.00 mm from companion" in res_xtal_far.findings[0].description
+
+    # Crystal with missing coordinates
+    y1_no_coords = PlacementComponentTopology(
+        reference="Y1",
+        component_type="crystal",
+        location_mm=None,
+        companion_refs=["U1"],
+    )
+    top_xtal_no_coords = PlacementBoardTopology(components={"U1": mcu, "Y1": y1_no_coords})
+    assert (
+        evaluate_crystal_placement(context, top_xtal_no_coords).status
+        == AssessmentStatus.NOT_ASSESSED
+    )
