@@ -222,6 +222,14 @@ def test_applicability_resolution_for_routing_style() -> None:
     resolved_default = {r.rule.rule_id: r for r in catalog.resolve(context_default)}
     assert resolved_default["routing.orthogonal_corners"].status == RuleApplicability.APPLICABLE
 
+    # Explicit custom routing style -> APPLICABLE via default fallthrough
+    context_custom = ReviewContext(
+        declared_routing_style="strict_45",
+        explicit_requirements={"tracks": True},
+    )
+    resolved_custom = {r.rule.rule_id: r for r in catalog.resolve(context_custom)}
+    assert resolved_custom["routing.orthogonal_corners"].status == RuleApplicability.APPLICABLE
+
 
 def test_adapter_never_adapts_not_assessed_or_blocked_to_pass() -> None:
     """Critical safety test: NOT_ASSESSED and BLOCKED must NEVER adapt to verdict='PASS'."""
