@@ -3,8 +3,7 @@
 Date: 2026-11-03
 Milestone: M18 — Engineering Review & Visual Quality
 Issue: [#1578](https://github.com/oaslananka/kicad-mcp-pro/issues/1578) (T0 — Baseline Inventory)
-Branch: `audit/review-baseline-inventory-1578`
-Reproduction Suite: [`tests/unit/test_engineering_review_baseline_false_pass.py`](file:///home/amd/Desktop/OPS_WORKSPACE/GITHUB/oaslananka/kicad-mcp-pro/tests/unit/test_engineering_review_baseline_false_pass.py)
+Reproduction Suite: [`tests/unit/test_engineering_review_baseline_false_pass.py`](../../tests/unit/test_engineering_review_baseline_false_pass.py)
 
 ---
 
@@ -26,7 +25,7 @@ This inventory maps all existing engineering controls, validation gates, critics
 
 ## 1. Verified False-PASS Reproductions
 
-Six suspected false-PASS paths were statically identified and reproduced deterministically in [`test_engineering_review_baseline_false_pass.py`](file:///home/amd/Desktop/OPS_WORKSPACE/GITHUB/oaslananka/kicad-mcp-pro/tests/unit/test_engineering_review_baseline_false_pass.py):
+Six suspected false-PASS paths were statically identified and reproduced deterministically in [`test_engineering_review_baseline_false_pass.py`](../../tests/unit/test_engineering_review_baseline_false_pass.py):
 
 | # | Suspected Path | Owning Service / Function | Real Mechanism | Reproduction Status |
 |---|---|---|---|---|
@@ -36,6 +35,11 @@ Six suspected false-PASS paths were statically identified and reproduced determi
 | 4 | Near but wrong-net capacitor | `src/kicad_mcp/tools/emc_compliance.py`<br>`_nearest_cap_distance_mm()` | Searches for any footprint starting with `"C"` within `max_distance_mm` of IC origin; completely ignores net connectivity (e.g. +12V cap passes for +3.3V IC). | **Reproduced** (`test_reproduce_near_wrong_net_capacitor_passes_decoupling`) |
 | 5 | Missing power pin falling back to footprint centre | `src/kicad_mcp/tools/signal_integrity_decoupling_placement.py`<br>`_find_power_anchor()` | If named `power_pin` is not found on pads of `ic_ref`, it silently returns `point_xy_mm(footprint.position)` rather than raising or returning `NOT_ASSESSED`. | **Reproduced** (`test_reproduce_missing_power_pin_fallback_to_footprint_centre`) |
 | 6 | Empty or unsupported results becoming PASS | `src/kicad_mcp/models/visual_qa.py`<br>`run_cosmetic_qa()` | A blank schematic with 0 symbols and 0 wires returns `status="PASS"` and `cosmetic_score >= 95.0` because penalty loop has 0 findings. | **Reproduced** (`test_reproduce_empty_schematic_cosmetic_score_passes_without_circuit`) |
+
+The six tests intentionally reproduce *pre-fix* behavior as historical evidence.
+When a control is corrected, update its reproduction test to assert the repaired
+outcome and revise this dated inventory; do not preserve false-PASS behavior
+merely to keep a historical reproduction green.
 
 ---
 
@@ -146,7 +150,7 @@ Six suspected false-PASS paths were statically identified and reproduced determi
 
 | Task / Domain | Issue | Scope Boundary | Existing Work to Reuse |
 |---|---|---|---|
-| **T0 (Envanter)** | [#1578](https://github.com/oaslananka/kicad-mcp-pro/issues/1578) | Map all existing controls, evidence, methods, and false-PASS paths. | This document and [`test_engineering_review_baseline_false_pass.py`](file:///home/amd/Desktop/OPS_WORKSPACE/GITHUB/oaslananka/kicad-mcp-pro/tests/unit/test_engineering_review_baseline_false_pass.py). |
+| **T0 (Envanter)** | [#1578](https://github.com/oaslananka/kicad-mcp-pro/issues/1578) | Map all existing controls, evidence, methods, and false-PASS paths. | This document and [`test_engineering_review_baseline_false_pass.py`](../../tests/unit/test_engineering_review_baseline_false_pass.py). |
 | **T1 (Model)** | [#1579](https://github.com/oaslananka/kicad-mcp-pro/issues/1579) | Versioned `ReviewRule`, `ReviewContext`, `ReviewAssessment`, `ReviewCoverage`. | Extends `src/kicad_mcp/models/verdict.py` and `intent.py`; pure domain logic. |
 | **T2 (Tazelik)** | [#1580](https://github.com/oaslananka/kicad-mcp-pro/issues/1580) | Bind coverage and freshness to workflow decisions; prevent fake PASS. | Uses `project/evidence_freshness.py` and `project/release_approval_audit.py`. |
 | **T3 (Routing)** | [#1581](https://github.com/oaslananka/kicad-mcp-pro/issues/1581) | Separate routing style policy from electrical defects. | Reuses `_route_90_degree_corners()`; does not replace #1394 path planning. |
