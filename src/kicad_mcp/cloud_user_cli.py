@@ -20,6 +20,7 @@ from typing import Annotated
 import typer
 
 DEFAULT_CLOUD_ORIGIN = "https://kicad-mcp-pro.oaslananka.dev"
+_DEFAULT_DEVICE_ALIAS = "My computer"
 cloud_app = typer.Typer(help="Sign in, pair a device and manage the optional Cloud Connector.")
 
 
@@ -122,7 +123,9 @@ def login(
 
 @cloud_app.command()
 def connect(
-    alias: str = typer.Option("My computer", "--alias", help="Display name for this new device."),
+    alias: str = typer.Option(
+        _DEFAULT_DEVICE_ALIAS, "--alias", help="Display name for this new device."
+    ),
     cloud_origin: str = typer.Option(
         DEFAULT_CLOUD_ORIGIN, "--cloud-origin", help="Trusted HTTPS Cloud origin."
     ),
@@ -180,6 +183,111 @@ def connect(
     typer.echo("Pairing alone does not enable the persistent Connector or project access.")
 
 
+def _resolve_device_alias(alias: str | None) -> str:
+    if not alias:
+        try:
+            host = socket.gethostname() or ""
+        except OSError:
+            host = ""
+        clean_host = re.sub(r"[^A-Za-z0-9 ._-]", "", host).strip(" ._-")
+        candidate = f"{clean_host} KiCad"[:64] if clean_host else _DEFAULT_DEVICE_ALIAS
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", candidate):
+            return _DEFAULT_DEVICE_ALIAS
+        return candidate
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", alias):
+        raise typer.BadParameter("Device alias must be 1 to 64 alphanumeric characters.")
+    return alias
+
+
+def _try_reconnect_existing(root: Path, origin: str) -> bool:
+    projects_dir = root / "projects"
+    keys_dir = root / "keys"
+    if not (projects_dir.exists() and any(projects_dir.iterdir())):
+        return False
+    from kicad_mcp.cloud_registered_pilot import _single_registered_identity
+
+    try:
+        existing = _single_registered_identity(root)
+    except Exception:
+        return False
+    if not (existing and existing.get("cloudOrigin") == origin):
+        return False
+    key_file = keys_dir / f"{existing['keySlot']}.pem"
+    if not key_file.is_file():
+        return False
+
+    typer.echo("Found valid existing Cloud device and project registration:")
+    typer.echo(f"  Device ID:  {existing['deviceId']}")
+    typer.echo(f"  Project ID: {existing['projectId']}")
+    typer.echo(f"  Directory:  {existing['directory']} ({existing['filenameStem']})")
+
+    from kicad_mcp.cloud_managed_connector import _enable, _status
+
+    current_status = _status()
+    if current_status == "Off":
+        typer.echo("Starting Cloud Connector...")
+        try:
+            _enable()
+            for _ in range(5):
+                time.sleep(1)
+                current_status = _status()
+                if current_status in ("Connected", "Connecting"):
+                    break
+        except Exception as exc:
+            typer.echo(f"Notice: Connector could not be started automatically: {exc}")
+    typer.echo(f"Connector Status: {current_status}")
+    typer.echo(f"Cloud web panel:  {origin}/devices")
+    return True
+
+
+def _perform_approval(page: str, challenge: str, code: str, no_browser: bool) -> None:
+    review_url = f"{page}#challenge={challenge}&code={code}"
+    typer.echo("\n" + "=" * 60)
+    typer.echo("KiCad MCP Pro Cloud — Device Authorization")
+    typer.echo(f"Pairing verification code: {code}")
+    typer.echo("=" * 60)
+    if not no_browser:
+        opened = False
+        try:
+            opened = webbrowser.open(review_url, new=2, autoraise=True)
+        except (OSError, webbrowser.Error):
+            opened = False
+        if opened:
+            typer.echo("Browser opened for approval. Please confirm the pairing code matches.")
+        else:
+            typer.echo(f"Open this approval link in your signed-in browser:\n  {review_url}")
+    else:
+        typer.echo(f"Open this approval link in your signed-in browser:\n  {review_url}")
+    typer.echo("Waiting for approval in browser...")
+
+
+def _start_connector(root: Path, new_record: dict[str, str]) -> str:
+    try:
+        from kicad_mcp.cloud_managed_connector import _enable, _status
+
+        _enable()
+        for _ in range(5):
+            time.sleep(1)
+            connector_state = _status()
+            if connector_state in ("Connected", "Connecting"):
+                return connector_state
+        return _status()
+    except Exception as exc:
+        typer.echo(f"Background service start notice: {exc}")
+        try:
+            from kicad_mcp.cloud_managed_connector import (
+                _ENABLED_FILE,
+                _identity_state,
+                _write_private_json,
+            )
+
+            _write_private_json(root, _ENABLED_FILE, _identity_state(new_record))
+            return "Enabled (Foreground ready)"
+        except Exception as write_err:
+            typer.echo(f"Notice: Could not write enabled state: {write_err}")
+            return "Off"
+
+
 @cloud_app.command()
 def setup(
     project_dir: Annotated[
@@ -222,58 +330,15 @@ def setup(
     """One-command onboarding: pair device, register KiCad project, and enable Connector."""
     origin = _verified_origin(cloud_origin)
     target_dir, stem = _discover_kicad_project(project_dir or Path.cwd())
-
-    device_alias = alias
-    if not device_alias:
-        try:
-            host = socket.gethostname() or ""
-        except OSError:
-            host = ""
-        clean_host = re.sub(r"[^A-Za-z0-9 ._-]", "", host).strip(" ._-")
-        device_alias = f"{clean_host} KiCad"[:64] if clean_host else "My computer"
-        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", device_alias):
-            device_alias = "My computer"
-    elif not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", device_alias):
-        raise typer.BadParameter("Device alias must be 1 to 64 alphanumeric characters.")
+    device_alias = _resolve_device_alias(alias)
 
     from kicad_mcp.cloud_local_registry import default_registry_root
-    from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
     root = default_registry_root()
-    projects_dir = root / "projects"
     keys_dir = root / "keys"
 
-    if projects_dir.exists() and any(projects_dir.iterdir()) and not new_device:
-        try:
-            existing = _single_registered_identity(root)
-        except Exception:
-            existing = None
-
-        if existing and existing.get("cloudOrigin") == origin:
-            key_file = keys_dir / f"{existing['keySlot']}.pem"
-            if key_file.is_file():
-                typer.echo("Found valid existing Cloud device and project registration:")
-                typer.echo(f"  Device ID:  {existing['deviceId']}")
-                typer.echo(f"  Project ID: {existing['projectId']}")
-                typer.echo(f"  Directory:  {existing['directory']} ({existing['filenameStem']})")
-
-                from kicad_mcp.cloud_managed_connector import _enable, _status
-
-                current_status = _status()
-                if current_status == "Off":
-                    typer.echo("Starting Cloud Connector...")
-                    try:
-                        _enable()
-                        for _ in range(5):
-                            time.sleep(1)
-                            current_status = _status()
-                            if current_status in ("Connected", "Connecting"):
-                                break
-                    except Exception as exc:
-                        typer.echo(f"Notice: Connector could not be started automatically: {exc}")
-                typer.echo(f"Connector Status: {current_status}")
-                typer.echo(f"Cloud web panel:  {origin}/devices")
-                return
+    if not new_device and _try_reconnect_existing(root, origin):
+        return
 
     root.mkdir(parents=True, mode=0o700, exist_ok=True)
     keys_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
@@ -283,31 +348,16 @@ def setup(
     slot = str(uuid.uuid4())
     keyfile = keys_dir / f"{slot}.pem"
 
-    def _approval_cb(page: str, challenge: str, code: str) -> None:
-        review_url = f"{page}#challenge={challenge}&code={code}"
-        typer.echo("\n" + "=" * 60)
-        typer.echo("KiCad MCP Pro Cloud — Device Authorization")
-        typer.echo(f"Pairing verification code: {code}")
-        typer.echo("=" * 60)
-        if not no_browser:
-            opened = False
-            try:
-                opened = webbrowser.open(review_url, new=2, autoraise=True)
-            except (OSError, webbrowser.Error):
-                opened = False
-            if opened:
-                typer.echo("Browser opened for approval. Please confirm the pairing code matches.")
-            else:
-                typer.echo(f"Open this approval link in your signed-in browser:\n  {review_url}")
-        else:
-            typer.echo(f"Open this approval link in your signed-in browser:\n  {review_url}")
-        typer.echo("Waiting for approval in browser...")
-
     from kicad_mcp.cloud_pair import CloudPairingError, enroll, register_device_project
     from kicad_mcp.cloud_pair_keys import _read_owner_binding
 
     try:
-        device_id, fingerprint = enroll(origin, device_alias, keyfile, _approval_cb)
+        device_id, fingerprint = enroll(
+            origin,
+            device_alias,
+            keyfile,
+            lambda page, chal, code: _perform_approval(page, chal, code, no_browser),
+        )
     except CloudPairingError as exc:
         raise typer.BadParameter("Device pairing failed or was denied.") from exc
 
@@ -317,7 +367,7 @@ def setup(
         raise typer.BadParameter("Owner identity missing from device binding.")
 
     typer.echo(f"\nDevice paired: {device_id} (Fingerprint: {fingerprint[:16]}...)")
-    typer.echo(f"Registering KiCad project '{stem}' on Cloud...")
+    typer.echo(f"Registering KiCad project {stem} on Cloud...")
 
     try:
         project_res = register_device_project(origin, keyfile, alias=stem)
@@ -337,30 +387,7 @@ def setup(
         "filenameStem": stem,
     }
     _write_project_record(root, new_record)
-
-    connector_state = "Off"
-    try:
-        from kicad_mcp.cloud_managed_connector import _enable, _status
-
-        _enable()
-        for _ in range(5):
-            time.sleep(1)
-            connector_state = _status()
-            if connector_state in ("Connected", "Connecting"):
-                break
-    except Exception as exc:
-        typer.echo(f"Background service start notice: {exc}")
-        try:
-            from kicad_mcp.cloud_managed_connector import (
-                _ENABLED_FILE,
-                _identity_state,
-                _write_private_json,
-            )
-
-            _write_private_json(root, _ENABLED_FILE, _identity_state(new_record))
-            connector_state = "Enabled (Foreground ready)"
-        except Exception as write_err:
-            typer.echo(f"Notice: Could not write enabled state: {write_err}")
+    connector_state = _start_connector(root, new_record)
 
     typer.echo("\n" + "=" * 60)
     typer.echo("KiCad MCP Pro Cloud Setup Complete!")

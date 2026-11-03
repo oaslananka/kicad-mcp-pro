@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -543,6 +544,8 @@ def test_cloud_pair_main(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("sys.stdout.isatty", lambda: True)
     monkeypatch.setattr(cloud_pair, "default_registry_root", lambda: tmp_path)
+    monkeypatch.setattr(cloud_pair, "_open_owner_private_dir", lambda path: 999)
+    monkeypatch.setattr("os.close", lambda fd: None)
     monkeypatch.setattr(
         cloud_pair, "enroll", lambda origin, alias, keyfile, approval: ("dev-1", "fp-1")
     )
@@ -645,7 +648,8 @@ def test_setup_browser_approval_and_service_fallback(tmp_path: Path, monkeypatch
     assert result.exit_code == 0
     assert "Browser opened for approval" in result.output
     assert "Background service start notice: systemd unavailable" in result.output
-    assert "Connector:       Enabled (Foreground ready)" in result.output
+    expected_connector = "Enabled (Foreground ready)" if os.name == "posix" else "Off"
+    assert f"Connector:       {expected_connector}" in result.output
 
 
 def test_setup_owner_sub_missing_and_pairing_error(tmp_path: Path, monkeypatch) -> None:
