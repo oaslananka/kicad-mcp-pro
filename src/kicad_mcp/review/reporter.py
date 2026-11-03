@@ -24,6 +24,7 @@ from ..models.review import (
     ReviewCoverage,
     ReviewDomain,
     ReviewSnapshot,
+    RuleApplicability,
 )
 from .catalog import compute_coverage
 from .stage_gate import ReviewStage, StageGateDecision
@@ -109,6 +110,74 @@ def _classify_finding_category(
     return ReviewActionCategory.ADVISORY_RECOMMENDATION, 4, False
 
 
+def _unassessed_mandatory_rule_actions(
+    snapshot: ReviewSnapshot,
+) -> list[PrioritizedActionItem]:
+    """Mandatory unresolved or absent assessments block a truthful PASS verdict."""
+    if not snapshot.resolved_rules:
+        return [
+            PrioritizedActionItem(
+                priority=2,
+                category=ReviewActionCategory.MISSING_EVIDENCE,
+                rule_id="catalog.empty",
+                title="Missing Evidence: Engineering rule catalog",
+                description="No registered engineering review rules were evaluated.",
+                remediation="Load the versioned review catalog and run applicable checks.",
+                is_blocking=True,
+            )
+        ]
+
+    assessed_ids = {assessment.rule_id for assessment in snapshot.assessments}
+    actions = []
+    for resolved in snapshot.resolved_rules:
+        rule = resolved.rule
+        if (
+            not rule.is_mandatory
+            or rule.rule_id in assessed_ids
+            or resolved.status
+            not in {
+                RuleApplicability.APPLICABLE,
+                RuleApplicability.UNDETERMINED,
+            }
+        ):
+            continue
+        missing = resolved.missing_inputs or rule.required_inputs
+        actions.append(
+            PrioritizedActionItem(
+                priority=2,
+                category=ReviewActionCategory.MISSING_EVIDENCE,
+                rule_id=rule.rule_id,
+                title=f"Missing Evidence: {rule.title}",
+                description=(
+                    f"Mandatory review {rule.rule_id} has no assessment; "
+                    f"missing inputs: {', '.join(missing) or 'review execution'}."
+                ),
+                remediation=rule.remediation or "Execute the mandatory review with current inputs.",
+                is_blocking=True,
+            )
+        )
+    return actions
+
+
+def _is_report_ready(
+    actions: list[PrioritizedActionItem],
+    stage_decision: StageGateDecision | None,
+) -> bool:
+    """Stage readiness requires no blocking actions and appropriate approval."""
+    return not any(item.is_blocking for item in actions) and (
+        stage_decision is None or stage_decision.approved
+    )
+
+
+def _resolve_report_coverage(
+    snapshot: ReviewSnapshot,
+    coverage: ReviewCoverage | None,
+) -> ReviewCoverage:
+    if coverage is not None:
+        return coverage
+    return compute_coverage(snapshot.resolved_rules, snapshot.assessments)
+
+
 def generate_unified_review_report(
     snapshot: ReviewSnapshot,
     coverage: ReviewCoverage | None = None,
@@ -116,14 +185,10 @@ def generate_unified_review_report(
     stage_decision: StageGateDecision | None = None,
 ) -> UnifiedReviewReport:
     """Synthesize complete engineering review snapshot into unified prioritized report."""
-    if coverage is None:
-        coverage = compute_coverage(
-            resolved_rules=snapshot.resolved_rules,
-            assessments=snapshot.assessments,
-        )
+    coverage = _resolve_report_coverage(snapshot, coverage)
 
     rule_map = {r.rule.rule_id: r.rule for r in snapshot.resolved_rules}
-    actions: list[PrioritizedActionItem] = []
+    actions: list[PrioritizedActionItem] = _unassessed_mandatory_rule_actions(snapshot)
 
     # 1. Collect missing evidence items
     for assessment in snapshot.assessments:
@@ -193,12 +258,8 @@ def generate_unified_review_report(
     )
     cosm_count = sum(1 for a in actions if a.category == ReviewActionCategory.COSMETIC_FINDING)
 
-    # Verdict & readiness
-    if stage_decision is not None:
-        is_ready = stage_decision.approved
-    else:
-        blocking_items = [a for a in actions if a.is_blocking]
-        is_ready = len(blocking_items) == 0
+    # Verdict & readiness; an external approval cannot waive internal blockers.
+    is_ready = _is_report_ready(actions, stage_decision)
 
     if any(a.is_blocking for a in actions if a.category == ReviewActionCategory.MISSING_EVIDENCE):
         verdict = "BLOCKED"

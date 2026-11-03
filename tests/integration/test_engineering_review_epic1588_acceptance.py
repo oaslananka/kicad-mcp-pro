@@ -66,6 +66,7 @@ from kicad_mcp.review.reporter import (
 from kicad_mcp.review.routing_style import evaluate_routing_style
 from kicad_mcp.review.stage_gate import (
     ReviewStage,
+    StageGateDecision,
 )
 from kicad_mcp.review.visual_quality import (
     evaluate_schematic_visual_quality,
@@ -391,11 +392,15 @@ def test_adversarial_pair_bringup_checklist_vs_measurements() -> None:
             measurement_unit="V",
             instrument_id="FLUKE_87V_SN987",
             environmental_temp_c=24.0,
+            evidence_link="signed-measurement-PWR_TP01",
         )
     ]
     good_assessment = evaluate_bringup_measurements(
         measured,
-        StageAuthorizationInput(power_on_authorized=True),
+        StageAuthorizationInput(
+            power_on_authorized=True,
+            power_on_authorizer="qualified-test-engineer",
+        ),
         context,
     )
     assert good_assessment.status == AssessmentStatus.PASS
@@ -474,7 +479,7 @@ def test_unified_report_structured_and_markdown_agreement(catalog: ReviewRuleCat
     assert report.is_ready_for_stage is False
     assert report.verdict == "BLOCKED"  # Missing mandatory DFM profile blocks release
     assert report.critical_defects_count == 1
-    assert report.missing_evidence_count == 1
+    assert report.missing_evidence_count >= 1
     assert report.cosmetic_findings_count == 1
 
     # 2. 100% agreement between structured counts and Markdown text
@@ -499,3 +504,77 @@ def test_unified_report_structured_and_markdown_agreement(catalog: ReviewRuleCat
         mtime_after = test_file.stat().st_mtime_ns
         assert mtime_before == mtime_after
         assert test_file.read_text() == content
+
+
+def test_integrated_report_never_passes_without_mandatory_rule_assessments(
+    catalog: ReviewRuleCatalog,
+) -> None:
+    """Catalog registration is not evidence that its rules were evaluated."""
+    context = ReviewContext(
+        project_name="unverified-board",
+        project_source_sha256="a" * 64,
+    )
+    resolved = catalog.resolve(context)
+    coverage = compute_coverage(resolved, [])
+    snapshot = ReviewSnapshot(
+        project_key="unverified-board",
+        project_source_sha256="a" * 64,
+        rule_catalog_revision="2026.11",
+        context=context,
+        resolved_rules=resolved,
+        assessments=[],
+        coverage=coverage,
+    )
+    report = generate_unified_review_report(snapshot)
+    assert report.verdict == "BLOCKED"
+    assert report.is_ready_for_stage is False
+    assert report.missing_evidence_count > 0
+    assert any(
+        action.is_blocking
+        for action in report.actions
+        if action.category.value == "MISSING_EVIDENCE"
+    )
+
+
+def test_positive_external_stage_decision_cannot_override_missing_mandatory_evidence(
+    catalog: ReviewRuleCatalog,
+) -> None:
+    context = ReviewContext(project_name="board", project_source_sha256="b" * 64)
+    resolved = catalog.resolve(context)
+    snapshot = ReviewSnapshot(
+        project_key="board",
+        project_source_sha256="b" * 64,
+        rule_catalog_revision="2026.11",
+        context=context,
+        resolved_rules=resolved,
+        assessments=[],
+        coverage=compute_coverage(resolved, []),
+    )
+    stage = StageGateDecision(
+        stage=ReviewStage.PRODUCTION_ACCEPTANCE,
+        approved=True,
+        summary="Upstream claims approval",
+    )
+    report = generate_unified_review_report(
+        snapshot,
+        stage=ReviewStage.PRODUCTION_ACCEPTANCE,
+        stage_decision=stage,
+    )
+    assert report.is_ready_for_stage is False
+    assert report.verdict == "BLOCKED"
+
+
+def test_empty_review_catalog_does_not_claim_engineering_pass() -> None:
+    context = ReviewContext(project_name="board", project_source_sha256="c" * 64)
+    snapshot = ReviewSnapshot(
+        project_key="board",
+        project_source_sha256="c" * 64,
+        rule_catalog_revision="empty",
+        context=context,
+        resolved_rules=[],
+        assessments=[],
+        coverage=compute_coverage([], []),
+    )
+    report = generate_unified_review_report(snapshot)
+    assert report.is_ready_for_stage is False
+    assert report.verdict == "BLOCKED"
