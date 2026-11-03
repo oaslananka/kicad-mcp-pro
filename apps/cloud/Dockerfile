@@ -16,6 +16,7 @@ COPY --chown=node:node --from=build /app/node_modules ./node_modules
 COPY --chown=node:node --from=build /app/dist ./dist
 COPY --chown=node:node ./db ./db
 COPY --chown=node:node --from=build /app/package.json ./package.json
+COPY --chown=node:node ./healthcheck.mjs ./healthcheck.mjs
 # The production entrypoint invokes node directly. Keep npm in the build
 # stage only; its globally bundled CLI packages are unused in production.
 # Preserve the distro tar utility: it may be needed by operator tooling.
@@ -26,4 +27,7 @@ RUN rm -rf /usr/local/lib/node_modules/npm \
     /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg
 USER node
 EXPOSE 8787
+# Run the readiness check inside the container without downloading extra tools.
+# Coolify uses the Dockerfile HEALTHCHECK in preference to its HTTP probe.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 CMD ["node", "healthcheck.mjs"]
 CMD ["node","dist/main.js"]
