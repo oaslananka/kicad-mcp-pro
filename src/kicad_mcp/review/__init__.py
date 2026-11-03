@@ -50,12 +50,6 @@ from .visual_quality import (
 )
 
 __all__ = [
-    "ComponentRotationState",
-    "ComponentStressContract",
-    "CosmeticTransactionPlan",
-    "ReviewRuleCatalog",
-    "ReviewStage",
-    "StageGateDecision",
     "adapt_assessment_to_verdict",
     "adapt_finding",
     "adapt_snapshot_to_verdict",
@@ -65,7 +59,10 @@ __all__ = [
     "build_verified_design_workflow",
     "calculate_cpl_rotation",
     "check_rectangular_outline",
+    "ComponentRotationState",
+    "ComponentStressContract",
     "compute_coverage",
+    "CosmeticTransactionPlan",
     "detect_pin1_marker_visibility",
     "evaluate_component_derating",
     "evaluate_component_stress",
@@ -83,5 +80,8 @@ __all__ = [
     "evaluate_visual_quality",
     "is_connector_footprint",
     "plan_cosmetic_transaction",
+    "ReviewRuleCatalog",
+    "ReviewStage",
+    "StageGateDecision",
     "verify_rotation_independence",
 ]
