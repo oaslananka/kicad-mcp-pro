@@ -16,6 +16,7 @@ Principles:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,6 +29,11 @@ from ..models.review import (
     ReviewFinding,
 )
 from ..utils.thermal_solver import ThermalPlaneSpec, solve_plane_temperature
+
+COMPONENT_DERATING_RULE = "electrical.component_derating"
+TRACE_VOLTAGE_DROP_RULE = "electrical.trace_voltage_drop"
+THERMAL_PLANE_RULE = "thermal.plane_operating_temperature"
+SPECIALIST_SAFETY_RULE = "safety.hazardous_mains_clearance"
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,15 +50,77 @@ class ComponentStressContract:
     units: str = "V"
 
 
+def _invalid_component_limits(contract: ComponentStressContract) -> bool:
+    """Reject unphysical stress inputs before computing ratios or release verdicts."""
+    values = (
+        contract.rated_value,
+        contract.recommended_max,
+        contract.nominal_operating,
+        contract.worst_case_operating,
+    )
+    return (
+        any(v is not None and (not math.isfinite(v) or v < 0.0) for v in values)
+        or (contract.rated_value is not None and contract.rated_value <= 0.0)
+        or (contract.recommended_max is not None and contract.recommended_max <= 0.0)
+        or not math.isfinite(contract.derating_limit_ratio)
+        or contract.derating_limit_ratio <= 0.0
+    )
+
+
+def _has_no_operating_point(contract: ComponentStressContract) -> bool:
+    """Require at least a nominal or a worst-case measured operating point."""
+    return contract.worst_case_operating is None and contract.nominal_operating is None
+
+
+def _derated_operating_limit(contract: ComponentStressContract) -> float | None:
+    """Use the recommended operating maximum or a bounded fraction of AMR."""
+    if contract.recommended_max is not None:
+        return contract.recommended_max
+    if contract.rated_value is not None:
+        return contract.rated_value * contract.derating_limit_ratio
+    return None
+
+
+def _derating_summary(
+    findings: list[ReviewFinding],
+    unassessed_count: int,
+    contract_count: int,
+) -> tuple[AssessmentStatus, str]:
+    """Preserve error > warning > unassessed > nominal outcome ordering."""
+    if any(f.severity == "error" for f in findings):
+        return AssessmentStatus.FAIL, (
+            f"Component derating review failed with {len(findings)} overstress/derating violations."
+        )
+    if any(f.severity == "warning" for f in findings):
+        return AssessmentStatus.WARN, (
+            f"Component derating identified {len(findings)} components near rating limits."
+        )
+    if unassessed_count > 0:
+        return AssessmentStatus.NOT_ASSESSED, (
+            f"{unassessed_count} component contracts lack operating or rating inputs."
+        )
+    return AssessmentStatus.PASS, (
+        f"All {contract_count} components operate within derating limits."
+    )
+
+
 def evaluate_component_stress(
     contract: ComponentStressContract,
 ) -> tuple[AssessmentStatus, str, str | None, dict[str, Any]]:
     """Evaluate stress for one component parameter, decoupling ROC and AMR limits."""
+    # Apply one explicit validity guard before ratio calculations.
+    if _invalid_component_limits(contract):
+        return (
+            AssessmentStatus.NOT_ASSESSED,
+            f"Component '{contract.reference}' {contract.parameter} has invalid physical limits.",
+            "invalid_inputs",
+            {"missing_inputs": ["valid_physical_ratings"]},
+        )
+
     # Check for missing operating conditions
     has_worst_case = contract.worst_case_operating is not None
-    has_nominal = contract.nominal_operating is not None
 
-    if not has_worst_case and not has_nominal:
+    if _has_no_operating_point(contract):
         return (
             AssessmentStatus.NOT_ASSESSED,
             f"Component '{contract.reference}' {contract.parameter} has no operating value.",
@@ -103,31 +171,23 @@ def evaluate_component_stress(
         )
 
     # 2. Recommended Operating Condition / Derating Limit Check -> WARN
-    derated_limit = (
-        contract.recommended_max
-        if contract.recommended_max is not None
-        else (
-            contract.rated_value * contract.derating_limit_ratio if contract.rated_value else None
-        )
-    )
+    derated_limit = _derated_operating_limit(contract)
 
     if derated_limit is not None:
         meta["derated_limit"] = derated_limit
-        if operating_val > derated_limit:
-            util_pct = (
-                (operating_val / contract.rated_value) * 100.0 if contract.rated_value else 100.0
-            )
-            meta["utilization_pct"] = round(util_pct, 1)
-            return (
-                AssessmentStatus.WARN,
-                (
-                    f"Component '{contract.reference}' {contract.parameter} "
-                    f"({operating_val:g} {contract.units}) exceeds safe derating limit "
-                    f"({derated_limit:g} {contract.units}) — reliability/lifecycle risk."
-                ),
-                "derating_exceeded",
-                meta,
-            )
+    if derated_limit is not None and operating_val > derated_limit:
+        util_pct = (operating_val / contract.rated_value) * 100.0 if contract.rated_value else 100.0
+        meta["utilization_pct"] = round(util_pct, 1)
+        return (
+            AssessmentStatus.WARN,
+            (
+                f"Component '{contract.reference}' {contract.parameter} "
+                f"({operating_val:g} {contract.units}) exceeds safe derating limit "
+                f"({derated_limit:g} {contract.units}) — reliability/lifecycle risk."
+            ),
+            "derating_exceeded",
+            meta,
+        )
 
     return (
         AssessmentStatus.PASS,
@@ -157,7 +217,7 @@ def evaluate_component_derating(
 
     if resolved_contracts is None:
         return ReviewAssessment(
-            rule_id="electrical.component_derating",
+            rule_id=COMPONENT_DERATING_RULE,
             rule_revision=1,
             status=AssessmentStatus.BLOCKED,
             method=EvaluationMethod.ANALYTICAL,
@@ -168,7 +228,7 @@ def evaluate_component_derating(
 
     if len(resolved_contracts) == 0:
         return ReviewAssessment(
-            rule_id="electrical.component_derating",
+            rule_id=COMPONENT_DERATING_RULE,
             rule_revision=1,
             status=AssessmentStatus.NOT_ASSESSED,
             method=EvaluationMethod.ANALYTICAL,
@@ -182,12 +242,12 @@ def evaluate_component_derating(
     unassessed_count = 0
 
     for c in resolved_contracts:
-        status, message, code, meta = evaluate_component_stress(c)
+        status, message, _, meta = evaluate_component_stress(c)
         if status == AssessmentStatus.FAIL:
             findings.append(
                 ReviewFinding(
                     id=f"ELEC_DERATE_{finding_idx:03d}",
-                    rule_id="electrical.component_derating",
+                    rule_id=COMPONENT_DERATING_RULE,
                     rule_revision=1,
                     severity="error",
                     object_ref=c.reference,
@@ -204,7 +264,7 @@ def evaluate_component_derating(
             findings.append(
                 ReviewFinding(
                     id=f"ELEC_DERATE_{finding_idx:03d}",
-                    rule_id="electrical.component_derating",
+                    rule_id=COMPONENT_DERATING_RULE,
                     rule_revision=1,
                     severity="warning",
                     object_ref=c.reference,
@@ -220,26 +280,10 @@ def evaluate_component_derating(
         elif status == AssessmentStatus.NOT_ASSESSED:
             unassessed_count += 1
 
-    has_error = any(f.severity == "error" for f in findings)
-    has_warning = any(f.severity == "warning" for f in findings)
-
-    if has_error:
-        overall_status = AssessmentStatus.FAIL
-        summary = (
-            f"Component derating review failed with {len(findings)} overstress/derating violations."
-        )
-    elif has_warning:
-        overall_status = AssessmentStatus.WARN
-        summary = f"Component derating identified {len(findings)} components near rating limits."
-    elif unassessed_count > 0:
-        overall_status = AssessmentStatus.NOT_ASSESSED
-        summary = f"{unassessed_count} component contracts lack operating or rating inputs."
-    else:
-        overall_status = AssessmentStatus.PASS
-        summary = f"All {len(resolved_contracts)} components operate within derating limits."
+    overall_status, summary = _derating_summary(findings, unassessed_count, len(resolved_contracts))
 
     return ReviewAssessment(
-        rule_id="electrical.component_derating",
+        rule_id=COMPONENT_DERATING_RULE,
         rule_revision=1,
         status=overall_status,
         method=EvaluationMethod.ANALYTICAL,
@@ -263,7 +307,7 @@ def evaluate_trace_dc_loss(
     """Evaluate power trace DC resistance, voltage drop, and power loss."""
     if trace_input is None:
         return ReviewAssessment(
-            rule_id="electrical.trace_voltage_drop",
+            rule_id=TRACE_VOLTAGE_DROP_RULE,
             rule_revision=1,
             status=AssessmentStatus.BLOCKED,
             method=EvaluationMethod.ANALYTICAL,
@@ -280,7 +324,7 @@ def evaluate_trace_dc_loss(
         or trace_input.copper_oz <= 0.0
     ):
         return ReviewAssessment(
-            rule_id="electrical.trace_voltage_drop",
+            rule_id=TRACE_VOLTAGE_DROP_RULE,
             rule_revision=1,
             status=AssessmentStatus.NOT_ASSESSED,
             method=EvaluationMethod.ANALYTICAL,
@@ -311,7 +355,7 @@ def evaluate_trace_dc_loss(
         findings.append(
             ReviewFinding(
                 id="TRACE_VDROP_001",
-                rule_id="electrical.trace_voltage_drop",
+                rule_id=TRACE_VOLTAGE_DROP_RULE,
                 rule_revision=1,
                 severity="error",
                 net=net_name,
@@ -335,7 +379,7 @@ def evaluate_trace_dc_loss(
         )
 
     return ReviewAssessment(
-        rule_id="electrical.trace_voltage_drop",
+        rule_id=TRACE_VOLTAGE_DROP_RULE,
         rule_revision=1,
         status=status,
         method=EvaluationMethod.ANALYTICAL,
@@ -360,7 +404,7 @@ def evaluate_thermal_spreading(
     """Evaluate 2-D steady-state heat spreading on copper plane with physical validity guards."""
     if spec is None:
         return ReviewAssessment(
-            rule_id="thermal.plane_operating_temperature",
+            rule_id=THERMAL_PLANE_RULE,
             rule_revision=1,
             status=AssessmentStatus.BLOCKED,
             method=EvaluationMethod.ANALYTICAL,
@@ -377,7 +421,7 @@ def evaluate_thermal_spreading(
         or spec.plane_height_mm <= 0.0
     ):
         return ReviewAssessment(
-            rule_id="thermal.plane_operating_temperature",
+            rule_id=THERMAL_PLANE_RULE,
             rule_revision=1,
             status=AssessmentStatus.NOT_ASSESSED,
             method=EvaluationMethod.ANALYTICAL,
@@ -388,7 +432,7 @@ def evaluate_thermal_spreading(
 
     if spec.power_w <= 0.0:
         return ReviewAssessment(
-            rule_id="thermal.plane_operating_temperature",
+            rule_id=THERMAL_PLANE_RULE,
             rule_revision=1,
             status=AssessmentStatus.NOT_ASSESSED,
             method=EvaluationMethod.ANALYTICAL,
@@ -401,7 +445,7 @@ def evaluate_thermal_spreading(
         result = solve_plane_temperature(spec, max_cells_per_side=24, max_iterations=5000)
     except Exception as exc:
         return ReviewAssessment(
-            rule_id="thermal.plane_operating_temperature",
+            rule_id=THERMAL_PLANE_RULE,
             rule_revision=1,
             status=AssessmentStatus.NOT_ASSESSED,
             method=EvaluationMethod.ANALYTICAL,
@@ -412,7 +456,7 @@ def evaluate_thermal_spreading(
 
     if not result.converged:
         return ReviewAssessment(
-            rule_id="thermal.plane_operating_temperature",
+            rule_id=THERMAL_PLANE_RULE,
             rule_revision=1,
             status=AssessmentStatus.NOT_ASSESSED,
             method=EvaluationMethod.ANALYTICAL,
@@ -432,7 +476,7 @@ def evaluate_thermal_spreading(
         findings.append(
             ReviewFinding(
                 id="THERM_PEAK_001",
-                rule_id="thermal.plane_operating_temperature",
+                rule_id=THERMAL_PLANE_RULE,
                 rule_revision=1,
                 severity="error",
                 description=summary,
@@ -458,7 +502,7 @@ def evaluate_thermal_spreading(
         )
 
     return ReviewAssessment(
-        rule_id="thermal.plane_operating_temperature",
+        rule_id=THERMAL_PLANE_RULE,
         rule_revision=1,
         status=status,
         method=EvaluationMethod.ANALYTICAL,
@@ -485,7 +529,7 @@ def evaluate_specialist_safety_review(
     if voltage_v >= 50.0:
         if not has_specialist_signoff:
             return ReviewAssessment(
-                rule_id="safety.hazardous_mains_clearance",
+                rule_id=SPECIALIST_SAFETY_RULE,
                 rule_revision=1,
                 status=AssessmentStatus.FAIL,
                 method=EvaluationMethod.HUMAN_REVIEW,
@@ -497,7 +541,7 @@ def evaluate_specialist_safety_review(
                 findings=[
                     ReviewFinding(
                         id="SAFETY_HV_001",
-                        rule_id="safety.hazardous_mains_clearance",
+                        rule_id=SPECIALIST_SAFETY_RULE,
                         rule_revision=1,
                         severity="error",
                         description=(
@@ -512,9 +556,22 @@ def evaluate_specialist_safety_review(
                 metadata={"voltage_v": voltage_v, "requires_human_review": True},
             )
 
-        evidence_list = [specialist_evidence_id] if specialist_evidence_id else []
+        if not specialist_evidence_id or not specialist_evidence_id.strip():
+            return ReviewAssessment(
+                rule_id=SPECIALIST_SAFETY_RULE,
+                rule_revision=1,
+                status=AssessmentStatus.NOT_ASSESSED,
+                method=EvaluationMethod.HUMAN_REVIEW,
+                summary=(
+                    "Specialist sign-off evidence ID missing; hazardous-voltage review unverified."
+                ),
+                missing_inputs=["specialist_evidence_id"],
+                metadata={"voltage_v": voltage_v, "requires_human_review": True},
+            )
+
+        evidence_list = [specialist_evidence_id]
         return ReviewAssessment(
-            rule_id="safety.hazardous_mains_clearance",
+            rule_id=SPECIALIST_SAFETY_RULE,
             rule_revision=1,
             status=AssessmentStatus.PASS,
             method=EvaluationMethod.HUMAN_REVIEW,
@@ -524,7 +581,7 @@ def evaluate_specialist_safety_review(
         )
 
     return ReviewAssessment(
-        rule_id="safety.hazardous_mains_clearance",
+        rule_id=SPECIALIST_SAFETY_RULE,
         rule_revision=1,
         status=AssessmentStatus.NOT_APPLICABLE,
         method=EvaluationMethod.HUMAN_REVIEW,

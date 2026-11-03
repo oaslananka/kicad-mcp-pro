@@ -61,64 +61,73 @@ class StageGateDecision(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-def evaluate_stage_readiness(
+def _check_freshness_blockers(
     snapshot: ReviewSnapshot,
-    stage: ReviewStage,
-    *,
-    freshness_assessments: Mapping[str, FreshnessAssessment] | None = None,
-) -> StageGateDecision:
-    """Evaluate whether a ReviewSnapshot satisfies the criteria for an engineering stage."""
+    freshness_assessments: Mapping[str, FreshnessAssessment] | None,
+) -> tuple[list[str], list[str]]:
     blocking: list[str] = []
     stale_ids: list[str] = []
+    if not freshness_assessments:
+        return blocking, stale_ids
 
-    # 1. Stale evidence validation
-    if freshness_assessments:
-        for assessment in snapshot.assessments:
-            for ev_ref in assessment.evidence_refs:
-                f_assessment = freshness_assessments.get(ev_ref)
-                if f_assessment and f_assessment.state != EvidenceFreshnessState.STILL_VALID:
-                    stale_ids.append(ev_ref)
-                    reason_desc = (
-                        ", ".join(r.code for r in f_assessment.reasons)
-                        if f_assessment.reasons
-                        else "input digest mismatch"
-                    )
-                    blocking.append(
-                        f"Evidence '{ev_ref}' for rule '{assessment.rule_id}' is stale "
-                        f"({f_assessment.state.value}): {reason_desc}."
-                    )
+    for assessment in snapshot.assessments:
+        for ev_ref in assessment.evidence_refs:
+            f_assessment = freshness_assessments.get(ev_ref)
+            if not f_assessment or f_assessment.state == EvidenceFreshnessState.STILL_VALID:
+                continue
+            stale_ids.append(ev_ref)
+            reason_desc = (
+                ", ".join(r.code for r in f_assessment.reasons)
+                if f_assessment.reasons
+                else "input digest mismatch"
+            )
+            blocking.append(
+                f"Evidence '{ev_ref}' for rule '{assessment.rule_id}' is stale "
+                f"({f_assessment.state.value}): {reason_desc}."
+            )
+    return blocking, stale_ids
 
-    # 2. Required unassessed mandatory rules
+
+def _check_coverage_blockers(snapshot: ReviewSnapshot) -> list[str]:
+    blocking: list[str] = []
     if snapshot.coverage.required_unassessed:
         for rule_id in snapshot.coverage.required_unassessed:
             blocking.append(f"Required mandatory rule '{rule_id}' has not been assessed.")
-
-    # 3. Failed or blocked checks
     if snapshot.coverage.failed_count > 0:
         blocking.append(f"{snapshot.coverage.failed_count} review rule(s) failed.")
     if snapshot.coverage.blocked_count > 0:
         blocking.append(
             f"{snapshot.coverage.blocked_count} review rule(s) blocked by missing tools or runtime."
         )
-
-    # 4. Incomplete catalog check
     if snapshot.coverage.total_rules == 0:
         blocking.append("Rule catalog is empty; cannot evaluate engineering readiness.")
+    return blocking
 
-    # 5. Undetermined rules collection
-    undetermined = [
-        r.rule.rule_id
-        for r in snapshot.resolved_rules
-        if r.status == RuleApplicability.UNDETERMINED
-    ]
 
-    # 6. Stage-specific rigor
+def _check_production_blockers(
+    snapshot: ReviewSnapshot,
+    undetermined: Sequence[str],
+    blocking: list[str],
+) -> None:
+    if undetermined:
+        blocking.append(
+            f"Production release does not permit undetermined rules: {', '.join(undetermined)}."
+        )
+    if not snapshot.context.selected_mfg_profile:
+        blocking.append("Production release requires a declared, versioned manufacturing profile.")
+    if snapshot.context.is_hv and not snapshot.context.explicit_requirements.get("pad_spacing_mm"):
+        blocking.append("Production release for HV design requires physical clearance.")
+
+
+def _check_stage_blockers(
+    snapshot: ReviewSnapshot,
+    stage: ReviewStage,
+    undetermined: Sequence[str],
+) -> tuple[str, list[str]]:
+    blocking: list[str] = []
     if stage == ReviewStage.PLAN_COMPLETION:
-        summary_base = "Plan completion review"
-        # Plan completion only ensures requirements are defined; does not claim hardware readiness
-    elif stage == ReviewStage.DESIGN_REVIEW:
-        summary_base = "Design review"
-        # Must evaluate schematic and PCB domains
+        return "Plan completion review", blocking
+    if stage == ReviewStage.DESIGN_REVIEW:
         assessed_domains = {r.rule.domain for r in snapshot.resolved_rules}
         if (
             ReviewDomain.SCHEMATIC not in assessed_domains
@@ -127,29 +136,37 @@ def evaluate_stage_readiness(
             blocking.append(
                 "Design review requires rule evaluation for both schematic and PCB domains."
             )
-    elif stage == ReviewStage.PROTOTYPE_TEST:
-        summary_base = "Prototype test stage"
+        return "Design review", blocking
+    if stage == ReviewStage.PROTOTYPE_TEST:
         if snapshot.coverage.warned_count > 5:
             blocking.append(
                 f"Too many unresolved warnings ({snapshot.coverage.warned_count}) for prototype."
             )
-    elif stage == ReviewStage.PRODUCTION_ACCEPTANCE:
-        summary_base = "Production manufacturing acceptance"
-        # Production release permits zero undetermined rules
-        if undetermined:
-            blocking.append(
-                f"Production release does not permit undetermined rules: {', '.join(undetermined)}."
-            )
-        # Production release requires explicit manufacturing profile
-        if not snapshot.context.selected_mfg_profile:
-            blocking.append(
-                "Production release requires a declared, versioned manufacturing profile."
-            )
-        # HV design requires explicit clearance evidence
-        if snapshot.context.is_hv and not snapshot.context.explicit_requirements.get(
-            "pad_spacing_mm"
-        ):
-            blocking.append("Production release for HV design requires physical clearance.")
+        return "Prototype test stage", blocking
+    if stage == ReviewStage.PRODUCTION_ACCEPTANCE:
+        _check_production_blockers(snapshot, undetermined, blocking)
+        return "Production manufacturing acceptance", blocking
+    return f"Stage {stage.value}", blocking
+
+
+def evaluate_stage_readiness(
+    snapshot: ReviewSnapshot,
+    stage: ReviewStage,
+    *,
+    freshness_assessments: Mapping[str, FreshnessAssessment] | None = None,
+) -> StageGateDecision:
+    """Evaluate whether a ReviewSnapshot satisfies the criteria for an engineering stage."""
+    fresh_blockers, stale_ids = _check_freshness_blockers(snapshot, freshness_assessments)
+    cov_blockers = _check_coverage_blockers(snapshot)
+
+    undetermined = [
+        r.rule.rule_id
+        for r in snapshot.resolved_rules
+        if r.status == RuleApplicability.UNDETERMINED
+    ]
+
+    summary_base, stage_blockers = _check_stage_blockers(snapshot, stage, undetermined)
+    blocking = fresh_blockers + cov_blockers + stage_blockers
 
     approved = len(blocking) == 0
     if approved:
@@ -222,6 +239,75 @@ def bind_snapshot_to_evidence(
     )
 
 
+def _verify_phase_readiness(
+    name: str,
+    snapshot: ReviewSnapshot | None,
+    freshness_assessments: Mapping[str, FreshnessAssessment] | None,
+) -> tuple[bool, str]:
+    if snapshot is None:
+        return False, f"Phase '{name}' claimed complete without review snapshot."
+
+    stage_map = {
+        "schematic_verification": (ReviewStage.DESIGN_REVIEW, "Schematic verification unverified"),
+        "full_verification": (ReviewStage.DESIGN_REVIEW, "Verification unverified"),
+        "fix_loop": (ReviewStage.DESIGN_REVIEW, "Verification unverified"),
+        "manufacturing_release": (ReviewStage.PRODUCTION_ACCEPTANCE, "Release unverified"),
+    }
+    stage_spec = stage_map.get(name)
+    if not stage_spec:
+        return True, ""
+
+    stage, prefix = stage_spec
+    decision = evaluate_stage_readiness(
+        snapshot,
+        stage,
+        freshness_assessments=freshness_assessments,
+    )
+    if decision.approved:
+        return True, ""
+
+    reasons_str = "; ".join(decision.blocking_reasons[:2])
+    return False, f"{prefix}: {reasons_str}"
+
+
+def _evaluate_phase_item(
+    spec: Mapping[str, Any],
+    claimed_complete: bool,
+    snapshot: ReviewSnapshot | None,
+    freshness_assessments: Mapping[str, FreshnessAssessment] | None,
+    current_index: int | None,
+    index: int,
+) -> tuple[WorkflowPhaseState, int | None]:
+    name = str(spec["phase"])
+    gates = list(cast(list[str], spec.get("gates") or []))
+    role = cast(WorkflowRole, spec["role"])
+
+    is_verified = True
+    warning = ""
+    if claimed_complete and gates:
+        is_verified, warning = _verify_phase_readiness(name, snapshot, freshness_assessments)
+
+    if claimed_complete and is_verified:
+        status: WorkflowPhaseStatus = "COMPLETE"
+    elif current_index is None:
+        status = "READY"
+        current_index = index
+    else:
+        status = "PENDING"
+
+    next_act = warning if warning else str(spec["next_action"])
+    phase_state = WorkflowPhaseState(
+        phase=name,
+        role=role,
+        status=status,
+        high_level_tool=str(spec["high_level_tool"]),
+        next_action=next_act,
+        gates=gates,
+        human_gate_required=role == "Release Manager",
+    )
+    return phase_state, current_index
+
+
 def build_verified_design_workflow(
     completed_phases: list[str],
     snapshot: ReviewSnapshot | None = None,
@@ -238,73 +324,15 @@ def build_verified_design_workflow(
 
     for index, spec in enumerate(AGENT_WORKFLOW_PHASES):
         name = str(spec["phase"])
-        gates = list(cast(list[str], spec.get("gates") or []))
-        role = cast(WorkflowRole, spec["role"])
-        claimed_complete = name in completed
-
-        # Verify engineering evidence if phase has quality gates
-        is_verified = True
-        verification_warning = ""
-
-        if claimed_complete and gates:
-            if snapshot is None:
-                is_verified = False
-                verification_warning = f"Phase '{name}' claimed complete without review snapshot."
-            else:
-                # Stage verification
-                if name == "schematic_verification":
-                    stage_decision = evaluate_stage_readiness(
-                        snapshot,
-                        ReviewStage.DESIGN_REVIEW,
-                        freshness_assessments=freshness_assessments,
-                    )
-                    if not stage_decision.approved:
-                        is_verified = False
-                        reasons_str = "; ".join(stage_decision.blocking_reasons[:2])
-                        verification_warning = f"Schematic verification unverified: {reasons_str}"
-                elif name in {"full_verification", "fix_loop"}:
-                    stage_decision = evaluate_stage_readiness(
-                        snapshot,
-                        ReviewStage.DESIGN_REVIEW,
-                        freshness_assessments=freshness_assessments,
-                    )
-                    if not stage_decision.approved:
-                        is_verified = False
-                        reasons_str = "; ".join(stage_decision.blocking_reasons[:2])
-                        verification_warning = f"Verification unverified: {reasons_str}"
-                elif name == "manufacturing_release":
-                    stage_decision = evaluate_stage_readiness(
-                        snapshot,
-                        ReviewStage.PRODUCTION_ACCEPTANCE,
-                        freshness_assessments=freshness_assessments,
-                    )
-                    if not stage_decision.approved:
-                        is_verified = False
-                        verification_warning = (
-                            f"Release unverified: {'; '.join(stage_decision.blocking_reasons[:2])}"
-                        )
-
-        if claimed_complete and is_verified:
-            status: WorkflowPhaseStatus = "COMPLETE"
-        elif current_index is None:
-            status = "READY"
-            current_index = index
-        else:
-            status = "PENDING"
-
-        next_act = verification_warning if verification_warning else str(spec["next_action"])
-
-        phases.append(
-            WorkflowPhaseState(
-                phase=name,
-                role=role,
-                status=status,
-                high_level_tool=str(spec["high_level_tool"]),
-                next_action=next_act,
-                gates=gates,
-                human_gate_required=role == "Release Manager",
-            )
+        phase_state, current_index = _evaluate_phase_item(
+            spec,
+            name in completed,
+            snapshot,
+            freshness_assessments,
+            current_index,
+            index,
         )
+        phases.append(phase_state)
 
     if current_index is None:
         current = phases[-1]
