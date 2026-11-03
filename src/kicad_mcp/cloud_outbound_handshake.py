@@ -14,9 +14,11 @@ import ssl
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import urlsplit
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from mcp.types import CallToolResult
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import WebSocketException
 
@@ -25,6 +27,7 @@ from kicad_mcp.cloud_device_proofs import (
     sign_device_challenge,
     sign_session_challenge,
 )
+from kicad_mcp.cloud_project_worker_bridge import BoundConnectorProjectWorker
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 
 CONNECTOR_WS_PATH = "/api/v1/connector/ws"
@@ -46,6 +49,21 @@ class HandshakeReceipt:
 
     device_id: str
     session_id: str
+
+
+@dataclass(frozen=True)
+class OutboundSessionOptions:
+    """Explicit operation mode layered onto the shared signed handshake."""
+
+    dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch] | None = None
+    operator_presence_pilot: bool = False
+    operator_native_drc_pilot: bool = False
+    inspection_factory: Callable[[HandshakeReceipt], BoundConnectorProjectWorker] | None = None
+    operator_inspection_pilot: bool = False
+    board_counts_pilot: bool = False
+    schematic_counts_pilot: bool = False
+    owner_managed_read: bool = False
+    managed_max_reads: int = 16
 
 
 def _endpoint(*, origin: str, trusted_origin: str) -> str:
@@ -187,6 +205,254 @@ async def _complete_authorized_read(
         dispatcher.close()
 
 
+def _inspection_operation_and_tool(board_counts: bool, schematic_counts: bool) -> tuple[str, str]:
+    if board_counts:
+        return "project_board_counts", "pcb_get_board_summary"
+    if schematic_counts:
+        return "project_schematic_counts", "sch_get_population_status"
+    return "project_worker_inspection", "kicad_get_server_info"
+
+
+async def _read_inspection_request(
+    socket: ClientConnection,
+    *,
+    board_counts: bool,
+    schematic_counts: bool,
+) -> tuple[dict[str, Any], str, str]:
+    raw = await socket.recv()
+    if not isinstance(raw, str):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    envelope = _read_strict_json(raw, "connector.authorized_read")
+    if (
+        set(envelope) != {"kind", "version", "sequence", "request"}
+        or type(envelope["version"]) is not int
+        or envelope["version"] != 1
+        or type(envelope["sequence"]) is not int
+        or envelope["sequence"] != 1
+        or not isinstance(envelope["request"], dict)
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    frame = envelope["request"]
+    operation, tool_name = _inspection_operation_and_tool(board_counts, schematic_counts)
+    if (
+        set(frame)
+        != {"kind", "version", "requestId", "deviceId", "projectId", "operation", "deadlineUnixMs"}
+        or frame.get("kind") != "connector.read_request"
+        or type(frame.get("version")) is not int
+        or frame["version"] != 1
+        or not isinstance(frame.get("requestId"), str)
+        or _DEVICE_UUID.fullmatch(frame["requestId"]) is None
+        or frame.get("operation") != operation
+        or type(frame.get("deadlineUnixMs")) is not int
+        or not (now_ms := int(datetime.now(UTC).timestamp() * 1000))
+        < frame["deadlineUnixMs"]
+        <= now_ms + 30_000
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    return frame, operation, tool_name
+
+
+def _schematic_inspection_payload(
+    raw_status: dict[str, Any], frame: dict[str, Any], project_id: str
+) -> dict[str, object]:
+    # FastMCP wraps this existing tool's JSON string in structured
+    # content as {result: "..."}; it includes private file paths and
+    # references, none of which may leave the device.
+    if set(raw_status) != {"result"} or not isinstance(raw_status["result"], str):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    try:
+        report = json.loads(raw_status["result"])
+    except (TypeError, ValueError) as exc:
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED) from exc
+    if (
+        not isinstance(report, dict)
+        or set(report) != {"count", "components"}
+        or type(report["count"]) is not int
+        or not 0 <= report["count"] <= 1_000_000
+        or not isinstance(report["components"], list)
+        or len(report["components"]) != report["count"]
+        or any(
+            not isinstance(item, dict)
+            or any(type(item.get(key)) is not bool for key in ("populated", "dnp", "in_bom"))
+            for item in report["components"]
+        )
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    counts = {
+        "components": report["count"],
+        "populated": sum(item["populated"] for item in report["components"]),
+        "dnp": sum(item["dnp"] for item in report["components"]),
+        "inBom": sum(item["in_bom"] for item in report["components"]),
+    }
+    answer = {
+        "kind": "connector.local_schematic_counts",
+        "version": 1,
+        "requestId": frame["requestId"],
+        "projectId": project_id,
+        "operation": "project_schematic_counts",
+        "counts": counts,
+    }
+    return answer
+
+
+def _board_inspection_payload(
+    raw_status: dict[str, Any], frame: dict[str, Any], project_id: str
+) -> dict[str, object]:
+    metadata = raw_status.get("metadata")
+    fields = ("tracks", "vias", "footprints", "zones", "nets", "shapes")
+    if (
+        not isinstance(metadata, dict)
+        or metadata.get("available") is not True
+        or metadata.get("source") not in ("live-gui", "file-backed")
+        or raw_status.get("verdict") not in ("PASS", "WARN")
+        or any(
+            type(metadata.get(name)) is not int or not 0 <= metadata[name] <= 1_000_000
+            for name in fields
+        )
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    answer = {
+        "kind": "connector.local_board_counts",
+        "version": 1,
+        "requestId": frame["requestId"],
+        "projectId": project_id,
+        "operation": "project_board_counts",
+        "source": metadata["source"],
+        "counts": {name: metadata[name] for name in fields},
+    }
+    return answer
+
+
+def _engine_inspection_payload(
+    raw_status: dict[str, Any], frame: dict[str, Any], project_id: str
+) -> dict[str, object]:
+    version = raw_status.get("version")
+    kicad = raw_status.get("kicad")
+    capabilities = raw_status.get("capabilities")
+    allowed_capabilities = (
+        "fileBackedDrc",
+        "fileBackedErc",
+        "livePcbRead",
+        "liveSchematicRead",
+    )
+    if not isinstance(capabilities, dict) or any(
+        type(capabilities.get(name)) is not bool for name in allowed_capabilities
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    if (
+        not isinstance(version, str)
+        or re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z.+_-]{0,79}", version) is None
+        or not isinstance(kicad, dict)
+        or type(kicad.get("cliFound")) is not bool
+        or type(kicad.get("ipcAvailable")) is not bool
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    answer = {
+        "kind": "connector.local_worker_inspection",
+        "version": 1,
+        "requestId": frame["requestId"],
+        "projectId": project_id,
+        "operation": "project_worker_inspection",
+        "status": {
+            "engineVersion": version,
+            "cliAvailable": kicad["cliFound"],
+            "ipcAvailable": kicad["ipcAvailable"],
+            "capabilities": {name: capabilities[name] for name in allowed_capabilities},
+        },
+    }
+    return answer
+
+
+def _inspected_result_payload(
+    result: CallToolResult,
+    frame: dict[str, Any],
+    project_id: str,
+    *,
+    board_counts: bool,
+    schematic_counts: bool,
+) -> dict[str, object]:
+    # Parse the typed MCP result. Never send full text/structuredContent:
+    # both can include local paths, environment details, or design data.
+    raw_status = result.structured_content
+    if result.is_error or not isinstance(raw_status, dict):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    if schematic_counts:
+        return _schematic_inspection_payload(raw_status, frame, project_id)
+    if board_counts:
+        return _board_inspection_payload(raw_status, frame, project_id)
+    return _engine_inspection_payload(raw_status, frame, project_id)
+
+
+async def _complete_authorized_inspection(
+    socket: ClientConnection,
+    receipt: HandshakeReceipt,
+    inspector_factory: Callable[[HandshakeReceipt], BoundConnectorProjectWorker],
+    *,
+    board_counts: bool = False,
+    schematic_counts: bool = False,
+) -> HandshakeReceipt:
+    """One explicit, manually started project-bound MCP inspection only.
+
+    Never forwards remote-supplied tool names, arguments, file paths, raw MCP
+    results, or project configuration strings over Cloud.
+    """
+    if board_counts and schematic_counts:
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    inspector = inspector_factory(receipt)
+    if not isinstance(inspector, BoundConnectorProjectWorker):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    frame, operation, tool_name = await _read_inspection_request(
+        socket, board_counts=board_counts, schematic_counts=schematic_counts
+    )
+    device_id = frame["deviceId"]
+    project_id = frame["projectId"]
+    inspector.assert_operation_authorized(operation)
+    inspector.assert_session_authorized(
+        device_id=device_id, project_id=project_id, session_id=receipt.session_id
+    )
+    async with inspector.connect(
+        device_id=device_id, project_id=project_id, session_id=receipt.session_id
+    ) as worker:
+        result = await worker.inspect(tool_name)
+    answer = _inspected_result_payload(
+        result,
+        frame,
+        project_id,
+        board_counts=board_counts,
+        schematic_counts=schematic_counts,
+    )
+    if frame["deadlineUnixMs"] <= int(datetime.now(UTC).timestamp() * 1000):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    inspector.assert_session_authorized(
+        device_id=device_id, project_id=project_id, session_id=receipt.session_id
+    )
+    await socket.send(
+        json.dumps(
+            {
+                "kind": "connector.read_result",
+                "version": 1,
+                "sequence": 1,
+                "result": answer,
+            },
+            separators=(",", ":"),
+        )
+    )
+    raw_ack = await socket.recv()
+    if not isinstance(raw_ack, str):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    ack = _read_strict_json(raw_ack, "connector.read_ack")
+    if (
+        set(ack) != {"kind", "version", "sequence", "requestId"}
+        or type(ack["version"]) is not int
+        or ack["version"] != 1
+        or type(ack["sequence"]) is not int
+        or ack["sequence"] != 1
+        or ack.get("requestId") != frame["requestId"]
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    return receipt
+
+
 def _require_independent_read_authority() -> None:
     """Deny read-capable transport until a separate owner verifier is accepted.
 
@@ -206,28 +472,36 @@ def _check_read_transport_gate(
         _require_independent_read_authority()
 
 
-async def _perform_outbound_session(
+def _validated_outbound_connection(
     *,
     origin: str,
     trusted_origin: str,
     owner_sub: str,
     device_id: str,
     signing_key: Ed25519PrivateKey,
-    tls_context: ssl.SSLContext | None = None,
-    dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch] | None = None,
-    operator_presence_pilot: bool = False,
-    operator_native_drc_pilot: bool = False,
-) -> HandshakeReceipt:
-    """Perform the Cloud v1 proof order; optionally handle one approved read.
-
-    Origin and credentials MUST come from independently trusted operator setup
-    (not Cloud messages). A custom TLS context is for controlled enterprise
-    trust roots or isolated tests; disabling certificate/hostname verification
-    is forbidden. No on-disk key management or actual KiCad project reads.
-    """
+    tls_context: ssl.SSLContext | None,
+    dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch] | None,
+    operator_presence_pilot: bool,
+    inspection_factory: Callable[[HandshakeReceipt], BoundConnectorProjectWorker] | None,
+    operator_inspection_pilot: bool,
+    owner_managed_read: bool = False,
+) -> tuple[str, ssl.SSLContext]:
     # Reject both direct public read calls and private session-helper calls
     # before TLS setup or a WebSocket. Proof-only sessions stay available.
-    _check_read_transport_gate(dispatcher_factory, operator_presence_pilot)
+    if owner_managed_read:
+        if (
+            dispatcher_factory is None
+            or inspection_factory is not None
+            or operator_presence_pilot
+            or operator_inspection_pilot
+        ):
+            raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    else:
+        _check_read_transport_gate(dispatcher_factory, operator_presence_pilot)
+    if inspection_factory is not None and not operator_inspection_pilot:
+        _require_independent_read_authority()
+    if inspection_factory is not None and dispatcher_factory is not None:
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     endpoint = _endpoint(origin=origin, trusted_origin=trusted_origin)
     if (
         not isinstance(owner_sub, str)
@@ -245,13 +519,101 @@ async def _perform_outbound_session(
         or not context.check_hostname
     ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    return endpoint, context
+
+
+def _validate_outbound_options(options: OutboundSessionOptions) -> None:
+    if options.owner_managed_read and (
+        options.dispatcher_factory is None
+        or options.inspection_factory is not None
+        or options.operator_presence_pilot
+        or options.operator_inspection_pilot
+        or options.operator_native_drc_pilot
+        or options.board_counts_pilot
+        or options.schematic_counts_pilot
+        or type(options.managed_max_reads) is not int
+        or not 1 <= options.managed_max_reads <= 16
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+
+
+def _outbound_session_timeout(options: OutboundSessionOptions) -> int:
+    if options.owner_managed_read:
+        return 299
+    if options.dispatcher_factory is None and options.inspection_factory is None:
+        return HANDSHAKE_TIMEOUT_SECONDS
+    return 40
+
+
+async def _complete_outbound_operation(
+    socket: ClientConnection, receipt: HandshakeReceipt, options: OutboundSessionOptions
+) -> HandshakeReceipt:
+    if options.owner_managed_read:
+        # Avoid a circular module dependency. This code only receives an
+        # already-signed socket; local authority is supplied by the dispatcher.
+        from kicad_mcp.cloud_managed_read_transport import serve_authenticated_reads
+
+        if options.dispatcher_factory is None:
+            raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+        return await serve_authenticated_reads(
+            socket, receipt, options.dispatcher_factory, max_reads=options.managed_max_reads
+        )
+    if options.inspection_factory is not None:
+        return await _complete_authorized_inspection(
+            socket,
+            receipt,
+            options.inspection_factory,
+            board_counts=options.board_counts_pilot,
+            schematic_counts=options.schematic_counts_pilot,
+        )
+    return await _complete_authorized_read(
+        socket,
+        receipt,
+        options.dispatcher_factory,
+        operator_presence_pilot=options.operator_presence_pilot,
+        operator_native_drc_pilot=options.operator_native_drc_pilot,
+    )
+
+
+async def _perform_outbound_session(
+    *,
+    origin: str,
+    trusted_origin: str,
+    owner_sub: str,
+    device_id: str,
+    signing_key: Ed25519PrivateKey,
+    tls_context: ssl.SSLContext | None = None,
+    options: OutboundSessionOptions | None = None,
+) -> HandshakeReceipt:
+    """Perform the Cloud v1 proof order; optionally handle one approved read.
+
+    Origin and credentials MUST come from independently trusted operator setup
+    (not Cloud messages). A custom TLS context is for controlled enterprise
+    trust roots or isolated tests; disabling certificate/hostname verification
+    is forbidden. No on-disk key management or actual KiCad project reads.
+    """
+    session_options = options if options is not None else OutboundSessionOptions()
+    endpoint, context = _validated_outbound_connection(
+        origin=origin,
+        trusted_origin=trusted_origin,
+        owner_sub=owner_sub,
+        device_id=device_id,
+        signing_key=signing_key,
+        tls_context=tls_context,
+        dispatcher_factory=session_options.dispatcher_factory,
+        operator_presence_pilot=session_options.operator_presence_pilot,
+        inspection_factory=session_options.inspection_factory,
+        operator_inspection_pilot=session_options.operator_inspection_pilot,
+        owner_managed_read=session_options.owner_managed_read,
+    )
+    _validate_outbound_options(session_options)
 
     def now_ms() -> int:
         return int(datetime.now(UTC).timestamp() * 1000)
 
     try:
         async with (
-            asyncio.timeout(HANDSHAKE_TIMEOUT_SECONDS if dispatcher_factory is None else 40),
+            asyncio.timeout(_outbound_session_timeout(session_options)),
             connect(
                 endpoint,
                 ssl=context,
@@ -311,13 +673,7 @@ async def _perform_outbound_session(
             ):
                 raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
             receipt = HandshakeReceipt(device_id=device_id, session_id=session_id)
-            return await _complete_authorized_read(
-                socket,
-                receipt,
-                dispatcher_factory,
-                operator_presence_pilot=operator_presence_pilot,
-                operator_native_drc_pilot=operator_native_drc_pilot,
-            )
+            return await _complete_outbound_operation(socket, receipt, session_options)
     except (OSError, ValueError, WebSocketException) as exc:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED) from exc
 
@@ -339,6 +695,7 @@ async def establish_proof_only_handshake(
         device_id=device_id,
         signing_key=signing_key,
         tls_context=tls_context,
+        options=OutboundSessionOptions(),
     )
 
 
@@ -367,8 +724,9 @@ async def execute_operator_presence_once(
         device_id=device_id,
         signing_key=signing_key,
         tls_context=tls_context,
-        dispatcher_factory=dispatcher_factory,
-        operator_presence_pilot=True,
+        options=OutboundSessionOptions(
+            dispatcher_factory=dispatcher_factory, operator_presence_pilot=True
+        ),
     )
 
 
@@ -396,9 +754,93 @@ async def execute_operator_native_drc_once(
         device_id=device_id,
         signing_key=signing_key,
         tls_context=tls_context,
-        dispatcher_factory=dispatcher_factory,
-        operator_presence_pilot=True,
-        operator_native_drc_pilot=True,
+        options=OutboundSessionOptions(
+            dispatcher_factory=dispatcher_factory,
+            operator_presence_pilot=True,
+            operator_native_drc_pilot=True,
+        ),
+    )
+
+
+async def execute_operator_schematic_counts_once(
+    *,
+    origin: str,
+    trusted_origin: str,
+    owner_sub: str,
+    device_id: str,
+    signing_key: Ed25519PrivateKey,
+    inspector_factory: Callable[[HandshakeReceipt], BoundConnectorProjectWorker],
+    tls_context: ssl.SSLContext | None = None,
+) -> HandshakeReceipt:
+    """Owner-started, separately approved schematic counts; never raw symbols."""
+    if not callable(inspector_factory):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    return await _perform_outbound_session(
+        origin=origin,
+        trusted_origin=trusted_origin,
+        owner_sub=owner_sub,
+        device_id=device_id,
+        signing_key=signing_key,
+        tls_context=tls_context,
+        options=OutboundSessionOptions(
+            inspection_factory=inspector_factory,
+            operator_inspection_pilot=True,
+            schematic_counts_pilot=True,
+        ),
+    )
+
+
+async def execute_operator_board_counts_once(
+    *,
+    origin: str,
+    trusted_origin: str,
+    owner_sub: str,
+    device_id: str,
+    signing_key: Ed25519PrivateKey,
+    inspector_factory: Callable[[HandshakeReceipt], BoundConnectorProjectWorker],
+    tls_context: ssl.SSLContext | None = None,
+) -> HandshakeReceipt:
+    """Foreground board-count operation distinct from engine-status consent."""
+    if not callable(inspector_factory):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    return await _perform_outbound_session(
+        origin=origin,
+        trusted_origin=trusted_origin,
+        owner_sub=owner_sub,
+        device_id=device_id,
+        signing_key=signing_key,
+        tls_context=tls_context,
+        options=OutboundSessionOptions(
+            inspection_factory=inspector_factory,
+            operator_inspection_pilot=True,
+            board_counts_pilot=True,
+        ),
+    )
+
+
+async def execute_operator_inspection_once(
+    *,
+    origin: str,
+    trusted_origin: str,
+    owner_sub: str,
+    device_id: str,
+    signing_key: Ed25519PrivateKey,
+    inspector_factory: Callable[[HandshakeReceipt], BoundConnectorProjectWorker],
+    tls_context: ssl.SSLContext | None = None,
+) -> HandshakeReceipt:
+    """Explicit foreground, single read-only project-worker inspection."""
+    if not callable(inspector_factory):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    return await _perform_outbound_session(
+        origin=origin,
+        trusted_origin=trusted_origin,
+        owner_sub=owner_sub,
+        device_id=device_id,
+        signing_key=signing_key,
+        tls_context=tls_context,
+        options=OutboundSessionOptions(
+            inspection_factory=inspector_factory, operator_inspection_pilot=True
+        ),
     )
 
 
@@ -427,5 +869,41 @@ async def execute_single_approved_read(
         device_id=device_id,
         signing_key=signing_key,
         tls_context=tls_context,
-        dispatcher_factory=dispatcher_factory,
+        options=OutboundSessionOptions(dispatcher_factory=dispatcher_factory),
+    )
+
+
+async def execute_owner_managed_read_session(
+    *,
+    origin: str,
+    trusted_origin: str,
+    owner_sub: str,
+    device_id: str,
+    signing_key: Ed25519PrivateKey,
+    dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch],
+    tls_context: ssl.SSLContext | None = None,
+    max_reads: int = 16,
+) -> HandshakeReceipt:
+    """One signed, owner-managed read-only session; no key loading or persistence.
+
+    The caller must provide the *already-authorized* enrolled signing identity
+    and a dispatcher whose independent, current local permission is checked
+    before every result. Cloud separately verifies owner On/Off, OAuth client,
+    project grant, device signature and revocation. This function does NOT
+    enroll a device, install a service, or grant unattended signer access.
+    """
+    if not callable(dispatcher_factory):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    return await _perform_outbound_session(
+        origin=origin,
+        trusted_origin=trusted_origin,
+        owner_sub=owner_sub,
+        device_id=device_id,
+        signing_key=signing_key,
+        tls_context=tls_context,
+        options=OutboundSessionOptions(
+            dispatcher_factory=dispatcher_factory,
+            owner_managed_read=True,
+            managed_max_reads=max_reads,
+        ),
     )

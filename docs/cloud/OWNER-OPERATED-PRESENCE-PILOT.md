@@ -5,7 +5,42 @@ It does not require a second OAuth app, domain, WebAuthn issuer, or background
 agent. This path sends only the three KiCad project-file presence booleans;
 it does not operate on KiCad, read contents or edit files.
 
-Launch manually from the separately approved owner's terminal:
+Launch manually from the separately approved owner's terminal. If there is
+**exactly one** previously registered project, use the simpler command from
+an installed version of this repository:
+
+    python -m kicad_mcp.cloud_registered_pilot
+
+Optional, separately owner-approved one-shot inspection modes:
+
+    python -m kicad_mcp.cloud_registered_pilot --mode inspection
+    python -m kicad_mcp.cloud_registered_pilot --mode board-counts
+    python -m kicad_mcp.cloud_registered_pilot --mode schematic-counts
+    python -m kicad_mcp.cloud_registered_pilot --mode native-drc
+
+This launcher survives machine restarts because it lives in the installed
+Python package, not under temporary `/run/user` storage. It uses the
+preexisting private registration and rejects missing, ambiguous, symlinked
+or incorrectly permissioned registrations. The existing operator CLI still
+performs the **same fresh terminal approval** before any owner key use or
+Cloud connection; these convenience commands are NOT unattended operation
+and do NOT create a persistent Connector session. Native DRC requires its
+own explicit approval text and uses the original read-only temporary-copy
+boundary. If the project is not already registered, do not auto-enroll it.
+
+For a **non-authenticating** diagnostics check after a reboot or network
+failure, run:
+
+    python -m kicad_mcp.cloud_registered_pilot --check-transport
+
+This uses the existing registered Cloud origin to test the verified-TLS
+WebSocket upgrade only. It sends **no device hello**, does not load or sign
+with the device key, does not request a project read or require terminal
+approval, and does not keep a session alive. A success means only that the
+Cloud ingress is reachable; it must **not** be displayed as device connected,
+an authenticated handshake, or native KiCad tool acceptance.
+
+The original explicit-selector form remains available:
 
     python -m kicad_mcp.cloud_operator_pilot --cloud-origin https://CLOUD-ORIGIN --owner-sub OWNER --device-id ENROLLED-DEVICE-UUID --project-id REGISTERED-PROJECT-UUID --allow-once
 

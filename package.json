@@ -8,6 +8,8 @@
     "metadata:check": "uv run --all-extras python scripts/sync_mcp_metadata.py --check",
     "dev:bootstrap": "./scripts/bootstrap-dev.sh",
     "dev:doctor": "uv run --all-extras python scripts/dev_environment.py --doctor",
+    "cloud:check": "npm --prefix apps/cloud run check",
+    "cloud:build": "npm --prefix apps/cloud run build",
     "assets:icons": "uv run --all-extras python scripts/render_icons.py",
     "assets:icons:check": "uv run --all-extras python scripts/check_icon_assets.py",
     "assets:demo": "uv run --all-extras python scripts/generate_synthetic_demo.py --convert-if-available",

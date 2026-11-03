@@ -1,0 +1,56 @@
+# Git-based Coolify application deployment. The database and dedicated Tunnel
+# are already separate resources: do not create or expose either one here.
+#
+# Configure KICAD_INGRESS_NETWORK and KICAD_INGRESS_APP_IP in Coolify for
+# the existing, isolated ingress network. The IP must be reserved exclusively
+# for this API, and Cloudflare Tunnel must point to that reserved IP.
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Cloud PostgreSQL URL is required}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Canonical HTTPS public origin is required}
+      OAUTH_ISSUER: ${OAUTH_ISSUER:?OAuth issuer required}
+      OAUTH_JWKS_URL: ${OAUTH_JWKS_URL:?OAuth JWKS URL required}
+      OAUTH_AUDIENCE: ${OAUTH_AUDIENCE:?OAuth MCP audience required}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Better Auth secret required}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      AUTH_MODE: ${AUTH_MODE:-builtin}
+      HOST: 0.0.0.0
+      PORT: "8787"
+      NODE_ENV: production
+      APP_REVISION: ${APP_REVISION:-unknown}
+      CONNECTOR_WS_ENABLED: ${CONNECTOR_WS_ENABLED:-false}
+      PAIRING_DEVICE_API_ENABLED: ${PAIRING_DEVICE_API_ENABLED:-false}
+      CONNECTOR_MANAGED_READ_ENABLED: ${CONNECTOR_MANAGED_READ_ENABLED:-false}
+      CONNECTOR_OPERATOR_ONESHOT_ENABLED: ${CONNECTOR_OPERATOR_ONESHOT_ENABLED:-false}
+      CONNECTOR_OPERATOR_NATIVE_DRC_ENABLED: ${CONNECTOR_OPERATOR_NATIVE_DRC_ENABLED:-false}
+      CONNECTOR_INGRESS_MODE: ${CONNECTOR_INGRESS_MODE:-cloudflare}
+      TRUSTED_CLOUDFLARED_PEERS: ${TRUSTED_CLOUDFLARED_PEERS:-}
+    expose:
+      - "8787"
+    networks:
+      coolify: {}
+      tunnel_ingress:
+        ipv4_address: ${KICAD_INGRESS_APP_IP:?Reserved private ingress IP required}
+
+networks:
+  coolify:
+    external: true
+    name: ${KICAD_INTERNAL_NETWORK:-coolify}
+  tunnel_ingress:
+    external: true
+    name: ${KICAD_INGRESS_NETWORK:?Existing isolated ingress network required}

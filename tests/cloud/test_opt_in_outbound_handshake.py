@@ -54,14 +54,23 @@ def test_unverified_direct_read_transport_denies_before_any_network(
         "connect",
         lambda *_args, **_kwargs: pytest.fail("ownerless read reached a socket"),
     )
-    runner = getattr(cloud_outbound_handshake, entrypoint)(
-        origin="https://localhost",
-        trusted_origin="https://localhost",
-        owner_sub=OWNER,
-        device_id=DEVICE,
-        signing_key=Ed25519PrivateKey.generate(),
-        dispatcher_factory=lambda *_: None,
-    )
+    call = getattr(cloud_outbound_handshake, entrypoint)
+    common = {
+        "origin": "https://localhost",
+        "trusted_origin": "https://localhost",
+        "owner_sub": OWNER,
+        "device_id": DEVICE,
+        "signing_key": Ed25519PrivateKey.generate(),
+    }
+    if entrypoint == "_perform_outbound_session":
+        runner = call(
+            **common,
+            options=cloud_outbound_handshake.OutboundSessionOptions(
+                dispatcher_factory=lambda *_: None
+            ),
+        )
+    else:
+        runner = call(**common, dispatcher_factory=lambda *_: None)
     with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
         asyncio.run(runner)
 

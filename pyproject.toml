@@ -104,6 +104,7 @@ vcs = [
 
 [project.scripts]
 kicad-mcp-pro = "kicad_mcp.server:main"
+kicad-mcp-cloud-connector = "kicad_mcp.cloud_managed_connector:main"
 
 [project.urls]
 Homepage = "https://github.com/oaslananka/kicad-mcp-pro"
