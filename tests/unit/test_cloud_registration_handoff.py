@@ -94,7 +94,8 @@ def test_preflight_does_not_modify_registration(tmp_path: Path) -> None:
     assert preflight.updated()["directory"] == preflight.old()["directory"]
     assert previous.read_bytes() == old
     assert not (root / "archived-project-registrations").exists()
-    assert key.exists() and bound.exists()
+    assert key.exists()
+    assert bound.exists()
 
 
 def test_approved_handoff_archives_old_and_installs_one_private_record(tmp_path: Path) -> None:
@@ -110,7 +111,8 @@ def test_approved_handoff_archives_old_and_installs_one_private_record(tmp_path:
     assert len(list((root / "projects").iterdir())) == 1
     assert json.loads(new.read_text()) == preflight.updated()
     assert stat.S_IMODE(new.stat().st_mode) == 0o600
-    assert key.exists() and bound.exists()
+    assert key.exists()
+    assert bound.exists()
     assert (root / "keys" / (OLD_DEVICE + ".pem")).exists()
     with pytest.raises(LocalApprovalDeniedError):
         handoff.activate_handoff(preflight)  # Cannot repeat or archive twice

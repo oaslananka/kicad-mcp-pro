@@ -152,6 +152,20 @@ def prepare_handoff(
         raise LocalApprovalDeniedError(_DENIED) from exc
 
 
+def _close_handoff_files(
+    *, temp: str | None, project_fd: int, archive_fd: int, root_fd: int
+) -> None:
+    """Close pinned directory handles and remove only our staged temporary file."""
+    if temp is not None and project_fd >= 0:
+        try:
+            os.unlink(temp, dir_fd=project_fd)
+        except FileNotFoundError:
+            pass
+    for fd in (archive_fd, project_fd, root_fd):
+        if fd >= 0:
+            os.close(fd)
+
+
 def activate_handoff(plan: RegistrationHandoff) -> None:
     """Archive the old registration privately, then install exactly one active record.
 
@@ -226,14 +240,9 @@ def activate_handoff(plan: RegistrationHandoff) -> None:
             os.rename(old_name, old_name, src_dir_fd=archive_fd, dst_dir_fd=project_fd)
         raise LocalApprovalDeniedError(_DENIED) from exc
     finally:
-        if temp is not None and project_fd >= 0:
-            try:
-                os.unlink(temp, dir_fd=project_fd)
-            except FileNotFoundError:
-                pass
-        for fd in (archive_fd, project_fd, root_fd):
-            if fd >= 0:
-                os.close(fd)
+        _close_handoff_files(
+            temp=temp, project_fd=project_fd, archive_fd=archive_fd, root_fd=root_fd
+        )
 
 
 __all__ = ["RegistrationHandoff", "prepare_handoff", "activate_handoff", "default_registry_root"]
