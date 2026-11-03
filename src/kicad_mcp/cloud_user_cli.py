@@ -54,8 +54,13 @@ def connect(
     cloud_origin: str = typer.Option(
         DEFAULT_CLOUD_ORIGIN, "--cloud-origin", help="Trusted HTTPS Cloud origin."
     ),
+    new_device: bool = typer.Option(
+        False,
+        "--new-device",
+        help="Pair a distinct new device after browser approval, preserving existing local keys.",
+    ),
 ) -> None:
-    """Pair a new computer via browser sign-in and explicit device approval."""
+    """Start browser-approved device pairing without granting project access."""
     if not alias or len(alias) > 80 or any(ord(char) < 32 for char in alias):
         raise typer.BadParameter("Device name must be 1 to 80 printable characters.")
     origin = _verified_origin(cloud_origin)
@@ -76,17 +81,33 @@ def connect(
             raise typer.BadParameter("Existing Cloud registration needs local repair.") from exc
         if existing["cloudOrigin"] != origin:
             raise typer.BadParameter("A different Cloud origin is already registered.")
-        typer.echo("Already paired with this Cloud; no new device was enrolled.")
-        typer.echo("Use cloud status, then cloud enable when you want local reads.")
-        return
+        if not new_device:
+            typer.echo("A private local registration exists for this Cloud origin.")
+            typer.echo("Cloud enrollment has NOT been verified for this registration.")
+            typer.echo(f"Check your enrolled devices at {origin}/devices.")
+            typer.echo(
+                "If the device is missing, run cloud connect --new-device "
+                "from an interactive owner terminal."
+            )
+            typer.echo("The existing local registration and keys were not changed.")
+            return
+        typer.echo(
+            "Starting a distinct browser-approved device pairing. "
+            "Existing registration and keys will be preserved."
+        )
 
     from kicad_mcp.cloud_pair import main as pair
 
     result = pair(["--cloud-origin", origin, "--alias", alias, "--begin-pairing"])
     if result:
         raise typer.Exit(result)
-    typer.echo("Pairing completed. Enable the device and choose project access in Cloud.")
-    typer.echo("Pairing alone does not enable the persistent Connector.")
+    typer.echo("Device pairing completed; the new device remains disabled by default.")
+    typer.echo(
+        "In Cloud Devices, explicitly enable the device and create a read-only project. "
+        "The owner-private local project registry must also reference that new "
+        "device, project and signing key before enabling the Connector."
+    )
+    typer.echo("Pairing alone does not enable the persistent Connector or project access.")
 
 
 @cloud_app.command()

@@ -100,7 +100,9 @@ def test_cloud_connect_does_not_pair_an_already_registered_project(monkeypatch, 
     )
     result = CliRunner().invoke(app, ["cloud", "connect"])
     assert result.exit_code == 0, result.output
-    assert "Already paired with this Cloud" in result.output
+    assert "Cloud enrollment has NOT been verified" in result.output
+    assert "cloud connect --new-device" in result.output
+    assert "existing local registration and keys were not changed" in result.output
 
 
 def test_cloud_connect_rejects_ambiguous_registration_before_enrollment(
@@ -120,5 +122,49 @@ def test_cloud_connect_rejects_ambiguous_registration_before_enrollment(
         lambda *_args: pytest.fail("ambiguous registration cannot trigger new key"),
     )
     result = CliRunner().invoke(app, ["cloud", "connect"])
+    assert result.exit_code != 0
+    assert "Existing Cloud registration needs local repair" in result.output
+
+
+def test_cloud_connect_explicit_new_device_preserves_existing_local_registration(
+    monkeypatch, tmp_path
+) -> None:
+    registry = tmp_path / "cloud"
+    projects = registry / "projects"
+    projects.mkdir(parents=True)
+    existing = projects / "fixture.json"
+    existing.write_text("private-existing-record", encoding="utf-8")
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_registered_pilot._single_registered_identity",
+        lambda _root: {"cloudOrigin": "https://kicad-mcp-pro.oaslananka.dev"},
+    )
+    called: list[list[str]] = []
+    monkeypatch.setattr("kicad_mcp.cloud_pair.main", lambda args: called.append(args) or 0)
+    result = CliRunner().invoke(app, ["cloud", "connect", "--new-device"])
+    assert result.exit_code == 0, result.output
+    assert len(called) == 1
+    assert called[0][-1] == "--begin-pairing"
+    assert existing.read_text(encoding="utf-8") == "private-existing-record"
+    assert "Existing registration and keys will be preserved" in result.output
+    assert "local project registry must also reference that new" in result.output
+
+
+def test_cloud_connect_new_device_rejects_corrupt_existing_registration(
+    monkeypatch, tmp_path
+) -> None:
+    registry = tmp_path / "cloud"
+    (registry / "projects").mkdir(parents=True)
+    (registry / "projects" / "fixture.json").write_text("untrusted", encoding="utf-8")
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_registered_pilot._single_registered_identity",
+        lambda _root: (_ for _ in ()).throw(ValueError("corrupt")),
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair.main",
+        lambda _args: pytest.fail("corrupt existing registration must fail closed"),
+    )
+    result = CliRunner().invoke(app, ["cloud", "connect", "--new-device"])
     assert result.exit_code != 0
     assert "Existing Cloud registration needs local repair" in result.output
