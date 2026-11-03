@@ -29,6 +29,8 @@ from ..tools.board_file import _board_frame_mm, _parse_board_footprint_blocks
 from ..utils.sexpr import _extract_block
 from .stage_gate import ReviewStage, StageGateDecision
 
+MECHANICAL_MATING_RULE_ID = "mechanical.connector_mating_orientation"
+
 
 def check_rectangular_outline(
     pcb_text: str,
@@ -64,6 +66,153 @@ def is_connector_footprint(ref: str, entry: Mapping[str, Any]) -> bool:
     return any(kw in name for kw in connector_keywords)
 
 
+def _resolve_board_inputs(
+    pcb_text: str | None,
+    footprints: Mapping[str, Mapping[str, Any]] | None,
+    frame: tuple[float, float, float, float] | None,
+) -> tuple[dict[str, dict[str, Any]], tuple[float, float, float, float] | None]:
+    """Resolve real footprint entries and board bounds, without asserting outline shape."""
+    entries = (
+        {ref: dict(entry) for ref, entry in footprints.items()}
+        if footprints is not None
+        else (_parse_board_footprint_blocks(pcb_text) if pcb_text is not None else {})
+    )
+    bounds = _board_frame_mm(pcb_text, entries) if frame is None and pcb_text is not None else frame
+    return entries, bounds
+
+
+def _resolve_mating_specs(
+    context: ReviewContext,
+    supplied_specs: list[ConnectorMatingSpec] | None,
+) -> list[ConnectorMatingSpec]:
+    """Honor explicitly supplied intent or verified context requirements."""
+    if supplied_specs is not None:
+        return supplied_specs
+    raw = context.explicit_requirements.get("connector_mating_specs")
+    if not isinstance(raw, list):
+        return []
+    return [
+        item if isinstance(item, ConnectorMatingSpec) else ConnectorMatingSpec.model_validate(item)
+        for item in raw
+        if isinstance(item, (ConnectorMatingSpec, dict))
+    ]
+
+
+def _unannotated_connector_findings(
+    connectors: Mapping[str, Mapping[str, Any]],
+    specs: list[ConnectorMatingSpec],
+) -> tuple[list[ReviewFinding], list[str]]:
+    """Treat every connector missing mating intent as a manufacturing blocker."""
+    unannotated = sorted(set(connectors) - {spec.ref for spec in specs})
+    findings: list[ReviewFinding] = []
+    for idx, ref in enumerate(unannotated, start=1):
+        entry = connectors[ref]
+        px, py = entry.get("x_mm"), entry.get("y_mm")
+        position = (float(px), float(py)) if px is not None and py is not None else None
+        footprint_name = str(entry.get("name", "Unknown"))
+        findings.append(
+            ReviewFinding(
+                id=f"MEC_MATING_{idx:03d}",
+                rule_id=MECHANICAL_MATING_RULE_ID,
+                rule_revision=1,
+                severity="error",
+                object_ref=ref,
+                location_mm=position,
+                description=(
+                    f"Connector '{ref}' ({footprint_name}) lacks declared "
+                    "mechanical mating intent. Mating direction, datum alignment, "
+                    "and cable clearance are unverified."
+                ),
+                remediation=(
+                    f"Declare ConnectorMatingSpec for '{ref}' with intended board edge, "
+                    "mating datum coordinates, and outward normal."
+                ),
+                metadata={"defect_category": "mechanical", "unannotated_connector": True},
+            )
+        )
+    return findings, unannotated
+
+
+def _declared_connector_findings(
+    specs: list[ConnectorMatingSpec],
+    entries: Mapping[str, Mapping[str, Any]],
+    frame: tuple[float, float, float, float],
+    *,
+    rectangular_outline_verified: bool,
+    has_3d_models: bool,
+    first_index: int,
+) -> list[ReviewFinding]:
+    """Keep per-connector alignment and 3-D evidence independent."""
+    findings: list[ReviewFinding] = []
+    for spec in specs:
+        entry = entries.get(spec.ref)
+        problems = evaluate_connector_mating(
+            spec,
+            entry,
+            frame,
+            rectangular_outline_verified=rectangular_outline_verified,
+        )
+        for problem in problems:
+            px = entry.get("x_mm") if entry else None
+            py = entry.get("y_mm") if entry else None
+            position = (float(px), float(py)) if px is not None and py is not None else None
+            findings.append(
+                ReviewFinding(
+                    id=f"MEC_MATING_{first_index + len(findings):03d}",
+                    rule_id=MECHANICAL_MATING_RULE_ID,
+                    rule_revision=1,
+                    severity="error",
+                    object_ref=spec.ref,
+                    location_mm=position,
+                    description=problem,
+                    remediation=(
+                        f"Realign connector '{spec.ref}' mating datum with {spec.edge} Edge.Cuts "
+                        "or rotate footprint to align outward mating normal."
+                    ),
+                    metadata={"defect_category": "mechanical", "alignment_failure": True},
+                )
+            )
+        if not has_3d_models:
+            findings.append(
+                ReviewFinding(
+                    id=f"MEC_MATING_{first_index + len(findings):03d}",
+                    rule_id=MECHANICAL_MATING_RULE_ID,
+                    rule_revision=1,
+                    severity="warning",
+                    object_ref=spec.ref,
+                    description=(
+                        f"Connector '{spec.ref}' 3D model is unavailable; physical swept volume "
+                        "and enclosure plug clearance cannot be verified."
+                    ),
+                    remediation=(
+                        "Attach valid 3D STEP/WRL model to footprint for swept-volume verification."
+                    ),
+                    metadata={"defect_category": "mechanical", "missing_3d_model": True},
+                )
+            )
+    return findings
+
+
+def _mechanical_result_summary(
+    findings: list[ReviewFinding],
+    spec_count: int,
+) -> tuple[AssessmentStatus, str]:
+    """Differentiate hard mechanical defects, unverified 3-D, and nominal fit."""
+    if any(f.severity == "error" for f in findings):
+        return AssessmentStatus.FAIL, (
+            f"Connector mechanical mating evaluation failed with {len(findings)} issues "
+            "(blocking manufacturing release)."
+        )
+    if any(f.severity == "warning" for f in findings):
+        return AssessmentStatus.WARN, (
+            f"Connector 2-D mating alignment passed nominally, with {len(findings)} warnings "
+            "(3-D swept volume unverified)."
+        )
+    return AssessmentStatus.PASS, (
+        f"Connector mechanical mating verified for {spec_count} connectors along Edge.Cuts."
+    )
+
+
 def evaluate_connector_mating_orientation(
     context: ReviewContext,
     *,
@@ -74,21 +223,10 @@ def evaluate_connector_mating_orientation(
     rectangular_outline_verified: bool | None = None,
 ) -> ReviewAssessment:
     """Evaluate connector mechanical mating direction, datum alignment, and 3-D intent."""
-    # Resolve footprints from pcb_text if not explicitly passed
-    resolved_footprints: dict[str, dict[str, Any]] = {}
-    if footprints is not None:
-        resolved_footprints = {k: dict(v) for k, v in footprints.items()}
-    elif pcb_text is not None:
-        resolved_footprints = _parse_board_footprint_blocks(pcb_text)
-
-    # Resolve frame
-    resolved_frame = frame
-    if resolved_frame is None and pcb_text is not None:
-        resolved_frame = _board_frame_mm(pcb_text, resolved_footprints)
-
+    resolved_footprints, resolved_frame = _resolve_board_inputs(pcb_text, footprints, frame)
     if not resolved_footprints or resolved_frame is None:
         return ReviewAssessment(
-            rule_id="mechanical.connector_mating_orientation",
+            rule_id=MECHANICAL_MATING_RULE_ID,
             rule_revision=1,
             status=AssessmentStatus.BLOCKED,
             method=EvaluationMethod.ANALYTICAL,
@@ -104,28 +242,15 @@ def evaluate_connector_mating_orientation(
             check_rectangular_outline(pcb_text, resolved_frame) if pcb_text is not None else False
         )
 
-    # Resolve specs
-    resolved_specs = specs
-    if resolved_specs is None:
-        raw_specs = context.explicit_requirements.get("connector_mating_specs")
-        if isinstance(raw_specs, list):
-            resolved_specs = []
-            for item in raw_specs:
-                if isinstance(item, ConnectorMatingSpec):
-                    resolved_specs.append(item)
-                elif isinstance(item, dict):
-                    resolved_specs.append(ConnectorMatingSpec.model_validate(item))
-        else:
-            resolved_specs = []
-
-    # Find all connector footprints
+    resolved_specs = _resolve_mating_specs(context, specs)
     connector_map = {
-        ref: fp for ref, fp in resolved_footprints.items() if is_connector_footprint(ref, fp)
+        ref: entry
+        for ref, entry in resolved_footprints.items()
+        if is_connector_footprint(ref, entry)
     }
-
     if not connector_map:
         return ReviewAssessment(
-            rule_id="mechanical.connector_mating_orientation",
+            rule_id=MECHANICAL_MATING_RULE_ID,
             rule_revision=1,
             status=AssessmentStatus.NOT_APPLICABLE,
             method=EvaluationMethod.ANALYTICAL,
@@ -133,42 +258,10 @@ def evaluate_connector_mating_orientation(
             metadata={"defect_category": "mechanical", "connector_count": 0},
         )
 
-    findings: list[ReviewFinding] = []
-    finding_idx = 1
-
-    # Rule: Fail closed on unannotated connectors
-    spec_map = {s.ref: s for s in resolved_specs}
-    unannotated_refs = sorted(set(connector_map.keys()) - set(spec_map.keys()))
-
-    for un_ref in unannotated_refs:
-        fp_name = str(connector_map[un_ref].get("name", "Unknown"))
-        px = connector_map[un_ref].get("x_mm")
-        py = connector_map[un_ref].get("y_mm")
-        pos = (float(px), float(py)) if px is not None and py is not None else None
-        findings.append(
-            ReviewFinding(
-                id=f"MEC_MATING_{finding_idx:03d}",
-                rule_id="mechanical.connector_mating_orientation",
-                rule_revision=1,
-                severity="error",
-                object_ref=un_ref,
-                location_mm=pos,
-                description=(
-                    f"Connector '{un_ref}' ({fp_name}) lacks declared mechanical mating intent. "
-                    "Mating direction, datum alignment, and cable clearance are unverified."
-                ),
-                remediation=(
-                    f"Declare ConnectorMatingSpec for '{un_ref}' with intended board edge, "
-                    "mating datum coordinates, and outward normal."
-                ),
-                metadata={"defect_category": "mechanical", "unannotated_connector": True},
-            )
-        )
-        finding_idx += 1
-
+    findings, unannotated_refs = _unannotated_connector_findings(connector_map, resolved_specs)
     if missing_outline_evidence and not unannotated_refs:
         return ReviewAssessment(
-            rule_id="mechanical.connector_mating_orientation",
+            rule_id=MECHANICAL_MATING_RULE_ID,
             rule_revision=1,
             status=AssessmentStatus.NOT_ASSESSED,
             method=EvaluationMethod.ANALYTICAL,
@@ -177,82 +270,19 @@ def evaluate_connector_mating_orientation(
             metadata={"defect_category": "mechanical", "connector_count": len(connector_map)},
         )
 
-    # Evaluate each declared spec
-    for spec in resolved_specs:
-        fp_entry = resolved_footprints.get(spec.ref)
-        problems = evaluate_connector_mating(
-            spec,
-            fp_entry,
+    findings.extend(
+        _declared_connector_findings(
+            resolved_specs,
+            resolved_footprints,
             resolved_frame,
             rectangular_outline_verified=rectangular_outline_verified,
+            has_3d_models=context.has_3d_models,
+            first_index=len(findings) + 1,
         )
-        for prob in problems:
-            px = fp_entry.get("x_mm") if fp_entry else None
-            py = fp_entry.get("y_mm") if fp_entry else None
-            pos = (float(px), float(py)) if px is not None and py is not None else None
-            findings.append(
-                ReviewFinding(
-                    id=f"MEC_MATING_{finding_idx:03d}",
-                    rule_id="mechanical.connector_mating_orientation",
-                    rule_revision=1,
-                    severity="error",
-                    object_ref=spec.ref,
-                    location_mm=pos,
-                    description=prob,
-                    remediation=(
-                        f"Realign connector '{spec.ref}' mating datum with {spec.edge} Edge.Cuts "
-                        "or rotate footprint to align outward mating normal."
-                    ),
-                    metadata={"defect_category": "mechanical", "alignment_failure": True},
-                )
-            )
-            finding_idx += 1
-
-        # Check 3D swept volume / model availability
-        if not context.has_3d_models:
-            findings.append(
-                ReviewFinding(
-                    id=f"MEC_MATING_{finding_idx:03d}",
-                    rule_id="mechanical.connector_mating_orientation",
-                    rule_revision=1,
-                    severity="warning",
-                    object_ref=spec.ref,
-                    description=(
-                        f"Connector '{spec.ref}' 3D model is unavailable; physical swept volume "
-                        "and enclosure plug clearance cannot be verified."
-                    ),
-                    remediation=(
-                        "Attach valid 3D STEP/WRL model to footprint for swept-volume verification."
-                    ),
-                    metadata={"defect_category": "mechanical", "missing_3d_model": True},
-                )
-            )
-            finding_idx += 1
-
-    has_error = any(f.severity == "error" for f in findings)
-    has_warning = any(f.severity == "warning" for f in findings)
-
-    if has_error:
-        status = AssessmentStatus.FAIL
-        summary = (
-            f"Connector mechanical mating evaluation failed with {len(findings)} issues "
-            f"(blocking manufacturing release)."
-        )
-    elif has_warning:
-        status = AssessmentStatus.WARN
-        summary = (
-            f"Connector 2-D mating alignment passed nominally, with {len(findings)} warnings "
-            "(3-D swept volume unverified)."
-        )
-    else:
-        status = AssessmentStatus.PASS
-        summary = (
-            f"Connector mechanical mating verified for {len(resolved_specs)} connectors "
-            f"along Edge.Cuts."
-        )
-
+    )
+    status, summary = _mechanical_result_summary(findings, len(resolved_specs))
     return ReviewAssessment(
-        rule_id="mechanical.connector_mating_orientation",
+        rule_id=MECHANICAL_MATING_RULE_ID,
         rule_revision=1,
         status=status,
         method=EvaluationMethod.ANALYTICAL,
