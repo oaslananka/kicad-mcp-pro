@@ -88,6 +88,7 @@ def test_usb4085_wrong_mating_direction_fails() -> None:
         footprints=footprints,
         frame=BOARD_FRAME,
         specs=[_usb_spec()],
+        rectangular_outline_verified=True,
     )
 
     assert assessment.status == AssessmentStatus.FAIL
@@ -118,6 +119,7 @@ def test_usb4085_valid_mating_orientation_passes() -> None:
         footprints=footprints,
         frame=BOARD_FRAME,
         specs=[_usb_spec()],
+        rectangular_outline_verified=True,
     )
 
     assert assessment.status == AssessmentStatus.PASS
@@ -143,6 +145,7 @@ def test_missing_3d_model_warns_swept_volume() -> None:
         footprints=footprints,
         frame=BOARD_FRAME,
         specs=[_usb_spec()],
+        rectangular_outline_verified=True,
     )
 
     assert assessment.status == AssessmentStatus.WARN
@@ -216,6 +219,7 @@ def test_electrical_pass_does_not_override_mechanical_fail() -> None:
         footprints=footprints,
         frame=BOARD_FRAME,
         specs=[_usb_spec()],
+        rectangular_outline_verified=True,
     )
     assert mechanical_eval.status == AssessmentStatus.FAIL
 
@@ -328,6 +332,7 @@ def test_explicit_mechanical_intent_loads_from_review_context(as_mapping: bool) 
             }
         },
         frame=BOARD_FRAME,
+        rectangular_outline_verified=True,
     )
     assert assessment.status == AssessmentStatus.PASS
     assert assessment.metadata["annotated_spec_count"] == 1
@@ -390,3 +395,26 @@ def test_assessed_mechanical_and_electrical_pass_accepts_stage() -> None:
     gate = evaluate_mechanical_stage_gate(mechanical, electrical)
     assert gate.approved is True
     assert gate.blocking_reasons == []
+
+
+def test_frame_bounds_alone_cannot_certify_rectangular_board_outline() -> None:
+    """A bbox could describe a curved board; missing Edge.Cuts proof cannot PASS."""
+    assessment = evaluate_connector_mating_orientation(
+        ReviewContext(has_3d_models=True),
+        footprints={
+            "J1": {
+                "name": USB4085_FP,
+                "x_mm": 6.1,
+                "y_mm": 13.5,
+                "rotation": 270.0,
+                "layer_name": "F.Cu",
+                "layer_name_explicit": True,
+            }
+        },
+        frame=BOARD_FRAME,
+        specs=[_usb_spec()],
+    )
+    assert assessment.status == AssessmentStatus.NOT_ASSESSED
+    assert "verified_rectangular_edge_cuts" in assessment.missing_inputs
+    gate = evaluate_mechanical_stage_gate(assessment)
+    assert gate.approved is False

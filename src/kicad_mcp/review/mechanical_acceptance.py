@@ -97,12 +97,12 @@ def evaluate_connector_mating_orientation(
             metadata={"defect_category": "mechanical"},
         )
 
-    # Resolve rectangular outline status
+    # Frame bounds alone do not prove a rectangular Edge.Cuts outline.
+    missing_outline_evidence = rectangular_outline_verified is None and pcb_text is None
     if rectangular_outline_verified is None:
-        if pcb_text is not None:
-            rectangular_outline_verified = check_rectangular_outline(pcb_text, resolved_frame)
-        else:
-            rectangular_outline_verified = True
+        rectangular_outline_verified = (
+            check_rectangular_outline(pcb_text, resolved_frame) if pcb_text is not None else False
+        )
 
     # Resolve specs
     resolved_specs = specs
@@ -165,6 +165,17 @@ def evaluate_connector_mating_orientation(
             )
         )
         finding_idx += 1
+
+    if missing_outline_evidence and not unannotated_refs:
+        return ReviewAssessment(
+            rule_id="mechanical.connector_mating_orientation",
+            rule_revision=1,
+            status=AssessmentStatus.NOT_ASSESSED,
+            method=EvaluationMethod.ANALYTICAL,
+            summary="A board frame cannot establish a verified rectangular Edge.Cuts outline.",
+            missing_inputs=["verified_rectangular_edge_cuts"],
+            metadata={"defect_category": "mechanical", "connector_count": len(connector_map)},
+        )
 
     # Evaluate each declared spec
     for spec in resolved_specs:
