@@ -63,6 +63,7 @@ class SignalIntegrityDecouplingPlacementService:
             lines.append(f"- {reference}: {distance_mm:.3f} mm ({value or 'value unknown'})")
         lines.append(
             "- Distance-only heuristic: preliminary advisory guidance only; "
-            "verify actual same-rail connectivity and return path in layout review."
+            "verify the actual current loop, same-rail connectivity and "
+            "return path in layout review."
         )
         return "\n".join(lines)
