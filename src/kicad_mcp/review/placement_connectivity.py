@@ -272,6 +272,32 @@ def _evaluate_pin_decoupling(
         ground_return = bool(ic_gnd & cap_gnd and topology.has_ground_plane)
 
         if best_d <= max_distance_mm:
+            if not ground_return:
+                return (
+                    None,
+                    False,
+                    None,
+                    ReviewAssessment(
+                        rule_id=_DECOUPLING_RULE_ID,
+                        rule_revision=1,
+                        status=AssessmentStatus.NOT_ASSESSED,
+                        method=EvaluationMethod.ANALYTICAL,
+                        summary=(
+                            f"Decoupling capacitor '{best_cap.reference}' is on the correct rail "
+                            f"and close to '{ic.reference}.{p.pin_number}', but its ground return "
+                            "cannot be verified."
+                        ),
+                        missing_inputs=["ground_return_connectivity"],
+                        metadata={
+                            "ic_ref": ic.reference,
+                            "pin": p.pin_number,
+                            "cap_ref": best_cap.reference,
+                            "ic_ground_nets": sorted(ic_gnd),
+                            "cap_ground_nets": sorted(cap_gnd),
+                            "ground_plane_evidence": topology.has_ground_plane,
+                        },
+                    ),
+                )
             return None, True, None, None
 
         finding = _build_same_rail_finding(

@@ -160,6 +160,72 @@ def test_farther_correct_rail_capacitor_satisfies_decoupling() -> None:
     assert assessment.metadata["passed_pins"] == 1
 
 
+@pytest.mark.parametrize(
+    ("ic_ground", "cap_ground", "has_ground_plane", "expected_status"),
+    [
+        ("AGND", "DGND", True, AssessmentStatus.NOT_ASSESSED),
+        ("GND", "GND", False, AssessmentStatus.NOT_ASSESSED),
+        ("GND", "GND", True, AssessmentStatus.PASS),
+    ],
+)
+def test_same_rail_nearby_cap_needs_verified_ground_return(
+    ic_ground: str,
+    cap_ground: str,
+    has_ground_plane: bool,
+    expected_status: AssessmentStatus,
+) -> None:
+    """A nearby same-rail capacitor alone is not sufficient electrical evidence."""
+    ic = PlacementComponentTopology(
+        reference="U1",
+        component_type="ic",
+        pins=[
+            PlacementPinTopology(
+                pin_number="1",
+                net_name="+3V3",
+                pin_type="power_input",
+                location_mm=(10.0, 12.0),
+            ),
+            PlacementPinTopology(
+                pin_number="2",
+                net_name=ic_ground,
+                pin_type="ground",
+                location_mm=(10.0, 10.0),
+            ),
+        ],
+    )
+    cap = PlacementComponentTopology(
+        reference="C1",
+        component_type="capacitor",
+        location_mm=(10.0, 12.5),
+        pins=[
+            PlacementPinTopology(
+                pin_number="1",
+                net_name="+3V3",
+                pin_type="passive",
+                location_mm=(10.0, 12.5),
+            ),
+            PlacementPinTopology(
+                pin_number="2",
+                net_name=cap_ground,
+                pin_type="ground",
+                location_mm=(10.0, 13.0),
+            ),
+        ],
+    )
+    topology = PlacementBoardTopology(
+        components={"U1": ic, "C1": cap},
+        has_ground_plane=has_ground_plane,
+    )
+    assessment = evaluate_decoupling_connectivity(ReviewContext(), topology)
+    assert assessment.status == expected_status
+    if expected_status == AssessmentStatus.NOT_ASSESSED:
+        assert assessment.missing_inputs == ["ground_return_connectivity"]
+        assert assessment.metadata["cap_ref"] == "C1"
+    else:
+        assert assessment.findings == []
+        assert assessment.metadata["passed_pins"] == 1
+
+
 def test_missing_unresolved_power_pin_returns_not_assessed() -> None:
     u1 = PlacementComponentTopology(
         reference="U1",
