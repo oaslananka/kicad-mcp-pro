@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import math
 import tempfile
 from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
 
 from kicad_mcp.models.review import (
     AssessmentStatus,
@@ -196,3 +200,216 @@ def test_clean_report_passes_and_converts_to_evidence_record() -> None:
     assert ev_record.producer == "openEMS"
     assert ev_record.source_sha256 == SAMPLE_SHA_1
     assert ev_record.provenance_source == "external_tool:openEMS"
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        ReviewContext(project_name="my_board"),
+        ReviewContext(project_source_sha256=SAMPLE_SHA_1),
+        ReviewContext(),
+    ],
+)
+def test_source_identity_missing_cannot_approve_external_report(context: ReviewContext) -> None:
+    report = ExternalAnalysisReport(
+        report_id="NO_CONTEXT_001",
+        tool_name="spice",
+        tool_version="42",
+        analysis_type="spice",
+        project_key="my_board",
+        source_sha256=SAMPLE_SHA_1,
+    )
+    result = evaluate_external_evidence(context, report)
+    assert result.status == AssessmentStatus.NOT_ASSESSED
+    assert result.missing_inputs
+
+
+@pytest.mark.parametrize("sha", ["z" * 64, "a" * 63, "a" * 65])
+def test_external_report_requires_valid_sha256_digest(sha: str) -> None:
+    with pytest.raises(ValidationError):
+        ExternalAnalysisReport(
+            report_id="BAD_SHA_001",
+            tool_name="spice",
+            tool_version="42",
+            analysis_type="spice",
+            project_key="my_board",
+            source_sha256=sha,
+        )
+
+
+@pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
+def test_nonfinite_external_solver_metrics_rejected(value: float) -> None:
+    with pytest.raises(ValidationError):
+        ExternalAnalysisReport(
+            report_id="BAD_METRIC_001",
+            tool_name="spice",
+            tool_version="42",
+            analysis_type="spice",
+            project_key="my_board",
+            source_sha256=SAMPLE_SHA_1,
+            metrics={"result": value},
+            metric_units={"result": "V"},
+        )
+
+
+def test_report_stackup_requires_matching_active_stackup() -> None:
+    report = ExternalAnalysisReport(
+        report_id="MISSING_STACK_001",
+        tool_name="simulator",
+        tool_version="1.0",
+        analysis_type="si",
+        project_key="my_board",
+        source_sha256=SAMPLE_SHA_1,
+        stackup_id="pcb4",
+    )
+    context = ReviewContext(project_name="my_board", project_source_sha256=SAMPLE_SHA_1)
+    assessment = evaluate_external_evidence(context, report)
+    assert assessment.status == AssessmentStatus.NOT_ASSESSED
+    assert "expected_stackup_id" in assessment.missing_inputs
+
+
+def test_wrong_metric_dimension_never_passes() -> None:
+    report = ExternalAnalysisReport(
+        report_id="BAD_UNIT_CONTRACT_001",
+        tool_name="simulator",
+        tool_version="1.0",
+        analysis_type="si",
+        project_key="my_board",
+        source_sha256=SAMPLE_SHA_1,
+        metrics={"delay": 1.0},
+        metric_units={"delay": "V"},
+    )
+    context = ReviewContext(
+        project_name="my_board",
+        project_source_sha256=SAMPLE_SHA_1,
+        explicit_requirements={"expected_metric_units": {"delay": "ps"}},
+    )
+    assessment = evaluate_external_evidence(context, report)
+    assert assessment.status == AssessmentStatus.NOT_ASSESSED
+    assert "compatible_metric_units" in assessment.missing_inputs
+
+
+def test_report_loader_rejects_bad_json_shape_schema_and_missing_file(tmp_path: Path) -> None:
+    absent, absent_error = load_external_analysis_report("none.json", base_dir=tmp_path)
+    assert absent is None
+    assert absent_error and "does not exist" in absent_error
+
+    file = tmp_path / "bad.json"
+    file.write_text("{", encoding="utf-8")
+    malformed, malformed_error = load_external_analysis_report(file, base_dir=tmp_path)
+    assert malformed is None
+    assert malformed_error and "Failed to parse" in malformed_error
+
+    file.write_text("[]", encoding="utf-8")
+    not_mapping, mapping_error = load_external_analysis_report(file, base_dir=tmp_path)
+    assert not_mapping is None
+    assert mapping_error and "mapping" in mapping_error
+
+    file.write_text("{}", encoding="utf-8")
+    bad_schema, schema_error = load_external_analysis_report(file, base_dir=tmp_path)
+    assert bad_schema is None
+    assert schema_error and "schema validation" in schema_error
+
+
+def test_report_loads_safe_yaml_without_executing_code(tmp_path: Path) -> None:
+    document = tmp_path / "evidence.yml"
+    document.write_text(
+        "schema_version: 1\nreport_id: YAML_VALID_001\n"
+        "tool_name: spice\ntool_version: '42'\nanalysis_type: transient\n"
+        "project_key: my_board\nsource_sha256: " + SAMPLE_SHA_1 + "\n",
+        encoding="utf-8",
+    )
+    report, error = load_external_analysis_report(document, base_dir=tmp_path)
+    assert error is None
+    assert report is not None and report.report_id == "YAML_VALID_001"
+
+
+def test_external_tool_violation_causes_hard_failure() -> None:
+    report = ExternalAnalysisReport(
+        report_id="VIOLATION_001",
+        tool_name="spice",
+        tool_version="42",
+        analysis_type="spice",
+        project_key="my_board",
+        source_sha256=SAMPLE_SHA_1,
+        violations=["voltage exceeded safe limit"],
+    )
+    context = ReviewContext(project_name="my_board", project_source_sha256=SAMPLE_SHA_1)
+    assessment = evaluate_external_evidence(context, report)
+    assert assessment.status == AssessmentStatus.FAIL
+    assert assessment.findings[0].severity == "error"
+
+
+@pytest.mark.parametrize(
+    "digest",
+    ["a" * 63, "b" * 65, "z" * 64, "A" * 64],
+)
+def test_artifact_hashes_reject_invalid_sha256(digest: str) -> None:
+    with pytest.raises(ValidationError, match="Artifact digest"):
+        ExternalAnalysisReport(
+            report_id="ARTIFACT_BAD_001",
+            tool_name="spice",
+            tool_version="42",
+            analysis_type="spice",
+            project_key="my_board",
+            source_sha256=SAMPLE_SHA_1,
+            artifact_hashes={"output": digest},
+        )
+
+
+def test_valid_artifact_hash_and_absolute_report_path(tmp_path: Path) -> None:
+    report = ExternalAnalysisReport(
+        report_id="ARTIFACT_GOOD_001",
+        tool_name="spice",
+        tool_version="42",
+        analysis_type="spice",
+        project_key="my_board",
+        source_sha256=SAMPLE_SHA_1,
+        artifact_hashes={"output": SAMPLE_SHA_2},
+    )
+    file = tmp_path / "report.json"
+    file.write_text(report.model_dump_json(), encoding="utf-8")
+    parsed, error = load_external_analysis_report(file)
+    assert error is None
+    assert parsed is not None
+    assert parsed.artifact_hashes["output"] == SAMPLE_SHA_2
+
+
+@pytest.mark.parametrize("unit_contract", ["invalid", {"delay": "ps"}, {"delay": "unknown"}])
+def test_missing_or_invalid_required_metric_units_rejected(unit_contract: object) -> None:
+    report = ExternalAnalysisReport(
+        report_id="NO_METRIC_001",
+        tool_name="spice",
+        tool_version="42",
+        analysis_type="spice",
+        project_key="my_board",
+        source_sha256=SAMPLE_SHA_1,
+    )
+    context = ReviewContext(
+        project_name="my_board",
+        project_source_sha256=SAMPLE_SHA_1,
+        explicit_requirements={"expected_metric_units": unit_contract},
+    )
+    result = evaluate_external_evidence(context, report)
+    assert result.status == AssessmentStatus.NOT_ASSESSED
+    assert "compatible_metric_units" in result.missing_inputs
+
+
+def test_valid_expected_metric_units_preserve_clean_result() -> None:
+    report = ExternalAnalysisReport(
+        report_id="VALID_DIMENSION_001",
+        tool_name="spice",
+        tool_version="42",
+        analysis_type="transient",
+        project_key="my_board",
+        source_sha256=SAMPLE_SHA_1,
+        metrics={"delay": 2.1},
+        metric_units={"delay": "ps"},
+    )
+    context = ReviewContext(
+        project_name="my_board",
+        project_source_sha256=SAMPLE_SHA_1,
+        explicit_requirements={"expected_metric_units": {"delay": "ps"}},
+    )
+    result = evaluate_external_evidence(context, report)
+    assert result.status == AssessmentStatus.PASS
