@@ -266,10 +266,18 @@ def _evaluate_pin_decoupling(
     same_rail, wrong_rail = _match_nearby_capacitors(p, pin_net, all_caps, max_distance_mm)
 
     if same_rail:
-        best_cap, best_d = same_rail[0]
         ic_gnd = {gp.net_name.upper().lstrip("/") for gp in ic.ground_pins()}
+        verified_caps = [
+            (cap, distance)
+            for cap, distance in same_rail
+            if topology.has_ground_plane
+            and ic_gnd & {gp.net_name.upper().lstrip("/") for gp in cap.ground_pins()}
+        ]
+        # The closest same-rail capacitor may have an unrelated ground net.
+        # Prefer an electrically verified candidate before checking proximity.
+        best_cap, best_d = (verified_caps or same_rail)[0]
         cap_gnd = {gp.net_name.upper().lstrip("/") for gp in best_cap.ground_pins()}
-        ground_return = bool(ic_gnd & cap_gnd and topology.has_ground_plane)
+        ground_return = bool(verified_caps)
 
         if best_d <= max_distance_mm:
             if not ground_return:

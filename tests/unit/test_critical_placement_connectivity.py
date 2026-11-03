@@ -226,6 +226,62 @@ def test_same_rail_nearby_cap_needs_verified_ground_return(
         assert assessment.metadata["passed_pins"] == 1
 
 
+def test_same_rail_selects_nearest_cap_with_verified_ground_return() -> None:
+    """A nearer wrong-ground capacitor must not hide a valid decoupler."""
+    ic = PlacementComponentTopology(
+        reference="U1",
+        component_type="ic",
+        pins=[
+            PlacementPinTopology(
+                pin_number="1",
+                net_name="+3V3",
+                pin_type="power_input",
+                location_mm=(10.0, 12.0),
+            ),
+            PlacementPinTopology(
+                pin_number="2",
+                net_name="AGND",
+                pin_type="ground",
+                location_mm=(10.0, 10.0),
+            ),
+        ],
+    )
+
+    def cap(ref: str, distance: float, ground: str) -> PlacementComponentTopology:
+        return PlacementComponentTopology(
+            reference=ref,
+            component_type="capacitor",
+            location_mm=(10.0, 12.0 + distance),
+            pins=[
+                PlacementPinTopology(
+                    pin_number="1",
+                    net_name="+3V3",
+                    pin_type="passive",
+                    location_mm=(10.0, 12.0 + distance),
+                ),
+                PlacementPinTopology(
+                    pin_number="2",
+                    net_name=ground,
+                    pin_type="ground",
+                    location_mm=(10.0, 12.5 + distance),
+                ),
+            ],
+        )
+
+    topology = PlacementBoardTopology(
+        components={
+            "U1": ic,
+            "C1": cap("C1", 0.3, "DGND"),
+            "C2": cap("C2", 1.0, "AGND"),
+        },
+        has_ground_plane=True,
+    )
+    result = evaluate_decoupling_connectivity(ReviewContext(), topology)
+    assert result.status == AssessmentStatus.PASS
+    assert result.metadata["passed_pins"] == 1
+    assert result.findings == []
+
+
 def test_missing_unresolved_power_pin_returns_not_assessed() -> None:
     u1 = PlacementComponentTopology(
         reference="U1",
