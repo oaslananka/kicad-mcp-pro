@@ -25,12 +25,16 @@ def test_rotations_cannot_leak_across_schematic_pcb_and_cpl() -> None:
     ok, reason = visual.verify_rotation_independence(
         before, replace(before, cpl_rotation_deg=180), mutated_domain="schematic"
     )
-    assert not ok and reason is not None and "CPL rotation" in reason
+    assert not ok
+    assert reason is not None
+    assert "CPL rotation" in reason
 
     ok, reason = visual.verify_rotation_independence(
         before, replace(before, symbol_orientation_deg=90), mutated_domain="pcb"
     )
-    assert not ok and reason is not None and "schematic orientation" in reason
+    assert not ok
+    assert reason is not None
+    assert "schematic orientation" in reason
     assert visual.verify_rotation_independence(
         before, replace(before, pcb_rotation_deg=180), mutated_domain="pcb"
     ) == (True, None)
@@ -82,7 +86,8 @@ def test_cosmetic_apply_rechecks_connectivity_and_rolls_back(
     # Simulate a changed connectivity reading between planning and commit.
     monkeypatch.setattr(visual, "_connectivity_signature", lambda _: frozenset({"drift"}))
     text, applied, message = visual.apply_cosmetic_transaction(SCHEMATIC, plan)
-    assert text == SCHEMATIC and not applied
+    assert text == SCHEMATIC
+    assert not applied
     assert "Rollback: connectivity signature diverged" in message
 
 
@@ -218,9 +223,11 @@ def test_visual_evaluation_is_only_attempted_for_explicit_input() -> None:
     assert visual.evaluate_visual_quality(ReviewContext()) == []
     context = ReviewContext(explicit_requirements={"schematic_symbols": True})
     result = visual.evaluate_visual_quality(context)
-    assert len(result) == 1 and result[0].status == AssessmentStatus.BLOCKED
+    assert len(result) == 1
+    assert result[0].status == AssessmentStatus.BLOCKED
     result = visual.evaluate_visual_quality(ReviewContext(), bounds=(0, 0, 20, 20))
-    assert len(result) == 1 and result[0].status == AssessmentStatus.BLOCKED
+    assert len(result) == 1
+    assert result[0].status == AssessmentStatus.BLOCKED
     assert (
         visual.evaluate_schematic_visual_quality(ReviewContext(), "   ").status
         == AssessmentStatus.NOT_ASSESSED
