@@ -17,10 +17,11 @@ from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
 from ..connection import get_board
-from ..models.common import _FootprintLike
+from ..models.common import _FootprintLike, _PadLike
 from ..models.verdict import Verdict, VerdictReport
 from ..pcb.board_access import (
     board_footprints,
+    board_pads,
     board_shapes,
     board_tracks,
     board_vias,
@@ -157,6 +158,47 @@ def _nearest_cap_distance_mm(reference: str) -> float | None:
     ]
     if not caps:
         return None
+
+    try:
+        pads = cast(list[_PadLike], board_pads(get_board()))
+        ic_pads = [
+            p
+            for p in pads
+            if getattr(p, "parent", None) is not None
+            and _footprint_reference(p.parent) == reference
+        ]
+        ic_supply_nets = {
+            str(getattr(p.net, "name", "")).lstrip("/").upper()
+            for p in ic_pads
+            if getattr(p, "net", None)
+            and getattr(p.net, "name", None)
+            and not str(getattr(p.net, "name", ""))
+            .upper()
+            .startswith(("GND", "VSS", "UNCONNECTED"))
+        }
+        if ic_supply_nets:
+            qualifying_caps: list[_FootprintLike] = []
+            for cap in caps:
+                cap_ref = _footprint_reference(cap)
+                cap_pads = [
+                    p
+                    for p in pads
+                    if getattr(p, "parent", None) is not None
+                    and _footprint_reference(p.parent) == cap_ref
+                ]
+                cap_nets = {
+                    str(getattr(p.net, "name", "")).lstrip("/").upper()
+                    for p in cap_pads
+                    if getattr(p, "net", None) and getattr(p.net, "name", None)
+                }
+                if cap_nets & ic_supply_nets:
+                    qualifying_caps.append(cap)
+            if not qualifying_caps:
+                return None
+            caps = qualifying_caps
+    except (AttributeError, RuntimeError, ValueError):
+        pass
+
     return min(
         math.hypot(source_x_mm - x_mm, source_y_mm - y_mm)
         for x_mm, y_mm in (point_xy_mm(cap.position) for cap in caps)

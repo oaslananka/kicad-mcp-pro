@@ -21,10 +21,30 @@ from .pcb import (
     SetStackupInput,
     StackupLayerSpec,
 )
+from .placement_topology import (
+    PlacementBoardTopology,
+    PlacementComponentTopology,
+    PlacementPinTopology,
+)
 from .power_integrity import (
     CopperWeightCheckInput,
     DecouplingRecommendationInput,
     VoltageDropInput,
+)
+from .review import (
+    SUPPORTED_REVIEW_UNITS,
+    AssessmentStatus,
+    EvaluationMethod,
+    ResolvedReviewRule,
+    ReviewAssessment,
+    ReviewContext,
+    ReviewCoverage,
+    ReviewDomain,
+    ReviewFinding,
+    ReviewRule,
+    ReviewSnapshot,
+    RuleApplicability,
+    validate_unit_compatibility,
 )
 from .schematic import AddLabelInput, AddSymbolInput, AddWireInput
 from .signal_integrity import (
@@ -48,11 +68,13 @@ __all__ = [
     "AddViaInput",
     "AddWireInput",
     "ArtifactRef",
+    "AssessmentStatus",
     "CopperWeightCheckInput",
     "CreepageCheckInput",
     "DecouplingRecommendationInput",
     "DCSweepInput",
     "DifferentialPairSkewInput",
+    "EvaluationMethod",
     "ExportBOMInput",
     "ExportGerberInput",
     "FailureMode",
@@ -68,6 +90,19 @@ __all__ = [
     "LivePreviewSafety",
     "LivePreviewWatch",
     "OperatingPointInput",
+    "PlacementBoardTopology",
+    "PlacementComponentTopology",
+    "PlacementPinTopology",
+    "ResolvedReviewRule",
+    "ReviewAssessment",
+    "ReviewContext",
+    "ReviewCoverage",
+    "ReviewDomain",
+    "ReviewFinding",
+    "ReviewRule",
+    "ReviewSnapshot",
+    "RuleApplicability",
+    "SUPPORTED_REVIEW_UNITS",
     "SetStackupInput",
     "SuggestedFix",
     "StackupInput",
@@ -81,4 +116,5 @@ __all__ = [
     "VerdictReport",
     "VoltageDropInput",
     "stable_finding_id",
+    "validate_unit_compatibility",
 ]
