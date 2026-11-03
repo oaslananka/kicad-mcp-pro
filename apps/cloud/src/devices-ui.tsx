@@ -112,6 +112,19 @@ export function renderDevicesPage(
       {enrollmentAvailable&&ownerSub?<details className="advanced-identity">
         <summary>Advanced: local Connector account ID</summary>
         <p>Only needed when configuring the local Connector manually: <code>{ownerSub}</code></p>
+        {(/^[A-Za-z0-9_.:@-]{1,256}$/.test(ownerSub))?
+          projects.filter(project=>/^[0-9a-f-]{36}$/i.test(project.id)&&
+            /^[0-9a-f-]{36}$/i.test(project.deviceId)&&
+            devices.some(d=>d.id===project.deviceId&&d.enabled&&!d.revoked)).map(project=>
+            <div key={project.id} className="local-setup-command">
+              <strong>{project.alias}</strong>
+              <p>Run on your own computer from a terminal using the latest CLI.
+                This only updates which local folder belongs to the paired device.
+                It preserves the old record and asks before changing anything.</p>
+              <code>{`kicad-mcp-pro cloud register-project --owner-sub '${ownerSub}' --device-id ${project.deviceId} --project-id ${project.id}`}</code>
+              <p>Registration does not enable the Connector or grant client access.</p>
+            </div>
+          ):null}
       </details>:null}
     </div>
   });

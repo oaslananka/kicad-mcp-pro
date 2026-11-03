@@ -99,6 +99,35 @@ redirect registration; GitHub sign-in likewise requires its own complete
 provider credentials. The UI lists only configured providers. No additional
 identity provider or shared OAuth client is created for this flow.
 
+## Link a newly approved Cloud project to the owner's local KiCad folder
+
+Cloud device pairing, Cloud project creation, and local project selection
+are distinct steps. A signed-in owner opens **Devices & projects** and,
+under **Advanced: local Connector account ID**, copies the scoped
+`kicad-mcp-pro cloud register-project ...` command displayed for the
+specific already-enrolled device and registered project. This command
+contains only opaque IDs, never OAuth tokens, device private keys or paths.
+
+Run that command from **your own interactive terminal** using the current
+CLI. It verifies the approved Ed25519 local key binding and existing one
+owner-private project, shows which already-selected local folder will be
+reused, and requires one explicit confirmation. On confirmation, it archives
+the previous local project record in a 0700 owner-only directory and
+activates a single new 0600 record. No private keys are regenerated or
+deleted. A failure attempts to restore the old registration, and all
+inconsistent or ambiguous input fails closed.
+
+The command intentionally performs **no** Cloud API call, remote OAuth
+approval, project or device enrollment, managed Connector startup,
+project read or client grant. The provided project ID must be copied
+from the owner's authenticated first-party Cloud page; it is not
+independently verified via a browser session in the local CLI. Only the
+already-approved device's origin, identity and signing key are checked.
+Run `kicad-mcp-pro cloud status` afterwards: it should remain Off until
+the user explicitly opts in with `cloud enable` and separately grants
+Cloud project access. The Cloud switch and per-client authorization
+continue to be required.
+
 ## Existing-host Coolify deployment (one canonical Git repo)
 
 The source of truth is `oaslananka/kicad-mcp-pro` and the cloud build

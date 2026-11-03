@@ -168,3 +168,23 @@ def test_cloud_connect_new_device_rejects_corrupt_existing_registration(
     result = CliRunner().invoke(app, ["cloud", "connect", "--new-device"])
     assert result.exit_code != 0
     assert "Existing Cloud registration needs local repair" in result.output
+
+
+def test_login_browser_launch_exception_prints_link(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_user_cli.webbrowser.open",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("desktop offline")),
+    )
+    result = CliRunner().invoke(app, ["cloud", "login"])
+    assert result.exit_code == 0
+    assert "Open the link above in your preferred browser" in result.output
+
+
+@pytest.mark.parametrize("alias", ["", "x" * 81, "control\nchar"])
+def test_connect_rejects_invalid_alias_without_pairing(monkeypatch, alias) -> None:
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair.main",
+        lambda *_args: pytest.fail("invalid alias cannot start pairing"),
+    )
+    result = CliRunner().invoke(app, ["cloud", "connect", "--alias", alias])
+    assert result.exit_code != 0

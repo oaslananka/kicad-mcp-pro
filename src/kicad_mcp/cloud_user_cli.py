@@ -6,6 +6,7 @@ no fabricated CLI bearer token or automatic project grant.
 
 from __future__ import annotations
 
+import sys
 import webbrowser
 
 import typer
@@ -108,6 +109,59 @@ def connect(
         "device, project and signing key before enabling the Connector."
     )
     typer.echo("Pairing alone does not enable the persistent Connector or project access.")
+
+
+def _owner_terminal() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+@cloud_app.command("register-project")
+def register_project(
+    owner_sub: str = typer.Option(
+        ..., "--owner-sub", help="Account ID from signed-in Cloud Devices."
+    ),
+    device_id: str = typer.Option(
+        ..., "--device-id", help="Device ID from signed-in Cloud Devices."
+    ),
+    project_id: str = typer.Option(
+        ..., "--project-id", help="Project ID from signed-in Cloud Devices."
+    ),
+) -> None:
+    """Explicitly associate a paired Cloud project with your existing local folder."""
+    if not _owner_terminal():
+        raise typer.BadParameter("Run this from your own interactive terminal.")
+    from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
+    from kicad_mcp.cloud_registration_handoff import (
+        activate_handoff,
+        default_registry_root,
+        prepare_handoff,
+    )
+
+    try:
+        plan = prepare_handoff(
+            default_registry_root(),
+            owner_sub=owner_sub,
+            device_id=device_id,
+            project_id=project_id,
+        )
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter("Local project binding could not be verified.") from exc
+    old = plan.old()
+    typer.echo("The existing local project folder will be reused:")
+    typer.echo(f"  {old['directory']} ({old['filenameStem']})")
+    typer.echo("The prior device registration will be archived privately, not deleted.")
+    typer.echo("The Cloud device, project and client access switches remain separate.")
+    if not typer.confirm("Link this local project to the newly approved device?", default=False):
+        typer.echo("No changes made.")
+        raise typer.Exit(1)
+    try:
+        activate_handoff(plan)
+    except (OSError, LocalApprovalDeniedError) as exc:
+        raise typer.BadParameter(
+            "Local registration update failed; inspect private registry."
+        ) from exc
+    typer.echo("Local project registration updated. Connector remains Off.")
+    typer.echo("Check cloud status, then use cloud enable only when ready.")
 
 
 @cloud_app.command()

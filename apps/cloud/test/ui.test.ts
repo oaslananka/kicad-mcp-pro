@@ -160,6 +160,10 @@ test("device and project controls show aliases while keeping opaque IDs in forms
   assert.match(html,/On device: Main Lab/);
   assert.match(html,/Registered projects/);
   assert.match(html,/Advanced: local Connector account ID/);
+  assert.match(html,/kicad-mcp-pro cloud register-project --owner-sub/);
+  assert.match(html,/--device-id 11111111-1111-4111-8111-111111111111/);
+  assert.match(html,/--project-id 22222222-2222-4222-8222-222222222222/);
+  assert.match(html,/Registration does not enable the Connector/);
   assert.match(html,/<details class="advanced-identity"/);
   assert.doesNotMatch(html,/Credential fingerprint|secret-test-fingerprint-42/);
   assert.doesNotMatch(html,/Registered project IDs/);
@@ -177,4 +181,11 @@ test("device and project controls show aliases while keeping opaque IDs in forms
   assert.doesNotMatch(escaped,/<script>|<svg onload/);
   assert.match(escaped,/&lt;script&gt;device&lt;\/script&gt;/);
   assert.match(escaped,/&lt;svg onload=bad&gt;/);
+  // Display copyable commands only for safe server-controlled identifiers.
+  const risky=renderDevicesPage(
+    [{id:deviceId,alias:"Device",enabled:true,revoked:false,
+      fingerprint:"x",createdAt:new Date(),csrf:"csrf"}],
+    undefined,true,[{id:projectId,deviceId,alias:"Project",enabled:true}],
+    "unsafe'$(touch /tmp/not-allowed)");
+  assert.doesNotMatch(risky,/cloud register-project/);
 });
