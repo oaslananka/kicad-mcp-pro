@@ -292,23 +292,27 @@ def test_wrong_metric_dimension_never_passes() -> None:
 def test_report_loader_rejects_bad_json_shape_schema_and_missing_file(tmp_path: Path) -> None:
     absent, absent_error = load_external_analysis_report("none.json", base_dir=tmp_path)
     assert absent is None
-    assert absent_error and "does not exist" in absent_error
+    assert absent_error is not None
+    assert "does not exist" in absent_error
 
     file = tmp_path / "bad.json"
     file.write_text("{", encoding="utf-8")
     malformed, malformed_error = load_external_analysis_report(file, base_dir=tmp_path)
     assert malformed is None
-    assert malformed_error and "Failed to parse" in malformed_error
+    assert malformed_error is not None
+    assert "Failed to parse" in malformed_error
 
     file.write_text("[]", encoding="utf-8")
     not_mapping, mapping_error = load_external_analysis_report(file, base_dir=tmp_path)
     assert not_mapping is None
-    assert mapping_error and "mapping" in mapping_error
+    assert mapping_error is not None
+    assert "mapping" in mapping_error
 
     file.write_text("{}", encoding="utf-8")
     bad_schema, schema_error = load_external_analysis_report(file, base_dir=tmp_path)
     assert bad_schema is None
-    assert schema_error and "schema validation" in schema_error
+    assert schema_error is not None
+    assert "schema validation" in schema_error
 
 
 def test_report_loads_safe_yaml_without_executing_code(tmp_path: Path) -> None:
@@ -321,7 +325,8 @@ def test_report_loads_safe_yaml_without_executing_code(tmp_path: Path) -> None:
     )
     report, error = load_external_analysis_report(document, base_dir=tmp_path)
     assert error is None
-    assert report is not None and report.report_id == "YAML_VALID_001"
+    assert report is not None
+    assert report.report_id == "YAML_VALID_001"
 
 
 def test_external_tool_violation_causes_hard_failure() -> None:

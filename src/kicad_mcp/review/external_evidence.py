@@ -204,30 +204,12 @@ def _metric_units_blocker(
     )
 
 
-def evaluate_external_evidence(
+def _external_provenance_findings(
     context: ReviewContext,
-    report: ExternalAnalysisReport | None,
-    *,
-    rule_id: str = "analysis.external_simulation",
-) -> ReviewAssessment:
-    """Evaluate external analysis evidence against active project context and validity bounds."""
-    if report is None:
-        return ReviewAssessment(
-            rule_id=rule_id,
-            rule_revision=1,
-            status=AssessmentStatus.NOT_ASSESSED,
-            method=EvaluationMethod.ANALYTICAL,
-            summary=(
-                "External analysis report not provided; local review remains offline and active."
-            ),
-            missing_inputs=["external_analysis_report"],
-            metadata={"defect_category": "analysis", "optional_external": True},
-        )
-
-    provenance_blocker = _missing_verification_context(context, report, rule_id)
-    if provenance_blocker is not None:
-        return provenance_blocker
-
+    report: ExternalAnalysisReport,
+    rule_id: str,
+) -> list[ReviewFinding]:
+    """Collect foreign-board, stale-source, stackup and solver evidence defects."""
     findings: list[ReviewFinding] = []
     finding_idx = 1
 
@@ -314,6 +296,36 @@ def evaluate_external_evidence(
             )
         )
         finding_idx += 1
+
+    return findings
+
+
+def evaluate_external_evidence(
+    context: ReviewContext,
+    report: ExternalAnalysisReport | None,
+    *,
+    rule_id: str = "analysis.external_simulation",
+) -> ReviewAssessment:
+    """Evaluate external analysis evidence against active project context and validity bounds."""
+    if report is None:
+        return ReviewAssessment(
+            rule_id=rule_id,
+            rule_revision=1,
+            status=AssessmentStatus.NOT_ASSESSED,
+            method=EvaluationMethod.ANALYTICAL,
+            summary=(
+                "External analysis report not provided; local review remains offline and active."
+            ),
+            missing_inputs=["external_analysis_report"],
+            metadata={"defect_category": "analysis", "optional_external": True},
+        )
+
+    provenance_blocker = _missing_verification_context(context, report, rule_id)
+    if provenance_blocker is not None:
+        return provenance_blocker
+
+    findings = _external_provenance_findings(context, report, rule_id)
+    finding_idx = len(findings) + 1
 
     # 5. Incompatible or unrecognized units check
     units_blocker = _metric_units_blocker(context, report, rule_id)
