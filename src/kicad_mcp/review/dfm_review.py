@@ -230,40 +230,10 @@ def _specific_pth_annular_ring_findings(
     return findings
 
 
-def evaluate_dfm_fabrication_limits(
-    profile: FabricationProfile | None,
-    board_input: BoardDFMInput | None,
-    context: ReviewContext,
-    rule_id: str = "mfg.dfm_profile_compliance",
-) -> ReviewAssessment:
-    """Evaluate PCB fabrication limits against selected supplier capability profile."""
-    if profile is None:
-        return ReviewAssessment(
-            rule_id=rule_id,
-            rule_revision=1,
-            status=AssessmentStatus.NOT_ASSESSED,
-            method=EvaluationMethod.ANALYTICAL,
-            summary=(
-                "No universal fabrication limit without a selected applicable profile; "
-                "DFM evaluation cannot run."
-            ),
-            missing_inputs=["dfm_profile"],
-            metadata={"defect_category": "manufacturing", "reason": "missing_profile"},
-        )
-
-    if board_input is None:
-        return ReviewAssessment(
-            rule_id=rule_id,
-            rule_revision=1,
-            status=AssessmentStatus.NOT_ASSESSED,
-            method=EvaluationMethod.ANALYTICAL,
-            summary="Board DFM measurements not provided.",
-            missing_inputs=["board_dfm_measurements"],
-            metadata={"defect_category": "manufacturing"},
-        )
-
-    findings: list[ReviewFinding] = []
-    finding_idx = 1
+def _missing_dfm_measurements(
+    profile: FabricationProfile,
+    board_input: BoardDFMInput,
+) -> list[str]:
     rules = profile.rules
     required_measurements = (
         ("min_trace_width_mm", "min_trace_width_mm"),
@@ -288,6 +258,18 @@ def evaluate_dfm_fabrication_limits(
     ):
         missing_inputs.append("min_pth_annular_ring_2layer_1oz_mm")
 
+    return missing_inputs
+
+
+def _dfm_trace_drill_ring_findings(
+    profile: FabricationProfile,
+    board_input: BoardDFMInput,
+    rule_id: str,
+    first_index: int,
+) -> list[ReviewFinding]:
+    rules = profile.rules
+    findings: list[ReviewFinding] = []
+    finding_idx = first_index
     # 1. Trace width
     min_tw = rules.get("min_trace_width_mm")
     if (
@@ -376,13 +358,18 @@ def evaluate_dfm_fabrication_limits(
         )
         finding_idx += 1
 
-    # Specific two-layer PTH floor is only enforceable from a selected profile.
-    pth_findings = _specific_pth_annular_ring_findings(
-        profile, board_input, context, rule_id, finding_idx
-    )
-    findings.extend(pth_findings)
-    finding_idx += len(pth_findings)
+    return findings
 
+
+def _dfm_edge_and_slot_findings(
+    profile: FabricationProfile,
+    board_input: BoardDFMInput,
+    rule_id: str,
+    first_index: int,
+) -> list[ReviewFinding]:
+    rules = profile.rules
+    findings: list[ReviewFinding] = []
+    finding_idx = first_index
     # 5. Copper to board edge
     copper_to_edge = rules.get("copper_to_edge_mm")
     if (
@@ -444,6 +431,54 @@ def evaluate_dfm_fabrication_limits(
         )
         finding_idx += 1
 
+    return findings
+
+
+def evaluate_dfm_fabrication_limits(
+    profile: FabricationProfile | None,
+    board_input: BoardDFMInput | None,
+    context: ReviewContext,
+    rule_id: str = "mfg.dfm_profile_compliance",
+) -> ReviewAssessment:
+    """Evaluate PCB fabrication limits against selected supplier capability profile."""
+    if profile is None:
+        return ReviewAssessment(
+            rule_id=rule_id,
+            rule_revision=1,
+            status=AssessmentStatus.NOT_ASSESSED,
+            method=EvaluationMethod.ANALYTICAL,
+            summary=(
+                "No universal fabrication limit without a selected applicable profile; "
+                "DFM evaluation cannot run."
+            ),
+            missing_inputs=["dfm_profile"],
+            metadata={"defect_category": "manufacturing", "reason": "missing_profile"},
+        )
+
+    if board_input is None:
+        return ReviewAssessment(
+            rule_id=rule_id,
+            rule_revision=1,
+            status=AssessmentStatus.NOT_ASSESSED,
+            method=EvaluationMethod.ANALYTICAL,
+            summary="Board DFM measurements not provided.",
+            missing_inputs=["board_dfm_measurements"],
+            metadata={"defect_category": "manufacturing"},
+        )
+
+    findings = _dfm_trace_drill_ring_findings(profile, board_input, rule_id, 1)
+    finding_idx = len(findings) + 1
+    missing_inputs = _missing_dfm_measurements(profile, board_input)
+
+    # Specific two-layer PTH floor is only enforceable from a selected profile.
+    pth_findings = _specific_pth_annular_ring_findings(
+        profile, board_input, context, rule_id, finding_idx
+    )
+    findings.extend(pth_findings)
+    finding_idx += len(pth_findings)
+
+    findings.extend(_dfm_edge_and_slot_findings(profile, board_input, rule_id, finding_idx))
+
     errors = [f for f in findings if f.severity == "error"]
     warnings = [f for f in findings if f.severity == "warning"]
 
@@ -484,10 +519,84 @@ def evaluate_dfm_fabrication_limits(
             "version": profile.version,
             "profile_sha256": profile.profile_sha256(),
             "measured_value": board_input.min_annular_ring_mm,
-            "applied_threshold": min_ar,
+            "applied_threshold": profile.rules.get("min_annular_ring_mm"),
             "threshold_unit": "mm",
         },
     )
+
+
+def _dfa_component_findings(
+    assembly_input: BoardAssemblyInput,
+    rule_id: str,
+    first_index: int,
+) -> list[ReviewFinding]:
+    findings: list[ReviewFinding] = []
+    finding_idx = first_index
+    # 3. Component checks (Pin-1, CPL rotation semantics, Tombstoning)
+    for comp in assembly_input.components:
+        ref = comp.get("ref", "unknown")
+        # Polarity / pin-1 check
+        if comp.get("is_polarized", False) and not comp.get("has_pin1_mark", False):
+            findings.append(
+                ReviewFinding(
+                    id=f"DFA_{finding_idx:03d}",
+                    rule_id=rule_id,
+                    rule_revision=1,
+                    severity="error",
+                    description=(
+                        f"Polarized component {ref} missing pin-1 / polarity silkscreen marker."
+                    ),
+                    remediation="Add pin-1 dot or cathode band on silkscreen.",
+                )
+            )
+            finding_idx += 1
+
+        # CPL rotation semantics: ensure CPL rotation reflects footprint + offset
+        fp_rot = comp.get("footprint_rotation_deg")
+        cpl_rot = comp.get("cpl_rotation_deg")
+        cpl_offset = comp.get("cpl_offset_deg", 0.0)
+        if fp_rot is not None and cpl_rot is not None:
+            expected_cpl = (float(fp_rot) + float(cpl_offset)) % 360.0
+            actual_cpl = float(cpl_rot) % 360.0
+            if not math.isclose(expected_cpl, actual_cpl, abs_tol=1e-2):
+                findings.append(
+                    ReviewFinding(
+                        id=f"DFA_{finding_idx:03d}",
+                        rule_id=rule_id,
+                        rule_revision=1,
+                        severity="error",
+                        description=(
+                            f"CPL rotation mismatch on {ref}: footprint {fp_rot}° + "
+                            f"offset {cpl_offset}° = {expected_cpl:.1f}°, "
+                            f"but CPL specifies {actual_cpl:.1f}°."
+                        ),
+                        remediation="Re-generate CPL with assembler-specific rotation correction.",
+                    )
+                )
+                finding_idx += 1
+
+        # Tombstoning / thermal imbalance on 2-terminal chips
+        pin1_plane = comp.get("pin1_connected_to_plane", False)
+        pin2_plane = comp.get("pin2_connected_to_plane", False)
+        has_relief = comp.get("has_thermal_relief", True)
+        if pin1_plane != pin2_plane and not has_relief:
+            findings.append(
+                ReviewFinding(
+                    id=f"DFA_{finding_idx:03d}",
+                    rule_id=rule_id,
+                    rule_revision=1,
+                    severity="warning",
+                    description=(
+                        f"Thermal imbalance on 2-terminal chip {ref} ({comp.get('package', '')}): "
+                        "one terminal on solid copper plane without thermal relief "
+                        "risks tombstoning."
+                    ),
+                    remediation="Add thermal relief spokes to pad connection.",
+                )
+            )
+            finding_idx += 1
+
+    return findings
 
 
 def evaluate_dfa_assembly(
@@ -559,69 +668,7 @@ def evaluate_dfa_assembly(
         )
         finding_idx += 1
 
-    # 3. Component checks (Pin-1, CPL rotation semantics, Tombstoning)
-    for comp in assembly_input.components:
-        ref = comp.get("ref", "unknown")
-        # Polarity / pin-1 check
-        if comp.get("is_polarized", False) and not comp.get("has_pin1_mark", False):
-            findings.append(
-                ReviewFinding(
-                    id=f"DFA_{finding_idx:03d}",
-                    rule_id=rule_id,
-                    rule_revision=1,
-                    severity="error",
-                    description=(
-                        f"Polarized component {ref} missing pin-1 / polarity silkscreen marker."
-                    ),
-                    remediation="Add pin-1 dot or cathode band on silkscreen.",
-                )
-            )
-            finding_idx += 1
-
-        # CPL rotation semantics: ensure CPL rotation reflects footprint + offset
-        fp_rot = comp.get("footprint_rotation_deg")
-        cpl_rot = comp.get("cpl_rotation_deg")
-        cpl_offset = comp.get("cpl_offset_deg", 0.0)
-        if fp_rot is not None and cpl_rot is not None:
-            expected_cpl = (float(fp_rot) + float(cpl_offset)) % 360.0
-            actual_cpl = float(cpl_rot) % 360.0
-            if not math.isclose(expected_cpl, actual_cpl, abs_tol=1e-2):
-                findings.append(
-                    ReviewFinding(
-                        id=f"DFA_{finding_idx:03d}",
-                        rule_id=rule_id,
-                        rule_revision=1,
-                        severity="error",
-                        description=(
-                            f"CPL rotation mismatch on {ref}: footprint {fp_rot}° + "
-                            f"offset {cpl_offset}° = {expected_cpl:.1f}°, "
-                            f"but CPL specifies {actual_cpl:.1f}°."
-                        ),
-                        remediation="Re-generate CPL with assembler-specific rotation correction.",
-                    )
-                )
-                finding_idx += 1
-
-        # Tombstoning / thermal imbalance on 2-terminal chips
-        pin1_plane = comp.get("pin1_connected_to_plane", False)
-        pin2_plane = comp.get("pin2_connected_to_plane", False)
-        has_relief = comp.get("has_thermal_relief", True)
-        if pin1_plane != pin2_plane and not has_relief:
-            findings.append(
-                ReviewFinding(
-                    id=f"DFA_{finding_idx:03d}",
-                    rule_id=rule_id,
-                    rule_revision=1,
-                    severity="warning",
-                    description=(
-                        f"Thermal imbalance on 2-terminal chip {ref} ({comp.get('package', '')}): "
-                        "one terminal on solid copper plane without thermal relief "
-                        "risks tombstoning."
-                    ),
-                    remediation="Add thermal relief spokes to pad connection.",
-                )
-            )
-            finding_idx += 1
+    findings.extend(_dfa_component_findings(assembly_input, rule_id, finding_idx))
 
     errors = [f for f in findings if f.severity == "error"]
     warnings = [f for f in findings if f.severity == "warning"]
@@ -654,6 +701,29 @@ def evaluate_dfa_assembly(
     )
 
 
+def _parse_dft_probe_measurement(
+    item: dict[str, Any],
+    measured_key: str,
+    threshold_key: str,
+) -> tuple[float, float] | None:
+    try:
+        measured = float(item[measured_key])
+        minimum = float(item[threshold_key])
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(measured) or not math.isfinite(minimum) or measured < 0 or minimum <= 0:
+        return None
+    return measured, minimum
+
+
+def _dft_probe_target(item: dict[str, Any], measured_key: str) -> str:
+    if measured_key == "pitch_mm":
+        return f"between {item.get('tp1', 'TP1')} and {item.get('tp2', 'TP2')}"
+    return (
+        f"between {item.get('testpoint', 'TP1')} and component {item.get('component', 'unknown')}"
+    )
+
+
 def _dft_probe_geometry_findings(
     spec: DFTTestabilitySpec,
     rule_id: str,
@@ -678,31 +748,15 @@ def _dft_probe_geometry_findings(
     )
     for entries, measured_key, threshold_key, input_name in contracts:
         for item in entries:
-            try:
-                measured = float(item[measured_key])
-                minimum = float(item[threshold_key])
-            except (KeyError, TypeError, ValueError, OverflowError):
+            measurements = _parse_dft_probe_measurement(item, measured_key, threshold_key)
+            if measurements is None:
                 if input_name not in missing_inputs:
                     missing_inputs.append(input_name)
                 continue
-            if (
-                not math.isfinite(measured)
-                or not math.isfinite(minimum)
-                or measured < 0
-                or minimum <= 0
-            ):
-                if input_name not in missing_inputs:
-                    missing_inputs.append(input_name)
-                continue
+            measured, minimum = measurements
             if measured >= minimum:
                 continue
-            if measured_key == "pitch_mm":
-                target = f"between {item.get('tp1', 'TP1')} and {item.get('tp2', 'TP2')}"
-            else:
-                target = (
-                    f"between {item.get('testpoint', 'TP1')} "
-                    f"and component {item.get('component', 'unknown')}"
-                )
+            target = _dft_probe_target(item, measured_key)
             findings.append(
                 ReviewFinding(
                     id=f"DFT_{first_index + len(findings):03d}",
@@ -829,6 +883,133 @@ def _alternate_incompatibilities(alt: dict[str, Any]) -> list[str]:
     return issues
 
 
+def _bom_lifecycle_findings(
+    item: BOMItemInput,
+    rule_id: str,
+    first_index: int,
+) -> list[ReviewFinding]:
+    findings: list[ReviewFinding] = []
+    finding_idx = first_index
+    # 1. Lifecycle checks
+    if item.lifecycle_status in ("EOL", "OBSOLETE"):
+        findings.append(
+            ReviewFinding(
+                id=f"BOM_{finding_idx:03d}",
+                rule_id=rule_id,
+                rule_revision=1,
+                severity="error",
+                description=(
+                    f"BOM component {item.reference} ({item.mpn}) is {item.lifecycle_status}."
+                ),
+                remediation="Select active replacement part with active lifecycle.",
+            )
+        )
+        finding_idx += 1
+    elif item.lifecycle_status == "NRND":
+        findings.append(
+            ReviewFinding(
+                id=f"BOM_{finding_idx:03d}",
+                rule_id=rule_id,
+                rule_revision=1,
+                severity="warning",
+                description=(
+                    f"BOM component {item.reference} ({item.mpn}) is Not Recommended "
+                    "for New Designs (NRND)."
+                ),
+                remediation="Plan migration to newer pin-compatible active component.",
+            )
+        )
+        finding_idx += 1
+
+    return findings
+
+
+def _bom_stock_findings(
+    item: BOMItemInput,
+    rule_id: str,
+    first_index: int,
+) -> list[ReviewFinding]:
+    findings: list[ReviewFinding] = []
+    finding_idx = first_index
+    # 2. Stock availability checks
+    if item.stock_status in ("OFFLINE_SNAPSHOT", "UNVERIFIED"):
+        findings.append(
+            ReviewFinding(
+                id=f"BOM_{finding_idx:03d}",
+                rule_id=rule_id,
+                rule_revision=1,
+                severity="warning",
+                description=(
+                    f"BOM component {item.reference} ({item.mpn}) stock is from "
+                    f"{item.stock_status.lower()} (as of {item.stock_as_of or 'unspecified'}); "
+                    "cannot be presented as verified live availability."
+                ),
+                remediation="Verify live supplier stock and lead time before procurement.",
+            )
+        )
+        finding_idx += 1
+    elif item.stock_status == "OUT_OF_STOCK":
+        findings.append(
+            ReviewFinding(
+                id=f"BOM_{finding_idx:03d}",
+                rule_id=rule_id,
+                rule_revision=1,
+                severity="error",
+                description=f"BOM component {item.reference} ({item.mpn}) is OUT_OF_STOCK.",
+                remediation="Select qualified in-stock alternate.",
+            )
+        )
+        finding_idx += 1
+
+    elif item.stock_status == "VERIFIED_IN_STOCK" and not item.stock_as_of:
+        findings.append(
+            ReviewFinding(
+                id=f"BOM_{finding_idx:03d}",
+                rule_id=rule_id,
+                rule_revision=1,
+                severity="warning",
+                description=(
+                    f"BOM component {item.reference} ({item.mpn}) has no dated stock "
+                    "verification; cannot be presented as current live availability."
+                ),
+                remediation="Attach dated supplier stock evidence before procurement.",
+            )
+        )
+        finding_idx += 1
+
+    return findings
+
+
+def _bom_alternate_findings(
+    item: BOMItemInput,
+    rule_id: str,
+    first_index: int,
+) -> list[ReviewFinding]:
+    findings: list[ReviewFinding] = []
+    finding_idx = first_index
+    # 3. Alternates evaluation
+    for alt in item.alternates:
+        alt_mpn = alt.get("alt_mpn", "alternate")
+        incompatibilities = _alternate_incompatibilities(alt)
+        if incompatibilities:
+            findings.append(
+                ReviewFinding(
+                    id=f"BOM_{finding_idx:03d}",
+                    rule_id=rule_id,
+                    rule_revision=1,
+                    severity="error",
+                    description=(
+                        f"Alternate {alt_mpn} for {item.reference} rejected: "
+                        f"{', '.join(incompatibilities)}."
+                    ),
+                    remediation="Disqualify incompatible alternate or modify schematic/PCB.",
+                )
+            )
+            finding_idx += 1
+
+    return findings
+
+
 def evaluate_bom_and_lifecycle(
     bom_items: list[BOMItemInput] | None,
     context: ReviewContext,
@@ -847,105 +1028,14 @@ def evaluate_bom_and_lifecycle(
         )
 
     findings: list[ReviewFinding] = []
-    finding_idx = 1
 
     for item in bom_items:
-        # 1. Lifecycle checks
-        if item.lifecycle_status in ("EOL", "OBSOLETE"):
-            findings.append(
-                ReviewFinding(
-                    id=f"BOM_{finding_idx:03d}",
-                    rule_id=rule_id,
-                    rule_revision=1,
-                    severity="error",
-                    description=(
-                        f"BOM component {item.reference} ({item.mpn}) is {item.lifecycle_status}."
-                    ),
-                    remediation="Select active replacement part with active lifecycle.",
-                )
-            )
-            finding_idx += 1
-        elif item.lifecycle_status == "NRND":
-            findings.append(
-                ReviewFinding(
-                    id=f"BOM_{finding_idx:03d}",
-                    rule_id=rule_id,
-                    rule_revision=1,
-                    severity="warning",
-                    description=(
-                        f"BOM component {item.reference} ({item.mpn}) is Not Recommended "
-                        "for New Designs (NRND)."
-                    ),
-                    remediation="Plan migration to newer pin-compatible active component.",
-                )
-            )
-            finding_idx += 1
-
-        # 2. Stock availability checks
-        if item.stock_status in ("OFFLINE_SNAPSHOT", "UNVERIFIED"):
-            findings.append(
-                ReviewFinding(
-                    id=f"BOM_{finding_idx:03d}",
-                    rule_id=rule_id,
-                    rule_revision=1,
-                    severity="warning",
-                    description=(
-                        f"BOM component {item.reference} ({item.mpn}) stock is from "
-                        f"{item.stock_status.lower()} (as of {item.stock_as_of or 'unspecified'}); "
-                        "cannot be presented as verified live availability."
-                    ),
-                    remediation="Verify live supplier stock and lead time before procurement.",
-                )
-            )
-            finding_idx += 1
-        elif item.stock_status == "OUT_OF_STOCK":
-            findings.append(
-                ReviewFinding(
-                    id=f"BOM_{finding_idx:03d}",
-                    rule_id=rule_id,
-                    rule_revision=1,
-                    severity="error",
-                    description=f"BOM component {item.reference} ({item.mpn}) is OUT_OF_STOCK.",
-                    remediation="Select qualified in-stock alternate.",
-                )
-            )
-            finding_idx += 1
-
-        elif item.stock_status == "VERIFIED_IN_STOCK" and not item.stock_as_of:
-            findings.append(
-                ReviewFinding(
-                    id=f"BOM_{finding_idx:03d}",
-                    rule_id=rule_id,
-                    rule_revision=1,
-                    severity="warning",
-                    description=(
-                        f"BOM component {item.reference} ({item.mpn}) has no dated stock "
-                        "verification; cannot be presented as current live availability."
-                    ),
-                    remediation="Attach dated supplier stock evidence before procurement.",
-                )
-            )
-            finding_idx += 1
-
-        # 3. Alternates evaluation
-        for alt in item.alternates:
-            alt_mpn = alt.get("alt_mpn", "alternate")
-            incompatibilities = _alternate_incompatibilities(alt)
-            if incompatibilities:
-                findings.append(
-                    ReviewFinding(
-                        id=f"BOM_{finding_idx:03d}",
-                        rule_id=rule_id,
-                        rule_revision=1,
-                        severity="error",
-                        description=(
-                            f"Alternate {alt_mpn} for {item.reference} rejected: "
-                            f"{', '.join(incompatibilities)}."
-                        ),
-                        remediation="Disqualify incompatible alternate or modify schematic/PCB.",
-                    )
-                )
-                finding_idx += 1
+        for evaluate_section in (
+            _bom_lifecycle_findings,
+            _bom_stock_findings,
+            _bom_alternate_findings,
+        ):
+            findings.extend(evaluate_section(item, rule_id, len(findings) + 1))
 
     errors = [f for f in findings if f.severity == "error"]
     warnings = [f for f in findings if f.severity == "warning"]
@@ -1036,6 +1126,126 @@ def _bringup_authorization_findings(
     ]
 
 
+def _bringup_item_findings(
+    item: BringupPlanInput,
+    rule_id: str,
+    first_index: int,
+) -> list[ReviewFinding]:
+    findings: list[ReviewFinding] = []
+    finding_idx = first_index
+    # Check: checklist item without measurement data is NOT measurement evidence
+    if item.is_checklist_only or item.measured_value is None:
+        findings.append(
+            ReviewFinding(
+                id=f"BRINGUP_{finding_idx:03d}",
+                rule_id=rule_id,
+                rule_revision=1,
+                severity="error",
+                description=(
+                    f"Bring-up step '{item.item_id}' ({item.description}): "
+                    "checklist completion without measurements is not measurement evidence."
+                ),
+                remediation="Record actual measured value using calibrated test instrument.",
+            )
+        )
+        finding_idx += 1
+        return findings
+
+    # Acceptance bounds
+    val = item.measured_value
+    if item.acceptance_min is None and item.acceptance_max is None:
+        findings.append(
+            ReviewFinding(
+                id=f"BRINGUP_{finding_idx:03d}",
+                rule_id=rule_id,
+                rule_revision=1,
+                severity="warning",
+                description=f"Bring-up step '{item.item_id}' has no acceptance bounds.",
+                remediation="Declare measurement acceptance limits before claiming PASS.",
+            )
+        )
+        finding_idx += 1
+    if item.acceptance_min is not None and val < item.acceptance_min:
+        findings.append(
+            ReviewFinding(
+                id=f"BRINGUP_{finding_idx:03d}",
+                rule_id=rule_id,
+                rule_revision=1,
+                severity="error",
+                description=(
+                    f"Bring-up step '{item.item_id}' measured value {val} "
+                    f"{item.measurement_unit or ''} is below minimum {item.acceptance_min}."
+                ),
+                remediation="Investigate power supply tolerance or load fault.",
+            )
+        )
+        finding_idx += 1
+
+    if item.acceptance_max is not None and val > item.acceptance_max:
+        findings.append(
+            ReviewFinding(
+                id=f"BRINGUP_{finding_idx:03d}",
+                rule_id=rule_id,
+                rule_revision=1,
+                severity="error",
+                description=(
+                    f"Bring-up step '{item.item_id}' measured value {val} "
+                    f"{item.measurement_unit or ''} exceeds maximum {item.acceptance_max}."
+                ),
+                remediation="Investigate regulator loop stability or overvoltage condition.",
+            )
+        )
+        finding_idx += 1
+
+    # Instrument identity and environment warnings
+    if not item.instrument_id:
+        findings.append(
+            ReviewFinding(
+                id=f"BRINGUP_{finding_idx:03d}",
+                rule_id=rule_id,
+                rule_revision=1,
+                severity="warning",
+                description=(
+                    f"Bring-up step '{item.item_id}' lacks instrument / test equipment identity."
+                ),
+                remediation="Log calibrated multimeter, scope, or analyzer serial number.",
+            )
+        )
+        finding_idx += 1
+
+    if not item.evidence_link:
+        findings.append(
+            ReviewFinding(
+                id=f"BRINGUP_{finding_idx:03d}",
+                rule_id=rule_id,
+                rule_revision=1,
+                severity="warning",
+                description=(
+                    f"Bring-up step '{item.item_id}' lacks a measurement evidence reference."
+                ),
+                remediation="Attach the signed measurement log or trace artifact reference.",
+            )
+        )
+        finding_idx += 1
+
+    if item.environmental_temp_c is None:
+        findings.append(
+            ReviewFinding(
+                id=f"BRINGUP_{finding_idx:03d}",
+                rule_id=rule_id,
+                rule_revision=1,
+                severity="warning",
+                description=(
+                    f"Bring-up step '{item.item_id}' lacks environmental ambient temperature."
+                ),
+                remediation="Record ambient room temperature during test.",
+            )
+        )
+        finding_idx += 1
+
+    return findings
+
+
 def evaluate_bringup_measurements(
     items: list[BringupPlanInput] | None,
     auth: StageAuthorizationInput | None,
@@ -1055,121 +1265,11 @@ def evaluate_bringup_measurements(
         )
 
     findings: list[ReviewFinding] = []
-    finding_idx = 1
 
     for item in items:
-        # Check: checklist item without measurement data is NOT measurement evidence
-        if item.is_checklist_only or item.measured_value is None:
-            findings.append(
-                ReviewFinding(
-                    id=f"BRINGUP_{finding_idx:03d}",
-                    rule_id=rule_id,
-                    rule_revision=1,
-                    severity="error",
-                    description=(
-                        f"Bring-up step '{item.item_id}' ({item.description}): "
-                        "checklist completion without measurements is not measurement evidence."
-                    ),
-                    remediation="Record actual measured value using calibrated test instrument.",
-                )
-            )
-            finding_idx += 1
-            continue
+        findings.extend(_bringup_item_findings(item, rule_id, len(findings) + 1))
 
-        # Acceptance bounds
-        val = item.measured_value
-        if item.acceptance_min is None and item.acceptance_max is None:
-            findings.append(
-                ReviewFinding(
-                    id=f"BRINGUP_{finding_idx:03d}",
-                    rule_id=rule_id,
-                    rule_revision=1,
-                    severity="warning",
-                    description=f"Bring-up step '{item.item_id}' has no acceptance bounds.",
-                    remediation="Declare measurement acceptance limits before claiming PASS.",
-                )
-            )
-            finding_idx += 1
-        if item.acceptance_min is not None and val < item.acceptance_min:
-            findings.append(
-                ReviewFinding(
-                    id=f"BRINGUP_{finding_idx:03d}",
-                    rule_id=rule_id,
-                    rule_revision=1,
-                    severity="error",
-                    description=(
-                        f"Bring-up step '{item.item_id}' measured value {val} "
-                        f"{item.measurement_unit or ''} is below minimum {item.acceptance_min}."
-                    ),
-                    remediation="Investigate power supply tolerance or load fault.",
-                )
-            )
-            finding_idx += 1
-
-        if item.acceptance_max is not None and val > item.acceptance_max:
-            findings.append(
-                ReviewFinding(
-                    id=f"BRINGUP_{finding_idx:03d}",
-                    rule_id=rule_id,
-                    rule_revision=1,
-                    severity="error",
-                    description=(
-                        f"Bring-up step '{item.item_id}' measured value {val} "
-                        f"{item.measurement_unit or ''} exceeds maximum {item.acceptance_max}."
-                    ),
-                    remediation="Investigate regulator loop stability or overvoltage condition.",
-                )
-            )
-            finding_idx += 1
-
-        # Instrument identity and environment warnings
-        if not item.instrument_id:
-            findings.append(
-                ReviewFinding(
-                    id=f"BRINGUP_{finding_idx:03d}",
-                    rule_id=rule_id,
-                    rule_revision=1,
-                    severity="warning",
-                    description=(
-                        f"Bring-up step '{item.item_id}' lacks instrument / "
-                        "test equipment identity."
-                    ),
-                    remediation="Log calibrated multimeter, scope, or analyzer serial number.",
-                )
-            )
-            finding_idx += 1
-
-        if not item.evidence_link:
-            findings.append(
-                ReviewFinding(
-                    id=f"BRINGUP_{finding_idx:03d}",
-                    rule_id=rule_id,
-                    rule_revision=1,
-                    severity="warning",
-                    description=(
-                        f"Bring-up step '{item.item_id}' lacks a measurement evidence reference."
-                    ),
-                    remediation="Attach the signed measurement log or trace artifact reference.",
-                )
-            )
-            finding_idx += 1
-
-        if item.environmental_temp_c is None:
-            findings.append(
-                ReviewFinding(
-                    id=f"BRINGUP_{finding_idx:03d}",
-                    rule_id=rule_id,
-                    rule_revision=1,
-                    severity="warning",
-                    description=(
-                        f"Bring-up step '{item.item_id}' lacks environmental ambient temperature."
-                    ),
-                    remediation="Record ambient room temperature during test.",
-                )
-            )
-            finding_idx += 1
-
-    findings.extend(_bringup_authorization_findings(auth, rule_id, finding_idx))
+    findings.extend(_bringup_authorization_findings(auth, rule_id, len(findings) + 1))
 
     errors = [f for f in findings if f.severity == "error"]
     warnings = [f for f in findings if f.severity == "warning"]

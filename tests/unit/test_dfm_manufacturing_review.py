@@ -410,13 +410,12 @@ def test_nonfinite_bringup_measurement_rejected(bad_value: float) -> None:
 
 
 def test_nonfinite_supplier_rule_rejected(jlcpcb_2layer_profile: FabricationProfile) -> None:
+    invalid_profile = {
+        **jlcpcb_2layer_profile.model_dump(),
+        "rules": {"min_trace_width_mm": math.nan},
+    }
     with pytest.raises(ValidationError):
-        FabricationProfile(
-            **{
-                **jlcpcb_2layer_profile.model_dump(),
-                "rules": {"min_trace_width_mm": math.nan},
-            }
-        )
+        FabricationProfile(**invalid_profile)
 
 
 def test_bringup_without_acceptance_bounds_is_not_a_pass() -> None:
