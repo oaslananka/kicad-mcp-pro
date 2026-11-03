@@ -23,6 +23,106 @@ from ..models.review import (
 )
 
 
+def _extract_context_keys(context: ReviewContext) -> set[str]:
+    """Collect available inputs from explicit requirements, inferred values, and flags."""
+    keys = set(context.explicit_requirements.keys()) | set(context.inferred_values.keys())
+    if context.operating_voltage_v is not None:
+        keys.add("operating_voltage_v")
+    if context.operating_current_a is not None:
+        keys.add("operating_current_a")
+    if context.declared_routing_style is not None:
+        keys.add("declared_routing_style")
+    if context.selected_mfg_profile is not None:
+        keys.add("selected_mfg_profile")
+    if context.has_kicad_cli:
+        keys.add("kicad_cli")
+    if context.has_3d_models:
+        keys.add("3d_models")
+    return keys
+
+
+def _resolve_safety_rule(rule: ReviewRule, context: ReviewContext) -> ResolvedReviewRule | None:
+    """Specialized resolution for high-voltage and mains safety rules."""
+    if rule.domain != ReviewDomain.SAFETY or "hazardous" not in rule.rule_id:
+        return None
+
+    if not context.is_hv and "hazardous_mains" not in context.technical_domains:
+        return ResolvedReviewRule(
+            rule=rule,
+            status=RuleApplicability.NOT_APPLICABLE,
+            rationale="SELV project; mains insulation rules do not apply.",
+        )
+
+    if (
+        context.is_hv
+        and context.operating_voltage_v is not None
+        and context.operating_voltage_v < 50.0
+    ):
+        return ResolvedReviewRule(
+            rule=rule,
+            status=RuleApplicability.UNDETERMINED,
+            rationale=(
+                f"Conflicting context: is_hv=True but voltage is "
+                f"{context.operating_voltage_v} V (< 50 V SELV threshold)."
+            ),
+            missing_inputs=["voltage_reconciliation"],
+        )
+
+    return None
+
+
+def _resolve_routing_rule(rule: ReviewRule, context: ReviewContext) -> ResolvedReviewRule | None:
+    """Specialized resolution for routing style rules."""
+    if rule.domain != ReviewDomain.ROUTING or rule.rule_id != "routing.orthogonal_corners":
+        return None
+
+    if context.declared_routing_style == "orthogonal_allowed":
+        return ResolvedReviewRule(
+            rule=rule,
+            status=RuleApplicability.NOT_APPLICABLE,
+            rationale="Project explicitly declares orthogonal routing is allowed.",
+        )
+
+    if context.declared_routing_style is None and "high_speed" not in context.technical_domains:
+        return ResolvedReviewRule(
+            rule=rule,
+            status=RuleApplicability.APPLICABLE,
+            rationale="Advisory style check: no explicit routing policy declared.",
+            applied_threshold=0,
+            threshold_unit="count",
+        )
+
+    return None
+
+
+def _tally_assessment(
+    coverage: ReviewCoverage,
+    resolved: ResolvedReviewRule,
+    assessment: ReviewAssessment | None,
+) -> None:
+    """Update applicable rule coverage counters and enforce mandatory check gates."""
+    status = assessment.status if assessment is not None else AssessmentStatus.NOT_ASSESSED
+
+    if status == AssessmentStatus.NOT_ASSESSED:
+        coverage.not_assessed_count += 1
+    elif status == AssessmentStatus.PASS:
+        coverage.passed_count += 1
+    elif status == AssessmentStatus.WARN:
+        coverage.warned_count += 1
+    elif status == AssessmentStatus.FAIL:
+        coverage.failed_count += 1
+    elif status == AssessmentStatus.BLOCKED:
+        coverage.blocked_count += 1
+
+    is_unassessed_or_blocked = status in (
+        AssessmentStatus.NOT_ASSESSED,
+        AssessmentStatus.BLOCKED,
+    )
+    if is_unassessed_or_blocked and resolved.rule.is_mandatory:
+        if resolved.rule.rule_id not in coverage.justified_exclusions:
+            coverage.required_unassessed.append(resolved.rule.rule_id)
+
+
 class ReviewRuleCatalog:
     """Registry of versioned engineering review rules."""
 
@@ -71,80 +171,20 @@ class ReviewRuleCatalog:
     def resolve(self, context: ReviewContext) -> list[ResolvedReviewRule]:
         """Pure-domain resolution of applicable rules against the provided ReviewContext."""
         resolved: list[ResolvedReviewRule] = []
-
-        context_keys = set(context.explicit_requirements.keys())
-        context_keys |= set(context.inferred_values.keys())
-        if context.operating_voltage_v is not None:
-            context_keys.add("operating_voltage_v")
-        if context.operating_current_a is not None:
-            context_keys.add("operating_current_a")
-        if context.declared_routing_style is not None:
-            context_keys.add("declared_routing_style")
-        if context.selected_mfg_profile is not None:
-            context_keys.add("selected_mfg_profile")
-        if context.has_kicad_cli:
-            context_keys.add("kicad_cli")
-        if context.has_3d_models:
-            context_keys.add("3d_models")
+        context_keys = _extract_context_keys(context)
 
         for rule in self.list_rules():
+            safety_override = _resolve_safety_rule(rule, context)
+            if safety_override is not None:
+                resolved.append(safety_override)
+                continue
+
+            routing_override = _resolve_routing_rule(rule, context)
+            if routing_override is not None:
+                resolved.append(routing_override)
+                continue
+
             missing = [inp for inp in rule.required_inputs if inp not in context_keys]
-
-            # Domain-specific applicability logic
-            if rule.domain == ReviewDomain.SAFETY and "hazardous" in rule.rule_id:
-                if not context.is_hv and "hazardous_mains" not in context.technical_domains:
-                    resolved.append(
-                        ResolvedReviewRule(
-                            rule=rule,
-                            status=RuleApplicability.NOT_APPLICABLE,
-                            rationale="SELV project; mains insulation rules do not apply.",
-                        )
-                    )
-                    continue
-                # Check conflicting HV declarations
-                if (
-                    context.is_hv
-                    and context.operating_voltage_v is not None
-                    and context.operating_voltage_v < 50.0
-                ):
-                    resolved.append(
-                        ResolvedReviewRule(
-                            rule=rule,
-                            status=RuleApplicability.UNDETERMINED,
-                            rationale=(
-                                f"Conflicting context: is_hv=True but voltage is "
-                                f"{context.operating_voltage_v} V (< 50 V SELV threshold)."
-                            ),
-                            missing_inputs=["voltage_reconciliation"],
-                        )
-                    )
-                    continue
-
-            if rule.domain == ReviewDomain.ROUTING and rule.rule_id == "routing.orthogonal_corners":
-                if context.declared_routing_style == "orthogonal_allowed":
-                    resolved.append(
-                        ResolvedReviewRule(
-                            rule=rule,
-                            status=RuleApplicability.NOT_APPLICABLE,
-                            rationale="Project explicitly declares orthogonal routing is allowed.",
-                        )
-                    )
-                    continue
-                if (
-                    context.declared_routing_style is None
-                    and "high_speed" not in context.technical_domains
-                ):
-                    resolved.append(
-                        ResolvedReviewRule(
-                            rule=rule,
-                            status=RuleApplicability.APPLICABLE,
-                            rationale="Advisory style check: no explicit routing policy declared.",
-                            applied_threshold=0,
-                            threshold_unit="count",
-                        )
-                    )
-                    continue
-
             if missing:
                 resolved.append(
                     ResolvedReviewRule(
@@ -179,37 +219,20 @@ def compute_coverage(
         total_rules=len(resolved_rules),
         justified_exclusions=justified_exclusions or {},
     )
-
     assessment_by_rule_id = {a.rule_id: a for a in assessments}
 
     for resolved in resolved_rules:
         if resolved.status == RuleApplicability.APPLICABLE:
             coverage.applicable_count += 1
+            _tally_assessment(
+                coverage,
+                resolved,
+                assessment_by_rule_id.get(resolved.rule.rule_id),
+            )
         elif resolved.status == RuleApplicability.NOT_APPLICABLE:
             coverage.not_applicable_count += 1
         elif resolved.status == RuleApplicability.UNDETERMINED:
             coverage.undetermined_count += 1
-
-        assessment = assessment_by_rule_id.get(resolved.rule.rule_id)
-        if resolved.status == RuleApplicability.APPLICABLE:
-            is_unassessed_or_blocked = assessment is None or assessment.status in {
-                AssessmentStatus.NOT_ASSESSED,
-                AssessmentStatus.BLOCKED,
-            }
-            if assessment is None or assessment.status == AssessmentStatus.NOT_ASSESSED:
-                coverage.not_assessed_count += 1
-            elif assessment.status == AssessmentStatus.PASS:
-                coverage.passed_count += 1
-            elif assessment.status == AssessmentStatus.WARN:
-                coverage.warned_count += 1
-            elif assessment.status == AssessmentStatus.FAIL:
-                coverage.failed_count += 1
-            elif assessment.status == AssessmentStatus.BLOCKED:
-                coverage.blocked_count += 1
-
-            if is_unassessed_or_blocked and resolved.rule.is_mandatory:
-                if resolved.rule.rule_id not in coverage.justified_exclusions:
-                    coverage.required_unassessed.append(resolved.rule.rule_id)
 
     return coverage
 
