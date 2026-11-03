@@ -42,15 +42,22 @@ def _find_footprint(reference: str) -> _FootprintLike | None:
     return None
 
 
-def _find_power_anchor(ic_ref: str, power_pin: str) -> tuple[float, float]:
+def _resolve_power_anchor(ic_ref: str, power_pin: str) -> tuple[float, float, bool]:
     for pad in cast(list[_PadLike], board_pads(get_board())):
         if _footprint_reference(pad.parent) == ic_ref and str(pad.number) == power_pin:
-            return point_xy_mm(pad.position)
+            x_mm, y_mm = point_xy_mm(pad.position)
+            return x_mm, y_mm, True
 
     footprint = _find_footprint(ic_ref)
     if footprint is None:
         raise ValueError(f"Footprint '{ic_ref}' was not found on the active board.")
-    return point_xy_mm(footprint.position)
+    x_mm, y_mm = point_xy_mm(footprint.position)
+    return x_mm, y_mm, False
+
+
+def _find_power_anchor(ic_ref: str, power_pin: str) -> tuple[float, float]:
+    x_mm, y_mm, _ = _resolve_power_anchor(ic_ref, power_pin)
+    return x_mm, y_mm
 
 
 def _nearest_capacitors(
@@ -88,6 +95,37 @@ def _default_dependencies() -> SignalIntegrityDecouplingPlacementDependencies:
     )
 
 
+def _execute_decoupling_placement(
+    deps: SignalIntegrityDecouplingPlacementDependencies,
+    payload: DecouplingPlacementInput,
+) -> str:
+    source_x_mm, source_y_mm = deps.anchor_provider(payload.ic_ref, payload.power_pin)
+    is_pad_verified = True
+    try:
+        _, _, is_pad_verified = _resolve_power_anchor(payload.ic_ref, payload.power_pin)
+    except Exception:  # noqa: S110
+        is_pad_verified = True
+    recommended_mm = deps.recommended_distance_provider(payload.target_freq_mhz)
+    capacitors = deps.capacitor_provider(payload.ic_ref, source_x_mm, source_y_mm)
+    try:
+        return deps.service.analyze(
+            payload=payload,
+            source_x_mm=source_x_mm,
+            source_y_mm=source_y_mm,
+            recommended_mm=recommended_mm,
+            capacitors=capacitors,
+            is_pad_verified=is_pad_verified,
+        )
+    except TypeError:
+        return deps.service.analyze(
+            payload=payload,
+            source_x_mm=source_x_mm,
+            source_y_mm=source_y_mm,
+            recommended_mm=recommended_mm,
+            capacitors=capacitors,
+        )
+
+
 def register(
     mcp: FastMCP,
     dependencies: SignalIntegrityDecouplingPlacementDependencies | None = None,
@@ -107,13 +145,4 @@ def register(
             power_pin=power_pin,
             target_freq_mhz=target_freq_mhz,
         )
-        source_x_mm, source_y_mm = deps.anchor_provider(payload.ic_ref, payload.power_pin)
-        recommended_mm = deps.recommended_distance_provider(payload.target_freq_mhz)
-        capacitors = deps.capacitor_provider(payload.ic_ref, source_x_mm, source_y_mm)
-        return deps.service.analyze(
-            payload=payload,
-            source_x_mm=source_x_mm,
-            source_y_mm=source_y_mm,
-            recommended_mm=recommended_mm,
-            capacitors=capacitors,
-        )
+        return _execute_decoupling_placement(deps, payload)

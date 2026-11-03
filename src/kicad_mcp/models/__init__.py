@@ -21,6 +21,11 @@ from .pcb import (
     SetStackupInput,
     StackupLayerSpec,
 )
+from .placement_topology import (
+    PlacementBoardTopology,
+    PlacementComponentTopology,
+    PlacementPinTopology,
+)
 from .power_integrity import (
     CopperWeightCheckInput,
     DecouplingRecommendationInput,
@@ -85,6 +90,9 @@ __all__ = [
     "LivePreviewSafety",
     "LivePreviewWatch",
     "OperatingPointInput",
+    "PlacementBoardTopology",
+    "PlacementComponentTopology",
+    "PlacementPinTopology",
     "ResolvedReviewRule",
     "ReviewAssessment",
     "ReviewContext",
