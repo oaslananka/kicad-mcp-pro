@@ -61,7 +61,7 @@ test("approved pairing is consumed once by the authentic device key, enrolled di
     const row=(await pool.query("SELECT d.enabled,d.owner_sub,c.revoked_at,c.key_fingerprint "+
       "FROM devices d JOIN device_credentials c ON c.device_id=d.id WHERE d.id=$1",
       [deviceId])).rows[0];
-    assert.equal(row.enabled,true);
+    assert.equal(row.enabled,false);
     assert.equal(row.owner_sub,owner);
     assert.equal(row.revoked_at,null);
     assert.equal(row.key_fingerprint,createHash("sha256").update(der).digest("hex"));

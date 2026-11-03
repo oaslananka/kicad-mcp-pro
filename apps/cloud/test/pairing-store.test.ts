@@ -54,7 +54,7 @@ test("isolated PostgreSQL pairing transitions serialize competing workers",
       "JOIN device_credentials c ON c.device_id=d.id WHERE c.pairing_challenge_id=$1",
       [first.id]);
     assert.equal(linked.rows.length,1);
-    assert.equal(linked.rows[0].enabled,true);
+    assert.equal(linked.rows[0].enabled,false);
     assert.equal((await store.enroll(first.id,first.deviceCode,proof)).kind,"unavailable");
 
     const wrong=await store.issue("Locked PC",der);

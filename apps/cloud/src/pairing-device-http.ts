@@ -124,7 +124,7 @@ export async function handlePairingDeviceRequest(
       deviceId:result.data.deviceId,
       deviceFingerprint:result.data.deviceFingerprint,
       ownerSub:result.data.ownerSub,
-      enabled:true
+      enabled:false
     });
     return true;
   }
