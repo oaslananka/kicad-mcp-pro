@@ -81,7 +81,9 @@ class ReviewDomain(StrEnum):
     SAFETY = "safety"
     DFM = "dfm"
     ASSEMBLY = "assembly"
+    DFT = "dft"
     BOM = "bom"
+    MANUFACTURING = "manufacturing"
     MECHANICAL = "mechanical"
 
 
