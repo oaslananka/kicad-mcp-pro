@@ -8,14 +8,47 @@ Configuration is resolved in this order:
 4. `~/.config/kicad-mcp-pro/config.toml`
 5. Built-in defaults
 
-The active project can also be changed at runtime with `kicad_set_project()`.
+The active project can also be changed at runtime with `kicad_set_project()`
+in a dedicated local `stdio` MCP process.
 
-**One active project per server process:** project selection is process-wide, not
-scoped to an HTTP request or MCP session. Run separate server processes (and
-project-specific workspace roots) for independent projects or users. Do not
-use one shared HTTP server as a multi-tenant editing service. For a single
-local trusted client, switching the active project intentionally changes which
-project subsequent tool calls operate on.
+**One active project per server process:** project selection is process-wide,
+not scoped to an HTTP request or MCP session. A shared Streamable HTTP server
+pins the selected project at the first tool call. Calls to
+`kicad_set_project` and `kicad_create_new_project` over that HTTP endpoint
+are rejected, and the browser dashboard cannot change the active project's
+paths after an HTTP tool call has started. A change made outside the dashboard
+is detected and later HTTP calls fail rather than silently targeting it.
+
+Choose the project before connecting HTTP clients, or restart the HTTP server
+to select another project. For independent projects or users, launch separate
+MCP processes (the generated local client configurations already launch
+dedicated `stdio` instances). This interim binding does **not** provide
+multiple independently selectable projects inside one shared HTTP process;
+do not use it as a multi-tenant KiCad editing engine.
+
+The internal `project.stdio_worker` helper supports a different approach:
+trusted local code can map approved opaque project identifiers to separate
+`stdio` MCP worker processes. Each process keeps its own project and
+read-only tool settings, without changing the shared HTTP server's state.
+The initial worker interface exposes only a bounded local inspection surface;
+it is **not** a remotely accessible Connector or general Cloud tool dispatcher.
+Remote identity, current grants and operation permissions must be validated
+before any future integration, and raw local project paths must not be
+forwarded to Cloud.
+
+The local `cloud_project_worker_bridge` accepts an already verified
+device/project/session binding and owner-approved project directory, and
+rechecks grants before/after bounded read-only MCP inspection. Its distinct
+`project_worker_inspection` capability is **not issued** by the existing
+one-shot Cloud Connector: the current `project_summary` and `run_drc`
+permissions cannot enable it. The bridge has no WebSocket listener or independent authorization endpoint.
+The Cloud Connector now has an independently opt-in one-shot
+`get_project_engine_status` tool using the bridge and an owner-started local
+`--inspection-once` client. The response is restricted to engine version
+and boolean CLI/IPC availability plus four bounded read capability flags
+(file-backed DRC/ERC and live PCB/schematic read). Raw MCP output,
+filesystem data, project files and local paths remain on the device.
+All other project tools remain local and unexposed by this Cloud operation.
 
 ## Operating Modes
 

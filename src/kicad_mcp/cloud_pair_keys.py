@@ -168,7 +168,7 @@ def _read_owner_binding(filename: Path) -> dict[str, str]:
         value = json.loads(raw, object_pairs_hook=unique)
         if (
             not isinstance(value, dict)
-            or set(value) != {"origin", "deviceId", "fingerprint"}
+            or not {"origin", "deviceId", "fingerprint"}.issubset(set(value))
             or not all(isinstance(v, str) for v in value.values())
             or len(value["origin"]) > 256
             or re.fullmatch(
@@ -177,6 +177,9 @@ def _read_owner_binding(filename: Path) -> dict[str, str]:
             )
             is None
             or re.fullmatch(r"[0-9a-f]{64}", value["fingerprint"]) is None
+            or (
+                "ownerSub" in value and (len(value["ownerSub"]) > 256 or len(value["ownerSub"]) < 1)
+            )
         ):
             raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
         return value
@@ -188,10 +191,21 @@ def _read_owner_binding(filename: Path) -> dict[str, str]:
         os.close(directory_fd)
 
 
-def _save_owner_binding(filename: Path, *, origin: str, device_id: str, fingerprint: str) -> None:
+def _save_owner_binding(
+    filename: Path,
+    *,
+    origin: str,
+    device_id: str,
+    fingerprint: str,
+    owner_sub: str | None = None,
+) -> None:
     """Pin approved enrollment to one HTTPS origin and device, never overwrite."""
     # The fields are independently validated by the Cloud enrollment response.
-    expected = {"origin": origin, "deviceId": device_id, "fingerprint": fingerprint}
+    expected: dict[str, str] = {"origin": origin, "deviceId": device_id, "fingerprint": fingerprint}
+    if owner_sub is not None:
+        if not isinstance(owner_sub, str) or not (1 <= len(owner_sub) <= 256):
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+        expected["ownerSub"] = owner_sub
     if (
         not isinstance(origin, str)
         or not origin.startswith("https://")

@@ -1020,10 +1020,16 @@ function renderWizardStep(step) {
       body.innerHTML =
         '<div class="form-group"><label>Default KiCad Project Directory</label>' +
         '<div style="display:flex;gap:6px;">' +
-        '<input type="text" id="wizProjectDir" value="" placeholder="~/KiCad" style="flex:1;">' +
+        '<input type="text" id="wizProjectDir" value="" placeholder="Full local project folder path" style="flex:1;">' +
         '<button class="btn btn-sm" onclick="browseProjectDir()" style="white-space:nowrap;flex-shrink:0;">Browse</button>' +
         '</div></div>' +
         '<div class="msg info">PCB and schematic files in this directory can be offered to tools automatically.</div>';
+      // Keep the already-selected local project, without asking the user to
+      // retype it whenever the wizard is reopened.
+      fetch('/api/config').then(r => r.json()).then(d => {
+        const field = document.getElementById('wizProjectDir');
+        if (field && !field.value && d.project_dir) field.value = d.project_dir;
+      }).catch(() => {});
       nav.innerHTML = '<button class="btn" onclick="wizardPrev()">&laquo; Back</button><button class="btn btn-primary" onclick="wizardNext()">Next: Transport &raquo;</button>';
       break;
 
@@ -1115,34 +1121,15 @@ function browseProjectDir() {
   }
 }
 function fallbackBrowseDir(input) {
-  var picker = document.createElement('input');
-  picker.type = 'file';
-  picker.setAttribute('webkitdirectory', '');
-  picker.style.display = 'none';
-  picker.addEventListener('change', function() {
-    if (this.files && this.files.length > 0) {
-      // Extract directory path from the first selected file
-      var p = this.files[0].path || this.files[0].webkitRelativePath;
-      if (p) {
-        // webkitRelativePath is like "folder/sub/file", take first component
-        var idx = p.indexOf('/');
-        if (idx > 0) p = p.substring(0, idx);
-        // full path includes the parent folder name from path property
-        if (this.files[0].path) {
-          var lastSlash = this.files[0].path.lastIndexOf('\\');
-          if (lastSlash > 0) p = this.files[0].path.substring(0, lastSlash);
-          else p = this.files[0].path;
-        }
-        input.value = p;
-      }
-    }
-  });
-  document.body.appendChild(picker);
-  picker.click();
-  setTimeout(function() { document.body.removeChild(picker); }, 200);
+  // Standard browser folder pickers return a relative folder name, not a
+  // usable absolute filesystem path. Never pretend that value is a path.
+  input.focus();
+  showMsg('wizardMsg',
+    'Enter the full local folder path. For graphical folder selection, use the desktop app.',
+    'warn');
 }
 
-function wizardNext() {
+function wizardAdvance() {
   const steps = document.querySelectorAll('.wizard-step');
   if (wizardStep < steps.length - 1) {
     steps[wizardStep].classList.remove('active');
@@ -1151,6 +1138,30 @@ function wizardNext() {
     steps[wizardStep].classList.add('active');
     renderWizardStep(wizardStep);
   }
+}
+
+function wizardNext() {
+  if (wizardStep !== 1) { wizardAdvance(); return; }
+  const field = document.getElementById('wizProjectDir');
+  const project = field ? field.value.trim() : '';
+  if (!project) { wizardAdvance(); return; }
+
+  // Explicitly save before exporting client configuration. Previously Next
+  // discarded the typed folder, silently connecting the MCP host elsewhere.
+  fetch('/api/config', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({project_dir: project})
+  }).then(async response => {
+    const result = await response.json();
+    if (!response.ok || !Array.isArray(result.applied) ||
+        !result.applied.includes('project_dir')) {
+      throw new Error(result.error || 'Cannot select this project folder.');
+    }
+    wizardAdvance();
+  }).catch(error => {
+    showMsg('wizardMsg', error.message || 'Cannot select this project folder.', 'error');
+  });
 }
 
 function wizardPrev() {

@@ -1,0 +1,82 @@
+name: kicad-cloud
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kicad_cloud
+      POSTGRES_USER: kicad_cloud
+      POSTGRES_PASSWORD: ${KICAD_DB_PASSWORD:?Required Doppler value}
+    volumes:
+      - production_database:/var/lib/postgresql/data
+    networks:
+      - database
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kicad_cloud -d kicad_cloud"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+  app:
+    image: kicad-mcp-pro-cloud:production
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Required Doppler value}
+      OAUTH_ISSUER: ${OAUTH_ISSUER:?Required Doppler value}
+      OAUTH_JWKS_URL: ${OAUTH_JWKS_URL:?Required Doppler value}
+      OAUTH_AUDIENCE: ${OAUTH_AUDIENCE:?Required Doppler value}
+      DATABASE_URL: postgresql://kicad_cloud@db:5432/kicad_cloud
+      PGPASSWORD: ${KICAD_DB_PASSWORD:?Required Doppler value}
+      AUTH_MODE: ${AUTH_MODE:-external}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      HOST: 0.0.0.0
+      PORT: "8787"
+      NODE_ENV: production
+      MANAGEMENT_CLIENT_ID: ${MANAGEMENT_CLIENT_ID:-}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      # Pilot remains OFF without explicit approved runtime opt-in.
+      CONNECTOR_WS_ENABLED: ${CONNECTOR_WS_ENABLED:-false}
+      PAIRING_DEVICE_API_ENABLED: ${PAIRING_DEVICE_API_ENABLED:-false}
+      CONNECTOR_OPERATOR_ONESHOT_ENABLED: ${CONNECTOR_OPERATOR_ONESHOT_ENABLED:-false}
+      CONNECTOR_OPERATOR_NATIVE_DRC_ENABLED: ${CONNECTOR_OPERATOR_NATIVE_DRC_ENABLED:-false}
+      CONNECTOR_INGRESS_MODE: ${CONNECTOR_INGRESS_MODE:-cloudflare}
+      TRUSTED_CLOUDFLARED_PEERS: ${TRUSTED_CLOUDFLARED_PEERS:-}
+    networks:
+      - database
+      - tunnel
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          require('node:http').get({hostname:'127.0.0.1',port:8787,
+          path:'/health',headers:{host:new URL(process.env.PUBLIC_ORIGIN).host}},
+          r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+volumes:
+  production_database:
+networks:
+  database:
+    internal: true
+  tunnel:
+    external: true
+    name: ${KICAD_TUNNEL_NETWORK:-ops_internal}

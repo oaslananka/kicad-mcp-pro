@@ -259,6 +259,86 @@ def test_candidate_tool_call_is_direct_and_has_server_metadata(sample_project: P
     assert "KiCad MCP Pro Server" in result["content"][0]["text"]
 
 
+@pytest.mark.parametrize("name", ["kicad_set_project", "kicad_create_new_project"])
+def test_shared_http_rejects_process_global_project_changes(
+    sample_project: Path, tmp_path: Path, name: str
+) -> None:
+    """A shared HTTP client cannot change the KiCad project for other clients."""
+    server = _candidate_server(sample_project)
+    original_project = get_config().project_dir
+    arguments = (
+        {"project_dir": str(tmp_path / "another")}
+        if name == "kicad_set_project"
+        else {"path": str(tmp_path), "name": "another"}
+    )
+    with TestClient(server.streamable_http_app(), base_url="http://127.0.0.1:3334") as client:
+        response = client.post(
+            "/mcp",
+            headers=_headers("tools/call", name=name),
+            json=_request("tools/call", params={"name": name, "arguments": arguments}),
+        )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == -32009
+    assert "separate" in response.json()["error"]["message"].lower()
+    assert get_config().project_dir == original_project
+
+
+def test_http_project_binding_blocks_dashboard_change(sample_project: Path, tmp_path: Path) -> None:
+    server = _candidate_server(sample_project)
+    app = server.streamable_http_app()
+    second = tmp_path / "second"
+    second.mkdir()
+    with TestClient(app, base_url="http://127.0.0.1:3334") as client:
+        first = client.post("/api/config", json={"project_dir": str(sample_project)})
+        assert first.status_code == 200
+        assert get_config().project_dir == sample_project.resolve()
+        result = client.post(
+            "/mcp",
+            headers=_headers("tools/call", name="kicad_get_version"),
+            json=_request("tools/call", params={"name": "kicad_get_version", "arguments": {}}),
+        )
+        assert result.status_code == 200
+        denied = client.post("/api/config", json={"project_dir": str(second)})
+        assert denied.status_code == 409
+        assert get_config().project_dir == sample_project.resolve()
+
+
+def test_http_project_binding_rejects_out_of_band_change(
+    sample_project: Path, tmp_path: Path
+) -> None:
+    server = _candidate_server(sample_project)
+    cfg = get_config()
+    current = cfg.project_dir
+    with TestClient(server.streamable_http_app(), base_url="http://127.0.0.1:3334") as client:
+        body = _request("tools/call", params={"name": "kicad_get_version", "arguments": {}})
+        headers = _headers("tools/call", name="kicad_get_version")
+        assert client.post("/mcp", headers=headers, json=body).status_code == 200
+        try:
+            cfg.project_dir = tmp_path
+            changed = client.post("/mcp", headers=headers, json=body)
+            assert changed.status_code == 409
+            assert changed.json()["error"]["code"] == -32009
+        finally:
+            cfg.project_dir = current
+
+
+def test_http_project_boundary_checks_request_body_tool_name(sample_project: Path) -> None:
+    server = _candidate_server(sample_project)
+    with TestClient(server.streamable_http_app(), base_url="http://127.0.0.1:3334") as client:
+        response = client.post(
+            "/mcp",
+            headers=_headers("tools/call", name="kicad_get_version"),
+            json=_request(
+                "tools/call",
+                params={
+                    "name": "kicad_set_project",
+                    "arguments": {"project_dir": str(sample_project)},
+                },
+            ),
+        )
+    assert response.status_code == 409
+
+
 def test_candidate_ignores_legacy_session_header_without_creating_session(
     sample_project: Path,
 ) -> None:

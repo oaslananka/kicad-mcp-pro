@@ -347,21 +347,67 @@ def enroll(
         },
         200,
     )
+    required = {"deviceId", "deviceFingerprint", "enabled"}
     if (
-        set(answer) != {"deviceId", "deviceFingerprint", "enabled"}
+        not required.issubset(set(answer))
         or not isinstance(answer["deviceId"], str)
         or not _UUID.fullmatch(answer["deviceId"])
         or answer["deviceFingerprint"] != fingerprint
-        or answer["enabled"] is not False
+        or type(answer["enabled"]) is not bool
     ):
         raise CloudPairingError(_PAIRING_DENIED)
+    owner_sub = str(answer["ownerSub"]) if isinstance(answer.get("ownerSub"), str) else None
     try:
         _save_owner_binding(
-            keyfile, origin=target[2], device_id=answer["deviceId"], fingerprint=fingerprint
+            keyfile,
+            origin=target[2],
+            device_id=answer["deviceId"],
+            fingerprint=fingerprint,
+            owner_sub=owner_sub,
         )
     except (OSError, ValueError) as exc:
         raise CloudPairingError(_PAIRING_DENIED) from exc
     return answer["deviceId"], fingerprint
+
+
+def register_device_project(origin: str, keyfile: Path, alias: str) -> dict[str, object]:
+    """Register one read-only KiCad project for an already-enrolled device using its signing key."""
+    if not isinstance(alias, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", alias):
+        raise CloudPairingError(_PAIRING_DENIED)
+    target = _origin(origin)
+    key = _load_owner_key(keyfile)
+    bound = _read_owner_binding(keyfile)
+    if bound["origin"] != target[2]:
+        raise CloudPairingError(_PAIRING_DENIED)
+    device_id = bound["deviceId"]
+    proof = (
+        b"kicad-cloud-device-project-v1\x00"
+        + device_id.encode("ascii")
+        + b"\x00"
+        + alias.encode("utf-8")
+    )
+    signature = base64.urlsafe_b64encode(key.sign(proof)).decode("ascii").rstrip("=")
+    res = _post(
+        target,
+        "/api/v1/pairing/device/project",
+        {
+            "deviceId": device_id,
+            "alias": alias,
+            "signature": signature,
+        },
+        200,
+    )
+    if (
+        not isinstance(res, dict)
+        or not {"projectId", "alias", "ownerSub", "enabled"}.issubset(set(res))
+        or not isinstance(res["projectId"], str)
+        or _UUID.fullmatch(res["projectId"]) is None
+        or not isinstance(res["ownerSub"], str)
+        or not (1 <= len(res["ownerSub"]) <= 256)
+        or type(res["enabled"]) is not bool
+    ):
+        raise CloudPairingError(_PAIRING_DENIED)
+    return res
 
 
 def _approval(page: str, challenge: str, code: str) -> None:
