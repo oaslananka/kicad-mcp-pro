@@ -62,7 +62,6 @@ def connect(
     # An owner with one valid local project registration should not enroll
     # another device/key just because they repeated the quickstart command.
     from kicad_mcp.cloud_local_registry import default_registry_root
-    from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
     from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
     folder = default_registry_root() / "projects"
@@ -73,7 +72,7 @@ def connect(
     if has_registration:
         try:
             existing = _single_registered_identity(default_registry_root())
-        except (OSError, ValueError, LocalApprovalDeniedError) as exc:
+        except (OSError, ValueError) as exc:
             raise typer.BadParameter("Existing Cloud registration needs local repair.") from exc
         if existing["cloudOrigin"] != origin:
             raise typer.BadParameter("A different Cloud origin is already registered.")
