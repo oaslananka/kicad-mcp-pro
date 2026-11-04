@@ -15,6 +15,34 @@ on:
         description: Exact approved main SHA, equal to both tags.
         required: true
         type: string
+      npm_tag:
+        description: Existing protected mcp-npm-vX.Y.Z tag, required if include_npm.
+        required: false
+        type: string
+      gui_tag:
+        description: Existing protected kicad-mcp-gui-vX.Y.Z tag, required if include_gui.
+        required: false
+        type: string
+      include_npm:
+        description: Also prepare the npm launcher (no publication).
+        required: false
+        type: boolean
+        default: false
+      include_gui:
+        description: Also build three platform GUI installers (costly; no publication).
+        required: false
+        type: boolean
+        default: false
+      include_container:
+        description: Also prepare the container (costly; no publication).
+        required: false
+        type: boolean
+        default: false
+      include_registry:
+        description: Also prepare MCP Registry evidence (no publication).
+        required: false
+        type: boolean
+        default: false
 
 # Preflight concurrency is NOT a verified exclusive Release writer lock.
 concurrency:
@@ -44,6 +72,12 @@ jobs:
           EXPECTED_SHA: ${{ inputs.source_commit }}
           SERVER_TAG: ${{ inputs.server_tag }}
           SCHEMAS_TAG: ${{ inputs.schemas_tag }}
+          NPM_TAG: ${{ inputs.npm_tag }}
+          GUI_TAG: ${{ inputs.gui_tag }}
+          INCLUDE_NPM: ${{ inputs.include_npm }}
+          INCLUDE_GUI: ${{ inputs.include_gui }}
+          INCLUDE_CONTAINER: ${{ inputs.include_container }}
+          INCLUDE_REGISTRY: ${{ inputs.include_registry }}
           CALLER_REF: ${{ github.ref }}
           CALLER_SHA: ${{ github.sha }}
         run: |
@@ -62,6 +96,33 @@ jobs:
           schemas_version="$(python3 -c 'import json; print(json.load(open("packages/protocol-schemas/package.json"))["version"])')" || exit 1
           [[ "$SERVER_TAG" == "mcp-server-v$server_version" ]] || exit 1
           [[ "$SCHEMAS_TAG" == "protocol-schemas-v$schemas_version" ]] || exit 1
+
+          # Optional high-cost producer families remain disabled unless the
+          # operator explicitly opts in. All tag/source/version checks complete
+          # in this one read-only job before any reusable build can run.
+          for include in "$INCLUDE_NPM" "$INCLUDE_GUI" "$INCLUDE_CONTAINER" "$INCLUDE_REGISTRY"; do
+            [[ "$include" == "true" || "$include" == "false" ]] || exit 1
+          done
+          if [[ "$INCLUDE_NPM" == "true" ]]; then
+            [[ "$NPM_TAG" =~ ^mcp-npm-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+            npm_sha="$(git rev-list -n 1 "refs/tags/$NPM_TAG^{commit}")" || exit 1
+            [[ "$npm_sha" == "$EXPECTED_SHA" ]] || exit 1
+            npm_version="$(python3 -c 'import json; print(json.load(open("packages/mcp-npm/package.json"))["version"])')" || exit 1
+            [[ "$NPM_TAG" == "mcp-npm-v$npm_version" ]] || exit 1
+          else
+            [[ -z "$NPM_TAG" ]] || exit 1
+          fi
+          if [[ "$INCLUDE_GUI" == "true" ]]; then
+            [[ "$GUI_TAG" =~ ^kicad-mcp-gui-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+            gui_sha="$(git rev-list -n 1 "refs/tags/$GUI_TAG^{commit}")" || exit 1
+            [[ "$gui_sha" == "$EXPECTED_SHA" ]] || exit 1
+            gui_version="$(python3 -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["version"])')" || exit 1
+            cargo_version="$(python3 -c 'import tomllib; print(tomllib.load(open("src-tauri/Cargo.toml", "rb"))["package"]["version"])')" || exit 1
+            [[ "$GUI_TAG" == "kicad-mcp-gui-v$gui_version" ]] || exit 1
+            [[ "$cargo_version" == "$gui_version" ]] || exit 1
+          else
+            [[ -z "$GUI_TAG" ]] || exit 1
+          fi
 
   python:
     needs: source
@@ -109,4 +170,62 @@ jobs:
       artifact-metadata: write
     with:
       tag: ${{ inputs.schemas_tag }}
+      source_commit: ${{ inputs.source_commit }}
+
+
+  # Additional non-publishing preparers share the same exact main-source gate.
+  # All are opt-in to avoid unneeded native GUI/container compute and artifact retention.
+  npm:
+    needs: source
+    if: inputs.include_npm == true
+    uses: ./.github/workflows/prepare-npm.yml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    with:
+      tag: ${{ inputs.npm_tag }}
+      source_commit: ${{ inputs.source_commit }}
+
+  gui:
+    needs: source
+    if: inputs.include_gui == true
+    uses: ./.github/workflows/prepare-gui.yml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    with:
+      tag: ${{ inputs.gui_tag }}
+      source_commit: ${{ inputs.source_commit }}
+    secrets:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+  container:
+    needs: source
+    if: inputs.include_container == true
+    uses: ./.github/workflows/prepare-mcp-container.yml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    with:
+      tag: ${{ inputs.server_tag }}
+      source_commit: ${{ inputs.source_commit }}
+
+  registry:
+    needs: source
+    if: inputs.include_registry == true
+    uses: ./.github/workflows/prepare-mcp-registry.yml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    with:
+      tag: ${{ inputs.server_tag }}
       source_commit: ${{ inputs.source_commit }}
