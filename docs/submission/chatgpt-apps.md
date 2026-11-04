@@ -1,5 +1,16 @@
 # ChatGPT Apps Submission
 
+> 2026-11-04 update: The public ChatGPT/Codex Plugins Directory uses a
+> portable plugin package with remote MCP and optional skills. Follow
+> [current platform compatibility](platform-compatibility-2026-11-04.md)
+> and the new integrations/cloud-directory-plugin candidate for the hosted
+> read-only connector. The Apps SDK sample described below is a separate
+> local/demo UI track; its smoke tests do not prove public remote OAuth
+> or new MCP Apps interoperability. Use the current
+> https://developers.openai.com/plugins/deploy/submission instructions
+> instead of assuming the older Apps dashboard route is authoritative.
+
+
 Use this document for the ChatGPT Apps submission path. The submission scope is
 the verified public-safe, read-only app under
 `integrations/chatgpt-app/apps-sdk`; it is not the full local KiCad mutation

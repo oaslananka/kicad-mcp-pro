@@ -1,0 +1,32 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "kicad-cloud-review",
+  "version": "0.1.0",
+  "description": "Read-only review of user-authorized KiCad projects through the hosted MCP connector.",
+  "author": {
+    "name": "oaslananka",
+    "url": "https://github.com/oaslananka/kicad-mcp-pro"
+  },
+  "homepage": "https://oaslananka.github.io/kicad-mcp-pro/",
+  "repository": "https://github.com/oaslananka/kicad-mcp-pro",
+  "license": "MIT",
+  "keywords": ["KiCad", "MCP", "PCB", "schematic", "read-only"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "KiCad MCP Pro — Cloud Review",
+        "shortDescription": "Inspect authorized KiCad projects without editing designs.",
+        "developerName": "oaslananka",
+        "category": "Developer Tools",
+        "capabilities": ["Read"],
+        "websiteURL": "https://oaslananka.github.io/kicad-mcp-pro/",
+        "privacyPolicyURL": "https://oaslananka.github.io/kicad-mcp-pro/privacy/",
+        "defaultPrompt": [
+          "Check which of my approved KiCad projects can be inspected.",
+          "Summarize the board and schematic counts of my authorized project."
+        ]
+      },
+      "onboardingSkill": "./skills/cloud-project-review/SKILL.md"
+    }
+  }
+}

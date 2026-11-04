@@ -38,6 +38,8 @@ snapshot in a dated `release-readiness-<date>.md` document.
 
 | Target | Status | Submitted UTC | Approved UTC | Listing URL | Notes |
 |---|---|---:|---:|---|---|
+| OpenAI Plugins Directory — hosted Cloud | Not submitted | — | — | — | Read-only remote candidate under integrations/cloud-directory-plugin; real OAuth/fixture review and provider import pending. |
+| Claude Directory — hosted Cloud | Not submitted | — | — | — | Remote connector/plugin candidate packaged separately from local stdio; client OAuth and reviewer acceptance pending. |
 | Anthropic Connector Directory | Not submitted | — | — | — | Run the full checklist in `docs/submission/anthropic-directory.md` first. |
 | ChatGPT Apps | Not submitted | — | — | — | Requires platform domain verification before final form submission. |
 | OpenAI/MCP Registry | Not submitted | — | — | — | Run registry dry-run and final submission checks first. |
