@@ -2,6 +2,8 @@ import type { PoolClient } from "pg";
 import { PgInventory } from "./store.js";
 
 export type AccessMode = "readonly" | "write" | "manufacturing";
+/** Saved client policies; not evidence of live OAuth, Connector or KiCad access. */
+export type BrowserGrantSummary={projectId:string;clientId:string;maxMode:AccessMode};
 export type GrantInput = {
   clientId: string;
   enabled: boolean;
@@ -12,6 +14,7 @@ export interface GrantManagement {
   setGrant(ownerSub: string, actorClientId: string, projectId: string, grant: GrantInput): Promise<boolean>;
   revokeClient(ownerSub: string, clientId: string): Promise<number>;
   setBrowserGrant?(ownerSub:string,projectId:string,clientId:string,enabled:boolean):Promise<boolean>;
+  listBrowserGrants?(ownerSub:string):Promise<BrowserGrantSummary[]>;
 }
 
 export class PgGrantManagement extends PgInventory implements GrantManagement {
@@ -64,6 +67,19 @@ export class PgGrantManagement extends PgInventory implements GrantManagement {
       db.release();
     }
   }
+  /** Owner-scoped saved policy inventory; do not imply a live remote session. */
+  async listBrowserGrants(ownerSub:string):Promise<BrowserGrantSummary[]>{
+    if(!this.builtInTokenStore||!ownerSub||ownerSub.length>256)return [];
+    const result=await this.pool.query<{
+      project_id:string;client_id:string;max_mode:AccessMode;
+    }>(
+      "SELECT g.project_id,g.client_id,g.max_mode FROM project_client_grants g "+
+      "JOIN projects p ON p.id=g.project_id AND p.owner_sub=g.owner_sub "+
+      "WHERE p.owner_sub=$1 AND g.enabled=true "+
+      "ORDER BY g.project_id,g.client_id LIMIT 500",[ownerSub]);
+    return result.rows.map(r=>({projectId:r.project_id,clientId:r.client_id,maxMode:r.max_mode}));
+  }
+
   /**
    * Owner's browser-only consent grant. Must not re-enable a client whose
    * OAuth consent predates the revocation cutoff; serialize with revokeClient.
@@ -79,6 +95,21 @@ export class PgGrantManagement extends PgInventory implements GrantManagement {
       await db.query(
         "SELECT pg_advisory_xact_lock(hashtextextended($1 || chr(31) || $2, 48296018))",
         [owner,clientId]);
+      if(!enabled){
+        // Emergency OFF always works, even if a project was upgraded to
+        // write mode or its device was subsequently disabled/revoked.
+        const removed=await db.query(
+          "UPDATE project_client_grants g SET enabled=false,max_mode='readonly' "+
+          "FROM projects p WHERE p.id=g.project_id AND p.owner_sub=g.owner_sub "+
+          "AND p.owner_sub=$1 AND g.project_id=$2 AND g.client_id=$3 "+
+          "RETURNING g.project_id",[owner,projectId,clientId]);
+        if(removed.rowCount!==1){await db.query("ROLLBACK");return false;}
+        await db.query(
+          "INSERT INTO client_grant_audit(owner_sub,actor_client_id,project_id,operation) "+
+          "VALUES($1,$2,$3,'grant.set')",[owner,"owner-browser",projectId]);
+        await db.query("COMMIT");
+        return true;
+      }
       const project=await db.query(
         "SELECT p.id FROM projects p JOIN devices d ON d.id=p.device_id AND d.owner_sub=p.owner_sub "+
         "JOIN device_credentials k ON k.device_id=d.id AND k.owner_sub=d.owner_sub "+

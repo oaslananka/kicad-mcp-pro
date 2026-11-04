@@ -167,6 +167,9 @@ test("owner approves only an OAuth-consented AI client's read-only project grant
     ]}} as unknown as BrowserIdentity;
   const requests:Array<{owner:string;project:string;client:string;enabled:boolean}>=[];
   const grants={
+    listBrowserGrants:async(owner:string)=>owner==="owner-1"?[{
+      projectId:registeredProjects[0].id,clientId:"ai-fixture",maxMode:"readonly" as const
+    }]:[],
     setGrant:async()=>false,
     revokeClient:async()=>0,
     setBrowserGrant:async(owner:string,project:string,client:string,enabled:boolean)=>{
@@ -182,6 +185,8 @@ test("owner approves only an OAuth-consented AI client's read-only project grant
     const html=await page.text();
     assert.match(html,/AI client with existing OAuth consent/);
     assert.match(html,/ai-fixture/);
+    assert.match(html,/Saved client permissions/);
+    assert.match(html,/Revoke this client/);
     assert.doesNotMatch(html,/other-owner|not-allowed/);
     const token=/action="\/devices\/projects\/grant"[\s\S]*?name="csrf" value="([^"]+)"/.exec(html)?.[1]??"";
     assert.ok(token);

@@ -55,6 +55,18 @@ test("browser owner grants require current OAuth consent and cannot revive revok
         "WHERE project_id=$1 AND client_id=$2",[project,client]);
       assert.equal(enabled.rows[0].enabled,true);
       assert.equal(enabled.rows[0].max_mode,"readonly");
+      assert.deepEqual(await grants.listBrowserGrants("other-owner"),[],
+        "another owner cannot see this project's client grants");
+      assert.deepEqual(await grants.listBrowserGrants(owner),[
+        {projectId:project,clientId:client,maxMode:"readonly"}
+      ]);
+      // Turning off project access must work after a later project-mode
+      // upgrade or device revocation, not only for read-only projects.
+      await db.query("UPDATE projects SET max_mode='write' WHERE id=$1",[project]);
+      assert.equal(await grants.setBrowserGrant(owner,project!,client,false),true);
+      assert.deepEqual(await grants.listBrowserGrants(owner),[]);
+      await db.query("UPDATE projects SET max_mode='readonly' WHERE id=$1",[project]);
+      assert.equal(await grants.setBrowserGrant(owner,project!,client,true),true);
       await grants.revokeClient(owner,client);
       assert.equal(await grants.setBrowserGrant(owner,project!,client,true),false,
         "Old OAuth consent must not re-enable a revoked client");
@@ -105,6 +117,10 @@ test("browser owner grants require current OAuth consent and cannot revive revok
         {...edit,enabled:false}),true);
       await devices.revokeDevice(owner,enrolled.deviceId);
       assert.equal(await grants.setBrowserGrant(owner,project!,client,true),false);
+      // A stale enabled grant can still be switched off after device revoke.
+      await db.query("UPDATE project_client_grants SET enabled=true WHERE project_id=$1",[project]);
+      assert.equal(await grants.setBrowserGrant(owner,project!,client,false),true);
+      assert.deepEqual(await grants.listBrowserGrants(owner),[]);
     }finally{await grants.close();}
   });
 });

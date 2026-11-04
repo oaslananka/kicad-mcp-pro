@@ -3,7 +3,7 @@ import {makeSignature} from "better-auth/crypto";
 import type {BrowserIdentity} from "./browser.js";
 import type {PgDeviceManagement} from "./device-management.js";
 import {renderDevicesPage} from "./devices-ui.js";
-import type {GrantManagement} from "./grants.js";
+import type {GrantManagement,BrowserGrantSummary} from "./grants.js";
 import type {PgManagedReadAccess} from "./connector-managed-read-access.js";
 
 export type ManagedReadPort=Pick<PgManagedReadAccess,"enabledProjectIds"|"setEnabled"|"isEnabled">;
@@ -34,10 +34,11 @@ type DeviceReply={
   projects?:Parameters<typeof renderDevicesPage>[3];
   ownerSub?:string;
   clients?:ReadonlyArray<string>;
+  savedGrants?:ReadonlyArray<BrowserGrantSummary>;
 };
 function reply({status,devices=[],message,stateCookie,enrollmentAvailable=true,
-  projects=[],ownerSub,clients=[]}:DeviceReply):Response{
-  const response=new Response(renderDevicesPage(devices,message,enrollmentAvailable,projects,ownerSub,clients),{status,headers:{
+  projects=[],ownerSub,clients=[],savedGrants=[]}:DeviceReply):Response{
+  const response=new Response(renderDevicesPage(devices,message,enrollmentAvailable,projects,ownerSub,clients,savedGrants),{status,headers:{
     "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store",
     // Preserve Origin on same-origin form POSTs; Chrome sends Origin: null
     // under no-referrer. Cross-site referrers remain hidden.
@@ -84,7 +85,7 @@ async function checkCsrf(req:Request,origin:string,secret:string,
 }
 async function list(req:Request,identity:BrowserIdentity,origin:string,
   devices:DeviceManagementPort,enrollmentAvailable=true,
-  grants?:Pick<GrantManagement,"setBrowserGrant">,
+  grants?:Pick<GrantManagement,"setBrowserGrant"|"listBrowserGrants">,
   deviceConnection?:DeviceConnectionLookup,managedRead?:ManagedReadPort):Promise<Response>{
   if(!identity.api||!identity.$context)return error(503);
   const who=userOf(await identity.api.getSession({headers:req.headers}));
@@ -129,6 +130,12 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
       }
     }catch{return error(503);}
   }
+  // Never present a failed policy lookup as "no saved permissions".
+  let savedGrants:BrowserGrantSummary[]=[];
+  if(enrollmentAvailable&&grants?.listBrowserGrants){
+    try{savedGrants=await grants.listBrowserGrants(who.user);}
+    catch{return error(503);}
+  }
   const managedIds=new Set(managedRead?await managedRead.enabledProjectIds(who.user):[]);
   const scoped=await Promise.all(projects.map(async project=>({...project,
     managedEnabled:managedRead?managedIds.has(project.id):undefined,
@@ -140,7 +147,7 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
   })));
   return reply({status:200,devices:rows,message:note,
     stateCookie:cookie(stamp+"."+nonce,origin,300),enrollmentAvailable,
-    projects:scoped,ownerSub:who.user,clients});
+    projects:scoped,ownerSub:who.user,clients,savedGrants});
 }
 async function revoke(req:Request,identity:BrowserIdentity,origin:string,
   devices:DeviceManagementPort):Promise<Response>{
@@ -293,7 +300,7 @@ async function ownerManagedRead(req:Request,identity:BrowserIdentity,origin:stri
 /** Authenticated browser-only management, never usable in external auth mode. */
 export async function devicesResponse(req:Request,identity:BrowserIdentity,origin:string,
   devices?:DeviceManagementPort,enrollmentAvailable=true,
-  grants?:Pick<GrantManagement,"setBrowserGrant">,
+  grants?:Pick<GrantManagement,"setBrowserGrant"|"listBrowserGrants">,
   deviceConnection?:DeviceConnectionLookup,managedRead?:ManagedReadPort):Promise<Response|null>{
   const path=new URL(req.url).pathname;
   if(!["/devices","/devices/revoke","/devices/delete","/devices/enable","/devices/projects/create",
