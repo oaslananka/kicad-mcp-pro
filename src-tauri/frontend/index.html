@@ -23,7 +23,7 @@
         --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace;
       }
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      ::selection { background: rgba(56, 189, 248, 0.32); color: #ffffff; }
+      ::selection { background: #0369a1; color: #ffffff; }
       body {
         font-family: var(--font-sans);
         background: var(--bg);
@@ -42,6 +42,7 @@
         text-align: center;
       }
       .spinner {
+        display: block;
         width: 48px;
         height: 48px;
         border: 4px solid var(--surface-2);
@@ -52,7 +53,16 @@
       }
       @keyframes spin { to { transform: rotate(360deg); } }
       @media (prefers-reduced-motion: reduce) {
-        .spinner { animation-duration: 2s; }
+        *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+          scroll-behavior: auto !important;
+        }
+        .spinner { animation: none; }
+        .details { animation: none; }
+        .support-link { transition: none !important; transform: none !important; }
+        .support-link:hover { transform: none !important; }
       }
       h1 {
         font-size: 22px;
@@ -62,6 +72,7 @@
         color: #ffffff;
       }
       .status {
+        display: block;
         font-size: 14px;
         color: var(--text-muted);
         margin-bottom: 32px;
@@ -120,7 +131,7 @@
         cursor: pointer;
         margin-right: 8px;
         white-space: nowrap;
-        transition: all 0.12s ease;
+        transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
       }
       .btn-copy:hover {
         background: var(--surface-hover);
@@ -144,7 +155,7 @@
         cursor: pointer;
         margin-top: 14px;
         text-decoration: none;
-        transition: all 0.15s ease;
+        transition: background 0.15s ease, border-color 0.15s ease;
       }
       .btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
       .btn.secondary {
@@ -190,8 +201,8 @@
       }
       .support-link:hover { transform: translateY(-1px); }
       .support-link svg { width: 14px; height: 14px; flex-shrink: 0; }
-      .support-link.github { color: #ff8ccf; border-color: rgba(255, 140, 207, 0.35); background: rgba(255, 140, 207, 0.08); }
-      .support-link.github:hover { background: rgba(255, 140, 207, 0.16); }
+      .support-link.github { color: #ffffff; background: #831843; border-color: #9d174d; }
+      .support-link.github:hover { background: #9d174d; }
       .support-link.coffee { color: #171717; background: #ffdd00; border-color: #d1b700; }
       .support-link.coffee:hover { background: #ffe433; }
       @media (max-width: 620px) {
@@ -213,11 +224,11 @@
       </a>
     </nav>
     <main class="container">
-      <div class="spinner" id="spinner" role="status" aria-label="Loading"></div>
+      <output class="spinner" id="spinner" aria-label="Loading"></output>
       <h1>KiCad MCP Pro</h1>
-      <p class="status" id="status" role="status" aria-live="polite">Starting server…</p>
+      <output class="status" id="status" aria-live="polite">Starting server…</output>
 
-      <div class="details" id="details" role="region" aria-label="Diagnostics details">
+      <section class="details" id="details" aria-label="Diagnostics details">
         <h2>
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           Server did not start
@@ -241,7 +252,7 @@
           <button type="button" class="btn secondary" onclick="handleRestartServer()">Restart Server</button>
           <button type="button" class="btn" onclick="handleRestartServer()">Retry</button>
         </div>
-      </div>
+      </section>
     </main>
 
     <script type="module">
@@ -264,7 +275,9 @@
           if (ipc && typeof ipc.invoke === 'function') {
             return await ipc.invoke(cmd, args || {});
           }
-        } catch (_) {}
+        } catch (err) {
+          // Tauri IPC invoke failed or running outside desktop container; fallback to web polling.
+        }
         return null;
       }
 
