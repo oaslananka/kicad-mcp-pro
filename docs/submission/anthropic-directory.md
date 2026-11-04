@@ -1,5 +1,14 @@
 # Anthropic Connector Directory Submission
 
+> 2026-11-04 update: Claude's September 2026 portal accepts a single
+> public remote MCP connector or a remote MCP plus Agent Skills plugin.
+> The older local stdio/reviewer installation path below is NOT the
+> hosted Cloud submission. See
+> [current platform compatibility](platform-compatibility-2026-11-04.md)
+> and integrations/cloud-directory-plugin for a no-secret remote candidate.
+> OAuth and remote project-grant acceptance must precede submission.
+
+
 Use this document when submitting KiCad MCP Pro to the Anthropic Connector Directory.
 
 ## Submission URL

@@ -1,5 +1,14 @@
 # Submission Readiness Checklist
 
+> Updated 2026-11-04: OpenAI now supports combined remote MCP and Agent
+> Skills in the Plugins Directory, and Claude accepts remote connectors or
+> plugin bundles. For the hosted read-only Cloud product, see
+> [current platform compatibility](platform-compatibility-2026-11-04.md)
+> and the source-only candidate under integrations/cloud-directory-plugin.
+> The root local stdio plugin and the old Apps SDK example are separate
+> distribution tracks. No application has been submitted.
+
+
 This page is the working index for public listing submissions.
 It links platform-specific instructions to the listing source of truth: [`docs/public-listing.md`](../public-listing.md).
 Use this checklist before entering any external review form.

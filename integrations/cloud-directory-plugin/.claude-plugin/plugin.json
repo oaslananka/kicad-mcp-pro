@@ -1,0 +1,11 @@
+{
+  "name": "kicad-cloud-review",
+  "version": "0.1.0",
+  "description": "Read-only hosted KiCad project review, scoped to user-authorized projects.",
+  "mcpServers": "./.mcp.json",
+  "skills": ["./skills/cloud-project-review"],
+  "author": {
+    "name": "oaslananka",
+    "url": "https://github.com/oaslananka"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "kicad-cloud": {
+      "type": "streamable-http",
+      "url": "https://kicad-mcp-pro.oaslananka.dev/mcp",
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "oauth",
+            "client": {
+              "mode": "cimd"
+            },
+            "resource": "https://kicad-mcp-pro.oaslananka.dev/mcp",
+            "baseScopes": ["projects:read"]
+          }
+        }
+      }
+    }
+  }
+}
