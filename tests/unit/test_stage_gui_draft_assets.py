@@ -111,3 +111,123 @@ def test_cannot_replace_existing_or_write_within_input(tmp_path: Path) -> None:
     assert (output / "reserved.bin").read_bytes() == b"must stay unchanged"
     with pytest.raises(ValueError, match="overlap"):
         stage_gui_draft_assets(src, src / "gui-windows-tauri" / "output", TAG)
+
+
+@pytest.mark.parametrize("fault", ["missing-root", "linked-root", "unexpected-role", "linked-role"])
+def test_invalid_artifact_bundle_layout_rejected(tmp_path: Path, fault: str) -> None:
+    src = _artifacts(tmp_path)
+    if fault == "missing-root":
+        src.rename(tmp_path / "renamed-artifacts")
+    elif fault == "linked-root":
+        source = tmp_path / "real-artifacts"
+        src.rename(source)
+        src.symlink_to(source, target_is_directory=True)
+    elif fault == "unexpected-role":
+        (src / "unapproved-platform").mkdir()
+    elif fault == "linked-role":
+        target = tmp_path / "stored-windows-bundle"
+        (src / "gui-windows-tauri").rename(target)
+        (src / "gui-windows-tauri").symlink_to(target, target_is_directory=True)
+    with pytest.raises(ValueError):
+        stage_gui_draft_assets(src, tmp_path / "output", TAG)
+    assert not (tmp_path / "output").exists()
+
+
+def test_duplicate_installer_detected_before_output(tmp_path: Path) -> None:
+    src = _artifacts(tmp_path)
+    installer = next((src / "gui-macos-tauri").rglob("*.dmg"))
+    duplicate = src / "gui-macos-tauri" / "another-bundle" / installer.name
+    duplicate.parent.mkdir()
+    duplicate.write_bytes(installer.read_bytes())
+    with pytest.raises(ValueError, match="duplicate GUI installer"):
+        stage_gui_draft_assets(src, tmp_path / "output", TAG)
+    assert not (tmp_path / "output").exists()
+
+
+@pytest.mark.parametrize("kind", ["symlink", "file", "empty-dir"])
+def test_preexisting_staging_destination_policy(tmp_path: Path, kind: str) -> None:
+    src = _artifacts(tmp_path)
+    destination = tmp_path / "staging"
+    if kind == "symlink":
+        target = tmp_path / "destination"
+        target.mkdir()
+        destination.symlink_to(target, target_is_directory=True)
+    elif kind == "file":
+        destination.write_bytes(b"keep")
+    else:
+        destination.mkdir()
+    if kind == "empty-dir":
+        names = stage_gui_draft_assets(src, destination, TAG)
+        assert len(names) == 6
+    else:
+        with pytest.raises(ValueError, match="empty and not a symlink"):
+            stage_gui_draft_assets(src, destination, TAG)
+
+
+def test_staging_cannot_write_to_parent_of_artifact_directory(tmp_path: Path) -> None:
+    src = _artifacts(tmp_path)
+    with pytest.raises(ValueError, match="overlap"):
+        stage_gui_draft_assets(src, tmp_path, TAG)
+
+
+def test_cli_success_and_validation_failure_without_publication(tmp_path: Path) -> None:
+    import json
+    import subprocess
+    import sys
+
+    src = _artifacts(tmp_path)
+    command = [
+        sys.executable,
+        str(Path(__file__).resolve().parents[2] / "scripts/stage_gui_draft_assets.py"),
+        "--artifacts-dir",
+        str(src),
+        "--output-dir",
+        str(tmp_path / "staged"),
+        "--release-tag",
+        TAG,
+    ]
+    good = subprocess.run(command, capture_output=True, text=True, check=False)
+    assert good.returncode == 0, good.stderr
+    payload = json.loads(good.stdout)
+    assert payload == {
+        "preparedAssets": sorted(
+            [
+                f"{role.removeprefix('gui-').removesuffix('-tauri')}_{name}"
+                for role, names in FILES.items()
+                for name in names
+            ]
+        ),
+        "published": False,
+    }
+    command[-1] = "mcp-server-v4.7.0"
+    bad = subprocess.run(command, capture_output=True, text=True, check=False)
+    assert bad.returncode == 2
+    assert "GUI draft preparation: FAIL" in bad.stderr
+
+
+def test_cli_main_reports_staged_assets_and_errors_in_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import json
+    import sys
+
+    from scripts.stage_gui_draft_assets import main
+
+    src = _artifacts(tmp_path)
+    argv = [
+        "stage_gui_draft_assets.py",
+        "--artifacts-dir",
+        str(src),
+        "--output-dir",
+        str(tmp_path / "approved"),
+        "--release-tag",
+        TAG,
+    ]
+    monkeypatch.setattr(sys, "argv", argv)
+    assert main() == 0
+    assert len(json.loads(capsys.readouterr().out)["preparedAssets"]) == 6
+    monkeypatch.setattr(sys, "argv", [*argv[:-1], "unknown-release"])
+    with pytest.raises(SystemExit) as error:
+        main()
+    assert error.value.code == 2
+    assert "GUI draft preparation: FAIL" in capsys.readouterr().err
