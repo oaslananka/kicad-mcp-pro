@@ -52,18 +52,6 @@
         margin: 0 auto 24px;
       }
       @keyframes spin { to { transform: rotate(360deg); } }
-      @media (prefers-reduced-motion: reduce) {
-        *, *::before, *::after {
-          animation-duration: 0.01ms !important;
-          animation-iteration-count: 1 !important;
-          transition-duration: 0.01ms !important;
-          scroll-behavior: auto !important;
-        }
-        .spinner { animation: none; }
-        .details { animation: none; }
-        .support-link { transition: none !important; transform: none !important; }
-        .support-link:hover { transform: none !important; }
-      }
       h1 {
         font-size: 22px;
         font-weight: 700;
@@ -209,6 +197,12 @@
         .support-links { top: 10px; right: 10px; gap: 6px; }
         .support-link { width: 34px; padding: 7px; justify-content: center; }
         .support-link span { display: none; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .spinner { animation: none; }
+        .details { animation: none; }
+        .btn-copy, .btn, .support-link { transition: none; }
+        .support-link:hover { transform: none; }
       }
     </style>
   </head>
