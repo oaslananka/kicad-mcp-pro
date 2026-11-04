@@ -37,7 +37,8 @@ def test_openai_plugin_has_readonly_display_and_no_hooks_or_app_references() -> 
     assert info["privacyPolicyURL"] == "https://oaslananka.github.io/kicad-mcp-pro/privacy/"
     assert extension["onboardingSkill"] == "./skills/cloud-project-review/SKILL.md"
     assert (PACKAGE / extension["onboardingSkill"]).is_file()
-    assert "apps" not in extension and "hooks" not in extension
+    assert "apps" not in extension
+    assert "hooks" not in extension
     assert not (PACKAGE / ".app.json").exists()
     assert not (PACKAGE / "hooks").exists()
 
