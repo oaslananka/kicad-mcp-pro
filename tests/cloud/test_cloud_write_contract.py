@@ -11,8 +11,8 @@ import pytest
 
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
 from kicad_mcp.cloud_write_contract import (
-    LocalWriteDeniedError,
     MAX_WRITE_FRAME_BYTES,
+    LocalWriteDeniedError,
     parse_local_write_contract,
 )
 
@@ -38,12 +38,19 @@ POLICY = OperatorProject(
 
 def fixture() -> dict[str, object]:
     return {
-        "kind": "connector.write_request", "version": 1,
-        "requestId": REQUEST, "deviceId": DEVICE, "projectId": PROJECT,
-        "sessionId": SESSION, "deadlineUnixMs": NOW + 1000,
+        "kind": "connector.write_request",
+        "version": 1,
+        "requestId": REQUEST,
+        "deviceId": DEVICE,
+        "projectId": PROJECT,
+        "sessionId": SESSION,
+        "deadlineUnixMs": NOW + 1000,
         "command": {
-            "operation": "pcb_move_footprint", "reference": "R12",
-            "xMm": 42.5, "yMm": 10.25, "rotationDeg": None,
+            "operation": "pcb_move_footprint",
+            "reference": "R12",
+            "xMm": 42.5,
+            "yMm": 10.25,
+            "rotationDeg": None,
             "expectedBoardSha256": "a" * 64,
         },
     }
@@ -57,7 +64,10 @@ def parse(
     now: int = NOW,
 ) -> dict[str, object]:
     return parse_local_write_contract(
-        payload, verified=binding, operator_project=policy, now_unix_ms=now,
+        payload,
+        verified=binding,
+        operator_project=policy,
+        now_unix_ms=now,
     )
 
 
@@ -66,24 +76,27 @@ def test_one_narrow_command_is_validated_without_mutating_a_file() -> None:
     assert parse(json.dumps(expected).encode()) == expected
 
 
-@pytest.mark.parametrize("where,key,value", [
-    ("frame", "version", 2),
-    ("frame", "kind", "connector.read_request"),
-    ("frame", "sessionId", PROJECT),
-    ("frame", "projectId", DEVICE),
-    ("frame", "deadlineUnixMs", NOW),
-    ("frame", "deadlineUnixMs", NOW + 10_001),
-    ("frame", "deadlineUnixMs", True),
-    ("command", "operation", "pcb_delete_all"),
-    ("command", "reference", "../../x"),
-    ("command", "xMm", 1001),
-    ("command", "xMm", 10 ** 500),
-    ("command", "yMm", True),
-    ("command", "rotationDeg", 361),
-    ("command", "expectedBoardSha256", "A" * 64),
-    ("command", "path", "/etc/passwd"),
-    ("frame", "shell", "rm -rf /"),
-])
+@pytest.mark.parametrize(
+    "where,key,value",
+    [
+        ("frame", "version", 2),
+        ("frame", "kind", "connector.read_request"),
+        ("frame", "sessionId", PROJECT),
+        ("frame", "projectId", DEVICE),
+        ("frame", "deadlineUnixMs", NOW),
+        ("frame", "deadlineUnixMs", NOW + 10_001),
+        ("frame", "deadlineUnixMs", True),
+        ("command", "operation", "pcb_delete_all"),
+        ("command", "reference", "../../x"),
+        ("command", "xMm", 1001),
+        ("command", "xMm", 10**500),
+        ("command", "yMm", True),
+        ("command", "rotationDeg", 361),
+        ("command", "expectedBoardSha256", "A" * 64),
+        ("command", "path", "/etc/passwd"),
+        ("frame", "shell", "rm -rf /"),
+    ],
+)
 def test_untrusted_fields_are_denied(where: str, key: str, value: object) -> None:
     data = fixture()
     target = data if where == "frame" else cast(dict[str, object], data["command"])

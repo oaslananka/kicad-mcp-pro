@@ -26,13 +26,28 @@ _UUID = re.compile(
 )
 _REFERENCE = re.compile(r"[A-Z]{1,3}[1-9][0-9]{0,5}", re.ASCII)
 _SHA256 = re.compile(r"[a-f0-9]{64}", re.ASCII)
-_FRAME_FIELDS = frozenset({
-    "kind", "version", "requestId", "deviceId", "projectId",
-    "sessionId", "deadlineUnixMs", "command",
-})
-_COMMAND_FIELDS = frozenset({
-    "operation", "reference", "xMm", "yMm", "rotationDeg", "expectedBoardSha256",
-})
+_FRAME_FIELDS = frozenset(
+    {
+        "kind",
+        "version",
+        "requestId",
+        "deviceId",
+        "projectId",
+        "sessionId",
+        "deadlineUnixMs",
+        "command",
+    }
+)
+_COMMAND_FIELDS = frozenset(
+    {
+        "operation",
+        "reference",
+        "xMm",
+        "yMm",
+        "rotationDeg",
+        "expectedBoardSha256",
+    }
+)
 
 
 class LocalWriteDeniedError(ValueError):
@@ -89,11 +104,19 @@ def parse_local_write_contract(
         or body["version"] != 1
         or not isinstance(body["requestId"], str)
         or _UUID.fullmatch(body["requestId"]) is None
-        or not all(isinstance(item, str) and _UUID.fullmatch(item) for item in (
-            body["deviceId"], body["projectId"], body["sessionId"],
-            verified.device_id, verified.project_id, verified.session_id,
-            operator_project.device_id, operator_project.project_id,
-        ))
+        or not all(
+            isinstance(item, str) and _UUID.fullmatch(item)
+            for item in (
+                body["deviceId"],
+                body["projectId"],
+                body["sessionId"],
+                verified.device_id,
+                verified.project_id,
+                verified.session_id,
+                operator_project.device_id,
+                operator_project.project_id,
+            )
+        )
         or body["deviceId"] != verified.device_id
         or body["projectId"] != verified.project_id
         or body["sessionId"] != verified.session_id
@@ -102,7 +125,9 @@ def parse_local_write_contract(
         or type(verified.session_expires_unix_ms) is not int
         or not now_unix_ms < verified.session_expires_unix_ms
         or type(deadline) is not int
-        or not now_unix_ms < deadline <= min(
+        or not now_unix_ms
+        < deadline
+        <= min(
             now_unix_ms + MAX_WRITE_DEADLINE_MS,
             verified.session_expires_unix_ms,
         )
@@ -112,10 +137,7 @@ def parse_local_write_contract(
         or _REFERENCE.fullmatch(command["reference"]) is None
         or not _coordinate(command["xMm"], maximum=1000)
         or not _coordinate(command["yMm"], maximum=1000)
-        or not (
-            command["rotationDeg"] is None
-            or _coordinate(command["rotationDeg"], maximum=360)
-        )
+        or not (command["rotationDeg"] is None or _coordinate(command["rotationDeg"], maximum=360))
         or not isinstance(command["expectedBoardSha256"], str)
         or _SHA256.fullmatch(command["expectedBoardSha256"]) is None
     ):
