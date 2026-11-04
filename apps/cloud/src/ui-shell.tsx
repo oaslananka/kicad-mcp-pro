@@ -141,6 +141,16 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
         <div className="step"><div className="step-index"><span className="step-icon"><Icon name="connections" size={19}/></span><span>03</span></div><h3>Connect your AI client</h3><p>Follow the connection guide and review the app's account permissions.</p></div>
         <div className="step"><div className="step-index"><span className="step-icon"><Icon name="cpu" size={19}/></span><span>04</span></div><h3>Choose project access</h3><p>Select a project on your own computer, then explicitly grant each connected AI client access.</p></div>
       </div>
+      <div className="setup-help" aria-label="Setup questions">
+        <p><strong>No projects listed?</strong> Check that your local Connector is running and that
+          your paired computer appears under <a href="/devices">Devices &amp; projects</a>.
+          Register a project there and grant your chosen AI client access. Signing in
+          or pairing alone never shares a project.</p>
+        <p><strong>Want to stop sharing?</strong> Open <a href="/connections">AI connections</a> to
+          revoke a client's authorization, or turn off the individual project grant
+          in your workspace. Your KiCad design files stay on your computer, and
+          hosted MCP project access is currently read-only.</p>
+      </div>
     </section>
   </div>;
 }

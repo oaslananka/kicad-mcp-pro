@@ -2,6 +2,7 @@
 title: KiCad MCP Cloud
 description: Owner-approved KiCad project review from compatible AI assistants using remote MCP.
 url: https://kicad-mcp-pro.oaslananka.dev/
+last_updated: 2026-11-04
 ---
 
 # KiCad MCP Cloud
