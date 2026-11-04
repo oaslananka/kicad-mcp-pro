@@ -11,9 +11,16 @@ test("cloud console presents available features without overstating local KiCad 
   assert.match(page,/KiCad MCP Cloud/);
   assert.match(page,/Account access pending/);
   assert.doesNotMatch(page,/href="\/sign-in"/);
-  assert.match(page,/Device pairing and local KiCad control are not enabled yet/);
+  assert.match(page,/pair a computer with your approval/);
+  assert.doesNotMatch(page,/Device pairing and local KiCad control are not enabled yet/);
+  assert.doesNotMatch(page,/Connection not enabled/);
+  assert.doesNotMatch(page,/Device pairing and local project actions aren't available yet/);
   assert.match(page,/rel="stylesheet" href="\/assets\/ui.css"/);
-  assert.doesNotMatch(page,/<script[\s>]/i);
+  const inertSchema=page.match(/<script type="application\/ld\+json">([^<]+)<\/script>/);
+  assert.ok(inertSchema,"public product metadata must use inert JSON-LD");
+  const parsed=JSON.parse(inertSchema[1]);
+  assert.equal(parsed["@type"],"SoftwareApplication");
+  assert.doesNotMatch(page.replace(inertSchema[0],""),/<script[\s>]/i);
   assert.match(uiCss,/@media\(max-width:560px\)/);
   assert.match(uiCss, /prefers-reduced-motion/);
   const open=renderLanding(true);

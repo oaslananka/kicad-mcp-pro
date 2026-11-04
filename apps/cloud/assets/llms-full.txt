@@ -1,0 +1,27 @@
+# KiCad MCP Cloud — public documentation for agents
+
+> Managed MCP access for explicit, owner-approved KiCad project summaries, not a public tool to execute arbitrary local commands.
+
+## Connection and authorization
+
+Use https://kicad-mcp-pro.oaslananka.dev/mcp as the protected HTTPS MCP endpoint. Authenticate through the advertised OAuth Protected Resource Metadata at https://kicad-mcp-pro.oaslananka.dev/.well-known/oauth-protected-resource. The authorization server is discovered from this metadata; do not assume an issuer at the site root.
+
+Read operations require the projects:read scope and a separate owner-approved project grant. Unauthorized project identifiers are not discoverable. Registered devices may be offline; do not assume KiCad's GUI or any PCB tool is running.
+
+## Common owner workflows
+
+1. Sign in to the Cloud workspace.
+2. On the owner's computer, run kicad-mcp-pro cloud setup to pair a device and select a local project folder.
+3. Approve device pairing using the owner's first-party browser session.
+4. Connect an AI client using the remote MCP URL and OAuth, not a shared static API key.
+5. Grant each client access to an explicitly registered project.
+6. Revoke client or project access independently when no longer needed.
+
+The hosted MCP currently exposes read-only project presence and bounded summary/count tools when available. Write operations and manufacturing submission are not included in the hosted surface. Local KiCad file paths, project data and credentials are not published by this documentation.
+
+## References
+
+- [Product documentation](https://oaslananka.github.io/kicad-mcp-pro/)
+- [Repository](https://github.com/oaslananka/kicad-mcp-pro)
+- [Privacy policy](https://oaslananka.github.io/kicad-mcp-pro/privacy/)
+- [Support issues](https://github.com/oaslananka/kicad-mcp-pro/issues)

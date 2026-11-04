@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /account
+Disallow: /connections
+Disallow: /devices
+Disallow: /consent
+Disallow: /api/
+Sitemap: https://kicad-mcp-pro.oaslananka.dev/sitemap.xml

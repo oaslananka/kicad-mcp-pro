@@ -1298,3 +1298,52 @@ test("schematic counts read obeys project grant and hides identifiers",async()=>
     await new Promise<void>(resolve=>enabled.close(()=>resolve()));
   }
 });
+
+test("only allowlisted static brand and agent-discovery assets are served",async()=>{
+  const known:Array<[string,string]>=[
+    ["/favicon.ico","image/x-icon"],
+    ["/favicon.svg","image/svg+xml"],
+    ["/apple-touch-icon.png","image/png"],
+    ["/assets/icon-192.png","image/png"],
+    ["/assets/icon-512.png","image/png"],
+    ["/site.webmanifest","application/manifest+json"],
+    ["/llms.txt","text/plain"],
+    ["/llms-full.txt","text/plain"],
+    ["/robots.txt","text/plain"],
+    ["/sitemap.xml","application/xml"],
+    ["/sitemap.md","text/markdown"],
+    ["/AGENTS.md","text/markdown"],
+    ["/index.md","text/markdown"]
+  ];
+  for(const [path,mime] of known){
+    const reply=await fetch(endpoint+path);
+    assert.equal(reply.status,200,path);
+    assert.ok((reply.headers.get("content-type")??"").startsWith(mime),path);
+    assert.ok((await reply.arrayBuffer()).byteLength>10,path);
+    assert.equal(reply.headers.get("x-content-type-options"),"nosniff");
+  }
+  for(const path of ["/assets/../../config.json","/llms-private.txt","/AGENTS.md/../../secret"]){
+    const response=await fetch(endpoint+path,{redirect:"manual"});
+    assert.notEqual(response.status,200,path);
+  }
+});
+
+test("public homepage supports safe markdown discovery, canonical and privacy",async()=>{
+  const htmlReply=await fetch(endpoint+"/",{headers:{"Accept":"text/html"}});
+  assert.equal(htmlReply.status,200);
+  const html=await htmlReply.text();
+  assert.match(html,/<link rel="canonical" href="https:\/\/kicad-mcp-pro\.oaslananka\.dev\/"\/>/);
+  assert.match(html,/rel="describedby" href="\/llms.txt"/);
+  assert.match(html,/rel="alternate" type="text\/markdown" href="\/index.md"/);
+  assert.match(html,/rel="icon" type="image\/svg\+xml" href="\/favicon.svg"/);
+  assert.match(html,/type="application\/ld\+json"/);
+  assert.match(html,/Pair your computer/);
+  assert.doesNotMatch(html,/Device pairing and local KiCad control are not enabled yet/);
+  const mirror=await fetch(endpoint+"/",{headers:{"Accept":"text/markdown"}});
+  assert.equal(mirror.status,200);
+  assert.match(mirror.headers.get("content-type")??"",/text\/markdown/);
+  const content=await mirror.text();
+  assert.match(content,/^---\ntitle:/);
+  assert.match(content,/explicitly grant each connected AI client|Grant each AI assistant permission/);
+  assert.doesNotMatch(content,/device_credentials|DATABASE_URL|secret value/);
+});

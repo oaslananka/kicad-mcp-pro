@@ -60,15 +60,34 @@ Add to your Gemini repo instructions:
 {
   "mcpServers": {
     "kicad-cloud": {
-      "httpUrl": "https://mcp.kicad.example.com/mcp",
+      "httpUrl": "https://kicad-mcp-pro.oaslananka.dev/mcp",
       "timeout": 30000,
-      "trust": false,
-      "includeTools": ["search_kicad_knowledge", "analyze_uploaded_kicad_project"]
+      "trust": false
     }
   }
 }
 ```
 
+
+Gemini CLI supports standard OAuth discovery for remote MCP connections;
+run the /mcp auth kicad-cloud command if the client requires authentication.
+The current Cloud advertises only projects:read, and a separately authorized
+project grant is required; the remote connector does not supply desktop
+write/edit tools.
+
+Google Gemini Apps custom MCP connections are a separate host product.
+Per Google's November 2026 documentation, they are currently available
+only to eligible US personal Google accounts with Gemini activity enabled
+and in English. Even on eligible accounts, Google may require dynamic client
+registration (RFC 7591), client metadata compatibility and additional
+redirect allowlisting; an authorization server advertising CIMD is not
+proof of successful Google registration. Do not bypass Google geo/account
+limits or downgrade OAuth to unauthenticated access. Use the Gemini CLI
+path above for a host-independent protocol smoke test.
+
+- [Official Gemini CLI MCP + OAuth guide](https://geminicli.com/docs/tools/mcp-server/)
+- [Google Gemini Apps custom MCP prerequisites](https://support.google.com/gemini/answer/17209137)
+- [Google Connected Apps troubleshooting](https://developers.google.com/connected-apps/gpc/troubleshooting)
 
 ## Gemini CLI extension pilot (opt-in)
 

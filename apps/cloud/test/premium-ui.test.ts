@@ -22,15 +22,21 @@ test("landing topology shows Cloud availability but no active KiCad connection",
   const enabled=renderLanding(true);
   assert.match(enabled,/ACCESS ARCHITECTURE/);
   assert.match(enabled,/EXPLICIT PERMISSIONS/);
-  assert.match(enabled,/Connection not enabled/);
+  assert.match(enabled,/Owner pairing required/);
+  assert.match(enabled,/Pair your computer/);
+  assert.doesNotMatch(enabled,/Connection not enabled/);
+  assert.doesNotMatch(enabled,/Not enabled/);
   assert.match(enabled,/Project access always requires separate approval/);
   assert.match(enabled,/href="\/sign-in"/);
   assert.match(enabled,/<svg[^>]+aria-hidden="true"/);
-  assert.doesNotMatch(enabled,/Foundation preview|<script[\s>]/i);
+  assert.doesNotMatch(enabled.replace(/<script type="application\/ld\+json">[^<]+<\/script>/,""),
+    /Foundation preview|<script[\s>]/i);
   const disabled=renderLanding(false);
   assert.match(disabled,/Account access pending/);
   assert.doesNotMatch(disabled,/href="\/sign-in"/);
-  assert.match(disabled,/Connection not enabled/);
+  assert.match(disabled,/Owner pairing required/);
+  assert.doesNotMatch(disabled,/Connection not enabled/);
+  assert.doesNotMatch(disabled,/Not enabled/);
 });
 test("security pages share brand/navigation while preserving authorization forms",()=>{
   const pages=[

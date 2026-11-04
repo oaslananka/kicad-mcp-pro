@@ -1,7 +1,7 @@
 import {renderPage,Landing,SignIn,Account,Notice} from "./ui-shell.js";
 export function renderLanding(identityEnabled:boolean){
   return renderPage({title:"KiCad MCP Cloud",kind:"home",navEnabled:identityEnabled,
-    eyebrow:"Cloud console",summary:"Manage AI account access today. Device pairing and local KiCad control are not enabled yet.",
+    eyebrow:"Cloud console",summary:"Connect an AI assistant, pair a computer with your approval, then choose exactly which KiCad projects it can read.",
     children:<Landing identityEnabled={identityEnabled}/>});
 }
 export function renderSignIn(query:string,providers:ReadonlyArray<"google"|"github">=["google","github"],pairing=false){

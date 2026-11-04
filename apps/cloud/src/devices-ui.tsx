@@ -17,6 +17,25 @@ export function renderDevicesPage(
     actions:enrollmentAvailable?<a className="button primary" href="/devices/pairing"><span aria-hidden="true">+</span> Pair a device</a>:null,
     children:<div className="page-stack">
       {notice?<output className="output-notice">{notice}</output>:null}
+      {enrollmentAvailable?<nav className="setup-progress" aria-label="Cloud setup progress">
+        <div className="setup-progress-heading"><strong>Connection setup</strong>
+          <span>Each layer requires its own approval. Nothing is shared by default.</span></div>
+        <ol>
+          <li className="progress-complete"><span className="progress-number">01</span>
+            <div><strong>Account</strong><small>Signed in</small></div></li>
+          <li className={devices.some(d=>d.enabled&&!d.revoked)?"progress-complete":"progress-current"}>
+            <span className="progress-number">02</span><div><strong>Computer</strong>
+              <small>{devices.some(d=>d.enabled&&!d.revoked)?"Device paired":"Pair your device"}</small></div></li>
+          <li className={projects.some(p=>p.enabled)?"progress-complete":"progress-current"}>
+            <span className="progress-number">03</span><div><strong>Project</strong>
+              <small>{projects.some(p=>p.enabled)?"Project registered":"Choose a local folder"}</small></div></li>
+          <li className={clients.length>0?"progress-complete":"progress-current"}>
+            <span className="progress-number">04</span><div><strong>AI client</strong>
+              <small>{clients.length>0?"Client connected":"Connect ChatGPT, Claude or another app"}</small></div></li>
+          <li className="progress-current"><span className="progress-number">05</span>
+            <div><strong>Grant access</strong><small>Choose permissions per project and client</small></div></li>
+        </ol>
+      </nav>:null}
       {!enrollmentAvailable && devices.length===0?<section className="card status-card" id="registered-projects"><div>
         <span className="status-pill pending">Not enabled</span>
         <h2>Local KiCad devices aren't available yet</h2>

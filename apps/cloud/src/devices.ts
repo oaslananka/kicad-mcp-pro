@@ -41,7 +41,7 @@ function reply({status,devices=[],message,stateCookie,enrollmentAvailable=true,
     // Preserve Origin on same-origin form POSTs; Chrome sends Origin: null
     // under no-referrer. Cross-site referrers remain hidden.
     "Referrer-Policy":"same-origin","X-Content-Type-Options":"nosniff",
-    "Content-Security-Policy":"default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; style-src 'self'"
+    "Content-Security-Policy":"default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; style-src 'self'; img-src 'self'"
   }});
   if(stateCookie)response.headers.append("Set-Cookie",stateCookie);
   return response;

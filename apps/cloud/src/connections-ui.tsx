@@ -59,6 +59,16 @@ export function renderConnectionsPage(
             <a className="text-link" href="https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp"
               target="_blank" rel="noopener noreferrer">Official setup guide</a>
           </div>
+          <div><h3>Google Gemini</h3><p>Gemini web custom apps currently require a supported
+            US personal account, English and Gemini activity enabled. This
+            restriction is controlled by Google, not by this Cloud service.
+            Gemini CLI supports remote HTTPS MCP and OAuth with its own
+            settings; do not paste bearer tokens into browser forms.</p>
+            <a className="text-link" href="https://support.google.com/gemini/answer/17209137"
+              target="_blank" rel="noopener noreferrer">Gemini Apps requirements</a>
+            <a className="text-link" href="https://geminicli.com/docs/tools/mcp-server/"
+              target="_blank" rel="noopener noreferrer">Gemini CLI instructions</a>
+          </div>
         </div>
         <p className="field-help">Availability varies by AI client and account.
           Remote host authentication and live KiCad operations must be tested

@@ -1,0 +1,13 @@
+{
+  "name": "KiCad MCP Cloud",
+  "short_name": "KiCad MCP",
+  "description": "Owner-controlled access to local KiCad project metadata through remote MCP.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0f17",
+  "theme_color": "#0b0f17",
+  "icons": [
+    {"src": "/assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}
+  ]
+}
