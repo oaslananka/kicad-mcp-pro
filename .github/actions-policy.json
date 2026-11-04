@@ -67,6 +67,13 @@
         "security-events"
       ]
     },
+    "prepare-gui.yml": {
+      "attest-and-store": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
+      ]
+    },
     "prepare-kicad-pcm.yml": {
       "prepare": [
         "artifact-metadata",
