@@ -50,6 +50,12 @@ from .placement_connectivity import (
     evaluate_crystal_placement,
     evaluate_decoupling_connectivity,
 )
+from .reporter import (
+    PrioritizedActionItem,
+    ReviewActionCategory,
+    UnifiedReviewReport,
+    generate_unified_review_report,
+)
 from .routing_style import evaluate_routing_style
 from .stage_gate import (
     ReviewStage,
@@ -115,13 +121,17 @@ __all__ = [
     "evaluate_visual_quality",
     "ExternalAnalysisReport",
     "FabricationProfile",
+    "generate_unified_review_report",
     "is_connector_footprint",
     "load_external_analysis_report",
     "plan_cosmetic_transaction",
+    "PrioritizedActionItem",
     "report_to_evidence_record",
+    "ReviewActionCategory",
     "ReviewRuleCatalog",
     "ReviewStage",
     "StageAuthorizationInput",
     "StageGateDecision",
+    "UnifiedReviewReport",
     "verify_rotation_independence",
 ]
