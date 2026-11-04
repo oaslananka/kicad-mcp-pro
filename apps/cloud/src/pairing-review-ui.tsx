@@ -15,12 +15,10 @@ export function renderPairingReviewPage(csrf:string,notice?:string):string {
       <form action="/devices/pairing/review" method="post">
         <details id="pairing-manual">
           <summary>Advanced: enter pairing details manually</summary>
-          <label>Pairing challenge ID
-            <input id="pairing-id-input" name="challenge_id" required={true} maxLength={36} autoComplete="off"/>
-          </label>
-          <label>12-character device code
-            <input id="pairing-code-input" name="user_code" required={true} minLength={12} maxLength={20} autoComplete="off"/>
-          </label>
+          <label htmlFor="pairing-id-input">Pairing challenge ID</label>
+          <input id="pairing-id-input" name="challenge_id" required={true} maxLength={36} autoComplete="off"/>
+          <label htmlFor="pairing-code-input">12-character device code</label>
+          <input id="pairing-code-input" name="user_code" required={true} minLength={12} maxLength={20} autoComplete="off"/>
         </details>
         <input type="hidden" name="csrf" value={csrf}/>
         <div className="action-row" id="pairing-actions">
