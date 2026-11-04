@@ -176,10 +176,7 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          python3 scripts/stage_gui_draft_assets.py \
-            --artifacts-dir artifacts \
-            --output-dir release-assets \
-            --release-tag "$RELEASE_TAG"
+          python3 scripts/stage_gui_draft_assets.py --release-tag "$RELEASE_TAG"
       - name: Generate GUI draft evidence
         env:
           RELEASE_TAG: ${{ inputs.tag }}

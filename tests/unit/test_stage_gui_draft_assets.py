@@ -175,18 +175,14 @@ def test_cli_success_and_validation_failure_without_publication(tmp_path: Path) 
     import subprocess
     import sys
 
-    src = _artifacts(tmp_path)
+    _artifacts(tmp_path)
     command = [
         sys.executable,
         str(Path(__file__).resolve().parents[2] / "scripts/stage_gui_draft_assets.py"),
-        "--artifacts-dir",
-        str(src),
-        "--output-dir",
-        str(tmp_path / "staged"),
         "--release-tag",
         TAG,
     ]
-    good = subprocess.run(command, capture_output=True, text=True, check=False)
+    good = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, check=False)
     assert good.returncode == 0, good.stderr
     payload = json.loads(good.stdout)
     assert payload == {
@@ -200,7 +196,7 @@ def test_cli_success_and_validation_failure_without_publication(tmp_path: Path) 
         "published": False,
     }
     command[-1] = "mcp-server-v4.7.0"
-    bad = subprocess.run(command, capture_output=True, text=True, check=False)
+    bad = subprocess.run(command, cwd=tmp_path, capture_output=True, text=True, check=False)
     assert bad.returncode == 2
     assert "GUI draft preparation: FAIL" in bad.stderr
 
@@ -213,16 +209,9 @@ def test_cli_main_reports_staged_assets_and_errors_in_process(
 
     from scripts.stage_gui_draft_assets import main
 
-    src = _artifacts(tmp_path)
-    argv = [
-        "stage_gui_draft_assets.py",
-        "--artifacts-dir",
-        str(src),
-        "--output-dir",
-        str(tmp_path / "approved"),
-        "--release-tag",
-        TAG,
-    ]
+    _artifacts(tmp_path)
+    argv = ["stage_gui_draft_assets.py", "--release-tag", TAG]
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(sys, "argv", argv)
     assert main() == 0
     assert len(json.loads(capsys.readouterr().out)["preparedAssets"]) == 6
@@ -231,3 +220,55 @@ def test_cli_main_reports_staged_assets_and_errors_in_process(
         main()
     assert error.value.code == 2
     assert "GUI draft preparation: FAIL" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("target", ["unapproved-root", "parent-traversal", "linked-parent"])
+def test_untrusted_cli_output_path_rejected_before_write(tmp_path: Path, target: str) -> None:
+    src = _artifacts(tmp_path)
+    if target == "unapproved-root":
+        dest = Path("/etc") / "kicad-mcp-pro-unapproved-draft-assets"
+    elif target == "parent-traversal":
+        dest = tmp_path / ".." / "unapproved-draft-assets"
+    else:
+        link = tmp_path / "external-parent"
+        link.symlink_to("/etc", target_is_directory=True)
+        dest = link / "unapproved-draft-assets"
+    with pytest.raises(ValueError):
+        stage_gui_draft_assets(src, dest, TAG)
+    assert not (tmp_path / "unapproved-draft-assets").exists()
+    assert not (tmp_path.parent / "unapproved-draft-assets").exists()
+
+
+def test_unapproved_cli_input_root_rejected(tmp_path: Path) -> None:
+    dest = tmp_path / "output"
+    with pytest.raises(ValueError):
+        stage_gui_draft_assets(Path("/etc"), dest, TAG)
+    assert not dest.exists()
+
+
+def test_explicit_parent_navigation_in_input_rejected(tmp_path: Path) -> None:
+    src = _artifacts(tmp_path)
+    dest = tmp_path / "output"
+    with pytest.raises(ValueError, match="parent traversal"):
+        stage_gui_draft_assets(src / "bundle" / "..", dest, TAG)
+    assert not dest.exists()
+
+
+def test_cli_does_not_accept_user_selected_filesystem_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    from scripts.stage_gui_draft_assets import main
+
+    _artifacts(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["stage_gui_draft_assets.py", "--release-tag", TAG, "--output-dir", "/etc"],
+    )
+    with pytest.raises(SystemExit) as rejected:
+        main()
+    assert rejected.value.code == 2
+    assert not (tmp_path / "release-assets").exists()
