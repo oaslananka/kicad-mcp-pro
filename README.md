@@ -12,7 +12,8 @@
   <a href="#quick-start">Quick Start</a> ·
   <a href="docs/tools-reference.generated.md">Tool Reference</a> ·
   <a href="https://oaslananka.github.io/kicad-mcp-pro/agents/">AI Agent Setup</a> ·
-  <a href="docs/llms.txt">AI discovery</a>
+  <a href="docs/llms.txt">AI discovery</a> ·
+  <a href="https://deepwiki.com/oaslananka/kicad-mcp-pro">Ask DeepWiki</a>
 </p>
 
 <p>
@@ -22,7 +23,6 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="MIT License" /></a>
   <a href="https://doi.org/10.5281/zenodo.21283791"><img src="https://zenodo.org/badge/1255527274.svg" alt="DOI" /></a>
   <a href="https://gitgem.org/github/oaslananka/kicad-mcp-pro"><img src="https://gitgem.org/api/badge/github/oaslananka/kicad-mcp-pro.svg" alt="GitGem" /></a>
-  <a href="https://deepwiki.com/oaslananka/kicad-mcp-pro"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki" /></a>
 </p>
 
 <p>
