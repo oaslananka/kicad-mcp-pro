@@ -54,18 +54,22 @@ export function renderOwnerReadReview(
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><title>Approve a KiCad project summary</title>
 <style>
-:root{color-scheme:dark;font-family:system-ui,sans-serif}
-body{margin:0;background:#0e121b;color:#edf0f7;padding:24px}
-main{max-width:620px;margin:5vh auto;background:#19202b;padding:28px;border:1px solid #343e50;border-radius:14px}
-h1{font-size:1.75rem;margin:12px 0}.hint{color:#b8c3d7;line-height:1.6}
-dl{display:grid;grid-template-columns:120px 1fr;gap:12px;line-height:1.4}
-dt{color:#b8c3d7}dd{margin:0;overflow-wrap:anywhere}
-button{font:inherit;border:0;border-radius:8px;padding:13px 18px;cursor:pointer}
+:root{color-scheme:dark;font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+body{margin:0;background:#0b0f17;color:#f1f5f9;padding:24px}
+main{max-width:620px;margin:5vh auto;background:#131926;padding:32px;border:1px solid rgba(255,255,255,0.08);border-radius:14px;box-shadow:0 10px 25px -5px rgba(0,0,0,0.5)}
+h1{font-size:1.75rem;margin:12px 0;letter-spacing:-0.03em;font-weight:700}.hint{color:#94a3b8;line-height:1.6}
+dl{display:grid;grid-template-columns:120px 1fr;gap:12px;line-height:1.4;margin:20px 0}
+dt{color:#94a3b8;font-weight:550}dd{margin:0;overflow-wrap:anywhere;font-family:'JetBrains Mono','Fira Code',ui-monospace,monospace;font-size:0.9em}
+button{font:inherit;border:0;border-radius:8px;padding:12px 20px;cursor:pointer;font-size:13px;transition:background .15s,box-shadow .15s}
 button:disabled{cursor:not-allowed;opacity:.5}
-#approve{background:#83baec;color:#111927;font-weight:650}
-#deny{background:#303b4f;color:#f2f2f5}
-.actions{display:flex;gap:10px;margin-top:25px;flex-wrap:wrap}
-#status{margin-top:18px;min-height:1.5em}
+button:focus-visible{outline:2px solid #38bdf8;outline-offset:2px;box-shadow:0 0 0 2px #0b0f17,0 0 0 4px #38bdf8}
+#approve{background:#0284c7;color:#ffffff;font-weight:650;box-shadow:0 2px 8px rgba(2,132,199,0.3)}
+#approve:hover:not(:disabled){background:#0369a1}
+#deny{background:#1e293b;color:#f1f5f9;border:1px solid rgba(255,255,255,0.12)}
+#deny:hover:not(:disabled){background:#283548}
+.actions{display:flex;gap:12px;margin-top:25px;flex-wrap:wrap}
+#status{margin-top:18px;min-height:1.5em;font-size:13px;color:#94a3b8}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
 </style></head><body><main>
 <p class="hint">KiCad Cloud · Owner approval</p>
 <h1>Approve one project summary?</h1>

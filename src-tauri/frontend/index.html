@@ -5,27 +5,48 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>KiCad MCP Pro</title>
     <style>
+      :root {
+        --bg: #0b0f17;
+        --surface: #131926;
+        --surface-2: #1a2336;
+        --surface-hover: #222d42;
+        --border: #232d3f;
+        --border-strong: #334155;
+        --text: #f1f5f9;
+        --text-muted: #94a3b8;
+        --text-dim: #64748b;
+        --accent: #38bdf8;
+        --accent-hover: #7dd3fc;
+        --success: #22c55e;
+        --error: #ef4444;
+        --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+        --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace;
+      }
       * { margin: 0; padding: 0; box-sizing: border-box; }
+      ::selection { background: #0369a1; color: #ffffff; }
       body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
-        background: #1a1a2e;
-        color: #e0e0e0;
+        font-family: var(--font-sans);
+        background: var(--bg);
+        color: var(--text);
         display: flex;
         justify-content: center;
         align-items: center;
         min-height: 100vh;
         padding: 24px;
+        -webkit-font-smoothing: antialiased;
       }
+      :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       .container {
         max-width: 520px;
         width: 100%;
         text-align: center;
       }
       .spinner {
+        display: block;
         width: 48px;
         height: 48px;
-        border: 4px solid #2d2d5e;
-        border-top-color: #4fc3f7;
+        border: 4px solid var(--surface-2);
+        border-top-color: var(--accent);
         border-radius: 50%;
         animation: spin 0.8s linear infinite;
         margin: 0 auto 24px;
@@ -33,70 +54,115 @@
       @keyframes spin { to { transform: rotate(360deg); } }
       h1 {
         font-size: 22px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
         margin-bottom: 8px;
         color: #ffffff;
       }
       .status {
+        display: block;
         font-size: 14px;
-        color: #a0a0b8;
+        color: var(--text-muted);
         margin-bottom: 32px;
+        line-height: 1.5;
       }
-      .status.error { color: #ef5350; }
-      .status.success { color: #66bb6a; }
+      .status.error { color: var(--error); font-weight: 600; }
+      .status.success { color: var(--success); font-weight: 600; }
       .details {
-        background: #16213e;
-        border-radius: 8px;
-        padding: 20px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 22px;
         text-align: left;
         font-size: 13px;
         line-height: 1.6;
         display: none;
+        animation: fadeIn 0.2s ease-out;
       }
+      @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
       .details.visible { display: block; }
       .details h2 {
+        display: flex;
+        align-items: center;
+        gap: 8px;
         font-size: 15px;
-        color: #ff7043;
+        font-weight: 700;
+        color: #f87171;
         margin-bottom: 12px;
+      }
+      .details-code-row {
+        position: relative;
+        display: flex;
+        align-items: center;
+        background: #06090e;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        margin: 8px 0;
       }
       .details code {
         display: block;
-        background: #0f3460;
-        padding: 8px 12px;
-        border-radius: 4px;
-        font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+        padding: 10px 12px;
+        font-family: var(--font-mono);
         font-size: 12px;
-        margin: 6px 0;
+        color: #7dd3fc;
         word-break: break-all;
+        flex: 1;
+      }
+      .btn-copy {
+        background: var(--surface-2);
+        border: 1px solid var(--border-strong);
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 600;
+        padding: 4px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-right: 8px;
+        white-space: nowrap;
+        transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+      }
+      .btn-copy:hover {
+        background: var(--surface-hover);
+        color: var(--text);
+        border-color: var(--accent);
       }
       .details ul { padding-left: 18px; margin: 8px 0; }
       .details li { margin-bottom: 6px; }
       .btn {
-        display: inline-block;
-        background: #4fc3f7;
-        color: #1a1a2e;
-        border: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        background: var(--accent);
+        color: #0b0f17;
+        border: 1px solid var(--accent);
         border-radius: 6px;
-        padding: 10px 24px;
-        font-size: 14px;
+        padding: 9px 20px;
+        font-size: 13px;
         font-weight: 600;
         cursor: pointer;
-        margin-top: 16px;
+        margin-top: 14px;
         text-decoration: none;
+        transition: background 0.15s ease, border-color 0.15s ease;
       }
-      .btn:hover { background: #29b6f6; }
+      .btn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
       .btn.secondary {
-        background: transparent;
-        color: #4fc3f7;
-        border: 1px solid #4fc3f7;
+        background: var(--surface-2);
+        color: var(--text);
+        border: 1px solid var(--border-strong);
       }
-      .step { margin-bottom: 4px; }
-      .step.ok { color: #66bb6a; }
-      .step.fail { color: #ef5350; }
-      .step.pending { color: #a0a0b8; }
-      .step::before { margin-right: 6px; }
-      .step.ok::before { content: '✓ '; }
-      .step.fail::before { content: '✗ '; }
-      .step.pending::before { content: '○ '; }
+      .btn.secondary:hover {
+        background: var(--surface-hover);
+        border-color: var(--accent);
+      }
+      .step { margin-bottom: 6px; display: flex; align-items: center; gap: 8px; font-size: 13px; }
+      .step.ok { color: var(--success); }
+      .step.fail { color: var(--error); }
+      .step.pending { color: var(--text-muted); }
+      .step::before { font-weight: bold; width: 14px; display: inline-block; }
+      .step.ok::before { content: '✓'; }
+      .step.fail::before { content: '✕'; }
+      .step.pending::before { content: '○'; }
       .support-links {
         position: fixed;
         top: 16px;
@@ -110,64 +176,83 @@
         align-items: center;
         gap: 6px;
         min-height: 34px;
-        padding: 7px 11px;
-        border: 1px solid #3a3a68;
+        padding: 7px 12px;
+        border: 1px solid var(--border);
         border-radius: 7px;
-        color: #e8e8f2;
-        background: rgba(22, 33, 62, 0.92);
+        color: var(--text);
+        background: rgba(19, 25, 38, 0.94);
         font-size: 12px;
         font-weight: 700;
         text-decoration: none;
-        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        transition: transform 0.12s ease, background 0.12s ease;
       }
       .support-link:hover { transform: translateY(-1px); }
-      .support-link.github { color: #ff8ccf; border-color: #8f376f; }
+      .support-link svg { width: 14px; height: 14px; flex-shrink: 0; }
+      .support-link.github { color: #ffffff; background: #831843; border-color: #9d174d; }
+      .support-link.github:hover { background: #9d174d; }
       .support-link.coffee { color: #171717; background: #ffdd00; border-color: #d1b700; }
+      .support-link.coffee:hover { background: #ffe433; }
       @media (max-width: 620px) {
         .support-links { top: 10px; right: 10px; gap: 6px; }
         .support-link { width: 34px; padding: 7px; justify-content: center; }
         .support-link span { display: none; }
       }
+      @media (prefers-reduced-motion: reduce) {
+        .spinner { animation: none; }
+        .details { animation: none; }
+        .btn-copy, .btn, .support-link { transition: none; }
+        .support-link:hover { transform: none; }
+      }
     </style>
   </head>
   <body>
     <nav class="support-links" aria-label="Project support">
-      <a class="support-link github" href="https://github.com/sponsors/oaslananka" target="_blank" rel="noopener noreferrer" aria-label="GitHub Sponsors">♥ <span>GitHub Sponsors</span></a>
-      <a class="support-link coffee" href="https://www.buymeacoffee.com/oaslananka" target="_blank" rel="noopener noreferrer" aria-label="Buy me a coffee">☕ <span>Buy me a coffee</span></a>
+      <a class="support-link github" href="https://github.com/sponsors/oaslananka" target="_blank" rel="noopener noreferrer" aria-label="GitHub Sponsors">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+        <span>GitHub Sponsors</span>
+      </a>
+      <a class="support-link coffee" href="https://www.buymeacoffee.com/oaslananka" target="_blank" rel="noopener noreferrer" aria-label="Buy me a coffee">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zM6 1v3M10 1v3M14 1v3"/></svg>
+        <span>Buy me a coffee</span>
+      </a>
     </nav>
-    <div class="container">
-      <div class="spinner" id="spinner"></div>
+    <main class="container">
+      <output class="spinner" id="spinner" aria-label="Loading"></output>
       <h1>KiCad MCP Pro</h1>
-      <p class="status" id="status">Starting server…</p>
+      <output class="status" id="status" aria-live="polite">Starting server…</output>
 
-      <div class="details" id="details">
-        <h2>⚠️ Server did not start</h2>
-        <p>The Python backend did not respond within the expected time.</p>
+      <section class="details" id="details" aria-label="Diagnostics details">
+        <h2>
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          Server did not start
+        </h2>
+        <p style="color:var(--text-muted);margin-bottom:12px;">The Python backend did not respond within the expected time window.</p>
         <div id="steps">
           <div class="step pending" data-step="uvx">Check uvx is installed</div>
           <div class="step pending" data-step="pkg">Check kicad-mcp-pro package</div>
           <div class="step pending" data-step="server">Check server health</div>
         </div>
-        <div id="error-detail" style="display:none;margin-top:12px;background:#1a1a2e;border:1px solid #ef5350;border-radius:6px;padding:12px;font-family:'Cascadia Code','Fira Code','Consolas',monospace;font-size:12px;white-space:pre-wrap;word-break:break-all;color:#ef5350;"></div>
-        <p style="margin-top:16px;font-size:13px;">
-          Try running this command manually in a terminal to see the error:
+        <div id="error-detail" style="display:none;margin-top:12px;background:#06090e;border:1px solid var(--error);border-radius:6px;padding:12px;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;word-break:break-all;color:#fca5a5;"></div>
+        <p style="margin-top:16px;font-size:13px;color:var(--text-muted);">
+          Run this command manually in a terminal to inspect diagnostics:
         </p>
-        <code>uvx kicad-mcp-pro@latest dashboard --host 127.0.0.1 --port 3334</code>
-        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
-          <a class="btn secondary" href="http://127.0.0.1:3334/ui" target="_blank">Try opening dashboard</a>
-          <button class="btn secondary" onclick="handleRestartServer()">Restart Server</button>
-          <button class="btn" onclick="handleRestartServer()">Retry</button>
+        <div class="details-code-row">
+          <code id="cliCommand">uvx kicad-mcp-pro@latest dashboard --host 127.0.0.1 --port 3334</code>
+          <button type="button" class="btn-copy" id="btnCopyCmd" onclick="copyCliCommand()">Copy</button>
         </div>
-      </div>
-    </div>
+        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+          <a class="btn secondary" href="http://127.0.0.1:3334/ui" target="_blank" rel="noopener noreferrer">Try opening dashboard</a>
+          <button type="button" class="btn secondary" onclick="handleRestartServer()">Restart Server</button>
+          <button type="button" class="btn" onclick="handleRestartServer()">Retry</button>
+        </div>
+      </section>
+    </main>
 
     <script type="module">
       const DASHBOARD_URL = 'http://127.0.0.1:3334/ui';
       const HEALTH_URL = 'http://127.0.0.1:3334/api/health';
 
-      // Must be at least as long as the Rust backend's health-wait window
-      // (120s). The first launch downloads the backend via uvx, which can take
-      // over a minute on a cold cache, so give it room before showing an error.
       const MAX_RETRIES = 120;
       const RETRY_INTERVAL_MS = 1000;
       let retries = 0;
@@ -178,31 +263,23 @@
       const detailsEl = document.getElementById('details');
       const errorDetailEl = document.getElementById('error-detail');
 
-      /**
-       * Helper: invoke a Tauri backend command via IPC.
-       * Returns null when IPC is unavailable (e.g. direct browser open).
-       */
       async function tauriInvoke(cmd, args) {
         try {
           const ipc = window.__TAURI_INTERNALS__;
           if (ipc && typeof ipc.invoke === 'function') {
             return await ipc.invoke(cmd, args || {});
           }
-        } catch (_) { /* IPC not available */ }
+        } catch (err) {
+          // Tauri IPC invoke failed or running outside desktop container; fallback to web polling.
+        }
         return null;
       }
 
-      /**
-       * Query the Rust backend via Tauri IPC to get server_status.
-       */
       async function getTauriStatus() {
         return await tauriInvoke('server_status');
       }
 
-      /** Restart the Python server (stop + start). */
       async function handleRestartServer() {
-        // Show feedback immediately so the button never looks dead — the
-        // restart can take a while on a cold first-run download.
         retries = 0;
         healthOk = false;
         spinnerEl.style.display = 'block';
@@ -213,12 +290,9 @@
 
         const result = await tauriInvoke('restart_server', { port: 3334 });
         if (result === null) {
-          // IPC not available (e.g. opened in a plain browser) — just re-poll.
           setTimeout(checkServer, 1000);
           return;
         }
-        // restart_server returned (ready or failed); let the poller redirect
-        // on success or surface the backend error.
         setTimeout(checkServer, 500);
       }
 
@@ -234,6 +308,17 @@
         statusEl.textContent = msg || 'Server failed to start';
         statusEl.className = 'status error';
         detailsEl.classList.add('visible');
+      }
+
+      function copyCliCommand() {
+        const cmd = document.getElementById('cliCommand').textContent.trim();
+        navigator.clipboard.writeText(cmd).then(() => {
+          const btn = document.getElementById('btnCopyCmd');
+          if (btn) {
+            btn.textContent = 'Copied!';
+            setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+          }
+        });
       }
 
       function handleTauriStatus(tauriStatus) {
@@ -278,13 +363,11 @@
       async function checkServer() {
         retries++;
 
-        // 1. Query Tauri backend for server status (no CORS issues)
         const tauriStatus = await getTauriStatus();
         if (!handleTauriStatus(tauriStatus)) {
           return;
         }
 
-        // 2. HTTP health-check the Python server directly
         if (!healthOk && (await probeHttpHealth())) {
           healthOk = true;
         }
@@ -300,7 +383,6 @@
         }
 
         if (retries >= MAX_RETRIES) {
-          // One last check: pull the error from the Tauri backend
           const finalStatus = await getTauriStatus();
           if (finalStatus && finalStatus.message && !finalStatus.running && errorDetailEl) {
             errorDetailEl.textContent = finalStatus.message;
@@ -318,8 +400,9 @@
       }
 
       window.handleRestartServer = handleRestartServer;
+      window.showError = showError;
+      window.copyCliCommand = copyCliCommand;
 
-      // Start checking
       await checkServer();
     </script>
   </body>

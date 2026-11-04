@@ -5,67 +5,123 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Manufacturing Readiness</title>
 <style>
-  :root { --bg: #1a1a2e; --card: #16213e; --accent: #0f3460; --text: #e0e0e0; --ok: #4caf50; --warn: #ff9800; --error: #f44336; }
+  :root {
+    --bg: #0b0f17;
+    --card: #131926;
+    --card-hover: #1a2336;
+    --border: #232d3f;
+    --border-strong: #334155;
+    --text: #f1f5f9;
+    --text-muted: #94a3b8;
+    --text-dim: #64748b;
+    --accent: #38bdf8;
+    --ok: #22c55e;
+    --warn: #f59e0b;
+    --error: #ef4444;
+    --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 16px; }
-  h1 { font-size: 1.3rem; margin-bottom: 16px; color: #fff; }
-  .card { background: var(--card); border-radius: 8px; padding: 16px; margin-bottom: 12px; border: 1px solid var(--accent); }
-  .card h2 { font-size: 1rem; margin-bottom: 12px; border-bottom: 1px solid var(--accent); padding-bottom: 4px; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    padding: 20px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .container { max-width: 820px; margin: 0 auto; }
+  h1 { font-size: 1.25rem; font-weight: 700; margin-bottom: 16px; color: #fff; display: flex; align-items: center; gap: 8px; }
+  .card {
+    background: var(--card); border-radius: 10px; padding: 18px; margin-bottom: 14px;
+    border: 1px solid var(--border); transition: border-color 0.15s ease;
+  }
+  .card:hover { border-color: var(--border-strong); }
+  .card h2 {
+    font-size: 0.95rem; font-weight: 700; margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px; color: var(--text);
+  }
   .checklist { list-style: none; }
-  .checklist li { padding: 8px 0; display: flex; align-items: center; gap: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .checklist li {
+    padding: 9px 0; display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.88rem;
+  }
   .checklist li:last-child { border-bottom: none; }
-  .checklist .icon { width: 24px; text-align: center; font-size: 1rem; }
-  .checklist .status-label { font-size: 0.75rem; font-weight: 600; padding: 2px 6px; border-radius: 3px; margin-left: auto; }
-  .pass { background: var(--ok); color: #000; }
-  .fail { background: var(--error); color: #fff; }
-  .pending { background: #444; color: #aaa; }
-  .progress-container { margin: 16px 0; }
-  .progress-bar { height: 8px; background: #333; border-radius: 4px; overflow: hidden; }
-  .progress-fill { height: 100%; background: var(--ok); border-radius: 4px; transition: width 0.5s; }
-  .progress-label { display: flex; justify-content: space-between; font-size: 0.85rem; margin-top: 4px; color: #aaa; }
+  .checklist .icon { width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .checklist .icon svg { width: 16px; height: 16px; }
+  .checklist .status-label {
+    font-size: 0.72rem; font-weight: 700; padding: 2px 7px; border-radius: 4px;
+    margin-left: auto; font-family: var(--font-mono); letter-spacing: 0.02em;
+  }
+  .pass { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); }
+  .fail { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+  .pending { background: rgba(148, 163, 184, 0.1); color: var(--text-muted); border: 1px solid rgba(148, 163, 184, 0.2); }
+
+  .progress-container { margin: 6px 0; }
+  .progress-bar { height: 8px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--ok); border-radius: 4px; transition: width 0.4s ease; }
+  .progress-label {
+    display: flex; justify-content: space-between; font-size: 0.85rem; margin-top: 8px;
+    color: var(--text-muted); font-family: var(--font-mono);
+  }
   .verdict { text-align: center; padding: 24px; }
-  .verdict h2 { font-size: 2rem; border: none; padding: 0; }
-  .verdict .sub { color: #aaa; margin-top: 8px; }
+  .verdict h2 { font-size: 1.5rem; justify-content: center; border: none; margin-bottom: 6px; }
+  .verdict .sub { color: var(--text-muted); font-size: 0.9rem; }
 </style>
 </head>
 <body>
-<h1>📦 Manufacturing Readiness</h1>
+<main class="container">
+  <h1>
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--accent)" stroke-width="2" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
+    Manufacturing Readiness
+  </h1>
 
-<div class="card">
-  <div class="progress-container">
-    <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
-    <div class="progress-label"><span id="completedCount">0</span>/<span id="totalCount">10</span> checks</div>
+  <div class="card">
+    <div class="progress-container">
+      <div class="progress-bar" role="progressbar" id="progressBar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="10" aria-label="Manufacturing checks completion">
+        <div class="progress-fill" id="progressFill" style="width:0%"></div>
+      </div>
+      <div class="progress-label">
+        <span>Completion</span>
+        <span><strong id="completedCount" style="color:#fff;">0</strong> / <span id="totalCount">10</span> checks</span>
+      </div>
+    </div>
   </div>
-</div>
 
-<div class="card">
-  <h2>✅ Quality Gates</h2>
-  <ul class="checklist" id="qualityGateList">
-    <li><span class="icon">⏳</span> ERC <span class="status-label pending">Pending</span></li>
-    <li><span class="icon">⏳</span> DRC <span class="status-label pending">Pending</span></li>
-    <li><span class="icon">⏳</span> DFM Check <span class="status-label pending">Pending</span></li>
-    <li><span class="icon">⏳</span> Manufacturing Gate <span class="status-label pending">Pending</span></li>
-  </ul>
-</div>
+  <section class="card" aria-labelledby="qg-heading">
+    <h2 id="qg-heading">Quality Gates</h2>
+    <ul class="checklist" id="qualityGateList">
+      <li><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></span> ERC <span class="status-label pending">Pending</span></li>
+      <li><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></span> DRC <span class="status-label pending">Pending</span></li>
+      <li><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></span> DFM Check <span class="status-label pending">Pending</span></li>
+      <li><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></span> Manufacturing Gate <span class="status-label pending">Pending</span></li>
+    </ul>
+  </section>
 
-<div class="card">
-  <h2>📁 Export Artifacts</h2>
-  <ul class="checklist" id="exportList">
-    <li><span class="icon">⏳</span> Gerber Files <span class="status-label pending">Pending</span></li>
-    <li><span class="icon">⏳</span> NC Drill Files <span class="status-label pending">Pending</span></li>
-    <li><span class="icon">⏳</span> BOM (CSV) <span class="status-label pending">Pending</span></li>
-    <li><span class="icon">⏳</span> Pick & Place <span class="status-label pending">Pending</span></li>
-    <li><span class="icon">⏳</span> 3D STEP <span class="status-label pending">Pending</span></li>
-    <li><span class="icon">⏳</span> PDF Documentation <span class="status-label pending">Pending</span></li>
-  </ul>
-</div>
+  <section class="card" aria-labelledby="export-heading">
+    <h2 id="export-heading">Export Artifacts</h2>
+    <ul class="checklist" id="exportList">
+      <li><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></span> Gerber Files <span class="status-label pending">Pending</span></li>
+      <li><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></span> NC Drill Files <span class="status-label pending">Pending</span></li>
+      <li><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></span> BOM (CSV) <span class="status-label pending">Pending</span></li>
+      <li><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></span> Pick &amp; Place <span class="status-label pending">Pending</span></li>
+      <li><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></span> 3D STEP <span class="status-label pending">Pending</span></li>
+      <li><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></span> PDF Documentation <span class="status-label pending">Pending</span></li>
+    </ul>
+  </section>
 
-<div class="card verdict" id="verdict">
-  <h2 id="verdictIcon">⏳</h2>
-  <div class="sub" id="verdictText">Run quality checks to get manufacturing readiness verdict</div>
-</div>
+  <div class="card verdict" id="verdict">
+    <h2 id="verdictHeading">Evaluation Pending</h2>
+    <div class="sub" id="verdictText">Run quality checks to get manufacturing readiness verdict.</div>
+  </div>
+</main>
 
 <script>
+const SVG_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>';
+const SVG_CROSS = '<svg viewBox="0 0 24 24" fill="none" stroke="var(--error)" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+const SVG_PENDING = '<svg viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>';
+
 window.addEventListener('message', (event) => {
   if (event.data?.type === 'mcp-tool-result') {
     const text = event.data.result?.content?.[0]?.text;
@@ -93,7 +149,10 @@ function updateReport(data) {
     const completed = all.filter(v => v === true).length;
     const total = all.length;
 
-    document.getElementById('progressFill').style.width = `${(completed / total) * 100}%`;
+    const pct = (completed / total) * 100;
+    document.getElementById('progressFill').style.width = `${pct}%`;
+    const bar = document.getElementById('progressBar');
+    if (bar) bar.setAttribute('aria-valuenow', completed);
     document.getElementById('completedCount').textContent = completed;
     document.getElementById('totalCount').textContent = total;
 
@@ -102,7 +161,10 @@ function updateReport(data) {
     const gateList = document.getElementById('qualityGateList');
     gateList.innerHTML = gates.map((key, i) => {
       const v = checks[key];
-      return `<li><span class="icon">${v === undefined ? '⏳' : v ? '✅' : '❌'}</span> ${gateLabels[i]} <span class="status-label ${v === undefined ? 'pending' : v ? 'pass' : 'fail'}">${v === undefined ? 'Pending' : v ? 'Pass' : 'Fail'}</span></li>`;
+      const icon = v === undefined ? SVG_PENDING : (v ? SVG_CHECK : SVG_CROSS);
+      const label = v === undefined ? 'Pending' : (v ? 'Pass' : 'Fail');
+      const cls = v === undefined ? 'pending' : (v ? 'pass' : 'fail');
+      return `<li><span class="icon">${icon}</span> <span>${gateLabels[i]}</span> <span class="status-label ${cls}">${label}</span></li>`;
     }).join('');
 
     const exports = ['gerbers', 'drill', 'bom', 'pnplace', 'step', 'pdf'];
@@ -110,14 +172,19 @@ function updateReport(data) {
     const exportList = document.getElementById('exportList');
     exportList.innerHTML = exports.map((key, i) => {
       const v = checks[key];
-      return `<li><span class="icon">${v === undefined ? '⏳' : v ? '✅' : '❌'}</span> ${exportLabels[i]} <span class="status-label ${v === undefined ? 'pending' : v ? 'pass' : 'fail'}">${v === undefined ? 'Pending' : v ? 'Done' : 'Missing'}</span></li>`;
+      const icon = v === undefined ? SVG_PENDING : (v ? SVG_CHECK : SVG_CROSS);
+      const label = v === undefined ? 'Pending' : (v ? 'Done' : 'Missing');
+      const cls = v === undefined ? 'pending' : (v ? 'pass' : 'fail');
+      return `<li><span class="icon">${icon}</span> <span>${exportLabels[i]}</span> <span class="status-label ${cls}">${label}</span></li>`;
     }).join('');
 
     const allPassed = completed === total;
-    document.getElementById('verdictIcon').textContent = allPassed ? '✅' : '❌';
+    const vHeading = document.getElementById('verdictHeading');
+    vHeading.textContent = allPassed ? 'Manufacturing Ready' : (completed > 0 ? 'Checks Incomplete' : 'Evaluation Pending');
+    vHeading.style.color = allPassed ? 'var(--ok)' : (completed > 0 ? 'var(--warn)' : 'var(--text)');
     document.getElementById('verdictText').textContent = allPassed
-      ? 'Board is manufacturing-ready! All checks passed.'
-      : `${total - completed} checks remaining before manufacturing release.`;
+      ? 'Board is manufacturing-ready! All 10 checks passed.'
+      : `${total - completed} check(s) remaining before manufacturing release.`;
   } catch (e) {
     // ignore parse errors
   }

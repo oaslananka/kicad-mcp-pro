@@ -31,16 +31,21 @@ export function renderOwnerPasskeyEnrollment(ownerSub:string,csrf:string):string
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><title>Register owner passkey · KiCad Cloud</title>
 <style>
-:root{font-family:system-ui,sans-serif;color-scheme:dark}
-body{margin:0;background:#0e131d;color:#edf2fc;padding:22px}
-main{max-width:620px;margin:6vh auto;background:#1a2331;border:1px solid #364255;
-padding:30px;border-radius:14px;line-height:1.6}
-h1{font-size:1.7rem;line-height:1.3;margin:4px 0 15px}
-.hint{color:#b9c5d5}
-button{background:#9ac8f4;color:#111927;padding:13px 18px;border:0;border-radius:8px;
-font:inherit;font-weight:650;cursor:pointer}
+:root{font-family:ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color-scheme:dark}
+body{margin:0;background:#0b0f17;color:#f1f5f9;padding:24px}
+main{max-width:620px;margin:6vh auto;background:#131926;border:1px solid rgba(255,255,255,0.08);
+padding:32px;border-radius:14px;line-height:1.6;box-shadow:0 10px 25px -5px rgba(0,0,0,0.5)}
+h1{font-size:1.7rem;line-height:1.3;margin:4px 0 15px;letter-spacing:-0.03em;font-weight:700}
+.hint{color:#94a3b8}
+#owner{font-family:'JetBrains Mono','Fira Code',ui-monospace,monospace;color:#38bdf8}
+button{background:#0284c7;color:#ffffff;padding:12px 20px;border:0;border-radius:8px;
+font:inherit;font-weight:650;cursor:pointer;font-size:13px;transition:background .15s,box-shadow .15s;
+box-shadow:0 2px 8px rgba(2,132,199,0.3)}
+button:hover:not(:disabled){background:#0369a1}
 button:disabled{opacity:.55;cursor:not-allowed}
-#status{min-height:2em;margin-top:22px}
+button:focus-visible{outline:2px solid #38bdf8;outline-offset:2px;box-shadow:0 0 0 2px #0b0f17,0 0 0 4px #38bdf8}
+#status{min-height:2em;margin-top:22px;color:#94a3b8;font-size:13px}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important;animation:none!important}}
 </style></head><body><main>
 <p class="hint">KiCad Cloud · Owner security</p>
 <h1>Register a passkey</h1>
