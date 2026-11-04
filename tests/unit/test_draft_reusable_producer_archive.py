@@ -1,4 +1,4 @@
-"""Read-only GitHub archive identity for four reusable preparation jobs (#1179).
+"""Read-only GitHub archive identity for reusable preparation jobs (#1179).
 
 A complete successful caller run and a verified archive do NOT prove which job
 uploaded it or that its SLSA signature is valid.
@@ -22,12 +22,27 @@ _ROLES = (
     "mcpb-release-evidence",
     "kicad-pcm-release-evidence",
     "protocol-schemas-release-evidence",
+    "npm-draft-release-evidence",
+    "gui-draft-installers",
+    "gui-draft-evidence",
+    "container-build-source-evidence",
+    "mcp-registry-draft-evidence",
 )
 
 
 def _reusable_case(tmp_path: Path, role: str = "mcpb-release-evidence"):
     # The existing read-only fixture models exact GitHub run/artifact records.
-    fixture_role = role if role != "protocol-schemas-release-evidence" else "mcpb-release-evidence"
+    fixture_role = (
+        role
+        if role
+        in {
+            "python-dist",
+            "python-release-evidence",
+            "mcpb-release-evidence",
+            "kicad-pcm-release-evidence",
+        }
+        else "mcpb-release-evidence"
+    )
     client, args = _case(tmp_path, fixture_role)
     client.run["path"] = _REUSABLE_CALLER_WORKFLOW
     client.art["name"] = role

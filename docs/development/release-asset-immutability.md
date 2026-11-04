@@ -449,6 +449,41 @@ independently attested by the Release or workflow-run REST responses.
 Reference: https://docs.github.com/en/rest/actions/workflow-runs
 and https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency
 
+## Read-only reusable producer metadata for opt-in families
+
+The #1179 reusable verifier (`scripts/check_draft_producer_job.py` and
+`scripts/check_draft_producer_archive.py`) now recognizes five additional
+artifact roles exposed by the **default-disabled** npm, GUI, container and MCP
+Registry preparers:
+
+| Opt-in preparer | Accepted Actions artifact roles | Required verified job |
+| --- | --- | --- |
+| npm launcher | `npm-draft-release-evidence` | `npm / prepare` |
+| Desktop GUI | `gui-draft-installers`, `gui-draft-evidence` | `gui / attest-and-store` |
+| Container | `container-build-source-evidence` | `container / prepare` |
+| MCP Registry | `mcp-registry-draft-evidence` | `registry / prepare` |
+
+The checks require the same exact successful, manually dispatched preflight
+run on protected `main`, correct run attempt, unique GitHub job identity,
+successful attestation and artifact-upload steps, and the exact Actions ZIP
+SHA-256 when a downloaded archive is provided. npm and GUI require the
+preceding SLSA provenance step, and GUI requires **both** final artifact
+uploads in the same successful job. Adversarial tests reject skipped,
+duplicated, misordered or missing steps, incorrect workflow identity, and
+wrong/expired/tampered downloaded archives.
+
+**Critical boundary:** GitHub Actions job metadata cannot cryptographically
+prove *which job created an artifact* or that its contents match a signed
+attestation. The container role attests **build-source evidence**, not a
+published image; the Registry role attests a **prepared manifest**, not a
+registry publication receipt. The helpers explicitly return
+`artifactProducedByThisJobVerified: false`,
+`signedAttestationVerified: false`, `registryReceiptVerified: false` where
+applicable, and `publicationAuthorized: false`. No release workflow was
+dispatched and no uploads, tag or immutable-release setting changed.
+Cryptographic package/registry receipt verification and the exclusive
+draft-first publication owner remain separate #1179 requirements.
+
 ## Exact stable release-family inventory gate (implemented; not wired)
 
 The read-only family gate validates mandatory asset **roles**, rather than

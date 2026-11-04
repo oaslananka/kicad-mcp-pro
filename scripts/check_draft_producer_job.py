@@ -86,6 +86,46 @@ _REUSABLE_JOB_NAMES: dict[str, tuple[str, str, str, str]] = {
         "Attest tarball",
         "Store release evidence",
     ),
+    "npm-draft-release-evidence": (
+        _REUSABLE_CALLER_NAME,
+        "npm / prepare",
+        "Attest npm launcher tarball",
+        "Store npm draft preparation",
+    ),
+    "gui-draft-installers": (
+        _REUSABLE_CALLER_NAME,
+        "gui / attest-and-store",
+        "Attest GUI installers",
+        "Store GUI draft installers",
+    ),
+    "gui-draft-evidence": (
+        _REUSABLE_CALLER_NAME,
+        "gui / attest-and-store",
+        "Attest GUI installers",
+        "Store GUI draft checksums and attestable evidence",
+    ),
+    "container-build-source-evidence": (
+        _REUSABLE_CALLER_NAME,
+        "container / prepare",
+        "Attest container build-source evidence",
+        "Store container build-source evidence",
+    ),
+    "mcp-registry-draft-evidence": (
+        _REUSABLE_CALLER_NAME,
+        "registry / prepare",
+        "Attest registry manifest provenance",
+        "Store registry draft preparation",
+    ),
+}
+
+
+# Source/build provenance is distinct from the SBOM/package attestation.
+# These exact step labels apply ONLY to the manually dispatched reusable path.
+_REUSABLE_PROVENANCE_STEPS = {
+    "protocol-schemas-release-evidence": "Attest Protocol Schemas SLSA build provenance",
+    "npm-draft-release-evidence": "Attest npm SLSA build provenance",
+    "gui-draft-installers": "Attest GUI SLSA build provenance",
+    "gui-draft-evidence": "Attest GUI SLSA build provenance",
 }
 
 
@@ -178,26 +218,55 @@ def _successful_step_numbers(steps: list[object], label: str, *, prefix: bool = 
     return result
 
 
+def _require_provenance_before(
+    steps: list[object], label: str, attest_number: int, message: str
+) -> None:
+    provenance = _successful_step_numbers(steps, label)
+    if len(provenance) != 1 or provenance[0] >= attest_number:
+        raise ValueError(message)
+
+
+def _check_gui_companion_uploads(steps: list[object], attest_number: int) -> None:
+    # The final GUI package and checksum/SBOM evidence are separate ZIPs.
+    # A successful job must have completed BOTH uploads after attestation.
+    for label in (
+        "Store GUI draft installers",
+        "Store GUI draft checksums and attestable evidence",
+    ):
+        uploaded = _successful_step_numbers(steps, label)
+        if len(uploaded) != 1 or uploaded[0] <= attest_number:
+            raise ValueError("GUI draft producer lacks its companion artifact upload")
+
+
 def _check_required_job_steps(
     steps: list[object], role: str, producer_profile: str = "legacy"
 ) -> None:
     _, _, attest_step, store_step = _job_names(producer_profile)[role]
     attest = _successful_step_numbers(steps, attest_step)
     uploaded = _successful_step_numbers(steps, store_step, prefix=role.startswith("python-"))
-    if len(attest) != 1 or (
-        len(uploaded) < 2 if role.startswith("python-") else len(uploaded) != 1
-    ):
+    expected_uploads = 2 if role.startswith("python-") else 1
+    if len(attest) != 1 or len(uploaded) != expected_uploads:
         raise ValueError("producer job lacks approved attest/upload step evidence")
+
     if role.startswith("python-"):
-        provenance = _successful_step_numbers(steps, "Attest Python SLSA build provenance")
-        if len(provenance) != 1 or provenance[0] >= attest[0]:
-            raise ValueError("Python SLSA provenance must precede SBOM attestation")
-    if producer_profile == "reusable" and role == "protocol-schemas-release-evidence":
-        provenance = _successful_step_numbers(
-            steps, "Attest Protocol Schemas SLSA build provenance"
+        _require_provenance_before(
+            steps,
+            "Attest Python SLSA build provenance",
+            attest[0],
+            "Python SLSA provenance must precede SBOM attestation",
         )
-        if len(provenance) != 1 or provenance[0] >= attest[0]:
-            raise ValueError("schema SLSA provenance must precede SBOM attestation")
+    if producer_profile == "reusable":
+        label = _REUSABLE_PROVENANCE_STEPS.get(role)
+        if label is not None:
+            message = (
+                "schema SLSA provenance must precede SBOM attestation"
+                if role == "protocol-schemas-release-evidence"
+                else "draft producer SLSA provenance must precede signed asset attestation"
+            )
+            _require_provenance_before(steps, label, attest[0], message)
+        if role in ("gui-draft-installers", "gui-draft-evidence"):
+            _check_gui_companion_uploads(steps, attest[0])
+
     if min(uploaded) <= attest[0]:
         raise ValueError("producer artifact upload preceded its attestation")
 
