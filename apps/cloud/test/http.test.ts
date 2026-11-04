@@ -1346,6 +1346,7 @@ test("public homepage supports safe markdown discovery, canonical and privacy",a
   assert.match(mirror.headers.get("content-type")??"",/text\/markdown/);
   const content=await mirror.text();
   assert.match(content,/^---\ntitle:/);
+  assert.match(content,/\nlast_updated: 2026-11-04\n/);
   assert.match(content,/explicitly grant each connected AI client|Grant each AI assistant permission/);
   assert.doesNotMatch(content,/device_credentials|DATABASE_URL|secret value/);
 });
@@ -1388,6 +1389,7 @@ test("AI discovery exposes canonical HTML only while retaining separate machine-
   assert.equal(mirror.status,200);
   assert.match(mirror.headers.get("link")??"",/rel="canonical"/);
   const mirrorText=await mirror.text();
+  assert.match(mirrorText,/\nlast_updated: 2026-11-04\n/);
   assert.match(mirrorText,/## Sitemap/);
   assert.match(mirrorText,/\/glossary\//);
   const negotiated=await fetch(endpoint+"/",{headers:{Accept:"text/markdown"}});

@@ -27,6 +27,11 @@ test("landing topology shows Cloud availability but no active KiCad connection",
   assert.doesNotMatch(enabled,/Connection not enabled/);
   assert.doesNotMatch(enabled,/Not enabled/);
   assert.match(enabled,/Project access always requires separate approval/);
+  assert.match(enabled,/No projects listed\?/);
+  assert.match(enabled,/Want to stop sharing\?/);
+  assert.match(enabled,/href="\/devices"/);
+  assert.match(enabled,/href="\/connections"/);
+  assert.doesNotMatch(enabled,/projects:write/);
   assert.match(enabled,/href="\/sign-in"/);
   assert.match(enabled,/<svg[^>]+aria-hidden="true"/);
   assert.doesNotMatch(enabled.replace(/<script type="application\/ld\+json">[^<]+<\/script>/,""),
