@@ -42,6 +42,32 @@ compatible with immutable GitHub Releases. The step-by-step map, the
 `release_asset_mutations` ratchet and the proposed draft-first design are in
 [Release asset immutability](release-asset-immutability.md) (#1179).
 
+### Non-publishing draft producer preflight (#1179)
+
+**Actions → Draft producer preflight (non-publishing) → Run workflow** on
+`main` remains an explicitly requested validation workflow, not a publisher or
+release-cutover switch. Its required `server_tag`, `schemas_tag` and
+`source_commit` must resolve to the **same exact existing protected `main`
+commit**, with versions matching the checked-out sources. It prepares the
+Python, MCPB, KiCad PCM and schema artifacts as GitHub Actions artifacts.
+
+Four other preparers are available but **disabled by default**:
+`include_npm` requires `npm_tag` (the matching protected `mcp-npm-vX.Y.Z`
+tag), `include_gui` requires `gui_tag` (the matching
+`kicad-mcp-gui-vX.Y.Z` tag), and `include_container` plus `include_registry`
+reuse the existing `server_tag`. Each opt-in job is gated on the common
+source check, uses the same commit, and does not publish. GUI and container
+builds are substantially heavier and should only be selected for a scoped
+acceptance run; disabled GUI/npm options require their tag fields to be empty.
+GUI signing secrets are forwarded **only** to the GUI preparer when selected.
+
+This preflight creates **no GitHub Release or tag**, makes **no registry
+publication**, and supplies **no exclusive-writer proof, signed per-job receipt
+or permission to enable immutable Releases**. The existing publish-first
+owner workflow remains active until the separately reviewed and fully
+accepted draft-first cutover. Do not replay previously published v4.7.0 tags
+to exercise this migration.
+
 For recovery only, an authorized maintainer can still use **Actions → Publish
 Release → Run workflow**, selecting `main`. The automatic and manual paths
 share a serialized concurrency group; Release Please's released-version
