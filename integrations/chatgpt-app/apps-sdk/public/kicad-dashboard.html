@@ -6,42 +6,74 @@
 <title>KiCad Project Dashboard</title>
 <style>
   :root {
-    --bg: #1a1a2e;
-    --card: #16213e;
-    --accent: #0f3460;
-    --text: #e0e0e0;
-    --success: #4caf50;
-    --warn: #ff9800;
-    --error: #f44336;
+    --bg: #0b0f17;
+    --card: #131926;
+    --card-hover: #1a2336;
+    --border: #232d3f;
+    --border-strong: #334155;
+    --text: #f1f5f9;
+    --text-muted: #94a3b8;
+    --text-dim: #64748b;
+    --accent: #38bdf8;
+    --success: #22c55e;
+    --warn: #f59e0b;
+    --error: #ef4444;
+    --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 16px; }
-  .container { max-width: 800px; margin: 0 auto; }
-  h1 { font-size: 1.5rem; margin-bottom: 16px; color: #fff; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 16px; }
-  .card { background: var(--card); border-radius: 8px; padding: 16px; border: 1px solid var(--accent); }
-  .card h3 { font-size: 0.85rem; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-  .card .value { font-size: 1.8rem; font-weight: 600; color: #fff; }
-  .card .sub { font-size: 0.85rem; color: #aaa; margin-top: 4px; }
-  .status-ok { color: var(--success); }
-  .status-warn { color: var(--warn); }
-  .status-error { color: var(--error); }
-  .section { margin-bottom: 16px; }
-  .section h2 { font-size: 1.1rem; margin-bottom: 8px; border-bottom: 1px solid var(--accent); padding-bottom: 4px; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    padding: 20px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .container { max-width: 820px; margin: 0 auto; }
+  .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  h1 { font-size: 1.25rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }
+  .badge {
+    padding: 3px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 700;
+    font-family: var(--font-mono); letter-spacing: 0.02em; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .badge-ok { background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); }
+  .badge-warn { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+  .badge-error { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .card {
+    background: var(--card); border-radius: 10px; padding: 16px; border: 1px solid var(--border);
+    transition: border-color 0.15s ease;
+  }
+  .card:hover { border-color: var(--border-strong); }
+  .card h3 { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 6px; }
+  .card .value { font-size: 1.6rem; font-weight: 700; color: #fff; font-family: var(--font-mono); line-height: 1.2; }
+  .card .sub { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+  .status-ok { color: var(--success) !important; }
+  .status-warn { color: var(--warn) !important; }
+  .status-error { color: var(--error) !important; }
+
+  .section { margin-bottom: 20px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+  .section h2 { font-size: 0.95rem; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; color: var(--text); }
   .checklist { list-style: none; }
-  .checklist li { padding: 6px 0; display: flex; align-items: center; gap: 8px; }
-  .checklist .icon { width: 20px; text-align: center; }
-  .header-row { display: flex; justify-content: space-between; align-items: center; }
-  .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
-  .badge-ok { background: var(--success); color: #000; }
-  .badge-warn { background: var(--warn); color: #000; }
-  .badge-error { background: var(--error); color: #fff; }
+  .checklist li {
+    padding: 8px 0; display: flex; align-items: center; gap: 10px; font-size: 0.88rem;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .checklist li:last-child { border-bottom: none; }
+  .checklist .icon { width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .checklist .icon svg { width: 16px; height: 16px; }
 </style>
 </head>
 <body>
-<div class="container">
+<main class="container">
   <div class="header-row">
-    <h1>🔧 KiCad Project Dashboard</h1>
+    <h1>
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--accent)" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" stroke="var(--border-strong)"/><circle cx="8" cy="8" r="2" fill="var(--accent)"/><circle cx="16" cy="16" r="2" fill="var(--success)"/><path d="M8 10v4a2 2 0 0 0 2 2h4"/></svg>
+      KiCad Project Dashboard
+    </h1>
     <span id="healthBadge" class="badge badge-ok">Checking...</span>
   </div>
 
@@ -68,20 +100,26 @@
     </div>
   </div>
 
-  <div class="section">
-    <h2>📋 ERC / DRC Status</h2>
+  <section class="section" aria-labelledby="erc-drc-heading">
+    <h2 id="erc-drc-heading">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      ERC / DRC Status
+    </h2>
     <ul class="checklist" id="issueList">
-      <li><span class="icon">⏳</span> Loading...</li>
+      <li><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span> Loading...</li>
     </ul>
-  </div>
+  </section>
 
-  <div class="section">
-    <h2>📦 Manufacturing Readiness</h2>
+  <section class="section" aria-labelledby="mfg-heading">
+    <h2 id="mfg-heading">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
+      Manufacturing Readiness
+    </h2>
     <ul class="checklist" id="manufacturingList">
-      <li><span class="icon">⏳</span> Loading...</li>
+      <li><span class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span> Loading...</li>
     </ul>
-  </div>
-</div>
+  </section>
+</main>
 
 <script>
 function esc(str) {
@@ -92,6 +130,11 @@ function esc(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+
+const ICON_CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>';
+const ICON_ERROR = '<svg viewBox="0 0 24 24" fill="none" stroke="var(--error)" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+const ICON_PENDING = '<svg viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg>';
+const ICON_BOLT = '<svg viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
 
 // MCP Apps Bridge: listen for tool results
 window.addEventListener('message', (event) => {
@@ -110,16 +153,16 @@ function updateDashboard(data) {
     document.getElementById('netCount').textContent = parsed.nets ?? parsed.net_count ?? '\u2014';
     document.getElementById('trackCount').textContent = parsed.tracks ? `${parsed.tracks} tracks` : '\u2014';
 
-    const ercErrors = parseInt(parsed.erc_errors ?? parsed.ercErrors ?? 0);
-    const drcErrors = parseInt(parsed.drc_errors ?? parsed.drcErrors ?? 0);
+    const ercErrors = parseInt(parsed.erc_errors ?? parsed.ercErrors ?? 0, 10);
+    const drcErrors = parseInt(parsed.drc_errors ?? parsed.drcErrors ?? 0, 10);
     const totalErrors = ercErrors + drcErrors;
     const qualityEl = document.getElementById('qualityScore');
     const badgeEl = document.getElementById('healthBadge');
 
     if (totalErrors === 0) {
-      qualityEl.textContent = '\u2705';
+      qualityEl.textContent = 'PASS';
       qualityEl.className = 'value status-ok';
-      document.getElementById('qualityStatus').textContent = 'No issues';
+      document.getElementById('qualityStatus').textContent = 'No issues found';
       badgeEl.textContent = 'PASS';
       badgeEl.className = 'badge badge-ok';
     } else {
@@ -135,31 +178,31 @@ function updateDashboard(data) {
     if (ercErrors > 0 || drcErrors > 0 || parsed.unrouted) {
       const appendItem = (icon, text) => {
         const li = document.createElement('li');
-        li.innerHTML = `<span class="icon">${icon}</span> ${esc(text)}`;
+        li.innerHTML = `<span class="icon">${icon}</span> <span>${esc(text)}</span>`;
         issueList.appendChild(li);
       };
-      if (ercErrors > 0) appendItem('\u26A1', `${ercErrors} ERC error(s) \u2014 check schematic connectivity`);
-      if (drcErrors > 0) appendItem('\uD83D\uDCD0', `${drcErrors} DRC error(s) \u2014 check layout rules`);
-      if (parsed.unrouted) appendItem('\uD83D\uDD17', `${parsed.unrouted} unrouted net(s)`);
+      if (ercErrors > 0) appendItem(ICON_BOLT, `${ercErrors} ERC error(s) \u2014 check schematic connectivity`);
+      if (drcErrors > 0) appendItem(ICON_ERROR, `${drcErrors} DRC error(s) \u2014 check layout rules`);
+      if (parsed.unrouted) appendItem(ICON_WARN, `${parsed.unrouted} unrouted net(s)`);
     } else {
-      issueList.innerHTML = '<li><span class="icon">\u2705</span> No issues found</li>';
+      issueList.innerHTML = `<li><span class="icon">${ICON_CHECK}</span> <span style="color:var(--success);">No issues found</span></li>`;
     }
 
     const mfgList = document.getElementById('manufacturingList');
     mfgList.innerHTML = '';
     const mfgItems = [
-      { icon: parsed.gerbers ? '\u2705' : '\u2B1C', text: 'Gerber files' },
-      { icon: parsed.bom ? '\u2705' : '\u2B1C', text: 'BOM' },
-      { icon: parsed.place ? '\u2705' : '\u2B1C', text: 'Pick & Place' },
-      { icon: parsed.step ? '\u2705' : '\u2B1C', text: '3D STEP' },
+      { ok: parsed.gerbers, text: 'Gerber files' },
+      { ok: parsed.bom, text: 'BOM' },
+      { ok: parsed.place, text: 'Pick & Place' },
+      { ok: parsed.step, text: '3D STEP' },
     ];
     for (const item of mfgItems) {
       const li = document.createElement('li');
-      li.innerHTML = `<span class="icon">${item.icon}</span> ${esc(item.text)}`;
+      li.innerHTML = `<span class="icon">${item.ok ? ICON_CHECK : ICON_PENDING}</span> <span>${esc(item.text)}</span>`;
       mfgList.appendChild(li);
     }
   } catch (e) {
-    document.getElementById('boardName').textContent = data.substring(0, 80);
+    document.getElementById('boardName').textContent = String(data).substring(0, 80);
   }
 }
 

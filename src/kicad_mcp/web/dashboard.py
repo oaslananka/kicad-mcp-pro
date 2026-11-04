@@ -4,8 +4,9 @@ Single-file single-page application with hash-routed views:
 - #dashboard - Server status, health, quick actions
 - #log-viewer - SSE live log viewer with filter/clear
 - #tools-catalog - MCP tools browser with search
+- #preview - Schematic live render gallery
 - #settings - Config viewer/editor
-- #setup-wizard - 4-step setup wizard
+- #setup-wizard - 5-step setup wizard
 """
 
 from .. import __version__
@@ -18,316 +19,477 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <title>KiCad MCP Pro Dashboard</title>
 <style>
   :root {
-    --bg: #0d1117; --surface: #161b22; --surface-2: #1c2333;
-    --border: #30363d; --text: #c9d1d9; --text-muted: #8b949e;
-    --accent: #58a6ff; --success: #3fb950; --warning: #d29922;
-    --error: #f85149; --info: #79c0ff; --sidebar-w: 200px;
+    --bg-canvas: #0b0f17;
+    --bg: #0b0f17;
+    --surface: #131926;
+    --surface-2: #1a2336;
+    --surface-hover: #222d42;
+    --surface-active: #28354f;
+    --border: #232d3f;
+    --border-strong: #334155;
+    --text: #f1f5f9;
+    --text-muted: #94a3b8;
+    --text-dim: #64748b;
+    --accent: #38bdf8;
+    --accent-hover: #7dd3fc;
+    --accent-subtle: rgba(56, 189, 248, 0.12);
+    --success: #22c55e;
+    --success-subtle: rgba(34, 197, 94, 0.12);
+    --warning: #f59e0b;
+    --warning-subtle: rgba(245, 158, 11, 0.12);
+    --error: #ef4444;
+    --error-subtle: rgba(239, 68, 68, 0.12);
+    --info: #38bdf8;
+    --sidebar-w: 230px;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  ::selection { background: rgba(56, 189, 248, 0.32); color: #ffffff; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: var(--bg); color: var(--text); min-height: 100vh;
-    display: flex;
+    font-family: var(--font-sans);
+    background: var(--bg-canvas); color: var(--text); min-height: 100vh;
+    display: flex; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased;
   }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  a { color: var(--accent); text-decoration: none; transition: color 0.15s ease; }
+  a:hover { color: var(--accent-hover); text-decoration: underline; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  * { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+  *::-webkit-scrollbar { width: 6px; height: 6px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+  *::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
 
   /* Sidebar */
   .sidebar {
     width: var(--sidebar-w); background: var(--surface);
-    border-right: 1px solid var(--border); padding: 16px 0;
+    border-right: 1px solid var(--border); padding: 18px 0;
     display: flex; flex-direction: column; flex-shrink: 0;
   }
   .sidebar .brand {
-    padding: 0 16px 16px; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+    padding: 0 16px 14px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
   }
-  .sidebar .brand h1 { font-size: 15px; font-weight: 600; }
+  .sidebar .brand-icon {
+    width: 28px; height: 28px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-sm); background: var(--accent-subtle);
+    border: 1px solid rgba(56, 189, 248, 0.25);
+  }
+  .sidebar .brand-icon svg { width: 18px; height: 18px; }
+  .sidebar .brand-title { display: flex; flex-direction: column; gap: 2px; }
+  .sidebar .brand h1 { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; color: var(--text); }
   .sidebar .brand .badge {
-    font-size: 10px; padding: 1px 6px; border-radius: 10px;
-    background: var(--accent); color: #fff; font-weight: 500;
+    align-self: flex-start; font-size: 10px; padding: 1px 6px; border-radius: 10px;
+    background: var(--accent-subtle); color: var(--accent); border: 1px solid rgba(56, 189, 248, 0.3);
+    font-weight: 600; font-family: var(--font-mono);
   }
   .sidebar .status-row {
-    padding: 8px 16px; font-size: 11px; color: var(--text-muted);
-    display: flex; align-items: center; gap: 6px;
+    padding: 6px 16px 12px; font-size: 12px; color: var(--text-muted);
+    display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border);
+    margin-bottom: 10px;
   }
   .status-dot {
-    width: 7px; height: 7px; border-radius: 50%; display: inline-block;
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0;
+    box-shadow: 0 0 0 2px var(--surface);
   }
-  .status-dot.ok { background: var(--success); }
-  .status-dot.degraded { background: var(--warning); }
-  .status-dot.error { background: var(--error); }
+  .status-dot.ok { background: var(--success); box-shadow: 0 0 8px rgba(34, 197, 94, 0.4); }
+  .status-dot.degraded { background: var(--warning); box-shadow: 0 0 8px rgba(245, 158, 11, 0.4); }
+  .status-dot.error { background: var(--error); box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); }
+
+  .nav-items-container { display: flex; flex-direction: column; width: 100%; }
   .nav-item {
-    display: block; width: 100%; text-align: left;
-    padding: 10px 16px; font: inherit; font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+    padding: 9px 16px; font: inherit; font-size: 13px; cursor: pointer;
     color: var(--text-muted); background: transparent;
-    transition: all 0.12s; border: 0; border-left: 3px solid transparent;
+    transition: all 0.15s ease; border: 0; border-left: 3px solid transparent;
   }
-  .nav-item:hover { background: var(--surface-2); color: var(--text); }
+  .nav-item svg {
+    width: 16px; height: 16px; flex-shrink: 0; stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .nav-item:hover { background: var(--surface-hover); color: var(--text); }
   .nav-item.active {
     background: var(--surface-2); color: var(--accent);
-    border-left-color: var(--accent); font-weight: 500;
+    border-left-color: var(--accent); font-weight: 600;
   }
-  a.nav-item { display: block; text-decoration: none; }
-  .nav-sep { height: 1px; background: var(--surface-2); margin: 8px 14px; }
+  a.nav-item { text-decoration: none; }
+  a.nav-item:hover { text-decoration: none; }
+  .nav-sep { height: 1px; background: var(--border); margin: 10px 14px; }
   .nav-label {
-    padding: 6px 16px 2px; font-size: 10px; letter-spacing: 0.06em;
-    text-transform: uppercase; color: var(--text-muted); opacity: 0.7;
+    padding: 6px 16px 4px; font-size: 10px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-dim); font-weight: 700;
   }
   .nav-support-group { margin-top: auto; padding-top: 10px; }
   .nav-support {
-    margin: 4px 10px; padding: 8px 10px; border: 1px solid var(--border);
-    border-radius: 7px; color: var(--text); font-weight: 600;
-    display: flex; align-items: center; gap: 7px;
+    margin: 4px 12px; padding: 7px 11px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); color: var(--text); font-weight: 600; font-size: 12px;
+    display: flex; align-items: center; gap: 8px; transition: transform 0.15s ease, background 0.15s ease;
   }
   .nav-support:hover { text-decoration: none; transform: translateY(-1px); }
-  .nav-support.github { border-color: #8f376f; color: #ff8ccf; background: #261727; }
+  .nav-support.github { border-color: rgba(255, 140, 207, 0.35); color: #ff8ccf; background: rgba(255, 140, 207, 0.08); }
+  .nav-support.github:hover { background: rgba(255, 140, 207, 0.16); }
   .nav-support.coffee { border-color: #d1b700; color: #171717; background: #ffdd00; }
+  .nav-support.coffee:hover { background: #ffe433; }
 
   /* Main content */
-  .main { flex: 1; min-width: 0; padding: 28px; overflow-y: auto; max-height: 100vh; }
+  .main { flex: 1; min-width: 0; padding: 32px 36px; overflow-y: auto; max-height: 100vh; }
   .view { display: none; }
-  .view.active { display: block; }
+  .view.active { display: block; animation: fadeIn 0.2s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
   .view h2 {
-    font-size: 16px; font-weight: 600; margin-bottom: 16px;
+    font-size: 18px; font-weight: 700; margin-bottom: 20px; letter-spacing: -0.01em; color: var(--text);
   }
 
-  /* Cards */
+  /* Cards & Grid */
   .grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 14px; margin-bottom: 20px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px; margin-bottom: 20px;
   }
   .card {
     background: var(--surface); border: 1px solid var(--border);
-    border-radius: 10px; padding: 18px; min-width: 0;
+    border-radius: var(--radius-md); padding: 20px; min-width: 0;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
+  .card:hover { border-color: var(--border-strong); }
   .card h3 {
-    font-size: 11px; font-weight: 600; text-transform: uppercase;
-    color: var(--text-muted); margin-bottom: 10px; letter-spacing: 0.4px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    color: var(--text-dim); margin-bottom: 12px; letter-spacing: 0.06em;
   }
   .card .row {
     display: flex; justify-content: space-between; align-items: flex-start;
-    gap: 12px; padding: 6px 0; font-size: 13px; line-height: 1.55;
+    gap: 12px; padding: 7px 0; font-size: 13px; line-height: 1.5; border-bottom: 1px solid rgba(255,255,255,0.03);
   }
+  .card .row:last-child { border-bottom: none; }
   .card .row .label { color: var(--text-muted); flex-shrink: 0; }
   .card .row .value {
     font-weight: 500; min-width: 0; overflow-wrap: anywhere; text-align: right;
+    font-family: var(--font-mono); font-size: 12px; color: var(--text);
   }
-  /* Health messages contain long Windows paths. Stack the label and
-     message rather than squeezing two columns into a narrow card. */
   #health-checks .row { display: block; padding: 10px 0; }
   #health-checks .row + .row { border-top: 1px solid var(--border); }
   #health-checks .row .label {
-    display: block; margin-bottom: 5px; font-size: 11px; letter-spacing: 0.02em;
+    display: block; margin-bottom: 5px; font-size: 11px; letter-spacing: 0.02em; font-family: var(--font-sans); font-weight: 600;
   }
   #health-checks .row .value {
     display: block; text-align: left; font-size: 12px; line-height: 1.6;
   }
-  .card .row .value.ok { color: var(--success); }
-  .card .row .value.warn { color: var(--warning); }
-  .card .row .value.err { color: var(--error); }
+  .card .row .value.ok, .badge-status.ok { color: var(--success); }
+  .card .row .value.warn, .badge-status.warn { color: var(--warning); }
+  .card .row .value.err, .badge-status.err { color: var(--error); }
 
   /* Buttons */
   .btn {
-    background: var(--surface); border: 1px solid var(--border);
-    color: var(--text); padding: 6px 14px; border-radius: 6px;
-    cursor: pointer; font-size: 13px; transition: all 0.12s;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    background: var(--surface-2); border: 1px solid var(--border-strong);
+    color: var(--text); padding: 7px 14px; border-radius: var(--radius-sm);
+    cursor: pointer; font-size: 13px; font-weight: 500; line-height: 1.4;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease;
   }
-  .btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .btn-primary:hover { background: #4a91e0; }
-  .btn-danger { background: transparent; border-color: var(--error); color: var(--error); }
+  .btn:hover { background: var(--surface-hover); border-color: var(--accent); color: var(--text); }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary {
+    background: var(--accent); border-color: var(--accent); color: #0b0f17; font-weight: 600;
+  }
+  .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #0b0f17; }
+  .btn-danger { background: var(--error-subtle); border-color: var(--error); color: #fca5a5; }
   .btn-danger:hover { background: var(--error); color: #fff; }
-  .btn-sm { padding: 3px 10px; font-size: 12px; }
-  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .btn-success { background: var(--success); border-color: var(--success); color: #0b0f17; font-weight: 600; }
+  .btn-success:hover { background: #4ade80; border-color: #4ade80; color: #0b0f17; }
+  .btn-sm { padding: 5px 12px; font-size: 12px; min-height: 32px; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 
   /* Forms */
-  label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+  label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
   input, textarea, select {
-    width: 100%; padding: 7px 10px; background: var(--bg);
-    border: 1px solid var(--border); border-radius: 5px;
+    width: 100%; padding: 8px 12px; background: var(--bg-canvas);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
     color: var(--text); font-size: 13px; font-family: inherit;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
-  input:focus, textarea:focus, select:focus {
-    outline: none; border-color: var(--accent);
+  input:focus-visible, textarea:focus-visible, select:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent);
   }
-  textarea { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 12px; }
-  .form-group { margin-bottom: 12px; }
-  .form-row { display: flex; gap: 12px; }
+  textarea { font-family: var(--font-mono); font-size: 12px; }
+  .form-group { margin-bottom: 16px; }
+  .form-row { display: flex; gap: 14px; }
   .form-row .form-group { flex: 1; }
 
   /* Log viewer */
   .log-section { margin-top: 10px; }
-  .log-controls { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; align-items: center; }
+  .log-controls { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
   .log-controls button {
-    background: var(--surface); border: 1px solid var(--border); color: var(--text);
-    padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted);
+    padding: 5px 12px; border-radius: var(--radius-sm); cursor: pointer; font-size: 12px; font-weight: 500;
+    transition: all 0.12s ease; min-height: 32px;
   }
-  .log-controls button:hover { background: var(--border); }
-  .log-controls button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .live-badge { color: var(--success); font-size: 12px; margin-left: auto; }
+  .log-controls button:hover { background: var(--surface-hover); color: var(--text); border-color: var(--border-strong); }
+  .log-controls button.active {
+    background: var(--accent); color: #0b0f17; border-color: var(--accent); font-weight: 600;
+  }
+  .live-badge {
+    color: var(--success); font-size: 12px; font-weight: 600; margin-left: auto;
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+    background: var(--success-subtle); border: 1px solid rgba(34, 197, 94, 0.25); border-radius: 12px;
+  }
+  .live-badge::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--success);
+    box-shadow: 0 0 6px var(--success);
+  }
   .recent-list { display: grid; gap: 6px; }
   .recent-call {
-    display: grid; grid-template-columns: 78px 1fr 70px 70px; gap: 8px;
-    align-items: center; font-size: 12px; padding: 6px 0; border-bottom: 1px solid var(--border);
+    display: grid; grid-template-columns: 82px 1fr 70px 70px; gap: 10px;
+    align-items: center; font-size: 12px; padding: 8px 10px; border-radius: var(--radius-sm);
+    background: var(--bg-canvas); border: 1px solid var(--border); font-family: var(--font-mono);
   }
-  .recent-call:last-child { border-bottom: 0; }
-  .recent-call .ok { color: var(--success); }
-  .recent-call .error { color: var(--error); }
+  .recent-call .ok { color: var(--success); font-weight: 600; }
+  .recent-call .error { color: var(--error); font-weight: 600; }
   #log-container {
-    background: #000; border: 1px solid var(--border); border-radius: 6px;
-    height: 400px; overflow-y: auto; font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 12px; padding: 10px;
+    background: #06090e; border: 1px solid var(--border); border-radius: var(--radius-md);
+    height: 480px; overflow-y: auto; font-family: var(--font-mono);
+    font-size: 12px; padding: 14px; line-height: 1.6;
   }
-  #log-container .line { padding: 3px 0; white-space: pre-wrap; word-break: break-all; cursor: pointer; }
+  #log-container .line {
+    padding: 4px 8px; border-radius: 4px; white-space: pre-wrap; word-break: break-all; cursor: pointer;
+    transition: background 0.1s ease;
+  }
+  #log-container .line:hover { background: rgba(255,255,255,0.04); }
   #log-container .line.hidden { display: none; }
-  #log-container .line .detail { display: none; color: var(--text-muted); padding: 4px 0 4px 18px; }
+  #log-container .line .detail {
+    display: none; color: var(--text-muted); padding: 8px 0 8px 24px;
+    border-left: 2px solid var(--border-strong); margin: 4px 0 4px 10px;
+  }
   #log-container .line.expanded .detail { display: block; }
-  #log-container .line.debug { color: var(--text-muted); }
-  #log-container .line.info { color: var(--info); }
+  #log-container .line.debug { color: var(--text-dim); }
+  #log-container .line.info { color: #7dd3fc; }
   #log-container .line.warning { color: var(--warning); }
   #log-container .line.error { color: var(--error); }
-  #log-container .line.critical { color: var(--error); font-weight: bold; }
+  #log-container .line.critical { color: #f87171; font-weight: bold; }
 
   /* Tools catalog */
-  .tool-search { margin-bottom: 12px; }
+  .tool-search { margin-bottom: 14px; }
   .tool-layout {
-    display: grid; grid-template-columns: minmax(280px, 1fr) minmax(300px, 0.9fr);
-    gap: 12px; align-items: start;
+    display: grid; grid-template-columns: minmax(320px, 1.1fr) minmax(320px, 0.9fr);
+    gap: 16px; align-items: start;
   }
   .tool-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: 10px;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
   }
   .tool-card {
     background: var(--surface); border: 1px solid var(--border);
-    border-radius: 6px; padding: 12px;
+    border-radius: var(--radius-md); padding: 16px; cursor: pointer;
+    transition: border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
   }
-  .tool-card h4 { font-size: 13px; margin-bottom: 4px; }
-  .tool-card.selected { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
-  .tool-card .tool-desc { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
-  .tool-card .tool-meta { font-size: 11px; color: var(--text-muted); }
-  .tool-card .tool-meta span { margin-right: 12px; }
+  .tool-card:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+  .tool-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--surface-2); }
+  .tool-card h4 { font-size: 13px; font-family: var(--font-mono); margin-bottom: 6px; color: var(--text); }
+  .tool-card .tool-desc { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; line-height: 1.5; }
+  .tool-card .tool-meta { font-size: 11px; color: var(--text-dim); display: flex; gap: 8px; flex-wrap: wrap; }
+  .tool-badge {
+    padding: 2px 7px; border-radius: 4px; background: var(--bg-canvas);
+    border: 1px solid var(--border); color: var(--accent); font-weight: 500;
+  }
   .tool-card .tool-params {
-    margin-top: 8px; font-size: 11px; background: var(--bg);
-    padding: 6px 8px; border-radius: 4px; max-height: 120px; overflow-y: auto;
+    margin-top: 10px; font-size: 11px; background: var(--bg-canvas);
+    padding: 8px 10px; border-radius: var(--radius-sm); max-height: 120px; overflow-y: auto;
+    border: 1px solid rgba(255,255,255,0.04);
   }
-  .tool-card .tool-params code {
-    color: var(--info); font-family: 'JetBrains Mono', monospace;
-  }
+  .tool-card .tool-params code { color: var(--accent); font-family: var(--font-mono); font-weight: 600; }
   .tool-detail { position: sticky; top: 16px; }
   .tool-detail pre {
-    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
-    padding: 10px; font-size: 11px; overflow: auto; max-height: 260px;
+    background: var(--bg-canvas); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 12px; font-size: 11px; font-family: var(--font-mono); overflow: auto; max-height: 280px;
+    color: #e2e8f0; line-height: 1.5;
   }
-  @media (max-width: 900px) {
+  @media (max-width: 960px) {
     .tool-layout { grid-template-columns: 1fr; }
     .tool-detail { position: static; }
   }
 
   /* Setup wizard */
   .wizard-steps {
-    display: flex; gap: 0; margin-bottom: 24px;
-    border-bottom: 1px solid var(--border); padding-bottom: 12px;
+    display: flex; gap: 0; margin-bottom: 28px;
+    border-bottom: 1px solid var(--border); padding-bottom: 16px; position: relative;
   }
   .wizard-step {
     flex: 1; text-align: center; font-size: 12px; color: var(--text-muted);
-    padding: 8px; position: relative;
+    padding: 8px 4px; position: relative;
   }
   .wizard-step .step-num {
-    display: inline-flex; width: 22px; height: 22px; border-radius: 50%;
-    background: var(--border); color: var(--text-muted); align-items: center;
-    justify-content: center; font-size: 11px; font-weight: 600; margin-bottom: 4px;
+    display: inline-flex; width: 26px; height: 26px; border-radius: 50%;
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted);
+    align-items: center; justify-content: center; font-size: 11px; font-weight: 700; margin-bottom: 6px;
+    transition: all 0.2s ease;
   }
-  .wizard-step.active .step-num { background: var(--accent); color: #fff; }
-  .wizard-step.completed .step-num { background: var(--success); color: #fff; }
-  .wizard-step.active { color: var(--text); font-weight: 500; }
-  .wizard-step.completed { color: var(--success); }
-  .wizard-body { min-height: 200px; }
-  .wizard-nav { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+  .wizard-step.active .step-num {
+    background: var(--accent); color: #0b0f17; border-color: var(--accent);
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+  }
+  .wizard-step.completed .step-num {
+    background: var(--success); color: #0b0f17; border-color: var(--success);
+  }
+  .wizard-step.active { color: var(--text); font-weight: 600; }
+  .wizard-step.completed { color: var(--success); font-weight: 500; }
+  .wizard-body { min-height: 220px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 24px; }
+  .wizard-nav { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
   .wizard-result {
-    background: var(--bg); border: 1px solid var(--border);
-    border-radius: 6px; padding: 12px; margin-top: 12px;
-    font-size: 13px; white-space: pre-wrap; max-height: 200px; overflow-y: auto;
-    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg-canvas); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 14px; margin-top: 14px;
+    font-size: 12px; white-space: pre-wrap; max-height: 240px; overflow-y: auto;
+    font-family: var(--font-mono); line-height: 1.55;
   }
-  .wizard-result.success { border-color: var(--success); }
-  .wizard-result.error { border-color: var(--error); }
+  .wizard-result.success { border-color: var(--success); color: var(--success); background: var(--success-subtle); }
+  .wizard-result.error { border-color: var(--error); color: var(--error); background: var(--error-subtle); }
 
   /* Messages */
   .msg {
-    padding: 8px 12px; border-radius: 6px; margin-bottom: 10px;
-    font-size: 13px;
+    padding: 10px 14px; border-radius: var(--radius-sm); margin-bottom: 12px;
+    font-size: 13px; line-height: 1.5; display: flex; align-items: center; gap: 8px;
   }
-  .msg.info { background: rgba(88,166,255,0.12); border: 1px solid var(--accent); color: var(--info); }
-  .msg.success { background: rgba(63,185,80,0.12); border: 1px solid var(--success); color: var(--success); }
-  .msg.warn { background: rgba(210,153,34,0.12); border: 1px solid var(--warning); color: var(--warning); }
-  .msg.error { background: rgba(248,81,73,0.12); border: 1px solid var(--error); color: var(--error); }
+  .msg.info { background: var(--accent-subtle); border: 1px solid rgba(56,189,248,0.3); color: var(--text); }
+  .msg.success { background: var(--success-subtle); border: 1px solid rgba(34,197,94,0.3); color: var(--text); }
+  .msg.warn { background: var(--warning-subtle); border: 1px solid rgba(245,158,11,0.3); color: var(--text); }
+  .msg.error { background: var(--error-subtle); border: 1px solid rgba(239,68,68,0.3); color: var(--text); }
 
   /* Spinner */
   .spinner {
-    display: inline-block; width: 16px; height: 16px;
+    display: inline-block; width: 18px; height: 18px;
     border: 2px solid var(--border); border-top-color: var(--accent);
     border-radius: 50%; animation: spin 0.6s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .loading { text-align: center; padding: 40px; color: var(--text-muted); }
+  .loading { text-align: center; padding: 48px; color: var(--text-muted); font-size: 13px; }
 
-  /* Responsive */
-  @media (max-width: 700px) {
+  /* Reduced Motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* Responsive Mobile / Tablet Layout */
+  @media (max-width: 768px) {
     body { flex-direction: column; }
-    .sidebar { width: 100%; flex-direction: row; flex-wrap: wrap; padding: 8px 12px;
-      border-right: none; border-bottom: 1px solid var(--border); }
-    .sidebar .brand { border-bottom: none; margin-bottom: 0; padding: 0; }
+    .sidebar {
+      width: 100%; padding: 12px 14px 8px; border-right: none;
+      border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100;
+      background: rgba(19, 25, 38, 0.96); backdrop-filter: blur(10px);
+    }
+    .sidebar .brand { border-bottom: none; margin-bottom: 6px; padding: 0; justify-content: space-between; }
     .sidebar .status-row { display: none; }
-    .nav-item { padding: 6px 10px; border-left: none; border-bottom: 2px solid transparent; }
-    .nav-item.active { border-left-color: transparent; border-bottom-color: var(--accent); }
-    .nav-support-group { display: flex; width: 100%; gap: 6px; padding-top: 4px; margin-top: 0; }
-    .nav-support-group .nav-label { display: none; }
-    .nav-support { margin: 0; padding: 6px 9px; border-bottom-width: 1px; }
-    .main { padding: 16px; max-height: none; }
+    .nav-items-container {
+      display: flex; flex-direction: row; gap: 6px; overflow-x: auto;
+      width: 100%; padding: 4px 0; -webkit-overflow-scrolling: touch;
+    }
+    .nav-items-container::-webkit-scrollbar { display: none; }
+    .nav-item {
+      padding: 7px 12px; border-left: none; border-bottom: 2px solid transparent;
+      border-radius: var(--radius-sm); white-space: nowrap; flex-shrink: 0; width: auto; font-size: 12px;
+    }
+    .nav-item.active { border-left-color: transparent; border-bottom-color: var(--accent); background: var(--surface-2); }
+    .nav-sep, .nav-label, .nav-support-group { display: none; }
+    .main { padding: 18px 16px; max-height: none; }
     .grid { grid-template-columns: minmax(0, 1fr); }
     .form-row { flex-wrap: wrap; }
-    .form-row .form-group { min-width: min(100%, 240px); }
+    .form-row .form-group { min-width: 100%; }
+    .wizard-steps { overflow-x: auto; justify-content: flex-start; gap: 8px; padding-bottom: 10px; }
+    .wizard-step { flex-shrink: 0; min-width: 80px; }
   }
 </style>
 </head>
 <body>
 
 <!-- Sidebar -->
-<nav class="sidebar">
+<nav class="sidebar" aria-label="Main Navigation">
   <div class="brand">
-    <span class="status-dot ok" id="navStatusDot"></span>
-    <h1>KiCad MCP Pro</h1>
-    <span class="badge" id="navVersion">v{{version}}</span>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="brand-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="3" stroke="var(--border-strong)"/>
+          <circle cx="8" cy="8" r="2" fill="var(--accent)"/>
+          <circle cx="16" cy="16" r="2" fill="var(--success)"/>
+          <path d="M8 10v4a2 2 0 0 0 2 2h4"/>
+        </svg>
+      </div>
+      <div class="brand-title">
+        <h1>KiCad MCP Pro</h1>
+        <span class="badge" id="navVersion">v{{version}}</span>
+      </div>
+    </div>
   </div>
-  <div class="status-row" id="navStatusText">Checking...</div>
-  <button type="button" class="nav-item active" data-view="dashboard">&#9664; Dashboard</button>
-  <button type="button" class="nav-item" data-view="log-viewer">&#9776; Logs</button>
-  <button type="button" class="nav-item" data-view="tools-catalog">&#9881; Tools</button>
-  <button type="button" class="nav-item" data-view="preview">&#128444; Preview</button>
-  <button type="button" class="nav-item" data-view="settings">&#9878; Settings</button>
-  <button type="button" class="nav-item" data-view="setup-wizard">&#9889; Setup</button>
-  <div class="nav-sep"></div>
-  <div class="nav-label">AI Agents</div>
-  <a class="nav-item" href="https://oaslananka.github.io/kicad-mcp-pro/agents/" target="_blank" rel="noopener noreferrer">&#129302; Agent Setup &#8599;</a>
-  <a class="nav-item" href="https://oaslananka.github.io/kicad-mcp-pro/agents/prompts/" target="_blank" rel="noopener noreferrer">&#128172; Prompt Library &#8599;</a>
+  <div class="status-row" id="navStatusRow">
+    <span class="status-dot ok" id="navStatusDot" aria-hidden="true"></span>
+    <span id="navStatusText">Checking...</span>
+  </div>
+  <div class="nav-items-container">
+    <button type="button" class="nav-item active" data-view="dashboard">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+      <span>Dashboard</span>
+    </button>
+    <button type="button" class="nav-item" data-view="log-viewer">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      <span>Logs</span>
+    </button>
+    <button type="button" class="nav-item" data-view="tools-catalog">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+      <span>Tools</span>
+    </button>
+    <button type="button" class="nav-item" data-view="preview">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+      <span>Preview</span>
+    </button>
+    <button type="button" class="nav-item" data-view="settings">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span>Settings</span>
+    </button>
+    <button type="button" class="nav-item" data-view="setup-wizard">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      <span>Setup</span>
+    </button>
+    <div class="nav-sep"></div>
+    <div class="nav-label">AI Agents</div>
+    <a class="nav-item" href="https://oaslananka.github.io/kicad-mcp-pro/agents/" target="_blank" rel="noopener noreferrer">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4M8 16h.01M16 16h.01"/></svg>
+      <span>Agent Setup</span>
+      <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="margin-left:auto;"><path d="M6 3h7v7M13 3 7 9"/></svg>
+    </a>
+    <a class="nav-item" href="https://oaslananka.github.io/kicad-mcp-pro/agents/prompts/" target="_blank" rel="noopener noreferrer">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span>Prompt Library</span>
+      <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="margin-left:auto;"><path d="M6 3h7v7M13 3 7 9"/></svg>
+    </a>
+  </div>
   <div class="nav-support-group">
     <div class="nav-label">Support</div>
-    <a class="nav-item nav-support github" href="https://github.com/sponsors/oaslananka" target="_blank" rel="noopener noreferrer" aria-label="Support KiCad MCP Pro through GitHub Sponsors">&#9829; GitHub Sponsors &#8599;</a>
-    <a class="nav-item nav-support coffee" href="https://www.buymeacoffee.com/oaslananka" target="_blank" rel="noopener noreferrer" aria-label="Support KiCad MCP Pro through Buy me a coffee">&#9749; Buy me a coffee &#8599;</a>
+    <a class="nav-item nav-support github" href="https://github.com/sponsors/oaslananka" target="_blank" rel="noopener noreferrer" aria-label="Support KiCad MCP Pro through GitHub Sponsors">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+      <span>GitHub Sponsors</span>
+      <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="margin-left:auto;"><path d="M6 3h7v7M13 3 7 9"/></svg>
+    </a>
+    <a class="nav-item nav-support coffee" href="https://www.buymeacoffee.com/oaslananka" target="_blank" rel="noopener noreferrer" aria-label="Support KiCad MCP Pro through Buy me a coffee">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zM6 1v3M10 1v3M14 1v3"/></svg>
+      <span>Buy me a coffee</span>
+      <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="margin-left:auto;"><path d="M6 3h7v7M13 3 7 9"/></svg>
+    </a>
   </div>
 </nav>
 
 <!-- Main content -->
-<div class="main" id="mainContent">
+<main class="main" id="mainContent">
 
   <!-- Dashboard -->
   <div class="view active" id="view-dashboard">
     <h2>Dashboard</h2>
     <div class="grid" id="statusGrid">
-      <div class="card"><h3>Server</h3>
+      <div class="card">
+        <h3>Server</h3>
         <div class="row"><span class="label">Profile</span><span class="value" id="s-profile">-</span></div>
         <div class="row"><span class="label">Mode</span><span class="value" id="s-mode">-</span></div>
         <div class="row"><span class="label">Transport</span><span class="value" id="s-transport">-</span></div>
@@ -335,37 +497,42 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
         <div class="row"><span class="label">Port</span><span class="value" id="s-port">-</span></div>
         <div class="row"><span class="label">Uptime</span><span class="value" id="s-uptime">-</span></div>
       </div>
-      <div class="card"><h3>KiCad</h3>
+      <div class="card">
+        <h3>KiCad</h3>
         <div class="row"><span class="label">CLI</span><span class="value" id="k-cli">-</span></div>
         <div class="row"><span class="label">Version</span><span class="value" id="k-version">-</span></div>
         <div class="row"><span class="label">IPC</span><span class="value" id="k-ipc">-</span></div>
       </div>
-      <div class="card"><h3>Project</h3>
+      <div class="card">
+        <h3>Project</h3>
         <div class="row"><span class="label">Directory</span><span class="value" id="p-dir">-</span></div>
         <div class="row"><span class="label">PCB</span><span class="value" id="p-pcb">-</span></div>
         <div class="row"><span class="label">SCH</span><span class="value" id="p-sch">-</span></div>
       </div>
-      <div class="card"><h3>Health</h3>
+      <div class="card">
+        <h3>Health</h3>
         <div id="health-checks"></div>
-        <div class="row" style="margin-top:8px; padding-top:6px; border-top:1px solid var(--border);">
+        <div class="row" style="margin-top:10px; padding-top:8px; border-top:1px solid var(--border);">
           <span class="label">Overall</span><span class="value" id="health-overall">-</span>
         </div>
       </div>
     </div>
-    <div class="card"><h3>Quick Actions</h3>
+    <div class="card">
+      <h3>Quick Actions</h3>
       <div class="actions">
-        <button class="btn btn-sm btn-primary" onclick="serverAction('start')">Start</button>
-        <button class="btn btn-sm" onclick="serverAction('stop')">Stop</button>
-        <button class="btn btn-sm" onclick="serverAction('restart')">Restart</button>
-        <button class="btn btn-sm" onclick="refreshStatus()">Refresh Status</button>
-        <button class="btn btn-sm" onclick="window.open('/api/status','_blank')">Status JSON</button>
-        <button class="btn btn-sm" onclick="window.open('/api/metrics','_blank')">Metrics JSON</button>
-        <button class="btn btn-sm" onclick="window.open('/api/health','_blank')">Health JSON</button>
-        <button class="btn btn-sm" onclick="window.location.hash='#/logs'">All Logs</button>
+        <button type="button" class="btn btn-sm btn-primary" onclick="serverAction('start')">Start</button>
+        <button type="button" class="btn btn-sm btn-danger" onclick="serverAction('stop')">Stop</button>
+        <button type="button" class="btn btn-sm" onclick="serverAction('restart')">Restart</button>
+        <button type="button" class="btn btn-sm" onclick="refreshStatus()">Refresh Status</button>
+        <button type="button" class="btn btn-sm" onclick="window.open('/api/status','_blank')">Status JSON</button>
+        <button type="button" class="btn btn-sm" onclick="window.open('/api/metrics','_blank')">Metrics JSON</button>
+        <button type="button" class="btn btn-sm" onclick="window.open('/api/health','_blank')">Health JSON</button>
+        <button type="button" class="btn btn-sm" onclick="window.location.hash='#/logs'">All Logs</button>
       </div>
-      <div id="action-msg" style="margin-top:8px;font-size:13px;"></div>
+      <div id="action-msg" role="status" aria-live="polite" style="margin-top:10px;font-size:13px;"></div>
     </div>
-    <div class="card" style="margin-top:14px;"><h3>Recent Tool Calls</h3>
+    <div class="card" style="margin-top:16px;">
+      <h3>Recent Tool Calls</h3>
       <div class="recent-list" id="recent-calls">
         <div class="row"><span class="label">No tool calls yet.</span><span class="value">Live</span></div>
       </div>
@@ -376,31 +543,31 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <div class="view" id="view-log-viewer">
     <h2>Log Viewer</h2>
     <div class="log-controls">
-      <input type="text" id="logSearch" placeholder="Search logs or /regex/" oninput="applyLogFilters()" style="max-width:220px;">
-      <button class="active" data-level="all" onclick="setLogFilter('all',this)">All</button>
-      <button data-level="debug" onclick="setLogFilter('debug',this)">Debug</button>
-      <button data-level="info" onclick="setLogFilter('info',this)">Info</button>
-      <button data-level="warning" onclick="setLogFilter('warning',this)">Warn</button>
-      <button data-level="error" onclick="setLogFilter('error',this)">Error</button>
-      <button onclick="downloadLogs()">Download</button>
-      <button onclick="clearLog()">Clear</button>
-      <button id="jumpBottom" onclick="jumpToBottom()" style="display:none;">Go Bottom</button>
-      <span class="live-badge" id="live-badge" data-testid="live-badge">Connecting</span>
+      <input type="text" id="logSearch" placeholder="Search logs or /regex/" aria-label="Search logs or regular expression" oninput="applyLogFilters()" style="max-width:240px;">
+      <button type="button" class="active" data-level="all" onclick="setLogFilter('all',this)">All</button>
+      <button type="button" data-level="debug" onclick="setLogFilter('debug',this)">Debug</button>
+      <button type="button" data-level="info" onclick="setLogFilter('info',this)">Info</button>
+      <button type="button" data-level="warning" onclick="setLogFilter('warning',this)">Warn</button>
+      <button type="button" data-level="error" onclick="setLogFilter('error',this)">Error</button>
+      <button type="button" onclick="downloadLogs()">Download</button>
+      <button type="button" onclick="clearLog()">Clear</button>
+      <button type="button" id="jumpBottom" onclick="jumpToBottom()" style="display:none;">Go Bottom</button>
+      <span class="live-badge" id="live-badge" data-testid="live-badge" role="status" aria-live="polite">Connecting</span>
     </div>
-    <div id="log-container"><div class="line" style="color:var(--text-muted)">Connecting to log stream...</div></div>
+    <div id="log-container" tabindex="0" aria-label="Live log stream"><div class="line" style="color:var(--text-muted)">Connecting to log stream...</div></div>
   </div>
 
   <!-- Tools Catalog -->
   <div class="view" id="view-tools-catalog">
     <h2>Tools Catalog</h2>
     <div class="tool-search form-row">
-      <input type="text" id="toolSearch" placeholder="Search tools by name or keyword..." oninput="filterTools()">
-      <select id="toolCategory" onchange="filterTools()" style="max-width:180px;">
+      <input type="text" id="toolSearch" placeholder="Search tools by name or keyword..." aria-label="Search MCP tools by name or keyword" oninput="filterTools()">
+      <select id="toolCategory" aria-label="Filter tools by category" onchange="filterTools()" style="max-width:200px;">
         <option value="all">All categories</option>
       </select>
     </div>
     <div id="tools-loading" class="loading"><div class="spinner"></div> Loading tools...</div>
-    <div id="tools-count" style="font-size:12px;color:var(--text-muted);margin-bottom:8px;display:none;"></div>
+    <div id="tools-count" style="font-size:12px;color:var(--text-muted);margin-bottom:12px;font-weight:500;display:none;"></div>
     <div class="tool-layout">
       <div class="tool-grid" id="toolGrid"></div>
       <div class="card tool-detail" id="toolDetail">
@@ -423,57 +590,63 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <!-- Settings -->
   <div class="view" id="view-settings">
     <h2>Settings</h2>
-    <div id="settings-msg"></div>
+    <div id="settings-msg" role="status" aria-live="polite"></div>
     <form id="settingsForm" onsubmit="saveSettings(event)">
-      <div class="form-row">
-        <div class="form-group">
-          <label for="cfg-kicad_path">KiCad Path</label>
-          <input type="text" id="cfg-kicad_path" name="kicad_path" placeholder="auto-detect">
+      <div class="card" style="margin-bottom:16px;">
+        <h3>KiCad &amp; Server Runtime</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="cfg-kicad_path">KiCad Path</label>
+            <input type="text" id="cfg-kicad_path" name="kicad_path" placeholder="auto-detect">
+          </div>
+          <div class="form-group">
+            <label for="cfg-transport">Transport</label>
+            <select id="cfg-transport" name="transport">
+              <option value="streamable-http">streamable-http</option>
+              <option value="stdio">stdio</option>
+              <option value="http">http</option>
+            </select>
+          </div>
         </div>
-        <div class="form-group">
-          <label for="cfg-transport">Transport</label>
-          <select id="cfg-transport" name="transport">
-            <option value="streamable-http">streamable-http</option>
-            <option value="stdio">stdio</option>
-            <option value="http">http</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label for="cfg-host">Host</label>
-          <input type="text" id="cfg-host" name="host" placeholder="127.0.0.1">
-        </div>
-        <div class="form-group">
-          <label for="cfg-port">Port</label>
-          <input type="number" id="cfg-port" name="port" placeholder="9090" min="1" max="65535">
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label for="cfg-profile">Profile</label>
-          <input type="text" id="cfg-profile" name="profile" placeholder="default">
-        </div>
-        <div class="form-group">
-          <label for="cfg-log_level">Log Level</label>
-          <select id="cfg-log_level" name="log_level">
-            <option value="DEBUG">DEBUG</option>
-            <option value="INFO" selected>INFO</option>
-            <option value="WARNING">WARNING</option>
-            <option value="ERROR">ERROR</option>
-          </select>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="cfg-host">Host</label>
+            <input type="text" id="cfg-host" name="host" placeholder="127.0.0.1">
+          </div>
+          <div class="form-group">
+            <label for="cfg-port">Port</label>
+            <input type="number" id="cfg-port" name="port" placeholder="9090" min="1" max="65535">
+          </div>
         </div>
       </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label for="cfg-operating_mode">Operating Mode</label>
-          <select id="cfg-operating_mode" name="operating_mode">
-            <option value="readonly">readonly</option>
-            <option value="write">write</option>
-            <option value="manufacturing">manufacturing</option>
-            <option value="experimental">experimental</option>
-          </select>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Takes effect after restart.</div>
+      <div class="card" style="margin-bottom:16px;">
+        <h3>Profile &amp; Governance</h3>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="cfg-profile">Profile</label>
+            <input type="text" id="cfg-profile" name="profile" placeholder="default">
+          </div>
+          <div class="form-group">
+            <label for="cfg-log_level">Log Level</label>
+            <select id="cfg-log_level" name="log_level">
+              <option value="DEBUG">DEBUG</option>
+              <option value="INFO" selected>INFO</option>
+              <option value="WARNING">WARNING</option>
+              <option value="ERROR">ERROR</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="cfg-operating_mode">Operating Mode</label>
+            <select id="cfg-operating_mode" name="operating_mode">
+              <option value="readonly">readonly</option>
+              <option value="write">write</option>
+              <option value="manufacturing">manufacturing</option>
+              <option value="experimental">experimental</option>
+            </select>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">Takes effect after server restart.</div>
+          </div>
         </div>
       </div>
       <div class="actions">
@@ -481,35 +654,35 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
         <button type="button" class="btn" onclick="loadSettings()">Discard Changes</button>
       </div>
     </form>
-    <div style="margin-top:20px;">
-      <h3 style="font-size:13px;font-weight:600;margin-bottom:8px;">Export Client Config</h3>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="btn btn-sm" onclick="exportClientConfig('claude')">Claude Desktop</button>
-        <button class="btn btn-sm" onclick="exportClientConfig('cursor')">Cursor</button>
-        <button class="btn btn-sm" onclick="exportClientConfig('vscode')">VS Code</button>
-        <button class="btn btn-sm" onclick="exportClientConfig('windsurf')">Windsurf</button>
-        <button class="btn btn-sm" onclick="exportClientConfig('zed')">Zed</button>
+    <div class="card" style="margin-top:20px;">
+      <h3>Export Client Config</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+        <button type="button" class="btn btn-sm" onclick="exportClientConfig('claude')">Claude Desktop</button>
+        <button type="button" class="btn btn-sm" onclick="exportClientConfig('cursor')">Cursor</button>
+        <button type="button" class="btn btn-sm" onclick="exportClientConfig('vscode')">VS Code</button>
+        <button type="button" class="btn btn-sm" onclick="exportClientConfig('windsurf')">Windsurf</button>
+        <button type="button" class="btn btn-sm" onclick="exportClientConfig('zed')">Zed</button>
       </div>
-      <pre id="export-result" style="display:none;margin-top:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:12px;overflow-x:auto;"></pre>
+      <pre id="export-result" style="display:none;margin-top:10px;background:var(--bg-canvas);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:12px;font-family:var(--font-mono);overflow-x:auto;"></pre>
     </div>
   </div>
 
   <!-- Setup Wizard -->
   <div class="view" id="view-setup-wizard">
     <h2>Setup Wizard</h2>
-    <div class="wizard-steps" id="wizardSteps">
-      <div class="wizard-step active" data-step="0"><div class="step-num">1</div>KiCad Detection</div>
-      <div class="wizard-step" data-step="1"><div class="step-num">2</div>Project</div>
-      <div class="wizard-step" data-step="2"><div class="step-num">3</div>Transport</div>
-      <div class="wizard-step" data-step="3"><div class="step-num">4</div>Client Config</div>
-      <div class="wizard-step" data-step="4"><div class="step-num">5</div>Test &amp; Finish</div>
+    <div class="wizard-steps" id="wizardSteps" role="tablist" aria-label="Setup steps">
+      <div class="wizard-step active" data-step="0"><div class="step-num">1</div><span>KiCad Detection</span></div>
+      <div class="wizard-step" data-step="1"><div class="step-num">2</div><span>Project</span></div>
+      <div class="wizard-step" data-step="2"><div class="step-num">3</div><span>Transport</span></div>
+      <div class="wizard-step" data-step="3"><div class="step-num">4</div><span>Client Config</span></div>
+      <div class="wizard-step" data-step="4"><div class="step-num">5</div><span>Test &amp; Finish</span></div>
     </div>
-    <div id="wizardMsg"></div>
+    <div id="wizardMsg" role="status" aria-live="polite"></div>
     <div class="wizard-body" id="wizardBody"></div>
     <div class="wizard-nav" id="wizardNav"></div>
   </div>
 
-</div>
+</main>
 
 <script>
 (function() {
@@ -661,7 +834,7 @@ function refreshStatus() {
 
     // Nav status
     const sd = byId('navStatusDot');
-    sd.className = 'status-dot ' + (hl.ok ? 'ok' : 'degraded');
+    sd.className = 'status-dot ' + (hl.ok ? 'ok' : hl.status === 'degraded' ? 'warn' : 'error');
     byId('navStatusText').textContent = hl.status || 'Unknown';
   }).catch(() => {
     byId('navStatusDot').className = 'status-dot error';
@@ -711,12 +884,16 @@ function connectSSE() {
   eventSource = new EventSource('/api/logs/stream');
   eventSource.onopen = function() {
     sseReconnectMs = 1000;
-    byId('live-badge').textContent = 'Live';
+    const badge = byId('live-badge');
+    badge.textContent = 'Live';
+    badge.style.color = 'var(--success)';
   };
   eventSource.onmessage = function(e) { addLogLine(e.data); };
   eventSource.addEventListener('log', function(e) { addLogLine(e.data); });
   eventSource.onerror = function() {
-    byId('live-badge').textContent = 'Retrying in ' + Math.round(sseReconnectMs / 1000) + 's';
+    const badge = byId('live-badge');
+    badge.textContent = 'Retrying in ' + Math.round(sseReconnectMs / 1000) + 's';
+    badge.style.color = 'var(--warning)';
     setTimeout(connectSSE, sseReconnectMs);
     sseReconnectMs = Math.min(sseReconnectMs * 2, 30000);
   };
@@ -776,9 +953,9 @@ function renderRecentCalls() {
     return;
   }
   el.innerHTML = recentCalls.map(c =>
-    '<div class="recent-call"><span>' + esc(c.time) + '</span><span>' +
+    '<div class="recent-call"><span>' + esc(c.time) + '</span><span style="font-weight:600;">' +
     esc(c.tool) + '</span><span class="' + esc(c.status) + '">' +
-    esc(c.status) + '</span><span>' + esc(c.latency || '') + '</span></div>'
+    esc(c.status.toUpperCase()) + '</span><span style="text-align:right;color:var(--text-muted);">' + esc(c.latency || '') + '</span></div>'
   ).join('');
 }
 
@@ -817,7 +994,7 @@ function renderTools(tools) {
       '<h4>' + esc(t.name) + '</h4>' +
       '<div class="tool-desc">' + esc(t.description || 'No description') + '</div>' +
       '<div class="tool-meta">' +
-        '<span>' + esc(t.category || toolCategory(t)) + '</span>' +
+        '<span class="tool-badge">' + esc(t.category || toolCategory(t)) + '</span>' +
         '<span>Params: ' + paramKeys.length + '</span>' +
         (t.annotations && t.annotations.length ? '<span>Tags: ' + esc(t.annotations.join(', ')) + '</span>' : '') +
       '</div>' +
@@ -866,13 +1043,13 @@ function selectTool(tool) {
   const required = tool.inputSchema && tool.inputSchema.required ? tool.inputSchema.required : [];
   byId('toolDetail').innerHTML =
     '<h3>' + esc(tool.name) + '</h3>' +
-    '<p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">' + esc(tool.description || 'No description') + '</p>' +
+    '<p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;line-height:1.5;">' + esc(tool.description || 'No description') + '</p>' +
     '<div class="row"><span class="label">Category</span><span class="value">' + esc(tool.category || toolCategory(tool)) + '</span></div>' +
     '<div class="row"><span class="label">Parameters</span><span class="value">' + Object.keys(params).length + '</span></div>' +
-    '<pre>' + esc(JSON.stringify({required, properties: params}, null, 2)) + '</pre>' +
-    '<div class="actions"><button class="btn btn-sm btn-primary" onclick="testSelectedTool()">Test</button>' +
-    '<button class="btn btn-sm" onclick="copySelectedSchema()">Copy Schema</button></div>' +
-    '<div id="tool-test-result" style="margin-top:10px;"></div>';
+    '<pre style="margin-top:10px;">' + esc(JSON.stringify({required, properties: params}, null, 2)) + '</pre>' +
+    '<div class="actions" style="margin-top:12px;"><button type="button" class="btn btn-sm btn-primary" onclick="testSelectedTool()">Test</button>' +
+    '<button type="button" class="btn btn-sm" onclick="copySelectedSchema()">Copy Schema</button></div>' +
+    '<div id="tool-test-result" style="margin-top:12px;"></div>';
   renderTools((window._allTools || []).filter(t => {
     const q = byId('toolSearch').value.toLowerCase();
     const category = byId('toolCategory').value;
@@ -883,7 +1060,10 @@ function selectTool(tool) {
 
 function copySelectedSchema() {
   if (!selectedTool) return;
-  navigator.clipboard.writeText(JSON.stringify(selectedTool.inputSchema || {}, null, 2));
+  navigator.clipboard.writeText(JSON.stringify(selectedTool.inputSchema || {}, null, 2)).then(() => {
+    const res = byId('tool-test-result');
+    if (res) res.innerHTML = '<div class="msg success">Schema copied to clipboard!</div>';
+  });
 }
 
 function testSelectedTool() {
@@ -922,11 +1102,11 @@ function loadPreview() {
       const name = a.sheet_path || a.target_path || a.session_id;
       const card = doc('div', 'tool-card');
       card.innerHTML =
-        '<div style="background:#fff;border-radius:4px;padding:6px;margin-bottom:8px;">' +
-        '<img src="' + esc(url) + '" alt="Schematic preview" style="width:100%;display:block;">' +
+        '<div style="background:#fff;border-radius:var(--radius-sm);padding:8px;margin-bottom:10px;">' +
+        '<img src="' + esc(url) + '" alt="Schematic preview" style="width:100%;display:block;border-radius:4px;">' +
         '</div>' +
-        '<div style="font-size:12px;font-weight:600;">' + esc(name) + '</div>' +
-        '<div style="font-size:11px;color:var(--text-muted);">' + esc(ts) + '</div>';
+        '<div style="font-size:13px;font-weight:600;margin-bottom:4px;word-break:break-all;">' + esc(name) + '</div>' +
+        '<div style="font-size:11px;color:var(--text-muted);font-family:var(--font-mono);">' + esc(ts) + '</div>';
       grid.appendChild(card);
     });
   }).catch(() => {
@@ -1013,15 +1193,15 @@ function renderWizardStep(step) {
       }).catch(() => {
         body.innerHTML = '<div class="msg error">Could not connect to server.</div>';
       });
-      nav.innerHTML = '<button class="btn" onclick="cancelWizard()">Cancel</button><button class="btn btn-primary" onclick="wizardNext()">Next: Project &raquo;</button>';
+      nav.innerHTML = '<button type="button" class="btn" onclick="cancelWizard()">Cancel</button><button type="button" class="btn btn-primary" onclick="wizardNext()">Next</button>';
       break;
 
     case 1:
       body.innerHTML =
-        '<div class="form-group"><label>Default KiCad Project Directory</label>' +
-        '<div style="display:flex;gap:6px;">' +
+        '<div class="form-group"><label for="wizProjectDir">Default KiCad Project Directory</label>' +
+        '<div style="display:flex;gap:8px;">' +
         '<input type="text" id="wizProjectDir" value="" placeholder="Full local project folder path" style="flex:1;">' +
-        '<button class="btn btn-sm" onclick="browseProjectDir()" style="white-space:nowrap;flex-shrink:0;">Browse</button>' +
+        '<button type="button" class="btn btn-sm" onclick="browseProjectDir()" style="white-space:nowrap;flex-shrink:0;">Browse</button>' +
         '</div></div>' +
         '<div class="msg info">PCB and schematic files in this directory can be offered to tools automatically.</div>';
       // Keep the already-selected local project, without asking the user to
@@ -1030,39 +1210,39 @@ function renderWizardStep(step) {
         const field = document.getElementById('wizProjectDir');
         if (field && !field.value && d.project_dir) field.value = d.project_dir;
       }).catch(() => {});
-      nav.innerHTML = '<button class="btn" onclick="wizardPrev()">&laquo; Back</button><button class="btn btn-primary" onclick="wizardNext()">Next: Transport &raquo;</button>';
+      nav.innerHTML = '<button type="button" class="btn" onclick="wizardPrev()">Back</button><button type="button" class="btn btn-primary" onclick="wizardNext()">Next</button>';
       break;
 
     case 2:
       body.innerHTML =
-        '<div class="form-group"><label>Transport Mode</label>' +
+        '<div class="form-group"><label for="wizTransport">Transport Mode</label>' +
         '<select id="wizTransport"><option value="streamable-http" selected>streamable-http (recommended)</option><option value="stdio">stdio (stdin/stdout)</option></select></div>' +
-        '<div class="form-group" id="wizPortGroup"><label>Port (HTTP only)</label><input type="number" id="wizPort" value="3334" min="1" max="65535"></div>' +
-        '<div class="form-group"><label>Host (HTTP only)</label><input type="text" id="wizHost" value="127.0.0.1"></div>';
+        '<div class="form-group" id="wizPortGroup"><label for="wizPort">Port (HTTP only)</label><input type="number" id="wizPort" value="3334" min="1" max="65535"></div>' +
+        '<div class="form-group"><label for="wizHost">Host (HTTP only)</label><input type="text" id="wizHost" value="127.0.0.1"></div>';
       document.getElementById('wizTransport').addEventListener('change', function() {
         document.getElementById('wizPortGroup').style.display = this.value !== 'stdio' ? 'block' : 'none';
       });
-      nav.innerHTML = '<button class="btn" onclick="wizardPrev()">&laquo; Back</button><button class="btn btn-primary" onclick="wizardNext()">Next: Client Config &raquo;</button>';
+      nav.innerHTML = '<button type="button" class="btn" onclick="wizardPrev()">Back</button><button type="button" class="btn btn-primary" onclick="wizardNext()">Next</button>';
       break;
 
     case 3:
       body.innerHTML =
-        '<div class="form-group"><label>Select MCP Client</label>' +
+        '<div class="form-group"><label for="wizClient">Select MCP Client</label>' +
         '<select id="wizClient"><option value="claude-desktop">Claude Desktop</option><option value="cursor">Cursor</option><option value="vscode">VS Code</option><option value="windsurf">Windsurf</option><option value="zed">Zed</option></select></div>' +
         '<div id="wizConfigPreview" class="wizard-result" style="display:none;"></div>' +
-        '<div class="actions" style="margin-top:8px;">' +
-        '<button class="btn btn-sm" onclick="previewClientConfig()">Preview Config</button>' +
-        '<button class="btn btn-sm" onclick="copyClientConfig()">Copy to Clipboard</button></div>';
-      nav.innerHTML = '<button class="btn" onclick="wizardPrev()">&laquo; Back</button><button class="btn btn-primary" onclick="wizardNext()">Next: Test &amp; Finish &raquo;</button>';
+        '<div class="actions" style="margin-top:12px;">' +
+        '<button type="button" class="btn btn-sm" onclick="previewClientConfig()">Preview Config</button>' +
+        '<button type="button" class="btn btn-sm" onclick="copyClientConfig()">Copy to Clipboard</button></div>';
+      nav.innerHTML = '<button type="button" class="btn" onclick="wizardPrev()">Back</button><button type="button" class="btn btn-primary" onclick="wizardNext()">Next</button>';
       break;
 
     case 4:
       body.innerHTML =
         '<div class="msg info">Your KiCad MCP Pro is ready to use!</div>' +
         '<div id="testResult" class="wizard-result" style="display:none;"></div>' +
-        '<div class="actions" style="margin-top:12px;">' +
-        '<button class="btn btn-sm btn-primary" onclick="testConnection()">Test Connection</button></div>';
-      nav.innerHTML = '<button class="btn" onclick="wizardPrev()">&laquo; Back</button><button class="btn btn-success" onclick="finishWizard()">Finish</button>';
+        '<div class="actions" style="margin-top:14px;">' +
+        '<button type="button" class="btn btn-sm btn-primary" onclick="testConnection()">Test Connection</button></div>';
+      nav.innerHTML = '<button type="button" class="btn" onclick="wizardPrev()">Back</button><button type="button" class="btn btn-success" onclick="finishWizard()">Finish</button>';
       break;
   }
 }
@@ -1111,7 +1291,6 @@ function testConnection() {
 
 function browseProjectDir() {
   var input = document.getElementById('wizProjectDir');
-  // Try Tauri IPC (available when running inside Tauri webview)
   if (window.__TAURI_INTERNALS__ && typeof window.__TAURI_INTERNALS__.invoke === 'function') {
     window.__TAURI_INTERNALS__.invoke('select_working_dir').then(function(path) {
       if (path) input.value = path;
@@ -1220,7 +1399,7 @@ function doc(tag, cls) {
 function showMsg(containerId, text, type) {
   const el = byId(containerId);
   if (!el) return;
-  el.innerHTML = '<div class="msg ' + (type || 'info') + '">' + esc(text) + '</div>';
+  el.innerHTML = '<div class="msg ' + (type || 'info') + '" role="status" aria-live="polite">' + esc(text) + '</div>';
 }
 
 /* ── Init ── */
