@@ -12,10 +12,13 @@
 
 ## Operational boundaries
 
-- Only clients with valid OAuth, an approved device and an explicitly granted project can read project metadata.
-- Device registration does not imply a live KiCad session or permission to edit a board.
-- Remote write operations are not available through the currently deployed Cloud MCP surface.
-- Local KiCad editing requires separate trusted local tools and explicit approval.
+Only clients with valid OAuth, an approved device and an explicitly granted
+project can read project metadata. Device registration does not imply a live
+KiCad session or permission to edit a board.
+
+Remote write operations are not available through the currently deployed Cloud
+MCP surface. Local KiCad editing requires separate trusted local tools and
+explicit approval.
 
 ## Optional
 

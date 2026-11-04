@@ -11,6 +11,8 @@ const publicSchema=JSON.stringify({
   "@type":"SoftwareApplication",
   name:"KiCad MCP Cloud",
   description:publicDescription,
+  headline:"KiCad MCP Cloud — secure project access",
+  dateModified:"2026-11-04",
   url:"https://kicad-mcp-pro.oaslananka.dev/",
   applicationCategory:"DeveloperApplication",
   operatingSystem:"Web",
@@ -21,9 +23,9 @@ function NavLink({href,current,children}:{href:string;current:boolean;children:R
   return <a href={href} aria-current={current?"page":undefined}>{children}</a>;
 }
 function Brand(){
-  return <a href="/" className="brand" aria-label="KiCad MCP Cloud home">
+  return <a href="/" className="brand" aria-label="KiCad MCP Cloud workspace home">
     <span className="brand-mark"><img src="/assets/icon.svg" alt="" width={30} height={30}/></span>
-    <span className="brand-title">KiCad MCP<small>Cloud workspace</small></span>
+    <span className="brand-title">KiCad MCP <small>Cloud workspace</small></span>
   </a>;
 }
 function WorkspaceNav({kind}:{kind:PageKind}){
@@ -88,7 +90,7 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
           </div>
         </div>
       </main>
-      {workspace?null:<footer className="site-footer"><div className="footer-inner"><span>© KiCad MCP Cloud</span>
+      {workspace?null:<footer className="site-footer"><div className="footer-inner"><span>© KiCad MCP Cloud <span className="footer-separator">/</span> <a href="https://oaslananka.github.io/kicad-mcp-pro/glossary/">Glossary</a></span>
         <span>Local files <span className="footer-separator">/</span> Explicit project access <span className="footer-separator">/</span> Your control</span></div></footer>}
     </div></body></html>
   );

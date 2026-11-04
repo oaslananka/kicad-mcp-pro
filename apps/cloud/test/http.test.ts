@@ -1349,3 +1349,48 @@ test("public homepage supports safe markdown discovery, canonical and privacy",a
   assert.match(content,/explicitly grant each connected AI client|Grant each AI assistant permission/);
   assert.doesNotMatch(content,/device_credentials|DATABASE_URL|secret value/);
 });
+
+test("AI discovery exposes canonical HTML only while retaining separate machine-readable mirrors",async()=>{
+  const xmlResponse=await fetch(endpoint+"/sitemap.xml");
+  assert.equal(xmlResponse.status,200);
+  const sitemap=await xmlResponse.text();
+  assert.match(sitemap,/<loc>https:\/\/kicad-mcp-pro\.oaslananka\.dev\/<\/loc>/);
+  assert.equal((sitemap.match(/<url>/g)??[]).length,1);
+  assert.doesNotMatch(sitemap,/\/index\.md|\/llms\.txt/);
+
+  const agentResponse=await fetch(endpoint+"/AGENTS.md");
+  assert.equal(agentResponse.status,200);
+  const agentText=await agentResponse.text();
+  for(const heading of ["## Installation","## Configuration","## Usage examples"]){
+    assert.ok(agentText.includes(heading),heading);
+  }
+  assert.match(agentText,/projects:read/);
+  assert.doesNotMatch(agentText,/Run arbitrary shell commands/);
+
+  const llms=await (await fetch(endpoint+"/llms.txt")).text();
+  assert.match(llms,/## Operational boundaries/);
+  const boundaries=llms.split("## Operational boundaries")[1]?.split("## Optional")[0]??"";
+  assert.doesNotMatch(boundaries,/^\s*-\s/m);
+  assert.match(boundaries,/Remote write operations are not available/);
+
+  const html=await (await fetch(endpoint+"/")).text();
+  assert.match(html,/aria-label="KiCad MCP Cloud workspace home"/);
+  assert.match(html,/KiCad MCP <small>Cloud workspace<\/small>/);
+  assert.match(html,/href="https:\/\/oaslananka\.github\.io\/kicad-mcp-pro\/glossary\/">Glossary<\/a>/);
+  const ld=html.match(/<script type="application\/ld\+json">([^<]+)<\/script>/);
+  assert.ok(ld);
+  const schema=JSON.parse(ld[1]);
+  assert.equal(schema.dateModified,"2026-11-04");
+  assert.equal(schema.name,"KiCad MCP Cloud");
+  assert.match(schema.headline,/secure project access/);
+
+  const mirror=await fetch(endpoint+"/index.md");
+  assert.equal(mirror.status,200);
+  assert.match(mirror.headers.get("link")??"",/rel="canonical"/);
+  const mirrorText=await mirror.text();
+  assert.match(mirrorText,/## Sitemap/);
+  assert.match(mirrorText,/\/glossary\//);
+  const negotiated=await fetch(endpoint+"/",{headers:{Accept:"text/markdown"}});
+  assert.equal(negotiated.status,200);
+  assert.match(negotiated.headers.get("link")??"",/rel="canonical"/);
+});

@@ -23,7 +23,8 @@ Device pairing alone does not authorize project access. Cloud MCP currently supp
 - [Documentation](https://oaslananka.github.io/kicad-mcp-pro/)
 - [Privacy](https://oaslananka.github.io/kicad-mcp-pro/privacy/)
 - [Complete public agent summary](https://kicad-mcp-pro.oaslananka.dev/llms-full.txt)
+- [Electronics and agent terminology](https://oaslananka.github.io/kicad-mcp-pro/glossary/)
 
-## Site map
+## Sitemap
 
 - [Public sitemap](https://kicad-mcp-pro.oaslananka.dev/sitemap.md)

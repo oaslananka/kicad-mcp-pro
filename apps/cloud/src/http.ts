@@ -150,7 +150,8 @@ async function handleRequest(
       const publicFile=publicAsset(path);
       if(publicFile && req.method==="GET"){
         res.writeHead(200,{"Content-Type":publicFile.contentType,
-          "Cache-Control":"public, max-age=3600","X-Content-Type-Options":"nosniff"});
+          "Cache-Control":"public, max-age=3600","X-Content-Type-Options":"nosniff",
+          ...(path==="/index.md"?{"Link":'</>; rel="canonical", </llms.txt>; rel="describedby"'}:{})});
         res.end(publicFile.body);
         return;
       }
@@ -233,7 +234,7 @@ async function handleRequest(
         if(!md){deny(res,500,"public_markdown_missing");return;}
         res.writeHead(200,{"Content-Type":md.contentType,
           "Cache-Control":"public, max-age=300",
-          "Vary":"Accept","Link":'</llms.txt>; rel="describedby"',
+          "Vary":"Accept","Link":'</>; rel="canonical", </llms.txt>; rel="describedby"',
           "X-Content-Type-Options":"nosniff"});
         res.end(md.body);
         return;
