@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "kicad-cloud": {
+      "type": "http",
+      "url": "https://kicad-mcp-pro.oaslananka.dev/mcp"
+    }
+  }
+}

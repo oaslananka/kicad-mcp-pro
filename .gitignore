@@ -58,6 +58,9 @@ TEMP/
 *.mcp.json.*.bak
 # User config file created by kicad-mcp-pro setup wizard
 .mcp.json
+# The directory-review candidate intentionally ships a public remote-MCP
+# manifest with no user credentials; leave all other .mcp.json files ignored.
+!integrations/cloud-directory-plugin/.mcp.json
 
 # Testing and mutation artifacts
 mutants/
