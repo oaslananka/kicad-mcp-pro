@@ -86,7 +86,7 @@ limits or downgrade OAuth to unauthenticated access. Use the Gemini CLI
 path above for a host-independent protocol smoke test.
 
 - [Official Gemini CLI MCP + OAuth guide](https://geminicli.com/docs/tools/mcp-server/)
-- [Google Gemini Apps custom MCP prerequisites](https://support.google.com/gemini/answer/17209137)
+- [Google Gemini Apps custom MCP prerequisites](https://support.google.com/gemini/answer/17209137?hl=en)
 - [Google Connected Apps troubleshooting](https://developers.google.com/connected-apps/gpc/troubleshooting)
 
 ## Gemini CLI extension pilot (opt-in)

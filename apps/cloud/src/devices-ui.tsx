@@ -2,7 +2,7 @@ import {renderPage} from "./ui-shell.js";
 import {Icon} from "./ui-icons.js";
 import type {ManagedDevice} from "./device-management.js";
 export function renderDevicesPage(
-  devices:ReadonlyArray<ManagedDevice & {csrf:string;enableCsrf?:string;projectCsrf?:string;
+  devices:ReadonlyArray<ManagedDevice & {csrf:string;deleteCsrf?:string;enableCsrf?:string;projectCsrf?:string;
     connectionState?:"connected"|"disconnected"}>,
   notice?:string,enrollmentAvailable=true,
   projects:ReadonlyArray<{id:string;deviceId:string;alias:string;enabled:boolean;grantCsrf?:string;
@@ -53,6 +53,11 @@ export function renderDevicesPage(
               <code>kicad-mcp-pro cloud setup</code>
             </div>
             <p className="field-help">The terminal will open your browser for one-click approval. No technical IDs or manual keys required.</p>
+            <div className="local-folder-browse"><strong>Prefer choosing a folder?</strong>
+              <p>On your own computer, run <code>kicad-mcp-pro cloud setup --browse</code> to select your KiCad
+                project directory using a native folder picker. Your local path is never sent to Cloud.
+                A web browser cannot safely browse the server's local filesystem.</p>
+            </div>
           </section>
           <section className="card device-card"><div className="card-header"><h2>Your devices</h2>
           <span className="list-count">{devices.length===1?"1 enrolled device":`${devices.length} enrolled devices`}</span></div>
@@ -74,6 +79,15 @@ export function renderDevicesPage(
                   <input type="hidden" name="device_id" value={d.id}/>
                   <input type="hidden" name="csrf" value={d.enableCsrf}/>
                   <button className="button secondary" type="submit">Enable my device</button>
+                </form>:null}
+              {d.revoked&&d.deleteCsrf?
+                <form action="/devices/delete" method="post">
+                  <input type="hidden" name="device_id" value={d.id}/>
+                  <input type="hidden" name="csrf" value={d.deleteCsrf}/>
+                  <button className="button danger" type="submit"
+                    title="Permanently delete this revoked device and its registered projects">
+                    Remove device permanently
+                  </button>
                 </form>:null}
               {d.revoked?<span className="status-pill pending">Credential revoked</span>:
                 <form action="/devices/revoke" method="post">

@@ -48,6 +48,17 @@ test("one complete OAuth provider permits first login, but partial provider fail
   assert.throws(()=>createIdentity(config,{...onlyGithub,githubId:"",githubSecret:""}));
 });
 
+test("Google Gemini CIMD JWKS origin is narrowly trusted without accepting arbitrary hosts",async()=>{
+  const id=instance();
+  const ctx=await id.$context;
+  assert.equal(ctx.isTrustedOrigin("https://www.googleapis.com/oauth2/v3/certs"),true);
+  assert.equal(ctx.isTrustedOrigin("https://attacker.invalid/keys"),false);
+  assert.equal(ctx.isTrustedOrigin("https://other.googleapis.com/keys"),false);
+  assert.equal(ctx.isTrustedOrigin("http://www.googleapis.com/keys"),false);
+  assert.equal(ctx.isTrustedOrigin("https://www.googleapis.com.evil.invalid/keys"),false);
+  assert.equal(ctx.isTrustedOrigin("http://127.0.0.1:8787/account"),true);
+});
+
 test("Better Auth serves MCP-aware OAuth metadata with PostgreSQL", {skip: !databaseUrl}, async () => {
   const pool = new pg.Pool({connectionString:databaseUrl});
   try {

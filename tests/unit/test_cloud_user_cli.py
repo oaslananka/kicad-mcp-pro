@@ -698,3 +698,65 @@ def test_setup_owner_sub_missing_and_pairing_error(tmp_path: Path, monkeypatch) 
     )
     assert res2.exit_code != 0
     assert "Project registration failed on Cloud" in res2.output
+
+
+def test_cloud_setup_browse_uses_only_local_picker_without_cloud_upload(
+    monkeypatch, tmp_path
+) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    folder = tmp_path / "pcb-project"
+    folder.mkdir()
+    (folder / "fixture.kicad_pro").write_text("{}", encoding="utf-8")
+    calls: list[str] = []
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_browse_local_project_folder",
+        lambda: calls.append("picked") or folder,
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_local_registry.default_registry_root",
+        lambda: tmp_path / "local-registry",
+    )
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_try_reconnect_existing",
+        lambda _root, _origin: calls.append("reconnect") or True,
+    )
+    result = CliRunner().invoke(app, ["cloud", "setup", "--browse", "--no-browser"])
+    assert result.exit_code == 0, result.output
+    assert calls == ["picked", "reconnect"]
+    assert not (tmp_path / "local-registry").exists()
+
+
+def test_cloud_setup_rejects_conflicting_picker_and_directory(monkeypatch, tmp_path) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_browse_local_project_folder",
+        lambda: pytest.fail("conflicting options must never open picker"),
+    )
+    result = CliRunner().invoke(app, ["cloud", "setup", "--browse", "--project-dir", str(tmp_path)])
+    assert result.exit_code != 0
+    assert "either --browse or --project-dir" in result.output
+
+
+def test_cloud_setup_cancelled_picker_cannot_enroll_or_change_registry(
+    monkeypatch, tmp_path
+) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    def cancelled() -> Path:
+        raise cloud_user_cli.typer.BadParameter(
+            "No project folder selected. Setup was not changed."
+        )
+
+    monkeypatch.setattr(cloud_user_cli, "_browse_local_project_folder", cancelled)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_local_registry.default_registry_root",
+        lambda: pytest.fail("canceled choice must stop before registry access"),
+    )
+    result = CliRunner().invoke(app, ["cloud", "setup", "--browse"])
+    assert result.exit_code != 0
+    assert "No project folder selected" in result.output

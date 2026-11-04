@@ -31,6 +31,12 @@ export function createIdentity(
   }
   return betterAuth({
     baseURL: config.publicOrigin,
+    // Gemini's Google-hosted CIMD is served from accountlinking.google.com,
+    // while its signed public client JWKS can live on www.googleapis.com.
+    // Better Auth requires the different HTTPS JWKS origin to be explicitly
+    // trusted. Keep this to Google's single exact origin: never allow
+    // arbitrary remote jwks_uri hosts or disable the JWKS/SSRF validation.
+    trustedOrigins: ["https://www.googleapis.com"],
     secret: credentials.secret,
     database: pool ?? new pg.Pool({
       connectionString: config.databaseUrl,

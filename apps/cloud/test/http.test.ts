@@ -1336,6 +1336,8 @@ test("public homepage supports safe markdown discovery, canonical and privacy",a
   assert.match(html,/rel="describedby" href="\/llms.txt"/);
   assert.match(html,/rel="alternate" type="text\/markdown" href="\/index.md"/);
   assert.match(html,/rel="icon" type="image\/svg\+xml" href="\/favicon.svg"/);
+  assert.match(html,/rel="manifest" href="\/site.webmanifest"/);
+  assert.match(htmlReply.headers.get("content-security-policy")??"",/manifest-src 'self'/);
   assert.match(html,/type="application\/ld\+json"/);
   assert.match(html,/Pair your computer/);
   assert.doesNotMatch(html,/Device pairing and local KiCad control are not enabled yet/);

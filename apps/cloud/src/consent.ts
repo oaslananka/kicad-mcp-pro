@@ -12,7 +12,7 @@ const HEADERS = {
   // same-origin keeps the strict Origin + CSRF checks enforceable.
   "Referrer-Policy": "same-origin",
   "X-Content-Type-Options": "nosniff",
-  "Content-Security-Policy": "default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; style-src 'self'; img-src 'self'"
+  "Content-Security-Policy": "default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; style-src 'self'; img-src 'self'; manifest-src 'self'"
 };
 function callbackOrigin(signedQuery:string):string|null {
   const redirectUris=new URLSearchParams(signedQuery).getAll("redirect_uri");

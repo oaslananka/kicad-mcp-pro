@@ -103,6 +103,57 @@ test("valid owner-bound CSRF revokes exactly the selected device",async()=>{
   assert.equal(revoked?.headers.get("location"),"/devices?revoked=1");
   assert.deepEqual(f.calls,["list:owner-a","revoke:owner-a:"+f.ownId]);
 });
+test("only a revoked owner's device exposes an independent, CSRF-protected permanent removal",async()=>{
+  const f=fixture();
+  const removed:string[]=[];
+  const devices:DeviceManagementPort={...f.devices,
+    async deleteRevokedDevice(owner,id){
+      removed.push(owner+":"+id);
+      return owner==="owner-a"&&id===f.ownId;
+    },
+    async list(owner){
+      const rows=await f.devices.list(owner);
+      return rows.map(row=>({...row,revoked:true,enabled:false}));
+    }
+  };
+  const viewPage=await devicesResponse(new Request(origin+"/devices"),
+    f.identity,origin,devices);
+  assert.equal(viewPage?.status,200);
+  const html=await viewPage!.text();
+  assert.match(html,/Remove device permanently/);
+  const token=/<form action="\/devices\/delete" method="post">[\s\S]*?name="csrf" value="([^"]+)"/.exec(html)?.[1];
+  assert.ok(token);
+  const session=(viewPage!.headers.get("set-cookie")??"").split(";")[0];
+  const makeRequest=(id:string,csrf:string,src=origin)=>{
+    return new Request(origin+"/devices/delete",{
+      method:"POST",
+      headers:{Origin:src,"Content-Type":"application/x-www-form-urlencoded",Cookie:session},
+      body:new URLSearchParams({device_id:id,csrf})
+    });
+  };
+  assert.equal((await devicesResponse(makeRequest(f.ownId,token!,"https://attacker.invalid"),
+    f.identity,origin,devices))?.status,403);
+  assert.equal((await devicesResponse(makeRequest(f.otherId,token!),
+    f.identity,origin,devices))?.status,403);
+  assert.equal((await devicesResponse(makeRequest(f.ownId,"fake"),
+    f.identity,origin,devices))?.status,403);
+  const outsider=fixture("owner-b");
+  assert.equal((await devicesResponse(makeRequest(f.ownId,token!),
+    outsider.identity,origin,devices))?.status,403);
+  assert.deepEqual(removed,[]);
+  const result=await devicesResponse(makeRequest(f.ownId,token!),
+    f.identity,origin,devices);
+  assert.equal(result?.status,303);
+  assert.equal(result?.headers.get("location"),"/devices?deleted=1");
+  assert.deepEqual(removed,["owner-a:"+f.ownId]);
+  const normal=fixture();
+  const activePage=await view(normal);
+  const activeHtml=await activePage!.text();
+  assert.doesNotMatch(activeHtml,/action="\/devices\/delete"/);
+  assert.equal((await devicesResponse(makeRequest(f.ownId,token!),
+    f.identity,origin,{...devices,deleteRevokedDevice:async()=>false}))?.status,404);
+});
+
 test("cross-origin, malformed form, expired-cookie, forged identity and wrong device fail",async()=>{
   const f=fixture(),r=await view(f);
   const token=csrf(await r!.text()),cookie=(r!.headers.get("set-cookie")??"").split(";")[0];

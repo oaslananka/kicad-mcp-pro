@@ -171,7 +171,7 @@ async function handleRequest(
         res.end(uiCss);
         return;
       }
-      if (identity && (path === "/sign-in" || path === "/account" || path === "/consent" || path === "/connections" || path === "/connections/revoke" || path === "/devices" || path === "/devices/revoke" || path === "/devices/enable" || path === "/devices/projects/create" || path === "/devices/projects/grant" || path === "/devices/projects/managed" || path === "/devices/pairing" || path === "/devices/pairing/review" || path.startsWith("/auth/start/") || path.startsWith("/auth/link/"))) {
+      if (identity && (path === "/sign-in" || path === "/account" || path === "/consent" || path === "/connections" || path === "/connections/revoke" || path === "/devices" || path === "/devices/revoke" || path === "/devices/delete" || path === "/devices/enable" || path === "/devices/projects/create" || path === "/devices/projects/grant" || path === "/devices/projects/managed" || path === "/devices/pairing" || path === "/devices/pairing/review" || path.startsWith("/auth/start/") || path.startsWith("/auth/link/"))) {
         const method=req.method??"GET";
         const headers=new Headers();
         for (const [name,value] of Object.entries(req.headers)) {
@@ -244,7 +244,7 @@ async function handleRequest(
           "Referrer-Policy":"no-referrer",
           "Vary":"Accept",
           "Link":'</llms.txt>; rel="describedby", </index.md>; rel="alternate"; type="text/markdown"',
-          "Content-Security-Policy":"default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; style-src 'self'; img-src 'self'"
+          "Content-Security-Policy":"default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; style-src 'self'; img-src 'self'; manifest-src 'self'"
         });
         res.end(renderLanding(Boolean(identity)));
         return;

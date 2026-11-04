@@ -64,7 +64,7 @@ export function renderConnectionsPage(
             restriction is controlled by Google, not by this Cloud service.
             Gemini CLI supports remote HTTPS MCP and OAuth with its own
             settings; do not paste bearer tokens into browser forms.</p>
-            <a className="text-link" href="https://support.google.com/gemini/answer/17209137"
+            <a className="text-link" href="https://support.google.com/gemini/answer/17209137?hl=en"
               target="_blank" rel="noopener noreferrer">Gemini Apps requirements</a>
             <a className="text-link" href="https://geminicli.com/docs/tools/mcp-server/"
               target="_blank" rel="noopener noreferrer">Gemini CLI instructions</a>
