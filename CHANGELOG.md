@@ -10,6 +10,38 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.7.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.6.1...mcp-server-v4.7.0) (2026-11-03)
+
+
+### Features
+
+* **cli:** add local-first MCP quickstart ([#1575](https://github.com/oaslananka/kicad-mcp-pro/issues/1575)) ([17e1fa5](https://github.com/oaslananka/kicad-mcp-pro/commit/17e1fa5b477759095854ca2f1a2c98018edf674a))
+* **cloud:** stage signed one-shot owner read and native DRC counts ([#1513](https://github.com/oaslananka/kicad-mcp-pro/issues/1513)) ([65c7d2b](https://github.com/oaslananka/kicad-mcp-pro/commit/65c7d2b3f9ffe615b3c0d94177c30df550979962))
+* **cloud:** unify hosted MCP and scoped local project workers ([#1571](https://github.com/oaslananka/kicad-mcp-pro/issues/1571)) ([849a63a](https://github.com/oaslananka/kicad-mcp-pro/commit/849a63ad09484c5c64925cafc0f7859d9725b477))
+* **review:** add a versioned rule catalog and context-aware assessment model ([#1579](https://github.com/oaslananka/kicad-mcp-pro/issues/1579)) ([#1590](https://github.com/oaslananka/kicad-mcp-pro/issues/1590)) ([a4297f1](https://github.com/oaslananka/kicad-mcp-pro/commit/a4297f15232b1bee0441c831b17d6b256a26f5ab))
+* **review:** assess DFM, DFA, DFT, BOM and bring-up evidence against versioned profiles ([#1586](https://github.com/oaslananka/kicad-mcp-pro/issues/1586)) ([#1598](https://github.com/oaslananka/kicad-mcp-pro/issues/1598)) ([ae38b52](https://github.com/oaslananka/kicad-mcp-pro/commit/ae38b525360e7cee18b55f0ef94e6a84614f97e3))
+* **review:** bind electrical, power, derating and thermal checks to explicit design contracts ([#1584](https://github.com/oaslananka/kicad-mcp-pro/issues/1584)) ([#1596](https://github.com/oaslananka/kicad-mcp-pro/issues/1596)) ([39ea8f2](https://github.com/oaslananka/kicad-mcp-pro/commit/39ea8f257ddf746a504c8fc021f600ae10edb1d8))
+* **review:** bind review coverage and evidence freshness to workflow decisions ([#1580](https://github.com/oaslananka/kicad-mcp-pro/issues/1580)) ([#1591](https://github.com/oaslananka/kicad-mcp-pro/issues/1591)) ([ad38103](https://github.com/oaslananka/kicad-mcp-pro/commit/ad38103476e8624dd88c7fd76cd4677db22a7ac4))
+* **review:** implement safe invariant-preserving visual quality review ([#1583](https://github.com/oaslananka/kicad-mcp-pro/issues/1583)) ([#1594](https://github.com/oaslananka/kicad-mcp-pro/issues/1594)) ([ffd7d41](https://github.com/oaslananka/kicad-mcp-pro/commit/ffd7d41aa957ea8d34e6c265d49d0ebe6c86bc5d))
+* **review:** import external analysis evidence with provenance and validity checks ([#1585](https://github.com/oaslananka/kicad-mcp-pro/issues/1585)) ([#1597](https://github.com/oaslananka/kicad-mcp-pro/issues/1597)) ([acfd4ca](https://github.com/oaslananka/kicad-mcp-pro/commit/acfd4cabcfc700d0b1ebd11fa76cb2ac071726c5))
+
+
+### Bug Fixes
+
+* **eval:** restore documented reference preflight invocation ([#1569](https://github.com/oaslananka/kicad-mcp-pro/issues/1569)) ([dc13042](https://github.com/oaslananka/kicad-mcp-pro/commit/dc13042d6ee5d430bc7480c4bc76917aad317f0a))
+* **opencode:** support v2 MCP setup and retain v1 configs ([#1567](https://github.com/oaslananka/kicad-mcp-pro/issues/1567)) ([f208e80](https://github.com/oaslananka/kicad-mcp-pro/commit/f208e8083920ba0775663c1a300a7573a717956d))
+* **parity:** mark swap intents as partial coverage ([#1577](https://github.com/oaslananka/kicad-mcp-pro/issues/1577)) ([639ae9b](https://github.com/oaslananka/kicad-mcp-pro/commit/639ae9be7051d74c9eb9f092416a957a908146fa))
+* **pcb:** preserve footprint orientation on position-only moves ([#1576](https://github.com/oaslananka/kicad-mcp-pro/issues/1576)) ([fa06e75](https://github.com/oaslananka/kicad-mcp-pro/commit/fa06e758f9eb50231d450db047ffb7d4cfc548d1))
+* **pcb:** validate critical placement using actual pin and net connectivity ([#1582](https://github.com/oaslananka/kicad-mcp-pro/issues/1582)) ([#1593](https://github.com/oaslananka/kicad-mcp-pro/issues/1593)) ([fff3c5b](https://github.com/oaslananka/kicad-mcp-pro/commit/fff3c5b41fdf3c8af94a5685b85c5d7c90d6961e))
+* **review:** separate routing style preferences from electrical correctness ([#1581](https://github.com/oaslananka/kicad-mcp-pro/issues/1581)) ([#1592](https://github.com/oaslananka/kicad-mcp-pro/issues/1592)) ([b9f4530](https://github.com/oaslananka/kicad-mcp-pro/commit/b9f4530355598dd4dfaf930fe43cd8e07bece07e))
+* **review:** validate connector mating direction and mechanical acceptance contract ([#1393](https://github.com/oaslananka/kicad-mcp-pro/issues/1393)) ([#1595](https://github.com/oaslananka/kicad-mcp-pro/issues/1595)) ([fc0ccd6](https://github.com/oaslananka/kicad-mcp-pro/commit/fc0ccd64838e778813f721559e96e1db81fb1458))
+
+
+### Documentation
+
+* add GitGem and DeepWiki badges to README ([#1601](https://github.com/oaslananka/kicad-mcp-pro/issues/1601)) ([d73cb30](https://github.com/oaslananka/kicad-mcp-pro/commit/d73cb30cbb404ddc70209011a4249d304360c5ec))
+* link engineering baseline tests to source ([#1602](https://github.com/oaslananka/kicad-mcp-pro/issues/1602)) ([f9e5486](https://github.com/oaslananka/kicad-mcp-pro/commit/f9e5486b444411a80a516808fe100a7075d66f75))
+
 ## [4.6.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.6.0...mcp-server-v4.6.1) (2026-11-01)
 
 
