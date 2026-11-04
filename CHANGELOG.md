@@ -15,6 +15,7 @@ published.
 
 ### Features
 
+* **review:** integrate engineering findings, coverage, and acceptance evidence into project reports and workflows ([#1587](https://github.com/oaslananka/kicad-mcp-pro/issues/1587)) ([#1599](https://github.com/oaslananka/kicad-mcp-pro/pull/1599)) ([088ef95](https://github.com/oaslananka/kicad-mcp-pro/commit/088ef9598fe1069dfa5464c8ba2eb160334d4d22))
 * **cli:** add local-first MCP quickstart ([#1575](https://github.com/oaslananka/kicad-mcp-pro/issues/1575)) ([17e1fa5](https://github.com/oaslananka/kicad-mcp-pro/commit/17e1fa5b477759095854ca2f1a2c98018edf674a))
 * **cloud:** stage signed one-shot owner read and native DRC counts ([#1513](https://github.com/oaslananka/kicad-mcp-pro/issues/1513)) ([65c7d2b](https://github.com/oaslananka/kicad-mcp-pro/commit/65c7d2b3f9ffe615b3c0d94177c30df550979962))
 * **cloud:** unify hosted MCP and scoped local project workers ([#1571](https://github.com/oaslananka/kicad-mcp-pro/issues/1571)) ([849a63a](https://github.com/oaslananka/kicad-mcp-pro/commit/849a63ad09484c5c64925cafc0f7859d9725b477))
