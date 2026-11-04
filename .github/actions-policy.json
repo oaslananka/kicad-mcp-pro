@@ -165,6 +165,26 @@
         "artifact-metadata",
         "attestations",
         "id-token"
+      ],
+      "npm": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
+      ],
+      "gui": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
+      ],
+      "container": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
+      ],
+      "registry": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
       ]
     },
     "prepare-protocol-schemas.yml": {
