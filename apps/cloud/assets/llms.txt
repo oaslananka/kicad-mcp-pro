@@ -1,0 +1,22 @@
+# KiCad MCP Cloud
+
+> Secure, owner-controlled remote MCP access to selected KiCad project metadata. Project files stay on the owner's computer; client access and device access require separate authorization.
+
+## Official product resources
+
+- [Cloud service overview](https://kicad-mcp-pro.oaslananka.dev/): current read-only Cloud capabilities and setup workflow
+- [Getting started](https://oaslananka.github.io/kicad-mcp-pro/): installation, setup, and local KiCad engineering tools
+- [Cloud agent integration](https://oaslananka.github.io/kicad-mcp-pro/agents/): guidance for compatible agent hosts
+- [Privacy policy](https://oaslananka.github.io/kicad-mcp-pro/privacy/): permission boundaries and data handling
+- [Source repository](https://github.com/oaslananka/kicad-mcp-pro): implementation, changelog and issue tracker
+
+## Operational boundaries
+
+- Only clients with valid OAuth, an approved device and an explicitly granted project can read project metadata.
+- Device registration does not imply a live KiCad session or permission to edit a board.
+- Remote write operations are not available through the currently deployed Cloud MCP surface.
+- Local KiCad editing requires separate trusted local tools and explicit approval.
+
+## Optional
+
+- [Complete public agent integration summary](https://kicad-mcp-pro.oaslananka.dev/llms-full.txt)

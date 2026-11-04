@@ -5,12 +5,24 @@ import {Icon} from "./ui-icons.js";
 export type PageKind="home"|"sign-in"|"account"|"consent"|"connections"|"devices"|"notice";
 type Props={title:string;eyebrow?:string;summary?:string;kind:PageKind;children:ReactNode;navEnabled?:boolean;actions?:ReactNode};
 const workspacePages=new Set<PageKind>(["account","connections","devices"]);
+const publicDescription="KiCad MCP Cloud lets you pair your computer and grant selected AI assistants read-only access to approved KiCad project metadata.";
+const publicSchema=JSON.stringify({
+  "@context":"https://schema.org",
+  "@type":"SoftwareApplication",
+  name:"KiCad MCP Cloud",
+  description:publicDescription,
+  url:"https://kicad-mcp-pro.oaslananka.dev/",
+  applicationCategory:"DeveloperApplication",
+  operatingSystem:"Web",
+  image:"https://kicad-mcp-pro.oaslananka.dev/assets/icon-512.png",
+  author:{"@type":"Organization",name:"KiCad MCP Pro",url:"https://github.com/oaslananka/kicad-mcp-pro"}
+});
 function NavLink({href,current,children}:{href:string;current:boolean;children:ReactNode}){
   return <a href={href} aria-current={current?"page":undefined}>{children}</a>;
 }
 function Brand(){
   return <a href="/" className="brand" aria-label="KiCad MCP Cloud home">
-    <span className="brand-mark"><Icon name="logo" size={24}/></span>
+    <span className="brand-mark"><img src="/assets/icon.svg" alt="" width={30} height={30}/></span>
     <span className="brand-title">KiCad MCP<small>Cloud workspace</small></span>
   </a>;
 }
@@ -38,7 +50,24 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
     <html lang="en"><head>
       <meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
       <meta name="theme-color" content="#0b0b0d"/>
-      <meta name="description" content="Manage KiCad MCP Cloud connections and access."/>
+      <meta name="description" content={kind==="home"?publicDescription:"Manage KiCad MCP Cloud connections and access."}/>
+      <meta name="robots" content={kind==="home"?"index, follow, max-snippet:-1, max-image-preview:large":"noindex, nofollow"}/>
+      {kind==="home"?<>
+        <link rel="canonical" href="https://kicad-mcp-pro.oaslananka.dev/"/>
+        <meta property="og:type" content="website"/>
+        <meta property="og:title" content="KiCad MCP Cloud — secure project access"/>
+        <meta property="og:description" content={publicDescription}/>
+        <meta property="og:image" content="https://kicad-mcp-pro.oaslananka.dev/assets/icon-512.png"/>
+        <link rel="alternate" type="text/markdown" href="/index.md"/>
+        <link rel="describedby" href="/llms.txt"/>
+        <script type="application/ld+json" dangerouslySetInnerHTML={{__html:publicSchema}}/>
+      </>:null}
+      <link rel="icon" href="/favicon.ico" sizes="any"/>
+      <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+      <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"/>
+      <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png"/>
+      <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180"/>
+      <link rel="manifest" href="/site.webmanifest"/>
       <link rel="stylesheet" href="/assets/ui.css"/><title>{title+" — KiCad MCP Cloud"}</title>
     </head><body><div className={workspace?"app-shell workspace-app":"app-shell"}>
       <a href="#main-content" className="skip-link">Skip to content</a>
@@ -94,8 +123,8 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
         </div>
         <div className="topology-link inactive"><span/><small>SEPARATE DEVICE APPROVAL</small></div>
         <div className="topology-node topology-node-device"><span className="topology-icon"><Icon name="cpu" size={21}/></span>
-          <span><strong>KiCad on your computer</strong><small>Connection not enabled</small></span>
-          <span className="topology-tag">Not enabled</span>
+          <span><strong>KiCad on your computer</strong><small>Available only after owner pairing and project approval</small></span>
+          <span className="topology-tag">Owner pairing required</span>
         </div>
         <div className="topology-foot"><Icon name="lock" size={15}/> No project files are shared by signing in.</div>
       </div>
@@ -106,9 +135,9 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
         <p>Account access, device access and project permissions remain separate.</p></div>
       <div className="steps-grid">
         <div className="step"><div className="step-index"><span className="step-icon"><Icon name="key" size={19}/></span><span>01</span></div><h3>Sign in securely</h3><p>Use your account to access the Cloud workspace.</p></div>
-        <div className="step"><div className="step-index"><span className="step-icon"><Icon name="devices" size={19}/></span><span>02</span></div><h3>Review your computer</h3><p>Device pairing and local project actions aren't available yet.</p><span className="step-state">Deployment-dependent</span></div>
+        <div className="step"><div className="step-index"><span className="step-icon"><Icon name="devices" size={19}/></span><span>02</span></div><h3>Pair your computer</h3><p>Pair from the local Connector and approve the request in your Cloud workspace. Pairing alone never shares projects.</p><span className="step-state">Your approval required</span></div>
         <div className="step"><div className="step-index"><span className="step-icon"><Icon name="connections" size={19}/></span><span>03</span></div><h3>Connect your AI client</h3><p>Follow the connection guide and review the app's account permissions.</p></div>
-        <div className="step"><div className="step-index"><span className="step-icon"><Icon name="cpu" size={19}/></span><span>04</span></div><h3>Choose project access</h3><p>When available, grant your authorized AI client access to a registered project.</p></div>
+        <div className="step"><div className="step-index"><span className="step-icon"><Icon name="cpu" size={19}/></span><span>04</span></div><h3>Choose project access</h3><p>Select a project on your own computer, then explicitly grant each connected AI client access.</p></div>
       </div>
     </section>
   </div>;

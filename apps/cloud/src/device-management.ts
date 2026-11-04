@@ -95,6 +95,23 @@ export class PgDeviceManagement {
   }
 
   /**
+   * Permanently forget an already-revoked device and all its dependent
+   * project, grant, session and credential records. Never delete an active
+   * credential: revocation must happen independently first. Device and
+   * credential ownership are checked in the same atomic DELETE.
+   */
+  async deleteRevokedDevice(owner:string,id:string):Promise<boolean>{
+    if(!owner||owner.length>256||!ID.test(id))return false;
+    const result=await this.pool.query(
+      "DELETE FROM devices d USING device_credentials c "+
+      "WHERE d.id=$1 AND d.owner_sub=$2 AND c.device_id=d.id "+
+      "AND c.owner_sub=d.owner_sub AND c.revoked_at IS NOT NULL RETURNING d.id",
+      [id,owner]
+    );
+    return result.rowCount===1;
+  }
+
+  /**
    * Owner-scoped, irreversible revocation and cascading permission fence.
    * This cannot be undone by toggling the device enabled flag later.
    */

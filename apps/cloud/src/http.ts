@@ -17,6 +17,7 @@ import type {RequestSourceResolver} from "./trusted-ingress.js";
 import { oauthProviderResponse } from "./oauth-error.js";
 import { renderLanding } from "./browser-ui.js";
 import { uiCss } from "./ui-styles.js";
+import {publicAsset} from "./public-assets.js";
 import {pairingReviewClient} from "./pairing-review-client.js";
 import {pairingLoginContinuationClient} from "./pairing-login-continuation.js";
 import type {TrustedOAuthReadIdentity} from "./connector-read-gate.js";
@@ -144,6 +145,15 @@ async function handleRequest(
       }
       if(pairingDevice&&await handlePairingDeviceRequest(req,res,pairingDevice,
         deviceSource??(()=>null),config.publicOrigin))return;
+      // Public icon and agent-discovery files only. Fixed allowlist in
+      // public-assets.ts prevents filesystem traversal and private data reads.
+      const publicFile=publicAsset(path);
+      if(publicFile && req.method==="GET"){
+        res.writeHead(200,{"Content-Type":publicFile.contentType,
+          "Cache-Control":"public, max-age=3600","X-Content-Type-Options":"nosniff"});
+        res.end(publicFile.body);
+        return;
+      }
       if (path === "/assets/pairing-login-continuation.js" && req.method === "GET") {
         res.writeHead(200,{...noCache,"Content-Type":"text/javascript; charset=utf-8",
           "Referrer-Policy":"no-referrer"});
@@ -161,7 +171,7 @@ async function handleRequest(
         res.end(uiCss);
         return;
       }
-      if (identity && (path === "/sign-in" || path === "/account" || path === "/consent" || path === "/connections" || path === "/connections/revoke" || path === "/devices" || path === "/devices/revoke" || path === "/devices/enable" || path === "/devices/projects/create" || path === "/devices/projects/grant" || path === "/devices/projects/managed" || path === "/devices/pairing" || path === "/devices/pairing/review" || path.startsWith("/auth/start/") || path.startsWith("/auth/link/"))) {
+      if (identity && (path === "/sign-in" || path === "/account" || path === "/consent" || path === "/connections" || path === "/connections/revoke" || path === "/devices" || path === "/devices/revoke" || path === "/devices/delete" || path === "/devices/enable" || path === "/devices/projects/create" || path === "/devices/projects/grant" || path === "/devices/projects/managed" || path === "/devices/pairing" || path === "/devices/pairing/review" || path.startsWith("/auth/start/") || path.startsWith("/auth/link/"))) {
         const method=req.method??"GET";
         const headers=new Headers();
         for (const [name,value] of Object.entries(req.headers)) {
@@ -217,11 +227,24 @@ async function handleRequest(
         });
         return;
       }
+      if(path==="/" && req.method==="GET" &&
+        (req.headers.accept??"").toLowerCase().includes("text/markdown")){
+        const md=publicAsset("/index.md");
+        if(!md){deny(res,500,"public_markdown_missing");return;}
+        res.writeHead(200,{"Content-Type":md.contentType,
+          "Cache-Control":"public, max-age=300",
+          "Vary":"Accept","Link":'</llms.txt>; rel="describedby"',
+          "X-Content-Type-Options":"nosniff"});
+        res.end(md.body);
+        return;
+      }
       if (path === "/" && req.method === "GET") {
         res.writeHead(200,{...noCache,
           "Content-Type":"text/html; charset=utf-8",
           "Referrer-Policy":"no-referrer",
-          "Content-Security-Policy":"default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; style-src 'self'"
+          "Vary":"Accept",
+          "Link":'</llms.txt>; rel="describedby", </index.md>; rel="alternate"; type="text/markdown"',
+          "Content-Security-Policy":"default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; style-src 'self'; img-src 'self'; manifest-src 'self'"
         });
         res.end(renderLanding(Boolean(identity)));
         return;

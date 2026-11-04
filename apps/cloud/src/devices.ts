@@ -9,6 +9,7 @@ import type {PgManagedReadAccess} from "./connector-managed-read-access.js";
 export type ManagedReadPort=Pick<PgManagedReadAccess,"enabledProjectIds"|"setEnabled"|"isEnabled">;
 export type DeviceConnectionLookup=(ownerSub:string,deviceId:string)=>boolean;
 export type DeviceManagementPort=Pick<PgDeviceManagement,"list"|"revokeDevice"> &
+  Partial<Pick<PgDeviceManagement,"deleteRevokedDevice">> &
   Partial<Pick<PgDeviceManagement,"enableDevice"|"createProject"|"listProjects">>;
 const FIVE_MINUTES=300_000;
 const DEVICE_ID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -41,7 +42,7 @@ function reply({status,devices=[],message,stateCookie,enrollmentAvailable=true,
     // Preserve Origin on same-origin form POSTs; Chrome sends Origin: null
     // under no-referrer. Cross-site referrers remain hidden.
     "Referrer-Policy":"same-origin","X-Content-Type-Options":"nosniff",
-    "Content-Security-Policy":"default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; style-src 'self'"
+    "Content-Security-Policy":"default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; style-src 'self'; img-src 'self'; manifest-src 'self'"
   }});
   if(stateCookie)response.headers.append("Set-Cookie",stateCookie);
   return response;
@@ -100,6 +101,8 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
   const stamp=String(Date.now()),nonce=randomBytes(16).toString("base64url");
   const rows=await Promise.all(list.map(async d=>({...d,
     csrf:await csrf(secret,who.user,who.session,d.id,stamp,nonce),
+    deleteCsrf:d.revoked&&devices.deleteRevokedDevice?
+      await csrf(secret,who.user,who.session,d.id,stamp,nonce,"device-delete-v1"):undefined,
     enableCsrf:devices.enableDevice?
       await csrf(secret,who.user,who.session,d.id,stamp,nonce,"device-enable-v1"):undefined,
     projectCsrf:devices.createProject?
@@ -107,8 +110,11 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
     connectionState: deviceConnection&&d.enabled&&!d.revoked?
       (deviceConnection(who.user,d.id)?"connected" as const:"disconnected" as const):undefined
   })));
-  const note=new URL(req.url).searchParams.has("revoked")?
-    "Device key revoked; its sessions and associated project/client permissions were disabled.":undefined;
+  const url=new URL(req.url);
+  const note=url.searchParams.has("deleted")?
+    "Revoked device and its registered projects were permanently removed.":
+    url.searchParams.has("revoked")?
+      "Device key revoked; its sessions and associated project/client permissions were disabled.":undefined;
   const projects=enrollmentAvailable&&devices.listProjects?
     await devices.listProjects(who.user):[];
   let clients:string[]=[];
@@ -162,6 +168,33 @@ async function revoke(req:Request,identity:BrowserIdentity,origin:string,
     "Set-Cookie":cookie("",origin,0)
   }});
 }
+async function deleteRevoked(req:Request,identity:BrowserIdentity,origin:string,
+  devices:DeviceManagementPort):Promise<Response>{
+  if(!identity.api||!identity.$context||!devices.deleteRevokedDevice)return error(503);
+  if(req.headers.get("origin")!==origin)return error(403);
+  if(req.headers.get("content-type")?.split(";")[0].trim()!=="application/x-www-form-urlencoded")
+    return error(415);
+  const raw=await req.text();
+  if(raw.length>2048)return error(413);
+  const fields=new URLSearchParams(raw);
+  if([...fields.keys()].length!==2||
+    fields.getAll("device_id").length!==1||fields.getAll("csrf").length!==1)return error(400);
+  const id=fields.get("device_id")??"",proof=fields.get("csrf")??"";
+  if(!DEVICE_ID.test(id))return error(400);
+  const who=userOf(await identity.api.getSession({headers:req.headers}));
+  if(!who)return error(401);
+  const {secret}=await identity.$context;
+  if(!await checkCsrf(req,origin,secret,who,id,proof,"device-delete-v1"))return error(403);
+  let success:boolean;
+  try{success=await devices.deleteRevokedDevice(who.user,id);}
+  catch{return error(503);}
+  if(!success)return error(404);
+  return new Response(null,{status:303,headers:{
+    Location:"/devices?deleted=1","Cache-Control":"no-store",
+    "Set-Cookie":cookie("",origin,0)
+  }});
+}
+
 async function activate(req:Request,identity:BrowserIdentity,origin:string,
   devices:DeviceManagementPort,action:"device-enable-v1"|"project-create-v1"):Promise<Response>{
   if(!identity.api||!identity.$context)return error(503);
@@ -263,13 +296,15 @@ export async function devicesResponse(req:Request,identity:BrowserIdentity,origi
   grants?:Pick<GrantManagement,"setBrowserGrant">,
   deviceConnection?:DeviceConnectionLookup,managedRead?:ManagedReadPort):Promise<Response|null>{
   const path=new URL(req.url).pathname;
-  if(!["/devices","/devices/revoke","/devices/enable","/devices/projects/create",
+  if(!["/devices","/devices/revoke","/devices/delete","/devices/enable","/devices/projects/create",
     "/devices/projects/grant","/devices/projects/managed"].includes(path))
     return null;
   if(!devices)return error(503);
   if(path==="/devices"&&req.method==="GET")
     return list(req,identity,origin,devices,enrollmentAvailable,grants,deviceConnection,managedRead);
   if(path==="/devices/revoke"&&req.method==="POST")return revoke(req,identity,origin,devices);
+  if(path==="/devices/delete"&&req.method==="POST")
+    return deleteRevoked(req,identity,origin,devices);
   if(enrollmentAvailable && req.method==="POST"){
     if(path==="/devices/enable")return activate(req,identity,origin,devices,"device-enable-v1");
     if(path==="/devices/projects/create")return activate(req,identity,origin,devices,"project-create-v1");

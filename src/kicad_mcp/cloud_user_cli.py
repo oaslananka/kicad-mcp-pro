@@ -9,7 +9,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import socket
+import subprocess
 import sys
 import time
 import uuid
@@ -60,6 +62,53 @@ def _discover_kicad_project(folder: Path) -> tuple[Path, str]:
     if sanitized and _STEM.fullmatch(sanitized[:80]):
         return resolved, sanitized[:80]
     return resolved, "project"
+
+
+def _browse_local_project_folder() -> Path:
+    """Open a native *local* directory picker. Never send the path to Cloud."""
+    zenity = shutil.which("zenity") if sys.platform.startswith("linux") else None
+    if zenity:
+        try:
+            selected = subprocess.run(
+                [
+                    zenity,
+                    "--file-selection",
+                    "--directory",
+                    "--title=Choose your local KiCad project folder",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise typer.BadParameter(
+                "Folder picker unavailable; use --project-dir /path/to/project."
+            ) from exc
+        if selected.returncode != 0 or not selected.stdout.strip():
+            raise typer.BadParameter("No project folder selected. Setup was not changed.")
+        return Path(selected.stdout.strip())
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+
+        dialog = tk.Tk()
+        dialog.withdraw()
+        try:
+            selection = filedialog.askdirectory(
+                parent=dialog,
+                title="Choose your local KiCad project folder",
+                mustexist=True,
+            )
+        finally:
+            dialog.destroy()
+    except (ImportError, RuntimeError, OSError) as exc:
+        raise typer.BadParameter(
+            "No graphical folder picker available; use --project-dir /path/to/project."
+        ) from exc
+    if not selection:
+        raise typer.BadParameter("No project folder selected. Setup was not changed.")
+    return Path(selection)
 
 
 def _write_project_record(root: Path, record: dict[str, str]) -> None:
@@ -298,6 +347,13 @@ def setup(
             help="Path to KiCad project directory (defaults to current directory).",
         ),
     ] = None,
+    browse: Annotated[
+        bool,
+        typer.Option(
+            "--browse",
+            help="Choose a local KiCad project folder using a native desktop dialog.",
+        ),
+    ] = False,
     alias: Annotated[
         str | None,
         typer.Option(
@@ -329,7 +385,10 @@ def setup(
 ) -> None:
     """One-command onboarding: pair device, register KiCad project, and enable Connector."""
     origin = _verified_origin(cloud_origin)
-    target_dir, stem = _discover_kicad_project(project_dir or Path.cwd())
+    if browse and project_dir is not None:
+        raise typer.BadParameter("Choose either --browse or --project-dir, not both.")
+    selected = _browse_local_project_folder() if browse else project_dir or Path.cwd()
+    target_dir, stem = _discover_kicad_project(selected)
     device_alias = _resolve_device_alias(alias)
 
     from kicad_mcp.cloud_local_registry import default_registry_root

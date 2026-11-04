@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">KiCad MCP Pro</title>
+  <desc id="desc">A cyan K formed by circuit traces and plated pads inside a rounded navy frame.</desc>
+  <defs>
+    <linearGradient id="case" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#063451"/>
+      <stop offset=".5" stop-color="#021725"/>
+      <stop offset="1" stop-color="#000e1c"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2=".8" y2="1">
+      <stop stop-color="#00e4f5"/>
+      <stop offset=".5" stop-color="#00a7df"/>
+      <stop offset="1" stop-color="#00618d"/>
+    </linearGradient>
+    <linearGradient id="copper" x1="0" y1="1" x2="1" y2="0">
+      <stop stop-color="#00d8d3"/>
+      <stop offset="1" stop-color="#00b6eb"/>
+    </linearGradient>
+    <radialGradient id="light" cx=".5" cy="1" r=".65">
+      <stop stop-color="#00d8ef" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#00d8ef" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="12" y="12" width="488" height="488" rx="88" fill="#001522"/>
+  <rect x="20" y="20" width="472" height="472" rx="80" fill="url(#case)" stroke="#004765" stroke-width="8"/>
+  <rect x="22" y="22" width="468" height="468" rx="78" fill="none" stroke="url(#edge)" stroke-width="2"/>
+  <rect x="40" y="40" width="432" height="432" rx="60" fill="#00111f" stroke="#00577c" stroke-width="1.5"/>
+  <rect x="40" y="40" width="432" height="432" rx="60" fill="url(#light)"/>
+  <g fill="none" stroke="url(#copper)" stroke-width="14" stroke-linejoin="miter">
+    <path d="M126 118H206V190H218L290 118H382L260 246L382 374H290L220 304H206V374H126V286L164 248V166"/>
+    <path d="M126 118V224L120 230M164 248H184L206 226H242L302 158M164 336V300L194 270H238L304 336"/>
+  </g>
+  <path d="M120 220L130 230L120 240L110 230Z" fill="#00c4de"/>
+  <g fill="#001623" stroke="url(#copper)" stroke-width="11">
+    <circle cx="126" cy="118" r="12"/>
+    <circle cx="206" cy="118" r="12"/>
+    <circle cx="382" cy="118" r="12"/>
+    <circle cx="164" cy="166" r="12"/>
+    <circle cx="302" cy="158" r="12"/>
+    <circle cx="164" cy="248" r="12"/>
+    <circle cx="164" cy="336" r="12"/>
+    <circle cx="206" cy="374" r="12"/>
+    <circle cx="304" cy="336" r="12"/>
+    <circle cx="382" cy="374" r="12"/>
+  </g>
+</svg>

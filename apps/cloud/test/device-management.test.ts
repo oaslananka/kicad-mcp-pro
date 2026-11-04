@@ -108,3 +108,52 @@ test("only owner enables an unrevoked enrolled device and registers a read-only 
     assert.equal((await manager.listProjects(owner))[0].enabled,false);
   });
 });
+
+
+test("permanent deletion of a revoked device cascades projects, grants and credential but not other owners",
+  {skip:!process.env.TEST_DATABASE_URL},async()=>{
+  await inIsolatedDatabase(process.env.TEST_DATABASE_URL!,[
+    "001_inventory.pgsql","002_client_grants.pgsql","007_device_pairing.pgsql",
+    "008_device_credentials.pgsql","009_device_handshake.pgsql",
+    "010_connector_sessions.pgsql"
+  ],async db=>{
+    const owner="owner-delete",outsider="another-owner";
+    const key=generateKeyPairSync("ed25519");
+    const pub=key.publicKey.export({format:"der",type:"spki"}) as Buffer;
+    const pairing=new PgPairingChallenges(db,randomBytes(32));
+    const challenge=await pairing.issue("Disposable revoked device",pub);
+    assert.equal(await pairing.review(challenge.id,owner,challenge.userCode,"approve"),"approved");
+    const enrollment=await pairing.enroll(challenge.id,challenge.deviceCode,
+      sign(null,redemptionProof(challenge.id,challenge.deviceCode),key.privateKey));
+    assert.equal(enrollment.kind,"enrolled");
+    if(enrollment.kind!=="enrolled")return;
+    const device=enrollment.deviceId;
+    const manager=new PgDeviceManagement(db);
+    assert.equal(await manager.deleteRevokedDevice(owner,device),false);
+    assert.equal(await manager.deleteRevokedDevice(outsider,device),false);
+    assert.equal((await manager.list(owner)).length,1);
+    assert.equal(await manager.enableDevice(owner,device),true);
+    const project=await manager.createProject(owner,device,"Delete test fixture");
+    assert.ok(project);
+    await db.query("INSERT INTO project_client_grants(project_id,owner_sub,client_id,enabled) "+
+      "VALUES($1,$2,'client-delete',true)",[project,owner]);
+    assert.equal(await manager.revokeDevice(owner,device),true);
+    assert.equal(await manager.deleteRevokedDevice(outsider,device),false);
+    assert.equal(await manager.deleteRevokedDevice(owner,device),true);
+    assert.equal(await manager.deleteRevokedDevice(owner,device),false);
+    assert.deepEqual(await manager.list(owner),[]);
+    assert.deepEqual(await manager.listProjects(owner),[]);
+    for(const [table,col] of [
+      ["devices","id"],["device_credentials","device_id"],
+      ["projects","device_id"],["connector_sessions","device_id"],
+      ["device_handshake_challenges","device_id"],
+    ]){
+      const q=await db.query("SELECT count(*)::integer AS n FROM "+table+" WHERE "+col+"=$1",[device]);
+      assert.equal(q.rows[0].n,0,table);
+    }
+    const grants=await db.query("SELECT count(*)::integer AS n FROM project_client_grants "+
+      "WHERE project_id=$1",[project]);
+    assert.equal(grants.rows[0].n,0);
+    assert.equal((await pairing.activeDevicePublicKey(owner,device)),null);
+  });
+});

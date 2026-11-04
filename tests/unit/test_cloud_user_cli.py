@@ -698,3 +698,200 @@ def test_setup_owner_sub_missing_and_pairing_error(tmp_path: Path, monkeypatch) 
     )
     assert res2.exit_code != 0
     assert "Project registration failed on Cloud" in res2.output
+
+
+def test_cloud_setup_browse_uses_only_local_picker_without_cloud_upload(
+    monkeypatch, tmp_path
+) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    folder = tmp_path / "pcb-project"
+    folder.mkdir()
+    (folder / "fixture.kicad_pro").write_text("{}", encoding="utf-8")
+    calls: list[str] = []
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_browse_local_project_folder",
+        lambda: calls.append("picked") or folder,
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_local_registry.default_registry_root",
+        lambda: tmp_path / "local-registry",
+    )
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_try_reconnect_existing",
+        lambda _root, _origin: calls.append("reconnect") or True,
+    )
+    result = CliRunner().invoke(app, ["cloud", "setup", "--browse", "--no-browser"])
+    assert result.exit_code == 0, result.output
+    assert calls == ["picked", "reconnect"]
+    assert not (tmp_path / "local-registry").exists()
+
+
+def test_cloud_setup_rejects_conflicting_picker_and_directory(monkeypatch, tmp_path) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_browse_local_project_folder",
+        lambda: pytest.fail("conflicting options must never open picker"),
+    )
+    result = CliRunner().invoke(app, ["cloud", "setup", "--browse", "--project-dir", str(tmp_path)])
+    # Typer/Rich wraps and colorizes error messages differently on each OS.
+    # The validation exit code, plus the failing picker mock, is the contract.
+    assert result.exit_code == 2
+    assert "Usage:" in result.output
+
+
+def test_cloud_setup_cancelled_picker_cannot_enroll_or_change_registry(
+    monkeypatch, tmp_path
+) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    def cancelled() -> Path:
+        raise cloud_user_cli.typer.BadParameter(
+            "No project folder selected. Setup was not changed."
+        )
+
+    monkeypatch.setattr(cloud_user_cli, "_browse_local_project_folder", cancelled)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_local_registry.default_registry_root",
+        lambda: pytest.fail("canceled choice must stop before registry access"),
+    )
+    result = CliRunner().invoke(app, ["cloud", "setup", "--browse"])
+    assert result.exit_code != 0
+    assert "No project folder selected" in result.output
+
+
+@pytest.mark.parametrize(
+    ("status", "path_text", "expected"),
+    [
+        (0, "/home/example/Circuit Board\n", "/home/example/Circuit Board"),
+        (1, "", None),
+        (0, "  \n", None),
+    ],
+)
+def test_cloud_native_zenity_folder_picker(
+    monkeypatch, status: int, path_text: str, expected: str | None
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli
+
+    argv_seen: list[list[str]] = []
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="linux"))
+    monkeypatch.setattr(cloud_user_cli.shutil, "which", lambda _name: "/usr/bin/zenity")
+
+    def dialog_command(argv, **kwargs: object):
+        argv_seen.append(argv)
+        assert argv[0] == "/usr/bin/zenity"
+        assert "--directory" in argv
+        assert kwargs == {
+            "capture_output": True,
+            "text": True,
+            "check": False,
+            "timeout": 120,
+        }
+        return SimpleNamespace(returncode=status, stdout=path_text)
+
+    monkeypatch.setattr(cloud_user_cli.subprocess, "run", dialog_command)
+    if expected is None:
+        with pytest.raises(cloud_user_cli.typer.BadParameter, match="No project folder"):
+            cloud_user_cli._browse_local_project_folder()
+    else:
+        assert cloud_user_cli._browse_local_project_folder() == Path(expected)
+    assert len(argv_seen) == 1
+
+
+@pytest.mark.parametrize("reason", ["timeout", "unavailable"])
+def test_cloud_native_zenity_picker_launch_failure(monkeypatch, reason: str) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="linux"))
+    monkeypatch.setattr(cloud_user_cli.shutil, "which", lambda _name: "/usr/bin/zenity")
+
+    def error_command(_argv, **_kwargs: object):
+        if reason == "timeout":
+            raise cloud_user_cli.subprocess.TimeoutExpired("/usr/bin/zenity", 120)
+        raise OSError("display backend unavailable")
+
+    monkeypatch.setattr(cloud_user_cli.subprocess, "run", error_command)
+    with pytest.raises(cloud_user_cli.typer.BadParameter, match="Folder picker unavailable"):
+        cloud_user_cli._browse_local_project_folder()
+
+
+@pytest.mark.parametrize(
+    ("selected", "should_succeed"),
+    [("/home/example/PCB fixture", True), ("", False)],
+)
+def test_cloud_native_tkinter_folder_picker(
+    monkeypatch, selected: str, should_succeed: bool
+) -> None:
+    import sys as interpreter
+    from types import ModuleType, SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli
+
+    events: list[str] = []
+    dialog = SimpleNamespace(
+        withdraw=lambda: events.append("hide"),
+        destroy=lambda: events.append("destroy"),
+    )
+    fake_tk = ModuleType("tkinter")
+    fake_tk.Tk = lambda: dialog  # type: ignore[attr-defined]
+
+    def select_directory(**options: object):
+        assert options["parent"] is dialog
+        assert options["mustexist"] is True
+        events.append("select")
+        return selected
+
+    fake_tk.filedialog = SimpleNamespace(askdirectory=select_directory)  # type: ignore[attr-defined]
+    monkeypatch.setitem(interpreter.modules, "tkinter", fake_tk)
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="darwin"))
+    if should_succeed:
+        assert cloud_user_cli._browse_local_project_folder() == Path(selected)
+    else:
+        with pytest.raises(cloud_user_cli.typer.BadParameter, match="No project folder"):
+            cloud_user_cli._browse_local_project_folder()
+    assert events == ["hide", "select", "destroy"]
+
+
+@pytest.mark.parametrize("reason", ["not_installed", "display_error", "dialog_error"])
+def test_cloud_native_tkinter_picker_errors_cleanly(monkeypatch, reason: str) -> None:
+    import sys as interpreter
+    from types import ModuleType, SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="win32"))
+    if reason == "not_installed":
+        monkeypatch.setitem(interpreter.modules, "tkinter", None)
+    else:
+        events: list[str] = []
+        dialog = SimpleNamespace(
+            withdraw=lambda: events.append("hide"),
+            destroy=lambda: events.append("destroy"),
+        )
+        fake_tk = ModuleType("tkinter")
+        if reason == "display_error":
+
+            def raise_display():
+                raise RuntimeError("no desktop session")
+
+            fake_tk.Tk = raise_display  # type: ignore[attr-defined]
+        else:
+            fake_tk.Tk = lambda: dialog  # type: ignore[attr-defined]
+
+            def raise_dialog(**_kwargs: object):
+                raise OSError("folder dialog cannot launch")
+
+            fake_tk.filedialog = SimpleNamespace(askdirectory=raise_dialog)  # type: ignore[attr-defined]
+        monkeypatch.setitem(interpreter.modules, "tkinter", fake_tk)
+    with pytest.raises(cloud_user_cli.typer.BadParameter, match="No graphical folder picker"):
+        cloud_user_cli._browse_local_project_folder()
+    if reason == "dialog_error":
+        assert events == ["hide", "destroy"]
