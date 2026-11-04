@@ -1,13 +1,15 @@
 import {renderPage} from "./ui-shell.js";
 import {Icon} from "./ui-icons.js";
 import type {ManagedDevice} from "./device-management.js";
+import type {BrowserGrantSummary} from "./grants.js";
 export function renderDevicesPage(
   devices:ReadonlyArray<ManagedDevice & {csrf:string;deleteCsrf?:string;enableCsrf?:string;projectCsrf?:string;
     connectionState?:"connected"|"disconnected"}>,
   notice?:string,enrollmentAvailable=true,
   projects:ReadonlyArray<{id:string;deviceId:string;alias:string;enabled:boolean;grantCsrf?:string;
     managedEnabled?:boolean;managedCsrf?:string}>=[],
-  ownerSub?:string,clients:ReadonlyArray<string>=[]
+  ownerSub?:string,clients:ReadonlyArray<string>=[],
+  savedGrants:ReadonlyArray<BrowserGrantSummary>=[]
 ):string {
   // Opaque identifiers remain in form fields for the existing backend
   // contract; the owner-facing page uses human-readable aliases instead.
@@ -114,6 +116,24 @@ export function renderDevicesPage(
               <p>On device: {deviceNames.get(project.deviceId)??"Previously registered device"}.
                 {project.enabled?" Read-only metadata registered.":" Disabled."}{" "}
                 Local folder must be selected separately on the device. Per-client access is denied until granted.</p>
+              {project.grantCsrf&&savedGrants.some(g=>g.projectId===project.id)?
+                <div className="project-grants"><strong>Saved client permissions</strong>
+                  <p>These are stored policies, not proof that a client is connected or that remote editing is available.</p>
+                  <ul>{savedGrants.filter(g=>g.projectId===project.id).map(g=><li key={g.clientId}>
+                    <span className="grant-client">{g.clientId}</span>{" "}
+                    <span className="permission-tag">{g.maxMode==="readonly"?"Read only":
+                      g.maxMode==="write"?"Edit configured (not active)":
+                      "Other permission (not remote editing)"}</span>
+                    <form method="post" action="/devices/projects/grant">
+                      <input type="hidden" name="project_id" value={project.id}/>
+                      <input type="hidden" name="client_id" value={g.clientId}/>
+                      <input type="hidden" name="csrf" value={project.grantCsrf}/>
+                      <button className="button danger" type="submit" name="enabled" value="false">
+                        Revoke this client
+                      </button>
+                    </form>
+                  </li>)}</ul>
+                </div>:null}
               {project.enabled&&project.managedCsrf?<>
                 <p>Managed Connector: {project.managedEnabled?"On (read-only project summary)":"Off"}. Per-client access is controlled separately.</p>
                 <form method="post" action="/devices/projects/managed">

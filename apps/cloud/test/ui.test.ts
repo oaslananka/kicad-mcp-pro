@@ -180,6 +180,19 @@ test("device and project controls show aliases while keeping opaque IDs in forms
   assert.match(html,/name="device_id" value="11111111-1111-4111-8111-111111111111"/);
   assert.match(html,/name="client_id"/);
   assert.match(html,/name="csrf"/);
+  const withGrants=renderDevicesPage(
+    [{id:deviceId,alias:deviceName,enabled:true,revoked:false,
+      fingerprint:"unused",createdAt:new Date(),csrf:"device-csrf"}],
+    undefined,true,
+    [{id:projectId,deviceId,alias:"Controller PCB",enabled:true,grantCsrf:"grant-csrf"}],
+    undefined,[],[{projectId,clientId:"client<svg onload=bad>",maxMode:"readonly"}]);
+  assert.match(withGrants,/Saved client permissions/);
+  assert.match(uiCss,/\.project-grants li/);
+  assert.match(withGrants,/Read only/);
+  assert.match(withGrants,/Revoke this client/);
+  assert.match(withGrants,/value="false"/);
+  assert.match(withGrants,/client&lt;svg onload=bad&gt;/);
+  assert.doesNotMatch(withGrants,/<svg onload|<script>/);
   const escaped=renderDevicesPage(
     [{id:deviceId,alias:"<script>device</script>",enabled:true,revoked:false,
       fingerprint:"secret",createdAt:new Date(),csrf:"csrf"}],
