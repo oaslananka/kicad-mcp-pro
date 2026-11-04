@@ -65,6 +65,44 @@ test("browser owner grants require current OAuth consent and cannot revive revok
         'VALUES($1,$2,$3,$4,clock_timestamp(),clock_timestamp())',
         ["consent-2",client,owner,JSON.stringify(["projects:read"])]);
       assert.equal(await grants.setBrowserGrant(owner,project!,client,true),true);
+      // #1611: an owner enabling project edit mode is not OAuth write consent.
+      await db.query("UPDATE projects SET max_mode='write' WHERE id=$1",[project]);
+      const edit={clientId:client,enabled:true,maxMode:"write" as const};
+      await assert.rejects(grants.setGrant(owner,"owner-browser",project!,edit),
+        /WRITE_CONSENT_REQUIRED/);
+      await db.query('UPDATE "oauthClient" SET "scopes"=$2 WHERE "clientId"=$1',
+        [client,JSON.stringify(["projects:read","projects:write"])]);
+      await assert.rejects(grants.setGrant(owner,"owner-browser",project!,edit),
+        /WRITE_CONSENT_REQUIRED/,"read-only user consent cannot be upgraded implicitly");
+      await db.query(
+        'INSERT INTO "oauthConsent"("id","clientId","userId","scopes","createdAt","updatedAt") '+
+        'VALUES($1,$2,$3,$4,clock_timestamp(),clock_timestamp())',
+        ["consent-write-1",client,owner,JSON.stringify(["projects:read","projects:write"])]);
+      await db.query('UPDATE "oauthClient" SET "scopes"=$2 WHERE "clientId"=$1',
+        [client,JSON.stringify(["projects:read"])]);
+      await assert.rejects(grants.setGrant(owner,"owner-browser",project!,edit),
+        /WRITE_CONSENT_REQUIRED/,"client registration must also permit write scope");
+      await db.query('UPDATE "oauthClient" SET "scopes"=$2 WHERE "clientId"=$1',
+        [client,JSON.stringify(["projects:read","projects:write"])]);
+      await db.query('UPDATE "oauthClient" SET "disabled"=true WHERE "clientId"=$1',[client]);
+      await assert.rejects(grants.setGrant(owner,"owner-browser",project!,edit),
+        /WRITE_CONSENT_REQUIRED/,"disabled OAuth clients cannot receive edit grants");
+      await db.query('UPDATE "oauthClient" SET "disabled"=false WHERE "clientId"=$1',[client]);
+      const externalIssuer=new PgGrantManagement(scoped,false);
+      try{
+        await assert.rejects(externalIssuer.setGrant(owner,"owner-browser",project!,edit),
+          /WRITE_CONSENT_REQUIRED/,"external issuers have no write-consent lifecycle");
+      }finally{await externalIssuer.close();}
+      assert.equal(await grants.setGrant(owner,"owner-browser",project!,edit),true);
+      assert.deepEqual((await db.query("SELECT enabled,max_mode FROM project_client_grants "+
+        "WHERE project_id=$1 AND client_id=$2",[project,client])).rows,
+        [{enabled:true,max_mode:"write"}]);
+      await grants.revokeClient(owner,client);
+      await assert.rejects(grants.setGrant(owner,"owner-browser",project!,edit),
+        /WRITE_CONSENT_REQUIRED/,"revoking client invalidates prior edit consent");
+      // Turning off an old grant must work even after OAuth revocation.
+      assert.equal(await grants.setGrant(owner,"owner-browser",project!,
+        {...edit,enabled:false}),true);
       await devices.revokeDevice(owner,enrolled.deviceId);
       assert.equal(await grants.setBrowserGrant(owner,project!,client,true),false);
     }finally{await grants.close();}

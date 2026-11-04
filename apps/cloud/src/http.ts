@@ -322,6 +322,9 @@ async function handleRequest(
           if (error instanceof Error && error.message === "POLICY_EXCEEDS_PROJECT") {
             deny(res, 409, "grant_exceeds_project_policy"); return;
           }
+          if (error instanceof Error && error.message === "WRITE_CONSENT_REQUIRED") {
+            deny(res, 409, "write_consent_required"); return;
+          }
           throw error;
         }
       }

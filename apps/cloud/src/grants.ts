@@ -123,6 +123,13 @@ export class PgGrantManagement extends PgInventory implements GrantManagement {
     const db: PoolClient = await this.pool.connect();
     try {
       await db.query("BEGIN");
+      if(grant.enabled&&grant.maxMode==="write"&&this.builtInTokenStore){
+        // Match revokeClient / browser-grant order so an old consent cannot
+        // race a client revocation and silently regain edit permissions.
+        await db.query(
+          "SELECT pg_advisory_xact_lock(hashtextextended($1 || chr(31) || $2, 48296018))",
+          [ownerSub,grant.clientId]);
+      }
       // Serialize against future project mode/ownership changes, and never accept foreign owners.
       const project = await db.query<{max_mode: AccessMode}>(
         "SELECT max_mode FROM projects WHERE id=$1 AND owner_sub=$2 FOR UPDATE", [projectId, ownerSub]
@@ -133,6 +140,28 @@ export class PgGrantManagement extends PgInventory implements GrantManagement {
       }
       if (grant.enabled && grant.maxMode !== "readonly" && grant.maxMode !== project.rows[0].max_mode) {
         throw new Error("POLICY_EXCEEDS_PROJECT");
+      }
+      if(grant.enabled&&grant.maxMode==="write"){
+        // A project policy change and the management API alone must not
+        // promote an existing read-only OAuth consent into write access.
+        // Keep this unreachable for external issuers until their consent
+        // and revocation lifecycle is deliberately integrated.
+        if(!this.builtInTokenStore)throw new Error("WRITE_CONSENT_REQUIRED");
+        const consent=await db.query<{created_at:Date}>(
+          'SELECT c."createdAt" AS created_at FROM "oauthConsent" c '+
+          'JOIN "oauthClient" o ON o."clientId"=c."clientId" '+
+          'WHERE c."userId"=$1 AND c."clientId"=$2 '+
+          'AND c."scopes" @> $3::jsonb AND o."scopes" @> $3::jsonb '+
+          'AND o."disabled" IS DISTINCT FROM true '+
+          'ORDER BY c."createdAt" DESC LIMIT 1 FOR SHARE OF c,o',
+          [ownerSub,grant.clientId,JSON.stringify(["projects:read","projects:write"])]);
+        const cutoff=await db.query<{revoked_at:Date}>(
+          "SELECT revoked_at FROM client_token_cutoffs "+
+          "WHERE owner_sub=$1 AND client_id=$2 FOR SHARE",[ownerSub,grant.clientId]);
+        const approved=consent.rows[0]?.created_at;
+        if(!approved||(cutoff.rows[0]&&
+          approved.getTime()<=cutoff.rows[0].revoked_at.getTime()))
+          throw new Error("WRITE_CONSENT_REQUIRED");
       }
       await db.query(
         "INSERT INTO project_client_grants(project_id,owner_sub,client_id,enabled,max_mode) VALUES($1,$2,$3,$4,$5) ON CONFLICT(project_id,client_id) DO UPDATE SET enabled=excluded.enabled,max_mode=excluded.max_mode WHERE project_client_grants.owner_sub=excluded.owner_sub",
