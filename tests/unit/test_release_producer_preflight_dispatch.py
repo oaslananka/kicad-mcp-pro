@@ -34,9 +34,11 @@ def test_only_manual_nonpublishing_dispatch_and_minimal_permissions() -> None:
         "include_registry",
     }
     for name in ("server_tag", "schemas_tag", "source_commit"):
-        assert inputs[name]["required"] is True and inputs[name]["type"] == "string"
+        assert inputs[name]["required"] is True
+        assert inputs[name]["type"] == "string"
     for name in ("npm_tag", "gui_tag"):
-        assert inputs[name]["required"] is False and inputs[name]["type"] == "string"
+        assert inputs[name]["required"] is False
+        assert inputs[name]["type"] == "string"
     for name in ("include_npm", "include_gui", "include_container", "include_registry"):
         assert inputs[name]["type"] == "boolean"
         assert inputs[name]["required"] is False
