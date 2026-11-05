@@ -11,8 +11,10 @@ const BATCH_SIZE=100;
  */
 export type RetentionTable=
   "connector_sessions"|"device_handshake_challenges"|"pairing_challenges"|
-  "pairing_review_budget"|"pairing_device_budget";
+  "pairing_review_budget"|"pairing_device_budget"|
+  "connector_write_proof_reservations";
 const ORDER:readonly RetentionTable[]=[
+  "connector_write_proof_reservations",
   "connector_sessions",
   "device_handshake_challenges",
   "pairing_challenges",
@@ -31,6 +33,10 @@ export type RetentionSummary={
 };
 
 function selection(table:RetentionTable):{key:string;condition:string}{
+  if(table==="connector_write_proof_reservations")return {
+    key:"request_id",
+    condition:"expires_at < statement_timestamp() - interval '"+BUDGET_GRACE+"'"
+  };
   if(table==="connector_sessions")return {
     key:"id",
     condition:"expires_at < statement_timestamp() - interval '"+PAIRING_GRACE+"'"
