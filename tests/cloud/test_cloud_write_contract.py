@@ -101,26 +101,31 @@ def test_untrusted_fields_are_denied(where: str, key: str, value: object) -> Non
     data = fixture()
     target = data if where == "frame" else cast(dict[str, object], data["command"])
     target[key] = value
+    payload = json.dumps(data).encode()
     with pytest.raises(LocalWriteDeniedError, match="^request denied$"):
-        parse(json.dumps(data).encode())
+        parse(payload)
 
 
 def test_replay_binding_and_noncanonical_json_are_denied() -> None:
     value = json.dumps(fixture()).encode()
+    invalid_session_binding = replace(BINDING, session_id=PROJECT)
     with pytest.raises(LocalWriteDeniedError):
-        parse(value, binding=replace(BINDING, session_id=PROJECT))
+        parse(value, binding=invalid_session_binding)
+    unauthorized_binding = replace(BINDING, operations=frozenset())
     with pytest.raises(LocalWriteDeniedError):
-        parse(value, binding=replace(BINDING, operations=frozenset()))
+        parse(value, binding=unauthorized_binding)
+    mismatched_policy = replace(POLICY, project_id=DEVICE)
     with pytest.raises(LocalWriteDeniedError):
-        parse(value, policy=replace(POLICY, project_id=DEVICE))
+        parse(value, policy=mismatched_policy)
     with pytest.raises(LocalWriteDeniedError):
         parse(value, now=NOW + 1000)
     with pytest.raises(LocalWriteDeniedError):
         parse(b'{"kind": "connector.write_request", "kind": "connector.write_request"}')
     with pytest.raises(LocalWriteDeniedError):
         parse(value + b" " * (MAX_WRITE_FRAME_BYTES + 1))
+    invalid_numeric_payload = value.replace(b"42.5", b"NaN")
     with pytest.raises(LocalWriteDeniedError):
-        parse(value.replace(b"42.5", b"NaN"))
+        parse(invalid_numeric_payload)
 
 
 def test_cloud_and_local_v1_contract_share_golden_fixture() -> None:

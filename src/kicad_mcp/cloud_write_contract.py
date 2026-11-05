@@ -24,7 +24,7 @@ _UUID = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
     re.ASCII,
 )
-_REFERENCE = re.compile(r"[A-Z]{1,3}[1-9][0-9]{0,5}", re.ASCII)
+_REFERENCE = re.compile(r"[A-Z]{1,3}[1-9]\d{0,5}", re.ASCII)
 _SHA256 = re.compile(r"[a-f0-9]{64}", re.ASCII)
 _FRAME_FIELDS = frozenset(
     {
@@ -88,7 +88,7 @@ def parse_local_write_contract(
             object_pairs_hook=_unique_pairs,
             parse_constant=_reject_nonstandard,
         )
-    except (ValueError, UnicodeError, TypeError) as exc:
+    except (ValueError, TypeError) as exc:
         raise LocalWriteDeniedError(_DENIED) from exc
     if not isinstance(parsed, dict) or parsed.keys() != _FRAME_FIELDS:
         raise LocalWriteDeniedError(_DENIED)
@@ -123,7 +123,7 @@ def parse_local_write_contract(
         or body["deviceId"] != operator_project.device_id
         or body["projectId"] != operator_project.project_id
         or type(verified.session_expires_unix_ms) is not int
-        or not now_unix_ms < verified.session_expires_unix_ms
+        or now_unix_ms >= verified.session_expires_unix_ms
         or type(deadline) is not int
         or not now_unix_ms
         < deadline
