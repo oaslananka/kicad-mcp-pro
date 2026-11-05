@@ -9,7 +9,8 @@ const migrations=[
   "001_inventory.pgsql","002_client_grants.pgsql",
   "007_device_pairing.pgsql","008_device_credentials.pgsql",
   "009_device_handshake.pgsql","010_connector_sessions.pgsql",
-  "011_pairing_review_budget.pgsql","012_pairing_device_budget.pgsql"
+  "011_pairing_review_budget.pgsql","012_pairing_device_budget.pgsql",
+  "020_connector_write_proof_reservations.pgsql"
 ];
 type FixtureIds={
   oldSession:string;currentSession:string;oldHandshake:string;
@@ -79,6 +80,12 @@ async function fixture(db:import("pg").Pool):Promise<FixtureIds>{
     "($2,statement_timestamp()-interval '10 minutes',40)",
     [oldBudget,freshBudget]
   );
+  await db.query(
+    "INSERT INTO connector_write_proof_reservations "+
+    "(request_id,session_id,reserved_at,expires_at) "+
+    "VALUES($1,$2,statement_timestamp()-interval '3 days',"+
+    "statement_timestamp()-interval '3 days'+interval '5 seconds')",
+    [randomUUID(),currentSession]);
   return {oldSession,currentSession,oldHandshake,linkedHandshake,oldPairing,
     credentialPairing,freshPairing,oldBudget,freshBudget};
 }
@@ -91,6 +98,8 @@ async function count(db:import("pg").Pool,table:string):Promise<number>{
     case "pairing_challenges": sql="SELECT count(*)::integer AS n FROM pairing_challenges";break;
     case "pairing_review_budget": sql="SELECT count(*)::integer AS n FROM pairing_review_budget";break;
     case "pairing_device_budget": sql="SELECT count(*)::integer AS n FROM pairing_device_budget";break;
+    case "connector_write_proof_reservations":
+      sql="SELECT count(*)::integer AS n FROM connector_write_proof_reservations";break;
     default: throw new Error("invalid table");
   }
   const result=await db.query<{n:number}>(sql);
@@ -101,10 +110,12 @@ test("dry run never mutates; apply respects FK dependencies and original grace w
   await inIsolatedDatabase(conn!,migrations,async db=>{
     const f=await fixture(db);
     const before=Object.fromEntries(await Promise.all(
-      ["connector_sessions","device_handshake_challenges","pairing_challenges",
+      ["connector_write_proof_reservations","connector_sessions",
+        "device_handshake_challenges","pairing_challenges",
         "pairing_review_budget","pairing_device_budget"].map(async t=>[t,await count(db,t)])));
     const scan=await pruneExpiredMetadata(db,"dry-run");
     assert.equal(scan.mode,"dry-run");
+    assert.equal(scan.tables.connector_write_proof_reservations.eligible,1);
     assert.equal(scan.tables.connector_sessions.eligible,1);
     assert.equal(scan.tables.device_handshake_challenges.eligible,0); // linked until session removal
     assert.equal(scan.tables.pairing_challenges.eligible,1); // bound credential survives
@@ -112,6 +123,7 @@ test("dry run never mutates; apply respects FK dependencies and original grace w
     assert.equal(scan.tables.pairing_device_budget.eligible,1);
     for(const t of Object.keys(before))assert.equal(await count(db,t),before[t]);
     const applied=await pruneExpiredMetadata(db,"apply");
+    assert.equal(applied.tables.connector_write_proof_reservations.deleted,1);
     assert.equal(applied.tables.connector_sessions.deleted,1);
     assert.equal(applied.tables.device_handshake_challenges.deleted,1);
     assert.equal(applied.tables.pairing_challenges.deleted,1);

@@ -33,12 +33,14 @@ test("migration runner is repeatable, serialized and rejects altered history",
     assert.deepEqual(latest.applied,[...migrationFiles]);
     assert.deepEqual(latest.pending,[]);
     const appliedRows=await pool.query("SELECT version FROM schema_migrations ORDER BY version");
-    assert.deepEqual(appliedRows.rows.map(row=>row.version),[1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]);
+    assert.deepEqual(appliedRows.rows.map(row=>row.version),
+      migrationFiles.map((_,index)=>index+1));
     assert.equal((await pool.query("SELECT to_regclass($1) IS NOT NULL AS exists",['"oauthRefreshToken"'])).rows[0]?.exists,true);
     await pool.query("UPDATE schema_migrations SET checksum=repeat('0',64) WHERE version=5");
     await assert.rejects(migrateDatabase(pool,"status"),/history conflicts/);
     await assert.rejects(migrateDatabase(pool,"apply"),/history conflicts/);
-    assert.equal((await pool.query("SELECT count(*)::integer AS count FROM schema_migrations")).rows[0]?.count,19);
+    assert.equal((await pool.query("SELECT count(*)::integer AS count FROM schema_migrations")).rows[0]?.count,
+      migrationFiles.length);
   }finally{
     await pool?.end();
     await root.query('DROP SCHEMA IF EXISTS "'+schema+'" CASCADE');
@@ -47,5 +49,5 @@ test("migration runner is repeatable, serialized and rejects altered history",
 });
 test("migrations require an explicit action",async()=>{
   const source=await import("../src/migrations.js");
-  assert.equal(source.migrationFiles.length,19);
+  assert.equal(source.migrationFiles.length,20);
 });
