@@ -231,6 +231,23 @@ def health(url: str, expected: str, get: JsonGetter = client_request) -> dict[st
     return result
 
 
+def verified_live_revision(
+    app: dict[str, Any], public_origin: str, get: JsonGetter = client_request
+) -> str:
+    """Require Coolify's active application to match the public live revision.
+
+    A deployment must not target a stale, stopped, or misrouted application.
+    This check is read-only and runs before the deploy POST.
+    """
+    if app.get("status") != "running:healthy" or app.get("container_present") is not True:
+        raise DeployError("COOLIFY_BASELINE_NOT_HEALTHY")
+    live_sha = app.get("git_commit_sha")
+    if not isinstance(live_sha, str) or not SHA.fullmatch(live_sha):
+        raise DeployError("COOLIFY_BASELINE_SHA_UNKNOWN")
+    health(public_origin, live_sha, get)
+    return live_sha
+
+
 def load_settings(fetch: SecretGetter = get_secret) -> dict[str, str]:
     env = os.environ
     if env.get("DOPPLER_CONFIG", "main") != "main":
@@ -313,12 +330,7 @@ def preflight(
         values[key] for key in ("COOLIFY_URL", "COOLIFY_API_TOKEN", "COOLIFY_APPLICATION_UUID")
     )
     app = verify_application(api, token, uuid, get)
-    if app.get("status") != "running:healthy" or app.get("container_present") is not True:
-        raise DeployError("COOLIFY_BASELINE_NOT_HEALTHY")
-    live_sha = app.get("git_commit_sha")
-    if not isinstance(live_sha, str) or not SHA.fullmatch(live_sha):
-        raise DeployError("COOLIFY_BASELINE_SHA_UNKNOWN")
-    health(values["PUBLIC_ORIGIN"], live_sha, get)
+    live_sha = verified_live_revision(app, values["PUBLIC_ORIGIN"], get)
     print("Read-only production preflight accepted, live revision " + live_sha)
     return live_sha
 
@@ -331,13 +343,10 @@ def deploy(
     api, token, uuid = (
         values[k] for k in ("COOLIFY_URL", "COOLIFY_API_TOKEN", "COOLIFY_APPLICATION_UUID")
     )
-    verify_application(api, token, uuid, get)
-    # Before deploying, verify there is a known, healthy revision to which a
-    # reviewed operator rollback could return. Do not print response bodies.
-    previous = get(values["PUBLIC_ORIGIN"] + "/health")
-    previous_sha = previous.get("revision")
-    if not isinstance(previous_sha, str) or not SHA.fullmatch(previous_sha):
-        raise DeployError("PRIOR_LIVE_SHA_UNKNOWN")
+    app = verify_application(api, token, uuid, get)
+    # Fail closed before any deploy POST if Coolify and public health disagree.
+    # This proves the live baseline identity, not rollback-image retention or DB recovery.
+    previous_sha = verified_live_revision(app, values["PUBLIC_ORIGIN"], get)
     if previous_sha == sha:
         print("Cloud already runs the intended main SHA: " + sha)
         return
