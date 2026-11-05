@@ -19,6 +19,25 @@ _SHA = re.compile(r"[0-9a-f]{64}", re.ASCII)
 _DENIED = "request denied"
 
 
+def _pin_approved_directory(filename: Path, existing_fd: int | None, owner_uid: int) -> int:
+    """Pin an existing owner-only directory descriptor or securely open it."""
+    if existing_fd is None:
+        return _open_owner_private_dir(filename)
+    duplicate = os.dup(existing_fd)
+    try:
+        directory_stat = os.fstat(duplicate)
+        if (
+            not stat.S_ISDIR(directory_stat.st_mode)
+            or directory_stat.st_uid != owner_uid
+            or directory_stat.st_mode & 0o077
+        ):
+            raise LocalWriteDeniedError(_DENIED)
+    except BaseException:
+        os.close(duplicate)
+        raise
+    return duplicate
+
+
 def verify_operator_board_revision(
     operator_project: OperatorProject,
     expected_sha256: str,
@@ -55,19 +74,7 @@ def verify_operator_board_revision(
     directory_fd: int | None = None
     board_fd: int | None = None
     try:
-        if _directory_fd is None:
-            directory_fd = _open_owner_private_dir(filename)
-        else:
-            # A cooperating native transaction must validate the exact
-            # same already-pinned directory that owns its advisory lock.
-            directory_fd = os.dup(_directory_fd)
-            directory_stat = os.fstat(directory_fd)
-            if (
-                not stat.S_ISDIR(directory_stat.st_mode)
-                or directory_stat.st_uid != getuid()
-                or directory_stat.st_mode & 0o077
-            ):
-                raise LocalWriteDeniedError(_DENIED)
+        directory_fd = _pin_approved_directory(filename, _directory_fd, getuid())
         board_fd = os.open(
             filename.name,
             os.O_RDONLY | nofollow | nonblock | getattr(os, "O_CLOEXEC", 0),
