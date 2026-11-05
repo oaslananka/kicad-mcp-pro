@@ -198,3 +198,55 @@ def test_stale_disk_revision_never_calls_native_begin(tmp_path: Path) -> None:
     with pytest.raises(LocalWriteDeniedError, match="request denied"):
         run(policy, digest, adapter(policy, [board], digest))
     assert board.calls == []
+
+
+@_POSIX
+def test_missing_active_project_accessor_is_rejected(tmp_path: Path) -> None:
+    policy, board, digest = setup(tmp_path)
+    board.get_project = None  # type: ignore[method-assign]
+    with pytest.raises(LocalWriteDeniedError, match="request denied"):
+        run(policy, digest, adapter(policy, [board], digest))
+    assert board.calls == []
+
+
+@_POSIX
+def test_invalid_signed_digest_is_rejected_before_native_begin(tmp_path: Path) -> None:
+    policy, board, _ = setup(tmp_path)
+    native = adapter(policy, [board], "not-a-sha256-digest")
+    assert native.begin() is False
+    assert board.calls == []
+
+
+@_POSIX
+def test_missing_in_memory_snapshot_method_is_rejected(tmp_path: Path) -> None:
+    policy, board, digest = setup(tmp_path)
+    board.get_as_string = None  # type: ignore[method-assign]
+    native = adapter(policy, [board], digest)
+    assert native.begin() is False
+    assert board.calls == []
+
+
+@_POSIX
+def test_unstarted_and_repeated_native_commands_fail_closed(tmp_path: Path) -> None:
+    policy, board, digest = setup(tmp_path)
+    native = adapter(policy, [board], digest)
+    assert native.commit() is False
+    assert native.discard() is False
+    with pytest.raises(LocalWriteDeniedError, match="request denied"):
+        native.stage()
+    assert board.calls == []
+    assert native.begin() is True
+    assert native.begin() is False
+    assert board.calls == ["begin"]
+    assert native.discard() is True
+    assert board.calls == ["begin", "drop"]
+
+
+@_POSIX
+def test_existing_native_transaction_does_not_allow_new_begin(tmp_path: Path) -> None:
+    policy, board, digest = setup(tmp_path)
+    native = adapter(policy, [board], digest)
+    assert native._service.begin().startswith("Transaction group started.")
+    assert native.begin() is False
+    assert board.calls == ["begin"]
+    assert native._service.drop() == "Transaction group discarded successfully."
