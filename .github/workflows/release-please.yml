@@ -61,7 +61,7 @@ jobs:
           token: ${{ steps.release-app-token.outputs.token }}
           persist-credentials: false
       - if: ${{ steps.release-pr-branch.outputs.branch != '' }}
-        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
         with:
           enable-cache: false
       - if: ${{ steps.release-pr-branch.outputs.branch != '' }}
