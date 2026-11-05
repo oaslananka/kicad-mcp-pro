@@ -221,7 +221,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
         with:
           enable-cache: true
           prune-cache: true
@@ -254,7 +254,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
         if: env.skip_ci != 'true'
         with:
           enable-cache: true
@@ -312,7 +312,7 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
         if: env.skip_ci != 'true'
         with:
           enable-cache: true
@@ -566,8 +566,7 @@ jobs:
         # public Action pin. This prevents Codacy's loose secret regex from
         # mistaking a pinned SonarSource commit for an API key. Actionlint and
         # action-policy checks still validate the exact complete SHA.
-        uses: "SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc12\
-          8f7f907dac145c9d6ae9"
+        uses: "SonarSource/sonarqube-scan-action@4d1dc0c91ee400dcf8a6dddf2f705ac36542e304"
         with:
           # Keep the required SonarCloud Scan check red when the actual Quality Gate fails.
           args: -Dsonar.qualitygate.wait=true
@@ -632,7 +631,7 @@ jobs:
         if: env.skip_ci != 'true'
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
         if: env.skip_ci != 'true'
         with:
           enable-cache: true
@@ -782,7 +781,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
         with:
           enable-cache: true
           prune-cache: true
@@ -861,7 +860,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
         with:
           enable-cache: false
           version-file: uv.toml
