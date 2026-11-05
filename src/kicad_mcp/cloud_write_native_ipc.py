@@ -114,7 +114,12 @@ class OfflineTrustedPcbIpcAdapter:
     def begin(self) -> bool:
         if self._started or self._staged:
             return False
-        self._current_board(compare_bytes=True)
+        try:
+            self._current_board(compare_bytes=True)
+        except LocalWriteDeniedError:
+            # No native begin was attempted; an identity/snapshot mismatch
+            # is a clean preflight denial, not an ambiguous IPC mutation.
+            return False
         state = self._service.status_payload()
         if state.get("state") != "idle" or state.get("recovery_required") is not False:
             return False
