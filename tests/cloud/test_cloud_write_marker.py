@@ -149,8 +149,9 @@ def test_signed_proof_replay_denied_after_new_store_instance(tmp_path: Path) -> 
         )
 
     assert run(LocalWriteMarker(directory)) == json.loads(GOLDEN)
+    replay_store = LocalWriteMarker(directory)
     with pytest.raises(LocalWriteDeniedError, match="^request denied$"):
-        run(LocalWriteMarker(directory))
+        run(replay_store)
 
 
 @pytest.mark.skipif(os.name != "posix", reason="requires POSIX pinned directory handles")
