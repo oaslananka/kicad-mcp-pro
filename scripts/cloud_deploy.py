@@ -300,6 +300,29 @@ def rollback_if_available(
     health(public_origin, old_sha, get)
 
 
+def preflight(
+    sha: str,
+    github_authorization: str,
+    get: JsonGetter = client_request,
+    fetch: SecretGetter = get_secret,
+) -> str:
+    """Read-only production acceptance: protected secrets, Coolify and live revision."""
+    require_successful_ci(sha, github_authorization, get)
+    values = load_settings(fetch)
+    api, token, uuid = (
+        values[key] for key in ("COOLIFY_URL", "COOLIFY_API_TOKEN", "COOLIFY_APPLICATION_UUID")
+    )
+    app = verify_application(api, token, uuid, get)
+    if app.get("status") != "running:healthy" or app.get("container_present") is not True:
+        raise DeployError("COOLIFY_BASELINE_NOT_HEALTHY")
+    live_sha = app.get("git_commit_sha")
+    if not isinstance(live_sha, str) or not SHA.fullmatch(live_sha):
+        raise DeployError("COOLIFY_BASELINE_SHA_UNKNOWN")
+    health(values["PUBLIC_ORIGIN"], live_sha, get)
+    print("Read-only production preflight accepted, live revision " + live_sha)
+    return live_sha
+
+
 def deploy(
     sha: str, gh_token: str, get: JsonGetter = client_request, post: JsonGetter = client_request
 ) -> None:
@@ -367,7 +390,9 @@ def deploy(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sha", required=True)
-    parser.add_argument("--verify-only", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--verify-only", action="store_true")
+    mode.add_argument("--preflight-only", action="store_true")
     args = parser.parse_args()
     try:
         if not SHA.fullmatch(args.sha):
@@ -381,7 +406,10 @@ def main() -> int:
                 raise DeployError("MAIN_ONLY")
             if os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch":
                 raise DeployError("MANUAL_DEPLOY_ONLY")
-            deploy(args.sha, gh_token)
+            if args.preflight_only:
+                preflight(args.sha, gh_token)
+            else:
+                deploy(args.sha, gh_token)
         return 0
     except (DeployError, SecretError) as exc:
         print("::error::" + str(exc), file=sys.stderr)

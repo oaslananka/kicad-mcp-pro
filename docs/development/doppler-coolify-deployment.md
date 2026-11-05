@@ -1,7 +1,8 @@
 # KiCad MCP Pro - one Doppler main config, GitHub CI and Coolify
 
-This is a **prepared, not activated** migration. No secret, domain, GitHub
-environment, Coolify application or live deployment was modified.
+The workflow is merged, but **production migration is not yet activated**.
+The protected production GitHub environment exists; no live Coolify application,
+secret value, OAuth provider or Cloudflare domain was changed by the workflow merge.
 
 ## Single source of truth
 
@@ -85,8 +86,8 @@ the sync is deliberately an explicit command, not instantaneous mirroring.
 
 ## One-command protected Cloud deploy
 
-In GitHub Actions create/protect environment **production**, limited to
-protected main. Put one manual bootstrap secret there:
+Keep GitHub Actions environment **production** restricted to protected main.
+It already has the one manually bootstrapped secret:
 DOPPLER_TOKEN = **read-only Doppler service token for kicad-mcp-pro/main**.
 NEVER add this main token to repository-level secrets. GitHub's ephemeral
 GITHUB_TOKEN and OIDC flows stay as they are.
@@ -106,8 +107,9 @@ configuration acceptance:
 pnpm deploy
 ~~~
 
-The local command dispatches Cloud Deploy (Coolify) on protected GitHub main
-and watches it. It never reads a production token locally. The hosted job
+The local command dispatches Cloud Deploy (Coolify) on protected GitHub main;
+inspect the GitHub Actions run for its actual result. The local command never
+reads the production token. The hosted job
 verifies exact-main CI, Cloud CI when Cloud sources changed, the Coolify
 repo/branch/Compose target, then performs the deploy and checks deployed
 SHA plus public /health revision. Runtime SOURCE_COMMIT is mapped to
@@ -116,6 +118,24 @@ APP_REVISION by the Compose file. It does not recreate databases or Tunnel.
 The **first** managed rollout requires an existing healthy known revision
 and a reviewed rollback route; when not present, it deliberately stops.
 Automatic rollback remains disabled until disposable verified acceptance.
+
+### Read-only first-deployment acceptance
+
+Run on a trusted, authenticated developer machine:
+
+    pnpm deploy:check
+
+This dispatches a distinct, input-free read-only GitHub Actions workflow
+inside the same protected production environment. It verifies exact-main CI,
+Doppler main token access, trusted Coolify application identity and the
+healthy live revision. It cannot perform deployment, rollback or environment
+writes. The local command only dispatches the workflow; inspect the GitHub
+Actions run for its terminal result.
+
+A passing preflight proves protected token access and a known healthy live
+revision, **not** automatic Coolify runtime variable or Cloudflare DNS/Tunnel
+synchronization. Review runtime parity and the rollback plan before
+running pnpm deploy.
 
 ## Coolify configuration and domain change
 
