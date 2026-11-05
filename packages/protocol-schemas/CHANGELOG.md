@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/oaslananka/kicad-mcp-pro/compare/protocol-schemas-v2.0.1...protocol-schemas-v2.1.0) (2026-11-05)
+
+
+### Features
+
+* **cloud:** add fail-closed per-project write preflight ([#1616](https://github.com/oaslananka/kicad-mcp-pro/issues/1616)) ([d7d844b](https://github.com/oaslananka/kicad-mcp-pro/commit/d7d844ba6b7a0dd8bae683ef76aa24a1de48d56f))
+
 ## [2.0.1](https://github.com/oaslananka/kicad-mcp-pro/compare/protocol-schemas-v2.0.0...protocol-schemas-v2.0.1) (2026-10-30)
 
 

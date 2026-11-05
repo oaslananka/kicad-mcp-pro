@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.8.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-npm-v4.7.0...mcp-npm-v4.8.0) (2026-11-05)
+
+
+### Features
+
+* **cloud:** add fail-closed per-project write preflight ([#1616](https://github.com/oaslananka/kicad-mcp-pro/issues/1616)) ([d7d844b](https://github.com/oaslananka/kicad-mcp-pro/commit/d7d844ba6b7a0dd8bae683ef76aa24a1de48d56f))
+
 ## [4.7.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-npm-v4.6.1...mcp-npm-v4.7.0) (2026-11-03)
 
 

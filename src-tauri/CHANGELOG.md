@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.8.0](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v4.7.0...kicad-mcp-gui-v4.8.0) (2026-11-05)
+
+
+### Features
+
+* **cloud:** add fail-closed per-project write preflight ([#1616](https://github.com/oaslananka/kicad-mcp-pro/issues/1616)) ([d7d844b](https://github.com/oaslananka/kicad-mcp-pro/commit/d7d844ba6b7a0dd8bae683ef76aa24a1de48d56f))
+* **ui:** production-ready UI/UX redesign, Cloud harmonization, and WCAG AA accessibility ([#1606](https://github.com/oaslananka/kicad-mcp-pro/issues/1606)) ([3b0c8ff](https://github.com/oaslananka/kicad-mcp-pro/commit/3b0c8ff3a0aad2cdaad10cd19886025e20cb7963))
+
 ## [4.7.0](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v4.6.1...kicad-mcp-gui-v4.7.0) (2026-11-03)
 
 
