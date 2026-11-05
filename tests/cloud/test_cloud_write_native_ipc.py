@@ -142,8 +142,9 @@ def test_wrong_live_board_never_opens_native_transaction(tmp_path: Path, wrong: 
         board.get_as_string = lambda: b"wrong"  # type: ignore[method-assign]
     else:
         board.get_project = lambda: None  # type: ignore[method-assign]
+    native = adapter(policy, [board], digest)
     with pytest.raises(LocalWriteDeniedError, match="request denied"):
-        run(policy, digest, adapter(policy, [board], digest))
+        run(policy, digest, native)
     assert "begin" not in board.calls
 
 
@@ -151,8 +152,9 @@ def test_wrong_live_board_never_opens_native_transaction(tmp_path: Path, wrong: 
 def test_nontransactional_native_is_rejected_without_staging(tmp_path: Path) -> None:
     policy, board, digest = setup(tmp_path)
     board.commit_supported = False
+    native = adapter(policy, [board], digest)
     with pytest.raises(LocalWriteDeniedError, match="request denied"):
-        run(policy, digest, adapter(policy, [board], digest))
+        run(policy, digest, native)
     assert board.calls == ["begin"]
 
 
@@ -166,8 +168,9 @@ def test_revoked_grant_after_stage_uses_real_verified_drop(tmp_path: Path) -> No
         count += 1
         return count == 1
 
+    native = adapter(policy, [board], digest)
     with pytest.raises(LocalWriteDeniedError, match="request denied"):
-        run(policy, digest, adapter(policy, [board], digest), authorized=grant)
+        run(policy, digest, native, authorized=grant)
     assert board.calls == ["begin", "stage", "drop"]
     assert board.text == _TEXT
     assert board.pending is None
@@ -195,8 +198,9 @@ def test_active_project_switch_after_stage_never_pushes(tmp_path: Path) -> None:
 def test_stale_disk_revision_never_calls_native_begin(tmp_path: Path) -> None:
     policy, board, digest = setup(tmp_path)
     (policy.directory / "test.kicad_pcb").write_text("stale", encoding="utf-8")
+    native = adapter(policy, [board], digest)
     with pytest.raises(LocalWriteDeniedError, match="request denied"):
-        run(policy, digest, adapter(policy, [board], digest))
+        run(policy, digest, native)
     assert board.calls == []
 
 
@@ -204,8 +208,9 @@ def test_stale_disk_revision_never_calls_native_begin(tmp_path: Path) -> None:
 def test_missing_active_project_accessor_is_rejected(tmp_path: Path) -> None:
     policy, board, digest = setup(tmp_path)
     board.get_project = None  # type: ignore[method-assign]
+    native = adapter(policy, [board], digest)
     with pytest.raises(LocalWriteDeniedError, match="request denied"):
-        run(policy, digest, adapter(policy, [board], digest))
+        run(policy, digest, native)
     assert board.calls == []
 
 
