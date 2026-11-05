@@ -10,6 +10,7 @@
     "dev:doctor": "uv run --all-extras python scripts/dev_environment.py --doctor",
     "cloud:check": "npm --prefix apps/cloud run check",
     "cloud:build": "npm --prefix apps/cloud run build",
+    "deploy": "gh workflow run cloud-deploy.yml --repo oaslananka/kicad-mcp-pro --ref main",
     "assets:icons": "uv run --all-extras python scripts/render_icons.py",
     "assets:icons:check": "uv run --all-extras python scripts/check_icon_assets.py",
     "assets:demo": "uv run --all-extras python scripts/generate_synthetic_demo.py --convert-if-available",
