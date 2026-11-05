@@ -19,7 +19,31 @@ _SHA = re.compile(r"[0-9a-f]{64}", re.ASCII)
 _DENIED = "request denied"
 
 
-def verify_operator_board_revision(operator_project: OperatorProject, expected_sha256: str) -> None:
+def _pin_approved_directory(filename: Path, existing_fd: int | None, owner_uid: int) -> int:
+    """Pin an existing owner-only directory descriptor or securely open it."""
+    if existing_fd is None:
+        return _open_owner_private_dir(filename)
+    duplicate = os.dup(existing_fd)
+    try:
+        directory_stat = os.fstat(duplicate)
+        if (
+            not stat.S_ISDIR(directory_stat.st_mode)
+            or directory_stat.st_uid != owner_uid
+            or directory_stat.st_mode & 0o077
+        ):
+            raise LocalWriteDeniedError(_DENIED)
+    except BaseException:
+        os.close(duplicate)
+        raise
+    return duplicate
+
+
+def verify_operator_board_revision(
+    operator_project: OperatorProject,
+    expected_sha256: str,
+    *,
+    _directory_fd: int | None = None,
+) -> None:
     """Read a pinned approved board and fail closed on stale revisions.
 
     This preflight never grants a write: the native adapter must revalidate
@@ -50,7 +74,7 @@ def verify_operator_board_revision(operator_project: OperatorProject, expected_s
     directory_fd: int | None = None
     board_fd: int | None = None
     try:
-        directory_fd = _open_owner_private_dir(filename)
+        directory_fd = _pin_approved_directory(filename, _directory_fd, getuid())
         board_fd = os.open(
             filename.name,
             os.O_RDONLY | nofollow | nonblock | getattr(os, "O_CLOEXEC", 0),
