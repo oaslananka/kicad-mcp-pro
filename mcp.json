@@ -6,7 +6,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "kicad-mcp-pro==4.7.0",
+        "kicad-mcp-pro==4.8.0",
         "kicad-mcp-pro",
         "--transport",
         "stdio"
