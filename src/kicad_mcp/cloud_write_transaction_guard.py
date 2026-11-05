@@ -74,8 +74,14 @@ def _validate_policy(policy: OperatorProject) -> Path:
 def _locked_operator_directory(policy: OperatorProject) -> Iterator[int]:
     """Pin the private folder and hold a nonblocking cross-process POSIX lock."""
     nofollow = getattr(os, "O_NOFOLLOW", None)
+    nonblock = getattr(os, "O_NONBLOCK", None)
     getuid = getattr(os, "getuid", None)
-    if os.name != "posix" or type(nofollow) is not int or not callable(getuid):
+    if (
+        os.name != "posix"
+        or type(nofollow) is not int
+        or type(nonblock) is not int
+        or not callable(getuid)
+    ):
         raise LocalWriteDeniedError(_DENIED)
     path = _validate_policy(policy)
     folder_fd: int | None = None
@@ -86,7 +92,12 @@ def _locked_operator_directory(policy: OperatorProject) -> Iterator[int]:
         folder_fd = _open_owner_private_dir(path)
         lock_fd = os.open(
             path.name,
-            os.O_RDWR | os.O_CREAT | nofollow | getattr(os, "O_CLOEXEC", 0),
+            os.O_RDWR
+            | os.O_CREAT
+            | nofollow
+            | nonblock
+            | getattr(os, "O_NOCTTY", 0)
+            | getattr(os, "O_CLOEXEC", 0),
             0o600,
             dir_fd=folder_fd,
         )

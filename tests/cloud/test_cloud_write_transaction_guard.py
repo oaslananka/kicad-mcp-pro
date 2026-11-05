@@ -244,6 +244,11 @@ def test_hostile_existing_lock_files_are_rejected(tmp_path: Path) -> None:
     link = policy.directory / "extra"
     os.link(lock, link)
     deny(lambda: run(policy, sha, StubNative()))
+    link.unlink()
+    lock.unlink()
+    # A FIFO/device substitution must never block before fstat rejects it.
+    os.mkfifo(lock)
+    deny(lambda: run(policy, sha, StubNative()))
 
 
 @POSIX
