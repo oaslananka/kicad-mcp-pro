@@ -120,6 +120,29 @@ class DeployContracts(unittest.TestCase):
             }
         raise AssertionError("Unexpected API: " + url)
 
+    def test_ci_workflow_query_limits_remote_response_size(self) -> None:
+        requests: list[str] = []
+
+        def bounded_get(url: str, token: str | None = None) -> dict[str, Any]:
+            requests.append(url)
+            self.assertEqual(token, "github")
+            return {"workflow_runs": []}
+
+        for workflow in ("ci.yml", "cloud-ci.yml"):
+            found = cloud._workflow_push_runs(
+                "https://api.github.com/repos/oaslananka/kicad-mcp-pro",
+                workflow,
+                "github",
+                bounded_get,
+            )
+            self.assertEqual(found, [])
+        self.assertEqual(len(requests), 2)
+        for url in requests:
+            self.assertIn("branch=main", url)
+            self.assertIn("event=push", url)
+            self.assertIn("per_page=10", url)
+            self.assertNotIn("per_page=100", url)
+
     def test_ci_requires_exact_successful_push_main(self) -> None:
         cloud.require_successful_ci(SHA, "github", self.ci_get)
         with self.assertRaisesRegex(cloud.DeployError, "^CI_IDENTITY_MISSING$"):

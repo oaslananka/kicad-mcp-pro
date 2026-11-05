@@ -110,7 +110,7 @@ def _workflow_push_runs(
         + "/actions/workflows/"
         + workflow
         + "/runs?"
-        + urllib.parse.urlencode({"branch": "main", "event": "push", "per_page": 100})
+        + urllib.parse.urlencode({"branch": "main", "event": "push", "per_page": 10})
     )
     runs = get(url, token=github_authorization).get("workflow_runs")
     if not isinstance(runs, list):
