@@ -13,7 +13,8 @@ const url=process.env.TEST_DATABASE_URL;
 const migrations=[
   "001_inventory.pgsql","002_client_grants.pgsql","005_token_cutoff.pgsql",
   "007_device_pairing.pgsql","008_device_credentials.pgsql",
-  "009_device_handshake.pgsql","010_connector_sessions.pgsql"
+  "009_device_handshake.pgsql","010_connector_sessions.pgsql",
+  "020_connector_write_proof_reservations.pgsql"
 ];
 
 test("remote write preflight fails closed until owner, project, client, scopes and live connector all opt in",
@@ -51,7 +52,14 @@ test("remote write preflight fails closed until owner, project, client, scopes a
     const gate=new PgConnectorWritePreflight(db);
     const check=(identity:Actor=actor,conn:TrustedConnectorContext=connection,project:string=projectId)=>
       gate.checkCurrentPolicy(identity,conn,project);
-    // A fresh paired device and an OAuth write token never create implicit permissions.
+    const reserve=(requestId:string,identity:Actor=actor,
+      conn:TrustedConnectorContext=connection,project=projectId,deadline=Date.now()+5_000)=>
+      gate.reserveAuthorizedWrite(identity,conn,project,requestId,deadline);
+    // Before explicit owner opt-in, the request must not even be consumed.
+    const unapproved=randomUUID();
+    assert.equal(await reserve(unapproved),false);
+    assert.equal((await db.query("SELECT count(*)::integer AS n "+
+      "FROM connector_write_proof_reservations")).rows[0]?.n,0);
     assert.equal(await check(),false);
     await db.query("INSERT INTO project_client_grants "+
       "(project_id,owner_sub,client_id,enabled,max_mode) VALUES($1,$2,$3,true,'readonly')",
@@ -61,6 +69,20 @@ test("remote write preflight fails closed until owner, project, client, scopes a
     assert.equal(await check(),false);
     await db.query("UPDATE project_client_grants SET max_mode='write' WHERE project_id=$1",[projectId]);
     assert.equal(await check(),true);
+    const once=randomUUID();
+    const parallel=await Promise.all(Array.from({length:8},()=>reserve(once)));
+    assert.equal(parallel.filter(Boolean).length,1,
+      "policy checking and one-use reservation must be atomic across workers");
+    assert.equal(await reserve(once),false);
+    assert.equal(await reserve(once,actor,{...connection,sessionId:randomUUID()}),false);
+    assert.equal(await reserve(randomUUID(),{...actor,scopes:new Set(["projects:read"])}),false);
+    assert.equal(await reserve(randomUUID(),actor,connection,foreignProjectId),false);
+    assert.equal(await reserve(randomUUID(),actor,connection,projectId,Date.now()-1_000),false);
+    assert.equal(await reserve(randomUUID(),actor,connection,projectId,Date.now()+30_000),false);
+    assert.equal(await reserve("bad-uuid"),false);
+    assert.equal((await db.query("SELECT count(*)::integer AS n "+
+      "FROM connector_write_proof_reservations")).rows[0]?.n,1,
+      "denied commands must not consume a replay reservation");
     assert.equal(await check({...actor,scopes:new Set(["projects:read"])}),false);
     assert.equal(await check({...actor,scopes:new Set(["projects:write"])}),false);
     assert.equal(await check({...actor,clientId:"ungranted-ai"}),false);
@@ -72,9 +94,13 @@ test("remote write preflight fails closed until owner, project, client, scopes a
     assert.equal(await check(actor,{...connection,sessionId:randomUUID()}),false);
     await db.query("UPDATE project_client_grants SET enabled=false WHERE project_id=$1",[projectId]);
     assert.equal(await check(),false);
+    assert.equal(await reserve(randomUUID()),false,
+      "disabled project-client grant cannot reserve a write");
     await db.query("UPDATE project_client_grants SET enabled=true WHERE project_id=$1",[projectId]);
     await db.query("UPDATE projects SET enabled=false WHERE id=$1",[projectId]);
     assert.equal(await check(),false);
+    assert.equal(await reserve(randomUUID()),false,
+      "disabled project cannot reserve a write");
     await db.query("UPDATE projects SET enabled=true WHERE id=$1",[projectId]);
     await db.query("UPDATE projects SET max_mode='readonly' WHERE id=$1",[projectId]);
     assert.equal(await check(),false);
@@ -83,11 +109,16 @@ test("remote write preflight fails closed until owner, project, client, scopes a
     await db.query("INSERT INTO client_token_cutoffs(owner_sub,client_id,revoked_at) "+
       "VALUES($1,$2,clock_timestamp()-interval '15 seconds')",[owner,clientId]);
     assert.equal(await check(),false,"revoked old token cannot edit despite an existing grant");
+    assert.equal(await reserve(randomUUID()),false,
+      "revoked OAuth token cannot reserve a new write command");
     const refreshed={...actor,issuedAt:Math.floor(Date.now()/1000)-2};
     assert.equal(await check(refreshed),true);
+    assert.equal(await reserve(randomUUID(),refreshed),true);
     await db.query("UPDATE connector_sessions SET state='expired' WHERE id=$1",
       [challenge.sessionId]);
     assert.equal(await check(refreshed),false);
+    assert.equal(await reserve(randomUUID(),refreshed),false,
+      "inactive Connector session cannot reserve a write");
     await db.query("UPDATE connector_sessions SET state='active' WHERE id=$1",
       [challenge.sessionId]);
     assert.equal(await check(refreshed),true);
@@ -101,5 +132,23 @@ test("remote write preflight fails closed until owner, project, client, scopes a
     assert.equal(await check(refreshed),true);
     assert.equal(await pairing.revokeDevice(owner,deviceId),true);
     assert.equal(await check(refreshed),false,"revoked device always blocks writes");
+    assert.equal(await reserve(randomUUID(),refreshed),false,
+      "revoked device can never reserve write commands");
   });
+});
+
+test("write reservation fails closed if the database is unavailable",async()=>{
+  const absent={connect:async()=>{throw new Error("database unavailable");}} as never;
+  const gate=new PgConnectorWritePreflight(absent);
+  const actor:Actor={
+    sub:"offline-owner",clientId:"offline-ai",
+    scopes:new Set(["projects:read","projects:write"]),
+    issuedAt:Math.floor(Date.now()/1000)
+  };
+  const conn:TrustedConnectorContext={
+    deviceId:randomUUID(),sessionId:randomUUID(),
+    connectionBinding:randomBytes(32).toString("base64url")
+  };
+  assert.equal(await gate.reserveAuthorizedWrite(
+    actor,conn,randomUUID(),randomUUID(),Date.now()+5_000),false);
 });
