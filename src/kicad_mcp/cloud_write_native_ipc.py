@@ -42,7 +42,8 @@ def _require_approved_live_board(board: object, policy: OperatorProject) -> tupl
         raise LocalWriteDeniedError(_DENIED)
     actual_path = getattr(get_project(), "path", None)
     actual_name = getattr(board, "name", None)
-    approved = policy.directory / (policy.filename_stem + ".kicad_pro")
+    # Official kipy Project.path is the containing directory, not a .kicad_pro file.
+    approved = policy.directory
     if (
         not isinstance(actual_path, str)
         or not isinstance(actual_name, str)
