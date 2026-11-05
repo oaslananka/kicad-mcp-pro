@@ -8,6 +8,7 @@ import unittest
 import urllib.error
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 EXAMPLE_SERVICE_VALUE = "nonsecret-stub"
 
@@ -19,6 +20,7 @@ import doppler_secret as secret  # noqa: E402
 SHA = "a" * 40
 OTHER = "b" * 40
 UUID = "gd6kdgzjuukp2lbwedos4u9k"
+CLOUD_ORIGIN = "https://cloud.example.com"
 
 
 class FakeResponse:
@@ -308,9 +310,104 @@ class DeployContracts(unittest.TestCase):
             self.assertEqual(url, "https://cloud.example.com/health")
             return {"revision": SHA}
 
-        cloud.health("https://cloud.example.com", SHA, good)
+        cloud.health(CLOUD_ORIGIN, SHA, good)
         with self.assertRaisesRegex(cloud.DeployError, "LIVE_REVISION_MISMATCH"):
             cloud.health("https://cloud.example.com", SHA, lambda url: {"revision": OTHER})
+
+    def test_preflight_read_only_accepts_live_revision(self) -> None:
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+            "OAUTH_ISSUER": CLOUD_ORIGIN + "/api/auth",
+            "OAUTH_JWKS_URL": CLOUD_ORIGIN + "/api/auth/jwks",
+            "OAUTH_AUDIENCE": CLOUD_ORIGIN + "/mcp",
+        }
+        calls: list[str] = []
+        application = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            calls.append(url)
+            if url.endswith("/applications/" + UUID):
+                return application
+            if url.endswith("/health"):
+                return {"revision": OTHER}
+            return self.ci_get(url, token)
+
+        def fetch(name: str, **_kwargs: object) -> str:
+            return settings[name]
+
+        with patch.dict("os.environ", {"DOPPLER_TOKEN": EXAMPLE_SERVICE_VALUE}):
+            result = cloud.preflight(SHA, "github", get, fetch)
+        self.assertEqual(result, OTHER)
+        self.assertEqual(len([url for url in calls if url.endswith("/health")]), 1)
+        self.assertFalse(any("/deploy" in url or "/rollback" in url for url in calls))
+
+    def test_preflight_rejects_mismatched_live_sha(self) -> None:
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+            "OAUTH_ISSUER": CLOUD_ORIGIN + "/api/auth",
+            "OAUTH_JWKS_URL": CLOUD_ORIGIN + "/api/auth/jwks",
+            "OAUTH_AUDIENCE": CLOUD_ORIGIN + "/mcp",
+        }
+        application = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            if url.endswith("/applications/" + UUID):
+                return application
+            if url.endswith("/health"):
+                return {"revision": SHA}
+            return self.ci_get(url, token)
+
+        def fetch(name: str, **_kwargs: object) -> str:
+            return settings[name]
+
+        with patch.dict("os.environ", {"DOPPLER_TOKEN": EXAMPLE_SERVICE_VALUE}):
+            with self.assertRaisesRegex(cloud.DeployError, "LIVE_REVISION_MISMATCH"):
+                cloud.preflight(SHA, "github", get, fetch)
+
+    def test_preflight_workflow_separates_actual_deployment(self) -> None:
+        workflow = (SCRIPTS.parent / ".github/workflows/cloud-deploy-preflight.yml").read_text(
+            encoding="utf-8"
+        )
+        deploy = (SCRIPTS.parent / ".github/workflows/cloud-deploy.yml").read_text(encoding="utf-8")
+        package = json.loads((SCRIPTS.parent / "package.json").read_text(encoding="utf-8"))
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertNotIn("inputs:", workflow)
+        self.assertIn("--preflight-only", workflow)
+        self.assertNotIn("--preflight-only", deploy)
+        self.assertNotIn("preflight_only", deploy)
+        self.assertIn("cloud-deploy-preflight.yml", package["scripts"]["deploy:check"])
 
     def test_rejects_http_or_credential_urls(self) -> None:
         for bad in (
