@@ -10,6 +10,38 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.8.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.7.0...mcp-server-v4.8.0) (2026-11-05)
+
+
+### Features
+
+* **cloud:** add fail-closed per-project write preflight ([#1616](https://github.com/oaslananka/kicad-mcp-pro/issues/1616)) ([d7d844b](https://github.com/oaslananka/kicad-mcp-pro/commit/d7d844ba6b7a0dd8bae683ef76aa24a1de48d56f))
+* **cloud:** add fail-closed per-project write preflight ([#1616](https://github.com/oaslananka/kicad-mcp-pro/issues/1616)) ([5aac4c4](https://github.com/oaslananka/kicad-mcp-pro/commit/5aac4c44c27d273c5170e765b4cd8fee3b2c0fbc))
+* **cloud:** atomically reserve approved one-shot write requests ([#1625](https://github.com/oaslananka/kicad-mcp-pro/issues/1625)) ([0fb247a](https://github.com/oaslananka/kicad-mcp-pro/commit/0fb247a188a0ad7bc7a43ccf2b9bf328e404c0a9))
+* **cloud:** improve owner onboarding, device cleanup and agent integration ([#1610](https://github.com/oaslananka/kicad-mcp-pro/issues/1610)) ([9e3377a](https://github.com/oaslananka/kicad-mcp-pro/commit/9e3377a86771f839d7696c7a70c94eda49c8a733))
+* **cloud:** issue offline signed write proposals ([#1623](https://github.com/oaslananka/kicad-mcp-pro/issues/1623)) ([6ed8bf5](https://github.com/oaslananka/kicad-mcp-pro/commit/6ed8bf5049cb6863931142fbead1ce0d252e2f4b))
+* **cloud:** load pinned offline write issuer key safely ([#1626](https://github.com/oaslananka/kicad-mcp-pro/issues/1626)) ([7def230](https://github.com/oaslananka/kicad-mcp-pro/commit/7def23025fd6ae26a5a639e12aba793dfe094e5f))
+* **cloud:** pin local trusted write issuer public key ([#1628](https://github.com/oaslananka/kicad-mcp-pro/issues/1628)) ([e65eba3](https://github.com/oaslananka/kicad-mcp-pro/commit/e65eba3ff092cc85d12dd059264806a7e4ef3d31))
+* **cloud:** require explicit OAuth consent for project write grants ([#1618](https://github.com/oaslananka/kicad-mcp-pro/issues/1618)) ([44daf5d](https://github.com/oaslananka/kicad-mcp-pro/commit/44daf5d90fbdf57e9f0458a2e04b15b00755bb34))
+* **cloud:** reserve signed write proofs atomically in Postgres ([#1624](https://github.com/oaslananka/kicad-mcp-pro/issues/1624)) ([b21b71d](https://github.com/oaslananka/kicad-mcp-pro/commit/b21b71d2c8776e02fad5b67ac0d91e6c59e5ce4e))
+* **cloud:** show per-project client grants with immediate revoke ([#1619](https://github.com/oaslananka/kicad-mcp-pro/issues/1619)) ([d1eaa02](https://github.com/oaslananka/kicad-mcp-pro/commit/d1eaa02d33bea7391a9820fd8671f3462681ba82))
+* **cloud:** validate bounded offline KiCad write command contract ([#1620](https://github.com/oaslananka/kicad-mcp-pro/issues/1620)) ([60eb34e](https://github.com/oaslananka/kicad-mcp-pro/commit/60eb34ed89217435ea1b6aebbdc40b90ee37af4d))
+* **cloud:** validate one-shot signed write proposals offline ([#1622](https://github.com/oaslananka/kicad-mcp-pro/issues/1622)) ([d312ca3](https://github.com/oaslananka/kicad-mcp-pro/commit/d312ca3addf8879fbc99809259483559e798a886))
+* **integrations:** prepare hosted Cloud plugin packages for directory review ([#1609](https://github.com/oaslananka/kicad-mcp-pro/issues/1609)) ([e0fdb7d](https://github.com/oaslananka/kicad-mcp-pro/commit/e0fdb7df25a172a00624c680c24cf7cb9139fd49))
+* **ui:** production-ready UI/UX redesign, Cloud harmonization, and WCAG AA accessibility ([#1606](https://github.com/oaslananka/kicad-mcp-pro/issues/1606)) ([3b0c8ff](https://github.com/oaslananka/kicad-mcp-pro/commit/3b0c8ff3a0aad2cdaad10cd19886025e20cb7963))
+
+
+### Bug Fixes
+
+* **cloud:** complete agent discovery metadata and practical onboarding help ([#1614](https://github.com/oaslananka/kicad-mcp-pro/issues/1614)) ([65b2935](https://github.com/oaslananka/kicad-mcp-pro/commit/65b2935e6e9aa1acacf853463d167e30e18c82b8))
+* **cloud:** keep agent sitemap canonical and improve discovery accessibility ([#1613](https://github.com/oaslananka/kicad-mcp-pro/issues/1613)) ([46f2bfc](https://github.com/oaslananka/kicad-mcp-pro/commit/46f2bfc446c214e58dce011cc4719caa278fed1a))
+
+
+### Documentation
+
+* **readme:** replace unstable DeepWiki badge with plain link ([#1612](https://github.com/oaslananka/kicad-mcp-pro/issues/1612)) ([4245633](https://github.com/oaslananka/kicad-mcp-pro/commit/4245633730fedcb03de05c436e8d2050aff77144))
+* **release:** include final engineering review in 4.7.0 notes ([#1604](https://github.com/oaslananka/kicad-mcp-pro/issues/1604)) ([cfed847](https://github.com/oaslananka/kicad-mcp-pro/commit/cfed8476ed4ba7e846edb29806f11b29b9d0c518))
+
 ## [4.7.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.6.1...mcp-server-v4.7.0) (2026-11-03)
 
 
