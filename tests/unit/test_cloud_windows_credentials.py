@@ -161,3 +161,72 @@ def test_mock_vault_fails_closed_on_credential_api_error(
         vault.read_credential("f" * 32, "key")
     with pytest.raises(LocalApprovalDeniedError, match="local approval denied"):
         vault.delete_credential("f" * 32, "key")
+
+
+def test_win32_last_error_fails_closed_when_not_available_or_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(vault.ctypes, "get_last_error", lambda: 1168, raising=False)
+    assert vault._last_error() == 1168
+    monkeypatch.setattr(vault.ctypes, "get_last_error", lambda: "invalid")
+    with pytest.raises(LocalApprovalDeniedError, match="local approval denied"):
+        vault._last_error()
+    monkeypatch.setattr(vault.ctypes, "get_last_error", None)
+    with pytest.raises(LocalApprovalDeniedError, match="local approval denied"):
+        vault._last_error()
+
+
+def test_win32_api_declares_exact_credential_abi_and_rejects_dll_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    functions = [Mock() for _ in range(4)]
+    api = SimpleNamespace(
+        CredReadW=functions[0],
+        CredWriteW=functions[1],
+        CredDeleteW=functions[2],
+        CredFree=functions[3],
+    )
+
+    def loader(library: str, *, use_last_error: bool) -> object:
+        assert library == "Advapi32.dll"
+        assert use_last_error is True
+        return api
+
+    # Replace only this module's os object; never change global os.name or
+    # WindowsPath behavior in pytest, and never load an actual Windows DLL.
+    monkeypatch.setattr(vault, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(vault.ctypes, "WinDLL", loader, raising=False)
+    vault._api.cache_clear()
+    try:
+        assert vault._api() is api
+        assert len(api.CredReadW.argtypes) == 4
+        assert len(api.CredWriteW.argtypes) == 2
+        assert len(api.CredDeleteW.argtypes) == 3
+        assert len(api.CredFree.argtypes) == 1
+        assert api.CredFree.restype is None
+        vault._api.cache_clear()
+
+        def failing_loader(_library: str, *, use_last_error: bool) -> object:
+            assert use_last_error is True
+            raise OSError("library unavailable")
+
+        monkeypatch.setattr(vault.ctypes, "WinDLL", failing_loader)
+        with pytest.raises(LocalApprovalDeniedError, match="local approval denied"):
+            vault._api()
+    finally:
+        vault._api.cache_clear()
+
+
+def test_mock_vault_refuses_failed_credential_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    api = _FakeWindowsCredentialAPI()
+    monkeypatch.setattr(vault, "_api", lambda: api)
+    monkeypatch.setattr(vault, "_last_error", lambda: 1168)
+    monkeypatch.setattr(api, "CredWriteW", lambda _entry, _flags: False)
+    with pytest.raises(LocalApprovalDeniedError, match="local approval denied"):
+        vault.create_credential("1" * 32, "key", b"non-secret-test")
+    assert api.entries == {}
