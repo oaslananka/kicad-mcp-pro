@@ -10,6 +10,15 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.8.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.8.0...mcp-server-v4.8.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **cloud:** guard unsupported pairing and accidental project registration ([#1646](https://github.com/oaslananka/kicad-mcp-pro/issues/1646)) ([23c2a06](https://github.com/oaslananka/kicad-mcp-pro/commit/23c2a0679ddaf600402d7b1968414224e8dd937b))
+* **cloud:** make mobile sign-in actions visible without scrolling ([#1648](https://github.com/oaslananka/kicad-mcp-pro/issues/1648)) ([b12d368](https://github.com/oaslananka/kicad-mcp-pro/commit/b12d368875dedf67b94d3f1b54811d88f2b60442))
+* **ux:** clarify Cloud sign-in and local/desktop navigation ([#1645](https://github.com/oaslananka/kicad-mcp-pro/issues/1645)) ([1c2cb50](https://github.com/oaslananka/kicad-mcp-pro/commit/1c2cb50c3faba4335307b77475a27752a5768012))
+
 ## [4.8.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.7.0...mcp-server-v4.8.0) (2026-11-05)
 
 
