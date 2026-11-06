@@ -1,10 +1,11 @@
-"""Offline verification of a signed, one-use proposed KiCad write command.
+"""Offline verification of version-separated signed KiCad write proposals.
 
-No Cloud transport, issuer key management, grant issuance, replay storage,
-filesystem or KiCad execution is wired to this helper. Even a valid signature
-is NOT authorization to mutate: a future caller must independently establish
-the trusted server signer, live owner/client/project consent, authenticated
-connection, atomic durable one-use reservation and current board revision.
+Version 2 signs both disk and in-memory PCB SHA-256 values under a new domain
+prefix; legacy v1 signatures cannot be upgraded or reused. No transport,
+owner approval, issuer trust setup, replay store or native execution is wired
+to this helper. A valid signature is NOT permission to mutate; a future caller
+must separately prove current owner/client/project consent, authentication,
+atomic one-use reservation, board identity and both current revisions.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from kicad_mcp.cloud_write_contract import (
 
 MAX_SIGNED_WRITE_PROOF_BYTES = 2048
 _SIGNED_PREFIX = b"kicad-cloud-signed-write-proposal-v1\x00"
+_SIGNED_PREFIX_V2 = b"kicad-cloud-signed-write-proposal-v2\x00"
 _PROOF_FIELDS = frozenset({"kind", "version", "payload", "signature"})
 _URLSAFE = re.compile(r"[\w-]+", re.ASCII)
 _DENIED = "request denied"
@@ -98,15 +100,16 @@ def verify_offline_signed_write_proof(
     if (
         proof["kind"] != "connector.signed_write_proposal"
         or type(proof["version"]) is not int
-        or proof["version"] != 1
+        or proof["version"] not in (1, 2)
     ):
         raise LocalWriteDeniedError(_DENIED)
     payload = _decode_bounded(proof["payload"], max_bytes=MAX_WRITE_FRAME_BYTES)
     signature = _decode_bounded(proof["signature"], max_bytes=64)
     if len(signature) != 64:
         raise LocalWriteDeniedError(_DENIED)
+    prefix = _SIGNED_PREFIX_V2 if proof["version"] == 2 else _SIGNED_PREFIX
     try:
-        trusted_issuer_key.verify(signature, _SIGNED_PREFIX + payload)
+        trusted_issuer_key.verify(signature, prefix + payload)
     except (InvalidSignature, ValueError, TypeError) as exc:
         raise LocalWriteDeniedError(_DENIED) from exc
     command = parse_local_write_contract(
@@ -115,6 +118,10 @@ def verify_offline_signed_write_proof(
         operator_project=operator_project,
         now_unix_ms=now_unix_ms,
     )
+    # An envelope version cannot reinterpret a differently signed payload.
+    # This also blocks cross-domain downgrades between v1 and v2 signatures.
+    if command["version"] != proof["version"]:
+        raise LocalWriteDeniedError(_DENIED)
     try:
         reserved = consume_once(str(command["sessionId"]), str(command["requestId"]))
     except Exception as exc:
