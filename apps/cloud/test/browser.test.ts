@@ -121,11 +121,11 @@ test("account linking is explicit, displays only enabled and linked providers",a
   const account=await browserResponse(new Request(origin+"/account"),identity,origin);
   assert.equal(account?.status,200);
   const page=await account!.text();
-  assert.match(page,/Google<\/strong> — Connected/);
+  assert.match(page,/class="identity-name">Google<\/span>[\s\S]*?class="status-pill ready">[\s\S]*?Connected<\/span>/);
   assert.match(page,/Connect GitHub to this account/);
   assert.doesNotMatch(page,/Connect Google to this account/);
   assert.match(page,/action="\/auth\/link\/github"/);
-  assert.match(page,/Accounts are never merged automatically/);
+  assert.match(page,/Matching email addresses do not automatically merge accounts/);
   assert.doesNotMatch(page,/linked-google/,"Account identifiers must not leak to HTML");
 });
 
