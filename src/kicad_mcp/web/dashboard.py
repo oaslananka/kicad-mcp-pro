@@ -532,7 +532,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
       <div>
         <span class="local-workspace-kicker">YOUR KICAD WORKSPACE</span>
         <h2>Your KiCad workspace is here.</h2>
-        <p>Use your own projects without an account. Choose local AI now, or connect Cloud only when you need remote access.</p>
+        <p>Work locally without an account. Choose local AI now, or connect Cloud only when you need remote access.</p>
       </div>
       <div class="local-workspace-actions">
         <button type="button" class="btn btn-primary" onclick="window.location.hash='#setup-wizard'">Set up local AI</button>
