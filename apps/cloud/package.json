@@ -10,7 +10,7 @@
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test --test-concurrency=1 test/*.test.ts",
+    "test": "tsx --test --test-concurrency=1 test/*.test.ts && node --test test/public-health-revision.test.mjs",
     "bench": "vitest bench --run",
     "check": "npm run typecheck && npm run build && npm test",
     "config:check": "node dist/config-check.js",

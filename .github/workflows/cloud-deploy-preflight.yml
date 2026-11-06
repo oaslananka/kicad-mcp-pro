@@ -1,0 +1,34 @@
+name: Cloud Deploy Preflight (Read Only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: cloud-production-preflight
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Verify protected production access without deploying
+    if: github.repository == 'oaslananka/kicad-mcp-pro' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify exact main CI before loading production credentials
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/cloud_deploy.py --verify-only --sha "$GITHUB_SHA"
+      - name: Read protected Doppler main and verify live Coolify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          DOPPLER_CONFIG: main
+        run: python3 scripts/cloud_deploy.py --preflight-only --sha "$GITHUB_SHA"

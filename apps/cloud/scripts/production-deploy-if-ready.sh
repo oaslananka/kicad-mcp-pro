@@ -17,9 +17,7 @@ target=$(git ls-remote origin refs/heads/main | awk '{print $1}')
 [[ $target =~ ^[a-f0-9]{40}$ ]] || { echo 'Main SHA unavailable'; exit 1; }
 public_origin=$(scripts/doppler-runtime.sh node scripts/portable-config.mjs origin)
 expected_google=$(scripts/doppler-runtime.sh node scripts/portable-config.mjs google)
-current=$(curl --fail --silent --show-error --max-time 10 \
-  "$public_origin/health" | \
-  python3 -c 'import json,sys; print(json.load(sys.stdin).get("revision","unknown"))' || echo unavailable)
+current=$(node scripts/read-public-health-revision.mjs "$public_origin" || echo unavailable)
 [[ "$current" == "$target" ]] && { echo "Already deployed $target"; exit 0; }
 
 # Public metadata API, called only when main differs; cannot deploy PR runs.

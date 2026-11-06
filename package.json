@@ -10,6 +10,7 @@
     "dev:doctor": "uv run --all-extras python scripts/dev_environment.py --doctor",
     "cloud:check": "npm --prefix apps/cloud run check",
     "cloud:build": "npm --prefix apps/cloud run build",
+    "deploy": "gh workflow run cloud-deploy.yml --repo oaslananka/kicad-mcp-pro --ref main",
     "assets:icons": "uv run --all-extras python scripts/render_icons.py",
     "assets:icons:check": "uv run --all-extras python scripts/check_icon_assets.py",
     "assets:demo": "uv run --all-extras python scripts/generate_synthetic_demo.py --convert-if-available",
@@ -91,7 +92,8 @@
     "profiles:check": "uv run --all-extras python scripts/profile_surface_report.py --check",
     "adapter-matrix:build": "uv run --all-extras python scripts/build_adapter_matrix.py",
     "adapter-matrix:check": "uv run --all-extras python scripts/build_adapter_matrix.py --check",
-    "hooks:install": "python scripts/install_git_hooks.py"
+    "hooks:install": "python scripts/install_git_hooks.py",
+    "deploy:check": "gh workflow run cloud-deploy-preflight.yml --repo oaslananka/kicad-mcp-pro --ref main"
   },
   "devDependencies": {
     "@commitlint/cli": "21.2.4",

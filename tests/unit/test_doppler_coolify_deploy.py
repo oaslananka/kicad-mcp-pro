@@ -1,0 +1,887 @@
+"""Offline contract tests for Doppler secret injection and Coolify deploy guards."""
+
+from __future__ import annotations
+
+import json
+import sys
+import unittest
+import urllib.error
+from pathlib import Path
+from typing import Any
+from unittest.mock import patch
+
+EXAMPLE_SERVICE_VALUE = "nonsecret-stub"
+
+SCRIPTS = Path(__file__).resolve().parents[2] / "scripts"
+sys.path.insert(0, str(SCRIPTS))
+import cloud_deploy as cloud  # noqa: E402
+import doppler_secret as secret  # noqa: E402
+
+SHA = "a" * 40
+OTHER = "b" * 40
+UUID = "gd6kdgzjuukp2lbwedos4u9k"
+CLOUD_ORIGIN = "https://cloud.example.com"
+
+
+class FakeResponse:
+    def __init__(self, data: dict[str, Any]) -> None:
+        self.data = data
+
+    def __enter__(self) -> FakeResponse:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return False
+
+    def read(self, _: object = None) -> bytes:
+        return json.dumps(self.data).encode("utf-8")
+
+
+class SecretContracts(unittest.TestCase):
+    def test_protected_main_reader_fetches_single_key(self) -> None:
+        requests = []
+
+        def fake_open(request, timeout):
+            self.assertEqual(timeout, 12)
+            requests.append(request)
+            return FakeResponse({"value": {"computed": "fixture-value"}})
+
+        result = secret.get_secret(
+            "COOLIFY_API_TOKEN", token=EXAMPLE_SERVICE_VALUE, opener=fake_open
+        )
+        self.assertEqual(result, "fixture-value")
+        self.assertEqual(len(requests), 1)
+        self.assertIn("config=main", requests[0].full_url)
+        self.assertIn("name=COOLIFY_API_TOKEN", requests[0].full_url)
+
+    def test_reader_rejects_every_other_config(self) -> None:
+        for wrong in ("ci", "deploy", "release", "gui-signing", "prd_cloud", "live-eval"):
+            with self.assertRaisesRegex(secret.SecretError, "UNEXPECTED_DOPPLER_SECRET_SCOPE"):
+                secret.get_secret("SONAR_TOKEN", token=EXAMPLE_SERVICE_VALUE, config=wrong)
+
+    def test_reader_rejects_unresolved_empty_and_log_injection(self) -> None:
+        for bad in ("", "x\r", "abc\nline", "$" + "{UNRESOLVED}"):
+
+            def fake(_request, timeout, value=bad):
+                return FakeResponse({"value": {"computed": value}})
+
+            with self.assertRaises(secret.SecretError):
+                secret.get_secret("COOLIFY_API_TOKEN", token=EXAMPLE_SERVICE_VALUE, opener=fake)
+
+    def test_reader_denies_redirects_and_hides_http_error(self) -> None:
+        self.assertIsNone(
+            secret.NoRedirect().redirect_request(
+                object(), None, 302, "Found", {}, "https://untrusted.invalid"
+            )
+        )
+
+        def failure(_request, timeout):
+            raise urllib.error.HTTPError(
+                "https://unused", 401, "response-contains-secret", {}, None
+            )
+
+        with self.assertRaisesRegex(secret.SecretError, "^DOPPLER_HTTP_401$"):
+            secret.get_secret("COOLIFY_API_TOKEN", token=EXAMPLE_SERVICE_VALUE, opener=failure)
+
+
+class LocalEntryContracts(unittest.TestCase):
+    def test_dispatch_does_not_supply_secrets_to_pr_jobs(self) -> None:
+        package = json.loads((SCRIPTS.parent / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            package["scripts"]["deploy"],
+            "gh workflow run cloud-deploy.yml --repo oaslananka/kicad-mcp-pro --ref main",
+        )
+
+    def test_bash_sync_has_explicit_scope_and_opt_in_apply(self) -> None:
+        source = (SCRIPTS / "sync_doppler_github.sh").read_text(encoding="utf-8")
+        self.assertIn('config="main"', source)
+        self.assertIn('case "$1" in', source)
+        self.assertIn("[[ $# -eq 1 ]]", source)
+        self.assertIn("GITHUB_ACTIONS", source)
+        self.assertIn("gh secret set", source)
+
+
+class DeployContracts(unittest.TestCase):
+    @staticmethod
+    def ci_get(url: str, token: str | None = None) -> dict[str, Any]:
+        if url.endswith("/branches/main"):
+            return {"commit": {"sha": SHA}}
+        if "/runs?" in url:
+            return {
+                "workflow_runs": [
+                    {
+                        "head_sha": SHA,
+                        "head_branch": "main",
+                        "event": "push",
+                        "status": "completed",
+                        "conclusion": "success",
+                    }
+                ]
+            }
+        raise AssertionError("Unexpected API: " + url)
+
+    def test_ci_workflow_query_limits_remote_response_size(self) -> None:
+        requests: list[str] = []
+
+        def bounded_get(url: str, token: str | None = None) -> dict[str, Any]:
+            requests.append(url)
+            self.assertEqual(token, "github")
+            return {"workflow_runs": []}
+
+        for workflow in ("ci.yml", "cloud-ci.yml"):
+            found = cloud._workflow_push_runs(
+                "https://api.github.com/repos/oaslananka/kicad-mcp-pro",
+                workflow,
+                "github",
+                bounded_get,
+            )
+            self.assertEqual(found, [])
+        self.assertEqual(len(requests), 2)
+        for url in requests:
+            self.assertIn("branch=main", url)
+            self.assertIn("event=push", url)
+            self.assertIn("per_page=10", url)
+            self.assertNotIn("per_page=100", url)
+
+    def test_ci_requires_exact_successful_push_main(self) -> None:
+        cloud.require_successful_ci(SHA, "github", self.ci_get)
+        with self.assertRaisesRegex(cloud.DeployError, "^CI_IDENTITY_MISSING$"):
+            cloud.require_successful_ci("invalid", "github", self.ci_get)
+
+        def wrong_run(url, token=None):
+            if "/runs?" in url:
+                return {
+                    "workflow_runs": [
+                        {
+                            "head_sha": OTHER,
+                            "head_branch": "main",
+                            "event": "push",
+                            "status": "completed",
+                            "conclusion": "success",
+                        }
+                    ]
+                }
+            return self.ci_get(url, token)
+
+        with self.assertRaisesRegex(cloud.DeployError, "MAIN_CI_NOT_SUCCESSFUL"):
+            cloud.require_successful_ci(SHA, "github", wrong_run)
+
+    def test_cloud_ci_path_filtered_clean_main_is_accepted(self) -> None:
+        def fake(url, token=None):
+            if "/cloud-ci.yml/runs?" in url:
+                return {
+                    "workflow_runs": [
+                        {
+                            "head_sha": OTHER,
+                            "head_branch": "main",
+                            "event": "push",
+                            "status": "completed",
+                            "conclusion": "success",
+                        }
+                    ]
+                }
+            if "/compare/" in url:
+                self.assertIn(OTHER + "..." + SHA, url)
+                return {
+                    "status": "ahead",
+                    "files": [
+                        {"filename": "docs/intro.md"},
+                        {"filename": ".github/workflows/ci.yml"},
+                    ],
+                }
+            return self.ci_get(url, token)
+
+        cloud.require_successful_ci(SHA, "github", fake)
+
+    def test_cloud_ci_path_filtered_changed_cloud_blocks(self) -> None:
+        def fake(url, token=None):
+            if "/cloud-ci.yml/runs?" in url:
+                return {
+                    "workflow_runs": [
+                        {
+                            "head_sha": OTHER,
+                            "head_branch": "main",
+                            "event": "push",
+                            "status": "completed",
+                            "conclusion": "success",
+                        }
+                    ]
+                }
+            if "/compare/" in url:
+                return {"status": "ahead", "files": [{"filename": "apps/cloud/src/http.ts"}]}
+            return self.ci_get(url, token)
+
+        with self.assertRaisesRegex(cloud.DeployError, "CLOUD_CI_NOT_SUCCESSFUL_FOR_CHANGED_CODE"):
+            cloud.require_successful_ci(SHA, "github", fake)
+
+    def test_cloud_ci_nonancestor_and_truncated_diff_block(self) -> None:
+        def build_getter(comparison: dict[str, Any]):
+            def fake(url: str, token: str | None = None):
+                if "/cloud-ci.yml/runs?" in url:
+                    return {
+                        "workflow_runs": [
+                            {
+                                "head_sha": OTHER,
+                                "head_branch": "main",
+                                "event": "push",
+                                "status": "completed",
+                                "conclusion": "success",
+                            }
+                        ]
+                    }
+                if "/compare/" in url:
+                    return comparison
+                return self.ci_get(url, token)
+
+            return fake
+
+        for comparison in (
+            {"status": "diverged", "files": []},
+            {"status": "ahead", "files": [{"filename": "docs/readme.md"}] * 300},
+        ):
+            getter = build_getter(comparison)
+            with self.assertRaises(cloud.DeployError):
+                cloud.require_successful_ci(SHA, "github", getter)
+
+    def test_ci_rechecks_moving_main_branch(self) -> None:
+        def stale(url, token=None):
+            if url.endswith("/branches/main"):
+                return {"commit": {"sha": OTHER}}
+            return self.ci_get(url, token)
+
+        with self.assertRaisesRegex(cloud.DeployError, "^MAIN_SHA_CHANGED$"):
+            cloud.require_successful_ci(SHA, "github", stale)
+
+    def test_coolify_wrong_target_or_autodeploy_is_denied(self) -> None:
+        data = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {"is_auto_deploy_enabled": False, "is_preview_deployments_enabled": False},
+        }
+
+        def get(url, token=None):
+            return data
+
+        cloud.verify_application("https://coolify.example/api/v1", "token", UUID, get)
+        data["git_repository"] = "other/repo"
+        with self.assertRaisesRegex(cloud.DeployError, "COOLIFY_REPOSITORY_MISMATCH"):
+            cloud.verify_application("https://coolify.example/api/v1", "token", UUID, get)
+        data["git_repository"] = cloud.REPOSITORY
+        data["settings"]["is_auto_deploy_enabled"] = True
+        with self.assertRaisesRegex(cloud.DeployError, "COOLIFY_AUTO_DEPLOY_MUST_BE_OFF"):
+            cloud.verify_application("https://coolify.example/api/v1", "token", UUID, get)
+
+    def test_rejects_coolify_unexpected_compose_directory(self) -> None:
+        data = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/other",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {"is_auto_deploy_enabled": False, "is_preview_deployments_enabled": False},
+        }
+        with self.assertRaisesRegex(cloud.DeployError, "COOLIFY_COMPOSE_LOCATION_MISMATCH"):
+            cloud.verify_application(
+                "https://coolify.example/api/v1", "token", UUID, lambda *_a, **_k: data
+            )
+
+    def test_rollback_rejects_ambiguous_or_partial_sha_tags(self) -> None:
+        def get(url, token=None):
+            return {"images": [{"tag": "app:" + OTHER + "-" + SHA, "is_current": False}]}
+
+        with self.assertRaisesRegex(cloud.DeployError, "ROLLBACK_IMAGE_NOT_VERIFIED"):
+            cloud.rollback_if_available(
+                "https://coolify.example/api/v1",
+                "token",
+                UUID,
+                SHA,
+                "https://cloud.example",
+                get,
+                lambda *_a, **_k: None,
+            )
+
+    def test_coolify_poll_fails_on_wrong_commit(self) -> None:
+        def fake(url, token=None):
+            return {"status": "finished", "commit": OTHER}
+
+        with self.assertRaisesRegex(cloud.DeployError, "COOLIFY_DEPLOYED_WRONG_COMMIT"):
+            cloud.wait_deployment("https://coolify.example/api/v1", "token", UUID, SHA, fake)
+
+    def test_coolify_poll_fails_on_deployment_error(self) -> None:
+        def fake(url, token=None):
+            return {"status": "failed", "commit": SHA}
+
+        with self.assertRaisesRegex(cloud.DeployError, "COOLIFY_DEPLOYMENT_FAILED"):
+            cloud.wait_deployment("https://coolify.example/api/v1", "token", UUID, SHA, fake)
+
+    def test_coolify_poll_returns_only_exact_success(self) -> None:
+        calls = []
+
+        def fake(url, token=None):
+            calls.append(url)
+            return {"status": "finished", "commit": SHA}
+
+        result = cloud.wait_deployment("https://coolify.example/api/v1", "token", UUID, SHA, fake)
+        self.assertEqual(result["commit"], SHA)
+        self.assertEqual(len(calls), 1)
+
+    def test_public_health_checks_revision(self) -> None:
+        def good(url, token=None):
+            self.assertEqual(url, "https://cloud.example.com/health")
+            return {"revision": SHA}
+
+        cloud.health(CLOUD_ORIGIN, SHA, good)
+        with self.assertRaisesRegex(cloud.DeployError, "LIVE_REVISION_MISMATCH"):
+            cloud.health("https://cloud.example.com", SHA, lambda url: {"revision": OTHER})
+
+    def test_deploy_requires_matching_healthy_coolify_baseline_before_post(self) -> None:
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+        app = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            if url.endswith("/applications/" + UUID):
+                return app
+            if url.endswith("/health"):
+                return {"revision": SHA}
+            raise AssertionError("Unexpected API: " + url)
+
+        posts: list[str] = []
+
+        def post(url: str, **_kwargs: object) -> dict[str, Any]:
+            posts.append(url)
+            raise AssertionError("deploy POST must not be called")
+
+        with (
+            patch.object(cloud, "require_successful_ci"),
+            patch.object(cloud, "load_settings", return_value=settings),
+        ):
+            with self.assertRaisesRegex(cloud.DeployError, "^LIVE_REVISION_MISMATCH$"):
+                cloud.deploy(SHA, "github", get, post)
+
+            app["status"] = "stopped"
+            with self.assertRaisesRegex(cloud.DeployError, "^COOLIFY_BASELINE_NOT_HEALTHY$"):
+                cloud.deploy(SHA, "github", get, post)
+
+            app["status"] = "running:healthy"
+            app["git_commit_sha"] = "invalid"
+            with self.assertRaisesRegex(cloud.DeployError, "^COOLIFY_BASELINE_SHA_UNKNOWN$"):
+                cloud.deploy(SHA, "github", get, post)
+
+            # Already deployed is still idempotent when both live sources match.
+            app["git_commit_sha"] = SHA
+            cloud.deploy(SHA, "github", get, post)
+        self.assertEqual(posts, [])
+
+    def test_deploy_pins_exact_main_before_post_and_checks_new_live(self) -> None:
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+        app = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+        live = OTHER
+        order: list[str] = []
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            if url.endswith("/applications/" + UUID):
+                return app
+            if url.endswith("/health"):
+                return {"revision": live}
+            if url.endswith("/deployments/" + UUID):
+                return {"status": "finished", "commit": SHA}
+            raise AssertionError("Unexpected API: " + url)
+
+        def post(url: str, **kwargs: object) -> dict[str, Any]:
+            nonlocal live
+            if url.endswith("/applications/" + UUID + "/envs"):
+                self.assertEqual(kwargs.get("method"), "PATCH")
+                self.assertEqual(
+                    kwargs["payload"],
+                    {
+                        "key": "APP_REVISION",
+                        "value": SHA,
+                        "is_preview": False,
+                        "is_literal": False,
+                    },
+                )
+                self.assertEqual(live, OTHER)
+                self.assertEqual(app["git_commit_sha"], SHA)
+                order.append("REVISION_PATCH")
+                return {"key": "APP_REVISION", "is_preview": False}
+            if kwargs.get("method") == "PATCH":
+                self.assertTrue(url.endswith("/applications/" + UUID))
+                self.assertEqual(kwargs["payload"], {"git_commit_sha": SHA})
+                self.assertEqual(live, OTHER)
+                order.append("PATCH")
+                app["git_commit_sha"] = SHA
+                return {"uuid": UUID}
+            self.assertEqual(kwargs.get("method"), "POST")
+            self.assertIn("/deploy?", url)
+            self.assertEqual(app["git_commit_sha"], SHA)
+            order.append("POST")
+            live = SHA
+            return {"deployments": [{"resource_uuid": UUID, "deployment_uuid": UUID}]}
+
+        with (
+            patch.object(cloud, "require_successful_ci") as ci,
+            patch.object(cloud, "load_settings", return_value=settings),
+        ):
+            cloud.deploy(SHA, "github", get, post)
+        self.assertEqual(order, ["PATCH", "REVISION_PATCH", "POST"])
+        self.assertEqual(ci.call_count, 5)
+
+    def test_deploy_restores_pin_if_ci_moves_before_post(self) -> None:
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+        app = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+        patch_values: list[str] = []
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            if url.endswith("/applications/" + UUID):
+                return app
+            if url.endswith("/health"):
+                return {"revision": OTHER}
+            raise AssertionError("Unexpected API: " + url)
+
+        def post(url: str, **kwargs: object) -> dict[str, Any]:
+            self.assertEqual(kwargs.get("method"), "PATCH")
+            self.assertTrue(url.endswith("/applications/" + UUID))
+            rev = kwargs["payload"]["git_commit_sha"]
+            patch_values.append(rev)
+            app["git_commit_sha"] = rev
+            return {"uuid": UUID}
+
+        checks = 0
+
+        def ci(*_args: object, **_kwargs: object) -> None:
+            nonlocal checks
+            checks += 1
+            if checks == 3:
+                raise cloud.DeployError("MAIN_SHA_CHANGED")
+
+        with (
+            patch.object(cloud, "require_successful_ci", side_effect=ci),
+            patch.object(cloud, "load_settings", return_value=settings),
+        ):
+            with self.assertRaisesRegex(cloud.DeployError, "^MAIN_SHA_CHANGED$"):
+                cloud.deploy(SHA, "github", get, post)
+        self.assertEqual(patch_values, [SHA, OTHER])
+        self.assertEqual(app["git_commit_sha"], OTHER)
+
+    def test_deploy_does_not_post_without_verified_pin(self) -> None:
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+        app = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+        methods: list[str] = []
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            if url.endswith("/applications/" + UUID):
+                return app
+            if url.endswith("/health"):
+                return {"revision": OTHER}
+            raise AssertionError("Unexpected API: " + url)
+
+        def post(_url: str, **kwargs: object) -> dict[str, Any]:
+            methods.append(kwargs["method"])
+            # Simulate Coolify accepting PATCH without actually persisting it.
+            return {"uuid": UUID}
+
+        with (
+            patch.object(cloud, "require_successful_ci"),
+            patch.object(cloud, "load_settings", return_value=settings),
+        ):
+            with self.assertRaisesRegex(cloud.DeployError, "^COOLIFY_TARGET_PIN_NOT_VERIFIED$"):
+                cloud.deploy(SHA, "github", get, post)
+        self.assertEqual(methods, ["PATCH"])
+
+    def test_deploy_rejects_source_pin_race_without_patch(self) -> None:
+        app = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+        application_reads = 0
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            nonlocal application_reads
+            if url.endswith("/applications/" + UUID):
+                application_reads += 1
+                if application_reads == 2:
+                    app["git_commit_sha"] = "c" * 40
+                return app
+            if url.endswith("/health"):
+                return {"revision": OTHER}
+            raise AssertionError("Unexpected API")
+
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+        with (
+            patch.object(cloud, "require_successful_ci"),
+            patch.object(cloud, "load_settings", return_value=settings),
+        ):
+            with self.assertRaisesRegex(cloud.DeployError, "^COOLIFY_SOURCE_PIN_CHANGED$"):
+                cloud.deploy(
+                    SHA,
+                    "github",
+                    get,
+                    lambda *_a, **_k: self.fail("no PATCH/POST permitted"),
+                )
+
+    def test_deploy_unhealthy_after_pin_denies_post_and_pin_restore(self) -> None:
+        app = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+        methods: list[str] = []
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            if url.endswith("/applications/" + UUID):
+                return app
+            if url.endswith("/health"):
+                return {"revision": OTHER}
+            raise AssertionError("Unexpected API")
+
+        def post(url: str, **kwargs: object) -> dict[str, Any]:
+            self.assertTrue(url.endswith("/applications/" + UUID))
+            self.assertEqual(kwargs.get("method"), "PATCH")
+            methods.append("PATCH")
+            app["git_commit_sha"] = SHA
+            app["status"] = "stopped"
+            return {"uuid": UUID}
+
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+        with (
+            patch.object(cloud, "require_successful_ci"),
+            patch.object(cloud, "load_settings", return_value=settings),
+        ):
+            with self.assertRaisesRegex(
+                cloud.DeployError, "^COOLIFY_BASELINE_UNHEALTHY_AFTER_PIN$"
+            ):
+                cloud.deploy(SHA, "github", get, post)
+        self.assertEqual(methods, ["PATCH"])
+
+    def test_revision_metadata_patch_requires_exact_application_scope(self) -> None:
+        requests: list[tuple[str, dict[str, object]]] = []
+
+        def send(url: str, **kwargs: object) -> dict[str, Any]:
+            requests.append((url, kwargs))
+            return {"key": "APP_REVISION", "is_preview": False}
+
+        cloud._set_runtime_revision(SHA, "https://coolify.example.com/api/v1", "scoped", UUID, send)
+        self.assertEqual(len(requests), 1)
+        url, kwargs = requests[0]
+        self.assertEqual(url, "https://coolify.example.com/api/v1/applications/" + UUID + "/envs")
+        self.assertEqual(kwargs["token"], "scoped")
+        self.assertEqual(kwargs["method"], "PATCH")
+        self.assertEqual(
+            kwargs["payload"],
+            {
+                "key": "APP_REVISION",
+                "value": SHA,
+                "is_preview": False,
+                "is_literal": False,
+            },
+        )
+
+        with self.assertRaisesRegex(cloud.DeployError, "^COOLIFY_REVISION_CONFIG_NOT_VERIFIED$"):
+            cloud._set_runtime_revision(
+                SHA,
+                "https://coolify.example.com/api/v1",
+                "scoped",
+                UUID,
+                lambda *_a, **_k: {"key": "WRONG_ENV", "is_preview": False},
+            )
+
+    def test_revision_metadata_rejects_untrusted_revision_without_write(self) -> None:
+        with self.assertRaisesRegex(cloud.DeployError, "^INVALID_REVISION_SHA$"):
+            cloud._set_runtime_revision(
+                "not-a-commit",
+                "https://coolify.example.com/api/v1",
+                "scoped",
+                UUID,
+                lambda *_a, **_k: self.fail("No mutation for unverified SHA"),
+            )
+
+    def test_revision_metadata_patch_rejects_preview_scope(self) -> None:
+        with self.assertRaisesRegex(cloud.DeployError, "^COOLIFY_REVISION_CONFIG_NOT_VERIFIED$"):
+            cloud._set_runtime_revision(
+                SHA,
+                "https://coolify.example.com/api/v1",
+                "scoped",
+                UUID,
+                lambda *_a, **_k: {"key": "APP_REVISION", "is_preview": True},
+            )
+
+    def test_source_and_revision_restored_if_ci_moves_before_deployment(self) -> None:
+        app = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+        revision = OTHER
+        mutations: list[str] = []
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            if url.endswith("/applications/" + UUID):
+                return app
+            if url.endswith("/health"):
+                return {"revision": OTHER}
+            raise AssertionError("Unexpected GET " + url)
+
+        def post(url: str, **kwargs: object) -> dict[str, Any]:
+            nonlocal revision
+            if url.endswith("/applications/" + UUID + "/envs"):
+                self.assertEqual(kwargs.get("method"), "PATCH")
+                payload = kwargs["payload"]
+                self.assertIsInstance(payload, dict)
+                new_revision = payload["value"]
+                mutations.append("ENV_" + ("NEW" if new_revision == SHA else "OLD"))
+                revision = new_revision
+                return {"key": "APP_REVISION", "is_preview": False}
+            if url.endswith("/applications/" + UUID):
+                self.assertEqual(kwargs.get("method"), "PATCH")
+                payload = kwargs["payload"]
+                self.assertIsInstance(payload, dict)
+                new_pin = payload["git_commit_sha"]
+                mutations.append("PIN_" + ("NEW" if new_pin == SHA else "OLD"))
+                app["git_commit_sha"] = new_pin
+                return {"uuid": UUID}
+            self.fail("No deployment may be requested after main changes")
+
+        checks = 0
+
+        def ci(*_args: object, **_kwargs: object) -> None:
+            nonlocal checks
+            checks += 1
+            if checks == 4:
+                raise cloud.DeployError("MAIN_SHA_CHANGED")
+
+        with (
+            patch.object(cloud, "require_successful_ci", side_effect=ci),
+            patch.object(cloud, "load_settings", return_value=settings),
+        ):
+            with self.assertRaisesRegex(cloud.DeployError, "^MAIN_SHA_CHANGED$"):
+                cloud.deploy(SHA, "github", get, post)
+        self.assertEqual(mutations, ["PIN_NEW", "ENV_NEW", "PIN_OLD", "ENV_OLD"])
+        self.assertEqual(app["git_commit_sha"], OTHER)
+        self.assertEqual(revision, OTHER)
+
+    def test_preflight_read_only_accepts_live_revision(self) -> None:
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+            "OAUTH_ISSUER": CLOUD_ORIGIN + "/api/auth",
+            "OAUTH_JWKS_URL": CLOUD_ORIGIN + "/api/auth/jwks",
+            "OAUTH_AUDIENCE": CLOUD_ORIGIN + "/mcp",
+        }
+        calls: list[str] = []
+        application = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            calls.append(url)
+            if url.endswith("/applications/" + UUID):
+                return application
+            if url.endswith("/health"):
+                return {"revision": OTHER}
+            return self.ci_get(url, token)
+
+        def fetch(name: str, **_kwargs: object) -> str:
+            return settings[name]
+
+        with patch.dict("os.environ", {"DOPPLER_TOKEN": EXAMPLE_SERVICE_VALUE}):
+            result = cloud.preflight(SHA, "github", get, fetch)
+        self.assertEqual(result, OTHER)
+        self.assertEqual(len([url for url in calls if url.endswith("/health")]), 1)
+        self.assertFalse(any("/deploy" in url or "/rollback" in url for url in calls))
+
+    def test_preflight_rejects_mismatched_live_sha(self) -> None:
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+            "OAUTH_ISSUER": CLOUD_ORIGIN + "/api/auth",
+            "OAUTH_JWKS_URL": CLOUD_ORIGIN + "/api/auth/jwks",
+            "OAUTH_AUDIENCE": CLOUD_ORIGIN + "/mcp",
+        }
+        application = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            if url.endswith("/applications/" + UUID):
+                return application
+            if url.endswith("/health"):
+                return {"revision": SHA}
+            return self.ci_get(url, token)
+
+        def fetch(name: str, **_kwargs: object) -> str:
+            return settings[name]
+
+        with patch.dict("os.environ", {"DOPPLER_TOKEN": EXAMPLE_SERVICE_VALUE}):
+            with self.assertRaisesRegex(cloud.DeployError, "LIVE_REVISION_MISMATCH"):
+                cloud.preflight(SHA, "github", get, fetch)
+
+    def test_preflight_workflow_separates_actual_deployment(self) -> None:
+        workflow = (SCRIPTS.parent / ".github/workflows/cloud-deploy-preflight.yml").read_text(
+            encoding="utf-8"
+        )
+        deploy = (SCRIPTS.parent / ".github/workflows/cloud-deploy.yml").read_text(encoding="utf-8")
+        package = json.loads((SCRIPTS.parent / "package.json").read_text(encoding="utf-8"))
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertNotIn("inputs:", workflow)
+        self.assertIn("--preflight-only", workflow)
+        self.assertNotIn("--preflight-only", deploy)
+        self.assertNotIn("preflight_only", deploy)
+        self.assertIn("cloud-deploy-preflight.yml", package["scripts"]["deploy:check"])
+
+    def test_rejects_http_or_credential_urls(self) -> None:
+        for bad in (
+            "http://coolify.example",
+            "https://user:password@coolify.example",
+            "https://coolify.example/path",
+        ):
+            with self.assertRaises(cloud.DeployError):
+                cloud.origin(bad)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -56,6 +56,15 @@ def fixture() -> dict[str, object]:
     }
 
 
+def fixture_v2() -> dict[str, object]:
+    """Distinct signed disk/live revisions, never an execution authorization."""
+    body = fixture()
+    body["version"] = 2
+    command = cast(dict[str, object], body["command"])
+    command["expectedLiveBoardSha256"] = "b" * 64
+    return body
+
+
 def parse(
     payload: bytes,
     *,
@@ -74,6 +83,70 @@ def parse(
 def test_one_narrow_command_is_validated_without_mutating_a_file() -> None:
     expected = fixture()
     assert parse(json.dumps(expected).encode()) == expected
+
+
+def test_v2_distinct_disk_and_live_snapshots_are_exactly_validated() -> None:
+    body = fixture_v2()
+    result = parse(json.dumps(body).encode())
+    assert result == body
+    command = cast(dict[str, object], result["command"])
+    assert command["expectedBoardSha256"] != command["expectedLiveBoardSha256"]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "missing_live",
+        "invalid_live",
+        "uppercase_live",
+        "short_live",
+        "nonstring_live",
+        "extra_live_field",
+        "version_one_with_live",
+        "version_bool",
+        "v2_with_extra_command",
+        "v2_with_extra_frame",
+    ],
+)
+def test_v2_hostile_revision_fields_are_denied(mutation: str) -> None:
+    body = fixture_v2()
+    command = cast(dict[str, object], body["command"])
+    if mutation == "missing_live":
+        del command["expectedLiveBoardSha256"]
+    elif mutation == "invalid_live":
+        command["expectedLiveBoardSha256"] = "g" * 64
+    elif mutation == "uppercase_live":
+        command["expectedLiveBoardSha256"] = "B" * 64
+    elif mutation == "short_live":
+        command["expectedLiveBoardSha256"] = "b" * 63
+    elif mutation == "nonstring_live":
+        command["expectedLiveBoardSha256"] = True
+    elif mutation == "extra_live_field":
+        command["expectedUnapprovedRevision"] = "c" * 64
+    elif mutation == "version_one_with_live":
+        body["version"] = 1
+    elif mutation == "version_bool":
+        body["version"] = True
+    elif mutation == "v2_with_extra_command":
+        command["path"] = "../../other"
+    else:
+        body["path"] = "/unsafe"
+    payload = json.dumps(body).encode()
+    with pytest.raises(LocalWriteDeniedError, match="^request denied$"):
+        parse(payload)
+
+
+def test_v2_local_binding_and_expiry_still_fail_closed() -> None:
+    body = fixture_v2()
+    payload = json.dumps(body).encode()
+    for binding, policy, clock in (
+        (replace(BINDING, session_id=PROJECT), POLICY, NOW),
+        (replace(BINDING, operations=frozenset()), POLICY, NOW),
+        (BINDING, replace(POLICY, project_id=DEVICE), NOW),
+        (BINDING, POLICY, NOW + 1000),
+    ):
+        with pytest.raises(LocalWriteDeniedError, match="^request denied$"):
+            parse(payload, binding=binding, policy=policy, now=clock)
 
 
 @pytest.mark.parametrize(
