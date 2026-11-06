@@ -339,7 +339,7 @@ def preflight(
 def _pin_exact_source(
     sha: str,
     previous_sha: str,
-    gh_token: str,
+    github_authorization: str,
     api: str,
     token: str,
     uuid: str,
@@ -348,7 +348,7 @@ def _pin_exact_source(
     post: JsonGetter,
 ) -> None:
     # Coolify /deploy rebuilds the pinned source, not the newest main commit.
-    require_successful_ci(sha, gh_token, get)
+    require_successful_ci(sha, github_authorization, get)
     if verify_application(api, token, uuid, get).get("git_commit_sha") != previous_sha:
         raise DeployError("COOLIFY_SOURCE_PIN_CHANGED")
     post(
@@ -364,7 +364,7 @@ def _pin_exact_source(
         raise DeployError("COOLIFY_BASELINE_UNHEALTHY_AFTER_PIN")
     # PATCH must not restart or redirect the public running application.
     health(public_origin, previous_sha, get)
-    require_successful_ci(sha, gh_token, get)
+    require_successful_ci(sha, github_authorization, get)
 
 
 def _restore_source_pin(
