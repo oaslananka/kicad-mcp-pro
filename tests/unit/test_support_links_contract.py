@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
@@ -66,12 +67,10 @@ def test_tauri_bootstrap_screen_exposes_support_actions() -> None:
 
 def test_native_browser_bridge_preserves_browser_security_boundary() -> None:
     rust = (ROOT / "src-tauri" / "src" / "lib.rs").read_text(encoding="utf-8")
-    html = (ROOT / "src-tauri" / "frontend" / "index.html").read_text(
-        encoding="utf-8"
-    )
+    html = (ROOT / "src-tauri" / "frontend" / "index.html").read_text(encoding="utf-8")
     assert "fn allowed_external_link(url: &str) -> bool" in rust
     assert "fn open_external_link(" in rust
-    assert "app.shell().open(url, None)" in rust
+    assert re.search(r"app\.shell\(\)\s*\.open\(url, None\)", rust) is not None
     assert "open_external_link," in rust
     for url in [GITHUB_SPONSORS, BUY_ME_A_COFFEE]:
         assert url in rust
