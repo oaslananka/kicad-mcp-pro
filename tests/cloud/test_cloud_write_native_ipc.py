@@ -25,8 +25,8 @@ _POSIX = pytest.mark.skipif(os.name != "posix", reason="requires pinned POSIX di
 
 
 class Board:
-    def __init__(self, project_path: Path, name: str, text: str = _TEXT) -> None:
-        self.project = SimpleNamespace(path=str(project_path))
+    def __init__(self, project_directory: Path, name: str, text: str = _TEXT) -> None:
+        self.project = SimpleNamespace(path=str(project_directory))
         self.name = name
         self.text = text
         self.pending: str | None = None
@@ -70,7 +70,7 @@ def setup(tmp_path: Path) -> tuple[OperatorProject, Board, str]:
     (directory / "test.kicad_pcb").chmod(0o600)
     (directory / "test.kicad_pro").write_text("{}", encoding="utf-8")
     policy = OperatorProject(_DEVICE, _PROJECT, directory, "test")
-    board = Board(directory / "test.kicad_pro", "test.kicad_pcb")
+    board = Board(directory, "test.kicad_pcb")
     return policy, board, hashlib.sha256(_TEXT.encode()).hexdigest()
 
 
@@ -116,6 +116,16 @@ def run(
 
 
 @_POSIX
+def test_real_kipy_project_path_is_approved_directory(tmp_path: Path) -> None:
+    policy, board, digest = setup(tmp_path)
+    assert board.get_project().path == str(policy.directory)
+    native = adapter(policy, [board], digest)
+    assert native.begin() is True
+    assert board.calls == ["begin"]
+    assert native.discard() is True
+
+
+@_POSIX
 def test_real_ipc_lifecycle_stages_verifies_and_pushes_one_undo_unit(tmp_path: Path) -> None:
     policy, board, digest = setup(tmp_path)
     native = adapter(policy, [board], digest)
@@ -128,12 +138,30 @@ def test_real_ipc_lifecycle_stages_verifies_and_pushes_one_undo_unit(tmp_path: P
 @_POSIX
 @pytest.mark.parametrize(
     "wrong",
-    ["different_project", "wrong_board", "dirty_snapshot", "bad_snapshot_type", "no_project"],
+    [
+        "different_project",
+        "project_file_not_directory",
+        "aliased_project_directory",
+        "relative_project_directory",
+        "nonstring_project_directory",
+        "wrong_board",
+        "dirty_snapshot",
+        "bad_snapshot_type",
+        "no_project",
+    ],
 )
 def test_wrong_live_board_never_opens_native_transaction(tmp_path: Path, wrong: str) -> None:
     policy, board, digest = setup(tmp_path)
     if wrong == "different_project":
-        board.project.path = str(tmp_path / "another.kicad_pro")
+        board.project.path = str(tmp_path / "another")
+    elif wrong == "project_file_not_directory":
+        board.project.path = str(policy.directory / "test.kicad_pro")
+    elif wrong == "aliased_project_directory":
+        board.project.path = str(policy.directory / ".." / "disposable")
+    elif wrong == "relative_project_directory":
+        board.project.path = "disposable"
+    elif wrong == "nonstring_project_directory":
+        board.project.path = 123
     elif wrong == "wrong_board":
         board.name = "unapproved.kicad_pcb"
     elif wrong == "dirty_snapshot":
@@ -185,7 +213,7 @@ def test_active_project_switch_after_stage_never_pushes(tmp_path: Path) -> None:
 
     def switch() -> str:
         result = original_stage()
-        current[0] = Board(tmp_path / "other.kicad_pro", "other.kicad_pcb")
+        current[0] = Board(tmp_path / "other", "other.kicad_pcb")
         return result
 
     board.stage_move = switch  # type: ignore[method-assign]
