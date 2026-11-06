@@ -26,6 +26,7 @@ KEY = Ed25519PrivateKey.generate()
 OTHER_KEY = Ed25519PrivateKey.generate()
 PUBLIC_KEY = KEY.public_key()
 PREFIX = b"kicad-cloud-signed-write-proposal-v1\x00"
+PREFIX_V2 = b"kicad-cloud-signed-write-proposal-v2\x00"
 BINDING = VerifiedLocalBinding(
     device_id=DEVICE,
     project_id=PROJECT,
@@ -55,6 +56,27 @@ def _signed(payload: bytes = GOLDEN) -> bytes:
             "version": 1,
             "payload": _encode(payload),
             "signature": _encode(KEY.sign(PREFIX + payload)),
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def _v2_payload() -> bytes:
+    body = json.loads(GOLDEN)
+    body["version"] = 2
+    body["command"]["expectedLiveBoardSha256"] = "b" * 64
+    return json.dumps(body, separators=(",", ":")).encode("utf-8")
+
+
+def _signed_v2(payload: bytes | None = None) -> bytes:
+    if payload is None:
+        payload = _v2_payload()
+    return json.dumps(
+        {
+            "kind": "connector.signed_write_proposal",
+            "version": 2,
+            "payload": _encode(payload),
+            "signature": _encode(KEY.sign(PREFIX_V2 + payload)),
         },
         separators=(",", ":"),
     ).encode("utf-8")
@@ -98,6 +120,83 @@ def test_valid_signed_proposal_is_bound_to_one_session_and_reserved_once() -> No
     assert _verify(raw, consume=reserve) == json.loads(GOLDEN)
     with pytest.raises(LocalWriteDeniedError, match="^request denied$"):
         _verify(raw, consume=reserve)
+
+
+def test_v2_proposal_signs_both_distinct_revisions_and_replay_id() -> None:
+    signed = _signed_v2()
+    reservations: list[tuple[str, str]] = []
+
+    def reserve(session: str, request: str) -> bool:
+        reservations.append((session, request))
+        return len(reservations) == 1
+
+    parsed = _verify(signed, consume=reserve)
+    assert parsed["version"] == 2
+    command = parsed["command"]
+    assert command["expectedBoardSha256"] == "a" * 64
+    assert command["expectedLiveBoardSha256"] == "b" * 64
+    with pytest.raises(LocalWriteDeniedError, match="^request denied$"):
+        _verify(signed, consume=reserve)
+    assert len(reservations) == 2
+
+
+@pytest.mark.parametrize(
+    "attack",
+    [
+        "modify_only_live",
+        "modify_disk",
+        "downgrade_envelope",
+        "upgrade_v1_envelope",
+        "v1_signature_v2_payload",
+        "v2_signature_v1_payload",
+        "missing_live_even_when_resigned",
+        "invalid_live_even_when_resigned",
+        "mismatched_project_even_when_resigned",
+    ],
+)
+def test_v2_signature_and_version_downgrade_are_rejected_before_replay(attack: str) -> None:
+    frame = json.loads(_signed_v2())
+    if attack == "modify_only_live":
+        command = json.loads(_v2_payload())
+        command["command"]["expectedLiveBoardSha256"] = "c" * 64
+        frame["payload"] = _encode(json.dumps(command).encode())
+    elif attack == "modify_disk":
+        command = json.loads(_v2_payload())
+        command["command"]["expectedBoardSha256"] = "c" * 64
+        frame["payload"] = _encode(json.dumps(command).encode())
+    elif attack == "downgrade_envelope":
+        frame["version"] = 1
+    elif attack == "upgrade_v1_envelope":
+        frame = json.loads(_signed())
+        frame["version"] = 2
+    elif attack == "v1_signature_v2_payload":
+        frame = json.loads(_signed(_v2_payload()))
+    elif attack == "v2_signature_v1_payload":
+        frame = json.loads(_signed_v2(GOLDEN))
+    else:
+        command = json.loads(_v2_payload())
+        if attack == "missing_live_even_when_resigned":
+            del command["command"]["expectedLiveBoardSha256"]
+        elif attack == "invalid_live_even_when_resigned":
+            command["command"]["expectedLiveBoardSha256"] = "not-a-sha256"
+        else:
+            command["projectId"] = DEVICE
+        frame = json.loads(_signed_v2(json.dumps(command).encode()))
+    calls: list[tuple[str, str]] = []
+    with pytest.raises(LocalWriteDeniedError, match="^request denied$"):
+        _verify(json.dumps(frame).encode(), consume=lambda a, b: (calls.append((a, b)), True)[1])
+    assert calls == []
+
+
+def test_v2_invalid_local_binding_never_reserves() -> None:
+    calls: list[tuple[str, str]] = []
+    with pytest.raises(LocalWriteDeniedError):
+        _verify(
+            _signed_v2(),
+            binding=replace(BINDING, session_id=PROJECT),
+            consume=lambda a, b: (calls.append((a, b)), True)[1],
+        )
+    assert calls == []
 
 
 def test_untrusted_signature_never_reserves_request() -> None:

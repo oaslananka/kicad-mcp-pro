@@ -1,11 +1,10 @@
-"""Strict offline-only validation of a future single KiCad write command.
+"""Strict offline-only validation of future KiCad write proposals (v1/v2).
 
-No transport, signer, permission, replay protection or KiCad execution lives
-here. A parse result is NOT authorization to mutate. A reviewed outbound
-Connector must independently authenticate a signed one-time command, query
-current owner/client/project grant, check expected board bytes, and execute
-an atomic local KiCad transaction. Existing read-only transport cannot call
-this module to perform writes.
+Version 1 binds an on-disk SHA-256. Version 2 separately pins the disk and
+KiCad in-memory serialization SHA-256; neither is derived from an untrusted
+request at execution time. A signed proposal is NOT owner approval. No
+transport, signer, permission, replay protection or KiCad execution lives
+here. The existing read-only Connector cannot call this module to write.
 """
 
 from __future__ import annotations
@@ -48,6 +47,9 @@ _COMMAND_FIELDS = frozenset(
         "expectedBoardSha256",
     }
 )
+# A new, separately signed version binds KiCad's byte-exact in-memory
+# serialization without changing the existing v1 disk-only proposal.
+_COMMAND_FIELDS_V2 = _COMMAND_FIELDS | {"expectedLiveBoardSha256"}
 
 
 class LocalWriteDeniedError(ValueError):
@@ -93,15 +95,19 @@ def parse_local_write_contract(
     if not isinstance(parsed, dict) or parsed.keys() != _FRAME_FIELDS:
         raise LocalWriteDeniedError(_DENIED)
     body = cast(dict[str, object], parsed)
+    version = body["version"]
     untrusted_command = body["command"]
-    if not isinstance(untrusted_command, dict) or untrusted_command.keys() != _COMMAND_FIELDS:
+    if (
+        type(version) is not int
+        or version not in (1, 2)
+        or not isinstance(untrusted_command, dict)
+        or untrusted_command.keys() != (_COMMAND_FIELDS_V2 if version == 2 else _COMMAND_FIELDS)
+    ):
         raise LocalWriteDeniedError(_DENIED)
     command = cast(dict[str, object], untrusted_command)
     deadline = body["deadlineUnixMs"]
     if (
         body["kind"] != "connector.write_request"
-        or type(body["version"]) is not int
-        or body["version"] != 1
         or not isinstance(body["requestId"], str)
         or _UUID.fullmatch(body["requestId"]) is None
         or not all(
@@ -140,6 +146,13 @@ def parse_local_write_contract(
         or not (command["rotationDeg"] is None or _coordinate(command["rotationDeg"], maximum=360))
         or not isinstance(command["expectedBoardSha256"], str)
         or _SHA256.fullmatch(command["expectedBoardSha256"]) is None
+        or (
+            version == 2
+            and (
+                not isinstance(command["expectedLiveBoardSha256"], str)
+                or _SHA256.fullmatch(command["expectedLiveBoardSha256"]) is None
+            )
+        )
     ):
         raise LocalWriteDeniedError(_DENIED)
     return body
