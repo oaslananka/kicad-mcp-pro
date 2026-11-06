@@ -405,12 +405,13 @@
           return;
         }
 
-        statusEl.textContent =
-          !readiness && retries > 8
-            ? 'Waiting for desktop integration. If this continues, restart KiCad MCP Pro.'
-            : retries < 8
-            ? 'Starting server…'
-            : `Starting server… first run downloads the backend, this can take a minute (${retries}s)`;
+        if (!readiness && retries > 8) {
+          statusEl.textContent = 'Waiting for desktop integration. If this continues, restart KiCad MCP Pro.';
+        } else if (retries < 8) {
+          statusEl.textContent = 'Starting server…';
+        } else {
+          statusEl.textContent = `Starting server… first run downloads the backend, this can take a minute (${retries}s)`;
+        }
         setTimeout(checkServer, RETRY_INTERVAL_MS);
       }
 
