@@ -178,9 +178,7 @@ scripts/doppler-runtime.sh docker compose -f infra/compose.cloudflare.yml up -d 
 # Bounded readiness never masks a wrong domain, route or revision.
 public_ready=false
 for _ in $(seq 1 20); do
-  observed=$(curl --fail --silent --show-error --max-time 7 \
-    "$public_origin/health" 2>/dev/null | \
-    node -e 'let b="";process.stdin.on("data",c=>b+=c);process.stdin.on("end",()=>{try{const h=JSON.parse(b);if(h.status==="ok")process.stdout.write(h.revision??"")}catch{}})' || true)
+  observed=$(node scripts/read-public-health-revision.mjs "$public_origin" --require-ok 2>/dev/null || true)
   if [[ "$observed" == "$revision" ]]; then public_ready=true; break; fi
   sleep 3
 done
