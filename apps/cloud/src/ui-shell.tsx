@@ -163,20 +163,38 @@ export function Notice({message}:{readonly message:string}){
   return <section className="card detail-card"><div className="notice-icon"><Icon name="warning" size={22}/></div>
     <h2>We couldn't complete that action</h2><p>{message}</p><a href="/" className="text-link">Return to overview <Icon name="arrow" size={16}/></a></section>;
 }
-export function SignIn({query,providers,pairing=false}:{readonly query:string;readonly providers:ReadonlyArray<"google"|"github">;readonly pairing?:boolean}){
-  return <section className="card auth-card">
-    <div className="panel-heading"><div className="panel-icon"><Icon name="lock" size={21}/></div>
-      <div><h2>Your workspace starts here</h2><p>Choose an available account to continue.</p></div></div>
-    {pairing?<p>Sign in or create an account to approve the device connection you just started from the CLI. This does not grant project access.</p>:null}
-    <div className="providers">{providers.includes("google")&&<form action="/auth/start/google" method="post">
-      <input type="hidden" name="oauth_query" value={query}/><button className="button provider" type="submit">
-        <span className="provider-logo">G</span> Continue with Google <Icon name="arrow" size={17} className="provider-arrow"/></button>
-    </form>}{providers.includes("github")&&<form action="/auth/start/github" method="post">
-      <input type="hidden" name="oauth_query" value={query}/><button className="button provider" type="submit">
-        <span className="provider-logo github"><Icon name="github" size={21}/></span> Continue with GitHub <Icon name="arrow" size={17} className="provider-arrow"/></button>
-    </form>}</div>
-    {pairing?<script defer={true} src="/assets/pairing-login-continuation.js"></script>:null}
-    <div className="auth-footnote"><Icon name="shield" size={19}/><p>Signing in doesn't share your KiCad projects. AI client permissions and project access require separate approval.</p></div>
+export function SignIn({query,providers,pairing=false}:{
+  readonly query:string;readonly providers:ReadonlyArray<"google"|"github">;readonly pairing?:boolean
+}){
+  return <section className="auth-stage" aria-label="KiCad MCP Cloud sign in">
+    <div className="auth-intro">
+      <div className="card-kicker">KICAD MCP CLOUD</div>
+      <h2>Your projects. Your control.</h2>
+      <p className="auth-lead">Connect your AI tools to the KiCad projects you choose. Your design files remain on your own computer.</p>
+      <div className="auth-journey" aria-label="How Cloud access works">
+        <div className="auth-journey-step"><span>01</span><div><strong>Sign in</strong><p>Continue with an available account.</p></div></div>
+        <div className="auth-journey-step"><span>02</span><div><strong>Pair your computer</strong><p>Approve the matching device code in your browser.</p></div></div>
+        <div className="auth-journey-step"><span>03</span><div><strong>Choose project access</strong><p>Grant each AI client access separately. Nothing is shared automatically.</p></div></div>
+      </div>
+      <div className="auth-local-note"><Icon name="lock" size={17}/><span>Using KiCad locally never requires a Cloud account.</span></div>
+    </div>
+    <div className="card auth-card">
+      <div className="panel-heading"><div className="panel-icon"><Icon name="shield" size={21}/></div>
+        <div><div className="card-kicker">{pairing?"DEVICE APPROVAL":"SECURE ACCOUNT ACCESS"}</div>
+          <h2>{pairing?"Approve your computer":"Welcome back"}</h2>
+          <p>{pairing?"Sign in to continue the device approval you started locally.":"Choose a provider to open your Cloud workspace."}</p></div>
+      </div>
+      <div className="providers">{providers.includes("google")&&<form action="/auth/start/google" method="post">
+        <input type="hidden" name="oauth_query" value={query}/><button className="button provider" type="submit">
+          <span className="provider-logo">G</span> Continue with Google <Icon name="arrow" size={17} className="provider-arrow"/></button>
+      </form>}{providers.includes("github")&&<form action="/auth/start/github" method="post">
+        <input type="hidden" name="oauth_query" value={query}/><button className="button provider" type="submit">
+          <span className="provider-logo github"><Icon name="github" size={21}/></span> Continue with GitHub <Icon name="arrow" size={17} className="provider-arrow"/></button>
+      </form>}</div>
+      {providers.length===0?<p className="auth-unavailable" role="status">Account sign-in is temporarily unavailable. Your local KiCad workspace continues to work without Cloud.</p>:null}
+      {pairing?<script defer={true} src="/assets/pairing-login-continuation.js"></script>:null}
+      <div className="auth-footnote"><Icon name="shield" size={19}/><p>Signing in does not pair a device or share a project. Access requires independent, explicit approval.</p></div>
+    </div>
   </section>;
 }
 export function Account({name,providers=["google","github"],linked=[]}:{

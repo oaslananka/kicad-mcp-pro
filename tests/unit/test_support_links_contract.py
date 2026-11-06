@@ -39,6 +39,21 @@ def test_dashboard_navigation_exposes_support_actions() -> None:
     assert DASHBOARD_HTML.count('rel="noopener noreferrer"') >= 4
 
 
+def test_local_dashboard_exposes_real_cloud_entry_without_forcing_authentication() -> None:
+    assert 'class="local-workspace-intro"' in DASHBOARD_HTML
+    assert 'href="https://kicad-mcp-pro.oaslananka.dev/sign-in"' in DASHBOARD_HTML
+    assert 'data-view="setup-wizard"' in DASHBOARD_HTML
+    assert "Work locally without an account" in DASHBOARD_HTML
+    assert "Signing in never shares local files" in DASHBOARD_HTML
+    assert "window.location.hash='#setup-wizard'" in DASHBOARD_HTML
+
+
+def test_mobile_dashboard_does_not_hide_sponsor_links() -> None:
+    assert ".nav-sep, .nav-label { display: none; }" in DASHBOARD_HTML
+    assert ".nav-support-group { display: flex" in DASHBOARD_HTML
+    assert ".nav-sep, .nav-label, .nav-support-group { display: none; }" not in DASHBOARD_HTML
+
+
 def test_tauri_bootstrap_screen_exposes_support_actions() -> None:
     html = (ROOT / "src-tauri" / "frontend" / "index.html").read_text(encoding="utf-8")
 
@@ -47,3 +62,22 @@ def test_tauri_bootstrap_screen_exposes_support_actions() -> None:
     assert "GitHub Sponsors" in html
     assert "Buy me a coffee" in html
     assert html.count('rel="noopener noreferrer"') >= 2
+
+
+def test_native_browser_bridge_preserves_browser_security_boundary() -> None:
+    rust = (ROOT / "src-tauri" / "src" / "lib.rs").read_text(encoding="utf-8")
+    html = (ROOT / "src-tauri" / "frontend" / "index.html").read_text(
+        encoding="utf-8"
+    )
+    assert "fn allowed_external_link(url: &str) -> bool" in rust
+    assert "fn open_external_link(" in rust
+    assert "app.shell().open(url, None)" in rust
+    assert "open_external_link," in rust
+    for url in [GITHUB_SPONSORS, BUY_ME_A_COFFEE]:
+        assert url in rust
+        assert url in html
+    assert "await invoke('open_external_link', {url: link.href})" in html
+    assert "await invoke('open_external_link', {url: link.href})" in DASHBOARD_HTML
+    assert "typeof invoke !== 'function'" in DASHBOARD_HTML
+    assert "Could not open the system browser" in DASHBOARD_HTML
+    assert "https://kicad-mcp-pro.oaslananka.dev/sign-in" in rust

@@ -403,6 +403,20 @@
       window.showError = showError;
       window.copyCliCommand = copyCliCommand;
 
+      /* Open sponsor links in the system browser, never inside the app. */
+      document.querySelectorAll('a.support-link[target="_blank"]').forEach(link => {
+        link.addEventListener('click', async event => {
+          const invoke = window.__TAURI_INTERNALS__?.invoke;
+          if (typeof invoke !== 'function') return;
+          event.preventDefault();
+          try {
+            await invoke('open_external_link', {url: link.href});
+          } catch (error) {
+            statusEl.textContent = 'Could not open the system browser. Copy this address: ' + link.href;
+            statusEl.className = 'status error';
+          }
+        });
+      });
       await checkServer();
     </script>
   </body>

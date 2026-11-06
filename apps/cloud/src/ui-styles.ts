@@ -266,4 +266,51 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-ser
 /* Final client guide link spacing. */
 .mcp-client-guides .text-link{margin-right:16px;vertical-align:middle}
 .mcp-client-guides .text-link:last-child{margin-right:0}
+
+
+/* Cloud account access: a real, provider-driven first-run journey. */
+.page-sign-in .content-wrap{max-width:1260px;padding-top:38px}
+.page-sign-in .page-heading{margin-bottom:24px}
+.auth-stage{display:grid;grid-template-columns:minmax(0,1.04fr) minmax(350px,.86fr);align-items:stretch;max-width:1160px;margin:0 auto;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#131820}
+.auth-intro{padding:clamp(28px,4vw,55px);background:radial-gradient(ellipse 85% 55% at 15% 2%,rgba(0,218,243,.12),transparent),#0d121a;display:flex;flex-direction:column}
+.auth-intro h2{font-size:clamp(29px,2.8vw,43px);line-height:1.18;letter-spacing:-.05em;margin:17px 0 13px}
+.auth-intro .auth-lead{max-width:490px;font-size:15px;line-height:1.65;color:var(--muted);margin-bottom:29px}
+.auth-journey{display:grid;gap:19px;margin:6px 0 27px}
+.auth-journey-step{display:flex;gap:16px;align-items:start}
+.auth-journey-step>span{flex:none;display:grid;place-items:center;width:35px;height:35px;border:1px solid rgba(0,218,243,.25);border-radius:9px;color:var(--accent);font-size:11px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.auth-journey-step strong{display:block;font-size:14px;line-height:1.35}
+.auth-journey-step p{font-size:12px;line-height:1.55;margin-top:4px;color:var(--muted)}
+.auth-local-note{display:flex;align-items:center;gap:10px;margin-top:auto;padding-top:23px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+.auth-local-note svg{flex:none;color:var(--accent)}
+.auth-stage .auth-card{display:flex;flex-direction:column;justify-content:center;padding:clamp(28px,3.6vw,52px);border:0;border-left:1px solid var(--line);border-radius:0;background:#171d26;box-shadow:none}
+.auth-stage .panel-heading{margin-bottom:30px;align-items:start;gap:14px}
+.auth-stage .panel-heading h2{font-size:clamp(22px,2.2vw,29px);margin:7px 0 8px;letter-spacing:-.025em}
+.auth-stage .panel-heading p{font-size:13px;line-height:1.55;color:var(--muted)}
+.auth-stage .provider{min-height:56px;gap:13px;border:1px solid var(--line-strong);border-radius:9px;background:#222b35;color:var(--text);font-size:14px;font-weight:650;transition:background .15s,border-color .15s}
+.auth-stage .provider:hover{background:#2b3b47;border-color:rgba(0,218,243,.56)}
+.auth-stage .provider:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.auth-stage .provider-logo{width:30px;height:30px;border-radius:8px;background:#111820}
+.auth-stage .auth-footnote{margin-top:29px;padding-top:19px}
+.auth-stage .auth-footnote p{font-size:12px;line-height:1.6}
+.auth-unavailable{padding:15px;border:1px solid var(--line-strong);border-radius:9px;color:var(--muted);font-size:13px}
+@media(max-width:860px){
+ .auth-stage{grid-template-columns:1fr}
+ .auth-intro{padding:28px}
+ .auth-intro h2{font-size:29px}
+ .auth-journey{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+ .auth-journey-step{gap:8px}
+ .auth-journey-step>span{width:29px;height:29px}
+ .auth-stage .auth-card{border-left:0;border-top:1px solid var(--line);padding:30px}
+}
+@media(max-width:560px){
+ .page-sign-in .content-wrap{padding:23px 15px 45px}
+ .auth-stage{border-radius:11px}
+ .auth-journey{grid-template-columns:1fr;gap:15px}
+ .auth-intro{padding:25px}
+ .auth-intro .auth-lead{margin-bottom:22px;font-size:13px}
+ .auth-stage .auth-card{padding:25px}
+ .auth-stage .panel-heading{margin-bottom:22px}
+}
+@media(prefers-reduced-motion:reduce){.auth-stage .provider{transition:none}}
+
 `;

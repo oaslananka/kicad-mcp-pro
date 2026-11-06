@@ -8,6 +8,7 @@ use std::time::Duration;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Manager, State};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_shell::ShellExt;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -371,6 +372,29 @@ fn stop_server_inner(process: &ServerProcess) -> Result<(), String> {
     Ok(())
 }
 
+/// Static outbound destinations usable from the packaged desktop and local UI.
+fn allowed_external_link(url: &str) -> bool {
+    matches!(
+        url,
+        "https://github.com/sponsors/oaslananka"
+            | "https://www.buymeacoffee.com/oaslananka"
+            | "https://oaslananka.github.io/kicad-mcp-pro/agents/"
+            | "https://oaslananka.github.io/kicad-mcp-pro/agents/prompts/"
+            | "https://kicad-mcp-pro.oaslananka.dev/sign-in"
+    )
+}
+
+#[tauri::command]
+fn open_external_link(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    if !allowed_external_link(&url) {
+        return Err("External destination is not permitted.".to_string());
+    }
+    #[allow(deprecated)]
+    app.shell()
+        .open(url, None)
+        .map_err(|_| "Could not open the system browser.".to_string())
+}
+
 #[tauri::command]
 fn start_server(state: State<'_, ServerProcess>, port: u16) -> Result<String, String> {
     start_server_inner(state.inner(), port)
@@ -508,6 +532,7 @@ pub fn run() {
             select_working_dir,
             get_working_dir,
             restart_server,
+            open_external_link,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -633,6 +658,25 @@ mod tests {
         );
         let port = serve_health_once(body);
         assert!(!check_health(port));
+    }
+
+    #[test]
+    fn external_browser_links_are_exactly_allowlisted() {
+        assert!(allowed_external_link(
+            "https://github.com/sponsors/oaslananka"
+        ));
+        assert!(allowed_external_link(
+            "https://www.buymeacoffee.com/oaslananka"
+        ));
+        assert!(allowed_external_link(
+            "https://kicad-mcp-pro.oaslananka.dev/sign-in"
+        ));
+        assert!(!allowed_external_link("https://www.buymeacoffee.com/other"));
+        assert!(!allowed_external_link(
+            "https://github.com/sponsors/oaslananka?other=1"
+        ));
+        assert!(!allowed_external_link("http://localhost:3334/"));
+        assert!(!allowed_external_link(""));
     }
 
     #[test]
