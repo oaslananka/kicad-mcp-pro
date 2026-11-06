@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import {readPublicHealthRevision} from "../scripts/read-public-health-revision.mjs";
 
 const REVISION="a".repeat(40);
@@ -36,4 +37,15 @@ test("fails closed for HTTP, JSON and unhealthy status without executing remote 
 test("read mode permits a valid revision even before full readiness",async()=>{
   assert.equal(await readPublicHealthRevision(ORIGIN,{fetchImpl:async()=>
     ({ok:true,json:async()=>({status:"starting",revision:REVISION})})}),REVISION);
+});
+
+test("Cloud production container copies only its required build helper",()=>{
+  const dockerfile=readFileSync(new URL("../Dockerfile",import.meta.url),"utf8");
+  const ignore=readFileSync(new URL("../.dockerignore",import.meta.url),"utf8");
+  assert.match(dockerfile,/COPY scripts\/copy-client-assets\.mjs \.\/scripts\/copy-client-assets\.mjs/);
+  assert.ok(dockerfile.indexOf("COPY scripts/copy-client-assets.mjs") <
+    dockerfile.indexOf("RUN npm run build"),"build helper must be copied before npm build");
+  assert.match(ignore,/^scripts\/\*$/m);
+  assert.match(ignore,/^!scripts\/copy-client-assets\.mjs$/m);
+  assert.doesNotMatch(dockerfile,/COPY scripts\s+\.\/scripts/);
 });

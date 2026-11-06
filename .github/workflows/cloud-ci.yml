@@ -30,7 +30,7 @@ jobs:
         image: postgres:17-alpine
         env:
           POSTGRES_USER: kicad_test
-          POSTGRES_PASSWORD: local_ci_fixture_only
+          POSTGRES_PASSWORD: ${{ github.run_id }}
           POSTGRES_DB: kicad_test
         ports:
           - 5432:5432
@@ -40,7 +40,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      TEST_DATABASE_URL: postgresql://kicad_test:local_ci_fixture_only@127.0.0.1:5432/kicad_test
+      TEST_DATABASE_URL: ${{ format('postgresql://kicad_test:{0}@127.0.0.1:5432/kicad_test', github.run_id) }}
     defaults:
       run:
         working-directory: apps/cloud
@@ -57,5 +57,9 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Validate Cloud types, build and tests
         run: npm run check
+      # The production image has a stricter build context than npm in CI.
+      # Fail before deployment if a required build helper is excluded.
+      - name: Build Cloud production container (no publish)
+        run: docker build --file Dockerfile --tag "kicad-cloud-ci:$GITHUB_SHA" --build-arg "APP_REVISION=$GITHUB_SHA" .
       - name: Validate Cloudflare edge contracts
         run: node --test scripts/test-cloudflare-edge.mjs

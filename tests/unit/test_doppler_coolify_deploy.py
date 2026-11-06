@@ -465,6 +465,94 @@ class DeployContracts(unittest.TestCase):
         self.assertEqual(order, ["PATCH", "REVISION_PATCH", "POST"])
         self.assertEqual(ci.call_count, 5)
 
+    def test_failed_build_restores_healthy_previous_pin_and_revision(self) -> None:
+        """A terminal failed Docker build must not leave Coolify pinned to failed source."""
+        app = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": SHA,
+        }
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+        writes: list[tuple[str, str]] = []
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            if url.endswith("/applications/" + UUID):
+                return app
+            if url.endswith("/health"):
+                return {"revision": OTHER}
+            raise AssertionError("Unexpected GET " + url)
+
+        def post(url: str, **kwargs: object) -> dict[str, Any]:
+            self.assertEqual(kwargs["method"], "PATCH")
+            payload = kwargs["payload"]
+            self.assertIsInstance(payload, dict)
+            if url.endswith("/applications/" + UUID):
+                writes.append(("source", payload["git_commit_sha"]))
+                app["git_commit_sha"] = payload["git_commit_sha"]
+                return {"uuid": UUID}
+            self.assertTrue(url.endswith("/applications/" + UUID + "/envs"))
+            self.assertEqual(payload["key"], "APP_REVISION")
+            self.assertFalse(payload["is_preview"])
+            writes.append(("revision", payload["value"]))
+            return {"key": "APP_REVISION", "is_preview": False}
+
+        # The live old app is still healthy even though Coolify's build failed.
+        with patch.dict("os.environ", {"COOLIFY_ROLLBACK_AUTO": "false"}):
+            cloud._recover_failed_deploy(True, True, True, SHA, OTHER, settings, get, post)
+        self.assertEqual(writes, [("source", OTHER), ("revision", OTHER)])
+        self.assertEqual(app["git_commit_sha"], OTHER)
+
+    def test_failed_deploy_refuses_pin_recovery_if_old_live_is_gone(self) -> None:
+        """Never repoint a live new revision to old source without verified safety."""
+        app = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": SHA,
+        }
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            if url.endswith("/applications/" + UUID):
+                return app
+            if url.endswith("/health"):
+                return {"revision": SHA}
+            raise AssertionError("Unexpected GET " + url)
+
+        def no_mutation(_url: str, **_kwargs: object) -> dict[str, Any]:
+            self.fail("Recovery must refuse mutation if previous live revision is gone")
+
+        with patch.dict("os.environ", {"COOLIFY_ROLLBACK_AUTO": "false"}):
+            cloud._recover_failed_deploy(True, True, True, SHA, OTHER, settings, get, no_mutation)
+        self.assertEqual(app["git_commit_sha"], SHA)
+
     def test_deploy_restores_pin_if_ci_moves_before_post(self) -> None:
         settings = {
             "COOLIFY_URL": "https://coolify.example.com/api/v1",
