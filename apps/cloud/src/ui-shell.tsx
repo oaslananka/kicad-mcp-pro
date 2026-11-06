@@ -24,21 +24,22 @@ function NavLink({href,current,children}:{href:string;current:boolean;children:R
 }
 function Brand(){
   return <a href="/" className="brand" aria-label="KiCad MCP Cloud workspace home">
-    <span className="brand-mark"><img src="/assets/icon.svg" alt="" width={30} height={30}/></span>
+    <span className="brand-mark"><img className="brand-logo" src="/assets/icon.svg" alt="" width={24} height={24} decoding="async"/></span>
     <span className="brand-title">KiCad MCP <small>Cloud workspace</small></span>
   </a>;
 }
 function WorkspaceNav({kind}:{kind:PageKind}){
   return <aside className="workspace-sidebar" aria-label="Workspace navigation">
     <Brand/>
+    <div className="sidebar-section-label">WORKSPACE</div>
     <nav className="sidebar-links" aria-label="Workspace">
-      <NavLink href="/devices" current={kind==="devices"}><Icon name="devices" size={18}/> Devices &amp; projects</NavLink>
-      <NavLink href="/connections" current={kind==="connections"}><Icon name="connections" size={18}/> AI connections</NavLink>
-      <NavLink href="/account" current={kind==="account"}><Icon name="overview" size={18}/> Overview</NavLink>
+      <NavLink href="/account" current={kind==="account"}><Icon name="overview" size={17}/> Overview</NavLink>
+      <NavLink href="/devices" current={kind==="devices"}><Icon name="devices" size={17}/> Devices &amp; projects</NavLink>
+      <NavLink href="/connections" current={kind==="connections"}><Icon name="connections" size={17}/> AI connections</NavLink>
     </nav>
-    <div className="sidebar-note"><strong>Connect your workspace</strong>
-      <p>Set up your AI client and choose which projects it can access.</p>
-      <a className="button secondary" href="/connections">Connection guide <Icon name="arrow" size={14}/></a>
+    <div className="sidebar-note"><strong><Icon name="shield" size={16}/> Project access is explicit</strong>
+      <p>Signing in never exposes local KiCad files. Pair a device and approve each client's project access separately.</p>
+      <a className="text-link" href="/connections">Connection guide <Icon name="arrow" size={14}/></a>
     </div>
     <div className="sidebar-footer">
       <a href="/account"><Icon name="shield" size={16}/> Your account</a>
@@ -82,6 +83,10 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
         </div>
       </div></header>}
       <main id="main-content" className={"site-main page-"+kind}>
+        {workspace?<div className="workspace-topbar"><span className="workspace-breadcrumb">KiCad MCP Cloud <span aria-hidden="true">/</span> Workspace</span>
+          <div className="workspace-topbar-actions"><span><Icon name="lock" size={15}/> Local files stay private</span>
+            <a href="https://oaslananka.github.io/kicad-mcp-pro/" target="_blank" rel="noopener noreferrer">Documentation <Icon name="arrow" size={14}/></a>
+          </div></div>:null}
         <div className={workspace?"workspace-layout":"content-wrap"}>
           <div className="main-content">
             <div className="page-heading"><div><div className="eyebrow">{eyebrow??"KiCad MCP Cloud"}</div>
@@ -99,29 +104,28 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
   return <div className="page-stack">
     <section className="card landing-panel" aria-label="Cloud capabilities">
       <div className="landing-intro">
-        <span className={identityEnabled?"status-pill ready":"status-pill pending"}>
-          {identityEnabled?<span className="status-dot" aria-hidden="true"/>:null}
-          {identityEnabled?"Cloud access available":"Account access pending"}
+        <span className={identityEnabled?"status-pill neutral":"status-pill pending"}>
+          {identityEnabled?"Account sign-in available":"Account access pending"}
         </span>
-        <h2>Manage your AI tools.<br/>Keep KiCad local.</h2>
-        <p>A single place for your AI connections, registered computers and project permissions. Start with your account, then choose what to connect.</p>
+        <h2>Your Cloud workspace.<br/>KiCad stays local.</h2>
+        <p>Securely manage account connections, computers and project access. Every device and client grant is approved independently.</p>
         <div className="action-row">{identityEnabled?
           <a className="button primary" href="/sign-in">Open workspace <Icon name="arrow" size={17}/></a>:
           <span className="button disabled" aria-disabled="true">Account access pending</span>}
-          <a className="text-link" href="#how-it-works">See the setup steps <Icon name="arrow" size={15}/></a>
+          <a className="text-link" href="#how-it-works">View setup guide <Icon name="arrow" size={15}/></a>
         </div>
         <p className="hero-note"><Icon name="shield" size={16}/> Project access always requires separate approval.</p>
       </div>
       <div className="topology-panel" aria-label="Current connection availability">
         <div className="topology-eyebrow">ACCESS ARCHITECTURE <span className="topology-eyebrow-dot"/></div>
         <div className="topology-node topology-node-client"><span className="topology-icon"><Icon name="connections" size={21}/></span>
-          <span><strong>Your AI assistant</strong><small>{identityEnabled?"Account authorization available":"Account access pending"}</small></span>
-          <span className={identityEnabled?"topology-indicator on":"topology-indicator"}/>
+          <span><strong>Your AI assistant</strong><small>{identityEnabled?"Client consent required":"Account access pending"}</small></span>
+          <span className="topology-indicator"/>
         </div>
-        <div className="topology-link active"><span/><small>EXPLICIT PERMISSIONS</small></div>
+        <div className="topology-link inactive"><span/><small>EXPLICIT PERMISSIONS</small></div>
         <div className="topology-node topology-node-cloud"><span className="topology-icon"><Icon name="cloud" size={21}/></span>
           <span><strong>KiCad MCP Cloud</strong><small>Account &amp; project access</small></span>
-          <span className={identityEnabled?"topology-indicator on":"topology-indicator"}/>
+          <span className="topology-indicator"/>
         </div>
         <div className="topology-link inactive"><span/><small>SEPARATE DEVICE APPROVAL</small></div>
         <div className="topology-node topology-node-device"><span className="topology-icon"><Icon name="cpu" size={21}/></span>
@@ -135,12 +139,13 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
       <div className="section-head"><div><div className="card-kicker">A CLEAR SETUP PATH</div>
         <h2 id="how-it-works">One step at a time.</h2></div>
         <p>Account access, device access and project permissions remain separate.</p></div>
-      <div className="steps-grid">
+      <details className="home-setup-guide"><summary>View the four setup steps <Icon name="arrow" size={15}/></summary><div className="steps-grid">
         <div className="step"><div className="step-index"><span className="step-icon"><Icon name="key" size={19}/></span><span>01</span></div><h3>Sign in securely</h3><p>Use your account to access the Cloud workspace.</p></div>
         <div className="step"><div className="step-index"><span className="step-icon"><Icon name="devices" size={19}/></span><span>02</span></div><h3>Pair your computer</h3><p>Pair from the local Connector and approve the request in your Cloud workspace. Pairing alone never shares projects.</p><span className="step-state">Your approval required</span></div>
         <div className="step"><div className="step-index"><span className="step-icon"><Icon name="connections" size={19}/></span><span>03</span></div><h3>Connect your AI client</h3><p>Follow the connection guide and review the app's account permissions.</p></div>
         <div className="step"><div className="step-index"><span className="step-icon"><Icon name="cpu" size={19}/></span><span>04</span></div><h3>Choose project access</h3><p>Select a project on your own computer, then explicitly grant each connected AI client access.</p></div>
       </div>
+      </details>
       <div className="setup-help" aria-label="Setup questions">
         <p><strong>No projects listed?</strong> Check that your local Connector is running and that
           your paired computer appears under <a href="/devices">Devices &amp; projects</a>.
@@ -179,37 +184,65 @@ export function Account({name,providers=["google","github"],linked=[]}:{
   readonly providers?:ReadonlyArray<"google"|"github">;
   readonly linked?:ReadonlyArray<"google"|"github">;
 }){
-  return <div className="page-stack">
+  return <div className="page-stack account-dashboard">
     <script defer={true} src="/assets/pairing-login-continuation.js"></script>
-    <section className="account-welcome" aria-label="Account status"><div className="account-banner">
-      <span className="avatar" aria-hidden="true">{name.trim().slice(0,1).toUpperCase()||"U"}</span>
-      <div><div className="card-kicker">YOUR ACCOUNT</div>
-        <h2>{name}</h2><p>Review your computers, project access and AI connections below.</p></div>
-    </div><span className="status-pill ready"><Icon name="check" size={14}/> Signed in</span></section>
-    <section className="card" aria-labelledby="sign-in-methods">
-      <div className="section-head"><div><div className="card-kicker">ACCOUNT SECURITY</div>
-        <h2 id="sign-in-methods">Sign-in methods</h2></div></div>
-      <p>Link another sign-in provider only after signing in to this account.
-        Accounts are never merged automatically just because emails match.</p>
-      <div className="providers">{providers.map(provider=><div key={provider}>
-        {linked.includes(provider)
-          ? <p><strong>{provider==="google"?"Google":"GitHub"}</strong> — Connected</p>
-          : <form action={"/auth/link/"+provider} method="post">
-            <button className="button provider" type="submit">
-              Connect {provider==="google"?"Google":"GitHub"} to this account
-            </button></form>}
-      </div>)}</div>
+    <section className="account-welcome" aria-label="Account status">
+      <div className="account-banner">
+        <span className="avatar" aria-hidden="true">{name.trim().slice(0,1).toUpperCase()||"U"}</span>
+        <div><div className="card-kicker">SIGNED-IN WORKSPACE</div>
+          <h2>{name}</h2><p>Manage your Cloud identity, paired devices and explicit project permissions.</p></div>
+      </div>
+      <span className="status-pill ready"><Icon name="check" size={14}/> Signed in</span>
     </section>
-    <section className="card setup-checklist" aria-labelledby="connection-checklist">
-      <div className="section-head"><div><div className="card-kicker">GET CONNECTED</div>
-        <h2 id="connection-checklist">Your connection checklist</h2></div><span className="section-note">Review each layer independently</span></div>
-      <ol className="checklist-list">
-        <li><span className="checklist-number complete"><Icon name="check" size={16}/></span><div><h3>Cloud account</h3><p>You're signed in to your workspace.</p></div><span className="status-pill ready">Signed in</span></li>
-        <li><span className="checklist-number">02</span><div><h3>Computer &amp; project</h3><p>Check your device's connection and register a project when available.</p></div><a className="text-link" href="/devices">Review devices <Icon name="arrow" size={15}/></a></li>
-        <li><span className="checklist-number">03</span><div><h3>AI connection</h3><p>Follow your client's setup guide and review its account permissions.</p></div><a className="text-link" href="/connections">Manage connections <Icon name="arrow" size={15}/></a></li>
-        <li><span className="checklist-number">04</span><div><h3>Project permissions</h3><p>Grant your authorized AI client access to a specific registered project.</p></div><a className="text-link" href="/devices#registered-projects">Review projects <Icon name="arrow" size={15}/></a></li>
-      </ol>
+    <section className="overview-tiles" aria-label="Workspace areas">
+      <a className="overview-tile" href="/devices">
+        <span className="tile-icon"><Icon name="devices" size={20}/></span>
+        <span className="tile-body"><strong>Devices &amp; projects</strong><small>Check registered computers, availability and approved project access.</small></span>
+        <Icon name="arrow" size={17} className="tile-arrow"/>
+      </a>
+      <a className="overview-tile" href="/connections">
+        <span className="tile-icon"><Icon name="connections" size={20}/></span>
+        <span className="tile-body"><strong>AI connections</strong><small>Review actual authorized applications and revoke access.</small></span>
+        <Icon name="arrow" size={17} className="tile-arrow"/>
+      </a>
+      <a className="overview-tile" href="/devices#registered-projects">
+        <span className="tile-icon"><Icon name="shield" size={20}/></span>
+        <span className="tile-body"><strong>Project permissions</strong><small>Manage client-specific read-only grants on registered projects.</small></span>
+        <Icon name="arrow" size={17} className="tile-arrow"/>
+      </a>
     </section>
-    <aside className="workspace-reminder"><Icon name="lock" size={18}/><p>An authorized AI app does not automatically have project access. A connected device does not by itself prove that KiCad is ready.</p></aside>
+    <div className="account-columns">
+      <section className="card setup-checklist" aria-labelledby="connection-checklist">
+        <div className="section-head"><div><div className="card-kicker">GET CONNECTED</div>
+          <h2 id="connection-checklist">Your connection checklist</h2></div>
+          <span className="section-note">Each approval is independent</span>
+        </div>
+        <ol className="checklist-list">
+          <li><span className="checklist-number complete"><Icon name="check" size={16}/></span><div><h3>Cloud account</h3><p>You're signed in to your workspace.</p></div><span className="status-pill ready">Signed in</span></li>
+          <li><span className="checklist-number">02</span><div><h3>Computer &amp; project</h3><p>Review actual device status and register projects on your computer.</p></div><a className="text-link" href="/devices">Review devices <Icon name="arrow" size={15}/></a></li>
+          <li><span className="checklist-number">03</span><div><h3>AI connection</h3><p>Connect a compatible AI client and review its account permissions.</p></div><a className="text-link" href="/connections">Manage connections <Icon name="arrow" size={15}/></a></li>
+          <li><span className="checklist-number">04</span><div><h3>Project permissions</h3><p>Grant your authorized AI client access to a specific registered project.</p></div><a className="text-link" href="/devices#registered-projects">Review projects <Icon name="arrow" size={15}/></a></li>
+        </ol>
+      </section>
+      <aside className="account-side">
+        <section className="card account-security" aria-labelledby="sign-in-methods">
+          <div className="section-head"><div><div className="card-kicker">ACCOUNT SECURITY</div>
+            <h2 id="sign-in-methods">Sign-in methods</h2></div></div>
+          <p>Only link providers after signing in. Matching email addresses do not automatically merge accounts.</p>
+          <div className="providers">{providers.map(provider=><div key={provider} className="identity-row">
+            {linked.includes(provider)
+              ? <><span className="identity-name">{provider==="google"?"Google":"GitHub"}</span>
+                <span className="status-pill ready"><Icon name="check" size={14}/> Connected</span></>
+              : <form action={"/auth/link/"+provider} method="post">
+                <button className="button provider" type="submit">
+                  Connect {provider==="google"?"Google":"GitHub"} to this account
+                </button></form>}
+          </div>)}</div>
+        </section>
+        <aside className="workspace-reminder"><Icon name="lock" size={18}/>
+          <p>An authorized AI app does not automatically have project access.
+             A connected device does not by itself prove that KiCad is ready.</p></aside>
+      </aside>
+    </div>
   </div>;
 }
