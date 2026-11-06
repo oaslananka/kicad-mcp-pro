@@ -39,6 +39,35 @@ def _owner_terminal() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
 
+def _local_pairing_storage_supported() -> bool:
+    """Do not start remote enrollment if the owner-key security boundary cannot run."""
+    return (
+        os.name == "posix"
+        and callable(getattr(os, "getuid", None))
+        and isinstance(getattr(os, "O_NOFOLLOW", None), int)
+        and isinstance(getattr(os, "O_DIRECTORY", None), int)
+        and os.open in os.supports_dir_fd
+    )
+
+
+def _require_local_pairing_storage() -> None:
+    if not _local_pairing_storage_supported():
+        raise typer.BadParameter(
+            "Cloud device pairing is not available on this operating system yet: "
+            "owner-private key storage requires supported native filesystem protection. "
+            "No device or project was registered. Local KiCad and the local AI tools "
+            "work without a Cloud account."
+        )
+
+
+def _has_kicad_project_files(folder: Path) -> bool:
+    """Avoid onboarding an arbitrary terminal working directory as a KiCad project."""
+    patterns = ("*.kicad_pro", "*.kicad_sch", "*.kicad_pcb", "*/*.kicad_pro")
+    return folder.is_dir() and any(
+        path.is_file() for pattern in patterns for path in folder.glob(pattern)
+    )
+
+
 def _discover_kicad_project(folder: Path) -> tuple[Path, str]:
     from kicad_mcp.cloud_local_registry import _STEM
 
@@ -109,6 +138,33 @@ def _browse_local_project_folder() -> Path:
     if not selection:
         raise typer.BadParameter("No project folder selected. Setup was not changed.")
     return Path(selection)
+
+
+def _select_setup_project_directory(browse: bool, project_dir: Path | None) -> Path:
+    """Select an actual local KiCad project before any network or registry writes."""
+    if browse:
+        selected = _browse_local_project_folder()
+    elif project_dir is not None:
+        selected = project_dir
+    else:
+        current = Path.cwd()
+        if _has_kicad_project_files(current):
+            selected = current
+        elif _owner_terminal():
+            selected = _browse_local_project_folder()
+        else:
+            raise typer.BadParameter(
+                "No KiCad project found in the current directory. "
+                "Choose a local project in the desktop UI, or supply a project directory. "
+                "No Cloud registration was started."
+            )
+    if not _has_kicad_project_files(selected):
+        raise typer.BadParameter(
+            "No KiCad project found in the selected directory. "
+            "Choose a folder containing a .kicad_pro, .kicad_sch or .kicad_pcb file. "
+            "No device or project registration was started."
+        )
+    return selected
 
 
 def _write_project_record(root: Path, record: dict[str, str]) -> None:
@@ -188,6 +244,7 @@ def connect(
     if not alias or len(alias) > 80 or any(ord(char) < 32 for char in alias):
         raise typer.BadParameter("Device name must be 1 to 80 printable characters.")
     origin = _verified_origin(cloud_origin)
+    _require_local_pairing_storage()
     from kicad_mcp.cloud_local_registry import default_registry_root
     from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
@@ -344,7 +401,7 @@ def setup(
         typer.Option(
             "--project-dir",
             "-p",
-            help="Path to KiCad project directory (defaults to current directory).",
+            help="KiCad project directory; otherwise use current project or choose a folder.",
         ),
     ] = None,
     browse: Annotated[
@@ -387,9 +444,10 @@ def setup(
     origin = _verified_origin(cloud_origin)
     if browse and project_dir is not None:
         raise typer.BadParameter("Choose either --browse or --project-dir, not both.")
-    selected = _browse_local_project_folder() if browse else project_dir or Path.cwd()
-    target_dir, stem = _discover_kicad_project(selected)
     device_alias = _resolve_device_alias(alias)
+    _require_local_pairing_storage()
+    selected = _select_setup_project_directory(browse, project_dir)
+    target_dir, stem = _discover_kicad_project(selected)
 
     from kicad_mcp.cloud_local_registry import default_registry_root
 
@@ -449,15 +507,19 @@ def setup(
     connector_state = _start_connector(root, new_record)
 
     typer.echo("\n" + "=" * 60)
-    typer.echo("KiCad MCP Pro Cloud Setup Complete!")
+    typer.echo(
+        "KiCad MCP Pro Cloud Setup Complete!"
+        if connector_state in ("Connected", "Connecting")
+        else "KiCad MCP Pro Cloud device registered; Connector needs attention"
+    )
     typer.echo("=" * 60)
     typer.echo(f"Cloud Origin:    {origin}")
-    typer.echo(f"Device:          {device_alias} ({device_id}) [Enabled]")
+    typer.echo(f"Device:          {device_alias} ({device_id}) [Review access in Cloud]")
     typer.echo(f"Project:         {stem} ({project_id})")
     typer.echo(f"Local Directory: {target_dir}")
     typer.echo(f"Connector:       {connector_state}")
     typer.echo(f"Web Dashboard:   {origin}/devices")
-    typer.echo("AI Client Access: Ready (Configure in Cloud Dashboard)")
+    typer.echo("AI Client Access: Requires separate Cloud owner approval")
     typer.echo("=" * 60 + "\n")
 
 
