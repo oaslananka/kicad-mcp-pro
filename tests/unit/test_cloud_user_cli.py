@@ -11,6 +11,15 @@ from typer.testing import CliRunner
 from kicad_mcp.server import app
 
 
+@pytest.fixture(autouse=True)
+def simulated_storage_support_for_mocked_cli_flows(monkeypatch) -> None:
+    """These command tests mock enrollment; explicit negative tests cover native guards."""
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_user_cli._local_pairing_storage_supported",
+        lambda: True,
+    )
+
+
 def test_login_opens_only_first_party_browser_and_saves_no_local_token(monkeypatch) -> None:
     seen: list[str] = []
     monkeypatch.setattr(
@@ -257,6 +266,8 @@ def test_setup_performs_one_command_onboarding(monkeypatch, tmp_path) -> None:
 
 
 def test_setup_existing_valid_registration_reconnects(monkeypatch, tmp_path) -> None:
+    (tmp_path / "board.kicad_pro").touch()
+    monkeypatch.chdir(tmp_path)
     cloud_root = tmp_path / "cloud_registry"
     projects_dir = cloud_root / "projects"
     keys_dir = cloud_root / "keys"
@@ -298,6 +309,8 @@ def test_setup_existing_valid_registration_reconnects(monkeypatch, tmp_path) -> 
 def test_setup_handles_pairing_error(monkeypatch, tmp_path) -> None:
     from kicad_mcp.cloud_pair import CloudPairingError
 
+    (tmp_path / "board.kicad_pro").touch()
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(
         "kicad_mcp.cloud_local_registry.default_registry_root", lambda: tmp_path / "cloud"
     )
@@ -895,3 +908,107 @@ def test_cloud_native_tkinter_picker_errors_cleanly(monkeypatch, reason: str) ->
         cloud_user_cli._browse_local_project_folder()
     if reason == "dialog_error":
         assert events == ["hide", "destroy"]
+
+
+def test_cloud_setup_blocks_unsupported_owner_key_storage_before_pairing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """No Cloud request or registry write may precede the native storage guard."""
+    project = tmp_path / "board"
+    project.mkdir()
+    (project / "board.kicad_pro").touch()
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "_local_pairing_storage_supported", lambda: False)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair.enroll",
+        lambda *_args, **_kwargs: pytest.fail("Unsupported platform cannot enroll"),
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_local_registry.default_registry_root",
+        lambda: pytest.fail("Unsupported platform cannot create registry"),
+    )
+    result = CliRunner().invoke(
+        app, ["cloud", "setup", "--project-dir", str(project), "--no-browser"]
+    )
+    assert result.exit_code != 0
+    assert "owner-private key storage" in result.output
+    assert "No device or project was registered" in result.output
+
+
+def test_cloud_connect_blocks_unsupported_storage_before_cloud_pairing(
+    monkeypatch,
+) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "_local_pairing_storage_supported", lambda: False)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair.main",
+        lambda *_args: pytest.fail("No remote pairing on unsupported platform"),
+    )
+    result = CliRunner().invoke(app, ["cloud", "connect"])
+    assert result.exit_code != 0
+    assert "owner-private key storage" in result.output
+
+
+def test_cloud_setup_rejects_empty_explicit_folder_without_registration(
+    monkeypatch, tmp_path: Path
+) -> None:
+    project = tmp_path / "empty"
+    project.mkdir()
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_local_registry.default_registry_root",
+        lambda: pytest.fail("Empty directory must not register"),
+    )
+    result = CliRunner().invoke(app, ["cloud", "setup", "--project-dir", str(project)])
+    assert result.exit_code != 0
+    assert "No KiCad project found" in result.output
+
+
+def test_cloud_setup_headless_nonproject_cwd_fails_without_opening_picker(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_browse_local_project_folder",
+        lambda: pytest.fail("Headless must never open a blocking dialog"),
+    )
+    result = CliRunner().invoke(app, ["cloud", "setup", "--no-browser"])
+    assert result.exit_code != 0
+    assert "No KiCad project found in the current directory" in result.output
+
+
+def test_cloud_setup_interactive_nonproject_cwd_uses_native_picker(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    current = tmp_path / "working"
+    current.mkdir()
+    selected = tmp_path / "valid-board"
+    selected.mkdir()
+    (selected / "chosen.kicad_pro").touch()
+    monkeypatch.chdir(current)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_browse_local_project_folder",
+        lambda: calls.append("browse") or selected,
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_local_registry.default_registry_root", lambda: tmp_path / "cloud"
+    )
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_try_reconnect_existing",
+        lambda _root, _origin: calls.append("reconnect") or True,
+    )
+    result = CliRunner().invoke(app, ["cloud", "setup", "--no-browser"])
+    assert result.exit_code == 0, result.output
+    assert calls == ["browse", "reconnect"]
+    assert not (tmp_path / "cloud").exists()
