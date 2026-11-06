@@ -31,6 +31,7 @@ FAILED = {"failed", "error", "cancelled", "canceled"}
 DEADLINE_SECONDS = 1200
 HEALTHY_STATUS = "running:healthy"
 APPLICATION_API_PATH = "/applications/"
+REVISION_ENV_KEY = "APP_REVISION"
 
 JsonGetter = Callable[..., dict[str, Any]]
 SecretGetter = Callable[..., str]
@@ -70,7 +71,7 @@ def origin(raw: str) -> str:
 
 
 def client_request(
-    url: str, *, token: str = "", method: str = "GET", payload: dict[str, str] | None = None
+    url: str, *, token: str = "", method: str = "GET", payload: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     headers = {"Accept": "application/json", "User-Agent": "kicad-cloud-deploy/1"}
     if token:
@@ -367,6 +368,27 @@ def _pin_exact_source(
     require_successful_ci(sha, github_authorization, get)
 
 
+def _set_runtime_revision(sha: str, api: str, token: str, uuid: str, post: JsonGetter) -> None:
+    # The app-scoped Coolify token can update this NONSECRET variable, while
+    # GET /envs redacts even nonsecret values without read-sensitive-data.
+    # Thus validate the exact PATCH target and public live SHA after deploy.
+    if not SHA.fullmatch(sha):
+        raise DeployError("INVALID_REVISION_SHA")
+    result = post(
+        api + APPLICATION_API_PATH + uuid + "/envs",
+        token=token,
+        method="PATCH",
+        payload={
+            "key": REVISION_ENV_KEY,
+            "value": sha,
+            "is_preview": False,
+            "is_literal": False,
+        },
+    )
+    if result.get("key") != REVISION_ENV_KEY or result.get("is_preview") is not False:
+        raise DeployError("COOLIFY_REVISION_CONFIG_NOT_VERIFIED")
+
+
 def _restore_source_pin(
     sha: str,
     previous_sha: str,
@@ -376,6 +398,7 @@ def _restore_source_pin(
     public_origin: str,
     get: JsonGetter,
     post: JsonGetter,
+    revision_attempted: bool,
 ) -> None:
     current = verify_application(api, token, uuid, get)
     if current.get("git_commit_sha") != sha:
@@ -391,6 +414,8 @@ def _restore_source_pin(
     )
     if verify_application(api, token, uuid, get).get("git_commit_sha") != previous_sha:
         raise DeployError("COOLIFY_PIN_RECOVERY_NOT_VERIFIED")
+    if revision_attempted:
+        _set_runtime_revision(previous_sha, api, token, uuid, post)
     print("Restored prior Coolify source pin " + previous_sha)
 
 
@@ -433,6 +458,7 @@ def _verify_published_revision(
 
 def _recover_failed_deploy(
     pin_attempted: bool,
+    revision_attempted: bool,
     deploy_requested: bool,
     sha: str,
     previous_sha: str,
@@ -446,7 +472,15 @@ def _recover_failed_deploy(
     if pin_attempted and not deploy_requested:
         try:
             _restore_source_pin(
-                sha, previous_sha, api, token, uuid, settings["PUBLIC_ORIGIN"], get, post
+                sha,
+                previous_sha,
+                api,
+                token,
+                uuid,
+                settings["PUBLIC_ORIGIN"],
+                get,
+                post,
+                revision_attempted,
             )
         except DeployError:
             print("::error::Source pin restoration could not be verified", file=sys.stderr)
@@ -479,6 +513,7 @@ def deploy(
         print("Cloud already runs the intended main SHA: " + sha)
         return
     pin_attempted = False
+    revision_attempted = False
     deploy_requested = False
     try:
         # Mark attempt before PATCH: an API error can follow a successful mutation.
@@ -486,12 +521,24 @@ def deploy(
         _pin_exact_source(
             sha, previous_sha, gh_token, api, token, uuid, settings["PUBLIC_ORIGIN"], get, post
         )
+        revision_attempted = True
+        _set_runtime_revision(sha, api, token, uuid, post)
+        # Preserve exact-main and previous-live acceptance after both PATCHes.
+        require_successful_ci(sha, gh_token, get)
+        health(settings["PUBLIC_ORIGIN"], previous_sha, get)
         deploy_requested = True
         _request_exact_deployment(sha, api, token, uuid, get, post)
         _verify_published_revision(sha, settings["PUBLIC_ORIGIN"], gh_token, get)
     except DeployError:
         _recover_failed_deploy(
-            pin_attempted, deploy_requested, sha, previous_sha, settings, get, post
+            pin_attempted,
+            revision_attempted,
+            deploy_requested,
+            sha,
+            previous_sha,
+            settings,
+            get,
+            post,
         )
         raise
 
