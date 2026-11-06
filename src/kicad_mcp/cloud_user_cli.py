@@ -140,6 +140,33 @@ def _browse_local_project_folder() -> Path:
     return Path(selection)
 
 
+def _select_setup_project_directory(browse: bool, project_dir: Path | None) -> Path:
+    """Select an actual local KiCad project before any network or registry writes."""
+    if browse:
+        selected = _browse_local_project_folder()
+    elif project_dir is not None:
+        selected = project_dir
+    else:
+        current = Path.cwd()
+        if _has_kicad_project_files(current):
+            selected = current
+        elif _owner_terminal():
+            selected = _browse_local_project_folder()
+        else:
+            raise typer.BadParameter(
+                "No KiCad project found in the current directory. "
+                "Choose a local project in the desktop UI, or supply a project directory. "
+                "No Cloud registration was started."
+            )
+    if not _has_kicad_project_files(selected):
+        raise typer.BadParameter(
+            "No KiCad project found in the selected directory. "
+            "Choose a folder containing a .kicad_pro, .kicad_sch or .kicad_pcb file. "
+            "No device or project registration was started."
+        )
+    return selected
+
+
 def _write_project_record(root: Path, record: dict[str, str]) -> None:
     projects_dir = root / "projects"
     archive_dir = root / "archived-project-registrations"
@@ -374,7 +401,7 @@ def setup(
         typer.Option(
             "--project-dir",
             "-p",
-            help="Path to KiCad project directory (defaults to current directory).",
+            help="KiCad project directory; otherwise use current project or choose a folder.",
         ),
     ] = None,
     browse: Annotated[
@@ -419,28 +446,7 @@ def setup(
         raise typer.BadParameter("Choose either --browse or --project-dir, not both.")
     device_alias = _resolve_device_alias(alias)
     _require_local_pairing_storage()
-    if browse:
-        selected = _browse_local_project_folder()
-    elif project_dir is not None:
-        selected = project_dir
-    else:
-        current = Path.cwd()
-        if _has_kicad_project_files(current):
-            selected = current
-        elif _owner_terminal():
-            selected = _browse_local_project_folder()
-        else:
-            raise typer.BadParameter(
-                "No KiCad project found in the current directory. "
-                "Choose a local project in the desktop UI, or supply a project directory. "
-                "No Cloud registration was started."
-            )
-    if not _has_kicad_project_files(selected):
-        raise typer.BadParameter(
-            "No KiCad project found in the selected directory. "
-            "Choose a folder containing a .kicad_pro, .kicad_sch or .kicad_pcb file. "
-            "No device or project registration was started."
-        )
+    selected = _select_setup_project_directory(browse, project_dir)
     target_dir, stem = _discover_kicad_project(selected)
 
     from kicad_mcp.cloud_local_registry import default_registry_root
