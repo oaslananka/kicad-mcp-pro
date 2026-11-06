@@ -135,6 +135,17 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .nav-support.coffee { border-color: #d1b700; color: #171717; background: #ffdd00; }
   .nav-support.coffee:hover { background: #ffe433; }
 
+  .local-workspace-intro { padding: 26px 27px 20px; margin-bottom: 25px; border: 1px solid rgba(56,189,248,.23); border-radius: 12px; background: radial-gradient(ellipse 67% 90% at 12% 2%,rgba(56,189,248,.08),transparent),var(--surface); }
+  .local-workspace-kicker { display: block; margin-bottom: 8px; color:var(--accent);font-size:10px;font-weight:700;letter-spacing:.11em; }
+  .local-workspace-intro h2 { font-size:clamp(22px,2.2vw,30px);margin-bottom:9px;letter-spacing:-.035em; }
+  .local-workspace-intro p { font-size:13px;line-height:1.6;color:var(--text-muted);max-width:750px; }
+  .local-workspace-actions { display:flex;gap:10px;flex-wrap:wrap;margin:17px 0 13px; }
+  .local-workspace-actions .btn { margin-top:0;min-height:41px;padding:10px 15px;font-size:13px; }
+  .local-workspace-actions .local-cloud-link { background:var(--surface-2);border:1px solid var(--border-strong);color:var(--text); }
+  .local-workspace-actions .local-cloud-link:hover { background:var(--surface-hover); }
+  .local-workspace-intro .local-workspace-safety { margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:11px; }
+  @media (max-width:480px) { .local-workspace-intro{padding:20px 17px}.local-workspace-actions .btn{flex:1 1 100%;} }
+
   /* Main content */
   .main { flex: 1; min-width: 0; padding: 32px 36px; overflow-y: auto; max-height: 100vh; }
   .view { display: none; }
@@ -394,7 +405,16 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
       border-radius: var(--radius-sm); white-space: nowrap; flex-shrink: 0; width: auto; font-size: 12px;
     }
     .nav-item.active { border-left-color: transparent; border-bottom-color: var(--accent); background: var(--surface-2); }
-    .nav-sep, .nav-label, .nav-support-group { display: none; }
+    .nav-sep, .nav-label { display: none; }
+    /* Support must not disappear on compact browsers or desktop webviews. */
+    .nav-support-group { display: flex; align-items: center; gap: 5px; padding: 7px 0 0; margin: 5px 0 0; border-top: 1px solid var(--border); }
+    .nav-support-group .nav-support { flex: 1 1 auto; justify-content: center; min-height: 36px; margin: 0; padding: 8px 10px; white-space: nowrap; }
+    .nav-support-group .nav-support svg:last-child { display: none; }
+    .sidebar { overflow: visible; }
+    @media (max-width: 430px) {
+      .nav-support-group .nav-support { font-size: 11px; padding: 8px 6px; }
+      .nav-support-group .nav-support svg:first-child { width: 13px; height: 13px; }
+    }
     .main { padding: 18px 16px; max-height: none; }
     .grid { grid-template-columns: minmax(0, 1fr); }
     .form-row { flex-wrap: wrap; }
@@ -483,10 +503,23 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 
 <!-- Main content -->
 <main class="main" id="mainContent">
+  <p class="msg warn" role="status" aria-live="polite" id="externalLinkMessage" style="display:none"></p>
 
   <!-- Dashboard -->
   <div class="view active" id="view-dashboard">
-    <h2>Dashboard</h2>
+    <section class="local-workspace-intro" aria-label="Choose how to use KiCad MCP Pro">
+      <div>
+        <span class="local-workspace-kicker">YOUR KICAD WORKSPACE</span>
+        <h2>Start with your project.</h2>
+        <p>Work locally without an account. Connect Cloud only when you want authorized remote AI access.</p>
+      </div>
+      <div class="local-workspace-actions">
+        <button type="button" class="btn btn-primary" onclick="window.location.hash='#setup-wizard'">Set up local AI</button>
+        <a class="btn local-cloud-link" href="https://kicad-mcp-pro.oaslananka.dev/sign-in" target="_blank" rel="noopener noreferrer">Open Cloud sign-in</a>
+      </div>
+      <p class="local-workspace-safety">Cloud sign-in, device pairing and each project permission are independent. Signing in never shares local files.</p>
+    </section>
+    <h2>Local status</h2>
     <div class="grid" id="statusGrid">
       <div class="card">
         <h3>Server</h3>
@@ -1359,6 +1392,31 @@ function cancelWizard() { window.location.hash = '#dashboard'; }
 function finishWizard() { window.location.hash = '#dashboard'; }
 
 /* ── Server Control ── */
+/* Use the host system browser for known links in a Tauri WebView. */
+document.addEventListener('click', async (event) => {
+  const link = event.target.closest?.('a[target="_blank"]');
+  const invoke = window.__TAURI_INTERNALS__?.invoke;
+  if (!link || typeof invoke !== 'function') return;
+  const allowedLinks = new Set([
+    'https://github.com/sponsors/oaslananka',
+    'https://www.buymeacoffee.com/oaslananka',
+    'https://oaslananka.github.io/kicad-mcp-pro/agents/',
+    'https://oaslananka.github.io/kicad-mcp-pro/agents/prompts/',
+    'https://kicad-mcp-pro.oaslananka.dev/sign-in'
+  ]);
+  if (!allowedLinks.has(link.href)) return;
+  event.preventDefault();
+  try {
+    await invoke('open_external_link', {url: link.href});
+  } catch (error) {
+    const message = document.getElementById('externalLinkMessage');
+    if (message) {
+      message.style.display = 'block';
+      message.textContent = 'Could not open the system browser. Please copy this address: ' + link.href;
+    }
+  }
+});
+
 function serverAction(action) {
   const dangerous = action === 'stop' || action === 'restart';
   if (dangerous && !confirm('Server action: ' + action + '. Continue?')) return;

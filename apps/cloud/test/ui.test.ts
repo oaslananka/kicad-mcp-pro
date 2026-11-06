@@ -37,6 +37,25 @@ test("sign-in presents both providers without altering signed parameters",()=>{
   assert.match(page,/client_id=trusted%26scope=openid/);
   assert.doesNotMatch(page,/<script[\s>]/i);
 });
+test("Cloud account access is a real responsive provider-driven journey, not mandatory for local use",()=>{
+  const page=renderSignIn("",["google","github"]);
+  assert.match(page,/class="auth-stage"/);
+  assert.match(page,/Your projects\. Your control\./);
+  assert.match(page,/Using KiCad locally never requires a Cloud account/);
+  assert.match(page,/Approve the matching device code in your browser/);
+  assert.match(page,/Nothing is shared automatically/);
+  assert.match(uiCss,/\.auth-stage\{display:grid/);
+  assert.match(uiCss,/@media\(max-width:860px\)/);
+  const paired=renderSignIn("state=abc%3Adef",["github"],true);
+  assert.match(paired,/Approve your computer/);
+  assert.match(paired,/name="oauth_query" value="state=abc%3Adef"/);
+  assert.match(paired,/src="\/assets\/pairing-login-continuation\.js"/);
+  assert.doesNotMatch(paired,/action="\/auth\/start\/google"/);
+  const unavailable=renderSignIn("",[]);
+  assert.match(unavailable,/Account sign-in is temporarily unavailable/);
+  assert.doesNotMatch(unavailable,/action="\/auth\/start\//);
+});
+
 test("first login presents only the configured provider",()=>{
   const github=renderSignIn("",["github"]);
   assert.match(github,/Continue with GitHub/);
