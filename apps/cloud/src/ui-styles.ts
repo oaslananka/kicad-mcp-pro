@@ -103,4 +103,167 @@ label{display:block;font-weight:600;font-size:12px;color:var(--text);margin:16px
 .card-footnote{display:flex;align-items:flex-start;gap:8px;padding:13px 22px;color:var(--muted);font-size:10px}.card-footnote svg{flex:none;margin-top:1px}.device-card>.empty-state{padding:24px 22px}.projects-card .project-empty{margin-top:18px;padding-top:18px}.client-shortcuts>p{font-size:12px}.client-shortcuts ul{list-style:none;padding:0;margin:18px 0 0;display:grid;gap:4px}.client-shortcuts li{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px 0}.client-shortcuts h3{font-size:12px;font-weight:500;margin:0 0 2px}.client-shortcuts li p{font-size:11px}.client-shortcuts .text-link{font-size:11px}.client-icon{display:grid;place-items:center;width:36px;height:36px;border:1px solid var(--line);border-radius:9px;color:var(--muted);background:var(--surface-raised)}
 @media(max-width:560px){.workspace-app .page-heading{flex-direction:column;gap:16px}.workspace-app h1{font-size:25px}.device-row{grid-template-columns:8px minmax(0,1fr);align-items:start}.device-dot{margin-top:6px}.device-actions{grid-column:2;justify-content:flex-start;gap:6px}.device-register{grid-column:2}.card-header{padding:17px}.device-list>li{padding:16px 17px}.client-shortcuts li{grid-template-columns:30px minmax(0,1fr);gap:10px}.client-icon{width:30px;height:30px}.client-shortcuts li>.text-link{grid-column:2;justify-self:start;min-height:32px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+
+/* Obsidian Circuit: verified Cloud UI. Uses only first-party assets and live state. */
+:root{
+ --bg:#0b0d13;--surface:#151820;--surface-raised:#212630;--surface-soft:#10141c;
+ --line:rgba(180,195,208,.13);--line-strong:rgba(180,195,208,.24);
+ --text:#edf3f7;--muted:#a5b5c5;--muted-soft:#8297ac;
+ --accent:#00daf3;--accent-hover:#75edfa;--primary:#00c6e0;--on-accent:#06161c;
+ --blue:var(--accent);--blue-strong:var(--accent-hover);--radius:10px;
+}
+body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.55}
+.site-header{background:#11151c}
+.header-inner,.content-wrap{max-width:1600px}
+.brand{font-size:15px;gap:11px;letter-spacing:-.025em;min-width:0}
+.brand-mark{width:38px;height:38px;min-width:38px;max-width:38px;aspect-ratio:1;display:grid;place-items:center;overflow:hidden;border:1px solid rgba(0,218,243,.19);border-radius:10px;background:rgba(0,218,243,.06)}
+.brand-mark .brand-logo{width:24px;height:24px;min-width:24px;max-width:24px;max-height:24px;aspect-ratio:1;object-fit:contain;object-position:center;display:block;flex:none}
+.brand-title{line-height:1.25}.brand-title small{font-size:11px}
+.site-main{background:radial-gradient(ellipse 85% 35% at 65% -30%,rgba(0,218,243,.05),transparent),var(--bg)}
+.card{border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:none;padding:23px}
+.card p{font-size:13px;line-height:1.65}
+.card-kicker,.eyebrow{color:var(--accent)}
+.button.primary{background:var(--primary);border-color:var(--primary);color:var(--on-accent);box-shadow:none;font-weight:700}
+.button.primary:hover{background:var(--accent-hover);border-color:var(--accent-hover);color:var(--on-accent);box-shadow:none}
+.button,.text-link{font-size:13px}.status-pill{font-size:12px}
+.workspace-sidebar{width:246px;padding:22px 12px 16px;background:#0e1118}
+.workspace-sidebar>.brand{padding:0 9px;margin-bottom:39px}
+.workspace-app>.site-main{margin-left:246px}
+.sidebar-section-label{font-size:10px;letter-spacing:.13em;font-weight:750;color:var(--muted-soft);margin:0 12px 10px}
+.workspace-sidebar .sidebar-links{display:grid;gap:5px;margin-bottom:26px}
+.sidebar-links a{font-size:13px;min-height:45px;padding:10px 12px;border:1px solid transparent;border-radius:8px}
+.sidebar-links a[aria-current=page]{background:rgba(0,218,243,.1);border-color:rgba(0,218,243,.17);color:var(--accent)}
+.sidebar-note{padding:16px;background:#151c25;border-radius:10px}
+.sidebar-note strong{display:flex;gap:8px;align-items:center;font-size:12px}
+.sidebar-note strong svg{color:var(--accent);flex:none}
+.sidebar-note p{font-size:12px;line-height:1.55}
+.sidebar-note .text-link{font-size:12px;min-height:36px}
+.sidebar-footer small{font-size:11px}
+.workspace-layout{width:100%;max-width:1800px;padding:32px clamp(22px,3.2vw,56px) 65px;margin:0}
+.workspace-topbar{margin-left:0;min-height:58px;padding:0 clamp(22px,3.2vw,56px);background:#11151c;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:18px}
+.workspace-breadcrumb{font-size:12px;color:var(--muted);font-weight:600}
+.workspace-breadcrumb span{color:var(--muted-soft);margin:0 9px}
+.workspace-topbar-actions{display:flex;align-items:center;gap:22px}
+.workspace-topbar-actions span,.workspace-topbar-actions a{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}
+.workspace-topbar-actions a:hover{color:var(--accent)}
+.workspace-app .page-heading{margin-bottom:24px}
+.workspace-app h1{font-size:clamp(25px,2.25vw,34px);letter-spacing:-.04em}
+.workspace-app .summary{max-width:760px;font-size:13px}
+.workspace-app .page-stack{gap:20px}.workspace-app .card h2{font-size:17px}
+.account-welcome{padding:18px 21px;border:1px solid var(--line);border-radius:10px;background:#171c24}
+.account-banner h2{font-size:19px;font-weight:700}.account-banner p{font-size:12px}
+.avatar{width:46px;height:46px;background:rgba(0,218,243,.1);color:var(--accent);border-color:rgba(0,218,243,.24)}
+.overview-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.overview-tile{display:flex;align-items:flex-start;min-height:136px;gap:13px;min-width:0;padding:20px 17px;border:1px solid var(--line);border-radius:10px;background:var(--surface);transition:border-color .18s,background .18s}
+.overview-tile:hover{border-color:rgba(0,218,243,.5);background:#1b2530}
+.tile-icon{display:grid;place-items:center;width:39px;height:39px;flex:none;border-radius:9px;color:var(--accent);background:rgba(0,218,243,.09);border:1px solid rgba(0,218,243,.17)}
+.tile-body{display:grid;gap:8px;min-width:0}.tile-body strong{font-size:14px;line-height:1.4}
+.tile-body small{font-size:12px;line-height:1.6;color:var(--muted)}
+.tile-arrow{margin-left:auto;flex:none;color:var(--muted-soft)}
+.account-columns{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(300px,1fr);gap:18px;align-items:start}
+.account-side{display:grid;gap:17px;min-width:0}
+.account-security .providers{margin-top:19px;gap:0}
+.identity-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:59px;padding:10px 0;border-top:1px solid var(--line)}
+.identity-row form{width:100%}.identity-row .provider{min-height:40px;font-size:12px}
+.identity-name{font-size:13px;font-weight:650}.identity-row .status-pill{flex:none}
+.account-side .workspace-reminder{padding:17px;background:#141c24;border:1px solid var(--line);border-radius:10px}
+.account-side .workspace-reminder svg{color:var(--accent)}.account-side .workspace-reminder p{font-size:12px}
+.checklist-list>li{grid-template-columns:31px minmax(0,1fr) auto;gap:12px;padding:16px 0}
+.checklist-list h3{font-size:13px}.checklist-list p{font-size:12px}
+.checklist-list .text-link{font-size:12px}.checklist-number{width:30px;height:30px}
+.page-account .section-head{margin-bottom:10px}
+.device-summary h3{font-size:13px}.device-summary p{font-size:12px}
+.device-actions .status-pill,.device-actions .button,.permission-tag{font-size:12px}
+.project-item>strong{font-size:14px}.connection-name{font-size:16px!important}
+.connections-list>li{padding:19px 0}.connection-item>div p{font-size:12px}
+.mcp-client-guides{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.mcp-client-guides>div{padding:17px}
+.content-wrap{max-width:1560px;padding:35px clamp(20px,3vw,48px) 66px}
+.landing-panel{box-shadow:none;border-color:var(--line);background:var(--surface);grid-template-columns:minmax(0,1.08fr) minmax(330px,.92fr)}
+.landing-intro{padding:40px;background:linear-gradient(130deg,rgba(0,218,243,.05),transparent 57%)}
+.landing-intro h2{font-size:clamp(30px,3vw,42px);margin:17px 0}
+.landing-intro>p:not(.hero-note){font-size:14px}
+.topology-panel{background:#10151d;padding:27px}
+.topology-node{background:#181f28}.topology-node-cloud{background:#172430}
+.step{padding:20px;border-color:var(--line)}.step-index{margin-bottom:13px}
+.steps-grid .step:first-child{border-color:var(--line)}
+@media(max-width:1250px){
+ .overview-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .mcp-client-guides{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:1080px){
+ .workspace-sidebar{width:214px}
+ .workspace-app>.site-main{margin-left:214px}
+ .workspace-layout{padding:28px 24px 54px}
+ .workspace-topbar{padding:0 24px}
+ .account-columns{grid-template-columns:1fr}
+ .account-side{grid-template-columns:1fr 1fr}
+ .landing-panel{grid-template-columns:1fr}
+ .topology-panel{border-left:0;border-top:1px solid var(--line)}
+}
+@media(max-width:750px){
+ .workspace-sidebar{position:static;width:100%;height:auto;overflow:visible;padding:12px 18px;border-right:0;border-bottom:1px solid var(--line)}
+ .workspace-sidebar>.brand{margin-bottom:10px;padding:0 5px}
+ .sidebar-section-label{display:none}
+ .workspace-app>.site-main,.workspace-topbar{margin-left:0}
+ .workspace-sidebar .sidebar-links{display:flex;gap:5px;margin-bottom:0;flex-wrap:wrap}
+ .sidebar-links a{flex:1 1 auto;justify-content:center;padding:9px 7px;font-size:12px}
+ .sidebar-note,.sidebar-footer{display:none}
+ .workspace-topbar{padding:12px 20px;min-height:48px}
+ .workspace-topbar-actions span{display:none}
+ .workspace-layout{padding:25px 20px 44px}
+ .overview-tiles{grid-template-columns:1fr}
+ .overview-tile{min-height:85px}
+ .account-side{grid-template-columns:1fr}
+ .checklist-list>li{grid-template-columns:30px minmax(0,1fr)}
+ .checklist-list>li>.text-link,.checklist-list>li>.status-pill{grid-column:2;justify-self:start}
+ .content-wrap{padding:25px 20px 46px}
+ .landing-intro{padding:27px}
+ .steps-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .mcp-client-guides{grid-template-columns:1fr}
+}
+@media(max-width:560px){
+ .brand-mark{width:34px;height:34px;min-width:34px;max-width:34px}
+ .brand-mark .brand-logo{width:22px;height:22px;min-width:22px;max-width:22px;max-height:22px}
+ .workspace-topbar{display:none}
+ .account-welcome{padding:15px;align-items:flex-start}
+ .account-welcome>.status-pill{display:inline-flex;font-size:11px}
+ .account-banner{align-items:start}
+ .account-banner h2{font-size:18px}
+ .overview-tile{min-height:90px}
+ .steps-grid{grid-template-columns:1fr}
+ .device-list>li{padding:16px}
+}
+
+
+
+/* Homepage setup stays optional for visitors who already have a workspace. */
+.home-setup-guide{margin-top:18px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft);overflow:hidden}
+.home-setup-guide>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px;min-height:51px;list-style:none;color:var(--text);font-size:13px;font-weight:650}
+.home-setup-guide>summary::-webkit-details-marker{display:none}
+.home-setup-guide>summary svg{flex:none;color:var(--accent);transition:transform .16s}
+.home-setup-guide[open]>summary svg{transform:rotate(90deg)}
+.home-setup-guide>.steps-grid{padding:0 14px 14px}
+.home-setup-guide .step{background:#151b25}
+.status-pill.neutral{background:var(--surface-raised);color:var(--muted);border-color:var(--line)}
+@media(max-width:750px){.home-setup-guide>.steps-grid{grid-template-columns:1fr;padding:0 12px 12px}}
+
+
+
+/* Final narrow-screen alignment: no two-line navigation or broken status labels. */
+@media(max-width:750px){
+ .workspace-sidebar .sidebar-links{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+ .sidebar-links a{display:flex;justify-content:center;gap:5px;padding:10px 5px;font-size:11px;letter-spacing:-.01em;white-space:nowrap}
+ .sidebar-links a svg{width:15px;height:15px}
+}
+@media(max-width:560px){
+ .account-welcome>.status-pill{display:none}
+ .sidebar-links a{font-size:10.5px;gap:4px}
+}
+
+
+/* Final client guide link spacing. */
+.mcp-client-guides .text-link{margin-right:16px;vertical-align:middle}
+.mcp-client-guides .text-link:last-child{margin-right:0}
 `;
