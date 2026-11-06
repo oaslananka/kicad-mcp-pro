@@ -280,6 +280,7 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-ser
 .auth-journey-step>span{flex:none;display:grid;place-items:center;width:35px;height:35px;border:1px solid rgba(0,218,243,.25);border-radius:9px;color:var(--accent);font-size:11px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
 .auth-journey-step strong{display:block;font-size:14px;line-height:1.35}
 .auth-journey-step p{font-size:12px;line-height:1.55;margin-top:4px;color:var(--muted)}
+.auth-mobile-journey{display:none}
 .auth-local-note{display:flex;align-items:center;gap:10px;margin-top:auto;padding-top:23px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
 .auth-local-note svg{flex:none;color:var(--accent)}
 .auth-stage .auth-card{display:flex;flex-direction:column;justify-content:center;padding:clamp(28px,3.6vw,52px);border:0;border-left:1px solid var(--line);border-radius:0;background:#171d26;box-shadow:none}
@@ -305,11 +306,30 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-ser
 @media(max-width:560px){
  .page-sign-in .content-wrap{padding:23px 15px 45px}
  .auth-stage{border-radius:11px}
- .auth-journey{grid-template-columns:1fr;gap:15px}
- .auth-intro{padding:25px}
- .auth-intro .auth-lead{margin-bottom:22px;font-size:13px}
- .auth-stage .auth-card{padding:25px}
- .auth-stage .panel-heading{margin-bottom:22px}
+ /* Keep the provider actions visible on a normal 390 x 844 phone viewport.
+    The full journey remains present on desktop/tablet; compact mobile users
+    get its equivalent short sequence instead of a 500px pre-login lecture. */
+ .page-sign-in .page-heading{margin-bottom:13px}
+ .auth-journey{display:none}
+ .auth-mobile-journey{display:block;margin:0 0 11px;font-size:12px;line-height:1.45;color:var(--muted)}
+ .auth-intro{padding:19px 21px}
+ .auth-intro h2{font-size:26px;margin:9px 0 7px}
+ .auth-intro .auth-lead{margin-bottom:11px;font-size:13px;line-height:1.45}
+ .auth-local-note{padding-top:11px;font-size:11px}
+ .auth-stage .auth-card{padding:20px 21px}
+ .auth-stage .panel-heading{margin-bottom:16px}
+ .auth-stage .panel-heading h2{margin:4px 0 5px}
+ .auth-stage .auth-footnote{margin-top:17px;padding-top:14px}
+}
+@media(max-width:380px){
+ .page-sign-in .content-wrap{padding-top:12px}
+ .page-sign-in .page-heading{margin-bottom:5px}
+ .auth-intro{padding:11px 18px}
+ .auth-intro h2{margin:6px 0 5px}
+ .auth-intro .auth-lead{margin-bottom:7px}
+ .auth-mobile-journey{margin-bottom:7px}
+ .auth-stage .auth-card{padding:12px 19px}
+ .auth-stage .panel-heading{margin-bottom:9px}
 }
 @media(prefers-reduced-motion:reduce){.auth-stage .provider{transition:none}}
 

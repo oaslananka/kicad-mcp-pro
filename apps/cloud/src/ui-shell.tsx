@@ -176,6 +176,7 @@ export function SignIn({query,providers,pairing=false}:{
         <div className="auth-journey-step"><span>02</span><div><strong>Pair your computer</strong><p>Approve the matching device code in your browser.</p></div></div>
         <div className="auth-journey-step"><span>03</span><div><strong>Choose project access</strong><p>Grant each AI client access separately. Nothing is shared automatically.</p></div></div>
       </div>
+      <p className="auth-mobile-journey">Next: sign in ? pair your computer ? approve project access.</p>
       <div className="auth-local-note"><Icon name="lock" size={17}/><span>Using KiCad locally never requires a Cloud account.</span></div>
     </div>
     <div className="card auth-card">
