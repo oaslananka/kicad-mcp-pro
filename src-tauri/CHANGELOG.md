@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.8.1](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v4.8.0...kicad-mcp-gui-v4.8.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **ux:** clarify Cloud sign-in and local/desktop navigation ([#1645](https://github.com/oaslananka/kicad-mcp-pro/issues/1645)) ([1c2cb50](https://github.com/oaslananka/kicad-mcp-pro/commit/1c2cb50c3faba4335307b77475a27752a5768012))
+
 ## [4.8.0](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v4.7.0...kicad-mcp-gui-v4.8.0) (2026-11-05)
 
 
