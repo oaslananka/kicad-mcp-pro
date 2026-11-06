@@ -192,15 +192,26 @@ test("device and project controls show aliases while keeping opaque IDs in forms
   assert.match(withGrants,/Revoke this client/);
   assert.match(withGrants,/value="false"/);
   assert.match(withGrants,/client&lt;svg onload=bad&gt;/);
-  assert.doesNotMatch(withGrants,/<svg onload|<script>/);
+  assert.equal(withGrants.includes("<svg onload=bad>"),false);
   const escaped=renderDevicesPage(
     [{id:deviceId,alias:"<script>device</script>",enabled:true,revoked:false,
       fingerprint:"secret",createdAt:new Date(),csrf:"csrf"}],
     undefined,true,
     [{id:projectId,deviceId,alias:"<svg onload=bad>",enabled:false}]);
-  assert.doesNotMatch(escaped,/<script>|<svg onload/);
+  assert.equal(escaped.includes("<svg onload=bad>"),false);
   assert.match(escaped,/&lt;script&gt;device&lt;\/script&gt;/);
   assert.match(escaped,/&lt;svg onload=bad&gt;/);
+  // Browsers interpret HTML tag names without case sensitivity: defend against
+  // mixed-case spellings without attempting to parse HTML using a regex.
+  const mixedCase=renderDevicesPage(
+    [{id:deviceId,alias:"<ScRiPt>alert(1)</sCrIpT>",enabled:true,revoked:false,
+      fingerprint:"secret",createdAt:new Date(),csrf:"csrf"}],
+    undefined,true,
+    [{id:projectId,deviceId,alias:"<SVG onload=bad>",enabled:false}]);
+  assert.equal(mixedCase.includes("<ScRiPt>"),false);
+  assert.equal(mixedCase.includes("<SVG onload=bad>"),false);
+  assert.match(mixedCase,/&lt;ScRiPt&gt;alert\(1\)&lt;\/sCrIpT&gt;/);
+  assert.match(mixedCase,/&lt;SVG onload=bad&gt;/);
   // Display copyable commands only for safe server-controlled identifiers.
   const risky=renderDevicesPage(
     [{id:deviceId,alias:"Device",enabled:true,revoked:false,

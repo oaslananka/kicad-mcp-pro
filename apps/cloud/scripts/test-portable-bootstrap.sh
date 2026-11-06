@@ -111,6 +111,10 @@ if [[ "$1" == scripts/production-smoke.mjs ]]; then
   printf 'mock public smoke\n' >> "$MOCK_LOG"
   exit 0
 fi
+if [[ "$1" == scripts/read-public-health-revision.mjs ]]; then
+  printf '%s' "$MOCK_HEAD"
+  exit 0
+fi
 exec "$REAL_NODE" "$@"
 MOCK
 chmod 700 "$bin"/*
