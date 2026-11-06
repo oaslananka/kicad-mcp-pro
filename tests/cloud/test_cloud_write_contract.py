@@ -131,8 +131,9 @@ def test_v2_hostile_revision_fields_are_denied(mutation: str) -> None:
         command["path"] = "../../other"
     else:
         body["path"] = "/unsafe"
+    payload = json.dumps(body).encode()
     with pytest.raises(LocalWriteDeniedError, match="^request denied$"):
-        parse(json.dumps(body).encode())
+        parse(payload)
 
 
 def test_v2_local_binding_and_expiry_still_fail_closed() -> None:

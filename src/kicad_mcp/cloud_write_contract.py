@@ -72,6 +72,14 @@ def _coordinate(value: object, *, maximum: float) -> bool:
     return -maximum <= value <= maximum and math.isfinite(value)
 
 
+def _valid_live_revision(version: int, command: dict[str, object]) -> bool:
+    """V1 cannot supply a live digest; v2 must supply a valid signed digest."""
+    if version == 1:
+        return True
+    live = command["expectedLiveBoardSha256"]
+    return isinstance(live, str) and _SHA256.fullmatch(live) is not None
+
+
 def parse_local_write_contract(
     frame: object,
     *,
@@ -146,13 +154,7 @@ def parse_local_write_contract(
         or not (command["rotationDeg"] is None or _coordinate(command["rotationDeg"], maximum=360))
         or not isinstance(command["expectedBoardSha256"], str)
         or _SHA256.fullmatch(command["expectedBoardSha256"]) is None
-        or (
-            version == 2
-            and (
-                not isinstance(command["expectedLiveBoardSha256"], str)
-                or _SHA256.fullmatch(command["expectedLiveBoardSha256"]) is None
-            )
-        )
+        or not _valid_live_revision(version, command)
     ):
         raise LocalWriteDeniedError(_DENIED)
     return body

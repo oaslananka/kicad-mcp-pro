@@ -183,19 +183,28 @@ def test_v2_signature_and_version_downgrade_are_rejected_before_replay(attack: s
             command["projectId"] = DEVICE
         frame = json.loads(_signed_v2(json.dumps(command).encode()))
     calls: list[tuple[str, str]] = []
+
+    def reserve(session: str, request: str) -> bool:
+        calls.append((session, request))
+        return True
+
+    encoded = json.dumps(frame).encode()
     with pytest.raises(LocalWriteDeniedError, match="^request denied$"):
-        _verify(json.dumps(frame).encode(), consume=lambda a, b: (calls.append((a, b)), True)[1])
+        _verify(encoded, consume=reserve)
     assert calls == []
 
 
 def test_v2_invalid_local_binding_never_reserves() -> None:
     calls: list[tuple[str, str]] = []
+
+    def reserve(session: str, request: str) -> bool:
+        calls.append((session, request))
+        return True
+
+    signed = _signed_v2()
+    invalid_binding = replace(BINDING, session_id=PROJECT)
     with pytest.raises(LocalWriteDeniedError):
-        _verify(
-            _signed_v2(),
-            binding=replace(BINDING, session_id=PROJECT),
-            consume=lambda a, b: (calls.append((a, b)), True)[1],
-        )
+        _verify(signed, binding=invalid_binding, consume=reserve)
     assert calls == []
 
 
