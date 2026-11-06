@@ -337,6 +337,62 @@ class DeployContracts(unittest.TestCase):
         with self.assertRaisesRegex(cloud.DeployError, "LIVE_REVISION_MISMATCH"):
             cloud.health("https://cloud.example.com", SHA, lambda url: {"revision": OTHER})
 
+    def test_deploy_requires_matching_healthy_coolify_baseline_before_post(self) -> None:
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+        app = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            if url.endswith("/applications/" + UUID):
+                return app
+            if url.endswith("/health"):
+                return {"revision": SHA}
+            raise AssertionError("Unexpected API: " + url)
+
+        posts: list[str] = []
+
+        def post(url: str, **_kwargs: object) -> dict[str, Any]:
+            posts.append(url)
+            raise AssertionError("deploy POST must not be called")
+
+        with (
+            patch.object(cloud, "require_successful_ci"),
+            patch.object(cloud, "load_settings", return_value=settings),
+        ):
+            with self.assertRaisesRegex(cloud.DeployError, "^LIVE_REVISION_MISMATCH$"):
+                cloud.deploy(SHA, "github", get, post)
+
+            app["status"] = "stopped"
+            with self.assertRaisesRegex(cloud.DeployError, "^COOLIFY_BASELINE_NOT_HEALTHY$"):
+                cloud.deploy(SHA, "github", get, post)
+
+            app["status"] = "running:healthy"
+            app["git_commit_sha"] = "invalid"
+            with self.assertRaisesRegex(cloud.DeployError, "^COOLIFY_BASELINE_SHA_UNKNOWN$"):
+                cloud.deploy(SHA, "github", get, post)
+
+            # Already deployed is still idempotent when both live sources match.
+            app["git_commit_sha"] = SHA
+            cloud.deploy(SHA, "github", get, post)
+        self.assertEqual(posts, [])
+
     def test_preflight_read_only_accepts_live_revision(self) -> None:
         settings = {
             "COOLIFY_URL": "https://coolify.example.com",
