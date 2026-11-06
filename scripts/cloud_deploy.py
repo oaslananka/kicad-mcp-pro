@@ -344,28 +344,52 @@ def deploy(
         values[k] for k in ("COOLIFY_URL", "COOLIFY_API_TOKEN", "COOLIFY_APPLICATION_UUID")
     )
     app = verify_application(api, token, uuid, get)
-    # Fail closed before any deploy POST if Coolify and public health disagree.
-    # This proves the live baseline identity, not rollback-image retention or DB recovery.
     previous_sha = verified_live_revision(app, values["PUBLIC_ORIGIN"], get)
     if previous_sha == sha:
         print("Cloud already runs the intended main SHA: " + sha)
         return
-    # Revalidate after all provider reads. No fallback to unverified branch.
+
+    # Coolify's deployment API uses the application's pinned git_commit_sha,
+    # NOT the latest branch SHA. A /deploy POST without updating this pin
+    # silently rebuilds the old commit and must never count as a release.
     require_successful_ci(sha, gh_token, get)
-    response = post(
-        api
-        + "/deploy?"
-        + urllib.parse.urlencode({"uuid": uuid, "force": "false", "cancel_previous": "none"}),
-        token=token,
-        method="POST",
-    )
-    deployments = response.get("deployments", [])
-    selected = [d for d in deployments if d.get("resource_uuid") == uuid]
-    if len(selected) != 1 or not ID.fullmatch(selected[0].get("deployment_uuid", "")):
-        raise DeployError("COOLIFY_DEPLOY_RESPONSE_INVALID")
-    deployment = selected[0]["deployment_uuid"]
-    print("Coolify deployment queued; waiting for exact-SHA verification")
+    latest = verify_application(api, token, uuid, get)
+    if latest.get("git_commit_sha") != previous_sha:
+        raise DeployError("COOLIFY_SOURCE_PIN_CHANGED")
+
+    pin_changed = False
+    deploy_requested = False
     try:
+        post(
+            api + APPLICATION_API_PATH + uuid,
+            token=token,
+            method="PATCH",
+            payload={"git_commit_sha": sha},
+        )
+        pin_changed = True
+        pinned = verify_application(api, token, uuid, get)
+        if pinned.get("git_commit_sha") != sha:
+            raise DeployError("COOLIFY_TARGET_PIN_NOT_VERIFIED")
+        if pinned.get("status") != "running:healthy" or pinned.get("container_present") is not True:
+            raise DeployError("COOLIFY_BASELINE_UNHEALTHY_AFTER_PIN")
+        # Changing the source pin must not have restarted or rerouted the live app.
+        health(values["PUBLIC_ORIGIN"], previous_sha, get)
+        require_successful_ci(sha, gh_token, get)
+
+        deploy_requested = True
+        response = post(
+            api
+            + "/deploy?"
+            + urllib.parse.urlencode({"uuid": uuid, "force": "false", "cancel_previous": "none"}),
+            token=token,
+            method="POST",
+        )
+        deployments = response.get("deployments", [])
+        selected = [d for d in deployments if d.get("resource_uuid") == uuid]
+        if len(selected) != 1 or not ID.fullmatch(selected[0].get("deployment_uuid", "")):
+            raise DeployError("COOLIFY_DEPLOY_RESPONSE_INVALID")
+        deployment = selected[0]["deployment_uuid"]
+        print("Coolify deployment queued; waiting for exact-SHA verification")
         wait_deployment(api, token, deployment, sha, get)
         require_successful_ci(sha, gh_token, get)
         deadline = time.monotonic() + 120
@@ -377,10 +401,34 @@ def deploy(
             except DeployError:
                 time.sleep(8)
         raise DeployError("POST_DEPLOY_HEALTH_FAILED")
-    except DeployError as exc:
-        # Automatic rollback is explicitly opt-in and only used with an
-        # unambiguous retained image. Never guess an image or revert a DB.
-        if os.environ.get("COOLIFY_ROLLBACK_AUTO") == "true":
+    except DeployError:
+        if pin_changed and not deploy_requested:
+            # No deployment was requested. Restore only if this is still our
+            # source pin and the original live container is proven healthy.
+            try:
+                current = verify_application(api, token, uuid, get)
+                if current.get("git_commit_sha") == sha:
+                    if (
+                        current.get("status") != "running:healthy"
+                        or current.get("container_present") is not True
+                    ):
+                        raise DeployError("COOLIFY_PIN_RECOVERY_UNSAFE")
+                    health(values["PUBLIC_ORIGIN"], previous_sha, get)
+                    post(
+                        api + APPLICATION_API_PATH + uuid,
+                        token=token,
+                        method="PATCH",
+                        payload={"git_commit_sha": previous_sha},
+                    )
+                    if (
+                        verify_application(api, token, uuid, get).get("git_commit_sha")
+                        != previous_sha
+                    ):
+                        raise DeployError("COOLIFY_PIN_RECOVERY_NOT_VERIFIED")
+                    print("Restored prior Coolify source pin " + previous_sha)
+            except DeployError:
+                print("::error::Source pin restoration could not be verified", file=sys.stderr)
+        if deploy_requested and os.environ.get("COOLIFY_ROLLBACK_AUTO") == "true":
             try:
                 rollback_if_available(
                     api, token, uuid, previous_sha, values["PUBLIC_ORIGIN"], get, post
@@ -393,7 +441,7 @@ def deploy(
                 "::error::Deploy failed; automatic rollback remains disabled until verified",
                 file=sys.stderr,
             )
-        raise exc
+        raise
 
 
 def main() -> int:
