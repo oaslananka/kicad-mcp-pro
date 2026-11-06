@@ -123,5 +123,5 @@ def inspect_local_binding(
             device_id=expected_device_id,
             fingerprint=fingerprint,
         )
-    except (OSError, ValueError, TypeError, UnicodeError) as exc:
+    except (OSError, ValueError, TypeError) as exc:
         raise LocalApprovalDeniedError(_DENIED) from exc
