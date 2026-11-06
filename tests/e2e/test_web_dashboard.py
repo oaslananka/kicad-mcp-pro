@@ -402,7 +402,7 @@ class TestDashboardSPA:
         assert page.locator('button[data-view="setup-wizard"]').inner_text() == "Connect an AI"
         assert not page.locator(".advanced-controls").get_attribute("open")
         page.get_by_role("button", name="Connect local AI").click()
-        assert page.is_visible("#view-setup-wizard")
+        page.wait_for_selector("#view-setup-wizard:visible")
         page.evaluate("wizardStep = 3; renderWizardStep(3)")
         assert page.locator("#wizClient").input_value() == "claude-desktop"
         with page.expect_download() as transfer:
