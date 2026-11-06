@@ -50,6 +50,17 @@ class _CredentialW(ctypes.Structure):
     ]
 
 
+def _last_error() -> int:
+    """Read the Win32 last-error slot only when Windows exposes it."""
+    reader = getattr(ctypes, "get_last_error", None)
+    if not callable(reader):
+        raise LocalApprovalDeniedError(_DENIED)
+    error = reader()
+    if type(error) is not int:
+        raise LocalApprovalDeniedError(_DENIED)
+    return error
+
+
 def _target(record_id: str, part: str) -> str:
     # Never permit arbitrary credential-manager names, user input, or paths.
     if (
@@ -92,7 +103,7 @@ def read_credential(record_id: str, part: str) -> bytes | None:
     api = _api()
     pointer = ctypes.POINTER(_CredentialW)()
     if not api.CredReadW(target, _CRED_TYPE_GENERIC, 0, ctypes.byref(pointer)):
-        if ctypes.get_last_error() == _ERROR_NOT_FOUND:
+        if _last_error() == _ERROR_NOT_FOUND:
             return None
         raise LocalApprovalDeniedError(_DENIED)
     try:
@@ -140,6 +151,6 @@ def delete_credential(record_id: str, part: str) -> bool:
     target = _target(record_id, part)
     if _api().CredDeleteW(target, _CRED_TYPE_GENERIC, 0):
         return True
-    if ctypes.get_last_error() == _ERROR_NOT_FOUND:
+    if _last_error() == _ERROR_NOT_FOUND:
         return False
     raise LocalApprovalDeniedError(_DENIED)
