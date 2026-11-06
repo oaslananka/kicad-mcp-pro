@@ -56,6 +56,22 @@ test("Cloud account access is a real responsive provider-driven journey, not man
   assert.doesNotMatch(unavailable,/action="\/auth\/start\//);
 });
 
+test("mobile Cloud sign-in prioritizes real providers over long setup copy",()=>{
+  const page=renderSignIn("opaque",["google","github"]);
+  assert.match(page,/class="auth-mobile-journey"/);
+  assert.match(page,/Next: sign in/);
+  assert.match(page,/pair your computer/);
+  assert.match(page,/approve project access/);
+  assert.match(uiCss,/\.auth-mobile-journey\{display:none\}/);
+  assert.match(uiCss,/@media\(max-width:560px\)/);
+  assert.match(uiCss,/\.auth-journey\{display:none\}/);
+  assert.match(uiCss,/\.auth-mobile-journey\{display:block/);
+  assert.match(uiCss,/@media\(max-width:380px\)/);
+  assert.match(page,/action="\/auth\/start\/google"/);
+  assert.match(page,/action="\/auth\/start\/github"/);
+  assert.match(page,/name="oauth_query" value="opaque"/);
+});
+
 test("first login presents only the configured provider",()=>{
   const github=renderSignIn("",["github"]);
   assert.match(github,/Continue with GitHub/);
