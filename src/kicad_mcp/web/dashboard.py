@@ -146,6 +146,27 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .local-workspace-intro .local-workspace-safety { margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:11px; }
   @media (max-width:480px) { .local-workspace-intro{padding:20px 17px}.local-workspace-actions .btn{flex:1 1 100%;} }
 
+
+  /* Guided local-first entry. Advanced server details are present but opt-in. */
+  .nav-label-strong{color:var(--accent)}
+  .local-get-started{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 28px}
+  .local-choice{display:flex;align-items:flex-start;gap:12px;min-width:0;padding:18px 16px;border:1px solid var(--border-strong);border-radius:var(--radius-md);background:var(--surface);color:var(--text);text-align:left;cursor:pointer;transition:border-color .15s,background .15s,transform .15s}
+  .local-choice:hover{background:var(--surface-2);border-color:var(--accent);transform:translateY(-2px);text-decoration:none;color:var(--text)}
+  .local-choice-number{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:8px;color:var(--accent);background:var(--accent-subtle);font-size:11px;font-weight:750}
+  .local-choice-content{display:grid;gap:8px;min-width:0;flex:1}
+  .local-choice-content strong{font-size:14px;line-height:1.3}
+  .local-choice-content small{font-size:12px;line-height:1.55;color:var(--text-muted)}
+  .local-choice-arrow{margin-left:auto;color:var(--accent);font-size:16px}
+  .advanced-note{font-size:12px;color:var(--text-muted);margin-bottom:12px}
+  .advanced-controls{border:1px solid var(--border);border-radius:8px;background:var(--surface-2)}
+  .advanced-controls summary{cursor:pointer;padding:12px 15px;font-size:12px;font-weight:650;color:var(--text);list-style:none}
+  .advanced-controls summary::after{content:'+';float:right;color:var(--accent);font-size:17px;font-weight:700}
+  .advanced-controls[open] summary::after{content:'?'}
+  .advanced-controls .actions{padding:0 14px 14px}
+  @media(max-width:1100px){.local-get-started{grid-template-columns:1fr}}
+  @media(max-width:768px){.local-choice{padding:14px 15px}.nav-label-strong{display:none}}
+  @media(prefers-reduced-motion:reduce){.local-choice{transition:none}.local-choice:hover{transform:none}}
+
   /* Main content */
   .main { flex: 1; min-width: 0; padding: 32px 36px; overflow-y: auto; max-height: 100vh; }
   .view { display: none; }
@@ -449,13 +470,16 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     <span id="navStatusText">Checking...</span>
   </div>
   <div class="nav-items-container">
+    <div class="nav-label nav-label-strong">GET STARTED</div>
+    <button type="button" class="nav-item" data-view="setup-wizard">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+      <span>Connect an AI</span>
+    </button>
+    <div class="nav-sep"></div>
+    <div class="nav-label">MY WORKSPACE</div>
     <button type="button" class="nav-item active" data-view="dashboard">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
-      <span>Dashboard</span>
-    </button>
-    <button type="button" class="nav-item" data-view="log-viewer">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-      <span>Logs</span>
+      <span>Overview</span>
     </button>
     <button type="button" class="nav-item" data-view="tools-catalog">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
@@ -465,24 +489,21 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
       <span>Preview</span>
     </button>
+    <div class="nav-sep"></div>
+    <div class="nav-label">DIAGNOSTICS</div>
+    <button type="button" class="nav-item" data-view="log-viewer">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+      <span>Activity log</span>
+    </button>
     <button type="button" class="nav-item" data-view="settings">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      <span>Settings</span>
-    </button>
-    <button type="button" class="nav-item" data-view="setup-wizard">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-      <span>Setup</span>
+      <span>Settings &amp; repair</span>
     </button>
     <div class="nav-sep"></div>
-    <div class="nav-label">AI Agents</div>
+    <div class="nav-label">HELP</div>
     <a class="nav-item" href="https://oaslananka.github.io/kicad-mcp-pro/agents/" target="_blank" rel="noopener noreferrer">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4M8 16h.01M16 16h.01"/></svg>
       <span>Agent Setup</span>
-      <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="margin-left:auto;"><path d="M6 3h7v7M13 3 7 9"/></svg>
-    </a>
-    <a class="nav-item" href="https://oaslananka.github.io/kicad-mcp-pro/agents/prompts/" target="_blank" rel="noopener noreferrer">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-      <span>Prompt Library</span>
       <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="margin-left:auto;"><path d="M6 3h7v7M13 3 7 9"/></svg>
     </a>
   </div>
@@ -510,14 +531,31 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     <section class="local-workspace-intro" aria-label="Choose how to use KiCad MCP Pro">
       <div>
         <span class="local-workspace-kicker">YOUR KICAD WORKSPACE</span>
-        <h2>Start with your project.</h2>
-        <p>Work locally without an account. Connect Cloud only when you want authorized remote AI access.</p>
+        <h2>Your KiCad workspace is here.</h2>
+        <p>Work locally without an account. Choose local AI now, or connect Cloud only when you need remote access.</p>
       </div>
       <div class="local-workspace-actions">
         <button type="button" class="btn btn-primary" onclick="window.location.hash='#setup-wizard'">Set up local AI</button>
         <a class="btn local-cloud-link" href="https://kicad-mcp-pro.oaslananka.dev/sign-in" target="_blank" rel="noopener noreferrer">Open Cloud sign-in</a>
       </div>
       <p class="local-workspace-safety">Cloud sign-in, device pairing and each project permission are independent. Signing in never shares local files.</p>
+    </section>
+    <section class="local-get-started" aria-label="Choose your next action">
+      <button type="button" class="local-choice" onclick="window.location.hash='#setup-wizard'">
+        <span class="local-choice-number">01</span><span class="local-choice-content"><strong>Connect local AI</strong>
+        <small>Choose your AI client, check KiCad and get its configuration in the built-in guided setup.</small></span>
+        <span class="local-choice-arrow" aria-hidden="true">?</span>
+      </button>
+      <button type="button" class="local-choice" onclick="window.location.hash='#preview'">
+        <span class="local-choice-number">02</span><span class="local-choice-content"><strong>View your project</strong>
+        <small>Open local previews and confirm what KiCad tools can see.</small></span>
+        <span class="local-choice-arrow" aria-hidden="true">?</span>
+      </button>
+      <a class="local-choice" href="https://kicad-mcp-pro.oaslananka.dev/sign-in" target="_blank" rel="noopener noreferrer">
+        <span class="local-choice-number">03</span><span class="local-choice-content"><strong>Cloud (optional)</strong>
+        <small>Sign in for read-only remote AI. Pairing and project sharing always require separate approval.</small></span>
+        <span class="local-choice-arrow" aria-hidden="true">?</span>
+      </a>
     </section>
     <h2>Local status</h2>
     <div class="grid" id="statusGrid">
@@ -552,6 +590,8 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     </div>
     <div class="card">
       <h3>Quick Actions</h3>
+      <p class="advanced-note">Normal setup does not need these manual controls.</p>
+      <details class="advanced-controls"><summary>Show server controls &amp; diagnostics</summary>
       <div class="actions">
         <button type="button" class="btn btn-sm btn-primary" onclick="serverAction('start')">Start</button>
         <button type="button" class="btn btn-sm btn-danger" onclick="serverAction('stop')">Stop</button>
@@ -561,7 +601,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
         <button type="button" class="btn btn-sm" onclick="window.open('/api/metrics','_blank')">Metrics JSON</button>
         <button type="button" class="btn btn-sm" onclick="window.open('/api/health','_blank')">Health JSON</button>
         <button type="button" class="btn btn-sm" onclick="window.location.hash='#/logs'">All Logs</button>
-      </div>
+      </div></details>
       <div id="action-msg" role="status" aria-live="polite" style="margin-top:10px;font-size:13px;"></div>
     </div>
     <div class="card" style="margin-top:16px;">
@@ -1265,7 +1305,9 @@ function renderWizardStep(step) {
         '<div id="wizConfigPreview" class="wizard-result" style="display:none;"></div>' +
         '<div class="actions" style="margin-top:12px;">' +
         '<button type="button" class="btn btn-sm" onclick="previewClientConfig()">Preview Config</button>' +
-        '<button type="button" class="btn btn-sm" onclick="copyClientConfig()">Copy to Clipboard</button></div>';
+        '<button type="button" class="btn btn-sm" onclick="copyClientConfig()">Copy to Clipboard</button>' +
+        '<button type="button" class="btn btn-sm btn-primary" onclick="downloadClientConfig()">Download config snippet</button></div>' +
+        '<p class="advanced-note">This downloads a snippet only. Review it before adding it to your AI client configuration; your existing settings are not overwritten.</p>';
       nav.innerHTML = '<button type="button" class="btn" onclick="wizardPrev()">Back</button><button type="button" class="btn btn-primary" onclick="wizardNext()">Next</button>';
       break;
 
@@ -1305,6 +1347,41 @@ function copyClientConfig() {
   }).catch(() => {
     showMsg('wizardMsg', 'Could not copy. Select text manually.', 'warn');
   });
+}
+
+async function downloadClientConfig() {
+  // Download-only. Never attempt silent edits to an AI client's config.
+  const client = document.getElementById('wizClient')?.value || '';
+  const allowed = ['claude-desktop', 'cursor', 'vscode', 'windsurf', 'zed'];
+  if (!allowed.includes(client)) {
+    showMsg('wizardMsg', 'Choose an AI client before downloading.', 'error');
+    return;
+  }
+  try {
+    const response = await fetch('/api/config/export/' + encodeURIComponent(client));
+    if (!response.ok) throw new Error('Could not generate this client configuration');
+    const data = await response.json();
+    if (typeof data.config !== 'string' || !data.config.trim()) {
+      throw new Error('No configuration was returned');
+    }
+    // Client is an allowlisted local value; API controls the actual contents.
+    const suffix = data.format === 'yaml' ? '.yaml' : '.json';
+    const url = URL.createObjectURL(new Blob([data.config], {type: 'text/plain;charset=utf-8'}));
+    try {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'kicad-mcp-pro-' + client + '-snippet' + suffix;
+      link.style.display = 'none';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      showMsg('wizardMsg', 'Config snippet downloaded. Review and merge it into your AI client settings.', 'success');
+    } finally {
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  } catch (error) {
+    showMsg('wizardMsg', error.message || 'Could not download configuration', 'error');
+  }
 }
 
 function testConnection() {
@@ -1396,7 +1473,7 @@ function finishWizard() { window.location.hash = '#dashboard'; }
 document.addEventListener('click', async (event) => {
   const link = event.target.closest?.('a[target="_blank"]');
   const invoke = window.__TAURI_INTERNALS__?.invoke;
-  if (!link || typeof invoke !== 'function') return;
+  if (!link) return;
   const allowedLinks = new Set([
     'https://github.com/sponsors/oaslananka',
     'https://www.buymeacoffee.com/oaslananka',
@@ -1405,6 +1482,18 @@ document.addEventListener('click', async (event) => {
     'https://kicad-mcp-pro.oaslananka.dev/sign-in'
   ]);
   if (!allowedLinks.has(link.href)) return;
+  if (typeof invoke !== 'function') {
+    // Once the packaged Tauri webview navigates from its bundle to its local
+    // HTTP dashboard, native IPC is deliberately unavailable on this origin.
+    // A one-shot same-window navigation is intercepted by the Rust plugin
+    // and opened in the system browser, with no remote IPC permissions.
+    // Ordinary Chrome/local HTTP users continue with a standard _blank link.
+    if (new URLSearchParams(location.search).get('desktop') === '1') {
+      event.preventDefault();
+      window.location.assign(link.href);
+    }
+    return;
+  }
   event.preventDefault();
   try {
     await invoke('open_external_link', {url: link.href});

@@ -14,7 +14,7 @@
     "bench": "vitest bench --run",
     "check": "npm run typecheck && npm run build && npm test",
     "config:check": "node dist/config-check.js",
-    "build": "tsc -p tsconfig.build.json && cp src/owner-read-enrollment-client.js dist/owner-read-enrollment-client.js && cp src/owner-read-review-client.js dist/owner-read-review-client.js",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-client-assets.mjs",
     "owner:acceptance": "node dist/owner-acceptance-cli.js",
     "owner:issuer": "node dist/owner-review-cli.js",
     "db:migrate": "node dist/migrations-cli.js",

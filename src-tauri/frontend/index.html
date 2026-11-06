@@ -238,7 +238,7 @@
           Run this command manually in a terminal to inspect diagnostics:
         </p>
         <div class="details-code-row">
-          <code id="cliCommand">uvx kicad-mcp-pro@latest dashboard --host 127.0.0.1 --port 3334</code>
+          <code id="cliCommand">Loading exact-version diagnostics from the desktop app?</code>
           <button type="button" class="btn-copy" id="btnCopyCmd" onclick="copyCliCommand()">Copy</button>
         </div>
         <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
@@ -250,13 +250,14 @@
     </main>
 
     <script type="module">
-      const DASHBOARD_URL = 'http://127.0.0.1:3334/ui';
+      const DASHBOARD_URL = 'http://127.0.0.1:3334/ui?desktop=1';
       const HEALTH_URL = 'http://127.0.0.1:3334/api/health';
 
       const MAX_RETRIES = 120;
       const RETRY_INTERVAL_MS = 1000;
       let retries = 0;
       let healthOk = false;
+      let diagnosticsLoaded = false;
 
       const statusEl = document.getElementById('status');
       const spinnerEl = document.getElementById('spinner');
@@ -277,6 +278,20 @@
 
       async function getTauriStatus() {
         return await tauriInvoke('server_status');
+      }
+
+      // The native command validates the backend's exact version + API
+      // contract. Never trust a no-cors/opaque localhost response.
+      async function getDesktopReadiness() {
+        return await tauriInvoke('desktop_readiness');
+      }
+
+      async function loadExactCommand() {
+        const command = await tauriInvoke('desktop_backend_command');
+        if (typeof command === 'string' && command.startsWith('uvx --from kicad-mcp-pro==')) {
+          document.getElementById('cliCommand').textContent = command;
+          diagnosticsLoaded = true;
+        }
       }
 
       async function handleRestartServer() {
@@ -311,6 +326,10 @@
       }
 
       function copyCliCommand() {
+        if (!diagnosticsLoaded) {
+          showError('Exact backend command is not available. Use the installed desktop app to retry.');
+          return;
+        }
         const cmd = document.getElementById('cliCommand').textContent.trim();
         navigator.clipboard.writeText(cmd).then(() => {
           const btn = document.getElementById('btnCopyCmd');
@@ -342,24 +361,6 @@
         return true;
       }
 
-      async function probeHttpHealth() {
-        for (const method of ['GET', 'HEAD']) {
-          try {
-            const resp = await fetch(HEALTH_URL, {
-              method,
-              mode: 'no-cors',
-              signal: AbortSignal.timeout(2000),
-            });
-            if (resp.status === 200 || resp.status === 0) {
-              return true;
-            }
-          } catch (err) {
-            console.debug(`Health probe ${method} failed:`, err);
-          }
-        }
-        return false;
-      }
-
       async function checkServer() {
         retries++;
 
@@ -368,9 +369,21 @@
           return;
         }
 
-        if (!healthOk && (await probeHttpHealth())) {
-          healthOk = true;
+        const readiness = await getDesktopReadiness();
+        if (readiness && readiness.incompatible) {
+          if (errorDetailEl) {
+            errorDetailEl.textContent = 'A different or incompatible service is using this port. '
+              + readiness.detail
+              + '. The desktop requires backend ' + readiness.expectedVersion
+              + '. Stop the other service before retrying; do not install @latest.';
+            errorDetailEl.style.display = 'block';
+          }
+          showError('Different backend detected on the local port');
+          return;
         }
+        // Do not redirect when Tauri IPC is unavailable or a foreign HTTP
+        // server returned 200/opaque status. Native compatibility is mandatory.
+        healthOk = readiness?.ready === true;
 
         if (healthOk) {
           statusEl.textContent = 'Server is ready, redirecting…';
@@ -392,10 +405,13 @@
           return;
         }
 
-        statusEl.textContent =
-          retries < 8
-            ? 'Starting server…'
-            : `Starting server… first run downloads the backend, this can take a minute (${retries}s)`;
+        if (!readiness && retries > 8) {
+          statusEl.textContent = 'Waiting for desktop integration. If this continues, restart KiCad MCP Pro.';
+        } else if (retries < 8) {
+          statusEl.textContent = 'Starting server…';
+        } else {
+          statusEl.textContent = `Starting server… first run downloads the backend, this can take a minute (${retries}s)`;
+        }
         setTimeout(checkServer, RETRY_INTERVAL_MS);
       }
 
@@ -417,6 +433,7 @@
           }
         });
       });
+      await loadExactCommand();
       await checkServer();
     </script>
   </body>

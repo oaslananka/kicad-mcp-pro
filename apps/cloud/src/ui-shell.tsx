@@ -5,6 +5,13 @@ import {Icon} from "./ui-icons.js";
 export type PageKind="home"|"sign-in"|"account"|"consent"|"connections"|"devices"|"notice";
 type Props={title:string;eyebrow?:string;summary?:string;kind:PageKind;children:ReactNode;navEnabled?:boolean;actions?:ReactNode};
 const workspacePages=new Set<PageKind>(["account","connections","devices"]);
+const desktopReleaseUrl="https://github.com/oaslananka/kicad-mcp-pro/releases/tag/kicad-mcp-gui-v4.8.1";
+// Version-pinned, published GUI downloads. Keep in sync with Tauri release
+// metadata; CI checks this rather than silently linking an incompatible app.
+const windowsInstallerUrl="https://github.com/oaslananka/kicad-mcp-pro/releases/download/kicad-mcp-gui-v4.8.1/windows_KiCad-MCP-Pro_4.8.1_x64-setup.exe";
+const macInstallerUrl="https://github.com/oaslananka/kicad-mcp-pro/releases/download/kicad-mcp-gui-v4.8.1/macos_KiCad-MCP-Pro_4.8.1_aarch64.dmg";
+const linuxInstallerUrl="https://github.com/oaslananka/kicad-mcp-pro/releases/download/kicad-mcp-gui-v4.8.1/linux_KiCad-MCP-Pro_4.8.1_amd64.AppImage";
+
 const publicDescription="KiCad MCP Cloud lets you pair your computer and grant selected AI assistants read-only access to approved KiCad project metadata.";
 const publicSchema=JSON.stringify({
   "@context":"https://schema.org",
@@ -79,6 +86,7 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
         <div className="header-right">
           <span className="release-label"><Icon name="shield" size={15}/> Your projects. Your permissions.</span>
           <nav className="public-nav" aria-label="Primary"><NavLink href="/" current={kind==="home"}>Overview</NavLink>
+            <a href={desktopReleaseUrl} target="_blank" rel="noopener noreferrer">Get the app</a>
             {navEnabled?<NavLink href="/account" current={false}>Workspace</NavLink>:null}</nav>
         </div>
       </div></header>}
@@ -107,12 +115,19 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
         <span className={identityEnabled?"status-pill neutral":"status-pill pending"}>
           {identityEnabled?"Account sign-in available":"Account access pending"}
         </span>
-        <h2>Your Cloud workspace.<br/>KiCad stays local.</h2>
-        <p>Securely manage account connections, computers and project access. Every device and client grant is approved independently.</p>
+        <div className="landing-product-label"><Icon name="shield" size={15}/> LOCAL FIRST ? CLOUD WHEN YOU NEED IT</div>
+        <h2>Use KiCad with your AI tools.<br/><span className="landing-accent">Your files stay yours.</span></h2>
+        <p>Start on your computer, without creating an account. When you want remote AI access, connect to Cloud and approve only the computers and projects you choose.</p>
         <div className="action-row">{identityEnabled?
-          <a className="button primary" href="/sign-in">Open workspace <Icon name="arrow" size={17}/></a>:
+          <a className="button primary" href="/sign-in">Connect to Cloud <Icon name="arrow" size={17}/></a>:
           <span className="button disabled" aria-disabled="true">Account access pending</span>}
-          <a className="text-link" href="#how-it-works">View setup guide <Icon name="arrow" size={15}/></a>
+          <a className="button secondary" href={desktopReleaseUrl} target="_blank" rel="noopener noreferrer">Get desktop app <Icon name="arrow" size={15}/></a>
+        </div>
+        <div className="landing-platforms" aria-label="Download KiCad MCP Pro v4.8.1">
+          <span>Get the desktop app for</span>
+          <a href={windowsInstallerUrl} target="_blank" rel="noopener noreferrer">Windows x64</a>
+          <a href={macInstallerUrl} target="_blank" rel="noopener noreferrer">macOS Apple Silicon</a>
+          <a href={linuxInstallerUrl} target="_blank" rel="noopener noreferrer">Linux x64</a>
         </div>
         <p className="hero-note"><Icon name="shield" size={16}/> Project access always requires separate approval.</p>
       </div>
@@ -135,15 +150,29 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
         <div className="topology-foot"><Icon name="lock" size={15}/> No project files are shared by signing in.</div>
       </div>
     </section>
+    <section className="entry-choices" aria-label="Choose how to start">
+      <a className="entry-choice" href={desktopReleaseUrl} target="_blank" rel="noopener noreferrer">
+        <span className="entry-choice-icon"><Icon name="cpu" size={23}/></span>
+        <span><small>LOCAL / NO ACCOUNT NEEDED</small><strong>Start with KiCad on your computer</strong>
+          <span>Download the desktop app. It checks its matching backend before opening your workspace.</span></span>
+        <Icon name="arrow" size={19} className="entry-choice-arrow"/>
+      </a>
+      <a className="entry-choice" href={identityEnabled?"/sign-in":"#how-it-works"}>
+        <span className="entry-choice-icon"><Icon name="connections" size={23}/></span>
+        <span><small>OPTIONAL / REMOTE AI</small><strong>Connect an AI assistant</strong>
+          <span>Sign in, approve a device, then choose the projects that AI can read.</span></span>
+        <Icon name="arrow" size={19} className="entry-choice-arrow"/>
+      </a>
+    </section>
     <section className="next-section" aria-labelledby="how-it-works">
       <div className="section-head"><div><div className="card-kicker">A CLEAR SETUP PATH</div>
-        <h2 id="how-it-works">One step at a time.</h2></div>
+        <h2 id="how-it-works">From download to your first AI connection</h2></div>
         <p>Account access, device access and project permissions remain separate.</p></div>
-      <details className="home-setup-guide"><summary>View the four setup steps <Icon name="arrow" size={15}/></summary><div className="steps-grid">
-        <div className="step"><div className="step-index"><span className="step-icon"><Icon name="key" size={19}/></span><span>01</span></div><h3>Sign in securely</h3><p>Use your account to access the Cloud workspace.</p></div>
-        <div className="step"><div className="step-index"><span className="step-icon"><Icon name="devices" size={19}/></span><span>02</span></div><h3>Pair your computer</h3><p>Pair from the local Connector and approve the request in your Cloud workspace. Pairing alone never shares projects.</p><span className="step-state">Your approval required</span></div>
-        <div className="step"><div className="step-index"><span className="step-icon"><Icon name="connections" size={19}/></span><span>03</span></div><h3>Connect your AI client</h3><p>Follow the connection guide and review the app's account permissions.</p></div>
-        <div className="step"><div className="step-index"><span className="step-icon"><Icon name="cpu" size={19}/></span><span>04</span></div><h3>Choose project access</h3><p>Select a project on your own computer, then explicitly grant each connected AI client access.</p></div>
+      <details className="home-setup-guide" open={true}><summary>Four steps, clearly explained <Icon name="arrow" size={15}/></summary><div className="steps-grid">
+        <div className="step"><div className="step-index"><span className="step-icon"><Icon name="key" size={19}/></span><span>01</span></div><h3>Get the desktop app</h3><p>Run KiCad MCP Pro locally without an account. Cloud is optional for remote access.</p><a className="text-link" href={desktopReleaseUrl} target="_blank" rel="noopener noreferrer">Get the app <Icon name="arrow" size={14}/></a></div>
+        <div className="step"><div className="step-index"><span className="step-icon"><Icon name="devices" size={19}/></span><span>02</span></div><h3>Pair your computer (Cloud only)</h3><p>If remote access is needed, sign in and explicitly approve your computer in the Cloud workspace. Pairing never shares projects.</p><span className="step-state">Your approval required</span></div>
+        <div className="step"><div className="step-index"><span className="step-icon"><Icon name="connections" size={19}/></span><span>03</span></div><h3>Connect your AI client</h3><p>Use the in-app setup for local AI, or review the Cloud connection request. No terminal command is required to browse the app.</p></div>
+        <div className="step"><div className="step-index"><span className="step-icon"><Icon name="cpu" size={19}/></span><span>04</span></div><h3>Choose exact projects</h3><p>Keep local files private; a remote client sees only approved read-only project data.</p></div>
       </div>
       </details>
       <div className="setup-help" aria-label="Setup questions">
@@ -195,6 +224,7 @@ export function SignIn({query,providers,pairing=false}:{
       {providers.length===0?<p className="auth-unavailable" role="status">Account sign-in is temporarily unavailable. Your local KiCad workspace continues to work without Cloud.</p>:null}
       {pairing?<script defer={true} src="/assets/pairing-login-continuation.js"></script>:null}
       <div className="auth-footnote"><Icon name="shield" size={19}/><p>Signing in does not pair a device or share a project. Access requires independent, explicit approval.</p></div>
+      <a className="auth-download-link" href={desktopReleaseUrl} target="_blank" rel="noopener noreferrer">No desktop app yet? Get KiCad MCP Pro <Icon name="arrow" size={15}/></a>
     </div>
   </section>;
 }
