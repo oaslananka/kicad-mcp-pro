@@ -393,6 +393,255 @@ class DeployContracts(unittest.TestCase):
             cloud.deploy(SHA, "github", get, post)
         self.assertEqual(posts, [])
 
+    def test_deploy_pins_exact_main_before_post_and_checks_new_live(self) -> None:
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+        app = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+        live = OTHER
+        order: list[str] = []
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            if url.endswith("/applications/" + UUID):
+                return app
+            if url.endswith("/health"):
+                return {"revision": live}
+            if url.endswith("/deployments/" + UUID):
+                return {"status": "finished", "commit": SHA}
+            raise AssertionError("Unexpected API: " + url)
+
+        def post(url: str, **kwargs: object) -> dict[str, Any]:
+            nonlocal live
+            if kwargs.get("method") == "PATCH":
+                self.assertTrue(url.endswith("/applications/" + UUID))
+                self.assertEqual(kwargs["payload"], {"git_commit_sha": SHA})
+                self.assertEqual(live, OTHER)
+                order.append("PATCH")
+                app["git_commit_sha"] = SHA
+                return {"uuid": UUID}
+            self.assertEqual(kwargs.get("method"), "POST")
+            self.assertIn("/deploy?", url)
+            self.assertEqual(app["git_commit_sha"], SHA)
+            order.append("POST")
+            live = SHA
+            return {"deployments": [{"resource_uuid": UUID, "deployment_uuid": UUID}]}
+
+        with (
+            patch.object(cloud, "require_successful_ci") as ci,
+            patch.object(cloud, "load_settings", return_value=settings),
+        ):
+            cloud.deploy(SHA, "github", get, post)
+        self.assertEqual(order, ["PATCH", "POST"])
+        self.assertEqual(ci.call_count, 4)
+
+    def test_deploy_restores_pin_if_ci_moves_before_post(self) -> None:
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+        app = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+        patch_values: list[str] = []
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            if url.endswith("/applications/" + UUID):
+                return app
+            if url.endswith("/health"):
+                return {"revision": OTHER}
+            raise AssertionError("Unexpected API: " + url)
+
+        def post(url: str, **kwargs: object) -> dict[str, Any]:
+            self.assertEqual(kwargs.get("method"), "PATCH")
+            self.assertTrue(url.endswith("/applications/" + UUID))
+            rev = kwargs["payload"]["git_commit_sha"]
+            patch_values.append(rev)
+            app["git_commit_sha"] = rev
+            return {"uuid": UUID}
+
+        checks = 0
+
+        def ci(*_args: object, **_kwargs: object) -> None:
+            nonlocal checks
+            checks += 1
+            if checks == 3:
+                raise cloud.DeployError("MAIN_SHA_CHANGED")
+
+        with (
+            patch.object(cloud, "require_successful_ci", side_effect=ci),
+            patch.object(cloud, "load_settings", return_value=settings),
+        ):
+            with self.assertRaisesRegex(cloud.DeployError, "^MAIN_SHA_CHANGED$"):
+                cloud.deploy(SHA, "github", get, post)
+        self.assertEqual(patch_values, [SHA, OTHER])
+        self.assertEqual(app["git_commit_sha"], OTHER)
+
+    def test_deploy_does_not_post_without_verified_pin(self) -> None:
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+        app = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+        methods: list[str] = []
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            if url.endswith("/applications/" + UUID):
+                return app
+            if url.endswith("/health"):
+                return {"revision": OTHER}
+            raise AssertionError("Unexpected API: " + url)
+
+        def post(_url: str, **kwargs: object) -> dict[str, Any]:
+            methods.append(kwargs["method"])
+            # Simulate Coolify accepting PATCH without actually persisting it.
+            return {"uuid": UUID}
+
+        with (
+            patch.object(cloud, "require_successful_ci"),
+            patch.object(cloud, "load_settings", return_value=settings),
+        ):
+            with self.assertRaisesRegex(cloud.DeployError, "^COOLIFY_TARGET_PIN_NOT_VERIFIED$"):
+                cloud.deploy(SHA, "github", get, post)
+        self.assertEqual(methods, ["PATCH"])
+
+    def test_deploy_rejects_source_pin_race_without_patch(self) -> None:
+        app = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+        application_reads = 0
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            nonlocal application_reads
+            if url.endswith("/applications/" + UUID):
+                application_reads += 1
+                if application_reads == 2:
+                    app["git_commit_sha"] = "c" * 40
+                return app
+            if url.endswith("/health"):
+                return {"revision": OTHER}
+            raise AssertionError("Unexpected API")
+
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+        with (
+            patch.object(cloud, "require_successful_ci"),
+            patch.object(cloud, "load_settings", return_value=settings),
+        ):
+            with self.assertRaisesRegex(cloud.DeployError, "^COOLIFY_SOURCE_PIN_CHANGED$"):
+                cloud.deploy(
+                    SHA,
+                    "github",
+                    get,
+                    lambda *_a, **_k: self.fail("no PATCH/POST permitted"),
+                )
+
+    def test_deploy_unhealthy_after_pin_denies_post_and_pin_restore(self) -> None:
+        app = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+        methods: list[str] = []
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            if url.endswith("/applications/" + UUID):
+                return app
+            if url.endswith("/health"):
+                return {"revision": OTHER}
+            raise AssertionError("Unexpected API")
+
+        def post(url: str, **kwargs: object) -> dict[str, Any]:
+            self.assertTrue(url.endswith("/applications/" + UUID))
+            self.assertEqual(kwargs.get("method"), "PATCH")
+            methods.append("PATCH")
+            app["git_commit_sha"] = SHA
+            app["status"] = "stopped"
+            return {"uuid": UUID}
+
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+        with (
+            patch.object(cloud, "require_successful_ci"),
+            patch.object(cloud, "load_settings", return_value=settings),
+        ):
+            with self.assertRaisesRegex(
+                cloud.DeployError, "^COOLIFY_BASELINE_UNHEALTHY_AFTER_PIN$"
+            ):
+                cloud.deploy(SHA, "github", get, post)
+        self.assertEqual(methods, ["PATCH"])
+
     def test_preflight_read_only_accepts_live_revision(self) -> None:
         settings = {
             "COOLIFY_URL": "https://coolify.example.com",
