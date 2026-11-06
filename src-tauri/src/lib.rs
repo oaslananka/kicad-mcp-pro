@@ -212,6 +212,41 @@ fn manual_backend_command(port: u16) -> String {
     )
 }
 
+/// A read-only desktop/loopback compatibility probe. The WebView must not
+/// infer readiness from an opaque (no-cors) HTTP response from another app.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopReadiness {
+    ready: bool,
+    incompatible: bool,
+    detail: String,
+    expected_version: String,
+}
+
+#[tauri::command]
+fn desktop_readiness() -> DesktopReadiness {
+    let (ready, incompatible, detail) = match probe_backend(3334) {
+        BackendProbe::Compatible => (true, false, "Verified desktop backend".to_string()),
+        BackendProbe::Unreachable => (
+            false,
+            false,
+            "Waiting for exact-version backend".to_string(),
+        ),
+        BackendProbe::Incompatible(reason) => (false, true, reason),
+    };
+    DesktopReadiness {
+        ready,
+        incompatible,
+        detail,
+        expected_version: env!("CARGO_PKG_VERSION").to_string(),
+    }
+}
+
+#[tauri::command]
+fn desktop_backend_command() -> String {
+    manual_backend_command(3334)
+}
+
 fn incompatible_backend_error(port: u16, reason: &str) -> String {
     format!(
         "Incompatible service detected at http://{}/api/health: {}. \
@@ -517,6 +552,31 @@ pub fn run() {
         show_main_window(app);
     }));
     builder
+        // The bundled splash has native IPC; the HTTP dashboard intentionally
+        // does NOT receive privileged Tauri IPC capabilities. Accept only
+        // exact allowlisted external navigation and open it in the OS browser.
+        .plugin(
+            tauri::plugin::Builder::<_, ()>::new("desktop-external-navigation")
+                .on_navigation(|webview, url| {
+                    if allowed_external_link(url.as_str()) {
+                        #[allow(deprecated)]
+                        let _ = webview.app_handle().shell().open(url.to_string(), None);
+                        return false;
+                    }
+                    // Never replace the app with an arbitrary external page.
+                    // The native app UI and exact 127.0.0.1 dashboard are the
+                    // only intended webviews.
+                    !matches!(url.scheme(), "http" | "https")
+                        || (url.scheme() == "http"
+                            && url.host_str() == Some("127.0.0.1")
+                            && url.port_or_known_default() == Some(3334))
+                        // The native app bundle uses tauri.localhost on
+                        // Windows. Keep the bundled splash reachable.
+                        || (matches!(url.scheme(), "http" | "https")
+                            && url.host_str() == Some("tauri.localhost"))
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(ServerProcess {
@@ -532,6 +592,8 @@ pub fn run() {
             select_working_dir,
             get_working_dir,
             restart_server,
+            desktop_readiness,
+            desktop_backend_command,
             open_external_link,
         ])
         .on_window_event(|window, event| {
@@ -630,6 +692,14 @@ mod tests {
                 .expect("write health response");
         });
         port
+    }
+
+    #[test]
+    fn displayed_backend_command_uses_exact_release_package() {
+        let command = desktop_backend_command();
+        assert!(command.contains(&format!("kicad-mcp-pro=={}", env!("CARGO_PKG_VERSION"))));
+        assert!(!command.contains("@latest"));
+        assert!(command.contains("--host 127.0.0.1 --port 3334"));
     }
 
     #[test]

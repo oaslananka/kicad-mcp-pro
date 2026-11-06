@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
+import {readFileSync} from "node:fs";
 import {renderAccount,renderLanding,renderSignIn} from "../src/browser-ui.js";
 import {renderConnectionsPage} from "../src/connections-ui.js";
 import {renderConsentPage} from "../src/consent-ui.js";
@@ -72,4 +73,23 @@ test("security pages share brand/navigation while preserving authorization forms
   assert.match(pages[4],/value="deny"[^>]*name="decision"/);
   assert.match(pages[4],/value="approve"[^>]*name="decision"/);
   assert.match(pages[5],/name="csrf"/);
+});
+
+
+test("direct desktop downloads match pinned Tauri version and released artifact names",()=>{
+  const metadata=JSON.parse(readFileSync(new URL("../../../src-tauri/tauri.conf.json",import.meta.url),"utf-8"));
+  const version=metadata.version as string;
+  const html=renderLanding(true);
+  const names=[
+    "windows_KiCad-MCP-Pro_"+version+"_x64-setup.exe",
+    "macos_KiCad-MCP-Pro_"+version+"_aarch64.dmg",
+    "linux_KiCad-MCP-Pro_"+version+"_amd64.AppImage"
+  ];
+  assert.match(html,/Download KiCad MCP Pro v/);
+  assert.match(html,/Windows x64/);
+  assert.match(html,/macOS Apple Silicon/);
+  assert.match(html,/Linux x64/);
+  for(const name of names) assert.ok(html.includes("/kicad-mcp-gui-v"+version+"/"+name),name);
+  assert.match(html,/href="\/sign-in"/);
+  assert.match(html,/Your files stay yours/);
 });

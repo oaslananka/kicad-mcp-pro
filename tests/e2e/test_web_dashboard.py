@@ -18,6 +18,7 @@ from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
 from playwright.sync_api import Page, Route
@@ -169,7 +170,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
     """Serves DASHBOARD_HTML at / and /api/dashboard."""
 
     def do_GET(self) -> None:
-        if self.path in ("/", "/ui", "/ui/", "/api/dashboard"):
+        if urlsplit(self.path).path in ("/", "/ui", "/ui/", "/api/dashboard"):
             html = DASHBOARD_HTML
             body = html.encode("utf-8")
             self.send_response(200)
@@ -374,6 +375,41 @@ class TestDashboardSPA:
         page.wait_for_function(
             "() => document.querySelector('#view-settings').classList.contains('active')"
         )
+
+    def test_desktop_navigation_fallback_for_support_link(
+        self, page: Page, dashboard_url: str
+    ) -> None:
+        """A remote-origin Tauri dashboard uses native navigation, not broken IPC."""
+        destination = "https://github.com/sponsors/oaslananka"
+        page.route(
+            destination,
+            lambda route: route.fulfill(
+                status=200, content_type="text/html", body="<p>Browser launched</p>"
+            ),
+        )
+        page.goto(dashboard_url + "?desktop=1")
+        page.locator("a.nav-support.github").click()
+        page.wait_for_url(destination)
+        assert page.get_by_text("Browser launched").is_visible()
+
+    def test_local_first_choice_and_downloadable_client_config(
+        self, page: Page, dashboard_url: str
+    ) -> None:
+        """A first-time user can navigate and download an AI config without a CLI."""
+        page.goto(dashboard_url)
+        assert page.locator(".local-choice").count() == 3
+        assert page.locator('button[data-view="setup-wizard"]').count() == 1
+        assert page.locator('button[data-view="setup-wizard"]').inner_text() == "Connect an AI"
+        assert not page.locator(".advanced-controls").get_attribute("open")
+        page.get_by_role("button", name="Connect local AI").click()
+        assert page.is_visible("#view-setup-wizard")
+        page.evaluate("wizardStep = 3; renderWizardStep(3)")
+        assert page.locator("#wizClient").input_value() == "claude-desktop"
+        with page.expect_download() as transfer:
+            page.get_by_role("button", name="Download config snippet").click()
+        received = transfer.value
+        assert received.suggested_filename == "kicad-mcp-pro-claude-desktop-snippet.json"
+        assert "Review and merge" in (page.locator("#wizardMsg").inner_text())
 
     def test_spa_loads(self, page: Page, dashboard_url: str) -> None:
         """The SPA loads and shows the dashboard view by default."""

@@ -32,8 +32,8 @@ test("Cloud availability never implies consent, pairing or a running device",()=
   assert.match(html,/Client consent required/);
   assert.match(html,/Owner pairing required/);
   assert.equal((html.match(/topology-indicator on/g)||[]).length,0);
-  assert.match(html,/<details class="home-setup-guide"><summary>/);
-  assert.doesNotMatch(html,/<details class="home-setup-guide" open/);
+  assert.match(html,/<details class="home-setup-guide" open/);
+  assert.match(html,/Get desktop app/);
   assert.doesNotMatch(html,/Enterprise SSO|PRO Tier|FIDO2 required/);
 });
 
