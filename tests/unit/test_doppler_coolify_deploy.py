@@ -428,6 +428,21 @@ class DeployContracts(unittest.TestCase):
 
         def post(url: str, **kwargs: object) -> dict[str, Any]:
             nonlocal live
+            if url.endswith("/applications/" + UUID + "/envs"):
+                self.assertEqual(kwargs.get("method"), "PATCH")
+                self.assertEqual(
+                    kwargs["payload"],
+                    {
+                        "key": "APP_REVISION",
+                        "value": SHA,
+                        "is_preview": False,
+                        "is_literal": False,
+                    },
+                )
+                self.assertEqual(live, OTHER)
+                self.assertEqual(app["git_commit_sha"], SHA)
+                order.append("REVISION_PATCH")
+                return {"key": "APP_REVISION", "is_preview": False}
             if kwargs.get("method") == "PATCH":
                 self.assertTrue(url.endswith("/applications/" + UUID))
                 self.assertEqual(kwargs["payload"], {"git_commit_sha": SHA})
@@ -447,8 +462,8 @@ class DeployContracts(unittest.TestCase):
             patch.object(cloud, "load_settings", return_value=settings),
         ):
             cloud.deploy(SHA, "github", get, post)
-        self.assertEqual(order, ["PATCH", "POST"])
-        self.assertEqual(ci.call_count, 4)
+        self.assertEqual(order, ["PATCH", "REVISION_PATCH", "POST"])
+        self.assertEqual(ci.call_count, 5)
 
     def test_deploy_restores_pin_if_ci_moves_before_post(self) -> None:
         settings = {
@@ -641,6 +656,127 @@ class DeployContracts(unittest.TestCase):
             ):
                 cloud.deploy(SHA, "github", get, post)
         self.assertEqual(methods, ["PATCH"])
+
+    def test_revision_metadata_patch_requires_exact_application_scope(self) -> None:
+        requests: list[tuple[str, dict[str, object]]] = []
+
+        def send(url: str, **kwargs: object) -> dict[str, Any]:
+            requests.append((url, kwargs))
+            return {"key": "APP_REVISION", "is_preview": False}
+
+        cloud._set_runtime_revision(SHA, "https://coolify.example.com/api/v1", "scoped", UUID, send)
+        self.assertEqual(len(requests), 1)
+        url, kwargs = requests[0]
+        self.assertEqual(url, "https://coolify.example.com/api/v1/applications/" + UUID + "/envs")
+        self.assertEqual(kwargs["token"], "scoped")
+        self.assertEqual(kwargs["method"], "PATCH")
+        self.assertEqual(
+            kwargs["payload"],
+            {
+                "key": "APP_REVISION",
+                "value": SHA,
+                "is_preview": False,
+                "is_literal": False,
+            },
+        )
+
+        with self.assertRaisesRegex(cloud.DeployError, "^COOLIFY_REVISION_CONFIG_NOT_VERIFIED$"):
+            cloud._set_runtime_revision(
+                SHA,
+                "https://coolify.example.com/api/v1",
+                "scoped",
+                UUID,
+                lambda *_a, **_k: {"key": "WRONG_ENV", "is_preview": False},
+            )
+
+    def test_revision_metadata_rejects_untrusted_revision_without_write(self) -> None:
+        with self.assertRaisesRegex(cloud.DeployError, "^INVALID_REVISION_SHA$"):
+            cloud._set_runtime_revision(
+                "not-a-commit",
+                "https://coolify.example.com/api/v1",
+                "scoped",
+                UUID,
+                lambda *_a, **_k: self.fail("No mutation for unverified SHA"),
+            )
+
+    def test_revision_metadata_patch_rejects_preview_scope(self) -> None:
+        with self.assertRaisesRegex(cloud.DeployError, "^COOLIFY_REVISION_CONFIG_NOT_VERIFIED$"):
+            cloud._set_runtime_revision(
+                SHA,
+                "https://coolify.example.com/api/v1",
+                "scoped",
+                UUID,
+                lambda *_a, **_k: {"key": "APP_REVISION", "is_preview": True},
+            )
+
+    def test_source_and_revision_restored_if_ci_moves_before_deployment(self) -> None:
+        app = {
+            "git_repository": cloud.REPOSITORY,
+            "git_branch": "main",
+            "build_pack": "dockercompose",
+            "base_directory": "/apps/cloud",
+            "docker_compose_location": "/compose.coolify.yml",
+            "settings": {
+                "is_auto_deploy_enabled": False,
+                "is_preview_deployments_enabled": False,
+            },
+            "status": "running:healthy",
+            "container_present": True,
+            "git_commit_sha": OTHER,
+        }
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+        revision = OTHER
+        mutations: list[str] = []
+
+        def get(url: str, token: str | None = None) -> dict[str, Any]:
+            if url.endswith("/applications/" + UUID):
+                return app
+            if url.endswith("/health"):
+                return {"revision": OTHER}
+            raise AssertionError("Unexpected GET " + url)
+
+        def post(url: str, **kwargs: object) -> dict[str, Any]:
+            nonlocal revision
+            if url.endswith("/applications/" + UUID + "/envs"):
+                self.assertEqual(kwargs.get("method"), "PATCH")
+                payload = kwargs["payload"]
+                self.assertIsInstance(payload, dict)
+                new_revision = payload["value"]
+                mutations.append("ENV_" + ("NEW" if new_revision == SHA else "OLD"))
+                revision = new_revision
+                return {"key": "APP_REVISION", "is_preview": False}
+            if url.endswith("/applications/" + UUID):
+                self.assertEqual(kwargs.get("method"), "PATCH")
+                payload = kwargs["payload"]
+                self.assertIsInstance(payload, dict)
+                new_pin = payload["git_commit_sha"]
+                mutations.append("PIN_" + ("NEW" if new_pin == SHA else "OLD"))
+                app["git_commit_sha"] = new_pin
+                return {"uuid": UUID}
+            self.fail("No deployment may be requested after main changes")
+
+        checks = 0
+
+        def ci(*_args: object, **_kwargs: object) -> None:
+            nonlocal checks
+            checks += 1
+            if checks == 4:
+                raise cloud.DeployError("MAIN_SHA_CHANGED")
+
+        with (
+            patch.object(cloud, "require_successful_ci", side_effect=ci),
+            patch.object(cloud, "load_settings", return_value=settings),
+        ):
+            with self.assertRaisesRegex(cloud.DeployError, "^MAIN_SHA_CHANGED$"):
+                cloud.deploy(SHA, "github", get, post)
+        self.assertEqual(mutations, ["PIN_NEW", "ENV_NEW", "PIN_OLD", "ENV_OLD"])
+        self.assertEqual(app["git_commit_sha"], OTHER)
+        self.assertEqual(revision, OTHER)
 
     def test_preflight_read_only_accepts_live_revision(self) -> None:
         settings = {
