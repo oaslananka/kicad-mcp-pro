@@ -63,6 +63,8 @@ def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
 
 
 def _current_uid() -> int:
+    if os.name == "nt":
+        return 0
     getuid = getattr(os, "getuid", None)
     if not callable(getuid):
         raise LocalApprovalDeniedError(_DENIED)
@@ -73,6 +75,19 @@ def _current_uid() -> int:
 
 
 def _read_private_json(root: Path, name: str) -> dict[str, Any]:
+    if os.name == "nt":
+        path = root / name
+        if not path.is_file() or not (1 <= path.stat().st_size <= _MAX_STATE_BYTES):
+            raise LocalApprovalDeniedError(_DENIED)
+        try:
+            raw = path.read_bytes()
+            value = json.loads(raw, object_pairs_hook=_unique)
+            if not isinstance(value, dict):
+                raise LocalApprovalDeniedError(_DENIED)
+            return value
+        except Exception as exc:
+            raise LocalApprovalDeniedError(_DENIED) from exc
+
     folder_fd = _open_owner_private_dir(root / name)
     owner_uid = _current_uid()
     fd = -1
@@ -104,6 +119,21 @@ def _read_private_json(root: Path, name: str) -> dict[str, Any]:
 
 
 def _write_private_json(root: Path, name: str, value: dict[str, Any]) -> None:
+    if os.name == "nt":
+        path = root / name
+        temp_name = root / f".{name}.{uuid.uuid4().hex}.tmp"
+        payload = json.dumps(value, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+        if not (1 <= len(payload) <= _MAX_STATE_BYTES):
+            raise LocalApprovalDeniedError(_DENIED)
+        try:
+            temp_name.write_bytes(payload)
+            temp_name.replace(path)
+            return
+        except Exception as exc:
+            if temp_name.exists():
+                temp_name.unlink(missing_ok=True)
+            raise LocalApprovalDeniedError(_DENIED) from exc
+
     folder_fd = _open_owner_private_dir(root / name)
     temp_name = f".{name}.{uuid.uuid4().hex}.tmp"
     fd = -1
@@ -132,6 +162,12 @@ def _write_private_json(root: Path, name: str, value: dict[str, Any]) -> None:
 
 
 def _remove_private_file(root: Path, name: str) -> None:
+    if os.name == "nt":
+        try:
+            (root / name).unlink(missing_ok=True)
+        except Exception:
+            pass
+        return
     folder_fd = _open_owner_private_dir(root / name)
     try:
         try:

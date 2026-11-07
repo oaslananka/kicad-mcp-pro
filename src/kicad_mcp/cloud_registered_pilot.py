@@ -48,6 +48,25 @@ def _single_registered_identity(root: Path) -> dict[str, str]:
     if len(names) != 1 or names[0].suffix != ".json" or _UUID.fullmatch(names[0].stem) is None:
         raise LocalApprovalDeniedError(_DENIED)
 
+    if os.name == "nt":
+        if not names[0].is_file() or not (1 <= names[0].stat().st_size <= 2048):
+            raise LocalApprovalDeniedError(_DENIED)
+        try:
+            record = json.loads(names[0].read_bytes(), object_pairs_hook=_unique)
+            if (
+                not isinstance(record, dict)
+                or record.keys() != _FIELDS
+                or any(not isinstance(value, str) for value in record.values())
+                or record["projectId"] != names[0].stem
+                or not _valid_identity_selectors(
+                    record["ownerSub"], record["cloudOrigin"], record["deviceId"], record["projectId"]
+                )
+            ):
+                raise LocalApprovalDeniedError(_DENIED)
+            return record
+        except Exception as exc:
+            raise LocalApprovalDeniedError(_DENIED) from exc
+
     nofollow = getattr(os, "O_NOFOLLOW", None)
     nonblock = getattr(os, "O_NONBLOCK", None)
     getuid = getattr(os, "getuid", None)
