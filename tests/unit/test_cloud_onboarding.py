@@ -194,7 +194,7 @@ def test_approval_status_is_signed_and_invalid_response_fails(tmp_path) -> None:
         return {"approved": False}
 
     with (
-        patch("kicad_mcp.cloud_managed_connector._read_private_json", return_value=data),
+        patch("kicad_mcp.cloud_pair._read_private_json", return_value=data),
         patch("kicad_mcp.cloud_pair._load_owner_key", return_value=key),
         patch("kicad_mcp.cloud_pair._post", side_effect=post),
     ):

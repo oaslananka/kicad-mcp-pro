@@ -10,7 +10,9 @@ import json
 import os
 import re
 import stat
+import uuid
 from pathlib import Path
+from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
@@ -304,3 +306,114 @@ def _save_owner_binding(
         if descriptor is not None:
             os.close(descriptor)
         os.close(directory_fd)
+
+
+# Owner-private JSON records are shared by enrollment and the outbound
+# connector. Keeping their filesystem boundary here avoids importing
+# the remote connector from the owner-key and pairing modules.
+_MAX_PRIVATE_JSON_BYTES = 2048
+
+
+def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    if len({key for key, _ in pairs}) != len(pairs):
+        raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+    return dict(pairs)
+
+
+def _current_uid() -> int:
+    if os.name == "nt":
+        return 0
+    getuid = getattr(os, "getuid", None)
+    if not callable(getuid):
+        raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+    uid = getuid()
+    if type(uid) is not int:
+        raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+    return uid
+
+
+def _read_private_json(root: Path, name: str) -> dict[str, Any]:
+    if os.name == "nt":
+        path = root / name
+        if not path.is_file() or not (1 <= path.stat().st_size <= _MAX_PRIVATE_JSON_BYTES):
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+        try:
+            raw = path.read_bytes()
+            value = json.loads(raw, object_pairs_hook=_unique)
+            if not isinstance(value, dict):
+                raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+            return value
+        except Exception as exc:
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED) from exc
+
+    folder_fd = _open_owner_private_dir(root / name)
+    owner_uid = _current_uid()
+    fd = -1
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        fd = os.open(name, flags | getattr(os, "O_CLOEXEC", 0), dir_fd=folder_fd)
+        info = os.fstat(fd)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_uid != owner_uid
+            or info.st_nlink != 1
+            or info.st_mode & 0o077
+            or not 1 <= info.st_size <= _MAX_PRIVATE_JSON_BYTES
+        ):
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+        raw = os.read(fd, _MAX_PRIVATE_JSON_BYTES + 1)
+        if len(raw) > _MAX_PRIVATE_JSON_BYTES:
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+        value = json.loads(raw, object_pairs_hook=_unique)
+        if not isinstance(value, dict):
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+        return value
+    except (OSError, ValueError, TypeError) as exc:
+        raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED) from exc
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        os.close(folder_fd)
+
+
+def _write_private_json(root: Path, name: str, value: dict[str, Any]) -> None:
+    if os.name == "nt":
+        path = root / name
+        temp_name = root / f".{name}.{uuid.uuid4().hex}.tmp"
+        payload = json.dumps(value, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+        if not (1 <= len(payload) <= _MAX_PRIVATE_JSON_BYTES):
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+        try:
+            temp_name.write_bytes(payload)
+            temp_name.replace(path)
+            return
+        except Exception as exc:
+            if temp_name.exists():
+                temp_name.unlink(missing_ok=True)
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED) from exc
+
+    folder_fd = _open_owner_private_dir(root / name)
+    temp_str = f".{name}.{uuid.uuid4().hex}.tmp"
+    fd = -1
+    try:
+        payload = json.dumps(value, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+        if not 1 <= len(payload) <= _MAX_PRIVATE_JSON_BYTES:
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+        fd = os.open(temp_str, flags, 0o600, dir_fd=folder_fd)
+        with os.fdopen(fd, "wb", closefd=True) as stream:
+            fd = -1
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp_str, name, src_dir_fd=folder_fd, dst_dir_fd=folder_fd)
+        os.fsync(folder_fd)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        try:
+            os.unlink(temp_str, dir_fd=folder_fd)
+        except FileNotFoundError:
+            pass
+        os.close(folder_fd)
