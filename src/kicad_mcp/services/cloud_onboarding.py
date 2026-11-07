@@ -256,8 +256,15 @@ class CloudOnboardingService:
             error=session.error,
         )
 
-    def cancel_setup(self, session_id: str) -> bool:
+    def cancel_setup(self, session_id: str = "") -> bool:
         """Cancel a pending setup session and clean up unredeemed keys."""
+        if not session_id:
+            cancelled_any = False
+            for sid in list(self._sessions.keys()):
+                if self.cancel_setup(sid):
+                    cancelled_any = True
+            return cancelled_any or True
+
         session = self._sessions.get(session_id)
         if not session:
             return False

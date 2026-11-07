@@ -697,6 +697,146 @@ async def api_artifacts_file(request: Request) -> JSONResponse | FileResponse:  
 
 
 # ---------------------------------------------------------------------------
+# Owner-authorized loopback API handlers
+# ---------------------------------------------------------------------------
+
+_ALLOWED_ORIGIN_HOSTS = {"127.0.0.1", "localhost", "tauri.localhost"}
+
+
+def _verify_owner_origin(request: Request) -> bool:
+    """Validate that mutating requests originate only from approved local/desktop contexts."""
+    origin = request.headers.get("origin")
+    if not origin:
+        host_header = request.headers.get("host", "")
+        host = host_header.split(":")[0]
+        return host in _ALLOWED_ORIGIN_HOSTS
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(origin)
+        if parsed.scheme in ("http", "https"):
+            return parsed.hostname in _ALLOWED_ORIGIN_HOSTS
+        if parsed.scheme == "tauri":
+            return parsed.hostname in ("localhost", "")
+    except Exception:
+        return False
+    return False
+
+
+async def api_experience(request: Request) -> JSONResponse:
+    from kicad_mcp.services.experience import calculate_experience_snapshot
+    snapshot = calculate_experience_snapshot()
+    return JSONResponse(snapshot.to_dict())
+
+
+async def api_cloud_setup_start(request: Request) -> JSONResponse:
+    if not _verify_owner_origin(request):
+        return JSONResponse({"error": "Origin not allowed"}, status_code=403)
+    from kicad_mcp.services.cloud_onboarding import CloudOnboardingService
+    svc = CloudOnboardingService()
+    try:
+        session = svc.start_setup()
+        return JSONResponse({"ok": True, "session": session.__dict__ if hasattr(session, "__dict__") else session})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+
+async def api_cloud_setup_status(request: Request) -> JSONResponse:
+    from kicad_mcp.services.cloud_onboarding import CloudOnboardingService
+    svc = CloudOnboardingService()
+    status = svc.get_setup_status()
+    return JSONResponse({"ok": True, "stage": status.stage, "error": status.error_detail})
+
+
+async def api_cloud_setup_cancel(request: Request) -> JSONResponse:
+    if not _verify_owner_origin(request):
+        return JSONResponse({"error": "Origin not allowed"}, status_code=403)
+    session_id = request.query_params.get("session_id", "")
+    if not session_id:
+        try:
+            raw = await request.json()
+            if isinstance(raw, dict):
+                session_id = str(raw.get("session_id") or "")
+        except Exception:
+            pass
+    from kicad_mcp.services.cloud_onboarding import CloudOnboardingService
+    svc = CloudOnboardingService()
+    svc.cancel_setup(session_id)
+    return JSONResponse({"ok": True, "status": "cancelled"})
+
+
+async def api_cloud_connector_enable(request: Request) -> JSONResponse:
+    if not _verify_owner_origin(request):
+        return JSONResponse({"error": "Origin not allowed"}, status_code=403)
+    from kicad_mcp.services.connector_lifecycle import ConnectorLifecycleManager
+    mgr = ConnectorLifecycleManager()
+    mgr.enable_connector()
+    return JSONResponse({"ok": True, "status": "enabled"})
+
+
+async def api_cloud_connector_disable(request: Request) -> JSONResponse:
+    if not _verify_owner_origin(request):
+        return JSONResponse({"error": "Origin not allowed"}, status_code=403)
+    from kicad_mcp.services.connector_lifecycle import ConnectorLifecycleManager
+    mgr = ConnectorLifecycleManager()
+    mgr.disable_connector()
+    return JSONResponse({"ok": True, "status": "disabled"})
+
+
+async def api_cloud_project_active(request: Request) -> JSONResponse:
+    if not _verify_owner_origin(request):
+        return JSONResponse({"error": "Origin not allowed"}, status_code=403)
+    body: dict[str, object] = {}
+    try:
+        raw = await request.json()
+        if isinstance(raw, dict):
+            body = raw
+    except Exception:
+        pass
+    project_path = str(body.get("path") or "")
+    from kicad_mcp.services.connector_lifecycle import ConnectorLifecycleManager
+    mgr = ConnectorLifecycleManager()
+    mgr.set_active_project(project_path)
+    return JSONResponse({"ok": True, "active_project": project_path})
+
+
+async def api_maintenance_repair_preview(request: Request) -> JSONResponse:
+    from kicad_mcp.services.maintenance import MaintenanceService
+    svc = MaintenanceService()
+    preview = svc.preview_repair()
+    return JSONResponse({"healthy": preview.healthy, "items": preview.items})
+
+
+async def api_maintenance_repair_apply(request: Request) -> JSONResponse:
+    if not _verify_owner_origin(request):
+        return JSONResponse({"error": "Origin not allowed"}, status_code=403)
+    from kicad_mcp.services.maintenance import MaintenanceService
+    svc = MaintenanceService()
+    res = svc.apply_repair()
+    return JSONResponse({"ok": res.success, "repaired_items": res.repaired_items, "message": res.message})
+
+
+async def api_maintenance_cleanup_preview(request: Request) -> JSONResponse:
+    from kicad_mcp.services.maintenance import MaintenanceService
+    svc = MaintenanceService()
+    preview = svc.preview_cleanup()
+    return JSONResponse({"targets_to_remove": preview.targets_to_remove, "preserved_user_files": preview.preserved_user_files})
+
+
+async def api_maintenance_cleanup_apply(request: Request) -> JSONResponse:
+    if not _verify_owner_origin(request):
+        return JSONResponse({"error": "Origin not allowed"}, status_code=403)
+    from kicad_mcp.services.maintenance import MaintenanceService
+    svc = MaintenanceService()
+    res = svc.apply_cleanup()
+    return JSONResponse({
+        "ok": res.success,
+        "removed_targets": res.removed_targets,
+        "preserved_user_files": res.preserved_user_files,
+        "message": res.message,
+    })
+
+
+# ---------------------------------------------------------------------------
 # Route definitions — list of Starlette Route objects for clean mounting
 # ---------------------------------------------------------------------------
 
@@ -704,6 +844,17 @@ web_routes: list[Route] = [
     Route("/api/status", endpoint=api_status, methods=["GET"]),
     Route("/api/health", endpoint=api_health, methods=["GET"]),
     Route("/api/info", endpoint=api_info, methods=["GET"]),
+    Route("/api/experience", endpoint=api_experience, methods=["GET"]),
+    Route("/api/cloud/setup/start", endpoint=api_cloud_setup_start, methods=["POST"]),
+    Route("/api/cloud/setup/status", endpoint=api_cloud_setup_status, methods=["GET"]),
+    Route("/api/cloud/setup/cancel", endpoint=api_cloud_setup_cancel, methods=["POST"]),
+    Route("/api/cloud/connector/enable", endpoint=api_cloud_connector_enable, methods=["POST"]),
+    Route("/api/cloud/connector/disable", endpoint=api_cloud_connector_disable, methods=["POST"]),
+    Route("/api/cloud/project/active", endpoint=api_cloud_project_active, methods=["POST"]),
+    Route("/api/maintenance/repair/preview", endpoint=api_maintenance_repair_preview, methods=["GET"]),
+    Route("/api/maintenance/repair/apply", endpoint=api_maintenance_repair_apply, methods=["POST"]),
+    Route("/api/maintenance/cleanup/preview", endpoint=api_maintenance_cleanup_preview, methods=["GET"]),
+    Route("/api/maintenance/cleanup/apply", endpoint=api_maintenance_cleanup_apply, methods=["POST"]),
     Route("/api/tools", endpoint=api_tools, methods=["GET"]),
     Route("/api/tools/{tool_name}/test", endpoint=api_tool_test, methods=["POST"]),
     Route("/api/config", endpoint=api_config_get, methods=["GET"]),

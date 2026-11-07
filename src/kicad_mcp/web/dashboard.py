@@ -559,6 +559,17 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     </section>
     <h2>Local status</h2>
     <div class="grid" id="statusGrid">
+      <div class="card" id="exp-card" style="grid-column: 1 / -1; background: var(--surface-2); border-color: var(--border-strong);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <h3 style="margin: 0;">Readiness: <span id="exp-readiness" class="badge-status ok">Ready</span></h3>
+            <p id="exp-next-desc" style="margin: 4px 0 0; font-size: 13px; color: var(--text-muted);">Local workspace active. No account required.</p>
+          </div>
+          <div>
+            <span class="badge" id="exp-mode">local</span>
+          </div>
+        </div>
+      </div>
       <div class="card">
         <h3>Server</h3>
         <div class="row"><span class="label">Profile</span><span class="value" id="s-profile">-</span></div>
@@ -738,6 +749,15 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
       </div>
       <pre id="export-result" style="display:none;margin-top:10px;background:var(--bg-canvas);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:12px;font-family:var(--font-mono);overflow-x:auto;"></pre>
     </div>
+    <div class="card" style="margin-top:20px;">
+      <h3>Application Maintenance &amp; Repair</h3>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Run non-destructive diagnostics, fix stale locks, or inspect cleanup impact without touching your KiCad projects.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+        <button type="button" class="btn btn-sm btn-primary" onclick="runMaintenanceRepair()">Diagnostic Repair</button>
+        <button type="button" class="btn btn-sm" onclick="previewCleanup()">Preview Cleanup</button>
+      </div>
+      <pre id="maintenance-result" style="display:none;margin-top:10px;background:var(--bg-canvas);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:12px;font-family:var(--font-mono);overflow-x:auto;"></pre>
+    </div>
   </div>
 
   <!-- Setup Wizard -->
@@ -889,6 +909,16 @@ function refreshStatus() {
     fetch('/api/metrics').then(r => r.json()).then(m => {
       setText('s-uptime', m.uptime_human || '-');
     }).catch(() => setText('s-uptime', '-'));
+
+    // Experience snapshot
+    fetch('/api/experience').then(r => r.ok ? r.json() : null).then(exp => {
+      if (!exp) return;
+      setText('exp-readiness', exp.readiness || '-');
+      setText('exp-mode', exp.mode || 'local');
+      if (exp.next_action && exp.next_action.description) {
+        setText('exp-next-desc', exp.next_action.description);
+      }
+    }).catch(() => {});
 
     // Health checks
     const hc = byId('health-checks');
@@ -1231,6 +1261,34 @@ function exportClientConfig(client) {
     }).catch(() => {
       byId('export-result').textContent = 'Error fetching config.';
       byId('export-result').style.display = 'block';
+    });
+}
+
+function runMaintenanceRepair() {
+  const el = byId('maintenance-result');
+  el.style.display = 'block';
+  el.textContent = 'Running diagnostic repair...';
+  fetch('/api/maintenance/repair/apply', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      el.textContent = JSON.stringify(d, null, 2);
+    })
+    .catch(err => {
+      el.textContent = 'Repair failed: ' + err.message;
+    });
+}
+
+function previewCleanup() {
+  const el = byId('maintenance-result');
+  el.style.display = 'block';
+  el.textContent = 'Scanning application state (user KiCad project files are strictly preserved)...';
+  fetch('/api/maintenance/cleanup/preview')
+    .then(r => r.json())
+    .then(d => {
+      el.textContent = JSON.stringify(d, null, 2);
+    })
+    .catch(err => {
+      el.textContent = 'Preview failed: ' + err.message;
     });
 }
 
