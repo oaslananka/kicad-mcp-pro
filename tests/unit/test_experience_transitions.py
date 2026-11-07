@@ -86,7 +86,10 @@ def test_cloud_view_strips_nested_credentials_and_local_paths(tmp_path: Path) ->
         cloud_connector_status="connected",
         computer_id="local-machine",
     )
-    result.account = {"bearer_token": "private-value", "password": "do-not-show"}
+    # Derive synthetic test input at runtime rather than committing a
+    # password-shaped literal; the redaction assertion still checks its value.
+    synthetic_password = f"fixture-only-{tmp_path.name}"
+    result.account = {"bearer_token": "private-value", "password": synthetic_password}
     result.ai_client = {
         "name": "client",
         "secret": "private-value",
@@ -95,6 +98,7 @@ def test_cloud_view_strips_nested_credentials_and_local_paths(tmp_path: Path) ->
     safe = sanitize_experience_for_cloud(result)
     assert str(tmp_path) not in str(safe)
     assert "private-value" not in str(safe)
+    assert synthetic_password not in str(safe)
     assert "C:/work/board" not in str(safe)
     assert safe["readiness"] == ReadinessStatus.READY
     assert safe["project"]["valid"] is True
