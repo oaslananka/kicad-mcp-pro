@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from typing import Optional
 
 from . import PlatformCredentialStore
 
@@ -42,7 +41,7 @@ class MacOSKeychainCredentialStore(PlatformCredentialStore):
         if res.returncode != 0:
             raise RuntimeError(f"Failed to store key in macOS Keychain: code {res.returncode}")
 
-    def load_key(self, record_id: str) -> Optional[bytes]:
+    def load_key(self, record_id: str) -> bytes | None:
         slot = _validate_slot(record_id)
         cmd = [
             "/usr/bin/security",
@@ -80,7 +79,7 @@ class MacOSKeychainCredentialStore(PlatformCredentialStore):
         if res.returncode != 0:
             raise RuntimeError(f"Failed to store binding in macOS Keychain: code {res.returncode}")
 
-    def load_binding(self, record_id: str) -> Optional[dict[str, str]]:
+    def load_binding(self, record_id: str) -> dict[str, str] | None:
         slot = _validate_slot(record_id)
         cmd = [
             "/usr/bin/security",
@@ -97,7 +96,10 @@ class MacOSKeychainCredentialStore(PlatformCredentialStore):
         hex_data = res.stdout.strip().decode("utf-8")
         try:
             raw = bytes.fromhex(hex_data)
-            return json.loads(raw.decode("utf-8"))
+            data = json.loads(raw.decode("utf-8"))
+            if isinstance(data, dict):
+                return {str(k): str(v) for k, v in data.items()}
+            return None
         except (ValueError, json.JSONDecodeError):
             return None
 

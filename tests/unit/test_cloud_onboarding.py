@@ -1,19 +1,19 @@
 """Tests for shared CloudOnboardingService."""
 
-import pytest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
+
+import pytest
 
 from kicad_mcp.services.cloud_onboarding import (
     CloudOnboardingService,
     OnboardingStep,
-    SetupProgress,
     SetupStatus,
 )
 
 
 @pytest.fixture
-def tmp_registry(tmp_path):
+def tmp_registry(tmp_path: Path) -> Path:
     reg = tmp_path / "cloud_registry"
     reg.mkdir()
     (reg / "projects").mkdir()
@@ -21,7 +21,7 @@ def tmp_registry(tmp_path):
     return reg
 
 
-def test_inspect_clean_setup(tmp_registry):
+def test_inspect_clean_setup(tmp_registry) -> None:
     """Clean environment reports unregistered state."""
     service = CloudOnboardingService(registry_root=tmp_registry)
     status = service.inspect_current_setup("https://kicad-mcp-pro.oaslananka.dev")
@@ -30,7 +30,7 @@ def test_inspect_clean_setup(tmp_registry):
     assert status.project_id is None
 
 
-def test_start_setup_initializes_pairing_session(tmp_registry, tmp_path):
+def test_start_setup_initializes_pairing_session(tmp_registry, tmp_path) -> None:
     """start_setup starts pairing flow and returns approval url."""
     proj = tmp_path / "my_project"
     proj.mkdir()
@@ -56,7 +56,7 @@ def test_start_setup_initializes_pairing_session(tmp_registry, tmp_path):
         assert session.user_code == "ABCD-1234"
 
 
-def test_failure_after_pairing_preserves_paired_keys(tmp_registry, tmp_path):
+def test_failure_after_pairing_preserves_paired_keys(tmp_registry, tmp_path) -> None:
     """If project registration fails after pairing succeeds, pairing keys are preserved."""
     proj = tmp_path / "my_project"
     proj.mkdir()
@@ -76,10 +76,12 @@ def test_failure_after_pairing_preserves_paired_keys(tmp_registry, tmp_path):
         "ownerSub": "usr-456",
     }
     import json
+
     binding_file.write_text(json.dumps(valid_binding))
 
     with patch("kicad_mcp.cloud_pair.register_device_project") as mock_proj:
         from kicad_mcp.cloud_pair import CloudPairingError
+
         mock_proj.side_effect = CloudPairingError("Project registration rejected")
 
         result = service.register_project_step(
@@ -94,7 +96,7 @@ def test_failure_after_pairing_preserves_paired_keys(tmp_registry, tmp_path):
         assert binding_file.exists()
 
 
-def test_cancel_pending_setup_does_not_corrupt_registry(tmp_registry, tmp_path):
+def test_cancel_pending_setup_does_not_corrupt_registry(tmp_registry, tmp_path) -> None:
     """Cancelling a pending setup session cleanly stops without corrupting registry."""
     service = CloudOnboardingService(registry_root=tmp_registry)
     with patch("kicad_mcp.cloud_pair.start_enrollment") as mock_start:
@@ -109,7 +111,7 @@ def test_cancel_pending_setup_does_not_corrupt_registry(tmp_registry, tmp_path):
         assert progress.status == SetupStatus.CANCELLED
 
 
-def test_repeated_start_re为其uses_pending_session(tmp_registry, tmp_path):
+def test_repeated_start_reuses_pending_session(tmp_registry: Path, tmp_path: Path) -> None:
     """Repeated calls with same params return the active session without duplicate devices."""
     service = CloudOnboardingService(registry_root=tmp_registry)
     with patch("kicad_mcp.cloud_pair.start_enrollment") as mock_start:

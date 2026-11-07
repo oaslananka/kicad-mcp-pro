@@ -7,13 +7,14 @@ Supports both account-free local mode and authenticated cloud mode.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, cast
 
 
-class ReadinessStatus(str, Enum):
+class ReadinessStatus(StrEnum):
     """Operation-specific readiness state."""
+
     READY = "ready"
     ACCOUNT_REQUIRED = "account_required"
     DEVICE_APPROVAL_REQUIRED = "device_approval_required"
@@ -31,6 +32,7 @@ class ReadinessStatus(str, Enum):
 @dataclass(frozen=True)
 class EngineCapabilities:
     """Sanitized KiCad engine availability."""
+
     cli_available: bool = False
     ipc_available: bool = False
     file_available: bool = False
@@ -40,6 +42,7 @@ class EngineCapabilities:
 @dataclass(frozen=True)
 class NextAction:
     """Actionable next step for the user."""
+
     id: str
     title: str
     description: str
@@ -49,20 +52,25 @@ class NextAction:
 @dataclass
 class ExperienceSnapshot:
     """Consolidated experience view model for desktop, local web, and cloud."""
+
     mode: str  # "local" | "cloud"
     readiness: str  # ReadinessStatus value
     reason_code: str
     engine_capabilities: EngineCapabilities
-    project: Optional[dict[str, Any]] = None
-    computer: Optional[dict[str, Any]] = None
-    ai_client: Optional[dict[str, Any]] = None
-    account: Optional[dict[str, Any]] = None
-    device_pairing: Optional[dict[str, Any]] = None
-    project_registration: Optional[dict[str, Any]] = None
-    client_grant: Optional[dict[str, Any]] = None
-    local_connector: dict[str, Any] = field(default_factory=lambda: {"enabled": True, "running": True})
-    cloud_connector: dict[str, Any] = field(default_factory=lambda: {"enabled": False, "connected": False})
-    next_action: Optional[NextAction] = None
+    project: dict[str, Any] | None = None
+    computer: dict[str, Any] | None = None
+    ai_client: dict[str, Any] | None = None
+    account: dict[str, Any] | None = None
+    device_pairing: dict[str, Any] | None = None
+    project_registration: dict[str, Any] | None = None
+    client_grant: dict[str, Any] | None = None
+    local_connector: dict[str, Any] = field(
+        default_factory=lambda: {"enabled": True, "running": True}
+    )
+    cloud_connector: dict[str, Any] = field(
+        default_factory=lambda: {"enabled": False, "connected": False}
+    )
+    next_action: NextAction | None = None
     available_actions: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -77,7 +85,7 @@ class ExperienceSnapshot:
 def calculate_experience_snapshot(
     *,
     mode: str = "local",
-    project_dir: Optional[Path | str] = None,
+    project_dir: Path | str | None = None,
     has_kicad_project: bool = False,
     cli_available: bool = False,
     ipc_available: bool = False,
@@ -87,10 +95,10 @@ def calculate_experience_snapshot(
     client_granted: bool = True,
     cloud_connector_enabled: bool = False,
     cloud_connector_status: str = "idle",
-    active_cloud_project_id: Optional[str] = None,
-    target_local_project_id: Optional[str] = None,
-    computer_id: Optional[str] = None,
-    ai_client_name: Optional[str] = None,
+    active_cloud_project_id: str | None = None,
+    target_local_project_id: str | None = None,
+    computer_id: str | None = None,
+    ai_client_name: str | None = None,
 ) -> ExperienceSnapshot:
     """Derive an experience snapshot from real state."""
     p_path = Path(project_dir) if project_dir else None
@@ -99,13 +107,15 @@ def calculate_experience_snapshot(
     engine_caps = EngineCapabilities(
         cli_available=cli_available,
         ipc_available=ipc_available,
-        file_available=bool(valid_project and (cli_available or p_path.is_dir())),
+        file_available=bool(
+            valid_project and (cli_available or (p_path is not None and p_path.is_dir()))
+        ),
         drc_available=cli_available,
     )
 
     available_actions: list[str] = ["select_project", "configure_ai"]
 
-    project_info: Optional[dict[str, Any]] = None
+    project_info: dict[str, Any] | None = None
     if p_path:
         project_info = {
             "path": str(p_path),
@@ -113,7 +123,7 @@ def calculate_experience_snapshot(
             "valid": valid_project,
         }
 
-    computer_info: Optional[dict[str, Any]] = None
+    computer_info: dict[str, Any] | None = None
     if computer_id or device_paired:
         computer_info = {
             "id": computer_id or "local",
@@ -121,7 +131,7 @@ def calculate_experience_snapshot(
             "registered": device_paired,
         }
 
-    ai_client_info: Optional[dict[str, Any]] = None
+    ai_client_info: dict[str, Any] | None = None
     if ai_client_name:
         ai_client_info = {
             "name": ai_client_name,
@@ -180,7 +190,7 @@ def calculate_experience_snapshot(
                 next_action=NextAction(
                     id="approve_device",
                     title="Approve computer",
-                    description="Approve this computer in your browser to enable secure connection.",
+                    description="Approve this computer in your browser to connect.",
                     target_route="/cloud/pair",
                 ),
                 available_actions=["approve_device", "use_local_mode"],
@@ -221,7 +231,7 @@ def calculate_experience_snapshot(
                 next_action=NextAction(
                     id="select_active_project",
                     title="Switch active project",
-                    description="The selected local project does not match the active Cloud project.",
+                    description="Local project does not match active Cloud project.",
                     target_route="/projects",
                 ),
                 available_actions=["select_active_project", "use_local_mode"],
@@ -378,12 +388,20 @@ def sanitize_experience_for_cloud(snapshot: ExperienceSnapshot) -> dict[str, Any
         }
 
     # Ensure no secrets or local filesystem paths leaked in any nested fields
-    def _strip_secrets(d: Any) -> Any:
+    def _strip_secrets(d: object) -> object:
         if isinstance(d, dict):
             clean = {}
             for k, v in d.items():
-                if any(sec in k.lower() for sec in ("key", "secret", "token", "password", "path")):
-                    if k in ("valid", "cli_available", "ipc_available", "file_available", "drc_available"):
+                if any(
+                    sec in str(k).lower() for sec in ("key", "secret", "token", "password", "path")
+                ):
+                    if k in (
+                        "valid",
+                        "cli_available",
+                        "ipc_available",
+                        "file_available",
+                        "drc_available",
+                    ):
                         clean[k] = v
                     continue
                 clean[k] = _strip_secrets(v)
@@ -392,4 +410,4 @@ def sanitize_experience_for_cloud(snapshot: ExperienceSnapshot) -> dict[str, Any
             return [_strip_secrets(item) for item in d]
         return d
 
-    return _strip_secrets(raw)
+    return cast("dict[str, Any]", _strip_secrets(raw))

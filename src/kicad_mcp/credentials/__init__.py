@@ -12,7 +12,6 @@ import os
 import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
 
 
 class PlatformCredentialStore(ABC):
@@ -23,7 +22,7 @@ class PlatformCredentialStore(ABC):
         """Store private key PEM bytes for the given record ID."""
 
     @abstractmethod
-    def load_key(self, record_id: str) -> Optional[bytes]:
+    def load_key(self, record_id: str) -> bytes | None:
         """Load private key PEM bytes for the given record ID."""
 
     @abstractmethod
@@ -31,7 +30,7 @@ class PlatformCredentialStore(ABC):
         """Store pairing binding metadata for the given record ID."""
 
     @abstractmethod
-    def load_binding(self, record_id: str) -> Optional[dict[str, str]]:
+    def load_binding(self, record_id: str) -> dict[str, str] | None:
         """Load pairing binding metadata for the given record ID."""
 
     @abstractmethod
@@ -45,14 +44,17 @@ class PlatformCredentialStore(ABC):
         return f"{self.__class__.__name__}()"
 
 
-def get_credential_store(registry_root: Optional[Path] = None) -> PlatformCredentialStore:
+def get_credential_store(registry_root: Path | None = None) -> PlatformCredentialStore:
     """Return the native credential store for the current operating system."""
     if os.name == "nt":
         from .windows import WindowsCredentialStore
+
         return WindowsCredentialStore()
     elif sys.platform == "darwin":
         from .macos import MacOSKeychainCredentialStore
+
         return MacOSKeychainCredentialStore()
     else:
         from .linux import LinuxCredentialStore
+
         return LinuxCredentialStore(registry_root=registry_root)

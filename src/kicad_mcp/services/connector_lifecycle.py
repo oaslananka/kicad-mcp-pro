@@ -12,9 +12,8 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
-from typing import Any, Optional
 
 from kicad_mcp.cloud_local_registry import default_registry_root
 from kicad_mcp.cloud_managed_connector import (
@@ -32,7 +31,7 @@ from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 logger = logging.getLogger(__name__)
 
 
-class ConnectorState(str, Enum):
+class ConnectorState(StrEnum):
     OFF = "off"
     CONNECTING = "connecting"
     CONNECTED = "connected"
@@ -42,18 +41,18 @@ class ConnectorState(str, Enum):
 @dataclass
 class ConnectorStatus:
     state: ConnectorState
-    active_project_id: Optional[str] = None
-    updated_at: Optional[float] = None
-    error: Optional[str] = None
+    active_project_id: str | None = None
+    updated_at: float | None = None
+    error: str | None = None
 
 
 class ConnectorLifecycleManager:
     """Manages the in-process / application-owned Cloud Connector task."""
 
-    def __init__(self, registry_root: Optional[Path] = None) -> None:
+    def __init__(self, registry_root: Path | None = None) -> None:
         self.root = registry_root if registry_root is not None else default_registry_root()
-        self._task: Optional[asyncio.Task[int]] = None
-        self._stop_event: Optional[asyncio.Event] = None
+        self._task: asyncio.Task[int] | None = None
+        self._stop_event: asyncio.Event | None = None
         self._lock = asyncio.Lock()
 
     def is_running(self) -> bool:
@@ -68,13 +67,19 @@ class ConnectorLifecycleManager:
             status_data = _read_private_json(self.root, _STATUS_FILE)
             raw_state = status_data.get("state")
             if raw_state == "connected":
-                return ConnectorStatus(state=ConnectorState.CONNECTED, active_project_id=active_proj)
+                return ConnectorStatus(
+                    state=ConnectorState.CONNECTED, active_project_id=active_proj
+                )
             if raw_state == "connecting":
-                return ConnectorStatus(state=ConnectorState.CONNECTING, active_project_id=active_proj)
+                return ConnectorStatus(
+                    state=ConnectorState.CONNECTING, active_project_id=active_proj
+                )
             return ConnectorStatus(state=ConnectorState.UNAVAILABLE, active_project_id=active_proj)
         except Exception:
             if self.is_running():
-                return ConnectorStatus(state=ConnectorState.CONNECTING, active_project_id=active_proj)
+                return ConnectorStatus(
+                    state=ConnectorState.CONNECTING, active_project_id=active_proj
+                )
             return ConnectorStatus(state=ConnectorState.OFF, active_project_id=active_proj)
 
     async def start(self) -> bool:
@@ -109,25 +114,26 @@ class ConnectorLifecycleManager:
             if self._task is not None:
                 try:
                     await asyncio.wait_for(asyncio.shield(self._task), timeout=5.0)
-                except (asyncio.TimeoutError, asyncio.CancelledError):
+                except (TimeoutError, asyncio.CancelledError):
                     self._task.cancel()
                 self._task = None
 
             _remove_private_file(self.root, _ENABLED_FILE)
             try:
                 _write_status(self.root, "unavailable")
-            except Exception:
+            except OSError:
                 pass
             return True
 
-    def get_active_project_id(self) -> Optional[str]:
+    def get_active_project_id(self) -> str | None:
         """Read the active project ID."""
         active_file = self.root / "active_project.json"
         if active_file.exists():
             try:
                 data = json.loads(active_file.read_text(encoding="utf-8"))
-                return data.get("activeProjectId")
-            except Exception:
+                val = data.get("activeProjectId")
+                return str(val) if val is not None else None
+            except (OSError, json.JSONDecodeError):
                 pass
 
         # Fall back to first registered project
@@ -143,8 +149,45 @@ class ConnectorLifecycleManager:
         if active_id:
             record_path = self.root / "projects" / f"{active_id}.json"
             if record_path.exists():
-                return json.loads(record_path.read_text(encoding="utf-8"))
+                rec = json.loads(record_path.read_text(encoding="utf-8"))
+                if isinstance(rec, dict):
+                    return {str(k): str(v) for k, v in rec.items()}
         return _single_registered_identity(self.root)
+
+    def enable_connector(self) -> None:
+        """Synchronously mark the connector enabled."""
+        record = self._resolve_active_record()
+        enabled_payload = _identity_state(record)
+        _write_private_json(self.root, _ENABLED_FILE, enabled_payload)
+        _write_status(self.root, "connecting")
+
+    def disable_connector(self) -> None:
+        """Synchronously mark the connector disabled."""
+        _remove_private_file(self.root, _ENABLED_FILE)
+        try:
+            _write_status(self.root, "unavailable")
+        except OSError:
+            pass
+
+    def set_active_project(self, project_path_or_id: str) -> None:
+        """Set active project by path or ID."""
+        projs = list((self.root / "projects").glob("*.json"))
+        target_id = project_path_or_id
+        for p in projs:
+            try:
+                rec = json.loads(p.read_text(encoding="utf-8"))
+                if rec.get("projectPath") == project_path_or_id or p.stem == project_path_or_id:
+                    target_id = p.stem
+                    break
+            except (OSError, json.JSONDecodeError):
+                continue
+        active_file = self.root / "active_project.json"
+        active_file.write_text(
+            json.dumps({"activeProjectId": target_id, "updatedAt": time.time()}),
+            encoding="utf-8",
+        )
+        if hasattr(os, "chmod"):
+            os.chmod(active_file, 0o600)
 
     async def switch_active_project(self, project_id: str) -> bool:
         """Switch active project with read-fencing. Fails closed if project does not exist."""
@@ -161,7 +204,7 @@ class ConnectorLifecycleManager:
                 if self._task:
                     try:
                         await asyncio.wait_for(asyncio.shield(self._task), timeout=3.0)
-                    except (asyncio.TimeoutError, asyncio.CancelledError):
+                    except (TimeoutError, asyncio.CancelledError):
                         self._task.cancel()
                     self._task = None
 

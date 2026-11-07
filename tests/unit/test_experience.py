@@ -1,18 +1,15 @@
 """Tests for experience view model, readiness calculation, and next action derivation."""
 
-import pytest
 from pathlib import Path
 
 from kicad_mcp.services.experience import (
     ReadinessStatus,
-    EngineCapabilities,
-    ExperienceSnapshot,
     calculate_experience_snapshot,
     sanitize_experience_for_cloud,
 )
 
 
-def test_local_mode_ready_without_cloud_account():
+def test_local_mode_ready_without_cloud_account() -> None:
     """Local mode with valid project and available CLI must be Ready without Cloud account."""
     snapshot = calculate_experience_snapshot(
         mode="local",
@@ -26,10 +23,12 @@ def test_local_mode_ready_without_cloud_account():
     assert snapshot.engine_capabilities.cli_available is True
     assert snapshot.engine_capabilities.ipc_available is False
     assert snapshot.reason_code == "local_ready"
-    assert "open_project" in snapshot.available_actions or "configure_ai" in snapshot.available_actions
+    assert (
+        "open_project" in snapshot.available_actions or "configure_ai" in snapshot.available_actions
+    )
 
 
-def test_local_mode_requires_project_selection():
+def test_local_mode_requires_project_selection() -> None:
     """Local mode with no project directory selected must require project selection."""
     snapshot = calculate_experience_snapshot(
         mode="local",
@@ -44,7 +43,7 @@ def test_local_mode_requires_project_selection():
     assert snapshot.reason_code == "project_selection_required"
 
 
-def test_cloud_mode_requires_device_approval():
+def test_cloud_mode_requires_device_approval() -> None:
     """Cloud mode with account signed in but unapproved device requires device approval."""
     snapshot = calculate_experience_snapshot(
         mode="cloud",
@@ -59,7 +58,7 @@ def test_cloud_mode_requires_device_approval():
     assert snapshot.reason_code == "device_approval_required"
 
 
-def test_revoked_grant_overrides_cached_ready():
+def test_revoked_grant_overrides_cached_ready() -> None:
     """Revoked device/client grant must override any ready state with priority."""
     snapshot = calculate_experience_snapshot(
         mode="cloud",
@@ -75,7 +74,7 @@ def test_revoked_grant_overrides_cached_ready():
     assert snapshot.next_action.id == "reconnect_device"
 
 
-def test_unrelated_computer_or_project_does_not_satisfy_current_step():
+def test_unrelated_computer_or_project_does_not_satisfy_current_step() -> None:
     """Different computer or project registration does not satisfy the active target."""
     snapshot = calculate_experience_snapshot(
         mode="cloud",
@@ -91,7 +90,7 @@ def test_unrelated_computer_or_project_does_not_satisfy_current_step():
     assert snapshot.reason_code == "active_project_mismatch"
 
 
-def test_cloud_sanitization_removes_local_paths_and_secrets():
+def test_cloud_sanitization_removes_local_paths_and_secrets() -> None:
     """Cloud snapshot must not expose local filesystem paths or secret keys."""
     snapshot = calculate_experience_snapshot(
         mode="local",

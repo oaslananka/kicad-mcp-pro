@@ -59,7 +59,10 @@ def _single_registered_identity(root: Path) -> dict[str, str]:
                 or any(not isinstance(value, str) for value in record.values())
                 or record["projectId"] != names[0].stem
                 or not _valid_identity_selectors(
-                    record["ownerSub"], record["cloudOrigin"], record["deviceId"], record["projectId"]
+                    record["ownerSub"],
+                    record["cloudOrigin"],
+                    record["deviceId"],
+                    record["projectId"],
                 )
             ):
                 raise LocalApprovalDeniedError(_DENIED)

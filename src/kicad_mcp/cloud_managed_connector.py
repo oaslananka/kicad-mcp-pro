@@ -135,7 +135,7 @@ def _write_private_json(root: Path, name: str, value: dict[str, Any]) -> None:
             raise LocalApprovalDeniedError(_DENIED) from exc
 
     folder_fd = _open_owner_private_dir(root / name)
-    temp_name = f".{name}.{uuid.uuid4().hex}.tmp"
+    temp_str = f".{name}.{uuid.uuid4().hex}.tmp"
     fd = -1
     try:
         payload = json.dumps(value, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
@@ -143,19 +143,19 @@ def _write_private_json(root: Path, name: str, value: dict[str, Any]) -> None:
             raise LocalApprovalDeniedError(_DENIED)
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
-        fd = os.open(temp_name, flags, 0o600, dir_fd=folder_fd)
+        fd = os.open(temp_str, flags, 0o600, dir_fd=folder_fd)
         with os.fdopen(fd, "wb", closefd=True) as stream:
             fd = -1
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temp_name, name, src_dir_fd=folder_fd, dst_dir_fd=folder_fd)
+        os.replace(temp_str, name, src_dir_fd=folder_fd, dst_dir_fd=folder_fd)
         os.fsync(folder_fd)
     finally:
         if fd >= 0:
             os.close(fd)
         try:
-            os.unlink(temp_name, dir_fd=folder_fd)
+            os.unlink(temp_str, dir_fd=folder_fd)
         except FileNotFoundError:
             pass
         os.close(folder_fd)
@@ -165,7 +165,7 @@ def _remove_private_file(root: Path, name: str) -> None:
     if os.name == "nt":
         try:
             (root / name).unlink(missing_ok=True)
-        except Exception:
+        except OSError:
             pass
         return
     folder_fd = _open_owner_private_dir(root / name)

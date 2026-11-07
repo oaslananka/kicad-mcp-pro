@@ -1,18 +1,18 @@
 """Tests for guided, safe, and reversible local AI client configuration."""
 
 import json
+
 import pytest
-from pathlib import Path
 
 from kicad_mcp.services.client_config import (
-    write_client_config_safe,
-    remove_client_config_entry,
-    get_owned_client_configs,
     ClientConfigError,
+    get_owned_client_configs,
+    remove_client_config_entry,
+    write_client_config_safe,
 )
 
 
-def test_write_client_config_new_file(tmp_path):
+def test_write_client_config_new_file(tmp_path) -> None:
     target = tmp_path / "claude_desktop_config.json"
     snippet = {
         "mcpServers": {
@@ -41,7 +41,7 @@ def test_write_client_config_new_file(tmp_path):
     assert str(target.resolve()) in owned["claude-desktop"]
 
 
-def test_write_client_config_preserves_other_servers(tmp_path):
+def test_write_client_config_preserves_other_servers(tmp_path) -> None:
     target = tmp_path / "config.json"
     existing_content = {
         "mcpServers": {
@@ -52,11 +52,7 @@ def test_write_client_config_preserves_other_servers(tmp_path):
     }
     target.write_text(json.dumps(existing_content, indent=2), encoding="utf-8")
 
-    snippet = {
-        "mcpServers": {
-            "kicad-mcp-pro": {"command": "uvx", "args": ["kicad-mcp-pro@4.8.1"]}
-        }
-    }
+    snippet = {"mcpServers": {"kicad-mcp-pro": {"command": "uvx", "args": ["kicad-mcp-pro@4.8.1"]}}}
     result = write_client_config_safe(
         client="claude-desktop",
         config_path=target,
@@ -79,7 +75,7 @@ def test_write_client_config_preserves_other_servers(tmp_path):
     assert merged["preferences"]["theme"] == "dark"
 
 
-def test_write_client_config_rejects_malformed_existing(tmp_path):
+def test_write_client_config_rejects_malformed_existing(tmp_path) -> None:
     target = tmp_path / "broken.json"
     target.write_text("{ this is not valid json : [", encoding="utf-8")
 
@@ -96,7 +92,7 @@ def test_write_client_config_rejects_malformed_existing(tmp_path):
     assert "{ this is not valid json : [" == target.read_text(encoding="utf-8")
 
 
-def test_remove_owned_client_config_entry_preserves_other_servers(tmp_path):
+def test_remove_owned_client_config_entry_preserves_other_servers(tmp_path) -> None:
     target = tmp_path / "config.json"
     initial_content = {
         "mcpServers": {
@@ -107,7 +103,9 @@ def test_remove_owned_client_config_entry_preserves_other_servers(tmp_path):
     target.write_text(json.dumps(initial_content), encoding="utf-8")
 
     reg = tmp_path / "registry"
-    write_client_config_safe("cursor", target, {"mcpServers": {"kicad-mcp-pro": {}}}, registry_root=reg)
+    write_client_config_safe(
+        "cursor", target, {"mcpServers": {"kicad-mcp-pro": {}}}, registry_root=reg
+    )
 
     # Now remove entry
     removed = remove_client_config_entry("cursor", target, registry_root=reg)

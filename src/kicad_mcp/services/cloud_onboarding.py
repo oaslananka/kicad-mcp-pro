@@ -8,17 +8,14 @@ from __future__ import annotations
 
 import json
 import os
-import re
-import socket
 import time
 import uuid
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
-from typing import Any, Optional
 
-from kicad_mcp.cloud_local_registry import default_registry_root
 from kicad_mcp import cloud_pair
+from kicad_mcp.cloud_local_registry import default_registry_root
 from kicad_mcp.cloud_pair_keys import _read_owner_binding
 from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
@@ -26,7 +23,7 @@ DEFAULT_CLOUD_ORIGIN = "https://kicad-mcp-pro.oaslananka.dev"
 _DEFAULT_DEVICE_ALIAS = "My computer"
 
 
-class SetupStatus(str, Enum):
+class SetupStatus(StrEnum):
     NOT_ENROLLED = "not_enrolled"
     PAIRING_PENDING = "pairing_pending"
     PAIRED = "paired"
@@ -36,7 +33,7 @@ class SetupStatus(str, Enum):
     FAILED = "failed"
 
 
-class OnboardingStep(str, Enum):
+class OnboardingStep(StrEnum):
     IDLE = "idle"
     DEVICE_PAIRING_PENDING = "device_pairing_pending"
     PROJECT_REGISTRATION_PENDING = "project_registration_pending"
@@ -51,37 +48,37 @@ class SetupSession:
     project_dir: Path
     alias: str
     current_step: OnboardingStep
-    approval_url: Optional[str] = None
-    user_code: Optional[str] = None
-    device_id: Optional[str] = None
-    project_id: Optional[str] = None
-    key_slot: Optional[str] = None
-    error: Optional[str] = None
+    approval_url: str | None = None
+    user_code: str | None = None
+    device_id: str | None = None
+    project_id: str | None = None
+    key_slot: str | None = None
+    error: str | None = None
 
 
 @dataclass
 class SetupProgress:
-    session_id: Optional[str]
+    session_id: str | None
     status: SetupStatus
     step: OnboardingStep
-    device_id: Optional[str] = None
-    project_id: Optional[str] = None
-    approval_url: Optional[str] = None
-    user_code: Optional[str] = None
-    error: Optional[str] = None
+    device_id: str | None = None
+    project_id: str | None = None
+    approval_url: str | None = None
+    user_code: str | None = None
+    error: str | None = None
 
 
 @dataclass
 class RegisterProjectResult:
     success: bool
-    project_id: Optional[str] = None
-    error: Optional[str] = None
+    project_id: str | None = None
+    error: str | None = None
 
 
 class CloudOnboardingService:
     """Service orchestrating device pairing and project onboarding."""
 
-    def __init__(self, registry_root: Optional[Path] = None) -> None:
+    def __init__(self, registry_root: Path | None = None) -> None:
         self.root = registry_root if registry_root is not None else default_registry_root()
         self._sessions: dict[str, SetupSession] = {}
 
@@ -136,7 +133,7 @@ class CloudOnboardingService:
         self,
         project_dir: Path,
         cloud_origin: str = DEFAULT_CLOUD_ORIGIN,
-        alias: Optional[str] = None,
+        alias: str | None = None,
         new_device: bool = False,
     ) -> SetupSession:
         """Start or resume onboarding without blocking. Returns SetupSession."""
@@ -347,15 +344,16 @@ class CloudOnboardingService:
             os.chmod(active_file, 0o600)
         return True
 
-    def get_active_project_id(self) -> Optional[str]:
+    def get_active_project_id(self) -> str | None:
         """Read the currently active Cloud project ID."""
         active_file = self.root / "active_project.json"
         if active_file.exists():
             try:
-                with open(active_file, "r", encoding="utf-8") as f:
+                with open(active_file, encoding="utf-8") as f:
                     data = json.load(f)
-                return data.get("activeProjectId")
-            except Exception:
+                val = data.get("activeProjectId")
+                return str(val) if val is not None else None
+            except (OSError, json.JSONDecodeError):
                 pass
         # Fall back to single project in registry if only one exists
         projects_dir = self.root / "projects"

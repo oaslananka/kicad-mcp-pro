@@ -1,11 +1,11 @@
 """Tests for dashboard status semantics and connection test logic."""
 
 import re
-import pytest
+
 from kicad_mcp.web.dashboard import DASHBOARD_HTML
 
 
-def test_dashboard_connection_test_does_not_treat_ok_false_as_success():
+def test_dashboard_connection_test_does_not_treat_ok_false_as_success() -> None:
     """Verify testConnection in DASHBOARD_HTML distinguishes ok:false from success."""
     # The script must check d.ok before assigning success
     # Previous bug: el.className = 'wizard-result success' unconditional on JSON parse
@@ -23,9 +23,15 @@ def test_dashboard_connection_test_does_not_treat_ok_false_as_success():
     )
 
     # Must verify malformed JSON or invalid schema is not treated as success
-    assert "typeof" in body or "catch" in body, "testConnection must handle invalid or unexpected response"
+    assert "typeof" in body or "catch" in body, (
+        "testConnection must handle invalid or unexpected response"
+    )
 
 
-def test_dashboard_status_distinguishes_degraded_from_error():
+def test_dashboard_status_distinguishes_degraded_from_error() -> None:
     """Verify refreshStatus or status rendering handles degraded distinctly from error."""
-    assert "status-dot.degraded" in DASHBOARD_HTML or "status-dot warn" in DASHBOARD_HTML or "degraded" in DASHBOARD_HTML
+    assert (
+        "status-dot.degraded" in DASHBOARD_HTML
+        or "status-dot warn" in DASHBOARD_HTML
+        or "degraded" in DASHBOARD_HTML
+    )

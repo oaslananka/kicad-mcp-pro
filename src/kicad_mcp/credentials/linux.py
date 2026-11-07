@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
-from typing import Optional
+
+from kicad_mcp.cloud_local_registry import default_registry_root
+from kicad_mcp.cloud_pair_keys import _read_owner_binding, _save_owner_binding
 
 from . import PlatformCredentialStore
-from kicad_mcp.cloud_local_registry import default_registry_root
-from kicad_mcp.cloud_pair_keys import _load_owner_key, _read_owner_binding, _save_owner_binding
 
 
 class LinuxCredentialStore(PlatformCredentialStore):
     """Linux protected filesystem store."""
 
-    def __init__(self, registry_root: Optional[Path] = None) -> None:
+    def __init__(self, registry_root: Path | None = None) -> None:
         self.root = registry_root if registry_root is not None else default_registry_root()
 
     def _keys_dir(self) -> Path:
@@ -31,7 +30,7 @@ class LinuxCredentialStore(PlatformCredentialStore):
         if hasattr(os, "chmod"):
             os.chmod(keyfile, 0o600)
 
-    def load_key(self, record_id: str) -> Optional[bytes]:
+    def load_key(self, record_id: str) -> bytes | None:
         keyfile = self._keys_dir() / f"{record_id}.pem"
         if not keyfile.exists():
             return None
@@ -47,7 +46,7 @@ class LinuxCredentialStore(PlatformCredentialStore):
             owner_sub=binding.get("ownerSub"),
         )
 
-    def load_binding(self, record_id: str) -> Optional[dict[str, str]]:
+    def load_binding(self, record_id: str) -> dict[str, str] | None:
         keyfile = self._keys_dir() / f"{record_id}.pem"
         try:
             return _read_owner_binding(keyfile)

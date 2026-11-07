@@ -1,10 +1,10 @@
 """Tests for Connector lifecycle management and safe active project selection."""
 
-import asyncio
 import json
-import pytest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from kicad_mcp.services.connector_lifecycle import (
     ConnectorLifecycleManager,
@@ -13,7 +13,7 @@ from kicad_mcp.services.connector_lifecycle import (
 
 
 @pytest.fixture
-def mock_registry(tmp_path):
+def mock_registry(tmp_path: Path) -> Path:
     root = tmp_path / "registry"
     root.mkdir()
     (root / "projects").mkdir()
@@ -42,11 +42,11 @@ def mock_registry(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_connector_lifecycle_start_and_stop(mock_registry):
+async def test_connector_lifecycle_start_and_stop(mock_registry) -> None:
     mgr = ConnectorLifecycleManager(registry_root=mock_registry)
     assert mgr.get_status().state == ConnectorState.OFF
 
-    with patch("kicad_mcp.cloud_managed_connector._run_connector", new_callable=AsyncMock) as mock_run:
+    with patch("kicad_mcp.cloud_managed_connector._run_connector", new_callable=AsyncMock):
         started = await mgr.start()
         assert started is True
         assert mgr.is_running() is True
@@ -57,7 +57,7 @@ async def test_connector_lifecycle_start_and_stop(mock_registry):
 
 
 @pytest.mark.asyncio
-async def test_connector_prevents_duplicate_instance(mock_registry):
+async def test_connector_prevents_duplicate_instance(mock_registry) -> None:
     mgr = ConnectorLifecycleManager(registry_root=mock_registry)
     with patch("kicad_mcp.cloud_managed_connector._run_connector", new_callable=AsyncMock):
         assert await mgr.start() is True
@@ -66,11 +66,12 @@ async def test_connector_prevents_duplicate_instance(mock_registry):
 
 
 @pytest.mark.asyncio
-async def test_active_project_selection_and_switch(mock_registry):
+async def test_active_project_selection_and_switch(mock_registry) -> None:
     mgr = ConnectorLifecycleManager(registry_root=mock_registry)
     # Default active project
     assert mgr.get_active_project_id() is None or mgr.get_active_project_id() in (
-        "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"
+        "11111111-1111-1111-1111-111111111111",
+        "22222222-2222-2222-2222-222222222222",
     )
 
     # Explicit switch to proj_b

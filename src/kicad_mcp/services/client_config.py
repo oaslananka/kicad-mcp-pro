@@ -57,7 +57,9 @@ def _record_owned_config(client: str, config_path: Path, registry_root: Path | N
     reg_file.write_text(json.dumps(owned, indent=2), encoding="utf-8")
 
 
-def _unrecord_owned_config(client: str, config_path: Path, registry_root: Path | None = None) -> None:
+def _unrecord_owned_config(
+    client: str, config_path: Path, registry_root: Path | None = None
+) -> None:
     reg_file = _default_registry_file(registry_root)
     if not reg_file.is_file():
         return
@@ -85,9 +87,13 @@ def write_client_config_safe(
             content = config_path.read_text(encoding="utf-8")
             data = json.loads(content)
             if not isinstance(data, dict):
-                raise ClientConfigError(f"Configuration file root must be a JSON object: {config_path}")
+                raise ClientConfigError(
+                    f"Configuration file root must be a JSON object: {config_path}"
+                )
         except json.JSONDecodeError as err:
-            raise ClientConfigError(f"Malformed JSON in existing config {config_path}: {err}") from err
+            raise ClientConfigError(
+                f"Malformed JSON in existing config {config_path}: {err}"
+            ) from err
 
         # Create .json.bak backup
         backup_path = config_path.with_suffix(".json.bak")

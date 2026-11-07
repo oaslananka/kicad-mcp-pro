@@ -5,7 +5,6 @@ Preserves user KiCad schematic, board, and project files at all times.
 
 from __future__ import annotations
 
-import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,7 +12,11 @@ from typing import Any
 
 from kicad_mcp.cloud_pair import default_registry_root
 from kicad_mcp.discovery import discover_kicad_cli, find_kicad_version
-from kicad_mcp.services.client_config import get_owned_client_configs, remove_client_config_entry
+from kicad_mcp.services.client_config import (
+    ClientConfigError,
+    get_owned_client_configs,
+    remove_client_config_entry,
+)
 
 _KICAD_PROJECT_EXTENSIONS = {
     ".kicad_sch",
@@ -65,31 +68,41 @@ class MaintenanceService:
         try:
             cli_path = discover_kicad_cli()
             kicad_ver = find_kicad_version(cli_path)
-            items.append({
-                "component": "kicad",
-                "status": "ok" if kicad_ver else "warn",
-                "detail": f"KiCad version: {kicad_ver}" if kicad_ver else "KiCad CLI located but version unknown",
-            })
+            items.append(
+                {
+                    "component": "kicad",
+                    "status": "ok" if kicad_ver else "warn",
+                    "detail": f"KiCad version: {kicad_ver}"
+                    if kicad_ver
+                    else "KiCad CLI located but version unknown",
+                }
+            )
         except Exception:
-            items.append({
-                "component": "kicad",
-                "status": "warn",
-                "detail": "KiCad CLI not found in default paths",
-            })
+            items.append(
+                {
+                    "component": "kicad",
+                    "status": "warn",
+                    "detail": "KiCad CLI not found in default paths",
+                }
+            )
 
         reg_exists = self.registry_root.is_dir()
-        items.append({
-            "component": "storage",
-            "status": "ok" if reg_exists else "info",
-            "detail": f"Application storage at {self.registry_root}",
-        })
+        items.append(
+            {
+                "component": "storage",
+                "status": "ok" if reg_exists else "info",
+                "detail": f"Application storage at {self.registry_root}",
+            }
+        )
 
         owned = get_owned_client_configs(self.registry_root)
-        items.append({
-            "component": "clients",
-            "status": "ok",
-            "detail": f"Configured AI clients: {len(owned)}",
-        })
+        items.append(
+            {
+                "component": "clients",
+                "status": "ok",
+                "detail": f"Configured AI clients: {len(owned)}",
+            }
+        )
 
         healthy = all(item["status"] in ("ok", "info") for item in items)
         return RepairPreview(healthy=healthy, items=items)
@@ -155,8 +168,10 @@ class MaintenanceService:
             for client, paths in owned.items():
                 for p in paths:
                     try:
-                        remove_client_config_entry(client, Path(p), registry_root=self.registry_root)
-                    except Exception:
+                        remove_client_config_entry(
+                            client, Path(p), registry_root=self.registry_root
+                        )
+                    except (ClientConfigError, OSError):
                         pass
 
         removed: list[str] = []
@@ -178,5 +193,8 @@ class MaintenanceService:
             success=True,
             removed_targets=removed,
             preserved_user_files=preview.preserved_user_files,
-            message=f"Cleaned {len(removed)} application targets; preserved {len(preview.preserved_user_files)} user project files.",
+            message=(
+                f"Cleaned {len(removed)} application targets; "
+                f"preserved {len(preview.preserved_user_files)} user project files."
+            ),
         )

@@ -145,6 +145,7 @@ def _load_owner_key(filename: Path) -> Ed25519PrivateKey:
 
 def _read_owner_binding(filename: Path) -> dict[str, str]:
     """Read owner-only pairing metadata by a pinned no-follow directory FD."""
+
     def unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
         if len({k for k, _ in pairs}) != len(pairs):
             raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
@@ -169,7 +170,8 @@ def _read_owner_binding(filename: Path) -> dict[str, str]:
                 is None
                 or re.fullmatch(r"[0-9a-f]{64}", value["fingerprint"]) is None
                 or (
-                    "ownerSub" in value and (len(value["ownerSub"]) > 256 or len(value["ownerSub"]) < 1)
+                    "ownerSub" in value
+                    and (len(value["ownerSub"]) > 256 or len(value["ownerSub"]) < 1)
                 )
             ):
                 raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)

@@ -313,9 +313,7 @@ def _wait_for_owner_approval(
         time.sleep(min(8.0, remaining / 1000))
 
 
-def start_enrollment(
-    origin: str, alias: str, keyfile: Path
-) -> tuple[str, str, str, int]:
+def start_enrollment(origin: str, alias: str, keyfile: Path) -> tuple[str, str, str, int]:
     """Start device pairing challenge without blocking for approval.
 
     Returns (review_url, challenge, code, expires_in_seconds).
@@ -375,7 +373,7 @@ def redeem_enrollment(origin: str, keyfile: Path) -> tuple[str, str]:
     chal_file = keyfile.with_suffix(".challenge.json")
     if not chal_file.is_file():
         raise CloudPairingError("No active pairing challenge found for key.")
-    with open(chal_file, "r", encoding="utf-8") as f:
+    with open(chal_file, encoding="utf-8") as f:
         chal_data = json.load(f)
     challenge = chal_data["challenge"]
     device_secret = chal_data["secret"]
@@ -430,7 +428,7 @@ def enroll(
     review_url, challenge, code, _ = start_enrollment(origin, alias, keyfile)
     target = _origin(origin)
     chal_file = keyfile.with_suffix(".challenge.json")
-    with open(chal_file, "r", encoding="utf-8") as f:
+    with open(chal_file, encoding="utf-8") as f:
         chal_data = json.load(f)
     device_secret = chal_data["secret"]
     key = _load_owner_key(keyfile)

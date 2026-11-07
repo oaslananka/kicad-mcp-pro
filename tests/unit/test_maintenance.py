@@ -1,17 +1,15 @@
 """Tests for diagnostic repair and safe cleanup without touching user KiCad projects."""
 
-import json
-import pytest
 from pathlib import Path
 
 from kicad_mcp.services.maintenance import (
+    CleanupPreview,
     MaintenanceService,
     RepairPreview,
-    CleanupPreview,
 )
 
 
-def test_maintenance_preview_repair(tmp_path):
+def test_maintenance_preview_repair(tmp_path) -> None:
     svc = MaintenanceService(registry_root=tmp_path / "registry")
     preview = svc.preview_repair()
     assert isinstance(preview, RepairPreview)
@@ -19,7 +17,7 @@ def test_maintenance_preview_repair(tmp_path):
     assert hasattr(preview, "items")
 
 
-def test_maintenance_cleanup_preview_preserves_user_projects(tmp_path):
+def test_maintenance_cleanup_preview_preserves_user_projects(tmp_path) -> None:
     project_dir = tmp_path / "my_project"
     project_dir.mkdir()
     sch_file = project_dir / "board.kicad_sch"
@@ -42,7 +40,7 @@ def test_maintenance_cleanup_preview_preserves_user_projects(tmp_path):
     assert any(str(sch_file.resolve()) in str(p) for p in preview.preserved_user_files)
 
 
-def test_maintenance_apply_cleanup_removes_app_state_only(tmp_path):
+def test_maintenance_apply_cleanup_removes_app_state_only(tmp_path) -> None:
     project_dir = tmp_path / "user_kicad"
     project_dir.mkdir()
     sch = project_dir / "design.kicad_sch"
