@@ -1,0 +1,25 @@
+{
+  "host_id": "codex",
+  "host_version": "0.144.4",
+  "mcp_server_discovered": true,
+  "mode": "readonly",
+  "observed_on": "2026-10-26",
+  "os": "windows",
+  "sanitized_log_sha256": "6ace3f8b2e54119ef21e2614129ce3b99931aab6a2a7a83881b199d5e130223e",
+  "schema_version": "native-agent-host-smoke.v1",
+  "server_version": "4.4.0",
+  "skills_discovered": [
+    "drc-check",
+    "fabrication-output",
+    "kicad-design-review",
+    "pcb-design",
+    "schematic-review",
+    "visual-excellence",
+    "wired-subcircuit-design"
+  ],
+  "source_revision": "f9a21b4e7fad0267bc162b864faea7be1081acbe",
+  "tool_call_successful": true,
+  "tool_called": "kicad_get_server_info",
+  "transport": "stdio",
+  "write_tools_absent": true
+}

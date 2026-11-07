@@ -1,0 +1,81 @@
+{
+  "date": "2026-10-12",
+  "fixtureIsolation": "temporary-copies-and-outputs-deleted",
+  "globalPromotionApproved": false,
+  "latestVerifiedRetained": "10.0.6",
+  "macosWindowsBomGuiQualified": false,
+  "nativeCliVersion": "10.0.7",
+  "nativeHostClass": "ubuntu-24.04.5-linux-x86_64",
+  "outstandingScopes": [
+    "native-windows-macos-schematic-editor-bom-gui",
+    "newer-stable-kicad-python-expanded-ipc-not-available-under-locked-0.7.1",
+    "gerber-editor-plot-api-on-windows-not-qualified",
+    "allegro-editor-import-does-not-imply-cli-format",
+    "ubuntu-22.04-10.0.7-not-installed-legacy-10.0.6",
+    "reference-board-manufacturing-not-qualified"
+  ],
+  "patchProbeScopes": {
+    "erc-json-unit-scale": {
+      "diagnostic": "footprint_link_issues",
+      "positions": {
+        "in": {
+          "x": 0.5905511811023622,
+          "y": 0.5511811023622046
+        },
+        "mils": {
+          "x": 590.5511811023622,
+          "y": 551.1811023622047
+        },
+        "mm": {
+          "x": 15.0,
+          "y": 14.0
+        }
+      },
+      "status": "pass",
+      "symbol": "J1",
+      "upstream": "25582",
+      "violationCountEachUnit": 4
+    },
+    "gerber-drill-marks": {
+      "copperFlashCount": {
+        "npth": 0,
+        "pth": 1
+      },
+      "npthDrillMm": 3.2,
+      "npthLocationMm": {
+        "x": 50,
+        "y": 50
+      },
+      "savedDrillMarkStyle": "full",
+      "status": "pass",
+      "upstream": "25532"
+    },
+    "multi-root-schematic-plot": {
+      "pageCount": 2,
+      "pages": [
+        {
+          "page": 1,
+          "root": "FlatRoot2",
+          "title": "clean-led-kicad10"
+        },
+        {
+          "page": 2,
+          "root": "FlatRoot1",
+          "title": "erc-power-pin-error"
+        }
+      ],
+      "status": "pass",
+      "upstream": "25198"
+    }
+  },
+  "schemaVersion": "kicad-107-linux-targeted-patch-regressions.v1",
+  "sourceFixtureSha256": {
+    "packages/kicad-fixtures/fixtures/clean-led-kicad10/clean-led-kicad10.kicad_sch": "99687419c11831ccae6776c5e7face48697e7587e7ea09ee210a675afb6b7b69",
+    "packages/kicad-fixtures/fixtures/erc-power-pin-error/erc-power-pin-error.kicad_sch": "24087da1c95e98e992f54ddd709a9a3ef11544cd39f9cf2b87f1a65055e1bba4",
+    "tests/fixtures/kicad-10-0-7-drill-marks/npth-stored-full-drill.kicad_pcb": "efce7e87bda545a6a4e35c6fecebafca63c2a15c3f3fb7d31a56b261117a935c",
+    "tests/fixtures/kicad-10-0-7-drill-marks/pth-stored-full-drill.kicad_pcb": "6b3665f4da3615300bbfa041aa2ee6686ca4ec3a4e11b25e07f393bbe9e48f02"
+  },
+  "sourceRevision": "8e31947f9e136ea1e33d07e89d9cd599a3263592",
+  "sourceTreeCleanAfterRun": true,
+  "status": "three-targeted-linux-cli-regressions-pass"
+}
