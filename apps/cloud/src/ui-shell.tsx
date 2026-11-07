@@ -5,12 +5,14 @@ import {Icon} from "./ui-icons.js";
 export type PageKind="home"|"sign-in"|"account"|"consent"|"connections"|"devices"|"notice";
 type Props={title:string;eyebrow?:string;summary?:string;kind:PageKind;children:ReactNode;navEnabled?:boolean;actions?:ReactNode};
 const workspacePages=new Set<PageKind>(["account","connections","devices"]);
-const desktopReleaseUrl="https://github.com/oaslananka/kicad-mcp-pro/releases/tag/kicad-mcp-gui-v4.8.1";
-// Version-pinned, published GUI downloads. Keep in sync with Tauri release
-// metadata; CI checks this rather than silently linking an incompatible app.
-const windowsInstallerUrl="https://github.com/oaslananka/kicad-mcp-pro/releases/download/kicad-mcp-gui-v4.8.1/windows_KiCad-MCP-Pro_4.8.1_x64-setup.exe";
-const macInstallerUrl="https://github.com/oaslananka/kicad-mcp-pro/releases/download/kicad-mcp-gui-v4.8.1/macos_KiCad-MCP-Pro_4.8.1_aarch64.dmg";
-const linuxInstallerUrl="https://github.com/oaslananka/kicad-mcp-pro/releases/download/kicad-mcp-gui-v4.8.1/linux_KiCad-MCP-Pro_4.8.1_amd64.AppImage";
+// Keep one explicit release pin; the UI parity test rejects drift from Tauri.
+const guiReleaseVersion="4.9.0";
+const guiReleaseTag="kicad-mcp-gui-v"+guiReleaseVersion;
+const guiReleaseBase="https://github.com/oaslananka/kicad-mcp-pro/releases";
+const desktopReleaseUrl=guiReleaseBase+"/tag/"+guiReleaseTag;
+const windowsInstallerUrl=guiReleaseBase+"/download/"+guiReleaseTag+"/windows_KiCad-MCP-Pro_"+guiReleaseVersion+"_x64-setup.exe";
+const macInstallerUrl=guiReleaseBase+"/download/"+guiReleaseTag+"/macos_KiCad-MCP-Pro_"+guiReleaseVersion+"_aarch64.dmg";
+const linuxInstallerUrl=guiReleaseBase+"/download/"+guiReleaseTag+"/linux_KiCad-MCP-Pro_"+guiReleaseVersion+"_amd64.AppImage";
 
 const publicDescription="KiCad MCP Cloud lets you pair your computer and grant selected AI assistants read-only access to approved KiCad project metadata.";
 const publicSchema=JSON.stringify({
@@ -123,7 +125,7 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
           <span className="button disabled" aria-disabled="true">Account access pending</span>}
           <a className="button secondary" href={desktopReleaseUrl} target="_blank" rel="noopener noreferrer">Get desktop app <Icon name="arrow" size={15}/></a>
         </div>
-        <div className="landing-platforms" aria-label="Download KiCad MCP Pro v4.8.1">
+        <div className="landing-platforms" aria-label={"Download KiCad MCP Pro v"+guiReleaseVersion}>
           <span>Get the desktop app for</span>
           <a href={windowsInstallerUrl} target="_blank" rel="noopener noreferrer">Windows x64</a>
           <a href={macInstallerUrl} target="_blank" rel="noopener noreferrer">macOS Apple Silicon</a>

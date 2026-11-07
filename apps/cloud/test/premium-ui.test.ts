@@ -90,6 +90,7 @@ test("direct desktop downloads match pinned Tauri version and released artifact 
   assert.match(html,/macOS Apple Silicon/);
   assert.match(html,/Linux x64/);
   for(const name of names) assert.ok(html.includes("/kicad-mcp-gui-v"+version+"/"+name),name);
+  assert.ok(html.includes('aria-label="Download KiCad MCP Pro v'+version+'"'));
   assert.match(html,/href="\/sign-in"/);
   assert.match(html,/Your files stay yours/);
 });
