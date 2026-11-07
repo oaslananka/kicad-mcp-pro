@@ -465,6 +465,7 @@ def _recover_failed_deploy(
     settings: dict[str, str],
     get: JsonGetter,
     post: JsonGetter,
+    failure_reason: str = "",
 ) -> None:
     api, token, uuid = (
         settings[k] for k in ("COOLIFY_URL", "COOLIFY_API_TOKEN", "COOLIFY_APPLICATION_UUID")
@@ -472,8 +473,10 @@ def _recover_failed_deploy(
     # A failed Docker build can occur *after* Coolify accepts the deploy POST.
     # Restore only the source pin + nonsecret revision when the previous live
     # deployment is still healthy and the source pin is unchanged. The helper
-    # verifies all these conditions and refuses unsafe mutations.
-    if pin_attempted:
+    # verifies all these conditions and refuses unsafe mutations. After POST,
+    # only an explicitly terminal failure may repin; a timeout or an ambiguous
+    # response may leave a deployment still building.
+    if pin_attempted and (not deploy_requested or failure_reason == "COOLIFY_DEPLOYMENT_FAILED"):
         try:
             _restore_source_pin(
                 sha,
@@ -533,7 +536,7 @@ def deploy(
         deploy_requested = True
         _request_exact_deployment(sha, api, token, uuid, get, post)
         _verify_published_revision(sha, settings["PUBLIC_ORIGIN"], gh_token, get)
-    except DeployError:
+    except DeployError as exc:
         _recover_failed_deploy(
             pin_attempted,
             revision_attempted,
@@ -543,6 +546,7 @@ def deploy(
             settings,
             get,
             post,
+            failure_reason=str(exc),
         )
         raise
 

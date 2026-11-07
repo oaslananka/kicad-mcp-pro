@@ -512,7 +512,17 @@ class DeployContracts(unittest.TestCase):
 
         # The live old app is still healthy even though Coolify's build failed.
         with patch.dict("os.environ", {"COOLIFY_ROLLBACK_AUTO": "false"}):
-            cloud._recover_failed_deploy(True, True, True, SHA, OTHER, settings, get, post)
+            cloud._recover_failed_deploy(
+                True,
+                True,
+                True,
+                SHA,
+                OTHER,
+                settings,
+                get,
+                post,
+                failure_reason="COOLIFY_DEPLOYMENT_FAILED",
+            )
         self.assertEqual(writes, [("source", OTHER), ("revision", OTHER)])
         self.assertEqual(app["git_commit_sha"], OTHER)
 
@@ -550,8 +560,48 @@ class DeployContracts(unittest.TestCase):
             self.fail("Recovery must refuse mutation if previous live revision is gone")
 
         with patch.dict("os.environ", {"COOLIFY_ROLLBACK_AUTO": "false"}):
-            cloud._recover_failed_deploy(True, True, True, SHA, OTHER, settings, get, no_mutation)
+            cloud._recover_failed_deploy(
+                True,
+                True,
+                True,
+                SHA,
+                OTHER,
+                settings,
+                get,
+                no_mutation,
+                failure_reason="COOLIFY_DEPLOYMENT_FAILED",
+            )
         self.assertEqual(app["git_commit_sha"], SHA)
+
+    def test_ambiguous_deploy_failure_never_repins_while_build_might_be_running(
+        self,
+    ) -> None:
+        """A POST response error or timeout is not a verified failed build."""
+        settings = {
+            "COOLIFY_URL": "https://coolify.example.com/api/v1",
+            "COOLIFY_API_TOKEN": EXAMPLE_SERVICE_VALUE,
+            "COOLIFY_APPLICATION_UUID": UUID,
+            "PUBLIC_ORIGIN": CLOUD_ORIGIN,
+        }
+
+        def reject_read(_url: str, **_kwargs: object) -> dict[str, Any]:
+            self.fail("A nonterminal deployment must not query/modify source pin")
+
+        def reject_write(_url: str, **_kwargs: object) -> dict[str, Any]:
+            self.fail("A nonterminal deployment must not modify live state")
+
+        with patch.dict("os.environ", {"COOLIFY_ROLLBACK_AUTO": "false"}):
+            cloud._recover_failed_deploy(
+                True,
+                True,
+                True,
+                SHA,
+                OTHER,
+                settings,
+                reject_read,
+                reject_write,
+                failure_reason="COOLIFY_DEPLOYMENT_TIMEOUT",
+            )
 
     def test_deploy_restores_pin_if_ci_moves_before_post(self) -> None:
         settings = {
