@@ -649,12 +649,9 @@ async fn resume_backend(
     base: &str,
     cookie: &str,
     csrf: &str,
-    token: Option<&str>,
+    maintenance_lease: &str,
 ) -> Result<(), String> {
-    let body = token.map_or_else(
-        || serde_json::json!({}),
-        |token| serde_json::json!({"token": token}),
-    );
+    let body = serde_json::json!({"token": maintenance_lease});
     let response = client
         .post(format!("{base}/api/maintenance/resume"))
         .header(reqwest::header::ORIGIN, base)
@@ -766,14 +763,7 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     }
     let (client, cookie, csrf, token) = quiesce_backend("http://127.0.0.1:3334").await?;
     if let Err(error) = update.install(&bytes) {
-        resume_backend(
-            &client,
-            "http://127.0.0.1:3334",
-            &cookie,
-            &csrf,
-            Some(&token),
-        )
-        .await?;
+        resume_backend(&client, "http://127.0.0.1:3334", &cookie, &csrf, &token).await?;
         return Err(error.to_string());
     }
     Ok(())

@@ -9,6 +9,7 @@ coverage
 test
 scripts/*
 !scripts/copy-client-assets.mjs
+!scripts/build-project-review.mjs
 docs
 infra
 *.log

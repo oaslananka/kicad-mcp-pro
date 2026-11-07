@@ -175,6 +175,11 @@ def test_quiesce_state_probe_failure_does_not_grant_update_token(
 
 def test_resume_denies_missing_and_invalid_lease_token(browser: TestClient) -> None:
     headers = approved(browser)
-    for body, expected in [({}, 400), ({"token": "x" * 200}, 400), ({"token": "unknown"}, 409)]:
+    unknown_lease = f"missing-lease-{id(browser)}"
+    for body, expected in [
+        ({}, 400),
+        ({"token": "x" * 200}, 400),
+        ({"token": unknown_lease}, 409),
+    ]:
         response = browser.post("/api/maintenance/resume", headers=headers, json=body)
         assert response.status_code == expected

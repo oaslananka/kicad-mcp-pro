@@ -64,8 +64,11 @@ def test_resume_requires_correct_owner_token_and_is_one_shot(client: TestClient)
     quiesced = client.post("/api/maintenance/quiesce", headers=headers, json={})
     assert quiesced.status_code == 200
     token = quiesced.json()["token"]
+    incorrect_token = f"invalid-{token}"
     assert (
-        client.post("/api/maintenance/resume", headers=headers, json={"token": "wrong"}).status_code
+        client.post(
+            "/api/maintenance/resume", headers=headers, json={"token": incorrect_token}
+        ).status_code
         == 409
     )
     assert not reserve_tool_execution()

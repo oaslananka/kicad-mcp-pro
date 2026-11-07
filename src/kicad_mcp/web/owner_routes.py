@@ -15,7 +15,6 @@ from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
-from urllib.parse import urlsplit
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -32,7 +31,7 @@ from kicad_mcp.services.maintenance import (
 )
 from kicad_mcp.web.state import begin_maintenance, end_maintenance
 
-_COOKIE = "kicad_owner"
+_COOKIE = "kicad_owner_session"
 _CSRF_HEADER = "x-kicad-owner-csrf"
 _SESSION_AGE = 1800
 _PREVIEW_AGE = 300
@@ -71,18 +70,24 @@ def _local_authority(request: Request) -> str | None:
         return None
     if request.client is None or request.client.host not in ("127.0.0.1", "::1", "localhost"):
         return None
-    authority = request.headers.get("host", "")
-    if not authority or "@" in authority or any(ch in authority for ch in "/\\?# "):
+    # Exact static authorities: do not parse an untrusted Host into a URL.
+    authority = request.headers.get("host", "").lower()
+    for hostname in ("127.0.0.1", "localhost", "[::1]"):
+        trusted = f"{hostname}:{cfg.port}"
+        if authority == trusted:
+            return trusted
+    return None
+
+
+def _expected_origin(authority: str | None, port: int) -> str | None:
+    """Return an origin generated only from verified loopback constants."""
+    if authority is None:
         return None
-    try:
-        parsed = urlsplit("http://" + authority)
-        if parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
-            return None
-        if parsed.port != cfg.port or parsed.username or parsed.password:
-            return None
-    except ValueError:
-        return None
-    return authority.lower()
+    for hostname in ("127.0.0.1", "localhost", "[::1]"):
+        trusted = f"{hostname}:{port}"
+        if authority == trusted:
+            return f"http://{trusted}"
+    return None
 
 
 def _owner_session(request: Request) -> tuple[str, str] | None:
@@ -107,7 +112,7 @@ def _authorize_mutation(request: Request) -> tuple[str | None, JSONResponse | No
         return None, _response({"error": "Owner authorization required"}, 403)
     authority = _local_authority(request)
     origin = request.headers.get("origin")
-    if authority is None or origin != "http://" + authority:
+    if authority is None or origin != _expected_origin(authority, get_config().port):
         return None, _response({"error": "Origin not allowed"}, 403)
     csrf = request.headers.get(_CSRF_HEADER, "")
     if not csrf or not hmac.compare_digest(csrf, session[1]):
@@ -153,7 +158,7 @@ async def api_owner_session(request: Request) -> JSONResponse:
     if authority is None:
         return _response({"error": "Loopback owner only"}, 403)
     origin = request.headers.get("origin")
-    if origin is not None and origin != "http://" + authority:
+    if origin is not None and origin != _expected_origin(authority, get_config().port):
         return _response({"error": "Origin not allowed"}, 403)
     current = _owner_session(request)
     scope = _scope(request)
