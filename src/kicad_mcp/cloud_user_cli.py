@@ -636,6 +636,14 @@ def status() -> None:
     except Exception as exc:
         _ = exc
 
+    from kicad_mcp.services.client_config import get_owned_client_configs
+
+    owned = get_owned_client_configs(root)
+    if owned:
+        typer.echo(f"Configured Clients: {', '.join(sorted(owned.keys()))}")
+    else:
+        typer.echo("Configured Clients: None (run 'kicad-mcp-pro init' to configure)")
+
 
 @cloud_app.command()
 def enable() -> None:

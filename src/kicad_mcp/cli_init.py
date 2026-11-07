@@ -103,31 +103,21 @@ def _resolve_config_path(client: str) -> Path | None:
 
 
 def _write_mcp_config(client: str, snippet: dict[str, Any]) -> Path | None:
-    """Write the MCP config snippet to the client's config file.
+    """Write the MCP config snippet to the client's config file safely.
 
-    Tries to merge with an existing ``mcpServers`` block when the file already
-    exists.  Returns the config path on success or ``None`` if the path could
-    not be resolved.
+    Merges safely under mcpServers, keeps backup, and records ownership.
     """
     config_path = _resolve_config_path(client)
     if config_path is None:
         return None
     write_target = config_path.expanduser().resolve()
 
-    if write_target.exists():
-        existing: dict[str, Any] = json.loads(write_target.read_text(encoding="utf-8"))
-    else:
-        existing = {}
+    from kicad_mcp.services.client_config import write_client_config_safe
 
-    # Merge the snippet under mcpServers
-    existing_servers = existing.get("mcpServers", {})
-    existing_servers.update(snippet.get("mcpServers", {}))
-    existing["mcpServers"] = existing_servers
-
-    write_target.parent.mkdir(parents=True, exist_ok=True)
-    with write_target.open("w", encoding="utf-8") as handle:
-        handle.write(json.dumps(existing, indent=2, ensure_ascii=False) + "\n")
-    return config_path
+    res = write_client_config_safe(client, write_target, snippet)
+    if res.success:
+        return write_target
+    return None
 
 
 def _generate_mcp_config(

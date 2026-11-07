@@ -661,7 +661,7 @@ def test_setup_browser_approval_and_service_fallback(tmp_path: Path, monkeypatch
     assert result.exit_code == 0
     assert "Browser opened for approval" in result.output
     assert "Background service start notice: systemd unavailable" in result.output
-    expected_connector = "Enabled (Foreground ready)" if os.name == "posix" else "Off"
+    expected_connector = "Enabled (Foreground ready)"
     assert f"Connector:       {expected_connector}" in result.output
 
 
