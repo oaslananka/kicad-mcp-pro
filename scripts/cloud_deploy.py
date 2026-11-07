@@ -469,7 +469,11 @@ def _recover_failed_deploy(
     api, token, uuid = (
         settings[k] for k in ("COOLIFY_URL", "COOLIFY_API_TOKEN", "COOLIFY_APPLICATION_UUID")
     )
-    if pin_attempted and not deploy_requested:
+    # A failed Docker build can occur *after* Coolify accepts the deploy POST.
+    # Restore only the source pin + nonsecret revision when the previous live
+    # deployment is still healthy and the source pin is unchanged. The helper
+    # verifies all these conditions and refuses unsafe mutations.
+    if pin_attempted:
         try:
             _restore_source_pin(
                 sha,
