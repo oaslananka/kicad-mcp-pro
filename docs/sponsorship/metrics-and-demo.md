@@ -21,9 +21,11 @@
 
 Existing [historical native-agent smoke evidence](../evidence/agent-host-smoke-history.md) documents a real read-only host integration under the stated host/version constraints. The [native-live benchmark example](../evidence/task-outcomes/2026-08-28-native-live-example/README.md) explicitly reports **insufficient evidence** for headline task-success targets. Neither document independently establishes current desktop acceptance or general manufacturing readiness.
 
-## Recorded sponsor demo — 46 seconds (2026-11-07)
+## Controlled schematic-edit technical demo — 85 seconds (2026-11-07)
 
-The [edited MP4](sponsor-demo-royalblue54l.mp4) contains a genuine, isolated KiCad PCB Editor recording plus slides based on actual, separately invoked MCP 4.8.1 read-only tool outputs. The [dated evidence record](demo-evidence-2026-11-07.md) includes source/license attribution, exact input hash, tool results (71 footprints, 943 tracks, 95 named nets, 287 DRC findings and 27 ERC findings), and the unresolved file-backed/native via-count discrepancy. The source board was not changed. This does **not** establish a continuous editor-IPC session or an autonomous PCB-design success.
+The [MP4 recording](sponsor-demo-controlled-schematic-edit.mp4) captures a **live MCP client session** and independent KiCad ERC checks on a disposable copy of the [ESP32-C3 schematic in this repository](../../examples/gallery/esp32-c3-wroom-02-breakout/README.md). The demo executes plan → preview → apply → verify → rollback for a deliberately unattached net label, then re-plans an additional correct EN net label and verifies **0 KiCad ERC findings**. The schematic views are genuine KiCad CLI SVG renders of the same exact before/after source content, prepared prior to recording to avoid expensive conversions. This is a **deterministic client harness, not a live autonomous LLM agent** or an official product GUI; it is a technical proof of the underlying MCP editing and recovery contract, **not yet the final flagship sponsor video**.
+
+The [dated source-bound evidence](demo-evidence-2026-11-07.md) states the versions, input/output hashes, exact scope and verification limits. The earlier PCB-pan-and-finding-count video was rejected for this outreach use case and removed from the PR. It is not presented as a current sponsor asset.
 
 ## Future continuous agent/IPC demonstration — capture plan
 
@@ -44,7 +46,7 @@ The [edited MP4](sponsor-demo-royalblue54l.mp4) contains a genuine, isolated KiC
 - No unauthorised design mutation, external manufacturing order or sponsor-branded claim.
 - Publish only after the capture file has been reviewed and playback can be independently verified.
 
-**Current gap:** a 46-second edited video now exists; a *continuous* agent/real-editor-IPC capture with independently verified session/tool evidence remains outstanding. Neither the edited clip nor the older synthetic cast is a substitute for this future acceptance.
+**Current gap:** the technical clip proves actual bounded MCP editing and independent ERC validation in a deterministic client. A *real autonomous AI-agent run* with meaningful design changes, and independently accepted real-editor IPC, remains outstanding. Neither this technical clip nor the older synthetic cast is that final evidence.
 
 ## Refresh before outreach
 

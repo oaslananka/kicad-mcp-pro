@@ -1,43 +1,42 @@
-# Real-board sponsorship demo — evidence, scope, and limitations
+# KiCad MCP Pro — controlled schematic-edit demonstration evidence
 
-**Recorded:** 7 November 2026 · **Video:** [46-second edited demo](sponsor-demo-royalblue54l.mp4) · **Preview:** [thumbnail](demo-thumbnail.png)
+**Date:** 2026-11-07 · **Recording:** [85-second MP4](sponsor-demo-controlled-schematic-edit.mp4) · **Preview:** [PNG](demo-thumbnail.png)
 
-This video is a carefully labeled **edited product demonstration**, not one continuous KiCad IPC session. It combines **22 seconds of genuine KiCad PCB Editor screen recording** from an isolated headless X11 session with cards showing results of **separate, real MCP calls** on the same unmodified KiCad sample. No AI-generated board imagery or fabricated MCP responses were used.
+## What the video actually shows
 
-## Software, sample, and reproducibility
+An **uninterrupted recording of a custom diagnostic client monitor while real MCP tool calls run** against a copy of a repository-owned ESP32-C3 example schematic. The UI is explicitly labeled **DEMO HARNESS**; it is not the published KiCad MCP Pro GUI or an autonomous LLM. The KiCad schematic view/inset was rendered by actual `kicad-cli sch export svg` from the **exact same verified source contents**, prior to recording to avoid costly SVG transformations during the live call sequence. Rendered views are not a live KiCad GUI/IPC session.
 
-| Component | Observed |
+The demonstration deliberately exercises **two tool plans**:
+
+1. **Unsafe candidate:** insert `EN_DIAG` on an empty part of the sheet; `sch_plan_from_spec` and `sch_preview_plan` run without mutating the schematic; `sch_apply_plan` writes to the isolated copy; `sch_verify_plan` returns **FAIL — unconnected EN_DIAG**; `sch_rollback_plan` restores the **bit-identical input hash**; KiCad ERC remains at **0**.
+2. **Corrected candidate:** add the consistent `EN` label at the already-connected EN wire endpoint. Plan, preview, and apply are real MCP calls. `sch_verify_plan` returns **PASS** and an independent KiCad CLI ERC check reports **0 violations**, same as before the change.
+
+The video illustrates **guarded, reversible design-edit tooling** rather than merely scanning a board. A deterministic harness chooses the two candidate edits; no language model reasoned over the project. The changes are small, and the result **does not prove autonomous schematic generation, routing, PCB fabrication, manufacturing sign-off or full benchmark task success**.
+
+## Pinned environment and proof
+
+| Property | Verified observation |
 | --- | --- |
-| KiCad PCB Editor / native CLI | 10.0.8 |
+| Project | `examples/gallery/esp32-c3-wroom-02-breakout/` (repo-owned example, copied into an isolated scratch directory) |
+| KiCad engine | 10.0.8 (native `kicad-cli sch erc` and schematic SVG exporter) |
 | KiCad MCP Pro package | Published 4.8.1 |
 | MCP transport | stdio |
-| MCP operating mode and profile | readonly / default |
-| MCP tools enumerated | 24 |
-| MCP project inspection source | **File-backed fallback**, because live editor IPC could not be connected in the MCP session |
-| Input project | RoyalBlue54L Feather, shipped with the installed KiCad 10.0.8 demo package |
-| Source acknowledgement | Lords Boards; upstream source README links to its RoyalBlue54L Feather project |
-| Sample license | CERN Open Hardware Licence v2 Permissive (CERN-OHL-P-2.0), as provided with the KiCad demo |
-| Original PCB SHA-256 | `535dbe212f43a8bab12b23277e176a94ac9694177258af2981c0e7b08e4b7252` |
+| Profile and mode | `build` / `write`; **17 callable tools** observed in the session (do not substitute documentation's 24-tool target) |
+| Tool calls | `sch_plan_from_spec`, `sch_preview_plan`, `sch_apply_plan`, `sch_verify_plan`, `sch_rollback_plan` |
+| ERC before, after rollback, after corrected edit | **0, 0, 0** |
+| Input schematic SHA-256 | `b4845b432646d31e09cf4a38e3f57c762680263291c7ecfa79de56c58f64cf68` |
+| Final isolated schematic SHA-256 | `692fb3f42fc9c73e1ac226c47da0d8f662f3d87da9d97a9a31de806f54e3a1f9` |
+| MP4 | 1600 × 900, approximately 85 seconds, H.264, silent |
+| MP4 SHA-256 | `3fe86437b8279be61afa44f2cc507ff789ece130e9388a778cfa28e4007030ab` |
 
-The recording shows an existing third-party open hardware design; **KiCad MCP Pro did not create this board**. The complete source CAD files are *not* redistributed with this demo. No manufacturer was contacted and no fabrication, release, or hardware validation was performed.
+**Scope:** No change to the canonical source example, user board, registry package, production server, GitHub configuration or third-party manufacturing service. All test mutations, checkpoints and ERC reports were confined to scratch copies. No paid model calls, API keys or outbound vendor messages.
 
-## Measured results — actual MCP tool calls
+## What remains unverified
 
-- `kicad_get_server_info`: server version 4.8.1, KiCad CLI 10.0.8.
-- `kicad_get_project_info`: correctly resolved the copied project and source files.
-- `pcb_get_board_summary`: **71 footprints, 943 tracks, 95 named nets** using the file-backed parser.
-- `run_drc`: **287 findings**, not a clean-board verdict.
-- `run_erc`: **27 findings**, not a clean-schematic verdict.
-- The source PCB SHA-256 matched before and after the procedure. Changes and outputs were confined to disposable scratch copies; no original design was written.
+- A real LLM agent independently interpreting a requested electronics-engineering task and selecting safe MCP tool calls.
+- A meaningful corrective design edit beyond a net-label addition, with native PCB/DRC and hardware-engineering review.
+- Continuous KiCad PCB Editor IPC state coupled to the MCP mutation.
+- Evidence that a full reference board can be built autonomously from a spec and pass the published task-success acceptance criteria (#729/#730).
+- Sponsorship, commercial conversion or manufacturer endorsement.
 
-**Observed discrepancy:** the file-backed `pcb_get_board_summary` reported **185 vias**, while the native `pcbnew` parser and KiCad PCB Editor reported **183 vias**. Therefore the via total was intentionally excluded from the video metrics. This unresolved counting difference must not be presented as validated agreement. It is not a claim of an accepted real-board benchmark.
-
-## What the demo does *not* prove
-
-- No continuous editor-IPC-backed MCP session or native editor write acceptance.
-- No complete autonomous board construction, qualified design-signoff or production-ready PCB.
-- No real-world fabrication, ordering, electronics bench test or validated sales conversion.
-- The source design has unresolved DRC/ERC findings. They are **reported**, not hidden or claimed fixed.
-- The graphical recording is edited together with independently observed MCP outputs; it is not a recording of a single agent's seamless end-to-end interaction.
-
-For the eventual continuous real agent/IPC demo, capture a fresh verified host session, preserving its tool traffic and constraints. See [metrics and demo plan](metrics-and-demo.md). The separate `docs/demo-media.md` terminal cast is synthetic and not interchangeable with this genuine GUI recording.
+For a sponsor-facing flagship demo, select a realistic engineering task (such as actually repairing a verified schematic connectivity fault), run it using a named AI client/model in an isolated project, then retain a continuous recording of the agent, KiCad and verification results, with complete non-cherry-picked attempt history.
