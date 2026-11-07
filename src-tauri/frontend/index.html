@@ -242,7 +242,8 @@
           <button type="button" class="btn-copy" id="btnCopyCmd" onclick="copyCliCommand()">Copy</button>
         </div>
         <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
-          <a class="btn secondary" href="http://127.0.0.1:3334/ui" target="_blank" rel="noopener noreferrer">Try opening dashboard</a>
+          <a class="btn secondary" id="openLocalDashboard" href="http://127.0.0.1:3334/ui" target="_blank" rel="noopener noreferrer">Try opening dashboard</a>
+          <button type="button" class="btn" id="useSeparatePort" style="display:none" onclick="handleUseSeparatePort()">Continue without stopping old service</button>
           <button type="button" class="btn secondary" onclick="handleRestartServer()">Restart Server</button>
           <button type="button" class="btn" onclick="handleRestartServer()">Retry</button>
         </div>
@@ -250,8 +251,18 @@
     </main>
 
     <script type="module">
-      const DASHBOARD_URL = 'http://127.0.0.1:3334/ui?desktop=1';
-      const HEALTH_URL = 'http://127.0.0.1:3334/api/health';
+      const PRIMARY_PORT = 3334;
+      const SEPARATE_PORT = 3335;
+      let desktopPort = PRIMARY_PORT;
+      const dashboardUrl = () => 'http://127.0.0.1:' + desktopPort + '/ui?desktop=1';
+      const dashboardLink = document.getElementById('openLocalDashboard');
+      const separateButton = document.getElementById('useSeparatePort');
+      const selectDesktopPort = port => {
+        if (port !== PRIMARY_PORT && port !== SEPARATE_PORT) return false;
+        desktopPort = port;
+        dashboardLink.href = 'http://127.0.0.1:' + port + '/ui';
+        return true;
+      };
 
       const MAX_RETRIES = 120;
       const RETRY_INTERVAL_MS = 1000;
@@ -301,11 +312,35 @@
         statusEl.textContent = 'Restarting server…';
         statusEl.className = 'status';
         detailsEl.classList.remove('visible');
+        separateButton.style.display = 'none';
         if (errorDetailEl) errorDetailEl.style.display = 'none';
 
-        const result = await tauriInvoke('restart_server', { port: 3334 });
+        const result = await tauriInvoke('restart_server', { port: desktopPort });
         if (result === null) {
           setTimeout(checkServer, 1000);
+          return;
+        }
+        setTimeout(checkServer, 500);
+      }
+
+      async function handleUseSeparatePort() {
+        // Never stop or mutate the older service on 3334. This choice
+        // launches an exact-version local backend on a separate fixed port.
+        if (desktopPort !== PRIMARY_PORT) return;
+        selectDesktopPort(SEPARATE_PORT);
+        separateButton.style.display = 'none';
+        retries = 0;
+        healthOk = false;
+        spinnerEl.style.display = 'block';
+        statusEl.textContent = 'Starting a separate desktop backend on 127.0.0.1:3335…';
+        statusEl.className = 'status';
+        detailsEl.classList.remove('visible');
+        const result = await tauriInvoke('restart_server', {port: SEPARATE_PORT});
+        // Keep the manual recovery command consistent even if the alternate
+        // port is occupied; do not suggest stopping the legacy instance.
+        await loadExactCommand();
+        if (result === null) {
+          showError('Could not start a separate backend. The existing service was left unchanged.');
           return;
         }
         setTimeout(checkServer, 500);
@@ -348,6 +383,9 @@
           return true;
         }
         if (tauriStatus.message && tauriStatus.message !== 'Server is not running.') {
+          if (desktopPort === PRIMARY_PORT && tauriStatus.message.startsWith('Incompatible service detected')) {
+            separateButton.style.display = '';
+          }
           if (errorDetailEl) {
             errorDetailEl.textContent = tauriStatus.message;
             errorDetailEl.style.display = 'block';
@@ -355,10 +393,45 @@
           setStep('uvx', 'fail');
           setStep('pkg', 'fail');
           setStep('server', 'fail');
-          showError('Backend error');
+          showError(
+            tauriStatus.message.startsWith('Incompatible service detected')
+              ? 'Older or incompatible local backend detected'
+              : 'Backend could not start'
+          );
           return false;
         }
         return true;
+      }
+
+      // Keep the guarded port and compatibility UI separate from the
+      // polling lifecycle, without relaxing the native exact-version check.
+      function rejectUnusableReadiness(readiness) {
+        if (!readiness) return false;
+        if (!selectDesktopPort(readiness.port)) {
+          showError('Desktop backend reported an unsupported port.');
+          return true;
+        }
+        if (!readiness.incompatible) return false;
+        if (desktopPort === PRIMARY_PORT) separateButton.style.display = '';
+        if (errorDetailEl) {
+          errorDetailEl.textContent = 'Another version or service occupies 127.0.0.1:' + desktopPort
+            + '. ' + readiness.detail
+            + '. You can keep it running and open a separate, exact-version desktop backend'
+            + (desktopPort === PRIMARY_PORT ? ' with one click.' : ' after freeing the separate port.')
+            + ' The existing service will not be changed.';
+          errorDetailEl.style.display = 'block';
+        }
+        showError('Different backend detected on the local port');
+        return true;
+      }
+
+      async function showStartupTimeout() {
+        const finalStatus = await getTauriStatus();
+        if (finalStatus && finalStatus.message && !finalStatus.running && errorDetailEl) {
+          errorDetailEl.textContent = finalStatus.message;
+          errorDetailEl.style.display = 'block';
+        }
+        showError('Server failed to start');
       }
 
       async function checkServer() {
@@ -370,17 +443,7 @@
         }
 
         const readiness = await getDesktopReadiness();
-        if (readiness && readiness.incompatible) {
-          if (errorDetailEl) {
-            errorDetailEl.textContent = 'A different or incompatible service is using this port. '
-              + readiness.detail
-              + '. The desktop requires backend ' + readiness.expectedVersion
-              + '. Stop the other service before retrying; do not install @latest.';
-            errorDetailEl.style.display = 'block';
-          }
-          showError('Different backend detected on the local port');
-          return;
-        }
+        if (rejectUnusableReadiness(readiness)) return;
         // Do not redirect when Tauri IPC is unavailable or a foreign HTTP
         // server returned 200/opaque status. Native compatibility is mandatory.
         healthOk = readiness?.ready === true;
@@ -391,17 +454,12 @@
           setStep('server', 'ok');
           setStep('uvx', 'ok');
           setStep('pkg', 'ok');
-          setTimeout(() => { window.location.href = DASHBOARD_URL; }, 500);
+          setTimeout(() => { window.location.href = dashboardUrl(); }, 500);
           return;
         }
 
         if (retries >= MAX_RETRIES) {
-          const finalStatus = await getTauriStatus();
-          if (finalStatus && finalStatus.message && !finalStatus.running && errorDetailEl) {
-            errorDetailEl.textContent = finalStatus.message;
-            errorDetailEl.style.display = 'block';
-          }
-          showError('Server failed to start');
+          await showStartupTimeout();
           return;
         }
 
@@ -416,6 +474,7 @@
       }
 
       window.handleRestartServer = handleRestartServer;
+      window.handleUseSeparatePort = handleUseSeparatePort;
       window.showError = showError;
       window.copyCliCommand = copyCliCommand;
 
