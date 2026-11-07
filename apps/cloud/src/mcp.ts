@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import type { Actor } from "./auth.js";
@@ -59,50 +60,6 @@ async function resolveScopedProject(
   };
 }
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function renderProjectReviewHtml(project: { alias: string; id: string; connectorConnected: boolean } | null): string {
-  const safeAlias = escapeHtml(project ? project.alias : "No active project");
-  const safeId = escapeHtml(project ? project.id : "-");
-  const isConnected = Boolean(project && project.connectorConnected);
-  const badgeClass = isConnected ? "badge ok" : "badge";
-  const badgeText = isConnected ? "Connected" : "Disconnected";
-
-  return [
-    "<!doctype html>",
-    "<html>",
-    "<head>",
-    '<meta charset="utf-8">',
-    "<style>",
-    ":root{--bg:#0b0f17;--surface:#131926;--border:#232d3f;--text:#f1f5f9;--muted:#94a3b8;--accent:#38bdf8;--success:#22c55e;}",
-    "body{margin:0;padding:16px;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;font-size:13px;line-height:1.5;}",
-    ".card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:12px;}",
-    "h1{font-size:16px;margin:0 0 12px;color:var(--accent);display:flex;align-items:center;gap:8px;}",
-    ".row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);}",
-    ".badge{padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:rgba(56,189,248,0.15);color:var(--accent);}",
-    ".badge.ok{background:rgba(34,197,94,0.15);color:var(--success);}",
-    "</style>",
-    "</head>",
-    "<body>",
-    '<div class="card">',
-    "<h1>KiCad Project Review</h1>",
-    '<div class="row"><span>Project</span><strong>' + safeAlias + "</strong></div>",
-    '<div class="row"><span>Project ID</span><code>' + safeId + "</code></div>",
-    '<div class="row"><span>Device Connection</span><span class="' + badgeClass + '">' + badgeText + "</span></div>",
-    '<div class="row"><span>Read Surface</span><span>Local Read-Only</span></div>',
-    "</div>",
-    "</body>",
-    "</html>"
-  ].join("\n");
-}
-
 export function createCloudMcpHandler(
   inventory: Inventory, actor: Actor, projectPresence?:ProjectPresenceReader,
   projectDrc?:ProjectDrcReader, projectInspection?:ProjectInspectionReader,
@@ -157,7 +114,8 @@ export function createCloudMcpHandler(
       .map(describeProject) }));
     mcp.registerTool("get_project", {
       description: "Find an enabled granted project by opaque UUID with session status, never local paths or KiCad data.",
-      inputSchema: z.object({ project_id: z.string().uuid() }), annotations: readonly
+      inputSchema: z.object({ project_id: z.string().uuid() }), annotations: readonly,
+      _meta: { ui: { resourceUri: "ui://project-review" } }
     }, async ({ project_id }) => {
       const project = await inventory.getProject(actor.sub,actor.clientId,project_id);
       if (!project) {
@@ -166,8 +124,7 @@ export function createCloudMcpHandler(
       const desc = describeProject(project);
       return {
         content: [{ type: "text" as const, text: JSON.stringify({ project: desc }) }],
-        structuredContent: { project: desc },
-        _meta: { ui: { resourceUri: `ui://project-review?project_id=${project.id}` } }
+        structuredContent: { project: desc }
       };
     });
     mcp.registerResource(
@@ -178,14 +135,13 @@ export function createCloudMcpHandler(
         description: "Interactive KiCad Project Review MCP App"
       },
       async (uri) => {
-        const projects = await inventory.listProjects(actor.sub, actor.clientId);
-        const project = projects.length > 0 ? describeProject(projects[0]!) : null;
-        const html = renderProjectReviewHtml(project);
+        const html = readFileSync(new URL("../dist/project-review.html", import.meta.url), "utf8");
         return {
           contents: [{
             uri: uri.href,
             mimeType: "text/html;profile=mcp-app",
-            text: html
+            text: html,
+            _meta: {ui:{csp:{connectDomains:[],resourceDomains:[],frameDomains:[]}}}
           }]
         };
       }

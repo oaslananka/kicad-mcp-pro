@@ -7,7 +7,6 @@ and status monitoring without requiring systemd on Windows/macOS.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import time
@@ -17,7 +16,10 @@ from pathlib import Path
 
 from kicad_mcp.cloud_local_registry import default_registry_root
 from kicad_mcp.cloud_managed_connector import (
+    _CONNECTED_STATUS_MAX_AGE_MS,
+    _CONNECTING_STATUS_MAX_AGE_MS,
     _ENABLED_FILE,
+    _STATUS_FIELDS,
     _STATUS_FILE,
     _identity_state,
     _read_private_json,
@@ -63,14 +65,27 @@ class ConnectorLifecycleManager:
         if not (self.root / _ENABLED_FILE).exists() and not self.is_running():
             return ConnectorStatus(state=ConnectorState.OFF, active_project_id=active_proj)
 
+        if not self.is_running():
+            return ConnectorStatus(state=ConnectorState.UNAVAILABLE, active_project_id=active_proj)
+
         try:
             status_data = _read_private_json(self.root, _STATUS_FILE)
             raw_state = status_data.get("state")
-            if raw_state == "connected":
+            updated = status_data.get("updatedAtUnixMs")
+            if (
+                status_data.keys() != _STATUS_FIELDS
+                or type(updated) is not int
+                or status_data.get("pid") != os.getpid()
+            ):
+                return ConnectorStatus(
+                    state=ConnectorState.UNAVAILABLE, active_project_id=active_proj
+                )
+            age = time.time_ns() // 1_000_000 - updated
+            if raw_state == "connected" and 0 <= age <= _CONNECTED_STATUS_MAX_AGE_MS:
                 return ConnectorStatus(
                     state=ConnectorState.CONNECTED, active_project_id=active_proj
                 )
-            if raw_state == "connecting":
+            if raw_state == "connecting" and 0 <= age <= _CONNECTING_STATUS_MAX_AGE_MS:
                 return ConnectorStatus(
                     state=ConnectorState.CONNECTING, active_project_id=active_proj
                 )
@@ -110,15 +125,19 @@ class ConnectorLifecycleManager:
         async with self._lock:
             if self._stop_event is not None:
                 self._stop_event.set()
+            _remove_private_file(self.root, _ENABLED_FILE)
 
             if self._task is not None:
                 try:
                     await asyncio.wait_for(asyncio.shield(self._task), timeout=5.0)
                 except (TimeoutError, asyncio.CancelledError):
                     self._task.cancel()
+                    try:
+                        await self._task
+                    except asyncio.CancelledError:
+                        pass
                 self._task = None
 
-            _remove_private_file(self.root, _ENABLED_FILE)
             try:
                 _write_status(self.root, "unavailable")
             except OSError:
@@ -126,33 +145,28 @@ class ConnectorLifecycleManager:
             return True
 
     def get_active_project_id(self) -> str | None:
-        """Read the active project ID."""
-        active_file = self.root / "active_project.json"
-        if active_file.exists():
+        """Return the unique verified registration, never an arbitrary record."""
+        try:
+            record = _single_registered_identity(self.root)
             try:
-                data = json.loads(active_file.read_text(encoding="utf-8"))
-                val = data.get("activeProjectId")
-                return str(val) if val is not None else None
-            except (OSError, json.JSONDecodeError):
-                pass
-
-        # Fall back to first registered project
-        projects_dir = self.root / "projects"
-        if projects_dir.exists():
-            projs = sorted(p.stem for p in projects_dir.glob("*.json"))
-            if projs:
-                return projs[0]
-        return None
+                pointer = _read_private_json(self.root, "active_project.json")
+            except Exception:
+                if (self.root / "active_project.json").exists():
+                    return None
+                return record["projectId"]
+            return (
+                record["projectId"]
+                if pointer.get("activeProjectId") == record["projectId"]
+                else None
+            )
+        except (OSError, ValueError):
+            return None
 
     def _resolve_active_record(self) -> dict[str, str]:
-        active_id = self.get_active_project_id()
-        if active_id:
-            record_path = self.root / "projects" / f"{active_id}.json"
-            if record_path.exists():
-                rec = json.loads(record_path.read_text(encoding="utf-8"))
-                if isinstance(rec, dict):
-                    return {str(k): str(v) for k, v in rec.items()}
-        return _single_registered_identity(self.root)
+        record = _single_registered_identity(self.root)
+        if self.get_active_project_id() != record["projectId"]:
+            raise ValueError("Active project does not match the verified registration")
+        return record
 
     def enable_connector(self) -> None:
         """Synchronously mark the connector enabled."""
@@ -170,61 +184,23 @@ class ConnectorLifecycleManager:
             pass
 
     def set_active_project(self, project_path_or_id: str) -> None:
-        """Set active project by path or ID."""
-        projs = list((self.root / "projects").glob("*.json"))
-        target_id = project_path_or_id
-        for p in projs:
-            try:
-                rec = json.loads(p.read_text(encoding="utf-8"))
-                if rec.get("projectPath") == project_path_or_id or p.stem == project_path_or_id:
-                    target_id = p.stem
-                    break
-            except (OSError, json.JSONDecodeError):
-                continue
-        active_file = self.root / "active_project.json"
-        active_file.write_text(
-            json.dumps({"activeProjectId": target_id, "updatedAt": time.time()}),
-            encoding="utf-8",
+        """Select only the uniquely verified local registration."""
+        record = _single_registered_identity(self.root)
+        if project_path_or_id not in (record["projectId"], record["directory"]):
+            raise ValueError("Project is not the verified registration")
+        _write_private_json(
+            self.root, "active_project.json", {"activeProjectId": record["projectId"]}
         )
-        if hasattr(os, "chmod"):
-            os.chmod(active_file, 0o600)
 
     async def switch_active_project(self, project_id: str) -> bool:
-        """Switch active project with read-fencing. Fails closed if project does not exist."""
-        record_file = self.root / "projects" / f"{project_id}.json"
-        if not record_file.exists():
-            return False
-
+        """Select the registered project; unverified identifiers fail closed."""
         async with self._lock:
-            was_running = self.is_running()
-            if was_running:
-                # Stop existing connector to fence in-flight reads
-                if self._stop_event:
-                    self._stop_event.set()
-                if self._task:
-                    try:
-                        await asyncio.wait_for(asyncio.shield(self._task), timeout=3.0)
-                    except (TimeoutError, asyncio.CancelledError):
-                        self._task.cancel()
-                    self._task = None
-
-            # Update active project pointer
-            active_file = self.root / "active_project.json"
-            active_file.write_text(
-                json.dumps({"activeProjectId": project_id, "updatedAt": time.time()}),
-                encoding="utf-8",
-            )
-            if hasattr(os, "chmod"):
-                os.chmod(active_file, 0o600)
-
-            if was_running:
-                # Restart connector with new project identity
-                record = json.loads(record_file.read_text(encoding="utf-8"))
-                _write_private_json(self.root, _ENABLED_FILE, _identity_state(record))
-                _write_status(self.root, "connecting")
-                self._stop_event = asyncio.Event()
-                self._task = asyncio.create_task(
-                    _run_connector(root=self.root, stop_event=self._stop_event)
-                )
-
+            # Never switch the active registry binding under an in-flight read.
+            # Stop the connector before selecting another project.
+            if self.is_running():
+                return self.get_active_project_id() == project_id
+            try:
+                self.set_active_project(project_id)
+            except (OSError, ValueError):
+                return False
             return True

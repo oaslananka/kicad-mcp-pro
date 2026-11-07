@@ -5,7 +5,6 @@ Preserves user KiCad schematic, board, and project files at all times.
 
 from __future__ import annotations
 
-import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -47,6 +46,7 @@ class RepairResult:
 class CleanupPreview:
     targets_to_remove: list[str] = field(default_factory=list)
     preserved_user_files: list[str] = field(default_factory=list)
+    client_entries_to_remove: list[dict[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -113,15 +113,6 @@ class MaintenanceService:
             self.registry_root.mkdir(parents=True, exist_ok=True)
             repaired.append("created_storage_root")
 
-        # Clean any stale lockfiles or tmp files in registry root
-        if self.registry_root.is_dir():
-            for tmp in self.registry_root.glob("*.tmp"):
-                try:
-                    tmp.unlink()
-                    repaired.append(f"cleaned_{tmp.name}")
-                except OSError:
-                    pass
-
         return RepairResult(
             success=True,
             repaired_items=repaired,
@@ -143,17 +134,20 @@ class MaintenanceService:
                         if file.is_file() and file.suffix.lower() in _KICAD_PROJECT_EXTENSIONS:
                             preserved.append(str(file.resolve()))
 
-        if self.registry_root.is_dir():
-            for item in self.registry_root.iterdir():
-                # Never include user project files even if placed in registry
-                if item.is_file() and item.suffix.lower() in _KICAD_PROJECT_EXTENSIONS:
-                    preserved.append(str(item.resolve()))
-                else:
-                    targets.append(str(item.resolve()))
+        for name in ("connector-enabled.json", "connector-status.json", "active_project.json"):
+            item = self.registry_root / name
+            if item.is_file() and not item.is_symlink():
+                targets.append(str(item))
 
+        client_entries = [
+            {"client": client, "config_file": str(path)}
+            for client, paths in get_owned_client_configs(self.registry_root).items()
+            for path in paths
+        ]
         return CleanupPreview(
             targets_to_remove=targets,
             preserved_user_files=preserved,
+            client_entries_to_remove=client_entries,
         )
 
     def apply_cleanup(
@@ -182,9 +176,6 @@ class MaintenanceService:
             try:
                 if target.is_file() or target.is_symlink():
                     target.unlink()
-                    removed.append(str(target))
-                elif target.is_dir():
-                    shutil.rmtree(target)
                     removed.append(str(target))
             except OSError:
                 pass

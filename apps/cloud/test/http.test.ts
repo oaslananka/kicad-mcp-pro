@@ -1415,6 +1415,11 @@ test("MCP Apps exposes standards-based UI resource and tool UI metadata", async 
 
   const projectCall = await call("tools/call", { name: "get_project", arguments: { project_id: id } }, "test-user-a", "get_project");
   assert.equal(projectCall.status, 200);
-  const meta = projectCall.data.result?._meta;
-  assert.ok(meta?.ui?.resourceUri?.startsWith("ui://project-review"));
+  assert.equal(projectCall.data.result?.structuredContent?.project?.id, id);
+  assert.match(projectCall.data.result?.content?.[0]?.text, /USB-C Controller/);
+  const tools = await call("tools/list");
+  assert.equal(tools.data.result.tools.find((tool:{name:string})=>tool.name==="get_project")._meta.ui.resourceUri, "ui://project-review");
+  assert.doesNotMatch(contents[0]?.text ?? "", /USB-C Controller/);
+  const denied = await call("tools/call", { name:"get_project", arguments:{project_id:id} }, "test-user-b", "get_project");
+  assert.equal(denied.data.result?.structuredContent?.found, false);
 });

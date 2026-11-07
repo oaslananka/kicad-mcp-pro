@@ -65,7 +65,7 @@ class ExperienceSnapshot:
     project_registration: dict[str, Any] | None = None
     client_grant: dict[str, Any] | None = None
     local_connector: dict[str, Any] = field(
-        default_factory=lambda: {"enabled": True, "running": True}
+        default_factory=lambda: {"enabled": False, "running": False}
     )
     cloud_connector: dict[str, Any] = field(
         default_factory=lambda: {"enabled": False, "connected": False}
@@ -92,7 +92,7 @@ def calculate_experience_snapshot(
     account_authenticated: bool = False,
     device_paired: bool = False,
     device_revoked: bool = False,
-    client_granted: bool = True,
+    client_granted: bool = False,
     cloud_connector_enabled: bool = False,
     cloud_connector_status: str = "idle",
     active_cloud_project_id: str | None = None,
@@ -140,7 +140,7 @@ def calculate_experience_snapshot(
         }
 
     # 1. Device revocation overrides everything
-    if device_revoked:
+    if mode == "cloud" and device_revoked:
         return ExperienceSnapshot(
             mode=mode,
             readiness=ReadinessStatus.DEVICE_REVOKED.value,
@@ -309,6 +309,18 @@ def calculate_experience_snapshot(
                 available_actions=["retry_connector", "stop_connector"],
             )
 
+        if cloud_connector_status != "connected":
+            return ExperienceSnapshot(
+                mode=mode,
+                readiness=ReadinessStatus.UNKNOWN_STALE.value,
+                reason_code="connector_status_unknown",
+                engine_capabilities=engine_caps,
+                project=project_info,
+                computer=computer_info,
+                ai_client=ai_client_info,
+                available_actions=["retry_connector", "stop_connector"],
+            )
+
         # Cloud Ready
         return ExperienceSnapshot(
             mode=mode,
@@ -341,7 +353,7 @@ def calculate_experience_snapshot(
             available_actions=["select_project", "use_cloud_mode"],
         )
 
-    if not cli_available and not ipc_available:
+    if not (cli_available or ipc_available or engine_caps.file_available):
         return ExperienceSnapshot(
             mode=mode,
             readiness=ReadinessStatus.ENGINE_CAPABILITY_UNAVAILABLE.value,
@@ -359,7 +371,9 @@ def calculate_experience_snapshot(
         )
 
     # Local Ready (even without Cloud account or IPC)
-    available_actions.extend(["open_project", "run_drc"])
+    available_actions.append("open_project")
+    if engine_caps.drc_available:
+        available_actions.append("run_drc")
     return ExperienceSnapshot(
         mode=mode,
         readiness=ReadinessStatus.READY.value,
@@ -411,3 +425,19 @@ def sanitize_experience_for_cloud(snapshot: ExperienceSnapshot) -> dict[str, Any
         return d
 
     return cast("dict[str, Any]", _strip_secrets(raw))
+
+
+def current_experience_snapshot() -> ExperienceSnapshot:
+    """Derive local readiness from configured project and executable state."""
+    from kicad_mcp.config import get_config
+    from kicad_mcp.discovery import find_kicad_version
+
+    config = get_config()
+    project_dir = config.project_dir
+    has_project = bool(
+        project_dir and project_dir.is_dir() and any(project_dir.glob("*.kicad_pro"))
+    )
+    cli_available = bool(config.kicad_cli.is_file() and find_kicad_version(config.kicad_cli))
+    return calculate_experience_snapshot(
+        project_dir=project_dir, has_kicad_project=has_project, cli_available=cli_available
+    )

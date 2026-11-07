@@ -23,23 +23,8 @@ class MacOSKeychainCredentialStore(PlatformCredentialStore):
     """macOS user Keychain credential store."""
 
     def save_key(self, record_id: str, key_pem: bytes) -> None:
-        slot = _validate_slot(record_id)
-        # Store as hex to ensure safe transmission across CLI args
-        payload = key_pem.hex()
-        cmd = [
-            "/usr/bin/security",
-            "add-generic-password",
-            "-s",
-            _SERVICE_NAME,
-            "-a",
-            f"{slot}_key",
-            "-w",
-            payload,
-            "-U",
-        ]
-        res = subprocess.run(cmd, capture_output=True, check=False)  # nosec B603 # nosemgrep
-        if res.returncode != 0:
-            raise RuntimeError(f"Failed to store key in macOS Keychain: code {res.returncode}")
+        _validate_slot(record_id)
+        raise RuntimeError("Native Keychain writes are unavailable")
 
     def load_key(self, record_id: str) -> bytes | None:
         slot = _validate_slot(record_id)
@@ -62,22 +47,8 @@ class MacOSKeychainCredentialStore(PlatformCredentialStore):
             return None
 
     def save_binding(self, record_id: str, binding: dict[str, str]) -> None:
-        slot = _validate_slot(record_id)
-        payload = json.dumps(binding, sort_keys=True).encode("utf-8").hex()
-        cmd = [
-            "/usr/bin/security",
-            "add-generic-password",
-            "-s",
-            _SERVICE_NAME,
-            "-a",
-            f"{slot}_binding",
-            "-w",
-            payload,
-            "-U",
-        ]
-        res = subprocess.run(cmd, capture_output=True, check=False)  # nosec B603 # nosemgrep
-        if res.returncode != 0:
-            raise RuntimeError(f"Failed to store binding in macOS Keychain: code {res.returncode}")
+        _validate_slot(record_id)
+        raise RuntimeError("Native Keychain writes are unavailable")
 
     def load_binding(self, record_id: str) -> dict[str, str] | None:
         slot = _validate_slot(record_id)

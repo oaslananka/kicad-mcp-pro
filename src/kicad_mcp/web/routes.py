@@ -32,6 +32,22 @@ from ..path_safety import resolve_under
 from ..project.http_binding import PROJECT_CONFIG_FIELDS, HttpProjectBinding
 from ..tools.router import available_profiles, tool_count_for_profile
 from .dashboard import DASHBOARD_HTML
+from .owner_routes import (
+    _owner_session,
+    api_cloud_connector_disable,
+    api_cloud_connector_enable,
+    api_cloud_project_active,
+    api_cloud_setup_cancel,
+    api_cloud_setup_start,
+    api_cloud_setup_status,
+    api_maintenance_cleanup_apply,
+    api_maintenance_cleanup_preview,
+    api_maintenance_quiesce,
+    api_maintenance_repair_apply,
+    api_maintenance_repair_preview,
+    api_maintenance_resume,
+    api_owner_session,
+)
 from .state import get_metrics_snapshot, get_server_handle, get_start_time
 
 logger = structlog.get_logger(__name__)
@@ -696,197 +712,34 @@ async def api_artifacts_file(request: Request) -> JSONResponse | FileResponse:  
     return FileResponse(resolved, media_type=media_type)
 
 
-# ---------------------------------------------------------------------------
-# Owner-authorized loopback API handlers
-# ---------------------------------------------------------------------------
-
-_ALLOWED_ORIGIN_HOSTS = {"127.0.0.1", "localhost", "tauri.localhost"}
-
-
-def _verify_owner_origin(request: Request) -> bool:
-    """Validate that mutating requests originate only from approved local/desktop contexts."""
-    origin = request.headers.get("origin")
-    if not origin:
-        host_header = request.headers.get("host", "")
-        host = host_header.split(":")[0]
-        return host in _ALLOWED_ORIGIN_HOSTS
-    try:
-        from urllib.parse import urlparse
-
-        parsed = urlparse(origin)
-        if parsed.scheme in ("http", "https"):
-            return parsed.hostname in _ALLOWED_ORIGIN_HOSTS
-        if parsed.scheme == "tauri":
-            return parsed.hostname in ("localhost", "")
-    except Exception:
-        return False
-    return False
-
-
 async def api_experience(request: Request) -> JSONResponse:
+    """Report real local capabilities only to an authenticated local owner session."""
+    if _owner_session(request) is None:
+        return JSONResponse({"error": "Owner session required"}, status_code=403)
     from kicad_mcp.services.experience import calculate_experience_snapshot
 
-    snapshot = calculate_experience_snapshot()
-    return JSONResponse(snapshot.to_dict())
-
-
-async def api_cloud_setup_start(request: Request) -> JSONResponse:
-    if not _verify_owner_origin(request):
-        return JSONResponse({"error": "Origin not allowed"}, status_code=403)
-    from kicad_mcp.services.cloud_onboarding import CloudOnboardingService
-
-    svc = CloudOnboardingService()
+    cfg = get_config()
+    project_dir = cfg.project_dir
+    has_project = bool(
+        project_dir and project_dir.is_dir() and any(project_dir.glob("*.kicad_pro"))
+    )
     try:
-        body: dict[str, object] = {}
-        try:
-            raw = await request.json()
-            if isinstance(raw, dict):
-                body = raw
-        except Exception as err:
-            logger.debug("Failed parsing body from json in setup start", error=str(err))
-        project_path = str(body.get("project_path") or "")
-        project_dir = Path(project_path) if project_path else Path.cwd()
-        origin = str(body.get("origin") or "") or "https://kicad-mcp-pro.oaslananka.dev"
-        alias = str(body.get("alias") or "") or None
-
-        session = svc.start_setup(project_dir=project_dir, cloud_origin=origin, alias=alias)
-        return JSONResponse(
-            {"ok": True, "session": session.__dict__ if hasattr(session, "__dict__") else session}
-        )
-    except Exception as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
-
-
-async def api_cloud_setup_status(request: Request) -> JSONResponse:
-    from kicad_mcp.services.cloud_onboarding import CloudOnboardingService
-
-    svc = CloudOnboardingService()
-    session_id = request.query_params.get("session_id", "")
-    if session_id:
-        status = svc.get_setup_status(session_id)
-        return JSONResponse(
-            {
-                "ok": True,
-                "status": status.status.value,
-                "step": status.step.value,
-                "error": status.error,
-            }
-        )
-    inspect = svc.inspect_current_setup("https://kicad-mcp-pro.oaslananka.dev")
-    return JSONResponse(
-        {
-            "ok": True,
-            "status": inspect.status.value,
-            "step": inspect.step.value,
-            "error": inspect.error,
-        }
-    )
-
-
-async def api_cloud_setup_cancel(request: Request) -> JSONResponse:
-    if not _verify_owner_origin(request):
-        return JSONResponse({"error": "Origin not allowed"}, status_code=403)
-    session_id = request.query_params.get("session_id", "")
-    if not session_id:
-        try:
-            raw = await request.json()
-            if isinstance(raw, dict):
-                session_id = str(raw.get("session_id") or "")
-        except Exception as err:
-            logger.debug("Failed parsing session_id from json body", error=str(err))
-    from kicad_mcp.services.cloud_onboarding import CloudOnboardingService
-
-    svc = CloudOnboardingService()
-    svc.cancel_setup(session_id)
-    return JSONResponse({"ok": True, "status": "cancelled"})
-
-
-async def api_cloud_connector_enable(request: Request) -> JSONResponse:
-    if not _verify_owner_origin(request):
-        return JSONResponse({"error": "Origin not allowed"}, status_code=403)
-    from kicad_mcp.services.connector_lifecycle import ConnectorLifecycleManager
-
-    mgr = ConnectorLifecycleManager()
-    mgr.enable_connector()
-    return JSONResponse({"ok": True, "status": "enabled"})
-
-
-async def api_cloud_connector_disable(request: Request) -> JSONResponse:
-    if not _verify_owner_origin(request):
-        return JSONResponse({"error": "Origin not allowed"}, status_code=403)
-    from kicad_mcp.services.connector_lifecycle import ConnectorLifecycleManager
-
-    mgr = ConnectorLifecycleManager()
-    mgr.disable_connector()
-    return JSONResponse({"ok": True, "status": "disabled"})
-
-
-async def api_cloud_project_active(request: Request) -> JSONResponse:
-    if not _verify_owner_origin(request):
-        return JSONResponse({"error": "Origin not allowed"}, status_code=403)
-    body: dict[str, object] = {}
+        cli_available = bool(find_kicad_version(cfg.kicad_cli))
+    except (OSError, ValueError):
+        cli_available = False
     try:
-        raw = await request.json()
-        if isinstance(raw, dict):
-            body = raw
-    except Exception as err:
-        logger.debug("Failed parsing body from json in active project", error=str(err))
-    project_path = str(body.get("path") or "")
-    from kicad_mcp.services.connector_lifecycle import ConnectorLifecycleManager
-
-    mgr = ConnectorLifecycleManager()
-    mgr.set_active_project(project_path)
-    return JSONResponse({"ok": True, "active_project": project_path})
-
-
-async def api_maintenance_repair_preview(request: Request) -> JSONResponse:
-    from kicad_mcp.services.maintenance import MaintenanceService
-
-    svc = MaintenanceService()
-    preview = svc.preview_repair()
-    return JSONResponse({"healthy": preview.healthy, "items": preview.items})
-
-
-async def api_maintenance_repair_apply(request: Request) -> JSONResponse:
-    if not _verify_owner_origin(request):
-        return JSONResponse({"error": "Origin not allowed"}, status_code=403)
-    from kicad_mcp.services.maintenance import MaintenanceService
-
-    svc = MaintenanceService()
-    res = svc.apply_repair()
-    return JSONResponse(
-        {"ok": res.success, "repaired_items": res.repaired_items, "message": res.message}
+        ipc = get_ipc_capability_state()
+        ipc_available = bool(ipc.live_pcb_read or ipc.live_schematic_read)
+    except (OSError, ValueError):
+        ipc_available = False
+    snapshot = calculate_experience_snapshot(
+        mode="local",
+        project_dir=project_dir,
+        has_kicad_project=has_project,
+        cli_available=cli_available,
+        ipc_available=ipc_available,
     )
-
-
-async def api_maintenance_cleanup_preview(request: Request) -> JSONResponse:
-    from kicad_mcp.services.maintenance import MaintenanceService
-
-    svc = MaintenanceService()
-    preview = svc.preview_cleanup()
-    return JSONResponse(
-        {
-            "targets_to_remove": preview.targets_to_remove,
-            "preserved_user_files": preview.preserved_user_files,
-        }
-    )
-
-
-async def api_maintenance_cleanup_apply(request: Request) -> JSONResponse:
-    if not _verify_owner_origin(request):
-        return JSONResponse({"error": "Origin not allowed"}, status_code=403)
-    from kicad_mcp.services.maintenance import MaintenanceService
-
-    svc = MaintenanceService()
-    res = svc.apply_cleanup()
-    return JSONResponse(
-        {
-            "ok": res.success,
-            "removed_targets": res.removed_targets,
-            "preserved_user_files": res.preserved_user_files,
-            "message": res.message,
-        }
-    )
+    return JSONResponse(snapshot.to_dict(), headers={"Cache-Control": "no-store"})
 
 
 # ---------------------------------------------------------------------------
@@ -898,8 +751,9 @@ web_routes: list[Route] = [
     Route("/api/health", endpoint=api_health, methods=["GET"]),
     Route("/api/info", endpoint=api_info, methods=["GET"]),
     Route("/api/experience", endpoint=api_experience, methods=["GET"]),
+    Route("/api/owner/session", endpoint=api_owner_session, methods=["GET"]),
     Route("/api/cloud/setup/start", endpoint=api_cloud_setup_start, methods=["POST"]),
-    Route("/api/cloud/setup/status", endpoint=api_cloud_setup_status, methods=["GET"]),
+    Route("/api/cloud/setup/status", endpoint=api_cloud_setup_status, methods=["POST"]),
     Route("/api/cloud/setup/cancel", endpoint=api_cloud_setup_cancel, methods=["POST"]),
     Route("/api/cloud/connector/enable", endpoint=api_cloud_connector_enable, methods=["POST"]),
     Route("/api/cloud/connector/disable", endpoint=api_cloud_connector_disable, methods=["POST"]),
@@ -907,6 +761,8 @@ web_routes: list[Route] = [
     Route(
         "/api/maintenance/repair/preview", endpoint=api_maintenance_repair_preview, methods=["GET"]
     ),
+    Route("/api/maintenance/quiesce", endpoint=api_maintenance_quiesce, methods=["POST"]),
+    Route("/api/maintenance/resume", endpoint=api_maintenance_resume, methods=["POST"]),
     Route("/api/maintenance/repair/apply", endpoint=api_maintenance_repair_apply, methods=["POST"]),
     Route(
         "/api/maintenance/cleanup/preview",

@@ -34,8 +34,8 @@ export function renderDevicesPage(
           <li className={clients.length>0?"progress-complete":"progress-current"}>
             <span className="progress-number">04</span><div><strong>AI client</strong>
               <small>{clients.length>0?"Client connected":"Connect ChatGPT, Claude or another app"}</small></div></li>
-          <li className="progress-current"><span className="progress-number">05</span>
-            <div><strong>Grant access</strong><small>Choose permissions per project and client</small></div></li>
+          <li className={savedGrants.some(g=>projects.some(p=>p.id===g.projectId&&p.enabled)&&clients.includes(g.clientId))?"progress-complete":"progress-current"}><span className="progress-number">05</span>
+            <div><strong>Grant access</strong><small>{savedGrants.some(g=>projects.some(p=>p.id===g.projectId&&p.enabled)&&clients.includes(g.clientId))?"Project permission saved":"Choose permissions per project and client"}</small></div></li>
         </ol>
       </nav>:null}
       {!enrollmentAvailable && devices.length===0?<section className="card status-card" id="registered-projects"><div>
@@ -48,13 +48,13 @@ export function renderDevicesPage(
       </div></section>:
         <>
           <section className="card quickstart-card">
-            <div className="card-kicker"><Icon name="cpu" size={15}/> SINGLE COMMAND ONBOARDING</div>
-            <h2>Connect your computer in seconds</h2>
-            <p>Run this single command in your local terminal to pair your device, select a project, and establish secure read-only MCP access automatically:</p>
+            <div className="card-kicker"><Icon name="cpu" size={15}/> PAIR YOUR COMPUTER</div>
+            <h2>Connect your computer</h2>
+            <p>Open KiCad MCP Pro on your computer and use Cloud setup to pair it. You can also start setup from a terminal:</p>
             <div className="local-setup-command">
               <code>kicad-mcp-pro cloud setup</code>
             </div>
-            <p className="field-help">The terminal will open your browser for one-click approval. No technical IDs or manual keys required.</p>
+            <p className="field-help">Follow the browser approval and choose the projects and AI clients to authorize.</p>
             <div className="local-folder-browse"><strong>Prefer choosing a folder?</strong>
               <p>On your own computer, run <code>kicad-mcp-pro cloud setup --browse</code> to select your KiCad
                 project directory using a native folder picker. Your local path is never sent to Cloud.

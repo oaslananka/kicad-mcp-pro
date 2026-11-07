@@ -48,7 +48,7 @@ def test_maintenance_apply_cleanup_removes_app_state_only(tmp_path) -> None:
 
     reg_dir = tmp_path / "registry"
     reg_dir.mkdir()
-    app_file = reg_dir / "pairing_state.json"
+    app_file = reg_dir / "connector-status.json"
     app_file.write_text("{}", encoding="utf-8")
 
     svc = MaintenanceService(registry_root=reg_dir)
@@ -61,3 +61,33 @@ def test_maintenance_apply_cleanup_removes_app_state_only(tmp_path) -> None:
 
     # App state cleaned
     assert not app_file.exists()
+
+
+def test_cleanup_preserves_unknown_and_nested_user_data(tmp_path) -> None:
+    root = tmp_path / "registry"
+    root.mkdir()
+    nested = root / "projects"
+    nested.mkdir()
+    user_file = nested / "design.kicad_pcb"
+    user_file.write_text("board")
+    unknown = root / "personal.txt"
+    unknown.write_text("data")
+    result = MaintenanceService(registry_root=root).apply_cleanup(clean_client_configs=False)
+    assert result.success
+    assert user_file.read_text() == "board"
+    assert unknown.read_text() == "data"
+
+
+def test_cleanup_preview_lists_owned_client_entries(tmp_path, monkeypatch) -> None:
+    import kicad_mcp.services.maintenance as maintenance
+
+    monkeypatch.setattr(
+        maintenance,
+        "get_owned_client_configs",
+        lambda _root: {"claude": [str(tmp_path / "claude-settings.json")]},
+    )
+    preview = MaintenanceService(registry_root=tmp_path).preview_cleanup()
+    assert preview.client_entries_to_remove == [
+        {"client": "claude", "config_file": str(tmp_path / "claude-settings.json")}
+    ]
+    assert not preview.targets_to_remove

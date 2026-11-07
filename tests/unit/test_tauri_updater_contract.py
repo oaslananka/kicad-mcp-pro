@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,17 +16,13 @@ def _contains_key(value: object, target: str) -> bool:
     return False
 
 
-def test_updater_is_configured_in_runtime_and_shipped_configuration() -> None:
-    manifest = tomllib.loads((TAURI_DIR / "Cargo.toml").read_text(encoding="utf-8"))
-    capability = json.loads(
-        (TAURI_DIR / "capabilities" / "default.json").read_text(encoding="utf-8")
-    )
+def test_unsigned_build_rejects_update_checks() -> None:
+    config = json.loads((TAURI_DIR / "tauri.conf.json").read_text(encoding="utf-8"))
     runtime = (TAURI_DIR / "src" / "lib.rs").read_text(encoding="utf-8")
 
-    assert manifest["dependencies"].get("tauri-plugin-updater") == "2"
-    assert "tauri_plugin_updater" in runtime
-    assert any(permission.startswith("updater:") for permission in capability["permissions"])
-    assert "check_update" in runtime
+    assert config["plugins"]["updater"]["pubkey"] == ""
+    assert '"Update signing is not configured' in runtime
+    assert "Duration::from_secs(24 * 60 * 60)" in runtime
 
 
 def test_generated_acl_schemas_expose_safe_updater_permissions() -> None:

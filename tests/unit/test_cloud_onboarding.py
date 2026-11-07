@@ -72,7 +72,7 @@ def test_failure_after_pairing_preserves_paired_keys(tmp_registry, tmp_path) -> 
     service = CloudOnboardingService(registry_root=tmp_registry)
 
     # Simulate established key and binding
-    slot = "slot-abc"
+    slot = "a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c8d"
     keyfile = tmp_registry / "keys" / f"{slot}.pem"
     keyfile.write_text("DUMMY_KEY")
     binding_file = tmp_registry / "keys" / f"{slot}.pem.cloud-binding-v1.json"
@@ -137,3 +137,68 @@ def test_repeated_start_reuses_pending_session(tmp_registry: Path, tmp_path: Pat
         s1 = service.start_setup(proj, cloud_origin="https://kicad-mcp-pro.oaslananka.dev")
         s2 = service.start_setup(proj, cloud_origin="https://kicad-mcp-pro.oaslananka.dev")
         assert s1.session_id == s2.session_id
+
+
+def test_poll_does_not_redeem_until_signed_approval(tmp_registry, tmp_path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "board.kicad_pro").write_text("project")
+    service = CloudOnboardingService(tmp_registry)
+    with patch("kicad_mcp.cloud_pair.start_enrollment", return_value=("url", "id", "code", 300)):
+        session = service.start_setup(project)
+    (tmp_registry / "keys" / f"{session.key_slot}.challenge.json").write_text("{}")
+    with (
+        patch("kicad_mcp.cloud_pair.enrollment_approved", return_value=False),
+        patch("kicad_mcp.cloud_pair.redeem_enrollment") as redeem,
+    ):
+        assert service.get_setup_status(session.session_id).status == SetupStatus.PAIRING_PENDING
+        redeem.assert_not_called()
+
+
+def test_register_rejects_path_traversal_without_network(tmp_registry, tmp_path) -> None:
+    service = CloudOnboardingService(tmp_registry)
+    with patch("kicad_mcp.cloud_pair.register_device_project") as register:
+        result = service.register_project_step("../../outside", tmp_path)
+        assert not result.success
+        register.assert_not_called()
+
+
+def test_approval_status_is_signed_and_invalid_response_fails(tmp_path) -> None:
+    import base64
+    import time
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from kicad_mcp import cloud_pair
+
+    key = Ed25519PrivateKey.generate()
+    challenge = "a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c8d"
+    device_code = base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("=")
+    data = {
+        "origin": "https://cloud.example",
+        "challenge": challenge,
+        "secret": device_code,
+        "expiry": time.time_ns() // 1_000_000 + 60000,
+    }
+
+    def post(origin, path, body, status):
+        assert path == "/api/v1/pairing/device/status"
+        signature = base64.urlsafe_b64decode(body["signature"] + "==")
+        key.public_key().verify(
+            signature,
+            b"kicad-cloud-pairing-status-v1\x00"
+            + challenge.encode()
+            + b"\x00"
+            + device_code.encode(),
+        )
+        return {"approved": False}
+
+    with (
+        patch("kicad_mcp.cloud_managed_connector._read_private_json", return_value=data),
+        patch("kicad_mcp.cloud_pair._load_owner_key", return_value=key),
+        patch("kicad_mcp.cloud_pair._post", side_effect=post),
+    ):
+        assert not cloud_pair.enrollment_approved("https://cloud.example", tmp_path / "key.pem")
+        data["origin"] = "https://other.example"
+        with pytest.raises(cloud_pair.CloudPairingError):
+            cloud_pair.enrollment_approved("https://cloud.example", tmp_path / "key.pem")

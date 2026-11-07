@@ -6,10 +6,9 @@ cancellation, and error recovery without fabricating bearer tokens or bypasses.
 
 from __future__ import annotations
 
-import json
 import os
 import stat
-import time
+import threading
 import uuid
 from dataclasses import dataclass
 from enum import StrEnum
@@ -17,7 +16,8 @@ from pathlib import Path
 
 from kicad_mcp import cloud_pair
 from kicad_mcp.cloud_local_registry import default_registry_root
-from kicad_mcp.cloud_pair_keys import _read_owner_binding
+from kicad_mcp.cloud_managed_connector import _write_private_json
+from kicad_mcp.cloud_pair_keys import _open_owner_private_dir, _read_owner_binding
 from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
 DEFAULT_CLOUD_ORIGIN = "https://kicad-mcp-pro.oaslananka.dev"
@@ -82,17 +82,23 @@ class CloudOnboardingService:
     def __init__(self, registry_root: Path | None = None) -> None:
         self.root = registry_root if registry_root is not None else default_registry_root()
         self._sessions: dict[str, SetupSession] = {}
+        self._lock = threading.RLock()
 
     def _ensure_registry_dirs(self) -> tuple[Path, Path]:
         projects_dir = self.root / "projects"
         keys_dir = self.root / "keys"
+        if self.root.is_symlink() or projects_dir.is_symlink() or keys_dir.is_symlink():
+            raise ValueError("Invalid registry directory")
         self.root.mkdir(parents=True, mode=stat.S_IRWXU, exist_ok=True)
-        projects_dir.mkdir(parents=True, mode=stat.S_IRWXU, exist_ok=True)
-        keys_dir.mkdir(parents=True, mode=stat.S_IRWXU, exist_ok=True)
-        if hasattr(os, "chmod"):
-            os.chmod(self.root, stat.S_IRWXU)  # nosec B103 # nosemgrep
-            os.chmod(projects_dir, stat.S_IRWXU)  # nosec B103 # nosemgrep
-            os.chmod(keys_dir, stat.S_IRWXU)  # nosec B103 # nosemgrep
+        if os.name == "posix":
+            fd = _open_owner_private_dir(self.root / "check")
+            os.close(fd)
+        projects_dir.mkdir(mode=stat.S_IRWXU, exist_ok=True)
+        keys_dir.mkdir(mode=stat.S_IRWXU, exist_ok=True)
+        if os.name == "posix":
+            for directory in (projects_dir, keys_dir):
+                fd = _open_owner_private_dir(directory / "check")
+                os.close(fd)
         return projects_dir, keys_dir
 
     def inspect_current_setup(self, cloud_origin: str) -> SetupProgress:
@@ -124,10 +130,13 @@ class CloudOnboardingService:
                 project_id=existing.get("projectId"),
             )
 
+        # A valid registration for another authority must not be treated as an
+        # empty local state. Re-enrollment requires an explicit handoff.
         return SetupProgress(
             session_id=None,
-            status=SetupStatus.NOT_ENROLLED,
+            status=SetupStatus.FAILED,
             step=OnboardingStep.IDLE,
+            error="Existing registration belongs to a different Cloud origin.",
         )
 
     def start_setup(
@@ -138,6 +147,16 @@ class CloudOnboardingService:
         new_device: bool = False,
     ) -> SetupSession:
         """Start or resume onboarding without blocking. Returns SetupSession."""
+        with self._lock:
+            return self._start_setup(project_dir, cloud_origin, alias, new_device)
+
+    def _start_setup(
+        self, project_dir: Path, cloud_origin: str, alias: str | None, new_device: bool
+    ) -> SetupSession:
+        project_dir = project_dir.resolve()
+        if not project_dir.is_dir() or len(list(project_dir.glob("*.kicad_pro"))) != 1:
+            raise ValueError("Select a directory containing exactly one KiCad project")
+        cloud_origin = cloud_pair._origin(cloud_origin)[2]
         _, keys_dir = self._ensure_registry_dirs()
 
         # Check for active session with same project and origin
@@ -149,10 +168,18 @@ class CloudOnboardingService:
             ):
                 return sess
 
+        # A replacement requires the explicit handoff workflow.
+        if new_device and any((self.root / "projects").iterdir()):
+            raise ValueError("Existing registration requires explicit handoff")
+
         # Check if already registered
         if not new_device:
             current = self.inspect_current_setup(cloud_origin)
-            if current.status == SetupStatus.PROJECT_REGISTERED:
+            if (
+                current.status == SetupStatus.PROJECT_REGISTERED
+                and Path(_single_registered_identity(self.root)["directory"]).resolve()
+                == project_dir
+            ):
                 session_id = str(uuid.uuid4())
                 sess = SetupSession(
                     session_id=session_id,
@@ -165,6 +192,8 @@ class CloudOnboardingService:
                 )
                 self._sessions[session_id] = sess
                 return sess
+            if current.status in (SetupStatus.PROJECT_REGISTERED, SetupStatus.FAILED):
+                raise ValueError("Existing registration requires explicit handoff or repair")
 
         device_alias = alias or _DEFAULT_DEVICE_ALIAS
         slot = str(uuid.uuid4())
@@ -189,6 +218,11 @@ class CloudOnboardingService:
         return session
 
     def get_setup_status(self, session_id: str) -> SetupProgress:
+        """Advance one session once at a time."""
+        with self._lock:
+            return self._get_setup_status(session_id)
+
+    def _get_setup_status(self, session_id: str) -> SetupProgress:
         """Get progress for a setup session."""
         session = self._sessions.get(session_id)
         if not session:
@@ -211,7 +245,17 @@ class CloudOnboardingService:
                     error="Challenge context missing",
                 )
             try:
-                device_id, fingerprint = cloud_pair.redeem_enrollment(session.cloud_origin, keyfile)
+                if not cloud_pair.enrollment_approved(session.cloud_origin, keyfile):
+                    return SetupProgress(
+                        session_id=session_id,
+                        status=SetupStatus.PAIRING_PENDING,
+                        step=session.current_step,
+                        approval_url=session.approval_url,
+                        user_code=session.user_code,
+                    )
+                device_id, _fingerprint = cloud_pair.redeem_enrollment(
+                    session.cloud_origin, keyfile
+                )
                 session.device_id = device_id
                 session.current_step = OnboardingStep.PROJECT_REGISTRATION_PENDING
                 return SetupProgress(
@@ -220,23 +264,27 @@ class CloudOnboardingService:
                     step=session.current_step,
                     device_id=device_id,
                 )
-            except cloud_pair.CloudPairingError:
-                # Still waiting for user approval
+            except (OSError, ValueError):
                 return SetupProgress(
                     session_id=session_id,
-                    status=SetupStatus.PAIRING_PENDING,
+                    status=SetupStatus.FAILED,
                     step=session.current_step,
-                    approval_url=session.approval_url,
-                    user_code=session.user_code,
+                    error="Pairing status unavailable",
                 )
 
         if session.current_step == OnboardingStep.PROJECT_REGISTRATION_PENDING:
-            return SetupProgress(
-                session_id=session_id,
-                status=SetupStatus.PAIRED,
-                step=session.current_step,
-                device_id=session.device_id,
+            result = self.register_project_step(
+                session.key_slot or "", session.project_dir, session.cloud_origin
             )
+            if not result.success:
+                return SetupProgress(
+                    session_id=session_id,
+                    status=SetupStatus.FAILED,
+                    step=session.current_step,
+                    error=result.error,
+                )
+            session.project_id = result.project_id
+            session.current_step = OnboardingStep.COMPLETE
 
         if session.current_step == OnboardingStep.COMPLETE:
             return SetupProgress(
@@ -256,6 +304,10 @@ class CloudOnboardingService:
 
     def cancel_setup(self, session_id: str = "") -> bool:
         """Cancel a pending setup session and clean up unredeemed keys."""
+        with self._lock:
+            return self._cancel_setup(session_id)
+
+    def _cancel_setup(self, session_id: str = "") -> bool:
         if not session_id:
             cancelled_any = False
             for sid in list(self._sessions.keys()):
@@ -287,7 +339,16 @@ class CloudOnboardingService:
         cloud_origin: str = DEFAULT_CLOUD_ORIGIN,
     ) -> RegisterProjectResult:
         """Register project using an already-paired key, preserving paired keys on failure."""
+        try:
+            if str(uuid.UUID(key_slot)) != key_slot:
+                raise ValueError
+        except (ValueError, AttributeError):
+            return RegisterProjectResult(success=False, error="Invalid key slot")
         projects_dir, keys_dir = self._ensure_registry_dirs()
+        if any(projects_dir.iterdir()):
+            return RegisterProjectResult(
+                success=False, error="Existing registration requires explicit handoff"
+            )
         keyfile = keys_dir / f"{key_slot}.pem"
         if not keyfile.exists():
             return RegisterProjectResult(success=False, error="Keyfile does not exist")
@@ -302,10 +363,10 @@ class CloudOnboardingService:
         if not owner_sub or not device_id:
             return RegisterProjectResult(success=False, error="Owner identity or device ID missing")
 
-        stem = project_dir.name
-        pros = list(project_dir.glob("*.kicad_pro"))
-        if pros:
-            stem = pros[0].stem
+        pros = list(project_dir.glob("*.kicad_pro")) if project_dir.is_dir() else []
+        if len(pros) != 1:
+            return RegisterProjectResult(success=False, error="Select exactly one KiCad project")
+        stem = pros[0].stem
 
         try:
             project_res = cloud_pair.register_device_project(cloud_origin, keyfile, alias=stem)
@@ -314,6 +375,11 @@ class CloudOnboardingService:
             return RegisterProjectResult(success=False, error=str(exc))
 
         project_id = str(project_res["projectId"])
+        if (
+            cloud_pair._UUID.fullmatch(project_id) is None
+            or project_res.get("ownerSub") != owner_sub
+        ):
+            return RegisterProjectResult(success=False, error="Project identity mismatch")
         record = {
             "ownerSub": owner_sub,
             "cloudOrigin": cloud_origin,
@@ -323,43 +389,21 @@ class CloudOnboardingService:
             "directory": str(project_dir.resolve()),
             "filenameStem": stem,
         }
-        record_file = projects_dir / f"{project_id}.json"
-        with open(record_file, "w", encoding="utf-8") as f:
-            json.dump(record, f, indent=2)
-        if hasattr(os, "chmod"):
-            os.chmod(record_file, 0o600)
-
-        # Set as active project
+        _write_private_json(projects_dir, f"{project_id}.json", record)
         self.select_active_project(project_id)
         return RegisterProjectResult(success=True, project_id=project_id)
 
     def select_active_project(self, project_id: str) -> bool:
-        """Set the active Cloud project pointer."""
-        record_file = self.root / "projects" / f"{project_id}.json"
-        if not record_file.exists():
+        """Select only a verified local registration."""
+        from kicad_mcp.services.connector_lifecycle import ConnectorLifecycleManager
+
+        try:
+            ConnectorLifecycleManager(self.root).set_active_project(project_id)
+        except (OSError, ValueError):
             return False
-        active_file = self.root / "active_project.json"
-        with open(active_file, "w", encoding="utf-8") as f:
-            json.dump({"activeProjectId": project_id, "updatedAt": time.time()}, f)
-        if hasattr(os, "chmod"):
-            os.chmod(active_file, 0o600)
         return True
 
     def get_active_project_id(self) -> str | None:
-        """Read the currently active Cloud project ID."""
-        active_file = self.root / "active_project.json"
-        if active_file.exists():
-            try:
-                with open(active_file, encoding="utf-8") as f:
-                    data = json.load(f)
-                val = data.get("activeProjectId")
-                return str(val) if val is not None else None
-            except (OSError, json.JSONDecodeError):
-                pass
-        # Fall back to single project in registry if only one exists
-        projects_dir = self.root / "projects"
-        if projects_dir.exists():
-            projs = list(projects_dir.glob("*.json"))
-            if len(projs) == 1:
-                return projs[0].stem
-        return None
+        from kicad_mcp.services.connector_lifecycle import ConnectorLifecycleManager
+
+        return ConnectorLifecycleManager(self.root).get_active_project_id()

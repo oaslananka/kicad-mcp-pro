@@ -61,8 +61,9 @@ def test_macos_keychain_crud() -> None:
 
     with patch("subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=0, stdout=key_pem.hex().encode())
-        store.save_key(record_id, key_pem)
-        assert mock_run.called
+        with pytest.raises(RuntimeError, match="Native Keychain writes"):
+            store.save_key(record_id, key_pem)
+        mock_run.assert_not_called()
 
         loaded = store.load_key(record_id)
         assert loaded == key_pem

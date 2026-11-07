@@ -255,3 +255,13 @@ test("device and project controls show aliases while keeping opaque IDs in forms
     "unsafe'$(touch /tmp/not-allowed)");
   assert.doesNotMatch(risky,/cloud register-project/);
 });
+
+test("account snapshot uses real counts and suggests next missing step",()=>{
+  const empty=renderAccount("Engineer",["google"],[],{devices:0,projects:0,clients:0,grants:0});
+  assert.match(empty,/0 paired devices/);
+  assert.match(empty,/Pair a computer/);
+  const ready=renderAccount("Engineer",["google"],[],{devices:1,projects:2,clients:1,grants:1});
+  assert.match(ready,/2 enabled projects/);
+  assert.match(ready,/Review device and project access/);
+  assert.match(renderAccount("Engineer"),/Workspace snapshot unavailable/);
+});

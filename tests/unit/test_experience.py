@@ -103,3 +103,32 @@ def test_cloud_sanitization_removes_local_paths_and_secrets() -> None:
     assert "ConfidentialBoard" not in str(sanitized)
     assert "private_key" not in sanitized
     assert "secret" not in str(sanitized)
+
+
+def test_cloud_unknown_connector_and_grant_do_not_claim_ready(tmp_path) -> None:
+    args = dict(
+        mode="cloud",
+        project_dir=tmp_path,
+        has_kicad_project=True,
+        account_authenticated=True,
+        device_paired=True,
+        cloud_connector_enabled=True,
+    )
+    assert calculate_experience_snapshot(**args).readiness == ReadinessStatus.PROJECT_GRANT_REQUIRED
+    assert (
+        calculate_experience_snapshot(**args, client_granted=True).readiness
+        == ReadinessStatus.UNKNOWN_STALE
+    )
+    assert (
+        calculate_experience_snapshot(
+            **args, client_granted=True, cloud_connector_status="connected"
+        ).readiness
+        == ReadinessStatus.READY
+    )
+
+
+def test_revoked_cloud_device_does_not_block_local_mode(tmp_path) -> None:
+    snapshot = calculate_experience_snapshot(
+        project_dir=tmp_path, has_kicad_project=True, cli_available=True, device_revoked=True
+    )
+    assert snapshot.readiness == ReadinessStatus.READY

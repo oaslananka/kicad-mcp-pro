@@ -7,7 +7,7 @@ COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 COPY assets ./assets
 # Copy only the build helper; never include operator/secret-handling scripts.
-COPY scripts/copy-client-assets.mjs ./scripts/copy-client-assets.mjs
+COPY scripts/copy-client-assets.mjs scripts/build-project-review.mjs ./scripts/
 RUN npm run build && npm prune --omit=dev --ignore-scripts
 
 FROM node:24-trixie-slim@sha256:0820eaa85e07d0490446dd01d14707e17e6108a36988cf374899cd057eb3812d AS runtime

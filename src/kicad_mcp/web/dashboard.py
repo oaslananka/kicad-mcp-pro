@@ -911,7 +911,10 @@ function refreshStatus() {
     }).catch(() => setText('s-uptime', '-'));
 
     // Experience snapshot
-    fetch('/api/experience').then(r => r.ok ? r.json() : null).then(exp => {
+    fetch('/api/owner/session').then(r => {
+      if (!r.ok) return null;
+      return fetch('/api/experience').then(exp => exp.ok ? exp.json() : null);
+    }).then(exp => {
       if (!exp) return;
       setText('exp-readiness', exp.readiness || '-');
       setText('exp-mode', exp.mode || 'local');
@@ -1264,26 +1267,45 @@ function exportClientConfig(client) {
     });
 }
 
-function runMaintenanceRepair() {
+async function runMaintenanceRepair() {
   const el = byId('maintenance-result');
   el.style.display = 'block';
-  el.textContent = 'Running diagnostic repair...';
-  fetch('/api/maintenance/repair/apply', { method: 'POST' })
-    .then(r => r.json())
-    .then(d => {
-      el.textContent = JSON.stringify(d, null, 2);
-    })
-    .catch(err => {
-      el.textContent = 'Repair failed: ' + err.message;
+  el.textContent = 'Inspecting available repair actions...';
+  try {
+    const sessionResponse = await fetch('/api/owner/session', {cache: 'no-store'});
+    if (!sessionResponse.ok) throw new Error('Local owner session unavailable');
+    const session = await sessionResponse.json();
+    const previewResponse = await fetch('/api/maintenance/repair/preview', {cache: 'no-store'});
+    if (!previewResponse.ok) throw new Error('Repair preview unavailable');
+    const preview = await previewResponse.json();
+    el.textContent = JSON.stringify({healthy: preview.healthy, items: preview.items}, null, 2);
+    if (!window.confirm('Apply the reviewed application-only repair?')) return;
+    const response = await fetch('/api/maintenance/repair/apply', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-KiCad-Owner-CSRF': session.csrf_token},
+      body: JSON.stringify({confirmation: preview.confirmation})
     });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Repair rejected');
+    el.textContent = JSON.stringify(result, null, 2);
+  } catch (err) {
+    el.textContent = 'Repair failed: ' + err.message;
+  }
 }
 
 function previewCleanup() {
   const el = byId('maintenance-result');
   el.style.display = 'block';
   el.textContent = 'Scanning application state (user KiCad project files are strictly preserved)...';
-  fetch('/api/maintenance/cleanup/preview')
-    .then(r => r.json())
+  fetch('/api/owner/session', {cache: 'no-store'})
+    .then(r => {
+      if (!r.ok) throw new Error('Local owner session unavailable');
+      return fetch('/api/maintenance/cleanup/preview', {cache: 'no-store'});
+    })
+    .then(r => {
+      if (!r.ok) throw new Error('Cleanup preview unavailable');
+      return r.json();
+    })
     .then(d => {
       el.textContent = JSON.stringify(d, null, 2);
     })

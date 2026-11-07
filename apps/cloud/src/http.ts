@@ -196,7 +196,7 @@ async function handleRequest(
         } else if(path==="/devices/pairing" || path==="/devices/pairing/review"){
           answer=await pairingBrowserResponse(browserRequest,identity,config.publicOrigin,pairings);
         } else {
-          answer=await browserResponse(browserRequest,identity,config.publicOrigin);
+          answer=await browserResponse(browserRequest,identity,config.publicOrigin,devices,grants);
         }
         if (answer) {
           const responseHeaders=Object.fromEntries(answer.headers);

@@ -355,13 +355,53 @@ def start_enrollment(origin: str, alias: str, keyfile: Path) -> tuple[str, str, 
         "expiry": expiry,
         "origin": target[2],
     }
-    with open(chal_file, "w", encoding="utf-8") as f:
-        json.dump(chal_data, f)
-    if hasattr(os, "chmod"):
-        os.chmod(chal_file, 0o600)
+    from kicad_mcp.cloud_managed_connector import _write_private_json
+
+    _write_private_json(chal_file.parent, chal_file.name, chal_data)
 
     expires_in_seconds = max(0, int((expiry - time.time_ns() // 1_000_000) / 1000))
     return review_url, challenge, code, expires_in_seconds
+
+
+def enrollment_approved(origin: str, keyfile: Path) -> bool:
+    """Check signed approval status without consuming the one-use enrollment."""
+    from kicad_mcp.cloud_managed_connector import _read_private_json
+
+    target = _origin(origin)
+    challenge_file = keyfile.with_suffix(".challenge.json")
+    data = _read_private_json(challenge_file.parent, challenge_file.name)
+    challenge, secret, expiry = data.get("challenge"), data.get("secret"), data.get("expiry")
+    if (
+        data.get("origin") != target[2]
+        or not isinstance(challenge, str)
+        or not _UUID.fullmatch(challenge)
+        or not isinstance(secret, str)
+        or not _BASE64URL_32.fullmatch(secret)
+        or type(expiry) is not int
+        or time.time_ns() // 1_000_000 >= expiry
+    ):
+        raise CloudPairingError(_PAIRING_DENIED)
+    key = _load_owner_key(keyfile)
+    proof = (
+        b"kicad-cloud-pairing-status-v1\x00"
+        + challenge.encode("ascii")
+        + b"\x00"
+        + secret.encode("ascii")
+    )
+    signature = base64.urlsafe_b64encode(key.sign(proof)).decode("ascii").rstrip("=")
+    answer = _post(
+        target,
+        "/api/v1/pairing/device/status",
+        {
+            "challengeId": challenge,
+            "deviceCode": secret,
+            "signature": signature,
+        },
+        200,
+    )
+    if set(answer) != {"approved"} or type(answer["approved"]) is not bool:
+        raise CloudPairingError(_PAIRING_DENIED)
+    return answer["approved"]
 
 
 def redeem_enrollment(origin: str, keyfile: Path) -> tuple[str, str]:
@@ -373,8 +413,9 @@ def redeem_enrollment(origin: str, keyfile: Path) -> tuple[str, str]:
     chal_file = keyfile.with_suffix(".challenge.json")
     if not chal_file.is_file():
         raise CloudPairingError("No active pairing challenge found for key.")
-    with open(chal_file, encoding="utf-8") as f:
-        chal_data = json.load(f)
+    from kicad_mcp.cloud_managed_connector import _read_private_json
+
+    chal_data = _read_private_json(chal_file.parent, chal_file.name)
     challenge = chal_data["challenge"]
     device_secret = chal_data["secret"]
     fingerprint = chal_data["fingerprint"]
@@ -428,8 +469,9 @@ def enroll(
     review_url, challenge, code, _ = start_enrollment(origin, alias, keyfile)
     target = _origin(origin)
     chal_file = keyfile.with_suffix(".challenge.json")
-    with open(chal_file, encoding="utf-8") as f:
-        chal_data = json.load(f)
+    from kicad_mcp.cloud_managed_connector import _read_private_json
+
+    chal_data = _read_private_json(chal_file.parent, chal_file.name)
     device_secret = chal_data["secret"]
     key = _load_owner_key(keyfile)
     expiry = chal_data["expiry"]

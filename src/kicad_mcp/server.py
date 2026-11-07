@@ -121,6 +121,8 @@ from .web.state import (
     _METRICS_LOCK,
     _TOOL_CALL_COUNTS,
     _TOOL_LATENCIES_MS,
+    finish_tool_execution,
+    reserve_tool_execution,
     set_server_handle,
 )
 from .wellknown import get_wellknown_metadata
@@ -1329,6 +1331,11 @@ class KiCadFastMCP(FastMCP):
         _log_tool_call_started(name, arguments)
         _error_detail: dict[str, object] = {"tool": name}
         with otel.tool_span(name) as span:
+            if not reserve_tool_execution():
+                return _structured_tool_error_from_message(
+                    "The application is preparing a desktop update. Try again after the update.",
+                    tool_name=name,
+                )
             try:
                 await self._ensure_registered_async()
                 execution_tool_names = getattr(self, "execution_tool_names", None)
@@ -1427,6 +1434,7 @@ class KiCadFastMCP(FastMCP):
                 )
                 raise
             finally:
+                finish_tool_execution()
                 elapsed_ms = (time.perf_counter() - started) * 1000.0
                 _record_tool_metric(name, status, elapsed_ms)
                 otel.record_tool_invocation(name, status, elapsed_ms / 1000.0)

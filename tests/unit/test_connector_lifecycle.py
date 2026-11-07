@@ -57,7 +57,14 @@ async def test_connector_lifecycle_start_and_stop(mock_registry) -> None:
     mgr = ConnectorLifecycleManager(registry_root=mock_registry)
     assert mgr.get_status().state == ConnectorState.OFF
 
-    with patch("kicad_mcp.cloud_managed_connector._run_connector", new_callable=AsyncMock):
+    record = json.loads(next((mock_registry / "projects").glob("*.json")).read_text())
+    with (
+        patch(
+            "kicad_mcp.services.connector_lifecycle._single_registered_identity",
+            return_value=record,
+        ),
+        patch("kicad_mcp.services.connector_lifecycle._run_connector", new_callable=AsyncMock),
+    ):
         started = await mgr.start()
         assert started is True
         assert mgr.is_running() is True
@@ -70,27 +77,36 @@ async def test_connector_lifecycle_start_and_stop(mock_registry) -> None:
 @pytest.mark.asyncio
 async def test_connector_prevents_duplicate_instance(mock_registry) -> None:
     mgr = ConnectorLifecycleManager(registry_root=mock_registry)
-    with patch("kicad_mcp.cloud_managed_connector._run_connector", new_callable=AsyncMock):
+    record = json.loads(next((mock_registry / "projects").glob("*.json")).read_text())
+    with (
+        patch(
+            "kicad_mcp.services.connector_lifecycle._single_registered_identity",
+            return_value=record,
+        ),
+        patch("kicad_mcp.services.connector_lifecycle._run_connector", new_callable=AsyncMock),
+    ):
         assert await mgr.start() is True
         # Second start call is a no-op / returns False or current running status
         assert await mgr.start() is False
 
 
 @pytest.mark.asyncio
-async def test_active_project_selection_and_switch(mock_registry) -> None:
+async def test_multiple_registrations_and_traversal_fail_closed(mock_registry) -> None:
     mgr = ConnectorLifecycleManager(registry_root=mock_registry)
-    # Default active project
-    assert mgr.get_active_project_id() is None or mgr.get_active_project_id() in (
-        "11111111-1111-1111-1111-111111111111",
-        "22222222-2222-2222-2222-222222222222",
-    )
+    assert mgr.get_active_project_id() is None
+    assert not await mgr.switch_active_project("../../outside")
+    assert not await mgr.switch_active_project("22222222-2222-2222-2222-222222222222")
+    assert not (mock_registry / "active_project.json").exists()
 
-    # Explicit switch to proj_b
-    switched = await mgr.switch_active_project("22222222-2222-2222-2222-222222222222")
-    assert switched is True
-    assert mgr.get_active_project_id() == "22222222-2222-2222-2222-222222222222"
 
-    # Switching to unknown project fails closed
-    unknown = await mgr.switch_active_project("99999999-9999-9999-9999-999999999999")
-    assert unknown is False
-    assert mgr.get_active_project_id() == "22222222-2222-2222-2222-222222222222"
+@pytest.mark.asyncio
+async def test_project_switch_refuses_active_connector_without_fencing(tmp_path) -> None:
+    mgr = ConnectorLifecycleManager(registry_root=tmp_path)
+    with (
+        patch.object(mgr, "is_running", return_value=True),
+        patch.object(mgr, "get_active_project_id", return_value="current"),
+        patch.object(mgr, "set_active_project") as setter,
+    ):
+        assert not await mgr.switch_active_project("other")
+        setter.assert_not_called()
+        assert await mgr.switch_active_project("current")
