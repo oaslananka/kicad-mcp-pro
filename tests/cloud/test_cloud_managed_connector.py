@@ -20,7 +20,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from kicad_mcp import cloud_managed_connector as connector
 from kicad_mcp.cloud_local_registry import LocalRegisteredRead
 from kicad_mcp.cloud_outbound_handshake import HandshakeReceipt
-from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
+from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError, _unique
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 from kicad_mcp.cloud_readonly_boundary import LocalReadDeniedError, inspect_readonly
 
@@ -416,7 +416,7 @@ def test_private_json_writer_rejects_oversized_state_and_remove_is_idempotent(
 
 def test_unique_rejects_duplicate_json_keys() -> None:
     with pytest.raises(LocalApprovalDeniedError):
-        connector._unique([("state", "Off"), ("state", "On")])
+        _unique([("state", "Off"), ("state", "On")])
 
 
 def test_enabled_predicate_fails_closed_on_identity_change_or_registry_error(

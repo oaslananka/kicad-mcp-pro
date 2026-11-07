@@ -42,9 +42,6 @@ from kicad_mcp.cloud_pair_keys import (
     _read_private_json,
     _write_private_json,
 )
-from kicad_mcp.cloud_pair_keys import (
-    _unique as _unique,
-)
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
 from kicad_mcp.cloud_reconnect_policy import reconnect_delay_seconds

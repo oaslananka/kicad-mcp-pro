@@ -20,6 +20,15 @@ use tauri::menu::{MenuBuilder, MenuItemBuilder};
 const DESKTOP_API_CONTRACT_VERSION: &str = "1.0.0";
 const DESKTOP_BACKEND_VERSION_POLICY: &str = "exact-release";
 
+// User-authorized second loopback port if the default is already occupied by
+// an older KiCad MCP or another application. Never take over that service.
+const PRIMARY_DASHBOARD_PORT: u16 = 3334;
+const SEPARATE_DASHBOARD_PORT: u16 = 3335;
+
+fn supported_dashboard_port(port: u16) -> bool {
+    matches!(port, PRIMARY_DASHBOARD_PORT | SEPARATE_DASHBOARD_PORT)
+}
+
 fn backend_package_spec() -> String {
     format!("kicad-mcp-pro=={}", env!("CARGO_PKG_VERSION"))
 }
@@ -47,6 +56,8 @@ pub struct ServerProcess {
     pub error: Mutex<Option<String>>,
     pub working_dir: Mutex<Option<PathBuf>>,
     pub preparation_stage: Mutex<String>,
+    /// Selected through the native splash, never from arbitrary HTTP content.
+    pub dashboard_port: Mutex<u16>,
 }
 
 impl ServerProcess {
@@ -56,6 +67,7 @@ impl ServerProcess {
             error: Mutex::new(None),
             working_dir: Mutex::new(None),
             preparation_stage: Mutex::new("idle".to_string()),
+            dashboard_port: Mutex::new(PRIMARY_DASHBOARD_PORT),
         }
     }
 }
@@ -78,6 +90,14 @@ fn get_stage(process: &ServerProcess) -> String {
         .lock()
         .map(|g| g.clone())
         .unwrap_or_else(|_| "idle".to_string())
+}
+
+fn selected_dashboard_port(process: &ServerProcess) -> Result<u16, String> {
+    process
+        .dashboard_port
+        .lock()
+        .map(|port| *port)
+        .map_err(|_| "Desktop port state is unavailable.".to_string())
 }
 
 impl Drop for ServerProcess {
@@ -284,30 +304,46 @@ struct DesktopReadiness {
     incompatible: bool,
     detail: String,
     expected_version: String,
+    port: u16,
 }
 
 #[tauri::command]
-fn desktop_readiness() -> DesktopReadiness {
-    let (ready, incompatible, detail) = match probe_backend(3334) {
-        BackendProbe::Compatible => (true, false, "Verified desktop backend".to_string()),
-        BackendProbe::Unreachable => (
+fn desktop_readiness(state: State<'_, ServerProcess>) -> DesktopReadiness {
+    let (port, ready, incompatible, detail) = match selected_dashboard_port(state.inner()) {
+        Ok(port) if supported_dashboard_port(port) => match probe_backend(port) {
+            BackendProbe::Compatible => (
+                port,
+                true,
+                false,
+                "Verified exact-version desktop backend".to_string(),
+            ),
+            BackendProbe::Unreachable => (
+                port,
+                false,
+                false,
+                "Waiting for exact-version backend".to_string(),
+            ),
+            BackendProbe::Incompatible(reason) => (port, false, true, reason),
+        },
+        _ => (
+            0,
             false,
-            false,
-            "Waiting for exact-version backend".to_string(),
+            true,
+            "Desktop port state is unavailable.".to_string(),
         ),
-        BackendProbe::Incompatible(reason) => (false, true, reason),
     };
     DesktopReadiness {
         ready,
         incompatible,
         detail,
         expected_version: env!("CARGO_PKG_VERSION").to_string(),
+        port,
     }
 }
 
 #[tauri::command]
-fn desktop_backend_command() -> String {
-    manual_backend_command(3334)
+fn desktop_backend_command(state: State<'_, ServerProcess>) -> String {
+    manual_backend_command(selected_dashboard_port(state.inner()).unwrap_or(PRIMARY_DASHBOARD_PORT))
 }
 
 fn incompatible_backend_error(port: u16, reason: &str) -> String {
@@ -326,6 +362,15 @@ Stop the incompatible service or run the supported backend explicitly: {}",
 }
 
 fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, String> {
+    // Native commands restrict user-selected ports. The internal helper also
+    // supports ephemeral ports in isolated unit tests. Navigation always
+    // refuses a port outside the two desktop ports.
+    // The active port is used both for the exact-version readiness probe and
+    // for the WebView's strictly-scoped loopback navigation permission.
+    *process
+        .dashboard_port
+        .lock()
+        .map_err(|_| "Desktop port state is unavailable.".to_string())? = port;
     // Clear previous error
     if let Ok(mut err_guard) = process.error.lock() {
         *err_guard = None;
@@ -489,6 +534,19 @@ fn stop_server_inner(process: &ServerProcess) -> Result<(), String> {
     Ok(())
 }
 
+/// Restrict the native WebView to its bundled splash and the one local
+/// dashboard port selected by the user, never an arbitrary loopback service.
+fn allowed_desktop_navigation(url: &tauri::Url, selected_port: Option<u16>) -> bool {
+    if matches!(url.scheme(), "http" | "https") && url.host_str() == Some("tauri.localhost") {
+        return true;
+    }
+    url.scheme() == "http"
+        && url.host_str() == Some("127.0.0.1")
+        && selected_port.is_some_and(|port| {
+            supported_dashboard_port(port) && url.port_or_known_default() == Some(port)
+        })
+}
+
 /// Static outbound destinations usable from the packaged desktop and local UI.
 fn allowed_external_link(url: &str) -> bool {
     matches!(
@@ -514,6 +572,9 @@ fn open_external_link(app: tauri::AppHandle, url: String) -> Result<(), String> 
 
 #[tauri::command]
 fn start_server(state: State<'_, ServerProcess>, port: u16) -> Result<String, String> {
+    if !supported_dashboard_port(port) {
+        return Err("Unsupported desktop port.".to_string());
+    }
     start_server_inner(state.inner(), port)
 }
 
@@ -758,12 +819,19 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
             return Err("Installation requires the app-owned backend.".into());
         }
     }
-    if !matches!(probe_backend(3334), BackendProbe::Compatible) {
+    let port = {
+        let process = app.state::<ServerProcess>();
+        selected_dashboard_port(process.inner())?
+    };
+    if !supported_dashboard_port(port) || !matches!(probe_backend(port), BackendProbe::Compatible) {
         return Err("Backend is not ready.".into());
     }
-    let (client, cookie, csrf, token) = quiesce_backend("http://127.0.0.1:3334").await?;
+    // A user-selected isolated desktop backend must be quiesced on its own
+    // port; the older, independently running service on 3334 is never touched.
+    let base = format!("http://{}", server_addr(port));
+    let (client, cookie, csrf, token) = quiesce_backend(&base).await?;
     if let Err(error) = update.install(&bytes) {
-        resume_backend(&client, "http://127.0.0.1:3334", &cookie, &csrf, &token).await?;
+        resume_backend(&client, &base, &cookie, &csrf, &token).await?;
         return Err(error.to_string());
     }
     Ok(())
@@ -809,6 +877,10 @@ fn get_working_dir(state: State<'_, ServerProcess>) -> Option<String> {
 /// current settings (port, working directory, etc.).
 #[tauri::command]
 fn restart_server(state: State<'_, ServerProcess>, port: u16) -> Result<String, String> {
+    // Do not allow web content to choose an arbitrary loopback target.
+    if !supported_dashboard_port(port) {
+        return Err("Unsupported desktop port.".to_string());
+    }
     let _ = stop_server_inner(state.inner());
     // Give the OS a moment to release the port
     thread::sleep(Duration::from_millis(500));
@@ -845,17 +917,11 @@ pub fn run() {
                         let _ = webview.app_handle().shell().open(url.to_string(), None);
                         return false;
                     }
-                    // Never replace the app with an arbitrary external page.
-                    // The native app UI and exact 127.0.0.1 dashboard are the
-                    // only intended webviews.
-                    !matches!(url.scheme(), "http" | "https")
-                        || (url.scheme() == "http"
-                            && url.host_str() == Some("127.0.0.1")
-                            && url.port_or_known_default() == Some(3334))
-                        // The native app bundle uses tauri.localhost on
-                        // Windows. Keep the bundled splash reachable.
-                        || (matches!(url.scheme(), "http" | "https")
-                            && url.host_str() == Some("tauri.localhost"))
+                    let selected_port = webview
+                        .app_handle()
+                        .try_state::<ServerProcess>()
+                        .and_then(|state| selected_dashboard_port(state.inner()).ok());
+                    allowed_desktop_navigation(url, selected_port)
                 })
                 .build(),
         )
@@ -952,7 +1018,7 @@ pub fn run() {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 let state = handle.state::<ServerProcess>();
-                match start_server_inner(state.inner(), 3334) {
+                match start_server_inner(state.inner(), PRIMARY_DASHBOARD_PORT) {
                     Ok(status) => {
                         eprintln!("[kicad-mcp-pro] Server started: {status}");
                         let _ = state.error.lock().map(|mut e| *e = None);
@@ -995,10 +1061,65 @@ mod tests {
 
     #[test]
     fn displayed_backend_command_uses_exact_release_package() {
-        let command = desktop_backend_command();
+        let command = manual_backend_command(PRIMARY_DASHBOARD_PORT);
         assert!(command.contains(&format!("kicad-mcp-pro=={}", env!("CARGO_PKG_VERSION"))));
         assert!(!command.contains("@latest"));
         assert!(command.contains("--host 127.0.0.1 --port 3334"));
+    }
+
+    #[test]
+    fn separate_port_only_allows_the_explicit_local_dashboard() {
+        let url = |value: &str| tauri::Url::parse(value).expect("valid URL");
+        let primary = url("http://127.0.0.1:3334/ui?desktop=1");
+        let alternate = url("http://127.0.0.1:3335/ui?desktop=1");
+        assert!(allowed_desktop_navigation(
+            &primary,
+            Some(PRIMARY_DASHBOARD_PORT)
+        ));
+        assert!(!allowed_desktop_navigation(
+            &alternate,
+            Some(PRIMARY_DASHBOARD_PORT)
+        ));
+        assert!(allowed_desktop_navigation(
+            &alternate,
+            Some(SEPARATE_DASHBOARD_PORT)
+        ));
+        assert!(!allowed_desktop_navigation(
+            &primary,
+            Some(SEPARATE_DASHBOARD_PORT)
+        ));
+        assert!(!allowed_desktop_navigation(&alternate, None));
+        assert!(!allowed_desktop_navigation(
+            &url("http://127.0.0.1:4444/ui"),
+            Some(SEPARATE_DASHBOARD_PORT)
+        ));
+        assert!(!allowed_desktop_navigation(
+            &url("http://localhost:3335/ui"),
+            Some(SEPARATE_DASHBOARD_PORT)
+        ));
+        assert!(!allowed_desktop_navigation(
+            &url("http://attacker.example/ui"),
+            Some(SEPARATE_DASHBOARD_PORT)
+        ));
+        assert!(!allowed_desktop_navigation(
+            &url("https://127.0.0.1:3335/ui"),
+            Some(SEPARATE_DASHBOARD_PORT)
+        ));
+        assert!(allowed_desktop_navigation(
+            &url("http://tauri.localhost/index.html"),
+            Some(PRIMARY_DASHBOARD_PORT)
+        ));
+        assert!(!supported_dashboard_port(3336));
+        assert!(!supported_dashboard_port(0));
+        assert!(!supported_dashboard_port(65535));
+    }
+
+    #[test]
+    fn separate_port_diagnostics_require_the_exact_backend_version() {
+        let cmd = manual_backend_command(SEPARATE_DASHBOARD_PORT);
+        assert!(cmd.contains(" --host 127.0.0.1 --port 3335"));
+        assert!(cmd.contains(&format!("kicad-mcp-pro=={}", env!("CARGO_PKG_VERSION"))));
+        assert!(!cmd.contains("@latest"));
     }
 
     #[test]
