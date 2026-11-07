@@ -189,7 +189,7 @@ async function handleRequest(
           answer=await consentResponse(browserRequest,identity,config.publicOrigin,config.managementClientId);
         } else if (path==="/connections" || path==="/connections/revoke") {
           answer=await connectionsResponse(browserRequest,identity,config.publicOrigin,grants);
-        } else if(path==="/devices" || path==="/devices/revoke" || path==="/devices/enable" || path==="/devices/projects/create" || path==="/devices/projects/grant" || path==="/devices/projects/managed"){
+        } else if(path==="/devices" || path==="/devices/revoke" || path==="/devices/delete" || path==="/devices/enable" || path==="/devices/projects/create" || path==="/devices/projects/grant" || path==="/devices/projects/managed"){
           answer=await devicesResponse(browserRequest,identity,config.publicOrigin,
             devices,Boolean(pairingDevice),grants,
             summaryRelay?.()?.isDeviceConnected,services.managedRead);

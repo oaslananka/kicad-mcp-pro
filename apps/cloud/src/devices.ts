@@ -307,6 +307,12 @@ export async function devicesResponse(req:Request,identity:BrowserIdentity,origi
     "/devices/projects/grant","/devices/projects/managed"].includes(path))
     return null;
   if(!devices)return error(503);
+  // A direct navigation is never a removal command. Keep users in the
+  // authenticated device list rather than rendering an unhelpful JSON 404.
+  if(path==="/devices/delete"&&req.method==="GET")
+    return new Response(null,{status:303,headers:{
+      Location:"/devices","Cache-Control":"no-store"
+    }});
   if(path==="/devices"&&req.method==="GET")
     return list(req,identity,origin,devices,enrollmentAvailable,grants,deviceConnection,managedRead);
   if(path==="/devices/revoke"&&req.method==="POST")return revoke(req,identity,origin,devices);

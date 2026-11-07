@@ -66,6 +66,12 @@ test("HTTP device routes are absent without builtin identity",async()=>{
       headers:{Origin:config.publicOrigin}
     });
     assert.equal(action.status,404);
+    const removal=await fetch(s.origin+"/devices/delete",{
+      method:"POST",body:"device_id="+id,
+      headers:{Origin:config.publicOrigin}
+    });
+    assert.equal(removal.status,404,
+      "permanent removal must not be available without a browser identity");
   }finally{await s.close();}
 });
 test("HTTP device revocation uses verified browser session plus CSRF",async()=>{
@@ -100,6 +106,68 @@ test("HTTP device revocation uses verified browser session plus CSRF",async()=>{
   }finally{await s.close();}
 });
 
+
+test("permanent removal from the actual HTTP page routes only a valid revoked-device POST",async()=>{
+  const removed:string[]=[];
+  let gone=false;
+  const revokedDevices:DeviceManagementPort={
+    ...devices,
+    async list(owner){
+      if(owner!=="owner-1"||gone)return [];
+      return [{id,alias:"Revoked KiCad",enabled:false,revoked:true,
+        fingerprint:"b".repeat(64),createdAt:new Date()}];
+    },
+    async deleteRevokedDevice(owner,device){
+      if(owner!=="owner-1"||device!==id||gone)return false;
+      removed.push(owner+":"+device);gone=true;return true;
+    }
+  };
+  const server=await startServer(createHttpServer(config,inventory,async()=>{
+    throw Error("unused");
+  },{identity,devices:revokedDevices}));
+  try{
+    const open=await fetch(server.origin+"/devices/delete",{redirect:"manual"});
+    assert.equal(open.status,303,
+      "GET is navigation only: never show raw not_found or perform a deletion");
+    assert.equal(open.headers.get("location"),"/devices");
+    assert.equal(removed.length,0);
+
+    const page=await fetch(server.origin+"/devices");
+    const html=await page.text();
+    assert.match(html,/Revoked KiCad/);
+    assert.match(html,/<form action="\/devices\/delete" method="post">/);
+    const token=/<form action="\/devices\/delete" method="post">[\s\S]*?name="csrf" value="([^"]+)"/
+      .exec(html)?.[1]??"";
+    const cookie=(page.headers.get("set-cookie")??"").split(";")[0];
+    assert.ok(token&&cookie);
+    const form=new URLSearchParams({device_id:id,csrf:token});
+    const headers={"Content-Type":"application/x-www-form-urlencoded",
+      Cookie:cookie,Origin:config.publicOrigin};
+    const malicious=await fetch(server.origin+"/devices/delete",{
+      method:"POST",headers:{...headers,Origin:"https://attacker.invalid"},
+      body:form,redirect:"manual"
+    });
+    assert.equal(malicious.status,403);
+    assert.deepEqual(removed,[]);
+    const invalid=await fetch(server.origin+"/devices/delete",{
+      method:"POST",headers:{...headers,Cookie:""},body:form,redirect:"manual"
+    });
+    assert.equal(invalid.status,403);
+    assert.deepEqual(removed,[]);
+
+    const valid=await fetch(server.origin+"/devices/delete",{
+      method:"POST",headers,body:form,redirect:"manual"
+    });
+    assert.equal(valid.status,303,"successful removal must return to the devices page");
+    assert.equal(valid.headers.get("location"),"/devices?deleted=1");
+    assert.deepEqual(removed,["owner-1:"+id]);
+    const done=await fetch(server.origin+"/devices?deleted=1");
+    assert.equal(done.status,200);
+    const result=await done.text();
+    assert.match(result,/Revoked device and its registered projects were permanently removed/);
+    assert.doesNotMatch(result,/Revoked KiCad/);
+  }finally{await server.close();}
+});
 
 test("owner device activation and read-only project creation are disabled by default, CSRF scoped",
   async()=>{
