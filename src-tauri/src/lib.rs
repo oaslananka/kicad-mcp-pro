@@ -38,12 +38,46 @@ pub struct ServerStatus {
     pub message: String,
     pub pid: Option<u32>,
     pub working_dir: Option<String>,
+    pub preparation_stage: String,
+    pub runtime_found: bool,
 }
 
 pub struct ServerProcess {
     pub child: Mutex<Option<Child>>,
     pub error: Mutex<Option<String>>,
     pub working_dir: Mutex<Option<PathBuf>>,
+    pub preparation_stage: Mutex<String>,
+}
+
+impl ServerProcess {
+    pub fn new() -> Self {
+        Self {
+            child: Mutex::new(None),
+            error: Mutex::new(None),
+            working_dir: Mutex::new(None),
+            preparation_stage: Mutex::new("idle".to_string()),
+        }
+    }
+}
+
+impl Default for ServerProcess {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn set_stage(process: &ServerProcess, stage: &str) {
+    if let Ok(mut g) = process.preparation_stage.lock() {
+        *g = stage.to_string();
+    }
+}
+
+fn get_stage(process: &ServerProcess) -> String {
+    process
+        .preparation_stage
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_else(|_| "idle".to_string())
 }
 
 impl Drop for ServerProcess {
@@ -168,12 +202,36 @@ fn check_health(port: u16) -> bool {
     matches!(probe_backend(port), BackendProbe::Compatible)
 }
 
+fn user_runtime_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("LOCALAPPDATA")
+            .map(|b| PathBuf::from(b).join("kicad-mcp-pro").join("runtime"))
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("HOME")
+            .map(|b| PathBuf::from(b).join(".local").join("share").join("kicad-mcp-pro").join("runtime"))
+    }
+}
+
 fn which_uvx() -> Option<PathBuf> {
     if let Ok(path) = which::which("uvx") {
         return Some(path);
     }
+    if let Some(runtime) = user_runtime_dir() {
+        let binary_name = if cfg!(windows) { "uvx.exe" } else { "uvx" };
+        let candidate = runtime.join("bin").join(binary_name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
     #[cfg(windows)]
     {
+        let tools_candidate = PathBuf::from("C:\\tools\\uvx.exe");
+        if tools_candidate.exists() {
+            return Some(tools_candidate);
+        }
         if let Some(home) = std::env::var_os("USERPROFILE") {
             // uv installed via cargo: ~/.cargo/bin/uvx.exe
             let candidate = PathBuf::from(&home)
@@ -267,10 +325,15 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
     if let Ok(mut err_guard) = process.error.lock() {
         *err_guard = None;
     }
+    set_stage(process, "checking_prerequisites");
 
     match probe_backend(port) {
-        BackendProbe::Compatible => return Ok("already_running".to_string()),
+        BackendProbe::Compatible => {
+            set_stage(process, "ready");
+            return Ok("already_running".to_string());
+        }
         BackendProbe::Incompatible(reason) => {
+            set_stage(process, "failed");
             return Err(incompatible_backend_error(port, &reason));
         }
         BackendProbe::Unreachable => {}
@@ -281,13 +344,16 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
         .as_mut()
         .is_some_and(|child| child.try_wait().ok().flatten().is_none())
     {
+        set_stage(process, "ready");
         return Ok("already_running".to_string());
     }
     if guard.is_some() {
         *guard = None;
     }
 
+    set_stage(process, "preparing_environment");
     let uvx = which_uvx().ok_or_else(|| {
+        set_stage(process, "failed");
         let hint = if cfg!(target_os = "windows") {
             "Install uv from PowerShell: (irm https://astral.sh/uv/install.ps1) | iex"
         } else {
@@ -345,20 +411,32 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
 
     let child = cmd
         .spawn()
-        .map_err(|error| format!("Failed to start kicad-mcp-pro with {uvx:?}: {error}"))?;
+        .map_err(|error| {
+            set_stage(process, "failed");
+            format!("Failed to start kicad-mcp-pro with {uvx:?}: {error}")
+        })?;
 
     *guard = Some(child);
     drop(guard);
 
+    set_stage(process, "starting_server");
     // Wait for the server to become healthy. The first launch downloads the
     // package via uvx, so allow a generous window (HEALTH_WAIT) before giving
     // up — killing the child early would abort an install that is still in
     // progress.
     let deadline = std::time::Instant::now() + HEALTH_WAIT;
     while std::time::Instant::now() < deadline {
+        if get_stage(process) == "cancelled" {
+            let _ = stop_server_inner(process);
+            return Err("Server startup was cancelled.".to_string());
+        }
         match probe_backend(port) {
-            BackendProbe::Compatible => return Ok("started".to_string()),
+            BackendProbe::Compatible => {
+                set_stage(process, "ready");
+                return Ok("started".to_string());
+            }
             BackendProbe::Incompatible(reason) => {
+                set_stage(process, "failed");
                 let _ = stop_server_inner(process);
                 return Err(incompatible_backend_error(port, &reason));
             }
@@ -370,6 +448,7 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
                 if let Some(status) = child.try_wait().ok().flatten() {
                     let _ = child.wait();
                     drop(guard);
+                    set_stage(process, "failed");
                     return Err(format!(
                         "Python server process exited unexpectedly (code: {}) before binding to port {}.\n\
                          The desktop requires backend {}. Run manually to debug: {}",
@@ -384,6 +463,7 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
         thread::sleep(HEALTH_POLL_INTERVAL);
     }
 
+    set_stage(process, "failed");
     let _ = stop_server_inner(process);
     Err(format!(
         "Python server at http://{}/api/health did not provide a compatible desktop handshake within {} seconds.\n\
@@ -484,6 +564,25 @@ fn server_status(state: State<'_, ServerProcess>) -> ServerStatus {
         }),
         pid,
         working_dir: wd,
+        preparation_stage: get_stage(state.inner()),
+        runtime_found: user_runtime_dir().map(|r| r.exists()).unwrap_or(false),
+    }
+}
+
+#[tauri::command]
+fn cancel_server_preparation(state: State<'_, ServerProcess>) -> Result<(), String> {
+    set_stage(state.inner(), "cancelled");
+    stop_server_inner(state.inner())
+}
+
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    match updater.check().await {
+        Ok(Some(update)) => Ok(Some(update.version)),
+        Ok(None) => Ok(None),
+        Err(e) => Err(e.to_string()),
     }
 }
 
@@ -579,11 +678,8 @@ pub fn run() {
         )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .manage(ServerProcess {
-            child: Mutex::new(None),
-            error: Mutex::new(None),
-            working_dir: Mutex::new(None),
-        })
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(ServerProcess::new())
         .invoke_handler(tauri::generate_handler![
             start_server,
             stop_server,
@@ -595,6 +691,8 @@ pub fn run() {
             desktop_readiness,
             desktop_backend_command,
             open_external_link,
+            cancel_server_preparation,
+            check_update,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -645,6 +743,20 @@ pub fn run() {
                 tray = tray.icon(icon.clone());
             }
             let _ = tray.build(app)?;
+
+            let updater_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(10));
+                let h = updater_handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    use tauri_plugin_updater::UpdaterExt;
+                    if let Ok(updater) = h.updater() {
+                        if let Ok(Some(update)) = updater.check().await {
+                            eprintln!("[kicad-mcp-pro] Update available: {}", update.version);
+                        }
+                    }
+                });
+            });
 
             // Launch the backend on a background thread so the first-run
             // download (which can take up to HEALTH_WAIT) never blocks the UI
@@ -768,27 +880,20 @@ mod tests {
             env!("CARGO_PKG_VERSION"),
         );
         let port = serve_health_once(body);
-        let process = ServerProcess {
-            child: Mutex::new(None),
-            error: Mutex::new(None),
-            working_dir: Mutex::new(None),
-        };
+        let process = ServerProcess::new();
 
         assert_eq!(
             start_server_inner(&process, port),
             Ok("already_running".to_string())
         );
+        assert_eq!(get_stage(&process), "ready");
     }
 
     #[test]
     fn desktop_startup_rejects_incompatible_existing_backend() {
         let body = r#"{"ok":true,"status":"ok","version":"99.0.0","desktopCompatibility":{"contractVersion":"1.0.0","backendVersion":"99.0.0","versionPolicy":"exact-release"}}"#.to_string();
         let port = serve_health_once(body);
-        let process = ServerProcess {
-            child: Mutex::new(None),
-            error: Mutex::new(None),
-            working_dir: Mutex::new(None),
-        };
+        let process = ServerProcess::new();
 
         let error =
             start_server_inner(&process, port).expect_err("incompatible backend must fail closed");
@@ -796,5 +901,14 @@ mod tests {
         assert!(error.contains(env!("CARGO_PKG_VERSION")));
         assert!(error.contains(DESKTOP_API_CONTRACT_VERSION));
         assert!(error.contains("kicad-mcp-pro=="));
+        assert_eq!(get_stage(&process), "failed");
+    }
+
+    #[test]
+    fn desktop_server_process_cancel_changes_stage() {
+        let process = ServerProcess::new();
+        assert_eq!(get_stage(&process), "idle");
+        set_stage(&process, "cancelled");
+        assert_eq!(get_stage(&process), "cancelled");
     }
 }

@@ -229,13 +229,14 @@
         </h2>
         <p style="color:var(--text-muted);margin-bottom:12px;">The Python backend did not respond within the expected time window.</p>
         <div id="steps">
-          <div class="step pending" data-step="uvx">Check uvx is installed</div>
-          <div class="step pending" data-step="pkg">Check kicad-mcp-pro package</div>
-          <div class="step pending" data-step="server">Check server health</div>
+          <div class="step ok" data-step="app">KiCad MCP Pro Desktop Installed</div>
+          <div class="step pending" data-step="backend">Application Environment &amp; Backend</div>
+          <div class="step pending" data-step="kicad">KiCad EDA Detection</div>
+          <div class="step pending" data-step="ai">AI Client Configuration</div>
         </div>
         <div id="error-detail" style="display:none;margin-top:12px;background:#06090e;border:1px solid var(--error);border-radius:6px;padding:12px;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;word-break:break-all;color:#fca5a5;"></div>
         <p style="margin-top:16px;font-size:13px;color:var(--text-muted);">
-          Run this command manually in a terminal to inspect diagnostics:
+          No terminal commands required. The application prepares its environment automatically. If you wish to inspect detailed diagnostics:
         </p>
         <div class="details-code-row">
           <code id="cliCommand">Loading exact-version diagnostics from the desktop app?</code>
@@ -243,6 +244,7 @@
         </div>
         <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
           <a class="btn secondary" href="http://127.0.0.1:3334/ui" target="_blank" rel="noopener noreferrer">Try opening dashboard</a>
+          <button type="button" class="btn secondary" id="btnCancel" onclick="handleCancelPreparation()">Cancel</button>
           <button type="button" class="btn secondary" onclick="handleRestartServer()">Restart Server</button>
           <button type="button" class="btn" onclick="handleRestartServer()">Retry</button>
         </div>
@@ -311,6 +313,12 @@
         setTimeout(checkServer, 500);
       }
 
+      async function handleCancelPreparation() {
+        statusEl.textContent = 'Cancelling…';
+        await tauriInvoke('cancel_server_preparation');
+        showError('Preparation cancelled.');
+      }
+
       function setStep(name, state) {
         const el = document.querySelector(`[data-step="${name}"]`);
         if (el) {
@@ -343,18 +351,25 @@
       function handleTauriStatus(tauriStatus) {
         if (!tauriStatus) return true;
         if (tauriStatus.running) {
-          setStep('uvx', 'ok');
-          setStep('pkg', 'ok');
+          setStep('backend', 'ok');
           return true;
+        }
+        if (tauriStatus.preparation_stage === 'preparing_environment') {
+          statusEl.textContent = `Preparing local environment (downloading dependencies if first launch, ${retries}s)…`;
+          setStep('backend', 'pending');
+        } else if (tauriStatus.preparation_stage === 'starting_server') {
+          statusEl.textContent = `Starting local server…`;
+          setStep('backend', 'pending');
+        } else if (tauriStatus.preparation_stage === 'cancelled') {
+          showError('Setup was cancelled.');
+          return false;
         }
         if (tauriStatus.message && tauriStatus.message !== 'Server is not running.') {
           if (errorDetailEl) {
             errorDetailEl.textContent = tauriStatus.message;
             errorDetailEl.style.display = 'block';
           }
-          setStep('uvx', 'fail');
-          setStep('pkg', 'fail');
-          setStep('server', 'fail');
+          setStep('backend', 'fail');
           showError('Backend error');
           return false;
         }
@@ -388,9 +403,9 @@
         if (healthOk) {
           statusEl.textContent = 'Server is ready, redirecting…';
           statusEl.className = 'status success';
-          setStep('server', 'ok');
-          setStep('uvx', 'ok');
-          setStep('pkg', 'ok');
+          setStep('backend', 'ok');
+          setStep('kicad', 'ok');
+          setStep('ai', 'ok');
           setTimeout(() => { window.location.href = DASHBOARD_URL; }, 500);
           return;
         }
@@ -416,6 +431,7 @@
       }
 
       window.handleRestartServer = handleRestartServer;
+      window.handleCancelPreparation = handleCancelPreparation;
       window.showError = showError;
       window.copyCliCommand = copyCliCommand;
 
