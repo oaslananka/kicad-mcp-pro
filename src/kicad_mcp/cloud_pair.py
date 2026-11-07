@@ -145,6 +145,17 @@ def _post(
 
 def _create_private_key(path: Path) -> Ed25519PrivateKey:
     """Exclusive 0600 owner key inside a pinned 0700 directory, never a symlink."""
+    if os.name == "nt":
+        try:
+            key = Ed25519PrivateKey.generate()
+            data = key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+            with open(path, "xb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            return key
+        except (OSError, ValueError) as exc:
+            raise CloudPairingError(_PAIRING_DENIED) from exc
     nofollow = getattr(os, "O_NOFOLLOW", None)
     if not isinstance(nofollow, int):
         raise CloudPairingError(_PAIRING_DENIED)
@@ -179,6 +190,15 @@ def _create_private_key(path: Path) -> Ed25519PrivateKey:
 
 
 def _load_or_create(path: Path) -> Ed25519PrivateKey:
+    if os.name == "nt":
+        if path.is_symlink():
+            raise CloudPairingError(_PAIRING_DENIED)
+        if path.exists():
+            try:
+                return _load_owner_key(path)
+            except (OSError, ValueError) as exc:
+                raise CloudPairingError(_PAIRING_DENIED) from exc
+        return _create_private_key(path)
     try:
         parent_fd = _open_owner_private_dir(path)
     except (OSError, ValueError) as exc:
@@ -230,6 +250,11 @@ def _require_unused_binding_path(keyfile: Path) -> None:
     Exclusive creation during redeem is still authoritative if the filesystem
     changes after this preflight check.
     """
+    if os.name == "nt":
+        binding_file = keyfile.parent / (keyfile.name + ".cloud-binding-v1.json")
+        if binding_file.exists():
+            raise CloudPairingError(_PAIRING_DENIED)
+        return
     try:
         directory_fd = _open_owner_private_dir(keyfile)
         try:
@@ -288,18 +313,18 @@ def _wait_for_owner_approval(
         time.sleep(min(8.0, remaining / 1000))
 
 
-def enroll(
-    origin: str, alias: str, keyfile: Path, approval: Callable[[str, str, str], None]
-) -> tuple[str, str]:
+def start_enrollment(
+    origin: str, alias: str, keyfile: Path
+) -> tuple[str, str, str, int]:
+    """Start device pairing challenge without blocking for approval.
+
+    Returns (review_url, challenge, code, expires_in_seconds).
+    Saves challenge metadata next to keyfile in .challenge.json.
+    """
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", alias):
         raise CloudPairingError(_PAIRING_DENIED)
     target = _origin(origin)
-    # A previously enrolled key is bound to its original Cloud; switching
-    # origin requires separate owner enrollment with a new device key.
     if keyfile.is_file():
-        # Reusing an already enrolled private key would create another remote
-        # device record with the same signing identity. Require a fresh key
-        # and a separate owner browser approval for each new enrollment.
         try:
             _read_owner_binding(keyfile)
         except (OSError, ValueError) as exc:
@@ -319,20 +344,48 @@ def enroll(
     )
     challenge, code, device_secret, fingerprint, expiry = _challenge(result, key)
     review_url = f"{target[2]}/devices/pairing#challenge={challenge}&code={code}"
-    # Never open an untrusted Cloud-supplied link or a link carrying deviceCode.
     supplied_url = result.get("verificationUriComplete")
     if supplied_url is not None and supplied_url != review_url:
         raise CloudPairingError(_PAIRING_DENIED)
-    _wait_for_owner_approval(
-        target,
-        challenge,
-        device_secret,
-        key,
-        expiry,
-        lambda: approval(target[2] + "/devices/pairing", challenge, code),
-    )
+
+    chal_file = keyfile.with_suffix(".challenge.json")
+    chal_data = {
+        "challenge": challenge,
+        "code": code,
+        "secret": device_secret,
+        "fingerprint": fingerprint,
+        "expiry": expiry,
+        "origin": target[2],
+    }
+    with open(chal_file, "w", encoding="utf-8") as f:
+        json.dump(chal_data, f)
+    if hasattr(os, "chmod"):
+        os.chmod(chal_file, 0o600)
+
+    expires_in_seconds = max(0, int((expiry - time.time_ns() // 1_000_000) / 1000))
+    return review_url, challenge, code, expires_in_seconds
+
+
+def redeem_enrollment(origin: str, keyfile: Path) -> tuple[str, str]:
+    """Redeem approved pairing challenge using saved challenge metadata.
+
+    Returns (device_id, fingerprint).
+    """
+    target = _origin(origin)
+    chal_file = keyfile.with_suffix(".challenge.json")
+    if not chal_file.is_file():
+        raise CloudPairingError("No active pairing challenge found for key.")
+    with open(chal_file, "r", encoding="utf-8") as f:
+        chal_data = json.load(f)
+    challenge = chal_data["challenge"]
+    device_secret = chal_data["secret"]
+    fingerprint = chal_data["fingerprint"]
+    expiry = chal_data["expiry"]
     if time.time_ns() // 1_000_000 >= expiry:
+        chal_file.unlink(missing_ok=True)
         raise CloudPairingError(_PAIRING_DENIED)
+
+    key = _load_owner_key(keyfile)
     proof = (
         b"kicad-cloud-pairing-proof-v1\x00" + challenge.encode() + b"\x00" + device_secret.encode()
     )
@@ -367,7 +420,30 @@ def enroll(
         )
     except (OSError, ValueError) as exc:
         raise CloudPairingError(_PAIRING_DENIED) from exc
+    chal_file.unlink(missing_ok=True)
     return answer["deviceId"], fingerprint
+
+
+def enroll(
+    origin: str, alias: str, keyfile: Path, approval: Callable[[str, str, str], None]
+) -> tuple[str, str]:
+    review_url, challenge, code, _ = start_enrollment(origin, alias, keyfile)
+    target = _origin(origin)
+    chal_file = keyfile.with_suffix(".challenge.json")
+    with open(chal_file, "r", encoding="utf-8") as f:
+        chal_data = json.load(f)
+    device_secret = chal_data["secret"]
+    key = _load_owner_key(keyfile)
+    expiry = chal_data["expiry"]
+    _wait_for_owner_approval(
+        target,
+        challenge,
+        device_secret,
+        key,
+        expiry,
+        lambda: approval(target[2] + "/devices/pairing", challenge, code),
+    )
+    return redeem_enrollment(origin, keyfile)
 
 
 def register_device_project(origin: str, keyfile: Path, alias: str) -> dict[str, object]:

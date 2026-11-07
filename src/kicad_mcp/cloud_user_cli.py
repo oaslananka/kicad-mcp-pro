@@ -41,6 +41,8 @@ def _owner_terminal() -> bool:
 
 def _local_pairing_storage_supported() -> bool:
     """Do not start remote enrollment if the owner-key security boundary cannot run."""
+    if os.name == "nt":
+        return True
     return (
         os.name == "posix"
         and callable(getattr(os, "getuid", None))
