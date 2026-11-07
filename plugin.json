@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "kicad-pro",
-  "version": "4.8.1",
+  "version": "4.9.0",
   "description": "Local KiCad MCP server and portable engineering workflow skills.",
   "author": {
     "name": "oaslananka",
