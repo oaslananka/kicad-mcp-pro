@@ -336,11 +336,13 @@
         statusEl.className = 'status';
         detailsEl.classList.remove('visible');
         const result = await tauriInvoke('restart_server', {port: SEPARATE_PORT});
+        // Keep the manual recovery command consistent even if the alternate
+        // port is occupied; do not suggest stopping the legacy instance.
+        await loadExactCommand();
         if (result === null) {
           showError('Could not start a separate backend. The existing service was left unchanged.');
           return;
         }
-        await loadExactCommand();
         setTimeout(checkServer, 500);
       }
 
@@ -391,7 +393,11 @@
           setStep('uvx', 'fail');
           setStep('pkg', 'fail');
           setStep('server', 'fail');
-          showError('Backend error');
+          showError(
+            tauriStatus.message.startsWith('Incompatible service detected')
+              ? 'Older or incompatible local backend detected'
+              : 'Backend could not start'
+          );
           return false;
         }
         return true;

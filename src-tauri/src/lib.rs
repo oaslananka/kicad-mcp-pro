@@ -29,7 +29,6 @@ fn supported_dashboard_port(port: u16) -> bool {
     matches!(port, PRIMARY_DASHBOARD_PORT | SEPARATE_DASHBOARD_PORT)
 }
 
-
 fn backend_package_spec() -> String {
     format!("kicad-mcp-pro=={}", env!("CARGO_PKG_VERSION"))
 }
@@ -65,7 +64,6 @@ fn selected_dashboard_port(process: &ServerProcess) -> Result<u16, String> {
         .map(|port| *port)
         .map_err(|_| "Desktop port state is unavailable.".to_string())
 }
-
 
 impl Drop for ServerProcess {
     fn drop(&mut self) {
@@ -263,7 +261,12 @@ fn desktop_readiness(state: State<'_, ServerProcess>) -> DesktopReadiness {
             ),
             BackendProbe::Incompatible(reason) => (port, false, true, reason),
         },
-        _ => (0, false, true, "Desktop port state is unavailable.".to_string()),
+        _ => (
+            0,
+            false,
+            true,
+            "Desktop port state is unavailable.".to_string(),
+        ),
     };
     DesktopReadiness {
         ready,
@@ -295,9 +298,9 @@ Stop the incompatible service or run the supported backend explicitly: {}",
 }
 
 fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, String> {
-    if !supported_dashboard_port(port) {
-        return Err("Unsupported desktop port.".to_string());
-    }
+    // Native commands restrict user-selected ports. The internal helper also
+    // supports ephemeral ports in isolated unit tests. Navigation always
+    // refuses a port outside the two desktop ports.
     // The active port is used both for the exact-version readiness probe and
     // for the WebView's strictly-scoped loopback navigation permission.
     *process
@@ -486,6 +489,9 @@ fn open_external_link(app: tauri::AppHandle, url: String) -> Result<(), String> 
 
 #[tauri::command]
 fn start_server(state: State<'_, ServerProcess>, port: u16) -> Result<String, String> {
+    if !supported_dashboard_port(port) {
+        return Err("Unsupported desktop port.".to_string());
+    }
     start_server_inner(state.inner(), port)
 }
 
@@ -760,25 +766,42 @@ mod tests {
         let url = |value: &str| tauri::Url::parse(value).expect("valid URL");
         let primary = url("http://127.0.0.1:3334/ui?desktop=1");
         let alternate = url("http://127.0.0.1:3335/ui?desktop=1");
-        assert!(allowed_desktop_navigation(&primary, Some(PRIMARY_DASHBOARD_PORT)));
-        assert!(!allowed_desktop_navigation(&alternate, Some(PRIMARY_DASHBOARD_PORT)));
-        assert!(allowed_desktop_navigation(&alternate, Some(SEPARATE_DASHBOARD_PORT)));
-        assert!(!allowed_desktop_navigation(&primary, Some(SEPARATE_DASHBOARD_PORT)));
-        assert!(!allowed_desktop_navigation(&alternate, None));
-        assert!(!allowed_desktop_navigation(
-            &url("http://127.0.0.1:4444/ui"), Some(SEPARATE_DASHBOARD_PORT)
+        assert!(allowed_desktop_navigation(
+            &primary,
+            Some(PRIMARY_DASHBOARD_PORT)
         ));
         assert!(!allowed_desktop_navigation(
-            &url("http://localhost:3335/ui"), Some(SEPARATE_DASHBOARD_PORT)
-        ));
-        assert!(!allowed_desktop_navigation(
-            &url("http://attacker.example/ui"), Some(SEPARATE_DASHBOARD_PORT)
-        ));
-        assert!(!allowed_desktop_navigation(
-            &url("https://127.0.0.1:3335/ui"), Some(SEPARATE_DASHBOARD_PORT)
+            &alternate,
+            Some(PRIMARY_DASHBOARD_PORT)
         ));
         assert!(allowed_desktop_navigation(
-            &url("http://tauri.localhost/index.html"), Some(PRIMARY_DASHBOARD_PORT)
+            &alternate,
+            Some(SEPARATE_DASHBOARD_PORT)
+        ));
+        assert!(!allowed_desktop_navigation(
+            &primary,
+            Some(SEPARATE_DASHBOARD_PORT)
+        ));
+        assert!(!allowed_desktop_navigation(&alternate, None));
+        assert!(!allowed_desktop_navigation(
+            &url("http://127.0.0.1:4444/ui"),
+            Some(SEPARATE_DASHBOARD_PORT)
+        ));
+        assert!(!allowed_desktop_navigation(
+            &url("http://localhost:3335/ui"),
+            Some(SEPARATE_DASHBOARD_PORT)
+        ));
+        assert!(!allowed_desktop_navigation(
+            &url("http://attacker.example/ui"),
+            Some(SEPARATE_DASHBOARD_PORT)
+        ));
+        assert!(!allowed_desktop_navigation(
+            &url("https://127.0.0.1:3335/ui"),
+            Some(SEPARATE_DASHBOARD_PORT)
+        ));
+        assert!(allowed_desktop_navigation(
+            &url("http://tauri.localhost/index.html"),
+            Some(PRIMARY_DASHBOARD_PORT)
         ));
         assert!(!supported_dashboard_port(3336));
         assert!(!supported_dashboard_port(0));
@@ -863,6 +886,7 @@ mod tests {
             child: Mutex::new(None),
             error: Mutex::new(None),
             working_dir: Mutex::new(None),
+            dashboard_port: Mutex::new(PRIMARY_DASHBOARD_PORT),
         };
 
         assert_eq!(
@@ -879,6 +903,7 @@ mod tests {
             child: Mutex::new(None),
             error: Mutex::new(None),
             working_dir: Mutex::new(None),
+            dashboard_port: Mutex::new(PRIMARY_DASHBOARD_PORT),
         };
 
         let error =
