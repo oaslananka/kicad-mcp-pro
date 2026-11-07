@@ -403,6 +403,37 @@
         return true;
       }
 
+      // Keep the guarded port and compatibility UI separate from the
+      // polling lifecycle, without relaxing the native exact-version check.
+      function rejectUnusableReadiness(readiness) {
+        if (!readiness) return false;
+        if (!selectDesktopPort(readiness.port)) {
+          showError('Desktop backend reported an unsupported port.');
+          return true;
+        }
+        if (!readiness.incompatible) return false;
+        if (desktopPort === PRIMARY_PORT) separateButton.style.display = '';
+        if (errorDetailEl) {
+          errorDetailEl.textContent = 'Another version or service occupies 127.0.0.1:' + desktopPort
+            + '. ' + readiness.detail
+            + '. You can keep it running and open a separate, exact-version desktop backend'
+            + (desktopPort === PRIMARY_PORT ? ' with one click.' : ' after freeing the separate port.')
+            + ' The existing service will not be changed.';
+          errorDetailEl.style.display = 'block';
+        }
+        showError('Different backend detected on the local port');
+        return true;
+      }
+
+      async function showStartupTimeout() {
+        const finalStatus = await getTauriStatus();
+        if (finalStatus && finalStatus.message && !finalStatus.running && errorDetailEl) {
+          errorDetailEl.textContent = finalStatus.message;
+          errorDetailEl.style.display = 'block';
+        }
+        showError('Server failed to start');
+      }
+
       async function checkServer() {
         retries++;
 
@@ -412,23 +443,7 @@
         }
 
         const readiness = await getDesktopReadiness();
-        if (readiness && !selectDesktopPort(readiness.port)) {
-          showError('Desktop backend reported an unsupported port.');
-          return;
-        }
-        if (readiness && readiness.incompatible) {
-          if (desktopPort === PRIMARY_PORT) separateButton.style.display = '';
-          if (errorDetailEl) {
-            errorDetailEl.textContent = 'Another version or service occupies 127.0.0.1:' + desktopPort
-              + '. ' + readiness.detail
-              + '. You can keep it running and open a separate, exact-version desktop backend'
-              + (desktopPort === PRIMARY_PORT ? ' with one click.' : ' after freeing the separate port.')
-              + ' The existing service will not be changed.';
-            errorDetailEl.style.display = 'block';
-          }
-          showError('Different backend detected on the local port');
-          return;
-        }
+        if (rejectUnusableReadiness(readiness)) return;
         // Do not redirect when Tauri IPC is unavailable or a foreign HTTP
         // server returned 200/opaque status. Native compatibility is mandatory.
         healthOk = readiness?.ready === true;
@@ -444,12 +459,7 @@
         }
 
         if (retries >= MAX_RETRIES) {
-          const finalStatus = await getTauriStatus();
-          if (finalStatus && finalStatus.message && !finalStatus.running && errorDetailEl) {
-            errorDetailEl.textContent = finalStatus.message;
-            errorDetailEl.style.display = 'block';
-          }
-          showError('Server failed to start');
+          await showStartupTimeout();
           return;
         }
 
