@@ -50,6 +50,16 @@
 
 <!-- mcp-name: io.github.oaslananka/kicad-mcp-pro -->
 
+## Corporate sponsorship & partnerships
+
+**Seeking corporate sponsors and technical partners.** KiCad MCP Pro is an independent MIT-licensed open-source project connecting AI agents with KiCad electronics-design workflows.
+
+We welcome financial contributions, infrastructure and signing support, component-data/API collaboration, and engineering partnerships. Learn more in [Sponsor & partnership opportunities](SPONSORS.md), view the [one-page partnership brief](docs/sponsorship/partnership-brief.md), and review the [dated reach metrics and proposed demo acceptance criteria](docs/sponsorship/metrics-and-demo.md).
+
+*Integration compatibility, independent media coverage, and prospective outreach do not imply a vendor endorsement or sponsorship. Only confirmed partners will be identified as sponsors.*
+
+
+
 KiCad MCP Pro is a Model Context Protocol server for KiCad EDA workflows. It exposes tools, resources, and prompts for schematic, PCB, validation, DFM, and manufacturing export automation.
 
 The server now starts with the bounded `default` profile: 24 read-only review tools instead of the complete expert catalog. Use `build` with write mode for controlled edits, `release` with manufacturing mode for human-gated handoff, or `expert`/`full` only for advanced trusted clients. Current catalog counts and context-size estimates come from [`docs/evidence/progressive-disclosure-profile-snapshot.json`](docs/evidence/progressive-disclosure-profile-snapshot.json); see [`docs/agents/progressive-disclosure.md`](docs/agents/progressive-disclosure.md).
