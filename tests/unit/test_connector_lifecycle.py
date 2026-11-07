@@ -2,6 +2,7 @@
 
 import json
 import os
+import stat
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -16,13 +17,13 @@ from kicad_mcp.services.connector_lifecycle import (
 @pytest.fixture
 def mock_registry(tmp_path: Path) -> Path:
     root = tmp_path / "registry"
-    root.mkdir(mode=0o700)
-    (root / "projects").mkdir(mode=0o700)
-    (root / "keys").mkdir(mode=0o700)
+    root.mkdir(mode=stat.S_IRWXU)
+    (root / "projects").mkdir(mode=stat.S_IRWXU)
+    (root / "keys").mkdir(mode=stat.S_IRWXU)
     if hasattr(os, "chmod"):
-        os.chmod(root, 0o700)
-        os.chmod(root / "projects", 0o700)
-        os.chmod(root / "keys", 0o700)
+        os.chmod(root, stat.S_IRWXU)  # nosec B103 # nosemgrep
+        os.chmod(root / "projects", stat.S_IRWXU)  # nosec B103 # nosemgrep
+        os.chmod(root / "keys", stat.S_IRWXU)  # nosec B103 # nosemgrep
     proj_a = {
         "ownerSub": "usr-1",
         "cloudOrigin": "https://kicad-mcp-pro.oaslananka.dev",

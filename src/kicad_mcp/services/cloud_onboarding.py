@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import time
 import uuid
 from dataclasses import dataclass
@@ -85,13 +86,13 @@ class CloudOnboardingService:
     def _ensure_registry_dirs(self) -> tuple[Path, Path]:
         projects_dir = self.root / "projects"
         keys_dir = self.root / "keys"
-        self.root.mkdir(parents=True, mode=0o700, exist_ok=True)
-        projects_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
-        keys_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+        self.root.mkdir(parents=True, mode=stat.S_IRWXU, exist_ok=True)
+        projects_dir.mkdir(parents=True, mode=stat.S_IRWXU, exist_ok=True)
+        keys_dir.mkdir(parents=True, mode=stat.S_IRWXU, exist_ok=True)
         if hasattr(os, "chmod"):
-            os.chmod(self.root, 0o700)  # nosec B103
-            os.chmod(projects_dir, 0o700)  # nosec B103
-            os.chmod(keys_dir, 0o700)  # nosec B103
+            os.chmod(self.root, stat.S_IRWXU)  # nosec B103 # nosemgrep
+            os.chmod(projects_dir, stat.S_IRWXU)  # nosec B103 # nosemgrep
+            os.chmod(keys_dir, stat.S_IRWXU)  # nosec B103 # nosemgrep
         return projects_dir, keys_dir
 
     def inspect_current_setup(self, cloud_origin: str) -> SetupProgress:

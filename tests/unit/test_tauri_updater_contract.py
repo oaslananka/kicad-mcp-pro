@@ -19,8 +19,6 @@ def _contains_key(value: object, target: str) -> bool:
 
 def test_updater_is_configured_in_runtime_and_shipped_configuration() -> None:
     manifest = tomllib.loads((TAURI_DIR / "Cargo.toml").read_text(encoding="utf-8"))
-    config_text = (TAURI_DIR / "tauri.conf.json").read_text(encoding="utf-8")
-    config = json.loads(config_text)
     capability = json.loads(
         (TAURI_DIR / "capabilities" / "default.json").read_text(encoding="utf-8")
     )

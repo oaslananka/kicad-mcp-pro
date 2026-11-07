@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import stat
 from pathlib import Path
 
 from kicad_mcp.cloud_local_registry import default_registry_root
@@ -19,9 +20,9 @@ class LinuxCredentialStore(PlatformCredentialStore):
 
     def _keys_dir(self) -> Path:
         keys_dir = self.root / "keys"
-        keys_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+        keys_dir.mkdir(parents=True, mode=stat.S_IRWXU, exist_ok=True)
         if hasattr(os, "chmod"):
-            os.chmod(keys_dir, 0o700)  # nosec B103
+            os.chmod(keys_dir, stat.S_IRWXU)  # nosec B103 # nosemgrep
         return keys_dir
 
     def save_key(self, record_id: str, key_pem: bytes) -> None:

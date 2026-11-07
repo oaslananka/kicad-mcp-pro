@@ -2,6 +2,7 @@
 
 import json
 import os
+import stat
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,13 +18,13 @@ from kicad_mcp.services.cloud_onboarding import (
 @pytest.fixture
 def tmp_registry(tmp_path: Path) -> Path:
     reg = tmp_path / "cloud_registry"
-    reg.mkdir(mode=0o700)
-    (reg / "projects").mkdir(mode=0o700)
-    (reg / "keys").mkdir(mode=0o700)
+    reg.mkdir(mode=stat.S_IRWXU)
+    (reg / "projects").mkdir(mode=stat.S_IRWXU)
+    (reg / "keys").mkdir(mode=stat.S_IRWXU)
     if hasattr(os, "chmod"):
-        os.chmod(reg, 0o700)
-        os.chmod(reg / "projects", 0o700)
-        os.chmod(reg / "keys", 0o700)
+        os.chmod(reg, stat.S_IRWXU)  # nosec B103 # nosemgrep
+        os.chmod(reg / "projects", stat.S_IRWXU)  # nosec B103 # nosemgrep
+        os.chmod(reg / "keys", stat.S_IRWXU)  # nosec B103 # nosemgrep
     return reg
 
 
