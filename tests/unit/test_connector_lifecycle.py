@@ -1,6 +1,7 @@
 """Tests for Connector lifecycle management and safe active project selection."""
 
 import json
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -15,9 +16,13 @@ from kicad_mcp.services.connector_lifecycle import (
 @pytest.fixture
 def mock_registry(tmp_path: Path) -> Path:
     root = tmp_path / "registry"
-    root.mkdir()
-    (root / "projects").mkdir()
-    (root / "keys").mkdir()
+    root.mkdir(mode=0o700)
+    (root / "projects").mkdir(mode=0o700)
+    (root / "keys").mkdir(mode=0o700)
+    if hasattr(os, "chmod"):
+        os.chmod(root, 0o700)
+        os.chmod(root / "projects", 0o700)
+        os.chmod(root / "keys", 0o700)
     proj_a = {
         "ownerSub": "usr-1",
         "cloudOrigin": "https://kicad-mcp-pro.oaslananka.dev",
@@ -36,8 +41,13 @@ def mock_registry(tmp_path: Path) -> Path:
         "directory": str(tmp_path / "project_b"),
         "filenameStem": "board_b",
     }
-    (root / "projects" / "11111111-1111-1111-1111-111111111111.json").write_text(json.dumps(proj_a))
-    (root / "projects" / "22222222-2222-2222-2222-222222222222.json").write_text(json.dumps(proj_b))
+    f1 = root / "projects" / "11111111-1111-1111-1111-111111111111.json"
+    f2 = root / "projects" / "22222222-2222-2222-2222-222222222222.json"
+    f1.write_text(json.dumps(proj_a), encoding="utf-8")
+    f2.write_text(json.dumps(proj_b), encoding="utf-8")
+    if hasattr(os, "chmod"):
+        os.chmod(f1, 0o600)
+        os.chmod(f2, 0o600)
     return root
 
 

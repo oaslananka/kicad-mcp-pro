@@ -21,7 +21,7 @@ class LinuxCredentialStore(PlatformCredentialStore):
         keys_dir = self.root / "keys"
         keys_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
         if hasattr(os, "chmod"):
-            os.chmod(keys_dir, 0o700)
+            os.chmod(keys_dir, 0o700)  # nosec B103
         return keys_dir
 
     def save_key(self, record_id: str, key_pem: bytes) -> None:

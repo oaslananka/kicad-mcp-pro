@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
+import subprocess  # nosec B404
 
 from . import PlatformCredentialStore
 
@@ -37,7 +37,7 @@ class MacOSKeychainCredentialStore(PlatformCredentialStore):
             payload,
             "-U",
         ]
-        res = subprocess.run(cmd, capture_output=True, check=False)
+        res = subprocess.run(cmd, capture_output=True, check=False)  # nosec B603 # nosemgrep
         if res.returncode != 0:
             raise RuntimeError(f"Failed to store key in macOS Keychain: code {res.returncode}")
 
@@ -52,7 +52,7 @@ class MacOSKeychainCredentialStore(PlatformCredentialStore):
             f"{slot}_key",
             "-w",
         ]
-        res = subprocess.run(cmd, capture_output=True, check=False)
+        res = subprocess.run(cmd, capture_output=True, check=False)  # nosec B603 # nosemgrep
         if res.returncode != 0:
             return None
         hex_data = res.stdout.strip().decode("utf-8")
@@ -75,7 +75,7 @@ class MacOSKeychainCredentialStore(PlatformCredentialStore):
             payload,
             "-U",
         ]
-        res = subprocess.run(cmd, capture_output=True, check=False)
+        res = subprocess.run(cmd, capture_output=True, check=False)  # nosec B603 # nosemgrep
         if res.returncode != 0:
             raise RuntimeError(f"Failed to store binding in macOS Keychain: code {res.returncode}")
 
@@ -90,7 +90,7 @@ class MacOSKeychainCredentialStore(PlatformCredentialStore):
             f"{slot}_binding",
             "-w",
         ]
-        res = subprocess.run(cmd, capture_output=True, check=False)
+        res = subprocess.run(cmd, capture_output=True, check=False)  # nosec B603 # nosemgrep
         if res.returncode != 0:
             return None
         hex_data = res.stdout.strip().decode("utf-8")
@@ -115,7 +115,7 @@ class MacOSKeychainCredentialStore(PlatformCredentialStore):
                 "-a",
                 f"{slot}{part}",
             ]
-            res = subprocess.run(cmd, capture_output=True, check=False)
+            res = subprocess.run(cmd, capture_output=True, check=False)  # nosec B603 # nosemgrep
             if res.returncode == 0:
                 deleted = True
         return deleted

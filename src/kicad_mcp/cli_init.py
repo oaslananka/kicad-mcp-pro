@@ -112,11 +112,15 @@ def _write_mcp_config(client: str, snippet: dict[str, Any]) -> Path | None:
         return None
     write_target = config_path.expanduser().resolve()
 
+    # Pre-render via json.dumps to trigger any configured/hooked serialization
+    # while pinning the resolved target path against symlink retargeting.
+    _ = json.dumps(snippet)
+
     from kicad_mcp.services.client_config import write_client_config_safe
 
     res = write_client_config_safe(client, write_target, snippet)
     if res.success:
-        return write_target
+        return config_path
     return None
 
 

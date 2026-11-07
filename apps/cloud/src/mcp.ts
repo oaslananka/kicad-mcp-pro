@@ -59,6 +59,50 @@ async function resolveScopedProject(
   };
 }
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function renderProjectReviewHtml(project: { alias: string; id: string; connectorConnected: boolean } | null): string {
+  const safeAlias = escapeHtml(project ? project.alias : "No active project");
+  const safeId = escapeHtml(project ? project.id : "-");
+  const isConnected = Boolean(project && project.connectorConnected);
+  const badgeClass = isConnected ? "badge ok" : "badge";
+  const badgeText = isConnected ? "Connected" : "Disconnected";
+
+  return [
+    "<!doctype html>",
+    "<html>",
+    "<head>",
+    '<meta charset="utf-8">',
+    "<style>",
+    ":root{--bg:#0b0f17;--surface:#131926;--border:#232d3f;--text:#f1f5f9;--muted:#94a3b8;--accent:#38bdf8;--success:#22c55e;}",
+    "body{margin:0;padding:16px;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;font-size:13px;line-height:1.5;}",
+    ".card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:12px;}",
+    "h1{font-size:16px;margin:0 0 12px;color:var(--accent);display:flex;align-items:center;gap:8px;}",
+    ".row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);}",
+    ".badge{padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:rgba(56,189,248,0.15);color:var(--accent);}",
+    ".badge.ok{background:rgba(34,197,94,0.15);color:var(--success);}",
+    "</style>",
+    "</head>",
+    "<body>",
+    '<div class="card">',
+    "<h1>KiCad Project Review</h1>",
+    '<div class="row"><span>Project</span><strong>' + safeAlias + "</strong></div>",
+    '<div class="row"><span>Project ID</span><code>' + safeId + "</code></div>",
+    '<div class="row"><span>Device Connection</span><span class="' + badgeClass + '">' + badgeText + "</span></div>",
+    '<div class="row"><span>Read Surface</span><span>Local Read-Only</span></div>',
+    "</div>",
+    "</body>",
+    "</html>"
+  ].join("\n");
+}
+
 export function createCloudMcpHandler(
   inventory: Inventory, actor: Actor, projectPresence?:ProjectPresenceReader,
   projectDrc?:ProjectDrcReader, projectInspection?:ProjectInspectionReader,
@@ -136,30 +180,7 @@ export function createCloudMcpHandler(
       async (uri) => {
         const projects = await inventory.listProjects(actor.sub, actor.clientId);
         const project = projects.length > 0 ? describeProject(projects[0]!) : null;
-        const html = `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<style>
-:root{--bg:#0b0f17;--surface:#131926;--border:#232d3f;--text:#f1f5f9;--muted:#94a3b8;--accent:#38bdf8;--success:#22c55e;}
-body{margin:0;padding:16px;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;font-size:13px;line-height:1.5;}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:12px;}
-h1{font-size:16px;margin:0 0 12px;color:var(--accent);display:flex;align-items:center;gap:8px;}
-.row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05);}
-.badge{padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;background:rgba(56,189,248,0.15);color:var(--accent);}
-.badge.ok{background:rgba(34,197,94,0.15);color:var(--success);}
-</style>
-</head>
-<body>
-<div class="card">
-<h1>KiCad Project Review</h1>
-<div class="row"><span>Project</span><strong>${project ? project.alias : "No active project"}</strong></div>
-<div class="row"><span>Project ID</span><code>${project ? project.id : "-"}</code></div>
-<div class="row"><span>Device Connection</span><span class="badge ${project && project.connectorConnected ? "ok" : ""}">${project && project.connectorConnected ? "Connected" : "Disconnected"}</span></div>
-<div class="row"><span>Read Surface</span><span>Local Read-Only</span></div>
-</div>
-</body>
-</html>`;
+        const html = renderProjectReviewHtml(project);
         return {
           contents: [{
             uri: uri.href,

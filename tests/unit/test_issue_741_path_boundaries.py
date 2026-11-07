@@ -60,7 +60,10 @@ def test_routing_rule_write_rejects_symlink_escape(sample_project: Path, tmp_pat
     outside = tmp_path / "outside.kicad_dru"
     outside.write_text("(rules)\n", encoding="utf-8")
     rules_path.unlink()
-    rules_path.symlink_to(outside)
+    try:
+        rules_path.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"symlink unavailable: {exc}")
 
     with pytest.raises(UnsafePathError):
         routing_rules._write_rule("min-width", '(rule "min-width")')
@@ -75,7 +78,10 @@ def test_drc_state_write_rejects_symlinked_sidecar_directory(
     outside = tmp_path / "outside-state"
     outside.mkdir()
     sidecar = sample_project / ".kicad-mcp"
-    sidecar.symlink_to(outside, target_is_directory=True)
+    try:
+        sidecar.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlink unavailable: {exc}")
 
     with pytest.raises(UnsafePathError):
         validation._save_drc_state({"enabled": {}, "severity": {}})
@@ -92,7 +98,10 @@ def test_variant_state_write_rejects_symlinked_sidecar_directory(
     outside = tmp_path / "outside-variants"
     outside.mkdir()
     sidecar = sample_project / ".kicad-mcp"
-    sidecar.symlink_to(outside, target_is_directory=True)
+    try:
+        sidecar.symlink_to(outside, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"symlink unavailable: {exc}")
 
     with pytest.raises(UnsafePathError):
         variants._save_state(

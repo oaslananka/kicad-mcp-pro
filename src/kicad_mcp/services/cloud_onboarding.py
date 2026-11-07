@@ -89,9 +89,9 @@ class CloudOnboardingService:
         projects_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
         keys_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
         if hasattr(os, "chmod"):
-            os.chmod(self.root, 0o700)
-            os.chmod(projects_dir, 0o700)
-            os.chmod(keys_dir, 0o700)
+            os.chmod(self.root, 0o700)  # nosec B103
+            os.chmod(projects_dir, 0o700)  # nosec B103
+            os.chmod(keys_dir, 0o700)  # nosec B103
         return projects_dir, keys_dir
 
     def inspect_current_setup(self, cloud_origin: str) -> SetupProgress:

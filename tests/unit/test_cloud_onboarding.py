@@ -1,5 +1,7 @@
 """Tests for shared CloudOnboardingService."""
 
+import json
+import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,9 +17,13 @@ from kicad_mcp.services.cloud_onboarding import (
 @pytest.fixture
 def tmp_registry(tmp_path: Path) -> Path:
     reg = tmp_path / "cloud_registry"
-    reg.mkdir()
-    (reg / "projects").mkdir()
-    (reg / "keys").mkdir()
+    reg.mkdir(mode=0o700)
+    (reg / "projects").mkdir(mode=0o700)
+    (reg / "keys").mkdir(mode=0o700)
+    if hasattr(os, "chmod"):
+        os.chmod(reg, 0o700)
+        os.chmod(reg / "projects", 0o700)
+        os.chmod(reg / "keys", 0o700)
     return reg
 
 
@@ -75,15 +81,23 @@ def test_failure_after_pairing_preserves_paired_keys(tmp_registry, tmp_path) -> 
         "fingerprint": "a" * 64,
         "ownerSub": "usr-456",
     }
-    import json
-
     binding_file.write_text(json.dumps(valid_binding))
+    if hasattr(os, "chmod"):
+        os.chmod(keyfile, 0o600)
+        os.chmod(binding_file, 0o600)
 
-    with patch("kicad_mcp.cloud_pair.register_device_project") as mock_proj:
-        from kicad_mcp.cloud_pair import CloudPairingError
+    from kicad_mcp.cloud_pair import CloudPairingError
 
-        mock_proj.side_effect = CloudPairingError("Project registration rejected")
-
+    with (
+        patch(
+            "kicad_mcp.services.cloud_onboarding._read_owner_binding",
+            return_value=valid_binding,
+        ),
+        patch(
+            "kicad_mcp.cloud_pair.register_device_project",
+            side_effect=CloudPairingError("Project registration rejected"),
+        ),
+    ):
         result = service.register_project_step(
             key_slot=slot,
             project_dir=proj,
