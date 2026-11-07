@@ -131,6 +131,36 @@ def calculate_experience_snapshot(**options: Unpack[ExperienceOptions]) -> Exper
     return _calculate_experience_state(_ExperienceInputs(**options))
 
 
+def _project_experience_info(path: Path | None, valid: bool) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    return {"path": str(path), "name": path.name, "valid": valid}
+
+
+def _computer_experience_info(
+    computer_id: str | None, device_paired: bool
+) -> dict[str, Any] | None:
+    if not computer_id and not device_paired:
+        return None
+    return {
+        "id": computer_id or "local",
+        "alias": "This computer",
+        "registered": device_paired,
+    }
+
+
+def _ai_client_experience_info(
+    ai_client_name: str | None, client_granted: bool
+) -> dict[str, Any] | None:
+    if not ai_client_name:
+        return None
+    return {
+        "name": ai_client_name,
+        "configured": True,
+        "grant_status": "granted" if client_granted else "pending",
+    }
+
+
 def _calculate_experience_state(state: _ExperienceInputs) -> ExperienceSnapshot:
     mode = state.mode
     project_dir = state.project_dir
@@ -155,29 +185,9 @@ def _calculate_experience_state(state: _ExperienceInputs) -> ExperienceSnapshot:
 
     available_actions: list[str] = ["select_project", "configure_ai"]
 
-    project_info: dict[str, Any] | None = None
-    if p_path:
-        project_info = {
-            "path": str(p_path),
-            "name": p_path.name,
-            "valid": valid_project,
-        }
-
-    computer_info: dict[str, Any] | None = None
-    if computer_id or device_paired:
-        computer_info = {
-            "id": computer_id or "local",
-            "alias": "This computer",
-            "registered": device_paired,
-        }
-
-    ai_client_info: dict[str, Any] | None = None
-    if ai_client_name:
-        ai_client_info = {
-            "name": ai_client_name,
-            "configured": True,
-            "grant_status": "granted" if client_granted else "pending",
-        }
+    project_info = _project_experience_info(p_path, valid_project)
+    computer_info = _computer_experience_info(computer_id, device_paired)
+    ai_client_info = _ai_client_experience_info(ai_client_name, client_granted)
 
     if mode == "cloud":
         return _cloud_experience(

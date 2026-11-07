@@ -12,6 +12,7 @@ import json
 import os
 import stat
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from websockets.asyncio.client import connect
@@ -54,6 +55,20 @@ def _validated_registration(record: object, expected_project_id: str) -> dict[st
     return record
 
 
+def _owner_private_stat(
+    info: os.stat_result, getuid: Callable[[], int], max_bytes: int | None = None
+) -> bool:
+    """Validate a single owner-only regular file without following links."""
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or info.st_uid != getuid()
+        or info.st_nlink != 1
+        or info.st_mode & 0o077
+    ):
+        return False
+    return max_bytes is None or 1 <= info.st_size <= max_bytes
+
+
 def _single_registered_identity(root: Path) -> dict[str, str]:
     """Read only a private, uniquely registered project with no symlink follows."""
     folder = root / "projects"
@@ -93,13 +108,7 @@ def _single_registered_identity(root: Path) -> dict[str, str]:
             dir_fd=directory_fd,
         )
         info = os.fstat(fd)
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or info.st_uid != getuid()
-            or info.st_nlink != 1
-            or info.st_mode & 0o077
-            or not 1 <= info.st_size <= 2048
-        ):
+        if not _owner_private_stat(info, getuid, max_bytes=2048):
             raise LocalApprovalDeniedError(_DENIED)
         record = json.loads(os.read(fd, 2049), object_pairs_hook=_unique)
         record = _validated_registration(record, names[0].stem)
@@ -111,12 +120,7 @@ def _single_registered_identity(root: Path) -> dict[str, str]:
             registry_root=root,
         )
         key_info = selected.key_file.lstat()
-        if (
-            not stat.S_ISREG(key_info.st_mode)
-            or key_info.st_uid != getuid()
-            or key_info.st_nlink != 1
-            or key_info.st_mode & 0o077
-        ):
+        if not _owner_private_stat(key_info, getuid):
             raise LocalApprovalDeniedError(_DENIED)
         return record
     except (OSError, ValueError, TypeError) as exc:
