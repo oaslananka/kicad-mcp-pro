@@ -22,12 +22,11 @@ from kicad_mcp.cloud_managed_connector import (
     _STATUS_FIELDS,
     _STATUS_FILE,
     _identity_state,
-    _read_private_json,
     _remove_private_file,
     _run_connector,
-    _write_private_json,
     _write_status,
 )
+from kicad_mcp.cloud_pair_keys import _read_private_json, _write_private_json
 from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
 logger = logging.getLogger(__name__)

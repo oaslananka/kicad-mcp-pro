@@ -16,8 +16,11 @@ from pathlib import Path
 
 from kicad_mcp import cloud_pair
 from kicad_mcp.cloud_local_registry import default_registry_root
-from kicad_mcp.cloud_managed_connector import _write_private_json
-from kicad_mcp.cloud_pair_keys import _open_owner_private_dir, _read_owner_binding
+from kicad_mcp.cloud_pair_keys import (
+    _open_owner_private_dir,
+    _read_owner_binding,
+    _write_private_json,
+)
 from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
 DEFAULT_CLOUD_ORIGIN = "https://kicad-mcp-pro.oaslananka.dev"

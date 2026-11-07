@@ -383,11 +383,8 @@ def _start_connector(root: Path, new_record: dict[str, str]) -> str:
     except Exception as exc:
         typer.echo(f"Background service start notice: {exc}")
         try:
-            from kicad_mcp.cloud_managed_connector import (
-                _ENABLED_FILE,
-                _identity_state,
-                _write_private_json,
-            )
+            from kicad_mcp.cloud_managed_connector import _ENABLED_FILE, _identity_state
+            from kicad_mcp.cloud_pair_keys import _write_private_json
 
             _write_private_json(root, _ENABLED_FILE, _identity_state(new_record))
             return "Enabled (Foreground ready)"
