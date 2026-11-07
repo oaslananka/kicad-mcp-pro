@@ -21,32 +21,21 @@
 
 Existing [historical native-agent smoke evidence](../evidence/agent-host-smoke-history.md) documents a real read-only host integration under the stated host/version constraints. The [native-live benchmark example](../evidence/task-outcomes/2026-08-28-native-live-example/README.md) explicitly reports **insufficient evidence** for headline task-success targets. Neither document independently establishes current desktop acceptance or general manufacturing readiness.
 
-## Controlled schematic-edit technical demo — 85 seconds (2026-11-07)
+## Future sponsor demo — review-before-publication contract
 
-The [MP4 recording](sponsor-demo-controlled-schematic-edit.mp4) captures a **live MCP client session** and independent KiCad ERC checks on a disposable copy of the [ESP32-C3 schematic in this repository](../../examples/gallery/esp32-c3-wroom-02-breakout/README.md). The demo executes plan → preview → apply → verify → rollback for a deliberately unattached net label, then re-plans an additional correct EN net label and verifies **0 KiCad ERC findings**. The schematic views are genuine KiCad CLI SVG renders of the same exact before/after source content, prepared prior to recording to avoid expensive conversions. This is a **deterministic client harness, not a live autonomous LLM agent** or an official product GUI; it is a technical proof of the underlying MCP editing and recovery contract, **not yet the final flagship sponsor video**.
+**Status:** no sponsor-facing video approved or included in this PR. The preceding PCB-pan and scrolling-tool-log prototype recordings were explicitly rejected as unclear to viewers and have been removed. Historical backend proofs do not substitute for a visible, meaningful engineering workflow.
 
-The [dated source-bound evidence](demo-evidence-2026-11-07.md) states the versions, input/output hashes, exact scope and verification limits. The earlier PCB-pan-and-finding-count video was rejected for this outreach use case and removed from the PR. It is not presented as a current sponsor asset.
+The next candidate must demonstrate a **real, visibly changing KiCad schematic or PCB** and answer the viewer's questions: what engineering task was requested; how did a named AI agent use KiCad MCP Pro; what exactly changed; did KiCad ERC/DRC independently confirm the result; and what happens on failure? A deterministic MCP harness must be labeled as such and cannot be sold as autonomous AI.
 
-## Future continuous agent/IPC demonstration — capture plan
+Acceptance requirements before any sponsor-facing claim:
 
-**Status: still required for a fully continuous live-integration claim.**
+1. Present a 45–90 second storyboard with the **problem**, the visible **before** state, a *real* agent/MCP operation, the visible **after** state, and independently checked ERC/DRC or another task-appropriate quality gate.
+2. Do not show static mockups, pre-rendered steps, arbitrary cursor movement or scrolling logs in place of demonstrated product functionality. Clearly distinguish agent decisions from scripted MCP actions, and real KiCad editor views from static renders.
+3. Use a disposable, license-clear sample with an exact pinned starting SHA and a reversible change; capture complete attempts, including failure/rollback, without cherry-picking unsupported success claims.
+4. Verify safety, playback, privacy, relevant source/version provenance and measured results. No manufacturing readiness or full autonomy claim without the applicable benchmark.
+5. **Owner review gate:** keep each proposed video **outside the PR and public assets until explicitly reviewed and approved**. Only after approval add it to the PR and update its public links/claims.
 
-1. **0–7 s — provenance:** show the exact source/version and a disposable sample KiCad project; redact paths, account details and tokens.
-2. **7–15 s — genuine MCP connection:** show a real local agent client discovering the server's read-only tools. Preserve the recorded original command and full uncut output elsewhere for audit.
-3. **15–27 s — board inspection:** open the board in KiCad and execute a real read-only project/board inspection through an MCP tool. Show the actual observed result, not a synthetic expected response.
-4. **27–38 s — validation:** use a tool that actually invokes KiCad's ERC/DRC engine in that tested setup; label real counts exactly. If a safe read-only rule-check is unavailable for that installed version, omit it and explain why.
-5. **38–45 s — scope:** end with the product and the explicit message `Human engineering review required before manufacture`.
-
-### Capture acceptance checklist
-
-- Exact software, KiCad and agent versions pinned; demonstrator source and temporary example project identified.
-- Screen capture of a real application and real tool traffic, not an animated mockup; no synthetic or edited JSON passed off as live results.
-- Demonstration shows no secret, private board, personal path, credential or unrelated desktop content.
-- Record whether command succeeded, what was measured, and what was **not** verified (e.g. native desktop onboarding, PCB fabrication, full-corpus task success).
-- No unauthorised design mutation, external manufacturing order or sponsor-branded claim.
-- Publish only after the capture file has been reviewed and playback can be independently verified.
-
-**Current gap:** the technical clip proves actual bounded MCP editing and independent ERC validation in a deterministic client. A *real autonomous AI-agent run* with meaningful design changes, and independently accepted real-editor IPC, remains outstanding. Neither this technical clip nor the older synthetic cast is that final evidence.
+Historical [tool-smoke evidence](../evidence/agent-host-smoke-history.md) and the separate [native-live benchmark example](../evidence/task-outcomes/2026-08-28-native-live-example/README.md) are not full autonomous design-task success evidence. The maintained reference-board success criteria remain open (#729 and #730).
 
 ## Refresh before outreach
 

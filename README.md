@@ -54,7 +54,7 @@
 
 **Seeking corporate sponsors and technical partners.** KiCad MCP Pro is an independent MIT-licensed open-source project connecting AI agents with KiCad electronics-design workflows.
 
-We welcome financial contributions, infrastructure and signing support, component-data/API collaboration, and engineering partnerships. Learn more in [Sponsor & partnership opportunities](SPONSORS.md), view the [one-page partnership brief](docs/sponsorship/partnership-brief.md), review the [dated reach metrics and demo evidence](docs/sponsorship/metrics-and-demo.md), and [view the controlled-change MCP demonstration](docs/sponsorship/sponsor-demo-controlled-schematic-edit.mp4).
+We welcome financial contributions, infrastructure and signing support, component-data/API collaboration, and engineering partnerships. Learn more in [Sponsor & partnership opportunities](SPONSORS.md), view the [one-page partnership brief](docs/sponsorship/partnership-brief.md), and review the [dated reach metrics and proposed demo acceptance criteria](docs/sponsorship/metrics-and-demo.md).
 
 *Integration compatibility, independent media coverage, and prospective outreach do not imply a vendor endorsement or sponsorship. Only confirmed partners will be identified as sponsors.*
 
