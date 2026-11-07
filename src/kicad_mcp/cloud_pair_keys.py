@@ -93,6 +93,16 @@ def _open_owner_private_dir(filename: Path) -> int:
 
 def _load_owner_key(filename: Path) -> Ed25519PrivateKey:
     """Read owner-only PEM by a pinned private directory FD and no-follow basename."""
+    if os.name == "nt":
+        if not filename.is_file() or not (1 <= filename.stat().st_size <= 8192):
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+        try:
+            key = load_pem_private_key(filename.read_bytes(), password=None)
+            if not isinstance(key, Ed25519PrivateKey):
+                raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+            return key
+        except Exception as exc:
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED) from exc
     nofollow = getattr(os, "O_NOFOLLOW", None)
     nonblock = getattr(os, "O_NONBLOCK", None)
     getuid = getattr(os, "getuid", None)
@@ -135,6 +145,38 @@ def _load_owner_key(filename: Path) -> Ed25519PrivateKey:
 
 def _read_owner_binding(filename: Path) -> dict[str, str]:
     """Read owner-only pairing metadata by a pinned no-follow directory FD."""
+    def unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        if len({k for k, _ in pairs}) != len(pairs):
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+        return dict(pairs)
+
+    if os.name == "nt":
+        binding_file = filename.parent / (filename.name + _BINDING_SUFFIX)
+        if not binding_file.is_file() or not (1 <= binding_file.stat().st_size <= 512):
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+        try:
+            raw = binding_file.read_bytes()
+            value = json.loads(raw, object_pairs_hook=unique)
+            if (
+                not isinstance(value, dict)
+                or not {"origin", "deviceId", "fingerprint"}.issubset(set(value))
+                or not all(isinstance(v, str) for v in value.values())
+                or len(value["origin"]) > 256
+                or re.fullmatch(
+                    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+                    value["deviceId"],
+                )
+                is None
+                or re.fullmatch(r"[0-9a-f]{64}", value["fingerprint"]) is None
+                or (
+                    "ownerSub" in value and (len(value["ownerSub"]) > 256 or len(value["ownerSub"]) < 1)
+                )
+            ):
+                raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+            return value
+        except Exception as exc:
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED) from exc
+
     nofollow = getattr(os, "O_NOFOLLOW", None)
     nonblock = getattr(os, "O_NONBLOCK", None)
     getuid = getattr(os, "getuid", None)
@@ -159,12 +201,6 @@ def _read_owner_binding(filename: Path) -> dict[str, str]:
         ):
             raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
         raw = os.read(descriptor, 513)
-
-        def unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
-            if len({k for k, _ in pairs}) != len(pairs):
-                raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
-            return dict(pairs)
-
         value = json.loads(raw, object_pairs_hook=unique)
         if (
             not isinstance(value, dict)
@@ -217,6 +253,21 @@ def _save_owner_binding(
         or re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None
     ):
         raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+
+    if os.name == "nt":
+        binding_file = filename.parent / (filename.name + _BINDING_SUFFIX)
+        if binding_file.exists():
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+        body = json.dumps(expected, separators=(",", ":"), sort_keys=True).encode()
+        try:
+            with open(binding_file, "xb") as output:
+                output.write(body)
+                output.flush()
+                os.fsync(output.fileno())
+            return
+        except Exception as exc:
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED) from exc
+
     nofollow = getattr(os, "O_NOFOLLOW", None)
     if type(nofollow) is not int:
         raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
