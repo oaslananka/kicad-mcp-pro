@@ -21,9 +21,13 @@
 
 Existing [historical native-agent smoke evidence](../evidence/agent-host-smoke-history.md) documents a real read-only host integration under the stated host/version constraints. The [native-live benchmark example](../evidence/task-outcomes/2026-08-28-native-live-example/README.md) explicitly reports **insufficient evidence** for headline task-success targets. Neither document independently establishes current desktop acceptance or general manufacturing readiness.
 
-## Real sponsor demo — proposed 35–45-second capture
+## Recorded sponsor demo — 46 seconds (2026-11-07)
 
-**Status: storyboard prepared; new real end-to-end video has not been recorded or verified by this sponsorship task.**
+The [edited MP4](sponsor-demo-royalblue54l.mp4) contains a genuine, isolated KiCad PCB Editor recording plus slides based on actual, separately invoked MCP 4.8.1 read-only tool outputs. The [dated evidence record](demo-evidence-2026-11-07.md) includes source/license attribution, exact input hash, tool results (71 footprints, 943 tracks, 95 named nets, 287 DRC findings and 27 ERC findings), and the unresolved file-backed/native via-count discrepancy. The source board was not changed. This does **not** establish a continuous editor-IPC session or an autonomous PCB-design success.
+
+## Future continuous agent/IPC demonstration — capture plan
+
+**Status: still required for a fully continuous live-integration claim.**
 
 1. **0–7 s — provenance:** show the exact source/version and a disposable sample KiCad project; redact paths, account details and tokens.
 2. **7–15 s — genuine MCP connection:** show a real local agent client discovering the server's read-only tools. Preserve the recorded original command and full uncut output elsewhere for audit.
@@ -40,7 +44,7 @@ Existing [historical native-agent smoke evidence](../evidence/agent-host-smoke-h
 - No unauthorised design mutation, external manufacturing order or sponsor-branded claim.
 - Publish only after the capture file has been reviewed and playback can be independently verified.
 
-**Current gap:** the ~45-second verified real capture needs a physical KiCad+MCP run and review. The present record establishes a safe scenario and existing evidence, not the video itself.
+**Current gap:** a 46-second edited video now exists; a *continuous* agent/real-editor-IPC capture with independently verified session/tool evidence remains outstanding. Neither the edited clip nor the older synthetic cast is a substitute for this future acceptance.
 
 ## Refresh before outreach
 

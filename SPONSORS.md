@@ -28,4 +28,4 @@ Possible recognition includes a verified public acknowledgement here, an approve
 
 For non-confidential technical or sponsorship proposals, [open a GitHub Discussion](https://github.com/oaslananka/kicad-mcp-pro/discussions) with a short outline of your organization, intended contribution and integration interest. **Discussions are public; do not post confidential terms or credentials.** For existing community support options, use [GitHub Sponsors](https://github.com/sponsors/oaslananka) or [Buy Me a Coffee](https://www.buymeacoffee.com/oaslananka).
 
-See the [one-page English partnership brief](docs/sponsorship/partnership-brief.md) and the [dated metrics and demo evidence](docs/sponsorship/metrics-and-demo.md). An actual sponsor will be listed here only after their support and acknowledgement are confirmed.
+See the [one-page English partnership brief](docs/sponsorship/partnership-brief.md), [dated metrics and demo evidence](docs/sponsorship/metrics-and-demo.md), and [46-second recorded demonstration](docs/sponsorship/sponsor-demo-royalblue54l.mp4). An actual sponsor will be listed here only after their support and acknowledgement are confirmed.

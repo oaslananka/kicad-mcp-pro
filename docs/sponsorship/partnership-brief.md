@@ -31,7 +31,7 @@ We welcome non-exclusive financial support, developer/CI infrastructure, compone
 
 ## Proof and demonstration
 
-We can provide a brief **real, version-pinned, read-only workflow demonstration** with KiCad open, MCP tool discovery, a board inspection, an observed rule-check output and explicit limitations. The existing deterministic terminal cast is synthetic and must **not** be presented as live end-to-end evidence. A filming procedure, available previous test records and current gaps are documented in [metrics-and-demo.md](metrics-and-demo.md).
+[Watch the 46-second recorded demo](sponsor-demo-royalblue54l.mp4): it combines **real KiCad 10.0.8 GUI footage** with **separate measured read-only KiCad MCP Pro 4.8.1** project inspection, DRC and ERC results on the same licensed RoyalBlue54L Feather board. It is an **edited evidence montage**, not a continuous live editor-IPC session or successful design sign-off. The sample has reported validation findings; its authors retain design credit. See the [source-bound demonstration evidence](demo-evidence-2026-11-07.md) and the [metrics and future continuous-demo plan](metrics-and-demo.md). The legacy terminal cast is synthetic and not equivalent to the new recording.
 
 ## Next step
 
