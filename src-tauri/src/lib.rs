@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
+use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -14,6 +15,66 @@ use tauri_plugin_shell::ShellExt;
 use std::os::windows::process::CommandExt;
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
+
+#[cfg(windows)]
+mod backend_job;
+
+/// A desktop-owned backend with its Windows subprocess tree. Stopping uvx
+/// alone does not stop its uv/python descendants on Windows.
+struct ManagedBackend {
+    child: Child,
+    #[cfg(windows)]
+    job: Option<backend_job::WindowsJob>,
+}
+
+impl ManagedBackend {
+    fn spawn(command: &mut Command) -> std::io::Result<Self> {
+        let child = command.spawn()?;
+        #[cfg(windows)]
+        let job = match backend_job::WindowsJob::attach(&child) {
+            Ok(job) => Some(job),
+            Err(error) => {
+                let mut child = child;
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error);
+            }
+        };
+        Ok(Self {
+            child,
+            #[cfg(windows)]
+            job,
+        })
+    }
+
+    fn shutdown(&mut self) {
+        #[cfg(windows)]
+        if let Some(job) = self.job.take() {
+            // The last KILL_ON_JOB_CLOSE handle also kills descendants if
+            // explicit termination fails. This never targets user PIDs.
+            let _ = job.terminate();
+        }
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl Deref for ManagedBackend {
+    type Target = Child;
+    fn deref(&self) -> &Child {
+        &self.child
+    }
+}
+impl DerefMut for ManagedBackend {
+    fn deref_mut(&mut self) -> &mut Child {
+        &mut self.child
+    }
+}
+impl Drop for ManagedBackend {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
 
 /// Desktop/backend API contract negotiated through `/api/health`.
 /// This is intentionally independent from the MCP protocol version.
@@ -52,8 +113,8 @@ pub struct ServerStatus {
 }
 
 pub struct ServerProcess {
-    pub child: Mutex<Option<Child>>,
-    /// Packaged uvx/uv runtime; never modifies the user's global Python or PATH.
+    pub(crate) child: Mutex<Option<ManagedBackend>>,
+    /// Bundled pinned uv runtime, independent from the user's global Python.
     pub bundled_uv: Mutex<Option<PathBuf>>,
     pub error: Mutex<Option<String>>,
     pub working_dir: Mutex<Option<PathBuf>>,
@@ -107,8 +168,7 @@ impl Drop for ServerProcess {
     fn drop(&mut self) {
         if let Ok(mut guard) = self.child.lock() {
             if let Some(mut child) = guard.take() {
-                let _ = child.kill();
-                let _ = child.wait();
+                child.shutdown();
             }
         }
     }
@@ -442,7 +502,7 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    let child = cmd.spawn().map_err(|error| {
+    let child = ManagedBackend::spawn(&mut cmd).map_err(|error| {
         set_stage(process, "failed");
         format!("Failed to start kicad-mcp-pro with {uvx:?}: {error}")
     })?;
@@ -478,7 +538,9 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
             if let Some(ref mut child) = *guard {
                 if let Some(status) = child.try_wait().ok().flatten() {
                     let _ = child.wait();
+                    let exited = guard.take();
                     drop(guard);
+                    drop(exited);
                     set_stage(process, "failed");
                     return Err(format!(
                         "Python server process exited unexpectedly (code: {}) before binding to port {}.\n\
@@ -512,8 +574,7 @@ Run manually to debug: {}",
 fn stop_server_inner(process: &ServerProcess) -> Result<(), String> {
     let mut guard = process.child.lock().map_err(|error| error.to_string())?;
     if let Some(mut child) = guard.take() {
-        let _ = child.kill();
-        let _ = child.wait();
+        child.shutdown();
     }
     Ok(())
 }
@@ -1246,6 +1307,19 @@ mod tests {
         let (_, _, _, token) = tauri::async_runtime::block_on(quiesce_backend(&base)).unwrap();
         assert_eq!(token, "test-token");
         server.join().unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn managed_backend_shutdown_reaps_its_owned_launcher() {
+        let mut cmd = Command::new("cmd.exe");
+        cmd.args(["/D", "/C", "ping -n 20 127.0.0.1 > NUL"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let mut owned = ManagedBackend::spawn(&mut cmd).expect("start test-owned backend launcher");
+        owned.shutdown();
+        assert!(owned.try_wait().expect("query stopped child").is_some());
     }
 
     #[test]
