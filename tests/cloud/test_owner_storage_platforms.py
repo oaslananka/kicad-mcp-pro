@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 import stat
-import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -25,6 +25,12 @@ RECORD_ID = "a" * 32
 DEVICE_ID = "11111111-1111-4111-8111-111111111111"
 FINGERPRINT = "f" * 64
 ORIGIN = "https://cloud.example"
+
+
+@dataclass(frozen=True)
+class _FakeProcessResult:
+    returncode: int
+    stdout: bytes
 
 
 class OSNamed:
@@ -241,10 +247,10 @@ def test_macos_keychain_load_key_returns_only_valid_hex(
 ) -> None:
     commands: list[list[str]] = []
 
-    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+    def fake_run(cmd: list[str], **kwargs: object) -> _FakeProcessResult:
         commands.append(cmd)
         assert kwargs == {"capture_output": True, "check": False}
-        return subprocess.CompletedProcess(cmd, returncode, stdout=payload, stderr=b"")
+        return _FakeProcessResult(returncode, payload)
 
     monkeypatch.setattr(macos, "subprocess", SimpleNamespace(run=fake_run))
     assert macos.MacOSKeychainCredentialStore().load_key(RECORD_ID) == expected
@@ -280,9 +286,9 @@ def test_macos_keychain_binding_rejects_invalid_format(
 ) -> None:
     commands: list[list[str]] = []
 
-    def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+    def fake_run(cmd: list[str], **_kwargs: object) -> _FakeProcessResult:
         commands.append(cmd)
-        return subprocess.CompletedProcess(cmd, 0, stdout=payload, stderr=b"")
+        return _FakeProcessResult(0, payload)
 
     monkeypatch.setattr(macos, "subprocess", SimpleNamespace(run=fake_run))
     assert macos.MacOSKeychainCredentialStore().load_binding(RECORD_ID) == expected
@@ -292,9 +298,9 @@ def test_macos_keychain_binding_rejects_invalid_format(
 def test_macos_keychain_missing_record_and_disabled_writes(monkeypatch: pytest.MonkeyPatch) -> None:
     commands: list[list[str]] = []
 
-    def missing(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+    def missing(cmd: list[str], **_kwargs: object) -> _FakeProcessResult:
         commands.append(cmd)
-        return subprocess.CompletedProcess(cmd, 44, stdout=b"", stderr=b"")
+        return _FakeProcessResult(44, b"")
 
     monkeypatch.setattr(macos, "subprocess", SimpleNamespace(run=missing))
     store = macos.MacOSKeychainCredentialStore()
@@ -312,11 +318,9 @@ def test_macos_keychain_missing_record_and_disabled_writes(monkeypatch: pytest.M
 def test_macos_keychain_delete_only_own_aliases(monkeypatch: pytest.MonkeyPatch) -> None:
     commands: list[list[str]] = []
 
-    def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+    def fake_run(cmd: list[str], **_kwargs: object) -> _FakeProcessResult:
         commands.append(cmd)
-        return subprocess.CompletedProcess(
-            cmd, 0 if cmd[-1].endswith("_binding") else 44, stdout=b"", stderr=b""
-        )
+        return _FakeProcessResult(0 if cmd[-1].endswith("_binding") else 44, b"")
 
     monkeypatch.setattr(macos, "subprocess", SimpleNamespace(run=fake_run))
     assert macos.MacOSKeychainCredentialStore().delete_credentials(RECORD_ID)
