@@ -1150,7 +1150,7 @@ wheels = [
 
 [[package]]
 name = "kicad-mcp-pro"
-version = "4.8.1"
+version = "4.9.0"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },

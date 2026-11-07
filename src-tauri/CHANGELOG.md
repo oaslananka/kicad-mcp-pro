@@ -1,5 +1,14 @@
 # Changelog
 
+## [4.9.0](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v4.8.1...kicad-mcp-gui-v4.9.0) (2026-11-07)
+
+
+### Features
+
+* **desktop:** one-click exact-version recovery from legacy local backend ([#1657](https://github.com/oaslananka/kicad-mcp-pro/issues/1657)) ([4cf6a61](https://github.com/oaslananka/kicad-mcp-pro/commit/4cf6a613f3885b396db4c8fe629b32910f1c7d56))
+* **product:** unified local, desktop, web, and cloud experience ([#1658](https://github.com/oaslananka/kicad-mcp-pro/issues/1658)) ([a498b6c](https://github.com/oaslananka/kicad-mcp-pro/commit/a498b6cf78b7b45ab75850ddb57b0a9dc884203b))
+* **product:** unify desktop, local web and Cloud onboarding ([#1652](https://github.com/oaslananka/kicad-mcp-pro/issues/1652)) ([e5b6a50](https://github.com/oaslananka/kicad-mcp-pro/commit/e5b6a50a2fbefa9d1bc681698c94d27733a8b234))
+
 ## [4.8.1](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v4.8.0...kicad-mcp-gui-v4.8.1) (2026-11-06)
 
 

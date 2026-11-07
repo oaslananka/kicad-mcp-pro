@@ -10,6 +10,22 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.9.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.8.1...mcp-server-v4.9.0) (2026-11-07)
+
+
+### Features
+
+* **desktop:** one-click exact-version recovery from legacy local backend ([#1657](https://github.com/oaslananka/kicad-mcp-pro/issues/1657)) ([4cf6a61](https://github.com/oaslananka/kicad-mcp-pro/commit/4cf6a613f3885b396db4c8fe629b32910f1c7d56))
+* **product:** unified local, desktop, web, and cloud experience ([#1658](https://github.com/oaslananka/kicad-mcp-pro/issues/1658)) ([a498b6c](https://github.com/oaslananka/kicad-mcp-pro/commit/a498b6cf78b7b45ab75850ddb57b0a9dc884203b))
+* **product:** unify desktop, local web and Cloud onboarding ([#1652](https://github.com/oaslananka/kicad-mcp-pro/issues/1652)) ([e5b6a50](https://github.com/oaslananka/kicad-mcp-pro/commit/e5b6a50a2fbefa9d1bc681698c94d27733a8b234))
+
+
+### Bug Fixes
+
+* **cloud:** never repin source after ambiguous deploy timeout ([#1654](https://github.com/oaslananka/kicad-mcp-pro/issues/1654)) ([3cc9f9c](https://github.com/oaslananka/kicad-mcp-pro/commit/3cc9f9c3e75f19008f47824f3f91c4699ddb5100))
+* **cloud:** route owner device removal through protected HTTP handler ([#1655](https://github.com/oaslananka/kicad-mcp-pro/issues/1655)) ([e138660](https://github.com/oaslananka/kicad-mcp-pro/commit/e138660b5fac9d0a0daaf96f65dea8db3c835271))
+* **cloud:** validate production Docker build and recover failed source pin ([#1653](https://github.com/oaslananka/kicad-mcp-pro/issues/1653)) ([75c67f0](https://github.com/oaslananka/kicad-mcp-pro/commit/75c67f0e84749ee2a15b8a1feaaa54c321053b41))
+
 ## [4.8.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.8.0...mcp-server-v4.8.1) (2026-11-06)
 
 
