@@ -39,13 +39,24 @@ test("read mode permits a valid revision even before full readiness",async()=>{
     ({ok:true,json:async()=>({status:"starting",revision:REVISION})})}),REVISION);
 });
 
-test("Cloud production container copies only its required build helper",()=>{
-  const dockerfile=readFileSync(new URL("../Dockerfile",import.meta.url),"utf8");
-  const ignore=readFileSync(new URL("../.dockerignore",import.meta.url),"utf8");
-  assert.match(dockerfile,/COPY scripts\/copy-client-assets\.mjs \.\/scripts\/copy-client-assets\.mjs/);
-  assert.ok(dockerfile.indexOf("COPY scripts/copy-client-assets.mjs") <
-    dockerfile.indexOf("RUN npm run build"),"build helper must be copied before npm build");
+test("Cloud production container allows only its two required build helpers",()=>{
+  const dockerfile=readFileSync(new URL("../Dockerfile",import.meta.url),"utf8")
+    .replace(/\r\n/g,"\n");
+  const ignore=readFileSync(new URL("../.dockerignore",import.meta.url),"utf8")
+    .replace(/\r\n/g,"\n");
+  const expected=[
+    "scripts/copy-client-assets.mjs",
+    "scripts/build-project-review.mjs"
+  ];
+  const copyLines=dockerfile.split("\n").filter(line=>/^COPY scripts\//.test(line));
+  assert.deepEqual(copyLines,[
+    "COPY scripts/copy-client-assets.mjs scripts/build-project-review.mjs ./scripts/"
+  ]);
+  assert.ok(dockerfile.indexOf(copyLines[0]) <
+    dockerfile.indexOf("RUN npm run build"),"build helpers must be copied before npm build");
+  assert.match(dockerfile,/^COPY src \.\/src$/m);
   assert.match(ignore,/^scripts\/\*$/m);
-  assert.match(ignore,/^!scripts\/copy-client-assets\.mjs$/m);
+  const exceptions=ignore.split("\n").filter(line=>line.startsWith("!scripts/"));
+  assert.deepEqual(exceptions,expected.map(path=>"!"+path));
   assert.doesNotMatch(dockerfile,/COPY scripts\s+\.\/scripts/);
 });
