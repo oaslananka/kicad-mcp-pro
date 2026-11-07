@@ -40,6 +40,7 @@ from kicad_mcp.cloud_pair_keys import (
 )
 
 _PAIRING_DENIED = "pairing denied"
+_CHALLENGE_SUFFIX = ".challenge.json"
 _JSON_MEDIA_TYPE = "application/json"
 
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
@@ -348,7 +349,7 @@ def start_enrollment(origin: str, alias: str, keyfile: Path) -> tuple[str, str, 
     if supplied_url is not None and supplied_url != review_url:
         raise CloudPairingError(_PAIRING_DENIED)
 
-    chal_file = keyfile.with_suffix(".challenge.json")
+    chal_file = keyfile.with_suffix(_CHALLENGE_SUFFIX)
     chal_data = {
         "challenge": challenge,
         "code": code,
@@ -366,7 +367,7 @@ def start_enrollment(origin: str, alias: str, keyfile: Path) -> tuple[str, str, 
 def enrollment_approved(origin: str, keyfile: Path) -> bool:
     """Check signed approval status without consuming the one-use enrollment."""
     target = _origin(origin)
-    challenge_file = keyfile.with_suffix(".challenge.json")
+    challenge_file = keyfile.with_suffix(_CHALLENGE_SUFFIX)
     data = _read_private_json(challenge_file.parent, challenge_file.name)
     challenge, secret, expiry = data.get("challenge"), data.get("secret"), data.get("expiry")
     if (
@@ -408,7 +409,7 @@ def redeem_enrollment(origin: str, keyfile: Path) -> tuple[str, str]:
     Returns (device_id, fingerprint).
     """
     target = _origin(origin)
-    chal_file = keyfile.with_suffix(".challenge.json")
+    chal_file = keyfile.with_suffix(_CHALLENGE_SUFFIX)
     if not chal_file.is_file():
         raise CloudPairingError("No active pairing challenge found for key.")
     chal_data = _read_private_json(chal_file.parent, chal_file.name)
@@ -462,9 +463,9 @@ def redeem_enrollment(origin: str, keyfile: Path) -> tuple[str, str]:
 def enroll(
     origin: str, alias: str, keyfile: Path, approval: Callable[[str, str, str], None]
 ) -> tuple[str, str]:
-    review_url, challenge, code, _ = start_enrollment(origin, alias, keyfile)
+    _, challenge, code, _ = start_enrollment(origin, alias, keyfile)
     target = _origin(origin)
-    chal_file = keyfile.with_suffix(".challenge.json")
+    chal_file = keyfile.with_suffix(_CHALLENGE_SUFFIX)
     chal_data = _read_private_json(chal_file.parent, chal_file.name)
     device_secret = chal_data["secret"]
     key = _load_owner_key(keyfile)

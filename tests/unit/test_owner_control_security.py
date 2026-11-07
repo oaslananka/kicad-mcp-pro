@@ -326,3 +326,15 @@ def test_update_quiesce_rejects_active_cloud_connector(browser: TestClient) -> N
         )
     finally:
         reset_maintenance_for_tests()
+
+
+def test_https_owner_session_cookie_has_secure_attribute(browser: TestClient) -> None:
+    """When an HTTPS loopback origin is used, cookies are transport-secure."""
+    with TestClient(
+        browser.app,
+        base_url="https://127.0.0.1:3334",
+        client=("127.0.0.1", 50002),
+    ) as https_client:
+        response = https_client.get("/api/owner/session")
+    assert response.status_code == 200
+    assert "Secure" in response.headers["set-cookie"]

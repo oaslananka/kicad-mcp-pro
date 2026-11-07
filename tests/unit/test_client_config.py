@@ -89,7 +89,7 @@ def test_write_client_config_rejects_malformed_existing(tmp_path) -> None:
         )
     assert "malformed" in str(exc_info.value).lower()
     # Broken file was not overwritten
-    assert "{ this is not valid json : [" == target.read_text(encoding="utf-8")
+    assert target.read_text(encoding="utf-8") == "{ this is not valid json : ["
 
 
 def test_remove_owned_client_config_entry_preserves_other_servers(tmp_path) -> None:

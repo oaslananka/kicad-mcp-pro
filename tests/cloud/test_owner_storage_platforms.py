@@ -309,8 +309,9 @@ def test_macos_keychain_missing_record_and_disabled_writes(monkeypatch: pytest.M
     assert len(commands) == 3
     with pytest.raises(RuntimeError, match="unavailable"):
         store.save_key(RECORD_ID, b"secret")
+    binding = _binding()
     with pytest.raises(RuntimeError, match="unavailable"):
-        store.save_binding(RECORD_ID, _binding())
+        store.save_binding(RECORD_ID, binding)
     with pytest.raises(ValueError):
         store.load_binding("../unsafe")
 
@@ -363,8 +364,9 @@ def test_windows_credential_manager_round_trip_and_delete(monkeypatch: pytest.Mo
     assert store.delete_credentials(RECORD_ID)
     assert delete_calls == [(RECORD_ID, "key"), (RECORD_ID, "binding")]
     assert store.delete_credentials(RECORD_ID) is False
+    binding = _binding()
     with pytest.raises(ValueError):
-        store.save_binding("../unsafe", _binding())
+        store.save_binding("../unsafe", binding)
 
 
 def test_windows_credential_manager_rejects_non_mapping_binding(
@@ -413,8 +415,9 @@ def test_linux_binding_rejects_reenrollment_and_tampering(tmp_path: Path) -> Non
     store = linux.LinuxCredentialStore(registry_root=tmp_path / "registry")
     store.save_key(RECORD_ID, _pem())
     store.save_binding(RECORD_ID, _binding())
+    binding = _binding()
     with pytest.raises(cloud_pair_keys.LocalApprovalDeniedError):
-        store.save_binding(RECORD_ID, _binding())
+        store.save_binding(RECORD_ID, binding)
     assert store.load_binding(RECORD_ID) == _binding()
     path = store.root / "keys" / f"{RECORD_ID}.pem.cloud-binding-v1.json"
     path.write_text('{"origin":"https://a","origin":"https://b"}', encoding="utf-8")

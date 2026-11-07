@@ -15,6 +15,7 @@ from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
+from urllib.parse import urlunsplit
 
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -36,7 +37,10 @@ _CSRF_HEADER = "x-kicad-owner-csrf"
 _SESSION_AGE = 1800
 _PREVIEW_AGE = 300
 _MAX_BODY = 16384
-_LOOPBACKS = frozenset({"127.0.0.1", "localhost", "[::1]"})
+_LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "[::1]")
+_INVALID_SETUP_REQUEST = "Invalid setup request"
+_SETUP_NOT_FOUND = "Setup not found"
+_INVALID_MAINTENANCE_REQUEST = "Invalid maintenance request"
 
 
 def _response(payload: dict[str, object], status: int = 200) -> JSONResponse:
@@ -72,7 +76,7 @@ def _local_authority(request: Request) -> str | None:
         return None
     # Exact static authorities: do not parse an untrusted Host into a URL.
     authority = request.headers.get("host", "").lower()
-    for hostname in ("127.0.0.1", "localhost", "[::1]"):
+    for hostname in _LOOPBACK_HOSTS:
         trusted = f"{hostname}:{cfg.port}"
         if authority == trusted:
             return trusted
@@ -83,10 +87,10 @@ def _expected_origin(authority: str | None, port: int) -> str | None:
     """Return an origin generated only from verified loopback constants."""
     if authority is None:
         return None
-    for hostname in ("127.0.0.1", "localhost", "[::1]"):
+    for hostname in _LOOPBACK_HOSTS:
         trusted = f"{hostname}:{port}"
         if authority == trusted:
-            return f"http://{trusted}"
+            return urlunsplit(("http", trusted, "", "", ""))
     return None
 
 
@@ -133,7 +137,7 @@ async def _json_body(request: Request) -> tuple[dict[str, object] | None, JSONRe
         return None, _response({"error": "Request too large"}, 413)
     try:
         obj = json.loads(data)
-    except (ValueError, UnicodeDecodeError):
+    except ValueError:
         return None, _response({"error": "Malformed JSON"}, 400)
     if not isinstance(obj, dict):
         return None, _response({"error": "Expected JSON object"}, 400)
@@ -153,7 +157,7 @@ def _preview_hash(
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-async def api_owner_session(request: Request) -> JSONResponse:
+def api_owner_session(request: Request) -> JSONResponse:
     authority = _local_authority(request)
     if authority is None:
         return _response({"error": "Loopback owner only"}, 403)
@@ -173,7 +177,7 @@ async def api_owner_session(request: Request) -> JSONResponse:
         token,
         max_age=_SESSION_AGE,
         httponly=True,
-        secure=False,
+        secure=request.url.scheme == "https",
         samesite="strict",
         path="/",
     )
@@ -188,7 +192,7 @@ async def api_cloud_setup_start(request: Request) -> JSONResponse:
     if bad:
         return bad
     if body is None or owner is None:
-        return _response({"error": "Invalid setup request"}, 400)
+        return _response({"error": _INVALID_SETUP_REQUEST}, 400)
     path = body.get("project_path")
     alias = body.get("alias")
     if (
@@ -198,7 +202,7 @@ async def api_cloud_setup_start(request: Request) -> JSONResponse:
         or "new_device" in body
         or (alias is not None and (not isinstance(alias, str) or len(alias) > 80))
     ):
-        return _response({"error": "Invalid setup request"}, 400)
+        return _response({"error": _INVALID_SETUP_REQUEST}, 400)
     try:
         session = _services(request).onboarding.start_setup(
             project_dir=Path(path), cloud_origin=DEFAULT_CLOUD_ORIGIN, alias=alias
@@ -225,10 +229,10 @@ async def _owned_setup_request(request: Request) -> tuple[str | None, JSONRespon
     if bad:
         return None, bad
     if body is None:
-        return None, _response({"error": "Invalid setup request"}, 400)
+        return None, _response({"error": _INVALID_SETUP_REQUEST}, 400)
     session_id = body.get("session_id")
     if not isinstance(session_id, str) or _scope(request).operations.get(session_id) != owner:
-        return None, _response({"error": "Setup not found"}, 404)
+        return None, _response({"error": _SETUP_NOT_FOUND}, 404)
     return session_id, None
 
 
@@ -237,7 +241,7 @@ async def api_cloud_setup_status(request: Request) -> JSONResponse:
     if denied:
         return denied
     if session_id is None:
-        return _response({"error": "Setup not found"}, 404)
+        return _response({"error": _SETUP_NOT_FOUND}, 404)
     progress = _services(request).onboarding.get_setup_status(session_id)
     return _response(
         {
@@ -257,10 +261,10 @@ async def api_cloud_setup_cancel(request: Request) -> JSONResponse:
     if denied:
         return denied
     if session_id is None:
-        return _response({"error": "Setup not found"}, 404)
+        return _response({"error": _SETUP_NOT_FOUND}, 404)
     cancelled = _services(request).onboarding.cancel_setup(session_id)
     if not cancelled:
-        return _response({"error": "Setup not found"}, 404)
+        return _response({"error": _SETUP_NOT_FOUND}, 404)
     _scope(request).operations.pop(session_id, None)
     return _response({"ok": True, "status": "cancelled"})
 
@@ -317,7 +321,7 @@ def _preview_service(request: Request, kind: str) -> RepairPreview | CleanupPrev
     return service.preview_cleanup()
 
 
-async def _preview(request: Request, kind: str) -> JSONResponse:
+def _preview(request: Request, kind: str) -> JSONResponse:
     session = _owner_session(request)
     if session is None:
         return _response({"error": "Owner authorization required"}, 403)
@@ -334,12 +338,12 @@ async def _preview(request: Request, kind: str) -> JSONResponse:
     return _response({**_preview_data(preview), "confirmation": nonce})
 
 
-async def api_maintenance_repair_preview(request: Request) -> JSONResponse:
-    return await _preview(request, "repair")
+def api_maintenance_repair_preview(request: Request) -> JSONResponse:
+    return _preview(request, "repair")
 
 
-async def api_maintenance_cleanup_preview(request: Request) -> JSONResponse:
-    return await _preview(request, "cleanup")
+def api_maintenance_cleanup_preview(request: Request) -> JSONResponse:
+    return _preview(request, "cleanup")
 
 
 async def _apply(request: Request, kind: str) -> JSONResponse:
@@ -350,7 +354,7 @@ async def _apply(request: Request, kind: str) -> JSONResponse:
     if bad:
         return bad
     if owner is None or body is None:
-        return _response({"error": "Invalid maintenance request"}, 400)
+        return _response({"error": _INVALID_MAINTENANCE_REQUEST}, 400)
     supplied = body.get("confirmation")
     pending = _scope(request).previews.pop((owner, kind), None)
     if (
@@ -389,7 +393,7 @@ async def api_maintenance_quiesce(request: Request) -> JSONResponse:
     if bad:
         return bad
     if owner is None or body != {}:
-        return _response({"error": "Invalid maintenance request"}, 400)
+        return _response({"error": _INVALID_MAINTENANCE_REQUEST}, 400)
     # Cloud reads use a separate dispatcher and do not traverse the MCP call
     # counter. Refuse updates while a connector may still issue such reads.
     try:
@@ -414,7 +418,7 @@ async def api_maintenance_resume(request: Request) -> JSONResponse:
         return bad
     token = body.get("token") if body is not None else None
     if owner is None or not isinstance(token, str) or len(token) > 160:
-        return _response({"error": "Invalid maintenance request"}, 400)
+        return _response({"error": _INVALID_MAINTENANCE_REQUEST}, 400)
     if not end_maintenance(owner, token):
         return _response({"error": "Maintenance ownership mismatch"}, 409)
     return _response({"ok": True, "state": "running"})

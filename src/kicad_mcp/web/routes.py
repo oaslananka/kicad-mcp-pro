@@ -712,7 +712,7 @@ async def api_artifacts_file(request: Request) -> JSONResponse | FileResponse:  
     return FileResponse(resolved, media_type=media_type)
 
 
-async def api_experience(request: Request) -> JSONResponse:
+def api_experience(request: Request) -> JSONResponse:
     """Report real local capabilities only to an authenticated local owner session."""
     if _owner_session(request) is None:
         return JSONResponse({"error": "Owner session required"}, status_code=403)

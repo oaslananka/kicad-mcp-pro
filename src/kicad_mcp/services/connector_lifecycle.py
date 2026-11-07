@@ -29,6 +29,8 @@ from kicad_mcp.cloud_managed_connector import (
 from kicad_mcp.cloud_pair_keys import _read_private_json, _write_private_json
 from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
+_ACTIVE_PROJECT_FILE = "active_project.json"
+
 logger = logging.getLogger(__name__)
 
 
@@ -104,8 +106,8 @@ class ConnectorLifecycleManager:
 
             try:
                 record = self._resolve_active_record()
-            except Exception as exc:
-                logger.error("Cannot start connector: registration resolution failed: %s", exc)
+            except Exception:
+                logger.exception("Cannot start connector: registration resolution failed")
                 return False
 
             # Enable file
@@ -129,13 +131,21 @@ class ConnectorLifecycleManager:
             if self._task is not None:
                 try:
                     await asyncio.wait_for(asyncio.shield(self._task), timeout=5.0)
-                except (TimeoutError, asyncio.CancelledError):
+                except TimeoutError:
                     self._task.cancel()
-                    try:
-                        await self._task
-                    except asyncio.CancelledError:
-                        pass
-                self._task = None
+                    # A cancelled child returns a result; cancellation of the
+                    # caller still propagates rather than being swallowed.
+                    results = await asyncio.gather(self._task, return_exceptions=True)
+                    for result in results:
+                        if isinstance(result, BaseException) and not isinstance(
+                            result, asyncio.CancelledError
+                        ):
+                            raise result from None
+                except asyncio.CancelledError:
+                    self._task.cancel()
+                    raise
+                finally:
+                    self._task = None
 
             try:
                 _write_status(self.root, "unavailable")
@@ -148,9 +158,9 @@ class ConnectorLifecycleManager:
         try:
             record = _single_registered_identity(self.root)
             try:
-                pointer = _read_private_json(self.root, "active_project.json")
+                pointer = _read_private_json(self.root, _ACTIVE_PROJECT_FILE)
             except Exception:
-                if (self.root / "active_project.json").exists():
+                if (self.root / _ACTIVE_PROJECT_FILE).exists():
                     return None
                 return record["projectId"]
             return (
@@ -188,7 +198,7 @@ class ConnectorLifecycleManager:
         if project_path_or_id not in (record["projectId"], record["directory"]):
             raise ValueError("Project is not the verified registration")
         _write_private_json(
-            self.root, "active_project.json", {"activeProjectId": record["projectId"]}
+            self.root, _ACTIVE_PROJECT_FILE, {"activeProjectId": record["projectId"]}
         )
 
     async def switch_active_project(self, project_id: str) -> bool:

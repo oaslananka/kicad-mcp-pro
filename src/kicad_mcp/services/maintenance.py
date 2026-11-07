@@ -57,6 +57,45 @@ class CleanupResult:
     message: str = ""
 
 
+def _preserved_kicad_paths(user_project_roots: list[Path] | None) -> list[str]:
+    """Report user-owned design files without changing or deleting any."""
+    preserved: list[str] = []
+    for folder in user_project_roots or []:
+        root = Path(folder)
+        if not root.is_dir():
+            continue
+        for file in root.rglob("*"):
+            if file.is_file() and file.suffix.lower() in _KICAD_PROJECT_EXTENSIONS:
+                preserved.append(str(file.resolve()))
+    return preserved
+
+
+def _remove_owned_client_entries(registry_root: Path) -> None:
+    """Remove only entries this application registered; keep client configs."""
+    for client, paths in get_owned_client_configs(registry_root).items():
+        for path in paths:
+            try:
+                remove_client_config_entry(client, Path(path), registry_root=registry_root)
+            except (ClientConfigError, OSError):
+                pass
+
+
+def _remove_application_targets(targets: list[str]) -> list[str]:
+    """Recheck each previewed target before deleting application state."""
+    removed: list[str] = []
+    for target_str in targets:
+        target = Path(target_str)
+        if target.suffix.lower() in _KICAD_PROJECT_EXTENSIONS:
+            continue
+        try:
+            if target.is_file() or target.is_symlink():
+                target.unlink()
+                removed.append(str(target))
+        except OSError:
+            pass
+    return removed
+
+
 class MaintenanceService:
     """Provides repair diagnostics and safe application-state cleanup."""
 
@@ -124,15 +163,7 @@ class MaintenanceService:
         user_project_roots: list[Path] | None = None,
     ) -> CleanupPreview:
         targets: list[str] = []
-        preserved: list[str] = []
-
-        if user_project_roots:
-            for root in user_project_roots:
-                root = Path(root)
-                if root.is_dir():
-                    for file in root.rglob("*"):
-                        if file.is_file() and file.suffix.lower() in _KICAD_PROJECT_EXTENSIONS:
-                            preserved.append(str(file.resolve()))
+        preserved = _preserved_kicad_paths(user_project_roots)
 
         for name in ("connector-enabled.json", "connector-status.json", "active_project.json"):
             item = self.registry_root / name
@@ -158,27 +189,8 @@ class MaintenanceService:
         preview = self.preview_cleanup(user_project_roots=user_project_roots)
 
         if clean_client_configs:
-            owned = get_owned_client_configs(self.registry_root)
-            for client, paths in owned.items():
-                for p in paths:
-                    try:
-                        remove_client_config_entry(
-                            client, Path(p), registry_root=self.registry_root
-                        )
-                    except (ClientConfigError, OSError):
-                        pass
-
-        removed: list[str] = []
-        for target_str in preview.targets_to_remove:
-            target = Path(target_str)
-            if target.suffix.lower() in _KICAD_PROJECT_EXTENSIONS:
-                continue  # Extra safety barrier
-            try:
-                if target.is_file() or target.is_symlink():
-                    target.unlink()
-                    removed.append(str(target))
-            except OSError:
-                pass
+            _remove_owned_client_entries(self.registry_root)
+        removed = _remove_application_targets(preview.targets_to_remove)
 
         return CleanupResult(
             success=True,

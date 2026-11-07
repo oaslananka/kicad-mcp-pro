@@ -896,6 +896,41 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+/// Schedule slow update polling and backend startup without blocking the tray.
+fn spawn_background_checks(app_handle: tauri::AppHandle) {
+    let updater_handle = app_handle.clone();
+    std::thread::spawn(move || loop {
+        if matches!(probe_backend(3334), BackendProbe::Compatible) {
+            let result = tauri::async_runtime::block_on(check_update(updater_handle.clone()));
+            if let Ok(Some(version)) = result {
+                eprintln!("[kicad-mcp-pro] Update available: {version}");
+            }
+            thread::sleep(Duration::from_secs(24 * 60 * 60));
+        } else {
+            thread::sleep(HEALTH_POLL_INTERVAL);
+        }
+    });
+
+    // Launch the backend on a background thread so the first-run
+    // download (which can take up to HEALTH_WAIT) never blocks the UI
+    // or the tray. The frontend polls /api/health and server_status
+    // independently and redirects as soon as the server is ready.
+    let handle = app_handle;
+    std::thread::spawn(move || {
+        let state = handle.state::<ServerProcess>();
+        match start_server_inner(state.inner(), PRIMARY_DASHBOARD_PORT) {
+            Ok(status) => {
+                eprintln!("[kicad-mcp-pro] Server started: {status}");
+                let _ = state.error.lock().map(|mut e| *e = None);
+            }
+            Err(error) => {
+                eprintln!("[kicad-mcp-pro] ERROR: {error}");
+                let _ = state.error.lock().map(|mut e| *e = Some(error));
+            }
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -997,38 +1032,7 @@ pub fn run() {
             }
             let _ = tray.build(app)?;
 
-            let updater_handle = app.handle().clone();
-            std::thread::spawn(move || loop {
-                if matches!(probe_backend(3334), BackendProbe::Compatible) {
-                    let result =
-                        tauri::async_runtime::block_on(check_update(updater_handle.clone()));
-                    if let Ok(Some(version)) = result {
-                        eprintln!("[kicad-mcp-pro] Update available: {version}");
-                    }
-                    thread::sleep(Duration::from_secs(24 * 60 * 60));
-                } else {
-                    thread::sleep(HEALTH_POLL_INTERVAL);
-                }
-            });
-
-            // Launch the backend on a background thread so the first-run
-            // download (which can take up to HEALTH_WAIT) never blocks the UI
-            // or the tray. The frontend polls /api/health and server_status
-            // independently and redirects as soon as the server is ready.
-            let handle = app.handle().clone();
-            std::thread::spawn(move || {
-                let state = handle.state::<ServerProcess>();
-                match start_server_inner(state.inner(), PRIMARY_DASHBOARD_PORT) {
-                    Ok(status) => {
-                        eprintln!("[kicad-mcp-pro] Server started: {status}");
-                        let _ = state.error.lock().map(|mut e| *e = None);
-                    }
-                    Err(error) => {
-                        eprintln!("[kicad-mcp-pro] ERROR: {error}");
-                        let _ = state.error.lock().map(|mut e| *e = Some(error));
-                    }
-                }
-            });
+            spawn_background_checks(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())

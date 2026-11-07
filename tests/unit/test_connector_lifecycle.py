@@ -1,5 +1,6 @@
 """Tests for Connector lifecycle management and safe active project selection."""
 
+import asyncio
 import json
 import os
 import stat
@@ -110,3 +111,24 @@ async def test_project_switch_refuses_active_connector_without_fencing(tmp_path)
         assert not await mgr.switch_active_project("other")
         setter.assert_not_called()
         assert await mgr.switch_active_project("current")
+
+
+@pytest.mark.asyncio
+async def test_owner_cancelled_stop_propagates_cancellation(tmp_path: Path) -> None:
+    """An interrupted stop must never falsely report a completed shutdown."""
+    mgr = ConnectorLifecycleManager(registry_root=tmp_path)
+    child = asyncio.create_task(asyncio.Event().wait())
+    mgr._task = child
+    mgr._stop_event = asyncio.Event()
+    with (
+        patch("kicad_mcp.services.connector_lifecycle._remove_private_file"),
+        patch("kicad_mcp.services.connector_lifecycle._write_status"),
+    ):
+        stopping = asyncio.create_task(mgr.stop())
+        await asyncio.sleep(0)
+        stopping.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await stopping
+    assert mgr._stop_event.is_set()
+    assert mgr._task is None
+    assert child.cancelled() or child.done()

@@ -72,6 +72,37 @@ def _unrecord_owned_config(
         reg_file.write_text(json.dumps(owned, indent=2), encoding="utf-8")
 
 
+def _prepare_config_contents(
+    config_path: Path, snippet: dict[str, Any]
+) -> tuple[dict[str, Any], Path | None]:
+    """Read/backup a user-owned config before any replacement is attempted."""
+    if not config_path.exists():
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        return snippet, None
+    try:
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ClientConfigError(f"Configuration file root must be a JSON object: {config_path}")
+    except json.JSONDecodeError as err:
+        raise ClientConfigError(f"Malformed JSON in existing config {config_path}: {err}") from err
+    backup_path = config_path.with_suffix(".json.bak")
+    try:
+        shutil.copy2(config_path, backup_path)
+    except OSError as err:
+        raise ClientConfigError(f"Failed to create backup at {backup_path}: {err}") from err
+
+    if "mcpServers" in snippet:
+        servers = data.setdefault("mcpServers", {})
+        if isinstance(servers, dict) and isinstance(snippet["mcpServers"], dict):
+            servers.update(snippet["mcpServers"])
+        else:
+            data["mcpServers"] = snippet["mcpServers"]
+    for key, value in snippet.items():
+        if key != "mcpServers":
+            data[key] = value
+    return data, backup_path
+
+
 def write_client_config_safe(
     client: str,
     config_path: Path,
@@ -80,43 +111,7 @@ def write_client_config_safe(
 ) -> WriteConfigResult:
     """Safely merge snippet into client config with backup and registry tracking."""
     config_path = Path(config_path)
-    backup_path: Path | None = None
-
-    if config_path.exists():
-        try:
-            content = config_path.read_text(encoding="utf-8")
-            data = json.loads(content)
-            if not isinstance(data, dict):
-                raise ClientConfigError(
-                    f"Configuration file root must be a JSON object: {config_path}"
-                )
-        except json.JSONDecodeError as err:
-            raise ClientConfigError(
-                f"Malformed JSON in existing config {config_path}: {err}"
-            ) from err
-
-        # Create .json.bak backup
-        backup_path = config_path.with_suffix(".json.bak")
-        try:
-            shutil.copy2(config_path, backup_path)
-        except OSError as err:
-            raise ClientConfigError(f"Failed to create backup at {backup_path}: {err}") from err
-
-        # Safe merge mcpServers
-        if "mcpServers" in snippet:
-            servers = data.setdefault("mcpServers", {})
-            if isinstance(servers, dict) and isinstance(snippet["mcpServers"], dict):
-                servers.update(snippet["mcpServers"])
-            else:
-                data["mcpServers"] = snippet["mcpServers"]
-
-        for k, v in snippet.items():
-            if k != "mcpServers":
-                data[k] = v
-        merged_data = data
-    else:
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        merged_data = snippet
+    merged_data, backup_path = _prepare_config_contents(config_path, snippet)
 
     try:
         # Atomic write

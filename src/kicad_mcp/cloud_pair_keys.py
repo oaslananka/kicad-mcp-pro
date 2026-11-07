@@ -26,6 +26,10 @@ _LOCAL_APPROVAL_DENIED = "local approval denied"
 
 _OWNER_KEY_FILENAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 _BINDING_SUFFIX = ".cloud-binding-v1.json"
+_DEVICE_ID_RE = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+)
+_FINGERPRINT_RE = re.compile(r"[0-9a-f]{64}")
 
 
 def _open_owner_directory(folder: Path) -> int:
@@ -145,6 +149,43 @@ def _load_owner_key(filename: Path) -> Ed25519PrivateKey:
         os.close(directory_fd)
 
 
+def _validated_binding(value: object) -> dict[str, str]:
+    # The same identity contract applies on Windows and POSIX; avoid
+    # accepting malformed/ambiguous metadata on either operating system.
+    if not isinstance(value, dict) or not {"origin", "deviceId", "fingerprint"}.issubset(value):
+        raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+    if not all(isinstance(item, str) for item in value.values()):
+        raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+    if (
+        len(value["origin"]) > 256
+        or _DEVICE_ID_RE.fullmatch(value["deviceId"]) is None
+        or _FINGERPRINT_RE.fullmatch(value["fingerprint"]) is None
+    ):
+        raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+    if "ownerSub" in value and not (1 <= len(value["ownerSub"]) <= 256):
+        raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+    return value
+
+
+def _new_binding(
+    origin: str, device_id: str, fingerprint: str, owner_sub: str | None
+) -> dict[str, str]:
+    if (
+        not isinstance(origin, str)
+        or not origin.startswith("https://")
+        or len(origin) > 256
+        or _DEVICE_ID_RE.fullmatch(device_id) is None
+        or _FINGERPRINT_RE.fullmatch(fingerprint) is None
+    ):
+        raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+    record = {"origin": origin, "deviceId": device_id, "fingerprint": fingerprint}
+    if owner_sub is not None:
+        if not isinstance(owner_sub, str) or not (1 <= len(owner_sub) <= 256):
+            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+        record["ownerSub"] = owner_sub
+    return record
+
+
 def _read_owner_binding(filename: Path) -> dict[str, str]:
     """Read owner-only pairing metadata by a pinned no-follow directory FD."""
 
@@ -160,24 +201,7 @@ def _read_owner_binding(filename: Path) -> dict[str, str]:
         try:
             raw = binding_file.read_bytes()
             value = json.loads(raw, object_pairs_hook=unique)
-            if (
-                not isinstance(value, dict)
-                or not {"origin", "deviceId", "fingerprint"}.issubset(set(value))
-                or not all(isinstance(v, str) for v in value.values())
-                or len(value["origin"]) > 256
-                or re.fullmatch(
-                    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
-                    value["deviceId"],
-                )
-                is None
-                or re.fullmatch(r"[0-9a-f]{64}", value["fingerprint"]) is None
-                or (
-                    "ownerSub" in value
-                    and (len(value["ownerSub"]) > 256 or len(value["ownerSub"]) < 1)
-                )
-            ):
-                raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
-            return value
+            return _validated_binding(value)
         except Exception as exc:
             raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED) from exc
 
@@ -206,23 +230,7 @@ def _read_owner_binding(filename: Path) -> dict[str, str]:
             raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
         raw = os.read(descriptor, 513)
         value = json.loads(raw, object_pairs_hook=unique)
-        if (
-            not isinstance(value, dict)
-            or not {"origin", "deviceId", "fingerprint"}.issubset(set(value))
-            or not all(isinstance(v, str) for v in value.values())
-            or len(value["origin"]) > 256
-            or re.fullmatch(
-                r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
-                value["deviceId"],
-            )
-            is None
-            or re.fullmatch(r"[0-9a-f]{64}", value["fingerprint"]) is None
-            or (
-                "ownerSub" in value and (len(value["ownerSub"]) > 256 or len(value["ownerSub"]) < 1)
-            )
-        ):
-            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
-        return value
+        return _validated_binding(value)
     except (OSError, ValueError, TypeError) as exc:
         raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED) from exc
     finally:
@@ -241,22 +249,7 @@ def _save_owner_binding(
 ) -> None:
     """Pin approved enrollment to one HTTPS origin and device, never overwrite."""
     # The fields are independently validated by the Cloud enrollment response.
-    expected: dict[str, str] = {"origin": origin, "deviceId": device_id, "fingerprint": fingerprint}
-    if owner_sub is not None:
-        if not isinstance(owner_sub, str) or not (1 <= len(owner_sub) <= 256):
-            raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
-        expected["ownerSub"] = owner_sub
-    if (
-        not isinstance(origin, str)
-        or not origin.startswith("https://")
-        or len(origin) > 256
-        or re.fullmatch(
-            r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", device_id
-        )
-        is None
-        or re.fullmatch(r"[0-9a-f]{64}", fingerprint) is None
-    ):
-        raise LocalApprovalDeniedError(_LOCAL_APPROVAL_DENIED)
+    expected = _new_binding(origin, device_id, fingerprint, owner_sub)
 
     if os.name == "nt":
         binding_file = filename.parent / (filename.name + _BINDING_SUFFIX)

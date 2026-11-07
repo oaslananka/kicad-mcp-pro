@@ -39,6 +39,21 @@ _MODE_FLAGS = {
 }
 
 
+def _validated_registration(record: object, expected_project_id: str) -> dict[str, str]:
+    if not isinstance(record, dict):
+        raise LocalApprovalDeniedError(_DENIED)
+    if (
+        record.keys() != _FIELDS
+        or any(not isinstance(value, str) for value in record.values())
+        or record["projectId"] != expected_project_id
+        or not _valid_identity_selectors(
+            record["ownerSub"], record["cloudOrigin"], record["deviceId"], record["projectId"]
+        )
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+    return record
+
+
 def _single_registered_identity(root: Path) -> dict[str, str]:
     """Read only a private, uniquely registered project with no symlink follows."""
     folder = root / "projects"
@@ -53,20 +68,7 @@ def _single_registered_identity(root: Path) -> dict[str, str]:
             raise LocalApprovalDeniedError(_DENIED)
         try:
             record = json.loads(names[0].read_bytes(), object_pairs_hook=_unique)
-            if (
-                not isinstance(record, dict)
-                or record.keys() != _FIELDS
-                or any(not isinstance(value, str) for value in record.values())
-                or record["projectId"] != names[0].stem
-                or not _valid_identity_selectors(
-                    record["ownerSub"],
-                    record["cloudOrigin"],
-                    record["deviceId"],
-                    record["projectId"],
-                )
-            ):
-                raise LocalApprovalDeniedError(_DENIED)
-            return record
+            return _validated_registration(record, names[0].stem)
         except Exception as exc:
             raise LocalApprovalDeniedError(_DENIED) from exc
 
@@ -100,16 +102,7 @@ def _single_registered_identity(root: Path) -> dict[str, str]:
         ):
             raise LocalApprovalDeniedError(_DENIED)
         record = json.loads(os.read(fd, 2049), object_pairs_hook=_unique)
-        if (
-            not isinstance(record, dict)
-            or record.keys() != _FIELDS
-            or any(not isinstance(value, str) for value in record.values())
-            or record["projectId"] != names[0].stem
-            or not _valid_identity_selectors(
-                record["ownerSub"], record["cloudOrigin"], record["deviceId"], record["projectId"]
-            )
-        ):
-            raise LocalApprovalDeniedError(_DENIED)
+        record = _validated_registration(record, names[0].stem)
         selected = resolve_registered_read(
             owner_sub=record["ownerSub"],
             origin=record["cloudOrigin"],

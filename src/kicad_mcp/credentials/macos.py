@@ -9,6 +9,7 @@ import subprocess  # nosec B404
 from . import PlatformCredentialStore
 
 _SERVICE_NAME = "KiCadMCPPro"
+_SECURITY_EXECUTABLE = "/usr/bin/security"
 _SLOT_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
@@ -24,12 +25,12 @@ class MacOSKeychainCredentialStore(PlatformCredentialStore):
 
     def save_key(self, record_id: str, key_pem: bytes) -> None:
         _validate_slot(record_id)
-        raise RuntimeError("Native Keychain writes are unavailable")
+        raise RuntimeError("Native Keychain writes are unavailable for keys")
 
     def load_key(self, record_id: str) -> bytes | None:
         slot = _validate_slot(record_id)
         cmd = [
-            "/usr/bin/security",
+            _SECURITY_EXECUTABLE,
             "find-generic-password",
             "-s",
             _SERVICE_NAME,
@@ -48,12 +49,12 @@ class MacOSKeychainCredentialStore(PlatformCredentialStore):
 
     def save_binding(self, record_id: str, binding: dict[str, str]) -> None:
         _validate_slot(record_id)
-        raise RuntimeError("Native Keychain writes are unavailable")
+        raise RuntimeError("Native Keychain writes are unavailable for bindings")
 
     def load_binding(self, record_id: str) -> dict[str, str] | None:
         slot = _validate_slot(record_id)
         cmd = [
-            "/usr/bin/security",
+            _SECURITY_EXECUTABLE,
             "find-generic-password",
             "-s",
             _SERVICE_NAME,
@@ -71,7 +72,7 @@ class MacOSKeychainCredentialStore(PlatformCredentialStore):
             if isinstance(data, dict):
                 return {str(k): str(v) for k, v in data.items()}
             return None
-        except (ValueError, json.JSONDecodeError):
+        except ValueError:
             return None
 
     def delete_credentials(self, record_id: str) -> bool:
@@ -79,7 +80,7 @@ class MacOSKeychainCredentialStore(PlatformCredentialStore):
         deleted = False
         for part in ("_key", "_binding"):
             cmd = [
-                "/usr/bin/security",
+                _SECURITY_EXECUTABLE,
                 "delete-generic-password",
                 "-s",
                 _SERVICE_NAME,

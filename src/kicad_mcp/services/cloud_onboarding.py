@@ -153,12 +153,16 @@ class CloudOnboardingService:
         with self._lock:
             return self._start_setup(project_dir, cloud_origin, alias, new_device)
 
+    @staticmethod
+    def _require_single_project(project_dir: Path) -> None:
+        if not project_dir.is_dir() or len(list(project_dir.glob("*.kicad_pro"))) != 1:
+            raise ValueError("Select a directory containing exactly one KiCad project")
+
     def _start_setup(
         self, project_dir: Path, cloud_origin: str, alias: str | None, new_device: bool
     ) -> SetupSession:
         project_dir = project_dir.resolve()
-        if not project_dir.is_dir() or len(list(project_dir.glob("*.kicad_pro"))) != 1:
-            raise ValueError("Select a directory containing exactly one KiCad project")
+        self._require_single_project(project_dir)
         cloud_origin = cloud_pair._origin(cloud_origin)[2]
         _, keys_dir = self._ensure_registry_dirs()
 
@@ -202,9 +206,7 @@ class CloudOnboardingService:
         slot = str(uuid.uuid4())
         keyfile = keys_dir / f"{slot}.pem"
 
-        approval_url, challenge, code, expires_in = cloud_pair.start_enrollment(
-            cloud_origin, device_alias, keyfile
-        )
+        approval_url, _, code, _ = cloud_pair.start_enrollment(cloud_origin, device_alias, keyfile)
 
         session_id = str(uuid.uuid4())
         session = SetupSession(
@@ -313,7 +315,7 @@ class CloudOnboardingService:
     def _cancel_setup(self, session_id: str = "") -> bool:
         if not session_id:
             cancelled_any = False
-            for sid in list(self._sessions.keys()):
+            for sid in tuple(self._sessions):
                 if self.cancel_setup(sid):
                     cancelled_any = True
             return cancelled_any or True
