@@ -1389,9 +1389,28 @@ function testConnection() {
   el.style.display = 'block';
   el.textContent = 'Testing...';
   el.className = 'wizard-result';
-  fetch('/api/health').then(r => r.json()).then(d => {
-    const serverState = d.ok ? 'online' : (d.status || 'offline');
-    el.textContent = 'Server: ' + serverState + ' | Version: ' + (d.version || '?') + ' | Uptime: ' + (d.uptime || '?') + 's';
+  fetch('/api/health').then(async r => {
+    if (!r.ok) {
+      const errData = await r.json().catch(() => ({}));
+      el.textContent = 'Health check failed (HTTP ' + r.status + '): ' + (errData.status || errData.error || 'Server error');
+      el.className = 'wizard-result error';
+      return;
+    }
+    const d = await r.json().catch(() => null);
+    if (!d || typeof d !== 'object' || typeof d.ok !== 'boolean') {
+      el.textContent = 'Invalid health response received from server.';
+      el.className = 'wizard-result error';
+      return;
+    }
+    const serverState = d.ok ? 'online' : (d.status || 'degraded');
+    const version = d.version || '?';
+    const uptime = d.uptime != null ? Math.round(d.uptime) : '?';
+    if (!d.ok) {
+      el.textContent = 'Server: ' + serverState + ' (degraded) | Version: ' + version + ' | Uptime: ' + uptime + 's. Check diagnostics.';
+      el.className = 'wizard-result warn';
+      return;
+    }
+    el.textContent = 'Server: ' + serverState + ' | Version: ' + version + ' | Uptime: ' + uptime + 's';
     el.className = 'wizard-result success';
   }).catch(() => {
     el.textContent = 'Connection failed. Check server is running.';
