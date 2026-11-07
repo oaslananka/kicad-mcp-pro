@@ -1396,3 +1396,30 @@ test("AI discovery exposes canonical HTML only while retaining separate machine-
   assert.equal(negotiated.status,200);
   assert.match(negotiated.headers.get("link")??"",/rel="canonical"/);
 });
+
+test("MCP Apps exposes standards-based UI resource and tool UI metadata", async () => {
+  const resourceList = await call("resources/list", {}, "test-user-a");
+  assert.equal(resourceList.status, 200);
+  const resources = resourceList.data.result?.resources as Array<{ uri: string; mimeType: string; name: string }>;
+  assert.ok(Array.isArray(resources));
+  const reviewResource = resources.find(r => r.uri === "ui://project-review");
+  assert.ok(reviewResource, "Expected ui://project-review resource to be registered");
+  assert.equal(reviewResource.mimeType, "text/html;profile=mcp-app");
+
+  const resourceRead = await call("resources/read", { uri: "ui://project-review" }, "test-user-a", "ui://project-review");
+  assert.equal(resourceRead.status, 200);
+  const contents = resourceRead.data.result?.contents as Array<{ uri: string; mimeType: string; text: string }>;
+  assert.ok(Array.isArray(contents) && contents.length > 0);
+  assert.equal(contents[0]?.mimeType, "text/html;profile=mcp-app");
+  assert.match(contents[0]?.text ?? "", /KiCad Project Review/);
+
+  const projectCall = await call("tools/call", { name: "get_project", arguments: { project_id: id } }, "test-user-a", "get_project");
+  assert.equal(projectCall.status, 200);
+  assert.equal(projectCall.data.result?.structuredContent?.project?.id, id);
+  assert.match(projectCall.data.result?.content?.[0]?.text, /USB-C Controller/);
+  const tools = await call("tools/list");
+  assert.equal(tools.data.result.tools.find((tool:{name:string})=>tool.name==="get_project")._meta.ui.resourceUri, "ui://project-review");
+  assert.doesNotMatch(contents[0]?.text ?? "", /USB-C Controller/);
+  const denied = await call("tools/call", { name:"get_project", arguments:{project_id:id} }, "test-user-b", "get_project");
+  assert.equal(denied.data.result?.structuredContent?.found, false);
+});

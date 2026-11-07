@@ -1,5 +1,7 @@
 import { verifyOAuthQueryParams } from "@better-auth/oauth-provider";
 import type { Identity } from "./identity.js";
+import type { DeviceManagementPort } from "./devices.js";
+import type { GrantManagement } from "./grants.js";
 import {renderSignIn,renderAccount,renderNotice} from "./browser-ui.js";
 
 export type BrowserIdentity =
@@ -104,13 +106,28 @@ async function startSocialLogin(request:Request,identity:BrowserIdentity,
   return approvedProviderRedirect(authResponse,provider);
 }
 
-async function accountPage(request:Request,identity:BrowserIdentity):Promise<Response> {
+async function accountPage(request:Request,identity:BrowserIdentity,devices?:DeviceManagementPort,grants?:GrantManagement):Promise<Response> {
   const session=await identity.api?.getSession({headers:request.headers});
   if(!session?.user) return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});
   const linked=await identity.api?.listUserAccounts?.({headers:request.headers});
   const names=(linked??[]).map(account=>account.providerId)
     .filter((provider):provider is SocialName=>provider==="google"||provider==="github");
-  return new Response(renderAccount(session.user.name??"User",availableProviders(identity),names),{
+  let snapshot: {devices:number;projects:number;clients:number;grants:number}|undefined;
+  if(devices?.listProjects && grants?.listBrowserGrants && identity.api?.getOAuthConsents){
+    try{
+      const [deviceRows,projectRows,consents,saved]=await Promise.all([
+        devices.list(session.user.id),devices.listProjects(session.user.id),
+        identity.api.getOAuthConsents({headers:request.headers}),grants.listBrowserGrants(session.user.id)
+      ]);
+      if(Array.isArray(consents)){
+        const clients=new Set(consents.filter(c=>c.userId===session.user.id && Array.isArray(c.scopes) && c.scopes.includes("projects:read")).map(c=>c.clientId));
+        const projects=projectRows.filter(p=>p.enabled);
+        snapshot={devices:deviceRows.filter(d=>d.enabled&&!d.revoked).length,projects:projects.length,clients:clients.size,
+          grants:saved.filter(g=>clients.has(g.clientId)&&projects.some(p=>p.id===g.projectId)).length};
+      }
+    }catch{ /* State is unavailable, not an empty workspace. */ }
+  }
+  return new Response(renderAccount(session.user.name??"User",availableProviders(identity),names,snapshot),{
     status:200,headers:htmlHeaders
   });
 }
@@ -138,7 +155,7 @@ async function startSocialLink(request:Request,identity:BrowserIdentity,
   return approvedProviderRedirect(reply,provider);
 }
 
-export async function browserResponse(request:Request,identity:BrowserIdentity,publicOrigin:string):Promise<Response|null> {
+export async function browserResponse(request:Request,identity:BrowserIdentity,publicOrigin:string,devices?:DeviceManagementPort,grants?:GrantManagement):Promise<Response|null> {
   const url=new URL(request.url);
   if(url.pathname==="/sign-in" && request.method==="GET") return signInPage(url,identity);
   let provider: "google" | "github" | null = null;
@@ -167,6 +184,6 @@ export async function browserResponse(request:Request,identity:BrowserIdentity,p
     }
     return startSocialLink(request,identity,publicOrigin,linkProvider);
   }
-  if(url.pathname==="/account" && request.method==="GET") return accountPage(request,identity);
+  if(url.pathname==="/account" && request.method==="GET") return accountPage(request,identity,devices,grants);
   return null;
 }

@@ -47,14 +47,49 @@ pub struct ServerStatus {
     pub message: String,
     pub pid: Option<u32>,
     pub working_dir: Option<String>,
+    pub preparation_stage: String,
+    pub runtime_found: bool,
 }
 
 pub struct ServerProcess {
     pub child: Mutex<Option<Child>>,
     pub error: Mutex<Option<String>>,
     pub working_dir: Mutex<Option<PathBuf>>,
+    pub preparation_stage: Mutex<String>,
     /// Selected through the native splash, never from arbitrary HTTP content.
     pub dashboard_port: Mutex<u16>,
+}
+
+impl ServerProcess {
+    pub fn new() -> Self {
+        Self {
+            child: Mutex::new(None),
+            error: Mutex::new(None),
+            working_dir: Mutex::new(None),
+            preparation_stage: Mutex::new("idle".to_string()),
+            dashboard_port: Mutex::new(PRIMARY_DASHBOARD_PORT),
+        }
+    }
+}
+
+impl Default for ServerProcess {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn set_stage(process: &ServerProcess, stage: &str) {
+    if let Ok(mut g) = process.preparation_stage.lock() {
+        *g = stage.to_string();
+    }
+}
+
+fn get_stage(process: &ServerProcess) -> String {
+    process
+        .preparation_stage
+        .lock()
+        .map(|g| g.clone())
+        .unwrap_or_else(|_| "idle".to_string())
 }
 
 fn selected_dashboard_port(process: &ServerProcess) -> Result<u16, String> {
@@ -187,12 +222,41 @@ fn check_health(port: u16) -> bool {
     matches!(probe_backend(port), BackendProbe::Compatible)
 }
 
+fn user_runtime_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        std::env::var_os("LOCALAPPDATA")
+            .map(|b| PathBuf::from(b).join("kicad-mcp-pro").join("runtime"))
+    }
+    #[cfg(not(windows))]
+    {
+        std::env::var_os("HOME").map(|b| {
+            PathBuf::from(b)
+                .join(".local")
+                .join("share")
+                .join("kicad-mcp-pro")
+                .join("runtime")
+        })
+    }
+}
+
 fn which_uvx() -> Option<PathBuf> {
     if let Ok(path) = which::which("uvx") {
         return Some(path);
     }
+    if let Some(runtime) = user_runtime_dir() {
+        let binary_name = if cfg!(windows) { "uvx.exe" } else { "uvx" };
+        let candidate = runtime.join("bin").join(binary_name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
     #[cfg(windows)]
     {
+        let tools_candidate = PathBuf::from("C:\\tools\\uvx.exe");
+        if tools_candidate.exists() {
+            return Some(tools_candidate);
+        }
         if let Some(home) = std::env::var_os("USERPROFILE") {
             // uv installed via cargo: ~/.cargo/bin/uvx.exe
             let candidate = PathBuf::from(&home)
@@ -311,10 +375,15 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
     if let Ok(mut err_guard) = process.error.lock() {
         *err_guard = None;
     }
+    set_stage(process, "checking_prerequisites");
 
     match probe_backend(port) {
-        BackendProbe::Compatible => return Ok("already_running".to_string()),
+        BackendProbe::Compatible => {
+            set_stage(process, "ready");
+            return Ok("already_running".to_string());
+        }
         BackendProbe::Incompatible(reason) => {
+            set_stage(process, "failed");
             return Err(incompatible_backend_error(port, &reason));
         }
         BackendProbe::Unreachable => {}
@@ -325,13 +394,15 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
         .as_mut()
         .is_some_and(|child| child.try_wait().ok().flatten().is_none())
     {
-        return Ok("already_running".to_string());
+        return Err("Server startup is already in progress.".to_string());
     }
     if guard.is_some() {
         *guard = None;
     }
 
+    set_stage(process, "preparing_environment");
     let uvx = which_uvx().ok_or_else(|| {
+        set_stage(process, "failed");
         let hint = if cfg!(target_os = "windows") {
             "Install uv from PowerShell: (irm https://astral.sh/uv/install.ps1) | iex"
         } else {
@@ -387,22 +458,32 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    let child = cmd
-        .spawn()
-        .map_err(|error| format!("Failed to start kicad-mcp-pro with {uvx:?}: {error}"))?;
+    let child = cmd.spawn().map_err(|error| {
+        set_stage(process, "failed");
+        format!("Failed to start kicad-mcp-pro with {uvx:?}: {error}")
+    })?;
 
     *guard = Some(child);
     drop(guard);
 
+    set_stage(process, "starting_server");
     // Wait for the server to become healthy. The first launch downloads the
     // package via uvx, so allow a generous window (HEALTH_WAIT) before giving
     // up — killing the child early would abort an install that is still in
     // progress.
     let deadline = std::time::Instant::now() + HEALTH_WAIT;
     while std::time::Instant::now() < deadline {
+        if get_stage(process) == "cancelled" {
+            let _ = stop_server_inner(process);
+            return Err("Server startup was cancelled.".to_string());
+        }
         match probe_backend(port) {
-            BackendProbe::Compatible => return Ok("started".to_string()),
+            BackendProbe::Compatible => {
+                set_stage(process, "ready");
+                return Ok("started".to_string());
+            }
             BackendProbe::Incompatible(reason) => {
+                set_stage(process, "failed");
                 let _ = stop_server_inner(process);
                 return Err(incompatible_backend_error(port, &reason));
             }
@@ -414,6 +495,7 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
                 if let Some(status) = child.try_wait().ok().flatten() {
                     let _ = child.wait();
                     drop(guard);
+                    set_stage(process, "failed");
                     return Err(format!(
                         "Python server process exited unexpectedly (code: {}) before binding to port {}.\n\
                          The desktop requires backend {}. Run manually to debug: {}",
@@ -428,6 +510,7 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
         thread::sleep(HEALTH_POLL_INTERVAL);
     }
 
+    set_stage(process, "failed");
     let _ = stop_server_inner(process);
     Err(format!(
         "Python server at http://{}/api/health did not provide a compatible desktop handshake within {} seconds.\n\
@@ -544,7 +627,214 @@ fn server_status(state: State<'_, ServerProcess>) -> ServerStatus {
         }),
         pid,
         working_dir: wd,
+        preparation_stage: get_stage(state.inner()),
+        runtime_found: user_runtime_dir().map(|r| r.exists()).unwrap_or(false),
     }
+}
+
+#[tauri::command]
+fn cancel_server_preparation(state: State<'_, ServerProcess>) -> Result<(), String> {
+    set_stage(state.inner(), "cancelled");
+    stop_server_inner(state.inner())
+}
+
+#[derive(Default)]
+struct PendingUpdate(Mutex<(Option<tauri_plugin_updater::Update>, Option<Vec<u8>>)>);
+
+#[derive(serde::Serialize)]
+struct UpdateStatus {
+    version: Option<String>,
+    downloaded: bool,
+}
+
+#[tauri::command]
+fn update_status(state: State<'_, PendingUpdate>) -> Result<UpdateStatus, String> {
+    let pending = state.0.lock().map_err(|e| e.to_string())?;
+    Ok(UpdateStatus {
+        version: pending.0.as_ref().map(|u| u.version.clone()),
+        downloaded: pending.1.is_some(),
+    })
+}
+
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_updater::UpdaterExt;
+    let config: serde_json::Value =
+        serde_json::from_str(include_str!("../tauri.conf.json")).map_err(|e| e.to_string())?;
+    if config["plugins"]["updater"]["pubkey"]
+        .as_str()
+        .unwrap_or("")
+        .is_empty()
+    {
+        return Err("Update signing is not configured for this build.".to_string());
+    }
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?;
+    let version = update.as_ref().map(|u| u.version.clone());
+    *app.state::<PendingUpdate>()
+        .0
+        .lock()
+        .map_err(|e| e.to_string())? = (update, None);
+    Ok(version)
+}
+
+#[tauri::command]
+async fn download_update(app: tauri::AppHandle) -> Result<(), String> {
+    let update = app
+        .state::<PendingUpdate>()
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .0
+        .clone()
+        .ok_or("No update is available.")?;
+    let bytes = update
+        .download(|_, _| {}, || {})
+        .await
+        .map_err(|e| e.to_string())?;
+    let state = app.state::<PendingUpdate>();
+    let mut pending = state.0.lock().map_err(|e| e.to_string())?;
+    if pending.0.as_ref().map(|u| &u.version) != Some(&update.version) {
+        return Err("Update changed during download. Check again.".to_string());
+    }
+    pending.1 = Some(bytes);
+    Ok(())
+}
+
+async fn resume_backend(
+    client: &reqwest::Client,
+    base: &str,
+    cookie: &str,
+    csrf: &str,
+    maintenance_lease: &str,
+) -> Result<(), String> {
+    let body = serde_json::json!({"token": maintenance_lease});
+    let response = client
+        .post(format!("{base}/api/maintenance/resume"))
+        .header(reqwest::header::ORIGIN, base)
+        .header(reqwest::header::COOKIE, cookie)
+        .header("X-KiCad-Owner-CSRF", csrf)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|_| "Could not resume backend; restart the desktop to recover.")?;
+    if !response.status().is_success() {
+        return Err("Backend remains in maintenance; restart the desktop to recover.".into());
+    }
+    Ok(())
+}
+
+async fn quiesce_backend(base: &str) -> Result<(reqwest::Client, String, String, String), String> {
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = client
+        .get(format!("{base}/api/owner/session"))
+        .send()
+        .await
+        .map_err(|_| "Could not establish local owner session.")?;
+    if !response.status().is_success() {
+        return Err("Local owner session was rejected.".into());
+    }
+    let cookie = response
+        .headers()
+        .get_all(reqwest::header::SET_COOKIE)
+        .iter()
+        .filter_map(|h| h.to_str().ok())
+        .filter_map(|h| h.split(';').next())
+        .find(|h| h.starts_with("kicad_owner_session="))
+        .ok_or("Owner cookie missing.")?
+        .to_string();
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|_| "Invalid owner session.")?;
+    let csrf = body["csrf_token"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or("Owner token missing.")?
+        .to_string();
+    let result: Result<String, String> = async {
+        let response = client
+            .post(format!("{base}/api/maintenance/quiesce"))
+            .header(reqwest::header::ORIGIN, base)
+            .header(reqwest::header::COOKIE, &cookie)
+            .header("X-KiCad-Owner-CSRF", &csrf)
+            .json(&serde_json::json!({}))
+            .send()
+            .await
+            .map_err(|_| "Could not quiesce local backend.")?;
+        if !response.status().is_success() {
+            return Err("Backend is busy or refused maintenance.".into());
+        }
+        let body: serde_json::Value = response
+            .json()
+            .await
+            .map_err(|_| "Invalid maintenance response.")?;
+        if body["ok"] != true || body["state"] != "quiesced" {
+            return Err("Backend did not enter maintenance.".into());
+        }
+        Ok(body["token"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .ok_or("Maintenance token missing.")?
+            .to_string())
+    }
+    .await;
+    // A failed/ambiguous quiesce never grants us a lease token. Do not
+    // attempt a tokenless resume or claim that a safe update transition ran.
+    let token = result.map_err(|error| {
+        format!("{error} No update was installed. Verify backend state before retrying.")
+    })?;
+    Ok((client, cookie, csrf, token))
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    let (update, bytes) = {
+        let state = app.state::<PendingUpdate>();
+        let pending = state.0.lock().map_err(|e| e.to_string())?;
+        (
+            pending.0.clone().ok_or("No update is available.")?,
+            pending
+                .1
+                .clone()
+                .ok_or("Download the signed update first.")?,
+        )
+    };
+    {
+        let state = app.state::<ServerProcess>();
+        let mut child = state.child.lock().map_err(|e| e.to_string())?;
+        if !child
+            .as_mut()
+            .is_some_and(|c| matches!(c.try_wait(), Ok(None)))
+        {
+            return Err("Installation requires the app-owned backend.".into());
+        }
+    }
+    let port = {
+        let process = app.state::<ServerProcess>();
+        selected_dashboard_port(process.inner())?
+    };
+    if !supported_dashboard_port(port) || !matches!(probe_backend(port), BackendProbe::Compatible) {
+        return Err("Backend is not ready.".into());
+    }
+    // A user-selected isolated desktop backend must be quiesced on its own
+    // port; the older, independently running service on 3334 is never touched.
+    let base = format!("http://{}", server_addr(port));
+    let (client, cookie, csrf, token) = quiesce_backend(&base).await?;
+    if let Err(error) = update.install(&bytes) {
+        resume_backend(&client, &base, &cookie, &csrf, &token).await?;
+        return Err(error.to_string());
+    }
+    Ok(())
 }
 
 /// Opens a native OS folder-picker dialog and stores the selection
@@ -606,6 +896,41 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+/// Schedule slow update polling and backend startup without blocking the tray.
+fn spawn_background_checks(app_handle: tauri::AppHandle) {
+    let updater_handle = app_handle.clone();
+    std::thread::spawn(move || loop {
+        if matches!(probe_backend(3334), BackendProbe::Compatible) {
+            let result = tauri::async_runtime::block_on(check_update(updater_handle.clone()));
+            if let Ok(Some(version)) = result {
+                eprintln!("[kicad-mcp-pro] Update available: {version}");
+            }
+            thread::sleep(Duration::from_secs(24 * 60 * 60));
+        } else {
+            thread::sleep(HEALTH_POLL_INTERVAL);
+        }
+    });
+
+    // Launch the backend on a background thread so the first-run
+    // download (which can take up to HEALTH_WAIT) never blocks the UI
+    // or the tray. The frontend polls /api/health and server_status
+    // independently and redirects as soon as the server is ready.
+    let handle = app_handle;
+    std::thread::spawn(move || {
+        let state = handle.state::<ServerProcess>();
+        match start_server_inner(state.inner(), PRIMARY_DASHBOARD_PORT) {
+            Ok(status) => {
+                eprintln!("[kicad-mcp-pro] Server started: {status}");
+                let _ = state.error.lock().map(|mut e| *e = None);
+            }
+            Err(error) => {
+                eprintln!("[kicad-mcp-pro] ERROR: {error}");
+                let _ = state.error.lock().map(|mut e| *e = Some(error));
+            }
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -637,12 +962,9 @@ pub fn run() {
         )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .manage(ServerProcess {
-            child: Mutex::new(None),
-            error: Mutex::new(None),
-            working_dir: Mutex::new(None),
-            dashboard_port: Mutex::new(PRIMARY_DASHBOARD_PORT),
-        })
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(ServerProcess::new())
+        .manage(PendingUpdate::default())
         .invoke_handler(tauri::generate_handler![
             start_server,
             stop_server,
@@ -654,6 +976,11 @@ pub fn run() {
             desktop_readiness,
             desktop_backend_command,
             open_external_link,
+            cancel_server_preparation,
+            check_update,
+            download_update,
+            install_update,
+            update_status,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -705,24 +1032,7 @@ pub fn run() {
             }
             let _ = tray.build(app)?;
 
-            // Launch the backend on a background thread so the first-run
-            // download (which can take up to HEALTH_WAIT) never blocks the UI
-            // or the tray. The frontend polls /api/health and server_status
-            // independently and redirects as soon as the server is ready.
-            let handle = app.handle().clone();
-            std::thread::spawn(move || {
-                let state = handle.state::<ServerProcess>();
-                match start_server_inner(state.inner(), PRIMARY_DASHBOARD_PORT) {
-                    Ok(status) => {
-                        eprintln!("[kicad-mcp-pro] Server started: {status}");
-                        let _ = state.error.lock().map(|mut e| *e = None);
-                    }
-                    Err(error) => {
-                        eprintln!("[kicad-mcp-pro] ERROR: {error}");
-                        let _ = state.error.lock().map(|mut e| *e = Some(error));
-                    }
-                }
-            });
+            spawn_background_checks(app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -882,29 +1192,20 @@ mod tests {
             env!("CARGO_PKG_VERSION"),
         );
         let port = serve_health_once(body);
-        let process = ServerProcess {
-            child: Mutex::new(None),
-            error: Mutex::new(None),
-            working_dir: Mutex::new(None),
-            dashboard_port: Mutex::new(PRIMARY_DASHBOARD_PORT),
-        };
+        let process = ServerProcess::new();
 
         assert_eq!(
             start_server_inner(&process, port),
             Ok("already_running".to_string())
         );
+        assert_eq!(get_stage(&process), "ready");
     }
 
     #[test]
     fn desktop_startup_rejects_incompatible_existing_backend() {
         let body = r#"{"ok":true,"status":"ok","version":"99.0.0","desktopCompatibility":{"contractVersion":"1.0.0","backendVersion":"99.0.0","versionPolicy":"exact-release"}}"#.to_string();
         let port = serve_health_once(body);
-        let process = ServerProcess {
-            child: Mutex::new(None),
-            error: Mutex::new(None),
-            working_dir: Mutex::new(None),
-            dashboard_port: Mutex::new(PRIMARY_DASHBOARD_PORT),
-        };
+        let process = ServerProcess::new();
 
         let error =
             start_server_inner(&process, port).expect_err("incompatible backend must fail closed");
@@ -912,5 +1213,42 @@ mod tests {
         assert!(error.contains(env!("CARGO_PKG_VERSION")));
         assert!(error.contains(DESKTOP_API_CONTRACT_VERSION));
         assert!(error.contains("kicad-mcp-pro=="));
+        assert_eq!(get_stage(&process), "failed");
+    }
+
+    #[test]
+    fn owner_quiesce_uses_session_cookie_and_csrf() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            for (index, stream) in listener.incoming().take(2).enumerate() {
+                let mut stream = stream.unwrap();
+                let mut request = [0; 4096];
+                let count = stream.read(&mut request).unwrap();
+                let request = String::from_utf8_lossy(&request[..count]).to_ascii_lowercase();
+                let body = if index == 0 {
+                    assert!(request.starts_with("get /api/owner/session "));
+                    r#"{"csrf_token":"test-csrf"}"#
+                } else {
+                    assert!(request.starts_with("post /api/maintenance/quiesce "));
+                    assert!(request.contains("cookie: kicad_owner_session=test-session"));
+                    assert!(request.contains("x-kicad-owner-csrf: test-csrf"));
+                    assert!(request.contains("origin: http://127.0.0.1:"));
+                    r#"{"ok":true,"state":"quiesced","token":"test-token"}"#
+                };
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nSet-Cookie: kicad_owner_session=test-session; Path=/api\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+            }
+        });
+        let (_, _, _, token) = tauri::async_runtime::block_on(quiesce_backend(&base)).unwrap();
+        assert_eq!(token, "test-token");
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn desktop_server_process_cancel_changes_stage() {
+        let process = ServerProcess::new();
+        assert_eq!(get_stage(&process), "idle");
+        set_stage(&process, "cancelled");
+        assert_eq!(get_stage(&process), "cancelled");
     }
 }

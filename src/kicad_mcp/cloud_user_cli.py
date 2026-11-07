@@ -41,6 +41,8 @@ def _owner_terminal() -> bool:
 
 def _local_pairing_storage_supported() -> bool:
     """Do not start remote enrollment if the owner-key security boundary cannot run."""
+    if os.name == "nt":
+        return True
     return (
         os.name == "posix"
         and callable(getattr(os, "getuid", None))
@@ -381,11 +383,8 @@ def _start_connector(root: Path, new_record: dict[str, str]) -> str:
     except Exception as exc:
         typer.echo(f"Background service start notice: {exc}")
         try:
-            from kicad_mcp.cloud_managed_connector import (
-                _ENABLED_FILE,
-                _identity_state,
-                _write_private_json,
-            )
+            from kicad_mcp.cloud_managed_connector import _ENABLED_FILE, _identity_state
+            from kicad_mcp.cloud_pair_keys import _write_private_json
 
             _write_private_json(root, _ENABLED_FILE, _identity_state(new_record))
             return "Enabled (Foreground ready)"
@@ -633,6 +632,14 @@ def status() -> None:
         typer.echo(f"Local Directory: {reg.get('directory')} ({reg.get('filenameStem')})")
     except Exception as exc:
         _ = exc
+
+    from kicad_mcp.services.client_config import get_owned_client_configs
+
+    owned = get_owned_client_configs(root)
+    if owned:
+        typer.echo(f"Configured Clients: {', '.join(sorted(owned.keys()))}")
+    else:
+        typer.echo("Configured Clients: None (run 'kicad-mcp-pro init' to configure)")
 
 
 @cloud_app.command()

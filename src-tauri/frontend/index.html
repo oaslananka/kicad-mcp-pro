@@ -222,6 +222,7 @@
       <h1>KiCad MCP Pro</h1>
       <output class="status" id="status" aria-live="polite">Starting server…</output>
 
+      <button type="button" class="btn secondary" id="cancelStartup" onclick="handleCancelPreparation()">Cancel setup</button>
       <section class="details" id="details" aria-label="Diagnostics details">
         <h2>
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -229,13 +230,14 @@
         </h2>
         <p style="color:var(--text-muted);margin-bottom:12px;">The Python backend did not respond within the expected time window.</p>
         <div id="steps">
-          <div class="step pending" data-step="uvx">Check uvx is installed</div>
-          <div class="step pending" data-step="pkg">Check kicad-mcp-pro package</div>
-          <div class="step pending" data-step="server">Check server health</div>
+          <div class="step ok" data-step="app">KiCad MCP Pro Desktop Installed</div>
+          <div class="step pending" data-step="backend">Application Environment &amp; Backend</div>
+          <div class="step pending" data-step="kicad">KiCad EDA Detection</div>
+          <div class="step pending" data-step="ai">AI Client Configuration</div>
         </div>
         <div id="error-detail" style="display:none;margin-top:12px;background:#06090e;border:1px solid var(--error);border-radius:6px;padding:12px;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;word-break:break-all;color:#fca5a5;"></div>
         <p style="margin-top:16px;font-size:13px;color:var(--text-muted);">
-          Run this command manually in a terminal to inspect diagnostics:
+          If automatic startup fails, inspect the exact-version diagnostic command:
         </p>
         <div class="details-code-row">
           <code id="cliCommand">Loading exact-version diagnostics from the desktop app?</code>
@@ -244,6 +246,7 @@
         <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
           <a class="btn secondary" id="openLocalDashboard" href="http://127.0.0.1:3334/ui" target="_blank" rel="noopener noreferrer">Try opening dashboard</a>
           <button type="button" class="btn" id="useSeparatePort" style="display:none" onclick="handleUseSeparatePort()">Continue without stopping old service</button>
+          <button type="button" class="btn secondary" id="btnCancel" onclick="handleCancelPreparation()">Cancel</button>
           <button type="button" class="btn secondary" onclick="handleRestartServer()">Restart Server</button>
           <button type="button" class="btn" onclick="handleRestartServer()">Retry</button>
         </div>
@@ -309,6 +312,7 @@
         retries = 0;
         healthOk = false;
         spinnerEl.style.display = 'block';
+        document.getElementById('cancelStartup').style.display = 'inline-flex';
         statusEl.textContent = 'Restarting server…';
         statusEl.className = 'status';
         detailsEl.classList.remove('visible');
@@ -321,6 +325,12 @@
           return;
         }
         setTimeout(checkServer, 500);
+      }
+
+      async function handleCancelPreparation() {
+        statusEl.textContent = 'Cancelling…';
+        await tauriInvoke('cancel_server_preparation');
+        showError('Preparation cancelled.');
       }
 
       async function handleUseSeparatePort() {
@@ -355,6 +365,7 @@
 
       function showError(msg) {
         spinnerEl.style.display = 'none';
+        document.getElementById('cancelStartup').style.display = 'none';
         statusEl.textContent = msg || 'Server failed to start';
         statusEl.className = 'status error';
         detailsEl.classList.add('visible');
@@ -378,9 +389,18 @@
       function handleTauriStatus(tauriStatus) {
         if (!tauriStatus) return true;
         if (tauriStatus.running) {
-          setStep('uvx', 'ok');
-          setStep('pkg', 'ok');
+          setStep('backend', 'ok');
           return true;
+        }
+        if (tauriStatus.preparation_stage === 'preparing_environment') {
+          statusEl.textContent = `Preparing local environment (downloading dependencies if first launch, ${retries}s)…`;
+          setStep('backend', 'pending');
+        } else if (tauriStatus.preparation_stage === 'starting_server') {
+          statusEl.textContent = `Starting local server…`;
+          setStep('backend', 'pending');
+        } else if (tauriStatus.preparation_stage === 'cancelled') {
+          showError('Setup was cancelled.');
+          return false;
         }
         if (tauriStatus.message && tauriStatus.message !== 'Server is not running.') {
           if (desktopPort === PRIMARY_PORT && tauriStatus.message.startsWith('Incompatible service detected')) {
@@ -390,9 +410,7 @@
             errorDetailEl.textContent = tauriStatus.message;
             errorDetailEl.style.display = 'block';
           }
-          setStep('uvx', 'fail');
-          setStep('pkg', 'fail');
-          setStep('server', 'fail');
+          setStep('backend', 'fail');
           showError(
             tauriStatus.message.startsWith('Incompatible service detected')
               ? 'Older or incompatible local backend detected'
@@ -451,9 +469,11 @@
         if (healthOk) {
           statusEl.textContent = 'Server is ready, redirecting…';
           statusEl.className = 'status success';
-          setStep('server', 'ok');
-          setStep('uvx', 'ok');
-          setStep('pkg', 'ok');
+          setStep('backend', 'ok');
+          // KiCad and AI-client detection are shown by the actual dashboard;
+          // backend readiness alone does not establish either capability.
+          setStep('kicad', 'pending');
+          setStep('ai', 'pending');
           setTimeout(() => { window.location.href = dashboardUrl(); }, 500);
           return;
         }
@@ -474,6 +494,7 @@
       }
 
       window.handleRestartServer = handleRestartServer;
+      window.handleCancelPreparation = handleCancelPreparation;
       window.handleUseSeparatePort = handleUseSeparatePort;
       window.showError = showError;
       window.copyCliCommand = copyCliCommand;

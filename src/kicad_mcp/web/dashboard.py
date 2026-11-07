@@ -559,6 +559,17 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     </section>
     <h2>Local status</h2>
     <div class="grid" id="statusGrid">
+      <div class="card" id="exp-card" style="grid-column: 1 / -1; background: var(--surface-2); border-color: var(--border-strong);">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <h3 style="margin: 0;">Readiness: <span id="exp-readiness" class="badge-status ok">Ready</span></h3>
+            <p id="exp-next-desc" style="margin: 4px 0 0; font-size: 13px; color: var(--text-muted);">Local workspace active. No account required.</p>
+          </div>
+          <div>
+            <span class="badge" id="exp-mode">local</span>
+          </div>
+        </div>
+      </div>
       <div class="card">
         <h3>Server</h3>
         <div class="row"><span class="label">Profile</span><span class="value" id="s-profile">-</span></div>
@@ -738,6 +749,15 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
       </div>
       <pre id="export-result" style="display:none;margin-top:10px;background:var(--bg-canvas);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:12px;font-family:var(--font-mono);overflow-x:auto;"></pre>
     </div>
+    <div class="card" style="margin-top:20px;">
+      <h3>Application Maintenance &amp; Repair</h3>
+      <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Run non-destructive diagnostics, fix stale locks, or inspect cleanup impact without touching your KiCad projects.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+        <button type="button" class="btn btn-sm btn-primary" onclick="runMaintenanceRepair()">Diagnostic Repair</button>
+        <button type="button" class="btn btn-sm" onclick="previewCleanup()">Preview Cleanup</button>
+      </div>
+      <pre id="maintenance-result" style="display:none;margin-top:10px;background:var(--bg-canvas);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:12px;font-family:var(--font-mono);overflow-x:auto;"></pre>
+    </div>
   </div>
 
   <!-- Setup Wizard -->
@@ -889,6 +909,19 @@ function refreshStatus() {
     fetch('/api/metrics').then(r => r.json()).then(m => {
       setText('s-uptime', m.uptime_human || '-');
     }).catch(() => setText('s-uptime', '-'));
+
+    // Experience snapshot
+    fetch('/api/owner/session').then(r => {
+      if (!r.ok) return null;
+      return fetch('/api/experience').then(exp => exp.ok ? exp.json() : null);
+    }).then(exp => {
+      if (!exp) return;
+      setText('exp-readiness', exp.readiness || '-');
+      setText('exp-mode', exp.mode || 'local');
+      if (exp.next_action && exp.next_action.description) {
+        setText('exp-next-desc', exp.next_action.description);
+      }
+    }).catch(() => {});
 
     // Health checks
     const hc = byId('health-checks');
@@ -1234,6 +1267,53 @@ function exportClientConfig(client) {
     });
 }
 
+async function runMaintenanceRepair() {
+  const el = byId('maintenance-result');
+  el.style.display = 'block';
+  el.textContent = 'Inspecting available repair actions...';
+  try {
+    const sessionResponse = await fetch('/api/owner/session', {cache: 'no-store'});
+    if (!sessionResponse.ok) throw new Error('Local owner session unavailable');
+    const session = await sessionResponse.json();
+    const previewResponse = await fetch('/api/maintenance/repair/preview', {cache: 'no-store'});
+    if (!previewResponse.ok) throw new Error('Repair preview unavailable');
+    const preview = await previewResponse.json();
+    el.textContent = JSON.stringify({healthy: preview.healthy, items: preview.items}, null, 2);
+    if (!window.confirm('Apply the reviewed application-only repair?')) return;
+    const response = await fetch('/api/maintenance/repair/apply', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-KiCad-Owner-CSRF': session.csrf_token},
+      body: JSON.stringify({confirmation: preview.confirmation})
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Repair rejected');
+    el.textContent = JSON.stringify(result, null, 2);
+  } catch (err) {
+    el.textContent = 'Repair failed: ' + err.message;
+  }
+}
+
+function previewCleanup() {
+  const el = byId('maintenance-result');
+  el.style.display = 'block';
+  el.textContent = 'Scanning application state (user KiCad project files are strictly preserved)...';
+  fetch('/api/owner/session', {cache: 'no-store'})
+    .then(r => {
+      if (!r.ok) throw new Error('Local owner session unavailable');
+      return fetch('/api/maintenance/cleanup/preview', {cache: 'no-store'});
+    })
+    .then(r => {
+      if (!r.ok) throw new Error('Cleanup preview unavailable');
+      return r.json();
+    })
+    .then(d => {
+      el.textContent = JSON.stringify(d, null, 2);
+    })
+    .catch(err => {
+      el.textContent = 'Preview failed: ' + err.message;
+    });
+}
+
 /* ── Setup Wizard ── */
 function initWizard() {
   wizardStep = 0;
@@ -1389,9 +1469,28 @@ function testConnection() {
   el.style.display = 'block';
   el.textContent = 'Testing...';
   el.className = 'wizard-result';
-  fetch('/api/health').then(r => r.json()).then(d => {
-    const serverState = d.ok ? 'online' : (d.status || 'offline');
-    el.textContent = 'Server: ' + serverState + ' | Version: ' + (d.version || '?') + ' | Uptime: ' + (d.uptime || '?') + 's';
+  fetch('/api/health').then(async r => {
+    if (!r.ok) {
+      const errData = await r.json().catch(() => ({}));
+      el.textContent = 'Health check failed (HTTP ' + r.status + '): ' + (errData.status || errData.error || 'Server error');
+      el.className = 'wizard-result error';
+      return;
+    }
+    const d = await r.json().catch(() => null);
+    if (!d || typeof d !== 'object' || typeof d.ok !== 'boolean') {
+      el.textContent = 'Invalid health response received from server.';
+      el.className = 'wizard-result error';
+      return;
+    }
+    const serverState = d.ok ? 'online' : (d.status || 'degraded');
+    const version = d.version || '?';
+    const uptime = d.uptime != null ? Math.round(d.uptime) : '?';
+    if (!d.ok) {
+      el.textContent = 'Server: ' + serverState + ' (degraded) | Version: ' + version + ' | Uptime: ' + uptime + 's. Check diagnostics.';
+      el.className = 'wizard-result warn';
+      return;
+    }
+    el.textContent = 'Server: ' + serverState + ' | Version: ' + version + ' | Uptime: ' + uptime + 's';
     el.className = 'wizard-result success';
   }).catch(() => {
     el.textContent = 'Connection failed. Check server is running.';

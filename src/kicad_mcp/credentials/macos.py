@@ -1,0 +1,93 @@
+"""macOS Keychain implementation using the system security CLI."""
+
+from __future__ import annotations
+
+import json
+import re
+import subprocess  # nosec B404
+
+from . import PlatformCredentialStore
+
+_SERVICE_NAME = "KiCadMCPPro"
+_SECURITY_EXECUTABLE = "/usr/bin/security"
+_SLOT_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+def _validate_slot(slot: str) -> str:
+    clean = slot.replace("-", "").lower()
+    if not _SLOT_PATTERN.fullmatch(clean):
+        raise ValueError(f"Invalid macOS credential slot: {slot}")
+    return clean
+
+
+class MacOSKeychainCredentialStore(PlatformCredentialStore):
+    """macOS user Keychain credential store."""
+
+    def save_key(self, record_id: str, key_pem: bytes) -> None:
+        _validate_slot(record_id)
+        raise RuntimeError("Native Keychain writes are unavailable for keys")
+
+    def load_key(self, record_id: str) -> bytes | None:
+        slot = _validate_slot(record_id)
+        cmd = [
+            _SECURITY_EXECUTABLE,
+            "find-generic-password",
+            "-s",
+            _SERVICE_NAME,
+            "-a",
+            f"{slot}_key",
+            "-w",
+        ]
+        res = subprocess.run(cmd, capture_output=True, check=False)  # nosec B603 # nosemgrep
+        if res.returncode != 0:
+            return None
+        hex_data = res.stdout.strip().decode("utf-8")
+        try:
+            return bytes.fromhex(hex_data)
+        except ValueError:
+            return None
+
+    def save_binding(self, record_id: str, binding: dict[str, str]) -> None:
+        _validate_slot(record_id)
+        raise RuntimeError("Native Keychain writes are unavailable for bindings")
+
+    def load_binding(self, record_id: str) -> dict[str, str] | None:
+        slot = _validate_slot(record_id)
+        cmd = [
+            _SECURITY_EXECUTABLE,
+            "find-generic-password",
+            "-s",
+            _SERVICE_NAME,
+            "-a",
+            f"{slot}_binding",
+            "-w",
+        ]
+        res = subprocess.run(cmd, capture_output=True, check=False)  # nosec B603 # nosemgrep
+        if res.returncode != 0:
+            return None
+        hex_data = res.stdout.strip().decode("utf-8")
+        try:
+            raw = bytes.fromhex(hex_data)
+            data = json.loads(raw.decode("utf-8"))
+            if isinstance(data, dict):
+                return {str(k): str(v) for k, v in data.items()}
+            return None
+        except ValueError:
+            return None
+
+    def delete_credentials(self, record_id: str) -> bool:
+        slot = _validate_slot(record_id)
+        deleted = False
+        for part in ("_key", "_binding"):
+            cmd = [
+                _SECURITY_EXECUTABLE,
+                "delete-generic-password",
+                "-s",
+                _SERVICE_NAME,
+                "-a",
+                f"{slot}{part}",
+            ]
+            res = subprocess.run(cmd, capture_output=True, check=False)  # nosec B603 # nosemgrep
+            if res.returncode == 0:
+                deleted = True
+        return deleted

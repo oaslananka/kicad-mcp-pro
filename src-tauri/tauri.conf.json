@@ -42,6 +42,12 @@
   "plugins": {
     "shell": {
       "open": true
+    },
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/oaslananka/kicad-mcp-pro/releases/latest/download/latest.json"
+      ]
     }
   }
 }

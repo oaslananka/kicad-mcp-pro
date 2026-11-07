@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import type { Actor } from "./auth.js";
@@ -113,12 +114,38 @@ export function createCloudMcpHandler(
       .map(describeProject) }));
     mcp.registerTool("get_project", {
       description: "Find an enabled granted project by opaque UUID with session status, never local paths or KiCad data.",
-      inputSchema: z.object({ project_id: z.string().uuid() }), annotations: readonly
+      inputSchema: z.object({ project_id: z.string().uuid() }), annotations: readonly,
+      _meta: { ui: { resourceUri: "ui://project-review" } }
     }, async ({ project_id }) => {
       const project = await inventory.getProject(actor.sub,actor.clientId,project_id);
-      return text(project ? { project:describeProject(project) }
-        : { found:false, message:"Project not found or not accessible" });
+      if (!project) {
+        return text({ found:false, message:"Project not found or not accessible" });
+      }
+      const desc = describeProject(project);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify({ project: desc }) }],
+        structuredContent: { project: desc }
+      };
     });
+    mcp.registerResource(
+      "kicad-project-review",
+      "ui://project-review",
+      {
+        mimeType: "text/html;profile=mcp-app",
+        description: "Interactive KiCad Project Review MCP App"
+      },
+      async (uri) => {
+        const html = readFileSync(new URL("../dist/project-review.html", import.meta.url), "utf8");
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: "text/html;profile=mcp-app",
+            text: html,
+            _meta: {ui:{csp:{connectDomains:[],resourceDomains:[],frameDomains:[]}}}
+          }]
+        };
+      }
+    );
     // Task-first discovery describes the CURRENT Cloud MCP surface, not
     // the much broader local KiCad tool registry. Never claim availability
     // for a feature that was not explicitly enabled on this Cloud instance.

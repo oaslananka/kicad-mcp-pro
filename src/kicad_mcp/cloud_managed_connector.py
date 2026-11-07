@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import os
 import secrets
 import shutil
@@ -36,7 +35,13 @@ from kicad_mcp.cloud_outbound_handshake import (
     HandshakeReceipt,
     execute_owner_managed_read_session,
 )
-from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError, _open_owner_private_dir
+from kicad_mcp.cloud_pair_keys import (
+    LocalApprovalDeniedError,
+    _current_uid,
+    _open_owner_private_dir,
+    _read_private_json,
+    _write_private_json,
+)
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
 from kicad_mcp.cloud_reconnect_policy import reconnect_delay_seconds
@@ -48,7 +53,6 @@ _STATUS_FILE = "connector-status.json"
 _ENABLED_FIELDS = frozenset({"enabled", "ownerSub", "cloudOrigin", "deviceId", "projectId"})
 _STATUS_FIELDS = frozenset({"state", "updatedAtUnixMs", "pid"})
 _STATUS_VALUES = frozenset({"connecting", "connected", "unavailable"})
-_MAX_STATE_BYTES = 2048
 _MAX_READS = 16
 _SESSION_LIFETIME_MS = 280_000
 _CONNECTED_STATUS_MAX_AGE_MS = 305_000
@@ -56,82 +60,13 @@ _CONNECTING_STATUS_MAX_AGE_MS = 45_000
 _DENIED = "Registered Cloud Connector unavailable; check its local enable state and registration."
 
 
-def _unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    if len({key for key, _ in pairs}) != len(pairs):
-        raise LocalApprovalDeniedError(_DENIED)
-    return dict(pairs)
-
-
-def _current_uid() -> int:
-    getuid = getattr(os, "getuid", None)
-    if not callable(getuid):
-        raise LocalApprovalDeniedError(_DENIED)
-    uid = getuid()
-    if type(uid) is not int:
-        raise LocalApprovalDeniedError(_DENIED)
-    return uid
-
-
-def _read_private_json(root: Path, name: str) -> dict[str, Any]:
-    folder_fd = _open_owner_private_dir(root / name)
-    owner_uid = _current_uid()
-    fd = -1
-    try:
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-        fd = os.open(name, flags | getattr(os, "O_CLOEXEC", 0), dir_fd=folder_fd)
-        info = os.fstat(fd)
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or info.st_uid != owner_uid
-            or info.st_nlink != 1
-            or info.st_mode & 0o077
-            or not 1 <= info.st_size <= _MAX_STATE_BYTES
-        ):
-            raise LocalApprovalDeniedError(_DENIED)
-        raw = os.read(fd, _MAX_STATE_BYTES + 1)
-        if len(raw) > _MAX_STATE_BYTES:
-            raise LocalApprovalDeniedError(_DENIED)
-        value = json.loads(raw, object_pairs_hook=_unique)
-        if not isinstance(value, dict):
-            raise LocalApprovalDeniedError(_DENIED)
-        return value
-    except (OSError, ValueError, TypeError) as exc:
-        raise LocalApprovalDeniedError(_DENIED) from exc
-    finally:
-        if fd >= 0:
-            os.close(fd)
-        os.close(folder_fd)
-
-
-def _write_private_json(root: Path, name: str, value: dict[str, Any]) -> None:
-    folder_fd = _open_owner_private_dir(root / name)
-    temp_name = f".{name}.{uuid.uuid4().hex}.tmp"
-    fd = -1
-    try:
-        payload = json.dumps(value, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-        if not 1 <= len(payload) <= _MAX_STATE_BYTES:
-            raise LocalApprovalDeniedError(_DENIED)
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-        flags |= getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
-        fd = os.open(temp_name, flags, 0o600, dir_fd=folder_fd)
-        with os.fdopen(fd, "wb", closefd=True) as stream:
-            fd = -1
-            stream.write(payload)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temp_name, name, src_dir_fd=folder_fd, dst_dir_fd=folder_fd)
-        os.fsync(folder_fd)
-    finally:
-        if fd >= 0:
-            os.close(fd)
-        try:
-            os.unlink(temp_name, dir_fd=folder_fd)
-        except FileNotFoundError:
-            pass
-        os.close(folder_fd)
-
-
 def _remove_private_file(root: Path, name: str) -> None:
+    if os.name == "nt":
+        try:
+            (root / name).unlink(missing_ok=True)
+        except OSError:
+            pass
+        return
     folder_fd = _open_owner_private_dir(root / name)
     try:
         try:

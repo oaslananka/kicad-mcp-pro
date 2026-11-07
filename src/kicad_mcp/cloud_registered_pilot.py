@@ -12,6 +12,7 @@ import json
 import os
 import stat
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from websockets.asyncio.client import connect
@@ -39,6 +40,35 @@ _MODE_FLAGS = {
 }
 
 
+def _validated_registration(record: object, expected_project_id: str) -> dict[str, str]:
+    if not isinstance(record, dict):
+        raise LocalApprovalDeniedError(_DENIED)
+    if (
+        record.keys() != _FIELDS
+        or any(not isinstance(value, str) for value in record.values())
+        or record["projectId"] != expected_project_id
+        or not _valid_identity_selectors(
+            record["ownerSub"], record["cloudOrigin"], record["deviceId"], record["projectId"]
+        )
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+    return record
+
+
+def _owner_private_stat(
+    info: os.stat_result, getuid: Callable[[], int], max_bytes: int | None = None
+) -> bool:
+    """Validate a single owner-only regular file without following links."""
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or info.st_uid != getuid()
+        or info.st_nlink != 1
+        or info.st_mode & 0o077
+    ):
+        return False
+    return max_bytes is None or 1 <= info.st_size <= max_bytes
+
+
 def _single_registered_identity(root: Path) -> dict[str, str]:
     """Read only a private, uniquely registered project with no symlink follows."""
     folder = root / "projects"
@@ -47,6 +77,15 @@ def _single_registered_identity(root: Path) -> dict[str, str]:
     names = list(folder.iterdir())
     if len(names) != 1 or names[0].suffix != ".json" or _UUID.fullmatch(names[0].stem) is None:
         raise LocalApprovalDeniedError(_DENIED)
+
+    if os.name == "nt":
+        if not names[0].is_file() or not (1 <= names[0].stat().st_size <= 2048):
+            raise LocalApprovalDeniedError(_DENIED)
+        try:
+            record = json.loads(names[0].read_bytes(), object_pairs_hook=_unique)
+            return _validated_registration(record, names[0].stem)
+        except Exception as exc:
+            raise LocalApprovalDeniedError(_DENIED) from exc
 
     nofollow = getattr(os, "O_NOFOLLOW", None)
     nonblock = getattr(os, "O_NONBLOCK", None)
@@ -69,25 +108,10 @@ def _single_registered_identity(root: Path) -> dict[str, str]:
             dir_fd=directory_fd,
         )
         info = os.fstat(fd)
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or info.st_uid != getuid()
-            or info.st_nlink != 1
-            or info.st_mode & 0o077
-            or not 1 <= info.st_size <= 2048
-        ):
+        if not _owner_private_stat(info, getuid, max_bytes=2048):
             raise LocalApprovalDeniedError(_DENIED)
         record = json.loads(os.read(fd, 2049), object_pairs_hook=_unique)
-        if (
-            not isinstance(record, dict)
-            or record.keys() != _FIELDS
-            or any(not isinstance(value, str) for value in record.values())
-            or record["projectId"] != names[0].stem
-            or not _valid_identity_selectors(
-                record["ownerSub"], record["cloudOrigin"], record["deviceId"], record["projectId"]
-            )
-        ):
-            raise LocalApprovalDeniedError(_DENIED)
+        record = _validated_registration(record, names[0].stem)
         selected = resolve_registered_read(
             owner_sub=record["ownerSub"],
             origin=record["cloudOrigin"],
@@ -96,12 +120,7 @@ def _single_registered_identity(root: Path) -> dict[str, str]:
             registry_root=root,
         )
         key_info = selected.key_file.lstat()
-        if (
-            not stat.S_ISREG(key_info.st_mode)
-            or key_info.st_uid != getuid()
-            or key_info.st_nlink != 1
-            or key_info.st_mode & 0o077
-        ):
+        if not _owner_private_stat(key_info, getuid):
             raise LocalApprovalDeniedError(_DENIED)
         return record
     except (OSError, ValueError, TypeError) as exc:

@@ -32,6 +32,22 @@ from ..path_safety import resolve_under
 from ..project.http_binding import PROJECT_CONFIG_FIELDS, HttpProjectBinding
 from ..tools.router import available_profiles, tool_count_for_profile
 from .dashboard import DASHBOARD_HTML
+from .owner_routes import (
+    _owner_session,
+    api_cloud_connector_disable,
+    api_cloud_connector_enable,
+    api_cloud_project_active,
+    api_cloud_setup_cancel,
+    api_cloud_setup_start,
+    api_cloud_setup_status,
+    api_maintenance_cleanup_apply,
+    api_maintenance_cleanup_preview,
+    api_maintenance_quiesce,
+    api_maintenance_repair_apply,
+    api_maintenance_repair_preview,
+    api_maintenance_resume,
+    api_owner_session,
+)
 from .state import get_metrics_snapshot, get_server_handle, get_start_time
 
 logger = structlog.get_logger(__name__)
@@ -696,6 +712,36 @@ async def api_artifacts_file(request: Request) -> JSONResponse | FileResponse:  
     return FileResponse(resolved, media_type=media_type)
 
 
+def api_experience(request: Request) -> JSONResponse:
+    """Report real local capabilities only to an authenticated local owner session."""
+    if _owner_session(request) is None:
+        return JSONResponse({"error": "Owner session required"}, status_code=403)
+    from kicad_mcp.services.experience import calculate_experience_snapshot
+
+    cfg = get_config()
+    project_dir = cfg.project_dir
+    has_project = bool(
+        project_dir and project_dir.is_dir() and any(project_dir.glob("*.kicad_pro"))
+    )
+    try:
+        cli_available = bool(find_kicad_version(cfg.kicad_cli))
+    except (OSError, ValueError):
+        cli_available = False
+    try:
+        ipc = get_ipc_capability_state()
+        ipc_available = bool(ipc.live_pcb_read or ipc.live_schematic_read)
+    except (OSError, ValueError):
+        ipc_available = False
+    snapshot = calculate_experience_snapshot(
+        mode="local",
+        project_dir=project_dir,
+        has_kicad_project=has_project,
+        cli_available=cli_available,
+        ipc_available=ipc_available,
+    )
+    return JSONResponse(snapshot.to_dict(), headers={"Cache-Control": "no-store"})
+
+
 # ---------------------------------------------------------------------------
 # Route definitions — list of Starlette Route objects for clean mounting
 # ---------------------------------------------------------------------------
@@ -704,6 +750,28 @@ web_routes: list[Route] = [
     Route("/api/status", endpoint=api_status, methods=["GET"]),
     Route("/api/health", endpoint=api_health, methods=["GET"]),
     Route("/api/info", endpoint=api_info, methods=["GET"]),
+    Route("/api/experience", endpoint=api_experience, methods=["GET"]),
+    Route("/api/owner/session", endpoint=api_owner_session, methods=["GET"]),
+    Route("/api/cloud/setup/start", endpoint=api_cloud_setup_start, methods=["POST"]),
+    Route("/api/cloud/setup/status", endpoint=api_cloud_setup_status, methods=["POST"]),
+    Route("/api/cloud/setup/cancel", endpoint=api_cloud_setup_cancel, methods=["POST"]),
+    Route("/api/cloud/connector/enable", endpoint=api_cloud_connector_enable, methods=["POST"]),
+    Route("/api/cloud/connector/disable", endpoint=api_cloud_connector_disable, methods=["POST"]),
+    Route("/api/cloud/project/active", endpoint=api_cloud_project_active, methods=["POST"]),
+    Route(
+        "/api/maintenance/repair/preview", endpoint=api_maintenance_repair_preview, methods=["GET"]
+    ),
+    Route("/api/maintenance/quiesce", endpoint=api_maintenance_quiesce, methods=["POST"]),
+    Route("/api/maintenance/resume", endpoint=api_maintenance_resume, methods=["POST"]),
+    Route("/api/maintenance/repair/apply", endpoint=api_maintenance_repair_apply, methods=["POST"]),
+    Route(
+        "/api/maintenance/cleanup/preview",
+        endpoint=api_maintenance_cleanup_preview,
+        methods=["GET"],
+    ),
+    Route(
+        "/api/maintenance/cleanup/apply", endpoint=api_maintenance_cleanup_apply, methods=["POST"]
+    ),
     Route("/api/tools", endpoint=api_tools, methods=["GET"]),
     Route("/api/tools/{tool_name}/test", endpoint=api_tool_test, methods=["POST"]),
     Route("/api/config", endpoint=api_config_get, methods=["GET"]),

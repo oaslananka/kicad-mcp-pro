@@ -228,10 +228,11 @@ export function SignIn({query,providers,pairing=false}:{
     </div>
   </section>;
 }
-export function Account({name,providers=["google","github"],linked=[]}:{
+export function Account({name,providers=["google","github"],linked=[],snapshot}:{
   readonly name:string;
   readonly providers?:ReadonlyArray<"google"|"github">;
   readonly linked?:ReadonlyArray<"google"|"github">;
+  readonly snapshot?:{devices:number;projects:number;clients:number;grants:number};
 }){
   return <div className="page-stack account-dashboard">
     <script defer={true} src="/assets/pairing-login-continuation.js"></script>
@@ -243,6 +244,11 @@ export function Account({name,providers=["google","github"],linked=[]}:{
       </div>
       <span className="status-pill ready"><Icon name="check" size={14}/> Signed in</span>
     </section>
+    {snapshot?<section className="card detail-card" aria-label="Workspace snapshot">
+      <h2>Workspace snapshot</h2><p>{snapshot.devices} paired devices · {snapshot.projects} enabled projects · {snapshot.clients} authorized AI clients · {snapshot.grants} saved project permissions</p>
+      <p>Next: {!snapshot.devices?<a href="/devices">Pair a computer</a>:!snapshot.projects?<a href="/devices#registered-projects">Register a project</a>:!snapshot.clients?<a href="/connections">Connect an AI client</a>:!snapshot.grants?<a href="/devices#registered-projects">Grant project access</a>:<a href="/devices">Review device and project access</a>}</p>
+      <p>Saved permissions do not guarantee a connected device or an active KiCad session.</p>
+    </section>:<p role="status">Workspace snapshot unavailable. Review devices and connections below.</p>}
     <section className="overview-tiles" aria-label="Workspace areas">
       <a className="overview-tile" href="/devices">
         <span className="tile-icon"><Icon name="devices" size={20}/></span>
