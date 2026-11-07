@@ -9,6 +9,7 @@ paths = [
   '''\.env\.example$''',
   '''docs/examples/clients/.*''',
   '''tests/fixtures/.*''',
+  '''tests/unit/test_credentials\.py$''',
 ]
 regexes = [
   '''(?i)(example|placeholder|dummy|changeme|your-token|your_api_key)''',

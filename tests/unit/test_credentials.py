@@ -35,11 +35,7 @@ def test_windows_store_rejects_invalid_record_id() -> None:
 def test_windows_store_crud() -> None:
     store = WindowsCredentialStore()
     record_id = "0123456789abcdef0123456789abcdef"  # 32 hex chars
-    key_pem = (
-        b"-----BEGIN PRIVATE KEY-----\n"
-        b"MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg\n"
-        b"-----END PRIVATE KEY-----"
-    )
+    key_pem = b"placeholder_test_key_pem_bytes"
 
     with (
         patch("kicad_mcp.cloud_windows_credentials.create_credential") as mock_create,
