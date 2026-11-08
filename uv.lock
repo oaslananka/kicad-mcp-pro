@@ -11,12 +11,6 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "actionlint-py"
-version = "1.7.12.25"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/33/75/36ee89db39bb3620d1e46fe1f6ec77d6000d30ff45345699e51b4c850e83/actionlint_py-1.7.12.25.tar.gz", hash = "sha256:83f83be4cd317c79b15cbb7022787513a6994f00bfb2dd8da02fa4e62b4f640d", size = 12438, upload-time = "2026-09-22T16:24:42.477Z" }
-
-[[package]]
 name = "aiofile"
 version = "3.11.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1182,7 +1176,6 @@ components = [
     { name = "httpx" },
 ]
 dev = [
-    { name = "actionlint-py" },
     { name = "bandit" },
     { name = "cairosvg" },
     { name = "defusedxml" },
@@ -1242,7 +1235,6 @@ release = [
 
 [package.metadata]
 requires-dist = [
-    { name = "actionlint-py", marker = "extra == 'dev'", specifier = "==1.7.12.25" },
     { name = "anyio", specifier = ">=4.4.0" },
     { name = "authlib", specifier = ">=1.7.1" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7.9" },

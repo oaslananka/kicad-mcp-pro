@@ -51,11 +51,14 @@ confirm JavaScript actions no longer declare a deprecated Node runtime.
 
 ## Deterministic local tooling
 
-`actionlint-py` and `shellcheck-py` are exact-version development dependencies,
-so `uv sync --all-extras --frozen` supplies the same workflow parser and shell
-analyzer on Linux, macOS, and Windows. `scripts/check_workflows.py` invokes the
-real `actionlint` binary directly; a missing or failing binary is an error rather
-than a successful no-op. Zizmor remains locked in `uv.lock` and runs offline.
+CI compiles **actionlint v1.7.12** from its pinned upstream Go module,
+using Go module checksum verification instead of an `actionlint-py` source
+build that downloads an additional GitHub release asset.
+`shellcheck-py==0.11.0.1` remains a locked development dependency; `uv sync
+--all-extras --frozen` installs ShellCheck on Linux, macOS and Windows.
+Developers install actionlint separately on `PATH`.
+`scripts/check_workflows.py` continues to run the real actionlint binary and
+fails closed if it is absent or fails. Zizmor remains locked in `uv.lock`.
 
 ## Node 24 runtime audit
 

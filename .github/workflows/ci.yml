@@ -853,12 +853,35 @@ jobs:
           enable-cache: true
           prune-cache: true
           version-file: uv.toml
+      # Pin an official Node 24 action and a stable Go toolchain; never rely
+      # on whichever Go happens to be preinstalled on the runner image.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: '1.27'
+          cache: false
       - run: uv sync --all-extras --frozen
       - name: Verify portable Agent Skills have no stale host copies
         run: uv run --all-extras python scripts/sync_agent_skills.py --check
       - name: Verify static agent host/extension configurations
         run: uv run --all-extras python scripts/check_agent_host_evidence.py
       - run: uv run --all-extras python scripts/check_github_actions_policy.py
+      # actionlint-py source builds fetch GitHub release binaries while
+      # resolving Python dependencies. Compile the pinned upstream module
+      # instead; preserve the required security and syntax checks.
+      - name: Install pinned actionlint from its upstream Go module
+        shell: bash
+        env:
+          GOTOOLCHAIN: local
+          GOPROXY: https://proxy.golang.org
+          GOSUMDB: sum.golang.org
+        run: |
+          set -euo pipefail
+          command -v go >/dev/null
+          export GOBIN="$RUNNER_TEMP/actionlint-bin"
+          mkdir -p "$GOBIN"
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$GOBIN/actionlint" -version | grep -F '1.7.12'
+          echo "$GOBIN" >> "$GITHUB_PATH"
       - run: uv run --all-extras python scripts/check_workflows.py --actionlint
       - run: uv run --all-extras python scripts/workflow_security.py --min-severity high
 

@@ -54,12 +54,31 @@ def test_retired_benchmark_service_has_no_ci_or_dependency_hooks() -> None:
     )
 
 
-def test_actionlint_is_a_locked_python_dev_tool() -> None:
-    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    checker = (ROOT / "scripts" / "check_workflows.py").read_text(encoding="utf-8")
+def test_actionlint_uses_pinned_upstream_go_module_without_binary_sdist() -> None:
+    import tomllib
 
-    assert '"actionlint-py==1.7.12.25"' in pyproject
-    assert '"shellcheck-py==0.11.0.1"' in pyproject
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    checker = (ROOT / "scripts" / "check_workflows.py").read_text(encoding="utf-8")
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    dev = project["project"]["optional-dependencies"]["dev"]
+    assert not any(dep.startswith("actionlint-py") for dep in dev)
+    assert "shellcheck-py==0.11.0.1" in dev
+    steps = workflow["jobs"]["workflow-policy"]["steps"]
+    toolchain = next(
+        step
+        for step in steps
+        if step.get("uses", "") == "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e"
+    )
+    assert toolchain["with"]["go-version"] == "1.27"
+    assert toolchain["with"]["cache"] is False
+    install = next(
+        step
+        for step in steps
+        if step.get("name") == "Install pinned actionlint from its upstream Go module"
+    )
+    assert install["env"]["GOTOOLCHAIN"] == "local"
+    assert "go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12" in install["run"]
+    assert any("scripts/check_workflows.py --actionlint" in step.get("run", "") for step in steps)
     assert 'ACTIONLINT_COMMAND = ["actionlint"]' in checker
     assert "kicadstudio" not in checker
 
