@@ -63,6 +63,7 @@ def _current_sid() -> str:
         [_system_tool("whoami.exe"), "/user", "/fo", "csv", "/nh"],
         capture_output=True,
         text=True,
+        errors="replace",
         timeout=_EXEC_TIMEOUT,
         check=False,
     )
@@ -137,15 +138,27 @@ def _run_schtasks(*args: str) -> subprocess.CompletedProcess[str]:
         [_system_tool("schtasks.exe"), *args],
         capture_output=True,
         text=True,
+        errors="replace",
         timeout=_EXEC_TIMEOUT,
         check=False,
     )
 
 
+_TASK_NOT_FOUND_HRESULT = 0x80070002
+
+
 def _query(sid: str) -> str | None:
-    result = _run_schtasks("/query", "/tn", _task_name(sid), "/xml")
-    if result.returncode:
-        return None  # A create without /F will safely refuse any hidden existing task.
+    """Distinguish missing task from denied/broken Task Scheduler queries.
+
+    Verified on Windows with schtasks /query /xml /hresult. Treat any other
+    failure as unknown, never silently create/overwrite or claim task stopped.
+    """
+    result = _run_schtasks("/query", "/tn", _task_name(sid), "/xml", "/hresult")
+    code = result.returncode & 0xFFFFFFFF
+    if code == _TASK_NOT_FOUND_HRESULT:
+        return None
+    if code != 0 or not result.stdout.strip():
+        raise LocalApprovalDeniedError(_DENIED)
     return result.stdout
 
 
@@ -229,9 +242,9 @@ def stop_and_remove_owner_task() -> bool:
     sid = _current_sid()
     existing = _query(sid)
     if existing is None:
-        # Absence and permission-denied query results are indistinguishable.
-        # Local marker is revoked separately; never claim task shutdown.
-        return False
+        # An exact Windows ERROR_FILE_NOT_FOUND was verified. Repeating
+        # disable after a successful uninstall is a harmless no-op.
+        return True
     _require_owned_task(existing, sid, _command_executable())
     ended = _run_schtasks("/end", "/tn", _task_name(sid)).returncode == 0
     removed = _run_schtasks("/delete", "/tn", _task_name(sid), "/f").returncode == 0

@@ -190,3 +190,48 @@ def test_system_tool_is_os_pinned_readonly() -> None:
         assert result.lower().endswith("system32\\" + name)
     with pytest.raises(LocalApprovalDeniedError):
         scheduler._system_tool("malicious.exe")
+
+
+def test_task_query_distinguishes_verified_missing_from_other_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[tuple[str, ...]] = []
+
+    def response(code: int, output: str = "") -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(["schtasks"], code, output, "opaque")
+
+    def simulate(*args: str) -> subprocess.CompletedProcess[str]:
+        seen.append(args)
+        return result
+
+    monkeypatch.setattr(scheduler, "_run_schtasks", simulate)
+    result = response(0x80070002)
+    assert scheduler._query(SID) is None
+    assert seen == [("/query", "/tn", scheduler._task_name(SID), "/xml", "/hresult")]
+    result = response(5)
+    with pytest.raises(LocalApprovalDeniedError):
+        scheduler._query(SID)
+    result = response(0, "")
+    with pytest.raises(LocalApprovalDeniedError):
+        scheduler._query(SID)
+    xml, _exe = _fixture_task()
+    result = response(0, xml)
+    assert scheduler._query(SID) == xml
+
+
+def test_disable_idempotent_only_after_verified_task_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(scheduler, "_current_sid", lambda: SID)
+    monkeypatch.setattr(scheduler, "_query", lambda _sid: None)
+    monkeypatch.setattr(
+        scheduler, "_run_schtasks", lambda *_a: pytest.fail("no task can be touched")
+    )
+    assert scheduler.stop_and_remove_owner_task() is True
+
+    def denied(_sid: str) -> str | None:
+        raise LocalApprovalDeniedError("denied")
+
+    monkeypatch.setattr(scheduler, "_query", denied)
+    with pytest.raises(LocalApprovalDeniedError):
+        scheduler.stop_and_remove_owner_task()
