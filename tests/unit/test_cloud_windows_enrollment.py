@@ -261,6 +261,54 @@ def test_other_platform_cannot_call_windows_pairing(
     assert not events and not store
 
 
+@pytest.mark.parametrize("enabled", [True, False])
+def test_windows_project_accepts_boolean_cloud_state_without_enabling_connector(
+    fake_windows_pair, monkeypatch: pytest.MonkeyPatch, enabled: bool
+) -> None:
+    _store, events, state = fake_windows_pair
+    device = cloud_windows_enrollment.enroll_windows_device(
+        origin=ORIGIN, alias="Lab PC", owner_approval=_approval(events, state)
+    )
+    original = cloud_pair._post
+
+    def project_reply(target, path, body, status):
+        reply = original(target, path, body, status)
+        if path.endswith("/project"):
+            reply["enabled"] = enabled
+        return reply
+
+    monkeypatch.setattr(cloud_pair, "_post", project_reply)
+    registered = cloud_windows_enrollment.register_windows_project(
+        device, alias="demo_board", filename_stem="demo_board"
+    )
+    assert registered.project_id == CHALLENGE
+    assert not hasattr(registered, "enabled")
+    assert not hasattr(registered, "authorized")
+
+
+@pytest.mark.parametrize("invalid", ["true", 1, None, {}, []])
+def test_windows_project_rejects_invalid_cloud_enabled_field(
+    fake_windows_pair, monkeypatch: pytest.MonkeyPatch, invalid
+) -> None:
+    _store, events, state = fake_windows_pair
+    device = cloud_windows_enrollment.enroll_windows_device(
+        origin=ORIGIN, alias="Lab PC", owner_approval=_approval(events, state)
+    )
+    original = cloud_pair._post
+
+    def project_reply(target, path, body, status):
+        reply = original(target, path, body, status)
+        if path.endswith("/project"):
+            reply["enabled"] = invalid
+        return reply
+
+    monkeypatch.setattr(cloud_pair, "_post", project_reply)
+    with pytest.raises(cloud_windows_enrollment.WindowsPartialProjectRegistrationError):
+        cloud_windows_enrollment.register_windows_project(
+            device, alias="demo_board", filename_stem="demo_board"
+        )
+
+
 def test_windows_project_registration_uses_signed_owner_key_and_vault_reference(
     fake_windows_pair: tuple[dict[tuple[str, str], bytes], list[str], dict[str, Any]],
     tmp_path,

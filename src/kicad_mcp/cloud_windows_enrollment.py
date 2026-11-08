@@ -302,7 +302,10 @@ def register_windows_project(
             or cloud_pair._UUID.fullmatch(project_id) is None
             or result.get("alias") != alias
             or result.get("ownerSub") != device.owner_sub
-            or result.get("enabled") is not False
+            # The Cloud API can return true for an owner-enabled project.
+            # This flag is *not* a local Connector grant or socket state.
+            # Both bool values are valid; other types are rejected.
+            or type(result.get("enabled")) is not bool
         ):
             raise WindowsEnrollmentError(_DENIED)
         registration_id = uuid.uuid4().hex

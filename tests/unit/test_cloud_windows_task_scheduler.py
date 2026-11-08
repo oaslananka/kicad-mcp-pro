@@ -307,3 +307,29 @@ def test_scheduler_stop_does_not_claim_success_on_unverifiable_post_delete(
     )
     with pytest.raises(LocalApprovalDeniedError):
         scheduler.stop_and_remove_owner_task()
+
+
+def test_native_scheduler_accepts_current_user_task_xml_without_registration() -> None:
+    """In-memory Windows COM contract: neither create nor modify a scheduled task."""
+    import os
+
+    if os.name != "nt":
+        pytest.skip("Windows COM Task Scheduler only")
+    com = pytest.importorskip("win32com.client")
+    sid = scheduler._current_sid()
+    executable = scheduler._command_executable()
+    service = com.Dispatch("Schedule.Service")
+    service.Connect()
+    # NewTask creates an in-memory task definition only; RegisterTaskDefinition
+    # is never invoked here, preserving every existing user's scheduled task.
+    definition = service.NewTask(0)
+    definition.XmlText = scheduler._task_xml(sid, executable)
+    # COM may display the resolved account name ("Admin") rather than the
+    # input SID. The exported XML retains the exact SID, which is what
+    # schtasks /query /xml and our no-foreign-task guard verify.
+    scheduler._require_owned_task(definition.XmlText, sid, executable)
+    assert definition.Principal.LogonType == 3  # TASK_LOGON_INTERACTIVE_TOKEN
+    assert definition.Principal.RunLevel == 0  # TASK_RUNLEVEL_LUA
+    assert definition.Actions.Count == 1
+    assert definition.Actions.Item(1).Path.casefold() == executable.casefold()
+    assert definition.Actions.Item(1).Arguments == scheduler._TASK_ARGS
