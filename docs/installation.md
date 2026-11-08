@@ -57,9 +57,9 @@ release notes for native Windows Cloud support before attempting pairing.
 
 Download the installer for your operating system from the repository's GitHub
 Releases page. Published installer behavior depends on its exact release:
-the already published 4.9.0 desktop still requires a discoverable external
-`uvx` runtime. Candidate desktop installers built with the bundled-bootstrap
-release workflow carry pinned `uv` and create their own user-scoped Python
+the already published 4.9.0 and 4.10.0 desktop installers still require
+a discoverable external `uvx` runtime. Candidate desktop installers built with
+the bundled-bootstrap release workflow carry pinned `uv` and create their own user-scoped Python
 runtime/cache on first startup, requesting managed Python 3.13 for its
 desktop-owned environment. They do not install global Python or modify the
 user's independent `uv` / MCP CLI installations. The first online startup may
@@ -71,9 +71,9 @@ Automatic updates are not enabled for the published desktop releases.
 The application includes Tauri updater integration, but automatic installation
 remains unavailable unless the given release configures a valid updater
 public key and publishes matching signed updater artifacts. An available GitHub
-tag alone is not permission to install an unsigned update. Existing 4.9.0
-installers are unsigned; users should verify the official release SHA256 and
-provenance and expect potential OS publisher warnings.
+tag alone is not permission to install an unsigned update. Published
+4.9.0 and 4.10.0 installers are unsigned; users should verify the official
+release SHA256 and provenance and expect potential OS publisher warnings.
 
 ### Upgrade
 

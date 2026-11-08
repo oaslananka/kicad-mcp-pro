@@ -7,6 +7,7 @@ backend, opens sponsor URLs, grants Cloud permissions, or modifies KiCad.
 from __future__ import annotations
 
 import functools
+import json
 import os
 import threading
 from collections.abc import Iterator
@@ -23,6 +24,10 @@ pytestmark = [
 
 _FRONTEND = Path(__file__).resolve().parents[2] / "src-tauri" / "frontend"
 
+_GUI_VERSION = json.loads((_FRONTEND.parent / "tauri.conf.json").read_text(encoding="utf-8"))[
+    "version"
+]
+
 _NATIVE_SHIM = """
 (() => {
   const state = {port:3334, mode:'incompatible', attempted:[], external:[]};
@@ -37,12 +42,12 @@ _NATIVE_SHIM = """
     if (command === 'desktop_readiness') {
       return state.mode === 'incompatible'
         ? {ready:false, incompatible:true, detail:'backend 4.7.0',
-           port:3334, expectedVersion:'4.9.0'}
+           port:3334, expectedVersion:'__GUI_VERSION__'}
         : {ready:true, incompatible:false, detail:'verified',
-           port:3335, expectedVersion:'4.9.0'};
+           port:3335, expectedVersion:'__GUI_VERSION__'};
     }
     if (command === 'desktop_backend_command') {
-      return 'uv tool run --from kicad-mcp-pro==4.9.0 kicad-mcp-pro dashboard '
+      return 'uv tool run --from kicad-mcp-pro==__GUI_VERSION__ kicad-mcp-pro dashboard '
         + '--host 127.0.0.1 --port ' + state.port;
     }
     if (command === 'restart_server') {
@@ -59,7 +64,7 @@ _NATIVE_SHIM = """
     throw Error('unexpected desktop command ' + command);
   }};
 })();
-"""
+""".replace("__GUI_VERSION__", _GUI_VERSION)
 
 
 @pytest.fixture(scope="module")
@@ -96,7 +101,7 @@ def test_old_backend_has_one_click_isolated_desktop_recovery(
     assert (
         page.locator("#cliCommand")
         .inner_text()
-        .startswith("uv tool run --from kicad-mcp-pro==4.9.0")
+        .startswith(f"uv tool run --from kicad-mcp-pro=={_GUI_VERSION}")
     )
     assert page.locator("#cliCommand").inner_text().endswith("--port 3334")
 
