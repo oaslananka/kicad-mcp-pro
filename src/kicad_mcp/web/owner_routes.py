@@ -43,6 +43,7 @@ _LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "[::1]")
 _INVALID_SETUP_REQUEST = "Invalid setup request"
 _SETUP_NOT_FOUND = "Setup not found"
 _INVALID_MAINTENANCE_REQUEST = "Invalid maintenance request"
+_OWNER_AUTH_REQUIRED = "Owner authorization required"
 
 
 def _response(payload: dict[str, object], status: int = 200) -> JSONResponse:
@@ -115,7 +116,7 @@ def _owner_session(request: Request) -> tuple[str, str] | None:
 def _authorize_mutation(request: Request) -> tuple[str | None, JSONResponse | None]:
     session = _owner_session(request)
     if session is None:
-        return None, _response({"error": "Owner authorization required"}, 403)
+        return None, _response({"error": _OWNER_AUTH_REQUIRED}, 403)
     authority = _local_authority(request)
     origin = request.headers.get("origin")
     if authority is None or origin != _expected_origin(authority, get_config().port):
@@ -321,28 +322,31 @@ async def api_cloud_project_active(request: Request) -> JSONResponse:
 _GUIDED_JSON_CLIENTS = frozenset(("claude-desktop", "cursor", "vscode", "windsurf"))
 
 
+def _read_guided_client_config(target: Path) -> tuple[bytes, dict[str, object]]:
+    """Inspect a supported local client file without following redirected paths."""
+    if target.is_symlink() or target.parent.is_symlink():
+        raise ValueError("Client configuration is redirected")
+    if not target.exists():
+        return b"", {}
+    if not target.is_file() or target.stat().st_size > 1024 * 1024:
+        raise ValueError("Client configuration is not a supported JSON file")
+    content = target.read_bytes()
+    try:
+        obj = json.loads(content)
+    except ValueError as exc:
+        raise ValueError("Client configuration is malformed") from exc
+    if not isinstance(obj, dict):
+        raise ValueError("Client configuration root must be a JSON object")
+    return content, obj
+
+
 def _client_setup_preview(client: str) -> tuple[Path, str, bool, int]:
     if client not in _GUIDED_JSON_CLIENTS:
         raise ValueError("Unsupported guided client")
     target = _resolve_config_path(client)
     if target is None:
         raise ValueError("Client has no supported local configuration path")
-    # Prevent writing through a user-created symlink to another target.
-    if target.is_symlink() or target.parent.is_symlink():
-        raise ValueError("Client configuration is redirected")
-    if target.exists():
-        if not target.is_file() or target.stat().st_size > 1024 * 1024:
-            raise ValueError("Client configuration is not a supported JSON file")
-        content = target.read_bytes()
-        try:
-            obj = json.loads(content)
-        except (ValueError, UnicodeDecodeError) as exc:
-            raise ValueError("Client configuration is malformed") from exc
-        if not isinstance(obj, dict):
-            raise ValueError("Client configuration root must be a JSON object")
-    else:
-        content = b""
-        obj = {}
+    content, obj = _read_guided_client_config(target)
     from .routes import _mcp_snippet_for_client
 
     snippet, fmt = _mcp_snippet_for_client(client)
@@ -353,8 +357,7 @@ def _client_setup_preview(client: str) -> tuple[Path, str, bool, int]:
     if not isinstance(existing, dict):
         raise ValueError("Existing client MCP settings are invalid")
     replacing = "kicad-mcp-pro" in existing
-    # Hash both exact path and existing bytes. A changed file forces a fresh
-    # explicit preview before any apply, rather than overwriting user edits.
+    # A changed file forces a fresh explicit preview before apply.
     signature = hashlib.sha256(
         json.dumps([str(target.resolve()), client], ensure_ascii=False).encode() + b"\x00" + content
     ).hexdigest()
@@ -364,7 +367,7 @@ def _client_setup_preview(client: str) -> tuple[Path, str, bool, int]:
 def api_client_config_preview(request: Request) -> JSONResponse:
     owner = _owner_session(request)
     if owner is None:
-        return _response({"error": "Owner authorization required"}, 403)
+        return _response({"error": _OWNER_AUTH_REQUIRED}, 403)
     client = request.path_params.get("client", "")
     try:
         target, signature, replacing, entries = _client_setup_preview(client)
@@ -445,7 +448,7 @@ def _preview_service(request: Request, kind: str) -> RepairPreview | CleanupPrev
 def _preview(request: Request, kind: str) -> JSONResponse:
     session = _owner_session(request)
     if session is None:
-        return _response({"error": "Owner authorization required"}, 403)
+        return _response({"error": _OWNER_AUTH_REQUIRED}, 403)
     try:
         preview = _preview_service(request, kind)
     except (OSError, ValueError):
