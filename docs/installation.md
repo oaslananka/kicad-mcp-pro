@@ -11,8 +11,9 @@ runtime/cache on first startup. They do not install global Python or modify
 the user's independent `uv` / MCP CLI installations. A first online startup is
 required when the exact backend and Python are not yet cached.
 
-The application includes Tauri updater integration, but **automatic updates
-remain unavailable** unless the given release configures a valid updater
+Automatic updates are not enabled for the published desktop releases.
+The application includes Tauri updater integration, but automatic installation
+remains unavailable unless the given release configures a valid updater
 public key and publishes matching signed updater artifacts. An available GitHub
 tag alone is not permission to install an unsigned update. Existing 4.9.0
 installers are unsigned; users should verify the official release SHA256 and
