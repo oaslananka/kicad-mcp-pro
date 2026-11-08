@@ -1,0 +1,277 @@
+"""Current-user Windows Connector lifecycle via the existing Task Scheduler.
+
+No task is registered from import, MCP stdio start, or Cloud setup. Only an
+explicit owner-initiated enable call may install/launch the single namespaced,
+least-privilege, interactive-user, on-logon task. Never overwrite or delete
+unknown tasks. A task alone is not proof of a Cloud grant or connected socket.
+"""
+
+from __future__ import annotations
+
+import csv
+import ctypes
+import hashlib
+import io
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import xml.etree.ElementTree as ET
+from collections.abc import Callable
+from pathlib import Path
+
+from defusedxml import ElementTree as SafeET
+from defusedxml.common import DefusedXmlException
+
+from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
+from kicad_mcp.cloud_windows_connector import (
+    activate,
+    deactivate,
+    local_state,
+)
+from kicad_mcp.cloud_windows_enrollment import WindowsRegisteredProject
+
+_DENIED = "Windows Connector scheduled task could not be verified."
+_SID = re.compile(r"S-1-5-(?:\d+-){1,15}\d+\Z", re.ASCII)
+_TASK_NS = "http://schemas.microsoft.com/windows/2004/02/mit/task"
+_TASK_ARGS = "-m kicad_mcp.cloud_windows_connector run"
+_EXEC_TIMEOUT = 15
+
+
+def _system_tool(name: str) -> str:
+    """Pin Windows' own system utilities; never resolve them from PATH."""
+    if os.name != "nt" or name not in {"schtasks.exe", "whoami.exe"}:
+        raise LocalApprovalDeniedError(_DENIED)
+    # Derive the genuine Windows system directory from kernel32, never
+    # from a mutable environment variable or executable PATH entry.
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.GetSystemDirectoryW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint]
+    kernel.GetSystemDirectoryW.restype = ctypes.c_uint
+    buf = ctypes.create_unicode_buffer(32768)
+    used = kernel.GetSystemDirectoryW(buf, len(buf))
+    if not 1 <= used < len(buf):
+        raise LocalApprovalDeniedError(_DENIED)
+    result = Path(buf.value) / name
+    if not result.is_file():
+        raise LocalApprovalDeniedError(_DENIED)
+    return str(result)
+
+
+def _current_sid() -> str:
+    result = subprocess.run(
+        [_system_tool("whoami.exe"), "/user", "/fo", "csv", "/nh"],
+        capture_output=True,
+        text=True,
+        timeout=_EXEC_TIMEOUT,
+        check=False,
+    )
+    if result.returncode:
+        raise LocalApprovalDeniedError(_DENIED)
+    rows = list(csv.reader(io.StringIO(result.stdout)))
+    if len(rows) != 1 or len(rows[0]) != 2:
+        raise LocalApprovalDeniedError(_DENIED)
+    sid = rows[0][1].strip()
+    if _SID.fullmatch(sid) is None:
+        raise LocalApprovalDeniedError(_DENIED)
+    return sid
+
+
+def _task_name(sid: str) -> str:
+    if not isinstance(sid, str) or _SID.fullmatch(sid) is None:
+        raise LocalApprovalDeniedError(_DENIED)
+    return "KiCadMCPPro-Cloud-Connector-" + hashlib.sha256(sid.encode("ascii")).hexdigest()[:16]
+
+
+def _command_executable() -> str:
+    executable = Path(sys.executable)
+    if (
+        os.name != "nt"
+        or not executable.is_absolute()
+        or not executable.is_file()
+        or executable.suffix.lower() != ".exe"
+        or str(executable).startswith(("\\\\", "//"))
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+    return str(executable)
+
+
+def _task_xml(sid: str, executable: str) -> str:
+    if _SID.fullmatch(sid) is None or not Path(executable).is_absolute():
+        raise LocalApprovalDeniedError(_DENIED)
+    root = ET.Element("Task", {"version": "1.3", "xmlns": _TASK_NS})
+    info = ET.SubElement(root, "RegistrationInfo")
+    ET.SubElement(info, "Description").text = "KiCad MCP Pro owner-managed, read-only Connector"
+    triggers = ET.SubElement(root, "Triggers")
+    logon = ET.SubElement(triggers, "LogonTrigger")
+    ET.SubElement(logon, "Enabled").text = "true"
+    ET.SubElement(logon, "UserId").text = sid
+    principals = ET.SubElement(root, "Principals")
+    principal = ET.SubElement(principals, "Principal", {"id": "Owner"})
+    ET.SubElement(principal, "UserId").text = sid
+    ET.SubElement(principal, "LogonType").text = "InteractiveToken"
+    ET.SubElement(principal, "RunLevel").text = "LeastPrivilege"
+    settings = ET.SubElement(root, "Settings")
+    for name, value in (
+        ("MultipleInstancesPolicy", "IgnoreNew"),
+        ("DisallowStartIfOnBatteries", "false"),
+        ("StopIfGoingOnBatteries", "false"),
+        ("AllowHardTerminate", "true"),
+        ("StartWhenAvailable", "true"),
+        ("RunOnlyIfNetworkAvailable", "true"),
+        ("Enabled", "true"),
+        ("Hidden", "false"),
+        ("AllowStartOnDemand", "true"),
+        ("ExecutionTimeLimit", "PT0S"),
+    ):
+        ET.SubElement(settings, name).text = value
+    actions = ET.SubElement(root, "Actions", {"Context": "Owner"})
+    action = ET.SubElement(actions, "Exec")
+    ET.SubElement(action, "Command").text = executable
+    ET.SubElement(action, "Arguments").text = _TASK_ARGS
+    return '<?xml version="1.0" encoding="utf-16"?>\n' + ET.tostring(root, encoding="unicode")
+
+
+def _run_schtasks(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [_system_tool("schtasks.exe"), *args],
+        capture_output=True,
+        text=True,
+        timeout=_EXEC_TIMEOUT,
+        check=False,
+    )
+
+
+def _query(sid: str) -> str | None:
+    result = _run_schtasks("/query", "/tn", _task_name(sid), "/xml")
+    if result.returncode:
+        return None  # A create without /F will safely refuse any hidden existing task.
+    return result.stdout
+
+
+def _require_owned_task(xml: str, sid: str, executable: str) -> None:
+    """Accept only a task with exactly our user, trigger and single executable."""
+    try:
+        if not 1 <= len(xml) <= 32768:
+            raise LocalApprovalDeniedError(_DENIED)
+        root = SafeET.fromstring(xml, forbid_dtd=True)
+        ns = {"t": _TASK_NS}
+        if root.tag != f"{{{_TASK_NS}}}Task":
+            raise LocalApprovalDeniedError(_DENIED)
+        principal = root.findall("t:Principals/t:Principal", ns)
+        trigger = root.findall("t:Triggers/*", ns)
+        actions = root.findall("t:Actions/*", ns)
+        actions_root = root.find("t:Actions", ns)
+        if (
+            len(principal) != 1
+            or len(trigger) != 1
+            or len(actions) != 1
+            or principal[0].attrib.get("id") != "Owner"
+            or actions_root is None
+            or actions_root.attrib.get("Context") != "Owner"
+            or trigger[0].tag != f"{{{_TASK_NS}}}LogonTrigger"
+            or actions[0].tag != f"{{{_TASK_NS}}}Exec"
+        ):
+            raise LocalApprovalDeniedError(_DENIED)
+        get = lambda item, node: item.findtext(node, namespaces=ns)  # noqa: E731
+        if (
+            get(principal[0], "t:UserId") != sid
+            or get(principal[0], "t:LogonType") != "InteractiveToken"
+            or get(principal[0], "t:RunLevel") != "LeastPrivilege"
+            or get(trigger[0], "t:UserId") != sid
+            or get(trigger[0], "t:Enabled") != "true"
+            or get(actions[0], "t:Arguments") != _TASK_ARGS
+            or get(actions[0], "t:Command") is None
+            or os.path.normcase(get(actions[0], "t:Command")) != os.path.normcase(executable)
+        ):
+            raise LocalApprovalDeniedError(_DENIED)
+    except (ET.ParseError, ValueError, TypeError, DefusedXmlException) as exc:
+        raise LocalApprovalDeniedError(_DENIED) from exc
+
+
+def ensure_owner_task() -> bool:
+    """Install once without /F; existing tasks must match exactly."""
+    sid = _current_sid()
+    executable = _command_executable()
+    previous = _query(sid)
+    if previous is not None:
+        _require_owned_task(previous, sid, executable)
+        return False
+    with tempfile.TemporaryDirectory(prefix="kicad-cloud-task-") as folder:
+        file = Path(folder) / "task.xml"
+        file.write_text(_task_xml(sid, executable), encoding="utf-16")
+        result = _run_schtasks("/create", "/tn", _task_name(sid), "/xml", str(file))
+    if result.returncode:
+        raise LocalApprovalDeniedError(_DENIED)
+    verified = _query(sid)
+    if verified is None:
+        raise LocalApprovalDeniedError(_DENIED)
+    _require_owned_task(verified, sid, executable)
+    return True
+
+
+def start_owner_task() -> None:
+    sid = _current_sid()
+    existing = _query(sid)
+    if existing is None:
+        raise LocalApprovalDeniedError(_DENIED)
+    _require_owned_task(existing, sid, _command_executable())
+    if _run_schtasks("/run", "/tn", _task_name(sid)).returncode != 0:
+        raise LocalApprovalDeniedError(_DENIED)
+
+
+def stop_and_remove_owner_task() -> bool:
+    """Never stop or delete a task with unexpected command/user/principal."""
+    sid = _current_sid()
+    existing = _query(sid)
+    if existing is None:
+        # Absence and permission-denied query results are indistinguishable.
+        # Local marker is revoked separately; never claim task shutdown.
+        return False
+    _require_owned_task(existing, sid, _command_executable())
+    ended = _run_schtasks("/end", "/tn", _task_name(sid)).returncode == 0
+    removed = _run_schtasks("/delete", "/tn", _task_name(sid), "/f").returncode == 0
+    return ended and removed
+
+
+def enable_windows_connector(
+    project: WindowsRegisteredProject,
+    *,
+    owner_confirm: Callable[[WindowsRegisteredProject], bool],
+) -> None:
+    """Owner explicitly enables a task; rollback local permission if start fails."""
+    activate(project, owner_confirm=owner_confirm)
+    newly_created = False
+    try:
+        newly_created = ensure_owner_task()
+        start_owner_task()
+    except (OSError, ValueError, subprocess.SubprocessError):
+        deactivate()
+        if newly_created:
+            try:
+                stop_and_remove_owner_task()
+            except (OSError, ValueError, subprocess.SubprocessError):
+                pass
+        raise
+
+
+def disable_windows_connector() -> bool:
+    """Revoke local reads first; remote Cloud grant must be revoked separately."""
+    deactivate()
+    return stop_and_remove_owner_task()
+
+
+def scheduler_state() -> str:
+    """Only claims configured; task XML does not prove a connected socket."""
+    state = local_state()
+    if state != "Configured (not connected)":
+        return state
+    try:
+        sid = _current_sid()
+        xml = _query(sid)
+        if xml is None:
+            return "Configured (task unverified)"
+        _require_owned_task(xml, sid, _command_executable())
+        return "Scheduled (connection unverified)"
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return "Unavailable"

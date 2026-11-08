@@ -298,3 +298,30 @@ async def run_connector(
             await asyncio.wait_for(stop.wait(), timeout=delay)
         except TimeoutError:
             pass
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Task Scheduler entrypoint; never enrolls/grants or starts without marker."""
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(
+        description="Owner-approved Windows read-only KiCad Cloud Connector"
+    )
+    parser.add_argument("command", choices=("run",))
+    parser.parse_args(argv)
+    try:
+        if _active() is None:
+            print("Cloud Connector is Off.", file=sys.stderr)
+            return 2
+        asyncio.run(run_connector(stop=asyncio.Event()))
+        return 0
+    except KeyboardInterrupt:
+        return 0
+    except (OSError, ValueError, TypeError):
+        print("Windows Connector unavailable; check local owner registration.", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
