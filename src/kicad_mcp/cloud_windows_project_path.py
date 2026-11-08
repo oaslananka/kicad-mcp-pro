@@ -19,6 +19,7 @@ from contextlib import contextmanager
 from ctypes import wintypes
 from functools import lru_cache
 from pathlib import Path
+from typing import cast
 
 from kicad_mcp.cloud_readonly_boundary import LocalReadDeniedError
 
@@ -61,10 +62,11 @@ class _FileInfo(ctypes.Structure):
 
 @lru_cache(maxsize=1)
 def _api() -> ctypes.CDLL:
-    if os.name != "nt" or not callable(getattr(ctypes, "WinDLL", None)):
+    factory = getattr(ctypes, "WinDLL", None)
+    if os.name != "nt" or not callable(factory):
         raise LocalReadDeniedError(_DENIED)
     try:
-        api = ctypes.WinDLL("kernel32", use_last_error=True)
+        api = cast(ctypes.CDLL, factory("kernel32", use_last_error=True))
         api.CreateFileW.argtypes = [
             wintypes.LPCWSTR,
             wintypes.DWORD,
@@ -122,7 +124,10 @@ def _open_checked(path: str, *, directory: bool, missing_ok: bool = False) -> in
     )
     invalid = ctypes.c_void_p(-1).value
     if not handle or handle == invalid:
-        error = ctypes.get_last_error()
+        last_error = getattr(ctypes, "get_last_error", None)
+        if not callable(last_error):
+            raise LocalReadDeniedError(_DENIED)
+        error = int(last_error())
         if missing_ok and error in {_ERROR_FILE_NOT_FOUND, _ERROR_PATH_NOT_FOUND}:
             return None
         raise LocalReadDeniedError(_DENIED)

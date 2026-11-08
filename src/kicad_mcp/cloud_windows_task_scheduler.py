@@ -20,6 +20,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 from defusedxml import ElementTree as SafeET
 from defusedxml.common import DefusedXmlException
@@ -45,7 +46,10 @@ def _system_tool(name: str) -> str:
         raise LocalApprovalDeniedError(_DENIED)
     # Derive the genuine Windows system directory from kernel32, never
     # from a mutable environment variable or executable PATH entry.
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    dll = getattr(ctypes, "WinDLL", None)
+    if not callable(dll):
+        raise LocalApprovalDeniedError(_DENIED)
+    kernel = cast(ctypes.CDLL, dll("kernel32", use_last_error=True))
     kernel.GetSystemDirectoryW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint]
     kernel.GetSystemDirectoryW.restype = ctypes.c_uint
     buf = ctypes.create_unicode_buffer(32768)
