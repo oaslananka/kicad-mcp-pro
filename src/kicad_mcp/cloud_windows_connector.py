@@ -294,6 +294,25 @@ async def _run_owner_session(
     )
 
 
+async def _await_authorized_session(
+    project: WindowsRegisteredProject,
+    task: asyncio.Task[HandshakeReceipt],
+    revoked: asyncio.Task[bool],
+) -> bool:
+    """Terminate a socket when owner authorization or the local stop marker is lost."""
+    while not task.done() and not revoked.done():
+        await asyncio.wait((task, revoked), timeout=1)
+        if not _current_authorization(project):
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            return False
+    if revoked.done():
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        return False
+    return True
+
+
 async def run_connector(
     *,
     stop: asyncio.Event,
@@ -316,15 +335,7 @@ async def run_connector(
         task = asyncio.create_task(_run_owner_session(project, selected, key, session_runner))
         revoked = asyncio.create_task(stop.wait())
         try:
-            while not task.done() and not revoked.done():
-                await asyncio.wait((task, revoked), timeout=1)
-                if not _current_authorization(project):
-                    task.cancel()
-                    await asyncio.gather(task, return_exceptions=True)
-                    return
-            if revoked.done():
-                task.cancel()
-                await asyncio.gather(task, return_exceptions=True)
+            if not await _await_authorized_session(project, task, revoked):
                 return
             await task
             failures = 0

@@ -392,7 +392,7 @@ def test_connector_service_failure_does_not_fabricate_enabled_state(monkeypatch,
             AssertionError("must not create enabled marker as fallback")
         ),
     )
-    assert _start_connector(tmp_path, {}) == "Unavailable"
+    assert _start_connector() == "Unavailable"
     assert not list(tmp_path.iterdir())
 
 

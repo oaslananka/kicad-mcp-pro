@@ -284,6 +284,17 @@ def _require_unused_binding_path(keyfile: Path) -> None:
         raise CloudPairingError(_PAIRING_DENIED) from exc
 
 
+def _approved_owner_status(response: dict[str, object]) -> bool:
+    """Accept only the expected signed device-status contract."""
+    if set(response) == {"approved", "denied"}:
+        if response["approved"] is False and response["denied"] is True:
+            raise CloudPairingDeniedError("Device pairing denied in browser.")
+        raise CloudPairingError(_PAIRING_DENIED)
+    if set(response) != {"approved"} or type(response["approved"]) is not bool:
+        raise CloudPairingError(_PAIRING_DENIED)
+    return response["approved"] is True
+
+
 def _wait_for_owner_approval(
     origin: tuple[str, int, str],
     challenge: str,
@@ -313,20 +324,15 @@ def _wait_for_owner_approval(
         # A device-signed response may disclose owner denial without exposing
         # the decision to an unauthenticated caller. Old Cloud versions only
         # send {"approved": bool}; keep both successful states unchanged.
-        if set(response) == {"approved", "denied"}:
-            if response["approved"] is False and response["denied"] is True:
-                raise CloudPairingDeniedError("Device pairing denied in browser.")
-            raise CloudPairingError(_PAIRING_DENIED)
-        if set(response) != {"approved"} or type(response["approved"]) is not bool:
-            raise CloudPairingError(_PAIRING_DENIED)
+        approved = _approved_owner_status(response)
         if start_owner_review is not None:
             # A new challenge must be pending before inviting a human to click.
             # This also rejects older Cloud versions with no signed status API.
-            if response["approved"]:
+            if approved:
                 raise CloudPairingError(_PAIRING_DENIED)
             start_owner_review()
             start_owner_review = None
-        elif response["approved"]:
+        elif approved:
             return
         time.sleep(min(8.0, remaining / 1000))
 

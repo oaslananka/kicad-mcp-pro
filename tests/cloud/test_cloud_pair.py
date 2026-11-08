@@ -29,14 +29,19 @@ def test_expired_challenge_never_opens_browser_or_contacts_cloud(
         "_post",
         lambda *_args, **_kwargs: pytest.fail("expired pairing must not contact Cloud"),
     )
+    owner_key = Ed25519PrivateKey.generate()
+
+    def no_browser() -> None:
+        pytest.fail("expired challenge must not open browser")
+
     with pytest.raises(cloud_pair.CloudPairingTimeoutError):
         cloud_pair._wait_for_owner_approval(
             ("localhost", 443, "https://localhost"),
             CHALLENGE,
             SECRET,
-            Ed25519PrivateKey.generate(),
+            owner_key,
             0,
-            lambda: pytest.fail("expired challenge must not open browser"),
+            no_browser,
         )
 
 
@@ -175,13 +180,14 @@ def test_owner_status_explicit_denial_exits_immediately(
     monkeypatch.setattr(
         cloud_pair.time, "sleep", lambda *_: pytest.fail("denied device must never keep polling")
     )
+    deadline = time.time_ns() // 1_000_000 + 45_000
     with pytest.raises(cloud_pair.CloudPairingDeniedError, match="denied"):
         cloud_pair._wait_for_owner_approval(
             ("localhost", 443, "https://localhost"),
             CHALLENGE,
             SECRET,
             key,
-            time.time_ns() // 1_000_000 + 45_000,
+            deadline,
         )
     assert seen == ["/api/v1/pairing/device/status"]
 

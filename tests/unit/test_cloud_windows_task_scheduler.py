@@ -62,8 +62,9 @@ def test_task_ownership_denies_extra_action_and_trigger() -> None:
         parent = root.find(f"{ns}{parent_name}")
         assert parent is not None
         ET.SubElement(parent, ns + extra_name)
+        invalid_xml = ET.tostring(root, encoding="unicode")
         with pytest.raises(LocalApprovalDeniedError):
-            scheduler._require_owned_task(ET.tostring(root, encoding="unicode"), SID, exe)
+            scheduler._require_owned_task(invalid_xml, SID, exe)
 
 
 def test_task_ownership_denies_xml_dtd_and_oversize() -> None:
@@ -91,7 +92,8 @@ def test_ensure_owner_task_never_overwrites_existing_and_verifies_created(
 
     def run(*args: str) -> subprocess.CompletedProcess[str]:
         seen.append(args)
-        assert args[0] == "/create" and "/f" not in args
+        assert args[0] == "/create"
+        assert "/f" not in args
         file = Path(args[-1])
         assert file.is_file()
         assert file.read_text(encoding="utf-16") == xml

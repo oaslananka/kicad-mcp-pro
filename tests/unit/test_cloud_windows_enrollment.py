@@ -146,7 +146,8 @@ def fake_windows_pair(
 def _approval(events: list[str], state: dict[str, Any]) -> Callable[[str, str, str], None]:
     def callback(page: str, challenge: str, code: str) -> None:
         assert page == ORIGIN + "/devices/pairing"
-        assert challenge == CHALLENGE and code == CODE
+        assert challenge == CHALLENGE
+        assert code == CODE
         assert not state["approved"]
         events.append("owner_approval")
         state["approved"] = True
@@ -279,11 +280,12 @@ def test_windows_vault_binding_failure_does_not_claim_success(
         original(record_id, part, data)
 
     monkeypatch.setattr(cloud_windows_enrollment, "create_credential", fail_binding)
+    owner_approval = _approval(events, state)
     with pytest.raises(cloud_windows_enrollment.WindowsPartialEnrollmentError) as info:
         cloud_windows_enrollment.enroll_windows_device(
             origin=ORIGIN,
             alias="Lab PC",
-            owner_approval=_approval(events, state),
+            owner_approval=owner_approval,
         )
     assert "Cloud device may already be registered" in str(info.value)
     assert "redeem" in events
@@ -297,11 +299,13 @@ def test_invalid_alias_refused_before_vault_or_http(
     name: str,
 ) -> None:
     store, events, state = fake_windows_pair
+    owner_approval = _approval(events, state)
     with pytest.raises(cloud_windows_enrollment.WindowsEnrollmentError):
         cloud_windows_enrollment.enroll_windows_device(
-            origin=ORIGIN, alias=name, owner_approval=_approval(events, state)
+            origin=ORIGIN, alias=name, owner_approval=owner_approval
         )
-    assert not store and not events
+    assert not store
+    assert not events
 
 
 def test_other_platform_cannot_call_windows_pairing(
@@ -310,13 +314,15 @@ def test_other_platform_cannot_call_windows_pairing(
 ) -> None:
     store, events, state = fake_windows_pair
     monkeypatch.setattr(cloud_windows_enrollment, "os", SimpleNamespace(name="posix"))
+    owner_approval = _approval(events, state)
     with pytest.raises(cloud_windows_enrollment.WindowsEnrollmentError):
         cloud_windows_enrollment.enroll_windows_device(
             origin=ORIGIN,
             alias="Lab PC",
-            owner_approval=_approval(events, state),
+            owner_approval=owner_approval,
         )
-    assert not events and not store
+    assert not events
+    assert not store
 
 
 @pytest.mark.parametrize("enabled", [True, False])
@@ -474,9 +480,10 @@ def test_lost_redeem_response_is_partial_and_keeps_owner_key(
         return original(target, path, body, status)
 
     monkeypatch.setattr(cloud_pair, "_post", lost_reply)
+    owner_approval = _approval(events, state)
     with pytest.raises(cloud_windows_enrollment.WindowsPartialEnrollmentError) as exc:
         cloud_windows_enrollment.enroll_windows_device(
-            origin=ORIGIN, alias="Lab PC", owner_approval=_approval(events, state)
+            origin=ORIGIN, alias="Lab PC", owner_approval=owner_approval
         )
     assert "redeem_sent" in events
     assert (exc.value.record_id, "key") in store
@@ -493,9 +500,10 @@ def test_failed_credential_create_does_not_delete_unowned_vault_key(
         raise LocalApprovalDeniedError("preexisting credential")
 
     monkeypatch.setattr(cloud_windows_enrollment, "create_credential", refuse_create)
+    owner_approval = _approval(events, state)
     with pytest.raises(cloud_windows_enrollment.WindowsEnrollmentError):
         cloud_windows_enrollment.enroll_windows_device(
-            origin=ORIGIN, alias="Lab PC", owner_approval=_approval(events, state)
+            origin=ORIGIN, alias="Lab PC", owner_approval=owner_approval
         )
     assert not store
     assert not events
@@ -545,9 +553,10 @@ def test_unexpected_cloud_grant_is_not_claimed_as_valid(
         return result
 
     monkeypatch.setattr(cloud_pair, "_post", enabled_reply)
+    owner_approval = _approval(events, state)
     with pytest.raises(cloud_windows_enrollment.WindowsPartialEnrollmentError):
         cloud_windows_enrollment.enroll_windows_device(
-            origin=ORIGIN, alias="Lab PC", owner_approval=_approval(events, state)
+            origin=ORIGIN, alias="Lab PC", owner_approval=owner_approval
         )
     assert "redeem" in events
     assert len(store) == 1

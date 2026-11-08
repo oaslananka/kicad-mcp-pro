@@ -64,6 +64,18 @@ def _install_manager(executable: str | Path | None = None) -> str:
     return "unknown"
 
 
+def _matching_launcher(root: str, suffix: str, *, windows: bool, seen: set[str]) -> str | None:
+    candidate = Path(root) / f"kicad-mcp-pro{suffix}"
+    if not candidate.is_file():
+        return None
+    path = str(candidate.resolve())
+    key = path.casefold() if windows else path
+    if key in seen:
+        return None
+    seen.add(key)
+    return path
+
+
 def _path_launchers(
     directories: Sequence[str] | None = None,
     *,
@@ -79,13 +91,8 @@ def _path_launchers(
         if not root:
             continue
         for suffix in extensions:
-            candidate = Path(root) / f"kicad-mcp-pro{suffix}"
-            if not candidate.is_file():
-                continue
-            path = str(candidate.resolve())
-            key = path.casefold() if is_windows else path
-            if key not in seen:
-                seen.add(key)
+            path = _matching_launcher(root, suffix, windows=is_windows, seen=seen)
+            if path is not None:
                 results.append(path)
     return results
 

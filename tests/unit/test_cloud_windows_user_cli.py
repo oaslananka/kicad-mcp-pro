@@ -89,7 +89,8 @@ def windows_cli(
         owner_confirm,
     ) -> WindowsLocalProjectSelection:
         events.append("bind")
-        assert the_project == project and path == folder
+        assert the_project == project
+        assert path == folder
         assert owner_confirm(path)
         return selected
 

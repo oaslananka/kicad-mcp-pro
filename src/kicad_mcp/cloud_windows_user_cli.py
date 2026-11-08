@@ -41,6 +41,36 @@ from kicad_mcp.cloud_windows_task_scheduler import (
     scheduler_state,
 )
 
+_PROJECT_SUFFIX_PRIORITY = {".kicad_pro": 0, ".kicad_sch": 1, ".kicad_pcb": 2}
+
+
+def _default_project_folder() -> Path:
+    cwd = Path.cwd()
+    try:
+        with _pinned_project(cwd):
+            has_files = any(
+                entry.is_file() and entry.suffix in _PROJECT_SUFFIX_PRIORITY
+                for entry in cwd.iterdir()
+            )
+    except (OSError, ValueError):
+        has_files = False
+    return cwd if has_files else Path(typer.prompt("KiCad project folder (absolute path)"))
+
+
+def _candidate_project_stem(folder: Path) -> str:
+    candidates: list[tuple[int, str]] = []
+    with os.scandir(folder) as entries:
+        for i, entry in enumerate(entries):
+            if i >= 128:
+                raise LocalApprovalDeniedError("Project folder has too many entries.")
+            suffix = Path(entry.name).suffix
+            if suffix in _PROJECT_SUFFIX_PRIORITY:
+                candidates.append((_PROJECT_SUFFIX_PRIORITY[suffix], Path(entry.name).stem))
+    if not candidates:
+        raise LocalApprovalDeniedError("No KiCad project found in selected folder.")
+    candidates.sort()
+    return candidates[0][1]
+
 
 def _choose_project(
     project_dir: Path | None, *, browse: bool, picker: Callable[[], Path]
@@ -51,16 +81,7 @@ def _choose_project(
     elif project_dir is not None:
         folder = project_dir
     else:
-        cwd = Path.cwd()
-        try:
-            with _pinned_project(cwd):
-                has_files = any(
-                    entry.is_file() and entry.suffix in {".kicad_pro", ".kicad_pcb", ".kicad_sch"}
-                    for entry in cwd.iterdir()
-                )
-        except (OSError, ValueError):
-            has_files = False
-        folder = cwd if has_files else Path(typer.prompt("KiCad project folder (absolute path)"))
+        folder = _default_project_folder()
     if not isinstance(folder, Path):
         raise typer.BadParameter("Invalid local KiCad project directory.")
     if not folder.is_absolute():
@@ -68,19 +89,7 @@ def _choose_project(
 
     try:
         with _pinned_project(folder):
-            candidates: list[tuple[int, str]] = []
-            with os.scandir(folder) as entries:
-                for i, entry in enumerate(entries):
-                    if i >= 128:
-                        raise LocalApprovalDeniedError("Project folder has too many entries.")
-                    suffix = Path(entry.name).suffix
-                    if suffix in {".kicad_pro", ".kicad_sch", ".kicad_pcb"}:
-                        priority = {".kicad_pro": 0, ".kicad_sch": 1, ".kicad_pcb": 2}[suffix]
-                        candidates.append((priority, Path(entry.name).stem))
-            if not candidates:
-                raise LocalApprovalDeniedError("No KiCad project found in selected folder.")
-            candidates.sort()
-            stem = candidates[0][1]
+            stem = _candidate_project_stem(folder)
             present = read_windows_project_presence(folder, stem)
             if not any(present.values()):
                 raise LocalApprovalDeniedError("No valid KiCad project files found.")
@@ -89,6 +98,47 @@ def _choose_project(
         raise typer.BadParameter(
             "Selected Windows project folder is unavailable or contains an unsafe link."
         ) from exc
+
+
+def _resume_existing_windows_project(
+    existing: WindowsRegisteredProject,
+    *,
+    origin: str,
+    directory: Path,
+    stem: str,
+    new_device: bool,
+) -> None:
+    """Preserve the existing owner registration; never silently replace it."""
+    if new_device:
+        raise typer.BadParameter(
+            "An owner-private device is already registered. Review/revoke it in "
+            "Cloud Devices before selecting a distinct new device."
+        )
+    selected = inspect_owner_selected_project(existing)
+    if (
+        existing.origin != origin
+        or selected.directory != directory
+        or selected.filename_stem != stem
+    ):
+        raise typer.BadParameter(
+            "A different Cloud origin or KiCad project is already selected. "
+            "The existing registration has not been replaced."
+        )
+    typer.echo(f"Existing Windows Cloud device: {existing.device_id}")
+    typer.echo(f"Local Connector: {scheduler_state()}")
+    if local_state() != "Off":
+        typer.echo("No new device registration or project grant was created.")
+        return
+    if not typer.confirm("Start the existing read-only Connector?", default=False):
+        typer.echo("Connector remains Off. No device changed.")
+        return
+    try:
+        enable_windows_connector(existing, owner_confirm=lambda _project: True)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise typer.BadParameter(
+            "Background Connector could not start. The device registration was preserved."
+        ) from exc
+    typer.echo(f"Connector scheduled; connection not yet verified. Check {origin}/devices.")
 
 
 def setup_windows(
@@ -115,36 +165,9 @@ def setup_windows(
             "Existing Windows Cloud registration needs local repair; no new device was created."
         ) from exc
     if existing is not None:
-        if new_device:
-            raise typer.BadParameter(
-                "An owner-private device is already registered. Review/revoke it in "
-                "Cloud Devices before selecting a distinct new device."
-            )
-        selected = inspect_owner_selected_project(existing)
-        if (
-            existing.origin != origin
-            or selected.directory != directory
-            or selected.filename_stem != stem
-        ):
-            raise typer.BadParameter(
-                "A different Cloud origin or KiCad project is already selected. "
-                "The existing registration has not been replaced."
-            )
-        typer.echo(f"Existing Windows Cloud device: {existing.device_id}")
-        typer.echo(f"Local Connector: {scheduler_state()}")
-        if local_state() != "Off":
-            typer.echo("No new device registration or project grant was created.")
-            return
-        if not typer.confirm("Start the existing read-only Connector?", default=False):
-            typer.echo("Connector remains Off. No device changed.")
-            return
-        try:
-            enable_windows_connector(existing, owner_confirm=lambda _project: True)
-        except (OSError, ValueError, RuntimeError) as exc:
-            raise typer.BadParameter(
-                "Background Connector could not start. The device registration was preserved."
-            ) from exc
-        typer.echo(f"Connector scheduled; connection not yet verified. Check {origin}/devices.")
+        _resume_existing_windows_project(
+            existing, origin=origin, directory=directory, stem=stem, new_device=new_device
+        )
         return
 
     typer.echo(f"KiCad project: {directory} ({stem})")

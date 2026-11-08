@@ -407,8 +407,9 @@ async def test_connector_refuses_non_windows_session_before_socket(
     async def unreachable(**_kwargs: object) -> HandshakeReceipt:
         raise AssertionError("must not open a Cloud session")
 
+    stop = asyncio.Event()
     with pytest.raises(LocalApprovalDeniedError):
-        await connector.run_connector(stop=asyncio.Event(), session_runner=unreachable)
+        await connector.run_connector(stop=stop, session_runner=unreachable)
 
 
 def test_connector_scheduled_entrypoint_requires_local_marker(

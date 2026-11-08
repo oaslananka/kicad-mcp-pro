@@ -406,7 +406,7 @@ def _perform_approval(page: str, challenge: str, code: str, no_browser: bool) ->
     typer.echo("Waiting for approval in browser...")
 
 
-def _start_connector(root: Path, new_record: dict[str, str]) -> str:
+def _start_connector() -> str:
     try:
         from kicad_mcp.cloud_managed_connector import _enable, _status
 
@@ -555,7 +555,7 @@ def setup(
         "filenameStem": stem,
     }
     _write_project_record(root, new_record)
-    connector_state = _start_connector(root, new_record)
+    connector_state = _start_connector()
 
     typer.echo("\n" + "=" * 60)
     typer.echo(

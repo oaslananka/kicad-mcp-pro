@@ -27,7 +27,6 @@ from cryptography.hazmat.primitives.serialization import (
 
 from kicad_mcp import cloud_pair
 from kicad_mcp.cloud_local_registry import _STEM
-from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
 from kicad_mcp.cloud_windows_binding import inspect_local_binding
 from kicad_mcp.cloud_windows_credentials import (
     create_credential,
@@ -127,6 +126,24 @@ def _approved_redeem(
     return device_id, owner_sub
 
 
+def _remove_unused_owner_credential(record_id: str, key_blob: bytes) -> None:
+    """Delete only the temporary key originally written by this enrollment."""
+    try:
+        # A same-user racing write must never be deleted as a side effect.
+        if read_credential(record_id, "key") == key_blob:
+            delete_credential(record_id, "key")
+    except (OSError, ValueError):
+        # Errors remain fail-closed, with no claim of Cloud access.
+        pass
+
+
+def _validate_windows_device_name(alias: str) -> None:
+    if os.name != "nt":
+        raise WindowsEnrollmentError("Windows Credential Manager is required.")
+    if not isinstance(alias, str) or _ALIAS.fullmatch(alias) is None:
+        raise WindowsEnrollmentError("Invalid device display name.")
+
+
 def enroll_windows_device(
     *,
     origin: str,
@@ -140,10 +157,7 @@ def enroll_windows_device(
     No PEM, challenge secret or Cloud grant is persisted to disk. A previously
     redeemed device is never reported as fully configured if vault binding fails.
     """
-    if os.name != "nt":
-        raise WindowsEnrollmentError("Windows Credential Manager is required.")
-    if not isinstance(alias, str) or _ALIAS.fullmatch(alias) is None:
-        raise WindowsEnrollmentError("Invalid device display name.")
+    _validate_windows_device_name(alias)
     target = cloud_pair._origin(origin)
     record_id = uuid.uuid4().hex
     key = Ed25519PrivateKey.generate()
@@ -225,7 +239,7 @@ def enroll_windows_device(
             "Browser device approval expired; no Connector was started. "
             "Start cloud setup again and approve within five minutes."
         ) from exc
-    except (OSError, ValueError, TypeError, LocalApprovalDeniedError) as exc:
+    except (OSError, ValueError, TypeError) as exc:
         if redeem_attempted:
             # Leave the owner key for explicit recovery/revocation: deleting it
             # would leave an unmanageable remotely registered device.
@@ -233,14 +247,7 @@ def enroll_windows_device(
         raise WindowsEnrollmentError(_DENIED) from exc
     finally:
         if key_saved and not committed and not redeem_attempted:
-            try:
-                # Do not delete a preexisting or substituted credential if
-                # the fresh random slot was changed after our initial write.
-                if read_credential(record_id, "key") == key_blob:
-                    delete_credential(record_id, "key")
-            except (OSError, ValueError, LocalApprovalDeniedError):
-                # Errors remain fail-closed, with no claim of Cloud access.
-                pass
+            _remove_unused_owner_credential(record_id, key_blob)
 
 
 class WindowsPartialProjectRegistrationError(WindowsEnrollmentError):
@@ -369,7 +376,7 @@ def register_windows_project(
             project_id=project_id,
             filename_stem=filename_stem,
         )
-    except (OSError, ValueError, TypeError, LocalApprovalDeniedError) as exc:
+    except (OSError, ValueError, TypeError) as exc:
         if request_attempted:
             raise WindowsPartialProjectRegistrationError(
                 "Cloud project request may have succeeded, but its private "

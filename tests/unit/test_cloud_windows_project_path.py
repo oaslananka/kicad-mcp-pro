@@ -149,7 +149,8 @@ def test_native_cloud_readonly_boundary_can_read_only_local_presence(tmp_path: P
         "boardPresent": False,
         "schematicPresent": False,
     }
-    assert "directory" not in result and "contents" not in result
+    assert "directory" not in result
+    assert "contents" not in result
 
 
 def test_native_cloud_readonly_boundary_denies_unapproved_command(tmp_path: Path) -> None:
@@ -176,22 +177,24 @@ def test_native_cloud_readonly_boundary_denies_unapproved_command(tmp_path: Path
             "deadlineUnixMs": now_ms + 10_000,
         }
     ).encode()
+    verified = VerifiedLocalBinding(
+        device_id=device,
+        project_id=project,
+        operations=frozenset({"project_summary"}),
+        session_id="49ee4be9-0aec-448e-9873-721ae113ec02",
+        session_expires_unix_ms=now_ms + 60_000,
+    )
+    operator_project = OperatorProject(
+        device_id=device,
+        project_id=project,
+        directory=tmp_path,
+        filename_stem="demo",
+    )
     with pytest.raises(LocalReadDeniedError):
         inspect_readonly(
             frame,
-            verified=VerifiedLocalBinding(
-                device_id=device,
-                project_id=project,
-                operations=frozenset({"project_summary"}),
-                session_id="49ee4be9-0aec-448e-9873-721ae113ec02",
-                session_expires_unix_ms=now_ms + 60_000,
-            ),
-            operator_project=OperatorProject(
-                device_id=device,
-                project_id=project,
-                directory=tmp_path,
-                filename_stem="demo",
-            ),
+            verified=verified,
+            operator_project=operator_project,
             now_unix_ms=now_ms,
         )
 

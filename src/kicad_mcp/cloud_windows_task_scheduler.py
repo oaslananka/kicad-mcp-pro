@@ -38,11 +38,12 @@ _SID = re.compile(r"S-1-5-(?:\d+-){1,15}\d+\Z", re.ASCII)
 _TASK_NS = "http://schemas.microsoft.com/windows/2004/02/mit/task"
 _TASK_ARGS = "-m kicad_mcp.cloud_windows_connector run"
 _EXEC_TIMEOUT = 15
+_WHOAMI_EXECUTABLE = "whoami.exe"
 
 
 def _system_tool(name: str) -> str:
     """Pin Windows' own system utilities; never resolve them from PATH."""
-    if os.name != "nt" or name not in {"schtasks.exe", "whoami.exe"}:
+    if os.name != "nt" or name not in {"schtasks.exe", _WHOAMI_EXECUTABLE}:
         raise LocalApprovalDeniedError(_DENIED)
     # Derive the genuine Windows system directory from kernel32, never
     # from a mutable environment variable or executable PATH entry.
@@ -64,7 +65,7 @@ def _system_tool(name: str) -> str:
 
 def _current_sid() -> str:
     result = subprocess.run(
-        [_system_tool("whoami.exe"), "/user", "/fo", "csv", "/nh"],
+        [_system_tool(_WHOAMI_EXECUTABLE), "/user", "/fo", "csv", "/nh"],
         capture_output=True,
         text=True,
         errors="replace",
@@ -94,7 +95,7 @@ def _same_logon_user(user: str | None, sid: str) -> bool:
     if not user:
         return False
     result = subprocess.run(
-        [_system_tool("whoami.exe")],
+        [_system_tool(_WHOAMI_EXECUTABLE)],
         capture_output=True,
         text=True,
         errors="replace",

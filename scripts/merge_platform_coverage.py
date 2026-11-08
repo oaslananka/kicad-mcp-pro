@@ -65,6 +65,35 @@ def stamp_windows_report(root: Path, sha: str, run_id: int, attempt: int) -> Non
     (root / _MANIFEST).write_text(json.dumps(manifest, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _validated_source_hits(
+    root: Path, raw_path: str, details: dict, measured: dict[Path, str]
+) -> tuple[str, set[int]]:
+    """Verify that only existing, measured in-package source lines are merged."""
+    path = raw_path.replace("\\", "/")
+    posix = PurePosixPath(path)
+    if (
+        not path.startswith("src/kicad_mcp/")
+        or posix.is_absolute()
+        or ".." in posix.parts
+        or posix.suffix != ".py"
+    ):
+        raise ValueError("Windows report contains a non-package or unsafe path")
+    source = (root / path).resolve(strict=True)
+    if not source.is_relative_to(root.resolve()):
+        raise ValueError("Native coverage path escaped repository")
+    canonical = measured.get(source)
+    if canonical is None:
+        raise ValueError(f"Windows source was not measured by Linux: {path}")
+    values = details.get("executed_lines")
+    if (
+        not isinstance(values, list)
+        or any(type(n) is not int or n < 1 for n in values)
+        or any(n > len(source.read_text(encoding="utf-8").splitlines()) for n in values)
+    ):
+        raise ValueError(f"Invalid executed line numbers in native coverage: {path}")
+    return canonical, set(values)
+
+
 def merge_native_coverage(root: Path, sha: str, run_id: int, attempt: int) -> int:
     """Merge executed lines into existing full-suite coverage without exclusions."""
     _source_sha(root, sha)
@@ -98,29 +127,8 @@ def merge_native_coverage(root: Path, sha: str, run_id: int, attempt: int) -> in
     for raw_path, details in files.items():
         if not isinstance(raw_path, str) or not isinstance(details, dict):
             raise ValueError("Invalid Windows coverage file entry")
-        path = raw_path.replace("\\", "/")
-        posix = PurePosixPath(path)
-        if (
-            not path.startswith("src/kicad_mcp/")
-            or posix.is_absolute()
-            or ".." in posix.parts
-            or posix.suffix != ".py"
-        ):
-            raise ValueError("Windows report contains a non-package or unsafe path")
-        source = (root / path).resolve(strict=True)
-        if not source.is_relative_to(root.resolve()):
-            raise ValueError("Native coverage path escaped repository")
-        canonical = measured.get(source)
-        if canonical is None:
-            raise ValueError(f"Windows source was not measured by Linux: {path}")
-        values = details.get("executed_lines")
-        if (
-            not isinstance(values, list)
-            or any(type(n) is not int or n < 1 for n in values)
-            or any(n > len(source.read_text(encoding="utf-8").splitlines()) for n in values)
-        ):
-            raise ValueError(f"Invalid executed line numbers in native coverage: {path}")
-        hits[canonical] = set(values)
+        canonical, values = _validated_source_hits(root, raw_path, details, measured)
+        hits[canonical] = values
     if not hits:
         raise ValueError("No Windows execution evidence in coverage report")
 
