@@ -1234,18 +1234,12 @@ mod tests {
     #[test]
     fn desktop_prefers_packaged_uv_to_global_tools() {
         let process = ServerProcess::new();
-        let task_owned = std::env::temp_dir().join(format!(
-            "kicad-mcp-pro-test-uv-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("test clock")
-                .as_nanos()
-        ));
-        std::fs::write(&task_owned, b"test launcher").expect("test file");
-        *process.bundled_uv.lock().expect("runtime lock") = Some(task_owned.clone());
-        assert_eq!(desktop_uv(&process), Some(task_owned.clone()));
-        std::fs::remove_file(task_owned).expect("cleanup test-owned file");
+        // This test needs a deterministic existing file path only: it never
+        // executes, modifies, or launches it.
+        let existing = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        assert!(existing.is_file());
+        *process.bundled_uv.lock().expect("runtime lock") = Some(existing.clone());
+        assert_eq!(desktop_uv(&process), Some(existing));
     }
 
     #[test]
