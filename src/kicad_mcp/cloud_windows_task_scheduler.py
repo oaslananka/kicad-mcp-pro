@@ -78,6 +78,34 @@ def _current_sid() -> str:
     return sid
 
 
+def _same_logon_user(user: str | None, sid: str) -> bool:
+    """Recognize a Task Scheduler-normalized current-user name, not a new owner.
+
+    Windows may serialize an originally SID-scoped LogonTrigger.UserId as the
+    account's short display name after registering the task. The principal
+    must still have exactly the current SID and InteractiveToken.
+    """
+    if user == sid:
+        return True
+    if not user:
+        return False
+    result = subprocess.run(
+        [_system_tool("whoami.exe")],
+        capture_output=True,
+        text=True,
+        errors="replace",
+        timeout=_EXEC_TIMEOUT,
+        check=False,
+    )
+    if result.returncode:
+        return False
+    current = result.stdout.strip()
+    if not current or chr(92) not in current:
+        return False
+    short = current.rsplit(chr(92), 1)[-1]
+    return user.casefold() in {current.casefold(), short.casefold()}
+
+
 def _task_name(sid: str) -> str:
     if not isinstance(sid, str) or _SID.fullmatch(sid) is None:
         raise LocalApprovalDeniedError(_DENIED)
@@ -194,9 +222,11 @@ def _require_owned_task(xml: str, sid: str, executable: str) -> None:
         if (
             get(principal[0], "t:UserId") != sid
             or get(principal[0], "t:LogonType") != "InteractiveToken"
-            or get(principal[0], "t:RunLevel") != "LeastPrivilege"
-            or get(trigger[0], "t:UserId") != sid
-            or get(trigger[0], "t:Enabled") != "true"
+            # Windows omits default LeastPrivilege/Enabled on export.
+            or get(principal[0], "t:RunLevel") not in (None, "LeastPrivilege")
+            or not _same_logon_user(get(trigger[0], "t:UserId"), sid)
+            or get(trigger[0], "t:Enabled") not in (None, "true")
+            or root.findtext("t:Settings/t:Enabled", namespaces=ns) == "false"
             or get(actions[0], "t:Arguments") != _TASK_ARGS
             or not command
             or os.path.normcase(command) != os.path.normcase(executable)

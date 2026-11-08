@@ -333,3 +333,41 @@ def test_native_scheduler_accepts_current_user_task_xml_without_registration() -
     assert definition.Actions.Count == 1
     assert definition.Actions.Item(1).Path.casefold() == executable.casefold()
     assert definition.Actions.Item(1).Arguments == scheduler._TASK_ARGS
+
+
+def test_task_sched_windows_normalizes_owner_alias_and_default_xml(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Real Schtasks may omit default flags and render SID as short username."""
+    xml, executable = _fixture_task()
+    sid_tag = "<UserId>" + SID + "</UserId>"
+    assert xml.count(sid_tag) == 2
+    normalized = xml.replace(sid_tag, "<UserId>Admin</UserId>", 1)
+    # Only trigger UserId may be normalized. Principal SID must remain pinned.
+    assert normalized.count(sid_tag) == 1
+    normalized = normalized.replace("<RunLevel>LeastPrivilege</RunLevel>", "")
+    normalized = normalized.replace("<Enabled>true</Enabled>", "", 1)
+    monkeypatch.setattr(scheduler, "_system_tool", lambda _name: "whoami.exe")
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        scheduler,
+        "subprocess",
+        SimpleNamespace(
+            run=lambda *_args, **_kwargs: subprocess.CompletedProcess([], 0, "DESKTOP\\Admin", "")
+        ),
+    )
+    scheduler._require_owned_task(normalized, SID, executable)
+
+
+@pytest.mark.parametrize("foreign", ["OtherUser", "S-1-5-21-88-99-100-101", ""])
+def test_task_sched_rejects_foreign_trigger_owner_even_if_defaults_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+    foreign: str,
+) -> None:
+    xml, executable = _fixture_task()
+    sid_tag = "<UserId>" + SID + "</UserId>"
+    xml = xml.replace(sid_tag, "<UserId>" + foreign + "</UserId>", 1)
+    monkeypatch.setattr(scheduler, "_same_logon_user", lambda user, sid: user == sid)
+    with pytest.raises(LocalApprovalDeniedError):
+        scheduler._require_owned_task(xml, SID, executable)
