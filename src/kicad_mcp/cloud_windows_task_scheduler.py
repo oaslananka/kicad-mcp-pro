@@ -246,9 +246,19 @@ def stop_and_remove_owner_task() -> bool:
         # disable after a successful uninstall is a harmless no-op.
         return True
     _require_owned_task(existing, sid, _command_executable())
-    ended = _run_schtasks("/end", "/tn", _task_name(sid)).returncode == 0
-    removed = _run_schtasks("/delete", "/tn", _task_name(sid), "/f").returncode == 0
-    return ended and removed
+    stopped = _run_schtasks("/end", "/tn", _task_name(sid))
+    # Win32 Task Scheduler distinguishes an already-stopped instance from a
+    # real failure. Never delete the task after an unknown stop failure: the
+    # scheduled process might still be running under the owner's account.
+    stop_code = stopped.returncode & 0xFFFFFFFF
+    if stop_code not in (0, 0x8004130B):  # SCHED_E_TASK_NOT_RUNNING
+        return False
+    deleted = _run_schtasks("/delete", "/tn", _task_name(sid), "/f")
+    if deleted.returncode != 0:
+        return False
+    # A successful CLI command is insufficient evidence for task deletion.
+    # This distinguishes a safely removed task from an inaccessible one.
+    return _query(sid) is None
 
 
 def enable_windows_connector(

@@ -40,6 +40,21 @@ def _install_manager(executable: str | Path | None = None) -> str:
         return "uv"
     if "/pipx/venvs/kicad-mcp-pro/" in normalized:
         return "pipx"
+    # uv supports an explicit UV_TOOL_DIR, including company-managed and
+    # portable installations outside the default uv home. Do not classify
+    # an unrelated interpreter just because the variable is present.
+    tool_root = os.environ.get("UV_TOOL_DIR")
+    if tool_root:
+        try:
+            candidate = Path(path).resolve()
+            managed = Path(tool_root).expanduser().resolve() / _PACKAGE
+            if candidate.is_relative_to(managed) and candidate.parent.name.casefold() in {
+                "scripts",
+                "bin",
+            }:
+                return "uv"
+        except (OSError, RuntimeError, ValueError):
+            pass
     return "unknown"
 
 

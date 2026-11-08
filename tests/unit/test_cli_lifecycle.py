@@ -30,6 +30,24 @@ def test_package_manager_detection_only_accepts_known_tool_paths() -> None:
     assert _manager_command("unknown", "uninstall") is None
 
 
+def test_custom_uv_tool_dir_is_recognized_only_for_its_managed_interpreter(
+    monkeypatch, tmp_path
+) -> None:
+
+    from kicad_mcp.cli_lifecycle import _install_manager
+
+    tool_root = tmp_path / "custom-tools"
+    managed = tool_root / "kicad-mcp-pro" / "Scripts" / "python.exe"
+    another = tool_root / "unrelated-tool" / "Scripts" / "python.exe"
+    monkeypatch.setenv("UV_TOOL_DIR", str(tool_root))
+    assert _install_manager(managed) == "uv"
+    assert _install_manager(another) == "unknown"
+    assert _install_manager(tmp_path / "kicad-mcp-pro" / "Scripts" / "python.exe") == "unknown"
+    assert _install_manager(tool_root / "kicad-mcp-pro" / "data" / "python.exe") == "unknown"
+    monkeypatch.delenv("UV_TOOL_DIR")
+    assert _install_manager(managed) == "unknown"
+
+
 def test_explicit_update_check_json_never_installs(monkeypatch) -> None:
     monkeypatch.setattr("kicad_mcp.cli_lifecycle._fetch_latest_stable", lambda: "99.0.0")
     monkeypatch.setattr("kicad_mcp.cli_lifecycle._install_manager", lambda: "uv")

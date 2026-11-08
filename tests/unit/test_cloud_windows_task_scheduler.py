@@ -127,10 +127,14 @@ def test_start_and_stop_recheck_principal_and_never_touch_other_tasks(
     seen: list[tuple[str, ...]] = []
     monkeypatch.setattr(scheduler, "_current_sid", lambda: SID)
     monkeypatch.setattr(scheduler, "_command_executable", lambda: exe)
-    monkeypatch.setattr(scheduler, "_query", lambda _sid: xml)
+    task_exists = True
+    monkeypatch.setattr(scheduler, "_query", lambda _sid: xml if task_exists else None)
 
     def call(*args: str) -> subprocess.CompletedProcess[str]:
+        nonlocal task_exists
         seen.append(args)
+        if args[0] == "/delete":
+            task_exists = False
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(scheduler, "_run_schtasks", call)
@@ -233,5 +237,73 @@ def test_disable_idempotent_only_after_verified_task_not_found(
         raise LocalApprovalDeniedError("denied")
 
     monkeypatch.setattr(scheduler, "_query", denied)
+    with pytest.raises(LocalApprovalDeniedError):
+        scheduler.stop_and_remove_owner_task()
+
+
+@pytest.mark.parametrize(
+    "end_code,delete_code,query_after_delete,expected,expected_actions",
+    [
+        (0, 0, None, True, ["/end", "/delete"]),
+        (0x8004130B, 0, None, True, ["/end", "/delete"]),
+        (5, 0, None, False, ["/end"]),
+        (0, 5, None, False, ["/end", "/delete"]),
+        (0, 0, "still here", False, ["/end", "/delete"]),
+    ],
+)
+def test_scheduler_stop_removal_handles_known_idle_and_refuses_unknown_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    end_code: int,
+    delete_code: int,
+    query_after_delete: str | None,
+    expected: bool,
+    expected_actions: list[str],
+) -> None:
+    xml, exe = _fixture_task()
+    seen: list[str] = []
+    deleted = False
+    monkeypatch.setattr(scheduler, "_current_sid", lambda: SID)
+    monkeypatch.setattr(scheduler, "_command_executable", lambda: exe)
+
+    def query(_sid: str) -> str | None:
+        if deleted:
+            return query_after_delete
+        return xml
+
+    def run(*args: str) -> subprocess.CompletedProcess[str]:
+        nonlocal deleted
+        seen.append(args[0])
+        result_code = end_code if args[0] == "/end" else delete_code
+        if args[0] == "/delete" and result_code == 0:
+            deleted = True
+        return subprocess.CompletedProcess(args, result_code, "", "")
+
+    monkeypatch.setattr(scheduler, "_query", query)
+    monkeypatch.setattr(scheduler, "_run_schtasks", run)
+    assert scheduler.stop_and_remove_owner_task() is expected
+    assert seen == expected_actions
+
+
+def test_scheduler_stop_does_not_claim_success_on_unverifiable_post_delete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    xml, exe = _fixture_task()
+    queries = 0
+    monkeypatch.setattr(scheduler, "_current_sid", lambda: SID)
+    monkeypatch.setattr(scheduler, "_command_executable", lambda: exe)
+
+    def query(_sid: str) -> str | None:
+        nonlocal queries
+        queries += 1
+        if queries > 1:
+            raise LocalApprovalDeniedError("access denied")
+        return xml
+
+    monkeypatch.setattr(scheduler, "_query", query)
+    monkeypatch.setattr(
+        scheduler,
+        "_run_schtasks",
+        lambda *args: subprocess.CompletedProcess(args, 0, "", ""),
+    )
     with pytest.raises(LocalApprovalDeniedError):
         scheduler.stop_and_remove_owner_task()
