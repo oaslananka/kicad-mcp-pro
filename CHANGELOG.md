@@ -10,6 +10,19 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.10.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.9.0...mcp-server-v4.10.0) (2026-11-08)
+
+
+### Features
+
+* **cli:** finish lifecycle UX and native Windows Cloud connector ([#1663](https://github.com/oaslananka/kicad-mcp-pro/issues/1663)) ([87ac915](https://github.com/oaslananka/kicad-mcp-pro/commit/87ac915f91d334d0c947fa6f5105e302b3d1fcbe))
+
+
+### Bug Fixes
+
+* **ci:** preserve native Windows coverage for analyzed main runs ([#1665](https://github.com/oaslananka/kicad-mcp-pro/issues/1665)) ([8539da2](https://github.com/oaslananka/kicad-mcp-pro/commit/8539da214082cce07fc9609e762b975c1318cb88))
+* **security:** whitelist verified post-squash Gitleaks fingerprint ([#1664](https://github.com/oaslananka/kicad-mcp-pro/issues/1664)) ([b93791d](https://github.com/oaslananka/kicad-mcp-pro/commit/b93791dffc0216882eeb572437bd66a6bc65644b))
+
 ## [4.9.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.8.1...mcp-server-v4.9.0) (2026-11-07)
 
 
