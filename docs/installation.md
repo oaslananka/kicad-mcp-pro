@@ -138,8 +138,15 @@ The single-page UI has these views:
 - **Settings** — edits KiCad path, transport, host, port, profile, log level, and
   operating mode (changes apply after restart), and exports a ready-to-paste MCP
   client config for Claude Desktop, Cursor, VS Code, Windsurf, or Zed.
-- **Setup** — a five-step wizard: KiCad detection, default project directory,
-  transport, MCP client config (preview and copy), and a connection test.
+- **Setup**: a five-step wizard for KiCad detection, local project selection,
+  transport, and guided AI-client configuration. Claude Desktop, Cursor, VS Code
+  and Windsurf use preview plus explicit apply to preserve unrelated MCP
+  entries and back up existing settings. Other clients retain manual snippet
+  export. When launched from a newly bundled desktop, local client configuration
+  reuses its exact pinned `uv` executable and private runtime cache; normal
+  setup does not require a separate global Python/`uvx` install. Saving the
+  client configuration is not evidence that the AI host connected: verify a
+  real MCP read in the client before declaring it ready.
 
 The dashboard reads project and KiCad state; it does not run ERC or DRC itself.
 Run `run_erc()`, `run_drc()`, or `validate_design()` from your MCP client and

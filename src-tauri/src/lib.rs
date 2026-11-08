@@ -472,7 +472,8 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
     if let Some(runtime) = user_runtime_dir() {
         std::fs::create_dir_all(&runtime)
             .map_err(|_| "Could not prepare private desktop runtime storage.".to_string())?;
-        cmd.env("UV_CACHE_DIR", runtime.join("cache"))
+        cmd.env("KICAD_MCP_DESKTOP_UV", &uvx)
+            .env("UV_CACHE_DIR", runtime.join("cache"))
             .env("UV_PYTHON_INSTALL_DIR", runtime.join("python"))
             .env("UV_PYTHON_PREFERENCE", "only-managed")
             .env("UV_NO_CONFIG", "1")
