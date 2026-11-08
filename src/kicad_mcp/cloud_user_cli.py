@@ -40,9 +40,11 @@ def _owner_terminal() -> bool:
 
 
 def _local_pairing_storage_supported() -> bool:
-    """Do not start remote enrollment if the owner-key security boundary cannot run."""
+    """Fail early until a complete native owner-private enrollment is available."""
+    # Windows vault inspection primitives are not an enrollment/connector
+    # implementation. Never create a Cloud challenge using POSIX-only keys.
     if os.name == "nt":
-        return True
+        return False
     return (
         os.name == "posix"
         and callable(getattr(os, "getuid", None))
@@ -54,6 +56,10 @@ def _local_pairing_storage_supported() -> bool:
 
 def _require_local_pairing_storage() -> None:
     if not _local_pairing_storage_supported():
+        if os.name == "nt":
+            typer.echo("No device or project was registered.", err=True)
+            typer.echo("Windows Cloud pairing is not yet supported. Local MCP works.", err=True)
+            raise typer.BadParameter("owner-private key storage is unavailable on Windows.")
         raise typer.BadParameter(
             "Cloud device pairing is not available on this operating system yet: "
             "owner-private key storage requires supported native filesystem protection. "

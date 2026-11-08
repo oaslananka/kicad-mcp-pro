@@ -872,6 +872,23 @@ def _probe_ipc_diagnostics(*, probe_ipc: bool) -> tuple[bool, list[CheckResult]]
     return ipc_reachable, checks
 
 
+def _duplicate_cli_path_check() -> CheckResult | None:
+    """Warn without executing other PATH launchers or mutating installations."""
+    from .cli_lifecycle import _path_launchers
+
+    executables = _path_launchers()
+    if len(executables) < 2:
+        return None
+    return CheckResult(
+        name="cli_path_conflict",
+        status="warn",
+        message=f"Found {len(executables)} KiCad MCP Pro launchers on PATH. "
+        "The first matching executable takes precedence.",
+        hint="Check command resolution before updating or uninstalling. "
+        "PowerShell: Get-Command kicad-mcp-pro -All.",
+    )
+
+
 def build_diagnostic_report(*, probe_cli: bool, probe_ipc: bool) -> DiagnosticReport:
     """Build a diagnostics report without raising for non-fatal KiCad unavailability."""
     cfg = get_config()
@@ -888,6 +905,9 @@ def build_diagnostic_report(*, probe_cli: bool, probe_ipc: bool) -> DiagnosticRe
 
     if probe_cli:
         checks.extend(package_checks)
+        cli_path_check = _duplicate_cli_path_check()
+        if cli_path_check is not None:
+            checks.append(cli_path_check)
         checkout = (
             Path(package_diagnostics.repo_path)
             if package_diagnostics.repo_path is not None

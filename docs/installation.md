@@ -1,5 +1,52 @@
 # Installation
 
+## Terminal CLI (recommended)
+
+Use [uv](https://docs.astral.sh/uv/) for a standalone installation. It keeps
+the MCP tool isolated from global Python packages and allows the package manager
+to safely replace or remove it.
+
+~~~powershell
+uv tool install kicad-mcp-pro
+kicad-mcp-pro --version
+kicad-mcp-pro setup
+kicad-mcp-pro doctor
+~~~
+
+The no-argument `setup` command starts the guided setup in an interactive
+terminal. In scripts or noninteractive terminals, choose a client explicitly:
+`kicad-mcp-pro setup --agent claude-code` (preview only by default).
+Existing `setup claude-code`, `quickstart` and `init` commands remain supported.
+
+### Check for updates and remove the CLI
+
+~~~powershell
+kicad-mcp-pro update check
+kicad-mcp-pro update check --json
+kicad-mcp-pro uninstall
+~~~
+
+`update` and `uninstall` **show the matching package-manager command** rather
+than modifying or removing the active running CLI. For a `uv tool` installation:
+
+~~~powershell
+uv tool upgrade kicad-mcp-pro
+uv tool uninstall kicad-mcp-pro
+~~~
+
+Do not mix `pip install` with `uv tool install` on the same executable PATH.
+`doctor` warns about duplicate `kicad-mcp-pro` launchers before users upgrade
+or remove the wrong installation. Package removal is separate from revoking
+Cloud devices or removing KiCad MCP entries from independently owned AI-client
+configuration files; it does not delete `.kicad_pro`/`.kicad_pcb` projects.
+
+**Windows Cloud status:** The CLI can be used locally without any Cloud account.
+On releases lacking native Windows owner-private device registration and the
+Windows Connector service, `cloud setup` declines early rather than creating a
+partial pairing or claiming that the Cloud owner denied approval. Check the
+release notes for native Windows Cloud support before attempting pairing.
+
+
 ## Desktop app
 
 Download the installer for your operating system from the repository's GitHub
