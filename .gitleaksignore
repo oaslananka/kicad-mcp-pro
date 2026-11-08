@@ -1,3 +1,4 @@
 # One exact historical Python dataclass type annotation false positive.
 # The scanner must still report every other genuine credential match.
 2ac4acc766ef7797b09a4d7e5192a056d1acb0d7:src/kicad_mcp/cloud_windows_connector.py:generic-api-key:68
+87ac915f91d334d0c947fa6f5105e302b3d1fcbe:src/kicad_mcp/cloud_windows_connector.py:generic-api-key:69
