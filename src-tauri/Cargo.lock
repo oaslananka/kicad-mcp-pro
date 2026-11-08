@@ -1941,7 +1941,7 @@ dependencies = [
 
 [[package]]
 name = "kicad-mcp-pro"
-version = "4.9.0"
+version = "4.10.0"
 dependencies = [
  "reqwest",
  "serde",
