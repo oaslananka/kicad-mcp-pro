@@ -63,7 +63,8 @@ def test_desktop_cold_start_timeout_and_managed_python_are_consistent() -> None:
     splash = (ROOT / "src-tauri/frontend/index.html").read_text(encoding="utf-8")
     native = re.search(r"const HEALTH_WAIT: Duration = Duration::from_secs\((\d+)\)", rust)
     frontend = re.search(r"const MAX_RETRIES = (\d+);", splash)
-    assert native is not None and frontend is not None
+    assert native is not None
+    assert frontend is not None
     assert int(native.group(1)) >= 180
     assert int(frontend.group(1)) > int(native.group(1))
     assert '.env("UV_PYTHON", "3.13")' in rust
