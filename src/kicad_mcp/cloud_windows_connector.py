@@ -42,6 +42,7 @@ from kicad_mcp.cloud_windows_project_record import inspect_project_reference
 
 _DENIED = "Windows Connector is unavailable; local authorization was not verified."
 _ACTIVE_RECORD_ID = "0" * 32  # Reserved only for the current user's app-namespaced vault.
+_SELECTED_RECORD_ID = "1" * 32  # Owner-selected identity independent of On/Off.
 _ACTIVE_FIELDS = frozenset({"registrationId", "recordId", "deviceId", "projectId"})
 _REGISTRATION_FIELDS = frozenset(
     {
@@ -132,6 +133,47 @@ def _load_project_from_marker(marker: dict[str, str]) -> WindowsRegisteredProjec
         return project
     except (ValueError, TypeError, KeyError) as exc:
         raise LocalApprovalDeniedError(_DENIED) from exc
+
+
+def selected_project() -> WindowsRegisteredProject | None:
+    """Read one remembered owner-approved device/project without enabling it."""
+    if os.name != "nt":
+        raise LocalApprovalDeniedError(_DENIED)
+    raw = read_credential(_SELECTED_RECORD_ID, "selected")
+    if raw is None:
+        return None
+    if len(raw) > 1024:
+        raise LocalApprovalDeniedError(_DENIED)
+    try:
+        marker = json.loads(raw, object_pairs_hook=_unique)
+        if (
+            not isinstance(marker, dict)
+            or set(marker) != _ACTIVE_FIELDS
+            or not all(isinstance(value, str) for value in marker.values())
+        ):
+            raise LocalApprovalDeniedError(_DENIED)
+        project = _load_project_from_marker(marker)
+        inspect_owner_selected_project(project)
+        return project
+    except (OSError, ValueError, TypeError) as exc:
+        raise LocalApprovalDeniedError(_DENIED) from exc
+
+
+def remember_selected_project(project: WindowsRegisteredProject) -> None:
+    """Create-only persistent owner selection, not a Cloud grant or enabled marker."""
+    if os.name != "nt" or not isinstance(project, WindowsRegisteredProject):
+        raise LocalApprovalDeniedError(_DENIED)
+    inspect_owner_selected_project(project)
+    marker = {
+        "registrationId": project.registration_id,
+        "recordId": project.record_id,
+        "deviceId": project.device_id,
+        "projectId": project.project_id,
+    }
+    payload = json.dumps(marker, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    create_credential(_SELECTED_RECORD_ID, "selected", payload)
+    if selected_project() != project:
+        raise LocalApprovalDeniedError(_DENIED)
 
 
 def _active() -> WindowsActiveConnector | None:

@@ -254,3 +254,40 @@ async def test_inactive_windows_connector_never_opens_socket(
         raise AssertionError("No socket while Off")
 
     await asyncio.wait_for(connector.run_connector(stop=stop, session_runner=no_call), 3)
+
+
+def test_remembered_project_survives_local_off_without_remote_access(
+    local_user_connector,
+) -> None:
+    project, store, _folder = local_user_connector
+    assert connector.selected_project() is None
+    connector.remember_selected_project(project)
+    assert connector.selected_project() == project
+    assert connector.local_state() == "Off"
+    assert connector._active() is None
+    assert connector.deactivate() is False
+    assert connector.selected_project() == project
+    assert (connector._SELECTED_RECORD_ID, "selected") in store
+
+
+def test_selected_project_cannot_be_replaced_silently(
+    local_user_connector,
+) -> None:
+    project, store, _folder = local_user_connector
+    connector.remember_selected_project(project)
+    before = store[(connector._SELECTED_RECORD_ID, "selected")]
+    with pytest.raises(LocalApprovalDeniedError):
+        connector.remember_selected_project(project)
+    assert store[(connector._SELECTED_RECORD_ID, "selected")] == before
+
+
+def test_tampered_selected_project_fails_without_auto_pairing(
+    local_user_connector,
+) -> None:
+    project, store, _folder = local_user_connector
+    connector.remember_selected_project(project)
+    key = (connector._SELECTED_RECORD_ID, "selected")
+    store[key] = b'{"deviceId":"x","deviceId":"y"}'
+    with pytest.raises(LocalApprovalDeniedError):
+        connector.selected_project()
+    assert connector.local_state() == "Off"

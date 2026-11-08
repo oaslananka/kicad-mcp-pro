@@ -17,6 +17,9 @@ def simulated_storage_support_for_mocked_cli_flows(monkeypatch) -> None:
         "kicad_mcp.cloud_user_cli._local_pairing_storage_supported",
         lambda: True,
     )
+    # Existing POSIX tests explicitly test the old registry path; native NT
+    # routes have their own real-Windows fixtures in test_cloud_windows_user_cli.
+    monkeypatch.setattr("kicad_mcp.cloud_user_cli._is_windows", lambda: False)
 
 
 def test_login_opens_only_first_party_browser_and_saves_no_local_token(monkeypatch) -> None:
