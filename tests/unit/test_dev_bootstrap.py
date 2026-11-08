@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+import urllib.error
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -68,6 +69,64 @@ def test_download_verified_rejects_checksum_mismatch(tmp_path: Path) -> None:
 
     download_verified(source.as_uri(), destination, hashlib.sha256(payload).hexdigest())
     assert destination.read_bytes() == payload
+
+
+def test_verified_https_download_retries_transient_502_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = b"pinned binary bytes"
+    calls: list[str] = []
+    delays: list[int] = []
+    url = "https://example.invalid/release.tar.gz"
+
+    def fake_urlopen(request_url: str, timeout: int):
+        assert timeout == 120
+        calls.append(request_url)
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(request_url, 502, "temporary CDN outage", None, None)
+        return io.BytesIO(payload)
+
+    monkeypatch.setattr("scripts.dev_environment.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("scripts.dev_environment.time.sleep", delays.append)
+    target = tmp_path / "archive.tar.gz"
+    assert download_verified(url, target, hashlib.sha256(payload).hexdigest()) == target
+    assert target.read_bytes() == payload
+    assert calls == [url, url]
+    assert delays == [1]
+
+
+def test_verified_https_download_does_not_retry_checksum_or_404(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    url = "https://example.invalid/release.tar.gz"
+    calls = 0
+
+    def fake_urlopen(request_url: str, timeout: int):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return io.BytesIO(b"unexpected bytes")
+        raise AssertionError("must never retry a checksum mismatch")
+
+    monkeypatch.setattr("scripts.dev_environment.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr(
+        "scripts.dev_environment.time.sleep",
+        lambda *_args: pytest.fail("checksum mismatch is not retryable"),
+    )
+    dest = tmp_path / "bad.tar.gz"
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
+        download_verified(url, dest, "0" * 64)
+    assert calls == 1
+    assert not dest.exists()
+
+    def missing(request_url: str, timeout: int):
+        raise urllib.error.HTTPError(request_url, 404, "not found", None, None)
+
+    monkeypatch.setattr("scripts.dev_environment.urllib.request.urlopen", missing)
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        download_verified(url, dest, "0" * 64)
+    assert caught.value.code == 404
+    assert not dest.exists()
 
 
 def test_safe_extract_tar_rejects_path_traversal(tmp_path: Path) -> None:

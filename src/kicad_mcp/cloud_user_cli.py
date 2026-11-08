@@ -39,10 +39,17 @@ def _owner_terminal() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
 
+def _is_windows() -> bool:
+    """Explicit routing seam; Windows enrollment is not a POSIX filesystem flow."""
+    return os.name == "nt"
+
+
 def _local_pairing_storage_supported() -> bool:
-    """Do not start remote enrollment if the owner-key security boundary cannot run."""
+    """Fail early until a complete native owner-private enrollment is available."""
+    # Windows vault inspection primitives are not an enrollment/connector
+    # implementation. Never create a Cloud challenge using POSIX-only keys.
     if os.name == "nt":
-        return True
+        return False
     return (
         os.name == "posix"
         and callable(getattr(os, "getuid", None))
@@ -54,6 +61,10 @@ def _local_pairing_storage_supported() -> bool:
 
 def _require_local_pairing_storage() -> None:
     if not _local_pairing_storage_supported():
+        if os.name == "nt":
+            typer.echo("No device or project was registered.", err=True)
+            typer.echo("Windows Cloud pairing is not yet supported. Local MCP works.", err=True)
+            raise typer.BadParameter("owner-private key storage is unavailable on Windows.")
         raise typer.BadParameter(
             "Cloud device pairing is not available on this operating system yet: "
             "owner-private key storage requires supported native filesystem protection. "
@@ -241,11 +252,37 @@ def connect(
         "--new-device",
         help="Pair a distinct new device after browser approval, preserving existing local keys.",
     ),
+    project_dir: Annotated[
+        Path | None,
+        typer.Option("--project-dir", "-p", help="Select a local KiCad project on Windows."),
+    ] = None,
+    no_browser: Annotated[
+        bool,
+        typer.Option(
+            "--no-browser", help="Print Cloud owner pairing URL without opening a browser."
+        ),
+    ] = False,
 ) -> None:
     """Start browser-approved device pairing without granting project access."""
     if not alias or len(alias) > 80 or any(ord(char) < 32 for char in alias):
         raise typer.BadParameter("Device name must be 1 to 80 printable characters.")
     origin = _verified_origin(cloud_origin)
+    if _is_windows():
+        from kicad_mcp.cloud_windows_user_cli import setup_windows
+
+        setup_windows(
+            origin=origin,
+            alias=_resolve_device_alias(alias),
+            project_dir=project_dir,
+            browse=False,
+            new_device=new_device,
+            approval=lambda page, challenge, code: _perform_approval(
+                page, challenge, code, no_browser
+            ),
+            picker=_browse_local_project_folder,
+            owner_terminal=_owner_terminal,
+        )
+        return
     _require_local_pairing_storage()
     from kicad_mcp.cloud_local_registry import default_registry_root
     from kicad_mcp.cloud_registered_pilot import _single_registered_identity
@@ -369,7 +406,7 @@ def _perform_approval(page: str, challenge: str, code: str, no_browser: bool) ->
     typer.echo("Waiting for approval in browser...")
 
 
-def _start_connector(root: Path, new_record: dict[str, str]) -> str:
+def _start_connector() -> str:
     try:
         from kicad_mcp.cloud_managed_connector import _enable, _status
 
@@ -381,16 +418,15 @@ def _start_connector(root: Path, new_record: dict[str, str]) -> str:
                 return connector_state
         return _status()
     except Exception as exc:
-        typer.echo(f"Background service start notice: {exc}")
-        try:
-            from kicad_mcp.cloud_managed_connector import _ENABLED_FILE, _identity_state
-            from kicad_mcp.cloud_pair_keys import _write_private_json
-
-            _write_private_json(root, _ENABLED_FILE, _identity_state(new_record))
-            return "Enabled (Foreground ready)"
-        except Exception as write_err:
-            typer.echo(f"Notice: Could not write enabled state: {write_err}")
-            return "Off"
+        # An enabled marker is not an executable Connector. Never tell users
+        # that Cloud access is ready when the service failed to start.
+        typer.echo(f"Cloud Connector could not start: {type(exc).__name__}.", err=True)
+        typer.echo(
+            "Device registration was not rolled back; check cloud status "
+            "before retrying cloud enable.",
+            err=True,
+        )
+        return "Unavailable"
 
 
 @cloud_app.command()
@@ -444,6 +480,22 @@ def setup(
     if browse and project_dir is not None:
         raise typer.BadParameter("Choose either --browse or --project-dir, not both.")
     device_alias = _resolve_device_alias(alias)
+    if _is_windows():
+        from kicad_mcp.cloud_windows_user_cli import setup_windows
+
+        setup_windows(
+            origin=origin,
+            alias=device_alias,
+            project_dir=project_dir,
+            browse=browse,
+            new_device=new_device,
+            approval=lambda page, challenge, code: _perform_approval(
+                page, challenge, code, no_browser
+            ),
+            picker=_browse_local_project_folder,
+            owner_terminal=_owner_terminal,
+        )
+        return
     _require_local_pairing_storage()
     selected = _select_setup_project_directory(browse, project_dir)
     target_dir, stem = _discover_kicad_project(selected)
@@ -503,7 +555,7 @@ def setup(
         "filenameStem": stem,
     }
     _write_project_record(root, new_record)
-    connector_state = _start_connector(root, new_record)
+    connector_state = _start_connector()
 
     typer.echo("\n" + "=" * 60)
     typer.echo(
@@ -574,6 +626,11 @@ def register_project(
 @cloud_app.command()
 def projects() -> None:
     """List registered KiCad Cloud projects and bound device."""
+    if _is_windows():
+        from kicad_mcp.cloud_windows_user_cli import show_status
+
+        show_status()
+        return
     from kicad_mcp.cloud_local_registry import default_registry_root
     from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
@@ -615,6 +672,11 @@ def projects() -> None:
 @cloud_app.command()
 def status() -> None:
     """Show local Connector and Cloud registration status."""
+    if _is_windows():
+        from kicad_mcp.cloud_windows_user_cli import show_status
+
+        show_status()
+        return
     from kicad_mcp.cloud_local_registry import default_registry_root
     from kicad_mcp.cloud_managed_connector import main as connector
     from kicad_mcp.cloud_registered_pilot import _single_registered_identity
@@ -645,6 +707,11 @@ def status() -> None:
 @cloud_app.command()
 def enable() -> None:
     """Explicitly enable the Connector for one already-registered local project."""
+    if _is_windows():
+        from kicad_mcp.cloud_windows_user_cli import enable_existing
+
+        enable_existing(owner_terminal=_owner_terminal)
+        return
     from kicad_mcp.cloud_managed_connector import main as connector
 
     result = connector(["enable"])
@@ -655,6 +722,11 @@ def enable() -> None:
 @cloud_app.command()
 def disable() -> None:
     """Disable local Connector authority and stop its user service."""
+    if _is_windows():
+        from kicad_mcp.cloud_windows_user_cli import disable_local
+
+        disable_local()
+        return
     from kicad_mcp.cloud_managed_connector import main as connector
 
     result = connector(["disable"])
@@ -665,6 +737,11 @@ def disable() -> None:
 @cloud_app.command()
 def disconnect() -> None:
     """Disable local Connector authority and stop its user service."""
+    if _is_windows():
+        from kicad_mcp.cloud_windows_user_cli import disable_local
+
+        disable_local()
+        return
     from kicad_mcp.cloud_managed_connector import main as connector
 
     result = connector(["disable"])
@@ -675,6 +752,11 @@ def disconnect() -> None:
 @cloud_app.command()
 def reconnect() -> None:
     """Explicitly enable the Connector for one already-registered local project."""
+    if _is_windows():
+        from kicad_mcp.cloud_windows_user_cli import enable_existing
+
+        enable_existing(owner_terminal=_owner_terminal)
+        return
     from kicad_mcp.cloud_managed_connector import main as connector
 
     result = connector(["enable"])
@@ -685,6 +767,13 @@ def reconnect() -> None:
 @cloud_app.command("run", hidden=True)
 def run() -> None:
     """Run the Cloud Connector in the foreground."""
+    if _is_windows():
+        from kicad_mcp.cloud_windows_connector import main as windows_connector
+
+        result = windows_connector(["run"])
+        if result:
+            raise typer.Exit(result)
+        return
     from kicad_mcp.cloud_managed_connector import main as connector
 
     result = connector(["run"])

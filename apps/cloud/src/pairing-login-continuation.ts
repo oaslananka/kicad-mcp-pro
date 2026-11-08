@@ -19,6 +19,13 @@ export const pairingLoginContinuationClient=String.raw`"use strict";
   }
 
   if(window.location.pathname==="/devices/pairing"){
+    // Signed-in pages own their approval form and separate pairing-review.js.
+    // Let that script read and clear the fragment exactly once. Otherwise
+    // this login-continuation handler erases the code before the form loads.
+    if(document.getElementById("pairing-id-input")){
+      clear();
+      return;
+    }
     const hash=window.location.hash;
     // Fragment never appears in a request target. Remove it from the address bar
     // before any navigation, including to an external OAuth provider.

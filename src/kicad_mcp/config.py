@@ -307,7 +307,7 @@ class KiCadMCPConfig(BaseSettings):
     @field_validator("public_base_url")
     @classmethod
     def _validate_public_base_url(cls, value: str | None) -> str | None:
-        if value in (None, ""):
+        if value is None or value == "":
             return None
         normalized = value.strip().rstrip("/")
         parsed = urlparse(normalized)

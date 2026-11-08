@@ -334,6 +334,52 @@ jobs:
         if: env.skip_ci != 'true'
       - run: corepack pnpm run test:unit
         if: env.skip_ci != 'true'
+      # Preserve native Windows execution evidence instead of excluding
+      # Windows-only code from the required 90% Python patch coverage gate.
+      - name: Collect native Windows CLI coverage
+        if: >-
+          env.skip_ci != 'true' &&
+          matrix.os == 'windows-2025' &&
+          github.event_name == 'pull_request' &&
+          needs.changes.outputs.python == 'true'
+        shell: pwsh
+        run: |
+          $tests = @(
+            'tests/unit/test_cli_lifecycle.py'
+            'tests/unit/test_cli_diagnostics.py'
+            'tests/unit/test_cloud_windows_connector.py'
+            'tests/unit/test_cloud_windows_user_cli.py'
+            'tests/unit/test_cloud_windows_enrollment.py'
+            'tests/unit/test_cloud_windows_task_scheduler.py'
+            'tests/unit/test_cloud_windows_project_path.py'
+            'tests/unit/test_cloud_windows_local_selection.py'
+            'tests/unit/test_cloud_windows_binding.py'
+            'tests/unit/test_cloud_windows_credentials.py'
+            'tests/unit/test_cloud_windows_project_record.py'
+            'tests/cloud/test_cloud_pair.py'
+            'tests/unit/test_cloud_user_cli.py'
+            'tests/unit/test_dev_bootstrap.py'
+            'tests/unit/test_runtime_helpers.py'
+            'tests/unit/test_server_startup.py'
+          )
+          uv run python -m pytest -o addopts= -q @tests --disable-warnings --tb=line --cov=kicad_mcp --cov-fail-under=0 --cov-report=json:windows-coverage.json --cov-report=
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          uv run python scripts/merge_platform_coverage.py stamp --sha $env:GITHUB_SHA --run-id $env:GITHUB_RUN_ID --attempt $env:GITHUB_RUN_ATTEMPT
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload exact-run native Windows coverage
+        if: >-
+          env.skip_ci != 'true' &&
+          matrix.os == 'windows-2025' &&
+          github.event_name == 'pull_request' &&
+          needs.changes.outputs.python == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: windows-python-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            windows-coverage.json
+            windows-coverage-manifest.json
+          if-no-files-found: error
+          retention-days: 3
       - run: corepack pnpm run metadata:check
         if: env.skip_ci != 'true'
       - run: corepack pnpm run mcp:manifest:check
@@ -343,7 +389,7 @@ jobs:
 
   coverage:
     name: CI Tests / Coverage
-    needs: [changes, release-metadata]
+    needs: [changes, release-metadata, mcp-server]
     outputs:
       sonar_coverage_artifact_id: ${{ steps.sonar-coverage-upload.outputs.artifact-id }}
     if: >-
@@ -378,6 +424,27 @@ jobs:
         uses: ./.github/actions/python-full-suite
         with:
           junitxml: python.junit.xml
+      # Wait for the Windows runner's same-run artifact. Require its exact
+      # merge SHA/run/attempt and preserve the Linux full-suite result.
+      - name: Download native Windows coverage for this run
+        if: >-
+          env.skip_ci != 'true' &&
+          github.event_name == 'pull_request' &&
+          needs.changes.outputs.python == 'true' &&
+          steps.python-tests.outcome == 'success'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: windows-python-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Merge native Windows and Linux coverage
+        if: >-
+          env.skip_ci != 'true' &&
+          github.event_name == 'pull_request' &&
+          needs.changes.outputs.python == 'true' &&
+          steps.python-tests.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run python scripts/merge_platform_coverage.py merge             --sha "$GITHUB_SHA"             --run-id "$GITHUB_RUN_ID"             --attempt "$GITHUB_RUN_ATTEMPT"
       - name: Enforce Python patch coverage
         id: patch-coverage
         if: >-
@@ -786,12 +853,35 @@ jobs:
           enable-cache: true
           prune-cache: true
           version-file: uv.toml
+      # Pin an official Node 24 action and a stable Go toolchain; never rely
+      # on whichever Go happens to be preinstalled on the runner image.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: '1.27'
+          cache: false
       - run: uv sync --all-extras --frozen
       - name: Verify portable Agent Skills have no stale host copies
         run: uv run --all-extras python scripts/sync_agent_skills.py --check
       - name: Verify static agent host/extension configurations
         run: uv run --all-extras python scripts/check_agent_host_evidence.py
       - run: uv run --all-extras python scripts/check_github_actions_policy.py
+      # actionlint-py source builds fetch GitHub release binaries while
+      # resolving Python dependencies. Compile the pinned upstream module
+      # instead; preserve the required security and syntax checks.
+      - name: Install pinned actionlint from its upstream Go module
+        shell: bash
+        env:
+          GOTOOLCHAIN: local
+          GOPROXY: https://proxy.golang.org
+          GOSUMDB: sum.golang.org
+        run: |
+          set -euo pipefail
+          command -v go >/dev/null
+          export GOBIN="$RUNNER_TEMP/actionlint-bin"
+          mkdir -p "$GOBIN"
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$GOBIN/actionlint" -version | grep -F '1.7.12'
+          echo "$GOBIN" >> "$GITHUB_PATH"
       - run: uv run --all-extras python scripts/check_workflows.py --actionlint
       - run: uv run --all-extras python scripts/workflow_security.py --min-severity high
 

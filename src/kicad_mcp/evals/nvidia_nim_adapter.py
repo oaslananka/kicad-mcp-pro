@@ -666,7 +666,7 @@ def _optional_usage(usage: object, key: str) -> int | None:
         return None
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise _ModelOutputValidationError("usage_shape")
-    return value
+    return int(value)
 
 
 def _parse_classifier_content(content: str) -> tuple[str, list[str]]:

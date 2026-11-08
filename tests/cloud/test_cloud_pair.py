@@ -19,6 +19,32 @@ from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError, _load_owner_key
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="Owner-key persistence needs POSIX")
 
 
+def test_expired_challenge_never_opens_browser_or_contacts_cloud(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    monkeypatch.setattr(
+        cloud_pair,
+        "_post",
+        lambda *_args, **_kwargs: pytest.fail("expired pairing must not contact Cloud"),
+    )
+    owner_key = Ed25519PrivateKey.generate()
+
+    def no_browser() -> None:
+        pytest.fail("expired challenge must not open browser")
+
+    with pytest.raises(cloud_pair.CloudPairingTimeoutError):
+        cloud_pair._wait_for_owner_approval(
+            ("localhost", 443, "https://localhost"),
+            CHALLENGE,
+            SECRET,
+            owner_key,
+            0,
+            no_browser,
+        )
+
+
 def test_pairing_import_graph_excludes_unapproved_remote_read_code() -> None:
     """Pairing needs only owner-key storage, never project/WS read modules."""
     import ast
@@ -140,6 +166,32 @@ def test_owner_status_is_signed_and_polls_only_until_real_approval(
     assert delays == [8.0]
 
 
+def test_owner_status_explicit_denial_exits_immediately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = cloud_pair.Ed25519PrivateKey.generate()
+    seen: list[str] = []
+
+    def rejected(_origin: tuple[str, int, str], path: str, _body: dict, _status: int) -> dict:
+        seen.append(path)
+        return {"approved": False, "denied": True}
+
+    monkeypatch.setattr(cloud_pair, "_post", rejected)
+    monkeypatch.setattr(
+        cloud_pair.time, "sleep", lambda *_: pytest.fail("denied device must never keep polling")
+    )
+    deadline = time.time_ns() // 1_000_000 + 45_000
+    with pytest.raises(cloud_pair.CloudPairingDeniedError, match="denied"):
+        cloud_pair._wait_for_owner_approval(
+            ("localhost", 443, "https://localhost"),
+            CHALLENGE,
+            SECRET,
+            key,
+            deadline,
+        )
+    assert seen == ["/api/v1/pairing/device/status"]
+
+
 def test_owner_status_expires_without_redeeming(monkeypatch: pytest.MonkeyPatch) -> None:
     key = cloud_pair.Ed25519PrivateKey.generate()
     calls: list[str] = []
@@ -160,7 +212,15 @@ def test_owner_status_expires_without_redeeming(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.parametrize(
-    "reply", [{"approved": "true"}, {"approved": True, "unexpectedField": "extra"}, {}]
+    "reply",
+    [
+        {"approved": "true"},
+        {"approved": True, "unexpectedField": "extra"},
+        {"approved": True, "denied": True},
+        {"approved": False, "denied": False},
+        {"approved": False, "denied": "true"},
+        {},
+    ],
 )
 def test_owner_status_malformed_reply_fails_closed(
     monkeypatch: pytest.MonkeyPatch,

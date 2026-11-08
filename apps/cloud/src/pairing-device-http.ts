@@ -107,6 +107,10 @@ export async function handlePairingDeviceRequest(
       fields.data.deviceCode,signature);
     if(result.kind==="throttled"){reply(res,429,{error:"rate_limited"});return true;}
     if(result.kind!=="ok"){reply(res,400,{error:"unavailable"});return true;}
+    if(result.data.denied===true){
+      if(result.data.approved!==false){reply(res,500,{error:"unavailable"});return true;}
+      reply(res,200,{approved:false,denied:true});return true;
+    }
     reply(res,200,{approved:result.data.approved});return true;
   }
   if(path.endsWith("/redeem")){

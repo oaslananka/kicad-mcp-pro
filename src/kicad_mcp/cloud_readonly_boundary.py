@@ -171,6 +171,13 @@ def _read_presence_only(policy: OperatorProject) -> dict[str, bool]:
         or policy.filename_stem in {".", ".."}
     ):
         raise LocalReadDeniedError(_READ_DENIED)
+    if os.name == "nt":
+        # Import after the boundary types are defined to avoid an eager cycle.
+        # The owner-selected path is not a Cloud-supplied selector, and this
+        # function does NOT authenticate a user/device or enable the Connector.
+        from kicad_mcp.cloud_windows_project_path import read_windows_project_presence
+
+        return read_windows_project_presence(path, policy.filename_stem)
     descriptor: int | None = None
     try:
         descriptor = _open_operator_directory(path)

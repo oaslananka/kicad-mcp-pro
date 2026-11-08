@@ -25,10 +25,13 @@ use different uv versions without conflict.
 
 ## Local Setup
 
-`pnpm run workflows:lint` and `task workflows:lint` use the exact
-`actionlint-py` and `shellcheck-py` versions locked by `uv.lock`. A frozen
-`uv sync --all-extras` installs both binaries; no separate global install is
-required.
+`pnpm run workflows:lint` and `task workflows:lint` invoke upstream
+actionlint v1.7.12 and the ShellCheck version locked in `uv.lock`.
+Install actionlint locally with the [official Go method](https://github.com/rhysd/actionlint/blob/main/docs/install.md):
+`go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12`, then ensure
+the Go binary directory is on `PATH`. CI builds the same pinned version.
+`uv sync --all-extras` installs ShellCheck and Zizmor but no longer downloads
+a GitHub release binary during Python dependency resolution.
 
 ## Daily Workflow
 
@@ -68,9 +71,10 @@ For local workstation security scanners:
 task security:local
 ```
 
-This command uses the locked actionlint, ShellCheck, and Zizmor binaries from
-the project environment. Gitleaks remains a separately installed required
-scanner; missing tools fail with explicit installation guidance.
+This command uses the pinned upstream actionlint available on `PATH`, plus
+the locked ShellCheck and Zizmor binaries from the Python environment.
+Gitleaks remains a separately installed required scanner; missing tools fail
+with explicit installation guidance.
 
 ## Optional GitHub Actions Local Run
 

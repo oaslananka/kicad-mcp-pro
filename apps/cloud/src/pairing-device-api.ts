@@ -11,7 +11,7 @@ export interface PairingDevicePort {
   enroll(source:string,id:string,deviceCode:string,signature:Buffer):
     Promise<PairingDeviceOutcome<Enrollment>>;
   approved(source:string,id:string,deviceCode:string,signature:Buffer):
-    Promise<PairingDeviceOutcome<{approved:boolean}>>;
+    Promise<PairingDeviceOutcome<{approved:boolean;denied?:true}>>;
   registerProject?(source:string,deviceId:string,alias:string,signature:Buffer):
     Promise<PairingDeviceOutcome<RegisteredProject>>;
 }
@@ -67,14 +67,17 @@ export class PgPairingDeviceAPI implements PairingDevicePort {
     }
   }
   async approved(source:string,id:string,deviceCode:string,signature:Buffer):
-    Promise<PairingDeviceOutcome<{approved:boolean}>>{
+    Promise<PairingDeviceOutcome<{approved:boolean;denied?:true}>>{
     if(!source||source.length>256||typeof deviceCode!=="string"||!UUID.test(id)||deviceCode.length!==43||
        !Buffer.isBuffer(signature)||signature.length!==64)return {kind:"unavailable"};
     // Allow at most 40 checks within 15 minutes; DB counters saturate at 41.
     if(!await this.take("status-source",source,40))return {kind:"throttled"};
     if(!await this.take("status-challenge",id,40))return {kind:"throttled"};
     const approved=await this.store.approved(id,deviceCode,signature);
-    return approved===null?{kind:"unavailable"}:{kind:"ok",data:{approved}};
+    if(approved===null)return {kind:"unavailable"};
+    // Only the device proving BOTH its secret and key can see denial.
+    if(approved==="denied")return {kind:"ok",data:{approved:false,denied:true}};
+    return {kind:"ok",data:{approved}};
   }
   async enroll(source:string,id:string,deviceCode:string,signature:Buffer):
     Promise<PairingDeviceOutcome<Enrollment>>{

@@ -100,14 +100,42 @@ the GUI at `http://127.0.0.1:3334/ui`. Desktop releases launch the matching exac
 backend version and verify its desktop compatibility handshake before use; see
 [Installation](docs/installation.md#desktopbackend-compatibility).
 
-### CLI
+### CLI (recommended)
+
+Install the CLI once with [uv](https://docs.astral.sh/uv/concepts/tools/), then
+use the same command on Windows PowerShell, macOS, or Linux:
 
 ```bash
-uvx kicad-mcp-pro quickstart
-uvx kicad-mcp-pro tray
-uvx kicad-mcp-pro dashboard --open
-uvx kicad-mcp-pro --transport streamable-http --port 3334
+uv tool install kicad-mcp-pro
+kicad-mcp-pro --version
+kicad-mcp-pro setup
+kicad-mcp-pro doctor
 ```
+
+`setup` guides the local MCP client configuration without requiring a Cloud
+account. For scripts, use `kicad-mcp-pro setup --agent claude-code`; the
+existing `init` and `quickstart` aliases remain supported.
+
+To check for a stable update or safely remove a CLI installation:
+
+```bash
+kicad-mcp-pro update check
+kicad-mcp-pro uninstall
+# If installed with uv, perform the suggested action in your terminal:
+uv tool upgrade kicad-mcp-pro
+uv tool uninstall kicad-mcp-pro
+```
+
+`update check` and `uninstall` provide package-manager-aware guidance; they do
+not replace an in-use Python environment or delete KiCad projects. On systems
+with an old pip and a newer uv executable in `PATH`, run `doctor` before
+uninstalling anything. See [CLI installation and version management](docs/installation.md#terminal-cli-recommended)
+for the full instructions. Optional Cloud requires separate browser pairing
+and owner approval; local MCP does not depend on it.
+
+For disposable testing without a persistent installation, `uvx kicad-mcp-pro
+quickstart` remains available, as do `tray`, `dashboard --open`, and
+`--transport streamable-http --port 3334` for their respective tasks.
 
 ### KiCad PCB Editor Companion (development preview)
 
