@@ -53,6 +53,10 @@ class CloudPairingError(ValueError):
     """Do not leak credentials, internal errors, or private filesystem details."""
 
 
+class CloudPairingTimeoutError(CloudPairingError):
+    """Owner did not approve before the one-use challenge expired."""
+
+
 def default_registry_root() -> Path:
     """Same owner-private key root used by the non-released read prototype."""
     return Path.home() / ".local" / "share" / "kicad-mcp-cloud"
@@ -300,7 +304,7 @@ def _wait_for_owner_approval(
     while True:
         remaining = expiry_ms - time.time_ns() // 1_000_000
         if remaining <= 0:
-            raise CloudPairingError(_PAIRING_DENIED)
+            raise CloudPairingTimeoutError("Device pairing approval expired.")
         response = _post(origin, "/api/v1/pairing/device/status", body, 200)
         if set(response) != {"approved"} or type(response["approved"]) is not bool:
             raise CloudPairingError(_PAIRING_DENIED)

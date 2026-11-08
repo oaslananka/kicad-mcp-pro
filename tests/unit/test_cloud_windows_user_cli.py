@@ -194,6 +194,28 @@ def test_windows_cancel_refuses_before_cloud(
     assert not events
 
 
+def test_expired_owner_browser_approval_has_actionable_retry_message(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder, events, _project, _selected = windows_cli
+
+    def expire(**_kwargs: object) -> None:
+        raise cloud_windows_user_cli.WindowsEnrollmentTimeoutError(
+            "Device approval expired; no device was redeemed. "
+            "Start cloud setup again and approve within five minutes."
+        )
+
+    monkeypatch.setattr(cloud_windows_user_cli, "enroll_windows_device", expire)
+    result = CliRunner().invoke(
+        app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
+    )
+    assert result.exit_code != 0
+    assert "approval expired" in result.output
+    assert "five minutes" in result.output
+    assert "Windows Cloud registration was not fully completed" not in result.output
+    assert events == ["owner_confirm"]
+
+
 def test_windows_empty_project_refuses_before_cloud(
     windows_cli,
     tmp_path: Path,

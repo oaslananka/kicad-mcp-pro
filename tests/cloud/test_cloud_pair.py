@@ -19,6 +19,27 @@ from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError, _load_owner_key
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="Owner-key persistence needs POSIX")
 
 
+def test_expired_challenge_never_opens_browser_or_contacts_cloud(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    monkeypatch.setattr(
+        cloud_pair,
+        "_post",
+        lambda *_args, **_kwargs: pytest.fail("expired pairing must not contact Cloud"),
+    )
+    with pytest.raises(cloud_pair.CloudPairingTimeoutError):
+        cloud_pair._wait_for_owner_approval(
+            ("localhost", 443, "https://localhost"),
+            CHALLENGE,
+            SECRET,
+            Ed25519PrivateKey.generate(),
+            0,
+            lambda: pytest.fail("expired challenge must not open browser"),
+        )
+
+
 def test_pairing_import_graph_excludes_unapproved_remote_read_code() -> None:
     """Pairing needs only owner-key storage, never project/WS read modules."""
     import ast

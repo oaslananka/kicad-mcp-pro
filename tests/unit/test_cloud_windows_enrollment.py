@@ -208,6 +208,44 @@ def test_windows_forged_preapproval_is_denied_and_key_removed(
     assert events[-1] == "delete:key"
 
 
+def test_windows_owner_approval_expiry_erases_only_the_unredeemed_key(
+    fake_windows_pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, events, _state = fake_windows_pair
+
+    def expire(*_args: object, **_kwargs: object) -> None:
+        raise cloud_pair.CloudPairingTimeoutError("approval expired")
+
+    monkeypatch.setattr(cloud_pair, "_wait_for_owner_approval", expire)
+    with pytest.raises(cloud_windows_enrollment.WindowsEnrollmentTimeoutError):
+        cloud_windows_enrollment.enroll_windows_device(
+            origin=ORIGIN,
+            alias="Lab PC",
+            owner_approval=lambda *_: pytest.fail("expired challenge cannot be approved"),
+        )
+    assert not store
+    assert events == ["vault:key", "challenge", "delete:key"]
+
+
+def test_windows_owner_interrupt_cleans_unredeemed_key(
+    fake_windows_pair, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, events, _state = fake_windows_pair
+
+    def interrupt(*_args: object, **_kwargs: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cloud_pair, "_wait_for_owner_approval", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        cloud_windows_enrollment.enroll_windows_device(
+            origin=ORIGIN,
+            alias="Lab PC",
+            owner_approval=lambda *_: None,
+        )
+    assert not store
+    assert events == ["vault:key", "challenge", "delete:key"]
+
+
 def test_windows_vault_binding_failure_does_not_claim_success(
     fake_windows_pair,
     monkeypatch: pytest.MonkeyPatch,

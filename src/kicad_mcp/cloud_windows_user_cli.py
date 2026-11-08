@@ -21,6 +21,7 @@ from kicad_mcp.cloud_windows_connector import (
 )
 from kicad_mcp.cloud_windows_enrollment import (
     WindowsEnrolledDevice,
+    WindowsEnrollmentTimeoutError,
     WindowsRegisteredProject,
     enroll_windows_device,
     register_windows_project,
@@ -161,6 +162,8 @@ def setup_windows(
         )
         bind_owner_selected_project(project, directory, owner_confirm=lambda _path: True)
         remember_selected_project(project)
+    except WindowsEnrollmentTimeoutError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     except (OSError, ValueError, RuntimeError) as exc:
         raise typer.BadParameter(
             "Windows Cloud registration was not fully completed. "

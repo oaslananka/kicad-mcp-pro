@@ -44,6 +44,10 @@ class WindowsEnrollmentError(ValueError):
     """No Cloud pairing success may be inferred from a local error."""
 
 
+class WindowsEnrollmentTimeoutError(WindowsEnrollmentError):
+    """Unredeemed owner challenge expired; no remote device was created."""
+
+
 class WindowsPartialEnrollmentError(WindowsEnrollmentError):
     """Cloud may already have redeemed; owner must inspect the Devices page."""
 
@@ -201,6 +205,15 @@ def enroll_windows_device(
             device_id=device_id,
             fingerprint=fingerprint,
         )
+    except cloud_pair.CloudPairingTimeoutError as exc:
+        # The redeem request has not been sent. The finally clause wipes
+        # our temporary owner key; no Cloud device/project was registered.
+        if redeem_attempted:
+            raise WindowsPartialEnrollmentError(record_id) from exc
+        raise WindowsEnrollmentTimeoutError(
+            "Browser device approval expired; no Connector was started. "
+            "Start cloud setup again and approve within five minutes."
+        ) from exc
     except (OSError, ValueError, TypeError, LocalApprovalDeniedError) as exc:
         if redeem_attempted:
             # Leave the owner key for explicit recovery/revocation: deleting it
