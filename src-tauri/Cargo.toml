@@ -24,8 +24,8 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 which = "8"
 
 [target.'cfg(windows)'.dependencies]
-# Restrict teardown to the process tree launched by this desktop.
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading"] }
+# Safe Windows Job Objects with KILL_ON_JOB_CLOSE, for owned backend trees.
+win32job = "2.0.3"
 
 [target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
 tauri-plugin-single-instance = "2"

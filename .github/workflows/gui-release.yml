@@ -75,6 +75,16 @@ jobs:
       - name: Install Python package dependencies
         run: uv sync --all-extras --frozen
 
+      - name: Verify exact pinned desktop bootstrap version
+        shell: bash
+        run: |
+          expected="$(python -c 'import tomllib; print(tomllib.load(open("uv.toml", "rb"))["required-version"])')"
+          actual="$(uv --version | awk '{print $2}')"
+          if [[ -z "$expected" || "$actual" != "$expected" ]]; then
+            echo "Installed uv version does not match uv.toml"
+            exit 1
+          fi
+
       - name: Stage pinned app-owned uv
         run: uv run --no-sync python scripts/prepare_desktop_bootstrap.py
 

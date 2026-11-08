@@ -9,7 +9,6 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -18,20 +17,15 @@ ROOT = Path(__file__).resolve().parents[1]
 DEST = ROOT / "src-tauri" / "resources" / "bootstrap"
 
 
-def stage(executable: Path, destination: Path, required_version: str) -> tuple[str, str]:
+def stage(executable: Path, destination: Path) -> tuple[str, str]:
+    """Copy the setup-uv executable; release CI verifies its exact version first.
+
+    This stage is intentionally file-only. No arbitrary binary is executed by
+    the Python packaging helper. The pinned setup-uv Action and the explicit
+    version gate in gui-release.yml are mandatory before this runs.
+    """
     if not executable.is_file():
         raise RuntimeError("Pinned uv executable is unavailable")
-    result = subprocess.run(
-        [str(executable), "--version"], capture_output=True, check=False, timeout=12
-    )
-    actual = result.stdout.decode("utf-8", errors="replace").strip()
-    # uv emits a build hash and target triple after the version on some OSes.
-    parts = actual.split()
-    if result.returncode != 0 or parts[:2] not in (
-        ["uv", required_version],
-        ["uvx", required_version],
-    ):
-        raise RuntimeError("uvx version differs from the pinned release runtime")
     destination.mkdir(parents=True, exist_ok=True)
     filename = "uv.exe" if sys.platform == "win32" else "uv"
     target = destination / filename
@@ -50,8 +44,8 @@ def main() -> None:
     binary = shutil.which("uv")
     if binary is None:
         raise RuntimeError("setup-uv must install pinned uv before GUI packaging")
-    name, digest = stage(Path(binary), DEST, pin)
-    print(f"Staged release bootstrap {name} uv={pin} sha256={digest}")
+    name, digest = stage(Path(binary), DEST)
+    print(f"Staged release bootstrap {name} required_uv={pin} sha256={digest}")
 
 
 if __name__ == "__main__":

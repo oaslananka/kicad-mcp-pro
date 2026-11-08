@@ -1,58 +1,55 @@
-"""Published GUI bootstrap staging: exact uv version and app-owned artifact."""
+"""Release bootstrap staging only copies the pinned setup-uv executable."""
 
 from __future__ import annotations
 
 import hashlib
-import subprocess
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
 from scripts.prepare_desktop_bootstrap import stage
 
+ROOT = Path(__file__).resolve().parents[2]
 
-def test_stages_matching_version_without_global_install(tmp_path: Path) -> None:
+
+def test_stage_uses_exact_source_bytes_without_executing_a_binary(tmp_path: Path) -> None:
     source = tmp_path / "uv.exe"
     source.write_bytes(b"synthetic test-owned executable bytes")
-    out = tmp_path / "resource"
-    with patch(
-        "scripts.prepare_desktop_bootstrap.subprocess.run",
-        return_value=subprocess.CompletedProcess(
-            [str(source), "--version"], 0, stdout=b"uv 0.13.5 (test-build x86_64-pc-windows-msvc)"
-        ),
-    ) as run:
-        filename, digest = stage(source, out, "0.13.5")
-    run.assert_called_once_with(
-        [str(source), "--version"], capture_output=True, check=False, timeout=12
-    )
+    output = tmp_path / "resource"
+    filename, digest = stage(source, output)
     assert filename in ("uv", "uv.exe")
-    assert (out / filename).read_bytes() == source.read_bytes()
+    assert (output / filename).read_bytes() == source.read_bytes()
     assert digest == hashlib.sha256(source.read_bytes()).hexdigest()
-    assert source.is_file()
+    assert source.read_bytes() == b"synthetic test-owned executable bytes"
 
 
-@pytest.mark.parametrize(
-    "version,exit_code",
-    [("uv 0.13.4", 0), ("uv 99.0", 0), ("uv 0.13.5", 1)],
-)
-def test_refuses_unpinned_or_failing_binary(tmp_path: Path, version: str, exit_code: int) -> None:
-    source = tmp_path / "uv.exe"
-    source.write_bytes(b"synthetic")
-    out = tmp_path / "resources"
-    with patch(
-        "scripts.prepare_desktop_bootstrap.subprocess.run",
-        return_value=subprocess.CompletedProcess(
-            [str(source), "--version"], exit_code, stdout=version.encode()
-        ),
-    ):
-        with pytest.raises(RuntimeError, match="pinned release runtime"):
-            stage(source, out, "0.13.5")
-    assert not out.exists()
+def test_stage_replaces_only_own_binary_and_removes_platform_stale_entry(tmp_path: Path) -> None:
+    source = tmp_path / "source-uv"
+    source.write_bytes(b"new")
+    output = tmp_path / "bundle"
+    output.mkdir()
+    (output / "uv").write_bytes(b"old")
+    (output / "uv.exe").write_bytes(b"old")
+    filename, digest = stage(source, output)
+    assert (output / filename).read_bytes() == b"new"
+    assert digest == hashlib.sha256(b"new").hexdigest()
+    stale = output / ("uv" if filename == "uv.exe" else "uv.exe")
+    assert not stale.exists()
 
 
 def test_refuses_missing_binary_without_creating_output(tmp_path: Path) -> None:
     output = tmp_path / "resources"
     with pytest.raises(RuntimeError, match="unavailable"):
-        stage(tmp_path / "missing", output, "0.13.5")
+        stage(tmp_path / "missing", output)
     assert not output.exists()
+
+
+def test_release_workflow_checks_version_before_staging() -> None:
+    workflow = (ROOT / ".github/workflows/gui-release.yml").read_text(encoding="utf-8")
+    gate = workflow.index("Verify exact pinned desktop bootstrap version")
+    stage_step = workflow.index("Stage pinned app-owned uv")
+    build_step = workflow.index("Build Tauri installer")
+    assert gate < stage_step < build_step
+    assert "uv --version" in workflow
+    assert "uv.toml" in workflow
+    assert "Installed uv version does not match uv.toml" in workflow
