@@ -291,3 +291,164 @@ def test_tampered_selected_project_fails_without_auto_pairing(
     with pytest.raises(LocalApprovalDeniedError):
         connector.selected_project()
     assert connector.local_state() == "Off"
+
+
+def test_connector_rejects_corrupt_vault_records_and_missing_identity(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, vault, _directory = local_user_connector
+    active_key = (connector._ACTIVE_RECORD_ID, "active")
+    selected_key = (connector._SELECTED_RECORD_ID, "selected")
+    valid_marker = {
+        "registrationId": project.registration_id,
+        "recordId": project.record_id,
+        "deviceId": project.device_id,
+        "projectId": project.project_id,
+    }
+    for malformed in [b"x" * 1025, b'{"deviceId":"bad"}', b"[]"]:
+        vault[active_key] = malformed
+        with pytest.raises(LocalApprovalDeniedError):
+            connector._active_marker()
+    vault[active_key] = json.dumps(valid_marker).encode()
+    registration = vault.pop((project.registration_id, "registration"))
+    with pytest.raises(LocalApprovalDeniedError):
+        connector._active()
+    vault[(project.registration_id, "registration")] = registration
+    vault[(project.registration_id, "registration")] = b"x" * 2049
+    with pytest.raises(LocalApprovalDeniedError):
+        connector._active()
+    vault[(project.registration_id, "registration")] = registration
+    monkeypatch.setattr(
+        connector, "inspect_project_reference", lambda **_kw: SimpleNamespace(fingerprint="bad")
+    )
+    with pytest.raises(LocalApprovalDeniedError):
+        connector._active()
+    monkeypatch.setattr(
+        connector,
+        "inspect_project_reference",
+        lambda **_kw: SimpleNamespace(fingerprint=project.fingerprint),
+    )
+
+    for malformed in [b"x" * 1025, b'{"deviceId":"bad"}', b"[]"]:
+        vault[selected_key] = malformed
+        with pytest.raises(LocalApprovalDeniedError):
+            connector.selected_project()
+    vault.pop(selected_key)
+    assert connector.selected_project() is None
+
+
+def test_connector_rejects_missing_or_mismatched_private_keys(
+    local_user_connector,
+) -> None:
+    project, vault, _directory = local_user_connector
+    connector.activate(project, owner_confirm=lambda _: True)
+    key_id = (project.record_id, "key")
+    valid = vault.pop(key_id)
+    with pytest.raises(LocalApprovalDeniedError):
+        connector._active()
+    vault[key_id] = valid
+    replacement = Ed25519PrivateKey.generate()
+    vault[key_id] = replacement.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+    with pytest.raises(LocalApprovalDeniedError):
+        connector._active()
+
+
+def test_connector_denies_invalid_owner_selection_or_dispatch(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, _vault, directory = local_user_connector
+    with pytest.raises(LocalApprovalDeniedError):
+        connector.remember_selected_project(object())  # type: ignore[arg-type]
+    with pytest.raises(LocalApprovalDeniedError):
+        connector.activate(object(), owner_confirm=lambda _: True)  # type: ignore[arg-type]
+    selected = WindowsLocalProjectSelection(
+        registration_id=project.registration_id,
+        record_id=project.record_id,
+        device_id=project.device_id,
+        project_id="different-project",
+        filename_stem=project.filename_stem,
+        directory=directory,
+    )
+    monkeypatch.setattr(connector, "inspect_owner_selected_project", lambda _: selected)
+    with pytest.raises(LocalApprovalDeniedError):
+        connector.activate(project, owner_confirm=lambda _: True)
+
+    receipt = HandshakeReceipt(device_id="wrong-device", session_id="session")
+    with pytest.raises(LocalApprovalDeniedError):
+        connector._dispatcher(project, selected, receipt)
+    monkeypatch.setattr(connector, "_active", lambda: (_ for _ in ()).throw(OSError("vault")))
+    assert connector._current_authorization(project) is False
+
+
+def test_connector_posix_guards_remain_fail_closed(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, _vault, _directory = local_user_connector
+    monkeypatch.setattr(connector, "os", SimpleNamespace(name="posix"))
+    with pytest.raises(LocalApprovalDeniedError):
+        connector._active_marker()
+    with pytest.raises(LocalApprovalDeniedError):
+        connector.selected_project()
+    with pytest.raises(LocalApprovalDeniedError):
+        connector.remember_selected_project(project)
+    with pytest.raises(LocalApprovalDeniedError):
+        connector.activate(project, owner_confirm=lambda _: True)
+    with pytest.raises(LocalApprovalDeniedError):
+        connector.deactivate()
+    assert connector.local_state() == "Unavailable"
+
+
+@pytest.mark.asyncio
+async def test_connector_refuses_non_windows_session_before_socket(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(connector, "os", SimpleNamespace(name="posix"))
+
+    async def unreachable(**_kwargs: object) -> HandshakeReceipt:
+        raise AssertionError("must not open a Cloud session")
+
+    with pytest.raises(LocalApprovalDeniedError):
+        await connector.run_connector(stop=asyncio.Event(), session_runner=unreachable)
+
+
+def test_connector_scheduled_entrypoint_requires_local_marker(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    project, _vault, _directory = local_user_connector
+    assert connector.main(["run"]) == 2
+    assert "Off" in capsys.readouterr().err
+    connector.activate(project, owner_confirm=lambda _: True)
+
+    def fake_run(task: object) -> None:
+        task.close()
+
+    monkeypatch.setattr(connector.asyncio, "run", fake_run)
+    assert connector.main(["run"]) == 0
+
+    def stopped(task: object) -> None:
+        task.close()
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(connector.asyncio, "run", stopped)
+    assert connector.main(["run"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_connector_retries_transient_session_failures_and_cancels(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, _vault, _directory = local_user_connector
+    connector.activate(project, owner_confirm=lambda _: True)
+    stop = asyncio.Event()
+    calls: list[str] = []
+    monkeypatch.setattr(connector, "reconnect_delay_seconds", lambda *_args: 0)
+
+    async def unstable(**_kwargs: object) -> HandshakeReceipt:
+        calls.append("attempt")
+        if len(calls) == 1:
+            raise OSError("transient socket failure")
+        stop.set()
+        return HandshakeReceipt(device_id=project.device_id, session_id="session")
+
+    await asyncio.wait_for(connector.run_connector(stop=stop, session_runner=unstable), 3)
+    assert len(calls) == 2

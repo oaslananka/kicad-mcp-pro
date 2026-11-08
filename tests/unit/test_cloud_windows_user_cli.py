@@ -346,3 +346,193 @@ def test_native_posix_guards_still_exist(
     windows_cli,
 ) -> None:
     assert callable(cloud_user_cli._local_pairing_storage_supported)
+
+
+def test_windows_cwd_and_owner_chosen_folder_are_verified(
+    windows_cli, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    folder, _events, _project, _selected = windows_cli
+    monkeypatch.chdir(folder)
+    path, stem = cloud_windows_user_cli._choose_project(
+        None, browse=False, picker=lambda: pytest.fail("unexpected picker")
+    )
+    assert (path, stem) == (folder, "demo")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cloud_windows_user_cli.typer, "prompt", lambda *_args: str(folder))
+    assert cloud_windows_user_cli._choose_project(None, browse=False, picker=lambda: folder) == (
+        folder,
+        "demo",
+    )
+    assert cloud_windows_user_cli._choose_project(
+        None, browse=True, picker=lambda: folder.relative_to(tmp_path)
+    ) == (folder, "demo")
+
+
+def test_windows_project_selector_limits_directory_and_rejects_invalid_picker(
+    windows_cli, tmp_path: Path
+) -> None:
+    _folder, events, _project, _selected = windows_cli
+    with pytest.raises(Exception, match="Invalid local KiCad project directory"):
+        cloud_windows_user_cli._choose_project(
+            None,
+            browse=True,
+            picker=lambda: "not-a-path",  # type: ignore[return-value]
+        )
+
+    crowded = tmp_path / "crowded"
+    crowded.mkdir()
+    (crowded / "demo.kicad_pro").touch()
+    for i in range(129):
+        (crowded / f"unrelated-{i}.txt").touch()
+    with pytest.raises(Exception, match="unsafe link") as caught:
+        cloud_windows_user_cli._choose_project(
+            crowded, browse=False, picker=lambda: pytest.fail("unexpected picker")
+        )
+    assert "too many entries" in str(caught.value.__cause__)
+    assert not events
+
+
+def test_windows_existing_device_cannot_be_replaced_or_switch_origin(
+    windows_cli,
+) -> None:
+    folder, events, _project, _selected = windows_cli
+    first = CliRunner().invoke(
+        app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
+    )
+    assert first.exit_code == 0
+    events.clear()
+    again = CliRunner().invoke(
+        app,
+        ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder), "--new-device"],
+    )
+    assert again.exit_code != 0
+    assert "already registered" in again.output
+    assert not events
+
+    with pytest.raises(Exception, match="different Cloud origin"):
+        cloud_windows_user_cli.setup_windows(
+            origin=ORIGIN + "/another",
+            alias="Lab PC",
+            project_dir=folder,
+            browse=False,
+            new_device=False,
+            approval=lambda *_: pytest.fail("owner approval not reached"),
+            picker=lambda: folder,
+            owner_terminal=lambda: True,
+        )
+    assert not events
+
+
+def test_windows_existing_device_off_may_remain_off_by_owner_choice(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder, events, _project, _selected = windows_cli
+    assert (
+        CliRunner()
+        .invoke(app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)])
+        .exit_code
+        == 0
+    )
+    events.clear()
+    monkeypatch.setattr(cloud_windows_user_cli, "local_state", lambda: "Off")
+    monkeypatch.setattr(cloud_windows_user_cli.typer, "confirm", lambda *_a, **_kw: False)
+    result = CliRunner().invoke(
+        app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
+    )
+    assert result.exit_code == 0
+    assert "remains Off" in result.output
+    assert not events
+
+
+def test_windows_corrupt_selection_and_registration_errors_never_start_connector(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder, events, _project, _selected = windows_cli
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "selected_project",
+        lambda: (_ for _ in ()).throw(OSError("vault read failed")),
+    )
+    error = CliRunner().invoke(
+        app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
+    )
+    assert error.exit_code != 0
+    assert "needs local repair" in error.output
+    assert not events
+
+    monkeypatch.setattr(cloud_windows_user_cli, "selected_project", lambda: None)
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "register_windows_project",
+        lambda *_a, **_kw: (_ for _ in ()).throw(OSError("cloud registration failure")),
+    )
+    bad_register = CliRunner().invoke(
+        app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
+    )
+    assert bad_register.exit_code != 0
+    assert "not fully completed" in bad_register.output
+    assert "schedule" not in events
+
+
+def test_windows_enable_requires_owner_consent_and_preserves_current_session(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder, events, _project, _selected = windows_cli
+    with pytest.raises(Exception, match="interactive owner terminal"):
+        cloud_windows_user_cli.enable_existing(owner_terminal=lambda: False)
+    missing = CliRunner().invoke(app, ["cloud", "enable"])
+    assert missing.exit_code != 0
+    assert "No registered Windows project" in missing.output
+    assert not events
+
+    assert (
+        CliRunner()
+        .invoke(app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)])
+        .exit_code
+        == 0
+    )
+    events.clear()
+    already_on = CliRunner().invoke(app, ["cloud", "enable"])
+    assert already_on.exit_code == 0
+    assert "Connector:" in already_on.output
+    assert not events
+
+    monkeypatch.setattr(cloud_windows_user_cli, "local_state", lambda: "Off")
+    monkeypatch.setattr(cloud_windows_user_cli.typer, "confirm", lambda *_a, **_kw: False)
+    cancelled = CliRunner().invoke(app, ["cloud", "enable"])
+    assert cancelled.exit_code == 0
+    assert "remains Off" in cancelled.output
+    assert not events
+    monkeypatch.setattr(cloud_windows_user_cli.typer, "confirm", lambda *_a, **_kw: True)
+    activated = CliRunner().invoke(app, ["cloud", "enable"])
+    assert activated.exit_code == 0
+    assert "Connector scheduled" in activated.output
+    assert events == ["schedule"]
+
+
+def test_windows_status_and_disable_fail_closed_for_unverifiable_state(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _folder, _events, _project, _selected = windows_cli
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "selected_project",
+        lambda: (_ for _ in ()).throw(OSError("corrupt state")),
+    )
+    bad_status = CliRunner().invoke(app, ["cloud", "status"])
+    assert bad_status.exit_code == 1
+    assert "needs repair" in bad_status.output
+
+    monkeypatch.setattr(cloud_windows_user_cli, "disable_windows_connector", lambda: False)
+    failed_stop = CliRunner().invoke(app, ["cloud", "disable"])
+    assert failed_stop.exit_code == 1
+    assert "not verified" in failed_stop.output
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "disable_windows_connector",
+        lambda: (_ for _ in ()).throw(OSError("task scheduler unavailable")),
+    )
+    fail = CliRunner().invoke(app, ["cloud", "disconnect"])
+    assert fail.exit_code != 0
+    assert "could not be fully verified" in fail.output

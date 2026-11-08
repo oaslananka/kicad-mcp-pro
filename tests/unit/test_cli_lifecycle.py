@@ -155,6 +155,154 @@ def test_unmanaged_pip_update_is_guidance_only(monkeypatch) -> None:
     assert "No update was installed automatically." in result.output
 
 
+def test_checked_pypi_release_uses_tls_verified_exact_package_without_mutating(
+    monkeypatch,
+) -> None:
+    from kicad_mcp.cli_lifecycle import _fetch_latest_stable
+
+    recorded: list[str] = []
+
+    class Response:
+        status = 200
+
+        def read(self, limit: int) -> bytes:
+            assert limit > 1024
+            recorded.append("read")
+            return b'{"info":{"name":"kicad_mcp_pro","version":"99.0.0"}}'
+
+        def release_conn(self) -> None:
+            recorded.append("release")
+
+    class Pool:
+        def request(self, verb: str, path: str, **kwargs: object) -> Response:
+            assert (verb, path) == ("GET", "/pypi/kicad-mcp-pro/json")
+            assert kwargs["redirect"] is False
+            recorded.append("request")
+            return Response()
+
+        def close(self) -> None:
+            recorded.append("close")
+
+    def factory(host: str, port: int, **kwargs: object) -> Pool:
+        assert (host, port, kwargs["cert_reqs"]) == ("pypi.org", 443, "CERT_REQUIRED")
+        return Pool()
+
+    monkeypatch.setattr("kicad_mcp.cli_lifecycle.urllib3.HTTPSConnectionPool", factory)
+    assert _fetch_latest_stable() == "99.0.0"
+    assert recorded == ["request", "read", "release", "close"]
+
+
+def test_checked_pypi_release_rejects_invalid_metadata_without_retry(
+    monkeypatch,
+) -> None:
+    import pytest
+
+    from kicad_mcp.cli_lifecycle import ReleaseLookupError, _fetch_latest_stable
+
+    cases = [
+        (503, b'{"info":{"name":"kicad-mcp-pro","version":"99.0.0"}}'),
+        (200, b'{"info":{"name":"other-package","version":"99.0.0"}}'),
+        (200, b'{"info":{"name":"kicad-mcp-pro","version":"99.0.0rc1"}}'),
+        (200, b'{"info":{"name":"kicad-mcp-pro","version":"not-a-version"}}'),
+        (200, b"not-json"),
+    ]
+
+    def check_case(status: int, blob: bytes) -> None:
+        seen: list[str] = []
+
+        class Response:
+            def __init__(self) -> None:
+                self.status = status
+
+            def read(self, _limit: int) -> bytes:
+                seen.append("read")
+                return blob
+
+            def release_conn(self) -> None:
+                seen.append("release")
+
+        class Pool:
+            def request(self, *_a: object, **_kw: object) -> Response:
+                seen.append("request")
+                return Response()
+
+            def close(self) -> None:
+                seen.append("close")
+
+        monkeypatch.setattr(
+            "kicad_mcp.cli_lifecycle.urllib3.HTTPSConnectionPool",
+            lambda *_a, **_kw: Pool(),
+        )
+        with pytest.raises(ReleaseLookupError):
+            _fetch_latest_stable()
+        assert seen[-2:] == ["release", "close"]
+        assert seen.count("request") == 1
+
+    for status, blob in cases:
+        check_case(status, blob)
+
+
+def test_pypi_release_metadata_size_limit_is_fail_closed(monkeypatch) -> None:
+    import pytest
+
+    from kicad_mcp.cli_lifecycle import (
+        ReleaseLookupError,
+        _fetch_latest_stable,
+    )
+
+    class Response:
+        status = 200
+
+        def read(self, limit: int) -> bytes:
+            return b"x" * limit
+
+        def release_conn(self) -> None:
+            return
+
+    class Pool:
+        def request(self, *_a: object, **_kw: object) -> Response:
+            return Response()
+
+        def close(self) -> None:
+            return
+
+    monkeypatch.setattr(
+        "kicad_mcp.cli_lifecycle.urllib3.HTTPSConnectionPool",
+        lambda *_a, **_kw: Pool(),
+    )
+    with pytest.raises(ReleaseLookupError, match="size limit"):
+        _fetch_latest_stable()
+
+
+def test_plain_update_covers_current_and_known_manager_commands(monkeypatch) -> None:
+    from kicad_mcp.cli_lifecycle import _manager_command
+
+    assert _manager_command("pipx", "upgrade") == "pipx upgrade kicad-mcp-pro"
+    assert _manager_command("pipx", "uninstall") == "pipx uninstall kicad-mcp-pro"
+
+    monkeypatch.setattr("kicad_mcp.cli_lifecycle._fetch_latest_stable", lambda: "1.0.0")
+    current = CliRunner().invoke(app, ["update"])
+    assert current.exit_code == 0
+    assert "Already up to date" in current.output
+
+    monkeypatch.setattr("kicad_mcp.cli_lifecycle._fetch_latest_stable", lambda: "99.0.0")
+    monkeypatch.setattr("kicad_mcp.cli_lifecycle._install_manager", lambda: "pipx")
+    later = CliRunner().invoke(app, ["update"])
+    assert later.exit_code == 0
+    assert "Upgrade using your package manager: pipx upgrade kicad-mcp-pro" in later.output
+
+    def fail() -> str:
+        from kicad_mcp.cli_lifecycle import ReleaseLookupError
+
+        raise ReleaseLookupError("index offline")
+
+    monkeypatch.setattr("kicad_mcp.cli_lifecycle._fetch_latest_stable", fail)
+    offline = CliRunner().invoke(app, ["update"])
+    assert offline.exit_code == 3
+    assert "Update check unavailable: index offline" in offline.output
+    assert "installed version has not been changed" in offline.output
+
+
 def test_setup_without_agent_is_safe_in_noninteractive_mode(monkeypatch) -> None:
     monkeypatch.setattr(
         "kicad_mcp.setup.run_wizard", lambda: (_ for _ in ()).throw(AssertionError("wizard"))
