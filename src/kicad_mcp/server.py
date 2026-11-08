@@ -2641,7 +2641,9 @@ def main_callback(
     ),
 ) -> None:
     """Start the KiCad MCP Pro server when no subcommand is supplied."""
-    if show_version:
+    # Direct Python calls receive Typer's OptionInfo default, which is truthy.
+    # Only an actual CLI --version flag may exit before server startup.
+    if show_version is True:
         typer.echo(__version__)
         raise typer.Exit()
     _apply_cli_env(
