@@ -75,6 +75,9 @@ jobs:
       - name: Install Python package dependencies
         run: uv sync --all-extras --frozen
 
+      - name: Stage pinned app-owned uv
+        run: uv run --no-sync python scripts/prepare_desktop_bootstrap.py
+
       - name: Verify Tauri lockfile
         working-directory: src-tauri
         run: cargo metadata --locked --format-version 1 --no-deps
@@ -89,7 +92,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # Apple signing secrets are not configured - skip codesigning on macOS.
           TAURI_SKIP_CODESIGNING: ${{ runner.os == 'macOS' && '1' || '' }}
-        run: cargo tauri build ${{ matrix.args }} -- --locked
+        run: cargo tauri build --config tauri.bootstrap.conf.json ${{ matrix.args }} -- --locked
 
       - name: Upload Tauri bundles
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

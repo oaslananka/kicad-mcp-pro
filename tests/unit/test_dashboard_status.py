@@ -35,3 +35,14 @@ def test_dashboard_status_distinguishes_degraded_from_error() -> None:
         or "status-dot warn" in DASHBOARD_HTML
         or "degraded" in DASHBOARD_HTML
     )
+
+
+def test_local_cleanup_requires_explicit_preview_and_user_click() -> None:
+    from kicad_mcp.web.dashboard import DASHBOARD_HTML
+
+    assert "function previewCleanup()" in DASHBOARD_HTML
+    assert "function applyCleanup(confirmation, button)" in DASHBOARD_HTML
+    assert "/api/maintenance/cleanup/preview" in DASHBOARD_HTML
+    assert "/api/maintenance/cleanup/apply" in DASHBOARD_HTML
+    assert "Clean reviewed local settings" in DASHBOARD_HTML
+    assert "does not revoke Cloud device or AI access" in DASHBOARD_HTML

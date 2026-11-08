@@ -295,7 +295,7 @@ def test_macos_keychain_binding_rejects_invalid_format(
     assert commands[0][-2:] == [RECORD_ID + "_binding", "-w"]
 
 
-def test_macos_keychain_missing_record_and_disabled_writes(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_macos_keychain_missing_record_and_failed_writes(monkeypatch: pytest.MonkeyPatch) -> None:
     commands: list[list[str]] = []
 
     def missing(cmd: list[str], **_kwargs: object) -> _FakeProcessResult:
@@ -307,11 +307,12 @@ def test_macos_keychain_missing_record_and_disabled_writes(monkeypatch: pytest.M
     assert store.load_binding(RECORD_ID) is None
     assert store.delete_credentials(RECORD_ID) is False
     assert len(commands) == 3
-    with pytest.raises(RuntimeError, match="unavailable"):
+    with pytest.raises(RuntimeError, match="write failed"):
         store.save_key(RECORD_ID, b"secret")
     binding = _binding()
-    with pytest.raises(RuntimeError, match="unavailable"):
+    with pytest.raises(RuntimeError, match="write failed"):
         store.save_binding(RECORD_ID, binding)
+    assert commands[-2:] == [["/usr/bin/security", "-i"]] * 2
     with pytest.raises(ValueError):
         store.load_binding("../unsafe")
 

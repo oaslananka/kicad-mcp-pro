@@ -53,6 +53,8 @@ pub struct ServerStatus {
 
 pub struct ServerProcess {
     pub child: Mutex<Option<Child>>,
+    /// Packaged uvx/uv runtime; never modifies the user's global Python or PATH.
+    pub bundled_uv: Mutex<Option<PathBuf>>,
     pub error: Mutex<Option<String>>,
     pub working_dir: Mutex<Option<PathBuf>>,
     pub preparation_stage: Mutex<String>,
@@ -64,6 +66,7 @@ impl ServerProcess {
     pub fn new() -> Self {
         Self {
             child: Mutex::new(None),
+            bundled_uv: Mutex::new(None),
             error: Mutex::new(None),
             working_dir: Mutex::new(None),
             preparation_stage: Mutex::new("idle".to_string()),
@@ -240,57 +243,29 @@ fn user_runtime_dir() -> Option<PathBuf> {
     }
 }
 
-fn which_uvx() -> Option<PathBuf> {
-    if let Ok(path) = which::which("uvx") {
-        return Some(path);
-    }
-    if let Some(runtime) = user_runtime_dir() {
-        let binary_name = if cfg!(windows) { "uvx.exe" } else { "uvx" };
-        let candidate = runtime.join("bin").join(binary_name);
-        if candidate.exists() {
-            return Some(candidate);
+fn desktop_uv(process: &ServerProcess) -> Option<PathBuf> {
+    let packaged = process
+        .bundled_uv
+        .lock()
+        .ok()
+        .and_then(|value| value.clone());
+    if let Some(path) = packaged {
+        if path.is_file() {
+            return Some(path);
         }
     }
-    #[cfg(windows)]
-    {
-        let tools_candidate = PathBuf::from("C:\\tools\\uvx.exe");
-        if tools_candidate.exists() {
-            return Some(tools_candidate);
-        }
-        if let Some(home) = std::env::var_os("USERPROFILE") {
-            // uv installed via cargo: ~/.cargo/bin/uvx.exe
-            let candidate = PathBuf::from(&home)
-                .join(".cargo")
-                .join("bin")
-                .join("uvx.exe");
-            if candidate.exists() {
-                return Some(candidate);
-            }
-            // uv installed via official installer (irm https://astral.sh/uv/install.ps1): ~/.local/bin/uvx.exe
-            let candidate = PathBuf::from(&home)
-                .join(".local")
-                .join("bin")
-                .join("uvx.exe");
-            if candidate.exists() {
-                return Some(candidate);
-            }
-        }
-        // Also check common uv install locations on Windows
-        for base in ["LOCALAPPDATA", "APPDATA"] {
-            if let Some(var) = std::env::var_os(base) {
-                let candidate = PathBuf::from(var).join("uv").join("uvx.exe");
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-            }
-        }
+    // Local source development may continue using installed uvx. Release
+    // bundles must carry their own reviewed, pinned bootstrap executable.
+    if cfg!(debug_assertions) {
+        which::which("uv").ok()
+    } else {
+        None
     }
-    None
 }
 
 fn manual_backend_command(port: u16) -> String {
     format!(
-        "uvx --from {} kicad-mcp-pro dashboard --host 127.0.0.1 --port {port}",
+        "uv tool run --from {} kicad-mcp-pro dashboard --host 127.0.0.1 --port {port}",
         backend_package_spec()
     )
 }
@@ -401,14 +376,10 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
     }
 
     set_stage(process, "preparing_environment");
-    let uvx = which_uvx().ok_or_else(|| {
+    let uvx = desktop_uv(process).ok_or_else(|| {
         set_stage(process, "failed");
-        let hint = if cfg!(target_os = "windows") {
-            "Install uv from PowerShell: (irm https://astral.sh/uv/install.ps1) | iex"
-        } else {
-            "Install uv: curl -fsSL https://astral.sh/uv/install.sh | sh"
-        };
-        format!("uvx was not found. {hint}")
+        "The application-owned Python bootstrap is missing. Repair or reinstall the official KiCad MCP Pro desktop package; your KiCad projects are unchanged."
+            .to_string()
     })?;
     // Use user-selected working directory (if set), or fall back to HOME
     let cwd = process
@@ -436,8 +407,21 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
     // it must never fall forward or backward to another release.
     let backend_spec = backend_package_spec();
     let mut cmd = Command::new(&uvx);
+    // Keep Python and downloaded dependencies in app-owned user storage;
+    // do not modify system Python, uv settings or shared package caches.
+    if let Some(runtime) = user_runtime_dir() {
+        std::fs::create_dir_all(&runtime)
+            .map_err(|_| "Could not prepare private desktop runtime storage.".to_string())?;
+        cmd.env("UV_CACHE_DIR", runtime.join("cache"))
+            .env("UV_PYTHON_INSTALL_DIR", runtime.join("python"))
+            .env("UV_PYTHON_PREFERENCE", "only-managed")
+            .env("UV_NO_CONFIG", "1")
+            .env("UV_NO_PROGRESS", "1");
+    }
     cmd.current_dir(&cwd)
         .args([
+            "tool",
+            "run",
             "--from",
             backend_spec.as_str(),
             "kicad-mcp-pro",
@@ -1032,6 +1016,18 @@ pub fn run() {
             }
             let _ = tray.build(app)?;
 
+            // Tauri resolves the platform-specific installed resource path.
+            let executable = if cfg!(windows) { "uv.exe" } else { "uv" };
+            if let Ok(resource) = app.path().resolve(
+                format!("bootstrap/{executable}"),
+                tauri::path::BaseDirectory::Resource,
+            ) {
+                if resource.is_file() {
+                    if let Ok(mut slot) = app.state::<ServerProcess>().bundled_uv.lock() {
+                        *slot = Some(resource);
+                    }
+                }
+            }
             spawn_background_checks(app.handle().clone());
             Ok(())
         })
@@ -1171,6 +1167,14 @@ mod tests {
         ));
         assert!(!allowed_external_link("http://localhost:3334/"));
         assert!(!allowed_external_link(""));
+    }
+
+    #[test]
+    fn desktop_prefers_packaged_uv_to_global_tools() {
+        let process = ServerProcess::new();
+        let task_owned = std::env::current_exe().expect("test executable is a file");
+        *process.bundled_uv.lock().expect("runtime lock") = Some(task_owned.clone());
+        assert_eq!(desktop_uv(&process), Some(task_owned));
     }
 
     #[test]

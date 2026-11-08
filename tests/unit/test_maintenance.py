@@ -91,3 +91,56 @@ def test_cleanup_preview_lists_owned_client_entries(tmp_path, monkeypatch) -> No
         {"client": "claude", "config_file": str(tmp_path / "claude-settings.json")}
     ]
     assert not preview.targets_to_remove
+
+
+def test_repair_never_reports_success_while_kicad_diagnosis_fails(tmp_path, monkeypatch) -> None:
+    import kicad_mcp.services.maintenance as maintenance
+
+    def missing_cli() -> None:
+        raise FileNotFoundError("Missing KiCad CLI")
+
+    monkeypatch.setattr(maintenance, "discover_kicad_cli", missing_cli)
+    result = MaintenanceService(registry_root=tmp_path / "new-registry").apply_repair()
+    assert result.repaired_items == ["created_storage_root"]
+    assert not result.success
+    assert "unresolved" in result.message.lower()
+
+
+def test_cleanup_reports_failed_app_owned_target_removal(tmp_path, monkeypatch) -> None:
+    import kicad_mcp.services.maintenance as maintenance
+
+    root = tmp_path / "registry"
+    root.mkdir()
+    state = root / "connector-status.json"
+    state.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(maintenance, "_remove_application_targets", lambda targets: [])
+    result = MaintenanceService(registry_root=root).apply_cleanup(clean_client_configs=False)
+    assert not result.success
+    assert result.remaining_targets == [str(state)]
+    assert result.cloud_revocation == "not_attempted"
+    assert result.credentials == "preserved"
+    assert state.exists()
+
+
+def test_cleanup_client_config_failure_is_reported_for_manual_recovery(
+    tmp_path, monkeypatch
+) -> None:
+    import kicad_mcp.services.maintenance as maintenance
+
+    user_file = tmp_path / "client.json"
+    user_file.write_text('{"mcpServers":{"kicad-mcp-pro":{}}}', encoding="utf-8")
+    monkeypatch.setattr(
+        maintenance,
+        "get_owned_client_configs",
+        lambda root: {"claude": [str(user_file)]},
+    )
+
+    def deny(*args: object, **kwargs: object) -> bool:
+        raise maintenance.ClientConfigError("Config changed externally")
+
+    monkeypatch.setattr(maintenance, "remove_client_config_entry", deny)
+    result = MaintenanceService(registry_root=tmp_path / "registry").apply_cleanup()
+    assert not result.success
+    assert result.failed_client_configs == [str(user_file)]
+    assert result.cloud_revocation == "not_attempted"
+    assert user_file.exists()

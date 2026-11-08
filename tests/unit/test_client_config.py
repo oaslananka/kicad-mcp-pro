@@ -114,3 +114,58 @@ def test_remove_owned_client_config_entry_preserves_other_servers(tmp_path) -> N
     data = json.loads(target.read_text(encoding="utf-8"))
     assert "kicad-mcp-pro" not in data.get("mcpServers", {})
     assert "sqlite" in data["mcpServers"]
+
+
+def test_user_modified_owned_entry_is_preserved_during_uninstall(tmp_path) -> None:
+    target = tmp_path / "client.json"
+    reg = tmp_path / "registry"
+    write_client_config_safe(
+        "claude",
+        target,
+        {"mcpServers": {"kicad-mcp-pro": {"command": "uv", "args": ["tool", "run"]}}},
+        registry_root=reg,
+    )
+    data = json.loads(target.read_text(encoding="utf-8"))
+    data["mcpServers"]["kicad-mcp-pro"]["args"].append("--user-customization")
+    data["mcpServers"]["sqlite"] = {"command": "other"}
+    target.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ClientConfigError, match="changed"):
+        remove_client_config_entry("claude", target, registry_root=reg)
+    assert json.loads(target.read_text(encoding="utf-8")) == data
+
+
+def test_legacy_path_only_ownership_does_not_authorize_deletion(tmp_path) -> None:
+    target = tmp_path / "config.json"
+    target.write_text(
+        json.dumps({"mcpServers": {"kicad-mcp-pro": {"command": "custom"}}}),
+        encoding="utf-8",
+    )
+    registry = tmp_path / "registry"
+    registry.mkdir()
+    (registry / "owned_client_configs.json").write_text(
+        json.dumps({"claude": [str(target.resolve())]}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ClientConfigError, match="unverified"):
+        remove_client_config_entry("claude", target, registry_root=registry)
+    assert target.exists()
+
+
+def test_vscode_server_entry_merge_and_scoped_removal(tmp_path) -> None:
+    target = tmp_path / "settings.json"
+    registry = tmp_path / "registry"
+    target.write_text(
+        json.dumps({"servers": {"other": {"type": "stdio", "command": "npx"}}}),
+        encoding="utf-8",
+    )
+    write_client_config_safe(
+        "vscode",
+        target,
+        {"servers": {"kicad-mcp-pro": {"type": "stdio", "command": "uvx"}}},
+        registry_root=registry,
+    )
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert set(data["servers"]) == {"other", "kicad-mcp-pro"}
+    assert remove_client_config_entry("vscode", target, registry_root=registry)
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert list(data["servers"]) == ["other"]

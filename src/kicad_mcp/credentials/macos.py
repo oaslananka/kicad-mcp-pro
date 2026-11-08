@@ -20,12 +20,44 @@ def _validate_slot(slot: str) -> str:
     return clean
 
 
+def _write_secret(slot: str, secret: bytes) -> None:
+    """Write a hex-encoded secret without leaking it in process argv.
+
+    macOS security add-generic-password -w VALUE exposes VALUE to process
+    inspection. The security -i batch interface accepts a command through
+    stdin instead. Only a validated slot and a hex payload enter that command;
+    user-controlled characters can never introduce an extra command.
+    """
+    if not secret:
+        raise ValueError("Keychain secret must not be empty")
+    # Keep unsupported/oversized items from causing unpredictable Keychain
+    # prompting or truncated batch data. Typical PEM keys are much smaller.
+    if len(secret) > 65536:
+        raise ValueError("Keychain secret exceeds the supported size")
+    command = f"add-generic-password -U -s {_SERVICE_NAME} -a {slot} -w {secret.hex()}\nquit\n"
+    try:
+        result = subprocess.run(
+            [_SECURITY_EXECUTABLE, "-i"],
+            input=command.encode("ascii"),
+            capture_output=True,
+            check=False,
+            timeout=15,
+        )  # nosec B603 # nosemgrep
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise RuntimeError("Keychain write unavailable") from error
+    if result.returncode != 0:
+        # Do not include stdout/stderr: the batch interpreter may echo input.
+        raise RuntimeError("Keychain write failed")
+
+
 class MacOSKeychainCredentialStore(PlatformCredentialStore):
     """macOS user Keychain credential store."""
 
     def save_key(self, record_id: str, key_pem: bytes) -> None:
-        _validate_slot(record_id)
-        raise RuntimeError("Native Keychain writes are unavailable for keys")
+        slot = _validate_slot(record_id)
+        _write_secret(f"{slot}_key", key_pem)
+        if self.load_key(record_id) != key_pem:
+            raise RuntimeError("Keychain key verification failed")
 
     def load_key(self, record_id: str) -> bytes | None:
         slot = _validate_slot(record_id)
@@ -48,8 +80,13 @@ class MacOSKeychainCredentialStore(PlatformCredentialStore):
             return None
 
     def save_binding(self, record_id: str, binding: dict[str, str]) -> None:
-        _validate_slot(record_id)
-        raise RuntimeError("Native Keychain writes are unavailable for bindings")
+        slot = _validate_slot(record_id)
+        if any(not isinstance(k, str) or not isinstance(v, str) for k, v in binding.items()):
+            raise ValueError("Invalid Keychain binding data")
+        payload = json.dumps(binding, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        _write_secret(f"{slot}_binding", payload)
+        if self.load_binding(record_id) != binding:
+            raise RuntimeError("Keychain binding verification failed")
 
     def load_binding(self, record_id: str) -> dict[str, str] | None:
         slot = _validate_slot(record_id)
