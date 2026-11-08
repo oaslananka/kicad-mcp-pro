@@ -99,7 +99,7 @@ fn backend_package_spec() -> String {
 /// which can take well over a minute on a cold cache or slow network, so this
 /// must be generous — and must not be shorter than the frontend's own poll
 /// window, or a still-installing child would be killed prematurely.
-const HEALTH_WAIT: Duration = Duration::from_secs(120);
+const HEALTH_WAIT: Duration = Duration::from_secs(300);
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 #[derive(Clone, serde::Serialize)]
@@ -476,6 +476,10 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
             .env("UV_CACHE_DIR", runtime.join("cache"))
             .env("UV_PYTHON_INSTALL_DIR", runtime.join("python"))
             .env("UV_PYTHON_PREFERENCE", "only-managed")
+            // Keep the managed runtime on a supported Python minor release.
+            // Unconstrained uv selected 3.15 and cold Windows install took
+            // longer than the prior 120-second splash timeout.
+            .env("UV_PYTHON", "3.13")
             .env("UV_NO_CONFIG", "1")
             .env("UV_NO_PROGRESS", "1");
     }
@@ -513,7 +517,7 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
 
     set_stage(process, "starting_server");
     // Wait for the server to become healthy. The first launch downloads the
-    // package via uvx, so allow a generous window (HEALTH_WAIT) before giving
+    // package via bundled uv, so allow a generous window (HEALTH_WAIT) before giving
     // up — killing the child early would abort an install that is still in
     // progress.
     let deadline = std::time::Instant::now() + HEALTH_WAIT;

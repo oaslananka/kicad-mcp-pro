@@ -237,6 +237,7 @@ def _mcp_snippet_for_client(client: str) -> tuple[object, str]:
             "UV_CACHE_DIR",
             "UV_PYTHON_INSTALL_DIR",
             "UV_PYTHON_PREFERENCE",
+            "UV_PYTHON",
             "UV_NO_CONFIG",
             "UV_NO_PROGRESS",
         ):

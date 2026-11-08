@@ -147,12 +147,14 @@ def test_bundled_app_owned_uv_is_reflected_in_local_client_snippet(
     bundled.write_bytes(b"test-owned placeholder executable")
     monkeypatch.setenv("KICAD_MCP_DESKTOP_UV", str(bundled))
     monkeypatch.setenv("UV_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("UV_PYTHON", "3.13")
     snippet, format_name = _mcp_snippet_for_client("claude-desktop")
     assert format_name == "json"
     server = snippet["mcpServers"]["kicad-mcp-pro"]
     assert server["command"] == str(bundled)
     assert server["args"][:3] == ["tool", "run", "--from"]
     assert server["env"]["UV_CACHE_DIR"] == str(tmp_path / "cache")
+    assert server["env"]["UV_PYTHON"] == "3.13"
 
 
 @pytest.mark.parametrize(

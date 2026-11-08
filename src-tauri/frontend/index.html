@@ -267,7 +267,9 @@
         return true;
       };
 
-      const MAX_RETRIES = 120;
+      // Allow the native 300-second cold-runtime setup to finish before
+      // displaying a timeout; the splash must never give up first.
+      const MAX_RETRIES = 330;
       const RETRY_INTERVAL_MS = 1000;
       let retries = 0;
       let healthOk = false;
@@ -302,7 +304,7 @@
 
       async function loadExactCommand() {
         const command = await tauriInvoke('desktop_backend_command');
-        if (typeof command === 'string' && command.startsWith('uvx --from kicad-mcp-pro==')) {
+        if (typeof command === 'string' && command.startsWith('uv tool run --from kicad-mcp-pro==')) {
           document.getElementById('cliCommand').textContent = command;
           diagnosticsLoaded = true;
         }

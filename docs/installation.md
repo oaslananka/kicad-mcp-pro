@@ -7,9 +7,12 @@ Releases page. Published installer behavior depends on its exact release:
 the already published 4.9.0 desktop still requires a discoverable external
 `uvx` runtime. Candidate desktop installers built with the bundled-bootstrap
 release workflow carry pinned `uv` and create their own user-scoped Python
-runtime/cache on first startup. They do not install global Python or modify
-the user's independent `uv` / MCP CLI installations. A first online startup is
-required when the exact backend and Python are not yet cached.
+runtime/cache on first startup, requesting managed Python 3.13 for its
+desktop-owned environment. They do not install global Python or modify the
+user's independent `uv` / MCP CLI installations. The first online startup may
+take several minutes while Python and exact backend dependencies are prepared;
+the startup screen keeps showing progress instead of failing after 120 seconds.
+An online startup is required when the matching runtime is not yet cached.
 
 Automatic updates are not enabled for the published desktop releases.
 The application includes Tauri updater integration, but automatic installation

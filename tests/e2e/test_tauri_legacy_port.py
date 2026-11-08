@@ -37,12 +37,12 @@ _NATIVE_SHIM = """
     if (command === 'desktop_readiness') {
       return state.mode === 'incompatible'
         ? {ready:false, incompatible:true, detail:'backend 4.7.0',
-           port:3334, expectedVersion:'4.8.1'}
+           port:3334, expectedVersion:'4.9.0'}
         : {ready:true, incompatible:false, detail:'verified',
-           port:3335, expectedVersion:'4.8.1'};
+           port:3335, expectedVersion:'4.9.0'};
     }
     if (command === 'desktop_backend_command') {
-      return 'uvx --from kicad-mcp-pro==4.8.1 kicad-mcp-pro dashboard '
+      return 'uv tool run --from kicad-mcp-pro==4.9.0 kicad-mcp-pro dashboard '
         + '--host 127.0.0.1 --port ' + state.port;
     }
     if (command === 'restart_server') {
@@ -93,6 +93,11 @@ def test_old_backend_has_one_click_isolated_desktop_recovery(
     separate = page.locator("#useSeparatePort")
     separate.wait_for(state="visible", timeout=12000)
     assert "Older or incompatible local backend" in page.locator("#status").inner_text()
+    assert (
+        page.locator("#cliCommand")
+        .inner_text()
+        .startswith("uv tool run --from kicad-mcp-pro==4.9.0")
+    )
     assert page.locator("#cliCommand").inner_text().endswith("--port 3334")
 
     separate.click()
