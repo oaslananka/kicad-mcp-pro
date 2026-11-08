@@ -387,16 +387,15 @@ def _start_connector(root: Path, new_record: dict[str, str]) -> str:
                 return connector_state
         return _status()
     except Exception as exc:
-        typer.echo(f"Background service start notice: {exc}")
-        try:
-            from kicad_mcp.cloud_managed_connector import _ENABLED_FILE, _identity_state
-            from kicad_mcp.cloud_pair_keys import _write_private_json
-
-            _write_private_json(root, _ENABLED_FILE, _identity_state(new_record))
-            return "Enabled (Foreground ready)"
-        except Exception as write_err:
-            typer.echo(f"Notice: Could not write enabled state: {write_err}")
-            return "Off"
+        # An enabled marker is not an executable Connector. Never tell users
+        # that Cloud access is ready when the service failed to start.
+        typer.echo(f"Cloud Connector could not start: {type(exc).__name__}.", err=True)
+        typer.echo(
+            "Device registration was not rolled back; check cloud status "
+            "before retrying cloud enable.",
+            err=True,
+        )
+        return "Unavailable"
 
 
 @cloud_app.command()

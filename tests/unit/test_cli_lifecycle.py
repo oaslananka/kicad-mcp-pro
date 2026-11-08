@@ -110,3 +110,64 @@ def test_doctor_warns_about_duplicate_launchers_without_running_them(monkeypatch
     assert check.name == "cli_path_conflict"
     assert check.status == "warn"
     assert "Get-Command" in check.hint
+
+
+def test_direct_windows_enrollment_cannot_create_unprotected_key_or_send_request(
+    monkeypatch, tmp_path
+) -> None:
+    from types import SimpleNamespace
+
+    import pytest
+
+    from kicad_mcp import cloud_pair
+
+    keyfile = tmp_path / "device.pem"
+    monkeypatch.setattr(cloud_pair, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        cloud_pair,
+        "_post",
+        lambda *_args, **_kwargs: pytest.fail("no Cloud HTTP allowed"),
+    )
+    with pytest.raises(cloud_pair.CloudPairingError, match="Windows"):
+        cloud_pair.start_enrollment("https://cloud.example", "Demo", keyfile)
+    assert not keyfile.exists()
+    assert not list(tmp_path.iterdir())
+
+
+def test_connector_service_failure_does_not_fabricate_enabled_state(monkeypatch, tmp_path) -> None:
+    from kicad_mcp.cloud_user_cli import _start_connector
+
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_managed_connector._enable",
+        lambda: (_ for _ in ()).throw(RuntimeError("systemd unavailable")),
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair_keys._write_private_json",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("must not create enabled marker as fallback")
+        ),
+    )
+    assert _start_connector(tmp_path, {}) == "Unavailable"
+    assert not list(tmp_path.iterdir())
+
+
+def test_windows_connector_enable_rejects_before_creating_enabled_marker(
+    monkeypatch, tmp_path
+) -> None:
+    from types import SimpleNamespace
+
+    import pytest
+
+    from kicad_mcp import cloud_managed_connector
+
+    monkeypatch.setattr(cloud_managed_connector, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(cloud_managed_connector, "default_registry_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        cloud_managed_connector,
+        "_single_registered_identity",
+        lambda *_args: pytest.fail("unsupported service must not access registration"),
+    )
+    with pytest.raises(RuntimeError, match="unsupported"):
+        cloud_managed_connector._enable()
+    assert not list(tmp_path.iterdir())
+    assert cloud_managed_connector._status() == "Off"

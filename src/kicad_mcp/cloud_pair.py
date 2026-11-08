@@ -322,6 +322,13 @@ def start_enrollment(origin: str, alias: str, keyfile: Path) -> tuple[str, str, 
     Returns (review_url, challenge, code, expires_in_seconds).
     Saves challenge metadata next to keyfile in .challenge.json.
     """
+    # Direct callers of the pairing module must observe the same fail-closed
+    # platform boundary as `cloud setup`, even without the Typer CLI preflight.
+    # Legacy PEM-on-NT branches below cannot establish owner-private ACLs.
+    if os.name == "nt":
+        raise CloudPairingError(
+            "Native Windows owner-private Cloud pairing is not available in this release."
+        )
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", alias):
         raise CloudPairingError(_PAIRING_DENIED)
     target = _origin(origin)

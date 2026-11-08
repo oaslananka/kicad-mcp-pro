@@ -615,7 +615,9 @@ def test_cloud_pair_keys_owner_sub_validation(tmp_path: Path) -> None:
         )
 
 
-def test_setup_browser_approval_and_service_fallback(tmp_path: Path, monkeypatch) -> None:
+def test_setup_browser_approval_does_not_claim_service_ready_on_failure(
+    tmp_path: Path, monkeypatch
+) -> None:
     (tmp_path / "board.kicad_pro").touch()
     keys_dir = tmp_path / "keys"
     projects_dir = tmp_path / "projects"
@@ -659,9 +661,9 @@ def test_setup_browser_approval_and_service_fallback(tmp_path: Path, monkeypatch
     result = CliRunner().invoke(app, ["cloud", "setup", "--project-dir", str(tmp_path)])
     assert result.exit_code == 0
     assert "Browser opened for approval" in result.output
-    assert "Background service start notice: systemd unavailable" in result.output
-    expected_connector = "Enabled (Foreground ready)"
-    assert f"Connector:       {expected_connector}" in result.output
+    assert "Cloud Connector could not start: RuntimeError" in result.output
+    assert "Connector:       Unavailable" in result.output
+    assert "Cloud device registered; Connector needs attention" in result.output
 
 
 def test_setup_owner_sub_missing_and_pairing_error(tmp_path: Path, monkeypatch) -> None:
