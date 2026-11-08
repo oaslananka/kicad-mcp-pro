@@ -102,6 +102,12 @@ test("signed status only reports owner-approved state, never consumes enrollment
   const id=issued.record.id;
   const proof=sign(null,pairingStatusProof(id,issued.deviceCode),issued.privateKey);
   assert.equal(pairingApprovalState(issued.record,serverKey,now+1,issued.deviceCode,proof),false);
+  const rejected=reviewPairing(issued.record,serverKey,now+2,"owner",issued.userCode,"deny");
+  assert.equal(rejected.kind,"denied");
+  assert.equal(pairingApprovalState(rejected.record,serverKey,now+3,issued.deviceCode,proof),"denied");
+  assert.equal(pairingApprovalState(rejected.record,serverKey,now+3,issued.deviceCode,
+    sign(null,pairingStatusProof(id,issued.deviceCode),
+      generateKeyPairSync("ed25519").privateKey)),null);
   const reviewed=reviewPairing(issued.record,serverKey,now+2,"owner",issued.userCode,"approve");
   assert.equal(reviewed.kind,"approved");
   assert.equal(pairingApprovalState(reviewed.record,serverKey,now+3,issued.deviceCode,proof),true);

@@ -179,7 +179,7 @@ def _optional_deferred_retry_passes(raw: dict[str, Any], record_id: str) -> int:
             f"Configuration {record_id!r} limit 'deferred_retry_passes' must be an integer "
             f"from 0 to {_MAX_DEFERRED_RETRY_PASSES}."
         )
-    return value
+    return int(value)
 
 
 def _parse_limits(value: object, record_id: str) -> RunLimits:

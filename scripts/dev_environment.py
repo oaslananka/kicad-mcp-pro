@@ -16,6 +16,8 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -201,14 +203,28 @@ def download_verified(url: str, destination: Path, expected_sha256: str) -> Path
     if parsed.scheme not in {"file", "https"}:
         raise ValueError(f"Unsupported download URL scheme: {parsed.scheme}")
     try:
-        digest = hashlib.sha256()
-        with (
-            urllib.request.urlopen(url, timeout=120) as response,  # noqa: S310
-            temporary.open("wb") as output,
-        ):
-            while chunk := response.read(1024 * 1024):
-                digest.update(chunk)
-                output.write(chunk)
+        # Retry only transient HTTPS errors from release/CDN endpoints.
+        # Never retry checksum mismatches or publish unverified bytes.
+        for attempt in range(3):
+            digest = hashlib.sha256()
+            try:
+                with (
+                    urllib.request.urlopen(url, timeout=120) as response,  # noqa: S310
+                    temporary.open("wb") as output,
+                ):
+                    while chunk := response.read(1024 * 1024):
+                        digest.update(chunk)
+                        output.write(chunk)
+            except urllib.error.HTTPError as exc:
+                if (
+                    parsed.scheme != "https"
+                    or exc.code not in {429, 500, 502, 503, 504}
+                    or attempt == 2
+                ):
+                    raise
+                time.sleep(2**attempt)
+            else:
+                break
         actual = digest.hexdigest()
         if actual != expected_sha256:
             raise ValueError(

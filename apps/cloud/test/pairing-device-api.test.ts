@@ -112,6 +112,10 @@ test("denied, nonexistent and expired approval cannot create a device",
     assert.equal(denied.kind,"ok");
     if(denied.kind!=="ok")return;
     assert.equal(await review.review(denied.data.id,"owner",denied.data.userCode,"deny"),"denied");
+    const statusSignature=sign(null,pairingStatusProof(denied.data.id,denied.data.deviceCode),
+      key.privateKey);
+    assert.deepEqual(await api.approved("peer",denied.data.id,denied.data.deviceCode,
+      statusSignature),{kind:"ok",data:{approved:false,denied:true}});
     const signature=sign(null,redemptionProof(denied.data.id,denied.data.deviceCode),
       key.privateKey);
     assert.equal((await api.enroll("peer",denied.data.id,denied.data.deviceCode,signature)).kind,"unavailable");

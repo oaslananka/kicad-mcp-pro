@@ -252,7 +252,7 @@ def _parse_max_calls(raw: Mapping[str, Any], case_id: str, *, default: int | Non
         raise EvalDatasetError(
             f"Case {case_id!r} field 'max_calls' must be a non-negative integer."
         )
-    return value
+    return int(value)
 
 
 def _load_raw_cases_dataset(path: str | Path) -> tuple[bool, list[object]]:
@@ -639,7 +639,7 @@ def _optional_integer(raw: Mapping[str, Any], key: str) -> int | None:
         return None
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise EvalDatasetError(f"Threshold {key!r} must be null or a non-negative integer.")
-    return value
+    return int(value)
 
 
 def load_thresholds(path: str | Path) -> EvalThresholds:

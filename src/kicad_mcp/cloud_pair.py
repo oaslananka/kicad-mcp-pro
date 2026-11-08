@@ -53,6 +53,14 @@ class CloudPairingError(ValueError):
     """Do not leak credentials, internal errors, or private filesystem details."""
 
 
+class CloudPairingTimeoutError(CloudPairingError):
+    """Owner did not approve before the one-use challenge expired."""
+
+
+class CloudPairingDeniedError(CloudPairingError):
+    """Owner explicitly rejected this device enrollment in the browser."""
+
+
 def default_registry_root() -> Path:
     """Same owner-private key root used by the non-released read prototype."""
     return Path.home() / ".local" / "share" / "kicad-mcp-cloud"
@@ -276,6 +284,17 @@ def _require_unused_binding_path(keyfile: Path) -> None:
         raise CloudPairingError(_PAIRING_DENIED) from exc
 
 
+def _approved_owner_status(response: dict[str, object]) -> bool:
+    """Accept only the expected signed device-status contract."""
+    if set(response) == {"approved", "denied"}:
+        if response["approved"] is False and response["denied"] is True:
+            raise CloudPairingDeniedError("Device pairing denied in browser.")
+        raise CloudPairingError(_PAIRING_DENIED)
+    if set(response) != {"approved"} or type(response["approved"]) is not bool:
+        raise CloudPairingError(_PAIRING_DENIED)
+    return response["approved"] is True
+
+
 def _wait_for_owner_approval(
     origin: tuple[str, int, str],
     challenge: str,
@@ -300,18 +319,20 @@ def _wait_for_owner_approval(
     while True:
         remaining = expiry_ms - time.time_ns() // 1_000_000
         if remaining <= 0:
-            raise CloudPairingError(_PAIRING_DENIED)
+            raise CloudPairingTimeoutError("Device pairing approval expired.")
         response = _post(origin, "/api/v1/pairing/device/status", body, 200)
-        if set(response) != {"approved"} or type(response["approved"]) is not bool:
-            raise CloudPairingError(_PAIRING_DENIED)
+        # A device-signed response may disclose owner denial without exposing
+        # the decision to an unauthenticated caller. Old Cloud versions only
+        # send {"approved": bool}; keep both successful states unchanged.
+        approved = _approved_owner_status(response)
         if start_owner_review is not None:
             # A new challenge must be pending before inviting a human to click.
             # This also rejects older Cloud versions with no signed status API.
-            if response["approved"]:
+            if approved:
                 raise CloudPairingError(_PAIRING_DENIED)
             start_owner_review()
             start_owner_review = None
-        elif response["approved"]:
+        elif approved:
             return
         time.sleep(min(8.0, remaining / 1000))
 
@@ -322,6 +343,13 @@ def start_enrollment(origin: str, alias: str, keyfile: Path) -> tuple[str, str, 
     Returns (review_url, challenge, code, expires_in_seconds).
     Saves challenge metadata next to keyfile in .challenge.json.
     """
+    # Direct callers of the pairing module must observe the same fail-closed
+    # platform boundary as `cloud setup`, even without the Typer CLI preflight.
+    # Legacy PEM-on-NT branches below cannot establish owner-private ACLs.
+    if os.name == "nt":
+        raise CloudPairingError(
+            "Native Windows owner-private Cloud pairing is not available in this release."
+        )
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", alias):
         raise CloudPairingError(_PAIRING_DENIED)
     target = _origin(origin)

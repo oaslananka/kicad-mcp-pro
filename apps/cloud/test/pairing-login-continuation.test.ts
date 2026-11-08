@@ -9,7 +9,7 @@ const challenge="11111111-1111-4111-8111-111111111111";
 const code="ABCDEF-123456";
 const key="kicad-pairing-return-v1";
 function script(path:"/devices/pairing"|"/account",hash:string,store=new Map<string,string>(),
-  time=1_800_000){
+  time=1_800_000,signedInReview=false){
   const redirects:string[]=[];
   const history:string[]=[];
   const window={
@@ -23,7 +23,9 @@ function script(path:"/devices/pairing"|"/account",hash:string,store=new Map<str
     }
   };
   runInNewContext(pairingLoginContinuationClient,{
-    window,URLSearchParams,Date:class extends Date {static override now(){return time;}},
+    window,
+    document:{getElementById:(id:string)=>signedInReview&&id==="pairing-id-input"?{}:null},
+    URLSearchParams,Date:class extends Date {static override now(){return time;}},
     JSON,Number
   });
   return {redirects,history,store};
@@ -80,4 +82,22 @@ test("signed-out pairing offers existing social login, no implicit approval",asy
   assert.match(html,/pairing-login-continuation\.js/);
   assert.doesNotMatch(html,/challenge=11111111/);
   assert.match(response?.headers.get("content-security-policy")??"",/script-src 'self'/);
+});
+
+test("signed-in approval page preserves fragment for review form script",()=>{
+  const store=new Map<string,string>();
+  const hash="#challenge="+challenge+"&code="+code;
+  const result=script("/devices/pairing",hash,store,1_800_000,true);
+  assert.deepEqual(result.history,[],"review client must receive the original URL fragment");
+  assert.deepEqual(result.redirects,[]);
+  assert.equal(store.has(key),false,"review page must not create a login continuation token");
+});
+test("signed-out page still preserves pairing for account login",()=>{
+  const store=new Map<string,string>();
+  const result=script("/devices/pairing","#challenge="+challenge+"&code="+code,
+    store,1_800_000,false);
+  assert.deepEqual(result.history,["/devices/pairing"]);
+  const saved=JSON.parse(store.get(key)??"{}");
+  assert.equal(saved.challenge,challenge);
+  assert.equal(saved.code,code);
 });

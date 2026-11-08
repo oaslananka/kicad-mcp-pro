@@ -54,12 +54,31 @@ def test_retired_benchmark_service_has_no_ci_or_dependency_hooks() -> None:
     )
 
 
-def test_actionlint_is_a_locked_python_dev_tool() -> None:
-    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    checker = (ROOT / "scripts" / "check_workflows.py").read_text(encoding="utf-8")
+def test_actionlint_uses_pinned_upstream_go_module_without_binary_sdist() -> None:
+    import tomllib
 
-    assert '"actionlint-py==1.7.12.25"' in pyproject
-    assert '"shellcheck-py==0.11.0.1"' in pyproject
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    checker = (ROOT / "scripts" / "check_workflows.py").read_text(encoding="utf-8")
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    dev = project["project"]["optional-dependencies"]["dev"]
+    assert not any(dep.startswith("actionlint-py") for dep in dev)
+    assert "shellcheck-py==0.11.0.1" in dev
+    steps = workflow["jobs"]["workflow-policy"]["steps"]
+    toolchain = next(
+        step
+        for step in steps
+        if step.get("uses", "") == "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e"
+    )
+    assert toolchain["with"]["go-version"] == "1.27"
+    assert toolchain["with"]["cache"] is False
+    install = next(
+        step
+        for step in steps
+        if step.get("name") == "Install pinned actionlint from its upstream Go module"
+    )
+    assert install["env"]["GOTOOLCHAIN"] == "local"
+    assert "go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12" in install["run"]
+    assert any("scripts/check_workflows.py --actionlint" in step.get("run", "") for step in steps)
     assert 'ACTIONLINT_COMMAND = ["actionlint"]' in checker
     assert "kicadstudio" not in checker
 
@@ -356,7 +375,8 @@ def test_root_tooling_changes_trigger_repository_contract_suite() -> None:
     coverage_skip = next(
         step
         for step in workflow["jobs"]["coverage"]["steps"]
-        if step.get("name") == "Skip full coverage when Python is unaffected"
+        if step.get("name")
+        == "Skip full coverage when Python is unaffected and main Sonar is not required"
     )
     for skip_step in (server_skip, coverage_skip):
         assert "needs.changes.outputs.repo_tooling != 'true'" in skip_step["if"]
@@ -421,3 +441,41 @@ def test_generated_package_test_output_is_not_repository_source() -> None:
 
     assert "**/dist-test/**" in properties["sonar.exclusions"]
     assert "packages/protocol-schemas/dist-test/" in gitignore
+
+
+def test_main_sonar_coverage_uses_windows_native_evidence() -> None:
+    """A metadata-only squash must not drop native Windows new-code coverage."""
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    jobs = workflow["jobs"]
+    windows = {s["name"]: s for s in jobs["mcp-server"]["steps"] if "name" in s}
+    linux = {s["name"]: s for s in jobs["coverage"]["steps"] if "name" in s}
+    skipped_server = windows["Skip mcp-server when unaffected or redundant"]
+    skipped_coverage = linux[
+        "Skip full coverage when Python is unaffected and main Sonar is not required"
+    ]
+    collector = windows["Collect native Windows CLI coverage"]
+    upload = windows["Upload exact-run native Windows coverage"]
+    download = linux["Download native Windows coverage for this run"]
+    merge = linux["Merge native Windows and Linux coverage"]
+    for step in (skipped_server, skipped_coverage, collector, upload, download, merge):
+        assert "github.event_name == 'push'" in step["if"]
+        assert "github.ref == 'refs/heads/main'" in step["if"]
+        assert "needs.changes.outputs.sonar_docs_only != 'true'" in step["if"]
+    for step in (collector, upload, download, merge):
+        assert "github.event_name == 'workflow_dispatch'" in step["if"]
+        assert "needs.changes.outputs.release_metadata_only != 'true'" in step["if"]
+    for step in (collector, upload):
+        assert "matrix.os == 'windows-2025'" in step["if"]
+    for step in (download, merge):
+        assert "steps.python-tests.outcome == 'success'" in step["if"]
+    assert "mcp-server" in jobs["coverage"]["needs"]
+    assert "scripts/merge_platform_coverage.py stamp" in collector["run"]
+    assert "scripts/merge_platform_coverage.py merge" in merge["run"]
+    assert "scripts/check_patch_coverage.py" in linux["Enforce Python patch coverage"]["run"]
+    assert "--min-percent 90" in linux["Enforce Python patch coverage"]["run"]
+    assert "steps.patch-coverage.outcome != 'failure'" in str(linux)
+    assert "needs.coverage.outputs.sonar_coverage_artifact_id != ''" in str(
+        jobs["sonarcloud"]["steps"]
+    )

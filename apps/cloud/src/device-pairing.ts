@@ -147,7 +147,7 @@ export function pairingStatusProof(id:string,deviceCode:string):Buffer{
 export function pairingApprovalState(
   record:PairingRecord,serverKey:Buffer,nowMs:number,
   deviceCode:string,signature:Buffer
-):boolean|null{
+):boolean|"denied"|null{
   requireServerKey(serverKey);
   if(!validClock(nowMs)||typeof deviceCode!=="string"||deviceCode.length!==43||
      !Buffer.isBuffer(signature)||signature.length!==64||
@@ -158,6 +158,7 @@ export function pairingApprovalState(
     if(key.asymmetricKeyType!=="ed25519"||
        !verify(null,pairingStatusProof(record.id,deviceCode),key,signature))return null;
   }catch{return null;}
+  if(record.state==="denied")return "denied";
   return record.state==="approved"&&nowMs<record.expiresAtMs;
 }
 

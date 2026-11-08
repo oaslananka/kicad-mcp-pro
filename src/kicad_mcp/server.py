@@ -75,6 +75,8 @@ from typer.models import OptionInfo
 from . import __version__
 from .capabilities import AccessTier, RuntimeRequirement, all_protocol_metadata
 from .capabilities import get as get_capability_record
+from .cli_lifecycle import uninstall as uninstall_package
+from .cli_lifecycle import update_app
 from .cloud_user_cli import cloud_app
 from .compatibility import MCP_PROTOCOL_VERSION
 from .config import LOOPBACK_HOSTS, KiCadMCPConfig, get_config, reset_config
@@ -189,6 +191,8 @@ mcp_config_app = typer.Typer(help=localize("Generate MCP client configuration sn
 app.add_typer(tools_app, name="tools")
 app.add_typer(mcp_config_app, name="mcp-config")
 app.add_typer(cloud_app, name="cloud")
+app.add_typer(update_app, name="update")
+app.command("uninstall")(uninstall_package)
 DOCTOR_BUNDLE_OPTION = cast(
     Path | None,
     typer.Option(
@@ -2632,8 +2636,16 @@ def main_callback(
     experimental: _CliExperimental = None,
     telemetry: _CliTelemetry = None,
     watch: _CliWatch = False,
+    show_version: bool = typer.Option(
+        False, "--version", help="Print the installed KiCad MCP Pro version and exit."
+    ),
 ) -> None:
     """Start the KiCad MCP Pro server when no subcommand is supplied."""
+    # Direct Python calls receive Typer's OptionInfo default, which is truthy.
+    # Only an actual CLI --version flag may exit before server startup.
+    if show_version is True:
+        typer.echo(__version__)
+        raise typer.Exit()
     _apply_cli_env(
         transport=transport,
         host=host,
@@ -2836,13 +2848,16 @@ def doctor(
 
 @app.command()
 def setup(
-    agent: str = typer.Argument(
-        ...,
+    agent: str | None = typer.Argument(
+        None,
         help=option_help(
             "Target agent: claude-code, codex, gemini, opencode, "
             "cursor, vscode, claude-desktop, antigravity, chatgpt, claude-ai. "
             "Use 'interactive' for simple help or 'wizard' for interactive wizard."
         ),
+    ),
+    agent_option: str | None = typer.Option(
+        None, "--agent", help="Agent to configure without a positional argument."
     ),
     project_dir: str | None = typer.Option(
         None,
@@ -2873,7 +2888,8 @@ def setup(
 ) -> None:
     """Generate or install KiCad MCP configuration for a supported agent.
 
-    Use 'kicad-mcp-pro setup wizard' for interactive setup.
+    With no arguments, start the guided local-first interactive setup.
+    Use --agent to select a supported client without a positional argument.
 
     \b
     Examples:
@@ -2885,6 +2901,19 @@ def setup(
       kicad-mcp-pro setup-backups claude-code
     """
     from .setup import setup_agent, setup_wizard
+
+    if agent is not None and agent_option is not None and agent != agent_option:
+        raise typer.BadParameter("Choose either a positional agent or --agent.")
+    agent = agent_option or agent
+    if agent is None:
+        if not sys.stdin.isatty():
+            typer.echo(
+                "Setup needs an interactive terminal. Use "
+                "'kicad-mcp-pro setup --agent claude-code' for a config preview.",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        agent = "wizard"
 
     if agent == "interactive":
         typer.echo(setup_wizard())
