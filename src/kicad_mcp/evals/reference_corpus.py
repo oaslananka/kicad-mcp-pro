@@ -244,7 +244,12 @@ def _required_validation_kinds(
     task = next((item for item in contract.tasks if item.task_id == record.task_id), None)
     if task is None:
         return ()
-    return tuple(kind for kind in ("erc", "drc") if task.stage_requirements[kind] == "required")
+    required: list[str] = []
+    if task.stage_requirements["erc"] == "required":
+        required.append("erc")
+    if task.stage_requirements["drc"] == "required":
+        required.append("drc")
+    return tuple(required)
 
 
 def _validate_required_validation_evidence(

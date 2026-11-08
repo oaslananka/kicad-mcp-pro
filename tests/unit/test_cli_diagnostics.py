@@ -508,6 +508,7 @@ def test_development_tool_version_treats_nonzero_exit_as_unavailable(
 
     assert _development_tool_version("tool", executable, ["--version"]) is None
 
+
 def test_cli_top_level_version_alias_does_not_start_mcp_server(monkeypatch) -> None:
     from kicad_mcp import __version__
 

@@ -201,9 +201,7 @@ def _enable() -> int:
     # The CLI-owned Connector lifecycle below is systemd-only. Do not write
     # an enabled marker on Windows/macOS and then fail to spawn a service.
     if os.name != "posix" or sys.platform == "darwin":
-        raise RuntimeError(
-            "Cloud Connector background service is unsupported on this platform."
-        )
+        raise RuntimeError("Cloud Connector background service is unsupported on this platform.")
     root = default_registry_root()
     record = _single_registered_identity(root)
     # This explicit local enable records only existing selectors. It does not
