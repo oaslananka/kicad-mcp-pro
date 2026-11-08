@@ -28,6 +28,44 @@ async function listener(server:Server){
     close:()=>new Promise<void>(resolve=>server.close(()=>resolve()))
   };
 }
+test("signed-device denial status is explicit, backwards compatible, and not browser-accessible",async()=>{
+  let state:"denied"|"pending"|"invalid"="denied",calls=0;
+  const api:PairingDevicePort={
+    issue:async()=>({kind:"unavailable"}),
+    enroll:async()=>({kind:"unavailable"}),
+    approved:async()=>{
+      calls++;
+      if(state==="denied")return {kind:"ok",data:{approved:false,denied:true}};
+      if(state==="invalid")return {kind:"ok",data:{approved:true,denied:true}};
+      return {kind:"ok",data:{approved:false}};
+    }
+  };
+  const server=createHttpServer(config,inventory,async()=>{throw Error("not called");},
+    {pairingDevice:api,deviceSource:req=>req.socket.remoteAddress??null});
+  const l=await listener(server);
+  try{
+    const url=l.origin+"/api/v1/pairing/device/status";
+    const body=JSON.stringify({challengeId:id,deviceCode:secret,
+      signature:randomBytes(64).toString("base64url")});
+    const request=()=>fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body});
+    const denied=await request();
+    assert.equal(denied.status,200);
+    assert.deepEqual(await denied.json(),{approved:false,denied:true});
+    assert.equal(denied.headers.get("cache-control"),"no-store");
+    state="pending";
+    assert.deepEqual(await (await request()).json(),{approved:false},
+      "existing pending response retains exact historical keys");
+    state="invalid";
+    const contradictory=await request();
+    assert.equal(contradictory.status,500);
+    assert.deepEqual(await contradictory.json(),{error:"unavailable"});
+    const browser=await fetch(url,{method:"POST",
+      headers:{"Content-Type":"application/json",Origin:"https://attacker.example"},body});
+    assert.equal(browser.status,403);
+    assert.equal(calls,3);
+  }finally{await l.close();}
+});
+
 test("device endpoints are absent unless separately wired",async()=>{
   const server=createHttpServer(config, inventory, async()=>{throw Error("not called");});
   const l=await listener(server);

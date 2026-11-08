@@ -216,6 +216,30 @@ def test_expired_owner_browser_approval_has_actionable_retry_message(
     assert events == ["owner_confirm"]
 
 
+def test_owner_denial_returns_specific_cli_message_and_creates_no_device(
+    windows_cli,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    folder, events, _project, _selected = windows_cli
+
+    def deny(**_kwargs: object) -> None:
+        raise cloud_windows_user_cli.WindowsEnrollmentDeniedError(
+            "Device pairing was denied in the browser. No device was registered."
+        )
+
+    monkeypatch.setattr(cloud_windows_user_cli, "enroll_windows_device", deny)
+    result = CliRunner().invoke(
+        app,
+        ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)],
+        terminal_width=200,
+    )
+    assert result.exit_code != 0
+    assert "denied" in result.output
+    assert "registered" in result.output
+    assert "Windows Cloud registration was not fully completed" not in result.output
+    assert events == ["owner_confirm"]
+
+
 def test_windows_empty_project_refuses_before_cloud(
     windows_cli,
     tmp_path: Path,

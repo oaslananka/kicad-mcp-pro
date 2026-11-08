@@ -21,6 +21,7 @@ from kicad_mcp.cloud_windows_connector import (
 )
 from kicad_mcp.cloud_windows_enrollment import (
     WindowsEnrolledDevice,
+    WindowsEnrollmentDeniedError,
     WindowsEnrollmentTimeoutError,
     WindowsRegisteredProject,
     enroll_windows_device,
@@ -162,7 +163,7 @@ def setup_windows(
         )
         bind_owner_selected_project(project, directory, owner_confirm=lambda _path: True)
         remember_selected_project(project)
-    except WindowsEnrollmentTimeoutError as exc:
+    except (WindowsEnrollmentTimeoutError, WindowsEnrollmentDeniedError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     except (OSError, ValueError, RuntimeError) as exc:
         raise typer.BadParameter(

@@ -48,6 +48,10 @@ class WindowsEnrollmentTimeoutError(WindowsEnrollmentError):
     """Unredeemed owner challenge expired; no remote device was created."""
 
 
+class WindowsEnrollmentDeniedError(WindowsEnrollmentError):
+    """Owner rejected the pending challenge before device redemption."""
+
+
 class WindowsPartialEnrollmentError(WindowsEnrollmentError):
     """Cloud may already have redeemed; owner must inspect the Devices page."""
 
@@ -205,6 +209,13 @@ def enroll_windows_device(
             device_id=device_id,
             fingerprint=fingerprint,
         )
+    except cloud_pair.CloudPairingDeniedError as exc:
+        if redeem_attempted:
+            raise WindowsPartialEnrollmentError(record_id) from exc
+        raise WindowsEnrollmentDeniedError(
+            "Device pairing was denied in the browser. No device was registered. "
+            "Start cloud setup again if you want to retry."
+        ) from exc
     except cloud_pair.CloudPairingTimeoutError as exc:
         # The redeem request has not been sent. The finally clause wipes
         # our temporary owner key; no Cloud device/project was registered.

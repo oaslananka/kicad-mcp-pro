@@ -174,7 +174,7 @@ export class PgPairingChallenges {
   }
 
   /** Read-only; no public state enumeration without 256-bit code AND private-key proof. */
-  async approved(id:string,code:string,signature:Buffer):Promise<boolean|null>{
+  async approved(id:string,code:string,signature:Buffer):Promise<boolean|"denied"|null>{
     if(!UUID.test(id))return null;
     const rows=await this.pool.query<Row>(
       "SELECT id,device_alias,device_public_key_der,device_fingerprint,"+

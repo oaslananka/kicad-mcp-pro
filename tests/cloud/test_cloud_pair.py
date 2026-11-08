@@ -161,6 +161,31 @@ def test_owner_status_is_signed_and_polls_only_until_real_approval(
     assert delays == [8.0]
 
 
+def test_owner_status_explicit_denial_exits_immediately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = cloud_pair.Ed25519PrivateKey.generate()
+    seen: list[str] = []
+
+    def rejected(_origin: tuple[str, int, str], path: str, _body: dict, _status: int) -> dict:
+        seen.append(path)
+        return {"approved": False, "denied": True}
+
+    monkeypatch.setattr(cloud_pair, "_post", rejected)
+    monkeypatch.setattr(
+        cloud_pair.time, "sleep", lambda *_: pytest.fail("denied device must never keep polling")
+    )
+    with pytest.raises(cloud_pair.CloudPairingDeniedError, match="denied"):
+        cloud_pair._wait_for_owner_approval(
+            ("localhost", 443, "https://localhost"),
+            CHALLENGE,
+            SECRET,
+            key,
+            time.time_ns() // 1_000_000 + 45_000,
+        )
+    assert seen == ["/api/v1/pairing/device/status"]
+
+
 def test_owner_status_expires_without_redeeming(monkeypatch: pytest.MonkeyPatch) -> None:
     key = cloud_pair.Ed25519PrivateKey.generate()
     calls: list[str] = []
@@ -181,7 +206,15 @@ def test_owner_status_expires_without_redeeming(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.parametrize(
-    "reply", [{"approved": "true"}, {"approved": True, "unexpectedField": "extra"}, {}]
+    "reply",
+    [
+        {"approved": "true"},
+        {"approved": True, "unexpectedField": "extra"},
+        {"approved": True, "denied": True},
+        {"approved": False, "denied": False},
+        {"approved": False, "denied": "true"},
+        {},
+    ],
 )
 def test_owner_status_malformed_reply_fails_closed(
     monkeypatch: pytest.MonkeyPatch,

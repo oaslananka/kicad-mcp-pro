@@ -57,6 +57,10 @@ class CloudPairingTimeoutError(CloudPairingError):
     """Owner did not approve before the one-use challenge expired."""
 
 
+class CloudPairingDeniedError(CloudPairingError):
+    """Owner explicitly rejected this device enrollment in the browser."""
+
+
 def default_registry_root() -> Path:
     """Same owner-private key root used by the non-released read prototype."""
     return Path.home() / ".local" / "share" / "kicad-mcp-cloud"
@@ -306,6 +310,13 @@ def _wait_for_owner_approval(
         if remaining <= 0:
             raise CloudPairingTimeoutError("Device pairing approval expired.")
         response = _post(origin, "/api/v1/pairing/device/status", body, 200)
+        # A device-signed response may disclose owner denial without exposing
+        # the decision to an unauthenticated caller. Old Cloud versions only
+        # send {"approved": bool}; keep both successful states unchanged.
+        if set(response) == {"approved", "denied"}:
+            if response["approved"] is False and response["denied"] is True:
+                raise CloudPairingDeniedError("Device pairing denied in browser.")
+            raise CloudPairingError(_PAIRING_DENIED)
         if set(response) != {"approved"} or type(response["approved"]) is not bool:
             raise CloudPairingError(_PAIRING_DENIED)
         if start_owner_review is not None:

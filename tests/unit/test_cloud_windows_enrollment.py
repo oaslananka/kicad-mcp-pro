@@ -227,6 +227,26 @@ def test_windows_owner_approval_expiry_erases_only_the_unredeemed_key(
     assert events == ["vault:key", "challenge", "delete:key"]
 
 
+def test_windows_owner_denial_erases_unredeemed_key(
+    fake_windows_pair,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, events, _state = fake_windows_pair
+
+    def deny(*_args: object, **_kwargs: object) -> None:
+        raise cloud_pair.CloudPairingDeniedError("owner denied")
+
+    monkeypatch.setattr(cloud_pair, "_wait_for_owner_approval", deny)
+    with pytest.raises(cloud_windows_enrollment.WindowsEnrollmentDeniedError):
+        cloud_windows_enrollment.enroll_windows_device(
+            origin=ORIGIN,
+            alias="Lab PC",
+            owner_approval=lambda *_: None,
+        )
+    assert not store
+    assert events == ["vault:key", "challenge", "delete:key"]
+
+
 def test_windows_owner_interrupt_cleans_unredeemed_key(
     fake_windows_pair, monkeypatch: pytest.MonkeyPatch
 ) -> None:
