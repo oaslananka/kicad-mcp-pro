@@ -169,3 +169,51 @@ def test_vscode_server_entry_merge_and_scoped_removal(tmp_path) -> None:
     assert remove_client_config_entry("vscode", target, registry_root=registry)
     data = json.loads(target.read_text(encoding="utf-8"))
     assert list(data["servers"]) == ["other"]
+
+
+@pytest.mark.parametrize(
+    "registry_contents,expected",
+    [
+        ("{not valid json", "unreadable"),
+        (json.dumps({"unexpected": 1}), "malformed"),
+    ],
+)
+def test_cleanup_refuses_corrupt_ownership_fingerprint_registry(
+    tmp_path, registry_contents: str, expected: str
+) -> None:
+    config = tmp_path / "client.json"
+    registry = tmp_path / "registry"
+    write_client_config_safe(
+        "claude-desktop",
+        config,
+        {"mcpServers": {"kicad-mcp-pro": {"command": "uvx"}}},
+        registry_root=registry,
+    )
+    original = config.read_bytes()
+    (registry / "owned_client_entry_hashes.json").write_text(registry_contents, encoding="utf-8")
+    with pytest.raises(ClientConfigError, match=expected):
+        remove_client_config_entry("claude-desktop", config, registry_root=registry)
+    assert config.read_bytes() == original
+
+
+def test_cleanup_refuses_unregistered_existing_client_file(tmp_path) -> None:
+    config = tmp_path / "settings.json"
+    content = json.dumps({"mcpServers": {"kicad-mcp-pro": {"command": "custom"}}})
+    config.write_text(content, encoding="utf-8")
+    with pytest.raises(ClientConfigError, match="not recorded"):
+        remove_client_config_entry("cursor", config, registry_root=tmp_path / "missing-registry")
+    assert config.read_text(encoding="utf-8") == content
+
+
+def test_setup_rejects_invalid_existing_mcp_namespace_without_overwrite(tmp_path) -> None:
+    config = tmp_path / "settings.json"
+    content = json.dumps({"mcpServers": ["not", "a", "mapping"]})
+    config.write_text(content, encoding="utf-8")
+    with pytest.raises(ClientConfigError, match="entries are invalid"):
+        write_client_config_safe(
+            "claude-desktop",
+            config,
+            {"mcpServers": {"kicad-mcp-pro": {"command": "uvx"}}},
+            registry_root=tmp_path / "registry",
+        )
+    assert config.read_text(encoding="utf-8") == content

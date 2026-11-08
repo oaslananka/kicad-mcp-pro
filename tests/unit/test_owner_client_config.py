@@ -153,3 +153,95 @@ def test_bundled_app_owned_uv_is_reflected_in_local_client_snippet(
     assert server["command"] == str(bundled)
     assert server["args"][:3] == ["tool", "run", "--from"]
     assert server["env"]["UV_CACHE_DIR"] == str(tmp_path / "cache")
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "{broken json",
+        "[]",
+        json.dumps({"mcpServers": []}),
+    ],
+)
+def test_guided_preview_rejects_unsupported_existing_client_settings(owner, content: str) -> None:
+    browser, target = owner
+    headers_for(browser)
+    target.write_text(content, encoding="utf-8")
+    response = browser.get("/api/owner/client-config/preview/claude-desktop")
+    assert response.status_code == 409
+    assert target.read_text(encoding="utf-8") == content
+
+
+def test_guided_preview_rejects_missing_and_oversized_client_config(
+    owner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    browser, target = owner
+    headers_for(browser)
+    monkeypatch.setattr(owner_routes, "_resolve_config_path", lambda _name: None)
+    assert browser.get("/api/owner/client-config/preview/cursor").status_code == 409
+    monkeypatch.setattr(owner_routes, "_resolve_config_path", lambda _name: target)
+    target.write_bytes(b" " * (1024 * 1024 + 1))
+    assert browser.get("/api/owner/client-config/preview/cursor").status_code == 409
+    assert target.stat().st_size > 1024 * 1024
+
+
+def test_guided_preview_refuses_redirected_and_unrecognized_client_format(
+    owner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    browser, target = owner
+    headers_for(browser)
+    original_is_symlink = Path.is_symlink
+
+    def redirected(path: Path) -> bool:
+        return path == target or original_is_symlink(path)
+
+    monkeypatch.setattr(Path, "is_symlink", redirected)
+    assert browser.get("/api/owner/client-config/preview/cursor").status_code == 409
+    monkeypatch.setattr(Path, "is_symlink", original_is_symlink)
+    from kicad_mcp.web import routes
+
+    monkeypatch.setattr(routes, "_mcp_snippet_for_client", lambda _client: ({}, "toml"))
+    assert browser.get("/api/owner/client-config/preview/cursor").status_code == 409
+    assert not target.exists()
+
+
+def test_guided_apply_rejects_bad_body_or_unsupported_client(
+    owner,
+) -> None:
+    browser, target = owner
+    headers = headers_for(browser)
+    malformed = browser.post(
+        "/api/owner/client-config/apply/claude-desktop",
+        headers={**headers, "Content-Type": "application/json"},
+        content="{bad",
+    )
+    assert malformed.status_code == 400
+    unsupported = browser.post(
+        "/api/owner/client-config/apply/codex",
+        headers=headers,
+        json={"confirmation": "not-valid"},
+    )
+    assert unsupported.status_code == 400
+    assert not target.exists()
+
+
+def test_guided_apply_handles_write_failure_without_claiming_connection(
+    owner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    browser, target = owner
+    headers = headers_for(browser)
+    preview = browser.get("/api/owner/client-config/preview/claude-desktop")
+    assert preview.status_code == 200
+
+    def fail_write(*_args: object, **_kwargs: object) -> None:
+        raise owner_routes.ClientConfigError("test blocked client write")
+
+    monkeypatch.setattr(owner_routes, "write_client_config_safe", fail_write)
+    result = browser.post(
+        "/api/owner/client-config/apply/claude-desktop",
+        headers=headers,
+        json={"confirmation": preview.json()["confirmation"]},
+    )
+    assert result.status_code == 409
+    assert "no connection was claimed" in result.text
+    assert not target.exists()
