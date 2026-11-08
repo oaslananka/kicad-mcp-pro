@@ -173,7 +173,11 @@ def _require_owned_task(xml: str, sid: str, executable: str) -> None:
             or actions[0].tag != f"{{{_TASK_NS}}}Exec"
         ):
             raise LocalApprovalDeniedError(_DENIED)
-        get = lambda item, node: item.findtext(node, namespaces=ns)  # noqa: E731
+
+        def get(item: ET.Element, node: str) -> str | None:
+            return item.findtext(node, namespaces=ns)
+
+        command = get(actions[0], "t:Command")
         if (
             get(principal[0], "t:UserId") != sid
             or get(principal[0], "t:LogonType") != "InteractiveToken"
@@ -181,8 +185,8 @@ def _require_owned_task(xml: str, sid: str, executable: str) -> None:
             or get(trigger[0], "t:UserId") != sid
             or get(trigger[0], "t:Enabled") != "true"
             or get(actions[0], "t:Arguments") != _TASK_ARGS
-            or get(actions[0], "t:Command") is None
-            or os.path.normcase(get(actions[0], "t:Command")) != os.path.normcase(executable)
+            or not command
+            or os.path.normcase(command) != os.path.normcase(executable)
         ):
             raise LocalApprovalDeniedError(_DENIED)
     except (ET.ParseError, ValueError, TypeError, DefusedXmlException) as exc:
