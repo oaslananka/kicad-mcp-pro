@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,8 @@ from kicad_mcp.cloud_windows_enrollment import (
 )
 from kicad_mcp.cloud_windows_local_selection import WindowsLocalProjectSelection
 from kicad_mcp.server import app
+
+pytestmark = pytest.mark.skipif(os.name != "nt", reason="Native Windows owner session only")
 
 ORIGIN = "https://kicad-mcp-pro.oaslananka.dev"
 

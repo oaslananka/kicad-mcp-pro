@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -11,6 +12,8 @@ from defusedxml import ElementTree as SafeET
 
 from kicad_mcp import cloud_windows_task_scheduler as scheduler
 from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
+
+pytestmark = pytest.mark.skipif(os.name != "nt", reason="Native Windows owner session only")
 
 SID = "S-1-5-21-100-200-300-1001"
 

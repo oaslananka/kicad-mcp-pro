@@ -46,8 +46,12 @@ def _install_manager(executable: str | Path | None = None) -> str:
     tool_root = os.environ.get("UV_TOOL_DIR")
     if tool_root:
         try:
-            candidate = Path(path).resolve()
-            managed = Path(tool_root).expanduser().resolve() / _PACKAGE
+            # POSIX uv virtual environments typically use a Python symlink
+            # into an external managed interpreter. Resolving that symlink
+            # erases the actual tool installation directory, so compare
+            # lexical absolute paths (with '..' normalized) instead.
+            candidate = Path(os.path.abspath(os.path.expanduser(path)))
+            managed = Path(os.path.abspath(os.path.expanduser(tool_root))) / _PACKAGE
             if candidate.is_relative_to(managed) and candidate.parent.name.casefold() in {
                 "scripts",
                 "bin",

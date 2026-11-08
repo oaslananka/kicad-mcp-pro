@@ -48,6 +48,28 @@ def test_custom_uv_tool_dir_is_recognized_only_for_its_managed_interpreter(
     assert _install_manager(managed) == "unknown"
 
 
+def test_custom_uv_tool_dir_respects_posix_python_symlinks(monkeypatch, tmp_path) -> None:
+    import os
+    import sys
+
+    import pytest
+
+    if os.name == "nt":
+        pytest.skip("POSIX uv tools use external interpreter symlinks")
+
+    from kicad_mcp.cli_lifecycle import _install_manager
+
+    tool_root = tmp_path / "uv-tools"
+    venv_bin = tool_root / "kicad-mcp-pro" / "bin"
+    venv_bin.mkdir(parents=True)
+    interpreter = venv_bin / "python"
+    interpreter.symlink_to(sys.executable)
+    monkeypatch.setenv("UV_TOOL_DIR", str(tool_root))
+    assert interpreter.resolve() != interpreter.absolute()
+    assert _install_manager(interpreter) == "uv"
+    assert _install_manager(tmp_path / "other" / "bin" / "python") == "unknown"
+
+
 def test_explicit_update_check_json_never_installs(monkeypatch) -> None:
     monkeypatch.setattr("kicad_mcp.cli_lifecycle._fetch_latest_stable", lambda: "99.0.0")
     monkeypatch.setattr("kicad_mcp.cli_lifecycle._install_manager", lambda: "uv")
@@ -113,7 +135,7 @@ def test_path_inventory_detects_multiple_launchers_without_executing_them(tmp_pa
     (second / "kicad-mcp-pro.exe").touch()
     found = _path_launchers([str(first), str(second), str(first)], windows=True)
     assert len(found) == 2
-    assert found[0].endswith("first\\kicad-mcp-pro.exe")
+    assert found[0].replace(chr(92), "/").endswith("first/kicad-mcp-pro.exe")
 
 
 def test_doctor_warns_about_duplicate_launchers_without_running_them(monkeypatch) -> None:
