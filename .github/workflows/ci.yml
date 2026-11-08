@@ -298,7 +298,11 @@ jobs:
            (needs.changes.outputs.release_metadata_only != 'true' &&
             needs.changes.outputs.python != 'true' &&
             needs.changes.outputs.repo_tooling != 'true' &&
-            needs.changes.outputs.workflows != 'true'))
+            needs.changes.outputs.workflows != 'true' &&
+             !(github.event_name == 'push' &&
+               github.ref == 'refs/heads/main' &&
+               matrix.os == 'windows-2025' &&
+               needs.changes.outputs.sonar_docs_only != 'true')))
         shell: bash
         run: |
           echo "::notice::Skipping mcp-server CI — change set does not require this lane"
@@ -334,14 +338,19 @@ jobs:
         if: env.skip_ci != 'true'
       - run: corepack pnpm run test:unit
         if: env.skip_ci != 'true'
-      # Preserve native Windows execution evidence instead of excluding
-      # Windows-only code from the required 90% Python patch coverage gate.
+      # Preserve native Windows execution evidence for PR patch coverage AND
+      # analyzed main pushes, including non-Python follow-up merges.
       - name: Collect native Windows CLI coverage
         if: >-
           env.skip_ci != 'true' &&
           matrix.os == 'windows-2025' &&
-          github.event_name == 'pull_request' &&
-          needs.changes.outputs.python == 'true'
+          ((github.event_name == 'pull_request' &&
+            needs.changes.outputs.python == 'true') ||
+           ((github.event_name == 'push' ||
+             github.event_name == 'workflow_dispatch') &&
+            github.ref == 'refs/heads/main' &&
+            needs.changes.outputs.release_metadata_only != 'true' &&
+            needs.changes.outputs.sonar_docs_only != 'true'))
         shell: pwsh
         run: |
           $tests = @(
@@ -370,8 +379,13 @@ jobs:
         if: >-
           env.skip_ci != 'true' &&
           matrix.os == 'windows-2025' &&
-          github.event_name == 'pull_request' &&
-          needs.changes.outputs.python == 'true'
+          ((github.event_name == 'pull_request' &&
+            needs.changes.outputs.python == 'true') ||
+           ((github.event_name == 'push' ||
+             github.event_name == 'workflow_dispatch') &&
+            github.ref == 'refs/heads/main' &&
+            needs.changes.outputs.release_metadata_only != 'true' &&
+            needs.changes.outputs.sonar_docs_only != 'true'))
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: windows-python-coverage-${{ github.run_id }}-${{ github.run_attempt }}
@@ -402,13 +416,16 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - name: Skip full coverage when Python is unaffected
+      - name: Skip full coverage when Python is unaffected and main Sonar is not required
         if: >-
           github.event_name != 'workflow_dispatch' &&
           (needs.changes.outputs.release_metadata_only == 'true' ||
            (needs.changes.outputs.python != 'true' &&
             needs.changes.outputs.repo_tooling != 'true' &&
-            needs.changes.outputs.workflows != 'true'))
+            needs.changes.outputs.workflows != 'true' &&
+            !(github.event_name == 'push' &&
+              github.ref == 'refs/heads/main' &&
+              needs.changes.outputs.sonar_docs_only != 'true')))
         run: |
           echo "::notice::Skipping full Python coverage — no Python, repository-tooling, or workflow changes detected"
           echo "skip_ci=true" >> "$GITHUB_ENV"
@@ -424,23 +441,33 @@ jobs:
         uses: ./.github/actions/python-full-suite
         with:
           junitxml: python.junit.xml
-      # Wait for the Windows runner's same-run artifact. Require its exact
-      # merge SHA/run/attempt and preserve the Linux full-suite result.
+      # On PR Python changes and analyzed main pushes, join same-run Windows
+      # execution evidence with the Linux suite; verify SHA/run/attempt.
       - name: Download native Windows coverage for this run
         if: >-
           env.skip_ci != 'true' &&
-          github.event_name == 'pull_request' &&
-          needs.changes.outputs.python == 'true' &&
-          steps.python-tests.outcome == 'success'
+          steps.python-tests.outcome == 'success' &&
+          ((github.event_name == 'pull_request' &&
+            needs.changes.outputs.python == 'true') ||
+           ((github.event_name == 'push' ||
+             github.event_name == 'workflow_dispatch') &&
+            github.ref == 'refs/heads/main' &&
+            needs.changes.outputs.release_metadata_only != 'true' &&
+            needs.changes.outputs.sonar_docs_only != 'true'))
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: windows-python-coverage-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Merge native Windows and Linux coverage
         if: >-
           env.skip_ci != 'true' &&
-          github.event_name == 'pull_request' &&
-          needs.changes.outputs.python == 'true' &&
-          steps.python-tests.outcome == 'success'
+          steps.python-tests.outcome == 'success' &&
+          ((github.event_name == 'pull_request' &&
+            needs.changes.outputs.python == 'true') ||
+           ((github.event_name == 'push' ||
+             github.event_name == 'workflow_dispatch') &&
+            github.ref == 'refs/heads/main' &&
+            needs.changes.outputs.release_metadata_only != 'true' &&
+            needs.changes.outputs.sonar_docs_only != 'true'))
         shell: bash
         run: |
           set -euo pipefail
