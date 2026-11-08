@@ -92,6 +92,40 @@ def test_update_lookup_error_is_not_misreported_as_current(monkeypatch) -> None:
     assert json.loads(result.output)["status"] == "lookup_failed"
 
 
+def test_offline_update_returns_stable_json_error_without_installing(monkeypatch) -> None:
+    """Real HTTP path, no network: both update spellings must fail closed."""
+    import urllib3.util.connection as transport
+
+    calls: list[tuple[object, ...]] = []
+
+    def offline(*args: object, **_kwargs: object) -> None:
+        calls.append(args)
+        raise OSError("simulated offline")
+
+    monkeypatch.setattr(transport, "create_connection", offline)
+    for args in (["update", "--json"], ["update", "check", "--json"]):
+        result = CliRunner().invoke(app, args)
+        assert result.exit_code == 3
+        assert json.loads(result.output)["status"] == "lookup_failed"
+        assert "update_available" not in result.output
+    assert len(calls) == 2
+
+
+def test_lifecycle_status_commands_never_check_network(monkeypatch) -> None:
+    """MCP version and removal guidance remain offline and non-mutating."""
+    import pytest
+
+    def fail_network() -> str:
+        pytest.fail("explicit update was not requested")
+
+    monkeypatch.setattr("kicad_mcp.cli_lifecycle._fetch_latest_stable", fail_network)
+    result = CliRunner().invoke(app, ["--version"])
+    assert result.exit_code == 0, result.output
+    result = CliRunner().invoke(app, ["uninstall"])
+    assert result.exit_code == 0, result.output
+    assert "No package, project or configuration was removed." in result.output
+
+
 def test_uninstall_prints_command_without_touching_installed_files(monkeypatch) -> None:
     monkeypatch.setattr("kicad_mcp.cli_lifecycle._install_manager", lambda: "uv")
     result = CliRunner().invoke(app, ["uninstall"])
