@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
+import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -96,6 +98,17 @@ def _manager_command(manager: str, action: str) -> str | None:
     return None
 
 
+def _python_pip_command(action: str) -> str:
+    """Conditional pip fallback, tied to this interpreter; never run implicitly."""
+    executable = (
+        subprocess.list2cmdline([sys.executable])
+        if os.name == "nt"
+        else shlex.quote(sys.executable)
+    )
+    pip_action = "install --upgrade" if action == "upgrade" else "uninstall"
+    return f"{executable} -m pip {pip_action} {_PACKAGE}"
+
+
 def _fetch_latest_stable() -> str:
     """Only on an explicit update invocation. Never run during MCP startup."""
     pool = urllib3.HTTPSConnectionPool(
@@ -181,9 +194,11 @@ def _show_update(json_output: bool) -> None:
     if result["upgrade_command"]:
         typer.echo(f"Upgrade using your package manager: {result['upgrade_command']}")
     else:
+        typer.echo("Installation manager not confirmed. Verify which CLI launcher is selected.")
+        typer.echo(f"If installed with pip using this Python: {_python_pip_command('upgrade')}")
         typer.echo(
-            "Installation manager not confirmed. Identify whether this CLI came "
-            "from uv, pipx or pip before changing it."
+            "If installed with uv or pipx, use uv tool upgrade kicad-mcp-pro "
+            "or pipx upgrade kicad-mcp-pro instead."
         )
     typer.echo("No update was installed automatically.")
 
@@ -212,9 +227,11 @@ def uninstall() -> None:
     typer.echo(f"Detected package manager: {manager}")
     command = _manager_command(manager, "uninstall")
     if command is None:
+        typer.echo("Installer unknown. Check which launcher runs before uninstalling it.")
+        typer.echo(f"If installed with pip using this Python: {_python_pip_command('uninstall')}")
         typer.echo(
-            "Installer unknown. Check which kicad-mcp-pro executable runs, then "
-            "uninstall it using that installation's manager."
+            "For uv or pipx instead: uv tool uninstall kicad-mcp-pro "
+            "or pipx uninstall kicad-mcp-pro."
         )
     else:
         typer.echo(f"Run this command outside the application: {command}")

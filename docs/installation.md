@@ -34,6 +34,12 @@ uv tool upgrade kicad-mcp-pro
 uv tool uninstall kicad-mcp-pro
 ~~~
 
+For a pip installation, `update` and `uninstall` show a conditional
+`python -m pip` command tied to the active interpreter. The CLI **does not
+guess that an unknown installation came from pip**: verify its launcher and
+package manager before running a suggested command. No installation is
+modified by these informational commands.
+
 Do not mix `pip install` with `uv tool install` on the same executable PATH.
 `doctor` warns about duplicate `kicad-mcp-pro` launchers before users upgrade
 or remove the wrong installation. Package removal is separate from revoking

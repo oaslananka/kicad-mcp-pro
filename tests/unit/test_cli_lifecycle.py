@@ -134,6 +134,27 @@ def test_uninstall_prints_command_without_touching_installed_files(monkeypatch) 
     assert "No package, project or configuration was removed." in result.output
 
 
+def test_unmanaged_pip_install_receives_conditional_removal_guidance(monkeypatch) -> None:
+    monkeypatch.setattr("kicad_mcp.cli_lifecycle._install_manager", lambda: "unknown")
+    result = CliRunner().invoke(app, ["uninstall"])
+    assert result.exit_code == 0, result.output
+    assert "If installed with pip" in result.output
+    assert "-m pip uninstall kicad-mcp-pro" in result.output
+    assert "uv tool uninstall" in result.output
+    assert "pipx uninstall" in result.output
+    assert "No package, project or configuration was removed." in result.output
+
+
+def test_unmanaged_pip_update_is_guidance_only(monkeypatch) -> None:
+    monkeypatch.setattr("kicad_mcp.cli_lifecycle._install_manager", lambda: "unknown")
+    monkeypatch.setattr("kicad_mcp.cli_lifecycle._fetch_latest_stable", lambda: "99.0.0")
+    result = CliRunner().invoke(app, ["update"])
+    assert result.exit_code == 0, result.output
+    assert "If installed with pip" in result.output
+    assert "-m pip install --upgrade kicad-mcp-pro" in result.output
+    assert "No update was installed automatically." in result.output
+
+
 def test_setup_without_agent_is_safe_in_noninteractive_mode(monkeypatch) -> None:
     monkeypatch.setattr(
         "kicad_mcp.setup.run_wizard", lambda: (_ for _ in ()).throw(AssertionError("wizard"))
