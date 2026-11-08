@@ -375,7 +375,8 @@ def test_root_tooling_changes_trigger_repository_contract_suite() -> None:
     coverage_skip = next(
         step
         for step in workflow["jobs"]["coverage"]["steps"]
-        if step.get("name") == "Skip full coverage when Python is unaffected"
+        if step.get("name")
+        == "Skip full coverage when Python is unaffected and main Sonar is not required"
     )
     for skip_step in (server_skip, coverage_skip):
         assert "needs.changes.outputs.repo_tooling != 'true'" in skip_step["if"]
@@ -440,3 +441,41 @@ def test_generated_package_test_output_is_not_repository_source() -> None:
 
     assert "**/dist-test/**" in properties["sonar.exclusions"]
     assert "packages/protocol-schemas/dist-test/" in gitignore
+
+
+def test_main_sonar_coverage_uses_windows_native_evidence() -> None:
+    """A metadata-only squash must not drop native Windows new-code coverage."""
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    jobs = workflow["jobs"]
+    windows = {s["name"]: s for s in jobs["mcp-server"]["steps"] if "name" in s}
+    linux = {s["name"]: s for s in jobs["coverage"]["steps"] if "name" in s}
+    skipped_server = windows["Skip mcp-server when unaffected or redundant"]
+    skipped_coverage = linux[
+        "Skip full coverage when Python is unaffected and main Sonar is not required"
+    ]
+    collector = windows["Collect native Windows CLI coverage"]
+    upload = windows["Upload exact-run native Windows coverage"]
+    download = linux["Download native Windows coverage for this run"]
+    merge = linux["Merge native Windows and Linux coverage"]
+    for step in (skipped_server, skipped_coverage, collector, upload, download, merge):
+        assert "github.event_name == 'push'" in step["if"]
+        assert "github.ref == 'refs/heads/main'" in step["if"]
+        assert "needs.changes.outputs.sonar_docs_only != 'true'" in step["if"]
+    for step in (collector, upload, download, merge):
+        assert "github.event_name == 'workflow_dispatch'" in step["if"]
+        assert "needs.changes.outputs.release_metadata_only != 'true'" in step["if"]
+    for step in (collector, upload):
+        assert "matrix.os == 'windows-2025'" in step["if"]
+    for step in (download, merge):
+        assert "steps.python-tests.outcome == 'success'" in step["if"]
+    assert "mcp-server" in jobs["coverage"]["needs"]
+    assert "scripts/merge_platform_coverage.py stamp" in collector["run"]
+    assert "scripts/merge_platform_coverage.py merge" in merge["run"]
+    assert "scripts/check_patch_coverage.py" in linux["Enforce Python patch coverage"]["run"]
+    assert "--min-percent 90" in linux["Enforce Python patch coverage"]["run"]
+    assert "steps.patch-coverage.outcome != 'failure'" in str(linux)
+    assert "needs.coverage.outputs.sonar_coverage_artifact_id != ''" in str(
+        jobs["sonarcloud"]["steps"]
+    )
