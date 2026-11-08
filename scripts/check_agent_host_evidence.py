@@ -129,16 +129,11 @@ def _check_opencode_v2_permissions(config: dict[str, Any], problems: list[str]) 
         problems.append("OpenCode V2 uses permissions/agents, not permission/agent")
         return
 
-    required_global = [
-        {"action": "kicad_*", "resource": "*", "effect": "deny"},
-        {"action": "edit", "resource": "*", "effect": "ask"},
-        {"action": "shell", "resource": "*", "effect": "ask"},
-    ]
-    required_agent = [
-        {"action": "kicad_*", "resource": "*", "effect": "allow"},
-        {"action": "edit", "resource": "*", "effect": "deny"},
-        {"action": "shell", "resource": "*", "effect": "ask"},
-    ]
+    def rule(action: str, effect: str) -> dict[str, str]:
+        return {"action": action, "resource": "*", "effect": effect}
+
+    required_global = [rule("kicad_*", "deny"), rule("edit", "ask"), rule("shell", "ask")]
+    required_agent = [rule("kicad_*", "allow"), rule("edit", "deny"), rule("shell", "ask")]
     agents = config.get("agents")
     reviewer = agents.get("pcb-review") if isinstance(agents, dict) else None
     if isinstance(reviewer, dict) and "permission" in reviewer:

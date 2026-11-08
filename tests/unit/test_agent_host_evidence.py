@@ -149,22 +149,28 @@ def test_opencode_v2_permissions_are_ordered_and_not_legacy() -> None:
     config = json.loads(
         (ROOT / "integrations/opencode/opencode.example.json").read_text(encoding="utf-8")
     )
-    assert "permission" not in config and "agent" not in config
+    assert "permission" not in config
+    assert "agent" not in config
+
+    def rule(action: str, effect: str) -> dict[str, str]:
+        return {"action": action, "resource": "*", "effect": effect}
+
     assert config["permissions"] == [
-        {"action": "kicad_*", "resource": "*", "effect": "deny"},
-        {"action": "edit", "resource": "*", "effect": "ask"},
-        {"action": "shell", "resource": "*", "effect": "ask"},
+        rule("kicad_*", "deny"),
+        rule("edit", "ask"),
+        rule("shell", "ask"),
     ]
     assert "permission" not in config["agents"]["pcb-review"]
     assert config["agents"]["pcb-review"]["permissions"] == [
-        {"action": "kicad_*", "resource": "*", "effect": "allow"},
-        {"action": "edit", "resource": "*", "effect": "deny"},
-        {"action": "shell", "resource": "*", "effect": "ask"},
+        rule("kicad_*", "allow"),
+        rule("edit", "deny"),
+        rule("shell", "ask"),
     ]
     legacy = json.loads(
         (ROOT / "integrations/opencode/opencode.v1.example.json").read_text(encoding="utf-8")
     )
-    assert "permission" in legacy and "agent" in legacy
+    assert "permission" in legacy
+    assert "agent" in legacy
 
 
 @pytest.mark.parametrize("legacy_key", ["permission", "agent"])
