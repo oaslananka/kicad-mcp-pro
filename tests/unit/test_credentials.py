@@ -129,16 +129,14 @@ def test_credentials_never_leaked_in_str_or_repr() -> None:
     assert "key" not in rep.lower() or "store" in rep.lower()
 
 
-def test_macos_keychain_refuses_oversized_value_and_subprocess_timeout() -> None:
-    import subprocess
-
+def test_macos_keychain_refuses_oversized_value_and_os_error() -> None:
     store = MacOSKeychainCredentialStore()
     record_id = "0123456789abcdef0123456789abcdef"
     with patch("subprocess.run") as run:
         with pytest.raises(ValueError, match="exceeds"):
             store.save_key(record_id, b"x" * 65537)
         run.assert_not_called()
-        run.side_effect = subprocess.TimeoutExpired(["/usr/bin/security", "-i"], 15)
+        run.side_effect = OSError("test-only Keychain executable unavailable")
         with pytest.raises(RuntimeError, match="write unavailable") as error:
             store.save_key(record_id, b"synthetic")
         assert "synthetic" not in str(error.value)
