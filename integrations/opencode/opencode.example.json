@@ -19,24 +19,48 @@
       }
     }
   },
-  "permission": {
-    "kicad_*": "deny",
-    "edit": "ask",
-    "bash": "ask"
-  },
-  "agent": {
-    "pcb-review": {
-      "description": "KiCad PCB review and manufacturing readiness agent",
-      "mode": "primary",
-      "permission": {
-        "kicad_*": "allow",
-        "edit": "deny",
-        "bash": "ask"
-      }
-    }
-  },
   "instructions": [
     "AGENTS.md",
     ".opencode/kicad-instructions.md"
-  ]
+  ],
+  "permissions": [
+    {
+      "action": "kicad_*",
+      "resource": "*",
+      "effect": "deny"
+    },
+    {
+      "action": "edit",
+      "resource": "*",
+      "effect": "ask"
+    },
+    {
+      "action": "shell",
+      "resource": "*",
+      "effect": "ask"
+    }
+  ],
+  "agents": {
+    "pcb-review": {
+      "description": "KiCad PCB review and manufacturing readiness agent",
+      "mode": "primary",
+      "permissions": [
+        {
+          "action": "kicad_*",
+          "resource": "*",
+          "effect": "allow"
+        },
+        {
+          "action": "edit",
+          "resource": "*",
+          "effect": "deny"
+        },
+        {
+          "action": "shell",
+          "resource": "*",
+          "effect": "ask"
+        }
+      ]
+    }
+  }
 }

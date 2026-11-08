@@ -8,7 +8,7 @@ This file is for repository maintenance. User-facing OpenCode setup and usage be
 
 OpenCode uses its own `mcp` configuration schema. Preserve local versus remote server semantics and keep the installer-facing `integrations/opencode/opencode.example.json` aligned with the documented project-level OpenCode example where they describe the same server behavior.
 
-- New OpenCode permission configuration uses `permission`; do not reintroduce the deprecated legacy `tools` boolean model.
+- OpenCode 2.x uses ordered `permissions` arrays and `agents` entries; 1.x retains `permission`/`agent` maps. Never mix versions or reintroduce deprecated legacy `tools` booleans.
 - Preserve wildcard behavior such as `kicad_*` when documenting or testing MCP tool permissions.
 - Keep conservative/read-only defaults for general review.
 - Do not embed literal remote bearer tokens; use environment references or the supported OpenCode secret mechanism.

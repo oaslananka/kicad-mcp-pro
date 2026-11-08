@@ -119,6 +119,38 @@ def _check_host_configuration(
         else None
     )
     _check_local_server(name, server, problems, expected_version)
+    if name == "opencode":
+        _check_opencode_v2_permissions(config, problems)
+
+
+def _check_opencode_v2_permissions(config: dict[str, Any], problems: list[str]) -> None:
+    """Prevent silently publishing legacy 1.x permission keys in a V2 example."""
+    if "permission" in config or "agent" in config:
+        problems.append("OpenCode V2 uses permissions/agents, not permission/agent")
+        return
+
+    required_global = [
+        {"action": "kicad_*", "resource": "*", "effect": "deny"},
+        {"action": "edit", "resource": "*", "effect": "ask"},
+        {"action": "shell", "resource": "*", "effect": "ask"},
+    ]
+    required_agent = [
+        {"action": "kicad_*", "resource": "*", "effect": "allow"},
+        {"action": "edit", "resource": "*", "effect": "deny"},
+        {"action": "shell", "resource": "*", "effect": "ask"},
+    ]
+    agents = config.get("agents")
+    reviewer = agents.get("pcb-review") if isinstance(agents, dict) else None
+    if isinstance(reviewer, dict) and "permission" in reviewer:
+        problems.append("OpenCode V2 agent uses permissions, not permission")
+        return
+    if (
+        config.get("permissions") != required_global
+        or not isinstance(reviewer, dict)
+        or reviewer.get("mode") != "primary"
+        or reviewer.get("permissions") != required_agent
+    ):
+        problems.append("OpenCode V2 reviewed permission defaults have changed")
 
 
 def _check_local_server(

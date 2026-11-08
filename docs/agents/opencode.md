@@ -33,25 +33,26 @@ On OpenCode 2.x, use the following minimal manual configuration (OpenCode
 }
 ```
 
-OpenCode permissions match tool names and support wildcards. Prefer the current
-`permission` schema over the deprecated legacy `tools` booleans:
+OpenCode 2.x uses ordered `permissions` arrays and `agents` entries, not
+the 1.x `permission`/`agent` maps. MCP tool names are prefixed by the
+server name, so `kicad_*` applies to this server's tools:
 
 ```json
 {
-  "permission": {
-    "kicad_*": "deny",
-    "edit": "ask",
-    "bash": "ask"
-  },
-  "agent": {
+  "permissions": [
+    {"action": "kicad_*", "resource": "*", "effect": "deny"},
+    {"action": "edit", "resource": "*", "effect": "ask"},
+    {"action": "shell", "resource": "*", "effect": "ask"}
+  ],
+  "agents": {
     "pcb-review": {
       "description": "KiCad PCB review and manufacturing readiness agent",
       "mode": "primary",
-      "permission": {
-        "kicad_*": "allow",
-        "edit": "deny",
-        "bash": "ask"
-      }
+      "permissions": [
+        {"action": "kicad_*", "resource": "*", "effect": "allow"},
+        {"action": "edit", "resource": "*", "effect": "deny"},
+        {"action": "shell", "resource": "*", "effect": "ask"}
+      ]
     }
   }
 }

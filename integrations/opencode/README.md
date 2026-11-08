@@ -36,26 +36,28 @@ legacy 1.x format instead, set `KICAD_MCP_OPENCODE_CONFIG_VERSION=1` for that
 setup command (or copy `opencode.v1.example.json`). No OpenCode CLI process is
 executed just to inspect a version.
 
-OpenCode permissions support wildcard matching against tool names, including MCP
-tools. A conservative default is to deny the KiCad tool family globally and allow
+OpenCode 2.x uses ordered `permissions` arrays and `agents` entries (not
+the legacy 1.x `permission` and `agent` maps). Its tool names are prefixed by
+the MCP server name, so `kicad_*` covers this configuration's KiCad tools.
+A conservative default is to deny the KiCad tool family globally and allow
 it only for a dedicated agent:
 
 ```json
 {
-  "permission": {
-    "kicad_*": "deny",
-    "edit": "ask",
-    "bash": "ask"
-  },
-  "agent": {
+  "permissions": [
+    {"action": "kicad_*", "resource": "*", "effect": "deny"},
+    {"action": "edit", "resource": "*", "effect": "ask"},
+    {"action": "shell", "resource": "*", "effect": "ask"}
+  ],
+  "agents": {
     "pcb-review": {
       "description": "KiCad PCB review and manufacturing readiness agent",
       "mode": "primary",
-      "permission": {
-        "kicad_*": "allow",
-        "edit": "deny",
-        "bash": "ask"
-      }
+      "permissions": [
+        {"action": "kicad_*", "resource": "*", "effect": "allow"},
+        {"action": "edit", "resource": "*", "effect": "deny"},
+        {"action": "shell", "resource": "*", "effect": "ask"}
+      ]
     }
   }
 }
@@ -97,8 +99,8 @@ Treat it as optional; the MCP server does not require the plugin.
 
 ## Security
 
-Start with `KICAD_MCP_OPERATING_MODE=readonly`. Use OpenCode `permission` rules,
-not the deprecated legacy `tools` booleans, to constrain built-in and MCP tools.
+Start with `KICAD_MCP_OPERATING_MODE=readonly`. Use OpenCode 2.x ordered `permissions` rules (1.x used `permission`),
+not deprecated legacy `tools` booleans, to constrain built-in and MCP tools.
 Keep write-capable agents narrow, require human intent before destructive KiCad
 operations, and use environment-variable references rather than literal remote
 tokens in configuration.
