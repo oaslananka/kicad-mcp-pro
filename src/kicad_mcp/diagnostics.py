@@ -879,12 +879,17 @@ def _duplicate_cli_path_check() -> CheckResult | None:
     executables = _path_launchers()
     if len(executables) < 2:
         return None
+    shadowed = ", ".join(executables[1:4])
+    extra = len(executables) - 4
+    if extra > 0:
+        shadowed += f" (+{extra} more)"
     return CheckResult(
         name="cli_path_conflict",
         status="warn",
         message=f"Found {len(executables)} KiCad MCP Pro launchers on PATH. "
-        "The first matching executable takes precedence.",
-        hint="Check command resolution before updating or uninstalling. "
+        f"First match: {executables[0]}",
+        hint=f"Other matching launchers: {shadowed}. "
+        "Verify the active installation before updating or uninstalling. "
         "PowerShell: Get-Command kicad-mcp-pro -All.",
     )
 

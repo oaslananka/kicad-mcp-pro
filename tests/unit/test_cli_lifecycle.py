@@ -204,6 +204,8 @@ def test_doctor_warns_about_duplicate_launchers_without_running_them(monkeypatch
     assert check is not None
     assert check.name == "cli_path_conflict"
     assert check.status == "warn"
+    assert "first/kicad-mcp-pro.exe" in check.message
+    assert "second/kicad-mcp-pro.exe" in check.hint
     assert "Get-Command" in check.hint
 
 
