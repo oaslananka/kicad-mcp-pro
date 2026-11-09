@@ -61,8 +61,18 @@ OpenCode permissions match tool names and support wildcards. Prefer the current
 
 ```bash
 opencode mcp list
+# If the KiCad server is missing, reload and check again:
+opencode reload
+opencode mcp list
 kicad-mcp-pro doctor
 ```
+
+If the KiCad server is not listed after writing `opencode.json`,
+`opencode reload` refreshes the existing service's configuration without a
+restart. Verify that the KiCad server reports connected before using its
+tools. Reloading active locations can cancel pending permission dialogs or
+forms, so run it when no approval is in progress. The experimental MCP
+registration API is not needed.
 
 ## Experimental plugin
 

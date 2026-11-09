@@ -76,6 +76,47 @@ def test_quickstart_installs_readonly_and_runs_stdio_smoke(tmp_path: Path, monke
     assert (tmp_path / ".cursor/skills/pcb-design/SKILL.md").is_file()
 
 
+def test_opencode_quickstart_explains_safe_cli_reload(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("KICAD_MCP_OPENCODE_CONFIG_VERSION", "2")
+    (tmp_path / "board.kicad_pro").write_text("{}", encoding="utf-8")
+
+    async def fake_smoke(project: Path, **kwargs: object) -> tuple[bool, str]:
+        assert project == tmp_path.resolve()
+        assert kwargs == {"agent": "opencode", "scope": "project"}
+        return True, "Read-only MCP tool discovery succeeded."
+
+    monkeypatch.setattr("kicad_mcp.setup.run_local_mcp_smoke", fake_smoke)
+    result = CliRunner().invoke(
+        app,
+        ["quickstart", "--agent", "opencode", "--project-dir", str(tmp_path), "--no-skills"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "opencode.json").is_file()
+    assert "MCP launch verified" in result.output
+    assert "opencode reload" in result.output
+    assert "opencode mcp list" in result.output
+    assert result.output.index("opencode mcp list") < result.output.index("opencode reload")
+    assert "Cloud remains optional" in result.output
+
+
+def test_opencode_v1_quickstart_does_not_offer_v2_reload(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("KICAD_MCP_OPENCODE_CONFIG_VERSION", "1")
+    (tmp_path / "board.kicad_pro").write_text("{}", encoding="utf-8")
+
+    async def fake_smoke(project: Path, **kwargs: object) -> tuple[bool, str]:
+        return True, "Read-only MCP tool discovery succeeded."
+
+    monkeypatch.setattr("kicad_mcp.setup.run_local_mcp_smoke", fake_smoke)
+    result = CliRunner().invoke(
+        app,
+        ["quickstart", "--agent", "opencode", "--project-dir", str(tmp_path), "--no-skills"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "MCP launch verified" in result.output
+    assert "opencode reload" not in result.output
+
+
 def test_quickstart_rejects_non_project_without_writing(tmp_path: Path, monkeypatch) -> None:
     def fail_if_called(*args: object, **kwargs: object) -> str:
         raise AssertionError("must not write configuration for an invalid project")
