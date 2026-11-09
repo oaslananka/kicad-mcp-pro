@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
+use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -14,6 +15,66 @@ use tauri_plugin_shell::ShellExt;
 use std::os::windows::process::CommandExt;
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
+
+#[cfg(windows)]
+mod backend_job;
+
+/// A desktop-owned backend with its Windows subprocess tree. Stopping uvx
+/// alone does not stop its uv/python descendants on Windows.
+struct ManagedBackend {
+    child: Child,
+    #[cfg(windows)]
+    job: Option<backend_job::WindowsJob>,
+}
+
+impl ManagedBackend {
+    fn spawn(command: &mut Command) -> std::io::Result<Self> {
+        let child = command.spawn()?;
+        #[cfg(windows)]
+        let job = match backend_job::WindowsJob::attach(&child) {
+            Ok(job) => Some(job),
+            Err(error) => {
+                let mut child = child;
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error);
+            }
+        };
+        Ok(Self {
+            child,
+            #[cfg(windows)]
+            job,
+        })
+    }
+
+    fn shutdown(&mut self) {
+        #[cfg(windows)]
+        if let Some(job) = self.job.take() {
+            // The last KILL_ON_JOB_CLOSE handle also kills descendants if
+            // explicit termination fails. This never targets user PIDs.
+            job.terminate();
+        }
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl Deref for ManagedBackend {
+    type Target = Child;
+    fn deref(&self) -> &Child {
+        &self.child
+    }
+}
+impl DerefMut for ManagedBackend {
+    fn deref_mut(&mut self) -> &mut Child {
+        &mut self.child
+    }
+}
+impl Drop for ManagedBackend {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
 
 /// Desktop/backend API contract negotiated through `/api/health`.
 /// This is intentionally independent from the MCP protocol version.
@@ -38,7 +99,7 @@ fn backend_package_spec() -> String {
 /// which can take well over a minute on a cold cache or slow network, so this
 /// must be generous — and must not be shorter than the frontend's own poll
 /// window, or a still-installing child would be killed prematurely.
-const HEALTH_WAIT: Duration = Duration::from_secs(120);
+const HEALTH_WAIT: Duration = Duration::from_secs(300);
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 #[derive(Clone, serde::Serialize)]
@@ -52,7 +113,9 @@ pub struct ServerStatus {
 }
 
 pub struct ServerProcess {
-    pub child: Mutex<Option<Child>>,
+    pub(crate) child: Mutex<Option<ManagedBackend>>,
+    /// Bundled pinned uv runtime, independent from the user's global Python.
+    pub bundled_uv: Mutex<Option<PathBuf>>,
     pub error: Mutex<Option<String>>,
     pub working_dir: Mutex<Option<PathBuf>>,
     pub preparation_stage: Mutex<String>,
@@ -64,6 +127,7 @@ impl ServerProcess {
     pub fn new() -> Self {
         Self {
             child: Mutex::new(None),
+            bundled_uv: Mutex::new(None),
             error: Mutex::new(None),
             working_dir: Mutex::new(None),
             preparation_stage: Mutex::new("idle".to_string()),
@@ -104,8 +168,7 @@ impl Drop for ServerProcess {
     fn drop(&mut self) {
         if let Ok(mut guard) = self.child.lock() {
             if let Some(mut child) = guard.take() {
-                let _ = child.kill();
-                let _ = child.wait();
+                child.shutdown();
             }
         }
     }
@@ -240,57 +303,29 @@ fn user_runtime_dir() -> Option<PathBuf> {
     }
 }
 
-fn which_uvx() -> Option<PathBuf> {
-    if let Ok(path) = which::which("uvx") {
-        return Some(path);
-    }
-    if let Some(runtime) = user_runtime_dir() {
-        let binary_name = if cfg!(windows) { "uvx.exe" } else { "uvx" };
-        let candidate = runtime.join("bin").join(binary_name);
-        if candidate.exists() {
-            return Some(candidate);
+fn desktop_uv(process: &ServerProcess) -> Option<PathBuf> {
+    let packaged = process
+        .bundled_uv
+        .lock()
+        .ok()
+        .and_then(|value| value.clone());
+    if let Some(path) = packaged {
+        if path.is_file() {
+            return Some(path);
         }
     }
-    #[cfg(windows)]
-    {
-        let tools_candidate = PathBuf::from("C:\\tools\\uvx.exe");
-        if tools_candidate.exists() {
-            return Some(tools_candidate);
-        }
-        if let Some(home) = std::env::var_os("USERPROFILE") {
-            // uv installed via cargo: ~/.cargo/bin/uvx.exe
-            let candidate = PathBuf::from(&home)
-                .join(".cargo")
-                .join("bin")
-                .join("uvx.exe");
-            if candidate.exists() {
-                return Some(candidate);
-            }
-            // uv installed via official installer (irm https://astral.sh/uv/install.ps1): ~/.local/bin/uvx.exe
-            let candidate = PathBuf::from(&home)
-                .join(".local")
-                .join("bin")
-                .join("uvx.exe");
-            if candidate.exists() {
-                return Some(candidate);
-            }
-        }
-        // Also check common uv install locations on Windows
-        for base in ["LOCALAPPDATA", "APPDATA"] {
-            if let Some(var) = std::env::var_os(base) {
-                let candidate = PathBuf::from(var).join("uv").join("uvx.exe");
-                if candidate.exists() {
-                    return Some(candidate);
-                }
-            }
-        }
+    // Local source development may continue using installed uvx. Release
+    // bundles must carry their own reviewed, pinned bootstrap executable.
+    if cfg!(debug_assertions) {
+        which::which("uv").ok()
+    } else {
+        None
     }
-    None
 }
 
 fn manual_backend_command(port: u16) -> String {
     format!(
-        "uvx --from {} kicad-mcp-pro dashboard --host 127.0.0.1 --port {port}",
+        "uv tool run --from {} kicad-mcp-pro dashboard --host 127.0.0.1 --port {port}",
         backend_package_spec()
     )
 }
@@ -401,14 +436,10 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
     }
 
     set_stage(process, "preparing_environment");
-    let uvx = which_uvx().ok_or_else(|| {
+    let uvx = desktop_uv(process).ok_or_else(|| {
         set_stage(process, "failed");
-        let hint = if cfg!(target_os = "windows") {
-            "Install uv from PowerShell: (irm https://astral.sh/uv/install.ps1) | iex"
-        } else {
-            "Install uv: curl -fsSL https://astral.sh/uv/install.sh | sh"
-        };
-        format!("uvx was not found. {hint}")
+        "The application-owned Python bootstrap is missing. Repair or reinstall the official KiCad MCP Pro desktop package; your KiCad projects are unchanged."
+            .to_string()
     })?;
     // Use user-selected working directory (if set), or fall back to HOME
     let cwd = process
@@ -436,8 +467,26 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
     // it must never fall forward or backward to another release.
     let backend_spec = backend_package_spec();
     let mut cmd = Command::new(&uvx);
+    // Keep Python and downloaded dependencies in app-owned user storage;
+    // do not modify system Python, uv settings or shared package caches.
+    if let Some(runtime) = user_runtime_dir() {
+        std::fs::create_dir_all(&runtime)
+            .map_err(|_| "Could not prepare private desktop runtime storage.".to_string())?;
+        cmd.env("KICAD_MCP_DESKTOP_UV", &uvx)
+            .env("UV_CACHE_DIR", runtime.join("cache"))
+            .env("UV_PYTHON_INSTALL_DIR", runtime.join("python"))
+            .env("UV_PYTHON_PREFERENCE", "only-managed")
+            // Keep the managed runtime on a supported Python minor release.
+            // Unconstrained uv selected 3.15 and cold Windows install took
+            // longer than the prior 120-second splash timeout.
+            .env("UV_PYTHON", "3.13")
+            .env("UV_NO_CONFIG", "1")
+            .env("UV_NO_PROGRESS", "1");
+    }
     cmd.current_dir(&cwd)
         .args([
+            "tool",
+            "run",
             "--from",
             backend_spec.as_str(),
             "kicad-mcp-pro",
@@ -458,7 +507,7 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
 
-    let child = cmd.spawn().map_err(|error| {
+    let child = ManagedBackend::spawn(&mut cmd).map_err(|error| {
         set_stage(process, "failed");
         format!("Failed to start kicad-mcp-pro with {uvx:?}: {error}")
     })?;
@@ -468,7 +517,7 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
 
     set_stage(process, "starting_server");
     // Wait for the server to become healthy. The first launch downloads the
-    // package via uvx, so allow a generous window (HEALTH_WAIT) before giving
+    // package via bundled uv, so allow a generous window (HEALTH_WAIT) before giving
     // up — killing the child early would abort an install that is still in
     // progress.
     let deadline = std::time::Instant::now() + HEALTH_WAIT;
@@ -494,7 +543,9 @@ fn start_server_inner(process: &ServerProcess, port: u16) -> Result<String, Stri
             if let Some(ref mut child) = *guard {
                 if let Some(status) = child.try_wait().ok().flatten() {
                     let _ = child.wait();
+                    let exited = guard.take();
                     drop(guard);
+                    drop(exited);
                     set_stage(process, "failed");
                     return Err(format!(
                         "Python server process exited unexpectedly (code: {}) before binding to port {}.\n\
@@ -528,8 +579,7 @@ Run manually to debug: {}",
 fn stop_server_inner(process: &ServerProcess) -> Result<(), String> {
     let mut guard = process.child.lock().map_err(|error| error.to_string())?;
     if let Some(mut child) = guard.take() {
-        let _ = child.kill();
-        let _ = child.wait();
+        child.shutdown();
     }
     Ok(())
 }
@@ -571,11 +621,18 @@ fn open_external_link(app: tauri::AppHandle, url: String) -> Result<(), String> 
 }
 
 #[tauri::command]
-fn start_server(state: State<'_, ServerProcess>, port: u16) -> Result<String, String> {
+async fn start_server(app: tauri::AppHandle, port: u16) -> Result<String, String> {
     if !supported_dashboard_port(port) {
         return Err("Unsupported desktop port.".to_string());
     }
-    start_server_inner(state.inner(), port)
+    // A cold app-owned Python bootstrap can take several minutes. Never
+    // block the Tauri UI thread or starve async command workers while waiting.
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ServerProcess>();
+        start_server_inner(state.inner(), port)
+    })
+    .await
+    .map_err(|error| format!("Desktop backend launch task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -876,15 +933,22 @@ fn get_working_dir(state: State<'_, ServerProcess>) -> Option<String> {
 /// Stops the running server (if any) and restarts it with the
 /// current settings (port, working directory, etc.).
 #[tauri::command]
-fn restart_server(state: State<'_, ServerProcess>, port: u16) -> Result<String, String> {
+async fn restart_server(app: tauri::AppHandle, port: u16) -> Result<String, String> {
     // Do not allow web content to choose an arbitrary loopback target.
     if !supported_dashboard_port(port) {
         return Err("Unsupported desktop port.".to_string());
     }
-    let _ = stop_server_inner(state.inner());
-    // Give the OS a moment to release the port
-    thread::sleep(Duration::from_millis(500));
-    start_server_inner(state.inner(), port)
+    // The splash must keep receiving status/readiness IPC commands while an
+    // isolated backend is downloading or starting. Hold only the task thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ServerProcess>();
+        let _ = stop_server_inner(state.inner());
+        // Give the OS a moment to release the port.
+        thread::sleep(Duration::from_millis(500));
+        start_server_inner(state.inner(), port)
+    })
+    .await
+    .map_err(|error| format!("Desktop backend restart task failed: {error}"))?
 }
 
 /// Bring an already-running desktop instance to the foreground.
@@ -1032,6 +1096,18 @@ pub fn run() {
             }
             let _ = tray.build(app)?;
 
+            // Tauri resolves the platform-specific installed resource path.
+            let executable = if cfg!(windows) { "uv.exe" } else { "uv" };
+            if let Ok(resource) = app.path().resolve(
+                format!("bootstrap/{executable}"),
+                tauri::path::BaseDirectory::Resource,
+            ) {
+                if resource.is_file() {
+                    if let Ok(mut slot) = app.state::<ServerProcess>().bundled_uv.lock() {
+                        *slot = Some(resource);
+                    }
+                }
+            }
             spawn_background_checks(app.handle().clone());
             Ok(())
         })
@@ -1174,6 +1250,17 @@ mod tests {
     }
 
     #[test]
+    fn desktop_prefers_packaged_uv_to_global_tools() {
+        let process = ServerProcess::new();
+        // This test needs a deterministic existing file path only: it never
+        // executes, modifies, or launches it.
+        let existing = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        assert!(existing.is_file());
+        *process.bundled_uv.lock().expect("runtime lock") = Some(existing.clone());
+        assert_eq!(desktop_uv(&process), Some(existing));
+    }
+
+    #[test]
     fn backend_package_spec_is_exact_and_cache_reusable() {
         let spec = backend_package_spec();
         assert_eq!(
@@ -1242,6 +1329,19 @@ mod tests {
         let (_, _, _, token) = tauri::async_runtime::block_on(quiesce_backend(&base)).unwrap();
         assert_eq!(token, "test-token");
         server.join().unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn managed_backend_shutdown_reaps_its_owned_launcher() {
+        let mut cmd = Command::new("cmd.exe");
+        cmd.args(["/D", "/C", "ping -n 20 127.0.0.1 > NUL"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let mut owned = ManagedBackend::spawn(&mut cmd).expect("start test-owned backend launcher");
+        owned.shutdown();
+        assert!(owned.try_wait().expect("query stopped child").is_some());
     }
 
     #[test]

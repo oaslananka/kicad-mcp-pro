@@ -56,8 +56,24 @@ release notes for native Windows Cloud support before attempting pairing.
 ## Desktop app
 
 Download the installer for your operating system from the repository's GitHub
-Releases page. Automatic updates are not enabled: the desktop application does
-not check for, download, or install releases in the background.
+Releases page. Published installer behavior depends on its exact release:
+the already published 4.9.0 and 4.10.0 desktop installers still require
+a discoverable external `uvx` runtime. Candidate desktop installers built with
+the bundled-bootstrap release workflow carry pinned `uv` and create their own user-scoped Python
+runtime/cache on first startup, requesting managed Python 3.13 for its
+desktop-owned environment. They do not install global Python or modify the
+user's independent `uv` / MCP CLI installations. The first online startup may
+take several minutes while Python and exact backend dependencies are prepared;
+the startup screen keeps showing progress instead of failing after 120 seconds.
+An online startup is required when the matching runtime is not yet cached.
+
+Automatic updates are not enabled for the published desktop releases.
+The application includes Tauri updater integration, but automatic installation
+remains unavailable unless the given release configures a valid updater
+public key and publishes matching signed updater artifacts. An available GitHub
+tag alone is not permission to install an unsigned update. Published
+4.9.0 and 4.10.0 installers are unsigned; users should verify the official
+release SHA256 and provenance and expect potential OS publisher warnings.
 
 ### Upgrade
 
@@ -123,10 +139,34 @@ desktop port, startup fails closed and reports the expected backend and contract
 instead of continuing with an unverified API. Stop that process and restart the
 desktop, or run the exact backend shown in the error message.
 
-`uvx` may reuse the exact release environment from its cache. When the machine
-is offline and that exact backend is not cached, startup fails rather than
-selecting a different version; reconnect long enough for `uvx` to obtain the
-required release, or pre-cache that exact version before going offline.
+An existing standalone `uvx` installation may reuse its cached environment.
+New bundled-bootstrap builds instead use only their application-owned runtime
+cache. Offline startup succeeds only after the matching Python and exact
+backend have been prepared, and never silently downgrades to a different
+version. If app-owned runtime preparation fails, use the desktop retry/repair
+path; do not install or change global Python to fix the desktop.
+
+## Disconnect, cleanup and uninstall
+
+Local use does not require a Cloud account. To stop remote sharing, first
+disable the relevant Cloud connector and revoke the computer or AI client's
+project permission in the authenticated Cloud workspace. **Signing out, local
+settings cleanup and OS uninstall do not prove server-side revocation.**
+When offline, review and revoke remote access later in the Cloud account.
+
+The local web dashboard's **Maintenance** view offers preview and explicit
+confirmation before removing application-owned connector settings and owned
+AI-client configuration entries. Only unchanged, fingerprint-verified entries
+are eligible for automatic removal; an edited or legacy-unverified entry is
+preserved and reported for manual review. User project files, KiCad itself,
+other AI MCP servers, shared Python and user-wide caches are never bulk-deleted.
+
+Use the operating system's normal Applications / Installed Apps / package
+manager route to remove the desktop installer. That OS operation is separate
+from Cloud revoke and local owner-controlled cleanup. A DMG-to-Trash or
+AppImage deletion may bypass a running-app cleanup hook. Reinstallation must
+not silently re-enable a revoked device or expand project grants. Observe
+the actual connected state before saying a device is disconnected.
 
 ## Web Dashboard
 
@@ -155,8 +195,15 @@ The single-page UI has these views:
 - **Settings** — edits KiCad path, transport, host, port, profile, log level, and
   operating mode (changes apply after restart), and exports a ready-to-paste MCP
   client config for Claude Desktop, Cursor, VS Code, Windsurf, or Zed.
-- **Setup** — a five-step wizard: KiCad detection, default project directory,
-  transport, MCP client config (preview and copy), and a connection test.
+- **Setup**: a five-step wizard for KiCad detection, local project selection,
+  transport, and guided AI-client configuration. Claude Desktop, Cursor, VS Code
+  and Windsurf use preview plus explicit apply to preserve unrelated MCP
+  entries and back up existing settings. Other clients retain manual snippet
+  export. When launched from a newly bundled desktop, local client configuration
+  reuses its exact pinned `uv` executable and private runtime cache; normal
+  setup does not require a separate global Python/`uvx` install. Saving the
+  client configuration is not evidence that the AI host connected: verify a
+  real MCP read in the client before declaring it ready.
 
 The dashboard reads project and KiCad state; it does not run ERC or DRC itself.
 Run `run_erc()`, `run_drc()`, or `validate_design()` from your MCP client and

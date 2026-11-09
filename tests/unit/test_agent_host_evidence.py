@@ -145,6 +145,62 @@ def test_untrusted_paths_and_missing_schema_are_rejected(tmp_path: Path) -> None
     assert any("Invalid configuration path" in item for item in failures)
 
 
+def test_opencode_v2_permissions_are_ordered_and_not_legacy() -> None:
+    config = json.loads(
+        (ROOT / "integrations/opencode/opencode.example.json").read_text(encoding="utf-8")
+    )
+    assert "permission" not in config
+    assert "agent" not in config
+
+    def rule(action: str, effect: str) -> dict[str, str]:
+        return {"action": action, "resource": "*", "effect": effect}
+
+    assert config["permissions"] == [
+        rule("kicad_*", "deny"),
+        rule("edit", "ask"),
+        rule("shell", "ask"),
+    ]
+    assert "permission" not in config["agents"]["pcb-review"]
+    assert config["agents"]["pcb-review"]["permissions"] == [
+        rule("kicad_*", "allow"),
+        rule("edit", "deny"),
+        rule("shell", "ask"),
+    ]
+    legacy = json.loads(
+        (ROOT / "integrations/opencode/opencode.v1.example.json").read_text(encoding="utf-8")
+    )
+    assert "permission" in legacy
+    assert "agent" in legacy
+
+
+@pytest.mark.parametrize("legacy_key", ["permission", "agent"])
+def test_opencode_v2_legacy_policy_keys_are_rejected(legacy_key: str, tmp_path: Path) -> None:
+    repo = _temp_host_repo(tmp_path)
+    relative = "integrations/opencode/opencode.example.json"
+    _update_json(repo, relative, lambda data: data.update({legacy_key: {}}))
+    assert any("OpenCode V2 uses permissions/agents" in error for error in verifier.check(repo))
+
+
+def test_opencode_v2_agent_legacy_permission_is_rejected(tmp_path: Path) -> None:
+    repo = _temp_host_repo(tmp_path)
+    relative = "integrations/opencode/opencode.example.json"
+    _update_json(
+        repo,
+        relative,
+        lambda data: data["agents"]["pcb-review"].update(permission={"kicad_*": "allow"}),
+    )
+    assert any("OpenCode V2 agent uses permissions" in error for error in verifier.check(repo))
+
+
+def test_opencode_v2_downgrade_of_default_deny_is_rejected(tmp_path: Path) -> None:
+    repo = _temp_host_repo(tmp_path)
+    relative = "integrations/opencode/opencode.example.json"
+    _update_json(repo, relative, lambda data: data["permissions"][0].update(effect="allow"))
+    assert any(
+        "OpenCode V2 reviewed permission defaults" in error for error in verifier.check(repo)
+    )
+
+
 def test_opencode_v2_default_example_is_readonly_and_static() -> None:
     config = json.loads(
         (ROOT / "integrations/opencode/opencode.example.json").read_text(encoding="utf-8")

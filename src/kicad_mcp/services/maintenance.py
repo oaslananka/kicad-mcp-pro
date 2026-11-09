@@ -54,6 +54,10 @@ class CleanupResult:
     success: bool
     removed_targets: list[str] = field(default_factory=list)
     preserved_user_files: list[str] = field(default_factory=list)
+    remaining_targets: list[str] = field(default_factory=list)
+    failed_client_configs: list[str] = field(default_factory=list)
+    cloud_revocation: str = "not_attempted"
+    credentials: str = "preserved"
     message: str = ""
 
 
@@ -70,14 +74,16 @@ def _preserved_kicad_paths(user_project_roots: list[Path] | None) -> list[str]:
     return preserved
 
 
-def _remove_owned_client_entries(registry_root: Path) -> None:
-    """Remove only entries this application registered; keep client configs."""
+def _remove_owned_client_entries(registry_root: Path) -> list[str]:
+    """Remove only registered entries and report failures for user recovery."""
+    failed: list[str] = []
     for client, paths in get_owned_client_configs(registry_root).items():
         for path in paths:
             try:
                 remove_client_config_entry(client, Path(path), registry_root=registry_root)
             except (ClientConfigError, OSError):
-                pass
+                failed.append(str(path))
+    return failed
 
 
 def _remove_application_targets(targets: list[str]) -> list[str]:
@@ -152,10 +158,15 @@ class MaintenanceService:
             self.registry_root.mkdir(parents=True, exist_ok=True)
             repaired.append("created_storage_root")
 
+        status = self.preview_repair()
         return RepairResult(
-            success=True,
+            success=status.healthy,
             repaired_items=repaired,
-            message="Repair completed successfully",
+            message=(
+                "Local repair checks passed."
+                if status.healthy
+                else "Repair partially completed; unresolved checks need attention."
+            ),
         )
 
     def preview_cleanup(
@@ -188,16 +199,31 @@ class MaintenanceService:
     ) -> CleanupResult:
         preview = self.preview_cleanup(user_project_roots=user_project_roots)
 
-        if clean_client_configs:
-            _remove_owned_client_entries(self.registry_root)
+        failed_configs = (
+            _remove_owned_client_entries(self.registry_root) if clean_client_configs else []
+        )
         removed = _remove_application_targets(preview.targets_to_remove)
-
+        remaining = [
+            name
+            for name in preview.targets_to_remove
+            if Path(name).exists() or Path(name).is_symlink()
+        ]
+        complete = not (remaining or failed_configs)
         return CleanupResult(
-            success=True,
+            success=complete,
             removed_targets=removed,
             preserved_user_files=preview.preserved_user_files,
+            remaining_targets=remaining,
+            failed_client_configs=failed_configs,
+            # A local cleanup is never proof of a Cloud-side access revoke.
+            cloud_revocation="not_attempted",
+            credentials="preserved",
             message=(
-                f"Cleaned {len(removed)} application targets; "
-                f"preserved {len(preview.preserved_user_files)} user project files."
+                (
+                    "Local connector settings cleaned."
+                    if complete
+                    else "Local cleanup incomplete; retry after resolving the listed failures."
+                )
+                + " Cloud access and stored credentials were not revoked."
             ),
         )

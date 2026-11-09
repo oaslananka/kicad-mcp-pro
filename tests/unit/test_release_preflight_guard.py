@@ -210,7 +210,15 @@ def test_tauri_lockfile_is_tracked_and_workflows_use_locked_resolution() -> None
     assert "src-tauri/Cargo.lock" not in ignored
     assert "run: cargo check --locked" in gui_ci
     assert "run: cargo metadata --locked --format-version 1 --no-deps" in gui_release
-    assert "run: cargo tauri build ${{ matrix.args }} -- --locked" in gui_release
+    # Release bundles must stage only the exact version-gated application uv
+    # resource, without loosening the Cargo dependency lock.
+    bundle = ROOT / "src-tauri" / "tauri.bootstrap.conf.json"
+    assert bundle.is_file()
+    config = json.loads(bundle.read_text(encoding="utf-8"))
+    assert config["bundle"]["resources"]["resources/bootstrap/*"] == "bootstrap/"
+    assert (
+        "run: cargo tauri build --config tauri.bootstrap.conf.json ${{ matrix.args }} -- --locked"
+    ) in gui_release
 
 
 def test_gui_release_uses_exact_reviewed_tauri_cli_version() -> None:

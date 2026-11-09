@@ -1296,7 +1296,7 @@ async function runMaintenanceRepair() {
 function previewCleanup() {
   const el = byId('maintenance-result');
   el.style.display = 'block';
-  el.textContent = 'Scanning application state (user KiCad project files are strictly preserved)...';
+  el.textContent = 'Inspecting app-owned local settings...';
   fetch('/api/owner/session', {cache: 'no-store'})
     .then(r => {
       if (!r.ok) throw new Error('Local owner session unavailable');
@@ -1306,12 +1306,50 @@ function previewCleanup() {
       if (!r.ok) throw new Error('Cleanup preview unavailable');
       return r.json();
     })
-    .then(d => {
-      el.textContent = JSON.stringify(d, null, 2);
+    .then(data => {
+      el.replaceChildren();
+      const summary = document.createElement('p');
+      summary.textContent = 'Local connector settings: ' +
+        (data.targets_to_remove || []).length + ' items. AI client entries: ' +
+        (data.client_entries_to_remove || []).length + '.';
+      el.appendChild(summary);
+      const note = document.createElement('p');
+      note.textContent = 'KiCad projects are preserved. This does not revoke Cloud device or AI access, remove credentials, or uninstall the application. Revoke Cloud access in your account separately.';
+      el.appendChild(note);
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'btn btn-sm btn-primary';
+      action.textContent = 'Clean reviewed local settings';
+      action.addEventListener('click', () => applyCleanup(data.confirmation, action));
+      el.appendChild(action);
     })
     .catch(err => {
-      el.textContent = 'Preview failed: ' + err.message;
+      el.textContent = 'Could not preview cleanup: ' + err.message;
     });
+}
+
+async function applyCleanup(confirmation, button) {
+  const el = byId('maintenance-result');
+  button.disabled = true;
+  button.textContent = 'Cleaning reviewed settings...';
+  try {
+    const session = await fetch('/api/owner/session', {cache: 'no-store'});
+    if (!session.ok) throw new Error('Owner session unavailable');
+    const owner = await session.json();
+    if (!owner.csrf_token) throw new Error('Owner confirmation unavailable');
+    const response = await fetch('/api/maintenance/cleanup/apply', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-KiCad-Owner-CSRF': owner.csrf_token},
+      body: JSON.stringify({confirmation})
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || data.message || 'Cleanup was incomplete; review the remaining items.');
+    }
+    el.textContent = data.message || 'Reviewed local connector settings cleaned; Cloud access remains unchanged.';
+  } catch (error) {
+    el.textContent = 'Cleanup not completed: ' + error.message + '. Preview again before retrying.';
+  }
 }
 
 /* ── Setup Wizard ── */
@@ -1386,14 +1424,15 @@ function renderWizardStep(step) {
         '<div class="actions" style="margin-top:12px;">' +
         '<button type="button" class="btn btn-sm" onclick="previewClientConfig()">Preview Config</button>' +
         '<button type="button" class="btn btn-sm" onclick="copyClientConfig()">Copy to Clipboard</button>' +
-        '<button type="button" class="btn btn-sm btn-primary" onclick="downloadClientConfig()">Download config snippet</button></div>' +
-        '<p class="advanced-note">This downloads a snippet only. Review it before adding it to your AI client configuration; your existing settings are not overwritten.</p>';
+        '<button type="button" class="btn btn-sm btn-primary" onclick="previewClientInstall()">Configure selected AI client</button>' +
+        '<button type="button" class="btn btn-sm" onclick="downloadClientConfig()">Download config snippet</button></div>' +
+        '<p class="advanced-note">Review the exact local changes before configuring a supported client. Your other MCP servers are preserved; connection must still be tested in the AI client. Manual config export remains available.</p>';
       nav.innerHTML = '<button type="button" class="btn" onclick="wizardPrev()">Back</button><button type="button" class="btn btn-primary" onclick="wizardNext()">Next</button>';
       break;
 
     case 4:
       body.innerHTML =
-        '<div class="msg info">Your KiCad MCP Pro is ready to use!</div>' +
+        '<div class="msg info">Setup prepared. Test backend health and verify a real MCP connection from your selected AI client.</div>' +
         '<div id="testResult" class="wizard-result" style="display:none;"></div>' +
         '<div class="actions" style="margin-top:14px;">' +
         '<button type="button" class="btn btn-sm btn-primary" onclick="testConnection()">Test Connection</button></div>';
@@ -1427,6 +1466,73 @@ function copyClientConfig() {
   }).catch(() => {
     showMsg('wizardMsg', 'Could not copy. Select text manually.', 'warn');
   });
+}
+
+async function previewClientInstall() {
+  const client = document.getElementById('wizClient')?.value || '';
+  const supported = ['claude-desktop', 'cursor', 'vscode', 'windsurf'];
+  if (!supported.includes(client)) {
+    showMsg('wizardMsg', 'Guided setup is not yet available for this client; use the config download.', 'warn');
+    return;
+  }
+  const preview = document.getElementById('wizConfigPreview');
+  preview.replaceChildren();
+  preview.style.display = 'block';
+  preview.textContent = 'Inspecting client settings...';
+  try {
+    const session = await fetch('/api/owner/session', {cache: 'no-store'});
+    if (!session.ok) throw new Error('Owner session unavailable');
+    const response = await fetch(
+      '/api/owner/client-config/preview/' + encodeURIComponent(client), {cache: 'no-store'}
+    );
+    const data = await response.json();
+    if (!response.ok || !data.confirmation) {
+      throw new Error(data.error || 'Client settings could not be inspected');
+    }
+    preview.replaceChildren();
+    const summary = document.createElement('p');
+    summary.textContent = (data.action === 'update_existing' ? 'Replace' : 'Add') +
+      ' the KiCad MCP Pro entry in ' + data.config_path + '. ' +
+      data.other_entries + ' unrelated MCP entries will be kept. ' +
+      'A backup is created when a config file already exists.';
+    preview.appendChild(summary);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn btn-sm btn-primary';
+    button.textContent = 'Apply reviewed client settings';
+    button.addEventListener('click', () => applyClientInstall(client, data.confirmation, button));
+    preview.appendChild(button);
+  } catch (error) {
+    preview.textContent = 'Guided setup unavailable: ' + error.message;
+  }
+}
+
+async function applyClientInstall(client, confirmation, button) {
+  const preview = document.getElementById('wizConfigPreview');
+  button.disabled = true;
+  button.textContent = 'Applying...';
+  try {
+    const session = await fetch('/api/owner/session', {cache: 'no-store'});
+    if (!session.ok) throw new Error('Owner session unavailable');
+    const owner = await session.json();
+    if (!owner.csrf_token) throw new Error('Owner confirmation unavailable');
+    const response = await fetch(
+      '/api/owner/client-config/apply/' + encodeURIComponent(client), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-KiCad-Owner-CSRF': owner.csrf_token
+        },
+        body: JSON.stringify({confirmation})
+      }
+    );
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error || 'Client configuration was not saved');
+    preview.textContent = data.message;
+    showMsg('wizardMsg', 'Settings written. Verify the connection from the selected AI client.', 'success');
+  } catch (error) {
+    preview.textContent = 'Client setup failed: ' + error.message + '. Preview again before retrying.';
+  }
 }
 
 async function downloadClientConfig() {

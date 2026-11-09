@@ -34,6 +34,8 @@ from ..tools.router import available_profiles, tool_count_for_profile
 from .dashboard import DASHBOARD_HTML
 from .owner_routes import (
     _owner_session,
+    api_client_config_apply,
+    api_client_config_preview,
     api_cloud_connector_disable,
     api_cloud_connector_enable,
     api_cloud_project_active,
@@ -209,7 +211,40 @@ def _mcp_snippet_for_client(client: str) -> tuple[object, str]:
     }
     if cfg.project_dir is not None:
         env["KICAD_MCP_PROJECT_DIR"] = str(cfg.project_dir)
-    stdio_server = {"command": "uvx", "args": args, "env": env}
+    command = "uvx"
+    bundled_uv = os.environ.get("KICAD_MCP_DESKTOP_UV", "")
+    candidate_uv = Path(bundled_uv) if bundled_uv else None
+    if (
+        candidate_uv is not None
+        and candidate_uv.is_absolute()
+        and candidate_uv.name in ("uv", "uv.exe")
+        and candidate_uv.is_file()
+    ):
+        # Only the app-launched backend supplies this path. The MCP client
+        # may reuse exactly that managed runtime, without asking the owner to
+        # install a second global Python or uvx.
+        command = str(candidate_uv)
+        args = [
+            "tool",
+            "run",
+            "--from",
+            f"kicad-mcp-pro=={__version__}",
+            "kicad-mcp-pro",
+            "--transport",
+            "stdio",
+        ]
+        for key in (
+            "UV_CACHE_DIR",
+            "UV_PYTHON_INSTALL_DIR",
+            "UV_PYTHON_PREFERENCE",
+            "UV_PYTHON",
+            "UV_NO_CONFIG",
+            "UV_NO_PROGRESS",
+        ):
+            value = os.environ.get(key)
+            if value:
+                env[key] = value
+    stdio_server = {"command": command, "args": args, "env": env}
 
     if client == "vscode":
         return {"servers": {server_name: {"type": "stdio", **stdio_server}}}, "json"
@@ -221,7 +256,7 @@ def _mcp_snippet_for_client(client: str) -> tuple[object, str]:
             "\n".join(
                 [
                     f"[mcp_servers.{server_name}]",
-                    'command = "uvx"',
+                    f"command = {json.dumps(command)}",
                     f"args = {json.dumps(args)}",
                     f"env = {{ {env_values} }}",
                 ]
@@ -752,6 +787,16 @@ web_routes: list[Route] = [
     Route("/api/info", endpoint=api_info, methods=["GET"]),
     Route("/api/experience", endpoint=api_experience, methods=["GET"]),
     Route("/api/owner/session", endpoint=api_owner_session, methods=["GET"]),
+    Route(
+        "/api/owner/client-config/preview/{client}",
+        endpoint=api_client_config_preview,
+        methods=["GET"],
+    ),
+    Route(
+        "/api/owner/client-config/apply/{client}",
+        endpoint=api_client_config_apply,
+        methods=["POST"],
+    ),
     Route("/api/cloud/setup/start", endpoint=api_cloud_setup_start, methods=["POST"]),
     Route("/api/cloud/setup/status", endpoint=api_cloud_setup_status, methods=["POST"]),
     Route("/api/cloud/setup/cancel", endpoint=api_cloud_setup_cancel, methods=["POST"]),

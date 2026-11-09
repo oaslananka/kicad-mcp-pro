@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -30,6 +31,60 @@ def _default_registry_file(registry_root: Path | None = None) -> Path:
     if registry_root is not None:
         return registry_root / "owned_client_configs.json"
     return default_registry_root() / "owned_client_configs.json"
+
+
+def _hash_record_path(registry_root: Path | None = None) -> Path:
+    return _default_registry_file(registry_root).with_name("owned_client_entry_hashes.json")
+
+
+def _read_entry_hashes(registry_root: Path | None = None) -> dict[str, str]:
+    path = _hash_record_path(registry_root)
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ClientConfigError("Owned entry integrity registry is unreadable") from exc
+    if not isinstance(data, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) and len(v) == 64 for k, v in data.items()
+    ):
+        raise ClientConfigError("Owned entry integrity registry is malformed")
+    return data
+
+
+def _hash_key(client: str, path: Path, namespace: str, server: str) -> str:
+    return json.dumps([client, str(path.resolve()), namespace, server], ensure_ascii=False)
+
+
+def _hash_value(value: object) -> str:
+    canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _write_entry_hashes(data: dict[str, str], registry_root: Path | None) -> None:
+    path = _hash_record_path(registry_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp = tempfile.mkstemp(prefix="kicad_owned_", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(data, stream, indent=2, sort_keys=True)
+        os.replace(temp, path)
+    finally:
+        if os.path.exists(temp):
+            os.unlink(temp)
+
+
+def _save_owned_hashes(
+    client: str, config_path: Path, content: dict[str, Any], registry_root: Path | None
+) -> None:
+    hashes = _read_entry_hashes(registry_root)
+    for namespace in ("mcpServers", "servers"):
+        entries = content.get(namespace)
+        if isinstance(entries, dict) and "kicad-mcp-pro" in entries:
+            hashes[_hash_key(client, config_path, namespace, "kicad-mcp-pro")] = _hash_value(
+                entries["kicad-mcp-pro"]
+            )
+    _write_entry_hashes(hashes, registry_root)
 
 
 def get_owned_client_configs(registry_root: Path | None = None) -> dict[str, list[str]]:
@@ -91,14 +146,16 @@ def _prepare_config_contents(
     except OSError as err:
         raise ClientConfigError(f"Failed to create backup at {backup_path}: {err}") from err
 
-    if "mcpServers" in snippet:
-        servers = data.setdefault("mcpServers", {})
-        if isinstance(servers, dict) and isinstance(snippet["mcpServers"], dict):
-            servers.update(snippet["mcpServers"])
-        else:
-            data["mcpServers"] = snippet["mcpServers"]
+    for namespace in ("mcpServers", "servers"):
+        if namespace not in snippet:
+            continue
+        entries = data.setdefault(namespace, {})
+        incoming = snippet[namespace]
+        if not isinstance(entries, dict) or not isinstance(incoming, dict):
+            raise ClientConfigError("Existing MCP client server entries are invalid")
+        entries.update(incoming)
     for key, value in snippet.items():
-        if key != "mcpServers":
+        if key not in ("mcpServers", "servers"):
             data[key] = value
     return data, backup_path
 
@@ -128,6 +185,7 @@ def write_client_config_safe(
         raise ClientConfigError(f"Failed to write config at {config_path}: {err}") from err
 
     _record_owned_config(client, config_path, registry_root)
+    _save_owned_hashes(client, config_path, merged_data, registry_root)
 
     return WriteConfigResult(
         success=True,
@@ -152,13 +210,26 @@ def remove_client_config_entry(
     except Exception as err:
         raise ClientConfigError(f"Failed to read existing config at {config_path}: {err}") from err
 
-    servers = data.get("mcpServers")
-    if not isinstance(servers, dict) or server_key not in servers:
+    if str(config_path.resolve()) not in get_owned_client_configs(registry_root).get(client, []):
+        raise ClientConfigError("Configuration entry is not recorded as application-owned")
+    namespaces = [
+        kind
+        for kind in ("mcpServers", "servers")
+        if isinstance(data.get(kind), dict) and server_key in data[kind]
+    ]
+    if not namespaces:
         _unrecord_owned_config(client, config_path, registry_root)
         return False
 
-    del servers[server_key]
-    data["mcpServers"] = servers
+    hashes = _read_entry_hashes(registry_root)
+    for kind in namespaces:
+        saved = hashes.get(_hash_key(client, config_path, kind, server_key))
+        if saved is None or saved != _hash_value(data[kind][server_key]):
+            # A pre-existing path-only record is NOT proof that a modified
+            # entry still belongs to this installation.
+            raise ClientConfigError("Client entry has changed or ownership is unverified")
+    for kind in namespaces:
+        del data[kind][server_key]
 
     try:
         tmp_fd, tmp_path = tempfile.mkstemp(
@@ -174,4 +245,7 @@ def remove_client_config_entry(
         raise ClientConfigError(f"Failed to update config at {config_path}: {err}") from err
 
     _unrecord_owned_config(client, config_path, registry_root)
+    for kind in namespaces:
+        hashes.pop(_hash_key(client, config_path, kind, server_key), None)
+    _write_entry_hashes(hashes, registry_root)
     return True

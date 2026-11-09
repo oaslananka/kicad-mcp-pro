@@ -20,7 +20,9 @@ from urllib.parse import urlunsplit
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from kicad_mcp.cli_init import _resolve_config_path
 from kicad_mcp.config import get_config
+from kicad_mcp.services.client_config import ClientConfigError, write_client_config_safe
 from kicad_mcp.services.cloud_onboarding import DEFAULT_CLOUD_ORIGIN, CloudOnboardingService
 from kicad_mcp.services.connector_lifecycle import ConnectorLifecycleManager
 from kicad_mcp.services.maintenance import (
@@ -41,6 +43,7 @@ _LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "[::1]")
 _INVALID_SETUP_REQUEST = "Invalid setup request"
 _SETUP_NOT_FOUND = "Setup not found"
 _INVALID_MAINTENANCE_REQUEST = "Invalid maintenance request"
+_OWNER_AUTH_REQUIRED = "Owner authorization required"
 
 
 def _response(payload: dict[str, object], status: int = 200) -> JSONResponse:
@@ -113,7 +116,7 @@ def _owner_session(request: Request) -> tuple[str, str] | None:
 def _authorize_mutation(request: Request) -> tuple[str | None, JSONResponse | None]:
     session = _owner_session(request)
     if session is None:
-        return None, _response({"error": "Owner authorization required"}, 403)
+        return None, _response({"error": _OWNER_AUTH_REQUIRED}, 403)
     authority = _local_authority(request)
     origin = request.headers.get("origin")
     if authority is None or origin != _expected_origin(authority, get_config().port):
@@ -314,6 +317,127 @@ async def api_cloud_project_active(request: Request) -> JSONResponse:
     return _response({"ok": True, "active_project_id": project_id})
 
 
+# The local owner may choose a supported app; never accept an arbitrary
+# filesystem path from HTTP for modifying another AI client's config.
+_GUIDED_JSON_CLIENTS = frozenset(("claude-desktop", "cursor", "vscode", "windsurf"))
+
+
+def _read_guided_client_config(target: Path) -> tuple[bytes, dict[str, object]]:
+    """Inspect a supported local client file without following redirected paths."""
+    if target.is_symlink() or target.parent.is_symlink():
+        raise ValueError("Client configuration is redirected")
+    if not target.exists():
+        return b"", {}
+    if not target.is_file() or target.stat().st_size > 1024 * 1024:
+        raise ValueError("Client configuration is not a supported JSON file")
+    content = target.read_bytes()
+    try:
+        obj = json.loads(content)
+    except ValueError as exc:
+        raise ValueError("Client configuration is malformed") from exc
+    if not isinstance(obj, dict):
+        raise ValueError("Client configuration root must be a JSON object")
+    return content, obj
+
+
+def _client_setup_preview(client: str) -> tuple[Path, str, bool, int]:
+    if client not in _GUIDED_JSON_CLIENTS:
+        raise ValueError("Unsupported guided client")
+    target = _resolve_config_path(client)
+    if target is None:
+        raise ValueError("Client has no supported local configuration path")
+    content, obj = _read_guided_client_config(target)
+    from .routes import _mcp_snippet_for_client
+
+    snippet, fmt = _mcp_snippet_for_client(client)
+    if fmt != "json" or not isinstance(snippet, dict):
+        raise ValueError("Client does not support guided JSON config")
+    namespace = "servers" if client == "vscode" else "mcpServers"
+    existing = obj.get(namespace, {})
+    if not isinstance(existing, dict):
+        raise ValueError("Existing client MCP settings are invalid")
+    replacing = "kicad-mcp-pro" in existing
+    # A changed file forces a fresh explicit preview before apply.
+    signature = hashlib.sha256(
+        json.dumps([str(target.resolve()), client], ensure_ascii=False).encode() + b"\x00" + content
+    ).hexdigest()
+    return target, signature, replacing, len(existing)
+
+
+def api_client_config_preview(request: Request) -> JSONResponse:
+    owner = _owner_session(request)
+    if owner is None:
+        return _response({"error": _OWNER_AUTH_REQUIRED}, 403)
+    client = request.path_params.get("client", "")
+    try:
+        target, signature, replacing, entries = _client_setup_preview(client)
+    except (ValueError, OSError):
+        return _response({"error": "Client configuration is unavailable or unsupported"}, 409)
+    nonce = secrets.token_urlsafe(32)
+    _scope(request).previews[(owner[0], "client_config:" + client)] = (
+        nonce,
+        signature,
+        time.monotonic() + _PREVIEW_AGE,
+    )
+    return _response(
+        {
+            "client": client,
+            "config_path": str(target),
+            "action": "update_existing" if replacing else "add",
+            "other_entries": entries - int(replacing),
+            "confirmation": nonce,
+            "description": (
+                "Preserves unrelated MCP entries and creates a backup when a file exists."
+            ),
+        }
+    )
+
+
+async def api_client_config_apply(request: Request) -> JSONResponse:
+    owner, denied = _authorize_mutation(request)
+    if denied:
+        return denied
+    body, bad = await _json_body(request)
+    if bad:
+        return bad
+    client = request.path_params.get("client", "")
+    if client not in _GUIDED_JSON_CLIENTS or owner is None or body is None:
+        return _response({"error": "Unsupported client or invalid request"}, 400)
+    confirmation = body.get("confirmation")
+    pending = _scope(request).previews.pop((owner, "client_config:" + client), None)
+    if (
+        pending is None
+        or not isinstance(confirmation, str)
+        or not hmac.compare_digest(confirmation, pending[0])
+        or pending[2] < time.monotonic()
+    ):
+        return _response({"error": "A fresh client configuration preview is required"}, 409)
+    try:
+        target, signature, _, _ = _client_setup_preview(client)
+        if not hmac.compare_digest(signature, pending[1]):
+            return _response({"error": "Client settings changed; preview again"}, 409)
+        from .routes import _mcp_snippet_for_client
+
+        snippet, fmt = _mcp_snippet_for_client(client)
+        if fmt != "json" or not isinstance(snippet, dict):
+            return _response({"error": "Unsupported client settings format"}, 409)
+        result = write_client_config_safe(client, target, snippet)
+    except (ValueError, OSError, ClientConfigError):
+        return _response(
+            {"error": "Client settings could not be changed; no connection was claimed"}, 409
+        )
+    return _response(
+        {
+            "ok": result.success,
+            "client": client,
+            "backup_created": result.backup_path is not None,
+            "message": (
+                "Client settings saved. Open the AI client and verify its actual MCP connection."
+            ),
+        }
+    )
+
+
 def _preview_service(request: Request, kind: str) -> RepairPreview | CleanupPreview:
     service = cast(MaintenanceService, _services(request).maintenance)
     if kind == "repair":
@@ -324,7 +448,7 @@ def _preview_service(request: Request, kind: str) -> RepairPreview | CleanupPrev
 def _preview(request: Request, kind: str) -> JSONResponse:
     session = _owner_session(request)
     if session is None:
-        return _response({"error": "Owner authorization required"}, 403)
+        return _response({"error": _OWNER_AUTH_REQUIRED}, 403)
     try:
         preview = _preview_service(request, kind)
     except (OSError, ValueError):

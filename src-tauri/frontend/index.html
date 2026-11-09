@@ -222,7 +222,7 @@
       <h1>KiCad MCP Pro</h1>
       <output class="status" id="status" aria-live="polite">Starting server…</output>
 
-      <button type="button" class="btn secondary" id="cancelStartup" onclick="handleCancelPreparation()">Cancel setup</button>
+      <button type="button" class="btn secondary" id="cancelStartup">Cancel setup</button>
       <section class="details" id="details" aria-label="Diagnostics details">
         <h2>
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -241,14 +241,14 @@
         </p>
         <div class="details-code-row">
           <code id="cliCommand">Loading exact-version diagnostics from the desktop app?</code>
-          <button type="button" class="btn-copy" id="btnCopyCmd" onclick="copyCliCommand()">Copy</button>
+          <button type="button" class="btn-copy" id="btnCopyCmd">Copy</button>
         </div>
         <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
           <a class="btn secondary" id="openLocalDashboard" href="http://127.0.0.1:3334/ui" target="_blank" rel="noopener noreferrer">Try opening dashboard</a>
-          <button type="button" class="btn" id="useSeparatePort" style="display:none" onclick="handleUseSeparatePort()">Continue without stopping old service</button>
-          <button type="button" class="btn secondary" id="btnCancel" onclick="handleCancelPreparation()">Cancel</button>
-          <button type="button" class="btn secondary" onclick="handleRestartServer()">Restart Server</button>
-          <button type="button" class="btn" onclick="handleRestartServer()">Retry</button>
+          <button type="button" class="btn" id="useSeparatePort" style="display:none">Continue without stopping old service</button>
+          <button type="button" class="btn secondary" id="btnCancel">Cancel</button>
+          <button type="button" class="btn secondary" id="restartBackend">Restart Server</button>
+          <button type="button" class="btn" id="retryBackend">Retry</button>
         </div>
       </section>
     </main>
@@ -267,7 +267,9 @@
         return true;
       };
 
-      const MAX_RETRIES = 120;
+      // Allow the native 300-second cold-runtime setup to finish before
+      // displaying a timeout; the splash must never give up first.
+      const MAX_RETRIES = 330;
       const RETRY_INTERVAL_MS = 1000;
       let retries = 0;
       let healthOk = false;
@@ -302,7 +304,7 @@
 
       async function loadExactCommand() {
         const command = await tauriInvoke('desktop_backend_command');
-        if (typeof command === 'string' && command.startsWith('uvx --from kicad-mcp-pro==')) {
+        if (typeof command === 'string' && command.startsWith('uv tool run --from kicad-mcp-pro==')) {
           document.getElementById('cliCommand').textContent = command;
           diagnosticsLoaded = true;
         }
@@ -319,12 +321,11 @@
         separateButton.style.display = 'none';
         if (errorDetailEl) errorDetailEl.style.display = 'none';
 
-        const result = await tauriInvoke('restart_server', { port: desktopPort });
-        if (result === null) {
-          setTimeout(checkServer, 1000);
-          return;
-        }
+        // Start polling immediately: private Python setup can keep IPC pending
+        // for minutes on a fresh machine, but status must stay responsive.
+        const restart = tauriInvoke('restart_server', { port: desktopPort });
         setTimeout(checkServer, 500);
+        await restart;
       }
 
       async function handleCancelPreparation() {
@@ -345,15 +346,18 @@
         statusEl.textContent = 'Starting a separate desktop backend on 127.0.0.1:3335…';
         statusEl.className = 'status';
         detailsEl.classList.remove('visible');
-        const result = await tauriInvoke('restart_server', {port: SEPARATE_PORT});
-        // Keep the manual recovery command consistent even if the alternate
-        // port is occupied; do not suggest stopping the legacy instance.
-        await loadExactCommand();
-        if (result === null) {
-          showError('Could not start a separate backend. The existing service was left unchanged.');
-          return;
-        }
+        // Native startup may wait for a cold Python/runtime download. Poll
+        // in parallel instead of leaving the splash status frozen until IPC
+        // resolves. The native readiness probe still gates navigation.
+        const restart = tauriInvoke('restart_server', {port: SEPARATE_PORT});
         setTimeout(checkServer, 500);
+        const result = await restart;
+        // Keep the diagnostic command scoped to the selected isolated port,
+        // even if startup failed. Never stop or reuse the older 3334 service.
+        await loadExactCommand();
+        if (result === null && !healthOk) {
+          showError('Could not start a separate backend. The existing service was left unchanged.');
+        }
       }
 
       function setStep(name, state) {
@@ -386,12 +390,27 @@
         });
       }
 
+      function reportBackendStatusError(message) {
+        const incompatible = message.startsWith('Incompatible service detected');
+        if (desktopPort === PRIMARY_PORT && incompatible) {
+          separateButton.style.display = '';
+        }
+        if (errorDetailEl) {
+          errorDetailEl.textContent = message;
+          errorDetailEl.style.display = 'block';
+        }
+        setStep('backend', 'fail');
+        showError(incompatible
+          ? 'Older or incompatible local backend detected'
+          : 'Backend could not start');
+      }
+
       function handleTauriStatus(tauriStatus) {
         if (!tauriStatus) return true;
-        if (tauriStatus.running) {
-          setStep('backend', 'ok');
-          return true;
-        }
+        // A spawned uv process is not yet a ready server. Preserve progress
+        // until the exact-version native readiness handshake succeeds.
+        const preparing = tauriStatus.preparation_stage === 'preparing_environment'
+          || tauriStatus.preparation_stage === 'starting_server';
         if (tauriStatus.preparation_stage === 'preparing_environment') {
           statusEl.textContent = `Preparing local environment (downloading dependencies if first launch, ${retries}s)…`;
           setStep('backend', 'pending');
@@ -402,20 +421,12 @@
           showError('Setup was cancelled.');
           return false;
         }
+        if (tauriStatus.running) {
+          setStep('backend', preparing ? 'pending' : 'ok');
+          return true;
+        }
         if (tauriStatus.message && tauriStatus.message !== 'Server is not running.') {
-          if (desktopPort === PRIMARY_PORT && tauriStatus.message.startsWith('Incompatible service detected')) {
-            separateButton.style.display = '';
-          }
-          if (errorDetailEl) {
-            errorDetailEl.textContent = tauriStatus.message;
-            errorDetailEl.style.display = 'block';
-          }
-          setStep('backend', 'fail');
-          showError(
-            tauriStatus.message.startsWith('Incompatible service detected')
-              ? 'Older or incompatible local backend detected'
-              : 'Backend could not start'
-          );
+          reportBackendStatusError(tauriStatus.message);
           return false;
         }
         return true;
@@ -485,10 +496,13 @@
 
         if (!readiness && retries > 8) {
           statusEl.textContent = 'Waiting for desktop integration. If this continues, restart KiCad MCP Pro.';
-        } else if (retries < 8) {
-          statusEl.textContent = 'Starting server…';
-        } else {
-          statusEl.textContent = `Starting server… first run downloads the backend, this can take a minute (${retries}s)`;
+        } else if (!['preparing_environment', 'starting_server']
+          .includes(tauriStatus?.preparation_stage)) {
+          if (retries < 8) {
+            statusEl.textContent = 'Starting server…';
+          } else {
+            statusEl.textContent = `Starting server… first run downloads the backend, this can take a minute (${retries}s)`;
+          }
         }
         setTimeout(checkServer, RETRY_INTERVAL_MS);
       }
@@ -498,6 +512,19 @@
       window.handleUseSeparatePort = handleUseSeparatePort;
       window.showError = showError;
       window.copyCliCommand = copyCliCommand;
+
+      // Native WebView2 CSP can reject inline event handlers even when scripts run.
+      // Bind every splash recovery action from the same trusted module instead.
+      for (const [id, handler] of [
+        ['cancelStartup', handleCancelPreparation],
+        ['btnCopyCmd', copyCliCommand],
+        ['useSeparatePort', handleUseSeparatePort],
+        ['btnCancel', handleCancelPreparation],
+        ['restartBackend', handleRestartServer],
+        ['retryBackend', handleRestartServer],
+      ]) {
+        document.getElementById(id).addEventListener('click', handler);
+      }
 
       /* Open sponsor links in the system browser, never inside the app. */
       document.querySelectorAll('a.support-link[target="_blank"]').forEach(link => {

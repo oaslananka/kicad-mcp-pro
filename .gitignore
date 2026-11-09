@@ -79,3 +79,7 @@ src-tauri/gen/
 .dev-cache/
 .dev-env.sh
 lefthook-local.yml
+
+
+# Generated only during release GUI packaging; do not commit binaries.
+src-tauri/resources/bootstrap/
