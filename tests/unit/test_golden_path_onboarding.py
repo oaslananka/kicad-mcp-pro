@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from starlette.applications import Starlette
@@ -127,6 +128,91 @@ def test_ai_configuration_requires_preview_then_explicit_apply() -> None:
     assert "gpClientPreview = {client, confirmation: data.confirmation}" in html
     assert "gpAiPending" not in html
     assert "Open your AI app and verify its actual MCP connection" in html
+
+
+@pytest.mark.skipif(__import__("os").name != "nt", reason="Windows scheduler contract only")
+def test_windows_connector_enable_and_disable_use_owner_scheduler(
+    owner_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from kicad_mcp import cloud_windows_connector, cloud_windows_task_scheduler
+    from kicad_mcp.services.connector_lifecycle import ConnectorLifecycleManager
+
+    calls: list[str] = []
+    registered = object()
+
+    def start(project: object, *, owner_confirm) -> None:
+        assert project is registered
+        assert owner_confirm(project)
+        calls.append("enable")
+
+    monkeypatch.setattr(cloud_windows_connector, "selected_project", lambda: registered)
+    monkeypatch.setattr(cloud_windows_task_scheduler, "enable_windows_connector", start)
+    monkeypatch.setattr(
+        cloud_windows_task_scheduler,
+        "scheduler_state",
+        lambda: "Scheduled (connection unverified)",
+    )
+    monkeypatch.setattr(
+        cloud_windows_task_scheduler,
+        "disable_windows_connector",
+        lambda: calls.append("disable") or True,
+    )
+    owner_client.app.state.owner_services = SimpleNamespace(
+        connector=ConnectorLifecycleManager(registry_root=tmp_path / "registry"),
+        onboarding=object(),
+        maintenance=object(),
+    )
+    headers = owner_headers(owner_client)
+    enabled = owner_client.post("/api/cloud/connector/enable", headers=headers, json={})
+    assert enabled.status_code == 200
+    assert enabled.json() == {"ok": True, "status": "Scheduled (connection unverified)"}
+    assert calls == ["enable"]
+
+    disabled = owner_client.post("/api/cloud/connector/disable", headers=headers, json={})
+    assert disabled.status_code == 200
+    assert disabled.json() == {"ok": True, "status": "disabled"}
+    assert calls == ["enable", "disable"]
+
+    monkeypatch.setattr(cloud_windows_task_scheduler, "disable_windows_connector", lambda: False)
+    unverified = owner_client.post("/api/cloud/connector/disable", headers=headers, json={})
+    assert unverified.status_code == 409
+    assert "unverified" in unverified.json()["error"]
+
+
+@pytest.mark.skipif(__import__("os").name != "nt", reason="Windows Cloud approval contract only")
+def test_windows_browser_approval_cannot_claim_cancelled(
+    owner_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from kicad_mcp.services.cloud_onboarding import OnboardingStep
+    from kicad_mcp.services.cloud_windows_onboarding_ui import WindowsCloudOnboardingService
+
+    enrollment = WindowsCloudOnboardingService()
+    monkeypatch.setattr(
+        enrollment,
+        "start_setup",
+        lambda **_kwargs: SimpleNamespace(
+            session_id="native-test",
+            current_step=OnboardingStep.DEVICE_PAIRING_PENDING,
+            approval_url=None,
+            user_code=None,
+        ),
+    )
+    monkeypatch.setattr(enrollment, "cancel_setup", lambda _sid: False)
+    owner_client.app.state.owner_services = SimpleNamespace(
+        onboarding=enrollment, connector=object(), maintenance=object()
+    )
+    headers = owner_headers(owner_client)
+    started = owner_client.post(
+        "/api/cloud/setup/start",
+        headers=headers,
+        json={"project_path": str(tmp_path)},
+    )
+    assert started.status_code == 200
+    cancelled = owner_client.post(
+        "/api/cloud/setup/cancel", headers=headers, json={"session_id": "native-test"}
+    )
+    assert cancelled.status_code == 409
+    assert "Deny it in the browser" in cancelled.json()["error"]
 
 
 def test_cloud_registration_never_claims_a_grant_or_autostarts_connector() -> None:

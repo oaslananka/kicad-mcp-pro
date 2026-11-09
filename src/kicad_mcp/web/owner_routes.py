@@ -329,13 +329,16 @@ async def api_cloud_setup_cancel(request: Request) -> JSONResponse:
     cancelled = _services(request).onboarding.cancel_setup(session_id)
     if not cancelled:
         if os.name == "nt":
-            return _response(
-                {
-                    "error": "Device approval already started. Deny it in the browser or let "
-                    "it expire, then review Cloud Devices. Connector remains off."
-                },
-                409,
-            )
+            from kicad_mcp.services.cloud_windows_onboarding_ui import WindowsCloudOnboardingService
+
+            if isinstance(_services(request).onboarding, WindowsCloudOnboardingService):
+                return _response(
+                    {
+                        "error": "Device approval already started. Deny it in the browser or let "
+                        "it expire, then review Cloud Devices. Connector remains off."
+                    },
+                    409,
+                )
         return _response({"error": _SETUP_NOT_FOUND}, 404)
     _scope(request).operations.pop(session_id, None)
     return _response({"ok": True, "status": "cancelled"})
@@ -345,7 +348,8 @@ async def api_cloud_connector_enable(request: Request) -> JSONResponse:
     _, denied = _authorize_mutation(request)
     if denied:
         return denied
-    if os.name == "nt":
+    manager = _services(request).connector
+    if os.name == "nt" and isinstance(manager, ConnectorLifecycleManager):
         from kicad_mcp.cloud_windows_connector import selected_project
         from kicad_mcp.cloud_windows_task_scheduler import enable_windows_connector, scheduler_state
 
@@ -360,10 +364,10 @@ async def api_cloud_connector_enable(request: Request) -> JSONResponse:
         except (OSError, ValueError, RuntimeError):
             return _response({"error": "Windows Connector could not be scheduled"}, 409)
     try:
-        started = await _services(request).connector.start()
+        started = await manager.start()
     except (OSError, ValueError, RuntimeError):
         return _response({"error": "Unable to start connector"}, 409)
-    if not started and not _services(request).connector.is_running():
+    if not started and not manager.is_running():
         return _response({"error": "Connector could not start"}, 409)
     return _response({"ok": True, "status": "started" if started else "already_running"})
 
@@ -372,8 +376,21 @@ async def api_cloud_connector_disable(request: Request) -> JSONResponse:
     _, denied = _authorize_mutation(request)
     if denied:
         return denied
+    manager = _services(request).connector
+    if os.name == "nt" and isinstance(manager, ConnectorLifecycleManager):
+        from kicad_mcp.cloud_windows_task_scheduler import disable_windows_connector
+
+        try:
+            stopped = await asyncio.to_thread(disable_windows_connector)
+        except (OSError, ValueError, RuntimeError):
+            return _response({"error": "Windows Connector shutdown could not be verified"}, 409)
+        if not stopped:
+            return _response(
+                {"error": "Local read access revoked; background task shutdown unverified"}, 409
+            )
+        return _response({"ok": True, "status": "disabled"})
     try:
-        await _services(request).connector.stop()
+        await manager.stop()
     except (OSError, ValueError, RuntimeError):
         return _response({"error": "Unable to stop connector"}, 409)
     return _response({"ok": True, "status": "disabled"})
