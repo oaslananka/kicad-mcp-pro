@@ -2986,6 +2986,19 @@ def _quickstart_project(project_dir: str | None) -> Path:
     return project
 
 
+def _quickstart_reload_guidance(selected_agent: str) -> str:
+    """Return host-specific discovery guidance without touching the host session."""
+    from .setup import _opencode_uses_v2
+
+    if selected_agent == "opencode" and _opencode_uses_v2():
+        return (
+            "MCP launch verified. From this project, run: opencode mcp list\n"
+            "If KiCad is missing, run: opencode reload\n"
+            "Then recheck: opencode mcp list"
+        )
+    return "MCP launch verified. Restart/reload the selected agent to discover its tools."
+
+
 @app.command()
 def quickstart(
     agent: str | None = typer.Option(
@@ -3075,7 +3088,7 @@ def quickstart(
             typer.echo(f"MCP config saved; skill installation failed: {exc}", err=True)
             raise typer.Exit(code=1) from exc
         typer.echo(installed.message)
-    typer.echo("MCP launch verified. Restart/reload the selected agent to discover its tools.")
+    typer.echo(_quickstart_reload_guidance(selected_agent))
     typer.echo("In the actual agent, ask: Inspect this KiCad project without modifying files.")
     typer.echo("Agent skill discovery and native KiCad readiness still need that first inspection.")
     typer.echo("Cloud remains optional; connect it later only when remote access is needed.")
