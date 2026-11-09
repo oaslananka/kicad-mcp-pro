@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import runpy
 import sys
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -39,15 +40,17 @@ def _entrypoint_help(
         if not as_module:
             patch.syspath_prepend(str(SYNC_SCRIPT.parent))
 
+        if as_module:
+            run_entrypoint = partial(
+                runpy.run_module,
+                "scripts.sync_release_artifacts",
+                run_name="__main__",
+                alter_sys=True,
+            )
+        else:
+            run_entrypoint = partial(runpy.run_path, str(SYNC_SCRIPT), run_name="__main__")
         with pytest.raises(SystemExit) as outcome:
-            if as_module:
-                runpy.run_module(
-                    "scripts.sync_release_artifacts",
-                    run_name="__main__",
-                    alter_sys=True,
-                )
-            else:
-                runpy.run_path(str(SYNC_SCRIPT), run_name="__main__")
+            run_entrypoint()
         assert outcome.value.code == 0
 
     return capsys.readouterr().out
