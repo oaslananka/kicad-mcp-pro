@@ -407,7 +407,7 @@
           return false;
         }
         if (tauriStatus.running) {
-          if (!preparing) setStep('backend', 'ok');
+          setStep('backend', preparing ? 'pending' : 'ok');
           return true;
         }
         if (tauriStatus.message && tauriStatus.message !== 'Server is not running.') {
