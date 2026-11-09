@@ -1096,6 +1096,69 @@ fn spawn_background_checks(app_handle: tauri::AppHandle) {
     });
 }
 
+fn setup_desktop(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(window) = app.get_webview_window("main") {
+        if let Err(error) = fit_main_window_to_work_area(&window) {
+            eprintln!("[kicad-mcp-pro] Could not fit window to monitor: {error}");
+        }
+    }
+    // Build tray context menu
+    let show_item = MenuItemBuilder::with_id("show", "Show Window").build(app)?;
+    let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+    let menu = MenuBuilder::new(app)
+        .item(&show_item)
+        .separator()
+        .item(&quit_item)
+        .build()?;
+
+    let mut tray = TrayIconBuilder::new()
+        .menu(&menu)
+        .tooltip("KiCad MCP Pro - Starting...")
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
+        })
+        .on_menu_event(|app, event| {
+            match event.id().as_ref() {
+                "show" => show_main_window(app),
+                "quit" => {
+                    // Stop the server first
+                    if let Some(state) = app.try_state::<ServerProcess>() {
+                        let _ = stop_server_inner(state.inner());
+                    }
+                    app.exit(0);
+                }
+                _ => {}
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    let _ = tray.build(app)?;
+
+    // Tauri resolves the platform-specific installed resource path.
+    let executable = if cfg!(windows) { "uv.exe" } else { "uv" };
+    if let Ok(resource) = app.path().resolve(
+        format!("bootstrap/{executable}"),
+        tauri::path::BaseDirectory::Resource,
+    ) {
+        if resource.is_file() {
+            if let Ok(mut slot) = app.state::<ServerProcess>().bundled_uv.lock() {
+                *slot = Some(resource);
+            }
+        }
+    }
+    spawn_background_checks(app.handle().clone());
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -1156,68 +1219,7 @@ pub fn run() {
                 api.prevent_close();
             }
         })
-        .setup(|app| {
-            if let Some(window) = app.get_webview_window("main") {
-                if let Err(error) = fit_main_window_to_work_area(&window) {
-                    eprintln!("[kicad-mcp-pro] Could not fit window to monitor: {error}");
-                }
-            }
-            // Build tray context menu
-            let show_item = MenuItemBuilder::with_id("show", "Show Window").build(app)?;
-            let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
-            let menu = MenuBuilder::new(app)
-                .item(&show_item)
-                .separator()
-                .item(&quit_item)
-                .build()?;
-
-            let mut tray = TrayIconBuilder::new()
-                .menu(&menu)
-                .tooltip("KiCad MCP Pro - Starting...")
-                .show_menu_on_left_click(false)
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        show_main_window(tray.app_handle());
-                    }
-                })
-                .on_menu_event(|app, event| {
-                    match event.id().as_ref() {
-                        "show" => show_main_window(app),
-                        "quit" => {
-                            // Stop the server first
-                            if let Some(state) = app.try_state::<ServerProcess>() {
-                                let _ = stop_server_inner(state.inner());
-                            }
-                            app.exit(0);
-                        }
-                        _ => {}
-                    }
-                });
-            if let Some(icon) = app.default_window_icon() {
-                tray = tray.icon(icon.clone());
-            }
-            let _ = tray.build(app)?;
-
-            // Tauri resolves the platform-specific installed resource path.
-            let executable = if cfg!(windows) { "uv.exe" } else { "uv" };
-            if let Ok(resource) = app.path().resolve(
-                format!("bootstrap/{executable}"),
-                tauri::path::BaseDirectory::Resource,
-            ) {
-                if resource.is_file() {
-                    if let Ok(mut slot) = app.state::<ServerProcess>().bundled_uv.lock() {
-                        *slot = Some(resource);
-                    }
-                }
-            }
-            spawn_background_checks(app.handle().clone());
-            Ok(())
-        })
+        .setup(setup_desktop)
         .run(tauri::generate_context!())
         .expect("Failed to start KiCad MCP Pro Tauri app");
 }
