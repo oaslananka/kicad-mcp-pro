@@ -190,8 +190,9 @@ def test_windows_cancel_refuses_before_cloud(
     result = CliRunner().invoke(
         app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
     )
-    assert result.exit_code != 0
-    assert "Owner cancelled" in result.output
+    assert result.exit_code == 0
+    assert "Setup paused" in result.output
+    assert "cloud setup --browse" in result.output
     assert not events
 
 

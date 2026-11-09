@@ -934,7 +934,10 @@ def build_diagnostic_report(*, probe_cli: bool, probe_ipc: bool) -> DiagnosticRe
         Path(package_diagnostics.repo_path) if package_diagnostics.repo_path is not None else None
     )
     development: DevelopmentDiagnostics | None = None
-    if checkout is not None:
+    # Desktop readiness and /api/status call build_health_report on the HTTP
+    # event loop. Do not launch developer-tool version subprocesses there.
+    # Keep the full toolchain inventory exclusively in explicit doctor runs.
+    if probe_cli and checkout is not None:
         cli_path = Path(cfg.kicad_cli) if cfg.kicad_cli else None
         development = build_development_diagnostics(
             checkout,

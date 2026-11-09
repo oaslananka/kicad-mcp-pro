@@ -390,6 +390,33 @@ class TestRouteRegistration:
         data = response.json()
         assert data["server"]["version"] == __version__
 
+    def test_desktop_health_and_status_never_launch_developer_tools(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Desktop readiness must not stall the event loop on tool versions."""
+        from starlette.applications import Starlette
+        from starlette.testclient import TestClient
+
+        from kicad_mcp import diagnostics
+        from kicad_mcp.web.routes import web_routes
+
+        monkeypatch.setenv("KICAD_MCP_REPO_PATH", str(Path(__file__).resolve().parents[2]))
+
+        def forbidden_development_probe(*_args: object, **_kwargs: object) -> None:
+            pytest.fail("Fast health check launched developer-tool probing")
+
+        monkeypatch.setattr(
+            diagnostics, "build_development_diagnostics", forbidden_development_probe
+        )
+        monkeypatch.setattr(diagnostics, "_development_tool_version", forbidden_development_probe)
+        assert diagnostics.build_health_report().development is None
+
+        with TestClient(Starlette(routes=web_routes)) as client:
+            for path in ("/api/health", "/api/status"):
+                response = client.get(path)
+                assert response.status_code == 200, (path, response.text)
+                assert isinstance(response.json(), dict)
+
     def test_health_via_test_client(self) -> None:
         """Test that /api/health responds via TestClient."""
         from starlette.applications import Starlette

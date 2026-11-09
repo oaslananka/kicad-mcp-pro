@@ -877,6 +877,80 @@ def test_cloud_native_tkinter_folder_picker(
     assert events == ["hide", "select", "destroy"]
 
 
+@pytest.mark.parametrize(
+    "case", ["selected", "cancelled", "non_filesystem", "com_unavailable", "dll_unavailable"]
+)
+def test_windows_native_folder_picker_uses_trusted_system_shell(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, case: str
+) -> None:
+    import ctypes
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="win32"))
+    events: list[str] = []
+
+    def write_folder(_pidl: int, output: object, _size: int, _flags: int) -> int:
+        events.append("get_path")
+        if case == "non_filesystem":
+            return 0
+        output.value = str(tmp_path)  # type: ignore[attr-defined]
+        return 1
+
+    shell = SimpleNamespace(
+        SHBrowseForFolderW=Mock(return_value=None if case == "cancelled" else 123),
+        SHGetPathFromIDListEx=Mock(side_effect=write_folder),
+    )
+    ole = SimpleNamespace(
+        CoInitializeEx=Mock(return_value=-1 if case == "com_unavailable" else 0),
+        CoUninitialize=Mock(),
+        CoTaskMemFree=Mock(),
+    )
+    user = SimpleNamespace(GetForegroundWindow=Mock(return_value=41))
+    trusted = {"shell32.dll": shell, "ole32.dll": ole, "user32.dll": user}
+
+    def load_dll(name: str, *, winmode: int) -> SimpleNamespace:
+        assert name in trusted
+        assert winmode == 0x800  # LOAD_LIBRARY_SEARCH_SYSTEM32
+        events.append("dll:" + name)
+        if case == "dll_unavailable":
+            raise OSError("System directory unavailable")
+        return trusted[name]
+
+    monkeypatch.setattr(ctypes, "WinDLL", load_dll, raising=False)
+    if case == "selected":
+        assert cloud_user_cli._browse_local_project_folder() == tmp_path
+    else:
+        message = (
+            "No project folder selected"
+            if case == "cancelled"
+            else "Windows folder picker unavailable"
+        )
+        with pytest.raises(cloud_user_cli.typer.BadParameter, match=message):
+            cloud_user_cli._browse_local_project_folder()
+
+    if case == "dll_unavailable":
+        assert events == ["dll:shell32.dll"]
+        return
+    if case == "com_unavailable":
+        ole.CoUninitialize.assert_not_called()
+        shell.SHBrowseForFolderW.assert_not_called()
+        return
+
+    ole.CoUninitialize.assert_called_once()
+    shell.SHBrowseForFolderW.assert_called_once()
+    user.GetForegroundWindow.assert_called_once()
+    if case == "cancelled":
+        shell.SHGetPathFromIDListEx.assert_not_called()
+        ole.CoTaskMemFree.assert_not_called()
+    else:
+        assert events[-1] == "get_path"
+        shell.SHGetPathFromIDListEx.assert_called_once()
+        ole.CoTaskMemFree.assert_called_once_with(123)
+
+
 @pytest.mark.parametrize("reason", ["not_installed", "display_error", "dialog_error"])
 def test_cloud_native_tkinter_picker_errors_cleanly(monkeypatch, reason: str) -> None:
     import sys as interpreter
@@ -884,7 +958,7 @@ def test_cloud_native_tkinter_picker_errors_cleanly(monkeypatch, reason: str) ->
 
     from kicad_mcp import cloud_user_cli
 
-    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="darwin"))
     if reason == "not_installed":
         monkeypatch.setitem(interpreter.modules, "tkinter", None)
     else:

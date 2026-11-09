@@ -175,7 +175,9 @@ def setup_windows(
     if not typer.confirm(
         "Approve pairing and the selected read-only local Connector?", default=False
     ):
-        raise typer.BadParameter("Owner cancelled Cloud setup. No device was registered.")
+        typer.echo("Setup paused. No device or project was registered.")
+        typer.echo("When ready, run: kicad-mcp-pro cloud setup --browse")
+        return
 
     try:
         device: WindowsEnrolledDevice = enroll_windows_device(
