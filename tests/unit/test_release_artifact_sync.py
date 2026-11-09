@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-import subprocess
+import runpy
 import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github" / "workflows" / "release-please.yml"
@@ -24,27 +26,42 @@ def test_release_artifact_sync_covers_all_version_derived_outputs() -> None:
     assert "build_tool_effect_manifest" in script
 
 
-def test_release_artifact_sync_can_run_as_script() -> None:
-    result = subprocess.run(
-        [sys.executable, str(SYNC_SCRIPT), "--help"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        timeout=20,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "--check" in result.stdout
+def _entrypoint_help(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    *,
+    as_module: bool,
+) -> str:
+    # Exercise both Python entry modes without spawning an unneeded process.
+    # A direct script launch puts its containing directory on sys.path.
+    with monkeypatch.context() as patch:
+        patch.setattr(sys, "argv", [str(SYNC_SCRIPT), "--help"])
+        if not as_module:
+            patch.syspath_prepend(str(SYNC_SCRIPT.parent))
+
+        with pytest.raises(SystemExit) as outcome:
+            if as_module:
+                runpy.run_module(
+                    "scripts.sync_release_artifacts",
+                    run_name="__main__",
+                    alter_sys=True,
+                )
+            else:
+                runpy.run_path(str(SYNC_SCRIPT), run_name="__main__")
+        assert outcome.value.code == 0
+
+    return capsys.readouterr().out
 
 
-def test_release_artifact_sync_can_run_as_module() -> None:
-    result = subprocess.run(
-        [sys.executable, "-m", "scripts.sync_release_artifacts", "--help"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        timeout=20,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
-    assert "--check" in result.stdout
+def test_release_artifact_sync_can_run_as_script(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert "--check" in _entrypoint_help(monkeypatch, capsys, as_module=False)
+
+
+def test_release_artifact_sync_can_run_as_module(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert "--check" in _entrypoint_help(monkeypatch, capsys, as_module=True)
