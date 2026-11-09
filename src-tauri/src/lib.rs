@@ -987,6 +987,72 @@ async fn restart_server(app: tauri::AppHandle, port: u16) -> Result<String, Stri
 }
 
 /// Bring an already-running desktop instance to the foreground.
+/// Size and center startup windows within actual usable monitor space, not the
+/// full monitor rectangle including Windows taskbars and macOS docks.
+fn desktop_window_size_for_work_area(
+    inner: tauri::PhysicalSize<u32>,
+    outer: tauri::PhysicalSize<u32>,
+    work: tauri::PhysicalSize<u32>,
+    margin: u32,
+) -> tauri::PhysicalSize<u32> {
+    let frame_width = outer.width.saturating_sub(inner.width);
+    let frame_height = outer.height.saturating_sub(inner.height);
+    let inset = margin.saturating_mul(2);
+    tauri::PhysicalSize::new(
+        inner
+            .width
+            .min(work.width.saturating_sub(inset).saturating_sub(frame_width)),
+        inner.height.min(
+            work.height
+                .saturating_sub(inset)
+                .saturating_sub(frame_height),
+        ),
+    )
+}
+
+fn fit_main_window_to_work_area(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+    let Some(monitor) = window.current_monitor()? else {
+        return Ok(());
+    };
+    let work = monitor.work_area();
+    let inner = window.inner_size()?;
+    let outer = window.outer_size()?;
+    let scale = monitor.scale_factor();
+    let logical_scale = if scale.is_finite() {
+        scale.max(1.0)
+    } else {
+        1.0
+    };
+    let margin = (12.0 * logical_scale).round() as u32;
+    let target = desktop_window_size_for_work_area(inner, outer, work.size, margin);
+    if target.width < 320 || target.height < 280 {
+        return Ok(());
+    }
+    if target != inner {
+        // Allow constrained monitors to use a smaller minimum without affecting
+        // the normal sized app; the dashboard has independent vertical scrolling.
+        let min_size = tauri::PhysicalSize::new(
+            target.width.min((640.0 * logical_scale).round() as u32),
+            target.height.min((420.0 * logical_scale).round() as u32),
+        );
+        window.set_min_size(Some(min_size))?;
+        window.set_size(target)?;
+    }
+    // The default center method centers inside the full monitor including
+    // the taskbar; place the outer frame in the actual work area instead.
+    let actual = window.outer_size()?;
+    let x = work
+        .position
+        .x
+        .saturating_add((work.size.width.saturating_sub(actual.width) / 2) as i32);
+    let y = work
+        .position
+        .y
+        .saturating_add((work.size.height.saturating_sub(actual.height) / 2) as i32);
+    window.set_position(tauri::PhysicalPosition::new(x, y))?;
+    Ok(())
+}
+
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
@@ -1091,6 +1157,11 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                if let Err(error) = fit_main_window_to_work_area(&window) {
+                    eprintln!("[kicad-mcp-pro] Could not fit window to monitor: {error}");
+                }
+            }
             // Build tray context menu
             let show_item = MenuItemBuilder::with_id("show", "Show Window").build(app)?;
             let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
@@ -1173,6 +1244,43 @@ mod tests {
                 .expect("write health response");
         });
         port
+    }
+
+    #[test]
+    fn desktop_window_fits_work_area_including_native_titlebar() {
+        let inner = tauri::PhysicalSize::new(1200, 800);
+        let outer = tauri::PhysicalSize::new(1214, 838);
+        let work = tauri::PhysicalSize::new(1536, 816);
+        assert_eq!(
+            desktop_window_size_for_work_area(inner, outer, work, 12),
+            tauri::PhysicalSize::new(1200, 754),
+        );
+    }
+
+    #[test]
+    fn desktop_window_keeps_default_on_spacious_screen() {
+        assert_eq!(
+            desktop_window_size_for_work_area(
+                tauri::PhysicalSize::new(1200, 800),
+                tauri::PhysicalSize::new(1214, 838),
+                tauri::PhysicalSize::new(1920, 1040),
+                12,
+            ),
+            tauri::PhysicalSize::new(1200, 800),
+        );
+    }
+
+    #[test]
+    fn desktop_window_clamps_on_smaller_or_scaled_screen() {
+        assert_eq!(
+            desktop_window_size_for_work_area(
+                tauri::PhysicalSize::new(1200, 800),
+                tauri::PhysicalSize::new(1214, 838),
+                tauri::PhysicalSize::new(1050, 690),
+                12,
+            ),
+            tauri::PhysicalSize::new(1012, 628),
+        );
     }
 
     #[test]
