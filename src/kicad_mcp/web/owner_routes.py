@@ -66,7 +66,9 @@ def _services(request: Request) -> SimpleNamespace:
         if os.name == "nt":
             from kicad_mcp.services.cloud_windows_onboarding_ui import WindowsCloudOnboardingService
 
-            onboarding = WindowsCloudOnboardingService()
+            onboarding: CloudOnboardingService | WindowsCloudOnboardingService = (
+                WindowsCloudOnboardingService()
+            )
         else:
             onboarding = CloudOnboardingService()
         services = SimpleNamespace(
