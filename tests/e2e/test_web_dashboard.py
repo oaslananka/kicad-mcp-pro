@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import threading
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -404,7 +405,7 @@ class TestDashboardSPA:
             path = urlsplit(route.request.url).path
             method = route.request.method
             if path == "/api/owner/session":
-                payload = {"csrf_token": "local-owner-test"}
+                payload = {"csrf_token": secrets.token_urlsafe(24)}
             elif path == "/api/owner/project/select" and method == "POST":
                 state["project"] = route.request.post_data_json["project_dir"]
                 actions.append("project")
