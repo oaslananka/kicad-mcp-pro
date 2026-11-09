@@ -23,6 +23,7 @@ import typer
 
 DEFAULT_CLOUD_ORIGIN = "https://kicad-mcp-pro.oaslananka.dev"
 _DEFAULT_DEVICE_ALIAS = "My computer"
+_NO_PROJECT_FOLDER_SELECTED = "No project folder selected. Setup was not changed."
 cloud_app = typer.Typer(help="Sign in, pair a device and manage the optional Cloud Connector.")
 
 
@@ -161,7 +162,7 @@ def _browse_windows_project_folder() -> Path:
             selection.ulFlags = 0x1 | 0x40 | 0x10  # Filesystem, new UI, editable tree.
             pidl = shell.SHBrowseForFolderW(ctypes.byref(selection))
             if not pidl:
-                raise typer.BadParameter("No project folder selected. Setup was not changed.")
+                raise typer.BadParameter(_NO_PROJECT_FOLDER_SELECTED)
             try:
                 path = ctypes.create_unicode_buffer(32768)
                 if not shell.SHGetPathFromIDListEx(pidl, path, len(path), 0):
@@ -199,7 +200,7 @@ def _browse_local_project_folder() -> Path:
                 "Folder picker unavailable; use --project-dir /path/to/project."
             ) from exc
         if selected.returncode != 0 or not selected.stdout.strip():
-            raise typer.BadParameter("No project folder selected. Setup was not changed.")
+            raise typer.BadParameter(_NO_PROJECT_FOLDER_SELECTED)
         return Path(selected.stdout.strip())
     try:
         import tkinter as tk
@@ -220,7 +221,7 @@ def _browse_local_project_folder() -> Path:
             "No graphical folder picker available; use --project-dir /path/to/project."
         ) from exc
     if not selection:
-        raise typer.BadParameter("No project folder selected. Setup was not changed.")
+        raise typer.BadParameter(_NO_PROJECT_FOLDER_SELECTED)
     return Path(selection)
 
 
