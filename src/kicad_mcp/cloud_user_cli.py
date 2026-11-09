@@ -107,68 +107,67 @@ def _discover_kicad_project(folder: Path) -> tuple[Path, str]:
 
 
 def _browse_windows_project_folder() -> Path:
-    """Use the built-in Windows folder dialog even without Python/Tk installed."""
-    # This program is a fixed literal: never interpolate project paths or other
-    # user input into an executable shell command.
-    script = """
-$ErrorActionPreference = 'Stop'
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
-Add-Type -AssemblyName System.Windows.Forms
-$picker = [System.Windows.Forms.FolderBrowserDialog]::new()
-$picker.Description = 'Choose your local KiCad project folder'
-$picker.ShowNewFolderButton = $false
-# The browser-facing backend runs without foreground focus. An invisible
-# topmost owner keeps the genuine Windows folder chooser above the app.
-$owner = [System.Windows.Forms.Form]::new()
-$owner.ShowInTaskbar = $false
-$owner.TopMost = $true
-$owner.Opacity = 0
-$owner.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
-try {
-    $owner.Show()
-    $owner.Activate()
-    if ($picker.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
-        [Console]::WriteLine($picker.SelectedPath)
-    }
-} finally {
-    $picker.Dispose()
-    $owner.Close()
-    $owner.Dispose()
-}
-"""
-    powershell = (
-        Path(os.environ.get("SystemRoot", r"C:\\Windows"))
-        / "System32"
-        / "WindowsPowerShell"
-        / "v1.0"
-        / "powershell.exe"
-    )
+    """Open Windows' native folder chooser in-process, without shell execution."""
+    import ctypes
+    from ctypes import wintypes
+
+    class BrowseInfo(ctypes.Structure):
+        _fields_ = [
+            ("hwndOwner", wintypes.HWND),
+            ("pidlRoot", ctypes.c_void_p),
+            ("pszDisplayName", wintypes.LPWSTR),
+            ("lpszTitle", wintypes.LPCWSTR),
+            ("ulFlags", wintypes.UINT),
+            ("lpfn", ctypes.c_void_p),
+            ("lParam", wintypes.LPARAM),
+            ("iImage", ctypes.c_int),
+        ]
+
     try:
-        selected = subprocess.run(
-            [
-                str(powershell),
-                "-NoProfile",
-                "-NonInteractive",
-                "-STA",
-                "-WindowStyle",
-                "Hidden",
-                "-Command",
-                script,
-            ],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-            timeout=120,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        # Load only trusted Windows system DLLs, never PATH/env-supplied commands.
+        shell = ctypes.WinDLL("shell32.dll", winmode=0x800)
+        ole = ctypes.WinDLL("ole32.dll", winmode=0x800)
+        user = ctypes.WinDLL("user32.dll", winmode=0x800)
+        ole.CoInitializeEx.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        ole.CoInitializeEx.restype = ctypes.c_long
+        ole.CoUninitialize.argtypes = []
+        shell.SHBrowseForFolderW.argtypes = [ctypes.POINTER(BrowseInfo)]
+        shell.SHBrowseForFolderW.restype = ctypes.c_void_p
+        shell.SHGetPathFromIDListEx.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            wintypes.DWORD,
+            wintypes.DWORD,
+        ]
+        shell.SHGetPathFromIDListEx.restype = wintypes.BOOL
+        ole.CoTaskMemFree.argtypes = [ctypes.c_void_p]
+        user.GetForegroundWindow.restype = wintypes.HWND
+        result = ole.CoInitializeEx(None, 2)  # STA required for new-style shell dialogs.
+        if result not in (0, 1):
+            raise OSError("Cannot initialize the native folder picker")
+        try:
+            display = ctypes.create_unicode_buffer(260)
+            selection = BrowseInfo()
+            # The backend is not in the foreground; own the current user window
+            # so the folder chooser appears above the desktop app, not behind it.
+            selection.hwndOwner = user.GetForegroundWindow()
+            selection.pszDisplayName = ctypes.cast(display, wintypes.LPWSTR)
+            selection.lpszTitle = "Choose your local KiCad project folder"
+            selection.ulFlags = 0x1 | 0x40 | 0x10  # Filesystem, new UI, editable tree.
+            pidl = shell.SHBrowseForFolderW(ctypes.byref(selection))
+            if not pidl:
+                raise typer.BadParameter("No project folder selected. Setup was not changed.")
+            try:
+                path = ctypes.create_unicode_buffer(32768)
+                if not shell.SHGetPathFromIDListEx(pidl, path, len(path), 0):
+                    raise ValueError("No filesystem folder was selected")
+                return Path(path.value)
+            finally:
+                ole.CoTaskMemFree(pidl)
+        finally:
+            ole.CoUninitialize()
+    except (AttributeError, OSError, ValueError) as exc:
         raise typer.BadParameter("Windows folder picker unavailable. Try again.") from exc
-    if selected.returncode != 0:
-        raise typer.BadParameter("Windows folder picker unavailable. Try again.")
-    if not selected.stdout.strip():
-        raise typer.BadParameter("No project folder selected. Setup was not changed.")
-    return Path(selected.stdout.strip())
 
 
 def _browse_local_project_folder() -> Path:
