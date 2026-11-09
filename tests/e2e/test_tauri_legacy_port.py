@@ -141,3 +141,90 @@ def test_second_port_failure_never_touches_existing_service(page: Page, splash_o
     assert page.evaluate("window.__desktopTest.mode") == "incompatible"
     assert page.locator("#cliCommand").inner_text().endswith("--port 3334") is False
     assert page.url == splash_origin + "/index.html"
+
+
+def test_separate_backend_keeps_polling_while_native_start_is_pending(
+    page: Page, splash_origin: str
+) -> None:
+    # A fresh private Python install takes longer than the splash poll interval.
+    # The user should see preparation progress *before* native IPC resolves.
+    shim = (
+        _NATIVE_SHIM.replace(
+            ": {running:true, message:'Server is running.'};",
+            ": state.mode === 'booting'"
+            " ? {running:true, message:'Server is running.',"
+            " preparation_stage:'starting_server'}"
+            " : {running:true, message:'Server is running.'};",
+        )
+        .replace(
+            "state.port=3335;\n      state.mode='ready';\n      return 'started';",
+            "state.port=3335;\n      state.mode='booting';"
+            "\n      await new Promise(resolve => setTimeout(resolve, 4500));"
+            "\n      state.mode='ready';\n      return 'started';",
+        )
+        .replace(
+            ": {ready:true, incompatible:false, detail:'verified',",
+            ": {ready:state.mode === 'ready', incompatible:false, detail:'verified',",
+        )
+    )
+    assert shim != _NATIVE_SHIM
+    page.add_init_script(shim)
+    page.route(
+        "http://127.0.0.1:3335/ui?desktop=1",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="text/html",
+            body="<main><h1>Separate backend ready</h1></main>",
+        ),
+    )
+    page.goto(splash_origin + "/index.html")
+    page.locator("#useSeparatePort").wait_for(state="visible", timeout=12000)
+    page.locator("#useSeparatePort").click()
+    page.wait_for_function("() => window.__desktopTest?.mode === 'booting'", timeout=1500)
+    page.get_by_text("Starting local server", exact=False).wait_for(timeout=2500)
+    assert page.evaluate("window.__desktopTest.mode") == "booting"
+    assert "pending" in (page.locator('[data-step="backend"]').get_attribute("class") or "")
+    page.wait_for_url("http://127.0.0.1:3335/ui?desktop=1", timeout=10000)
+    assert page.get_by_text("Separate backend ready").is_visible()
+
+
+def test_retry_keeps_polling_while_native_start_is_pending(page: Page, splash_origin: str) -> None:
+    # A retry must display live preparation before the native IPC resolves.
+    shim = (
+        _NATIVE_SHIM.replace(
+            ": {running:true, message:'Server is running.'};",
+            ": state.mode === 'booting'"
+            " ? {running:true, message:'Server is running.',"
+            " preparation_stage:'starting_server'}"
+            " : {running:true, message:'Server is running.'};",
+        )
+        .replace(
+            "if (args.port !== 3335) throw Error('wrong requested port');",
+            "if (args.port !== 3334) throw Error('wrong requested port');",
+        )
+        .replace(
+            "state.port=3335;\n      state.mode='ready';\n      return 'started';",
+            "state.port=3334;\n      state.mode='booting';"
+            "\n      await new Promise(resolve => setTimeout(resolve, 4500));"
+            "\n      state.mode='ready';\n      return 'started';",
+        )
+        .replace(
+            ": {ready:true, incompatible:false, detail:'verified',",
+            ": {ready:state.mode === 'ready', incompatible:false, detail:'verified',",
+        )
+        .replace(
+            "port:3335, expectedVersion:'__GUI_VERSION__'",
+            "port:state.port, expectedVersion:'__GUI_VERSION__'",
+        )
+    )
+    page.add_init_script(shim)
+    page.goto(splash_origin + "/index.html")
+    page.get_by_role("button", name="Retry").wait_for(state="visible", timeout=12000)
+    page.get_by_role("button", name="Retry").click()
+    page.wait_for_function("() => window.__desktopTest?.mode === 'booting'", timeout=1500)
+    page.get_by_text("Starting local server", exact=False).wait_for(timeout=2500)
+    assert "pending" in (page.locator('[data-step="backend"]').get_attribute("class") or "")
+    assert page.evaluate("window.__desktopTest.mode") == "booting"
+    assert page.evaluate("window.__desktopTest.attempted") == [3334]
+    # Do not navigate to the owner's real 3334 service. The separate-port
+    # acceptance case already covers successful redirect on the fake 3335.

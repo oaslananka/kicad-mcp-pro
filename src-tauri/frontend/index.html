@@ -321,12 +321,11 @@
         separateButton.style.display = 'none';
         if (errorDetailEl) errorDetailEl.style.display = 'none';
 
-        const result = await tauriInvoke('restart_server', { port: desktopPort });
-        if (result === null) {
-          setTimeout(checkServer, 1000);
-          return;
-        }
+        // Start polling immediately: private Python setup can keep IPC pending
+        // for minutes on a fresh machine, but status must stay responsive.
+        const restart = tauriInvoke('restart_server', { port: desktopPort });
         setTimeout(checkServer, 500);
+        await restart;
       }
 
       async function handleCancelPreparation() {
@@ -347,15 +346,18 @@
         statusEl.textContent = 'Starting a separate desktop backend on 127.0.0.1:3335…';
         statusEl.className = 'status';
         detailsEl.classList.remove('visible');
-        const result = await tauriInvoke('restart_server', {port: SEPARATE_PORT});
-        // Keep the manual recovery command consistent even if the alternate
-        // port is occupied; do not suggest stopping the legacy instance.
-        await loadExactCommand();
-        if (result === null) {
-          showError('Could not start a separate backend. The existing service was left unchanged.');
-          return;
-        }
+        // Native startup may wait for a cold Python/runtime download. Poll
+        // in parallel instead of leaving the splash status frozen until IPC
+        // resolves. The native readiness probe still gates navigation.
+        const restart = tauriInvoke('restart_server', {port: SEPARATE_PORT});
         setTimeout(checkServer, 500);
+        const result = await restart;
+        // Keep the diagnostic command scoped to the selected isolated port,
+        // even if startup failed. Never stop or reuse the older 3334 service.
+        await loadExactCommand();
+        if (result === null && !healthOk) {
+          showError('Could not start a separate backend. The existing service was left unchanged.');
+        }
       }
 
       function setStep(name, state) {
@@ -390,10 +392,10 @@
 
       function handleTauriStatus(tauriStatus) {
         if (!tauriStatus) return true;
-        if (tauriStatus.running) {
-          setStep('backend', 'ok');
-          return true;
-        }
+        // A spawned uv process is not yet a ready server. Preserve progress
+        // until the exact-version native readiness handshake succeeds.
+        const preparing = tauriStatus.preparation_stage === 'preparing_environment'
+          || tauriStatus.preparation_stage === 'starting_server';
         if (tauriStatus.preparation_stage === 'preparing_environment') {
           statusEl.textContent = `Preparing local environment (downloading dependencies if first launch, ${retries}s)…`;
           setStep('backend', 'pending');
@@ -403,6 +405,10 @@
         } else if (tauriStatus.preparation_stage === 'cancelled') {
           showError('Setup was cancelled.');
           return false;
+        }
+        if (tauriStatus.running) {
+          if (!preparing) setStep('backend', 'ok');
+          return true;
         }
         if (tauriStatus.message && tauriStatus.message !== 'Server is not running.') {
           if (desktopPort === PRIMARY_PORT && tauriStatus.message.startsWith('Incompatible service detected')) {
@@ -487,10 +493,13 @@
 
         if (!readiness && retries > 8) {
           statusEl.textContent = 'Waiting for desktop integration. If this continues, restart KiCad MCP Pro.';
-        } else if (retries < 8) {
-          statusEl.textContent = 'Starting server…';
-        } else {
-          statusEl.textContent = `Starting server… first run downloads the backend, this can take a minute (${retries}s)`;
+        } else if (!['preparing_environment', 'starting_server']
+          .includes(tauriStatus?.preparation_stage)) {
+          if (retries < 8) {
+            statusEl.textContent = 'Starting server…';
+          } else {
+            statusEl.textContent = `Starting server… first run downloads the backend, this can take a minute (${retries}s)`;
+          }
         }
         setTimeout(checkServer, RETRY_INTERVAL_MS);
       }

@@ -621,11 +621,18 @@ fn open_external_link(app: tauri::AppHandle, url: String) -> Result<(), String> 
 }
 
 #[tauri::command]
-fn start_server(state: State<'_, ServerProcess>, port: u16) -> Result<String, String> {
+async fn start_server(app: tauri::AppHandle, port: u16) -> Result<String, String> {
     if !supported_dashboard_port(port) {
         return Err("Unsupported desktop port.".to_string());
     }
-    start_server_inner(state.inner(), port)
+    // A cold app-owned Python bootstrap can take several minutes. Never
+    // block the Tauri UI thread or starve async command workers while waiting.
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ServerProcess>();
+        start_server_inner(state.inner(), port)
+    })
+    .await
+    .map_err(|error| format!("Desktop backend launch task failed: {error}"))?
 }
 
 #[tauri::command]
@@ -926,15 +933,22 @@ fn get_working_dir(state: State<'_, ServerProcess>) -> Option<String> {
 /// Stops the running server (if any) and restarts it with the
 /// current settings (port, working directory, etc.).
 #[tauri::command]
-fn restart_server(state: State<'_, ServerProcess>, port: u16) -> Result<String, String> {
+async fn restart_server(app: tauri::AppHandle, port: u16) -> Result<String, String> {
     // Do not allow web content to choose an arbitrary loopback target.
     if !supported_dashboard_port(port) {
         return Err("Unsupported desktop port.".to_string());
     }
-    let _ = stop_server_inner(state.inner());
-    // Give the OS a moment to release the port
-    thread::sleep(Duration::from_millis(500));
-    start_server_inner(state.inner(), port)
+    // The splash must keep receiving status/readiness IPC commands while an
+    // isolated backend is downloading or starting. Hold only the task thread.
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<ServerProcess>();
+        let _ = stop_server_inner(state.inner());
+        // Give the OS a moment to release the port.
+        thread::sleep(Duration::from_millis(500));
+        start_server_inner(state.inner(), port)
+    })
+    .await
+    .map_err(|error| format!("Desktop backend restart task failed: {error}"))?
 }
 
 /// Bring an already-running desktop instance to the foreground.

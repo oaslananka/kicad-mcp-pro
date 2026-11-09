@@ -80,3 +80,13 @@ def test_dashboard_health_long_windows_path_is_wrappable() -> None:
     assert "grid-template-columns: minmax(0, 1fr)" in DASHBOARD_HTML
     assert '<button type="button" class="nav-item' in DASHBOARD_HTML
     assert 'data-view="settings"' in DASHBOARD_HTML
+
+
+def test_desktop_slow_backend_commands_run_off_main_thread() -> None:
+    # Synchronous native startup blocks UI IPC while uv downloads Python.
+    # Keep both launch paths on dedicated Tauri blocking workers.
+    source = (ROOT / "src-tauri/src/lib.rs").read_text(encoding="utf-8")
+    assert "async fn start_server(app: tauri::AppHandle, port: u16)" in source
+    assert "async fn restart_server(app: tauri::AppHandle, port: u16)" in source
+    assert source.count("tauri::async_runtime::spawn_blocking(move || {") >= 2
+    assert "if !supported_dashboard_port(port)" in source
