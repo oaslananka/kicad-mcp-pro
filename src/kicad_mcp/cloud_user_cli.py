@@ -125,9 +125,14 @@ def _browse_windows_project_folder() -> Path:
 
     try:
         # Load only trusted Windows system DLLs, never PATH/env-supplied commands.
-        shell = ctypes.WinDLL("shell32.dll", winmode=0x800)
-        ole = ctypes.WinDLL("ole32.dll", winmode=0x800)
-        user = ctypes.WinDLL("user32.dll", winmode=0x800)
+        # WinDLL is intentionally absent from ctypes stubs on Linux/macOS.
+        # Resolve it only inside this Windows-only function.
+        load_system_dll = getattr(ctypes, "WinDLL", None)
+        if load_system_dll is None:
+            raise OSError("Windows system DLL loader unavailable")
+        shell = load_system_dll("shell32.dll", winmode=0x800)
+        ole = load_system_dll("ole32.dll", winmode=0x800)
+        user = load_system_dll("user32.dll", winmode=0x800)
         ole.CoInitializeEx.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
         ole.CoInitializeEx.restype = ctypes.c_long
         ole.CoUninitialize.argtypes = []
