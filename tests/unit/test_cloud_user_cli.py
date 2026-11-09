@@ -877,6 +877,77 @@ def test_cloud_native_tkinter_folder_picker(
     assert events == ["hide", "select", "destroy"]
 
 
+@pytest.mark.parametrize(
+    ("returncode", "path_text", "expected"),
+    [
+        (0, "C:\\\\KiCad Projects\\\\Ornek Proje\n", "C:\\\\KiCad Projects\\\\Ornek Proje"),
+        (0, "", None),
+        (1, "", None),
+    ],
+)
+def test_windows_native_folder_picker_uses_windows_dialog_without_tkinter(
+    monkeypatch: pytest.MonkeyPatch, returncode: int, path_text: str, expected: str | None
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="win32"))
+    calls: list[list[str]] = []
+
+    def browse(argv: list[str], **kwargs: object) -> SimpleNamespace:
+        calls.append(argv)
+        assert argv[0].lower().endswith("powershell.exe")
+        assert argv[1:5] == ["-NoProfile", "-NonInteractive", "-STA", "-WindowStyle"]
+        assert argv[5] == "Hidden"
+        assert "System.Windows.Forms.FolderBrowserDialog" in argv[-1]
+        assert "WriteLine($picker.SelectedPath)" in argv[-1]
+        assert "$owner.TopMost = $true" in argv[-1]
+        assert "$picker.ShowDialog($owner)" in argv[-1]
+        assert kwargs == {
+            "capture_output": True,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "check": False,
+            "timeout": 120,
+        }
+        return SimpleNamespace(returncode=returncode, stdout=path_text)
+
+    monkeypatch.setattr(cloud_user_cli.subprocess, "run", browse)
+    if expected:
+        assert cloud_user_cli._browse_local_project_folder() == Path(expected)
+    else:
+        match = (
+            "No project folder selected" if returncode == 0 else "Windows folder picker unavailable"
+        )
+        with pytest.raises(cloud_user_cli.typer.BadParameter, match=match):
+            cloud_user_cli._browse_local_project_folder()
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("reason", ["timeout", "cannot_start"])
+def test_windows_native_folder_picker_reports_recoverable_failure(
+    monkeypatch: pytest.MonkeyPatch, reason: str
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="win32"))
+
+    def fail(_args: list[str], **_kwargs: object) -> None:
+        if reason == "timeout":
+            raise cloud_user_cli.subprocess.TimeoutExpired("powershell.exe", 120)
+        raise OSError("No GUI user session")
+
+    monkeypatch.setattr(cloud_user_cli.subprocess, "run", fail)
+    with pytest.raises(
+        cloud_user_cli.typer.BadParameter, match="Windows folder picker unavailable"
+    ):
+        cloud_user_cli._browse_local_project_folder()
+
+
 @pytest.mark.parametrize("reason", ["not_installed", "display_error", "dialog_error"])
 def test_cloud_native_tkinter_picker_errors_cleanly(monkeypatch, reason: str) -> None:
     import sys as interpreter
@@ -884,7 +955,7 @@ def test_cloud_native_tkinter_picker_errors_cleanly(monkeypatch, reason: str) ->
 
     from kicad_mcp import cloud_user_cli
 
-    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="darwin"))
     if reason == "not_installed":
         monkeypatch.setitem(interpreter.modules, "tkinter", None)
     else:

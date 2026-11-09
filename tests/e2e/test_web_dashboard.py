@@ -393,6 +393,82 @@ class TestDashboardSPA:
         page.wait_for_url(destination)
         assert page.get_by_text("Browser launched").is_visible()
 
+    @pytest.mark.parametrize(
+        ("width", "height"),
+        [(360, 740), (560, 780), (768, 800), (769, 700), (900, 650), (1024, 768), (1200, 800)],
+    )
+    def test_responsive_dashboard_views_have_no_horizontal_clipping(
+        self, page: Page, dashboard_url: str, width: int, height: int
+    ) -> None:
+        """Actual rendered layout must fit compact and native window widths."""
+        page.set_viewport_size({"width": width, "height": height})
+        page.goto(dashboard_url)
+        violations = []
+        for view in ("dashboard", "setup-wizard", "tools-catalog", "settings"):
+            page.evaluate("(v) => { window.location.hash = '#' + v }", view)
+            page.wait_for_function(
+                "(v) => document.querySelector('#view-' + v)?.classList.contains('active')",
+                arg=view,
+            )
+            metrics = page.evaluate(
+                """() => {
+                    const main = document.querySelector('#mainContent');
+                    const active = document.querySelector('.view.active');
+                    const clip = active.getBoundingClientRect();
+                    return {
+                        viewport: innerWidth,
+                        document: document.documentElement.scrollWidth,
+                        mainWidth: main.clientWidth,
+                        mainScroll: main.scrollWidth,
+                        viewRight: clip.right,
+                    };
+                }"""
+            )
+            if (
+                metrics["document"] > width + 2
+                or metrics["mainScroll"] > metrics["mainWidth"] + 2
+                or metrics["viewRight"] > width + 2
+            ):
+                violations.append((view, metrics))
+        assert not violations, f"Viewport {width}x{height} clips content: {violations}"
+
+    def test_short_desktop_sidebar_support_is_scrollable(
+        self, page: Page, dashboard_url: str
+    ) -> None:
+        """At a minimum-height native window, support links must remain reachable."""
+        page.set_viewport_size({"width": 1200, "height": 600})
+        page.goto(dashboard_url)
+        page.locator(".sidebar").evaluate(
+            "(element) => { element.scrollTop = element.scrollHeight }"
+        )
+        link = page.get_by_role("link", name="Support KiCad MCP Pro through Buy me a coffee")
+        bounds = link.bounding_box()
+        assert bounds is not None
+        assert 0 <= bounds["y"] < 600
+        assert bounds["y"] + bounds["height"] <= 600
+        assert (
+            page.locator(".sidebar").evaluate("(element) => getComputedStyle(element).overflowY")
+            == "auto"
+        )
+
+    def test_failed_desktop_browser_link_is_small_dismissible_notice(
+        self, page: Page, dashboard_url: str
+    ) -> None:
+        """A system browser failure must not block or consume the workspace."""
+        page.add_init_script(
+            "window.__TAURI_INTERNALS__ = {invoke: async () => { throw Error('unavailable'); }};"
+        )
+        page.goto(dashboard_url)
+        page.get_by_role("link", name="Agent Setup").click()
+        notice = page.locator("#externalLinkMessage")
+        notice.wait_for(state="visible")
+        assert page.get_by_role("button", name="Copy link").is_visible()
+        assert "Could not open the system browser" in notice.inner_text()
+        assert notice.evaluate("(element) => element.getBoundingClientRect().width") < 460
+        page.get_by_role("button", name="Dismiss external link notice").click()
+        assert not notice.is_visible()
+        assert page.get_by_role("button", name="Choose project").is_visible()
+
     def test_golden_path_project_ai_cloud_never_claims_unverified_access(
         self, page: Page, dashboard_url: str
     ) -> None:
@@ -811,6 +887,69 @@ class TestDashboardSPA:
         assert "KiCad CLI found" in body_text
         assert "Version" in body_text
         assert "IPC Status" in body_text
+
+    def test_wizard_browse_uses_owner_picker_and_preserves_choice_on_cancel(
+        self, page: Page, dashboard_url: str
+    ) -> None:
+        """Both onboarding paths use a CSRF-confirmed local picker, not HTML file names."""
+        csrf = secrets.token_urlsafe(24)
+        picked = "C:/KiCad/Example Board"
+        requests: list[str] = []
+
+        def owner_api(route: Route) -> None:
+            path = urlsplit(route.request.url).path
+            if path == "/api/owner/session" and route.request.method == "GET":
+                route.fulfill(
+                    status=200,
+                    content_type="application/json",
+                    body=json.dumps({"csrf_token": csrf}),
+                )
+                return
+            if path == "/api/owner/project/browse" and route.request.method == "POST":
+                assert route.request.headers.get("x-kicad-owner-csrf") == csrf
+                assert route.request.post_data_json == {}
+                requests.append("browse")
+                if len(requests) == 1:
+                    route.fulfill(
+                        status=200,
+                        content_type="application/json",
+                        body=json.dumps({"project_dir": picked}),
+                    )
+                else:
+                    route.fulfill(
+                        status=409,
+                        content_type="application/json",
+                        body=json.dumps({"error": "No folder selected"}),
+                    )
+                return
+            route.fulfill(
+                status=404,
+                content_type="application/json",
+                body='{"error":"Unexpected owner API request"}',
+            )
+
+        page.route("**/api/owner/**", owner_api)
+        page.goto(dashboard_url)
+        page.evaluate('window.location.hash = "#setup-wizard"')
+        page.get_by_role("button", name="Next", exact=True).click()
+        field = page.locator("#wizProjectDir")
+        field.wait_for(state="visible")
+        page.get_by_role("button", name="Browse", exact=True).click()
+        page.wait_for_function(
+            '() => document.querySelector("#wizProjectDir").value === "C:/KiCad/Example Board"'
+        )
+        assert "Folder selected" in page.locator("#wizardMsg").inner_text()
+        assert requests == ["browse"]
+
+        # Cancelling a subsequent picker must not discard the owner's selection.
+        page.get_by_role("button", name="Browse", exact=True).click()
+        page.wait_for_function(
+            '() => document.querySelector("#wizardMsg").textContent'
+            '.includes("Folder selection canceled")'
+        )
+        assert field.input_value() == picked
+        assert requests == ["browse", "browse"]
+        assert page.locator("#wizTransport").count() == 0
 
     def test_setup_wizard_saves_project_before_export(
         self, page: Page, dashboard_url: str, tmp_path: Path

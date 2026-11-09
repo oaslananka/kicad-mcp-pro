@@ -101,7 +101,7 @@ def test_native_picker_cancellation_is_recoverable(
     monkeypatch.setattr(cloud_user_cli, "_browse_local_project_folder", cancel)
     response = browser.post("/api/owner/project/browse", json={}, headers=owner_headers(browser))
     assert response.status_code == 409
-    assert "Enter a local project folder" in response.json()["error"]
+    assert "Click Browse to try again" in response.json()["error"]
     assert "cancelled" not in response.text
 
 

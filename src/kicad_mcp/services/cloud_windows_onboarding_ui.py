@@ -56,11 +56,9 @@ class WindowsCloudOnboardingService:
             existing = selected_project()
             if existing is not None:
                 local = inspect_owner_selected_project(existing)
-                if (
-                    existing.origin != cloud_origin
-                    or local.directory != directory
-                    or local.filename_stem != stem
-                ):
+                selected = (existing.origin, local.directory, local.filename_stem)
+                requested = (cloud_origin, directory, stem)
+                if selected != requested:
                     raise ValueError("Existing registration needs explicit owner handoff")
                 session = SetupSession(
                     session_id=str(uuid.uuid4()),

@@ -68,6 +68,8 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     width: var(--sidebar-w); background: var(--surface);
     border-right: 1px solid var(--border); padding: 18px 0;
     display: flex; flex-direction: column; flex-shrink: 0;
+    height: 100vh; max-height: 100vh; min-height: 0;
+    overflow-y: auto; overscroll-behavior: contain;
   }
   .sidebar .brand {
     padding: 0 16px 14px; border-bottom: 1px solid var(--border);
@@ -386,6 +388,11 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   .msg.success { background: var(--success-subtle); border: 1px solid rgba(34,197,94,0.3); color: var(--text); }
   .msg.warn { background: var(--warning-subtle); border: 1px solid rgba(245,158,11,0.3); color: var(--text); }
   .msg.error { background: var(--error-subtle); border: 1px solid rgba(239,68,68,0.3); color: var(--text); }
+  /* Open-browser errors are actionable and dismissible, never a full-width banner. */
+  #externalLinkMessage { position: fixed; bottom: 14px; right: 14px; z-index: 500;
+    max-width: min(420px, calc(100vw - 28px)); max-height: 35vh; overflow: auto;
+    margin: 0; box-shadow: 0 12px 36px rgba(0,0,0,.48); overflow-wrap: anywhere; }
+  #externalLinkMessage .btn { flex: none; }
 
   /* Spinner */
   .spinner {
@@ -431,7 +438,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     .nav-support-group { display: flex; align-items: center; gap: 5px; padding: 7px 0 0; margin: 5px 0 0; border-top: 1px solid var(--border); }
     .nav-support-group .nav-support { flex: 1 1 auto; justify-content: center; min-height: 36px; margin: 0; padding: 8px 10px; white-space: nowrap; }
     .nav-support-group .nav-support svg:last-child { display: none; }
-    .sidebar { overflow: visible; }
+    .sidebar { height: auto; max-height: none; overflow: visible; }
     @media (max-width: 430px) {
       .nav-support-group .nav-support { font-size: 11px; padding: 8px 6px; }
       .nav-support-group .nav-support svg:first-child { width: 13px; height: 13px; }
@@ -551,7 +558,11 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 
 <!-- Main content -->
 <main class="main" id="mainContent">
-  <p class="msg warn" role="status" aria-live="polite" id="externalLinkMessage" style="display:none"></p>
+  <div class="msg warn" role="status" aria-live="polite" id="externalLinkMessage" style="display:none">
+    <span id="externalLinkText"></span>
+    <button type="button" class="btn btn-sm" id="externalLinkCopy">Copy link</button>
+    <button type="button" class="btn btn-sm" id="externalLinkDismiss" aria-label="Dismiss external link notice">Dismiss</button>
+  </div>
 
   <!-- Dashboard -->
   <div class="view active" id="view-dashboard">
@@ -1661,23 +1672,38 @@ function testConnection() {
   });
 }
 
-function browseProjectDir() {
-  var input = document.getElementById('wizProjectDir');
-  if (window.__TAURI_INTERNALS__ && typeof window.__TAURI_INTERNALS__.invoke === 'function') {
-    window.__TAURI_INTERNALS__.invoke('select_working_dir').then(function(path) {
-      if (path) input.value = path;
-    }).catch(function() { fallbackBrowseDir(input); });
-  } else {
-    fallbackBrowseDir(input);
+async function chooseOwnerProjectFolder() {
+  // A Tauri shell may expose the native command; ordinary browser windows
+  // use the same-origin owner-only, CSRF-protected OS folder picker instead.
+  const invoke = window.__TAURI_INTERNALS__?.invoke;
+  if (typeof invoke === 'function') {
+    try {
+      // A pure picker: selecting a folder must not silently change the running
+      // backend or persist a project before the owner clicks Use project.
+      const path = await invoke('pick_project_folder');
+      return typeof path === 'string' ? path : '';
+    } catch (_error) {
+      // An older desktop shell might not contain this command. Its owner-only
+      // loopback API opens the same native Windows picker.
+    }
   }
+  const result = await gpPostOwner('/api/owner/project/browse');
+  return typeof result.project_dir === 'string' ? result.project_dir : '';
 }
-function fallbackBrowseDir(input) {
-  // Standard browser folder pickers return a relative folder name, not a
-  // usable absolute filesystem path. Never pretend that value is a path.
-  input.focus();
-  showMsg('wizardMsg',
-    'Enter the full local folder path. For graphical folder selection, use the desktop app.',
-    'warn');
+async function browseProjectDir() {
+  const input = document.getElementById('wizProjectDir');
+  if (!input) return;
+  try {
+    const path = await chooseOwnerProjectFolder();
+    if (path) {
+      input.value = path;
+      showMsg('wizardMsg', 'Folder selected. Choose Next to use it.', 'success');
+    }
+  } catch (error) {
+    // Keep the previous typed folder and make cancellation recoverable.
+    input.focus();
+    showMsg('wizardMsg', 'Folder selection canceled or unavailable. Click Browse to try again.', 'warn');
+  }
 }
 
 function wizardAdvance() {
@@ -1763,8 +1789,19 @@ document.addEventListener('click', async (event) => {
   } catch (error) {
     const message = document.getElementById('externalLinkMessage');
     if (message) {
-      message.style.display = 'block';
-      message.textContent = 'Could not open the system browser. Please copy this address: ' + link.href;
+      message.style.display = 'flex';
+      document.getElementById('externalLinkText').textContent =
+        'Could not open the system browser. Copy the address to open it manually.';
+      const copy = document.getElementById('externalLinkCopy');
+      copy.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(link.href);
+          document.getElementById('externalLinkText').textContent = 'Link copied to clipboard.';
+        } catch (_error) {
+          document.getElementById('externalLinkText').textContent = 'Copy this address: ' + link.href;
+        }
+      };
+      document.getElementById('externalLinkDismiss').onclick = () => { message.style.display = 'none'; };
     }
   }
 });
@@ -1815,16 +1852,13 @@ async function gpChooseProject() {
   const button = byId('gpBrowse');
   button.disabled = true;
   try {
-    const invoke = window.__TAURI_INTERNALS__?.invoke;
-    const result = typeof invoke === 'function'
-      ? {project_dir: await invoke('select_working_dir')}
-      : await gpPostOwner('/api/owner/project/browse');
-    if (result.project_dir) {
-      byId('gpProjectPath').value = result.project_dir;
+    const path = await chooseOwnerProjectFolder();
+    if (path) {
+      byId('gpProjectPath').value = path;
       gpSay('gpProjectState', 'Folder selected. Choose "Use project" to apply it.');
     }
   } catch (error) {
-    gpSay('gpProjectState', error.message + ' Enter the full folder path instead.', 'error');
+    gpSay('gpProjectState', 'No folder selected. Click Browse to try again.');
   } finally { button.disabled = false; }
 }
 async function gpSaveProject() {

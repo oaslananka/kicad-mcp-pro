@@ -215,9 +215,7 @@ async def api_project_folder_browse(request: Request) -> JSONResponse:
     except Exception:
         # GUI unavailability and user cancellation are ordinary recoverable
         # outcomes. Avoid leaking filesystem or native dialog exceptions.
-        return _response(
-            {"error": "No folder selected. Enter a local project folder path instead."}, 409
-        )
+        return _response({"error": "No folder selected. Click Browse to try again."}, 409)
     return _response({"project_dir": str(directory)})
 
 

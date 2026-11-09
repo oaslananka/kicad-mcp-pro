@@ -106,8 +106,75 @@ def _discover_kicad_project(folder: Path) -> tuple[Path, str]:
     return resolved, "project"
 
 
+def _browse_windows_project_folder() -> Path:
+    """Use the built-in Windows folder dialog even without Python/Tk installed."""
+    # This program is a fixed literal: never interpolate project paths or other
+    # user input into an executable shell command.
+    script = """
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+Add-Type -AssemblyName System.Windows.Forms
+$picker = [System.Windows.Forms.FolderBrowserDialog]::new()
+$picker.Description = 'Choose your local KiCad project folder'
+$picker.ShowNewFolderButton = $false
+# The browser-facing backend runs without foreground focus. An invisible
+# topmost owner keeps the genuine Windows folder chooser above the app.
+$owner = [System.Windows.Forms.Form]::new()
+$owner.ShowInTaskbar = $false
+$owner.TopMost = $true
+$owner.Opacity = 0
+$owner.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+try {
+    $owner.Show()
+    $owner.Activate()
+    if ($picker.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
+        [Console]::WriteLine($picker.SelectedPath)
+    }
+} finally {
+    $picker.Dispose()
+    $owner.Close()
+    $owner.Dispose()
+}
+"""
+    powershell = (
+        Path(os.environ.get("SystemRoot", r"C:\\Windows"))
+        / "System32"
+        / "WindowsPowerShell"
+        / "v1.0"
+        / "powershell.exe"
+    )
+    try:
+        selected = subprocess.run(
+            [
+                str(powershell),
+                "-NoProfile",
+                "-NonInteractive",
+                "-STA",
+                "-WindowStyle",
+                "Hidden",
+                "-Command",
+                script,
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise typer.BadParameter("Windows folder picker unavailable. Try again.") from exc
+    if selected.returncode != 0:
+        raise typer.BadParameter("Windows folder picker unavailable. Try again.")
+    if not selected.stdout.strip():
+        raise typer.BadParameter("No project folder selected. Setup was not changed.")
+    return Path(selected.stdout.strip())
+
+
 def _browse_local_project_folder() -> Path:
     """Open a native *local* directory picker. Never send the path to Cloud."""
+    if sys.platform == "win32":
+        return _browse_windows_project_folder()
     zenity = shutil.which("zenity") if sys.platform.startswith("linux") else None
     if zenity:
         try:

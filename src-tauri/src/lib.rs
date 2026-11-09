@@ -913,6 +913,22 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Opens a native OS project folder picker without changing the active server
+/// working directory. The owner must explicitly choose "Use project" later.
+#[tauri::command]
+fn pick_project_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let selected = app.dialog().file().blocking_pick_folder();
+    selected
+        .map(|entry| {
+            entry
+                .as_path()
+                .filter(|path| path.is_dir())
+                .map(|path| path.to_string_lossy().to_string())
+                .ok_or_else(|| "Selected path is not a valid folder.".to_string())
+        })
+        .transpose()
+}
+
 /// Opens a native OS folder-picker dialog and stores the selection
 /// as the working directory for the Python server process.
 #[tauri::command]
@@ -1054,6 +1070,7 @@ pub fn run() {
             server_pid,
             server_status,
             select_working_dir,
+            pick_project_folder,
             get_working_dir,
             restart_server,
             desktop_readiness,
