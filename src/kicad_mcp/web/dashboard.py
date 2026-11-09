@@ -443,6 +443,33 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     .wizard-steps { overflow-x: auto; justify-content: flex-start; gap: 8px; padding-bottom: 10px; }
     .wizard-step { flex-shrink: 0; min-width: 80px; }
   }
+  /* Golden Path: progressive disclosure without another service or dependency. */
+  .gp-steps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; margin:18px 0 28px; }
+  .gp-card { background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius-lg); padding:19px; min-width:0; }
+  .gp-card.gp-project { grid-column:1/-1; }
+  .gp-heading { display:flex; gap:11px; align-items:flex-start; margin-bottom:15px; }
+  .gp-heading h3 { font-size:16px; margin:1px 0 4px; font-weight:650; }
+  .gp-heading p, .gp-hint { font-size:12px; color:var(--text-muted); line-height:1.55; }
+  .gp-number { width:28px; height:28px; flex:none; border-radius:9px; background:var(--accent-subtle);
+    border:1px solid rgba(56,189,248,.3); color:var(--accent); display:grid; place-items:center; font-weight:700; }
+  .gp-card label { display:block; font-size:12px; color:var(--text-muted); margin-bottom:7px; }
+  .gp-field { display:flex; gap:8px; flex-wrap:wrap; align-items:stretch; margin-bottom:10px; }
+  .gp-field input, .gp-field select { flex:1 1 200px; min-width:0; background:var(--bg-canvas); color:var(--text);
+    border:1px solid var(--border-strong); border-radius:var(--radius-sm); padding:9px 11px; font-size:13px; }
+  .gp-field .btn { min-height:38px; }
+  .gp-state { color:var(--text-muted); font-size:12px; line-height:1.5; margin:0; overflow-wrap:anywhere; }
+  .gp-state.gp-ok { color:var(--success); }
+  .gp-state.gp-error { color:#fca5a5; }
+  .gp-review { border-radius:var(--radius-sm); padding:10px 12px; background:var(--surface-2);
+    color:var(--text-muted); font-size:12px; line-height:1.55; overflow-wrap:anywhere; margin-bottom:10px; }
+  .gp-review.gp-ok { border:1px solid rgba(34,197,94,.32); color:var(--text); }
+  .gp-review.gp-error { border:1px solid rgba(239,68,68,.35); color:var(--text); }
+  .gp-hidden { display:none !important; }
+  .gp-hint { margin-top:10px; }
+  .gp-cloud-devices { font-size:12px; display:inline-block; margin-top:3px; }
+  .gp-cloud-actions { margin-top:12px; }
+  @media(max-width:900px) { .gp-steps { grid-template-columns:minmax(0,1fr); } }
+  @media(max-width:560px) { .gp-card { padding:14px; } .gp-field .btn { flex:1 1 auto; } }
 </style>
 </head>
 <body>
@@ -528,34 +555,64 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 
   <!-- Dashboard -->
   <div class="view active" id="view-dashboard">
-    <section class="local-workspace-intro" aria-label="Choose how to use KiCad MCP Pro">
+    <section class="local-workspace-intro" aria-label="Start using KiCad MCP Pro">
       <div>
-        <span class="local-workspace-kicker">YOUR KICAD WORKSPACE</span>
-        <h2>Your KiCad workspace is here.</h2>
-        <p>Work locally without an account. Choose local AI now, or connect Cloud only when you need remote access.</p>
+        <span class="local-workspace-kicker">GET STARTED</span>
+        <h2>From KiCad project to working AI, without terminal setup.</h2>
+        <p>Work locally without an account. Select a project, then connect an AI client or optionally link Cloud.</p>
       </div>
       <div class="local-workspace-actions">
-        <button type="button" class="btn btn-primary" onclick="window.location.hash='#setup-wizard'">Set up local AI</button>
-        <a class="btn local-cloud-link" href="https://kicad-mcp-pro.oaslananka.dev/sign-in" target="_blank" rel="noopener noreferrer">Open Cloud sign-in</a>
+        <button type="button" class="btn btn-primary" id="gpFocusProject">Choose project</button>
+        <button type="button" class="btn" onclick="window.location.hash='#setup-wizard'">Connect local AI (advanced)</button>
       </div>
-      <p class="local-workspace-safety">Cloud sign-in, device pairing and each project permission are independent. Signing in never shares local files.</p>
+      <p class="local-workspace-safety">Signing in never shares local files. Cloud device pairing and project/client permission need separate approval.</p>
     </section>
-    <section class="local-get-started" aria-label="Choose your next action">
-      <button type="button" class="local-choice" onclick="window.location.hash='#setup-wizard'">
-        <span class="local-choice-number">01</span><span class="local-choice-content"><strong>Connect local AI</strong>
-        <small>Choose your AI client, check KiCad and get its configuration in the built-in guided setup.</small></span>
-        <span class="local-choice-arrow" aria-hidden="true">?</span>
-      </button>
-      <button type="button" class="local-choice" onclick="window.location.hash='#preview'">
-        <span class="local-choice-number">02</span><span class="local-choice-content"><strong>View your project</strong>
-        <small>Open local previews and confirm what KiCad tools can see.</small></span>
-        <span class="local-choice-arrow" aria-hidden="true">?</span>
-      </button>
-      <a class="local-choice" href="https://kicad-mcp-pro.oaslananka.dev/sign-in" target="_blank" rel="noopener noreferrer">
-        <span class="local-choice-number">03</span><span class="local-choice-content"><strong>Cloud (optional)</strong>
-        <small>Sign in for read-only remote AI. Pairing and project sharing always require separate approval.</small></span>
-        <span class="local-choice-arrow" aria-hidden="true">?</span>
-      </a>
+
+    <section class="gp-steps" aria-label="Three-step getting started">
+      <article class="gp-card gp-project" aria-labelledby="gpProjectTitle">
+        <div class="gp-heading"><span class="gp-number">1</span><div><h3 id="gpProjectTitle">Choose a KiCad project</h3><p>Project files stay on this computer.</p></div></div>
+        <label for="gpProjectPath">Project folder</label>
+        <div class="gp-field">
+          <input type="text" id="gpProjectPath" autocomplete="off" placeholder="Choose a folder containing a KiCad project">
+          <button type="button" class="btn" id="gpBrowse">Browse</button>
+          <button type="button" class="btn btn-primary" id="gpSaveProject">Use project</button>
+        </div>
+        <p id="gpProjectState" class="gp-state" role="status" aria-live="polite">Checking your local project...</p>
+      </article>
+
+      <article class="gp-card" aria-labelledby="gpAiTitle">
+        <div class="gp-heading"><span class="gp-number">2</span><div><h3 id="gpAiTitle">Connect an AI</h3><p>No Cloud account is required.</p></div></div>
+        <label for="gpAiClient">AI application</label>
+        <div class="gp-field">
+          <select id="gpAiClient">
+            <option value="claude-desktop">Claude Desktop</option>
+            <option value="cursor">Cursor</option>
+            <option value="vscode">VS Code</option>
+            <option value="windsurf">Windsurf</option>
+          </select>
+          <button type="button" class="btn btn-primary" id="gpAiPreview">Connect</button>
+        </div>
+        <div id="gpAiReview" class="gp-review" role="status" aria-live="polite">Choose an AI client to preview the settings change.</div>
+        <button type="button" class="btn gp-hidden" id="gpAiApply">Apply reviewed settings</button>
+        <p class="gp-hint">Your existing AI settings are preserved and backed up. Confirm the connection inside your AI app.</p>
+      </article>
+
+      <article class="gp-card" aria-labelledby="gpCloudTitle">
+        <div class="gp-heading"><span class="gp-number">3</span><div><h3 id="gpCloudTitle">Cloud, only if you want it</h3><p>Local KiCad works without Cloud.</p></div></div>
+        <div class="gp-field gp-cloud-actions">
+          <a class="btn" href="https://kicad-mcp-pro.oaslananka.dev/sign-in" target="_blank" rel="noopener noreferrer">Sign in</a>
+          <button type="button" class="btn btn-primary" id="gpCloudPair">Pair device and project</button>
+        </div>
+        <div id="gpCloudState" class="gp-review" role="status" aria-live="polite">Cloud access has not been verified in this session. Pair only if needed.</div>
+        <a id="gpApprovalLink" class="btn gp-hidden" target="_blank" rel="noopener noreferrer">Approve device in browser</a>
+        <div class="gp-field">
+          <button type="button" class="btn gp-hidden" id="gpCheckPair">Check pairing</button>
+          <button type="button" class="btn gp-hidden" id="gpCancelPair">Cancel pairing</button>
+          <button type="button" class="btn gp-hidden" id="gpEnableConnector">Enable local Connector</button>
+        </div>
+        <a class="gp-cloud-devices" href="https://kicad-mcp-pro.oaslananka.dev/devices" target="_blank" rel="noopener noreferrer">Review device and project permissions</a>
+        <p class="gp-hint">Pairing does not automatically grant an AI client access. Review each permission in Cloud Devices.</p>
+      </article>
     </section>
     <h2>Local status</h2>
     <div class="grid" id="statusGrid">
@@ -1684,9 +1741,10 @@ document.addEventListener('click', async (event) => {
     'https://www.buymeacoffee.com/oaslananka',
     'https://oaslananka.github.io/kicad-mcp-pro/agents/',
     'https://oaslananka.github.io/kicad-mcp-pro/agents/prompts/',
-    'https://kicad-mcp-pro.oaslananka.dev/sign-in'
+    'https://kicad-mcp-pro.oaslananka.dev/sign-in',
+    'https://kicad-mcp-pro.oaslananka.dev/devices'
   ]);
-  if (!allowedLinks.has(link.href)) return;
+  if (!allowedLinks.has(link.href) && !gpTrustedCloudPairLink(link.href)) return;
   if (typeof invoke !== 'function') {
     // Once the packaged Tauri webview navigates from its bundle to its local
     // HTTP dashboard, native IPC is deliberately unavailable on this origin.
@@ -1710,6 +1768,251 @@ document.addEventListener('click', async (event) => {
     }
   }
 });
+
+
+/* User-first guided setup. Local-first, explicit changes, no implied Cloud grants. */
+let gpProject = '';
+let gpClientPreview = null;
+let gpPairing = '';
+let gpPollCount = 0;
+let gpPollTimer = null;
+
+function gpSay(id, message, state = '') {
+  const el = document.getElementById(id);
+  el.textContent = message;
+  el.classList.remove('gp-ok', 'gp-error');
+  if (state) el.classList.add('gp-' + state);
+}
+async function gpFetch(url, options = {}) {
+  const response = await fetch(url, {cache: 'no-store', ...options});
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Request failed. Please try again.');
+  return data;
+}
+async function gpPostOwner(url, body = {}) {
+  const owner = await gpFetch('/api/owner/session');
+  if (!owner.csrf_token) throw new Error('Local owner authorization unavailable.');
+  return gpFetch(url, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-KiCad-Owner-CSRF': owner.csrf_token},
+    body: JSON.stringify(body)
+  });
+}
+async function gpLoadProject() {
+  try {
+    const status = await gpFetch('/api/status');
+    const path = status.project?.dir;
+    gpProject = typeof path === 'string' ? path : '';
+    if (gpProject) {
+      if (document.activeElement !== byId('gpProjectPath')) byId('gpProjectPath').value = gpProject;
+      gpSay('gpProjectState', 'Selected locally: ' + gpProject + '. Your files stay here.', 'ok');
+    } else {
+      gpSay('gpProjectState', 'Choose a project folder. Cloud is optional.');
+    }
+  } catch (error) { gpSay('gpProjectState', 'Cannot read local status: ' + error.message, 'error'); }
+}
+async function gpChooseProject() {
+  const button = byId('gpBrowse');
+  button.disabled = true;
+  try {
+    const invoke = window.__TAURI_INTERNALS__?.invoke;
+    const result = typeof invoke === 'function'
+      ? {project_dir: await invoke('select_working_dir')}
+      : await gpPostOwner('/api/owner/project/browse');
+    if (result.project_dir) {
+      byId('gpProjectPath').value = result.project_dir;
+      gpSay('gpProjectState', 'Folder selected. Choose "Use project" to apply it.');
+    }
+  } catch (error) {
+    gpSay('gpProjectState', error.message + ' Enter the full folder path instead.', 'error');
+  } finally { button.disabled = false; }
+}
+async function gpSaveProject() {
+  const folder = byId('gpProjectPath').value.trim();
+  if (!folder) {
+    gpSay('gpProjectState', 'Select a project folder first.', 'error');
+    byId('gpProjectPath').focus();
+    return;
+  }
+  const button = byId('gpSaveProject');
+  button.disabled = true;
+  gpSay('gpProjectState', 'Saving the local project selection...');
+  try {
+    const result = await gpPostOwner('/api/owner/project/select', {project_dir: folder});
+    if (!Array.isArray(result.applied) || !result.applied.includes('project_dir')) {
+      throw new Error(result.error || 'The project selection could not be applied.');
+    }
+    await gpLoadProject();
+  } catch (error) {
+    gpSay('gpProjectState', error.message + ' Your previous project is unchanged.', 'error');
+  } finally { button.disabled = false; }
+}
+async function gpPreviewClient() {
+  const client = byId('gpAiClient').value;
+  gpClientPreview = null;
+  byId('gpAiApply').classList.add('gp-hidden');
+  gpSay('gpAiReview', 'Reviewing your AI settings...');
+  try {
+    await gpFetch('/api/owner/session');
+    const data = await gpFetch('/api/owner/client-config/preview/' + encodeURIComponent(client));
+    if (data.client !== client || !data.confirmation) throw new Error('Invalid preview.');
+    gpClientPreview = {client, confirmation: data.confirmation};
+    gpSay('gpAiReview',
+      (data.action === 'update_existing' ? 'Update' : 'Add') + ' KiCad MCP Pro in ' +
+      data.config_path + '. Preserving ' + data.other_entries +
+      ' other MCP entries. Existing files are backed up.');
+    byId('gpAiApply').classList.remove('gp-hidden');
+  } catch (error) {
+    gpSay('gpAiReview', error.message + ' Use advanced setup if this client is not supported.', 'error');
+  }
+}
+async function gpApplyClient() {
+  const preview = gpClientPreview;
+  if (!preview || preview.client !== byId('gpAiClient').value) return;
+  const button = byId('gpAiApply');
+  button.disabled = true;
+  try {
+    const data = await gpPostOwner(
+      '/api/owner/client-config/apply/' + encodeURIComponent(preview.client),
+      {confirmation: preview.confirmation}
+    );
+    if (!data.ok) throw new Error(data.error || 'Client settings not saved.');
+    gpSay('gpAiReview', 'Settings saved. Open your AI app and verify its actual MCP connection.', 'ok');
+  } catch (error) {
+    gpSay('gpAiReview', error.message + ' Preview again before retrying.', 'error');
+  } finally {
+    gpClientPreview = null;
+    button.disabled = false;
+    button.classList.add('gp-hidden');
+  }
+}
+function gpTrustedCloudPairLink(address) {
+  try {
+    const parsed = new URL(address);
+    return parsed.origin === 'https://kicad-mcp-pro.oaslananka.dev' &&
+      parsed.pathname === '/devices/pairing' && !parsed.search &&
+      parsed.hash.startsWith('#challenge=') && parsed.hash.includes('&code=');
+  } catch (_) { return false; }
+}
+function gpStopPolling() {
+  if (gpPollTimer !== null) clearTimeout(gpPollTimer);
+  gpPollTimer = null;
+}
+async function gpStartPairing() {
+  if (!gpProject || byId('gpProjectPath').value.trim() !== gpProject) {
+    gpSay('gpCloudState', 'Save the selected local project before pairing.', 'error');
+    byId('gpProjectPath').focus();
+    return;
+  }
+  if (gpPairing) { gpSay('gpCloudState', 'A pairing is already in progress. Check or cancel it.'); return; }
+  const button = byId('gpCloudPair');
+  button.disabled = true;
+  gpSay('gpCloudState', 'Preparing owner-approved Cloud pairing...');
+  try {
+    const data = await gpPostOwner('/api/cloud/setup/start', {project_path: gpProject});
+    if (!data.ok || !data.session_id) {
+      throw new Error('Cloud did not return a valid owner approval link.');
+    }
+    gpPairing = data.session_id;
+    gpPollCount = 0;
+    byId('gpCheckPair').classList.remove('gp-hidden');
+    byId('gpCancelPair').classList.remove('gp-hidden');
+    if (gpTrustedCloudPairLink(data.approval_url)) {
+      byId('gpApprovalLink').href = data.approval_url;
+      byId('gpApprovalLink').classList.remove('gp-hidden');
+    }
+    gpSay('gpCloudState', 'Preparing secure device authorization. ' +
+      'No Cloud project or AI-client grant has been enabled.');
+    await gpCheckPairing();
+  } catch (error) {
+    gpSay('gpCloudState', 'Pairing unavailable: ' + error.message +
+      '. Local KiCad remains ready.', 'error');
+  } finally { button.disabled = false; }
+}
+async function gpCheckPairing() {
+  gpStopPolling();
+  const session = gpPairing;
+  if (!session) return;
+  try {
+    const data = await gpPostOwner('/api/cloud/setup/status', {session_id: session});
+    if (gpPairing !== session) return;
+    if (gpTrustedCloudPairLink(data.approval_url)) {
+      byId('gpApprovalLink').href = data.approval_url;
+      byId('gpApprovalLink').classList.remove('gp-hidden');
+    }
+    if (data.status === 'ready' || data.status === 'project_registered') {
+      gpSay('gpCloudState', 'Device and project registered. Enable the local Connector, ' +
+        'then review Cloud project and AI-client grants in Devices.', 'ok');
+      byId('gpEnableConnector').classList.remove('gp-hidden');
+      byId('gpCheckPair').classList.add('gp-hidden');
+      byId('gpCancelPair').classList.add('gp-hidden');
+      return;
+    }
+    if (data.status === 'failed' || data.status === 'cancelled') {
+      gpSay('gpCloudState', 'Pairing did not complete. ' +
+        (data.error || 'Check Cloud Devices before retrying.'), 'error');
+      gpPairing = '';
+      byId('gpCheckPair').classList.add('gp-hidden');
+      byId('gpCancelPair').classList.add('gp-hidden');
+      return;
+    }
+    gpSay('gpCloudState', (data.approval_url ? 'Approve this device in your browser. ' :
+      'Preparing the browser approval link. ') + 'Step: ' +
+      (data.step || data.status) + '. Your project files remain local.');
+    if (++gpPollCount < 90) gpPollTimer = setTimeout(gpCheckPairing, 3000);
+    else gpSay('gpCloudState', 'Approval is taking longer than expected. ' +
+      'Choose "Check pairing" after approving in your browser.');
+  } catch (error) {
+    gpSay('gpCloudState', 'Could not check pairing: ' + error.message +
+      '. Do not create another device until you check Devices.', 'error');
+  }
+}
+async function gpCancelPairing() {
+  gpStopPolling();
+  if (!gpPairing) return;
+  try {
+    await gpPostOwner('/api/cloud/setup/cancel', {session_id: gpPairing});
+    gpPairing = '';
+    byId('gpApprovalLink').classList.add('gp-hidden');
+    byId('gpCheckPair').classList.add('gp-hidden');
+    byId('gpCancelPair').classList.add('gp-hidden');
+    gpSay('gpCloudState', 'Pairing paused. Review Cloud Devices if approval was already completed.');
+  } catch (error) {
+    gpSay('gpCloudState', 'Could not cancel pairing: ' + error.message, 'error');
+  }
+}
+async function gpEnableConnector() {
+  const button = byId('gpEnableConnector');
+  button.disabled = true;
+  try {
+    const data = await gpPostOwner('/api/cloud/connector/enable');
+    if (!data.ok) throw new Error(data.error || 'Connector was not started.');
+    gpSay('gpCloudState', 'Local Connector scheduled (' +
+      (data.status || 'connection unverified') + '). Cloud access is NOT verified until ' +
+      'project and AI-client grants are approved in Devices.', 'ok');
+    button.classList.add('gp-hidden');
+  } catch (error) {
+    gpSay('gpCloudState', 'Connector is not ready: ' + error.message, 'error');
+  } finally { button.disabled = false; }
+}
+byId('gpFocusProject').addEventListener('click', () => {
+  byId('gpProjectPath').scrollIntoView({block: 'center', behavior: 'smooth'});
+  byId('gpProjectPath').focus();
+});
+byId('gpBrowse').addEventListener('click', gpChooseProject);
+byId('gpSaveProject').addEventListener('click', gpSaveProject);
+byId('gpAiClient').addEventListener('change', () => {
+  gpClientPreview = null;
+  byId('gpAiApply').classList.add('gp-hidden');
+  gpSay('gpAiReview', 'Choose Connect to review the selected AI client.');
+});
+byId('gpAiPreview').addEventListener('click', gpPreviewClient);
+byId('gpAiApply').addEventListener('click', gpApplyClient);
+byId('gpCloudPair').addEventListener('click', gpStartPairing);
+byId('gpCheckPair').addEventListener('click', gpCheckPairing);
+byId('gpCancelPair').addEventListener('click', gpCancelPairing);
+byId('gpEnableConnector').addEventListener('click', gpEnableConnector);
+gpLoadProject();
 
 function serverAction(action) {
   const dangerous = action === 'stop' || action === 'restart';

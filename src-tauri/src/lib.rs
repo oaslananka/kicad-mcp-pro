@@ -599,14 +599,33 @@ fn allowed_desktop_navigation(url: &tauri::Url, selected_port: Option<u16>) -> b
 
 /// Static outbound destinations usable from the packaged desktop and local UI.
 fn allowed_external_link(url: &str) -> bool {
-    matches!(
+    if matches!(
         url,
         "https://github.com/sponsors/oaslananka"
             | "https://www.buymeacoffee.com/oaslananka"
             | "https://oaslananka.github.io/kicad-mcp-pro/agents/"
             | "https://oaslananka.github.io/kicad-mcp-pro/agents/prompts/"
             | "https://kicad-mcp-pro.oaslananka.dev/sign-in"
-    )
+            | "https://kicad-mcp-pro.oaslananka.dev/devices"
+    ) {
+        return true;
+    }
+    // A single-use owner pairing link contains a challenge in the fragment.
+    // Do not allow arbitrary Cloud routes or an untrusted redirect URL.
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    let fragment = parsed.fragment().unwrap_or("");
+    parsed.scheme() == "https"
+        && parsed.host_str() == Some("kicad-mcp-pro.oaslananka.dev")
+        && parsed.port().is_none()
+        && parsed.username().is_empty()
+        && parsed.password().is_none()
+        && parsed.path() == "/devices/pairing"
+        && parsed.query().is_none()
+        && fragment.starts_with("challenge=")
+        && fragment.contains("&code=")
+        && fragment.len() < 512
 }
 
 #[tauri::command]
@@ -1244,6 +1263,21 @@ mod tests {
         assert!(!allowed_external_link("https://www.buymeacoffee.com/other"));
         assert!(!allowed_external_link(
             "https://github.com/sponsors/oaslananka?other=1"
+        ));
+        assert!(allowed_external_link(
+            "https://kicad-mcp-pro.oaslananka.dev/devices"
+        ));
+        assert!(allowed_external_link(
+            "https://kicad-mcp-pro.oaslananka.dev/devices/pairing#challenge=abc&code=123"
+        ));
+        assert!(!allowed_external_link(
+            "https://kicad-mcp-pro.oaslananka.dev.evil.test/devices/pairing#challenge=abc&code=123"
+        ));
+        assert!(!allowed_external_link(
+            "https://kicad-mcp-pro.oaslananka.dev/devices/pairing?next=evil#challenge=abc&code=123"
+        ));
+        assert!(!allowed_external_link(
+            "https://kicad-mcp-pro.oaslananka.dev/devices/pairing#other=abc"
         ));
         assert!(!allowed_external_link("http://localhost:3334/"));
         assert!(!allowed_external_link(""));

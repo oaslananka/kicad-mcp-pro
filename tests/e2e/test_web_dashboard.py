@@ -392,12 +392,119 @@ class TestDashboardSPA:
         page.wait_for_url(destination)
         assert page.get_by_text("Browser launched").is_visible()
 
+    def test_golden_path_project_ai_cloud_never_claims_unverified_access(
+        self, page: Page, dashboard_url: str
+    ) -> None:
+        """New users select a project and review permissions without a terminal."""
+        actions: list[str] = []
+        state = {"project": "/home/user/project", "cloud_checks": 0}
+        link = "https://kicad-mcp-pro.oaslananka.dev/devices/pairing#challenge=sample&code=REVIEW"
+
+        def owner_api(route: Route) -> None:
+            path = urlsplit(route.request.url).path
+            method = route.request.method
+            if path == "/api/owner/session":
+                payload = {"csrf_token": "local-owner-test"}
+            elif path == "/api/owner/project/select" and method == "POST":
+                state["project"] = route.request.post_data_json["project_dir"]
+                actions.append("project")
+                payload = {"applied": ["project_dir"]}
+            elif path.endswith("/client-config/preview/claude-desktop"):
+                payload = {
+                    "client": "claude-desktop",
+                    "action": "add",
+                    "confirmation": "preview1",
+                    "other_entries": 2,
+                    "config_path": "existing-user-settings.json",
+                }
+            elif path.endswith("/client-config/apply/claude-desktop"):
+                actions.append("client")
+                payload = {"ok": True, "message": "Settings saved"}
+            else:
+                route.fulfill(
+                    status=404,
+                    content_type="application/json",
+                    body='{"error":"Unexpected request"}',
+                )
+                return
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+
+        def status(route: Route) -> None:
+            payload = {**MOCK_STATUS, "project": {"dir": state["project"]}}
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+
+        def cloud_api(route: Route) -> None:
+            path = urlsplit(route.request.url).path
+            if path == "/api/cloud/setup/start":
+                actions.append("pair-request")
+                payload = {
+                    "ok": True,
+                    "session_id": "mock-1",
+                    "status": "pairing_pending",
+                    "approval_url": None,
+                    "user_code": None,
+                }
+            elif path == "/api/cloud/setup/status":
+                state["cloud_checks"] += 1
+                payload = {
+                    "status": (
+                        "pairing_pending" if state["cloud_checks"] == 1 else "project_registered"
+                    ),
+                    "step": (
+                        "device_pairing_pending" if state["cloud_checks"] == 1 else "complete"
+                    ),
+                    "approval_url": link,
+                    "user_code": "REVIEW",
+                }
+            elif path == "/api/cloud/connector/enable":
+                actions.append("connector")
+                payload = {"ok": True, "status": "Scheduled (connection unverified)"}
+            else:
+                route.fulfill(
+                    status=404,
+                    content_type="application/json",
+                    body='{"error":"Unexpected request"}',
+                )
+                return
+            route.fulfill(status=200, content_type="application/json", body=json.dumps(payload))
+
+        page.route("**/api/owner/**", owner_api)
+        page.route("**/api/status", status)
+        page.route("**/api/cloud/**", cloud_api)
+        page.goto(dashboard_url)
+        page.locator("#gpProjectPath").fill("/home/user/new-project")
+        page.locator("#gpSaveProject").click()
+        page.get_by_text("Selected locally: /home/user/new-project").wait_for()
+        assert actions == ["project"]
+
+        page.locator("#gpAiPreview").click()
+        page.locator("#gpAiApply").wait_for(state="visible")
+        assert actions == ["project"]  # Nothing was written on preview.
+        page.locator("#gpAiApply").click()
+        page.get_by_text("Settings saved. Open your AI app", exact=False).wait_for()
+        assert "client" in actions
+        assert "verify its actual MCP connection" in page.locator("#gpAiReview").inner_text()
+
+        page.locator("#gpCloudPair").click()
+        page.locator("#gpApprovalLink").wait_for(state="visible")
+        assert page.locator("#gpApprovalLink").get_attribute("href") == link
+        assert "connector" not in actions
+        page.evaluate("gpCheckPairing()")
+        page.locator("#gpEnableConnector").wait_for(state="visible")
+        assert "connection" not in page.locator("#gpCloudState").inner_text().lower()
+        page.locator("#gpEnableConnector").click()
+        page.get_by_text("Cloud access is NOT verified", exact=False).wait_for()
+        assert actions == ["project", "client", "pair-request", "connector"]
+
     def test_local_first_choice_and_downloadable_client_config(
         self, page: Page, dashboard_url: str
     ) -> None:
         """A first-time user can navigate and download an AI config without a CLI."""
         page.goto(dashboard_url)
-        assert page.locator(".local-choice").count() == 3
+        assert page.locator(".gp-card").count() == 3
+        assert page.get_by_role("button", name="Choose project").is_visible()
+        assert page.get_by_role("button", name="Pair device and project").is_visible()
+        assert "not been verified" in page.locator("#gpCloudState").inner_text()
         assert page.locator('button[data-view="setup-wizard"]').count() == 1
         assert page.locator('button[data-view="setup-wizard"]').inner_text() == "Connect an AI"
         assert not page.locator(".advanced-controls").get_attribute("open")
@@ -840,7 +947,7 @@ class TestDashboardSPA:
         page.wait_for_selector("#view-setup-wizard")
         page.wait_for_selector("#wizardBody", timeout=5000)
 
-        page.click('button:has-text("Cancel")')
+        page.locator('#wizardNav button:has-text("Cancel")').click()
         page.wait_for_timeout(500)
         assert page.is_visible("#view-dashboard")
 

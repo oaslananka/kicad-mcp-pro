@@ -48,7 +48,9 @@ from .owner_routes import (
     api_maintenance_repair_apply,
     api_maintenance_repair_preview,
     api_maintenance_resume,
+    api_owner_project_select,
     api_owner_session,
+    api_project_folder_browse,
 )
 from .state import get_metrics_snapshot, get_server_handle, get_start_time
 
@@ -797,6 +799,8 @@ web_routes: list[Route] = [
         endpoint=api_client_config_apply,
         methods=["POST"],
     ),
+    Route("/api/owner/project/browse", endpoint=api_project_folder_browse, methods=["POST"]),
+    Route("/api/owner/project/select", endpoint=api_owner_project_select, methods=["POST"]),
     Route("/api/cloud/setup/start", endpoint=api_cloud_setup_start, methods=["POST"]),
     Route("/api/cloud/setup/status", endpoint=api_cloud_setup_status, methods=["POST"]),
     Route("/api/cloud/setup/cancel", endpoint=api_cloud_setup_cancel, methods=["POST"]),

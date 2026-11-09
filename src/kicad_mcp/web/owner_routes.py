@@ -6,9 +6,11 @@ same-origin session with a server-generated CSRF token may mutate owner state.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import time
 from dataclasses import asdict
@@ -61,8 +63,14 @@ def _scope(request: Request) -> SimpleNamespace:
 def _services(request: Request) -> SimpleNamespace:
     services = getattr(request.app.state, "owner_services", None)
     if services is None:
+        if os.name == "nt":
+            from kicad_mcp.services.cloud_windows_onboarding_ui import WindowsCloudOnboardingService
+
+            onboarding = WindowsCloudOnboardingService()
+        else:
+            onboarding = CloudOnboardingService()
         services = SimpleNamespace(
-            onboarding=CloudOnboardingService(),
+            onboarding=onboarding,
             connector=ConnectorLifecycleManager(),
             maintenance=MaintenanceService(),
         )
@@ -187,6 +195,50 @@ def api_owner_session(request: Request) -> JSONResponse:
     return response
 
 
+async def api_project_folder_browse(request: Request) -> JSONResponse:
+    """Open an on-device folder chooser only for a CSRF-confirmed local owner."""
+    _, denied = _authorize_mutation(request)
+    if denied:
+        return denied
+
+    # Selecting a folder does not register a Cloud device or change the
+    # active project. The user explicitly applies the choice afterwards.
+    from kicad_mcp.cloud_user_cli import _browse_local_project_folder
+
+    try:
+        selected = await asyncio.to_thread(_browse_local_project_folder)
+        directory = selected.resolve(strict=True)
+        if not directory.is_dir():
+            raise ValueError("Selected path is not a folder")
+    except Exception:
+        # GUI unavailability and user cancellation are ordinary recoverable
+        # outcomes. Avoid leaking filesystem or native dialog exceptions.
+        return _response(
+            {"error": "No folder selected. Enter a local project folder path instead."}, 409
+        )
+    return _response({"project_dir": str(directory)})
+
+
+async def api_owner_project_select(request: Request) -> JSONResponse:
+    """Apply only an explicit project folder selected by the local owner."""
+    _, denied = _authorize_mutation(request)
+    if denied:
+        return denied
+    body, bad = await _json_body(request)
+    if bad:
+        return bad
+    if (
+        body is None
+        or set(body) != {"project_dir"}
+        or not isinstance(body["project_dir"], str)
+        or not body["project_dir"].strip()
+    ):
+        return _response({"error": "Select an existing local project folder."}, 400)
+    from .routes import api_config_post
+
+    return await api_config_post(request)
+
+
 async def api_cloud_setup_start(request: Request) -> JSONResponse:
     owner, denied = _authorize_mutation(request)
     if denied:
@@ -220,6 +272,11 @@ async def api_cloud_setup_start(request: Request) -> JSONResponse:
             "step": session.current_step.value,
             "approval_url": session.approval_url,
             "user_code": session.user_code,
+            "status": (
+                "project_registered"
+                if session.current_step.value == "complete"
+                else "pairing_pending"
+            ),
         }
     )
 
@@ -255,6 +312,8 @@ async def api_cloud_setup_status(request: Request) -> JSONResponse:
             "device_id": progress.device_id,
             "project_id": progress.project_id,
             "error": progress.error,
+            "approval_url": progress.approval_url,
+            "user_code": progress.user_code,
         }
     )
 
@@ -267,6 +326,14 @@ async def api_cloud_setup_cancel(request: Request) -> JSONResponse:
         return _response({"error": _SETUP_NOT_FOUND}, 404)
     cancelled = _services(request).onboarding.cancel_setup(session_id)
     if not cancelled:
+        if os.name == "nt":
+            return _response(
+                {
+                    "error": "Device approval already started. Deny it in the browser or let "
+                    "it expire, then review Cloud Devices. Connector remains off."
+                },
+                409,
+            )
         return _response({"error": _SETUP_NOT_FOUND}, 404)
     _scope(request).operations.pop(session_id, None)
     return _response({"ok": True, "status": "cancelled"})
@@ -276,6 +343,20 @@ async def api_cloud_connector_enable(request: Request) -> JSONResponse:
     _, denied = _authorize_mutation(request)
     if denied:
         return denied
+    if os.name == "nt":
+        from kicad_mcp.cloud_windows_connector import selected_project
+        from kicad_mcp.cloud_windows_task_scheduler import enable_windows_connector, scheduler_state
+
+        try:
+            project = selected_project()
+            if project is None:
+                return _response({"error": "No owner-selected Windows project"}, 409)
+            await asyncio.to_thread(
+                enable_windows_connector, project, owner_confirm=lambda _project: True
+            )
+            return _response({"ok": True, "status": scheduler_state()})
+        except (OSError, ValueError, RuntimeError):
+            return _response({"error": "Windows Connector could not be scheduled"}, 409)
     try:
         started = await _services(request).connector.start()
     except (OSError, ValueError, RuntimeError):
