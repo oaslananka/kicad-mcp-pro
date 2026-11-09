@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import argparse
 
-try:
-    from scripts import build_tool_effect_manifest, sync_mcp_metadata
-except ModuleNotFoundError:  # Direct `python scripts/foo.py` execution.
+if __package__:
+    # Module entry point: python -m scripts.sync_release_artifacts.
+    from . import build_tool_effect_manifest, sync_mcp_metadata
+else:
+    # Script entry point: python scripts/sync_release_artifacts.py.
+    # Avoid importing an unrelated third-party "scripts" namespace on Windows.
     import build_tool_effect_manifest
     import sync_mcp_metadata
 

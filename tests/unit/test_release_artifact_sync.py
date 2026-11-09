@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -20,3 +22,29 @@ def test_release_artifact_sync_covers_all_version_derived_outputs() -> None:
 
     assert "sync_mcp_metadata" in script
     assert "build_tool_effect_manifest" in script
+
+
+def test_release_artifact_sync_can_run_as_script() -> None:
+    result = subprocess.run(
+        [sys.executable, str(SYNC_SCRIPT), "--help"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--check" in result.stdout
+
+
+def test_release_artifact_sync_can_run_as_module() -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "scripts.sync_release_artifacts", "--help"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--check" in result.stdout
