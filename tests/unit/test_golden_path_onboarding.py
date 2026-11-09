@@ -12,6 +12,7 @@ from starlette.testclient import TestClient
 
 from kicad_mcp import cloud_user_cli
 from kicad_mcp.config import reset_config
+from kicad_mcp.web import owner_routes
 from kicad_mcp.web.dashboard import DASHBOARD_HTML
 from kicad_mcp.web.routes import web_routes
 
@@ -130,13 +131,14 @@ def test_ai_configuration_requires_preview_then_explicit_apply() -> None:
     assert "Open your AI app and verify its actual MCP connection" in html
 
 
-@pytest.mark.skipif(__import__("os").name != "nt", reason="Windows scheduler contract only")
 def test_windows_connector_enable_and_disable_use_owner_scheduler(
     owner_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from kicad_mcp import cloud_windows_connector, cloud_windows_task_scheduler
     from kicad_mcp.services.connector_lifecycle import ConnectorLifecycleManager
 
+    # Exercise Windows behavior on Linux CI without mutating global os.name.
+    monkeypatch.setattr(owner_routes, "os", SimpleNamespace(name="nt"))
     calls: list[str] = []
     registered = object()
 
@@ -178,14 +180,37 @@ def test_windows_connector_enable_and_disable_use_owner_scheduler(
     assert unverified.status_code == 409
     assert "unverified" in unverified.json()["error"]
 
+    monkeypatch.setattr(cloud_windows_connector, "selected_project", lambda: None)
+    no_project = owner_client.post("/api/cloud/connector/enable", headers=headers, json={})
+    assert no_project.status_code == 409
+    assert "No owner-selected" in no_project.json()["error"]
 
-@pytest.mark.skipif(__import__("os").name != "nt", reason="Windows Cloud approval contract only")
+    monkeypatch.setattr(cloud_windows_connector, "selected_project", lambda: registered)
+
+    def broken_enable(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("private path never shown")
+
+    monkeypatch.setattr(cloud_windows_task_scheduler, "enable_windows_connector", broken_enable)
+    failed_enable = owner_client.post("/api/cloud/connector/enable", headers=headers, json={})
+    assert failed_enable.status_code == 409
+    assert failed_enable.json()["error"] == "Windows Connector could not be scheduled"
+
+    def broken_disable():
+        raise OSError("secret from Windows scheduler")
+
+    monkeypatch.setattr(cloud_windows_task_scheduler, "disable_windows_connector", broken_disable)
+    failed_disable = owner_client.post("/api/cloud/connector/disable", headers=headers, json={})
+    assert failed_disable.status_code == 409
+    assert failed_disable.json()["error"] == "Windows Connector shutdown could not be verified"
+
+
 def test_windows_browser_approval_cannot_claim_cancelled(
     owner_client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from kicad_mcp.services.cloud_onboarding import OnboardingStep
     from kicad_mcp.services.cloud_windows_onboarding_ui import WindowsCloudOnboardingService
 
+    monkeypatch.setattr(owner_routes, "os", SimpleNamespace(name="nt"))
     enrollment = WindowsCloudOnboardingService()
     monkeypatch.setattr(
         enrollment,
