@@ -390,6 +390,21 @@
         });
       }
 
+      function reportBackendStatusError(message) {
+        const incompatible = message.startsWith('Incompatible service detected');
+        if (desktopPort === PRIMARY_PORT && incompatible) {
+          separateButton.style.display = '';
+        }
+        if (errorDetailEl) {
+          errorDetailEl.textContent = message;
+          errorDetailEl.style.display = 'block';
+        }
+        setStep('backend', 'fail');
+        showError(incompatible
+          ? 'Older or incompatible local backend detected'
+          : 'Backend could not start');
+      }
+
       function handleTauriStatus(tauriStatus) {
         if (!tauriStatus) return true;
         // A spawned uv process is not yet a ready server. Preserve progress
@@ -411,19 +426,7 @@
           return true;
         }
         if (tauriStatus.message && tauriStatus.message !== 'Server is not running.') {
-          if (desktopPort === PRIMARY_PORT && tauriStatus.message.startsWith('Incompatible service detected')) {
-            separateButton.style.display = '';
-          }
-          if (errorDetailEl) {
-            errorDetailEl.textContent = tauriStatus.message;
-            errorDetailEl.style.display = 'block';
-          }
-          setStep('backend', 'fail');
-          showError(
-            tauriStatus.message.startsWith('Incompatible service detected')
-              ? 'Older or incompatible local backend detected'
-              : 'Backend could not start'
-          );
+          reportBackendStatusError(tauriStatus.message);
           return false;
         }
         return true;
