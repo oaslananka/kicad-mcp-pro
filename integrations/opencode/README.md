@@ -87,7 +87,18 @@ See `opencode.example.json` for the 2.x example and
 ```bash
 kicad-mcp-pro doctor
 opencode mcp list
+# If the KiCad server is missing, reload and check again:
+opencode reload
+opencode mcp list
 ```
+
+For OpenCode 2.x, run `opencode reload` from the configured project only
+if the KiCad MCP server is missing after a config change. The background service can
+otherwise retain an old connection list even while the config file is
+correct. Confirm the KiCad server is connected. Reload rebuilds active
+locations and may cancel pending permissions or forms; do it only when the
+host is idle. Do not use experimental runtime-registration endpoints as an
+installation workaround.
 
 ## Experimental plugin
 
