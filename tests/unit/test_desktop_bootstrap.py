@@ -76,3 +76,20 @@ def test_desktop_diagnostic_command_matches_actual_native_command() -> None:
     splash = (ROOT / "src-tauri/frontend/index.html").read_text(encoding="utf-8")
     assert '"uv tool run --from {} kicad-mcp-pro dashboard' in rust
     assert "command.startsWith('uv tool run --from kicad-mcp-pro==')" in splash
+
+
+def test_splash_native_actions_are_not_inline_handlers() -> None:
+    """CSP-safe DOM listeners must wire native error and recovery actions."""
+    splash = (ROOT / "src-tauri/frontend/index.html").read_text(encoding="utf-8")
+    assert "onclick=" not in splash
+    for element_id in (
+        "cancelStartup",
+        "btnCopyCmd",
+        "useSeparatePort",
+        "btnCancel",
+        "restartBackend",
+        "retryBackend",
+    ):
+        assert f'id="{element_id}"' in splash
+        assert f"['{element_id}', " in splash
+    assert "document.getElementById(id).addEventListener('click', handler)" in splash
