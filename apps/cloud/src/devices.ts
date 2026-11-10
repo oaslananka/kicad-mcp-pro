@@ -112,10 +112,15 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
       (deviceConnection(who.user,d.id)?"connected" as const:"disconnected" as const):undefined
   })));
   const url=new URL(req.url);
+  const access=url.searchParams.get("access");
   const note=url.searchParams.has("deleted")?
     "Revoked device and its registered projects were permanently removed.":
     url.searchParams.has("revoked")?
-      "Device key revoked; its sessions and associated project/client permissions were disabled.":undefined;
+      "Device revoked. Its sessions and project access were disabled.":
+    access==="granted"?"Project summary access was granted to the selected AI app.":
+    access==="removed"?"The selected AI app's project access was removed.":
+    access==="reads-on"?"Project summary access was enabled.":
+    access==="reads-off"?"Project summary access was paused.":undefined;
   const projects=enrollmentAvailable&&devices.listProjects?
     await devices.listProjects(who.user):[];
   let clients:string[]=[];
@@ -263,7 +268,8 @@ async function ownerGrant(req:Request,identity:BrowserIdentity,origin:string,
   try{updated=await grants.setBrowserGrant(who.user,project,client,enabled==="true");}
   catch{return error(503);}
   if(!updated)return error(404);
-  return new Response(null,{status:303,headers:{Location:"/devices",
+  return new Response(null,{status:303,headers:{
+    Location:enabled==="true"?"/devices?access=granted":"/devices?access=removed",
     "Cache-Control":"no-store","Set-Cookie":cookie("",origin,0)}});
 }
 
@@ -293,7 +299,8 @@ async function ownerManagedRead(req:Request,identity:BrowserIdentity,origin:stri
   try{updated=await managedRead.setEnabled(who.user,device,project,enabled==="true");}
   catch{return error(503);}
   if(!updated)return error(404);
-  return new Response(null,{status:303,headers:{Location:"/devices",
+  return new Response(null,{status:303,headers:{
+    Location:enabled==="true"?"/devices?access=reads-on":"/devices?access=reads-off",
     "Cache-Control":"no-store","Set-Cookie":cookie("",origin,0)}});
 }
 

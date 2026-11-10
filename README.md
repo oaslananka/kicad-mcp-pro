@@ -122,6 +122,28 @@ kicad-mcp-pro setup
 kicad-mcp-pro doctor
 ```
 
+### Optional Cloud remote — Windows
+
+With KiCad MCP Pro installed, open PowerShell and run:
+
+```powershell
+kicad-mcp-pro remote
+```
+
+On first use, choose a local KiCad project and approve the device pairing
+in your browser. Subsequent starts reuse the paired device and project.
+The terminal stays open and reports **Connected** only after the Cloud
+acknowledges the signed session; press Ctrl+C to disconnect. Foreground mode
+retires an existing verified user-owned background Connector task, avoiding
+the extra empty Python console window. Local KiCad files remain on-device.
+
+Open the [Cloud Devices page](https://kicad-mcp-pro.oaslananka.dev/devices)
+and choose **Manage access** for the project to grant/revoke each AI client's
+**project-summary** permission. Cloud remote editing is not yet available:
+no write controls are presented as functional. Local MCP use does not require
+a Cloud account. Selecting a different project on a paired device is not yet
+supported in this foreground CLI.
+
 `setup` guides the local MCP client configuration without requiring a Cloud
 account. For scripts, use `kicad-mcp-pro setup --agent claude-code`; the
 existing `init` and `quickstart` aliases remain supported.

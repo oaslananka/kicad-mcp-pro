@@ -3,6 +3,17 @@ import {Icon} from "./ui-icons.js";
 import type {ManagedDevice} from "./device-management.js";
 import type {BrowserGrantSummary} from "./grants.js";
 
+function clientDisplayName(clientId:string):string {
+  try{
+    const host=new URL(clientId).hostname.toLowerCase();
+    if(host==="chatgpt.com")return "ChatGPT";
+    if(host==="claude.ai")return "Claude";
+    return host;
+  }catch{
+    return clientId;
+  }
+}
+
 export function renderDevicesPage(
   devices:ReadonlyArray<ManagedDevice & {csrf:string;deleteCsrf?:string;enableCsrf?:string;projectCsrf?:string;
     connectionState?:"connected"|"disconnected"}>,
@@ -20,39 +31,19 @@ export function renderDevicesPage(
 
   return renderPage({title:"Devices & projects",kind:"devices",eyebrow:"Workspace / Devices & projects",
     summary:"Computers your AI clients can reach, and the projects you choose to share.",
-    actions:enrollmentAvailable?<a className="button primary" href="/devices/pairing"><span aria-hidden="true">+</span> Pair a device</a>:null,
+    actions:enrollmentAvailable&&!hasDevices?<a className="button primary" href="#connect-computer">Connect computer</a>:null,
     children:<div className="page-stack">
       {notice?<output className="output-notice">{notice}</output>:null}
 
-      {/* Guided 5-Stage Stepper with High-Contrast Statuses */}
-      {enrollmentAvailable?<nav className="setup-progress" aria-label="Cloud setup progress">
-        <div className="setup-progress-heading">
-          <strong>Connection setup</strong>
-          <span>Each layer requires its own approval. Nothing is shared by default.</span>
-        </div>
-        <ol>
-          <li className="progress-complete">
-            <span className="progress-number">01</span>
-            <div><strong>Account</strong><small>Signed in</small></div>
-          </li>
-          <li className={hasDevices?"progress-complete":"progress-current"}>
-            <span className="progress-number">02</span>
-            <div><strong>Computer</strong><small>{hasDevices?"Device paired":"Pair your device"}</small></div>
-          </li>
-          <li className={hasProjects?"progress-complete":hasDevices?"progress-current":"progress-pending"}>
-            <span className="progress-number">03</span>
-            <div><strong>Project</strong><small>{hasProjects?"Project registered":"Choose a local folder"}</small></div>
-          </li>
-          <li className={hasClients?"progress-complete":hasProjects?"progress-current":"progress-pending"}>
-            <span className="progress-number">04</span>
-            <div><strong>AI client</strong><small>{hasClients?"Client connected":"Connect ChatGPT, Claude or another app"}</small></div>
-          </li>
-          <li className={hasGrants?"progress-complete":hasClients?"progress-current":"progress-pending"}>
-            <span className="progress-number">05</span>
-            <div><strong>Grant access</strong><small>{hasGrants?"Project permission saved":"Choose permissions per project and client"}</small></div>
-          </li>
-        </ol>
-      </nav>:null}
+      {enrollmentAvailable&&!hasGrants?
+        <aside className="setup-next-step" aria-label="Next setup step">
+          <strong>{!hasDevices?"Connect computer":!hasProjects?"Choose a project":
+            !hasClients?"Connect an AI app":"Allow project access"}</strong>
+          <span>{!hasDevices?"Run kicad-mcp-pro remote on your computer.":
+            !hasProjects?"Choose a KiCad project locally.":
+            !hasClients?"Connect ChatGPT or another AI app.":
+            "Use Manage access on the project below."}</span>
+        </aside>:null}
 
       {!enrollmentAvailable && devices.length===0?<section className="card status-card" id="registered-projects"><div className="status-message">
         <span className="status-pill pending">Not enabled</span>
@@ -66,7 +57,7 @@ export function renderDevicesPage(
       </div></section>:
         <>
       {/* Enrolled Devices Section */}
-      <section className="card device-card">
+      <section className="card device-card" id="connect-computer">
         <div className="card-header">
           <div>
             <span className="card-kicker">COMPUTERS</span>
@@ -78,7 +69,7 @@ export function renderDevicesPage(
           <div className="empty-icon"><Icon name="devices" size={21}/></div>
           <div>
             <h3>No enrolled devices</h3>
-            <p>Run <code>kicad-mcp-pro cloud setup</code> on your computer to connect.</p>
+            <p>Run <code>kicad-mcp-pro remote</code> on your computer to connect.</p>
           </div>
         </div>:
           <ul className="connections-list device-list">{devices.map(d=><li className="device-row" key={d.id}>
@@ -86,10 +77,9 @@ export function renderDevicesPage(
             <div className="device-summary">
               <h3>{d.alias}</h3>
               <p>{d.revoked?"Revoked":!d.enabled?"Disabled":
-                d.connectionState==="connected"?
-                  "Connector connected now (temporary session; not proof of KiCad activity)":
-                d.connectionState==="disconnected"?"Connector not connected now":
-                  "Enabled (not proof of online status)"}</p>
+                d.connectionState==="connected"?"Cloud session active":
+                d.connectionState==="disconnected"?"Run kicad-mcp-pro remote to connect":
+                "Cloud status unknown"}</p>
             </div>
             <div className="device-actions">
               <span className={d.enabled&&!d.revoked&&d.connectionState==="connected"?"status-pill ready":"status-pill neutral"}>
@@ -111,22 +101,28 @@ export function renderDevicesPage(
                   </button>
                 </form>:null}
               {d.revoked?<span className="status-pill pending">Revoked</span>:
-                <form action="/devices/revoke" method="post">
-                  <input type="hidden" name="device_id" value={d.id}/>
-                  <input type="hidden" name="csrf" value={d.csrf}/>
-                  <button className="button danger" type="submit">Revoke device</button>
-                </form>}
+                <details className="device-advanced">
+                  <summary>Device settings</summary>
+                  <p>Revoking disconnects this device and disables its project access.</p>
+                  <form action="/devices/revoke" method="post">
+                    <input type="hidden" name="device_id" value={d.id}/>
+                    <input type="hidden" name="csrf" value={d.csrf}/>
+                    <button className="button danger" type="submit">Revoke this device</button>
+                  </form>
+                </details>}
             </div>
             {enrollmentAvailable&&!d.revoked&&d.enabled&&d.projectCsrf?
               <details className="device-register">
-                <summary>+ Register a project</summary>
+                <summary>Advanced: register a project name</summary>
+                <p className="field-help">This only registers a Cloud name; it does not
+                  select a local folder. Use kicad-mcp-pro remote to choose a project.</p>
                 <form action="/devices/projects/create" method="post">
                   <input type="hidden" name="device_id" value={d.id}/>
                   <input type="hidden" name="csrf" value={d.projectCsrf}/>
                   <label>Project name or alias{" "}
                     <input name="alias" maxLength={64} required={true} autoComplete="off" placeholder="e.g. Feather-M4 or Motor-Driver"/>
                   </label>
-                  <button className="button secondary" type="submit">Register read-only project</button>
+                  <button className="button secondary" type="submit">Register project name</button>
                 </form>
               </details>:null}
           </li>)}</ul>}
@@ -136,39 +132,41 @@ export function renderDevicesPage(
       {devices.length===0?<section className="card quickstart-card">
         <div className="card-kicker"><Icon name="cpu" size={15}/> PAIR YOUR COMPUTER</div>
         <h2>Connect your computer</h2>
-        <p>Run Cloud setup in your terminal to pair this computer:</p>
+        <p>Run this once to pair your computer and keep the Cloud session open:</p>
         <div className="local-setup-command">
-          <code>kicad-mcp-pro cloud setup</code>
+          <code>kicad-mcp-pro remote</code>
         </div>
-        <p className="field-help">Or run <code>kicad-mcp-pro cloud setup --browse</code> to choose a project folder directly.</p>
+        <p className="field-help">Choose your KiCad folder in the native picker when prompted.</p>
       </section>:
       <details className="card pair-another-card">
         <summary><Icon name="cpu" size={16}/> Connect another computer</summary>
         <div className="pair-another-content">
           <p>On your other computer, run:</p>
           <div className="local-setup-command">
-            <code>kicad-mcp-pro cloud setup</code>
+            <code>kicad-mcp-pro remote</code>
           </div>
-          <p className="field-help">Follow the browser approval link to pair the new device.</p>
+          <p className="field-help">Approve the browser pairing once; future connections reuse it.</p>
         </div>
       </details>}
 
           {/* Registered Projects Section */}
           <section className="card projects-card">
-            <h2 id="registered-projects">Registered projects</h2>
+            <h2 id="registered-projects">Your projects</h2>
             {projects.length>0?<>
               <ul className="connections-list">{projects.map(project=><li className="project-item" key={project.id}>
                 <strong>{project.alias}</strong>
                 <p>On device: {deviceNames.get(project.deviceId)??"Previously registered device"}.
-                  {project.enabled?" Read-only metadata registered.":" Disabled."}{" "}
-                  Local folder must be selected separately on the device. Per-client access is denied until granted.</p>
+                  {project.enabled?" Registered.":" Disabled."}</p>
 
+                <details className="project-access-details">
+                  <summary>Manage access</summary>
+                  <p className="field-help">Choose which AI apps may read this project's summary.
+                    Remote editing is not available in this Cloud version.</p>
                 {project.grantCsrf&&savedGrants.some(g=>g.projectId===project.id)?
                   <div className="project-grants">
-                    <strong>Saved client permissions</strong>
-                    <p>These are stored policies, not proof that a client is connected or that remote editing is available.</p>
+                    <strong>Applications with access</strong>
                     <ul>{savedGrants.filter(g=>g.projectId===project.id).map(g=><li key={g.clientId}>
-                      <span className="grant-client">{g.clientId}</span>{" "}
+                      <span className="grant-client">{clientDisplayName(g.clientId)}</span>{" "}
                       <span className="permission-tag">{g.maxMode==="readonly"?"Read only":
                         g.maxMode==="write"?"Edit configured (not active)":
                         "Other permission (not remote editing)"}</span>
@@ -177,46 +175,47 @@ export function renderDevicesPage(
                         <input type="hidden" name="client_id" value={g.clientId}/>
                         <input type="hidden" name="csrf" value={project.grantCsrf}/>
                         <button className="button danger" type="submit" name="enabled" value="false">
-                          Revoke this client
+                          Remove this app access
                         </button>
                       </form>
                     </li>)}</ul>
                   </div>:null}
 
                 {project.enabled&&project.managedCsrf?<>
-                  <p>Managed Connector: {project.managedEnabled?"On (read-only project summary)":"Off"}. Per-client access is controlled separately.</p>
+                  <p>Project summary access: {project.managedEnabled?"Enabled":"Paused"}</p>
                   <form method="post" action="/devices/projects/managed">
                     <input type="hidden" name="project_id" value={project.id}/>
                     <input type="hidden" name="device_id" value={project.deviceId}/>
                     <input type="hidden" name="csrf" value={project.managedCsrf}/>
                     <button className="button secondary" name="enabled" value={project.managedEnabled?"false":"true"} type="submit">
-                      {project.managedEnabled?"Turn Connector Off":"Turn Connector On"}
+                      {project.managedEnabled?"Pause project reads":"Enable project reads"}
                     </button>
                   </form>
                 </>:null}
 
-                {project.enabled&&project.grantCsrf&&clients.length>0?
+                {project.enabled&&project.grantCsrf&&clients.some(client=>!savedGrants.some(
+                  g=>g.projectId===project.id&&g.clientId===client))?
                   <form method="post" action="/devices/projects/grant">
                     <input type="hidden" name="project_id" value={project.id}/>
                     <input type="hidden" name="csrf" value={project.grantCsrf}/>
-                    <label>AI client with existing OAuth consent{" "}
+                    <label>AI application{" "}
                       <select name="client_id" required={true}>
-                        {clients.map(client=><option value={client} key={client}>{client}</option>)}
+                        {clients.filter(client=>!savedGrants.some(g=>
+                          g.projectId===project.id&&g.clientId===client)).map(
+                            client=><option value={client} key={client}>{clientDisplayName(client)}</option>)}
                       </select>
                     </label>
                     <div className="action-row">
-                      <button className="button primary" name="enabled" value="true" type="submit">Allow read-only metadata</button>
-                      <button className="button danger" name="enabled" value="false" type="submit">Revoke this project's access</button>
+                      <button className="button primary" name="enabled" value="true" type="submit">Allow project summary</button>
                     </div>
                   </form>:null}
+                </details>
               </li>)}</ul>
             </>:<div className="project-empty">
-              <h3>No registered projects yet</h3>
-              <p>Register a project under an enabled device above. Each AI client's access is granted separately.</p>
+              <h3>No KiCad projects yet</h3>
+              <p>Run <code>kicad-mcp-pro remote</code> on your computer to choose a project.</p>
             </div>}
-            <div className="security-note">
-              <Icon name="shield" size={17}/>Revoked keys cannot authenticate, even if a device flag is later changed. No KiCad project files or paths are stored in Cloud.
-            </div>
+
           </section>
         </>}
 

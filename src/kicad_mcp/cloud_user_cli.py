@@ -284,6 +284,111 @@ def _write_project_record(root: Path, record: dict[str, str]) -> None:
     os.replace(temp_path, final_path)
 
 
+@cloud_app.command("remote")
+def remote(
+    browse: Annotated[bool, typer.Option("--browse", help="Choose a local KiCad project.")] = False,
+    project_dir: Annotated[
+        Path | None, typer.Option("--project-dir", "-p", help="Local KiCad project directory.")
+    ] = None,
+    cloud_origin: Annotated[
+        str, typer.Option("--cloud-origin", help="Trusted HTTPS Cloud origin.")
+    ] = DEFAULT_CLOUD_ORIGIN,
+    no_browser: Annotated[
+        bool,
+        typer.Option("--no-browser", help="Print the pairing URL instead of opening a browser."),
+    ] = False,
+) -> None:
+    """Pair once; keep a verified foreground Cloud connection open."""
+    if not _is_windows():
+        raise typer.BadParameter(
+            "Foreground remote is currently supported on Windows. Local MCP remains available."
+        )
+    if not _owner_terminal():
+        raise typer.BadParameter("Run this command in an interactive terminal.")
+    if browse and project_dir is not None:
+        raise typer.BadParameter("Use --browse or --project-dir, not both.")
+    origin = _verified_origin(cloud_origin)
+    from kicad_mcp.cloud_windows_connector import (
+        activate,
+        local_state,
+        run_connector,
+        selected_project,
+    )
+    from kicad_mcp.cloud_windows_local_selection import inspect_owner_selected_project
+    from kicad_mcp.cloud_windows_task_scheduler import stop_and_remove_owner_task
+    from kicad_mcp.cloud_windows_user_cli import setup_windows
+
+    existing = selected_project()
+    if existing is None:
+        # A single command handles the first browser-approved pairing and folder selection.
+        choose_folder = browse or (
+            project_dir is None
+            and not any(
+                p.is_file()
+                for suffix in ("*.kicad_pro", "*.kicad_sch", "*.kicad_pcb")
+                for p in Path.cwd().glob(suffix)
+            )
+        )
+        setup_windows(
+            origin=origin,
+            alias=_resolve_device_alias(None),
+            project_dir=project_dir,
+            browse=choose_folder,
+            new_device=False,
+            approval=lambda page, challenge, code: _perform_approval(
+                page, challenge, code, no_browser
+            ),
+            picker=_browse_local_project_folder,
+            owner_terminal=_owner_terminal,
+            start_background=False,
+        )
+        existing = selected_project()
+        if existing is None:
+            typer.echo("Pairing cancelled; no Connector was started.")
+            return
+    elif browse or project_dir is not None:
+        chosen = _select_setup_project_directory(browse, project_dir)
+        selected = inspect_owner_selected_project(existing)
+        if chosen.resolve() != selected.directory.resolve():
+            raise typer.BadParameter(
+                "This device is already paired with a different project. No project was replaced."
+            )
+    if existing.origin != origin:
+        raise typer.BadParameter("This device is paired with a different Cloud site.")
+
+    # Exactly one user-owned session: remove the legacy scheduled task, which
+    # otherwise opens a blank Python console and may contend for the socket.
+    if not stop_and_remove_owner_task():
+        raise typer.BadParameter(
+            "Could not stop the existing Connector task safely. "
+            "Registration and permissions were preserved."
+        )
+    state = local_state()
+    if state == "Off":
+        activate(existing, owner_confirm=lambda _project: True)
+    elif state != "Configured (not connected)":
+        raise typer.BadParameter("Local Connector registration requires repair.")
+    selected = inspect_owner_selected_project(existing)
+    typer.echo("\nKiCad MCP Pro Remote")
+    typer.echo(f"Project: {selected.filename_stem}")
+    typer.echo(f"Cloud: {origin}")
+    typer.echo("Connecting... Keep this terminal open; press Ctrl+C to disconnect.")
+
+    def show_status(value: str) -> None:
+        if value == "Connected":
+            typer.echo("Connected — Cloud acknowledged this device's signed session.")
+            typer.echo(f"Manage AI access: {origin}/devices")
+        else:
+            typer.echo(value)
+
+    import asyncio
+
+    try:
+        asyncio.run(run_connector(stop=asyncio.Event(), status_callback=show_status))
+    except KeyboardInterrupt:
+        typer.echo("\nDisconnected; device and project remain paired.")
+
+
 @cloud_app.command()
 def login(
     cloud_origin: str = typer.Option(

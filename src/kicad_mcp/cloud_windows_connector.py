@@ -317,6 +317,7 @@ async def run_connector(
     *,
     stop: asyncio.Event,
     session_runner: Callable[..., Awaitable[HandshakeReceipt]] = execute_owner_managed_read_session,
+    status_callback: Callable[[str], None] | None = None,
 ) -> None:
     """Local-only execution core; supervisor controls process startup/shutdown.
 
@@ -332,7 +333,17 @@ async def run_connector(
             return
         project, selected, key = active.project, active.selected, active.signing_key
 
-        task = asyncio.create_task(_run_owner_session(project, selected, key, session_runner))
+        if status_callback is not None:
+            status_callback("Connecting" if failures == 0 else "Reconnecting")
+        verified_runner = session_runner
+        if status_callback is not None and session_runner is execute_owner_managed_read_session:
+
+            async def verified_runner(**kwargs: object) -> HandshakeReceipt:
+                return await session_runner(
+                    **kwargs, on_ready=lambda _receipt: status_callback("Connected")
+                )
+
+        task = asyncio.create_task(_run_owner_session(project, selected, key, verified_runner))
         revoked = asyncio.create_task(stop.wait())
         try:
             if not await _await_authorized_session(project, task, revoked):
@@ -343,6 +354,8 @@ async def run_connector(
             raise
         except (OSError, ValueError, WebSocketException):
             failures += 1
+            if status_callback is not None:
+                status_callback("Disconnected — reconnecting")
         finally:
             revoked.cancel()
             await asyncio.gather(revoked, return_exceptions=True)

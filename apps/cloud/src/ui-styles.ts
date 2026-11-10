@@ -482,6 +482,20 @@ input:not([type=hidden]):focus,select:focus,textarea:focus{border-color:var(--ac
 .project-item>strong{font-size:15px}
 .project-item select{max-width:440px}
 .project-empty p{font-size:13px}
+/* Single clear next step instead of five full-size onboarding cards. */
+.setup-next-step{display:flex;align-items:center;justify-content:space-between;gap:16px;
+ border:1px solid var(--line);border-radius:12px;background:var(--surface-soft);padding:15px 20px}
+.setup-next-step strong{font-size:13px;font-weight:700;white-space:nowrap}
+.setup-next-step span{font-size:12px;color:var(--muted);line-height:1.5}
+.project-access-details{margin-top:10px;border-top:1px solid var(--line);padding-top:8px}
+.project-access-details>summary,.device-advanced>summary{width:fit-content;cursor:pointer;
+ padding:8px 4px;color:var(--accent);font-size:13px;font-weight:700}
+.project-access-details[open]>summary,.device-advanced[open]>summary{margin-bottom:10px}
+.project-access-details>p,.device-advanced>p{font-size:12px;color:var(--muted);max-width:620px}
+.project-access-details form,.device-advanced form{max-width:520px}
+.device-advanced form{margin:6px 0 0}
+.device-register p{max-width:510px;font-size:12px;color:var(--muted)}
+@media(max-width:680px){.setup-next-step{align-items:flex-start;flex-direction:column;gap:5px}}
 
 /* ── Client Shortcuts ── */
 .client-shortcuts>p{font-size:13px}

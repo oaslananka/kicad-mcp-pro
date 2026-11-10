@@ -578,3 +578,36 @@ def test_windows_status_and_disable_fail_closed_for_unverifiable_state(
     fail = CliRunner().invoke(app, ["cloud", "disconnect"])
     assert fail.exit_code != 0
     assert "could not be fully verified" in fail.output
+
+
+def test_foreground_remote_pairing_uses_browser_consent_without_second_terminal_prompt(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder, events, _project, _selected = windows_cli
+
+    def activate_local(project: WindowsRegisteredProject, *, owner_confirm) -> None:
+        assert owner_confirm(project) is True
+        events.append("foreground_activate")
+
+    monkeypatch.setattr("kicad_mcp.cloud_windows_connector.activate", activate_local)
+    cloud_windows_user_cli.setup_windows(
+        origin=ORIGIN,
+        alias="Lab PC",
+        project_dir=folder,
+        browse=False,
+        new_device=False,
+        approval=lambda _page, _challenge, _code: events.append("browser_approval"),
+        picker=lambda: folder,
+        owner_terminal=lambda: True,
+        start_background=False,
+    )
+    assert events == [
+        "enroll",
+        "browser_approval",
+        "register",
+        "bind",
+        "remember",
+        "foreground_activate",
+    ]
+    assert "owner_confirm" not in events
+    assert "schedule" not in events

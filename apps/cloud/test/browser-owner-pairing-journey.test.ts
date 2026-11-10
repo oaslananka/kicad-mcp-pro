@@ -172,16 +172,16 @@ test("real HTTP owner journey: DB pairing, browser consent gates, project grant 
       const withoutConsent=await (await fetch(base+"/devices",{
         headers:{Cookie:ownerCookie}
       })).text();
-      assert.doesNotMatch(withoutConsent,/Allow read-only metadata/);
+      assert.doesNotMatch(withoutConsent,/Allow project summary/);
       await db.query(
         'INSERT INTO "oauthConsent"("id","clientId","userId","scopes","createdAt","updatedAt") '+
         'VALUES($1,$2,$3,$4,clock_timestamp(),clock_timestamp())',
         [randomUUID(),client,owner,JSON.stringify(["openid","projects:read"])]);
       const grantPage=await fetch(base+"/devices",{headers:{Cookie:ownerCookie}});
       const grantHtml=await grantPage.text();
-      assert.match(grantHtml,/Allow read-only metadata/);
+      assert.match(grantHtml,/Allow project summary/);
       assert.match(grantHtml,/journey-oauth-client/);
-      assert.match(grantHtml,/Registered projects/);
+      assert.match(grantHtml,/Your projects/);
       assert.match(grantHtml,/Test PCB/);
       assert.match(grantHtml,/On device: Owner approved local test/);
       assert.doesNotMatch(grantHtml,/Credential fingerprint|Registered project IDs/);
