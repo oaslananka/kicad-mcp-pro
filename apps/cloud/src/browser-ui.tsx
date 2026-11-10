@@ -12,9 +12,11 @@ export function renderSignIn(query:string,providers:ReadonlyArray<"google"|"gith
 export function renderAccount(name:string,
   providers:ReadonlyArray<"google"|"github">=["google","github"],
   linked:ReadonlyArray<"google"|"github">=[],
-  snapshot?:{devices:number;projects:number;clients:number;grants:number}){
+  snapshot?:{devices:number;projects:number;clients:number;grants:number},
+  email?:string){
   return renderPage({title:"Workspace overview",kind:"account",eyebrow:"Workspace / Overview",
     summary:"Your account, connected AI apps, and device availability in one place.",
+    userEmail:email||(name.includes("@")?name:undefined),
     children:<Account name={name} providers={providers} linked={linked} snapshot={snapshot}/>});
 }
 export function renderNotice(title:string,message:string){

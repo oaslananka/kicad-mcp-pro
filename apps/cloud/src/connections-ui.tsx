@@ -60,51 +60,34 @@ export function renderConnectionsPage(
 
       {/* Remote MCP Endpoint & Client Setup Guide */}
       {publicOrigin?<section className="card detail-card" aria-labelledby="mcp-setup">
-        <div className="card-kicker">REMOTE MCP CONNECTION</div>
+        <div className="card-kicker">REMOTE MCP INTEGRATION</div>
         <h2 id="mcp-setup">Connect your AI client</h2>
-        {publicEndpoint?<><p>Use this HTTPS endpoint when adding a custom remote MCP server:</p>
-          <p className="mcp-endpoint"><code>{publicEndpoint}</code></p>
-          <p>The endpoint alone does not grant project access. Sign in through your
-            AI client when prompted, then allow that client access to the selected
-            project under <a href="/devices">Devices</a>. A supported local
-            Connector session and its explicitly enabled operation must also be available.</p>
+        {publicEndpoint?<><p className="section-description">Use this HTTPS endpoint when adding a custom remote MCP server to ChatGPT or Claude:</p>
+          <div className="mcp-endpoint-box">
+            <code className="endpoint-url">{publicEndpoint}</code>
+          </div>
+          <p className="endpoint-subtext">The endpoint alone does not grant project access. Review permissions on the <a href="/devices" className="text-link">Devices</a> page. A connected Cloud account does not imply a running KiCad engine.</p>
           <div className="mcp-client-guides">
-            <div><h3>ChatGPT</h3><p>Open Plugins, choose Add custom MCP server,
-              enter the endpoint, configure OAuth sign-in, review permissions and
-              inspect the discovered tools. Workspace settings may restrict custom servers.</p>
+            <div className="client-guide-card">
+              <h3>ChatGPT</h3>
+              <p>Open Plugins, choose Add custom MCP server, enter the endpoint, configure OAuth, and inspect tools.</p>
               <a className="text-link" href="https://help.openai.com/en/articles/12584461-connecting-custom-mcp-servers-in-chatgpt"
-                target="_blank" rel="noopener noreferrer">Official setup guide</a>
+                target="_blank" rel="noopener noreferrer">ChatGPT setup guide <Icon name="arrow" size={13}/></a>
             </div>
-            <div><h3>Claude</h3><p>Open Customize / Connectors, add a custom remote
-              connector with this endpoint, then connect and authenticate.
-              The remote server must be reachable from the Claude service.</p>
+            <div className="client-guide-card">
+              <h3>Claude</h3>
+              <p>Open Customize / Connectors, add a custom remote connector with this endpoint, and authenticate.</p>
               <a className="text-link" href="https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp"
-                target="_blank" rel="noopener noreferrer">Official setup guide</a>
+                target="_blank" rel="noopener noreferrer">Claude setup guide <Icon name="arrow" size={13}/></a>
             </div>
-            <div><h3>Google Gemini</h3><p>Gemini web custom apps currently require a supported
-              US personal account, English and Gemini activity enabled. This
-              restriction is controlled by Google, not by this Cloud service.
-              Gemini CLI supports remote HTTPS MCP and OAuth with its own
-              settings; do not paste bearer tokens into browser forms.</p>
-              <a className="text-link" href="https://support.google.com/gemini/answer/17209137?hl=en"
-                target="_blank" rel="noopener noreferrer">Gemini Apps requirements</a>
+            <div className="client-guide-card">
+              <h3>Google Gemini</h3>
+              <p>Gemini CLI supports remote HTTPS MCP with OAuth authentication settings.</p>
               <a className="text-link" href="https://geminicli.com/docs/tools/mcp-server/"
-                target="_blank" rel="noopener noreferrer">Gemini CLI instructions</a>
+                target="_blank" rel="noopener noreferrer">Gemini CLI guide <Icon name="arrow" size={13}/></a>
             </div>
           </div>
-          <p className="field-help">Availability varies by AI client and account.
-            Remote host authentication and live KiCad operations must be tested
-            separately; a connected Cloud account does not imply a running KiCad engine.</p>
-        </>:<p>This development endpoint is not public HTTPS. Configure a reachable
-          HTTPS Cloud origin before using a remote AI-host connector.
-          Local KiCad MCP remains available without a Cloud account.</p>}
+        </>:<p>This development endpoint is not public HTTPS. Configure a reachable HTTPS Cloud origin before using a remote AI-host connector. Local KiCad MCP remains available without a Cloud account.</p>}
       </section>:null}
-
-      {/* Permissions Model Card */}
-      <section className="card detail-card">
-        <div className="card-kicker">PERMISSIONS</div>
-        <h2>How access is controlled</h2>
-        <p>Signing in authorizes your account. Access to an individual KiCad project requires an additional explicit grant and a supported device connection.</p>
-      </section>
     </div>});
 }

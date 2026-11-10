@@ -337,3 +337,18 @@ def scheduler_state() -> str:
         return "Scheduled (connection unverified)"
     except (OSError, ValueError, subprocess.SubprocessError):
         return "Unavailable"
+
+
+def task_run_state(sid: str | None = None) -> str | None:
+    """Query whether the owner task is currently Running, Ready, or Disabled."""
+    try:
+        resolved_sid = sid or _current_sid()
+        result = _run_schtasks("/query", "/tn", _task_name(resolved_sid), "/fo", "csv", "/nh")
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+        rows = list(csv.reader(io.StringIO(result.stdout)))
+        if rows and len(rows[0]) >= 3:
+            return rows[0][2].strip()
+        return None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None

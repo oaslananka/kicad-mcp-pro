@@ -2,9 +2,9 @@ import type {ReactNode} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
 import {Icon} from "./ui-icons.js";
 
-export type PageKind="home"|"sign-in"|"account"|"consent"|"connections"|"devices"|"notice";
-type Props={title:string;eyebrow?:string;summary?:string;kind:PageKind;children:ReactNode;navEnabled?:boolean;actions?:ReactNode};
-const workspacePages=new Set<PageKind>(["account","connections","devices"]);
+export type PageKind="home"|"sign-in"|"account"|"consent"|"connections"|"devices"|"notice"|"usage"|"settings";
+type Props={title:string;eyebrow?:string;summary?:string;kind:PageKind;children:ReactNode;navEnabled?:boolean;actions?:ReactNode;userEmail?:string};
+const workspacePages=new Set<PageKind>(["account","connections","devices","usage","settings"]);
 // The Python Streamable HTTP transport stays; no Tauri desktop binary is required.
 const httpGuideUrl="https://oaslananka.github.io/kicad-mcp-pro/installation/";
 const localHttpCommand="uvx kicad-mcp-pro --transport streamable-http --host 127.0.0.1 --port 3334";
@@ -27,30 +27,58 @@ function NavLink({href,current,children}:{href:string;current:boolean;children:R
 }
 function Brand(){
   return <a href="/" className="brand" aria-label="KiCad MCP Cloud workspace home">
-    <span className="brand-mark"><img className="brand-logo" src="/assets/icon.svg" alt="" width={24} height={24} decoding="async"/></span>
+    <span className="brand-mark"><img className="brand-logo" src="/assets/icon.svg" alt="" width={24} height={24} srcSet="/assets/icon-32.png 1x, /assets/icon-64.png 2x" decoding="async"/></span>
     <span className="brand-title">KiCad MCP <small>Cloud workspace</small></span>
   </a>;
 }
-function WorkspaceNav({kind}:{kind:PageKind}){
+function WorkspaceNav({kind,userEmail}:{kind:PageKind;userEmail?:string}){
+  const cleanEmail=userEmail?.trim();
+  const initials=cleanEmail && cleanEmail.includes("@")
+    ? cleanEmail.slice(0,2).toUpperCase()
+    : "OA";
+  const displayEmail=cleanEmail||"oaslananka@gmail.com";
+
   return <aside className="workspace-sidebar" aria-label="Workspace navigation">
     <Brand/>
     <div className="sidebar-section-label">WORKSPACE</div>
     <nav className="sidebar-links" aria-label="Workspace">
       <NavLink href="/account" current={kind==="account"}><Icon name="overview" size={17}/> Overview</NavLink>
-      <NavLink href="/devices" current={kind==="devices"}><Icon name="devices" size={17}/> Devices &amp; projects</NavLink>
+      <NavLink href="/devices" current={kind==="devices"}><Icon name="devices" size={17}/> Devices</NavLink>
+      <NavLink href="/devices#registered-projects" current={false}><Icon name="projects" size={17}/> Projects</NavLink>
       <NavLink href="/connections" current={kind==="connections"}><Icon name="connections" size={17}/> AI connections</NavLink>
+      <NavLink href="/usage" current={kind==="usage"}><Icon name="usage" size={17}/> Usage</NavLink>
+      <NavLink href="/account#security" current={kind==="settings"}><Icon name="settings" size={17}/> Settings</NavLink>
     </nav>
-    <div className="sidebar-note"><strong><Icon name="shield" size={16}/> Project access is explicit</strong>
-      <p>Signing in never exposes local KiCad files. Pair a device and approve each client's project access separately.</p>
-      <a className="text-link" href="/connections">Connection guide <Icon name="arrow" size={14}/></a>
+    <div className="sidebar-quick-usage" aria-label="Tool calls usage summary">
+      <div className="usage-meter-header">
+        <span>Tool calls</span>
+        <span className="usage-meter-percent">5%</span>
+      </div>
+      <div className="usage-meter-bar" role="progressbar" aria-valuenow={5} aria-valuemin={0} aria-valuemax={100}>
+        <div className="usage-meter-fill" style={{width:"5%"}}/>
+      </div>
+      <div className="usage-meter-meta">
+        <span>473 of 10.000 this month</span>
+        <span className="usage-reset-note">Resets on 1st of month</span>
+      </div>
+      <a href="/usage" className="button plan-active-btn"><Icon name="spark" size={13}/> Developer Plan</a>
     </div>
-    <div className="sidebar-footer">
-      <a href="/account"><Icon name="shield" size={16}/> Your account</a>
-      <small>KiCad files stay on your computer.</small>
+    <div className="sidebar-profile">
+      <span className="profile-avatar" aria-hidden="true">{initials}</span>
+      <span className="profile-identity" title={displayEmail}>{displayEmail}</span>
+    </div>
+    <div className="sidebar-footer-links">
+      <a href="https://oaslananka.github.io/kicad-mcp-pro/" target="_blank" rel="noopener noreferrer">Docs</a>
+      <span className="footer-dot" aria-hidden="true">·</span>
+      <a href="https://github.com/oaslananka/kicad-mcp-pro" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <span className="footer-dot" aria-hidden="true">·</span>
+      <a href="/connections">Privacy</a>
+      <span className="footer-dot" aria-hidden="true">·</span>
+      <a href="/account#security">Security</a>
     </div>
   </aside>;
 }
-export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,actions}:Props):string{
+export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,actions,userEmail}:Props):string{
   const workspace=workspacePages.has(kind);
   return "<!doctype html>"+renderToStaticMarkup(
     <html lang="en"><head>
@@ -77,7 +105,7 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
       <link rel="stylesheet" href="/assets/ui.css"/><title>{title+" — KiCad MCP Cloud"}</title>
     </head><body><div className={workspace?"app-shell workspace-app":"app-shell"}>
       <a href="#main-content" className="skip-link">Skip to content</a>
-      {workspace?<WorkspaceNav kind={kind}/>:<header className="site-header"><div className="header-inner">
+      {workspace?<WorkspaceNav kind={kind} userEmail={userEmail}/>:<header className="site-header"><div className="header-inner">
         <Brand/>
         <div className="header-right">
           <span className="release-label"><Icon name="shield" size={15}/> Your projects. Your permissions.</span>

@@ -1,6 +1,6 @@
 import type {ReactNode} from "react";
 
-export type IconName="logo"|"overview"|"connections"|"devices"|"shield"|"arrow"|"check"|"lock"|"spark"|"activity"|"cloud"|"cpu"|"key"|"github"|"warning";
+export type IconName="logo"|"overview"|"connections"|"devices"|"shield"|"arrow"|"check"|"lock"|"spark"|"activity"|"cloud"|"cpu"|"key"|"github"|"warning"|"usage"|"projects"|"settings"|"copy";
 export function Icon({name,size=20,className=""}:{name:IconName;size?:number;className?:string}){
   const shapes:Record<IconName,ReactNode>={
     logo:<><path d="M5 5h5l4 4h5"/><path d="M5 19h5l4-4h5"/><path d="M5 5v14"/><circle cx="19" cy="9" r="1.5"/><circle cx="19" cy="15" r="1.5"/><circle cx="5" cy="5" r="1.5"/><circle cx="5" cy="19" r="1.5"/></>,
@@ -17,7 +17,11 @@ export function Icon({name,size=20,className=""}:{name:IconName;size?:number;cla
     cpu:<><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m-4 6h4m12-6h4m-4 6h4"/><rect x="10" y="10" width="4" height="4" rx=".5"/></>,
     key:<><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9m-3 3 3 3m-6 0 3 3"/></>,
     github:<><path d="M9 20c-4.2 1.4-4.2-2.3-6-2.5m12 5v-3.2a3 3 0 0 0-.9-2.4c3-.3 6.3-1.5 6.3-7a5.4 5.4 0 0 0-1.5-3.7 5 5 0 0 0-.1-3.6s-1.4-.5-3.8 1.4a13 13 0 0 0-7 0C5.6 2.1 4.2 2.6 4.2 2.6a5 5 0 0 0-.1 3.6A5.4 5.4 0 0 0 2.6 10c0 5.5 3.2 6.7 6.2 7a3 3 0 0 0-.9 2.4V23"/></>,
-    warning:<><path d="m12 3 10 18H2z"/><path d="M12 9v5m0 3h.01"/></>
+    warning:<><path d="m12 3 10 18H2z"/><path d="M12 9v5m0 3h.01"/></>,
+    usage:<><path d="M18 20V10M12 20V4M6 20v-6"/></>,
+    projects:<><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></>,
+    settings:<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></>,
+    copy:<><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></>
   };
   return <svg aria-hidden="true" className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={name==="logo"?1.7:1.65} strokeLinecap="round" strokeLinejoin="round">{shapes[name]}</svg>;
 }
