@@ -3,6 +3,7 @@ import type { Identity } from "./identity.js";
 import type { DeviceManagementPort } from "./devices.js";
 import type { GrantManagement } from "./grants.js";
 import {renderSignIn,renderAccount,renderNotice} from "./browser-ui.js";
+import {renderUsagePage} from "./usage-ui.js";
 
 export type BrowserIdentity =
   Pick<Identity,"handler"> & Partial<Pick<Identity,"$context"|"api"|"options">>;
@@ -19,7 +20,7 @@ export const htmlHeaders = {
   // HTML form navigations with no-referrer transmit Origin: null in Chrome;
   // same-origin preserves the verified Origin for first-party OAuth POSTs.
   "Referrer-Policy":"same-origin",
-  "Content-Security-Policy":"default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self' https://github.com https://accounts.google.com; style-src 'self'; img-src 'self'; manifest-src 'self'; script-src 'self'"
+  "Content-Security-Policy":"default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self' https://github.com https://accounts.google.com; style-src 'self'; img-src 'self'; manifest-src 'self'; script-src 'self' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com"
 };
 
 function page(title:string,message:string,status=200):Response {
@@ -127,7 +128,15 @@ async function accountPage(request:Request,identity:BrowserIdentity,devices?:Dev
       }
     }catch{ /* State is unavailable, not an empty workspace. */ }
   }
-  return new Response(renderAccount(session.user.name??"User",availableProviders(identity),names,snapshot),{
+  return new Response(renderAccount(session.user.name??"User",availableProviders(identity),names,snapshot,session.user.email),{
+    status:200,headers:htmlHeaders
+  });
+}
+
+async function usagePage(request:Request,identity:BrowserIdentity):Promise<Response>{
+  const session=await identity.api?.getSession({headers:request.headers});
+  if(!session?.user) return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});
+  return new Response(renderUsagePage(undefined,session.user.email??session.user.name??undefined),{
     status:200,headers:htmlHeaders
   });
 }
@@ -184,6 +193,13 @@ export async function browserResponse(request:Request,identity:BrowserIdentity,p
     }
     return startSocialLink(request,identity,publicOrigin,linkProvider);
   }
-  if(url.pathname==="/account" && request.method==="GET") return accountPage(request,identity,devices,grants);
+  if((url.pathname==="/account"||url.pathname==="/overview") && request.method==="GET") return accountPage(request,identity,devices,grants);
+  if(url.pathname==="/usage" && request.method==="GET") return usagePage(request,identity);
+  if(url.pathname==="/settings" && request.method==="GET"){
+    return new Response(null,{status:303,headers:{"Location":"/account#security","Cache-Control":"no-store"}});
+  }
+  if(url.pathname==="/projects" && request.method==="GET"){
+    return new Response(null,{status:303,headers:{"Location":"/devices#registered-projects","Cache-Control":"no-store"}});
+  }
   return null;
 }

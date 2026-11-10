@@ -376,3 +376,37 @@ def test_task_sched_rejects_foreign_trigger_owner_even_if_defaults_omitted(
     monkeypatch.setattr(scheduler, "_same_logon_user", lambda user, sid: user == sid)
     with pytest.raises(LocalApprovalDeniedError):
         scheduler._require_owned_task(xml, SID, executable)
+
+
+def test_task_run_state_queries_schtasks(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(scheduler, "_current_sid", lambda: SID)
+    csv_output = f'"{scheduler._task_name(SID)}","N/A","Running"\n'
+    monkeypatch.setattr(
+        scheduler,
+        "_run_schtasks",
+        lambda *args: subprocess.CompletedProcess(["schtasks.exe"], 0, csv_output, ""),
+    )
+    assert scheduler.task_run_state() == "Running"
+
+    # Incomplete columns
+    monkeypatch.setattr(
+        scheduler,
+        "_run_schtasks",
+        lambda *args: subprocess.CompletedProcess(["schtasks.exe"], 0, "only_one_col\n", ""),
+    )
+    assert scheduler.task_run_state() is None
+
+    # Error returncode
+    monkeypatch.setattr(
+        scheduler,
+        "_run_schtasks",
+        lambda *args: subprocess.CompletedProcess(["schtasks.exe"], 1, "", ""),
+    )
+    assert scheduler.task_run_state() is None
+
+    # Exception raised
+    def raise_err(*_args: object) -> subprocess.CompletedProcess[str]:
+        raise OSError("subprocess failed")
+
+    monkeypatch.setattr(scheduler, "_run_schtasks", raise_err)
+    assert scheduler.task_run_state() is None

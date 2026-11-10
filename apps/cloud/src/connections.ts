@@ -27,7 +27,7 @@ function page(connections:DisplayConnection[],status=200,extraCookie?:string,
   response.headers.set("Referrer-Policy","same-origin");
   response.headers.set("X-Content-Type-Options","nosniff");
   response.headers.set("Content-Security-Policy",
-    "default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; style-src 'self'");
+    "default-src 'none'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; style-src 'self'; img-src 'self'; manifest-src 'self'; script-src 'self' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com");
   if(extraCookie) response.headers.append("Set-Cookie",extraCookie);
   return response;
 }

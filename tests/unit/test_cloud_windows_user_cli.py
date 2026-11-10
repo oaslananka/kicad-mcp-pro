@@ -317,6 +317,20 @@ def test_windows_status_displays_selected_project_and_opaque_connector_state(
     assert str(folder) in status.output
 
 
+def test_windows_status_includes_running_state_when_active(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder, _events, _project, _selected = windows_cli
+    CliRunner().invoke(app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)])
+    monkeypatch.setattr(
+        cloud_windows_user_cli, "scheduler_state", lambda: "Scheduled (connection unverified)"
+    )
+    monkeypatch.setattr(cloud_windows_user_cli, "task_run_state", lambda: "Running")
+    status = CliRunner().invoke(app, ["cloud", "status"])
+    assert status.exit_code == 0
+    assert "Scheduled (connection unverified) [Running]" in status.output
+
+
 def test_windows_status_before_registration_does_not_trigger_cloud(
     windows_cli,
 ) -> None:

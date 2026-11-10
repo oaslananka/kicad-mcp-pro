@@ -39,6 +39,7 @@ from kicad_mcp.cloud_windows_task_scheduler import (
     disable_windows_connector,
     enable_windows_connector,
     scheduler_state,
+    task_run_state,
 )
 
 _PROJECT_SUFFIX_PRIORITY = {".kicad_pro": 0, ".kicad_sch": 1, ".kicad_pcb": 2}
@@ -215,7 +216,11 @@ def setup_windows(
 
 def show_status() -> None:
     state = scheduler_state()
-    typer.echo(f"Local Windows Connector: {state}")
+    run_state = task_run_state() if state == "Scheduled (connection unverified)" else None
+    if run_state:
+        typer.echo(f"Local Windows Connector: {state} [{run_state}]")
+    else:
+        typer.echo(f"Local Windows Connector: {state}")
     try:
         project = selected_project()
         if project is None:

@@ -65,89 +65,93 @@ export function renderDevicesPage(
         </div>
       </div></section>:
         <>
-          {/* Quickstart Card with Direct Action Hierarchy */}
-          <section className="card quickstart-card">
-            <div className="card-kicker"><Icon name="cpu" size={15}/> PAIR YOUR COMPUTER</div>
-            <h2>Connect your computer</h2>
-            <p>Open KiCad MCP Pro on your computer and use Cloud setup to pair it. You can also start setup from a terminal:</p>
-            <div className="local-setup-command">
-              <code>kicad-mcp-pro cloud setup</code>
+      {/* Enrolled Devices Section */}
+      <section className="card device-card">
+        <div className="card-header">
+          <div>
+            <span className="card-kicker">COMPUTERS</span>
+            <h2>Your devices</h2>
+          </div>
+          <span className="list-count">{devices.length===1?"1 enrolled device":`${devices.length} enrolled devices`}</span>
+        </div>
+        {devices.length===0?<div className="empty-state">
+          <div className="empty-icon"><Icon name="devices" size={21}/></div>
+          <div>
+            <h3>No enrolled devices</h3>
+            <p>Run <code>kicad-mcp-pro cloud setup</code> on your computer to connect.</p>
+          </div>
+        </div>:
+          <ul className="connections-list device-list">{devices.map(d=><li className="device-row" key={d.id}>
+            <span className={d.enabled&&!d.revoked&&d.connectionState==="connected"?"device-dot connected":"device-dot"} aria-hidden="true"/>
+            <div className="device-summary">
+              <h3>{d.alias}</h3>
+              <p>{d.revoked?"Revoked":!d.enabled?"Disabled":
+                d.connectionState==="connected"?
+                  "Connector connected now (temporary session; not proof of KiCad activity)":
+                d.connectionState==="disconnected"?"Connector not connected now":
+                  "Enabled (not proof of online status)"}</p>
             </div>
-            <p className="field-help">Follow the browser approval and choose the projects and AI clients to authorize.</p>
-            <div className="local-folder-browse">
-              <strong>Prefer choosing a folder?</strong>
-              <p>On your own computer, run <code>kicad-mcp-pro cloud setup --browse</code> to select your KiCad
-                project directory using a native folder picker. Your local path is never sent to Cloud.
-                A web browser cannot safely browse the server's local filesystem.</p>
+            <div className="device-actions">
+              <span className={d.enabled&&!d.revoked&&d.connectionState==="connected"?"status-pill ready":"status-pill neutral"}>
+                {d.revoked?"Revoked":!d.enabled?"Disabled":d.connectionState==="connected"?"Connected":d.connectionState==="disconnected"?"Offline":"Status unknown"}
+              </span>
+              {enrollmentAvailable&&!d.revoked&&!d.enabled&&d.enableCsrf?
+                <form action="/devices/enable" method="post">
+                  <input type="hidden" name="device_id" value={d.id}/>
+                  <input type="hidden" name="csrf" value={d.enableCsrf}/>
+                  <button className="button secondary" type="submit">Enable my device</button>
+                </form>:null}
+              {d.revoked&&d.deleteCsrf?
+                <form action="/devices/delete" method="post">
+                  <input type="hidden" name="device_id" value={d.id}/>
+                  <input type="hidden" name="csrf" value={d.deleteCsrf}/>
+                  <button className="button danger" type="submit"
+                    title="Permanently delete this revoked device and its registered projects">
+                    Remove device permanently
+                  </button>
+                </form>:null}
+              {d.revoked?<span className="status-pill pending">Revoked</span>:
+                <form action="/devices/revoke" method="post">
+                  <input type="hidden" name="device_id" value={d.id}/>
+                  <input type="hidden" name="csrf" value={d.csrf}/>
+                  <button className="button danger" type="submit">Revoke device</button>
+                </form>}
             </div>
-          </section>
+            {enrollmentAvailable&&!d.revoked&&d.enabled&&d.projectCsrf?
+              <details className="device-register">
+                <summary>+ Register a project</summary>
+                <form action="/devices/projects/create" method="post">
+                  <input type="hidden" name="device_id" value={d.id}/>
+                  <input type="hidden" name="csrf" value={d.projectCsrf}/>
+                  <label>Project name or alias{" "}
+                    <input name="alias" maxLength={64} required={true} autoComplete="off" placeholder="e.g. Feather-M4 or Motor-Driver"/>
+                  </label>
+                  <button className="button secondary" type="submit">Register read-only project</button>
+                </form>
+              </details>:null}
+          </li>)}</ul>}
+      </section>
 
-          {/* Enrolled Devices Section */}
-          <section className="card device-card">
-            <div className="card-header">
-              <h2>Your devices</h2>
-              <span className="list-count">{devices.length===1?"1 enrolled device":`${devices.length} enrolled devices`}</span>
-            </div>
-            {devices.length===0?<div className="empty-state">
-              <div className="empty-icon"><Icon name="devices" size={21}/></div>
-              <div>
-                <h3>No enrolled devices</h3>
-                <p>No devices are currently registered to this account.</p>
-              </div>
-            </div>:
-              <ul className="connections-list device-list">{devices.map(d=><li className="device-row" key={d.id}>
-                <span className={d.enabled&&!d.revoked&&d.connectionState==="connected"?"device-dot connected":"device-dot"} aria-hidden="true"/>
-                <div className="device-summary">
-                  <h3>{d.alias}</h3>
-                  <p>{d.revoked?"Revoked":!d.enabled?"Disabled":
-                    d.connectionState==="connected"?
-                      "Connector connected now (temporary session; not proof of KiCad activity)":
-                    d.connectionState==="disconnected"?"Connector not connected now":
-                      "Enabled (not proof of online status)"}</p>
-                </div>
-                <div className="device-actions">
-                  <span className={d.enabled&&!d.revoked&&d.connectionState==="connected"?"status-pill ready":"status-pill neutral"}>
-                    {d.revoked?"Revoked":!d.enabled?"Disabled":d.connectionState==="connected"?"Connected":d.connectionState==="disconnected"?"Offline":"Status unknown"}
-                  </span>
-                  {enrollmentAvailable&&!d.revoked&&!d.enabled&&d.enableCsrf?
-                    <form action="/devices/enable" method="post">
-                      <input type="hidden" name="device_id" value={d.id}/>
-                      <input type="hidden" name="csrf" value={d.enableCsrf}/>
-                      <button className="button secondary" type="submit">Enable my device</button>
-                    </form>:null}
-                  {d.revoked&&d.deleteCsrf?
-                    <form action="/devices/delete" method="post">
-                      <input type="hidden" name="device_id" value={d.id}/>
-                      <input type="hidden" name="csrf" value={d.deleteCsrf}/>
-                      <button className="button danger" type="submit"
-                        title="Permanently delete this revoked device and its registered projects">
-                        Remove device permanently
-                      </button>
-                    </form>:null}
-                  {d.revoked?<span className="status-pill pending">Credential revoked</span>:
-                    <form action="/devices/revoke" method="post">
-                      <input type="hidden" name="device_id" value={d.id}/>
-                      <input type="hidden" name="csrf" value={d.csrf}/>
-                      <button className="button danger" type="submit">Revoke device</button>
-                    </form>}
-                </div>
-                {enrollmentAvailable&&!d.revoked&&d.enabled&&d.projectCsrf?
-                  <details className="device-register">
-                    <summary>Register a project</summary>
-                    <form action="/devices/projects/create" method="post">
-                      <input type="hidden" name="device_id" value={d.id}/>
-                      <input type="hidden" name="csrf" value={d.projectCsrf}/>
-                      <label>Project alias (no local paths){" "}
-                        <input name="alias" maxLength={64} required={true} autoComplete="off" placeholder="e.g. Feather-M4 or Motor-Driver"/>
-                      </label>
-                      <button className="button secondary" type="submit">Register read-only project</button>
-                    </form>
-                  </details>:null}
-              </li>)}</ul>}
-            <div className="card-footnote">
-              <Icon name="lock" size={14}/> A connected Connector does not by itself prove KiCad is ready.
-            </div>
-          </section>
+      {/* Quickstart / Pairing Guidance */}
+      {devices.length===0?<section className="card quickstart-card">
+        <div className="card-kicker"><Icon name="cpu" size={15}/> PAIR YOUR COMPUTER</div>
+        <h2>Connect your computer</h2>
+        <p>Run Cloud setup in your terminal to pair this computer:</p>
+        <div className="local-setup-command">
+          <code>kicad-mcp-pro cloud setup</code>
+        </div>
+        <p className="field-help">Or run <code>kicad-mcp-pro cloud setup --browse</code> to choose a project folder directly.</p>
+      </section>:
+      <details className="card pair-another-card">
+        <summary><Icon name="cpu" size={16}/> Connect another computer</summary>
+        <div className="pair-another-content">
+          <p>On your other computer, run:</p>
+          <div className="local-setup-command">
+            <code>kicad-mcp-pro cloud setup</code>
+          </div>
+          <p className="field-help">Follow the browser approval link to pair the new device.</p>
+        </div>
+      </details>}
 
           {/* Registered Projects Section */}
           <section className="card projects-card">

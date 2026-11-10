@@ -5,6 +5,7 @@ import {renderConnectionsPage} from "../src/connections-ui.js";
 import {renderConsentPage} from "../src/consent-ui.js";
 import {renderDevicesPage} from "../src/devices-ui.js";
 import {renderPairingReviewPage} from "../src/pairing-review-ui.js";
+import {renderUsagePage, defaultMetrics} from "../src/usage-ui.js";
 import {uiCss} from "../src/ui-styles.js";
 
 test("premium visual language is first-party, consistent and responsive",()=>{
@@ -83,4 +84,20 @@ test("HTTP-first landing offers a working local transport and optional Cloud",()
   assert.match(html,/href="\/sign-in"/);
   assert.match(html,/Your files stay yours|Stay in control/);
   assert.doesNotMatch(html,/Get desktop app|AppImage|\.dmg|_x64-setup\.exe|tauri/i);
+});
+
+test("usage telemetry dashboard renders monthly stats, chart, and tool breakdown",()=>{
+  const html = renderUsagePage(defaultMetrics, "oaslananka@gmail.com");
+  assert.match(html, /<h1>Usage<\/h1>/);
+  assert.match(html, /473/);
+  assert.match(html, /10[.,]000/);
+  assert.match(html, /tool calls left this month/);
+  assert.match(html, /Calls over time/);
+  assert.match(html, /Last 6 months, grouped by month/);
+  assert.match(html, /Most used tools/);
+  assert.match(html, /Recent MCP activity/);
+  assert.match(html, /project_summary/);
+  assert.match(html, /oaslananka@gmail\.com/);
+  assert.match(html, /TOOL USAGE BREAKDOWN/);
+  assert.match(html, /SESSION TELEMETRY/);
 });
