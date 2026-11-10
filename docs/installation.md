@@ -103,16 +103,15 @@ are eligible for automatic removal; an edited or legacy-unverified entry is
 preserved and reported for manual review. User project files, KiCad itself,
 other AI MCP servers, shared Python and user-wide caches are never bulk-deleted.
 
-Use the operating system's normal Applications / Installed Apps / package
-manager route to remove the desktop installer. That OS operation is separate
-from Cloud revoke and local owner-controlled cleanup. A DMG-to-Trash or
-AppImage deletion may bypass a running-app cleanup hook. Reinstallation must
-not silently re-enable a revoked device or expand project grants. Observe
-the actual connected state before saying a device is disconnected.
+For a current CLI installation, remove the package using its confirmed
+package manager (uv tool or the active pip environment), as explained
+above. If you still have a retired desktop installer, remove it through
+your operating system's application manager. Neither action revokes Cloud
+access: verify the actual Connector and project-grant state after removal.
 
 ## Web Dashboard
 
-The desktop app starts the dashboard automatically. You can also run it directly:
+The dashboard runs in your normal browser and needs no desktop application:
 
 ```bash
 kicad-mcp-pro dashboard --open
@@ -141,11 +140,8 @@ The single-page UI has these views:
   transport, and guided AI-client configuration. Claude Desktop, Cursor, VS Code
   and Windsurf use preview plus explicit apply to preserve unrelated MCP
   entries and back up existing settings. Other clients retain manual snippet
-  export. When launched from a newly bundled desktop, local client configuration
-  reuses its exact pinned `uv` executable and private runtime cache; normal
-  setup does not require a separate global Python/`uvx` install. Saving the
-  client configuration is not evidence that the AI host connected: verify a
-  real MCP read in the client before declaring it ready.
+  export. Saving a client configuration does not prove the AI host is connected:
+  verify a real MCP read in the client before declaring it ready.
 
 The dashboard reads project and KiCad state; it does not run ERC or DRC itself.
 Run `run_erc()`, `run_drc()`, or `validate_design()` from your MCP client and
