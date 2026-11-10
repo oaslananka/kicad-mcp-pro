@@ -426,6 +426,53 @@ test("HTTP connection list requires signed-in session",async()=>{
 });
 
 
+test("workspace routes reach browser auth flow through the HTTP server",async()=>{
+  const mockIdentity={
+    handler:async()=>Response.json({client_id:"test"}),
+    api:{getSession:async()=>null},
+    $context:Promise.resolve({secret:"test-only-not-a-production-secret"})
+  };
+  const server=createHttpServer(config, inventory, verify, {grants, identity:mockIdentity as never});
+  await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
+  try {
+    const base="http://127.0.0.1:"+(server.address() as AddressInfo).port;
+    for(const path of ["/usage","/overview"]) {
+      const response=await fetch(base+path,{redirect:"manual"});
+      assert.equal(response.status,303,path+" should require sign-in");
+      assert.equal(response.headers.get("location"),"/sign-in");
+    }
+    for(const [path,target] of [["/settings","/account#security"],["/projects","/devices#registered-projects"]]) {
+      const response=await fetch(base+path,{redirect:"manual"});
+      assert.equal(response.status,303,path+" should redirect to its workspace page");
+      assert.equal(response.headers.get("location"),target);
+    }
+  }finally{
+    await new Promise<void>(resolve=>server.close(()=>resolve()));
+  }
+});
+
+test("signed-in workspace Usage route displays honest no-data state",async()=>{
+  const mockIdentity={
+    handler:async()=>Response.json({client_id:"test"}),
+    api:{getSession:async()=>({user:{id:"user-a",email:"example@example.com"}})},
+    $context:Promise.resolve({secret:"test-only-not-a-production-secret"})
+  };
+  const server=createHttpServer(config, inventory, verify, {grants, identity:mockIdentity as never});
+  await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
+  try{
+    const base="http://127.0.0.1:"+(server.address() as AddressInfo).port;
+    const response=await fetch(base+"/usage");
+    assert.equal(response.status,200);
+    const html=await response.text();
+    assert.match(html,/Usage data is not available yet/);
+    assert.match(html,/example@example.com/);
+    assert.match(html,/src="\/assets\/icon-32\.png"/);
+    assert.doesNotMatch(html,/473|10[.,]000|Standard Developer Plan/);
+  }finally{
+    await new Promise<void>(resolve=>server.close(()=>resolve()));
+  }
+});
+
 test("a revoked signed JWT is rejected at MCP and management edges",async()=>{
   accessAllowed=false;
   try {
