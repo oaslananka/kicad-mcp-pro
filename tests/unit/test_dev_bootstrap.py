@@ -16,7 +16,6 @@ import pytest
 from scripts.dev_environment import (
     _doctor_payload,
     _install_node,
-    _install_rust,
     build_bootstrap_plan,
     ci_quality_gate_commands,
     download_verified,
@@ -38,8 +37,6 @@ def test_bootstrap_plan_is_repository_scoped_and_exact() -> None:
         "node": "24.22.1",
         "pnpm": "11.28.6",
         "python": "3.13.17",
-        "rust": "1.97.1",
-        "rustup": "1.29.0",
         "task": "3.52.0",
         "uv": "0.13.5",
     }
@@ -51,7 +48,7 @@ def test_bootstrap_plan_core_only_keeps_optional_tools_explicit() -> None:
     plan = build_bootstrap_plan(ROOT, core_only=True)
 
     assert plan.install_optional is False
-    assert plan.optional_tools == ("cargo", "rustc", "task")
+    assert plan.optional_tools == ("task",)
     assert plan.required_tools == ("node", "pnpm", "python", "uv")
 
 
@@ -515,29 +512,6 @@ def test_main_requests_captured_subprocess_output_for_json(monkeypatch, capsys) 
     assert result == 0
     assert captured == [True]
     assert json.loads(capsys.readouterr().out)["status"] == "ready"
-
-
-def test_existing_rust_toolchain_still_repairs_required_rustfmt(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    plan = build_bootstrap_plan(tmp_path / "checkout", core_only=False, contract_root=ROOT)
-    rustc = plan.tool_root / "cargo" / "bin" / "rustc"
-    rustup = plan.tool_root / "cargo" / "bin" / "rustup"
-    rustc.parent.mkdir(parents=True)
-    rustc.write_text("rustc", encoding="utf-8")
-    rustup.write_text("rustup", encoding="utf-8")
-    commands: list[list[str]] = []
-
-    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        commands.append(command)
-        return subprocess.CompletedProcess(command, 0, stdout="rustc 1.97.1", stderr="")
-
-    monkeypatch.setattr("scripts.dev_environment._run", fake_run)
-
-    _install_rust(plan, "x86_64", {}, capture=True)
-
-    assert [str(rustup), "component", "add", "rustfmt", "--toolchain", "1.97.1"] in commands
 
 
 def test_dev_doctor_text_renderer_handles_aggregate_tool_catalog(monkeypatch, capsys) -> None:

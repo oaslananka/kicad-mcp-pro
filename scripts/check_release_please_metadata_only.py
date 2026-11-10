@@ -32,13 +32,6 @@ def allowed_release_metadata_paths(config: dict[str, Any]) -> set[str]:
                     _repo_path(package_path, "package-lock.json"),
                 }
             )
-        elif release_type == "rust":
-            allowed.update(
-                {
-                    _repo_path(package_path, "Cargo.toml"),
-                    _repo_path(package_path, "Cargo.lock"),
-                }
-            )
 
         for extra in package.get("extra-files", []):
             path = extra.get("path") if isinstance(extra, dict) else extra

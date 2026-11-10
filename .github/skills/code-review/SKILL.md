@@ -3,10 +3,10 @@ name: code-review
 description: >-
   Use this skill for GitHub Copilot pull request and code reviews in
   oaslananka/kicad-mcp-pro. Review Python MCP server changes, KiCad adapter and
-  tool-contract changes, tests, npm/package wrappers, Tauri/Rust desktop code,
+  tool-contract changes, tests, npm/package wrappers, browser dashboard code,
   GitHub Actions, security controls, documentation, generated metadata, and
   compatibility/release surfaces. Use it whenever reviewing a PR or diff in this
-  repository, especially changes under src/, tests/, packages/, src-tauri/,
+  repository, especially changes under src/, tests/, packages/,
   .github/workflows/, or public MCP metadata/configuration.
 license: MIT
 compatibility: >-
@@ -77,8 +77,7 @@ Relevant areas include:
 
 - `src/kicad_mcp/web/`
 - dashboard routes/templates/assets
-- `src-tauri/frontend/`
-- desktop flows that depend on the local dashboard
+- browser flows that depend on the local dashboard
 
 Do not report a browser regression unless you have code evidence or observed behavior.
 Lack of a runnable browser environment is not itself a defect.
@@ -294,7 +293,7 @@ Important repository rules include:
 Flag generated drift, but do not ask contributors to hand-edit generated files when the
 repository generator is authoritative.
 
-## 8. Packaging, release, and desktop review
+## 8. Packaging and release review
 
 For Python/npm/container/release changes, check:
 
@@ -305,14 +304,6 @@ For Python/npm/container/release changes, check:
 - trusted publishing / provenance controls are not bypassed;
 - public compatibility claims match `compatibility.yaml`;
 - generated registry/container metadata stays synchronized.
-
-For Tauri/desktop changes, also review:
-
-- backend/frontend version compatibility and startup handshake;
-- local server lifecycle and port/bind assumptions;
-- permission/capability changes;
-- error handling when the backend cannot start or does not match;
-- user-visible flows with web/GUI tests when practical.
 
 ## 9. Focused validation commands
 

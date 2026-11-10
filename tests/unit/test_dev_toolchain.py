@@ -18,14 +18,12 @@ def test_toolchain_contract_is_exact_and_cross_file_consistent() -> None:
     assert contract.node_version == "24.22.1"
     assert contract.pnpm_version == "11.28.6"
     assert contract.task_version == "3.52.0"
-    assert contract.rustup_version == "1.29.0"
-    assert contract.rust_toolchain == "1.97.1"
     assert contract.kicad_cli_version == "10.0.6"
     assert contract.supported_architectures == ("aarch64", "x86_64")
+    assert not (ROOT / "rust-toolchain.toml").exists()
 
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     uv_config = tomllib.loads((ROOT / "uv.toml").read_text(encoding="utf-8"))
-    rust_config = tomllib.loads((ROOT / "rust-toolchain.toml").read_text(encoding="utf-8"))
 
     assert (ROOT / ".python-version").read_text(encoding="utf-8").strip() == contract.python_version
     assert package["packageManager"] == f"pnpm@{contract.pnpm_version}"
@@ -38,7 +36,6 @@ def test_toolchain_contract_is_exact_and_cross_file_consistent() -> None:
     expected_uvx_check = f'test "$(uvx --version | awk \'{{print $2}}\')" = "{contract.uv_version}"'
     assert expected_uv_check in workflow
     assert expected_uvx_check in workflow
-    assert rust_config["toolchain"]["channel"] == contract.rust_toolchain
 
 
 def test_toolchain_contract_has_pinned_linux_download_checksums() -> None:
@@ -47,7 +44,7 @@ def test_toolchain_contract_has_pinned_linux_download_checksums() -> None:
 
     for architecture in contract.supported_architectures:
         downloads = contract.downloads[architecture]
-        assert set(downloads) == {"node", "rustup", "task", "uv"}
+        assert set(downloads) == {"node", "task", "uv"}
         for download in downloads.values():
             assert download.url.startswith("https://")
             assert sha256.fullmatch(download.sha256)

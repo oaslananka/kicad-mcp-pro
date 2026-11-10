@@ -37,7 +37,6 @@ Requirements:
 
 - Node.js 24 and pnpm 11 through Corepack
 - Python 3.13 and uv
-- Rust stable for the optional Tauri desktop application
 
 Install the development dependencies:
 

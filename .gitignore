@@ -67,8 +67,6 @@ mutants/
 .mutmut-cache/
 .codacy/
 
-# Tauri / Rust build artifacts
-
 # Serena local index cache
 .serena/
 

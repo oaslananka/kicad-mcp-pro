@@ -403,11 +403,9 @@ def test_development_diagnostics_classify_required_optional_and_live_tools(
         encoding="utf-8",
     )
     versions = {
-        "cargo": "cargo 1.97.1",
         "node": "v24.22.1",
         "pnpm": "11.28.6",
         "python": "Python 3.13.17",
-        "rustc": "rustc 1.97.1",
         "task": "Task version: v3.52.0",
         "uv": "uv 0.10.8",
         "uvx": "uvx 0.10.8",
@@ -422,12 +420,10 @@ def test_development_diagnostics_classify_required_optional_and_live_tools(
     assert core.prepared is False
     classes = {tool.name: tool.classification for tool in core.tools}
     assert classes == {
-        "cargo": "optional",
         "kicad-cli": "live-kicad",
         "node": "required",
         "pnpm": "required",
         "python": "required",
-        "rustc": "optional",
         "task": "optional",
         "uv": "required",
         "uvx": "required",
@@ -478,7 +474,6 @@ def test_development_contract_ignores_non_assignment_lines(tmp_path: Path) -> No
         "NODE_VERSION=24.22.1\n"
         "PNPM_VERSION=11.5.0\n"
         "TASK_VERSION=3.52.0\n"
-        "RUST_TOOLCHAIN=1.97.1\n"
         "KICAD_CLI_VERSION=10.0.4\n",
         encoding="utf-8",
     )

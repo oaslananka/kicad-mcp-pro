@@ -1,8 +1,7 @@
 name: OSV Full Dependency Inventory
 
-# Inventory-only across all lockfiles. The existing RustSec CI baseline is
-# strict and rejects unexpected Rust advisories; this workflow never ignores
-# or suppresses OSV findings.
+# Inventory-only across currently supported lockfiles. This workflow reports
+# dependency findings without exclusions or suppressions.
 on:
   schedule:
     - cron: "47 7 * * 4"
@@ -54,7 +53,7 @@ jobs:
             exit 1
           fi
 
-      - name: Produce SARIF without hiding reviewed Rust findings
+      - name: Produce complete dependency SARIF inventory
         uses: google/osv-scanner-action/osv-reporter-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347
         with:
           scan-args: |

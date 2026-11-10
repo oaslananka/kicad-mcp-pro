@@ -330,8 +330,6 @@ def test_mergify_only_autoqueues_safe_grouped_dependabot_updates() -> None:
         "actions-minor-patch",
         "containers-patch",
         "compose-patch",
-        "cargo-minor-patch",
-        "cargo-security",
     )
     for group_name in auto_groups:
         assert group_name in head_condition
@@ -345,7 +343,6 @@ def test_mergify_only_autoqueues_safe_grouped_dependabot_updates() -> None:
         "actions-major",
         "containers-manual",
         "compose-manual",
-        "cargo-major",
     ):
         assert manual_group not in head_condition
 

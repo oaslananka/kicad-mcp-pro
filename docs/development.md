@@ -55,7 +55,7 @@ task pre-push
 ```
 
 It selects Ruff, mypy, matching unit tests, architecture/tool-contract checks,
-workflow validation, web route tests, Cargo checks, or compatibility checks from
+workflow validation, web route tests or compatibility checks from
 the files being pushed. It deliberately does not run the repository-wide unit
 suite, coverage, package build, docs build, release checks, or security matrix.
 

@@ -2,7 +2,7 @@
 
 The repository provides a rootless Linux bootstrap for contributors and CI. It
 installs the exact reviewed toolchain into the checkout instead of modifying
-system package directories, a global npm prefix, or user-wide Python and Rust
+system package directories, a global npm prefix, or user-wide Python
 homes.
 
 ## Supported hosts
@@ -31,11 +31,7 @@ The first command installs the exact versions committed in
 - Node.js 24.22.1
 - pnpm 11.28.6
 - Task 3.52.0
-- rustup 1.29.0
-- Rust, Cargo, and rustfmt 1.97.1
 
-Rust and Cargo are optional development tools. The Python Streamable HTTP
-server and Cloud web application do not require a Tauri installer or Cargo.
 
 Native downloads are written to temporary files, checked against committed
 SHA-256 values, and only then moved into `.dev-tools/`. Python and Node
@@ -59,7 +55,7 @@ Verify an existing prepared checkout without downloading or changing it:
 ./scripts/bootstrap-dev.sh --check --json
 ```
 
-Install only the required Python/uv/Node/pnpm toolchain when optional Task and Rust work are not needed:
+Install only the required Python/uv/Node/pnpm toolchain when optional Task are not needed:
 
 ```bash
 ./scripts/bootstrap-dev.sh --core-only
@@ -89,7 +85,7 @@ The development section separates three classes:
 
 - **required** — Python, uv, uvx, Node.js, and pnpm; a missing or mismatched
   required tool fails `--ci`;
-- **optional** — Task, Rust, and Cargo; missing tools are explicit limitations
+- **optional** — Task; missing tools are explicit limitations
   and can be restored by running the full bootstrap;
 - **live-kicad** — KiCad CLI and GUI/IPC connectivity; these are host
   capabilities rather than repository-downloaded tools.
@@ -111,7 +107,7 @@ The bootstrap owns only these ignored paths:
 
 | Path | Purpose |
 | --- | --- |
-| `.dev-tools/` | Versioned native binaries and managed Python/Rust runtimes |
+| `.dev-tools/` | Versioned native binaries and managed Python runtimes |
 | `.dev-cache/` | uv, npm, pnpm, Corepack, and download caches |
 | `.venv/` | Frozen Python environment for this checkout |
 | `.dev-env.sh` | Generated activation file |
@@ -174,7 +170,6 @@ KiCad, enable IPC, and open a board to reach `gui-connected` mode.
 ## Upgrading the toolchain
 
 Tool upgrades are code changes. Update `scripts/dev-toolchain.env`, the related
-repository pin such as `.python-version`, `uv.toml`, `package.json`, or
-`rust-toolchain.toml`, and the committed checksums in one pull request. Optional Rust tooling changes must preserve reproducibility. The contract tests,
+repository pins and committed checksums in a single pull request. The contract tests,
 clean-host workflow, OS matrix, and security checks must pass on the final
 commit before merge.

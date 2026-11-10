@@ -325,7 +325,6 @@ def _development_contract(checkout: Path) -> dict[str, str] | None:
         "NODE_VERSION",
         "PNPM_VERSION",
         "PYTHON_VERSION",
-        "RUST_TOOLCHAIN",
         "TASK_VERSION",
         "UV_VERSION",
     }
@@ -468,20 +467,6 @@ def build_development_diagnostics(
             "optional",
             contract["TASK_VERSION"],
             tool_root / "task" / contract["TASK_VERSION"] / "bin" / "task",
-            ["--version"],
-        ),
-        (
-            "rustc",
-            "optional",
-            contract["RUST_TOOLCHAIN"],
-            tool_root / "cargo" / "bin" / "rustc",
-            ["--version"],
-        ),
-        (
-            "cargo",
-            "optional",
-            contract["RUST_TOOLCHAIN"],
-            tool_root / "cargo" / "bin" / "cargo",
             ["--version"],
         ),
         ("kicad-cli", "live-kicad", contract["KICAD_CLI_VERSION"], cli_path, ["--version"]),
