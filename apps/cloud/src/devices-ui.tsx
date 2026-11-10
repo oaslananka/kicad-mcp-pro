@@ -38,7 +38,7 @@ export function renderDevicesPage(
             <div><strong>Grant access</strong><small>{savedGrants.some(g=>projects.some(p=>p.id===g.projectId&&p.enabled)&&clients.includes(g.clientId))?"Project permission saved":"Choose permissions per project and client"}</small></div></li>
         </ol>
       </nav>:null}
-      {!enrollmentAvailable && devices.length===0?<section className="card status-card" id="registered-projects"><div>
+      {!enrollmentAvailable && devices.length===0?<section className="card status-card" id="registered-projects"><div className="status-message">
         <span className="status-pill pending">Not enabled</span>
         <h2>Local KiCad devices aren't available yet</h2>
         <p>Device enrollment and management are not enabled on this deployment. No pairing or local project control is available. The device schema and recovery checks must be approved before activation.</p>
@@ -167,9 +167,18 @@ export function renderDevicesPage(
       <section className="card client-shortcuts"><h2>Where you use it</h2>
         <p>Connect your preferred AI client, then grant it access to a registered project.</p>
         <ul>
-          <li><span className="client-icon"><Icon name="connections" size={20}/></span><div><h3>ChatGPT</h3><p>Review the remote MCP connection guide.</p></div><a className="text-link" href="/connections" aria-label="Set up ChatGPT">Set up <Icon name="arrow" size={14}/></a></li>
-          <li><span className="client-icon"><Icon name="spark" size={20}/></span><div><h3>Claude</h3><p>Review connector setup and account permissions.</p></div><a className="text-link" href="/connections" aria-label="Set up Claude">Set up <Icon name="arrow" size={14}/></a></li>
-          <li><span className="client-icon"><Icon name="cpu" size={20}/></span><div><h3>Other MCP clients</h3><p>Check endpoint details and authentication requirements.</p></div><a className="text-link" href="/connections" aria-label="Set up another MCP client">Details <Icon name="arrow" size={14}/></a></li>
+          <li><a className="client-shortcut-link" href="/connections" aria-label="Set up ChatGPT">
+            <span className="client-icon"><Icon name="connections" size={20}/></span>
+            <span><strong>ChatGPT</strong><small>Review remote MCP connection settings.</small></span>
+            <b>Set up <Icon name="arrow" size={14}/></b></a></li>
+          <li><a className="client-shortcut-link" href="/connections" aria-label="Set up Claude">
+            <span className="client-icon"><Icon name="spark" size={20}/></span>
+            <span><strong>Claude</strong><small>Review connector permissions and setup.</small></span>
+            <b>Set up <Icon name="arrow" size={14}/></b></a></li>
+          <li><a className="client-shortcut-link" href="/connections" aria-label="Set up another MCP client">
+            <span className="client-icon"><Icon name="cpu" size={20}/></span>
+            <span><strong>Other MCP clients</strong><small>Check endpoint details and authentication.</small></span>
+            <b>Details <Icon name="arrow" size={14}/></b></a></li>
         </ul>
       </section>
       {enrollmentAvailable&&ownerSub?<details className="advanced-identity">

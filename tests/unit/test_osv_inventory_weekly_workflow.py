@@ -70,26 +70,6 @@ def test_osv_weekly_inventory_is_pinned_and_uploads_all_findings() -> None:
     config = ROOT / ".github/security/osv-full-inventory.toml"
     assert config.exists()
     assert tomllib.loads(config.read_text(encoding="utf-8")) == {}
-    assert (ROOT / "src-tauri/osv-scanner.toml").exists()
-
-
-def test_existing_rustsec_baseline_is_still_exact_and_not_ignored() -> None:
-    baseline = json.loads(
-        (ROOT / ".github/security/rustsec-baseline.json").read_text(encoding="utf-8")
-    )
-    items = baseline["advisories"]
-    assert len(items) == 5
-    assert {item["id"] for item in items} == {
-        "RUSTSEC-2024-0370",
-        "RUSTSEC-2024-0429",
-        "RUSTSEC-2026-0370",
-        "RUSTSEC-2026-0371",
-        "RUSTSEC-2026-0372",
-    }
-    assert all(item["rationale"] and item["revisit"] for item in items)
-    ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert "scripts/check_rustsec_audit.py" in ci
-    assert ".github/security/rustsec-baseline.json" in ci
 
 
 def test_osv_action_has_a_single_explicit_approved_repository() -> None:

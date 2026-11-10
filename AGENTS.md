@@ -13,7 +13,6 @@ Nested operational boundaries:
 - `src/kicad_mcp/tools/AGENTS.md` — public MCP tools, profiles, operating modes, annotations, generated contracts, and manufacturing gates.
 - `.github/AGENTS.md` — CI, required checks, workflow security, release, provenance, and publishing.
 - `integrations/AGENTS.md` — agent-runtime config templates, installers, permission defaults, and integration drift.
-- `src-tauri/AGENTS.md` — Rust/Tauri desktop lifecycle, backend compatibility, loopback boundary, and packaging.
 - `packages/AGENTS.md` — npm wrapper, protocol schemas, fixtures, and KiCad companion package boundaries.
 
 ## Start here

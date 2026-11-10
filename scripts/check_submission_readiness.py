@@ -172,21 +172,15 @@ def _runner_check() -> CheckResult:
 def _version_check() -> CheckResult:
     try:
         pyproject = tomllib.loads((ROOT / PYPROJECT_FILENAME).read_text(encoding="utf-8"))
-        tauri_cargo = tomllib.loads((ROOT / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8"))
-        tauri_config = json.loads(
-            (ROOT / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8")
-        )
         release_manifest = json.loads(
             (ROOT / ".release-please-manifest.json").read_text(encoding="utf-8")
         )
         versions = {
             PYPROJECT_FILENAME: pyproject["project"]["version"],
+            ".release-please-manifest.json .": release_manifest["."],
             SERVER_MANIFEST_FILENAME: json.loads(
                 (ROOT / SERVER_MANIFEST_FILENAME).read_text(encoding="utf-8")
             )["version"],
-            "src-tauri/Cargo.toml": tauri_cargo["package"]["version"],
-            "src-tauri/tauri.conf.json": tauri_config["version"],
-            ".release-please-manifest.json src-tauri": release_manifest["src-tauri"],
         }
         init_text = (ROOT / "src" / "kicad_mcp" / "__init__.py").read_text(encoding="utf-8")
         match = re.search(r'__version__\s*=\s*"([^"]+)"', init_text)

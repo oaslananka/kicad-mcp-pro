@@ -2596,7 +2596,7 @@ def _run_server_from_options(
         return
 
     # For non-stdio transports stdout is not needed for the protocol. If the
-    # parent process (e.g. Tauri) closed its pipe end, sys.stdout operations
+    # parent process (e.g. a supervising process) closed its pipe end, sys.stdout operations
     # like .fileno() or .isatty() raise ValueError. Replace it with stderr so
     # uvicorn/typer don't crash during logging config or start-up echo.
     try:
@@ -3504,7 +3504,7 @@ def dashboard(
     os.environ["KICAD_MCP_PORT"] = str(port)
 
     # Use safe echo that tolerates closed/non-available stdout (e.g. when
-    # spawned by Tauri with stdout=NUL on Windows).
+    # spawned with stdout=NUL on Windows).
     def _safe_echo(msg: str) -> None:
         try:
             typer.echo(msg)

@@ -133,7 +133,6 @@ def _browse_windows_project_folder() -> Path:
             raise OSError("Windows system DLL loader unavailable")
         shell = load_system_dll("shell32.dll", winmode=0x800)
         ole = load_system_dll("ole32.dll", winmode=0x800)
-        user = load_system_dll("user32.dll", winmode=0x800)
         ole.CoInitializeEx.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
         ole.CoInitializeEx.restype = ctypes.c_long
         ole.CoUninitialize.argtypes = []
@@ -147,16 +146,15 @@ def _browse_windows_project_folder() -> Path:
         ]
         shell.SHGetPathFromIDListEx.restype = wintypes.BOOL
         ole.CoTaskMemFree.argtypes = [ctypes.c_void_p]
-        user.GetForegroundWindow.restype = wintypes.HWND
         result = ole.CoInitializeEx(None, 2)  # STA required for new-style shell dialogs.
         if result not in (0, 1):
             raise OSError("Cannot initialize the native folder picker")
         try:
             display = ctypes.create_unicode_buffer(260)
             selection = BrowseInfo()
-            # The backend is not in the foreground; own the current user window
-            # so the folder chooser appears above the desktop app, not behind it.
-            selection.hwndOwner = user.GetForegroundWindow()
+            # A headless HTTP server cannot own another app's foreground HWND;
+            # passing Chrome's window causes Windows to silently dismiss Browse.
+            selection.hwndOwner = None
             selection.pszDisplayName = ctypes.cast(display, wintypes.LPWSTR)
             selection.lpszTitle = "Choose your local KiCad project folder"
             selection.ulFlags = 0x1 | 0x40 | 0x10  # Filesystem, new UI, editable tree.

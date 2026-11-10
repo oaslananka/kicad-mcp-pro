@@ -1673,20 +1673,7 @@ function testConnection() {
 }
 
 async function chooseOwnerProjectFolder() {
-  // A Tauri shell may expose the native command; ordinary browser windows
-  // use the same-origin owner-only, CSRF-protected OS folder picker instead.
-  const invoke = window.__TAURI_INTERNALS__?.invoke;
-  if (typeof invoke === 'function') {
-    try {
-      // A pure picker: selecting a folder must not silently change the running
-      // backend or persist a project before the owner clicks Use project.
-      const path = await invoke('pick_project_folder');
-      return typeof path === 'string' ? path : '';
-    } catch (_error) {
-      // An older desktop shell might not contain this command. Its owner-only
-      // loopback API opens the same native Windows picker.
-    }
-  }
+  // The owner-only same-origin HTTP API opens the native OS folder picker.
   const result = await gpPostOwner('/api/owner/project/browse');
   return typeof result.project_dir === 'string' ? result.project_dir : '';
 }
@@ -1757,56 +1744,6 @@ function cancelWizard() { window.location.hash = '#dashboard'; }
 function finishWizard() { window.location.hash = '#dashboard'; }
 
 /* ── Server Control ── */
-/* Use the host system browser for known links in a Tauri WebView. */
-document.addEventListener('click', async (event) => {
-  const link = event.target.closest?.('a[target="_blank"]');
-  const invoke = window.__TAURI_INTERNALS__?.invoke;
-  if (!link) return;
-  const allowedLinks = new Set([
-    'https://github.com/sponsors/oaslananka',
-    'https://www.buymeacoffee.com/oaslananka',
-    'https://oaslananka.github.io/kicad-mcp-pro/agents/',
-    'https://oaslananka.github.io/kicad-mcp-pro/agents/prompts/',
-    'https://kicad-mcp-pro.oaslananka.dev/sign-in',
-    'https://kicad-mcp-pro.oaslananka.dev/devices'
-  ]);
-  if (!allowedLinks.has(link.href) && !gpTrustedCloudPairLink(link.href)) return;
-  if (typeof invoke !== 'function') {
-    // Once the packaged Tauri webview navigates from its bundle to its local
-    // HTTP dashboard, native IPC is deliberately unavailable on this origin.
-    // A one-shot same-window navigation is intercepted by the Rust plugin
-    // and opened in the system browser, with no remote IPC permissions.
-    // Ordinary Chrome/local HTTP users continue with a standard _blank link.
-    if (new URLSearchParams(location.search).get('desktop') === '1') {
-      event.preventDefault();
-      window.location.assign(link.href);
-    }
-    return;
-  }
-  event.preventDefault();
-  try {
-    await invoke('open_external_link', {url: link.href});
-  } catch (error) {
-    const message = document.getElementById('externalLinkMessage');
-    if (message) {
-      message.style.display = 'flex';
-      document.getElementById('externalLinkText').textContent =
-        'Could not open the system browser. Copy the address to open it manually.';
-      const copy = document.getElementById('externalLinkCopy');
-      copy.onclick = async () => {
-        try {
-          await navigator.clipboard.writeText(link.href);
-          document.getElementById('externalLinkText').textContent = 'Link copied to clipboard.';
-        } catch (_error) {
-          document.getElementById('externalLinkText').textContent = 'Copy this address: ' + link.href;
-        }
-      };
-      document.getElementById('externalLinkDismiss').onclick = () => { message.style.display = 'none'; };
-    }
-  }
-});
-
-
 /* User-first guided setup. Local-first, explicit changes, no implied Cloud grants. */
 let gpProject = '';
 let gpClientPreview = null;

@@ -30,7 +30,7 @@ Official docs:
 | --- | --- |
 | SonarCloud/Codacy CI | Existing individually scoped GitHub Actions secrets; source values mirrored from Doppler main by trusted, allowlisted operator sync |
 | Live model checks | Existing GitHub provider secrets/environment; mirrored from Doppler main |
-| Release App and Tauri GUI signing | Existing protected workflow secret interfaces; mirrored from Doppler main |
+| Release automation | Existing protected Python/npm workflow secret interfaces; no Tauri GUI signing |
 | Production deployment | A read-only main service token, *only* in GitHub protected production environment, secret name DOPPLER_TOKEN |
 | Coolify Cloud runtime | Existing Doppler integration; switch runtime mappings to main only after proven parity and rollback |
 

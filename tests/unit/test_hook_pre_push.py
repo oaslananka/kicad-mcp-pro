@@ -98,7 +98,7 @@ def test_workflow_change_only_adds_workflow_checks(tmp_path: Path) -> None:
     assert _names(plan) == ["workflow-policy", "actionlint", "zizmor"]
 
 
-def test_web_and_tauri_checks_are_pre_push_only_and_conditional(tmp_path: Path) -> None:
+def test_web_checks_are_pre_push_only_and_conditional(tmp_path: Path) -> None:
     web = tmp_path / "src" / "kicad_mcp" / "web" / "dashboard.py"
     tauri = tmp_path / "src-tauri" / "src" / "main.rs"
     web.parent.mkdir(parents=True)
@@ -112,7 +112,7 @@ def test_web_and_tauri_checks_are_pre_push_only_and_conditional(tmp_path: Path) 
     )
 
     assert "web-route-tests" in _names(plan)
-    assert "tauri-cargo-check" in _names(plan)
+    assert "tauri-cargo-check" not in _names(plan)
 
 
 def test_web_route_change_keeps_exact_scoped_test_command(tmp_path: Path) -> None:

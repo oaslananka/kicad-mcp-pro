@@ -6,9 +6,6 @@ ROOT = Path(__file__).resolve().parents[2]
 APT_GUARD = "sudo rm -f /etc/apt/sources.list.d/google-chrome.{list,sources}"
 
 CASES = [
-    ("gui-ci.yml", "Install Playwright browsers", "playwright install --with-deps chromium"),
-    ("gui-ci.yml", "Install Linux Tauri dependencies", "sudo apt-get update"),
-    ("gui-release.yml", "Install Linux Tauri dependencies", "sudo apt-get update"),
     ("kicad-live-e2e.yml", "Install KiCad nightly preview CLI", "sudo add-apt-repository"),
 ]
 

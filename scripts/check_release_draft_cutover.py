@@ -25,7 +25,6 @@ _PUBLISHERS = (
     "publish-kicad-pcm.yml",
     "publish-mcp-container.yml",
     "publish-mcp-registry.yml",
-    "gui-release.yml",
 )
 
 

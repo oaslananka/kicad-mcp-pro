@@ -37,10 +37,6 @@ def test_release_metadata_allowlist_covers_generated_version_files() -> None:
         "pyproject.toml",
         "server.json",
         "sonar-project.properties",
-        "src-tauri/CHANGELOG.md",
-        "src-tauri/Cargo.lock",
-        "src-tauri/Cargo.toml",
-        "src-tauri/tauri.conf.json",
         "src/kicad_mcp/__init__.py",
         "uv.lock",
     }

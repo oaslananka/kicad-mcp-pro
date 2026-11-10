@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
-import {readFileSync} from "node:fs";
 import {renderAccount,renderLanding,renderSignIn} from "../src/browser-ui.js";
 import {renderConnectionsPage} from "../src/connections-ui.js";
 import {renderConsentPage} from "../src/consent-ui.js";
@@ -24,10 +23,10 @@ test("landing topology shows Cloud availability but no active KiCad connection",
   assert.match(enabled,/ACCESS ARCHITECTURE/);
   assert.match(enabled,/EXPLICIT PERMISSIONS/);
   assert.match(enabled,/Owner pairing required/);
-  assert.match(enabled,/Pair your computer/);
+  assert.match(enabled,/Pair a computer/);
   assert.doesNotMatch(enabled,/Connection not enabled/);
   assert.doesNotMatch(enabled,/Not enabled/);
-  assert.match(enabled,/Project access always requires separate approval/);
+  assert.match(enabled,/Remote project access needs explicit approval/);
   assert.match(enabled,/No projects listed\?/);
   assert.match(enabled,/Want to stop sharing\?/);
   assert.match(enabled,/href="\/devices"/);
@@ -76,21 +75,12 @@ test("security pages share brand/navigation while preserving authorization forms
 });
 
 
-test("direct desktop downloads match pinned Tauri version and released artifact names",()=>{
-  const metadata=JSON.parse(readFileSync(new URL("../../../src-tauri/tauri.conf.json",import.meta.url),"utf-8"));
-  const version=metadata.version as string;
+test("HTTP-first landing offers a working local transport and optional Cloud",()=>{
   const html=renderLanding(true);
-  const names=[
-    "windows_KiCad-MCP-Pro_"+version+"_x64-setup.exe",
-    "macos_KiCad-MCP-Pro_"+version+"_aarch64.dmg",
-    "linux_KiCad-MCP-Pro_"+version+"_amd64.AppImage"
-  ];
-  assert.match(html,/Download KiCad MCP Pro v/);
-  assert.match(html,/Windows x64/);
-  assert.match(html,/macOS Apple Silicon/);
-  assert.match(html,/Linux x64/);
-  for(const name of names) assert.ok(html.includes("/kicad-mcp-gui-v"+version+"/"+name),name);
-  assert.ok(html.includes('aria-label="Download KiCad MCP Pro v'+version+'"'));
+  assert.match(html,/uvx kicad-mcp-pro --transport streamable-http --host 127\.0\.0\.1 --port 3334/);
+  assert.match(html,/http:\/\/127\.0\.0\.1:3334\/mcp/);
+  assert.match(html,/href="#http-setup"/);
   assert.match(html,/href="\/sign-in"/);
-  assert.match(html,/Your files stay yours/);
+  assert.match(html,/Your files stay yours|Stay in control/);
+  assert.doesNotMatch(html,/Get desktop app|AppImage|\.dmg|_x64-setup\.exe|tauri/i);
 });

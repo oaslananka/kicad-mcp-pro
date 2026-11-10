@@ -256,12 +256,13 @@ test("device and project controls show aliases while keeping opaque IDs in forms
   assert.doesNotMatch(risky,/cloud register-project/);
 });
 
-test("account snapshot uses real counts and suggests next missing step",()=>{
-  const empty=renderAccount("Engineer",["google"],[],{devices:0,projects:0,clients:0,grants:0});
-  assert.match(empty,/0 paired devices/);
-  assert.match(empty,/Pair a computer/);
-  const ready=renderAccount("Engineer",["google"],[],{devices:1,projects:2,clients:1,grants:1});
-  assert.match(ready,/2 enabled projects/);
-  assert.match(ready,/Review device and project access/);
-  assert.match(renderAccount("Engineer"),/Workspace snapshot unavailable/);
+test("account snapshots remain factual and make status metrics navigable",()=>{
+ const empty=renderAccount("Engineer",["google"],[],{devices:0,projects:0,clients:0,grants:0});
+ assert.match(empty,/data-next-action="pair-device"/);
+ assert.match(empty,/<div class="metric">0<\/div><div class="metric-label">Paired devices/);
+ const ready=renderAccount("Engineer",["google"],[],{devices:1,projects:2,clients:1,grants:1});
+ assert.match(ready,/<div class="metric">2<\/div><div class="metric-label">Enabled projects/);
+ assert.match(ready,/data-next-action="review-access"/);
+ assert.match(ready,/href="\/connections"/);
+ assert.match(renderAccount("Engineer"),/Workspace snapshot unavailable/);
 });

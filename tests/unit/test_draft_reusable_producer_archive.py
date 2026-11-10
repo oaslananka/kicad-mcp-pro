@@ -23,8 +23,6 @@ _ROLES = (
     "kicad-pcm-release-evidence",
     "protocol-schemas-release-evidence",
     "npm-draft-release-evidence",
-    "gui-draft-installers",
-    "gui-draft-evidence",
     "container-build-source-evidence",
     "mcp-registry-draft-evidence",
 )
@@ -144,3 +142,12 @@ def test_reusable_archive_tampering_cannot_pass(tmp_path: Path) -> None:
     args["downloaded_zip"].write_bytes(b"tampered")
     with pytest.raises(ValueError, match="ZIP differs"):
         verify_archive(client, **args)
+
+
+@pytest.mark.parametrize("retired", ["gui-draft-installers", "gui-draft-evidence"])
+def test_retired_gui_roles_are_no_longer_authorized(tmp_path: Path, retired: str) -> None:
+    client, args = _reusable_case(tmp_path)
+    args["role"] = retired
+    with pytest.raises(ValueError, match="unapproved"):
+        verify_archive(client, **args)
+    assert client.artifact_reads == 0

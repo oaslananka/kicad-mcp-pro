@@ -908,8 +908,7 @@ def test_windows_native_folder_picker_uses_trusted_system_shell(
         CoUninitialize=Mock(),
         CoTaskMemFree=Mock(),
     )
-    user = SimpleNamespace(GetForegroundWindow=Mock(return_value=41))
-    trusted = {"shell32.dll": shell, "ole32.dll": ole, "user32.dll": user}
+    trusted = {"shell32.dll": shell, "ole32.dll": ole}
 
     def load_dll(name: str, *, winmode: int) -> SimpleNamespace:
         assert name in trusted
@@ -941,7 +940,7 @@ def test_windows_native_folder_picker_uses_trusted_system_shell(
 
     ole.CoUninitialize.assert_called_once()
     shell.SHBrowseForFolderW.assert_called_once()
-    user.GetForegroundWindow.assert_called_once()
+    assert shell.SHBrowseForFolderW.call_args.args[0]._obj.hwndOwner is None
     if case == "cancelled":
         shell.SHGetPathFromIDListEx.assert_not_called()
         ole.CoTaskMemFree.assert_not_called()

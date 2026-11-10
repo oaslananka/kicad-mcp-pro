@@ -28,10 +28,6 @@ case "$1" in
     names=(OASLANANKA_OPS_APP_PRIVATE_KEY)
     destinations=(repository)
     ;;
-  gui)
-    names=(TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD)
-    destinations=(repository repository)
-    ;;
   *)
     printf '%s\n' 'Unknown sync group (refusing arbitrary secret names)' >&2
     exit 2

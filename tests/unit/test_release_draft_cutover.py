@@ -69,7 +69,7 @@ def test_cutover_rejects_mixed_modes(tmp_path: Path) -> None:
     _draft(root)
     config_path = root / "release-please-config.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
-    config["packages"]["src-tauri"]["draft"] = False
+    config["packages"]["packages/mcp-npm"]["draft"] = False
     config_path.write_text(json.dumps(config), encoding="utf-8")
     assert any("no mixed-mode" in e for e in validate_cutover(root))
 

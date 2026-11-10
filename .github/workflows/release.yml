@@ -11,8 +11,6 @@ on:
       - "pyproject.toml"
       - "packages/mcp-npm/package.json"
       - "packages/mcp-npm/README.md"
-      - "src-tauri/Cargo.toml"
-      - "src-tauri/Cargo.lock"
       - "package.json"
       - "server.json"
       - "compatibility.yaml"

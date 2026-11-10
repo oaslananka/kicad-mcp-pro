@@ -1590,7 +1590,6 @@ def test_external_release_workflows_fail_closed_on_live_model_readiness() -> Non
         "publish-mcp-registry.yml",
         "publish-mcpb.yml",
         "publish-kicad-pcm.yml",
-        "gui-release.yml",
     ]
 
     for name in workflows:

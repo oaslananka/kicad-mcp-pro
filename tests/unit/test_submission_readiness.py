@@ -12,33 +12,21 @@ def test_readme_listing_references_use_current_package_version() -> None:
     assert result.status == "PASS"
 
 
-def test_submission_readiness_rejects_tauri_bundle_version_drift(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+def test_submission_readiness_rejects_python_http_server_version_drift(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (tmp_path / "src" / "kicad_mcp").mkdir(parents=True)
-    (tmp_path / "src-tauri").mkdir()
     (tmp_path / "pyproject.toml").write_text('[project]\nversion = "3.25.0"\n', encoding="utf-8")
-    (tmp_path / "server.json").write_text('{"version":"3.25.0"}\n', encoding="utf-8")
+    (tmp_path / "server.json").write_text('{"version":"3.14.1"}\n', encoding="utf-8")
     (tmp_path / "src" / "kicad_mcp" / "__init__.py").write_text(
         '__version__ = "3.25.0"\n', encoding="utf-8"
     )
-    (tmp_path / "src-tauri" / "Cargo.toml").write_text(
-        '[package]\nversion = "3.25.0"\n', encoding="utf-8"
-    )
-    (tmp_path / "src-tauri" / "tauri.conf.json").write_text(
-        '{"version":"3.14.1"}\n', encoding="utf-8"
-    )
-    (tmp_path / ".release-please-manifest.json").write_text(
-        '{"src-tauri":"3.25.0"}\n', encoding="utf-8"
-    )
+    (tmp_path / ".release-please-manifest.json").write_text('{"." : "3.25.0"}', encoding="utf-8")
     monkeypatch.setattr(check_submission_readiness, "ROOT", tmp_path)
-
     result = check_submission_readiness._version_check()
-
     assert result.status == "FAIL"
     assert result.name == "version metadata sync"
-    assert "src-tauri/tauri.conf.json" in result.detail
+    assert "server.json" in result.detail
 
 
 def test_chatgpt_app_readiness_contract_passes() -> None:
@@ -89,22 +77,13 @@ def test_readiness_manifest_errors_are_reported_not_raised(
     assert "unreadable" in result.detail
 
 
-def test_version_check_returns_failed_result_for_invalid_server_json(
+def test_version_check_rejects_invalid_http_server_json(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     (tmp_path / "src" / "kicad_mcp").mkdir(parents=True)
-    (tmp_path / "src-tauri").mkdir()
-    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "4.0.2"\n', encoding="utf-8")
-    (tmp_path / "src-tauri" / "Cargo.toml").write_text(
-        '[package]\nversion = "4.0.2"\n', encoding="utf-8"
-    )
-    (tmp_path / "src-tauri" / "tauri.conf.json").write_text('{"version":"4.0.2"}', encoding="utf-8")
-    (tmp_path / ".release-please-manifest.json").write_text(
-        '{"src-tauri":"4.0.2"}', encoding="utf-8"
-    )
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion="4.0.2"\n', encoding="utf-8")
     (tmp_path / "server.json").write_text("{corrupt", encoding="utf-8")
     monkeypatch.setattr(check_submission_readiness, "ROOT", tmp_path)
-
     result = check_submission_readiness._version_check()
     assert result.name == "version metadata sync"
     assert result.status == "FAIL"
