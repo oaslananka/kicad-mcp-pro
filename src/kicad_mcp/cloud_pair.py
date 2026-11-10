@@ -136,9 +136,20 @@ def _post(
         )
         try:
             payload = response.read(2049)
+            if response.status != status:
+                detail = None
+                try:
+                    err_json = json.loads(payload)
+                    if isinstance(err_json, dict) and "error" in err_json:
+                        detail = str(err_json["error"])
+                except ValueError:
+                    pass
+                msg = f"HTTP {response.status}"
+                if detail:
+                    msg += f": {detail}"
+                raise CloudPairingError(f"{_PAIRING_DENIED} ({msg})")
             if (
-                response.status != status
-                or len(payload) > 2048
+                len(payload) > 2048
                 or response.headers.get("Content-Type", "").split(";")[0] != _JSON_MEDIA_TYPE
             ):
                 raise CloudPairingError(_PAIRING_DENIED)
@@ -148,8 +159,10 @@ def _post(
             return decoded
         finally:
             response.release_conn()
+    except CloudPairingError:
+        raise
     except (urllib3.exceptions.HTTPError, OSError, ValueError) as exc:
-        raise CloudPairingError(_PAIRING_DENIED) from exc
+        raise CloudPairingError(f"{_PAIRING_DENIED}: {exc}") from exc
     finally:
         pool.close()
 

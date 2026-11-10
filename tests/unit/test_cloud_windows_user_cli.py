@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from kicad_mcp import cloud_user_cli, cloud_windows_user_cli
 from kicad_mcp.cloud_windows_enrollment import (
     WindowsEnrolledDevice,
+    WindowsEnrollmentError,
     WindowsRegisteredProject,
 )
 from kicad_mcp.cloud_windows_local_selection import WindowsLocalProjectSelection
@@ -239,6 +240,31 @@ def test_owner_denial_returns_specific_cli_message_and_creates_no_device(
     assert "denied" in result.output
     assert "registered" in result.output
     assert "Windows Cloud registration was not fully completed" not in result.output
+    assert events == ["owner_confirm"]
+
+
+def test_windows_registration_failure_includes_diagnostic_details(
+    windows_cli,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    folder, events, _project, _selected = windows_cli
+
+    def server_rejection(**_kwargs: object) -> None:
+        raise WindowsEnrollmentError(
+            "Windows device enrollment could not be completed. "
+            "(Pairing request failed: HTTP 403: untrusted_ingress)"
+        )
+
+    monkeypatch.setattr(cloud_windows_user_cli, "enroll_windows_device", server_rejection)
+    result = CliRunner().invoke(
+        app,
+        ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)],
+        terminal_width=200,
+    )
+    assert result.exit_code != 0
+    assert "Windows Cloud registration was not fully completed" in result.output
+    assert "HTTP 403: untrusted_ingress" in result.output
+    assert "Review your Cloud Devices page" in result.output
     assert events == ["owner_confirm"]
 
 

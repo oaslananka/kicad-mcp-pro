@@ -176,7 +176,7 @@ def setup_windows(
         "Approve pairing and the selected read-only local Connector?", default=False
     ):
         typer.echo("Setup paused. No device or project was registered.")
-        typer.echo("When ready, run: kicad-mcp-pro cloud setup --browse")
+        typer.echo("When ready, run: kicad-mcp-pro cloud setup (or cloud setup --browse)")
         return
 
     try:
@@ -191,10 +191,15 @@ def setup_windows(
     except (WindowsEnrollmentTimeoutError, WindowsEnrollmentDeniedError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     except (OSError, ValueError, RuntimeError) as exc:
-        raise typer.BadParameter(
-            "Windows Cloud registration was not fully completed. "
-            "Review your Cloud Devices page before retrying; no Connector was started."
-        ) from exc
+        err_detail = str(exc).strip()
+        msg = "Windows Cloud registration was not fully completed. "
+        if err_detail and err_detail != "Windows device enrollment could not be completed.":
+            clean_detail = err_detail.removeprefix(
+                "Windows device enrollment could not be completed. ("
+            ).removesuffix(")")
+            msg += f"\nDetails: {clean_detail}\n"
+        msg += "Review your Cloud Devices page before retrying; no Connector was started."
+        raise typer.BadParameter(msg) from exc
 
     try:
         enable_windows_connector(project, owner_confirm=lambda _project: True)

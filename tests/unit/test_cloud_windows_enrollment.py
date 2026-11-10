@@ -248,6 +248,26 @@ def test_windows_owner_denial_erases_unredeemed_key(
     assert events == ["vault:key", "challenge", "delete:key"]
 
 
+def test_windows_enrollment_preserves_error_details(
+    fake_windows_pair,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store, events, _state = fake_windows_pair
+
+    def fail_with_details(*_args: object, **_kwargs: object) -> None:
+        raise cloud_pair.CloudPairingError("pairing denied (HTTP 403: untrusted_ingress)")
+
+    monkeypatch.setattr(cloud_pair, "_post", fail_with_details)
+    with pytest.raises(cloud_windows_enrollment.WindowsEnrollmentError) as exc_info:
+        cloud_windows_enrollment.enroll_windows_device(
+            origin=ORIGIN,
+            alias="Lab PC",
+            owner_approval=lambda *_: None,
+        )
+    assert not store
+    assert "HTTP 403: untrusted_ingress" in str(exc_info.value)
+
+
 def test_windows_owner_interrupt_cleans_unredeemed_key(
     fake_windows_pair, monkeypatch: pytest.MonkeyPatch
 ) -> None:
