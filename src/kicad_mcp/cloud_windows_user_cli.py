@@ -142,6 +142,40 @@ def _resume_existing_windows_project(
     typer.echo(f"Connector scheduled; connection not yet verified. Check {origin}/devices.")
 
 
+def _enroll_selected_windows_project(
+    *,
+    origin: str,
+    alias: str,
+    stem: str,
+    directory: Path,
+    approval: Callable[[str, str, str], None],
+) -> WindowsRegisteredProject:
+    """Create the device binding only after explicit browser approval."""
+    try:
+        device: WindowsEnrolledDevice = enroll_windows_device(
+            origin=origin, alias=alias, owner_approval=approval
+        )
+        project: WindowsRegisteredProject = register_windows_project(
+            device, alias=stem, filename_stem=stem
+        )
+        bind_owner_selected_project(project, directory, owner_confirm=lambda _path: True)
+        remember_selected_project(project)
+    except (WindowsEnrollmentTimeoutError, WindowsEnrollmentDeniedError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except (OSError, ValueError, RuntimeError) as exc:
+        err_detail = str(exc).strip()
+        msg = "Windows Cloud registration was not fully completed. "
+        if err_detail and err_detail != "Windows device enrollment could not be completed.":
+            clean_detail = err_detail.removeprefix(
+                "Windows device enrollment could not be completed. ("
+            ).removesuffix(")")
+            msg += f"\nDetails: {clean_detail}\n"
+        msg += "Review your Cloud Devices page before retrying; no Connector was started."
+        raise typer.BadParameter(msg) from exc
+
+    return project
+
+
 def setup_windows(
     *,
     origin: str,
@@ -198,27 +232,9 @@ def setup_windows(
         typer.echo("When ready, run: kicad-mcp-pro cloud setup (or cloud setup --browse)")
         return
 
-    try:
-        device: WindowsEnrolledDevice = enroll_windows_device(
-            origin=origin, alias=alias, owner_approval=approval
-        )
-        project: WindowsRegisteredProject = register_windows_project(
-            device, alias=stem, filename_stem=stem
-        )
-        bind_owner_selected_project(project, directory, owner_confirm=lambda _path: True)
-        remember_selected_project(project)
-    except (WindowsEnrollmentTimeoutError, WindowsEnrollmentDeniedError) as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except (OSError, ValueError, RuntimeError) as exc:
-        err_detail = str(exc).strip()
-        msg = "Windows Cloud registration was not fully completed. "
-        if err_detail and err_detail != "Windows device enrollment could not be completed.":
-            clean_detail = err_detail.removeprefix(
-                "Windows device enrollment could not be completed. ("
-            ).removesuffix(")")
-            msg += f"\nDetails: {clean_detail}\n"
-        msg += "Review your Cloud Devices page before retrying; no Connector was started."
-        raise typer.BadParameter(msg) from exc
+    project = _enroll_selected_windows_project(
+        origin=origin, alias=alias, stem=stem, directory=directory, approval=approval
+    )
 
     try:
         if start_background:

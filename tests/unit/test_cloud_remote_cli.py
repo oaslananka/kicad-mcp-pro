@@ -16,7 +16,7 @@ from kicad_mcp import cloud_user_cli, cloud_windows_connector, cloud_windows_use
 _REAL_SETUP_WINDOWS = cloud_windows_user_cli.setup_windows
 
 
-@pytest.fixture()
+@pytest.fixture
 def remote_fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[dict[str, Any], Path]:
     folder = tmp_path / "board"
     folder.mkdir()

@@ -313,6 +313,41 @@ async def _await_authorized_session(
     return True
 
 
+def _session_runner_with_status(
+    session_runner: Callable[..., Awaitable[HandshakeReceipt]],
+    status_callback: Callable[[str], None] | None,
+) -> Callable[..., Awaitable[HandshakeReceipt]]:
+    if status_callback is None or session_runner is not execute_owner_managed_read_session:
+        return session_runner
+
+    def report_ready(_receipt: HandshakeReceipt) -> None:
+        status_callback("Connected")
+
+    async def signed_ready_runner(
+        *,
+        origin: str,
+        trusted_origin: str,
+        owner_sub: str,
+        device_id: str,
+        signing_key: Ed25519PrivateKey,
+        dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch],
+        max_reads: int,
+        on_ready: Callable[[HandshakeReceipt], None] = report_ready,
+    ) -> HandshakeReceipt:
+        return await execute_owner_managed_read_session(
+            origin=origin,
+            trusted_origin=trusted_origin,
+            owner_sub=owner_sub,
+            device_id=device_id,
+            signing_key=signing_key,
+            dispatcher_factory=dispatcher_factory,
+            max_reads=max_reads,
+            on_ready=on_ready,
+        )
+
+    return signed_ready_runner
+
+
 async def run_connector(
     *,
     stop: asyncio.Event,
@@ -335,38 +370,7 @@ async def run_connector(
 
         if status_callback is not None:
             status_callback("Connecting" if failures == 0 else "Reconnecting")
-        runner_for_session = session_runner
-        if status_callback is not None and session_runner is execute_owner_managed_read_session:
-            connected_callback = status_callback
-
-            def report_ready(
-                _receipt: HandshakeReceipt,
-                callback: Callable[[str], None] = connected_callback,
-            ) -> None:
-                callback("Connected")
-
-            async def signed_ready_runner(
-                *,
-                origin: str,
-                trusted_origin: str,
-                owner_sub: str,
-                device_id: str,
-                signing_key: Ed25519PrivateKey,
-                dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch],
-                max_reads: int,
-            ) -> HandshakeReceipt:
-                return await execute_owner_managed_read_session(
-                    origin=origin,
-                    trusted_origin=trusted_origin,
-                    owner_sub=owner_sub,
-                    device_id=device_id,
-                    signing_key=signing_key,
-                    dispatcher_factory=dispatcher_factory,
-                    max_reads=max_reads,
-                    on_ready=report_ready,
-                )
-
-            runner_for_session = signed_ready_runner
+        runner_for_session = _session_runner_with_status(session_runner, status_callback)
 
         task = asyncio.create_task(_run_owner_session(project, selected, key, runner_for_session))
         revoked = asyncio.create_task(stop.wait())
