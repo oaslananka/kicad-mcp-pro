@@ -337,10 +337,33 @@ async def run_connector(
             status_callback("Connecting" if failures == 0 else "Reconnecting")
         verified_runner = session_runner
         if status_callback is not None and session_runner is execute_owner_managed_read_session:
+            connected_callback = status_callback
 
-            async def verified_runner(**kwargs: object) -> HandshakeReceipt:
-                return await session_runner(
-                    **kwargs, on_ready=lambda _receipt: status_callback("Connected")
+            def report_ready(
+                _receipt: HandshakeReceipt,
+                callback: Callable[[str], None] = connected_callback,
+            ) -> None:
+                callback("Connected")
+
+            async def verified_runner(
+                *,
+                origin: str,
+                trusted_origin: str,
+                owner_sub: str,
+                device_id: str,
+                signing_key: Ed25519PrivateKey,
+                dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch],
+                max_reads: int,
+            ) -> HandshakeReceipt:
+                return await execute_owner_managed_read_session(
+                    origin=origin,
+                    trusted_origin=trusted_origin,
+                    owner_sub=owner_sub,
+                    device_id=device_id,
+                    signing_key=signing_key,
+                    dispatcher_factory=dispatcher_factory,
+                    max_reads=max_reads,
+                    on_ready=report_ready,
                 )
 
         task = asyncio.create_task(_run_owner_session(project, selected, key, verified_runner))
