@@ -335,7 +335,7 @@ async def run_connector(
 
         if status_callback is not None:
             status_callback("Connecting" if failures == 0 else "Reconnecting")
-        verified_runner = session_runner
+        runner_for_session = session_runner
         if status_callback is not None and session_runner is execute_owner_managed_read_session:
             connected_callback = status_callback
 
@@ -345,7 +345,7 @@ async def run_connector(
             ) -> None:
                 callback("Connected")
 
-            async def verified_runner(
+            async def signed_ready_runner(
                 *,
                 origin: str,
                 trusted_origin: str,
@@ -366,7 +366,9 @@ async def run_connector(
                     on_ready=report_ready,
                 )
 
-        task = asyncio.create_task(_run_owner_session(project, selected, key, verified_runner))
+            runner_for_session = signed_ready_runner
+
+        task = asyncio.create_task(_run_owner_session(project, selected, key, runner_for_session))
         revoked = asyncio.create_task(stop.wait())
         try:
             if not await _await_authorized_session(project, task, revoked):
