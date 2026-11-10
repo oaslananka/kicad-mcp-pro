@@ -150,7 +150,7 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
       <a className="entry-choice entry-choice-cloud" href={identityEnabled?"/sign-in":"#http-setup"}>
         <span className="entry-choice-icon"><Icon name="connections" size={23}/></span>
         <span className="entry-choice-copy"><small>02 · OPTIONAL / REMOTE</small><strong>Connect through Cloud</strong>
-          <span>Sign in, pair a computer and approve project access separately.</span><b>Review Cloud setup <Icon name="arrow" size={15}/></b></span>
+          <span>Sign in. Pair your computer. Approve each project and AI client separately.</span><b>Review Cloud setup <Icon name="arrow" size={15}/></b></span>
         <Icon name="arrow" size={19} className="entry-choice-arrow"/>
       </a>
     </section>
