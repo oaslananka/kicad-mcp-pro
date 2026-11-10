@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import secrets
 import socket
 import threading
@@ -68,7 +69,9 @@ def _running_http_server(app: ASGIApp) -> Iterator[str]:
             raise RuntimeError("native MCP v2 contract server did not stop")
 
 
-def _configure_native_v2_server(sample_project: Path, *, auth_token: str | None = None):
+def _configure_native_v2_server(
+    sample_project: Path, *, auth_token: str | None = None, profile: str = "minimal"
+):
     _ = sample_project
     cfg = get_config()
     cfg.transport = "streamable-http"
@@ -76,7 +79,7 @@ def _configure_native_v2_server(sample_project: Path, *, auth_token: str | None 
     cfg.stateful_http = False
     cfg.enable_tasks = False
     cfg.auth_token = auth_token
-    return build_server("minimal")
+    return build_server(profile)
 
 
 @pytest.mark.parametrize("client_name", SUPPORTED_HOST_PROFILES)
@@ -194,3 +197,47 @@ async def test_sdk_v2_supported_host_profiles_preserve_bearer_authorization(
     assert called.is_error is False
     assert called.content
     assert any("KiCad MCP Pro Server" in getattr(block, "text", "") for block in called.content)
+
+
+@pytest.mark.asyncio
+async def test_sdk_v2_readonly_mode_rejects_pcb_mutations_over_http(
+    sample_project: Path,
+) -> None:
+    """A real remote SDK session must not discover or execute PCB mutations."""
+    design_files = tuple(sample_project.glob("*.kicad_*"))
+    assert design_files
+    original_hashes = {path: hashlib.sha256(path.read_bytes()).hexdigest() for path in design_files}
+    cfg = get_config()
+    previous_mode = cfg.operating_mode
+    cfg.operating_mode = "readonly"
+    try:
+        server = _configure_native_v2_server(sample_project, profile="pcb_only")
+        forbidden = (
+            "pcb_add_track_segment",
+            "pcb_move_footprint",
+            "pcb_delete_items",
+            "pcb_push_commit",
+        )
+
+        with _running_http_server(server.streamable_http_app()) as base_url:
+            async with streamable_http_client(f"{base_url}/mcp") as streams:
+                async with ClientSession(
+                    streams[0],
+                    streams[1],
+                    client_info=Implementation(name="vscode-mcp", version="smoke"),
+                ) as session:
+                    await session.initialize()
+                    names = {tool.name for tool in (await session.list_tools()).tools}
+                    assert "pcb_get_tracks" in names
+                    assert set(forbidden).isdisjoint(names)
+
+                    for tool_name in forbidden:
+                        result = await session.call_tool(tool_name, {})
+                        assert result.is_error is True
+                        assert result.content
+
+        assert {
+            path: hashlib.sha256(path.read_bytes()).hexdigest() for path in design_files
+        } == original_hashes
+    finally:
+        cfg.operating_mode = previous_mode
