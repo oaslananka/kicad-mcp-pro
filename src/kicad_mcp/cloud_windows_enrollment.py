@@ -144,6 +144,13 @@ def _validate_windows_device_name(alias: str) -> None:
         raise WindowsEnrollmentError("Invalid device display name.")
 
 
+def _format_enrollment_denied(exc: Exception) -> WindowsEnrollmentError:
+    err_msg = str(exc).strip()
+    if err_msg and err_msg != _DENIED:
+        return WindowsEnrollmentError(f"{_DENIED} ({err_msg})")
+    return WindowsEnrollmentError(_DENIED)
+
+
 def enroll_windows_device(
     *,
     origin: str,
@@ -244,10 +251,7 @@ def enroll_windows_device(
             # Leave the owner key for explicit recovery/revocation: deleting it
             # would leave an unmanageable remotely registered device.
             raise WindowsPartialEnrollmentError(record_id) from exc
-        err_msg = str(exc).strip()
-        if not err_msg or err_msg == _DENIED:
-            raise WindowsEnrollmentError(_DENIED) from exc
-        raise WindowsEnrollmentError(f"{_DENIED} ({err_msg})") from exc
+        raise _format_enrollment_denied(exc) from exc
     finally:
         if key_saved and not committed and not redeem_attempted:
             _remove_unused_owner_credential(record_id, key_blob)

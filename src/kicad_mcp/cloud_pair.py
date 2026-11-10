@@ -142,7 +142,7 @@ def _post(
                     err_json = json.loads(payload)
                     if isinstance(err_json, dict) and "error" in err_json:
                         detail = str(err_json["error"])
-                except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+                except ValueError:
                     pass
                 msg = f"HTTP {response.status}"
                 if detail:
