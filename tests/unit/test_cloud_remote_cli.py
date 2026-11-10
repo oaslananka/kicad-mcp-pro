@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from kicad_mcp import cloud_user_cli, cloud_windows_connector, cloud_windows_user_cli, server
@@ -130,10 +131,16 @@ def test_remote_rejects_ambiguous_folder_selection(
     state, folder = remote_fixture
     result = CliRunner().invoke(server.app, ["remote", "--browse", "--project-dir", str(folder)])
     assert result.exit_code != 0
-    # Rich may insert ANSI styling and wrap this error across terminal widths.
-    # Both conflicting options must be identified, with no action performed.
+    # Rich can truncate the pretty-printed message, so assert the precise
+    # validation contract without depending on terminal width or ANSI output.
     assert "browse" in result.output
-    assert "project-dir" in result.output
+    with pytest.raises(typer.BadParameter, match=r"Use --browse or --project-dir, not both"):
+        cloud_user_cli.remote(
+            browse=True,
+            project_dir=folder,
+            cloud_origin=cloud_user_cli.DEFAULT_CLOUD_ORIGIN,
+            no_browser=False,
+        )
     assert state["calls"] == []
 
 
