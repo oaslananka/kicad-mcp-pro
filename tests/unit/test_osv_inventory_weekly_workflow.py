@@ -72,8 +72,6 @@ def test_osv_weekly_inventory_is_pinned_and_uploads_all_findings() -> None:
     assert tomllib.loads(config.read_text(encoding="utf-8")) == {}
 
 
-
-
 def test_osv_action_has_a_single_explicit_approved_repository() -> None:
     policy = json.loads((ROOT / ".github/actions-policy.json").read_text(encoding="utf-8"))
     assert "google/osv-scanner-action" in policy["allowed_action_repositories"]

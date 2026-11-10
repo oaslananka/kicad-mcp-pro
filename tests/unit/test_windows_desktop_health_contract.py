@@ -53,8 +53,6 @@ def test_windows_candidate_list_prefers_supported_stable_branch(monkeypatch) -> 
     assert "KiCad\\11.0\\bin\\kicad-cli.exe" in candidates[-1]
 
 
-
-
 def test_dashboard_health_long_windows_path_is_wrappable() -> None:
     assert "#health-checks .row { display: block;" in DASHBOARD_HTML
     assert "overflow-wrap: anywhere" in DASHBOARD_HTML

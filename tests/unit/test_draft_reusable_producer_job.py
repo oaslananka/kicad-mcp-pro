@@ -204,9 +204,7 @@ def test_new_reusable_role_requires_exact_completed_attest_and_upload(
 
 @pytest.mark.parametrize(
     "role",
-    (
-        "npm-draft-release-evidence",
-            ),
+    ("npm-draft-release-evidence",),
 )
 @pytest.mark.parametrize("mutation", ["missing", "skipped", "out-of-order", "duplicated"])
 def test_new_signed_package_provenance_step_precedes_attestation(role: str, mutation: str) -> None:
@@ -223,8 +221,6 @@ def test_new_signed_package_provenance_step_precedes_attestation(role: str, muta
         steps.append({**provenance, "number": 10})
     with pytest.raises(ValueError, match="SLSA provenance|required producer step"):
         verify_producer_job(fake, **args)
-
-
 
 
 def test_readonly_job_profile_matches_reviewed_workflow_step_names() -> None:
