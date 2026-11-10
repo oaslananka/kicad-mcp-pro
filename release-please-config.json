@@ -9,8 +9,7 @@
       "groupName": "kicad-mcp-pro",
       "components": [
         "mcp-server",
-        "mcp-npm",
-        "kicad-mcp-gui"
+        "mcp-npm"
       ]
     }
   ],
@@ -93,20 +92,6 @@
       "release-type": "node",
       "component": "protocol-schemas",
       "changelog-path": "CHANGELOG.md"
-    },
-    "src-tauri": {
-      "package-name": "kicad-mcp-gui",
-      "tag-prefix": "kicad-mcp-gui-v",
-      "release-type": "rust",
-      "component": "kicad-mcp-gui",
-      "changelog-path": "CHANGELOG.md",
-      "extra-files": [
-        {
-          "type": "json",
-          "path": "tauri.conf.json",
-          "jsonpath": "$.version"
-        }
-      ]
     }
   }
 }

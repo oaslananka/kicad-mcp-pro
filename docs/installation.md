@@ -53,128 +53,40 @@ partial pairing or claiming that the Cloud owner denied approval. Check the
 release notes for native Windows Cloud support before attempting pairing.
 
 
-## Guided desktop setup (introduced after GUI v4.10.0)
+## Local HTTP server (no desktop application)
 
-The new desktop **Get Started** surface is designed around one user outcome:
-**Choose project -> Connect AI -> Start working**. Cloud remains optional.
-The guided flow is merged into main, but the previously published v4.10.0
-desktop installers do not include it. Check the exact GUI release and its
-installer verification before assuming it is available in an installed app.
+Install or run the Python MCP server. The local browser dashboard and Streamable
+HTTP transport remain supported without Tauri or an installer.
 
-1. Open the desktop app. Use **Choose project** to select the KiCad project
-   folder; the local owner-only picker requires a loopback session and CSRF
-   verification, and a typed absolute path is available if the native dialog
-   cannot run. **Use project** applies the choice. It does not upload files.
-2. Choose a supported AI client and click **Connect**. The app first shows
-   which settings file will change and which existing MCP entries are kept.
-   **Apply reviewed settings** is a separate explicit action. It creates a
-   backup where applicable; the user verifies the actual connection inside
-   the chosen AI application. Advanced/manual setup remains available.
-3. For remote access only, choose **Sign in** then **Pair device and project**.
-   Approve the specific device in the first-party browser, inspect the pairing
-   result, explicitly enable the local Connector and review project/client
-   grants in **Cloud Devices**. Neither login nor pairing automatically grants
-   an AI client access. If pairing is unavailable on the installed platform,
-   local KiCad still works independently.
+~~~powershell
+uvx kicad-mcp-pro --transport streamable-http --host 127.0.0.1 --port 3334
+~~~
 
-Previously released installers and command-line interfaces retain their
-existing behavior until a newer build is published and installed. Build
-provenance is not operating-system code signing: confirm the specific release's
-signing status and integrity evidence. Neither merged source nor passing tests
-prove Cloud authorization or a real MSI upgrade.
+Enter `http://127.0.0.1:3334/mcp` in a Streamable HTTP-capable AI client.
+Use the loopback address unless you have intentionally configured
+authentication and an HTTPS reverse proxy for remote access.
 
-## Desktop app
+To open the owner-only setup dashboard instead:
 
-Download the installer for your operating system from the repository's GitHub
-Releases page. Published installer behavior depends on its exact release:
-the already published 4.9.0 and 4.10.0 desktop installers still require
-a discoverable external `uvx` runtime. Candidate desktop installers built with
-the bundled-bootstrap release workflow carry pinned `uv` and create their own user-scoped Python
-runtime/cache on first startup, requesting managed Python 3.13 for its
-desktop-owned environment. They do not install global Python or modify the
-user's independent `uv` / MCP CLI installations. The first online startup may
-take several minutes while Python and exact backend dependencies are prepared;
-the startup screen keeps showing progress instead of failing after 120 seconds.
-An online startup is required when the matching runtime is not yet cached.
+~~~powershell
+uvx kicad-mcp-pro dashboard --host 127.0.0.1 --port 3334 --open
+~~~
 
-Automatic updates are not enabled for the published desktop releases.
-The application includes Tauri updater integration, but automatic installation
-remains unavailable unless the given release configures a valid updater
-public key and publishes matching signed updater artifacts. An available GitHub
-tag alone is not permission to install an unsigned update. Published
-4.9.0 and 4.10.0 installers are unsigned; users should verify the official
-release SHA256 and provenance and expect potential OS publisher warnings.
+The dashboard opens in a normal browser at `http://127.0.0.1:3334/ui`.
+Its **Browse** action uses the local owner-only, CSRF-protected HTTP API
+to open the operating system's folder chooser. Choosing a folder does not
+by itself share a KiCad project or authorize an AI client.
 
-### Upgrade
+### Optional Cloud access
 
-1. Close the desktop application.
-2. Download the installer from the newer `kicad-mcp-gui-v*` GitHub release.
-3. Install it using the normal package flow for your operating system.
-4. Start the application and verify the displayed version and dashboard health.
+Open [KiCad MCP Cloud](https://kicad-mcp-pro.oaslananka.dev/) only when
+remote AI access is needed. Account sign-in, device pairing, Connector
+availability, and each per-project AI-client grant are separate.
+Cloud's HTTPS Streamable MCP endpoint is `/mcp`; neither signing in nor
+pairing shares project files automatically.
 
-### Rollback
-
-1. Close the desktop application.
-2. Download the installer from the previously trusted `kicad-mcp-gui-v*` release.
-3. Reinstall that version using the normal package flow for your operating system.
-4. Start the application and verify its version before reopening project work.
-
-Desktop installation does not rewrite KiCad project files. Keep normal project
-backups and verify release checksums or provenance when those assets are provided.
-
-### macOS
-
-The macOS desktop release is published as a `.dmg` asset (named `macos_*.dmg`)
-on the `kicad-mcp-gui-v*` GitHub release. Open the `.dmg` and drag the app into
-`Applications`.
-
-The current release is not Apple-codesigned, so macOS Gatekeeper may block the
-first launch. To allow it, open **System Settings → Privacy & Security**, find the
-blocked-app notice, and choose **Open Anyway**; then launch the app.
-
-The desktop app requires KiCad 10.x for full GUI/IPC capability. To enable it:
-
-1. Install KiCad 10.x from the official download (the macOS build is a universal
-   `.dmg`).
-2. Open KiCad and enable the IPC API server:
-   `KiCad → Preferences → Scripting → Enable IPC API Server`.
-3. Run `kicad-mcp-pro doctor` and confirm the KiCad CLI path, version, and IPC
-   status. On macOS the CLI is bundled at
-   `/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli`; set
-   `KICAD_MCP_KICAD_CLI` if auto-detection misses it.
-
-Without a running KiCad IPC server the app still works in file-backed and
-headless modes; live GUI operations report an IPC-disconnected state instead.
-
-To connect an MCP client on macOS, use the **Setup** view's **Client Config**
-step, or the `mcp-config generate` command and client paths in
-[Client Configuration](client-configuration.md).
-
-### Desktop/backend compatibility
-
-Each desktop release is coupled to the **same exact** `kicad-mcp-pro` backend
-version. For example, desktop `3.30.1` launches `kicad-mcp-pro==3.30.1`; it does
-not silently fall forward to a newer cached package or fall back to an older one.
-
-Before using an already-running backend or declaring a newly launched backend
-ready, the desktop reads `/api/health` and requires the machine-readable
-`desktopCompatibility` handshake to report:
-
-- the desktop API contract version expected by the GUI;
-- the same backend package version as the desktop release; and
-- the `exact-release` version policy.
-
-If another service or an incompatible backend is already listening on the
-desktop port, startup fails closed and reports the expected backend and contract
-instead of continuing with an unverified API. Stop that process and restart the
-desktop, or run the exact backend shown in the error message.
-
-An existing standalone `uvx` installation may reuse its cached environment.
-New bundled-bootstrap builds instead use only their application-owned runtime
-cache. Offline startup succeeds only after the matching Python and exact
-backend have been prepared, and never silently downgrades to a different
-version. If app-owned runtime preparation fails, use the desktop retry/repair
-path; do not install or change global Python to fix the desktop.
+Historic Tauri GUI releases remain archival GitHub artifacts but the desktop
+application and GUI release family are retired from future development.
 
 ## Disconnect, cleanup and uninstall
 

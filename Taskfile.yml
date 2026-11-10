@@ -231,12 +231,6 @@ tasks:
     cmds:
       - uv run kicad-mcp-pro tray
 
-  dev:tauri:
-    desc: Run the Tauri v2 desktop app in development mode (starts Python server automatically)
-    cmds:
-      - cmd: cd src-tauri && cargo run
-        silent: false
-
   test:web:
     desc: Run web dashboard API and SSE route tests
     cmds:
@@ -265,25 +259,8 @@ tasks:
     cmds:
       - uv run pytest tests/unit/test_web_routes.py::TestWebModule::test_dashboard_html_content -q
 
-  build:tauri:
-    desc: Build the Tauri v2 desktop app for production
-    cmds:
-      - cmd: cd src-tauri && cargo tauri build
-        silent: false
-
-  build:tauri:universal:
-    desc: Build macOS universal Tauri bundle
-    cmds:
-      - cmd: cd src-tauri && cargo tauri build -- --target universal-apple-darwin
-        silent: false
-
-  icons:tauri:
-    desc: Regenerate Tauri icons from the canonical SVG
-    cmds:
-      - task: icons:generate
-
   icons:generate:
-    desc: Regenerate tray and Tauri icon assets
+    desc: Regenerate first-party icon assets
     cmds:
       - uv run python scripts/generate_icons.py --source assets/icon.svg
 

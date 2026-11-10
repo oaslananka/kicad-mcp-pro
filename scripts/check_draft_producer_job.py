@@ -92,18 +92,6 @@ _REUSABLE_JOB_NAMES: dict[str, tuple[str, str, str, str]] = {
         "Attest npm launcher tarball",
         "Store npm draft preparation",
     ),
-    "gui-draft-installers": (
-        _REUSABLE_CALLER_NAME,
-        "gui / attest-and-store",
-        "Attest GUI installers",
-        "Store GUI draft installers",
-    ),
-    "gui-draft-evidence": (
-        _REUSABLE_CALLER_NAME,
-        "gui / attest-and-store",
-        "Attest GUI installers",
-        "Store GUI draft checksums and attestable evidence",
-    ),
     "container-build-source-evidence": (
         _REUSABLE_CALLER_NAME,
         "container / prepare",
@@ -124,8 +112,6 @@ _REUSABLE_JOB_NAMES: dict[str, tuple[str, str, str, str]] = {
 _REUSABLE_PROVENANCE_STEPS = {
     "protocol-schemas-release-evidence": "Attest Protocol Schemas SLSA build provenance",
     "npm-draft-release-evidence": "Attest npm SLSA build provenance",
-    "gui-draft-installers": "Attest GUI SLSA build provenance",
-    "gui-draft-evidence": "Attest GUI SLSA build provenance",
 }
 
 
@@ -226,18 +212,6 @@ def _require_provenance_before(
         raise ValueError(message)
 
 
-def _check_gui_companion_uploads(steps: list[object], attest_number: int) -> None:
-    # The final GUI package and checksum/SBOM evidence are separate ZIPs.
-    # A successful job must have completed BOTH uploads after attestation.
-    for label in (
-        "Store GUI draft installers",
-        "Store GUI draft checksums and attestable evidence",
-    ):
-        uploaded = _successful_step_numbers(steps, label)
-        if len(uploaded) != 1 or uploaded[0] <= attest_number:
-            raise ValueError("GUI draft producer lacks its companion artifact upload")
-
-
 def _check_required_job_steps(
     steps: list[object], role: str, producer_profile: str = "legacy"
 ) -> None:
@@ -264,8 +238,6 @@ def _check_required_job_steps(
                 else "draft producer SLSA provenance must precede signed asset attestation"
             )
             _require_provenance_before(steps, label, attest[0], message)
-        if role in ("gui-draft-installers", "gui-draft-evidence"):
-            _check_gui_companion_uploads(steps, attest[0])
 
     if min(uploaded) <= attest[0]:
         raise ValueError("producer artifact upload preceded its attestation")

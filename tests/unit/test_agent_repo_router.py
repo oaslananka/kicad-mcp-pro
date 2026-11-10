@@ -36,11 +36,6 @@ NESTED_AGENT_CONTRACTS = {
         "least-privileged",
         "operating-mode",
     ),
-    "src-tauri/AGENTS.md": (
-        "desktop API contract",
-        "loopback",
-        "cargo check --manifest-path src-tauri/Cargo.toml",
-    ),
     "packages/AGENTS.md": (
         "mcp-npm/",
         "protocol-schemas/",

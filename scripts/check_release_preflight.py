@@ -6,8 +6,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -63,10 +61,6 @@ def _collect_versions() -> dict[str, str]:
     server = _read_json("server.json")
     wrapper = _read_repo_json("packages/mcp-npm/package.json")
     manifest = _read_repo_json(".release-please-manifest.json")
-    tauri_cargo = tomllib.loads(
-        (REPO_ROOT / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8")
-    )
-    tauri_config = _read_repo_json("src-tauri/tauri.conf.json")
     versions = {
         "pyproject.toml": _project_version(),
         "src/kicad_mcp/__init__.py": _init_version(),
@@ -74,9 +68,6 @@ def _collect_versions() -> dict[str, str]:
         "packages/mcp-npm/package.json": str(wrapper.get("version", "")),
         ".release-please-manifest.json .": str(manifest.get(".", "")),
         ".release-please-manifest.json packages/mcp-npm": str(manifest.get("packages/mcp-npm", "")),
-        "src-tauri/Cargo.toml": str(tauri_cargo.get("package", {}).get("version", "")),
-        "src-tauri/tauri.conf.json": str(tauri_config.get("version", "")),
-        ".release-please-manifest.json src-tauri": str(manifest.get("src-tauri", "")),
     }
     packages = server.get("packages")
     if not isinstance(packages, list) or not packages:
@@ -100,118 +91,6 @@ def _check_versions() -> list[str]:
         rendered = ", ".join(f"{source}={version}" for source, version in versions.items())
         errors.append(f"release metadata version drift detected: {rendered}")
     return errors
-
-
-def _check_desktop_backend_contract() -> list[str]:
-    python_contract = (ROOT / "src" / "kicad_mcp" / "compatibility.py").read_text(encoding="utf-8")
-    tauri_launcher = (REPO_ROOT / "src-tauri" / "src" / "lib.rs").read_text(encoding="utf-8")
-
-    def extract(text: str, pattern: str, label: str) -> tuple[str | None, list[str]]:
-        match = re.search(pattern, text)
-        if match is None:
-            return None, [f"{label} is missing"]
-        return match.group(1), []
-
-    python_api, errors = extract(
-        python_contract,
-        r'DESKTOP_API_CONTRACT_VERSION: Final = "([^"]+)"',
-        "Python desktop API contract version",
-    )
-    tauri_api, tauri_api_errors = extract(
-        tauri_launcher,
-        r'const DESKTOP_API_CONTRACT_VERSION: &str = "([^"]+)";',
-        "Tauri desktop API contract version",
-    )
-    errors.extend(tauri_api_errors)
-    python_policy, python_policy_errors = extract(
-        python_contract,
-        r'DESKTOP_BACKEND_VERSION_POLICY: Final = "([^"]+)"',
-        "Python desktop backend version policy",
-    )
-    errors.extend(python_policy_errors)
-    tauri_policy, tauri_policy_errors = extract(
-        tauri_launcher,
-        r'const DESKTOP_BACKEND_VERSION_POLICY: &str = "([^"]+)";',
-        "Tauri desktop backend version policy",
-    )
-    errors.extend(tauri_policy_errors)
-
-    if python_api is not None and tauri_api is not None and python_api != tauri_api:
-        errors.append(
-            f"desktop API contract drift detected: python={python_api}, tauri={tauri_api}"
-        )
-    if python_policy is not None and tauri_policy is not None and python_policy != tauri_policy:
-        errors.append(
-            "desktop backend version policy drift detected: "
-            f"python={python_policy}, tauri={tauri_policy}"
-        )
-    if python_policy is not None and python_policy != "exact-release":
-        errors.append(
-            f"desktop backend version policy must remain exact-release; found {python_policy!r}"
-        )
-
-    exact_spec = 'format!("kicad-mcp-pro=={}", env!("CARGO_PKG_VERSION"))'
-    if exact_spec not in tauri_launcher:
-        errors.append(
-            "desktop launcher must derive an exact kicad-mcp-pro==<GUI version> spec "
-            "from CARGO_PKG_VERSION"
-        )
-    return errors
-
-
-def _check_tauri_lockfile() -> list[str]:
-    lockfile = REPO_ROOT / "src-tauri" / "Cargo.lock"
-    if not lockfile.is_file():
-        return ["src-tauri/Cargo.lock is missing; desktop releases require a committed lockfile"]
-    try:
-        data = tomllib.loads(lockfile.read_text(encoding="utf-8"))
-    except tomllib.TOMLDecodeError:
-        return ["src-tauri/Cargo.lock is not valid TOML"]
-    packages = data.get("package")
-    if data.get("version") not in {3, 4} or not isinstance(packages, list):
-        return ["src-tauri/Cargo.lock is not a valid generated Cargo lockfile"]
-
-    manifest_path = REPO_ROOT / "src-tauri" / "Cargo.toml"
-    try:
-        manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
-        return ["src-tauri/Cargo.toml is missing or invalid"]
-    manifest_package = manifest.get("package")
-    if not isinstance(manifest_package, dict):
-        return ["src-tauri/Cargo.toml must define a package table"]
-    manifest_name = manifest_package.get("name")
-    manifest_version = manifest_package.get("version")
-    root_package = next(
-        (package for package in packages if package.get("name") == manifest_name),
-        None,
-    )
-    if not isinstance(root_package, dict):
-        return ["src-tauri/Cargo.lock does not contain the root Tauri package"]
-    lock_version = str(root_package.get("version", ""))
-    if lock_version != manifest_version:
-        return [
-            "src-tauri/Cargo.lock root package version does not match Cargo.toml: "
-            f"lock={lock_version}, manifest={manifest_version}"
-        ]
-
-    cargo = shutil.which("cargo")
-    if cargo is None:
-        return ["cargo is unavailable; cannot validate src-tauri/Cargo.lock freshness"]
-    try:
-        result = subprocess.run(
-            [cargo, "metadata", "--locked", "--format-version", "1", "--no-deps"],
-            cwd=REPO_ROOT / "src-tauri",
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    except OSError as exc:
-        return [f"cargo metadata could not start: {exc}"]
-    if result.returncode != 0:
-        return [
-            "src-tauri/Cargo.lock is stale; run cargo metadata --locked after updating Cargo.toml"
-        ]
-    return []
 
 
 def _check_protocol_schema_version() -> list[str]:
@@ -326,8 +205,6 @@ def main() -> int:
     version = _project_version()
     errors = [
         *_check_versions(),
-        *_check_desktop_backend_contract(),
-        *_check_tauri_lockfile(),
         *_check_protocol_schema_version(),
         *_check_citation(version),
         *_check_changelog(version),

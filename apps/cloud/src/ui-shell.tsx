@@ -5,15 +5,9 @@ import {Icon} from "./ui-icons.js";
 export type PageKind="home"|"sign-in"|"account"|"consent"|"connections"|"devices"|"notice";
 type Props={title:string;eyebrow?:string;summary?:string;kind:PageKind;children:ReactNode;navEnabled?:boolean;actions?:ReactNode};
 const workspacePages=new Set<PageKind>(["account","connections","devices"]);
-// Keep one explicit release pin; the UI parity test rejects drift from Tauri.
-const guiReleaseVersion="4.10.0";
-const guiReleaseTag="kicad-mcp-gui-v"+guiReleaseVersion;
-const guiReleaseBase="https://github.com/oaslananka/kicad-mcp-pro/releases";
-const desktopReleaseUrl=guiReleaseBase+"/tag/"+guiReleaseTag;
-const windowsInstallerUrl=guiReleaseBase+"/download/"+guiReleaseTag+"/windows_KiCad-MCP-Pro_"+guiReleaseVersion+"_x64-setup.exe";
-const macInstallerUrl=guiReleaseBase+"/download/"+guiReleaseTag+"/macos_KiCad-MCP-Pro_"+guiReleaseVersion+"_aarch64.dmg";
-const linuxInstallerUrl=guiReleaseBase+"/download/"+guiReleaseTag+"/linux_KiCad-MCP-Pro_"+guiReleaseVersion+"_amd64.AppImage";
-
+// The Python Streamable HTTP transport stays; no Tauri desktop binary is required.
+const httpGuideUrl="https://oaslananka.github.io/kicad-mcp-pro/installation/";
+const localHttpCommand="uvx kicad-mcp-pro --transport streamable-http --host 127.0.0.1 --port 3334";
 const publicDescription="KiCad MCP Cloud lets you pair your computer and grant selected AI assistants read-only access to approved KiCad project metadata.";
 const publicSchema=JSON.stringify({
   "@context":"https://schema.org",
@@ -88,7 +82,7 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
         <div className="header-right">
           <span className="release-label"><Icon name="shield" size={15}/> Your projects. Your permissions.</span>
           <nav className="public-nav" aria-label="Primary"><NavLink href="/" current={kind==="home"}>Overview</NavLink>
-            <a href={desktopReleaseUrl} target="_blank" rel="noopener noreferrer">Get the app</a>
+            <a href={kind==="home"?"#http-setup":httpGuideUrl} target={kind==="home"?undefined:"_blank"} rel={kind==="home"?undefined:"noopener noreferrer"}>HTTP setup</a>
             {navEnabled?<NavLink href="/account" current={false}>Workspace</NavLink>:null}</nav>
         </div>
       </div></header>}
@@ -117,21 +111,15 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
         <span className={identityEnabled?"status-pill neutral":"status-pill pending"}>
           {identityEnabled?"Account sign-in available":"Account access pending"}
         </span>
-        <div className="landing-product-label"><Icon name="shield" size={15}/> LOCAL FIRST · CLOUD WHEN YOU NEED IT</div>
-        <h2>Use KiCad with your AI tools.<br/><span className="landing-accent">Your files stay yours.</span></h2>
-        <p>Start on your computer, without creating an account. When you want remote AI access, connect to Cloud and approve only the computers and projects you choose.</p>
-        <div className="action-row">{identityEnabled?
-          <a className="button primary" href="/sign-in">Connect to Cloud <Icon name="arrow" size={17}/></a>:
-          <span className="button disabled" aria-disabled="true">Account access pending</span>}
-          <a className="button secondary" href={desktopReleaseUrl} target="_blank" rel="noopener noreferrer">Get desktop app <Icon name="arrow" size={15}/></a>
+        <div className="landing-product-label"><Icon name="shield" size={15}/> HTTP FIRST · CLOUD OPTIONAL</div>
+        <h2>Connect KiCad to your AI.<br/><span className="landing-accent">Stay in control.</span></h2>
+        <p>Run a local MCP server over HTTP. Add Cloud only when you need remote AI access, and approve the exact projects you share.</p>
+        <div className="action-row">
+          <a className="button primary" href="#http-setup">Start local HTTP <Icon name="arrow" size={17}/></a>
+          {identityEnabled?<a className="button secondary" href="/sign-in">Open Cloud workspace <Icon name="arrow" size={16}/></a>
+            :<span className="button disabled" aria-disabled="true">Cloud sign-in pending</span>}
         </div>
-        <div className="landing-platforms" aria-label={"Download KiCad MCP Pro v"+guiReleaseVersion}>
-          <span>Download KiCad MCP Pro v{guiReleaseVersion} for</span>
-          <a href={windowsInstallerUrl} target="_blank" rel="noopener noreferrer">Windows x64</a>
-          <a href={macInstallerUrl} target="_blank" rel="noopener noreferrer">macOS Apple Silicon</a>
-          <a href={linuxInstallerUrl} target="_blank" rel="noopener noreferrer">Linux x64</a>
-        </div>
-        <p className="hero-note"><Icon name="shield" size={16}/> Project access always requires separate approval.</p>
+        <p className="hero-note"><Icon name="shield" size={16}/> Local HTTP requires no Cloud account. Remote project access needs explicit approval.</p>
       </div>
       <div className="topology-panel" aria-label="Current connection availability">
         <div className="topology-eyebrow">ACCESS ARCHITECTURE <span className="topology-eyebrow-dot"/></div>
@@ -153,40 +141,48 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
       </div>
     </section>
     <section className="entry-choices" aria-label="Choose how to start">
-      <a className="entry-choice" href={desktopReleaseUrl} target="_blank" rel="noopener noreferrer">
+      <a className="entry-choice entry-choice-primary" href="#http-setup">
         <span className="entry-choice-icon"><Icon name="cpu" size={23}/></span>
-        <span><small>LOCAL / NO ACCOUNT NEEDED</small><strong>Start with KiCad on your computer</strong>
-          <span>Download the desktop app. It checks its matching backend before opening your workspace.</span></span>
+        <span className="entry-choice-copy"><small>01 · LOCAL / NO ACCOUNT</small><strong>Run the HTTP server</strong>
+          <span>Keep KiCad projects on your computer. Connect an AI client.</span><b>View the command <Icon name="arrow" size={15}/></b></span>
         <Icon name="arrow" size={19} className="entry-choice-arrow"/>
       </a>
-      <a className="entry-choice" href={identityEnabled?"/sign-in":"#how-it-works"}>
+      <a className="entry-choice entry-choice-cloud" href={identityEnabled?"/sign-in":"#http-setup"}>
         <span className="entry-choice-icon"><Icon name="connections" size={23}/></span>
-        <span><small>OPTIONAL / REMOTE AI</small><strong>Connect an AI assistant</strong>
-          <span>Sign in, approve a device, then choose the projects that AI can read.</span></span>
+        <span className="entry-choice-copy"><small>02 · OPTIONAL / REMOTE</small><strong>Connect through Cloud</strong>
+          <span>Sign in, pair a computer and approve project access separately.</span><b>Review Cloud setup <Icon name="arrow" size={15}/></b></span>
         <Icon name="arrow" size={19} className="entry-choice-arrow"/>
       </a>
     </section>
+    <section className="card http-setup-callout" id="http-setup" aria-labelledby="http-start-title">
+      <div className="http-setup-heading">
+        <span className="http-setup-icon"><Icon name="cpu" size={22}/></span>
+        <div><span className="card-kicker">LOCAL · STREAMABLE HTTP</span>
+          <h2 id="http-start-title">Start in your terminal</h2>
+          <p>Use the existing Python HTTP server on your machine. Run the Python service directly.</p></div>
+      </div>
+      <code className="http-command">{localHttpCommand}</code>
+      <div className="http-setup-footer"><span>Local endpoint: <code>http://127.0.0.1:3334/mcp</code></span>
+        <a className="text-link" href={httpGuideUrl} target="_blank" rel="noopener noreferrer">Setup guide <Icon name="arrow" size={15}/></a></div>
+    </section>
     <section className="next-section" aria-labelledby="how-it-works">
-      <div className="section-head"><div><div className="card-kicker">A CLEAR SETUP PATH</div>
-        <h2 id="how-it-works">From download to your first AI connection</h2></div>
-        <p>Account access, device access and project permissions remain separate.</p></div>
-      <details className="home-setup-guide" open={true}><summary>Four steps, clearly explained <Icon name="arrow" size={15}/></summary><div className="steps-grid">
-        <div className="step"><div className="step-index"><span className="step-icon"><Icon name="key" size={19}/></span><span>01</span></div><h3>Get the desktop app</h3><p>Run KiCad MCP Pro locally without an account. Cloud is optional for remote access.</p><a className="text-link" href={desktopReleaseUrl} target="_blank" rel="noopener noreferrer">Get the app <Icon name="arrow" size={14}/></a></div>
-        <div className="step"><div className="step-index"><span className="step-icon"><Icon name="devices" size={19}/></span><span>02</span></div><h3>Pair your computer (Cloud only)</h3><p>If remote access is needed, sign in and explicitly approve your computer in the Cloud workspace. Pairing never shares projects.</p><span className="step-state">Your approval required</span></div>
-        <div className="step"><div className="step-index"><span className="step-icon"><Icon name="connections" size={19}/></span><span>03</span></div><h3>Connect your AI client</h3><p>Use the in-app setup for local AI, or review the Cloud connection request. No terminal command is required to browse the app.</p></div>
-        <div className="step"><div className="step-index"><span className="step-icon"><Icon name="cpu" size={19}/></span><span>04</span></div><h3>Choose exact projects</h3><p>Keep local files private; a remote client sees only approved read-only project data.</p></div>
-      </div>
+      <div className="section-head"><div><div className="card-kicker">ONLY WHEN NEEDED</div>
+        <h2 id="how-it-works">Need remote AI access?</h2></div>
+        <p>Each permission is independent.</p></div>
+      <details className="home-setup-guide"><summary>See Cloud connection steps <Icon name="arrow" size={15}/></summary>
+        <div className="steps-grid">
+          <div className="step"><div className="step-index"><span className="step-icon"><Icon name="key" size={19}/></span><span>01</span></div><h3>Sign in</h3><p>Use Cloud only if you need remote MCP access.</p></div>
+          <div className="step"><div className="step-index"><span className="step-icon"><Icon name="devices" size={19}/></span><span>02</span></div><h3>Pair a computer</h3><p>Approve a Connector device in your browser. Pairing does not share projects.</p></div>
+          <div className="step"><div className="step-index"><span className="step-icon"><Icon name="connections" size={19}/></span><span>03</span></div><h3>Authorize your AI</h3><p>Review OAuth consent for your client.</p></div>
+          <div className="step"><div className="step-index"><span className="step-icon"><Icon name="shield" size={19}/></span><span>04</span></div><h3>Grant project access</h3><p>Choose exactly which registered project metadata your AI can read.</p></div>
+        </div>
       </details>
-      <div className="setup-help" aria-label="Setup questions">
-        <p><strong>No projects listed?</strong> Check that your local Connector is running and that
-          your paired computer appears under <a href="/devices">Devices &amp; projects</a>.
-          Register a project there and grant your chosen AI client access. Signing in
-          or pairing alone never shares a project.</p>
-        <p><strong>Want to stop sharing?</strong> Open <a href="/connections">AI connections</a> to
-          revoke a client's authorization, or turn off the individual project grant
-          in your workspace. Your KiCad design files stay on your computer, and
-          hosted MCP project access is currently read-only.</p>
-      </div>
+      <details className="setup-faq"><summary>Troubleshooting &amp; permissions <Icon name="arrow" size={15}/></summary>
+        <div className="setup-help">
+          <p><strong>No projects listed?</strong> Check that your local Connector is running and that your paired computer appears under <a href="/devices">Devices &amp; projects</a>; then authorize a project for your AI client.</p>
+          <p><strong>Want to stop sharing?</strong> Open <a href="/connections">AI connections</a> to revoke authorization. Signing in never shares files by itself.</p>
+        </div>
+      </details>
     </section>
   </div>;
 }
@@ -226,7 +222,7 @@ export function SignIn({query,providers,pairing=false}:{
       {providers.length===0?<p className="auth-unavailable" role="status">Account sign-in is temporarily unavailable. Your local KiCad workspace continues to work without Cloud.</p>:null}
       {pairing?<script defer={true} src="/assets/pairing-login-continuation.js"></script>:null}
       <div className="auth-footnote"><Icon name="shield" size={19}/><p>Signing in does not pair a device or share a project. Access requires independent, explicit approval.</p></div>
-      <a className="auth-download-link" href={desktopReleaseUrl} target="_blank" rel="noopener noreferrer">No desktop app yet? Get KiCad MCP Pro <Icon name="arrow" size={15}/></a>
+      <a className="auth-download-link" href={httpGuideUrl} target="_blank" rel="noopener noreferrer">Prefer local use? Set up HTTP without Cloud <Icon name="arrow" size={15}/></a>
     </div>
   </section>;
 }
@@ -236,39 +232,47 @@ export function Account({name,providers=["google","github"],linked=[],snapshot}:
   readonly linked?:ReadonlyArray<"google"|"github">;
   readonly snapshot?:{devices:number;projects:number;clients:number;grants:number};
 }){
+  const nextAction = !snapshot
+    ? {id:"review-devices",title:"See what's connected",detail:"Review your computers and project access.",href:"/devices",label:"Open devices"}
+    : snapshot.devices===0
+    ? {id:"pair-device",title:"Connect your first computer",detail:"Start with your KiCad device. Signing in shares nothing.",href:"/devices",label:"Review devices"}
+    : snapshot.projects===0
+    ? {id:"add-project",title:"Choose a KiCad project",detail:"Register only a project you wish to authorize.",href:"/devices#registered-projects",label:"Review projects"}
+    : snapshot.clients===0
+    ? {id:"connect-client",title:"Connect an AI tool",detail:"Choose an assistant and review its access request.",href:"/connections",label:"Manage AI connections"}
+    : snapshot.grants===0
+    ? {id:"grant-access",title:"Decide what AI can see",detail:"Project access is separate from account consent.",href:"/devices#registered-projects",label:"Review permissions"}
+    : {id:"review-access",title:"Review your connections",detail:"Saved permissions and current device status are separate.",href:"/devices",label:"Review access"};
   return <div className="page-stack account-dashboard">
     <script defer={true} src="/assets/pairing-login-continuation.js"></script>
     <section className="account-welcome" aria-label="Account status">
       <div className="account-banner">
         <span className="avatar" aria-hidden="true">{name.trim().slice(0,1).toUpperCase()||"U"}</span>
         <div><div className="card-kicker">SIGNED-IN WORKSPACE</div>
-          <h2>{name}</h2><p>Manage your Cloud identity, paired devices and explicit project permissions.</p></div>
+          <h2>{name}</h2><p>Your devices, AI connections and project access.</p></div>
       </div>
       <span className="status-pill ready"><Icon name="check" size={14}/> Signed in</span>
+    </section>
+    <section className="premium-focus-panel" aria-label="Workspace next action" data-next-action={nextAction.id}>
+      <div><span className="focus-eyebrow"><Icon name="spark" size={16}/> YOUR NEXT STEP</span>
+        <h2>{nextAction.title}</h2><p>{nextAction.detail}</p></div>
+      <a className="button primary" href={nextAction.href}>{nextAction.label} <Icon name="arrow" size={18}/></a>
     </section>
     {snapshot?<section className="card detail-card workspace-snapshot-card" aria-label="Workspace snapshot">
       <div className="card-kicker">WORKSPACE SNAPSHOT</div>
       <h2>Workspace snapshot</h2>
       <div className="snapshot-grid">
-        <div className="snapshot-card">
-          <div className="metric">{snapshot.devices}</div>
-          <div className="metric-label">Paired devices</div>
-        </div>
-        <div className="snapshot-card">
-          <div className="metric">{snapshot.projects}</div>
-          <div className="metric-label">Enabled projects</div>
-        </div>
-        <div className="snapshot-card">
-          <div className="metric">{snapshot.clients}</div>
-          <div className="metric-label">AI clients</div>
-        </div>
-        <div className="snapshot-card">
-          <div className="metric">{snapshot.grants}</div>
-          <div className="metric-label">Project grants</div>
-        </div>
+        {([
+          {value:snapshot.devices,label:"Paired devices",href:"/devices",icon:"devices"},
+          {value:snapshot.projects,label:"Enabled projects",href:"/devices#registered-projects",icon:"cpu"},
+          {value:snapshot.clients,label:"AI clients",href:"/connections",icon:"connections"},
+          {value:snapshot.grants,label:"Project grants",href:"/devices#registered-projects",icon:"shield"}
+        ] as const).map(item=><a className="snapshot-card" href={item.href} key={item.label}>
+          <span className="snapshot-icon"><Icon name={item.icon} size={19}/></span>
+          <div className="metric">{item.value}</div><div className="metric-label">{item.label}</div>
+          <Icon name="arrow" size={16} className="snapshot-link-arrow"/>
+        </a>)}
       </div>
-      <p className="snapshot-summary-text">{snapshot.devices} paired devices · {snapshot.projects} enabled projects · {snapshot.clients} authorized AI clients · {snapshot.grants} saved project permissions</p>
-      <div className="snapshot-next-action">Next: {!snapshot.devices?<a className="text-link" href="/devices">Pair a computer <Icon name="arrow" size={14}/></a>:!snapshot.projects?<a className="text-link" href="/devices#registered-projects">Register a project <Icon name="arrow" size={14}/></a>:!snapshot.clients?<a className="text-link" href="/connections">Connect an AI client <Icon name="arrow" size={14}/></a>:!snapshot.grants?<a className="text-link" href="/devices#registered-projects">Grant project access <Icon name="arrow" size={14}/></a>:<a className="text-link" href="/devices">Review device and project access <Icon name="arrow" size={14}/></a>}</div>
       <p className="card-footnote-inline"><Icon name="lock" size={13}/> Saved permissions do not guarantee a connected device or an active KiCad session.</p>
     </section>:<p role="status">Workspace snapshot unavailable. Review devices and connections below.</p>}
     <section className="overview-tiles" aria-label="Workspace areas">
@@ -294,12 +298,12 @@ export function Account({name,providers=["google","github"],linked=[],snapshot}:
           <h2 id="connection-checklist">Your connection checklist</h2></div>
           <span className="section-note">Each approval is independent</span>
         </div>
-        <ol className="checklist-list">
+        <details className="checklist-disclosure"><summary>Show detailed checklist <Icon name="arrow" size={15}/></summary><ol className="checklist-list">
           <li><span className="checklist-number complete"><Icon name="check" size={16}/></span><div><h3>Cloud account</h3><p>You're signed in to your workspace.</p></div><span className="status-pill ready">Signed in</span></li>
           <li><span className="checklist-number">02</span><div><h3>Computer &amp; project</h3><p>Review actual device status and register projects on your computer.</p></div><a className="text-link" href="/devices">Review devices <Icon name="arrow" size={15}/></a></li>
           <li><span className="checklist-number">03</span><div><h3>AI connection</h3><p>Connect a compatible AI client and review its account permissions.</p></div><a className="text-link" href="/connections">Manage connections <Icon name="arrow" size={15}/></a></li>
           <li><span className="checklist-number">04</span><div><h3>Project permissions</h3><p>Grant your authorized AI client access to a specific registered project.</p></div><a className="text-link" href="/devices#registered-projects">Review projects <Icon name="arrow" size={15}/></a></li>
-        </ol>
+        </ol></details>
       </section>
       <aside className="account-side">
         <section className="card account-security" aria-labelledby="sign-in-methods">

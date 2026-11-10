@@ -19,7 +19,7 @@ INTERNAL = {"test", "style"}
 SHA_LINK = re.compile(r"/commit/([0-9a-f]{7,40})(?![0-9a-f])")
 TYPE = re.compile(r"^(?P<kind>[a-z]+)(?:\([^)]+\))?!?\s*:")
 HEADER = re.compile(r"^## \[?(?P<version>\d+\.\d+\.\d+)\]?(?:\(|\s|$)", re.M | re.ASCII)
-FAMILIES = {"mcp-server", "mcp-npm", "kicad-mcp-gui"}
+FAMILIES = {"mcp-server", "mcp-npm"}
 
 
 class AuditError(Exception):

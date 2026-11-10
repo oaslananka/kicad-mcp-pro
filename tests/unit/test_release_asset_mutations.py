@@ -59,14 +59,6 @@ def _entry(**overrides: object) -> dict[str, Any]:
 
 
 EXPECTED_REPOSITORY_INVENTORY = {
-    ("gui-release.yml", "create-release", "Prepare release inventory", "create_release", False),
-    (
-        "gui-release.yml",
-        "create-release",
-        "Upload installers and evidence to GitHub Release",
-        "upload_asset",
-        True,
-    ),
     (
         "publish-kicad-pcm.yml",
         "publish",

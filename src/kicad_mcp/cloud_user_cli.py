@@ -155,7 +155,7 @@ def _browse_windows_project_folder() -> Path:
             display = ctypes.create_unicode_buffer(260)
             selection = BrowseInfo()
             # The backend is not in the foreground; own the current user window
-            # so the folder chooser appears above the desktop app, not behind it.
+            # so the folder chooser appears above the calling terminal/browser.
             selection.hwndOwner = user.GetForegroundWindow()
             selection.pszDisplayName = ctypes.cast(display, wintypes.LPWSTR)
             selection.lpszTitle = "Choose your local KiCad project folder"

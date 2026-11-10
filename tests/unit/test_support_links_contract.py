@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import yaml
@@ -53,30 +52,3 @@ def test_mobile_dashboard_does_not_hide_sponsor_links() -> None:
     assert ".nav-sep, .nav-label { display: none; }" in DASHBOARD_HTML
     assert ".nav-support-group { display: flex" in DASHBOARD_HTML
     assert ".nav-sep, .nav-label, .nav-support-group { display: none; }" not in DASHBOARD_HTML
-
-
-def test_tauri_bootstrap_screen_exposes_support_actions() -> None:
-    html = (ROOT / "src-tauri" / "frontend" / "index.html").read_text(encoding="utf-8")
-
-    assert GITHUB_SPONSORS in html
-    assert BUY_ME_A_COFFEE in html
-    assert "GitHub Sponsors" in html
-    assert "Buy me a coffee" in html
-    assert html.count('rel="noopener noreferrer"') >= 2
-
-
-def test_native_browser_bridge_preserves_browser_security_boundary() -> None:
-    rust = (ROOT / "src-tauri" / "src" / "lib.rs").read_text(encoding="utf-8")
-    html = (ROOT / "src-tauri" / "frontend" / "index.html").read_text(encoding="utf-8")
-    assert "fn allowed_external_link(url: &str) -> bool" in rust
-    assert "fn open_external_link(" in rust
-    assert re.search(r"app\.shell\(\)\s*\.open\(url, None\)", rust) is not None
-    assert "open_external_link," in rust
-    for url in [GITHUB_SPONSORS, BUY_ME_A_COFFEE]:
-        assert url in rust
-        assert url in html
-    assert "await invoke('open_external_link', {url: link.href})" in html
-    assert "await invoke('open_external_link', {url: link.href})" in DASHBOARD_HTML
-    assert "typeof invoke !== 'function'" in DASHBOARD_HTML
-    assert "Could not open the system browser" in DASHBOARD_HTML
-    assert "https://kicad-mcp-pro.oaslananka.dev/sign-in" in rust

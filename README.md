@@ -91,14 +91,25 @@ separate until the qualification work in #730 is complete.
 
 ## Quick Start
 
-### Desktop App
+### Local HTTP and browser dashboard
 
-Download the latest installer from the
-[GitHub releases page](https://github.com/oaslananka/kicad-mcp-pro/releases).
-The Tauri desktop app starts the Python dashboard server automatically and opens
-the GUI at `http://127.0.0.1:3334/ui`. Desktop releases launch the matching exact
-backend version and verify its desktop compatibility handshake before use; see
-[Installation](docs/installation.md#desktopbackend-compatibility).
+No desktop installer or Tauri application is required. The Python server retains
+Streamable HTTP and the browser dashboard. Start the local MCP endpoint:
+
+```bash
+uvx kicad-mcp-pro --transport streamable-http --host 127.0.0.1 --port 3334
+```
+
+Then connect your MCP client to `http://127.0.0.1:3334/mcp`.
+To open the owner-only browser dashboard:
+
+```bash
+uvx kicad-mcp-pro dashboard --host 127.0.0.1 --port 3334 --open
+```
+
+The local server and dashboard work without Cloud sign-in. Cloud access is
+optional and requires separate authorization for devices and project metadata.
+See [Installation](docs/installation.md) for setup and security details.
 
 ### CLI (recommended)
 
@@ -134,8 +145,8 @@ for the full instructions. Optional Cloud requires separate browser pairing
 and owner approval; local MCP does not depend on it.
 
 For disposable testing without a persistent installation, `uvx kicad-mcp-pro
-quickstart` remains available, as do `tray`, `dashboard --open`, and
-`--transport streamable-http --port 3334` for their respective tasks.
+quickstart` remains available. Use `dashboard --open` for the local browser UI,
+or `--transport streamable-http --port 3334` to run an HTTP MCP endpoint.
 
 ### KiCad PCB Editor Companion (development preview)
 

@@ -10,13 +10,12 @@ KiCad MCP Pro uses reviewable dependency declarations, lockfiles, audit jobs, an
 | Node / npm / pnpm | `package.json`, `pnpm-lock.yaml`, package-level lockfiles | Use lockfiles and Corepack-managed package managers. |
 | Docker | `Dockerfile` | Pin base images by digest and avoid unpinned package-manager bootstrap steps. |
 | GitHub Actions | `.github/workflows/*.yml` | Pin third-party Actions to full commit SHAs and keep job permissions minimal. |
-| Rust / Tauri | Cargo manifests and lockfiles where present | Keep generated lockfiles under version control when used for release artifacts. |
 
 ## Automated update ownership
 
 GitHub Dependabot is the single normal dependency-update source for this repository.
 `.github/dependabot.yml` covers the root `uv` project, npm/pnpm package locations,
-GitHub Actions, Docker/Docker Compose, and the Tauri Cargo project. Renovate is not
+GitHub Actions, and Docker/Docker Compose. Renovate is not
 part of the active update path, so the repository does not keep a second bot
 configuration that could create duplicate update pull requests.
 
@@ -31,7 +30,6 @@ pull requests and full CI runs at the same time:
 | npm | `/integrations/chatgpt-app/apps-sdk` | Tuesday 04:00 |
 | npm/pnpm | `/packages/kicad-fixtures` | Tuesday 12:00 |
 | npm | `/packages/mcp-npm` | Wednesday 04:00 |
-| Cargo | `/src-tauri` | Wednesday 12:00 |
 | GitHub Actions | `/` | Thursday 04:00 |
 | Docker | `/` | Friday 04:00 |
 | Docker Compose | `/` | Friday 12:00 |
@@ -91,7 +89,6 @@ remain authoritative build inputs:
 
 - Python: `pyproject.toml` + `uv.lock`;
 - pnpm/npm: `package.json` + `pnpm-lock.yaml` or the package-local `package-lock.json`;
-- Rust/Tauri: `src-tauri/Cargo.toml` + `src-tauri/Cargo.lock`.
 
 Lockfile-only refreshes that are not caused by an available dependency version are a
 maintainer task and must use the repository's pinned toolchain. CI uses frozen/locked

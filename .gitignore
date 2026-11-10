@@ -68,8 +68,6 @@ mutants/
 .codacy/
 
 # Tauri / Rust build artifacts
-src-tauri/target/
-src-tauri/gen/
 
 # Serena local index cache
 .serena/
@@ -82,4 +80,3 @@ lefthook-local.yml
 
 
 # Generated only during release GUI packaging; do not commit binaries.
-src-tauri/resources/bootstrap/

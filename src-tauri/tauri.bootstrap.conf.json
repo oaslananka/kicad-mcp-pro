@@ -1,7 +1,0 @@
-{
-  "bundle": {
-    "resources": {
-      "resources/bootstrap/*": "bootstrap/"
-    }
-  }
-}

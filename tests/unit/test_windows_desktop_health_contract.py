@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from kicad_mcp import discovery
@@ -54,22 +53,6 @@ def test_windows_candidate_list_prefers_supported_stable_branch(monkeypatch) -> 
     assert "KiCad\\11.0\\bin\\kicad-cli.exe" in candidates[-1]
 
 
-def test_desktop_creates_one_tray_and_restores_click_and_single_instance() -> None:
-    config = json.loads((ROOT / "src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
-    source = (ROOT / "src-tauri/src/lib.rs").read_text(encoding="utf-8")
-    cargo = (ROOT / "src-tauri/Cargo.toml").read_text(encoding="utf-8")
-    assert "trayIcon" not in config["app"]
-    assert source.count("TrayIconBuilder::new()") == 1
-    assert "tauri_plugin_single_instance::init" in source
-    assert "tauri-plugin-single-instance" in cargo
-    assert source.index("tauri_plugin_single_instance::init") < source.index(
-        ".plugin(tauri_plugin_shell::init())"
-    )
-    assert ".on_tray_icon_event" in source
-    assert "MouseButton::Left" in source
-    assert "MouseButtonState::Up" in source
-    assert "show_main_window(tray.app_handle())" in source
-    assert '"show" => show_main_window(app)' in source
 
 
 def test_dashboard_health_long_windows_path_is_wrappable() -> None:
@@ -80,13 +63,3 @@ def test_dashboard_health_long_windows_path_is_wrappable() -> None:
     assert "grid-template-columns: minmax(0, 1fr)" in DASHBOARD_HTML
     assert '<button type="button" class="nav-item' in DASHBOARD_HTML
     assert 'data-view="settings"' in DASHBOARD_HTML
-
-
-def test_desktop_slow_backend_commands_run_off_main_thread() -> None:
-    # Synchronous native startup blocks UI IPC while uv downloads Python.
-    # Keep both launch paths on dedicated Tauri blocking workers.
-    source = (ROOT / "src-tauri/src/lib.rs").read_text(encoding="utf-8")
-    assert "async fn start_server(app: tauri::AppHandle, port: u16)" in source
-    assert "async fn restart_server(app: tauri::AppHandle, port: u16)" in source
-    assert source.count("tauri::async_runtime::spawn_blocking(move || {") >= 2
-    assert "if !supported_dashboard_port(port)" in source

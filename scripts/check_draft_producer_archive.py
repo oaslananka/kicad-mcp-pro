@@ -38,8 +38,6 @@ _REUSABLE_ARTIFACT_WORKFLOWS: dict[str, set[str]] = {
     "kicad-pcm-release-evidence": {_REUSABLE_CALLER_WORKFLOW},
     "protocol-schemas-release-evidence": {_REUSABLE_CALLER_WORKFLOW},
     "npm-draft-release-evidence": {_REUSABLE_CALLER_WORKFLOW},
-    "gui-draft-installers": {_REUSABLE_CALLER_WORKFLOW},
-    "gui-draft-evidence": {_REUSABLE_CALLER_WORKFLOW},
     "container-build-source-evidence": {_REUSABLE_CALLER_WORKFLOW},
     "mcp-registry-draft-evidence": {_REUSABLE_CALLER_WORKFLOW},
 }

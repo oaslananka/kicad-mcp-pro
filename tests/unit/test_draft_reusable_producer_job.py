@@ -72,24 +72,6 @@ def _fixture(role: str) -> tuple[Fake, dict]:
                 "number": 6,
             },
         )
-    if role in ("gui-draft-installers", "gui-draft-evidence"):
-        steps.insert(
-            0,
-            {
-                "name": "Attest GUI SLSA build provenance",
-                "status": "completed",
-                "conclusion": "success",
-                "number": 6,
-            },
-        )
-        companion = (
-            "Store GUI draft checksums and attestable evidence"
-            if role == "gui-draft-installers"
-            else "Store GUI draft installers"
-        )
-        steps.append(
-            {"name": companion, "status": "completed", "conclusion": "success", "number": 9}
-        )
     fake.jobs["jobs"][0]["steps"] = steps
     args = {**_params(base_role), "role": role, "producer_profile": "reusable"}
     return fake, args
@@ -181,8 +163,6 @@ def test_incomplete_or_duplicated_job_listing_fails_closed() -> None:
 
 _NEW_ROLES = (
     "npm-draft-release-evidence",
-    "gui-draft-installers",
-    "gui-draft-evidence",
     "container-build-source-evidence",
     "mcp-registry-draft-evidence",
 )
@@ -226,9 +206,7 @@ def test_new_reusable_role_requires_exact_completed_attest_and_upload(
     "role",
     (
         "npm-draft-release-evidence",
-        "gui-draft-installers",
-        "gui-draft-evidence",
-    ),
+            ),
 )
 @pytest.mark.parametrize("mutation", ["missing", "skipped", "out-of-order", "duplicated"])
 def test_new_signed_package_provenance_step_precedes_attestation(role: str, mutation: str) -> None:
@@ -247,23 +225,6 @@ def test_new_signed_package_provenance_step_precedes_attestation(role: str, muta
         verify_producer_job(fake, **args)
 
 
-@pytest.mark.parametrize("role", ("gui-draft-installers", "gui-draft-evidence"))
-@pytest.mark.parametrize("mutation", ["missing", "skipped", "out-of-order", "duplicated"])
-def test_gui_reusable_job_requires_both_final_artifact_uploads(role: str, mutation: str) -> None:
-    fake, args = _fixture(role)
-    steps = fake.jobs["jobs"][0]["steps"]
-    primary = _REUSABLE_JOB_NAMES[role][3]
-    companion = next(s for s in steps if s["name"].startswith("Store GUI") and s["name"] != primary)
-    if mutation == "missing":
-        steps.remove(companion)
-    elif mutation == "skipped":
-        companion["conclusion"] = "skipped"
-    elif mutation == "out-of-order":
-        companion["number"] = 1
-    else:
-        steps.append({**companion, "number": 12})
-    with pytest.raises(ValueError, match="companion artifact|required producer step"):
-        verify_producer_job(fake, **args)
 
 
 def test_readonly_job_profile_matches_reviewed_workflow_step_names() -> None:
@@ -274,12 +235,6 @@ def test_readonly_job_profile_matches_reviewed_workflow_step_names() -> None:
     root = Path(__file__).resolve().parents[2]
     expected = {
         "npm-draft-release-evidence": ("prepare-npm.yml", "prepare", "npm / prepare"),
-        "gui-draft-installers": (
-            "prepare-gui.yml",
-            "attest-and-store",
-            "gui / attest-and-store",
-        ),
-        "gui-draft-evidence": ("prepare-gui.yml", "attest-and-store", "gui / attest-and-store"),
         "container-build-source-evidence": (
             "prepare-mcp-container.yml",
             "prepare",

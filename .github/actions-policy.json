@@ -54,24 +54,9 @@
         "contents"
       ]
     },
-    "gui-release.yml": {
-      "create-release": [
-        "artifact-metadata",
-        "attestations",
-        "contents",
-        "id-token"
-      ]
-    },
     "osv-inventory-weekly.yml": {
       "osv-full-inventory": [
         "security-events"
-      ]
-    },
-    "prepare-gui.yml": {
-      "attest-and-store": [
-        "artifact-metadata",
-        "attestations",
-        "id-token"
       ]
     },
     "prepare-kicad-pcm.yml": {
@@ -167,11 +152,6 @@
         "id-token"
       ],
       "npm": [
-        "artifact-metadata",
-        "attestations",
-        "id-token"
-      ],
-      "gui": [
         "artifact-metadata",
         "attestations",
         "id-token"
@@ -326,24 +306,6 @@
       "clobber": true,
       "issue": "#1179",
       "reason": "KiCad PCM package and evidence are uploaded with --clobber from a release:published run."
-    },
-    {
-      "workflow": "gui-release.yml",
-      "job": "create-release",
-      "step": "Prepare release inventory",
-      "kind": "create_release",
-      "clobber": false,
-      "issue": "#1179",
-      "reason": "Creates a non-draft GUI release with gh release create when Publish Release has not created it yet (race with Release Please); draft-first orchestration removes this path."
-    },
-    {
-      "workflow": "gui-release.yml",
-      "job": "create-release",
-      "step": "Upload installers and evidence to GitHub Release",
-      "kind": "upload_asset",
-      "clobber": true,
-      "issue": "#1179",
-      "reason": "GUI installers and evidence are uploaded with --clobber onto an already published kicad-mcp-gui release."
     }
   ]
 }

@@ -130,9 +130,9 @@ cosign verify \
 The Docker workflow publishes BuildKit provenance and SBOM attestations only
 when the image is pushed.
 
-## GUI installer integrity
+## Archived GUI installer integrity (historical)
 
-The Tauri GUI release workflow builds the Linux, Windows, and macOS installers from the exact `kicad-mcp-gui-v*` tag commit and publishes three evidence files with the installers:
+The retired Tauri GUI release workflow previously built the Linux, Windows, and macOS installers from the exact `kicad-mcp-gui-v*` tag commit and publishes three evidence files with the installers:
 
 ```text
 kicad-mcp-pro-gui-SHA256SUMS.txt

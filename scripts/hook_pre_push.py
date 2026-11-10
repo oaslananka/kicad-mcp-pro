@@ -288,18 +288,6 @@ def _platform_and_hook_checks(changed: list[str], *, root: Path) -> list[Check]:
                 )
             )
 
-    if any(_is_under(path, "src-tauri") for path in changed):
-        managed_cargo = (
-            root / ".dev-tools" / "cargo" / "bin" / ("cargo.exe" if os.name == "nt" else "cargo")
-        )
-        cargo = str(managed_cargo) if managed_cargo.is_file() else "cargo"
-        checks.append(
-            Check(
-                "tauri-cargo-check",
-                [cargo, "check", "--manifest-path", "src-tauri/Cargo.toml"],
-            )
-        )
-
     compatibility_changed = any(
         path == "compatibility.yaml"
         or _is_under(path, "src/kicad_mcp/adapters")
