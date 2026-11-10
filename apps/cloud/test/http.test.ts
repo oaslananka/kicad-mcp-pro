@@ -1335,7 +1335,8 @@ test("public homepage supports safe markdown discovery, canonical and privacy",a
   assert.match(html,/<link rel="canonical" href="https:\/\/kicad-mcp-pro\.oaslananka\.dev\/"\/>/);
   assert.match(html,/rel="describedby" href="\/llms.txt"/);
   assert.match(html,/rel="alternate" type="text\/markdown" href="\/index.md"/);
-  assert.match(html,/rel="icon" type="image\/svg\+xml" href="\/favicon.svg"/);
+  assert.match(html,/rel="icon" type="image\/png" sizes="32x32" href="\/assets\/favicon-32.png"/);
+  assert.doesNotMatch(html,/rel="icon" type="image\/svg\+xml"/);
   assert.match(html,/rel="manifest" href="\/site.webmanifest"/);
   assert.match(htmlReply.headers.get("content-security-policy")??"",/manifest-src 'self'/);
   assert.match(html,/type="application\/ld\+json"/);
