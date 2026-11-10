@@ -53,12 +53,13 @@ partial pairing or claiming that the Cloud owner denied approval. Check the
 release notes for native Windows Cloud support before attempting pairing.
 
 
-## User-first Golden Path (pending desktop PR)
+## Guided desktop setup (introduced after GUI v4.10.0)
 
 The new desktop **Get Started** surface is designed around one user outcome:
 **Choose project -> Connect AI -> Start working**. Cloud remains optional.
-This workflow is source under review, not a claim that the currently published
-4.10.0 installers already ship it.
+The guided flow is merged into main, but the previously published v4.10.0
+desktop installers do not include it. Check the exact GUI release and its
+installer verification before assuming it is available in an installed app.
 
 1. Open the desktop app. Use **Choose project** to select the KiCad project
    folder; the local owner-only picker requires a loopback session and CSRF
@@ -76,10 +77,11 @@ This workflow is source under review, not a claim that the currently published
    an AI client access. If pairing is unavailable on the installed platform,
    local KiCad still works independently.
 
-The previously released installers and command-line interfaces keep their
-existing capabilities and limitations until a new release is signed and
-published. Do not treat a source PR or passing unit tests as a live Cloud
-authorization or MSI upgrade acceptance.
+Previously released installers and command-line interfaces retain their
+existing behavior until a newer build is published and installed. Build
+provenance is not operating-system code signing: confirm the specific release's
+signing status and integrity evidence. Neither merged source nor passing tests
+prove Cloud authorization or a real MSI upgrade.
 
 ## Desktop app
 
