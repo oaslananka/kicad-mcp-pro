@@ -19,27 +19,27 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <title>KiCad MCP Pro Dashboard</title>
 <style>
   :root {
-    --bg-canvas: #0b0f17;
-    --bg: #0b0f17;
-    --surface: #131926;
-    --surface-2: #1a2336;
-    --surface-hover: #222d42;
-    --surface-active: #28354f;
-    --border: #232d3f;
-    --border-strong: #334155;
-    --text: #f1f5f9;
+    --bg-canvas: #0b0d13;
+    --bg: #0b0d13;
+    --surface: #151820;
+    --surface-2: #212630;
+    --surface-hover: #29303d;
+    --surface-active: #323b4b;
+    --border: rgba(180, 195, 208, 0.13);
+    --border-strong: rgba(180, 195, 208, 0.28);
+    --text: #f0f4f8;
     --text-muted: #94a3b8;
     --text-dim: #64748b;
-    --accent: #38bdf8;
-    --accent-hover: #7dd3fc;
-    --accent-subtle: rgba(56, 189, 248, 0.12);
+    --accent: #00d8f5;
+    --accent-hover: #38bdf8;
+    --accent-subtle: rgba(0, 216, 245, 0.12);
     --success: #22c55e;
     --success-subtle: rgba(34, 197, 94, 0.12);
     --warning: #f59e0b;
     --warning-subtle: rgba(245, 158, 11, 0.12);
     --error: #ef4444;
     --error-subtle: rgba(239, 68, 68, 0.12);
-    --info: #38bdf8;
+    --info: #00d8f5;
     --sidebar-w: 230px;
     --radius-sm: 6px;
     --radius-md: 10px;
@@ -1778,7 +1778,10 @@ async function gpLoadProject() {
     const path = status.project?.dir;
     gpProject = typeof path === 'string' ? path : '';
     if (gpProject) {
-      if (document.activeElement !== byId('gpProjectPath')) byId('gpProjectPath').value = gpProject;
+      if (document.activeElement !== byId('gpProjectPath')) {
+        byId('gpProjectPath').value = gpProject;
+        byId('gpProjectPath').title = gpProject;
+      }
       gpSay('gpProjectState', 'Selected locally: ' + gpProject + '. Your files stay here.', 'ok');
     } else {
       gpSay('gpProjectState', 'Choose a project folder. Cloud is optional.');
@@ -1792,6 +1795,7 @@ async function gpChooseProject() {
     const path = await chooseOwnerProjectFolder();
     if (path) {
       byId('gpProjectPath').value = path;
+      byId('gpProjectPath').title = path;
       gpSay('gpProjectState', 'Folder selected. Choose "Use project" to apply it.');
     }
   } catch (error) {

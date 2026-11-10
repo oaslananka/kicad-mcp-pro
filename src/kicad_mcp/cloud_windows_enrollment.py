@@ -244,7 +244,10 @@ def enroll_windows_device(
             # Leave the owner key for explicit recovery/revocation: deleting it
             # would leave an unmanageable remotely registered device.
             raise WindowsPartialEnrollmentError(record_id) from exc
-        raise WindowsEnrollmentError(_DENIED) from exc
+        err_msg = str(exc).strip()
+        if not err_msg or err_msg == _DENIED:
+            raise WindowsEnrollmentError(_DENIED) from exc
+        raise WindowsEnrollmentError(f"{_DENIED} ({err_msg})") from exc
     finally:
         if key_saved and not committed and not redeem_attempted:
             _remove_unused_owner_credential(record_id, key_blob)
