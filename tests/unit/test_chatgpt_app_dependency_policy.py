@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from packaging.version import Version
+
 ROOT = Path(__file__).resolve().parents[2]
 APP = ROOT / "integrations" / "chatgpt-app" / "apps-sdk"
 
@@ -17,13 +19,16 @@ def test_chatgpt_app_express5_dependency_policy() -> None:
     assert express.startswith("5.")
     assert express.count(".") == 2
     assert all(part.isdigit() for part in express.split("."))
+    hono_override = package["overrides"]["@hono/node-server"]
+    assert Version(hono_override) >= Version("2.1.6")
     assert package["overrides"] == {
-        "@hono/node-server": "2.1.5",
+        "@hono/node-server": hono_override,
         "hono": "4.13.13",
         "fast-uri": "3.1.9",
         "qs": "6.16.1",
         "ip-address": "10.7.4",
     }
+    assert lock["packages"]["node_modules/@hono/node-server"]["version"] == hono_override
     assert lock["packages"][""]["dependencies"]["express"] == express
     assert lock["packages"]["node_modules/express"]["version"] == express
     # Dependabot can upgrade this compatible transitive dependency independently.
