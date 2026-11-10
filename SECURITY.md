@@ -9,7 +9,7 @@ KiCad MCP Pro is an MCP server and companion toolchain for KiCad EDA workflows. 
 | Python package `kicad-mcp-pro` | Latest released minor line | Supported |
 | npm wrapper `kicad-mcp-pro` | Version matching the latest Python package | Supported |
 | Docker image `ghcr.io/oaslananka/kicad-mcp-pro` | Tags matching the latest release | Supported |
-| Tauri GUI installers | Latest GUI release tag | Supported |
+| Archived Tauri GUI installers | Historical release tags | Retired; no new security fixes |
 | Old release lines | Best effort only | Upgrade recommended |
 
 Security fixes are normally released in the next patch version. Critical fixes may be released as an out-of-band hotfix.

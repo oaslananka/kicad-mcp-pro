@@ -1,5 +1,9 @@
 # Windows desktop and dashboard regression smoke
 
+> Historical archive: this checklist documents the retired Tauri Windows installer.
+> The current product uses the browser dashboard; no new GUI installer is built.
+
+
 Scope: the Tauri Windows installer and the Python-backed local dashboard.
 This is **not** a claim that Linux tests prove native Windows installer behavior.
 Use a clean supported Windows VM for the release smoke and retain the evidence

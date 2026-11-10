@@ -48,7 +48,7 @@ def test_osv_weekly_inventory_is_pinned_and_uploads_all_findings() -> None:
     assert check["if"] == "steps.scan.outcome == 'failure'"
     assert "[[ ! -s results.json ]]" in check["run"]
 
-    reporter = steps["Produce SARIF without hiding reviewed Rust findings"]
+    reporter = steps["Produce complete dependency SARIF inventory"]
     assert reporter["uses"] == (
         "google/osv-scanner-action/osv-reporter-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347"
     )

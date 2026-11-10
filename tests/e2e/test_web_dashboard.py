@@ -377,10 +377,8 @@ class TestDashboardSPA:
             "() => document.querySelector('#view-settings').classList.contains('active')"
         )
 
-    def test_desktop_navigation_fallback_for_support_link(
-        self, page: Page, dashboard_url: str
-    ) -> None:
-        """A remote-origin Tauri dashboard uses native navigation, not broken IPC."""
+    def test_browser_support_link_navigates(self, page: Page, dashboard_url: str) -> None:
+        """The browser dashboard opens support links with regular navigation."""
         destination = "https://github.com/sponsors/oaslananka"
         page.route(
             destination,
@@ -388,7 +386,7 @@ class TestDashboardSPA:
                 status=200, content_type="text/html", body="<p>Browser launched</p>"
             ),
         )
-        page.goto(dashboard_url + "?desktop=1")
+        page.goto(dashboard_url)
         page.locator("a.nav-support.github").click()
         page.wait_for_url(destination)
         assert page.get_by_text("Browser launched").is_visible()
@@ -432,10 +430,10 @@ class TestDashboardSPA:
                 violations.append((view, metrics))
         assert not violations, f"Viewport {width}x{height} clips content: {violations}"
 
-    def test_short_desktop_sidebar_support_is_scrollable(
+    def test_short_browser_sidebar_support_is_scrollable(
         self, page: Page, dashboard_url: str
     ) -> None:
-        """At a minimum-height native window, support links must remain reachable."""
+        """At a compact browser height, support links must remain reachable."""
         page.set_viewport_size({"width": 1200, "height": 600})
         page.goto(dashboard_url)
         page.locator(".sidebar").evaluate(
@@ -450,24 +448,6 @@ class TestDashboardSPA:
             page.locator(".sidebar").evaluate("(element) => getComputedStyle(element).overflowY")
             == "auto"
         )
-
-    def test_failed_desktop_browser_link_is_small_dismissible_notice(
-        self, page: Page, dashboard_url: str
-    ) -> None:
-        """A system browser failure must not block or consume the workspace."""
-        page.add_init_script(
-            "window.__TAURI_INTERNALS__ = {invoke: async () => { throw Error('unavailable'); }};"
-        )
-        page.goto(dashboard_url)
-        page.get_by_role("link", name="Agent Setup").click()
-        notice = page.locator("#externalLinkMessage")
-        notice.wait_for(state="visible")
-        assert page.get_by_role("button", name="Copy link").is_visible()
-        assert "Could not open the system browser" in notice.inner_text()
-        assert notice.evaluate("(element) => element.getBoundingClientRect().width") < 460
-        page.get_by_role("button", name="Dismiss external link notice").click()
-        assert not notice.is_visible()
-        assert page.get_by_role("button", name="Choose project").is_visible()
 
     def test_golden_path_project_ai_cloud_never_claims_unverified_access(
         self, page: Page, dashboard_url: str

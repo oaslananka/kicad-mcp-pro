@@ -12,7 +12,7 @@ if ! command -v asciinema >/dev/null 2>&1; then
 fi
 
 if ! command -v agg >/dev/null 2>&1; then
-  echo "agg is required. Install it with: cargo install --locked agg"
+  echo "agg is required. Install the prebuilt agg binary from its upstream releases."
   exit 1
 fi
 

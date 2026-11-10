@@ -14,7 +14,7 @@ queue_rules:
       - -draft
       - dependabot-update-type != version-update:semver-major
       - "#review-threads-unresolved = 0"
-      - head ~= ^dependabot/.*/(python-minor-patch|python-security|npm-root-minor-patch|npm-root-security|npm-chatgpt-app-minor-patch|npm-chatgpt-app-security|npm-fixtures-minor-patch|npm-fixtures-security|npm-wrapper-minor-patch|npm-wrapper-security|actions-minor-patch|containers-patch|compose-patch|cargo-minor-patch|cargo-security)(?:-|$)
+      - head ~= ^dependabot/.*/(python-minor-patch|python-security|npm-root-minor-patch|npm-root-security|npm-chatgpt-app-minor-patch|npm-chatgpt-app-security|npm-fixtures-minor-patch|npm-fixtures-security|npm-wrapper-minor-patch|npm-wrapper-security|actions-minor-patch|containers-patch|compose-patch)(?:-|$)
       - check-success = mcp-server (ubuntu-24.04)
       - check-success = mcp-server (windows-2025)
       - check-success = mcp-server (macos-15)
@@ -34,7 +34,7 @@ queue_rules:
       - -draft
       - dependabot-update-type != version-update:semver-major
       - "#review-threads-unresolved = 0"
-      - head ~= ^dependabot/.*/(python-minor-patch|python-security|npm-root-minor-patch|npm-root-security|npm-chatgpt-app-minor-patch|npm-chatgpt-app-security|npm-fixtures-minor-patch|npm-fixtures-security|npm-wrapper-minor-patch|npm-wrapper-security|actions-minor-patch|containers-patch|compose-patch|cargo-minor-patch|cargo-security)(?:-|$)
+      - head ~= ^dependabot/.*/(python-minor-patch|python-security|npm-root-minor-patch|npm-root-security|npm-chatgpt-app-minor-patch|npm-chatgpt-app-security|npm-fixtures-minor-patch|npm-fixtures-security|npm-wrapper-minor-patch|npm-wrapper-security|actions-minor-patch|containers-patch|compose-patch)(?:-|$)
       - check-success = mcp-server (ubuntu-24.04)
       - check-success = mcp-server (windows-2025)
       - check-success = mcp-server (macos-15)
@@ -152,7 +152,7 @@ pull_request_rules:
       - -draft
       - dependabot-update-type != version-update:semver-major
       - "#review-threads-unresolved = 0"
-      - head ~= ^dependabot/.*/(python-minor-patch|python-security|npm-root-minor-patch|npm-root-security|npm-chatgpt-app-minor-patch|npm-chatgpt-app-security|npm-fixtures-minor-patch|npm-fixtures-security|npm-wrapper-minor-patch|npm-wrapper-security|actions-minor-patch|containers-patch|compose-patch|cargo-minor-patch|cargo-security)(?:-|$)
+      - head ~= ^dependabot/.*/(python-minor-patch|python-security|npm-root-minor-patch|npm-root-security|npm-chatgpt-app-minor-patch|npm-chatgpt-app-security|npm-fixtures-minor-patch|npm-fixtures-security|npm-wrapper-minor-patch|npm-wrapper-security|actions-minor-patch|containers-patch|compose-patch)(?:-|$)
     actions:
       queue:
         name: safe-dependencies

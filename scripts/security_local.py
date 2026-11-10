@@ -52,7 +52,6 @@ def _which(command: str) -> str | None:
     for directory in (
         Path.home() / "go" / "bin",
         Path.home() / ".local" / "bin",
-        Path.home() / ".cargo" / "bin",
     ):
         candidate = directory / executable
         if candidate.is_file():

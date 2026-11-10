@@ -262,7 +262,7 @@ GitHub's Dependency Graph (`vulnerability-alerts` API) is **enabled** on this
 repository. It must stay enabled for Dependency Review and Dependabot alerts.
 
 `.github/dependabot.yml` is the active dependency-update configuration. It covers
-`uv`, npm/pnpm package locations, GitHub Actions, Docker/Docker Compose, and Cargo.
+`uv`, npm/pnpm package locations, GitHub Actions, Docker/Docker Compose, .
 Dependabot security updates own automated vulnerable-dependency remediation. The
 repository intentionally has no active Renovate configuration or Mend Renovate App
 requirement, avoiding two bots opening overlapping update pull requests.
@@ -332,7 +332,6 @@ All publish workflows enforce strict safety:
 | Publish Container | Dry-run build (cacheonly) | Push to GHCR → Trivy scan → cosign sign |
 | Publish MCP Registry | Dry-run validate | Wait for artifacts → publish to registry |
 | Publish Protocol Schemas | N/A | Build → attest → publish to npm |
-| GUI Release | N/A | Build Tauri → create GitHub Release |
 
 ## Supply Chain — Action Pinning
 
