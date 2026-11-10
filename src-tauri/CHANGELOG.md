@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.11.0](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v4.10.0...kicad-mcp-gui-v4.11.0) (2026-11-10)
+
+
+### Features
+
+* **desktop:** bundled runtime and safe lifecycle maintenance ([#1662](https://github.com/oaslananka/kicad-mcp-pro/issues/1662)) ([4532603](https://github.com/oaslananka/kicad-mcp-pro/commit/45326039501a938245810bfbaf5462406d4eff09))
+* **onboarding:** one guided desktop project, AI, and Cloud start ([#1670](https://github.com/oaslananka/kicad-mcp-pro/issues/1670)) ([a4308e0](https://github.com/oaslananka/kicad-mcp-pro/commit/a4308e0f609e67f6648f68f4ae040397fecba867))
+
 ## [4.10.0](https://github.com/oaslananka/kicad-mcp-pro/compare/kicad-mcp-gui-v4.9.0...kicad-mcp-gui-v4.10.0) (2026-11-08)
 
 

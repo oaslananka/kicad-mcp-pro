@@ -10,6 +10,25 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.11.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.10.0...mcp-server-v4.11.0) (2026-11-10)
+
+
+### Features
+
+* **desktop:** bundled runtime and safe lifecycle maintenance ([#1662](https://github.com/oaslananka/kicad-mcp-pro/issues/1662)) ([4532603](https://github.com/oaslananka/kicad-mcp-pro/commit/45326039501a938245810bfbaf5462406d4eff09))
+* **onboarding:** one guided desktop project, AI, and Cloud start ([#1670](https://github.com/oaslananka/kicad-mcp-pro/issues/1670)) ([a4308e0](https://github.com/oaslananka/kicad-mcp-pro/commit/a4308e0f609e67f6648f68f4ae040397fecba867))
+
+
+### Bug Fixes
+
+* **cloud:** Overhaul cloud web UI/UX with premium modern design ([#1673](https://github.com/oaslananka/kicad-mcp-pro/issues/1673)) ([a0eb0c6](https://github.com/oaslananka/kicad-mcp-pro/commit/a0eb0c6f2986ccd3080ed6553e11ac9cb2286083))
+* **opencode:** guide safe V2 config reload after quickstart ([#1668](https://github.com/oaslananka/kicad-mcp-pro/issues/1668)) ([47365fa](https://github.com/oaslananka/kicad-mcp-pro/commit/47365fa8d46c0931fab3c393c068148b736be13f))
+
+
+### Documentation
+
+* **install:** distinguish merged Golden Path from published GUI ([#1674](https://github.com/oaslananka/kicad-mcp-pro/issues/1674)) ([04faead](https://github.com/oaslananka/kicad-mcp-pro/commit/04faead74da6d69c501ab7efc615cc57df69c989))
+
 ## [4.10.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.9.0...mcp-server-v4.10.0) (2026-11-08)
 
 

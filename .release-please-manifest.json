@@ -1,6 +1,6 @@
 {
-  ".": "4.10.0",
-  "packages/mcp-npm": "4.10.0",
+  ".": "4.11.0",
+  "packages/mcp-npm": "4.11.0",
   "packages/protocol-schemas": "2.1.0",
-  "src-tauri": "4.10.0"
+  "src-tauri": "4.11.0"
 }
