@@ -34,3 +34,13 @@ test("next action guides true state without manufacturing connectivity",()=>{
    assert.match(renderAccount("Engineer",["github"],[],snapshot),new RegExp('data-next-action="'+key+'"'));
  }
 });
+
+test("Cloud choice never sends people to HTTP when Cloud sign-in is unavailable",()=>{
+ const available=renderLanding(true);
+ const pending=renderLanding(false);
+ assert.match(available,/<a class="entry-choice entry-choice-cloud" href="\/sign-in">/);
+ assert.match(pending,/<div class="entry-choice entry-choice-cloud unavailable" aria-disabled="true">/);
+ assert.doesNotMatch(pending,/<a class="entry-choice entry-choice-cloud"/);
+ assert.match(pending,/Cloud sign-in unavailable/);
+ assert.match(pending,/Pair your computer/);
+});

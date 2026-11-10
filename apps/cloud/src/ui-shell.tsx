@@ -105,6 +105,14 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
   );
 }
 export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
+  const cloudChoice=<>
+    <span className="entry-choice-icon"><Icon name="connections" size={23}/></span>
+    <span className="entry-choice-copy"><small>02 · OPTIONAL / REMOTE</small><strong>Connect through Cloud</strong>
+      <span>{identityEnabled?"Sign in. Pair your computer. Approve each project and AI client separately.":
+        "Cloud sign-in is unavailable on this deployment. Pair your computer after account access is enabled."}</span>
+      <b>{identityEnabled?"Open Cloud setup":"Cloud sign-in unavailable"} {identityEnabled?<Icon name="arrow" size={15}/>:null}</b></span>
+    {identityEnabled?<Icon name="arrow" size={19} className="entry-choice-arrow"/>:null}
+  </>;
   return <div className="page-stack">
     <section className="card landing-panel" aria-label="Cloud capabilities">
       <div className="landing-intro">
@@ -112,7 +120,7 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
           {identityEnabled?"Account sign-in available":"Account access pending"}
         </span>
         <div className="landing-product-label"><Icon name="shield" size={15}/> HTTP FIRST · CLOUD OPTIONAL</div>
-        <h2>Connect KiCad to your AI.<br/><span className="landing-accent">Stay in control.</span></h2>
+        <h2>Connect KiCad to AI.<br/><span className="landing-accent">Stay in control.</span></h2>
         <p>Run a local MCP server over HTTP. Add Cloud only when you need remote AI access, and approve the exact projects you share.</p>
         <div className="action-row">
           <a className="button primary" href="#http-setup">Start local HTTP <Icon name="arrow" size={17}/></a>
@@ -147,12 +155,9 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
           <span>Keep KiCad projects on your computer. Connect an AI client.</span><b>View the command <Icon name="arrow" size={15}/></b></span>
         <Icon name="arrow" size={19} className="entry-choice-arrow"/>
       </a>
-      <a className="entry-choice entry-choice-cloud" href={identityEnabled?"/sign-in":"#http-setup"}>
-        <span className="entry-choice-icon"><Icon name="connections" size={23}/></span>
-        <span className="entry-choice-copy"><small>02 · OPTIONAL / REMOTE</small><strong>Connect through Cloud</strong>
-          <span>Sign in. Pair your computer. Approve each project and AI client separately.</span><b>Review Cloud setup <Icon name="arrow" size={15}/></b></span>
-        <Icon name="arrow" size={19} className="entry-choice-arrow"/>
-      </a>
+      {identityEnabled?
+        <a className="entry-choice entry-choice-cloud" href="/sign-in">{cloudChoice}</a>:
+        <div className="entry-choice entry-choice-cloud unavailable" aria-disabled="true">{cloudChoice}</div>}
     </section>
     <section className="card http-setup-callout" id="http-setup" aria-labelledby="http-start-title">
       <div className="http-setup-heading">

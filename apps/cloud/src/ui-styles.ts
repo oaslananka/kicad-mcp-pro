@@ -679,6 +679,7 @@ body{line-height:1.5;letter-spacing:-.007em}
 }
 .entry-choice-primary{background:radial-gradient(circle at 0 0,rgba(47,199,224,.18),transparent 62%),#122536;border-color:rgba(66,204,218,.35)}
 .entry-choice-cloud{background:radial-gradient(circle at 98% 100%,rgba(107,109,216,.12),transparent 65%),#151d30}
+.entry-choice.unavailable,.entry-choice.unavailable:hover{opacity:.78;cursor:default;transform:none;box-shadow:none;border-color:var(--line-strong)}
 .entry-choice:hover{transform:translateY(-3px);background:#192d42;border-color:#45d4e8;box-shadow:0 17px 40px rgba(0,0,0,.25)}
 .entry-choice-icon{width:52px;height:52px;border-radius:15px;background:#1b3a4c;border-color:rgba(73,205,227,.25);color:#83e1eb}
 .entry-choice-copy{display:grid;gap:7px;min-width:0}
