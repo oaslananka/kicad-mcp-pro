@@ -130,7 +130,10 @@ def test_remote_rejects_ambiguous_folder_selection(
     state, folder = remote_fixture
     result = CliRunner().invoke(server.app, ["remote", "--browse", "--project-dir", str(folder)])
     assert result.exit_code != 0
-    assert "--browse or --project-dir" in result.output
+    # Rich may insert ANSI styling and wrap this error across terminal widths.
+    # Both conflicting options must be identified, with no action performed.
+    assert "browse" in result.output
+    assert "project-dir" in result.output
     assert state["calls"] == []
 
 
