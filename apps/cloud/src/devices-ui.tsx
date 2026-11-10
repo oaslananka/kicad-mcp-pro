@@ -99,7 +99,7 @@ export function renderDevicesPage(
                 <form action="/devices/enable" method="post">
                   <input type="hidden" name="device_id" value={d.id}/>
                   <input type="hidden" name="csrf" value={d.enableCsrf}/>
-                  <button className="button secondary" type="submit">Enable device</button>
+                  <button className="button secondary" type="submit">Enable my device</button>
                 </form>:null}
               {d.revoked&&d.deleteCsrf?
                 <form action="/devices/delete" method="post">
@@ -126,7 +126,7 @@ export function renderDevicesPage(
                   <label>Project name or alias{" "}
                     <input name="alias" maxLength={64} required={true} autoComplete="off" placeholder="e.g. Feather-M4 or Motor-Driver"/>
                   </label>
-                  <button className="button secondary" type="submit">Register project</button>
+                  <button className="button secondary" type="submit">Register read-only project</button>
                 </form>
               </details>:null}
           </li>)}</ul>}
