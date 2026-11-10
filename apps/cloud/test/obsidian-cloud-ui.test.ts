@@ -7,7 +7,7 @@ import {uiCss} from "../src/ui-styles.js";
 
 test("brand SVG is a constrained external image, never an unscaled inline file",()=>{
   const html=renderAccount("Engineer");
-  assert.match(html, /class="brand-mark"><img class="brand-logo" src="\/assets\/icon\.svg" alt="" width="24" height="24"/);
+  assert.match(html, /class="brand-mark"><img class="brand-logo" src="\/assets\/icon-32\.png" alt="" width="24" height="24"/);
   assert.match(uiCss,/\.brand-mark \.brand-logo\{width:24px;height:24px;min-width:24px;max-width:24px;max-height:24px/);
   assert.match(uiCss,/\.brand-mark\{width:38px;height:38px;min-width:38px;max-width:38px;aspect-ratio:1/);
   assert.doesNotMatch(html, /<svg[^>]+width="512"/);

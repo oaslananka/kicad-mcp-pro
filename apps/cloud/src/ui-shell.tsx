@@ -27,7 +27,7 @@ function NavLink({href,current,children}:{href:string;current:boolean;children:R
 }
 function Brand(){
   return <a href="/" className="brand" aria-label="KiCad MCP Cloud workspace home">
-    <span className="brand-mark"><img className="brand-logo" src="/assets/icon.svg" alt="" width={24} height={24} srcSet="/assets/icon-32.png 1x, /assets/icon-64.png 2x" decoding="async"/></span>
+    <span className="brand-mark"><img className="brand-logo" src="/assets/icon-32.png" alt="" width={24} height={24} srcSet="/assets/icon-32.png 1x, /assets/icon-64.png 2x" decoding="async"/></span>
     <span className="brand-title">KiCad MCP <small>Cloud workspace</small></span>
   </a>;
 }
@@ -36,7 +36,7 @@ function WorkspaceNav({kind,userEmail}:{kind:PageKind;userEmail?:string}){
   const initials=cleanEmail && cleanEmail.includes("@")
     ? cleanEmail.slice(0,2).toUpperCase()
     : "OA";
-  const displayEmail=cleanEmail||"oaslananka@gmail.com";
+  const displayEmail=cleanEmail||"Account";
 
   return <aside className="workspace-sidebar" aria-label="Workspace navigation">
     <Brand/>
@@ -49,20 +49,6 @@ function WorkspaceNav({kind,userEmail}:{kind:PageKind;userEmail?:string}){
       <NavLink href="/usage" current={kind==="usage"}><Icon name="usage" size={17}/> Usage</NavLink>
       <NavLink href="/account#security" current={kind==="settings"}><Icon name="settings" size={17}/> Settings</NavLink>
     </nav>
-    <div className="sidebar-quick-usage" aria-label="Tool calls usage summary">
-      <div className="usage-meter-header">
-        <span>Tool calls</span>
-        <span className="usage-meter-percent">5%</span>
-      </div>
-      <div className="usage-meter-bar" role="progressbar" aria-valuenow={5} aria-valuemin={0} aria-valuemax={100}>
-        <div className="usage-meter-fill" style={{width:"5%"}}/>
-      </div>
-      <div className="usage-meter-meta">
-        <span>473 of 10.000 this month</span>
-        <span className="usage-reset-note">Resets on 1st of month</span>
-      </div>
-      <a href="/usage" className="button plan-active-btn"><Icon name="spark" size={13}/> Developer Plan</a>
-    </div>
     <div className="sidebar-profile">
       <span className="profile-avatar" aria-hidden="true">{initials}</span>
       <span className="profile-identity" title={displayEmail}>{displayEmail}</span>
@@ -97,7 +83,6 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
         <script type="application/ld+json" dangerouslySetInnerHTML={{__html:publicSchema}}/>
       </>:null}
       <link rel="icon" href="/favicon.ico" sizes="any"/>
-      <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
       <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png"/>
       <link rel="icon" type="image/png" sizes="16x16" href="/assets/favicon-16.png"/>
       <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180"/>

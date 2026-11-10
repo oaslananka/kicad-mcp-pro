@@ -18,39 +18,30 @@ export type UsageMetrics = {
   }>;
 };
 
-export const defaultMetrics: UsageMetrics = {
-  totalCallsThisMonth: 473,
-  monthlyQuota: 10000,
-  dailyAverage: 47,
-  daysRemainingInMonth: 21,
-  resetDateLabel: "1st of next month",
-  monthlyHistory: [
-    {month: "Jun", calls: 0},
-    {month: "Jul", calls: 0},
-    {month: "Aug", calls: 0},
-    {month: "Sep", calls: 7850},
-    {month: "Oct", calls: 0},
-    {month: "Nov", calls: 473}
-  ],
-  toolBreakdown: [
-    {name: "project_summary", count: 322, percentage: 68},
-    {name: "list_projects", count: 85, percentage: 18},
-    {name: "get_project", count: 48, percentage: 10},
-    {name: "list_devices", count: 18, percentage: 4}
-  ],
-  recentActivity: [
-    {id: "act-1", toolName: "project_summary", clientName: "ChatGPT", timestamp: "Today, 16:42", status: "success"},
-    {id: "act-2", toolName: "list_projects", clientName: "ChatGPT", timestamp: "Today, 16:40", status: "success"},
-    {id: "act-3", toolName: "get_project", clientName: "ChatGPT", timestamp: "Today, 15:18", status: "success"},
-    {id: "act-4", toolName: "project_summary", clientName: "Claude", timestamp: "Yesterday, 19:05", status: "success"},
-    {id: "act-5", toolName: "list_devices", clientName: "ChatGPT", timestamp: "Yesterday, 14:22", status: "success"}
-  ]
-};
+export function renderUsagePage(metrics: UsageMetrics | null = null, userEmail?: string): string {
+  if (!metrics) {
+    return renderPage({
+      title: "Usage",
+      kind: "usage",
+      eyebrow: "Workspace / Usage",
+      summary: "Account activity and tool usage.",
+      userEmail,
+      children: (
+        <div className="page-stack usage-dashboard">
+          <section className="card detail-card" aria-label="Usage data unavailable">
+            <div className="notice-icon"><Icon name="usage" size={23}/></div>
+            <h2>Usage data is not available yet</h2>
+            <p>No verified tool-call counts, plan limits, or history are available for this account. We do not display estimates as real activity.</p>
+            <a className="button secondary" href="/devices">View connected devices</a>
+          </section>
+        </div>
+      )
+    });
+  }
 
-export function renderUsagePage(metrics: UsageMetrics = defaultMetrics, userEmail?: string): string {
   const remaining = Math.max(0, metrics.monthlyQuota - metrics.totalCallsThisMonth);
   const percentage = Math.min(100, Math.round((metrics.totalCallsThisMonth / metrics.monthlyQuota) * 100));
-  const maxCalls = Math.max(...metrics.monthlyHistory.map(h => h.calls), 10000);
+  const maxCalls = Math.max(1, ...metrics.monthlyHistory.map(h => h.calls));
 
   return renderPage({
     title: "Usage",
@@ -65,10 +56,10 @@ export function renderUsagePage(metrics: UsageMetrics = defaultMetrics, userEmai
           <div className="usage-banner-content">
             <span className="banner-kicker">MONTHLY ALLOWANCE</span>
             <h2>{remaining.toLocaleString()} tool calls left this month</h2>
-            <p>Resets on {metrics.resetDateLabel} · Standard Developer Plan active.</p>
+            <p>Resets on {metrics.resetDateLabel}.</p>
           </div>
           <div className="usage-banner-badge">
-            <span className="plan-badge"><Icon name="spark" size={14}/> Active Plan</span>
+            <span className="plan-badge">Verified metrics</span>
           </div>
         </section>
 
@@ -110,8 +101,8 @@ export function renderUsagePage(metrics: UsageMetrics = defaultMetrics, userEmai
           </div>
           <div className="chart-container" aria-label="Bar chart showing calls over the last 6 months">
             <div className="chart-y-axis" aria-hidden="true">
-              <span>10.000</span>
-              <span>5.000</span>
+              <span>{maxCalls.toLocaleString()}</span>
+              <span>{Math.round(maxCalls / 2).toLocaleString()}</span>
               <span>0</span>
             </div>
             <div className="chart-bars-wrap">
