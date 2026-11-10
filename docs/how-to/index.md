@@ -14,6 +14,7 @@ This directory maps common tasks to the existing operational documentation.
 - First PCB: `docs/workflows/first-pcb.md`
 - Schematic to PCB: `docs/workflows/schematic-to-pcb.md`
 - Professional circuit design: `docs/workflows/professional-circuit-design.md`
+- SPICE simulation: `docs/workflows/spice-simulation.md`
 - Manufacturing export: `docs/workflows/manufacturing-export.md`
 
 ## Operate and maintain

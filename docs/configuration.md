@@ -105,6 +105,7 @@ interop aliases for launchers and editors:
 | `KICAD_API_TOKEN`             | KiCad IPC token                       |
 | `KICAD_API_SOCKET`            | KiCad IPC endpoint URI or socket path |
 | `KICAD_CLI_PATH`              | `kicad-cli` path                      |
+| `KICAD_MCP_NGSPICE_CLI`       | `ngspice` path                        |
 | `KICAD_MCP_TIMEOUT_MS`        | IPC timeout in milliseconds           |
 | `KICAD_MCP_RETRIES`           | IPC connection retries                |
 | `KICAD_MCP_HEADLESS`          | Headless preference                   |

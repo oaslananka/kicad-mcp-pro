@@ -16,6 +16,25 @@ Run:
 kicad-cli --version
 ```
 
+## ngspice Not Found
+
+Simulation tools need an ngspice executable. Set `KICAD_MCP_NGSPICE_CLI` to its
+absolute path when discovery misses it.
+
+Discovery checks, in order: the configured `KICAD_MCP_NGSPICE_CLI` path, then
+`ngspice` on `PATH`, then the KiCad-bundled installs:
+
+- Windows: `C:\Program Files\KiCad\10.0\bin\ngspice.exe` (and `9.0`)
+- macOS (universal KiCad build, Apple silicon or Intel):
+  `/Applications/KiCad/KiCad.app/Contents/MacOS/ngspice`
+- Linux: `/usr/bin/ngspice`, `/usr/local/bin/ngspice`
+
+Run:
+
+```bash
+ngspice --version
+```
+
 ## IPC Connection Fails
 
 Open KiCad and enable the IPC API server:

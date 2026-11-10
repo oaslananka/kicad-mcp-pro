@@ -130,6 +130,7 @@ nav:
       - Read-only Agent Review: workflows/read-only-agent-review.md
       - Schematic to PCB: workflows/schematic-to-pcb.md
       - Professional Circuit Design: workflows/professional-circuit-design.md
+      - SPICE Simulation: workflows/spice-simulation.md
       - High-Speed Review: workflows/high-speed-review.md
       - Safe Live Preview: workflows/live-preview.md
       - Manufacturing Export: workflows/manufacturing-export.md
