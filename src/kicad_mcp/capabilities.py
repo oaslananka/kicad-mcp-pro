@@ -261,13 +261,23 @@ _register_many(
     [
         "pcb_get_board_state",
         "pcb_list_footprints",
-        "pcb_get_tracks",
         "pcb_get_zones",
         "pcb_run_drc",
     ],
     profiles=_PCB_PROFILES,
     tier=AccessTier.READ,
     runtime=RuntimeRequirement.KICAD_IPC,
+    verification_level="verified",
+)
+
+# Tracks inspection has an explicit file-backed fallback when the PCB Editor
+# is closed. Keep it visible in tools/list so clients can inspect before
+# opening KiCad and later transition to the live GUI source.
+_register_many(
+    ["pcb_get_tracks"],
+    profiles=_PCB_PROFILES,
+    tier=AccessTier.READ,
+    runtime=RuntimeRequirement.NONE,
     verification_level="verified",
 )
 
