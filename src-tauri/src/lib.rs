@@ -599,14 +599,33 @@ fn allowed_desktop_navigation(url: &tauri::Url, selected_port: Option<u16>) -> b
 
 /// Static outbound destinations usable from the packaged desktop and local UI.
 fn allowed_external_link(url: &str) -> bool {
-    matches!(
+    if matches!(
         url,
         "https://github.com/sponsors/oaslananka"
             | "https://www.buymeacoffee.com/oaslananka"
             | "https://oaslananka.github.io/kicad-mcp-pro/agents/"
             | "https://oaslananka.github.io/kicad-mcp-pro/agents/prompts/"
             | "https://kicad-mcp-pro.oaslananka.dev/sign-in"
-    )
+            | "https://kicad-mcp-pro.oaslananka.dev/devices"
+    ) {
+        return true;
+    }
+    // A single-use owner pairing link contains a challenge in the fragment.
+    // Do not allow arbitrary Cloud routes or an untrusted redirect URL.
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    let fragment = parsed.fragment().unwrap_or("");
+    parsed.scheme() == "https"
+        && parsed.host_str() == Some("kicad-mcp-pro.oaslananka.dev")
+        && parsed.port().is_none()
+        && parsed.username().is_empty()
+        && parsed.password().is_none()
+        && parsed.path() == "/devices/pairing"
+        && parsed.query().is_none()
+        && fragment.starts_with("challenge=")
+        && fragment.contains("&code=")
+        && fragment.len() < 512
 }
 
 #[tauri::command]
@@ -894,6 +913,22 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Opens a native OS project folder picker without changing the active server
+/// working directory. The owner must explicitly choose "Use project" later.
+#[tauri::command]
+fn pick_project_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let selected = app.dialog().file().blocking_pick_folder();
+    selected
+        .map(|entry| {
+            entry
+                .as_path()
+                .filter(|path| path.is_dir())
+                .map(|path| path.to_string_lossy().to_string())
+                .ok_or_else(|| "Selected path is not a valid folder.".to_string())
+        })
+        .transpose()
+}
+
 /// Opens a native OS folder-picker dialog and stores the selection
 /// as the working directory for the Python server process.
 #[tauri::command]
@@ -952,6 +987,72 @@ async fn restart_server(app: tauri::AppHandle, port: u16) -> Result<String, Stri
 }
 
 /// Bring an already-running desktop instance to the foreground.
+/// Size and center startup windows within actual usable monitor space, not the
+/// full monitor rectangle including Windows taskbars and macOS docks.
+fn desktop_window_size_for_work_area(
+    inner: tauri::PhysicalSize<u32>,
+    outer: tauri::PhysicalSize<u32>,
+    work: tauri::PhysicalSize<u32>,
+    margin: u32,
+) -> tauri::PhysicalSize<u32> {
+    let frame_width = outer.width.saturating_sub(inner.width);
+    let frame_height = outer.height.saturating_sub(inner.height);
+    let inset = margin.saturating_mul(2);
+    tauri::PhysicalSize::new(
+        inner
+            .width
+            .min(work.width.saturating_sub(inset).saturating_sub(frame_width)),
+        inner.height.min(
+            work.height
+                .saturating_sub(inset)
+                .saturating_sub(frame_height),
+        ),
+    )
+}
+
+fn fit_main_window_to_work_area(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+    let Some(monitor) = window.current_monitor()? else {
+        return Ok(());
+    };
+    let work = monitor.work_area();
+    let inner = window.inner_size()?;
+    let outer = window.outer_size()?;
+    let scale = monitor.scale_factor();
+    let logical_scale = if scale.is_finite() {
+        scale.max(1.0)
+    } else {
+        1.0
+    };
+    let margin = (12.0 * logical_scale).round() as u32;
+    let target = desktop_window_size_for_work_area(inner, outer, work.size, margin);
+    if target.width < 320 || target.height < 280 {
+        return Ok(());
+    }
+    if target != inner {
+        // Allow constrained monitors to use a smaller minimum without affecting
+        // the normal sized app; the dashboard has independent vertical scrolling.
+        let min_size = tauri::PhysicalSize::new(
+            target.width.min((640.0 * logical_scale).round() as u32),
+            target.height.min((420.0 * logical_scale).round() as u32),
+        );
+        window.set_min_size(Some(min_size))?;
+        window.set_size(target)?;
+    }
+    // The default center method centers inside the full monitor including
+    // the taskbar; place the outer frame in the actual work area instead.
+    let actual = window.outer_size()?;
+    let x = work
+        .position
+        .x
+        .saturating_add((work.size.width.saturating_sub(actual.width) / 2) as i32);
+    let y = work
+        .position
+        .y
+        .saturating_add((work.size.height.saturating_sub(actual.height) / 2) as i32);
+    window.set_position(tauri::PhysicalPosition::new(x, y))?;
+    Ok(())
+}
+
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
@@ -995,6 +1096,69 @@ fn spawn_background_checks(app_handle: tauri::AppHandle) {
     });
 }
 
+fn setup_desktop(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(window) = app.get_webview_window("main") {
+        if let Err(error) = fit_main_window_to_work_area(&window) {
+            eprintln!("[kicad-mcp-pro] Could not fit window to monitor: {error}");
+        }
+    }
+    // Build tray context menu
+    let show_item = MenuItemBuilder::with_id("show", "Show Window").build(app)?;
+    let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+    let menu = MenuBuilder::new(app)
+        .item(&show_item)
+        .separator()
+        .item(&quit_item)
+        .build()?;
+
+    let mut tray = TrayIconBuilder::new()
+        .menu(&menu)
+        .tooltip("KiCad MCP Pro - Starting...")
+        .show_menu_on_left_click(false)
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                show_main_window(tray.app_handle());
+            }
+        })
+        .on_menu_event(|app, event| {
+            match event.id().as_ref() {
+                "show" => show_main_window(app),
+                "quit" => {
+                    // Stop the server first
+                    if let Some(state) = app.try_state::<ServerProcess>() {
+                        let _ = stop_server_inner(state.inner());
+                    }
+                    app.exit(0);
+                }
+                _ => {}
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    let _ = tray.build(app)?;
+
+    // Tauri resolves the platform-specific installed resource path.
+    let executable = if cfg!(windows) { "uv.exe" } else { "uv" };
+    if let Ok(resource) = app.path().resolve(
+        format!("bootstrap/{executable}"),
+        tauri::path::BaseDirectory::Resource,
+    ) {
+        if resource.is_file() {
+            if let Ok(mut slot) = app.state::<ServerProcess>().bundled_uv.lock() {
+                *slot = Some(resource);
+            }
+        }
+    }
+    spawn_background_checks(app.handle().clone());
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -1035,6 +1199,7 @@ pub fn run() {
             server_pid,
             server_status,
             select_working_dir,
+            pick_project_folder,
             get_working_dir,
             restart_server,
             desktop_readiness,
@@ -1054,63 +1219,7 @@ pub fn run() {
                 api.prevent_close();
             }
         })
-        .setup(|app| {
-            // Build tray context menu
-            let show_item = MenuItemBuilder::with_id("show", "Show Window").build(app)?;
-            let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
-            let menu = MenuBuilder::new(app)
-                .item(&show_item)
-                .separator()
-                .item(&quit_item)
-                .build()?;
-
-            let mut tray = TrayIconBuilder::new()
-                .menu(&menu)
-                .tooltip("KiCad MCP Pro - Starting...")
-                .show_menu_on_left_click(false)
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        show_main_window(tray.app_handle());
-                    }
-                })
-                .on_menu_event(|app, event| {
-                    match event.id().as_ref() {
-                        "show" => show_main_window(app),
-                        "quit" => {
-                            // Stop the server first
-                            if let Some(state) = app.try_state::<ServerProcess>() {
-                                let _ = stop_server_inner(state.inner());
-                            }
-                            app.exit(0);
-                        }
-                        _ => {}
-                    }
-                });
-            if let Some(icon) = app.default_window_icon() {
-                tray = tray.icon(icon.clone());
-            }
-            let _ = tray.build(app)?;
-
-            // Tauri resolves the platform-specific installed resource path.
-            let executable = if cfg!(windows) { "uv.exe" } else { "uv" };
-            if let Ok(resource) = app.path().resolve(
-                format!("bootstrap/{executable}"),
-                tauri::path::BaseDirectory::Resource,
-            ) {
-                if resource.is_file() {
-                    if let Ok(mut slot) = app.state::<ServerProcess>().bundled_uv.lock() {
-                        *slot = Some(resource);
-                    }
-                }
-            }
-            spawn_background_checks(app.handle().clone());
-            Ok(())
-        })
+        .setup(setup_desktop)
         .run(tauri::generate_context!())
         .expect("Failed to start KiCad MCP Pro Tauri app");
 }
@@ -1137,6 +1246,43 @@ mod tests {
                 .expect("write health response");
         });
         port
+    }
+
+    #[test]
+    fn desktop_window_fits_work_area_including_native_titlebar() {
+        let inner = tauri::PhysicalSize::new(1200, 800);
+        let outer = tauri::PhysicalSize::new(1214, 838);
+        let work = tauri::PhysicalSize::new(1536, 816);
+        assert_eq!(
+            desktop_window_size_for_work_area(inner, outer, work, 12),
+            tauri::PhysicalSize::new(1200, 754),
+        );
+    }
+
+    #[test]
+    fn desktop_window_keeps_default_on_spacious_screen() {
+        assert_eq!(
+            desktop_window_size_for_work_area(
+                tauri::PhysicalSize::new(1200, 800),
+                tauri::PhysicalSize::new(1214, 838),
+                tauri::PhysicalSize::new(1920, 1040),
+                12,
+            ),
+            tauri::PhysicalSize::new(1200, 800),
+        );
+    }
+
+    #[test]
+    fn desktop_window_clamps_on_smaller_or_scaled_screen() {
+        assert_eq!(
+            desktop_window_size_for_work_area(
+                tauri::PhysicalSize::new(1200, 800),
+                tauri::PhysicalSize::new(1214, 838),
+                tauri::PhysicalSize::new(1050, 690),
+                12,
+            ),
+            tauri::PhysicalSize::new(1012, 628),
+        );
     }
 
     #[test]
@@ -1244,6 +1390,21 @@ mod tests {
         assert!(!allowed_external_link("https://www.buymeacoffee.com/other"));
         assert!(!allowed_external_link(
             "https://github.com/sponsors/oaslananka?other=1"
+        ));
+        assert!(allowed_external_link(
+            "https://kicad-mcp-pro.oaslananka.dev/devices"
+        ));
+        assert!(allowed_external_link(
+            "https://kicad-mcp-pro.oaslananka.dev/devices/pairing#challenge=abc&code=123"
+        ));
+        assert!(!allowed_external_link(
+            "https://kicad-mcp-pro.oaslananka.dev.evil.test/devices/pairing#challenge=abc&code=123"
+        ));
+        assert!(!allowed_external_link(
+            "https://kicad-mcp-pro.oaslananka.dev/devices/pairing?next=evil#challenge=abc&code=123"
+        ));
+        assert!(!allowed_external_link(
+            "https://kicad-mcp-pro.oaslananka.dev/devices/pairing#other=abc"
         ));
         assert!(!allowed_external_link("http://localhost:3334/"));
         assert!(!allowed_external_link(""));

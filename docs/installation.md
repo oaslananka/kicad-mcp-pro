@@ -53,6 +53,34 @@ partial pairing or claiming that the Cloud owner denied approval. Check the
 release notes for native Windows Cloud support before attempting pairing.
 
 
+## User-first Golden Path (pending desktop PR)
+
+The new desktop **Get Started** surface is designed around one user outcome:
+**Choose project -> Connect AI -> Start working**. Cloud remains optional.
+This workflow is source under review, not a claim that the currently published
+4.10.0 installers already ship it.
+
+1. Open the desktop app. Use **Choose project** to select the KiCad project
+   folder; the local owner-only picker requires a loopback session and CSRF
+   verification, and a typed absolute path is available if the native dialog
+   cannot run. **Use project** applies the choice. It does not upload files.
+2. Choose a supported AI client and click **Connect**. The app first shows
+   which settings file will change and which existing MCP entries are kept.
+   **Apply reviewed settings** is a separate explicit action. It creates a
+   backup where applicable; the user verifies the actual connection inside
+   the chosen AI application. Advanced/manual setup remains available.
+3. For remote access only, choose **Sign in** then **Pair device and project**.
+   Approve the specific device in the first-party browser, inspect the pairing
+   result, explicitly enable the local Connector and review project/client
+   grants in **Cloud Devices**. Neither login nor pairing automatically grants
+   an AI client access. If pairing is unavailable on the installed platform,
+   local KiCad still works independently.
+
+The previously released installers and command-line interfaces keep their
+existing capabilities and limitations until a new release is signed and
+published. Do not treat a source PR or passing unit tests as a live Cloud
+authorization or MSI upgrade acceptance.
+
 ## Desktop app
 
 Download the installer for your operating system from the repository's GitHub

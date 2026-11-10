@@ -23,6 +23,7 @@ import typer
 
 DEFAULT_CLOUD_ORIGIN = "https://kicad-mcp-pro.oaslananka.dev"
 _DEFAULT_DEVICE_ALIAS = "My computer"
+_NO_PROJECT_FOLDER_SELECTED = "No project folder selected. Setup was not changed."
 cloud_app = typer.Typer(help="Sign in, pair a device and manage the optional Cloud Connector.")
 
 
@@ -106,8 +107,79 @@ def _discover_kicad_project(folder: Path) -> tuple[Path, str]:
     return resolved, "project"
 
 
+def _browse_windows_project_folder() -> Path:
+    """Open Windows' native folder chooser in-process, without shell execution."""
+    import ctypes
+    from ctypes import wintypes
+
+    class BrowseInfo(ctypes.Structure):
+        _fields_ = [
+            ("hwndOwner", wintypes.HWND),
+            ("pidlRoot", ctypes.c_void_p),
+            ("pszDisplayName", wintypes.LPWSTR),
+            ("lpszTitle", wintypes.LPCWSTR),
+            ("ulFlags", wintypes.UINT),
+            ("lpfn", ctypes.c_void_p),
+            ("lParam", wintypes.LPARAM),
+            ("iImage", ctypes.c_int),
+        ]
+
+    try:
+        # Load only trusted Windows system DLLs, never PATH/env-supplied commands.
+        # WinDLL is intentionally absent from ctypes stubs on Linux/macOS.
+        # Resolve it only inside this Windows-only function.
+        load_system_dll = getattr(ctypes, "WinDLL", None)
+        if load_system_dll is None:
+            raise OSError("Windows system DLL loader unavailable")
+        shell = load_system_dll("shell32.dll", winmode=0x800)
+        ole = load_system_dll("ole32.dll", winmode=0x800)
+        user = load_system_dll("user32.dll", winmode=0x800)
+        ole.CoInitializeEx.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        ole.CoInitializeEx.restype = ctypes.c_long
+        ole.CoUninitialize.argtypes = []
+        shell.SHBrowseForFolderW.argtypes = [ctypes.POINTER(BrowseInfo)]
+        shell.SHBrowseForFolderW.restype = ctypes.c_void_p
+        shell.SHGetPathFromIDListEx.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_wchar_p,
+            wintypes.DWORD,
+            wintypes.DWORD,
+        ]
+        shell.SHGetPathFromIDListEx.restype = wintypes.BOOL
+        ole.CoTaskMemFree.argtypes = [ctypes.c_void_p]
+        user.GetForegroundWindow.restype = wintypes.HWND
+        result = ole.CoInitializeEx(None, 2)  # STA required for new-style shell dialogs.
+        if result not in (0, 1):
+            raise OSError("Cannot initialize the native folder picker")
+        try:
+            display = ctypes.create_unicode_buffer(260)
+            selection = BrowseInfo()
+            # The backend is not in the foreground; own the current user window
+            # so the folder chooser appears above the desktop app, not behind it.
+            selection.hwndOwner = user.GetForegroundWindow()
+            selection.pszDisplayName = ctypes.cast(display, wintypes.LPWSTR)
+            selection.lpszTitle = "Choose your local KiCad project folder"
+            selection.ulFlags = 0x1 | 0x40 | 0x10  # Filesystem, new UI, editable tree.
+            pidl = shell.SHBrowseForFolderW(ctypes.byref(selection))
+            if not pidl:
+                raise typer.BadParameter(_NO_PROJECT_FOLDER_SELECTED)
+            try:
+                path = ctypes.create_unicode_buffer(32768)
+                if not shell.SHGetPathFromIDListEx(pidl, path, len(path), 0):
+                    raise ValueError("No filesystem folder was selected")
+                return Path(path.value)
+            finally:
+                ole.CoTaskMemFree(pidl)
+        finally:
+            ole.CoUninitialize()
+    except (AttributeError, OSError, ValueError) as exc:
+        raise typer.BadParameter("Windows folder picker unavailable. Try again.") from exc
+
+
 def _browse_local_project_folder() -> Path:
     """Open a native *local* directory picker. Never send the path to Cloud."""
+    if sys.platform == "win32":
+        return _browse_windows_project_folder()
     zenity = shutil.which("zenity") if sys.platform.startswith("linux") else None
     if zenity:
         try:
@@ -128,7 +200,7 @@ def _browse_local_project_folder() -> Path:
                 "Folder picker unavailable; use --project-dir /path/to/project."
             ) from exc
         if selected.returncode != 0 or not selected.stdout.strip():
-            raise typer.BadParameter("No project folder selected. Setup was not changed.")
+            raise typer.BadParameter(_NO_PROJECT_FOLDER_SELECTED)
         return Path(selected.stdout.strip())
     try:
         import tkinter as tk
@@ -149,7 +221,7 @@ def _browse_local_project_folder() -> Path:
             "No graphical folder picker available; use --project-dir /path/to/project."
         ) from exc
     if not selection:
-        raise typer.BadParameter("No project folder selected. Setup was not changed.")
+        raise typer.BadParameter(_NO_PROJECT_FOLDER_SELECTED)
     return Path(selection)
 
 
