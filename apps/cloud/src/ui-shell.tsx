@@ -6,7 +6,7 @@ export type PageKind="home"|"sign-in"|"account"|"consent"|"connections"|"devices
 type Props={title:string;eyebrow?:string;summary?:string;kind:PageKind;children:ReactNode;navEnabled?:boolean;actions?:ReactNode};
 const workspacePages=new Set<PageKind>(["account","connections","devices"]);
 // Keep one explicit release pin; the UI parity test rejects drift from Tauri.
-const guiReleaseVersion="4.9.0";
+const guiReleaseVersion="4.10.0";
 const guiReleaseTag="kicad-mcp-gui-v"+guiReleaseVersion;
 const guiReleaseBase="https://github.com/oaslananka/kicad-mcp-pro/releases";
 const desktopReleaseUrl=guiReleaseBase+"/tag/"+guiReleaseTag;
@@ -117,7 +117,7 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
         <span className={identityEnabled?"status-pill neutral":"status-pill pending"}>
           {identityEnabled?"Account sign-in available":"Account access pending"}
         </span>
-        <div className="landing-product-label"><Icon name="shield" size={15}/> LOCAL FIRST ? CLOUD WHEN YOU NEED IT</div>
+        <div className="landing-product-label"><Icon name="shield" size={15}/> LOCAL FIRST · CLOUD WHEN YOU NEED IT</div>
         <h2>Use KiCad with your AI tools.<br/><span className="landing-accent">Your files stay yours.</span></h2>
         <p>Start on your computer, without creating an account. When you want remote AI access, connect to Cloud and approve only the computers and projects you choose.</p>
         <div className="action-row">{identityEnabled?
@@ -126,7 +126,7 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
           <a className="button secondary" href={desktopReleaseUrl} target="_blank" rel="noopener noreferrer">Get desktop app <Icon name="arrow" size={15}/></a>
         </div>
         <div className="landing-platforms" aria-label={"Download KiCad MCP Pro v"+guiReleaseVersion}>
-          <span>Get the desktop app for</span>
+          <span>Download KiCad MCP Pro v{guiReleaseVersion} for</span>
           <a href={windowsInstallerUrl} target="_blank" rel="noopener noreferrer">Windows x64</a>
           <a href={macInstallerUrl} target="_blank" rel="noopener noreferrer">macOS Apple Silicon</a>
           <a href={linuxInstallerUrl} target="_blank" rel="noopener noreferrer">Linux x64</a>
@@ -207,7 +207,7 @@ export function SignIn({query,providers,pairing=false}:{
         <div className="auth-journey-step"><span>02</span><div><strong>Pair your computer</strong><p>Approve the matching device code in your browser.</p></div></div>
         <div className="auth-journey-step"><span>03</span><div><strong>Choose project access</strong><p>Grant each AI client access separately. Nothing is shared automatically.</p></div></div>
       </div>
-      <p className="auth-mobile-journey">Next: sign in ? pair your computer ? approve project access.</p>
+      <p className="auth-mobile-journey">Next: sign in → pair your computer → approve project access.</p>
       <div className="auth-local-note"><Icon name="lock" size={17}/><span>Using KiCad locally never requires a Cloud account.</span></div>
     </div>
     <div className="card auth-card">
@@ -246,10 +246,30 @@ export function Account({name,providers=["google","github"],linked=[],snapshot}:
       </div>
       <span className="status-pill ready"><Icon name="check" size={14}/> Signed in</span>
     </section>
-    {snapshot?<section className="card detail-card" aria-label="Workspace snapshot">
-      <h2>Workspace snapshot</h2><p>{snapshot.devices} paired devices � {snapshot.projects} enabled projects � {snapshot.clients} authorized AI clients � {snapshot.grants} saved project permissions</p>
-      <p>Next: {!snapshot.devices?<a href="/devices">Pair a computer</a>:!snapshot.projects?<a href="/devices#registered-projects">Register a project</a>:!snapshot.clients?<a href="/connections">Connect an AI client</a>:!snapshot.grants?<a href="/devices#registered-projects">Grant project access</a>:<a href="/devices">Review device and project access</a>}</p>
-      <p>Saved permissions do not guarantee a connected device or an active KiCad session.</p>
+    {snapshot?<section className="card detail-card workspace-snapshot-card" aria-label="Workspace snapshot">
+      <div className="card-kicker">WORKSPACE SNAPSHOT</div>
+      <h2>Workspace snapshot</h2>
+      <div className="snapshot-grid">
+        <div className="snapshot-card">
+          <div className="metric">{snapshot.devices}</div>
+          <div className="metric-label">Paired devices</div>
+        </div>
+        <div className="snapshot-card">
+          <div className="metric">{snapshot.projects}</div>
+          <div className="metric-label">Enabled projects</div>
+        </div>
+        <div className="snapshot-card">
+          <div className="metric">{snapshot.clients}</div>
+          <div className="metric-label">AI clients</div>
+        </div>
+        <div className="snapshot-card">
+          <div className="metric">{snapshot.grants}</div>
+          <div className="metric-label">Project grants</div>
+        </div>
+      </div>
+      <p className="snapshot-summary-text">{snapshot.devices} paired devices · {snapshot.projects} enabled projects · {snapshot.clients} authorized AI clients · {snapshot.grants} saved project permissions</p>
+      <div className="snapshot-next-action">Next: {!snapshot.devices?<a className="text-link" href="/devices">Pair a computer <Icon name="arrow" size={14}/></a>:!snapshot.projects?<a className="text-link" href="/devices#registered-projects">Register a project <Icon name="arrow" size={14}/></a>:!snapshot.clients?<a className="text-link" href="/connections">Connect an AI client <Icon name="arrow" size={14}/></a>:!snapshot.grants?<a className="text-link" href="/devices#registered-projects">Grant project access <Icon name="arrow" size={14}/></a>:<a className="text-link" href="/devices">Review device and project access <Icon name="arrow" size={14}/></a>}</div>
+      <p className="card-footnote-inline"><Icon name="lock" size={13}/> Saved permissions do not guarantee a connected device or an active KiCad session.</p>
     </section>:<p role="status">Workspace snapshot unavailable. Review devices and connections below.</p>}
     <section className="overview-tiles" aria-label="Workspace areas">
       <a className="overview-tile" href="/devices">
