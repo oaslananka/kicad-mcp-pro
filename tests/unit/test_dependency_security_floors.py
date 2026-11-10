@@ -147,18 +147,22 @@ def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
     package = json.loads((APP / "package.json").read_text(encoding="utf-8"))
     lock = json.loads((APP / "package-lock.json").read_text(encoding="utf-8"))
 
-    assert package["overrides"]["@hono/node-server"] == "2.1.5"
+    assert Version(package["overrides"]["@hono/node-server"]) >= Version("2.1.6")
     assert package["overrides"]["hono"] == "4.13.13"
     assert package["overrides"]["fast-uri"] == "3.1.9"  # nosec B101
     assert package["overrides"]["qs"] == "6.16.1"
 
     patched = {
-        "node_modules/@hono/node-server": "2.1.5",
+        "node_modules/@hono/node-server": "2.1.6",
         "node_modules/hono": "4.13.13",
         "node_modules/fast-uri": "3.1.9",
         "node_modules/qs": "6.16.1",
         "node_modules/ip-address": "10.7.4",
     }
+    assert (
+        lock["packages"]["node_modules/@hono/node-server"]["version"]
+        == package["overrides"]["@hono/node-server"]
+    )
     for path, minimum in patched.items():
         assert Version(lock["packages"][path]["version"]) >= Version(minimum)
 
