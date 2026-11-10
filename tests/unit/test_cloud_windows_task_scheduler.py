@@ -384,7 +384,7 @@ def test_task_run_state_queries_schtasks(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(
         scheduler,
         "_run_schtasks",
-        lambda *args: subprocess.CompletedProcess(list(args), 0, csv_output, ""),
+        lambda *args: subprocess.CompletedProcess(["schtasks.exe"], 0, csv_output, ""),
     )
     assert scheduler.task_run_state() == "Running"
 
@@ -392,7 +392,7 @@ def test_task_run_state_queries_schtasks(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(
         scheduler,
         "_run_schtasks",
-        lambda *args: subprocess.CompletedProcess(list(args), 0, "only_one_col\n", ""),
+        lambda *args: subprocess.CompletedProcess(["schtasks.exe"], 0, "only_one_col\n", ""),
     )
     assert scheduler.task_run_state() is None
 
@@ -400,7 +400,7 @@ def test_task_run_state_queries_schtasks(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(
         scheduler,
         "_run_schtasks",
-        lambda *args: subprocess.CompletedProcess(list(args), 1, "", ""),
+        lambda *args: subprocess.CompletedProcess(["schtasks.exe"], 1, "", ""),
     )
     assert scheduler.task_run_state() is None
 
