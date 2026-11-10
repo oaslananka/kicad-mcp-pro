@@ -31,7 +31,7 @@ test("next action guides true state without manufacturing connectivity",()=>{
   [{devices:1,projects:1,clients:1,grants:0},"grant-access"],
   [{devices:1,projects:1,clients:1,grants:1},"review-access"]
  ] as const){
-   assert.match(renderAccount("Engineer",["github"],[],snapshot),new RegExp('data-next-action="'+key+'"'));
+   assert.ok(renderAccount("Engineer",["github"],[],snapshot).includes('data-next-action="'+key+'"'));
  }
 });
 
