@@ -157,3 +157,36 @@ test("permanent deletion of a revoked device cascades projects, grants and crede
     assert.equal((await pairing.activeDevicePublicKey(owner,device)),null);
   });
 });
+
+test("owner deletes only their selected project and its grants while keeping the device",{
+  skip:!process.env.TEST_DATABASE_URL
+},async()=>{
+  await inIsolatedDatabase(process.env.TEST_DATABASE_URL!,[
+    "001_inventory.pgsql","002_client_grants.pgsql","019_connector_managed_read_access.pgsql",
+    "007_device_pairing.pgsql","008_device_credentials.pgsql"
+  ],async db=>{
+    const owner="owner-project-delete",other="foreign-project-delete";
+    const device=randomUUID(),ownProject=randomUUID(),otherProject=randomUUID();
+    await db.query("INSERT INTO devices(id,owner_sub,alias,enabled) VALUES($1,$2,'Demo',true)",
+      [device,owner]);
+    await db.query("INSERT INTO projects(id,owner_sub,device_id,alias,enabled) VALUES "+
+      "($1,$2,$3,'Delete me',true),($4,$2,$3,'Keep me',true)",[
+      ownProject,owner,device,otherProject]);
+    await db.query("INSERT INTO project_client_grants(project_id,owner_sub,client_id,enabled) "+
+      "VALUES($1,$2,'chatgpt',true)",[ownProject,owner]);
+    await db.query("INSERT INTO connector_managed_read_access(project_id,enabled) VALUES($1,true)",[ownProject]);
+    const manager=new PgDeviceManagement(db);
+    assert.equal(await manager.deleteProject(other,ownProject),false);
+    assert.equal(await manager.deleteProject(owner,randomUUID()),false);
+    assert.equal(await manager.deleteProject(owner,ownProject),true);
+    assert.equal(await manager.deleteProject(owner,ownProject),false);
+    assert.equal((await manager.listProjects(owner)).length,1);
+    assert.equal((await manager.listProjects(owner))[0]?.id,otherProject);
+    assert.equal((await db.query("SELECT count(*)::integer AS n FROM devices WHERE id=$1",
+      [device])).rows[0].n,1);
+    for(const table of ["project_client_grants","connector_managed_read_access"]){
+      assert.equal((await db.query("SELECT count(*)::integer AS n FROM "+table+
+        " WHERE project_id=$1",[ownProject])).rows[0].n,0);
+    }
+  });
+});

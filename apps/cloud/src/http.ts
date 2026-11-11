@@ -19,6 +19,7 @@ import { renderLanding } from "./browser-ui.js";
 import { uiCss } from "./ui-styles.js";
 import {publicAsset} from "./public-assets.js";
 import {pairingReviewClient} from "./pairing-review-client.js";
+import {deviceProjectsClient} from "./device-projects-client.js";
 import {pairingLoginContinuationClient} from "./pairing-login-continuation.js";
 import type {TrustedOAuthReadIdentity} from "./connector-read-gate.js";
 import type {PreparedOwnerSummary,SummaryReadResult,PreparedOwnerDrc,DrcReadResult,
@@ -29,6 +30,7 @@ import {OwnerSummaryHttpPreparations} from "./owner-summary-http-preparations.js
 import type {ConnectorCapabilityClaim} from "./connector-capability-claim.js";
 
 type SummaryRelay={
+  localFolders?:import("./connector-ws.js").LocalFolderPort;
   isDeviceConnected?:(ownerSub:string,deviceId:string)=>boolean;
   getDeviceCapabilityClaim?:(ownerSub:string,deviceId:string)=>ConnectorCapabilityClaim|null;
   prepareOwnerSummary:(oauth:TrustedOAuthReadIdentity,deviceId:string,
@@ -95,6 +97,8 @@ function validOrigin(req: IncomingMessage, config: Config): boolean {
 export type CloudHttpServices={
   grants?:GrantManagement;
   identity?:Pick<Identity,"handler">;
+  /** Only passed from strictly loopback-gated local sandbox identity. */
+  localDevWorkspace?:boolean;
   devices?:DeviceManagementPort;
   managedRead?:ManagedReadPort;
   pairings?:PairingReviewPort;
@@ -169,12 +173,21 @@ async function handleRequest(
         res.end(pairingReviewClient);
         return;
       }
+      if (path === "/assets/device-projects.js" && req.method === "GET" &&
+          services.localDevWorkspace){
+        res.writeHead(200,{...noCache,"Content-Type":"text/javascript; charset=utf-8",
+          "Referrer-Policy":"no-referrer"});
+        res.end(deviceProjectsClient);
+        return;
+      }
       if (path === "/assets/ui.css" && req.method === "GET") {
         res.writeHead(200,{...noCache,"Content-Type":"text/css; charset=utf-8"});
         res.end(uiCss);
         return;
       }
-      if (identity && (path === "/sign-in" || path === "/account" || path === "/overview" || path === "/usage" || path === "/projects" || path === "/settings" || path === "/consent" || path === "/connections" || path === "/connections/revoke" || path === "/devices" || path === "/devices/revoke" || path === "/devices/delete" || path === "/devices/enable" || path === "/devices/projects/create" || path === "/devices/projects/grant" || path === "/devices/projects/managed" || path === "/devices/pairing" || path === "/devices/pairing/review" || path.startsWith("/auth/start/") || path.startsWith("/auth/link/"))) {
+      if (identity && (path === "/devices/projects/browse" ||
+        path === "/devices/projects/select" || path === "/devices/projects/rename" ||
+        path === "/sign-in" || path === "/account" || path === "/overview" || path === "/usage" || path === "/projects" || path === "/settings" || path === "/consent" || path === "/connections" || path === "/connections/revoke" || path === "/devices" || path === "/devices/revoke" || path === "/devices/delete" || path === "/devices/enable" || path === "/devices/projects/create" || path === "/devices/projects/grant" || path === "/devices/projects/managed" || path === "/devices/projects/delete" || path === "/devices/pairing" || path === "/devices/pairing/review" || path.startsWith("/auth/start/") || path.startsWith("/auth/link/"))) {
         const method=req.method??"GET";
         const headers=new Headers();
         for (const [name,value] of Object.entries(req.headers)) {
@@ -191,10 +204,13 @@ async function handleRequest(
           answer=await consentResponse(browserRequest,identity,config.publicOrigin,config.managementClientId);
         } else if (path==="/connections" || path==="/connections/revoke") {
           answer=await connectionsResponse(browserRequest,identity,config.publicOrigin,grants);
-        } else if(path==="/devices" || path==="/devices/revoke" || path==="/devices/delete" || path==="/devices/enable" || path==="/devices/projects/create" || path==="/devices/projects/grant" || path==="/devices/projects/managed"){
+        } else if(path==="/devices" || path==="/devices/revoke" || path==="/devices/delete" || path==="/devices/enable" || path==="/devices/projects/create" || path==="/devices/projects/grant" || path==="/devices/projects/managed" || path==="/devices/projects/delete" ||
+          path==="/devices/projects/browse" || path==="/devices/projects/select" ||
+          path==="/devices/projects/rename"){
           answer=await devicesResponse(browserRequest,identity,config.publicOrigin,
             devices,Boolean(pairingDevice),grants,
-            summaryRelay?.()?.isDeviceConnected,services.managedRead);
+            summaryRelay?.()?.isDeviceConnected,services.managedRead,
+            services.localDevWorkspace?summaryRelay?.()?.localFolders:undefined);
         } else if(path==="/devices/pairing" || path==="/devices/pairing/review"){
           answer=await pairingBrowserResponse(browserRequest,identity,config.publicOrigin,pairings);
         } else {
@@ -229,6 +245,9 @@ async function handleRequest(
           bearer_methods_supported: ["header"]
         });
         return;
+      }
+      if(path==="/" && req.method==="GET" && services.localDevWorkspace){
+        res.writeHead(303,{...noCache,"Location":"/devices"});res.end();return;
       }
       if(path==="/" && req.method==="GET" &&
         (req.headers.accept??"").toLowerCase().includes("text/markdown")){

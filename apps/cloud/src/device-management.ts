@@ -2,6 +2,12 @@ import type {Pool} from "pg";
 import {randomUUID} from "node:crypto";
 
 const ID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+/** Labels only. Paths and KiCad files are never stored in Cloud. */
+export function validProjectAlias(value:string):boolean{
+  return value.length>=1&&value.length<=64&&
+    /^[\p{L}\p{N}][\p{L}\p{N} ._()\-]*$/u.test(value)&&value.trim()===value;
+}
+
 
 export interface ManagedDevice {
   id:string;
@@ -55,7 +61,7 @@ export class PgDeviceManagement {
   /** Register metadata only; a local path is never accepted or stored. */
   async createProject(owner:string,deviceId:string,alias:string):Promise<string|null>{
     if(!owner||owner.length>256||!ID.test(deviceId)||
-      !/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/.test(alias))return null;
+      !validProjectAlias(alias))return null;
     const db=await this.pool.connect();
     try{
       await db.query("BEGIN");
@@ -92,6 +98,25 @@ export class PgDeviceManagement {
       "WHERE p.owner_sub=$1 ORDER BY p.created_at DESC,p.id LIMIT 100",[owner]);
     return rows.rows.map(row=>({id:row.id,deviceId:row.device_id,
       alias:row.alias,enabled:row.enabled}));
+  }
+
+  /** Change a display label, never a path or a KiCad folder on disk. */
+  async renameProject(owner:string,id:string,alias:string):Promise<boolean>{
+    if(!owner||owner.length>256||!ID.test(id)||!validProjectAlias(alias))return false;
+    const rows=await this.pool.query(
+      "UPDATE projects SET alias=$3 WHERE id=$1 AND owner_sub=$2 RETURNING id",
+      [id,owner,alias]);
+    return rows.rowCount===1;
+  }
+
+  /** Remove one owner's Cloud project and its dependent grants, not the local KiCad files. */
+  async deleteProject(owner:string,id:string):Promise<boolean>{
+    if(!owner||owner.length>256||!ID.test(id))return false;
+    const result=await this.pool.query(
+      "DELETE FROM projects WHERE id=$1 AND owner_sub=$2 RETURNING id",
+      [id,owner]
+    );
+    return result.rowCount===1;
   }
 
   /**

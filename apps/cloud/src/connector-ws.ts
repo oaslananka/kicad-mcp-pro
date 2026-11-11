@@ -51,6 +51,58 @@ type PreparedRead=PreparedOwnerSummary|PreparedOwnerDrc|PreparedOwnerInspection|
   PreparedOwnerBoardCounts|PreparedOwnerSchematicCounts;
 type ReadOperation="project_summary"|"run_drc"|"project_worker_inspection"|"project_board_counts"|"project_schematic_counts";
 type State="new"|"device_challenge"|"session_challenge"|"ready"|"closed";
+export type LocalFolderListing={
+  folderId:string;name:string;parentId:string|null;project:boolean;
+  more:boolean;folders:ReadonlyArray<{id:string;name:string;project:boolean}>;
+};
+export type NativeFolderSelection={
+  status:"selected"|"cancelled"|"invalid";
+  folderId?:string;name?:string;
+  projects?:ReadonlyArray<{id:string;name:string}>;
+};
+export type LocalFolderPort={
+  getProjectPath:(owner:string,deviceId:string,projectId:string)=>Promise<string|null>;
+  chooseFolder:(owner:string,deviceId:string)=>Promise<NativeFolderSelection|null>;
+  listFolder:(owner:string,deviceId:string,folderId:string)=>Promise<LocalFolderListing|null>;
+  bindFolder:(owner:string,deviceId:string,folderId:string,projectId:string)=>Promise<boolean>;
+};
+type FolderPending={
+  requestId:string;operation:"list"|"bind"|"choose"|"path";timer:NodeJS.Timeout;
+  resolve:(result:LocalFolderListing|NativeFolderSelection|string|boolean|null)=>void;
+};
+const folderResponse=z.discriminatedUnion("operation",[
+  z.strictObject({
+    kind:z.literal("connector.local_browser_result"),version:z.literal(1),
+    requestId:z.uuid(),operation:z.literal("path"),
+    path:z.string().max(2048).nullable()
+      .refine(p=>p===null||(!/[\x00-\x1f]/.test(p)&&
+        /^[A-Za-z]:\\/.test(p)&&p.toLowerCase().endsWith(".kicad_pro")))
+  }),
+  z.strictObject({
+    kind:z.literal("connector.local_browser_result"),version:z.literal(1),
+    requestId:z.uuid(),operation:z.literal("choose"),
+    status:z.enum(["selected","cancelled","invalid"]),
+    folderId:z.string().min(1).max(64).optional(),
+    name:z.string().min(1).max(76).optional(),
+    projects:z.array(z.strictObject({
+      id:z.string().min(1).max(64),
+      name:z.string().min(1).max(76)
+    })).min(1).max(25).optional()
+  }),
+  z.strictObject({
+    kind:z.literal("connector.local_browser_result"),version:z.literal(1),
+    requestId:z.uuid(),operation:z.literal("list"),folderId:z.string().min(1).max(64),
+    name:z.string().max(76),parentId:z.string().min(1).max(64).nullable(),
+    project:z.boolean(),more:z.boolean(),folders:z.array(z.strictObject({
+      id:z.string().min(1).max(64),name:z.string().min(1).max(76),project:z.boolean()
+    })).max(35)
+  }),
+  z.strictObject({
+    kind:z.literal("connector.local_browser_result"),version:z.literal(1),
+    requestId:z.uuid(),operation:z.literal("bind"),ok:z.boolean()
+  })
+]);
+
 export type SummaryReadResult={
   kind:"connector.local_read_preview";version:1;requestId:string;
   projectId:string;operation:"project_summary";
@@ -93,7 +145,7 @@ type Entry={
   readSequence:ConnectorReadSequence;
   pendingCatalogClaim?:ConnectorCapabilityClaim;
   catalogClaim?:ConnectorCapabilityClaim;
-  awaiting?:PendingRead; validating?:PendingRead;
+  awaiting?:PendingRead; validating?:PendingRead; folderPending?:FolderPending;
 };
 const hello=z.strictObject({
   kind:z.literal("device.hello"),version:z.literal(1),
@@ -224,6 +276,8 @@ export function attachConnectorWebSocket(
     operatorInspectionOnce?:boolean;
     operatorBoardCountsOnce?:boolean;
     operatorSchematicCountsOnce?:boolean;
+    /** Explicit single-user, loopback development only. Never used in production. */
+    localDevFolderBrowse?:boolean;
     maxConnections?:number;
     sourceOf:RequestSourceResolver;
   }
@@ -250,7 +304,8 @@ export function attachConnectorWebSocket(
     projectId:string,prepared?:PreparedOwnerSchematicCounts)=>Promise<SchematicCountsReadResult|null>;
   isDeviceConnected:(ownerSub:string,deviceId:string)=>boolean;
   /** Authenticated claim only; an advertised operation is not a grant. */
-  getDeviceCapabilityClaim:(ownerSub:string,deviceId:string)=>ConnectorCapabilityClaim|null}{
+  getDeviceCapabilityClaim:(ownerSub:string,deviceId:string)=>ConnectorCapabilityClaim|null;
+  localFolders:LocalFolderPort}{
   // Never let a lightweight pilot setting downgrade an independent owner
   // approval dependency, even when used outside the production entrypoint.
   if(options.operatorLocalOnce&&options.ownerConsent)
@@ -266,7 +321,7 @@ export function attachConnectorWebSocket(
   if(options.operatorSchematicCountsOnce&&!options.operatorLocalOnce)
     throw Error("Schematic counts require explicit local one-shot mode");
   const wss=new WebSocketServer({noServer:true,perMessageDeflate:false,
-    maxPayload:1024,clientTracking:true});
+    maxPayload:options.localDevFolderBrowse?8192:1024,clientTracking:true});
   const sockets=new Set<WebSocket>();
   const readyDevices=new Map<string,{socket:WebSocket,entry:Entry}>();
   const socketKey=(owner:string,device:string)=>JSON.stringify([owner,device]);
@@ -332,6 +387,11 @@ export function attachConnectorWebSocket(
             entry.validating.resolve(null);
             entry.validating=undefined;
           }
+          if(entry.folderPending){
+            clearTimeout(entry.folderPending.timer);
+            entry.folderPending.resolve(null);
+            entry.folderPending=undefined;
+          }
           reject(ws);
         }
         function send(msg:object):void{
@@ -346,7 +406,8 @@ export function attachConnectorWebSocket(
           }
         }
         async function frame(payload:Buffer,isBinary:boolean):Promise<void>{
-          if(entry.phase==="closed"||isBinary||payload.length===0||payload.length>1024){
+          if(entry.phase==="closed"||isBinary||payload.length===0||
+             payload.length>(options.localDevFolderBrowse?8192:1024)){
             fail();return;
           }
           const raw=asJson(payload);
@@ -407,6 +468,37 @@ export function attachConnectorWebSocket(
             expire(Math.max(1,(entry.sessionDeadline??0)-performance.now()));
             send({kind:"connector.ready",version:1});
             readyDevices.set(socketKey(entry.owner,entry.device),{socket:ws,entry});
+            return;
+          }
+          // Device-local folder selection is a separate *owner-only* sandbox
+          // request. No file contents, paths, OAuth tokens or tool results.
+          if(entry.phase==="ready"&&options.localDevFolderBrowse&&entry.folderPending){
+            const pending=entry.folderPending;
+            entry.folderPending=undefined;
+            clearTimeout(pending.timer);
+            const reply=folderResponse.safeParse(raw);
+            if(!reply.success||pending.requestId!==reply.data.requestId||
+               pending.operation!==reply.data.operation){
+              pending.resolve(null);fail();return;
+            }
+            if(reply.data.operation==="path"){
+              pending.resolve(reply.data.path);
+            }else if(reply.data.operation==="choose"){
+              if(reply.data.status==="selected"&&(!reply.data.folderId||!reply.data.name||
+                !reply.data.projects?.length)){
+                pending.resolve(null);fail();return;
+              }
+              pending.resolve({status:reply.data.status,
+                ...(reply.data.folderId?{folderId:reply.data.folderId}:{}),
+                ...(reply.data.name?{name:reply.data.name}:{}),
+                ...(reply.data.projects?{projects:reply.data.projects}:{})});
+            }else if(reply.data.operation==="list"){
+              pending.resolve({
+                folderId:reply.data.folderId,name:reply.data.name,
+                parentId:reply.data.parentId,project:reply.data.project,
+                more:reply.data.more,folders:reply.data.folders
+              });
+            }else{pending.resolve(reply.data.ok);}
             return;
           }
           // A result is meaningful only if this same authenticated socket
@@ -484,6 +576,11 @@ export function attachConnectorWebSocket(
             clearTimeout(entry.validating.timer);
             entry.validating.resolve(null);
             entry.validating=undefined;
+          }
+          if(entry.folderPending){
+            clearTimeout(entry.folderPending.timer);
+            entry.folderPending.resolve(null);
+            entry.folderPending=undefined;
           }
           const count=(ipOpen.get(ip)??1)-1;
           if(count<=0)ipOpen.delete(ip);else ipOpen.set(ip,count);
@@ -753,6 +850,60 @@ export function attachConnectorWebSocket(
     const result=await requestRead(oauth,deviceId,projectId,prepared,"project_schematic_counts");
     return result?.operation==="project_schematic_counts"?result:null;
   }
+  async function queryFolder(owner:string,deviceId:string,operation:"list"|"bind"|"choose"|"path",
+    folderId:string,projectId?:string):Promise<LocalFolderListing|NativeFolderSelection|string|boolean|null>{
+    if(!options.localDevFolderBrowse||owner!=="local-dev-owner"||
+       (operation!=="choose"&&operation!=="path"&&(folderId.length<1||folderId.length>64))||
+       ((operation==="bind"||operation==="path")&&
+         (!projectId||!z.uuid().safeParse(projectId).success)))return null;
+    const active=readyDevices.get(socketKey(owner,deviceId));
+    if(!active||active.entry.phase!=="ready"||
+       active.socket.readyState!==WebSocket.OPEN||
+       active.entry.folderPending||active.entry.awaiting||active.entry.validating||
+       (active.entry.sessionDeadline??0)-performance.now()<8_000)return null;
+    // A signed session is renewed by the Connector on expiry. Do not
+    // block Browse for the last 130 seconds of a valid 5-minute lease;
+    // allow a bounded request while the existing lease is still valid.
+    const remaining=Math.max(0,(active.entry.sessionDeadline??0)-performance.now());
+    const waitMs=Math.max(1,Math.min(operation==="choose"?120_000:5_000,
+      remaining-2_000));
+    const requestId=randomUUID();
+    return new Promise<LocalFolderListing|NativeFolderSelection|string|boolean|null>(resolve=>{
+      const timer=setTimeout(()=>{
+        if(active.entry.folderPending?.requestId===requestId)
+          active.entry.folderPending=undefined;
+        resolve(null);
+      },waitMs);
+      timer.unref();
+      active.entry.folderPending={requestId,operation,timer,resolve};
+      try{active.socket.send(JSON.stringify({
+        kind:"connector.local_browser_request",version:1,operation,
+        requestId,...((operation==="choose"||operation==="path")?{}:{folderId}),
+        ...(projectId?{projectId}:{})
+      }));}catch{
+        clearTimeout(timer);
+        active.entry.folderPending=undefined;
+        resolve(null);
+      }
+    });
+  }
+  const localFolders:LocalFolderPort={
+    async getProjectPath(owner,deviceId,projectId){
+      const value=await queryFolder(owner,deviceId,"path","",projectId);
+      return typeof value==="string"?value:null;
+    },
+    async chooseFolder(owner,deviceId){
+      const answer=await queryFolder(owner,deviceId,"choose","");
+      return answer&&typeof answer==="object"&&"status" in answer?answer:null;
+    },
+    async listFolder(owner,deviceId,folderId){
+      const answer=await queryFolder(owner,deviceId,"list",folderId);
+      return answer&&typeof answer==="object"&&! ("status" in answer)?answer:null;
+    },
+    async bindFolder(owner,deviceId,folderId,projectId){
+      return await queryFolder(owner,deviceId,"bind",folderId,projectId)===true;
+    }
+  };
   function isDeviceConnected(ownerSub:string,deviceId:string):boolean{
     if(stopped)return false;
     const ready=readyDevices.get(socketKey(ownerSub,deviceId));
@@ -769,7 +920,7 @@ export function attachConnectorWebSocket(
   return {prepareOwnerSummary,requestSummary,prepareOwnerDrc,requestDrc,
     prepareOwnerInspection,requestInspection,prepareOwnerBoardCounts,requestBoardCounts,
     prepareOwnerSchematicCounts,requestSchematicCounts,isDeviceConnected,
-    getDeviceCapabilityClaim,
+    getDeviceCapabilityClaim,localFolders,
     close:async()=>{
     if(stopped)return;
     stopped=true;

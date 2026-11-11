@@ -112,3 +112,20 @@ export function configuredDeviceSource(env:NodeJS.ProcessEnv):RequestSourceResol
   }
   throw new Error("INVALID_CONNECTOR_INGRESS_MODE");
 }
+
+
+/**
+ * Development-only direct TCP source. The entire HTTP server must already be
+ * bound to 127.0.0.1 by createLocalDevIdentity. Never accept proxy headers:
+ * they are neither proof of identity nor needed for a same-host socket.
+ */
+export const localDevLoopbackSource:RequestSourceResolver=req=>{
+  if(req.socket.localAddress!=="127.0.0.1"||
+     req.socket.remoteAddress!=="127.0.0.1")return null;
+  for(let i=0;i<req.rawHeaders.length;i+=2){
+    if(["cf-connecting-ip","x-forwarded-for","forwarded","x-real-ip",
+        "tailscale-user-login","tailscale-user-name"].includes(
+      req.rawHeaders[i]?.toLowerCase()??""))return null;
+  }
+  return "127.0.0.1";
+};
