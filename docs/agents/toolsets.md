@@ -12,12 +12,12 @@ that every listed tool is really registered.
 
 | Profile | Router profile / mode | Tools | Use Case |
 |---------|-----------------------|------:|----------|
-| `default` | `default` / readonly | 24 | Safe general-agent review |
-| `review` | `review` / readonly | 24 | DRC/ERC/DFM and visual review |
+| `default` | `default` / readonly | 25 | Safe general-agent review |
+| `review` | `review` / readonly | 25 | DRC/ERC/DFM and visual review |
 | `build` | `build` / write | 24 | Plan/apply/verify/rollback workflows |
 | `release` | `release` / manufacturing | 24 | Human-gated manufacturing handoff |
 | `expert` | `expert` / experimental | generated | Complete trusted-client catalog |
-| `readonly` | `review` / readonly | 24 | Backward-compatible review alias |
+| `readonly` | `review` / readonly | 25 | Backward-compatible review alias |
 | `schematic` | `schematic` / experimental | generated | Schematic design, library, export |
 | `pcb_layout` | `pcb_only` / experimental | generated | PCB layout and routing |
 | `manufacturing` | `manufacturing` / experimental | generated | Broad manufacturing surface |

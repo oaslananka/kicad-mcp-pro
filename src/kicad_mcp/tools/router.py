@@ -643,6 +643,7 @@ _REVIEW_TOOLS: tuple[str, ...] = (
     "pcb_get_design_rules",
     "pcb_get_stackup",
     "sch_get_symbols",
+    "sch_list_sheets",
     "sch_get_connectivity_graph",
     "sch_get_bounding_boxes",
     "validate_design",

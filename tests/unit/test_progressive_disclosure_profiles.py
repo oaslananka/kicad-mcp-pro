@@ -30,13 +30,13 @@ def test_default_configuration_uses_bounded_profile(tmp_path: Path) -> None:
     config = KiCadMCPConfig(kicad_cli=cli)
 
     assert config.profile == "default"
-    assert len(tools_for_profile(config.profile)) < 25
+    assert len(tools_for_profile(config.profile)) <= 25
 
 
 def test_workflow_profiles_are_public_and_bounded() -> None:
     assert set(WORKFLOW_PROFILES).issubset(available_profiles())
     assert tools_for_profile("default") == tools_for_profile("review")
-    assert len(tools_for_profile("review")) == 24
+    assert len(tools_for_profile("review")) == 25
     assert len(tools_for_profile("build")) == 24
     assert len(tools_for_profile("release")) == 24
     assert tools_for_profile("expert") == tools_for_profile("full")
@@ -175,3 +175,19 @@ def test_discovery_without_allowlist_preserves_full_legacy_visibility() -> None:
 def test_unknown_profile_fails_closed_to_default() -> None:
     assert tools_for_profile("unknown-profile") == tools_for_profile("default")
     assert categories_for_profile("unknown-profile") == categories_for_profile("default")
+
+
+@pytest.mark.anyio
+async def test_default_surfaces_hierarchical_sheet_discovery() -> None:
+    from kicad_mcp.capabilities import AccessTier
+
+    surfaced = set(tools_for_profile("default"))
+    assert "sch_list_sheets" in surfaced
+    assert len(surfaced) == 25
+    assert all(all_records()[tool].tier is AccessTier.READ for tool in surfaced)
+    server = build_server("default")
+    assert "sch_list_sheets" in {t.name for t in server.list_tools_sync()}
+    discovery = await call_tool_text(
+        server, "kicad_get_tools_in_category", {"category": "schematic"}
+    )
+    assert "sch_list_sheets" in discovery

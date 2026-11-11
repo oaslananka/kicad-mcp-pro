@@ -47,11 +47,11 @@
       ]
     },
     "default": {
-      "callableTools": 24,
-      "catalogCharacters": 9345,
-      "catalogReductionVsExpertPct": 95.9,
-      "declaredTools": 24,
-      "estimatedCatalogTokens": 2337,
+      "callableTools": 25,
+      "catalogCharacters": 9612,
+      "catalogReductionVsExpertPct": 95.8,
+      "declaredTools": 25,
+      "estimatedCatalogTokens": 2403,
       "forbiddenToolExposures": 0,
       "goldenCases": 65,
       "goldenCasesCovered": 12,
@@ -64,7 +64,7 @@
       "readOnlyCases": 25,
       "readOnlyCasesCovered": 12,
       "readOnlyCoveragePct": 48.0,
-      "toolReductionVsExpertPct": 93.8,
+      "toolReductionVsExpertPct": 93.6,
       "tools": [
         "dfm_run_manufacturer_check",
         "kicad_get_project_info",
@@ -87,6 +87,7 @@
         "sch_get_bounding_boxes",
         "sch_get_connectivity_graph",
         "sch_get_symbols",
+        "sch_list_sheets",
         "sch_visual_qa",
         "validate_design",
         "validate_footprints_vs_schematic"
@@ -549,11 +550,11 @@
       ]
     },
     "review": {
-      "callableTools": 24,
-      "catalogCharacters": 9345,
-      "catalogReductionVsExpertPct": 95.9,
-      "declaredTools": 24,
-      "estimatedCatalogTokens": 2337,
+      "callableTools": 25,
+      "catalogCharacters": 9612,
+      "catalogReductionVsExpertPct": 95.8,
+      "declaredTools": 25,
+      "estimatedCatalogTokens": 2403,
       "forbiddenToolExposures": 0,
       "goldenCases": 65,
       "goldenCasesCovered": 12,
@@ -566,7 +567,7 @@
       "readOnlyCases": 25,
       "readOnlyCasesCovered": 12,
       "readOnlyCoveragePct": 48.0,
-      "toolReductionVsExpertPct": 93.8,
+      "toolReductionVsExpertPct": 93.6,
       "tools": [
         "dfm_run_manufacturer_check",
         "kicad_get_project_info",
@@ -589,6 +590,7 @@
         "sch_get_bounding_boxes",
         "sch_get_connectivity_graph",
         "sch_get_symbols",
+        "sch_list_sheets",
         "sch_visual_qa",
         "validate_design",
         "validate_footprints_vs_schematic"
