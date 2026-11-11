@@ -191,6 +191,19 @@ To ensure required checks always report success even on docs-only PRs, we use
 This avoids the "pending check" problem that occurs when a required job is
 skipped entirely.
 
+### Parallel coverage readiness
+
+The Linux full-suite CI Tests / Coverage job begins alongside the
+mcp-server OS matrix after change classification and release metadata checks.
+When native Windows coverage is required, that job waits (maximum 20 minutes)
+for the immutable Windows artifact from the **same workflow run and attempt**,
+then downloads it and verifies the original SHA/run/attempt manifest before
+merging executed lines. Missing evidence, an API failure or conflicting artifact
+IDs fail the job; they never turn into a successful quality result. The
+Required PR Gate still checks every OS matrix job separately. This reduces
+unnecessary serial execution without launching a second SonarCloud analysis,
+dropping Windows-only coverage or changing required GitHub status names.
+
 ### One-run Python coverage for SonarCloud
 
 The required `SonarCloud Scan` is produced by `ci.yml` after `CI Tests / Coverage`.

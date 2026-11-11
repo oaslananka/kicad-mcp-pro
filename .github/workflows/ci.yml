@@ -392,7 +392,8 @@ jobs:
 
   coverage:
     name: CI Tests / Coverage
-    needs: [changes, release-metadata, mcp-server]
+    # Linux coverage starts beside the platform matrix; native evidence joins below.
+    needs: [changes, release-metadata]
     outputs:
       sonar_coverage_artifact_id: ${{ steps.sonar-coverage-upload.outputs.artifact-id }}
     if: >-
@@ -403,6 +404,7 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
+      actions: read  # Poll only current-run immutable Windows coverage artifacts.
       id-token: write
     steps:
       - name: Skip full coverage when Python is unaffected and main Sonar is not required
@@ -432,6 +434,42 @@ jobs:
           junitxml: python.junit.xml
       # On PR Python changes and analyzed main pushes, join same-run Windows
       # execution evidence with the Linux suite; verify SHA/run/attempt.
+      - name: Wait for exact-run Windows coverage evidence
+        if: >-
+          env.skip_ci != 'true' &&
+          steps.python-tests.outcome == 'success' &&
+          ((github.event_name == 'pull_request' &&
+            needs.changes.outputs.python == 'true') ||
+           ((github.event_name == 'push' ||
+             github.event_name == 'workflow_dispatch') &&
+            github.ref == 'refs/heads/main' &&
+            needs.changes.outputs.release_metadata_only != 'true' &&
+            needs.changes.outputs.sonar_docs_only != 'true'))
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COVERAGE_ARTIFACT: windows-python-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Artifact v4 is accessible before the Windows producer job completes.
+          for attempt in $(seq 1 80); do
+            if ! response="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100")"; then
+              echo "::error::Cannot inspect current workflow run artifacts."
+              exit 1
+            fi
+            matches="$(jq -r --arg name "$COVERAGE_ARTIFACT"               '[.artifacts[] | select(.name == $name and .expired == false) | .id] | unique | .[]' <<< "$response")"
+            if [[ "$matches" =~ ^[0-9]+$ ]]; then
+              echo "Native Windows coverage evidence is ready."
+              exit 0
+            fi
+            if [[ -n "$matches" ]]; then
+              echo "::error::Ambiguous current-run native coverage artifact."
+              exit 1
+            fi
+            if (( attempt < 80 )); then sleep 15; fi
+          done
+          echo "::error::Exact-run Windows coverage not available after 20 minutes."
+          exit 1
       - name: Download native Windows coverage for this run
         if: >-
           env.skip_ci != 'true' &&
