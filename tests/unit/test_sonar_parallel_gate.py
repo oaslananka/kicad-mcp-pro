@@ -43,9 +43,12 @@ def test_coverage_waits_for_exact_run_windows_artifact_before_merge() -> None:
     run_id = "$" + "{{ github.run_id }}"
     run_attempt = "$" + "{{ github.run_attempt }}"
     expected = f"windows-python-coverage-{run_id}-{run_attempt}"
-    assert expected == wait["env"]["COVERAGE_ARTIFACT"]
-    assert "gh api" in run and "GITHUB_RUN_ID" in run
-    assert "attempt" in run and "sleep 15" in run and "exit 1" in run
+    assert wait["env"]["COVERAGE_ARTIFACT"] == expected
+    assert "gh api" in run
+    assert "GITHUB_RUN_ID" in run
+    assert "attempt" in run
+    assert "sleep 15" in run
+    assert "exit 1" in run
     assert "GITHUB_TOKEN" not in run
     assert "GH_TOKEN" in wait["env"]
     assert steps[names.index(merge_name)]["run"].count("merge_platform_coverage.py merge") == 1
