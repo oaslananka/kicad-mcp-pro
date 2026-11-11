@@ -11,6 +11,7 @@ import sys
 from collections.abc import Callable
 from ctypes import wintypes
 from pathlib import Path
+from typing import cast
 from uuid import UUID
 
 FOS_PICKFOLDERS = 0x20
@@ -93,7 +94,10 @@ def _method(pointer: ctypes.c_void_p, index: int, result: type, *args: type) -> 
     # COM vtable functions use Windows stdcall and the interface pointer
     # as their first argument.
     vtable = ctypes.cast(pointer, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
-    return ctypes.WINFUNCTYPE(result, ctypes.c_void_p, *args)(vtable[index])
+    winfunctype = getattr(ctypes, "WINFUNCTYPE", None)
+    if not callable(winfunctype):
+        raise OSError("Windows stdcall is required for native folder selection")
+    return cast(Callable[..., int], winfunctype(result, ctypes.c_void_p, *args)(vtable[index]))
 
 
 def choose_project_folder() -> Path | None:
