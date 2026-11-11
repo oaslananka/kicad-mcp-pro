@@ -135,7 +135,13 @@ test("outbound local WebSocket proves enrolled device identity then binds signed
       await assert.rejects(connect("ws://127.0.0.1:"+port+"/api/v1/connector/ws?token=leak"),
         /403/);
       ws=await connect("ws://127.0.0.1:"+port+"/api/v1/connector/ws");
-      const hello=await send(ws,{kind:"device.hello",version:1,ownerSub:owner,deviceId:device});
+      const catalog={schemaVersion:"1.0.0",catalogRevision:"a".repeat(64),
+        operations:["project_summary"]};
+      assert.equal(attached.getDeviceCapabilityClaim(owner,device),null);
+      const hello=await send(ws,{kind:"device.hello",version:1,
+        ownerSub:owner,deviceId:device,catalog});
+      assert.equal(attached.getDeviceCapabilityClaim(owner,device),null,
+        "Unauthenticated hello cannot claim verified connector status");
       assert.equal(hello.kind,"device.challenge");
       const challengeId=field(hello,"challengeId"),nonce=field(hello,"nonce");
       assert.ok(!JSON.stringify((await db.query(
@@ -151,6 +157,13 @@ test("outbound local WebSocket proves enrolled device identity then binds signed
       const ready=await send(ws,{kind:"connector.session_proof",version:1,signature:second});
       assert.equal(ready.kind,"connector.ready");
       assert.equal(attached.isDeviceConnected(owner,device),true);
+      assert.deepEqual(attached.getDeviceCapabilityClaim(owner,device),catalog);
+      const copy=attached.getDeviceCapabilityClaim(owner,device);
+      assert.ok(copy);
+      copy.operations.push("run_drc"); // Caller cannot mutate the server's actual claim.
+      assert.deepEqual(attached.getDeviceCapabilityClaim(owner,device),catalog);
+      assert.equal(attached.getDeviceCapabilityClaim("another-owner",device),null);
+      assert.equal(attached.getDeviceCapabilityClaim(owner,randomUUID()),null);
       assert.equal(attached.isDeviceConnected("another-owner",device),false);
       assert.equal(attached.isDeviceConnected(owner,randomUUID()),false);
       assert.equal((await db.query("SELECT state FROM connector_sessions WHERE id=$1",
@@ -159,6 +172,7 @@ test("outbound local WebSocket proves enrolled device identity then binds signed
       ws.send(JSON.stringify({kind:"connector.execute",operation:"run_drc"}));
       assert.equal(await close,1008); // No native KiCad relay.
       assert.equal(attached.isDeviceConnected(owner,device),false);
+      assert.equal(attached.getDeviceCapabilityClaim(owner,device),null);
       // Closure should fence the persistent session as well.
       let state="active";
       for(let i=0;i<35;i++){
@@ -424,7 +438,9 @@ test("managed WSS performs two successful sequential reads and discards a third 
 // grant state, and strict native DRC reply framing. Not an owner/WebAuthn UV.
 test("signed one-shot WSS admits only explicit native DRC count results",
   {skip:!url,timeout:70_000},async()=>{
-  for(const behavior of ["allowed","wrong_operation","revoked","flag_off"] as const){
+  for(const behavior of [
+    "allowed","wrong_operation","revoked","flag_off","claim_blocks_drc"
+  ] as const){
     await inIsolatedDatabase(url!,migrations,async db=>{
       const owner="native-drc-owner",clientId="native-drc-client";
       const keys=generateKeyPairSync("ed25519");
@@ -447,8 +463,13 @@ test("signed one-shot WSS admits only explicit native DRC count results",
       let ws:WebSocket|undefined;
       try{
         ws=await connect("ws://127.0.0.1:"+port+"/api/v1/connector/ws");
+        const catalog=behavior==="claim_blocks_drc"?{
+          schemaVersion:"1.0.0",catalogRevision:"b".repeat(64),
+          operations:["project_summary"]
+        }:undefined;
         const hello=await send(ws,{
-          kind:"device.hello",version:1,ownerSub:owner,deviceId:device
+          kind:"device.hello",version:1,ownerSub:owner,deviceId:device,
+          ...(catalog?{catalog}:{})
         });
         const deviceSignature=sign(null,deviceHandshakeProof(
           field(hello,"challengeId"),device,field(hello,"nonce")),
@@ -467,6 +488,13 @@ test("signed one-shot WSS admits only explicit native DRC count results",
         const oauth={ownerSub:owner,clientId,
           accessTokenIssuedAtSeconds:Math.floor(Date.now()/1000)};
         const pendingIntent=attached.prepareOwnerDrc(oauth,device,project);
+        if(behavior==="claim_blocks_drc"){
+          assert.deepEqual(attached.getDeviceCapabilityClaim(owner,device),catalog);
+          assert.equal(pendingIntent,null,
+            "Claim may narrow remote read operations but cannot grant new ones");
+          assert.ok(attached.prepareOwnerSummary(oauth,device,project));
+          return;
+        }
         if(behavior==="flag_off"){
           assert.equal(pendingIntent,null,"A normal one-shot session cannot invoke native DRC");
           return;
