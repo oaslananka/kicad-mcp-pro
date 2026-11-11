@@ -8,7 +8,7 @@ import json
 import ssl
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
@@ -512,4 +512,57 @@ def test_opt_in_revision_is_sent_only_with_verified_synthetic_tls(tmp_path: Path
         "device_verified",
         "session_verified",
         "completed",
+    ]
+
+
+def test_catalog_hello_rejects_non_boolean_opt_in() -> None:
+    from kicad_mcp.cloud_outbound_handshake import (
+        CloudHandshakeDeniedError,
+        OutboundSessionOptions,
+        _catalog_hello_metadata,
+    )
+
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        _catalog_hello_metadata(OutboundSessionOptions(advertise_catalog=cast(Any, "yes")))
+
+
+@pytest.mark.parametrize(
+    ("options", "expected"),
+    [
+        (
+            dict(operator_presence_pilot=True),
+            ["project_summary"],
+        ),
+        (
+            dict(operator_presence_pilot=True, operator_native_drc_pilot=True),
+            ["project_summary", "run_drc"],
+        ),
+    ],
+)
+def test_catalog_hello_reports_only_opted_in_presence_operations(
+    options: dict[str, bool], expected: list[str]
+) -> None:
+    from kicad_mcp.cloud_outbound_handshake import OutboundSessionOptions, _catalog_hello_metadata
+
+    claim = _catalog_hello_metadata(
+        OutboundSessionOptions(advertise_catalog=True, dispatcher_factory=lambda _: None, **options)
+    )["catalog"]
+    assert claim["operations"] == expected
+
+
+def test_catalog_hello_reports_only_explicit_inspection_pilots() -> None:
+    from kicad_mcp.cloud_outbound_handshake import OutboundSessionOptions, _catalog_hello_metadata
+
+    options = OutboundSessionOptions(
+        advertise_catalog=True,
+        inspection_factory=lambda _: None,
+        operator_inspection_pilot=True,
+        board_counts_pilot=True,
+        schematic_counts_pilot=True,
+    )
+    claim = _catalog_hello_metadata(options)["catalog"]
+    assert claim["operations"] == [
+        "project_worker_inspection",
+        "project_board_counts",
+        "project_schematic_counts",
     ]
