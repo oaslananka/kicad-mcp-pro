@@ -63,6 +63,8 @@ if TYPE_CHECKING:
 # Stable validation messages and gate labels shared across reports.
 _PCB_TRANSFER_GATE = "PCB transfer"
 _STACKUP_CONSISTENCY_GATE = "Stackup consistency"
+_FAILURE_PREFIX = "FAIL: "
+_BLOCKED_PREFIX = "BLOCKED: "
 _WARNING_PREFIX = "WARN: "
 _MAX_UNCONNECTED_NET_LINES = 25
 _ROUTE_CORNER_STYLE_GATE = "Route corner style"
@@ -378,13 +380,16 @@ def _fix_for_gate(gate_name: str) -> SuggestedFix | None:
 
 def _finding_for_gate_detail(outcome: GateOutcome, detail: str) -> Finding:
     cleaned = detail.strip()
-    severity = (
-        "warning" if outcome.status == "EMPTY" or cleaned.startswith(_WARNING_PREFIX) else "error"
-    )
+    if cleaned.startswith((_FAILURE_PREFIX, _BLOCKED_PREFIX)):
+        severity = "error"
+    elif outcome.status in ("WARN", "EMPTY") or cleaned.startswith(_WARNING_PREFIX):
+        severity = "warning"
+    else:
+        severity = "error"
     description = (
-        cleaned.removeprefix("FAIL: ")
+        cleaned.removeprefix(_FAILURE_PREFIX)
         .removeprefix(_WARNING_PREFIX)
-        .removeprefix("BLOCKED: ")
+        .removeprefix(_BLOCKED_PREFIX)
         .strip()
         or outcome.summary
     )
@@ -423,7 +428,7 @@ def _gate_findings(outcome: GateOutcome) -> list[Finding]:
     tagged = [
         detail
         for detail in outcome.details
-        if detail.strip().startswith(("FAIL: ", _WARNING_PREFIX, "BLOCKED: "))
+        if detail.strip().startswith((_FAILURE_PREFIX, _WARNING_PREFIX, _BLOCKED_PREFIX))
     ]
     if outcome.status == "PASS":
         actionable = tagged
@@ -2961,6 +2966,17 @@ def _signoff_provenance(intent: ProjectDesignIntent) -> dict[str, Any]:
     }
 
 
+def _project_gate_headline(status: GateStatus) -> str:
+    """Use distinct user-facing summaries for blockers and advisory findings."""
+    if status == "PASS":
+        return "This project is ready for the next stage."
+    if status == "WARN":
+        return "Advisory findings remain; review them before production sign-off."
+    if status == "EMPTY":
+        return "This project is empty; complete onboarding before release."
+    return "Blocking issues remain. Do not treat this design as production-ready yet."
+
+
 def _render_project_gate_report(
     outcomes: list[GateOutcome],
     *,
@@ -2969,12 +2985,7 @@ def _render_project_gate_report(
     status = _combined_status(outcomes)
     lines = [
         f"Project quality gate: {status}",
-        summary
-        or (
-            "- This project is ready for the next stage."
-            if status == "PASS"
-            else "- Blocking issues remain. Do not treat this design as production-ready yet."
-        ),
+        summary or f"- {_project_gate_headline(status)}",
     ]
     if _design_intent_warning():
         lines.append("WARN: Design intent not set - placement scoring will use defaults.")
@@ -2998,11 +3009,7 @@ def _project_gate_report_payload(
 ) -> ProjectGateReportPayload:
     text = _render_project_gate_report(outcomes, summary=summary)
     status = _combined_status(outcomes)
-    headline = summary or (
-        "This project is ready for the next stage."
-        if status == "PASS"
-        else "Blocking issues remain. Do not treat this design as production-ready yet."
-    )
+    headline = summary or _project_gate_headline(status)
     return ProjectGateReportPayload(
         text=text,
         status=status,
@@ -3018,11 +3025,7 @@ def _project_gate_verdict_report(
 ) -> VerdictReport:
     text = _render_project_gate_report(outcomes, summary=summary)
     status = _combined_status(outcomes)
-    headline = summary or (
-        "This project is ready for the next stage."
-        if status == "PASS"
-        else "Blocking issues remain. Do not treat this design as production-ready yet."
-    )
+    headline = summary or _project_gate_headline(status)
     findings = [finding for outcome in outcomes for finding in _gate_findings(outcome)]
     if _design_intent_warning():
         findings.append(
@@ -3037,9 +3040,16 @@ def _project_gate_verdict_report(
     verdict = VerdictReport.verdict_for([finding.severity for finding in findings])
     if verdict == "PASS":
         verdict = _gate_status_verdict(status)
-    first_blocker = next((outcome for outcome in outcomes if outcome.status != "PASS"), None)
+    first_blocker = next(
+        (outcome for outcome in outcomes if outcome.status in ("FAIL", "BLOCKED", "EMPTY")),
+        None,
+    )
     if first_blocker is None:
-        next_action = "Proceed to export_manufacturing_package()."
+        next_action = (
+            "Review advisory findings and rerun project_quality_gate()."
+            if status == "WARN"
+            else "Proceed to export_manufacturing_package()."
+        )
     else:
         fixer = _fix_for_gate(first_blocker.name)
         next_action = (
