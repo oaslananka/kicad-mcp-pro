@@ -11,6 +11,7 @@ import type { Inventory, Device, Project } from "../src/store.js";
 import type { Actor, Verifier } from "../src/auth.js";
 import type { GrantManagement } from "../src/grants.js";
 
+const capabilityCatalogTool = "list_project_capabilities";
 const id = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
 const mockProject: Project = {
   id, alias: "USB-C Controller", deviceId: "d108b5f4-22f2-4b3c-b62d-55163fa34814",
@@ -107,9 +108,31 @@ test("MCP tools/list advertises only bounded Cloud inventory tools", async () =>
   const out = await call("tools/list");
   assert.equal(out.status,200,JSON.stringify(out.data));
   const names=(out.data.result?.tools??[]).map((t:{name:string})=>t.name);
-  assert.deepEqual(names.sort(), ["discover_project_workflow","get_project","get_service_status","list_devices","list_projects"]);
+  assert.deepEqual(names.sort(), ["discover_project_workflow","get_project","get_service_status","list_devices",capabilityCatalogTool,"list_projects"]);
   assert.equal(names.includes("pcb_delete_items"), false);
 });
+test("Cloud category discovery cannot expose a disabled or foreign local tool",async()=>{
+  const ask=async(token:string,projectId?:string)=>{
+    const response=await call("tools/call",{
+      name:capabilityCatalogTool,
+      arguments:projectId?{project_id:projectId}:{}
+    },token,capabilityCatalogTool);
+    assert.equal(response.status,200);
+    return response.data.result.structuredContent as Record<string,unknown>;
+  };
+  const selected=await ask("test-user-a",id);
+  assert.equal(selected.catalogAvailable,true);
+  assert.deepEqual(selected.categories,[]);
+  const unauthorized=await ask("test-user-b",id);
+  assert.deepEqual(unauthorized,{
+    catalogAvailable:false,selectionRequired:false,categories:[]
+  });
+  const invalid=await ask("test-user-a",randomUUID());
+  assert.deepEqual(invalid,{
+    catalogAvailable:false,selectionRequired:false,categories:[]
+  });
+});
+
 test("MCP inventory reflects only the real owner-scoped signed Connector session",async()=>{
   let ready=false;
   const observations:string[]=[];
@@ -141,7 +164,16 @@ test("MCP inventory reflects only the real owner-scoped signed Connector session
     assert.equal(offlineProjects.value.projects[0].connectorConnected,false);
     assert.equal(offlineProjects.value.projects[0].available,false);
     assert.equal(offlineProjects.value.projects[0].reason,"device_not_connected");
+    const offlineCatalog=await callTool("test-user-a",capabilityCatalogTool);
+    assert.equal(offlineCatalog.value.catalogAvailable,true);
+    assert.equal(offlineCatalog.value.connectorConnected,false);
+    assert.equal(offlineCatalog.value.categories[0].tools[0].state,"device_not_connected");
+    assert.equal(offlineCatalog.value.categories[0].tools[0].canExecuteNow,false);
     ready=true;
+    const onlineCatalog=await callTool("test-user-a",capabilityCatalogTool);
+    assert.equal(onlineCatalog.value.connectorConnected,true);
+    assert.equal(onlineCatalog.value.categories[0].tools[0].state,"owner_session_required");
+    assert.equal(onlineCatalog.value.categories[0].tools[0].canExecuteNow,false);
     const onlineDevice=await callTool("test-user-a","list_devices");
     assert.equal(onlineDevice.value.devices[0].connected,true);
     const grantedProjects=await callTool("test-user-a","list_projects");
@@ -260,6 +292,14 @@ test("task discovery respects enabled operation and ambiguous project selection"
     return ((await reply.json()) as any).result.structuredContent;
   }
   try{
+    const browse=await fetch(origin+"/mcp",{
+      method:"POST",
+      headers:headers("test-user-a","tools/call",capabilityCatalogTool),
+      body:payload("tools/call",{name:capabilityCatalogTool,arguments:{}})
+    });
+    assert.deepEqual(((await browse.json()) as any).result.structuredContent,{
+      catalogAvailable:false,selectionRequired:true,categories:[]
+    });
     const ambiguous=await discover({task:"inspect_engine"});
     assert.deepEqual(ambiguous,{
       available:false,selectionRequired:true,tools:[]
@@ -272,6 +312,33 @@ test("task discovery respects enabled operation and ambiguous project selection"
     assert.equal(drc.available,false);
     assert.deepEqual(drc.tools,[]);
     assert.equal(drc.reason,"cloud_operation_not_enabled");
+    const catalogReply=await fetch(origin+"/mcp",{
+      method:"POST",
+      headers:headers("test-user-a","tools/call",capabilityCatalogTool),
+      body:payload("tools/call",{
+        name:capabilityCatalogTool,arguments:{project_id:another.id}
+      })
+    });
+    assert.equal(catalogReply.status,200);
+    const catalog=((await catalogReply.json()) as any).result.structuredContent;
+    assert.equal(catalog.catalogAvailable,true);
+    assert.equal(catalog.connectorConnected,false);
+    assert.deepEqual(catalog.categories.map((g:{category:string})=>g.category),["project"]);
+    assert.deepEqual(catalog.categories[0].tools.map((t:{tool:string})=>t.tool),[
+      "get_project_engine_status"
+    ]);
+    assert.equal(catalog.categories[0].tools[0].canExecuteNow,false);
+    assert.equal(catalog.categories[0].tools[0].state,"device_not_connected");
+    const filteredReply=await fetch(origin+"/mcp",{
+      method:"POST",
+      headers:headers("test-user-a","tools/call",capabilityCatalogTool),
+      body:payload("tools/call",{
+        name:capabilityCatalogTool,arguments:{project_id:another.id,category:"pcb"}
+      })
+    });
+    assert.deepEqual(
+      ((await filteredReply.json()) as any).result.structuredContent.categories,[]
+    );
     const foreign=await discover({task:"inspect_engine",project_id:another.id},"test-user-b");
     assert.equal(foreign.available,false);
     assert.deepEqual(foreign.tools,[]);

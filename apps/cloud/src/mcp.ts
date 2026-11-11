@@ -3,6 +3,12 @@ import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import type { Actor } from "./auth.js";
 import type { Inventory, Project } from "./store.js";
+import {
+  CLOUD_READ_CAPABILITIES,
+  CLOUD_READ_CATEGORIES,
+  CLOUD_READ_TASKS,
+  listConfiguredCloudCapabilities
+} from "./cloud-capabilities.js";
 
 const text = (value: object) => ({
   content: [{ type: "text" as const, text: JSON.stringify(value) }],
@@ -149,32 +155,39 @@ export function createCloudMcpHandler(
     // Task-first discovery describes the CURRENT Cloud MCP surface, not
     // the much broader local KiCad tool registry. Never claim availability
     // for a feature that was not explicitly enabled on this Cloud instance.
-    const workflows = {
-      inspect_engine: {
-        tool: "get_project_engine_status",
-        enabled: Boolean(projectInspection)
-      },
-      check_board_drc: {
-        tool: "get_project_drc_counts",
-        enabled: Boolean(projectDrc)
-      },
-      check_project_files: {
-        tool: "get_project_presence",
-        enabled: Boolean(projectPresence)
-      },
-      inspect_board: {
-        tool: "get_project_board_counts",
-        enabled: Boolean(boardCounts)
-      },
-      inspect_schematic: {
-        tool: "get_project_schematic_counts",
-        enabled: Boolean(schematicCounts)
-      }
-    } as const;
+    // The same bounded registry powers task discovery and category browsing.
+    // Never mirror arbitrary local-only tools into Cloud MCP.
+    const enabled={
+      inspect_engine:Boolean(projectInspection),
+      check_board_drc:Boolean(projectDrc),
+      check_project_files:Boolean(projectPresence),
+      inspect_board:Boolean(boardCounts),
+      inspect_schematic:Boolean(schematicCounts)
+    };
+    const workflows=Object.fromEntries(CLOUD_READ_CAPABILITIES.map(c=>[
+      c.task,{tool:c.tool,enabled:enabled[c.task]}
+    ])) as Record<(typeof CLOUD_READ_TASKS)[number],{tool:string;enabled:boolean}>;
+
+    mcp.registerTool("list_project_capabilities",{
+      description:"Browse only configured read-only Cloud MCP operations by category for one granted project. Never advertise local-only tools as remote; Connector presence is not permission to execute.",
+      inputSchema:z.object({
+        project_id:z.string().uuid().optional(),
+        category:z.enum(CLOUD_READ_CATEGORIES).optional()
+      }),annotations:readonly
+    },async ({project_id,category})=>{
+      const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
+      if(!project)return text({catalogAvailable:false,selectionRequired,categories:[]});
+      const connectorConnected=connected(project.deviceId);
+      return text({
+        catalogAvailable:true,selectionRequired:false,connectorConnected,
+        categories:listConfiguredCloudCapabilities(enabled,connectorConnected,category)
+      });
+    });
+
     mcp.registerTool("discover_project_workflow",{
       description:"Find the currently enabled, project-authorized Cloud MCP tool for a read-only KiCad task. Reports missing capabilities without executing KiCad, switching projects or revealing local paths.",
       inputSchema:z.object({
-        task:z.enum(["inspect_engine","check_board_drc", "check_project_files","inspect_board","inspect_schematic"]),
+        task:z.enum(CLOUD_READ_TASKS),
         project_id:z.string().uuid().optional()
       }),annotations:readonly
     },async ({task,project_id})=>{
