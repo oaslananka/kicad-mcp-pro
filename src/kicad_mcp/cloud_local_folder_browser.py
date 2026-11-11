@@ -126,6 +126,7 @@ class LocalFolderBrowser:
     def list_folder(self, token: str) -> dict[str, Any]:
         if token not in self._paths:
             raise ValueError("unknown_folder")
+        path: Path | None
         if token in self._selected_native:
             path = self._selected_native[token]
             if path != self._paths[token] or not path.is_dir() or not self._has_project(path):
