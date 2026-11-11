@@ -24,6 +24,31 @@ then start the separately enabled local one-shot Connector operation. The
 Cloud portal does not proxy arbitrary local tools or store KiCad design
 content. Existing account-free local MCP clients remain supported.
 
+## Cloud MCP capability discovery (bounded pilot)
+
+Cloud exposes **list_project_capabilities** alongside the existing
+**discover_project_workflow** endpoint. For one OAuth-client-granted project,
+the new tool groups **only configured, registered Cloud read operations** into
+project, schematic, pcb, and validation categories. It can filter a
+category without sending local KiCad paths, schematics, or the entire local
+expert tool catalog to an AI client.
+
+A project grant is checked again on each request. Multiple granted projects
+require explicit selection; foreign, revoked or unknown project IDs reveal no
+categories. An offline Connector reports device_not_connected; an online
+Connector reports owner_session_required, **not** an executable grant. The
+actual read tool must independently verify owner/device/project authorization
+before use. This pilot adds **one discovery tool**, not remote write access
+or a promise that all local KiCad operations work through Cloud.
+
+The stable category definitions and mapping for currently implemented Cloud
+read tools are in src/cloud-capabilities.ts. Expand this surface only after
+the corresponding local-adapter contract, input validation, version support,
+live permission checks, and rollback/negative-case tests have passed. The
+existing local KiCad capability catalog remains authoritative for local
+engineering features; this Cloud registry describes only its verified
+remotely callable subset, not a second full engineering engine.
+
 ## Owner-managed read-only Connector (development; default OFF)
 
 A separate, opt-in `CONNECTOR_MANAGED_READ_ENABLED=true` Cloud mode permits
