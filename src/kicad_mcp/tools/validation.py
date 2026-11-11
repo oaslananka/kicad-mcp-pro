@@ -63,6 +63,8 @@ if TYPE_CHECKING:
 # Stable validation messages and gate labels shared across reports.
 _PCB_TRANSFER_GATE = "PCB transfer"
 _STACKUP_CONSISTENCY_GATE = "Stackup consistency"
+_FAILURE_PREFIX = "FAIL: "
+_BLOCKED_PREFIX = "BLOCKED: "
 _WARNING_PREFIX = "WARN: "
 _MAX_UNCONNECTED_NET_LINES = 25
 _ROUTE_CORNER_STYLE_GATE = "Route corner style"
@@ -378,16 +380,16 @@ def _fix_for_gate(gate_name: str) -> SuggestedFix | None:
 
 def _finding_for_gate_detail(outcome: GateOutcome, detail: str) -> Finding:
     cleaned = detail.strip()
-    if cleaned.startswith(("FAIL: ", "BLOCKED: ")):
+    if cleaned.startswith((_FAILURE_PREFIX, _BLOCKED_PREFIX)):
         severity = "error"
     elif outcome.status in ("WARN", "EMPTY") or cleaned.startswith(_WARNING_PREFIX):
         severity = "warning"
     else:
         severity = "error"
     description = (
-        cleaned.removeprefix("FAIL: ")
+        cleaned.removeprefix(_FAILURE_PREFIX)
         .removeprefix(_WARNING_PREFIX)
-        .removeprefix("BLOCKED: ")
+        .removeprefix(_BLOCKED_PREFIX)
         .strip()
         or outcome.summary
     )
@@ -426,7 +428,7 @@ def _gate_findings(outcome: GateOutcome) -> list[Finding]:
     tagged = [
         detail
         for detail in outcome.details
-        if detail.strip().startswith(("FAIL: ", _WARNING_PREFIX, "BLOCKED: "))
+        if detail.strip().startswith((_FAILURE_PREFIX, _WARNING_PREFIX, _BLOCKED_PREFIX))
     ]
     if outcome.status == "PASS":
         actionable = tagged
