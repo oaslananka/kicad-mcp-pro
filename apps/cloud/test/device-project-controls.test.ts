@@ -22,7 +22,7 @@ test("device project menus default open and expose compact owner-scoped actions"
   const html=renderDevicesPage([device],undefined,true,projects,"local-dev-owner",
     [],[],true,true);
   assert.match(html,/class="device-projects-menu"[^>]*open=""/);
-  assert.match(html,new RegExp('data-device-id="'+id+'"'));
+  assert.ok(html.includes('data-device-id="'+id+'"'));
   assert.equal((html.match(/class="device-linked-project"/g)||[]).length,2);
   assert.equal((html.match(/class="project-action-dialog project-rename-dialog"/g)||[]).length,2);
   assert.equal((html.match(/class="project-action-dialog project-remove-dialog"/g)||[]).length,2);

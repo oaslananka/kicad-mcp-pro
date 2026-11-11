@@ -18,6 +18,12 @@ test("local dev account requires explicit opt-in and loopback-only origin, liste
   assert.throws(()=>createLocalDevIdentity(config,{...env,NODE_ENV:"production"}));
   assert.throws(()=>createLocalDevIdentity({...config,host:"0.0.0.0"},env));
   assert.throws(()=>createLocalDevIdentity({...config,publicOrigin:"https://cloud.example"},env));
+  for(const publicOrigin of [
+    "http://127.0.0.1:8787/", "http://127.0.0.1:8787?sid=1",
+    "http://127.0.0.1:0008787", "http://127.0.0.1:65536",
+    "http://127.0.0.1:0", "http://127.0.0.1:1",
+    "http://127.0.0.1:8787.evil.test", "http://127.0.0.2:8787"
+  ])assert.throws(()=>createLocalDevIdentity({...config,publicOrigin},env));
   assert.throws(()=>createLocalDevIdentity({...config,databaseUrl:"postgresql://x:fake@prod.example/db_dev"},env));
   assert.throws(()=>createLocalDevIdentity({...config,databaseUrl:"postgresql://x:fake@127.0.0.1/prod"},env));
 });

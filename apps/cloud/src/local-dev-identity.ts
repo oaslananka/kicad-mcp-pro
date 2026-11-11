@@ -13,10 +13,18 @@ export function createLocalDevIdentity(
   let db:URL;
   try{db=new URL(config.databaseUrl);}
   catch{throw Error("Local sandbox database URL invalid");}
+  // An explicit loopback origin with a decimal port is cheap to validate
+  // without running a regular expression over user-configured URL text.
+  const prefix="http://127.0.0.1:";
+  const portText=config.publicOrigin.startsWith(prefix)
+    ?config.publicOrigin.slice(prefix.length):"";
+  const port=Number(portText);
+  const validOrigin=portText.length>=2&&portText.length<=5&&
+    Number.isInteger(port)&&port>=10&&port<=65535&&String(port)===portText;
   if(env.AUTH_MODE!=="local_dev" || env.LOCAL_DEV_SANDBOX!=="acknowledged" ||
     env.NODE_ENV!=="development" ||
     config.host!=="127.0.0.1" ||
-    !/^http:\/\/127\.0\.0\.1:[1-9][0-9]{1,4}$/.test(config.publicOrigin) ||
+    !validOrigin ||
     !["postgres:","postgresql:"].includes(db.protocol) ||
     !["127.0.0.1","localhost"].includes(db.hostname) ||
     !/^\/[a-z0-9_]+_(dev|test)$/.test(db.pathname)){
