@@ -33,7 +33,12 @@ def test_browse_and_bind_local_project_without_leaking_paths(tmp_path: Path) -> 
 
     unique_id = str(uuid4())
     assert browse.bind(project_id, unique_id)
-    assert json.loads(db.read_text(encoding="utf8")) == {unique_id: str(project)}
+    assert json.loads(db.read_text(encoding="utf8")) == {
+        unique_id: str((project / "test.kicad_pro").resolve(strict=True))
+    }
+    assert browse.get_project_path(unique_id) == str(
+        (project / "test.kicad_pro").resolve(strict=True)
+    )
     assert browse.bind(desktop_id, str(uuid4())) is False
     assert browse.bind("fake", str(uuid4())) is False
     assert browse.bind(project_id, "../../bad") is False

@@ -229,9 +229,27 @@ class LocalFolderBrowser:
         if not self._has_project(folder):
             return False
         exact_project = self._native_project_file.get(token)
-        if exact_project is not None and (
+        if exact_project is None:
+            # Browser folder navigation must never store a directory path or
+            # silently guess between multiple KiCad projects in one folder.
+            try:
+                with os.scandir(folder) as entries:
+                    project_files = [
+                        Path(entry.path)
+                        for entry in entries
+                        if entry.is_file(follow_symlinks=False)
+                        and entry.name.lower().endswith(".kicad_pro")
+                        and not entry.is_symlink()
+                    ]
+            except OSError:
+                return False
+            if len(project_files) != 1:
+                return False
+            exact_project = project_files[0]
+        if (
             not exact_project.is_file()
             or exact_project.is_symlink()
+            or exact_project.is_junction()
             or exact_project.suffix.lower() != ".kicad_pro"
             or exact_project.parent != folder
         ):
@@ -245,7 +263,7 @@ class LocalFolderBrowser:
             existing = {
                 k: v for k, v in content.items() if isinstance(k, str) and isinstance(v, str)
             }
-        existing[project_id] = str(exact_project if exact_project is not None else folder)
+        existing[project_id] = str(exact_project)
         self._bindings_file.parent.mkdir(parents=True, exist_ok=True)
         staging = self._bindings_file.with_suffix(".tmp")
         staging.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf8")
