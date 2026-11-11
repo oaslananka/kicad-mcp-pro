@@ -13,6 +13,7 @@ import json
 import ssl
 import time
 from pathlib import Path
+from shutil import copyfile
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -23,6 +24,7 @@ from websockets.exceptions import ConnectionClosed
 from kicad_mcp.cloud_outbound_handshake import (
     CloudHandshakeDeniedError,
     HandshakeReceipt,
+    execute_operator_board_counts_once,
     execute_operator_inspection_once,
 )
 from kicad_mcp.cloud_project_worker_bridge import BoundConnectorProjectWorker
@@ -30,6 +32,7 @@ from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBind
 
 DEVICE = "11111111-1111-4111-8111-111111111111"
 PROJECT = "55555555-5555-4555-8555-555555555555"
+FOREIGN_PROJECT = "77777777-7777-4777-8777-777777777777"
 SESSION = "33333333-3333-4333-8333-333333333333"
 CHALLENGE = "22222222-2222-4222-8222-222222222222"
 SECOND_CHALLENGE = "44444444-4444-4444-8444-444444444444"
@@ -45,9 +48,17 @@ def _signature(frame: dict[str, object]) -> bytes:
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("operation", ["project_worker_inspection", "run_drc"])
+@pytest.mark.parametrize(
+    ("operation", "requested_project"),
+    [
+        ("project_worker_inspection", PROJECT),
+        ("project_board_counts", PROJECT),
+        ("project_board_counts", FOREIGN_PROJECT),
+        ("run_drc", PROJECT),
+    ],
+)
 async def test_signed_real_tls_wss_reaches_scoped_mcp_without_exposing_paths(
-    tmp_path: Path, operation: str
+    tmp_path: Path, operation: str, requested_project: str
 ) -> None:
     tls_server, ca_pem = _synthetic_tls(tmp_path)
     tls_client = ssl.create_default_context(cadata=ca_pem)
@@ -55,6 +66,11 @@ async def test_signed_real_tls_wss_reaches_scoped_mcp_without_exposing_paths(
     verified = signer.public_key()
     project_dir = tmp_path / "secret project"
     project_dir.mkdir()
+    if operation == "project_board_counts":
+        fixture = Path(__file__).resolve().parents[1] / (
+            "fixtures/benchmark_projects/pass_minimal_mcu_board/demo.kicad_pcb"
+        )
+        copyfile(fixture, project_dir / "board.kicad_pcb")
     (project_dir / "board.kicad_pro").write_text('{"confidential": "BOARD_SECRET"}')
     seen: list[str] = []
     delivered: list[dict[str, object]] = []
@@ -132,14 +148,14 @@ async def test_signed_real_tls_wss_reaches_scoped_mcp_without_exposing_paths(
                         "version": 1,
                         "requestId": REQUEST,
                         "deviceId": DEVICE,
-                        "projectId": PROJECT,
+                        "projectId": requested_project,
                         "operation": operation,
                         "deadlineUnixMs": int(time.time() * 1000) + 20_000,
                     },
                 }
             )
         )
-        if operation != "project_worker_inspection":
+        if operation == "run_drc" or requested_project != PROJECT:
             receive = ws.recv()
             with pytest.raises(ConnectionClosed):
                 await asyncio.wait_for(receive, 8)
@@ -152,13 +168,32 @@ async def test_signed_real_tls_wss_reaches_scoped_mcp_without_exposing_paths(
         payload = response["result"]
         assert payload["requestId"] == REQUEST
         assert payload["projectId"] == PROJECT
-        assert payload["operation"] == "project_worker_inspection"
-        assert isinstance(payload["status"]["engineVersion"], str)
-        assert type(payload["status"]["cliAvailable"]) is bool
-        assert type(payload["status"]["ipcAvailable"]) is bool
-        caps = payload["status"]["capabilities"]
-        assert set(caps) == {"fileBackedDrc", "fileBackedErc", "livePcbRead", "liveSchematicRead"}
-        assert all(type(value) is bool for value in caps.values())
+        assert payload["operation"] == operation
+        if operation == "project_board_counts":
+            assert payload["kind"] == "connector.local_board_counts"
+            assert payload["source"] == "file-backed"
+            assert payload["counts"]["footprints"] == 3
+            assert set(payload["counts"]) == {
+                "tracks",
+                "vias",
+                "footprints",
+                "zones",
+                "nets",
+                "shapes",
+            }
+            assert all(type(value) is int and value >= 0 for value in payload["counts"].values())
+        else:
+            assert isinstance(payload["status"]["engineVersion"], str)
+            assert type(payload["status"]["cliAvailable"]) is bool
+            assert type(payload["status"]["ipcAvailable"]) is bool
+            caps = payload["status"]["capabilities"]
+            assert set(caps) == {
+                "fileBackedDrc",
+                "fileBackedErc",
+                "livePcbRead",
+                "liveSchematicRead",
+            }
+            assert all(type(value) is bool for value in caps.values())
         assert str(project_dir) not in json.dumps(response)
         assert "BOARD_SECRET" not in json.dumps(response)
         assert "cliPath" not in json.dumps(response)
@@ -176,11 +211,16 @@ async def test_signed_real_tls_wss_reaches_scoped_mcp_without_exposing_paths(
 
     def inspector(receipt: HandshakeReceipt) -> BoundConnectorProjectWorker:
         assert receipt == HandshakeReceipt(DEVICE, SESSION)
+        allowed_operation = (
+            "project_board_counts"
+            if operation == "project_board_counts"
+            else "project_worker_inspection"
+        )
         return BoundConnectorProjectWorker(
             verified=VerifiedLocalBinding(
                 device_id=DEVICE,
                 project_id=PROJECT,
-                operations=frozenset({"project_worker_inspection"}),
+                operations=frozenset({allowed_operation}),
                 session_id=SESSION,
                 session_expires_unix_ms=int(time.time() * 1000) + 35_000,
             ),
@@ -198,7 +238,12 @@ async def test_signed_real_tls_wss_reaches_scoped_mcp_without_exposing_paths(
     ) as listener:
         assert listener.sockets
         origin = f"https://localhost:{listener.sockets[0].getsockname()[1]}"
-        session = execute_operator_inspection_once(
+        reader = (
+            execute_operator_board_counts_once
+            if operation == "project_board_counts"
+            else execute_operator_inspection_once
+        )
+        session = reader(
             origin=origin,
             trusted_origin=origin,
             owner_sub="test-owner",
@@ -207,7 +252,7 @@ async def test_signed_real_tls_wss_reaches_scoped_mcp_without_exposing_paths(
             tls_context=tls_client,
             inspector_factory=inspector,
         )
-        if operation == "project_worker_inspection":
+        if operation != "run_drc" and requested_project == PROJECT:
             assert await session == HandshakeReceipt(DEVICE, SESSION)
         else:
             with pytest.raises(CloudHandshakeDeniedError):
@@ -215,7 +260,7 @@ async def test_signed_real_tls_wss_reaches_scoped_mcp_without_exposing_paths(
 
     assert seen == (
         ["hello", "proof", "session", "metadata-only"]
-        if operation == "project_worker_inspection"
+        if operation != "run_drc" and requested_project == PROJECT
         else ["hello", "proof", "session", "operation-denied"]
     )
-    assert len(delivered) == int(operation == "project_worker_inspection")
+    assert len(delivered) == int(operation != "run_drc" and requested_project == PROJECT)
