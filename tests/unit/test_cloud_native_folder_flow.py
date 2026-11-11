@@ -16,7 +16,9 @@ class NativeFolderSelectionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # macOS may expose /var as a symlink to /private/var; binding paths are
+        # canonicalized by LocalFolderBrowser before being stored.
+        self.root = Path(self.temporary.name).resolve(strict=True)
         self.outside = self.root / "different_drive_simulation"
         self.outside.mkdir()
         self.project = self.outside / "KiCad (A)"
