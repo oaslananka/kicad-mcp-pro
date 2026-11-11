@@ -49,3 +49,36 @@ test("Disabled operations are absent; filters do not imply capabilities",()=>{
     Object.fromEntries(CLOUD_READ_TASKS.map(task=>[task,false])) as typeof onlyDrc,true
   ),[]);
 });
+
+
+test("signed Connector claim narrows configured categories without permitting writes",()=>{
+  const claim={
+    schemaVersion:"1.0.0" as const,
+    catalogRevision:"a".repeat(64),
+    operations:["project_summary","project_board_counts"] as (
+      "project_summary"|"project_board_counts")[]
+  };
+  const categories=listConfiguredCloudCapabilities(allConfigured,true,undefined,claim);
+  assert.deepEqual(categories.map(group=>group.category),["project","pcb"]);
+  assert.deepEqual(categories.flatMap(group=>group.tools.map(t=>t.tool)),[
+    "get_project_presence","get_project_board_counts"
+  ]);
+  assert.equal(categories.flatMap(group=>group.tools).every(tool=>!tool.canExecuteNow),true);
+  assert.deepEqual(listConfiguredCloudCapabilities(allConfigured,true,undefined,{
+    ...claim,operations:[]
+  }),[]);
+  assert.equal(listConfiguredCloudCapabilities(allConfigured,true).flatMap(g=>g.tools).length,5,
+    "legacy devices without a claim retain the previous discovery view");
+});
+
+test("signed claims cannot resurrect disabled Cloud operations",()=>{
+  const readers={
+    ...allConfigured,check_project_files:false
+  };
+  const claim={
+    schemaVersion:"1.0.0" as const,
+    catalogRevision:"b".repeat(64),
+    operations:["project_summary"] as ("project_summary")[]
+  };
+  assert.deepEqual(listConfiguredCloudCapabilities(readers,true,undefined,claim),[]);
+});

@@ -26,9 +26,11 @@ import type {PreparedOwnerSummary,SummaryReadResult,PreparedOwnerDrc,DrcReadResu
   PreparedOwnerBoardCounts,BoardCountsReadResult,
   PreparedOwnerSchematicCounts,SchematicCountsReadResult} from "./connector-ws.js";
 import {OwnerSummaryHttpPreparations} from "./owner-summary-http-preparations.js";
+import type {ConnectorCapabilityClaim} from "./connector-capability-claim.js";
 
 type SummaryRelay={
   isDeviceConnected?:(ownerSub:string,deviceId:string)=>boolean;
+  getDeviceCapabilityClaim?:(ownerSub:string,deviceId:string)=>ConnectorCapabilityClaim|null;
   prepareOwnerSummary:(oauth:TrustedOAuthReadIdentity,deviceId:string,
     projectId:string)=>PreparedOwnerSummary|null;
   requestSummary:(oauth:TrustedOAuthReadIdentity,deviceId:string,
@@ -635,9 +637,10 @@ async function handleRequest(
             return null;
           return result.counts;
         } : undefined;
+      const signedRelay=summaryRelay?.();
       const handler=createCloudMcpHandler(
         inventory,actor,presenceReader,drcReader,inspectionReader,boardReader,schematicReader,
-        summaryRelay?.()?.isDeviceConnected);
+        signedRelay?.isDeviceConnected,signedRelay?.getDeviceCapabilityClaim);
       let output: Response;
       try {
         output = await handler.fetch(request);
