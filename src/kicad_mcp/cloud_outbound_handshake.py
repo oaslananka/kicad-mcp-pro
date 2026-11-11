@@ -64,6 +64,7 @@ class OutboundSessionOptions:
     schematic_counts_pilot: bool = False
     owner_managed_read: bool = False
     managed_max_reads: int = 16
+    on_ready: Callable[[HandshakeReceipt], None] | None = None
 
 
 def _endpoint(*, origin: str, trusted_origin: str) -> str:
@@ -673,6 +674,8 @@ async def _perform_outbound_session(
             ):
                 raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
             receipt = HandshakeReceipt(device_id=device_id, session_id=session_id)
+            if session_options.on_ready is not None:
+                session_options.on_ready(receipt)  # Only after verified Cloud ready frame.
             return await _complete_outbound_operation(socket, receipt, session_options)
     except (OSError, ValueError, WebSocketException) as exc:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED) from exc
@@ -883,6 +886,7 @@ async def execute_owner_managed_read_session(
     dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch],
     tls_context: ssl.SSLContext | None = None,
     max_reads: int = 16,
+    on_ready: Callable[[HandshakeReceipt], None] | None = None,
 ) -> HandshakeReceipt:
     """One signed, owner-managed read-only session; no key loading or persistence.
 
@@ -905,5 +909,6 @@ async def execute_owner_managed_read_session(
             dispatcher_factory=dispatcher_factory,
             owner_managed_read=True,
             managed_max_reads=max_reads,
+            on_ready=on_ready,
         ),
     )

@@ -453,3 +453,66 @@ async def test_connector_retries_transient_session_failures_and_cancels(
 
     await asyncio.wait_for(connector.run_connector(stop=stop, session_runner=unstable), 3)
     assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_foreground_connected_is_emitted_only_from_authenticated_ready_callback(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, _store, _ = local_user_connector
+    connector.activate(project, owner_confirm=lambda _: True)
+    stop = asyncio.Event()
+    statuses: list[str] = []
+    receipt = HandshakeReceipt(
+        device_id=project.device_id,
+        session_id="39ee4be9-0aec-448e-9873-721ae113ec02",
+    )
+
+    async def signed_runner(**kwargs: object) -> HandshakeReceipt:
+        assert kwargs["device_id"] == project.device_id
+        callback = kwargs.get("on_ready")
+        assert callable(callback)
+        callback(receipt)
+        stop.set()
+        return receipt
+
+    async def authorized(_project, _task, _revoked) -> bool:
+        return True
+
+    monkeypatch.setattr(connector, "execute_owner_managed_read_session", signed_runner)
+    monkeypatch.setattr(connector, "_await_authorized_session", authorized)
+    await asyncio.wait_for(
+        connector.run_connector(
+            stop=stop, session_runner=signed_runner, status_callback=statuses.append
+        ),
+        5,
+    )
+    assert statuses == ["Connecting", "Connected"]
+
+
+@pytest.mark.asyncio
+async def test_foreground_signed_session_error_reports_disconnect_not_connected(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, _store, _ = local_user_connector
+    connector.activate(project, owner_confirm=lambda _: True)
+    stop = asyncio.Event()
+    statuses: list[str] = []
+
+    async def failed_session(**kwargs: object) -> HandshakeReceipt:
+        assert kwargs.get("on_ready") is not None
+        stop.set()
+        raise OSError("simulated connector transport failure")
+
+    async def authorized(_project, _task, _revoked) -> bool:
+        return True
+
+    monkeypatch.setattr(connector, "execute_owner_managed_read_session", failed_session)
+    monkeypatch.setattr(connector, "_await_authorized_session", authorized)
+    await asyncio.wait_for(
+        connector.run_connector(
+            stop=stop, session_runner=failed_session, status_callback=statuses.append
+        ),
+        5,
+    )
+    assert statuses == ["Connecting", "Disconnected — reconnecting"]

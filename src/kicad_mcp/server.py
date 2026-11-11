@@ -78,6 +78,7 @@ from .capabilities import get as get_capability_record
 from .cli_lifecycle import uninstall as uninstall_package
 from .cli_lifecycle import update_app
 from .cloud_user_cli import cloud_app
+from .cloud_user_cli import remote as cloud_remote
 from .compatibility import MCP_PROTOCOL_VERSION
 from .config import LOOPBACK_HOSTS, KiCadMCPConfig, get_config, reset_config
 from .connection import KiCadConnectionError, get_board
@@ -191,6 +192,7 @@ mcp_config_app = typer.Typer(help=localize("Generate MCP client configuration sn
 app.add_typer(tools_app, name="tools")
 app.add_typer(mcp_config_app, name="mcp-config")
 app.add_typer(cloud_app, name="cloud")
+app.command("remote")(cloud_remote)
 app.add_typer(update_app, name="update")
 app.command("uninstall")(uninstall_package)
 DOCTOR_BUNDLE_OPTION = cast(

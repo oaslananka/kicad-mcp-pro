@@ -80,6 +80,7 @@ async def test_signed_tls_wss_two_reads_and_owner_off(
     grant = [True]
     responses: list[dict[str, object]] = []
     event_order: list[str] = []
+    ready_events: list[tuple[HandshakeReceipt, tuple[str, ...]]] = []
 
     async def server(ws: ServerConnection) -> None:
         hello = json.loads(await ws.recv())
@@ -205,6 +206,7 @@ async def test_signed_tls_wss_two_reads_and_owner_off(
             dispatcher_factory=dispatcher_factory,
             tls_context=client_context,
             max_reads=2,
+            on_ready=lambda receipt: ready_events.append((receipt, tuple(event_order))),
         )
         if revoke_after_first:
             with pytest.raises((CloudHandshakeDeniedError, LocalReadDeniedError)):
@@ -213,6 +215,9 @@ async def test_signed_tls_wss_two_reads_and_owner_off(
             assert await operation == HandshakeReceipt(DEVICE, SESSION)
 
     assert event_order == ["device-verified", "session-verified"]
+    assert ready_events == [
+        (HandshakeReceipt(DEVICE, SESSION), ("device-verified", "session-verified"))
+    ], "Only a valid signed Cloud ready frame may report Connected"
     assert len(responses) == (1 if revoke_after_first else 2)
     assert hashlib.sha256(original_file.read_bytes()).hexdigest() == original_sha
 

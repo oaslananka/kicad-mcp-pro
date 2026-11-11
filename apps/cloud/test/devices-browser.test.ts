@@ -55,7 +55,7 @@ test("device owner listing requires a browser session and escapes device metadat
   const html=await page!.text();
   assert.match(html,/&lt;script&gt;/);
   assert.doesNotMatch(html,/<script>malicious/);
-  assert.match(html,/not proof of online status/);
+  assert.match(html,/Cloud status unknown/);
   assert.match(page!.headers.get("set-cookie")??"",/HttpOnly; SameSite=Strict/);
   assert.doesNotMatch(html,/secret|private_key|public_key_der/);
   assert.deepEqual(f.calls,["list:owner-a"]);
@@ -71,11 +71,11 @@ test("authenticated devices page reports only actual owner-bound connector sessi
     new Request(origin+"/devices"),f.identity,origin,f.devices,true,undefined,connected);
   assert.equal(page?.status,200);
   const html=await page!.text();
-  assert.match(html,/Connector connected now \(temporary session; not proof of KiCad activity\)/);
+  assert.match(html,/Cloud session active/);
   assert.deepEqual(checks,["owner-a:"+f.ownId]);
   const offline=await devicesResponse(
     new Request(origin+"/devices"),f.identity,origin,f.devices,true,undefined,()=>false);
-  assert.match(await offline!.text(),/Connector not connected now/);
+  assert.match(await offline!.text(),/Run kicad-mcp-pro remote to connect/);
   const anonymous=fixture(null);
   let called=false;
   const unauthenticated=await devicesResponse(
@@ -88,7 +88,7 @@ test("authenticated devices page reports only actual owner-bound connector sessi
     new Request(origin+"/devices"),other.identity,origin,other.devices,true,
     undefined,()=>{called=true;return true;});
   assert.equal(outsider?.status,200);
-  assert.doesNotMatch(await outsider!.text(),/Connector connected now/);
+  assert.doesNotMatch(await outsider!.text(),/Cloud session active/);
   assert.equal(called,false,"foreign account cannot enumerate ready sockets");
 });
 
@@ -218,7 +218,7 @@ test("schema-ready inventory remains disabled without explicitly enabled device 
   const response=await devicesResponse(new Request(origin+"/devices"),existing.identity,origin,existing.devices,false);
   assert.equal(response?.status,200);
   const detail=await response!.text();
-  assert.match(detail,/Revoke device/);
+  assert.match(detail,/Revoke this device/);
   assert.doesNotMatch(detail,/href="\/devices\/pairing"/);
 });
 
@@ -244,7 +244,7 @@ test("owner-managed Connector On/Off stays session-bound and CSRF protected",asy
   const first=await get();
   assert.equal(first?.status,200);
   const html=await first!.text();
-  assert.match(html,/Managed Connector: Off/);
+  assert.match(html,/Project summary access: Paused/);
   const token=/action="\/devices\/projects\/managed"[\s\S]*?name="csrf" value="([^"]+)"/.exec(html)?.[1]??"";
   assert.ok(token);
   const cookie=(first!.headers.get("set-cookie")??"").split(";")[0];
@@ -261,12 +261,14 @@ test("owner-managed Connector On/Off stays session-bound and CSRF protected",asy
   assert.equal((await devicesResponse(submit(true,"invalid"),
     f.identity,origin,devices,true,undefined,undefined,managed))?.status,403);
   assert.equal(requests.length,0);
-  assert.equal((await devicesResponse(submit(true),f.identity,origin,devices,true,
-    undefined,undefined,managed))?.status,303);
+  const enabledReply=await devicesResponse(submit(true),f.identity,origin,devices,true,
+    undefined,undefined,managed);
+  assert.equal(enabledReply?.status,303);
+  assert.equal(enabledReply?.headers.get("location"),"/devices?access=reads-on");
   assert.equal(requests.length,1);
   assert.deepEqual(requests[0],{owner:"owner-a",device:f.ownId,project,enabled:true});
   const refreshed=await get();
-  assert.match(await refreshed!.text(),/Managed Connector: On/);
+  assert.match(await refreshed!.text(),/Project summary access: Enabled/);
   const offToken=/action="\/devices\/projects\/managed"[\s\S]*?name="csrf" value="([^"]+)"/
     .exec(await (await get())!.text())?.[1]??"";
   const newest=await get();
@@ -279,7 +281,9 @@ test("owner-managed Connector On/Off stays session-bound and CSRF protected",asy
       enabled:"false",csrf:newestToken})
   });
   assert.ok(offToken&&newestToken);
-  assert.equal((await devicesResponse(offRequest,f.identity,origin,devices,true,
-    undefined,undefined,managed))?.status,303);
+  const disabledReply=await devicesResponse(offRequest,f.identity,origin,devices,true,
+    undefined,undefined,managed);
+  assert.equal(disabledReply?.status,303);
+  assert.equal(disabledReply?.headers.get("location"),"/devices?access=reads-off");
   assert.equal(requests.at(-1)?.enabled,false);
 });

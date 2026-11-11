@@ -40,7 +40,7 @@ test("Cloud availability never implies consent, pairing or a running device",()=
 test("device/client views retain actual empty states and explicit revocation actions",()=>{
   const devices=renderDevicesPage([],undefined,true);
   const apps=renderConnectionsPage([]);
-  assert.match(devices,/No registered projects yet/);
+  assert.match(devices,/No KiCad projects yet/);
   assert.doesNotMatch(devices,/Acme Hardware|Alex.s MacBook|Workstation Pro/);
   assert.match(apps,/No AI apps connected yet/);
   assert.doesNotMatch(apps,/Claude Desktop.*Active|Cursor IDE.*Connected|kmcp_live_/);

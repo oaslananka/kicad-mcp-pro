@@ -135,7 +135,7 @@ test("shared navigation never contradicts a live device or invents an account-wi
   const device={id:"fixture",alias:"Lab computer",enabled:true,revoked:false,
     fingerprint:"private",createdAt:new Date(),csrf:"csrf",connectionState:"connected" as const};
   const page=renderDevicesPage([device]);
-  assert.match(page,/Connector connected now/);
+  assert.match(page,/Cloud session active/);
   assert.doesNotMatch(page,/Local KiCad connection not enabled|Local KiCad control not enabled/);
   const overview=renderAccount("Engineer");
   assert.doesNotMatch(overview,/KiCad device execution|Local KiCad connection not enabled/);
@@ -200,7 +200,7 @@ test("device and project controls show aliases while keeping opaque IDs in forms
   assert.match(html,/>Main Lab</);
   assert.match(html,/>Controller PCB</);
   assert.match(html,/On device: Main Lab/);
-  assert.match(html,/Registered projects/);
+  assert.match(html,/Your projects/);
   assert.match(html,/Advanced: local Connector account ID/);
   assert.match(html,/kicad-mcp-pro cloud register-project --owner-sub/);
   assert.match(html,/--device-id 11111111-1111-4111-8111-111111111111/);
@@ -221,10 +221,10 @@ test("device and project controls show aliases while keeping opaque IDs in forms
     undefined,true,
     [{id:projectId,deviceId,alias:"Controller PCB",enabled:true,grantCsrf:"grant-csrf"}],
     undefined,[],[{projectId,clientId:"client<svg onload=bad>",maxMode:"readonly"}]);
-  assert.match(withGrants,/Saved client permissions/);
+  assert.match(withGrants,/Applications with access/);
   assert.match(uiCss,/\.project-grants li/);
   assert.match(withGrants,/Read only/);
-  assert.match(withGrants,/Revoke this client/);
+  assert.match(withGrants,/Remove this app access/);
   assert.match(withGrants,/value="false"/);
   assert.match(withGrants,/client&lt;svg onload=bad&gt;/);
   assert.equal(withGrants.includes("<svg onload=bad>"),false);
@@ -265,4 +265,23 @@ test("account snapshots remain factual and make status metrics navigable",()=>{
  assert.match(ready,/data-next-action="review-access"/);
  assert.match(ready,/href="\/connections"/);
  assert.match(renderAccount("Engineer"),/Workspace snapshot unavailable/);
+});
+
+test("project permission UI names ChatGPT clearly and never offers a duplicate grant",()=>{
+  const device={id:"11111111-1111-4111-8111-111111111111",alias:"Lab",
+    enabled:true,revoked:false,fingerprint:"f",createdAt:new Date(),
+    csrf:"csrf",connectionState:"connected" as const};
+  const project={id:"22222222-2222-4222-8222-222222222222",
+    deviceId:device.id,alias:"Controller",enabled:true,grantCsrf:"grant"};
+  const client="https://chatgpt.com/oauth/client.json";
+  const ungranted=renderDevicesPage([device],undefined,true,[project],
+    undefined,[client]);
+  assert.match(ungranted,/>ChatGPT<\/option>/);
+  assert.match(ungranted,/Allow project summary/);
+  const granted=renderDevicesPage([device],undefined,true,[project],
+    undefined,[client],[{projectId:project.id,clientId:client,maxMode:"readonly"}]);
+  assert.match(granted,/class="grant-client">ChatGPT<\/span>/);
+  assert.match(granted,/Remove this app access/);
+  assert.doesNotMatch(granted,/Allow project summary/);
+  assert.doesNotMatch(granted,/>Pair a device</);
 });

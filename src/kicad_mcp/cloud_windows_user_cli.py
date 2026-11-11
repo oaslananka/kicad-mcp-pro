@@ -142,44 +142,15 @@ def _resume_existing_windows_project(
     typer.echo(f"Connector scheduled; connection not yet verified. Check {origin}/devices.")
 
 
-def setup_windows(
+def _enroll_selected_windows_project(
     *,
     origin: str,
     alias: str,
-    project_dir: Path | None,
-    browse: bool,
-    new_device: bool,
+    stem: str,
+    directory: Path,
     approval: Callable[[str, str, str], None],
-    picker: Callable[[], Path],
-    owner_terminal: Callable[[], bool],
-) -> None:
-    if not owner_terminal():
-        raise typer.BadParameter(
-            "Cloud pairing requires an interactive owner terminal; "
-            "use cloud status for noninteractive checks."
-        )
-    directory, stem = _choose_project(project_dir, browse=browse, picker=picker)
-    try:
-        existing = selected_project()
-    except (OSError, ValueError, RuntimeError) as exc:
-        raise typer.BadParameter(
-            "Existing Windows Cloud registration needs local repair; no new device was created."
-        ) from exc
-    if existing is not None:
-        _resume_existing_windows_project(
-            existing, origin=origin, directory=directory, stem=stem, new_device=new_device
-        )
-        return
-
-    typer.echo(f"KiCad project: {directory} ({stem})")
-    typer.echo("Cloud will register a device/project identity; local project files stay local.")
-    if not typer.confirm(
-        "Approve pairing and the selected read-only local Connector?", default=False
-    ):
-        typer.echo("Setup paused. No device or project was registered.")
-        typer.echo("When ready, run: kicad-mcp-pro cloud setup (or cloud setup --browse)")
-        return
-
+) -> WindowsRegisteredProject:
+    """Create the device binding only after explicit browser approval."""
     try:
         device: WindowsEnrolledDevice = enroll_windows_device(
             origin=origin, alias=alias, owner_approval=approval
@@ -202,16 +173,113 @@ def setup_windows(
         msg += "Review your Cloud Devices page before retrying; no Connector was started."
         raise typer.BadParameter(msg) from exc
 
+    return project
+
+
+def _reuse_owner_registration(
+    existing: WindowsRegisteredProject,
+    *,
+    origin: str,
+    directory: Path,
+    stem: str,
+    new_device: bool,
+    start_background: bool,
+) -> None:
+    """Never silently replace or re-pair an existing owner-selected project."""
+    if not start_background:
+        selected = inspect_owner_selected_project(existing)
+        if (
+            new_device
+            or existing.origin != origin
+            or selected.directory != directory
+            or selected.filename_stem != stem
+        ):
+            raise typer.BadParameter(
+                "An existing device is paired with a different project. "
+                "No keys or project files were replaced."
+            )
+        typer.echo(f"Reusing paired KiCad project: {stem}")
+        return
+    _resume_existing_windows_project(
+        existing, origin=origin, directory=directory, stem=stem, new_device=new_device
+    )
+
+
+def setup_windows(
+    *,
+    origin: str,
+    alias: str,
+    project_dir: Path | None,
+    browse: bool,
+    new_device: bool,
+    approval: Callable[[str, str, str], None],
+    picker: Callable[[], Path],
+    owner_terminal: Callable[[], bool],
+    start_background: bool = True,
+) -> None:
+    if not owner_terminal():
+        raise typer.BadParameter(
+            "Cloud pairing requires an interactive owner terminal; "
+            "use cloud status for noninteractive checks."
+        )
+    directory, stem = _choose_project(project_dir, browse=browse, picker=picker)
     try:
-        enable_windows_connector(project, owner_confirm=lambda _project: True)
+        existing = selected_project()
     except (OSError, ValueError, RuntimeError) as exc:
         raise typer.BadParameter(
-            "Cloud device/project registered locally, but Windows Connector did not start. "
-            "Use cloud status and cloud enable to retry; Cloud permissions were not granted."
+            "Existing Windows Cloud registration needs local repair; no new device was created."
         ) from exc
-    typer.echo("Device and project registered; Connector scheduled (connection unverified).")
-    typer.echo(f"Cloud owner must separately approve access: {origin}/devices")
-    typer.echo("Local read operations are limited to project_summary.")
+    if existing is not None:
+        _reuse_owner_registration(
+            existing,
+            origin=origin,
+            directory=directory,
+            stem=stem,
+            new_device=new_device,
+            start_background=start_background,
+        )
+        return
+
+    typer.echo(f"KiCad project: {directory} ({stem})")
+    typer.echo("Cloud will register a device/project identity; local project files stay local.")
+    # Foreground remote is an explicit local action followed by browser device
+    # approval, so do not ask for the same consent a second time in the terminal.
+    # Keep legacy background setup confirmation unchanged.
+    if start_background and not typer.confirm(
+        "Approve pairing and the selected read-only local Connector?", default=False
+    ):
+        typer.echo("Setup paused. No device or project was registered.")
+        typer.echo("When ready, run: kicad-mcp-pro cloud setup (or cloud setup --browse)")
+        return
+
+    project = _enroll_selected_windows_project(
+        origin=origin, alias=alias, stem=stem, directory=directory, approval=approval
+    )
+
+    try:
+        if start_background:
+            enable_windows_connector(project, owner_confirm=lambda _project: True)
+        else:
+            from kicad_mcp.cloud_windows_connector import activate
+
+            activate(project, owner_confirm=lambda _project: True)
+    except (OSError, ValueError, RuntimeError) as exc:
+        if start_background:
+            raise typer.BadParameter(
+                "Cloud device/project registered locally, but Windows Connector did not start. "
+                "Use cloud status and cloud enable to retry; Cloud permissions were not granted."
+            ) from exc
+        raise typer.BadParameter(
+            "Device and project registered, but Connector activation failed. "
+            "The keys were preserved."
+        ) from exc
+    if start_background:
+        typer.echo("Device and project registered; Connector scheduled (connection unverified).")
+        typer.echo(f"Cloud owner must separately approve access: {origin}/devices")
+        typer.echo("Local read operations are limited to project_summary.")
+    else:
+        typer.echo("Device paired. Starting verified Cloud session...")
+        typer.echo(f"Manage permissions: {origin}/devices")
 
 
 def show_status() -> None:

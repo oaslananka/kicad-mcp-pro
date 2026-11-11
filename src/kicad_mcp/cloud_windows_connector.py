@@ -313,10 +313,91 @@ async def _await_authorized_session(
     return True
 
 
+def _session_runner_with_status(
+    session_runner: Callable[..., Awaitable[HandshakeReceipt]],
+    status_callback: Callable[[str], None] | None,
+) -> Callable[..., Awaitable[HandshakeReceipt]]:
+    if status_callback is None or session_runner is not execute_owner_managed_read_session:
+        return session_runner
+
+    def report_ready(_receipt: HandshakeReceipt) -> None:
+        status_callback("Connected")
+
+    async def signed_ready_runner(
+        *,
+        origin: str,
+        trusted_origin: str,
+        owner_sub: str,
+        device_id: str,
+        signing_key: Ed25519PrivateKey,
+        dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch],
+        max_reads: int,
+        on_ready: Callable[[HandshakeReceipt], None] = report_ready,
+    ) -> HandshakeReceipt:
+        return await execute_owner_managed_read_session(
+            origin=origin,
+            trusted_origin=trusted_origin,
+            owner_sub=owner_sub,
+            device_id=device_id,
+            signing_key=signing_key,
+            dispatcher_factory=dispatcher_factory,
+            max_reads=max_reads,
+            on_ready=on_ready,
+        )
+
+    return signed_ready_runner
+
+
+async def _attempt_authorized_session(
+    project: WindowsRegisteredProject,
+    selected: WindowsLocalProjectSelection,
+    key: Ed25519PrivateKey,
+    runner: Callable[..., Awaitable[HandshakeReceipt]],
+    stop: asyncio.Event,
+) -> bool | None:
+    """One signed session: True completed, False network failure, None revoked."""
+    task = asyncio.create_task(_run_owner_session(project, selected, key, runner))
+    revoked = asyncio.create_task(stop.wait())
+    try:
+        if not await _await_authorized_session(project, task, revoked):
+            return None
+        await task
+        return True
+    except asyncio.CancelledError:
+        raise
+    except (OSError, ValueError, WebSocketException):
+        return False
+    finally:
+        revoked.cancel()
+        await asyncio.gather(revoked, return_exceptions=True)
+
+
+def _notify_connection_attempt(
+    status_callback: Callable[[str], None] | None, failures: int
+) -> None:
+    """Report connection progress without claiming that Cloud accepted the socket."""
+    if status_callback is not None:
+        status_callback("Connecting" if failures == 0 else "Reconnecting")
+
+
+def _next_failure_count(
+    session_succeeded: bool,
+    failures: int,
+    status_callback: Callable[[str], None] | None,
+) -> int:
+    """A clean session resets backoff; network failures request a retry."""
+    if session_succeeded:
+        return 0
+    if status_callback is not None:
+        status_callback("Disconnected — reconnecting")
+    return failures + 1
+
+
 async def run_connector(
     *,
     stop: asyncio.Event,
     session_runner: Callable[..., Awaitable[HandshakeReceipt]] = execute_owner_managed_read_session,
+    status_callback: Callable[[str], None] | None = None,
 ) -> None:
     """Local-only execution core; supervisor controls process startup/shutdown.
 
@@ -332,20 +413,13 @@ async def run_connector(
             return
         project, selected, key = active.project, active.selected, active.signing_key
 
-        task = asyncio.create_task(_run_owner_session(project, selected, key, session_runner))
-        revoked = asyncio.create_task(stop.wait())
-        try:
-            if not await _await_authorized_session(project, task, revoked):
-                return
-            await task
-            failures = 0
-        except asyncio.CancelledError:
-            raise
-        except (OSError, ValueError, WebSocketException):
-            failures += 1
-        finally:
-            revoked.cancel()
-            await asyncio.gather(revoked, return_exceptions=True)
+        _notify_connection_attempt(status_callback, failures)
+        runner_for_session = _session_runner_with_status(session_runner, status_callback)
+
+        result = await _attempt_authorized_session(project, selected, key, runner_for_session, stop)
+        if result is None:
+            return
+        failures = _next_failure_count(result, failures, status_callback)
         delay = reconnect_delay_seconds(failures, secrets.randbelow(1001) / 1000)
         try:
             await asyncio.wait_for(stop.wait(), timeout=delay)

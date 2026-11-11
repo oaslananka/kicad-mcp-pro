@@ -202,7 +202,7 @@ test("owner device activation and read-only project creation are disabled by def
     assert.equal(deviceEnabled,true);
     const updated=await fetch(enabled.origin+"/devices");
     const projectHtml=await updated.text();
-    assert.match(projectHtml,/Register read-only project/);
+    assert.match(projectHtml,/Register project name/);
     const projectCsrf=/<form action="\/devices\/projects\/create"[\s\S]*?name="csrf" value="([^"]+)"/.exec(projectHtml)?.[1]??"";
     const projectCookie=(updated.headers.get("set-cookie")??"").split(";")[0];
     assert.ok(projectCsrf);
@@ -251,10 +251,11 @@ test("owner approves only an OAuth-consented AI client's read-only project grant
   try{
     const page=await fetch(web.origin+"/devices");
     const html=await page.text();
-    assert.match(html,/AI client with existing OAuth consent/);
+    // The already-granted client is listed but not offered for a redundant grant.
+    assert.doesNotMatch(html,/AI application/);
     assert.match(html,/ai-fixture/);
-    assert.match(html,/Saved client permissions/);
-    assert.match(html,/Revoke this client/);
+    assert.match(html,/Applications with access/);
+    assert.match(html,/Remove this app access/);
     assert.doesNotMatch(html,/other-owner|not-allowed/);
     const token=/action="\/devices\/projects\/grant"[\s\S]*?name="csrf" value="([^"]+)"/.exec(html)?.[1]??"";
     assert.ok(token);
@@ -273,12 +274,15 @@ test("owner approves only an OAuth-consented AI client's read-only project grant
       method:"POST",headers,body:data,redirect:"manual"
     });
     assert.equal(approved.status,303);
+    assert.equal(approved.headers.get("location"),"/devices?access=granted");
     assert.deepEqual(requests,[{owner:"owner-1",project:registeredProjects[0].id,
       client:"ai-fixture",enabled:true}]);
     data.set("enabled","false");
-    assert.equal((await fetch(web.origin+"/devices/projects/grant",{
+    const removed=await fetch(web.origin+"/devices/projects/grant",{
       method:"POST",headers,body:data,redirect:"manual"
-    })).status,303);
+    });
+    assert.equal(removed.status,303);
+    assert.equal(removed.headers.get("location"),"/devices?access=removed");
     assert.equal(requests[1].enabled,false);
   }finally{await web.close();}
 });
