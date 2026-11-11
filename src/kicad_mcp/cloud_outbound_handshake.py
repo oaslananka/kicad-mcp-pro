@@ -63,6 +63,9 @@ class OutboundSessionOptions:
     board_counts_pilot: bool = False
     schematic_counts_pilot: bool = False
     owner_managed_read: bool = False
+    # Opt-in ONLY after the target Cloud deployment accepts extended device.hello.
+    # Legacy devices and servers retain the byte-identical v1 handshake by default.
+    advertise_catalog: bool = False
     managed_max_reads: int = 16
     on_ready: Callable[[HandshakeReceipt], None] | None = None
 
@@ -538,6 +541,36 @@ def _validate_outbound_options(options: OutboundSessionOptions) -> None:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
 
 
+def _catalog_hello_metadata(options: OutboundSessionOptions) -> dict[str, object]:
+    """Bounded optional report: never broadens local/Cloud project authority."""
+    if type(options.advertise_catalog) is not bool:
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    if not options.advertise_catalog:
+        return {}
+    from kicad_mcp.runtime_capability_catalog import installed_catalog_revision
+
+    operations: list[str] = []
+    if options.owner_managed_read and options.dispatcher_factory is not None:
+        operations.append("project_summary")
+    elif options.dispatcher_factory is not None and options.operator_presence_pilot:
+        operations.append("project_summary")
+        if options.operator_native_drc_pilot:
+            operations.append("run_drc")
+    elif options.inspection_factory is not None and options.operator_inspection_pilot:
+        operations.append("project_worker_inspection")
+        if options.board_counts_pilot:
+            operations.append("project_board_counts")
+        if options.schematic_counts_pilot:
+            operations.append("project_schematic_counts")
+    return {
+        "catalog": {
+            "schemaVersion": "1.0.0",
+            "catalogRevision": installed_catalog_revision(),
+            "operations": operations,
+        }
+    }
+
+
 def _outbound_session_timeout(options: OutboundSessionOptions) -> int:
     if options.owner_managed_read:
         return 299
@@ -608,6 +641,8 @@ async def _perform_outbound_session(
         owner_managed_read=session_options.owner_managed_read,
     )
     _validate_outbound_options(session_options)
+    # Fail before network access if an opt-in local catalog cannot be derived.
+    catalog_hello = _catalog_hello_metadata(session_options)
 
     def now_ms() -> int:
         return int(datetime.now(UTC).timestamp() * 1000)
@@ -628,17 +663,14 @@ async def _perform_outbound_session(
         ):
             if socket.transport.get_extra_info("ssl_object") is None:
                 raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
-            await socket.send(
-                json.dumps(
-                    {
-                        "kind": "device.hello",
-                        "version": 1,
-                        "ownerSub": owner_sub,
-                        "deviceId": device_id,
-                    },
-                    separators=(",", ":"),
-                )
-            )
+            hello = {
+                "kind": "device.hello",
+                "version": 1,
+                "ownerSub": owner_sub,
+                "deviceId": device_id,
+                **catalog_hello,
+            }
+            await socket.send(json.dumps(hello, separators=(",", ":")))
             challenge = await socket.recv()
             if not isinstance(challenge, str):
                 raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)

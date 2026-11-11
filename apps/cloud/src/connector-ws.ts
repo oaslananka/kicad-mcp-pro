@@ -1,4 +1,7 @@
 import {type IncomingMessage, type Server} from "node:http";
+import {
+  ConnectorCapabilityClaimSchema,allowsClaimedRead,type ConnectorCapabilityClaim
+} from "./connector-capability-claim.js";
 import {randomUUID} from "node:crypto";
 import {performance} from "node:perf_hooks";
 import type {TrustedOAuthReadIdentity} from "./connector-read-gate.js";
@@ -88,11 +91,14 @@ type Entry={
   queued:number; pending:Promise<void>; timer:NodeJS.Timeout | null;
   lastPong:number; sessionDeadline?:number; readSent?:boolean;
   readSequence:ConnectorReadSequence;
+  pendingCatalogClaim?:ConnectorCapabilityClaim;
+  catalogClaim?:ConnectorCapabilityClaim;
   awaiting?:PendingRead; validating?:PendingRead;
 };
 const hello=z.strictObject({
   kind:z.literal("device.hello"),version:z.literal(1),
-  ownerSub:z.string().min(1).max(256),deviceId:z.uuid()
+  ownerSub:z.string().min(1).max(256),deviceId:z.uuid(),
+  catalog:ConnectorCapabilityClaimSchema.optional()
 });
 const proof=z.strictObject({kind:z.literal("device.proof"),version:z.literal(1),
   signature:z.string().regex(/^[A-Za-z0-9_-]{86}$/)});
@@ -242,7 +248,9 @@ export function attachConnectorWebSocket(
     projectId:string)=>PreparedOwnerSchematicCounts|null;
   requestSchematicCounts:(oauth:TrustedOAuthReadIdentity,deviceId:string,
     projectId:string,prepared?:PreparedOwnerSchematicCounts)=>Promise<SchematicCountsReadResult|null>;
-  isDeviceConnected:(ownerSub:string,deviceId:string)=>boolean}{
+  isDeviceConnected:(ownerSub:string,deviceId:string)=>boolean;
+  /** Authenticated claim only; an advertised operation is not a grant. */
+  getDeviceCapabilityClaim:(ownerSub:string,deviceId:string)=>ConnectorCapabilityClaim|null}{
   // Never let a lightweight pilot setting downgrade an independent owner
   // approval dependency, even when used outside the production entrypoint.
   if(options.operatorLocalOnce&&options.ownerConsent)
@@ -349,6 +357,7 @@ export function attachConnectorWebSocket(
               fail();return;
             }
             entry.owner=parsed.data.ownerSub;entry.device=parsed.data.deviceId;
+            entry.pendingCatalogClaim=parsed.data.catalog;
             const issue=await options.proofs.issue(entry.owner,entry.device);
             if(issue.kind!=="issued"){fail();return;}
             entry.challenge=issue.challengeId;entry.nonce=issue.nonce;
@@ -393,6 +402,8 @@ export function attachConnectorWebSocket(
             }
             if(closed()||ws.readyState!==WebSocket.OPEN)return;
             entry.phase="ready";
+            entry.catalogClaim=entry.pendingCatalogClaim;
+            entry.pendingCatalogClaim=undefined;
             expire(Math.max(1,(entry.sessionDeadline??0)-performance.now()));
             send({kind:"connector.ready",version:1});
             readyDevices.set(socketKey(entry.owner,entry.device),{socket:ws,entry});
@@ -527,6 +538,7 @@ export function attachConnectorWebSocket(
        active.entry.awaiting||active.socket.readyState!==WebSocket.OPEN||
        (active.entry.sessionDeadline??0)-performance.now()<40_000||
        reservedSockets.has(active.socket))return null;
+    if(!allowsClaimedRead(active.entry.catalogClaim??null,operation))return null;
     const intent=Object.freeze({
       requestId:randomUUID(),ownerSub:oauth.ownerSub,clientId:oauth.clientId,
       deviceId,projectId,origin:options.publicOrigin,
@@ -587,6 +599,7 @@ export function attachConnectorWebSocket(
     const active=readyDevices.get(socketKey(oauth.ownerSub,deviceId));
     if(!active)return null;
     const {socket,entry}=active;
+    if(!allowsClaimedRead(entry.catalogClaim??null,operation))return null;
     // Never dispatch using the old direct-consent shortcut.
     if(!prepared||typeof prepared!=="object")return null;
     const reserved=preparedIntents.get(prepared);
@@ -747,9 +760,16 @@ export function attachConnectorWebSocket(
       ready.socket.readyState===WebSocket.OPEN&&
       (ready.entry.sessionDeadline??0)>performance.now());
   }
+  function getDeviceCapabilityClaim(ownerSub:string,deviceId:string):
+    ConnectorCapabilityClaim|null{
+    if(!isDeviceConnected(ownerSub,deviceId))return null;
+    const claim=readyDevices.get(socketKey(ownerSub,deviceId))?.entry.catalogClaim;
+    return claim?{...claim,operations:[...claim.operations]}:null;
+  }
   return {prepareOwnerSummary,requestSummary,prepareOwnerDrc,requestDrc,
     prepareOwnerInspection,requestInspection,prepareOwnerBoardCounts,requestBoardCounts,
     prepareOwnerSchematicCounts,requestSchematicCounts,isDeviceConnected,
+    getDeviceCapabilityClaim,
     close:async()=>{
     if(stopped)return;
     stopped=true;

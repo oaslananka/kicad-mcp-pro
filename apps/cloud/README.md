@@ -49,6 +49,25 @@ existing local KiCad capability catalog remains authoritative for local
 engineering features; this Cloud registry describes only its verified
 remotely callable subset, not a second full engineering engine.
 
+## Opt-in local capability revision announcement (development)
+
+The existing signed Connector v1 WebSocket accepts an optional bounded
+catalog object on its original device.hello frame. This contains the
+generated **local registry SHA-256 revision**, schemaVersion 1.0.0 and at most
+five explicitly supported read operations. It does **not** transmit KiCad
+project paths, tool input schemas, design source or the full 388-tool catalog.
+
+The local Python transport sends this extension only when its internal
+OutboundSessionOptions(advertise_catalog=True) option is explicitly used.
+Default clients send the legacy, byte-compatible v1 hello. Cloud validates the
+shape but **only attaches the claim to the device after both signed device and
+session proofs succeed**. A claim can restrict an independently authorized
+request, never expand OAuth grants, project access, allowed operations or
+human approval. The claim is not an attestation that local binaries match its
+digest; source/runtime compatibility and actual native read acceptance remain
+separate requirements. Unknown revisions are not treated as automatic feature
+enablement. No user-facing switch or production rollout is enabled here.
+
 ## Owner-managed read-only Connector (development; default OFF)
 
 A separate, opt-in `CONNECTOR_MANAGED_READ_ENABLED=true` Cloud mode permits

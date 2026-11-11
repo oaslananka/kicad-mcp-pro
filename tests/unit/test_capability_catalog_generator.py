@@ -56,3 +56,12 @@ def test_revision_is_stable_digest_of_registered_tool_contracts() -> None:
         data["tools"], ensure_ascii=False, separators=(",", ":"), sort_keys=True
     )
     assert data["catalogRevision"] == hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def test_runtime_catalog_revision_matches_generated_artifact() -> None:
+    from kicad_mcp.runtime_capability_catalog import build_local_catalog_entries, catalog_revision
+
+    entries = build_local_catalog_entries()
+    data = builder.build()
+    assert entries == data["tools"]
+    assert catalog_revision(entries) == data["catalogRevision"]

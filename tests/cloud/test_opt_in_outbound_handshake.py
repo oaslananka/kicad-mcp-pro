@@ -8,7 +8,7 @@ import json
 import ssl
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from unittest.mock import patch
 
 import pytest
@@ -103,13 +103,22 @@ async def _scenario(tmp_path: Path, mode: str = "success", *, pilot: bool = Fals
     async def peer(ws: ServerConnection) -> None:
         try:
             hello = json.loads(await ws.recv())
-            assert hello == {
+            expected = {
                 "kind": "device.hello",
                 "version": 1,
                 "ownerSub": OWNER,
                 "deviceId": DEVICE,
             }
+            if mode == "catalog":
+                expected.update(
+                    cloud_outbound_handshake._catalog_hello_metadata(
+                        cloud_outbound_handshake.OutboundSessionOptions(advertise_catalog=True)
+                    )
+                )
+            assert hello == expected
             observations.append("hello")
+            if mode == "catalog":
+                observations.append("catalog")
             expiry = int(datetime.now(UTC).timestamp() * 1000) + 30_000
             if mode == "premature-ready":
                 await ws.send('{"kind":"connector.ready","version":1}')
@@ -269,6 +278,16 @@ async def _scenario(tmp_path: Path, mode: str = "success", *, pilot: bool = Fals
                             tls_context=trust,
                             dispatcher_factory=local_dispatcher,
                         )
+            elif mode == "catalog":
+                receipt = await cloud_outbound_handshake._perform_outbound_session(
+                    origin=origin,
+                    trusted_origin=origin,
+                    owner_sub=OWNER,
+                    device_id=DEVICE,
+                    signing_key=signing_key,
+                    tls_context=trust,
+                    options=cloud_outbound_handshake.OutboundSessionOptions(advertise_catalog=True),
+                )
             else:
                 receipt = await establish_proof_only_handshake(
                     origin=origin,
@@ -279,15 +298,17 @@ async def _scenario(tmp_path: Path, mode: str = "success", *, pilot: bool = Fals
                     tls_context=trust,
                 )
         except CloudHandshakeDeniedError:
-            if mode == "success":
+            if mode in {"success", "catalog"}:
                 raise
             observations.append("denied")
         else:
-            assert mode in {"success", "approved-read"}, "a negative scenario was admitted"
+            assert mode in {"success", "approved-read", "catalog"}, (
+                "a negative scenario was admitted"
+            )
             assert receipt.device_id == DEVICE
             assert receipt.session_id == SESSION
 
-            if mode == "success":
+            if mode in {"success", "catalog"}:
                 observations.append("completed")
     return observations
 
@@ -466,3 +487,82 @@ def test_one_shot_tls_relay_denies_native_revoked_or_unbound_request(
     got = asyncio.run(_scenario(tmp_path, mode))
     assert "read_denied" in got
     assert not any(item.startswith("answer:") for item in got)
+
+
+def test_optional_catalog_claim_is_bounded_and_defaults_off() -> None:
+    from kicad_mcp.cloud_outbound_handshake import OutboundSessionOptions, _catalog_hello_metadata
+
+    assert _catalog_hello_metadata(OutboundSessionOptions()) == {}
+    claim = _catalog_hello_metadata(OutboundSessionOptions(advertise_catalog=True))["catalog"]
+    assert claim["schemaVersion"] == "1.0.0"
+    assert len(claim["catalogRevision"]) == 64
+    assert claim["operations"] == []
+    managed = _catalog_hello_metadata(
+        OutboundSessionOptions(
+            advertise_catalog=True, owner_managed_read=True, dispatcher_factory=lambda _: None
+        )
+    )["catalog"]
+    assert managed["operations"] == ["project_summary"]
+
+
+def test_opt_in_revision_is_sent_only_with_verified_synthetic_tls(tmp_path: Path) -> None:
+    assert asyncio.run(_scenario(tmp_path, "catalog")) == [
+        "hello",
+        "catalog",
+        "device_verified",
+        "session_verified",
+        "completed",
+    ]
+
+
+def test_catalog_hello_rejects_non_boolean_opt_in() -> None:
+    from kicad_mcp.cloud_outbound_handshake import (
+        CloudHandshakeDeniedError,
+        OutboundSessionOptions,
+        _catalog_hello_metadata,
+    )
+
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        _catalog_hello_metadata(OutboundSessionOptions(advertise_catalog=cast(Any, "yes")))
+
+
+@pytest.mark.parametrize(
+    ("options", "expected"),
+    [
+        (
+            dict(operator_presence_pilot=True),
+            ["project_summary"],
+        ),
+        (
+            dict(operator_presence_pilot=True, operator_native_drc_pilot=True),
+            ["project_summary", "run_drc"],
+        ),
+    ],
+)
+def test_catalog_hello_reports_only_opted_in_presence_operations(
+    options: dict[str, bool], expected: list[str]
+) -> None:
+    from kicad_mcp.cloud_outbound_handshake import OutboundSessionOptions, _catalog_hello_metadata
+
+    claim = _catalog_hello_metadata(
+        OutboundSessionOptions(advertise_catalog=True, dispatcher_factory=lambda _: None, **options)
+    )["catalog"]
+    assert claim["operations"] == expected
+
+
+def test_catalog_hello_reports_only_explicit_inspection_pilots() -> None:
+    from kicad_mcp.cloud_outbound_handshake import OutboundSessionOptions, _catalog_hello_metadata
+
+    options = OutboundSessionOptions(
+        advertise_catalog=True,
+        inspection_factory=lambda _: None,
+        operator_inspection_pilot=True,
+        board_counts_pilot=True,
+        schematic_counts_pilot=True,
+    )
+    claim = _catalog_hello_metadata(options)["catalog"]
+    assert claim["operations"] == [
+        "project_worker_inspection",
+        "project_board_counts",
+        "project_schematic_counts",
+    ]
