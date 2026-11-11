@@ -611,3 +611,113 @@ def test_foreground_remote_pairing_uses_browser_consent_without_second_terminal_
     ]
     assert "owner_confirm" not in events
     assert "schedule" not in events
+
+
+def test_windows_reconnect_repairs_verified_missing_task_without_repairing(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder, events, _project, _selected = windows_cli
+    initial = CliRunner().invoke(
+        app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
+    )
+    assert initial.exit_code == 0, initial.output
+    events.clear()
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "scheduler_state",
+        lambda: "Configured (task unverified)",
+    )
+
+    recovered = CliRunner().invoke(app, ["cloud", "reconnect"])
+    assert recovered.exit_code == 0, recovered.output
+    assert events == ["owner_confirm", "disable", "schedule"]
+    assert "task restored" in recovered.output.lower()
+    assert "connected" not in recovered.output.lower()
+
+
+def test_windows_reconnect_cancel_missing_task_keeps_registration(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder, events, _project, _selected = windows_cli
+    assert (
+        CliRunner()
+        .invoke(app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)])
+        .exit_code
+        == 0
+    )
+    events.clear()
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "scheduler_state",
+        lambda: "Configured (task unverified)",
+    )
+    monkeypatch.setattr(cloud_windows_user_cli.typer, "confirm", lambda *_a, **_k: False)
+    declined = CliRunner().invoke(app, ["cloud", "reconnect"])
+    assert declined.exit_code == 0, declined.output
+    assert "unchanged" in declined.output.lower()
+    assert not events
+
+
+def test_windows_reconnect_missing_task_refuses_unverified_stop(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder, events, _project, _selected = windows_cli
+    assert (
+        CliRunner()
+        .invoke(app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)])
+        .exit_code
+        == 0
+    )
+    events.clear()
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "scheduler_state",
+        lambda: "Configured (task unverified)",
+    )
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "disable_windows_connector",
+        lambda: events.append("stop-not-verified") or False,
+    )
+    refused = CliRunner().invoke(app, ["cloud", "reconnect"])
+    assert refused.exit_code != 0
+    assert "not verified" in refused.output.lower()
+    assert events == ["owner_confirm", "stop-not-verified"]
+
+
+def test_windows_existing_setup_restores_missing_task_without_pairing(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder, events, _project, _selected = windows_cli
+    args = ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
+    assert CliRunner().invoke(app, args).exit_code == 0
+    events.clear()
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "scheduler_state",
+        lambda: "Configured (task unverified)",
+    )
+
+    repaired = CliRunner().invoke(app, args)
+    assert repaired.exit_code == 0, repaired.output
+    assert events == ["owner_confirm", "disable", "schedule"]
+    assert "task restored" in repaired.output.lower()
+    assert "No new device registration" in repaired.output
+
+
+def test_windows_reconnect_unverifiable_task_never_replaces_scheduler_entry(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder, events, _project, _selected = windows_cli
+    assert (
+        CliRunner()
+        .invoke(app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)])
+        .exit_code
+        == 0
+    )
+    events.clear()
+    monkeypatch.setattr(cloud_windows_user_cli, "scheduler_state", lambda: "Unavailable")
+    result = CliRunner().invoke(app, ["cloud", "reconnect"])
+    assert result.exit_code == 0
+    assert "Unavailable" in result.output
+    assert events == []

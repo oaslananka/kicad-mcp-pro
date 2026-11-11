@@ -101,6 +101,28 @@ def _choose_project(
         ) from exc
 
 
+def _repair_missing_owner_task(project: WindowsRegisteredProject) -> bool:
+    """Repair only a verified missing scheduler task, never replace a foreign task.
+
+    The existing device registration and selected project remain unchanged.
+    The established disable/enable paths revoke the old local marker before
+    recreating an owner-only task, and independently revalidate task ownership.
+    """
+    if scheduler_state() != "Configured (task unverified)":
+        return False
+    inspect_owner_selected_project(project)
+    if not typer.confirm("Restore the missing read-only Windows Connector task?", default=False):
+        typer.echo("Existing registration unchanged; task not started.")
+        return True
+    if not disable_windows_connector():
+        raise typer.BadParameter(
+            "Previous Connector task stop/removal was not verified; no restart attempted."
+        )
+    enable_windows_connector(project, owner_confirm=lambda _project: True)
+    typer.echo("Windows Connector task restored; Cloud connection and grants remain unverified.")
+    return True
+
+
 def _resume_existing_windows_project(
     existing: WindowsRegisteredProject,
     *,
@@ -128,6 +150,7 @@ def _resume_existing_windows_project(
     typer.echo(f"Existing Windows Cloud device: {existing.device_id}")
     typer.echo(f"Local Connector: {scheduler_state()}")
     if local_state() != "Off":
+        _repair_missing_owner_task(existing)
         typer.echo("No new device registration or project grant was created.")
         return
     if not typer.confirm("Start the existing read-only Connector?", default=False):
@@ -313,7 +336,8 @@ def enable_existing(*, owner_terminal: Callable[[], bool]) -> None:
         if project is None:
             raise typer.BadParameter("No registered Windows project; run cloud setup.")
         if local_state() != "Off":
-            typer.echo(f"Connector: {scheduler_state()}")
+            if not _repair_missing_owner_task(project):
+                typer.echo(f"Connector: {scheduler_state()}")
             return
         if not typer.confirm(
             "Enable the owner-selected read-only Windows Connector?", default=False
