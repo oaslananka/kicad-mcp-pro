@@ -372,6 +372,27 @@ async def _attempt_authorized_session(
         await asyncio.gather(revoked, return_exceptions=True)
 
 
+def _notify_connection_attempt(
+    status_callback: Callable[[str], None] | None, failures: int
+) -> None:
+    """Report connection progress without claiming that Cloud accepted the socket."""
+    if status_callback is not None:
+        status_callback("Connecting" if failures == 0 else "Reconnecting")
+
+
+def _next_failure_count(
+    session_succeeded: bool,
+    failures: int,
+    status_callback: Callable[[str], None] | None,
+) -> int:
+    """A clean session resets backoff; network failures request a retry."""
+    if session_succeeded:
+        return 0
+    if status_callback is not None:
+        status_callback("Disconnected — reconnecting")
+    return failures + 1
+
+
 async def run_connector(
     *,
     stop: asyncio.Event,
@@ -392,19 +413,13 @@ async def run_connector(
             return
         project, selected, key = active.project, active.selected, active.signing_key
 
-        if status_callback is not None:
-            status_callback("Connecting" if failures == 0 else "Reconnecting")
+        _notify_connection_attempt(status_callback, failures)
         runner_for_session = _session_runner_with_status(session_runner, status_callback)
 
         result = await _attempt_authorized_session(project, selected, key, runner_for_session, stop)
         if result is None:
             return
-        if result:
-            failures = 0
-        else:
-            failures += 1
-            if status_callback is not None:
-                status_callback("Disconnected — reconnecting")
+        failures = _next_failure_count(result, failures, status_callback)
         delay = reconnect_delay_seconds(failures, secrets.randbelow(1001) / 1000)
         try:
             await asyncio.wait_for(stop.wait(), timeout=delay)
