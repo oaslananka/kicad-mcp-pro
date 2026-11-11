@@ -21,6 +21,7 @@ ROOT_FOLDER_ID = "root"
 MAX_CHILDREN = 35
 MAX_TOKENS = 2048
 MAX_NAME = 76
+KICAD_PROJECT_SUFFIX = ".kicad_pro"
 
 
 class LocalFolderBrowser:
@@ -46,37 +47,55 @@ class LocalFolderBrowser:
         self._parents[token] = parent
         return token
 
+    @staticmethod
+    def _has_no_reparse_components(root: Path, resolved: Path) -> bool:
+        """Reject a junction or symlink at any level below the trusted root."""
+        current = root
+        for component in resolved.relative_to(root).parts:
+            current = current / component
+            if current.is_symlink() or current.is_junction():
+                return False
+        return True
+
     def _safe(self, path: Path) -> bool:
         if path.is_symlink() or path.is_junction() or not path.is_dir():
             return False
         try:
             resolved = path.resolve(strict=True)
-            if not any(resolved == root or resolved.is_relative_to(root) for root in self._roots):
-                return False
-            # Do not follow any reparse points between the root and target.
             for root in self._roots:
                 if resolved == root or resolved.is_relative_to(root):
-                    rel = resolved.relative_to(root)
-                    current = root
-                    for part in rel.parts:
-                        current = current / part
-                        if current.is_symlink() or current.is_junction():
-                            return False
-                    break
+                    return self._has_no_reparse_components(root, resolved)
         except (OSError, RuntimeError, ValueError):
             return False
-        return True
+        return False
 
     @staticmethod
     def _has_project(folder: Path) -> bool:
         try:
             with os.scandir(folder) as items:
                 return any(
-                    item.is_file(follow_symlinks=False) and item.name.lower().endswith(".kicad_pro")
+                    item.is_file(follow_symlinks=False)
+                    and item.name.lower().endswith(KICAD_PROJECT_SUFFIX)
                     for item in items
                 )
         except OSError:
             return False
+
+    @staticmethod
+    def _visible_subfolders(path: Path) -> list[tuple[str, Path]]:
+        try:
+            with os.scandir(path) as entries:
+                folders = [
+                    (entry.name, Path(entry.path))
+                    for entry in entries
+                    if not entry.name.startswith(".")
+                    and entry.is_dir(follow_symlinks=False)
+                    and not entry.is_symlink()
+                ]
+        except OSError as exc:
+            raise ValueError("folder_unavailable") from exc
+        folders.sort(key=lambda item: item[0].casefold())
+        return folders
 
     def choose_native(
         self, picker: Callable[[], Path | None] = choose_project_folder
@@ -101,7 +120,7 @@ class LocalFolderBrowser:
                         Path(e.path)
                         for e in entries
                         if e.is_file(follow_symlinks=False)
-                        and e.name.lower().endswith(".kicad_pro")
+                        and e.name.lower().endswith(KICAD_PROJECT_SUFFIX)
                         and not e.is_symlink()
                     ),
                     key=lambda p: p.name.casefold(),
@@ -149,18 +168,7 @@ class LocalFolderBrowser:
                 raise ValueError("folder_unavailable")
             title = path.name
             is_project = self._has_project(path)
-            try:
-                with os.scandir(path) as items:
-                    folders = [
-                        (item.name, Path(item.path))
-                        for item in items
-                        if not item.name.startswith(".")
-                        and item.is_dir(follow_symlinks=False)
-                        and not item.is_symlink()
-                    ]
-            except OSError as exc:
-                raise ValueError("folder_unavailable") from exc
-            folders.sort(key=lambda item: item[0].casefold())
+            folders = self._visible_subfolders(path)
         children = []
         # Keep frame size bounded, and never enumerate a whole device.
         for name, folder in folders[:MAX_CHILDREN]:
@@ -200,21 +208,14 @@ class LocalFolderBrowser:
                 or file.is_symlink()
                 or file.is_junction()
                 or not file.is_file()
-                or file.suffix.lower() != ".kicad_pro"
+                or file.suffix.lower() != KICAD_PROJECT_SUFFIX
             ):
                 return None
             return str(file)
         except (OSError, RuntimeError, ValueError, TypeError):
             return None
 
-    def bind(self, token: str, project_id: str) -> bool:
-        try:
-            UUID(project_id)
-        except (ValueError, AttributeError):
-            return False
-        folder = self._paths.get(token)
-        if folder is None:
-            return False
+    def _folder_is_bindable(self, token: str, folder: Path) -> bool:
         native = self._selected_native.get(token)
         if native is not None:
             if (
@@ -226,33 +227,52 @@ class LocalFolderBrowser:
                 return False
         elif not self._safe(folder):
             return False
-        if not self._has_project(folder):
-            return False
-        exact_project = self._native_project_file.get(token)
-        if exact_project is None:
-            # Browser folder navigation must never store a directory path or
-            # silently guess between multiple KiCad projects in one folder.
-            try:
-                with os.scandir(folder) as entries:
-                    project_files = [
-                        Path(entry.path)
-                        for entry in entries
-                        if entry.is_file(follow_symlinks=False)
-                        and entry.name.lower().endswith(".kicad_pro")
-                        and not entry.is_symlink()
-                    ]
-            except OSError:
-                return False
-            if len(project_files) != 1:
-                return False
-            exact_project = project_files[0]
+        return self._has_project(folder)
+
+    @staticmethod
+    def _unambiguous_project_file(folder: Path) -> Path | None:
+        """Never guess which .kicad_pro file the owner intended."""
+        try:
+            with os.scandir(folder) as entries:
+                project_files = [
+                    Path(entry.path)
+                    for entry in entries
+                    if entry.is_file(follow_symlinks=False)
+                    and entry.name.lower().endswith(KICAD_PROJECT_SUFFIX)
+                    and not entry.is_symlink()
+                ]
+        except OSError:
+            return None
+        return project_files[0] if len(project_files) == 1 else None
+
+    def _bindable_project(self, token: str, folder: Path) -> Path | None:
+        if not self._folder_is_bindable(token, folder):
+            return None
+        project = self._native_project_file.get(token)
+        if project is None:
+            project = self._unambiguous_project_file(folder)
+        if project is None:
+            return None
         if (
-            not exact_project.is_file()
-            or exact_project.is_symlink()
-            or exact_project.is_junction()
-            or exact_project.suffix.lower() != ".kicad_pro"
-            or exact_project.parent != folder
+            not project.is_file()
+            or project.is_symlink()
+            or project.is_junction()
+            or project.suffix.lower() != KICAD_PROJECT_SUFFIX
+            or project.parent != folder
         ):
+            return None
+        return project
+
+    def bind(self, token: str, project_id: str) -> bool:
+        try:
+            UUID(project_id)
+        except (ValueError, AttributeError):
+            return False
+        folder = self._paths.get(token)
+        if folder is None:
+            return False
+        exact_project = self._bindable_project(token, folder)
+        if exact_project is None:
             return False
         # The mapping is per-user and local only, not returned via Cloud.
         existing: dict[str, str] = {}
