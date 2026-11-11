@@ -549,19 +549,30 @@ def _drc_report_payload(
 
     validated_report = cast(dict[str, object], report)
     violations = _entries(validated_report, "violations")
-    unconnected = _entries(validated_report, "unconnected_items")
-    courtyard = courtyard_violations(validated_report)
+    excluded = [entry for entry in violations if entry.get("excluded") is True]
+    actionable = [entry for entry in violations if entry.get("excluded") is not True]
+    unconnected = [
+        entry
+        for entry in _entries(validated_report, "unconnected_items")
+        if entry.get("excluded") is not True
+    ]
+    courtyard = [
+        entry
+        for entry in courtyard_violations(validated_report)
+        if entry.get("excluded") is not True
+    ]
     lines = [
         "DRC summary:",
-        f"- Violations: {len(violations)}",
+        f"- Violations: {len(actionable)}",
+        f"- Excluded by KiCad: {len(excluded)}",
         f"- Unconnected items: {len(unconnected)}",
         f"- Courtyard issues: {len(courtyard)}",
     ]
-    if violations:
-        lines.append(_format_violations("Violations", violations))
+    if actionable:
+        lines.append(_format_violations("Violations", actionable))
     if save_report:
         lines.append(f"Saved report: {path}")
-    findings = [_report_entry_finding("drc", entry, fix_tool="run_drc") for entry in violations]
+    findings = [_report_entry_finding("drc", entry, fix_tool="run_drc") for entry in actionable]
     findings.extend(
         _report_entry_finding(
             "drc.unconnected",
@@ -585,9 +596,16 @@ def _drc_report_payload(
     return VerdictReport(
         text="\n".join(lines),
         summary=(
-            "DRC is clean."
+            (
+                f"DRC has no actionable findings ({len(excluded)} excluded by KiCad)."
+                if excluded
+                else "DRC is clean."
+            )
             if verdict == "PASS"
-            else f"DRC reported {len(findings)} actionable finding(s)."
+            else (
+                f"DRC reported {len(findings)} actionable finding(s)"
+                + (f" ({len(excluded)} excluded by KiCad)." if excluded else ".")
+            )
         ),
         verdict=verdict,
         failure_mode="none" if verdict == "PASS" else "design",
@@ -606,6 +624,8 @@ def _drc_report_payload(
             "report_path": str(path),
             "available": True,
             "violations": len(violations),
+            "actionable_violations": len(actionable),
+            "excluded_violations": len(excluded),
             "unconnected_items": len(unconnected),
             "courtyard_issues": len(courtyard),
             "report_status": report_status,
@@ -1790,15 +1810,24 @@ def _evaluate_pcb_gate() -> GateOutcome:
             summary=f"DRC report was unavailable ({error or 'unknown error'}).",
         )
 
-    violations = _entries(report, "violations")
-    unconnected = _entries(report, "unconnected_items")
-    courtyard = courtyard_violations(report)
+    all_violations = _entries(report, "violations")
+    violations = [entry for entry in all_violations if entry.get("excluded") is not True]
+    excluded_count = len(all_violations) - len(violations)
+    unconnected = [
+        entry
+        for entry in _entries(report, "unconnected_items")
+        if entry.get("excluded") is not True
+    ]
+    courtyard = [
+        entry for entry in courtyard_violations(report) if entry.get("excluded") is not True
+    ]
     legacy_only_courtyard = [entry for entry in courtyard if entry not in violations]
     blocking_count = len(violations) + len(unconnected) + len(legacy_only_courtyard)
     evidence_problems = connectivity_evidence_problems(report)
     status: GateStatus = "PASS" if blocking_count == 0 else "FAIL"
     details = [
         f"DRC violations: {len(violations)}",
+        f"DRC excluded by KiCad: {excluded_count}",
         f"Unconnected items: {len(unconnected)}",
         f"Courtyard issues: {len(courtyard)}",
     ]

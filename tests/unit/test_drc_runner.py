@@ -387,3 +387,111 @@ def test_run_drc_report_timeout_and_oserror(tmp_path: Path) -> None:
     )
     assert res_os.status == "unavailable"
     assert "Permission denied" in res_os.error
+
+
+def test_drc_payload_exclusions_are_auditable_not_actionable() -> None:
+    from kicad_mcp.tools.validation import _drc_report_payload
+
+    excluded = {
+        "type": "copper_edge_clearance",
+        "severity": "error",
+        "description": "Accepted board edge exception",
+        "excluded": True,
+        "items": [],
+    }
+    active = {
+        "type": "hole_clearance",
+        "severity": "warning",
+        "description": "New hole clearance issue",
+        "excluded": False,
+        "items": [],
+    }
+    report = {"violations": [excluded, active], "unconnected_items": []}
+    payload = _drc_report_payload(Path("drc.json"), report, None, save_report=False)
+
+    assert payload.verdict == "WARN"
+    assert len(payload.findings) == 1
+    assert payload.findings[0].description == "New hole clearance issue"
+    assert payload.summary == "DRC reported 1 actionable finding(s) (1 excluded by KiCad)."
+    assert payload.metadata["violations"] == 2  # keep raw/auditable count
+    assert payload.metadata["actionable_violations"] == 1
+    assert payload.metadata["excluded_violations"] == 1
+    assert payload.evidence[0]["violations"]["violations"] == report["violations"]
+
+
+def test_drc_payload_only_exclusions_is_not_a_failed_design() -> None:
+    from kicad_mcp.tools.validation import _drc_report_payload
+
+    report = {
+        "violations": [
+            {
+                "type": "copper_edge_clearance",
+                "severity": "error",
+                "description": "Already reviewed",
+                "excluded": True,
+                "items": [],
+            }
+        ],
+        "unconnected_items": [],
+    }
+    payload = _drc_report_payload(Path("drc.json"), report, None, save_report=False)
+
+    assert payload.verdict == "PASS"
+    assert not payload.findings
+    assert payload.summary == "DRC has no actionable findings (1 excluded by KiCad)."
+    assert payload.metadata["violations"] == 1
+    assert payload.metadata["excluded_violations"] == 1
+    assert payload.metadata["actionable_violations"] == 0
+    assert payload.failure_mode == "none"
+    assert payload.next_action == "No DRC action required."
+
+
+def test_pcb_quality_gate_exclusions_are_not_blocking(monkeypatch) -> None:
+    from kicad_mcp.tools import validation
+
+    report = {
+        "violations": [
+            {
+                "type": "copper_edge_clearance",
+                "severity": "error",
+                "excluded": True,
+                "description": "Intentionally accepted board-edge clearance",
+            }
+        ],
+        "unconnected_items": [],
+    }
+    monkeypatch.setattr(
+        validation, "_run_drc_report", lambda _name: (Path("drc.json"), report, None)
+    )
+    monkeypatch.setattr(validation, "connectivity_evidence_problems", lambda _report: [])
+    monkeypatch.setattr(validation, "_zone_fill_check", lambda _report: ([], []))
+
+    gate = validation._evaluate_pcb_gate()
+
+    assert gate.status == "PASS"
+    assert "DRC violations: 0" in gate.details
+    assert "DRC excluded by KiCad: 1" in gate.details
+    assert all("FAIL:" not in line for line in gate.details)
+
+
+def test_pcb_quality_gate_new_violation_is_still_blocking(monkeypatch) -> None:
+    from kicad_mcp.tools import validation
+
+    report = {
+        "violations": [
+            {"type": "copper_edge_clearance", "severity": "error", "excluded": True},
+            {"type": "hole_clearance", "severity": "error", "excluded": False},
+        ],
+        "unconnected_items": [],
+    }
+    monkeypatch.setattr(
+        validation, "_run_drc_report", lambda _name: (Path("drc.json"), report, None)
+    )
+    monkeypatch.setattr(validation, "connectivity_evidence_problems", lambda _report: [])
+    monkeypatch.setattr(validation, "_zone_fill_check", lambda _report: ([], []))
+
+    gate = validation._evaluate_pcb_gate()
+
+    assert gate.status == "FAIL"
+    assert "DRC violations: 1" in gate.details
+    assert "DRC excluded by KiCad: 1" in gate.details

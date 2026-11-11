@@ -260,7 +260,7 @@ class TestAPIEndpoints:
         assert "tools" in data
         # Regression guard: this is the public tool count, not the number of
         # enabled categories for the active profile.
-        assert data["tools"]["active_tool_count"] == 24
+        assert data["tools"]["active_tool_count"] == 25
         assert "timestamp" in data
 
     @pytest.mark.anyio
