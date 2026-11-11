@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
 import type {PreparedOwnerSummary} from "../src/connector-ws.js";
+import type {ConnectorCapabilityClaim} from "../src/connector-capability-claim.js";
 import type {TrustedOAuthReadIdentity} from "../src/connector-read-gate.js";
 import { createServer as httpCreateServer, request as httpRequest, type Server } from "node:http";
 import { after, before, test } from "node:test";
@@ -1537,4 +1538,80 @@ test("MCP Apps exposes standards-based UI resource and tool UI metadata", async 
   assert.doesNotMatch(contents[0]?.text ?? "", /USB-C Controller/);
   const denied = await call("tools/call", { name:"get_project", arguments:{project_id:id} }, "test-user-b", "get_project");
   assert.equal(denied.data.result?.structuredContent?.found, false);
+});
+
+
+test("signed Connector operations narrow project-scoped Cloud task discovery",async()=>{
+  let connected=true;
+  let claim:ConnectorCapabilityClaim|null={
+    schemaVersion:"1.0.0",catalogRevision:"a".repeat(64),
+    operations:["project_summary","project_board_counts"]
+  };
+  const relay={
+    isDeviceConnected:(ownerSub:string,deviceId:string)=>
+      connected&&ownerSub==="user-a"&&deviceId===mockProject.deviceId,
+    getDeviceCapabilityClaim:(ownerSub:string,deviceId:string)=>
+      ownerSub==="user-a"&&deviceId===mockProject.deviceId?claim:null,
+    prepareOwnerSummary:testPrepared,
+    async requestSummary(){return null;}
+  };
+  const proxy=createHttpServer(config,inventory,verify,{
+    summaryRelay:()=>relay,
+    mcpProjectPresenceEnabled:true,
+    mcpProjectNativeDrcEnabled:true,
+    mcpProjectInspectionEnabled:true,
+    mcpProjectBoardCountsEnabled:true,
+    mcpProjectSchematicCountsEnabled:true
+  });
+  await new Promise<void>(done=>proxy.listen(0,"127.0.0.1",done));
+  const origin="http://127.0.0.1:"+(proxy.address() as AddressInfo).port;
+  const invoke=async(name:string,args:object,token="test-user-a")=>{
+    const result=await fetch(origin+"/mcp",{
+      method:"POST",headers:headers(token,"tools/call",name),
+      body:payload("tools/call",{name,arguments:args})
+    });
+    assert.equal(result.status,200);
+    return ((await result.json()) as any).result.structuredContent;
+  };
+  try{
+    const narrow=await invoke(capabilityCatalogTool,{project_id:id});
+    assert.deepEqual(narrow.categories.map((c:{category:string})=>c.category),[
+      "project","pcb"
+    ]);
+    assert.deepEqual(narrow.categories.flatMap(
+      (c:{tools:{tool:string}[]})=>c.tools.map(t=>t.tool)
+    ),["get_project_presence","get_project_board_counts"]);
+    assert.ok(narrow.categories.flatMap(
+      (c:{tools:{canExecuteNow:boolean}[]})=>c.tools
+    ).every((c:{canExecuteNow:boolean})=>!c.canExecuteNow));
+    const denied=await invoke("discover_project_workflow",{
+      task:"check_board_drc",project_id:id
+    });
+    assert.equal(denied.available,false);
+    assert.deepEqual(denied.tools,[]);
+    assert.equal(denied.reason,"connector_operation_not_supported");
+    const board=await invoke("discover_project_workflow",{
+      task:"inspect_board",project_id:id
+    });
+    assert.deepEqual(board.tools,["get_project_board_counts"]);
+    const foreign=await invoke(capabilityCatalogTool,{project_id:id},"test-user-b");
+    assert.deepEqual(foreign.categories,[]);
+    assert.equal(foreign.catalogAvailable,false);
+    claim={schemaVersion:"1.0.0",catalogRevision:"b".repeat(64),operations:["run_drc"]};
+    const afterChange=await invoke(capabilityCatalogTool,{project_id:id});
+    assert.deepEqual(afterChange.categories.map((c:{category:string})=>c.category),[
+      "validation"
+    ]);
+    connected=false;
+    const offline=await invoke(capabilityCatalogTool,{project_id:id});
+    assert.equal(offline.connectorConnected,false);
+    assert.ok(offline.categories.flatMap(
+      (c:{tools:{state:string}[]})=>c.tools
+    ).every((tool:{state:string})=>tool.state==="device_not_connected"));
+    claim=null;connected=true;
+    const legacy=await invoke(capabilityCatalogTool,{project_id:id});
+    assert.equal(legacy.categories.flatMap((c:{tools:unknown[]})=>c.tools).length,5);
+  }finally{
+    await new Promise<void>(done=>proxy.close(()=>done()));
+  }
 });

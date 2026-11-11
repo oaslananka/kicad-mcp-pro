@@ -3,10 +3,12 @@ import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import type { Actor } from "./auth.js";
 import type { Inventory, Project } from "./store.js";
+import type {ConnectorCapabilityClaim} from "./connector-capability-claim.js";
 import {
   CLOUD_READ_CAPABILITIES,
   CLOUD_READ_CATEGORIES,
   CLOUD_READ_TASKS,
+  configuredReadersForClaim,
   listConfiguredCloudCapabilities
 } from "./cloud-capabilities.js";
 
@@ -71,7 +73,8 @@ export function createCloudMcpHandler(
   projectDrc?:ProjectDrcReader, projectInspection?:ProjectInspectionReader,
   boardCounts?:ProjectBoardCountsReader,
   schematicCounts?:ProjectSchematicCountsReader,
-  isDeviceConnected?:(ownerSub:string,deviceId:string)=>boolean
+  isDeviceConnected?:(ownerSub:string,deviceId:string)=>boolean,
+  getDeviceCapabilityClaim?:(ownerSub:string,deviceId:string)=>ConnectorCapabilityClaim|null
 ) {
   return createMcpHandler(() => {
     const mcp = new McpServer({ name: "kicad-mcp-pro-cloud", version: "0.1.0" });
@@ -84,6 +87,12 @@ export function createCloudMcpHandler(
       boardCounts||schematicCounts);
     const connected=(deviceId:string)=>Boolean(
       isDeviceConnected?.(actor.sub,deviceId));
+    // Claims are effective only inside a currently authenticated signed socket.
+    // A missing claim is the legacy v1 Connector compatibility path.
+    const authenticatedClaim=(project:Project)=>
+      connected(project.deviceId)
+        ? getDeviceCapabilityClaim?.(actor.sub,project.deviceId)??null
+        : null;
     const describeProject=(project:Project)=>{
       const connectorConnected=connected(project.deviceId);
       return {
@@ -180,7 +189,9 @@ export function createCloudMcpHandler(
       const connectorConnected=connected(project.deviceId);
       return text({
         catalogAvailable:true,selectionRequired:false,connectorConnected,
-        categories:listConfiguredCloudCapabilities(enabled,connectorConnected,category)
+        categories:listConfiguredCloudCapabilities(
+          enabled,connectorConnected,category,authenticatedClaim(project)
+        )
       });
     });
 
@@ -194,12 +205,13 @@ export function createCloudMcpHandler(
       const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
       if(!project)return text({available:false,selectionRequired,tools:[]});
       const chosen=workflows[task];
-      return text(chosen.enabled ? {
+      const claimEnabled=configuredReadersForClaim(enabled,authenticatedClaim(project));
+      return text(chosen.enabled&&claimEnabled[task] ? {
         available:true,selectionRequired:false,
         tools:[chosen.tool],requiresOwnerSession:true
       } : {
         available:false,selectionRequired:false,tools:[],
-        reason:"cloud_operation_not_enabled"
+        reason:chosen.enabled?"connector_operation_not_supported":"cloud_operation_not_enabled"
       });
     });
     // Pilot presence read is an opt-in Cloud capability. No native commands,

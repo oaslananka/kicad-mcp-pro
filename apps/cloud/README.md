@@ -49,6 +49,25 @@ existing local KiCad capability catalog remains authoritative for local
 engineering features; this Cloud registry describes only its verified
 remotely callable subset, not a second full engineering engine.
 
+## Cloud discovery follows a signed Connector claim
+
+For a project already granted to the OAuth client, list_project_capabilities
+and discover_project_workflow now restrict **configured Cloud read operations**
+to those in the currently authenticated Connector's optional operation claim.
+For example, a device advertising only project_summary will not advertise
+native DRC or PCB reads in task/category discovery. Missing operation support
+produces connector_operation_not_supported, distinct from a Cloud feature flag
+being disabled. Project grants are still independently resolved on each call.
+
+A legacy Connector that sends no claim keeps its previous configured
+discovery view; a disconnected device remains clearly marked offline and
+never becomes executable merely because an operation is listed. A claimed
+revision is **not a trusted attestation of installed software** and does not
+grant, activate, or validate actual KiCad commands. Read dispatch still
+requires signed session, owner/client/project authorization and native
+acceptance. The generic MCP tool list remains an API surface description,
+not an assertion that every project can invoke every registered tool.
+
 ## Opt-in local capability revision announcement (development)
 
 The existing signed Connector v1 WebSocket accepts an optional bounded
