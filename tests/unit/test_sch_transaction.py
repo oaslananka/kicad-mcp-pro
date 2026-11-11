@@ -294,3 +294,74 @@ async def test_verify_plan_does_not_accept_same_label_at_wrong_position(
     _expect_equal(verified["unconnected_labels"], [])
     _expect_equal(verified["connectivity_error"], None)
     _expect_equal(verified["connectivity"], "fail")
+
+
+@pytest.mark.anyio
+async def test_verify_plan_uses_configured_cli_when_not_on_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.server import create_server
+    from kicad_mcp.tools import sch_transaction
+    from tests.conftest import call_tool_text
+
+    (tmp_path / "test.kicad_pro").write_text("{}", encoding="utf-8")
+    (tmp_path / "test.kicad_pcb").write_text("", encoding="utf-8")
+    (tmp_path / "test.kicad_sch").write_text(MINIMAL_SCH, encoding="utf-8")
+    fake_cli = tmp_path / "kicad-cli"
+    fake_cli.write_text("fake-kicad-cli", encoding="utf-8")
+    fake_cli.chmod(0o755)
+    server = create_server()
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(tmp_path)})
+    sch_transaction.get_config().kicad_cli = fake_cli
+    monkeypatch.setattr(sch_transaction.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(
+        sch_transaction, "find_kicad_version", lambda _path: "10.0.8", raising=False
+    )
+
+    planned = json.loads(
+        await call_tool_text(
+            server,
+            "sch_plan_from_spec",
+            {"spec_json": json.dumps({"labels": [{"text": "N1", "x": 10, "y": 10}]})},
+        )
+    )
+    await call_tool_text(server, "sch_apply_plan", {"plan_id": planned["plan_id"]})
+    verified = json.loads(
+        await call_tool_text(server, "sch_verify_plan", {"plan_id": planned["plan_id"]})
+    )
+    assert verified["erc"] == "available"
+    assert "Run run_erc()" in verified["erc_note"]
+
+
+@pytest.mark.anyio
+async def test_verify_plan_rejects_unusable_configured_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.server import create_server
+    from kicad_mcp.tools import sch_transaction
+    from tests.conftest import call_tool_text
+
+    (tmp_path / "test.kicad_pro").write_text("{}", encoding="utf-8")
+    (tmp_path / "test.kicad_pcb").write_text("", encoding="utf-8")
+    (tmp_path / "test.kicad_sch").write_text(MINIMAL_SCH, encoding="utf-8")
+    invalid_cli = tmp_path / "not-an-executable"
+    invalid_cli.write_text("not actually a kicad-cli binary", encoding="utf-8")
+    server = create_server()
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(tmp_path)})
+    sch_transaction.get_config().kicad_cli = invalid_cli
+    monkeypatch.setattr(sch_transaction.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(sch_transaction, "find_kicad_version", lambda _path: None, raising=False)
+
+    planned = json.loads(
+        await call_tool_text(
+            server,
+            "sch_plan_from_spec",
+            {"spec_json": json.dumps({"labels": [{"text": "N1", "x": 10, "y": 10}]})},
+        )
+    )
+    await call_tool_text(server, "sch_apply_plan", {"plan_id": planned["plan_id"]})
+    verified = json.loads(
+        await call_tool_text(server, "sch_verify_plan", {"plan_id": planned["plan_id"]})
+    )
+    assert verified["erc"] == "unavailable"
+    assert "KICAD_MCP_KICAD_CLI" in verified["erc_note"]

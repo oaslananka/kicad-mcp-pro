@@ -28,6 +28,7 @@
         "sch_get_bounding_boxes",
         "sch_get_connectivity_graph",
         "sch_get_symbols",
+        "sch_list_sheets",
         "sch_visual_qa",
         "validate_design",
         "validate_footprints_vs_schematic"
@@ -59,6 +60,7 @@
         "sch_get_bounding_boxes",
         "sch_get_connectivity_graph",
         "sch_get_symbols",
+        "sch_list_sheets",
         "sch_visual_qa",
         "validate_design",
         "validate_footprints_vs_schematic"
@@ -548,6 +550,7 @@
         "sch_get_bounding_boxes",
         "sch_get_connectivity_graph",
         "sch_get_symbols",
+        "sch_list_sheets",
         "sch_visual_qa",
         "validate_design",
         "validate_footprints_vs_schematic"

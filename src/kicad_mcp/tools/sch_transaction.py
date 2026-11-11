@@ -24,6 +24,7 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
+from ..discovery import find_kicad_version
 from ..models import sch_transaction as txn
 from .metadata import headless_compatible
 
@@ -270,12 +271,15 @@ def sch_verify_plan(plan_id: str) -> str:
         else "fail"
     )
 
-    erc_available = shutil.which("kicad-cli") is not None
+    configured_cli = get_config().kicad_cli
+    erc_available = (
+        configured_cli.is_file() or shutil.which(str(configured_cli)) is not None
+    ) and find_kicad_version(configured_cli) is not None
     erc_status = "available" if erc_available else "unavailable"
     erc_note = (
         "Run run_erc() for the full electrical rules check."
         if erc_available
-        else "kicad-cli not found on PATH; ERC cannot run headless here."
+        else "Configured kicad-cli is unavailable; check KICAD_MCP_KICAD_CLI."
     )
 
     return json.dumps(

@@ -6,8 +6,8 @@ KiCad MCP Pro defaults to a bounded tool surface so general-purpose agents do no
 
 | Profile | Operating mode | Callable tools | Intended use |
 |---|---|---:|---|
-| `default` | `readonly` | 24 | Safe general-agent review and next-action discovery |
-| `review` | `readonly` | 24 | Explicit read-only DRC, ERC, DFM, visual QA, and component-contract review |
+| `default` | `readonly` | 25 | Safe general-agent review and next-action discovery |
+| `review` | `readonly` | 25 | Explicit read-only DRC, ERC, DFM, visual QA, and component-contract review |
 | `build` | `write` | 24 | Plan/apply/verify workflows plus bounded PCB inspect/remove/DRC operations |
 | `release` | `manufacturing` | 24 | Validation and human-gated manufacturing package generation |
 | `expert` | `experimental` | generated | Complete catalog for trusted advanced clients |
