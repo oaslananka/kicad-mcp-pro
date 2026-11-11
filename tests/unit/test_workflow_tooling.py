@@ -470,7 +470,8 @@ def test_main_sonar_coverage_uses_windows_native_evidence() -> None:
         assert "matrix.os == 'windows-2025'" in step["if"]
     for step in (download, merge):
         assert "steps.python-tests.outcome == 'success'" in step["if"]
-    assert "mcp-server" in jobs["coverage"]["needs"]
+    assert "mcp-server" not in jobs["coverage"]["needs"]
+    assert "actions" in jobs["coverage"]["permissions"]
     assert "scripts/merge_platform_coverage.py stamp" in collector["run"]
     assert "scripts/merge_platform_coverage.py merge" in merge["run"]
     assert "scripts/check_patch_coverage.py" in linux["Enforce Python patch coverage"]["run"]
