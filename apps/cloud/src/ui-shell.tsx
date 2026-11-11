@@ -32,6 +32,32 @@ function Brand(){
   </a>;
 }
 function WorkspaceNav({kind,userEmail}:{kind:PageKind;userEmail?:string}){
+  if(kind==="devices")return <aside className="workspace-sidebar device-home-sidebar" aria-label="Workspace navigation">
+    <Brand/>
+    <nav className="sidebar-links" aria-label="Workspace">
+      <NavLink href="/devices" current={true}><Icon name="devices" size={17}/> Devices</NavLink>
+      <NavLink href="/usage" current={false}><Icon name="usage" size={17}/> Usage</NavLink>
+      <NavLink href="/connections" current={false}><Icon name="connections" size={17}/> AI connections</NavLink>
+      <NavLink href="/account#security" current={false}><Icon name="settings" size={17}/> Settings</NavLink>
+      <a href="https://oaslananka.github.io/kicad-mcp-pro/" target="_blank" rel="noopener noreferrer">
+        <Icon name="warning" size={17}/> Help center
+      </a>
+    </nav>
+    <div className="device-sidebar-bottom">
+      <a className="device-sidebar-usage" href="/usage">
+        <span><Icon name="usage" size={17}/> Tool calls</span>
+        <small>View actual usage</small>
+      </a>
+      <div className="sidebar-profile">
+        <span className="profile-avatar" aria-hidden="true">KC</span>
+        <span className="profile-identity">KiCad MCP workspace</span>
+      </div>
+      <div className="sidebar-footer-links"><a href="/connections">Privacy</a>
+        <span className="footer-dot" aria-hidden="true">·</span>
+        <a href="https://oaslananka.github.io/kicad-mcp-pro/" target="_blank" rel="noopener noreferrer">Docs</a>
+      </div>
+    </div>
+  </aside>;
   const cleanEmail=userEmail?.trim();
   const initials=cleanEmail && cleanEmail.includes("@")
     ? cleanEmail.slice(0,2).toUpperCase()
@@ -43,7 +69,7 @@ function WorkspaceNav({kind,userEmail}:{kind:PageKind;userEmail?:string}){
     <div className="sidebar-section-label">WORKSPACE</div>
     <nav className="sidebar-links" aria-label="Workspace">
       <NavLink href="/account" current={kind==="account"}><Icon name="overview" size={17}/> Overview</NavLink>
-      <NavLink href="/devices" current={kind==="devices"}><Icon name="devices" size={17}/> Devices</NavLink>
+      <NavLink href="/devices" current={false}><Icon name="devices" size={17}/> Devices</NavLink>
       <NavLink href="/devices#registered-projects" current={false}><Icon name="projects" size={17}/> Projects</NavLink>
       <NavLink href="/connections" current={kind==="connections"}><Icon name="connections" size={17}/> AI connections</NavLink>
       <NavLink href="/usage" current={kind==="usage"}><Icon name="usage" size={17}/> Usage</NavLink>
@@ -88,7 +114,7 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
       <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180"/>
       <link rel="manifest" href="/site.webmanifest"/>
       <link rel="stylesheet" href="/assets/ui.css"/><title>{title+" — KiCad MCP Cloud"}</title>
-    </head><body><div className={workspace?"app-shell workspace-app":"app-shell"}>
+    </head><body><div className={workspace?(kind==="devices"?"app-shell workspace-app device-home-app":"app-shell workspace-app"):"app-shell"}>
       <a href="#main-content" className="skip-link">Skip to content</a>
       {workspace?<WorkspaceNav kind={kind} userEmail={userEmail}/>:<header className="site-header"><div className="header-inner">
         <Brand/>

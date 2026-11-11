@@ -11,24 +11,29 @@ import {openConfiguredOwnerIntentDelivery} from "./owner-read-intent-runtime.js"
 import {PgDeviceManagement} from "./device-management.js";
 import {PgPairingReview} from "./pairing-review.js";
 import {PgPairingDeviceAPI} from "./pairing-device-api.js";
-import {configuredDeviceSource} from "./trusted-ingress.js";
+import {configuredDeviceSource,localDevLoopbackSource} from "./trusted-ingress.js";
 import { createVerifier } from "./auth.js";
 import { createHttpServer } from "./http.js";
 import { PgGrantManagement } from "./grants.js";
 import { configuredIdentity } from "./identity.js";
+import {createLocalDevIdentity} from "./local-dev-identity.js";
+import {recoverLocalDevSessions} from "./local-dev-recovery.js";
 
 const config = loadConfig();
-const identity = configuredIdentity(config);
+const localDevWorkspace=process.env.AUTH_MODE==="local_dev";
+const identity = localDevWorkspace?createLocalDevIdentity(config):configuredIdentity(config);
 const inventory = new PgGrantManagement(config.databaseUrl,Boolean(identity));
 // Deliberately disabled until trusted WSS ingress, device onboarding and
 // real local connector acceptance have been verified.
 const wsEnabled=process.env.CONNECTOR_WS_ENABLED==="true";
 // Managed mode is OFF unless explicitly enabled by the Cloud operator.
 const managedReadEnabled=process.env.CONNECTOR_MANAGED_READ_ENABLED==="true";
-if(wsEnabled&&!config.publicOrigin.startsWith("https://")){
+if(wsEnabled&&!localDevWorkspace&&!config.publicOrigin.startsWith("https://")){
   throw new Error("Connector WebSocket requires externally terminated HTTPS");
 }
 const connectorPool=(wsEnabled||Boolean(identity))?new Pool({connectionString:config.databaseUrl}):null;
+// Only the isolated, single-worker sandbox may expire its own stale sockets.
+if(localDevWorkspace&&connectorPool)await recoverLocalDevSessions(connectorPool);
 // Explicitly independent PostgreSQL role; never issue owner approvals here.
 // With the default flag OFF, reads remain disabled even if WSS is enabled.
 const ownerConsentRuntime=await openOwnerConsentRuntime(
@@ -71,7 +76,7 @@ if(operatorLocalOnce&&(!wsEnabled||!pairingDeviceEnabled||!identity||
     ownerConsentRuntime||process.env.OWNER_READ_CONSUMER_ENABLED==="true")){
   throw Error("Local one-shot pilot needs built-in identity, pairing and WS only");
 }
-if(pairingDeviceEnabled&&(!identity||!config.publicOrigin.startsWith("https://"))){
+if(pairingDeviceEnabled&&(!identity||(!localDevWorkspace&&!config.publicOrigin.startsWith("https://")))){
   throw new Error("Device pairing API requires built-in identity and trusted HTTPS ingress");
 }
 const pairingDevice=pairingDeviceEnabled&&connectorPool?
@@ -82,10 +87,10 @@ const pairingDevice=pairingDeviceEnabled&&connectorPool?
 // private owner SSH forward may use the private mode. The default stays the
 // existing fail-closed Cloudflare source policy.
 const deviceSource=(wsEnabled||pairingDeviceEnabled)?
-  configuredDeviceSource(process.env):undefined;
+  (localDevWorkspace?localDevLoopbackSource:configuredDeviceSource(process.env)):undefined;
 // Lazy binding keeps all read surfaces absent when connector WS is disabled.
 let connectorRelay:ReturnType<typeof attachConnectorWebSocket>|null=null;
-const server=createHttpServer(config, inventory, createVerifier(config), {grants:inventory, identity:identity, devices:deviceManagement, managedRead, pairings:pairingReview, pairingDevice:pairingDevice, deviceSource:deviceSource,
+const server=createHttpServer(config, inventory, createVerifier(config), {grants:inventory, identity:identity, localDevWorkspace, devices:deviceManagement, managedRead, pairings:pairingReview, pairingDevice:pairingDevice, deviceSource:deviceSource,
   mcpProjectPresenceEnabled:operatorLocalOnce||managedReadEnabled,
   mcpProjectNativeDrcEnabled:operatorNativeDrc,
   mcpProjectInspectionEnabled:operatorInspection,
@@ -102,6 +107,7 @@ const connectorWs=wsEnabled&&connectorPool?attachConnectorWebSocket(server,{
   operatorInspectionOnce:operatorInspection,
   operatorBoardCountsOnce:operatorBoardCounts,
   operatorSchematicCountsOnce:operatorSchematicCounts,
+  localDevFolderBrowse:localDevWorkspace,
   connections:new BoundConnectorConnections(
     new PgConnectorSessions(connectorPool),
     new PgConnectorReadGate(connectorPool))

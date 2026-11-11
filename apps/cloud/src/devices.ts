@@ -3,14 +3,17 @@ import {makeSignature} from "better-auth/crypto";
 import type {BrowserIdentity} from "./browser.js";
 import type {PgDeviceManagement} from "./device-management.js";
 import {renderDevicesPage} from "./devices-ui.js";
+import {renderLocalFolderPage} from "./local-folder-page.js";
+import {validProjectAlias} from "./device-management.js";
+import type {LocalFolderPort} from "./connector-ws.js";
 import type {GrantManagement,BrowserGrantSummary} from "./grants.js";
 import type {PgManagedReadAccess} from "./connector-managed-read-access.js";
 
 export type ManagedReadPort=Pick<PgManagedReadAccess,"enabledProjectIds"|"setEnabled"|"isEnabled">;
 export type DeviceConnectionLookup=(ownerSub:string,deviceId:string)=>boolean;
 export type DeviceManagementPort=Pick<PgDeviceManagement,"list"|"revokeDevice"> &
-  Partial<Pick<PgDeviceManagement,"deleteRevokedDevice">> &
-  Partial<Pick<PgDeviceManagement,"enableDevice"|"createProject"|"listProjects">>;
+  Partial<Pick<PgDeviceManagement,"deleteRevokedDevice"|"deleteProject">> &
+  Partial<Pick<PgDeviceManagement,"enableDevice"|"createProject"|"listProjects"|"renameProject">>;
 const FIVE_MINUTES=300_000;
 const DEVICE_ID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function cookieName(origin:string):string{
@@ -35,10 +38,13 @@ type DeviceReply={
   ownerSub?:string;
   clients?:ReadonlyArray<string>;
   savedGrants?:ReadonlyArray<BrowserGrantSummary>;
+  sandboxMode?:boolean;
+  localFolders?:LocalFolderPort;
 };
 function reply({status,devices=[],message,stateCookie,enrollmentAvailable=true,
-  projects=[],ownerSub,clients=[],savedGrants=[]}:DeviceReply):Response{
-  const response=new Response(renderDevicesPage(devices,message,enrollmentAvailable,projects,ownerSub,clients,savedGrants),{status,headers:{
+  projects=[],ownerSub,clients=[],savedGrants=[],sandboxMode=false,localFolders}:DeviceReply):Response{
+  const response=new Response(renderDevicesPage(devices,message,enrollmentAvailable,projects,
+    ownerSub,clients,savedGrants,sandboxMode,Boolean(localFolders)),{status,headers:{
     "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store",
     // Preserve Origin on same-origin form POSTs; Chrome sends Origin: null
     // under no-referrer. Cross-site referrers remain hidden.
@@ -86,7 +92,8 @@ async function checkCsrf(req:Request,origin:string,secret:string,
 async function list(req:Request,identity:BrowserIdentity,origin:string,
   devices:DeviceManagementPort,enrollmentAvailable=true,
   grants?:Pick<GrantManagement,"setBrowserGrant"|"listBrowserGrants">,
-  deviceConnection?:DeviceConnectionLookup,managedRead?:ManagedReadPort):Promise<Response>{
+  deviceConnection?:DeviceConnectionLookup,managedRead?:ManagedReadPort,
+  localFolders?:LocalFolderPort):Promise<Response>{
   if(!identity.api||!identity.$context)return error(503);
   const who=userOf(await identity.api.getSession({headers:req.headers}));
   if(!who)return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});
@@ -108,12 +115,23 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
       await csrf(secret,who.user,who.session,d.id,stamp,nonce,"device-enable-v1"):undefined,
     projectCsrf:devices.createProject?
       await csrf(secret,who.user,who.session,d.id,stamp,nonce,"project-create-v1"):undefined,
+    browseCsrf:identity.localDevSandbox&&localFolders?
+      await csrf(secret,who.user,who.session,d.id,stamp,nonce,"project-native-picker-open-v1"):
+      undefined,
     connectionState: deviceConnection&&d.enabled&&!d.revoked?
       (deviceConnection(who.user,d.id)?"connected" as const:"disconnected" as const):undefined
   })));
   const url=new URL(req.url);
   const access=url.searchParams.get("access");
-  const note=url.searchParams.has("deleted")?
+  const note=url.searchParams.get("picker")==="unavailable"?
+    "This device could not complete folder selection. Wait until it is Online and try Browse again.":
+    url.searchParams.get("picker")==="cancelled"?
+    "Folder selection cancelled. No project was added.":
+    url.searchParams.get("picker")==="invalid"?
+    "That folder does not contain a KiCad project (.kicad_pro). Select the project folder.":
+    url.searchParams.has("project-removed")?
+    "Project removed from Cloud. Its saved AI app permissions were deleted; local files are untouched.":
+    url.searchParams.has("deleted")?
     "Revoked device and its registered projects were permanently removed.":
     url.searchParams.has("revoked")?
       "Device revoked. Its sessions and project access were disabled.":
@@ -121,7 +139,7 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
     access==="removed"?"The selected AI app's project access was removed.":
     access==="reads-on"?"Project summary access was enabled.":
     access==="reads-off"?"Project summary access was paused.":undefined;
-  const projects=enrollmentAvailable&&devices.listProjects?
+  const projects=devices.listProjects?
     await devices.listProjects(who.user):[];
   let clients:string[]=[];
   if(enrollmentAvailable&&grants?.setBrowserGrant&&identity.api.getOAuthConsents){
@@ -142,7 +160,23 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
     catch{return error(503);}
   }
   const managedIds=new Set(managedRead?await managedRead.enabledProjectIds(who.user):[]);
+  // Only one local RPC may be outstanding on a signed Connector socket.
+  // Serialize path lookups so every project in a multi-project folder gets
+  // its own accurate path rather than an intermittent "unavailable".
+  const localPaths=new Map<string,string>();
+  if(identity.localDevSandbox&&localFolders&&
+     url.searchParams.get("csrf-refresh")!=="1"){
+    for(const project of projects){
+      const value=await localFolders.getProjectPath(who.user,project.deviceId,project.id);
+      if(value)localPaths.set(project.id,value);
+    }
+  }
   const scoped=await Promise.all(projects.map(async project=>({...project,
+    localPath:localPaths.get(project.id),
+    deleteCsrf:devices.deleteProject?
+      await csrf(secret,who.user,who.session,project.id,stamp,nonce,"project-delete-v1"):undefined,
+    renameCsrf:devices.renameProject?
+      await csrf(secret,who.user,who.session,project.id,stamp,nonce,"project-rename-v1"):undefined,
     managedEnabled:managedRead?managedIds.has(project.id):undefined,
     managedCsrf:managedRead?
       await csrf(secret,who.user,who.session,project.id,stamp,nonce,"project-managed-read-v1"):undefined,
@@ -152,7 +186,8 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
   })));
   return reply({status:200,devices:rows,message:note,
     stateCookie:cookie(stamp+"."+nonce,origin,300),enrollmentAvailable,
-    projects:scoped,ownerSub:who.user,clients,savedGrants});
+    projects:scoped,ownerSub:who.user,clients,savedGrants,
+    sandboxMode:identity.localDevSandbox===true,localFolders});
 }
 async function revoke(req:Request,identity:BrowserIdentity,origin:string,
   devices:DeviceManagementPort):Promise<Response>{
@@ -207,6 +242,33 @@ async function deleteRevoked(req:Request,identity:BrowserIdentity,origin:string,
   }});
 }
 
+async function deleteProject(req:Request,identity:BrowserIdentity,origin:string,
+  devices:DeviceManagementPort):Promise<Response>{
+  if(!identity.api||!identity.$context||!devices.deleteProject)return error(503);
+  if(req.headers.get("origin")!==origin)return error(403);
+  if(req.headers.get("content-type")?.split(";")[0].trim()!=="application/x-www-form-urlencoded")
+    return error(415);
+  const raw=await req.text();
+  if(raw.length>2048)return error(413);
+  const fields=new URLSearchParams(raw);
+  if([...fields.keys()].length!==2||
+    fields.getAll("project_id").length!==1||fields.getAll("csrf").length!==1)return error(400);
+  const id=fields.get("project_id")??"",proof=fields.get("csrf")??"";
+  if(!DEVICE_ID.test(id))return error(400);
+  const who=userOf(await identity.api.getSession({headers:req.headers}));
+  if(!who)return error(401);
+  const {secret}=await identity.$context;
+  if(!await checkCsrf(req,origin,secret,who,id,proof,"project-delete-v1"))return error(403);
+  let success:boolean;
+  try{success=await devices.deleteProject(who.user,id);}
+  catch{return error(503);}
+  if(!success)return error(404);
+  return new Response(null,{status:303,headers:{
+    Location:"/devices?project-removed=1","Cache-Control":"no-store",
+    "Set-Cookie":cookie("",origin,0)
+  }});
+}
+
 async function activate(req:Request,identity:BrowserIdentity,origin:string,
   devices:DeviceManagementPort,action:"device-enable-v1"|"project-create-v1"):Promise<Response>{
   if(!identity.api||!identity.$context)return error(503);
@@ -232,7 +294,7 @@ async function activate(req:Request,identity:BrowserIdentity,origin:string,
       success=!!await devices.enableDevice?.(who.user,id);
     }else{
       const alias=fields.get("alias")??"";
-      if(!/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/.test(alias))return error(400);
+      if(!validProjectAlias(alias))return error(400);
       success=!!await devices.createProject?.(who.user,id,alias);
     }
   }catch{return error(503);}
@@ -304,14 +366,139 @@ async function ownerManagedRead(req:Request,identity:BrowserIdentity,origin:stri
     "Cache-Control":"no-store","Set-Cookie":cookie("",origin,0)}});
 }
 
+
+
+/** Browsing is permitted only inside an explicit, synthetic local Cloud session. */
+async function folderBrowse(req:Request,identity:BrowserIdentity,origin:string,
+  devices:DeviceManagementPort,folders?:LocalFolderPort):Promise<Response>{
+  if(!identity.localDevSandbox||!folders||!identity.api||!identity.$context)return error(404);
+  if(req.headers.get("origin")!==origin)return error(403);
+  if(req.headers.get("content-type")?.split(";")[0].trim()!=="application/x-www-form-urlencoded")
+    return error(415);
+  const raw=await req.text();
+  if(raw.length>750)return error(413);
+  const fields=new URLSearchParams(raw);
+  if([...fields.keys()].length!==2||
+     ["device_id","csrf"].some(x=>fields.getAll(x).length!==1))return error(400);
+  const device=fields.get("device_id")??"";
+  if(!DEVICE_ID.test(device))return error(400);
+  const who=userOf(await identity.api.getSession({headers:req.headers}));
+  if(!who)return error(401);
+  const {secret}=await identity.$context;
+  if(!await checkCsrf(req,origin,secret,who,device,fields.get("csrf")??"",
+    "project-native-picker-open-v1"))return error(403);
+  const own=await devices.list(who.user);
+  if(!own.some(d=>d.id===device&&d.enabled&&!d.revoked))return error(404);
+
+  // This is a user-clicked POST, never an auto-prefetched GET.
+  // The native modal appears on the selected device, not the Cloud host.
+  const selection=await folders.chooseFolder(who.user,device);
+  if(!selection)return new Response(null,{status:303,headers:{
+    Location:"/devices?picker=unavailable","Cache-Control":"no-store"
+  }});
+  if(selection.status==="cancelled"||selection.status==="invalid"){
+    return new Response(null,{status:303,headers:{
+      "Location":selection.status==="cancelled"?"/devices?picker=cancelled":
+        "/devices?picker=invalid","Cache-Control":"no-store"
+    }});
+  }
+  if(selection.status!=="selected"||!selection.folderId||!selection.name||
+     !selection.projects?.length)return error(503);
+  const stamp=String(Date.now()),nonce=randomBytes(16).toString("base64url");
+  const choices=await Promise.all(selection.projects.map(async project=>({
+    ...project,csrf:await csrf(secret,who.user,who.session,
+      device+":"+project.id,stamp,nonce,"project-folder-select-v1")
+  })));
+  return new Response(renderLocalFolderPage(device,selection,choices),{
+    status:200,headers:{
+      "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store",
+      "Set-Cookie":cookie(stamp+"."+nonce,origin,300),
+      "Referrer-Policy":"same-origin",
+      "X-Content-Type-Options":"nosniff",
+      "Content-Security-Policy":"default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    }
+  });
+}
+
+/** Local selection is atomic from the user's perspective: persist Cloud label
+ * only after a real signed device has confirmed this actual KiCad folder. */
+async function folderSelect(req:Request,identity:BrowserIdentity,origin:string,
+  devices:DeviceManagementPort,folders?:LocalFolderPort):Promise<Response>{
+  if(!identity.localDevSandbox||!folders||!identity.api||!identity.$context||
+     !devices.createProject||!devices.deleteProject)return error(404);
+  if(req.headers.get("origin")!==origin)return error(403);
+  if(req.headers.get("content-type")?.split(";")[0].trim()!=="application/x-www-form-urlencoded")
+    return error(415);
+  const raw=await req.text();
+  if(raw.length>2048)return error(413);
+  const fields=new URLSearchParams(raw);
+  if([...fields.keys()].length!==4||
+     ["device_id","folder_id","alias","csrf"].some(x=>fields.getAll(x).length!==1))return error(400);
+  const device=fields.get("device_id")??"",folder=fields.get("folder_id")??"";
+  const alias=(fields.get("alias")??"").trim();
+  if(!DEVICE_ID.test(device)||folder.length<1||folder.length>64||
+     !validProjectAlias(alias))return error(400);
+  const who=userOf(await identity.api.getSession({headers:req.headers}));
+  if(!who)return error(401);
+  const {secret}=await identity.$context;
+  if(!await checkCsrf(req,origin,secret,who,device+":"+folder,
+    fields.get("csrf")??"","project-folder-select-v1"))return error(403);
+  const own=await devices.list(who.user);
+  if(!own.some(d=>d.id===device&&d.enabled&&!d.revoked))return error(404);
+  const listing=await folders.listFolder(who.user,device,folder);
+  if(!listing?.project)return error(422);
+  const newId=await devices.createProject(who.user,device,alias);
+  if(!newId)return error(409);
+  let accepted=false;
+  try{accepted=await folders.bindFolder(who.user,device,folder,newId);}
+  catch{accepted=false;}
+  if(!accepted){
+    await devices.deleteProject(who.user,newId);
+    return error(503);
+  }
+  return new Response(null,{status:303,headers:{
+    Location:"/devices#registered-projects","Cache-Control":"no-store",
+    "Set-Cookie":cookie("",origin,0)
+  }});
+}
+async function projectRename(req:Request,identity:BrowserIdentity,origin:string,
+  devices:DeviceManagementPort):Promise<Response>{
+  if(!identity.api||!identity.$context||!devices.renameProject)return error(404);
+  if(req.headers.get("origin")!==origin)return error(403);
+  if(req.headers.get("content-type")?.split(";")[0].trim()!=="application/x-www-form-urlencoded")
+    return error(415);
+  const raw=await req.text();
+  if(raw.length>1024)return error(413);
+  const fields=new URLSearchParams(raw);
+  if([...fields.keys()].length!==3||
+    ["project_id","alias","csrf"].some(x=>fields.getAll(x).length!==1))return error(400);
+  const projectId=fields.get("project_id")??"";
+  const alias=(fields.get("alias")??"").trim();
+  if(!DEVICE_ID.test(projectId)||!validProjectAlias(alias))return error(400);
+  const who=userOf(await identity.api.getSession({headers:req.headers}));
+  if(!who)return error(401);
+  const {secret}=await identity.$context;
+  if(!await checkCsrf(req,origin,secret,who,projectId,fields.get("csrf")??"",
+     "project-rename-v1"))return error(403);
+  try{
+    if(!await devices.renameProject(who.user,projectId,alias))return error(404);
+  }catch{return error(503);}
+  return new Response(null,{status:303,headers:{
+    Location:"/devices#registered-projects","Cache-Control":"no-store",
+    "Set-Cookie":cookie("",origin,0)
+  }});
+}
+
 /** Authenticated browser-only management, never usable in external auth mode. */
 export async function devicesResponse(req:Request,identity:BrowserIdentity,origin:string,
   devices?:DeviceManagementPort,enrollmentAvailable=true,
   grants?:Pick<GrantManagement,"setBrowserGrant"|"listBrowserGrants">,
-  deviceConnection?:DeviceConnectionLookup,managedRead?:ManagedReadPort):Promise<Response|null>{
+  deviceConnection?:DeviceConnectionLookup,managedRead?:ManagedReadPort,
+  localFolders?:LocalFolderPort):Promise<Response|null>{
   const path=new URL(req.url).pathname;
   if(!["/devices","/devices/revoke","/devices/delete","/devices/enable","/devices/projects/create",
-    "/devices/projects/grant","/devices/projects/managed"].includes(path))
+    "/devices/projects/grant","/devices/projects/managed","/devices/projects/delete",
+    "/devices/projects/browse","/devices/projects/select","/devices/projects/rename"].includes(path))
     return null;
   if(!devices)return error(503);
   // A direct navigation is never a removal command. Keep users in the
@@ -321,10 +508,23 @@ export async function devicesResponse(req:Request,identity:BrowserIdentity,origi
       Location:"/devices","Cache-Control":"no-store"
     }});
   if(path==="/devices"&&req.method==="GET")
-    return list(req,identity,origin,devices,enrollmentAvailable,grants,deviceConnection,managedRead);
+    return list(req,identity,origin,devices,enrollmentAvailable,grants,deviceConnection,
+      managedRead,localFolders);
   if(path==="/devices/revoke"&&req.method==="POST")return revoke(req,identity,origin,devices);
   if(path==="/devices/delete"&&req.method==="POST")
     return deleteRevoked(req,identity,origin,devices);
+  if(path==="/devices/projects/delete"&&req.method==="POST")
+    return deleteProject(req,identity,origin,devices);
+  if(path==="/devices/projects/browse"&&req.method==="POST")
+    return folderBrowse(req,identity,origin,devices,localFolders);
+  if(path==="/devices/projects/browse"&&req.method==="GET")
+    return new Response(null,{status:303,headers:{
+      Location:"/devices","Cache-Control":"no-store"
+    }});
+  if(path==="/devices/projects/select"&&req.method==="POST")
+    return folderSelect(req,identity,origin,devices,localFolders);
+  if(path==="/devices/projects/rename"&&req.method==="POST")
+    return projectRename(req,identity,origin,devices);
   if(enrollmentAvailable && req.method==="POST"){
     if(path==="/devices/enable")return activate(req,identity,origin,devices,"device-enable-v1");
     if(path==="/devices/projects/create")return activate(req,identity,origin,devices,"project-create-v1");

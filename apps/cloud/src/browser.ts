@@ -6,7 +6,7 @@ import {renderSignIn,renderAccount,renderNotice} from "./browser-ui.js";
 import {renderUsagePage} from "./usage-ui.js";
 
 export type BrowserIdentity =
-  Pick<Identity,"handler"> & Partial<Pick<Identity,"$context"|"api"|"options">>;
+  Pick<Identity,"handler"> & Partial<Pick<Identity,"$context"|"api"|"options">> & {localDevSandbox?:true};
 type SocialName="google"|"github";
 export function availableProviders(identity:BrowserIdentity):SocialName[]{
   const social=identity.options?.socialProviders;
@@ -128,7 +128,7 @@ async function accountPage(request:Request,identity:BrowserIdentity,devices?:Dev
       }
     }catch{ /* State is unavailable, not an empty workspace. */ }
   }
-  return new Response(renderAccount(session.user.name??"User",availableProviders(identity),names,snapshot,session.user.email),{
+  return new Response(renderAccount(session.user.name??"User",availableProviders(identity),names,snapshot,session.user.email,identity.localDevSandbox===true),{
     status:200,headers:htmlHeaders
   });
 }
@@ -166,7 +166,10 @@ async function startSocialLink(request:Request,identity:BrowserIdentity,
 
 export async function browserResponse(request:Request,identity:BrowserIdentity,publicOrigin:string,devices?:DeviceManagementPort,grants?:GrantManagement):Promise<Response|null> {
   const url=new URL(request.url);
-  if(url.pathname==="/sign-in" && request.method==="GET") return signInPage(url,identity);
+  if(url.pathname==="/sign-in" && request.method==="GET") {
+    if(identity.localDevSandbox && !url.search)return new Response(null,{status:303,headers:{"Location":"/account","Cache-Control":"no-store"}});
+    return signInPage(url,identity);
+  }
   let provider: "google" | "github" | null = null;
   if (url.pathname === "/auth/start/google") provider = "google";
   else if (url.pathname === "/auth/start/github") provider = "github";

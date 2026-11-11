@@ -287,3 +287,45 @@ test("owner-managed Connector On/Off stays session-bound and CSRF protected",asy
   assert.equal(disabledReply?.headers.get("location"),"/devices?access=reads-off");
   assert.equal(requests.at(-1)?.enabled,false);
 });
+
+test("a project has an explicit owner-only permanent removal, separate from app access",async()=>{
+  const f=fixture(),project=randomUUID(),removed:string[]=[];
+  const devices:DeviceManagementPort={...f.devices,
+    listProjects:async()=>[{id:project,deviceId:f.ownId,alias:"PCB demo",enabled:true}],
+    deleteProject:async(owner,id)=>{
+      removed.push(owner+":"+id);
+      return owner==="owner-a"&&id===project;
+    }
+  };
+  const first=await devicesResponse(new Request(origin+"/devices"),f.identity,origin,devices);
+  assert.equal(first?.status,200);
+  const html=await first!.text();
+  assert.match(html,/Remove project from Cloud/);
+  assert.match(html,/does not delete files on your computer/);
+  const token=/<form action="\/devices\/projects\/delete" method="post">[\s\S]*?name="csrf" value="([^"]+)"/
+    .exec(html)?.[1]??"";
+  assert.ok(token,"remove project action has its own CSRF");
+  const cookie=(first!.headers.get("set-cookie")??"").split(";")[0];
+  const post=(id:string,proof=token,src=origin,extra?:string)=>{
+    const data=new URLSearchParams({project_id:id,csrf:proof});
+    if(extra)data.append("extra","1");
+    return new Request(origin+"/devices/projects/delete",{method:"POST",
+      headers:{Origin:src,"Content-Type":"application/x-www-form-urlencoded",Cookie:cookie},
+      body:data});
+  };
+  assert.equal((await devicesResponse(post(project,token,"https://evil.invalid"),
+    f.identity,origin,devices))?.status,403);
+  assert.equal((await devicesResponse(post(project,"bad"),f.identity,origin,devices))?.status,403);
+  assert.equal((await devicesResponse(post(randomUUID()),f.identity,origin,devices))?.status,403);
+  assert.equal((await devicesResponse(post(project,token,origin,"extra"),
+    f.identity,origin,devices))?.status,400);
+  assert.equal((await devicesResponse(post(project),fixture("owner-b").identity,
+    origin,devices))?.status,403);
+  assert.deepEqual(removed,[]);
+  const success=await devicesResponse(post(project),f.identity,origin,devices);
+  assert.equal(success?.status,303);
+  assert.equal(success?.headers.get("location"),"/devices?project-removed=1");
+  assert.deepEqual(removed,["owner-a:"+project]);
+  assert.equal((await devicesResponse(post(project),f.identity,origin,
+    {...devices,deleteProject:async()=>false}))?.status,404);
+});
