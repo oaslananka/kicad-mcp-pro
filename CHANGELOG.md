@@ -10,6 +10,27 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.12.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.11.0...mcp-server-v4.12.0) (2026-11-11)
+
+
+### Features
+
+* **cloud:** premium product redesign, usage telemetry and connector reliability ([#1683](https://github.com/oaslananka/kicad-mcp-pro/issues/1683)) ([a36251d](https://github.com/oaslananka/kicad-mcp-pro/commit/a36251d63fe7e410c3ebecf4aa87795aba390f42))
+* **cloud:** simplify Windows remote onboarding and project permissions ([#1686](https://github.com/oaslananka/kicad-mcp-pro/issues/1686)) ([a9cfbb8](https://github.com/oaslananka/kicad-mcp-pro/commit/a9cfbb864af84f0c3097ada55b953ae18d927306))
+* **ux:** comprehensive product UX, onboarding and reliability overhaul ([#1681](https://github.com/oaslananka/kicad-mcp-pro/issues/1681)) ([ea08db6](https://github.com/oaslananka/kicad-mcp-pro/commit/ea08db6f8c28a959ad7ede1ea392d9013a6e8557))
+
+
+### Bug Fixes
+
+* **cloud:** remove fabricated usage and account data from premium UI ([#1684](https://github.com/oaslananka/kicad-mcp-pro/issues/1684)) ([76e9ae8](https://github.com/oaslananka/kicad-mcp-pro/commit/76e9ae88e11429e6f2fe1f88da5172e62310cfc0))
+* **cloud:** route workspace pages through authenticated browser handler ([#1685](https://github.com/oaslananka/kicad-mcp-pro/issues/1685)) ([bd6af20](https://github.com/oaslananka/kicad-mcp-pro/commit/bd6af20a1730dadec716e6c4da394b56cb9bf2d6))
+
+
+### Documentation
+
+* align installation with browser-only experience ([#1678](https://github.com/oaslananka/kicad-mcp-pro/issues/1678)) ([a7edc2d](https://github.com/oaslananka/kicad-mcp-pro/commit/a7edc2dfe229d52181cda47b3e4eea1b2e2dda33))
+* document SPICE simulation workflows and ngspice setup ([#1675](https://github.com/oaslananka/kicad-mcp-pro/issues/1675)) ([47e3d48](https://github.com/oaslananka/kicad-mcp-pro/commit/47e3d485d18195411b4be325065a0d2a7bce8535))
+
 ## [4.11.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.10.0...mcp-server-v4.11.0) (2026-11-10)
 
 
