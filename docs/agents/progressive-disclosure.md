@@ -54,6 +54,23 @@ Profiles are selected when the MCP server process starts. To move from review to
 
 KiCad MCP Pro does not currently mutate a session's profile at runtime, so it does not emit `notifications/tools/list_changed` for profile transitions. Clients that support `tools/listChanged` still receive normal server-driven list changes where the underlying MCP implementation supports them, but profile changes require a fresh connection.
 
+## Versioned local capability contract
+
+The machine-readable contract under integrations/common/capability-catalog.json
+is generated from actually registered expert-profile MCP tools and the router
+categories. It records input JSON schemas, maturity, effect and permission
+tiers, runtime requirements and tested KiCad versions. Run
+pnpm capabilities:build to regenerate, or pnpm capabilities:check to detect
+drift. The existing repository metadata check also enforces the snapshot.
+
+**Discovery is not authorization.** Every generated local entry declares
+remoteCallable=false. Cloud exposes only separately implemented and authorized
+Connector adapters for a specific user, client and project. Reading this
+catalog cannot automatically expose any local tool for remote execution.
+Version compatibility, KiCad presence, permission checks, project isolation
+and independent native verification remain separate acceptance gates.
+No new MCP runtime tool, provider, credential or service is introduced.
+
 ## Evidence and drift checks
 
 The deterministic snapshot at `docs/evidence/progressive-disclosure-profile-snapshot.json` records:
