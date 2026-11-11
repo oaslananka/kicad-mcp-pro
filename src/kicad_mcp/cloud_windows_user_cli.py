@@ -176,6 +176,35 @@ def _enroll_selected_windows_project(
     return project
 
 
+def _reuse_owner_registration(
+    existing: WindowsRegisteredProject,
+    *,
+    origin: str,
+    directory: Path,
+    stem: str,
+    new_device: bool,
+    start_background: bool,
+) -> None:
+    """Never silently replace or re-pair an existing owner-selected project."""
+    if not start_background:
+        selected = inspect_owner_selected_project(existing)
+        if (
+            new_device
+            or existing.origin != origin
+            or selected.directory != directory
+            or selected.filename_stem != stem
+        ):
+            raise typer.BadParameter(
+                "An existing device is paired with a different project. "
+                "No keys or project files were replaced."
+            )
+        typer.echo(f"Reusing paired KiCad project: {stem}")
+        return
+    _resume_existing_windows_project(
+        existing, origin=origin, directory=directory, stem=stem, new_device=new_device
+    )
+
+
 def setup_windows(
     *,
     origin: str,
@@ -201,22 +230,13 @@ def setup_windows(
             "Existing Windows Cloud registration needs local repair; no new device was created."
         ) from exc
     if existing is not None:
-        if not start_background:
-            selected = inspect_owner_selected_project(existing)
-            if (
-                new_device
-                or existing.origin != origin
-                or selected.directory != directory
-                or selected.filename_stem != stem
-            ):
-                raise typer.BadParameter(
-                    "An existing device is paired with a different project. "
-                    "No keys or project files were replaced."
-                )
-            typer.echo(f"Reusing paired KiCad project: {stem}")
-            return
-        _resume_existing_windows_project(
-            existing, origin=origin, directory=directory, stem=stem, new_device=new_device
+        _reuse_owner_registration(
+            existing,
+            origin=origin,
+            directory=directory,
+            stem=stem,
+            new_device=new_device,
+            start_background=start_background,
         )
         return
 
