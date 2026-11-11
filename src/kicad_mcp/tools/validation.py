@@ -470,6 +470,19 @@ def _gate_report(outcome: GateOutcome) -> VerdictReport:
     )
 
 
+def _drc_summary_text(*, verdict: str, finding_count: int, excluded_count: int) -> str:
+    """Summarize actionable DRC results without hiding KiCad-approved exclusions."""
+    if verdict == "PASS":
+        if excluded_count:
+            return f"DRC has no actionable findings ({excluded_count} excluded by KiCad)."
+        return "DRC is clean."
+
+    message = f"DRC reported {finding_count} actionable finding(s)"
+    if excluded_count:
+        return f"{message} ({excluded_count} excluded by KiCad)."
+    return f"{message}."
+
+
 def _drc_report_payload(
     path: Path,
     report: dict[str, object] | None,
@@ -595,17 +608,10 @@ def _drc_report_payload(
     verdict = VerdictReport.verdict_for([finding.severity for finding in findings])
     return VerdictReport(
         text="\n".join(lines),
-        summary=(
-            (
-                f"DRC has no actionable findings ({len(excluded)} excluded by KiCad)."
-                if excluded
-                else "DRC is clean."
-            )
-            if verdict == "PASS"
-            else (
-                f"DRC reported {len(findings)} actionable finding(s)"
-                + (f" ({len(excluded)} excluded by KiCad)." if excluded else ".")
-            )
+        summary=_drc_summary_text(
+            verdict=verdict,
+            finding_count=len(findings),
+            excluded_count=len(excluded),
         ),
         verdict=verdict,
         failure_mode="none" if verdict == "PASS" else "design",

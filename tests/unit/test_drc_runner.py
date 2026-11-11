@@ -5,6 +5,8 @@ import subprocess  # nosec B404
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from kicad_mcp.validation.drc_runner import (
     DrcRunResult,
     classify_drc_report,
@@ -495,3 +497,27 @@ def test_pcb_quality_gate_new_violation_is_still_blocking(monkeypatch) -> None:
     assert gate.status == "FAIL"
     assert "DRC violations: 1" in gate.details
     assert "DRC excluded by KiCad: 1" in gate.details
+
+
+@pytest.mark.parametrize(
+    ("verdict", "finding_count", "excluded_count", "expected"),
+    [
+        ("PASS", 0, 0, "DRC is clean."),
+        ("PASS", 0, 2, "DRC has no actionable findings (2 excluded by KiCad)."),
+        ("WARN", 1, 0, "DRC reported 1 actionable finding(s)."),
+        ("FAIL", 2, 3, "DRC reported 2 actionable finding(s) (3 excluded by KiCad)."),
+    ],
+)
+def test_drc_summary_preserves_clear_actionable_and_excluded_counts(
+    verdict: str, finding_count: int, excluded_count: int, expected: str
+) -> None:
+    from kicad_mcp.tools.validation import _drc_summary_text
+
+    assert (
+        _drc_summary_text(
+            verdict=verdict,
+            finding_count=finding_count,
+            excluded_count=excluded_count,
+        )
+        == expected
+    )
