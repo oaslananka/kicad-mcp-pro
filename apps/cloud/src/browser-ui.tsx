@@ -1,4 +1,4 @@
-import {renderPage,Landing,SignIn,Account,Notice} from "./ui-shell.js";
+import {renderPage,Landing,SignIn,Account,Notice,SettingsHome} from "./ui-shell.js";
 export function renderLanding(identityEnabled:boolean){
   return renderPage({title:"KiCad MCP Cloud",kind:"home",navEnabled:identityEnabled,
     eyebrow:"Cloud console",summary:"Connect an AI assistant, pair a computer with your approval, then choose exactly which KiCad projects it can read.",
@@ -24,4 +24,10 @@ export function renderAccount(name:string,
 }
 export function renderNotice(title:string,message:string){
   return renderPage({title,kind:"notice",eyebrow:"Account access",children:<Notice message={message}/>});
+}
+
+export function renderSettings(identity?:string){
+  return renderPage({title:"Security settings",kind:"settings",eyebrow:"Workspace / Security",
+    summary:"One place to review your account, connected computers and AI permissions.",
+    userEmail:identity,children:<SettingsHome identity={identity}/>});
 }

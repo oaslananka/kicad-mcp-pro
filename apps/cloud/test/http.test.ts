@@ -509,7 +509,7 @@ test("workspace routes reach browser auth flow through the HTTP server",async()=
       assert.equal(response.status,303,path+" should require sign-in");
       assert.equal(response.headers.get("location"),"/sign-in");
     }
-    for(const [path,target] of [["/settings","/account#security"],["/projects","/devices#registered-projects"]]) {
+    for(const [path,target] of [["/settings","/sign-in"],["/projects","/devices#registered-projects"]]) {
       const response=await fetch(base+path,{redirect:"manual"});
       assert.equal(response.status,303,path+" should redirect to its workspace page");
       assert.equal(response.headers.get("location"),target);

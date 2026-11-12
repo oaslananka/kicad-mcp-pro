@@ -11,12 +11,18 @@ function device(alias:string,connectionState:"connected"|"disconnected"|"unknown
    connectionState:connectionState==="unknown"?undefined:connectionState};
 }
 
-test("devices become the first, compact home card with a functional setup link",()=>{
+test("devices retain functional setup while using the same workspace shell as every page",()=>{
  const html=renderDevicesPage([device("AMD2700X","connected")],undefined,true,[],
    "local-dev-owner",[],[],true);
  assert.match(html,/<title>Devices/);
- assert.match(html,/class="app-shell workspace-app device-home-app"/);
- assert.match(html,/class="page-stack device-home-stack/);
+ assert.match(html,/class="app-shell workspace-app"/);
+ assert.doesNotMatch(html,/device-home-app|device-home-sidebar/);
+ assert.match(html,/href="\/account"[^>]*>.*Overview/);
+ assert.match(html,/href="\/devices" aria-current="page"[^>]*>.*Devices/);
+ assert.match(html,/href="\/connections"/);
+ assert.match(html,/href="\/settings"/);
+ assert.match(html,/class="page-stack/);
+ assert.doesNotMatch(html,/device-home-stack/);
  assert.match(html,/href="#connect-computer"[^>]*>.*Add a device/);
  assert.match(html,/Your devices/);
  assert.match(html,/AMD2700X/);
@@ -27,8 +33,7 @@ test("devices become the first, compact home card with a functional setup link",
  assert.match(html,/Local development only/);
  assert.doesNotMatch(html,/479 of 10,000|Upgrade to Pro|Revoke all/);
  assert.ok(html.indexOf("Your devices")<html.indexOf("Your projects"));
- assert.match(uiCss,/\.device-home-app\s*\{/);
- assert.match(uiCss,/\.device-home-app \.workspace-layout/);
+ assert.match(uiCss,/\.workspace-app \.workspace-layout/);
  assert.match(uiCss,/@media\s*\(max-width:750px\)/);
 });
 
