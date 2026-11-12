@@ -451,13 +451,17 @@ def remote(
     import asyncio
 
     try:
-        asyncio.run(
-            run_connector(
-                stop=asyncio.Event(),
-                status_callback=show_status,
-                allow_native_drc=allow_native_drc,
+        if allow_native_drc:
+            asyncio.run(
+                run_connector(
+                    stop=asyncio.Event(),
+                    status_callback=show_status,
+                    allow_native_drc=True,
+                )
             )
-        )
+        else:
+            # Preserve the exact legacy call signature for normal remote use.
+            asyncio.run(run_connector(stop=asyncio.Event(), status_callback=show_status))
     except CloudOwnerReapprovalRequiredError:
         raise typer.Exit(code=3) from None
     except KeyboardInterrupt:

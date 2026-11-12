@@ -750,10 +750,18 @@ def test_windows_reconnect_unverifiable_task_never_replaces_scheduler_entry(
 
 
 def test_remote_exposes_explicit_repair_command_without_running_pairing() -> None:
+    from typer.main import get_command
+
     options = CliRunner().invoke(app, ["cloud", "remote", "--help"])
     assert options.exit_code == 0, options.output
-    assert "--repair-device" in options.output
-    assert "--allow-native-drc" in options.output
+    # Rich inserts ANSI escapes within option text on Windows. Inspect the
+    # registered Click options, not presentation-dependent terminal bytes.
+    remote_command = get_command(cloud_user_cli.cloud_app).commands["remote"]
+    option_names = {
+        name for parameter in remote_command.params for name in getattr(parameter, "opts", ())
+    }
+    assert "--repair-device" in option_names
+    assert "--allow-native-drc" in option_names
 
 
 def test_browser_approved_device_repair_reuses_project_and_preserves_old_binding(
