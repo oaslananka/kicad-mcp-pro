@@ -421,11 +421,13 @@ async def _complete_authorized_inspection(
     if remaining_seconds <= 0:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     try:
-        async with asyncio.timeout(remaining_seconds):
-            async with inspector.connect(
+        async with (
+            asyncio.timeout(remaining_seconds),
+            inspector.connect(
                 device_id=device_id, project_id=project_id, session_id=receipt.session_id
-            ) as worker:
-                result = await worker.inspect(tool_name)
+            ) as worker,
+        ):
+            result = await worker.inspect(tool_name)
     except TimeoutError as exc:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED) from exc
     answer = _inspected_result_payload(
