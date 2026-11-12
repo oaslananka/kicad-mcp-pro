@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import {execFile} from "node:child_process";
+import {promisify} from "node:util";
+import {fileURLToPath} from "node:url";
 import {generateKeyPairSync,randomBytes,randomUUID,sign} from "node:crypto";
 import {createServer} from "node:http";
 import type {AddressInfo} from "node:net";
@@ -691,7 +694,8 @@ test("manual WSS project inspection uses exact grant and discards invalid typed 
 });
 
 test("managed signed WSS native DRC is operation-scoped and revocation-safe",
-  {skip:!url,timeout:40_000},async()=>{
+  {skip:!url,timeout:process.env.KICAD_NATIVE_DRC_ACCEPTANCE==="1"?100_000:40_000},
+  async()=>{
   await inIsolatedDatabase(url!,migrations,async db=>{
     const owner="managed-native-owner",clientId="native-client";
     const keys=generateKeyPairSync("ed25519");
@@ -742,9 +746,28 @@ test("managed signed WSS native DRC is operation-scoped and revocation-safe",
         const remaining=(request.deadlineUnixMs as number)-Date.now();
         assert.ok(remaining>40_000&&remaining<=50_000,
           "Bounded managed DRC deadline must permit a real Windows CLI invocation");
-        const reply={kind:"connector.local_drc_preview",version:1,
+        let reply={kind:"connector.local_drc_preview",version:1,
           requestId:request.requestId,projectId:project,operation:"run_drc",
           counts:{violations:17,unconnectedItems:4}};
+        if(sequence===1&&process.env.KICAD_NATIVE_DRC_ACCEPTANCE==="1"){
+          // Opt-in: exact signed Cloud frame -> production Python dispatcher ->
+          // real KiCad CLI on a disposable public PCB copy -> bounded reply.
+          // This is loopback signed WS; it does NOT prove public TLS/OAuth.
+          const python=process.env.KICAD_NATIVE_DRC_PYTHON;
+          assert.ok(python,"Set KICAD_NATIVE_DRC_PYTHON for local acceptance");
+          const worker=fileURLToPath(new URL(
+            "../../../tests/cloud/managed_native_drc_acceptance_worker.py",
+            import.meta.url));
+          const source=fileURLToPath(new URL("../../../src",import.meta.url));
+          const {stdout,stderr}=await promisify(execFile)(python,
+            [worker,device,project,field(sess,"sessionId"),JSON.stringify(request)],
+            {timeout:44_000,maxBuffer:8_192,env:{...process.env,PYTHONPATH:source}});
+          assert.equal(stderr,"");
+          const actual=JSON.parse(stdout) as typeof reply;
+          assert.deepEqual(actual,reply,
+            "Real fixture must reach Cloud with the expected bounded DRC counts");
+          reply=actual;
+        }
         if(sequence===2)assert.equal(await policy.setNativeOperation(owner,device,project,"run_drc",false),true);
         const ack:Promise<Record<string,unknown>>|null=sequence===1?waitMessage(ws):null;
         const closed:Promise<number>|null=sequence===2?waitClose(ws):null;
