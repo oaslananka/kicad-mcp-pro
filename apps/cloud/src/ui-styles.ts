@@ -376,7 +376,7 @@ h3{font-size:15px;line-height:1.4;font-weight:650;margin:0 0 5px}
 .chart-bar-col{flex:1;max-width:54px;display:flex;flex-direction:column;align-items:center;height:100%;justify-content:flex-end}
 .bar-track{width:100%;height:160px;display:flex;align-items:flex-end;justify-content:center}
 .bar-fill{width:100%;border-radius:4px 4px 0 0;transition:height 0.3s ease,background 0.2s}
-.bar-fill.active{background:linear-gradient(180deg,#79a9f1,#0070e0);box-shadow:0 0 12px rgba(39,159,255,0.25)}
+.bar-fill.active{background:linear-gradient(180deg,var(--accent),#0070e0);box-shadow:0 0 12px rgba(39,159,255,0.25)}
 .bar-fill.active:hover{background:#a6c5fc}
 .bar-fill.empty{background:rgba(255,255,255,0.05)}
 .bar-label{margin-top:8px;font-size:12px;color:var(--muted);font-weight:550;text-align:center}
@@ -732,7 +732,7 @@ body{line-height:1.5;letter-spacing:-.007em}
 .landing-intro>p:not(.hero-note){max-width:495px;font-size:15px;line-height:1.65;color:#bed0df}
 .landing-intro .action-row{margin-top:26px;gap:12px}
 .landing-intro .action-row .button{min-height:52px;font-size:14px;border-radius:11px;padding:12px 22px}
-.button.primary{background:#79a9f1;border-color:#79a9f1;color:#0b1828;box-shadow:0 7px 25px rgba(39,159,255,.16);font-weight:800}
+.button.primary{background:var(--primary);border-color:var(--primary);color:var(--on-accent);box-shadow:0 7px 25px rgba(39,159,255,.16);font-weight:800}
 .button.primary:hover{background:#a6c5fc;color:#0b1828}
 .button.secondary{background:rgba(255,255,255,.025);border-color:rgba(172,210,232,.32)}
 .landing-platforms{margin-top:22px;gap:8px}
@@ -758,7 +758,7 @@ body{line-height:1.5;letter-spacing:-.007em}
 .entry-choice-primary{background:radial-gradient(circle at 0 0,rgba(39,159,255,.18),transparent 62%),#122536;border-color:rgba(39,159,255,.35)}
 .entry-choice-cloud{background:radial-gradient(circle at 98% 100%,rgba(107,109,216,.12),transparent 65%),#151d30}
 .entry-choice.unavailable,.entry-choice.unavailable:hover{opacity:.78;cursor:default;transform:none;box-shadow:none;border-color:var(--line-strong)}
-.entry-choice:hover{transform:translateY(-3px);background:#192d42;border-color:#79a9f1;box-shadow:0 17px 40px rgba(0,0,0,.25)}
+.entry-choice:hover{transform:translateY(-3px);background:#192d42;border-color:var(--accent);box-shadow:0 17px 40px rgba(0,0,0,.25)}
 .entry-choice-icon{width:52px;height:52px;border-radius:15px;background:#1b3a4c;border-color:rgba(39,159,255,.25);color:#9dc3fc}
 .entry-choice-copy{display:grid;gap:7px;min-width:0}
 .entry-choice-copy small{letter-spacing:.12em;font-size:10px;font-weight:800;color:#8faec4}
@@ -808,7 +808,7 @@ body{line-height:1.5;letter-spacing:-.007em}
  min-height:133px;border-radius:15px;padding:17px;border:1px solid var(--line);
  background:#192839;transition:transform var(--transition),border-color var(--transition)
 }
-.snapshot-card:hover{background:#233750;transform:translateY(-2px);border-color:#79a9f1}
+.snapshot-card:hover{background:#233750;transform:translateY(-2px);border-color:var(--accent)}
 .snapshot-icon{color:#98bcf4}
 .snapshot-card .metric{font:750 33px var(--font-sans);color:#f0f7fc;letter-spacing:-.05em;margin:0}
 .snapshot-card .metric-label{font-size:12px;color:#a9c0d4}
@@ -989,7 +989,7 @@ body{line-height:1.5;letter-spacing:-.007em}
 }
 .device-home-app .sidebar-links a:hover{color:#fff;background:#141d29}
 .device-home-app .sidebar-links a[aria-current=page]{
- color:#79a9f1;background:transparent;border:0;font-weight:675
+ color:var(--accent);background:transparent;border:0;font-weight:675
 }
 .device-home-app .device-sidebar-bottom{margin-top:auto}
 .device-home-app .device-sidebar-usage{
@@ -1003,7 +1003,7 @@ body{line-height:1.5;letter-spacing:-.007em}
 .device-home-app .device-sidebar-usage small{
  font-size:11px;line-height:1.4;color:#9a9aa2
 }
-.device-home-app .device-sidebar-usage:hover{border-color:#79a9f1}
+.device-home-app .device-sidebar-usage:hover{border-color:var(--accent)}
 .device-home-app .sidebar-profile{
  padding:10px 5px;margin:0;border-radius:0;background:none;
  border-top:1px solid #262629
@@ -1033,7 +1033,7 @@ body{line-height:1.5;letter-spacing:-.007em}
 }
 .device-home-app .device-add-button{
  min-height:35px;min-width:135px;flex:none;padding:7px 16px;
- border:0;border-radius:8px;background:#79a9f1;color:#fff;
+ border:0;border-radius:8px;background:var(--accent);color:#fff;
  font-size:13px;font-weight:740;box-shadow:none
 }
 .device-home-app .device-add-button:hover{
@@ -1135,7 +1135,7 @@ body{line-height:1.5;letter-spacing:-.007em}
 .device-home-app .projects-card h2,.device-home-app .client-shortcuts h2{font-size:15px}
 .device-home-app .client-shortcut-link{background:#242428;border-radius:9px}
 .device-home-app .client-shortcut-link:hover{
- background:#2c2c32;border-color:#79a9f1
+ background:#2c2c32;border-color:var(--accent)
 }
 @media(max-width:1080px){
  .device-home-app>.site-main{margin-left:220px}
