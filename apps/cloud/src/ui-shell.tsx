@@ -49,10 +49,10 @@ function WorkspaceNav({kind,userEmail}:{kind:PageKind;userEmail?:string}){
       <NavLink href="/usage" current={kind==="usage"}><Icon name="usage" size={17}/> Usage</NavLink>
       <NavLink href="/settings" current={kind==="settings"}><Icon name="settings" size={17}/> Settings</NavLink>
     </nav>
-    <div className="sidebar-profile">
+    <a href="/settings" className="sidebar-profile" aria-label="Account and security settings" title={displayEmail}>
       <span className="profile-avatar" aria-hidden="true">{initials}</span>
-      <span className="profile-identity" title={displayEmail}>{displayEmail}</span>
-    </div>
+      <span className="profile-identity">{displayEmail}</span>
+    </a>
     <div className="sidebar-footer-links">
       <a href="https://oaslananka.github.io/kicad-mcp-pro/" target="_blank" rel="noopener noreferrer">Docs</a>
       <span className="footer-dot" aria-hidden="true">·</span>
@@ -150,6 +150,11 @@ export function SettingsHome({identity}:{readonly identity?:string}){
     </div>
     <p className="card-footnote-inline"><Icon name="lock" size={14}/>
       Native remote project editing is not enabled. Changes require explicit local owner approval.</p>
+    <nav className="settings-support-links" aria-label="Help and policies">
+      <a href="https://oaslananka.github.io/kicad-mcp-pro/" target="_blank" rel="noopener noreferrer">Documentation</a>
+      <a href="https://oaslananka.github.io/kicad-mcp-pro/privacy/" target="_blank" rel="noopener noreferrer">Privacy policy</a>
+      <a href="https://github.com/oaslananka/kicad-mcp-pro" target="_blank" rel="noopener noreferrer">GitHub</a>
+    </nav>
   </div>;
 }
 
