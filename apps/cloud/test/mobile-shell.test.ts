@@ -17,6 +17,8 @@ test("mobile navigation stays compact while every workspace section is directly 
   assert.match(uiCss,/\.workspace-app \.workspace-sidebar \.sidebar-profile\{[^}]*width:44px;height:44px/);
   assert.match(uiCss,/\.workspace-app \.device-actions button,[^}]*\{min-height:44px/);
   assert.doesNotMatch(uiCss,/\.device-home-app/);
+  assert.match(uiCss,/\.project-action-dialog::backdrop/);
+  assert.match(uiCss,/\.workspace-app \.project-action-dialog:not\(\[open\]\)/);
 });
 
 test("account security and help links remain accessible with a compact mobile profile",()=>{

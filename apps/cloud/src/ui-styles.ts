@@ -1028,4 +1028,15 @@ body{line-height:1.5;letter-spacing:-.007em}
 .settings-support-links a{color:var(--text-secondary);text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px}
 .settings-support-links a:hover,.settings-support-links a:focus-visible{color:var(--accent)}
 
+/* Project actions still use native modal dialogs on the unified Devices page. */
+.workspace-app .project-action-dialog:not([open]){display:none!important}
+.workspace-app .project-action-dialog{width:min(440px,calc(100vw - 30px));max-width:440px;max-height:min(80vh,600px);margin:auto;padding:22px;box-sizing:border-box;border:1px solid var(--line-strong);border-radius:13px;background:var(--surface-raised);color:var(--text);box-shadow:0 20px 65px rgba(0,0,0,.6);overflow:auto}
+.project-action-dialog::backdrop{background:rgba(0,0,0,.72)}
+.workspace-app .project-action-dialog h3{margin:0 0 10px;font-size:18px;line-height:1.3}
+.workspace-app .project-action-dialog p{font-size:13px;line-height:1.6;color:var(--muted);margin:0 0 17px;overflow-wrap:anywhere}
+.workspace-app .project-action-dialog label{display:block;font-size:12px;font-weight:650}
+.workspace-app .project-action-dialog input[name="alias"]{display:block;box-sizing:border-box;width:100%;margin:7px 0 0;min-height:44px;padding:8px 10px}
+.workspace-app .project-dialog-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;margin-top:20px}
+@media(max-width:520px){.workspace-app .project-action-dialog{padding:18px}.workspace-app .project-dialog-actions .button,.workspace-app .project-dialog-actions button{min-height:44px}}
+
 `;
