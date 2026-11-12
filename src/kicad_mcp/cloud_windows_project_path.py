@@ -216,8 +216,15 @@ def _copy_pinned_input(source: str, destination: Path, *, limit: int, required: 
         if required:
             raise LocalReadDeniedError(_DENIED)
         return
+    # Linux type checking intentionally lacks Windows-only CRT/OS constants.
+    # Check at the real Windows boundary rather than type-ignoring or guessing.
+    opener = getattr(msvcrt, "open_osfhandle", None)
+    binary_flag = getattr(os, "O_BINARY", None)
+    if not callable(opener) or type(binary_flag) is not int:
+        _api().CloseHandle(handle)
+        raise LocalReadDeniedError(_DENIED)
     try:
-        fd = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+        fd = opener(handle, os.O_RDONLY | binary_flag)
     except (OSError, ValueError) as exc:
         _api().CloseHandle(handle)
         raise LocalReadDeniedError(_DENIED) from exc

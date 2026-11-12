@@ -95,6 +95,16 @@ def test_windows_optional_project_file_can_be_missing(
     assert {f.name for f in scratch.iterdir()} == {"LED.kicad_pcb", "LED.kicad_dru"}
 
 
+def test_windows_missing_binary_handle_capability_fails_closed(
+    selected: OperatorProject, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delattr(os, "O_BINARY", raising=False)
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    with pytest.raises(LocalReadDeniedError):
+        copy_windows_drc_inputs(selected.directory, selected.filename_stem, scratch)
+
+
 def test_native_windows_cli_drc_on_disposable_public_fixture(tmp_path: Path) -> None:
     from kicad_mcp.cloud_native_drc import summarize_native_pcb_drc
     from kicad_mcp.discovery import discover_kicad_cli
