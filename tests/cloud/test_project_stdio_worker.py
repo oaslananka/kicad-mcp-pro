@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 import pytest
+from mcp.types import CallToolResult
 
 from kicad_mcp.project.stdio_worker import (
     LocalProjectWorkerRouter,
@@ -14,6 +15,11 @@ from kicad_mcp.project.stdio_worker import (
     project_stdio_worker,
     project_worker_parameters,
 )
+
+
+def _tool_text(result: CallToolResult) -> str:
+    """Compare MCP text payloads, not a platform-escaped Python repr."""
+    return "\n".join(item.text for item in result.content if item.type == "text")
 
 
 def test_worker_uses_scoped_project_and_forces_readonly_stdio(
@@ -50,7 +56,7 @@ async def test_independent_projects_have_independent_mcp_processes(
     async def inspect(root: Path) -> tuple[str, str]:
         async with project_stdio_worker(root) as client:
             result = await client.call_tool("kicad_get_project_info", {})
-            return str(root), str(result)
+            return str(root), _tool_text(result)
 
     first, second = await asyncio.gather(*(inspect(root) for root in projects))
     assert str(projects[0]) in first[1]
@@ -78,7 +84,7 @@ async def test_router_isolates_two_granted_projects_and_denies_foreign_tools(
                 await worker.inspect("kicad_set_project")
             result = await worker.inspect("kicad_get_project_info")
             assert result.is_error is not True
-            return str(result)
+            return _tool_text(result)
 
     first, second = await asyncio.gather(inspect("project-alpha"), inspect("project-beta"))
     assert str(projects["project-alpha"]) in first
