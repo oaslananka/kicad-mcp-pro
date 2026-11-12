@@ -803,13 +803,16 @@ def test_browser_approved_device_repair_reuses_project_and_preserves_old_binding
 
     def bind(project, directory, *, owner_confirm):
         events.append("bind-same-folder")
-        assert project == replacement and directory == folder
+        assert project == replacement
+        assert directory == folder
         assert owner_confirm(directory) is True
         return selection
 
     def switch(old, new, *, owner_confirm):
         events.append("switch")
-        assert old == previous and new == replacement and owner_confirm(old, new) is True
+        assert old == previous
+        assert new == replacement
+        assert owner_confirm(old, new) is True
 
     monkeypatch.setattr(cloud_windows_user_cli, "enroll_windows_device", enroll)
     monkeypatch.setattr(cloud_windows_user_cli, "register_windows_project", register)
@@ -855,7 +858,8 @@ def test_repair_requires_verified_old_connector_stop_before_selection_switch(
             stop_previous=lambda: False,
         )
     assert "browser-approval" in events
-    assert previous.filename_stem == "demo" and folder.is_dir()
+    assert previous.filename_stem == "demo"
+    assert folder.is_dir()
 
 
 def test_repair_rejects_foreign_cloud_before_reenrollment(

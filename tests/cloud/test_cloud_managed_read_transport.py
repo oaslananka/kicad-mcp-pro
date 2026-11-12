@@ -284,7 +284,8 @@ async def test_managed_native_drc_requires_local_opt_in_and_returns_counts_only(
     blocked = Socket([request(1, operation="run_drc")])
     with pytest.raises(CloudHandshakeDeniedError):
         await serve_authenticated_reads(blocked, receipt, lambda _: dispatcher, max_reads=1)
-    assert blocked.sent == [] and calls == []
+    assert blocked.sent == []
+    assert calls == []
 
     allowed = Socket([request(1), request(2, operation="run_drc")])
     assert (

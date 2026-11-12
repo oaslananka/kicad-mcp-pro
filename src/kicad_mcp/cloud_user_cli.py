@@ -359,6 +359,18 @@ def _select_remote_project(
     return existing
 
 
+def _verify_remote_foreground_options(browse: bool, project_dir: Path | None) -> None:
+    """Validate foreground use before touching the selected Windows device."""
+    if not _is_windows():
+        raise typer.BadParameter(
+            "Foreground remote is currently supported on Windows. Local MCP remains available."
+        )
+    if not _owner_terminal():
+        raise typer.BadParameter("Run this command in an interactive terminal.")
+    if browse and project_dir is not None:
+        raise typer.BadParameter("Use --browse or --project-dir, not both.")
+
+
 @cloud_app.command("remote")
 def remote(
     browse: Annotated[bool, typer.Option("--browse", help="Choose a local KiCad project.")] = False,
@@ -391,14 +403,7 @@ def remote(
     ] = False,
 ) -> None:
     """Pair once; keep a verified foreground Cloud connection open."""
-    if not _is_windows():
-        raise typer.BadParameter(
-            "Foreground remote is currently supported on Windows. Local MCP remains available."
-        )
-    if not _owner_terminal():
-        raise typer.BadParameter("Run this command in an interactive terminal.")
-    if browse and project_dir is not None:
-        raise typer.BadParameter("Use --browse or --project-dir, not both.")
+    _verify_remote_foreground_options(browse, project_dir)
     origin = _verified_origin(cloud_origin)
     from kicad_mcp.cloud_windows_connector import (
         CloudOwnerReapprovalRequiredError,

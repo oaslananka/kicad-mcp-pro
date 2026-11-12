@@ -195,30 +195,11 @@ def remember_selected_project(project: WindowsRegisteredProject) -> None:
         raise LocalApprovalDeniedError(_DENIED)
 
 
-def repair_selected_project(
+def _validate_repair_candidate(
     previous: WindowsRegisteredProject,
     replacement: WindowsRegisteredProject,
-    *,
-    owner_confirm: Callable[[WindowsRegisteredProject, WindowsRegisteredProject], bool],
 ) -> None:
-    """Switch only after a *new* device has completed browser-approved enrollment.
-
-    The original signing key, registration and folder binding remain intact.
-    Previous markers are archived in Credential Manager under the new random
-    registration ID before the currently active markers are changed. An error
-    during the switch rolls the original selection and active marker back.
-    The caller must first stop any scheduled/foreground old Connector.
-    """
-    import hashlib
-
-    if (
-        os.name != "nt"
-        or not isinstance(previous, WindowsRegisteredProject)
-        or not isinstance(replacement, WindowsRegisteredProject)
-    ):
-        raise LocalApprovalDeniedError(_DENIED)
-    if not callable(owner_confirm) or owner_confirm(previous, replacement) is not True:
-        raise LocalApprovalDeniedError("The owner declined Cloud device repair.")
+    """A repaired identity is new, but the Cloud owner and local folder cannot change."""
     if (
         previous.origin != replacement.origin
         or previous.owner_sub != replacement.owner_sub
@@ -238,6 +219,12 @@ def repair_selected_project(
         or old_selection.filename_stem != new_selection.filename_stem
     ):
         raise LocalApprovalDeniedError(_DENIED)
+
+
+def _verify_repair_signing_key(replacement: WindowsRegisteredProject) -> dict[str, str]:
+    """Check that the staged registration is backed by its actual new Ed25519 key."""
+    import hashlib
+
     expected_marker = {
         "registrationId": replacement.registration_id,
         "recordId": replacement.record_id,
@@ -260,7 +247,14 @@ def repair_selected_project(
             raise LocalApprovalDeniedError(_DENIED)
     except (ValueError, TypeError) as exc:
         raise LocalApprovalDeniedError(_DENIED) from exc
+    return expected_marker
 
+
+def _archive_repair_marker_state(
+    previous: WindowsRegisteredProject,
+    replacement: WindowsRegisteredProject,
+) -> tuple[bytes, bytes | None]:
+    """Archive old selection/activation under the new registration, never overwrite."""
     saved_selected = read_credential(_SELECTED_RECORD_ID, "selected")
     saved_active = read_credential(_ACTIVE_RECORD_ID, "active")
     if saved_selected is None:
@@ -270,7 +264,6 @@ def repair_selected_project(
         current = _active()
         if current is None or current.project != previous:
             raise LocalApprovalDeniedError(_DENIED)
-    # These backups are create-only and remain after success or rollback.
     create_credential(replacement.registration_id, "archived_selected", saved_selected)
     if saved_active is not None:
         create_credential(replacement.registration_id, "archived_active", saved_active)
@@ -279,30 +272,45 @@ def repair_selected_project(
         and read_credential(replacement.registration_id, "archived_active") != saved_active
     ):
         raise LocalApprovalDeniedError(_DENIED)
+    return saved_selected, saved_active
 
-    def restore() -> None:
-        selected = read_credential(_SELECTED_RECORD_ID, "selected")
-        if selected is not None and selected != saved_selected:
-            # Never erase another process's unexpected selection.
-            new_marker = json.dumps(expected_marker, sort_keys=True, separators=(",", ":")).encode(
-                "utf-8"
-            )
-            if selected != new_marker:
-                raise LocalApprovalDeniedError(_DENIED)
-            delete_credential(_SELECTED_RECORD_ID, "selected")
-        if read_credential(_SELECTED_RECORD_ID, "selected") is None:
-            create_credential(_SELECTED_RECORD_ID, "selected", saved_selected)
-        active = read_credential(_ACTIVE_RECORD_ID, "active")
-        if active is not None and active != saved_active:
-            raise LocalApprovalDeniedError(_DENIED)
-        if saved_active is not None and active is None:
-            create_credential(_ACTIVE_RECORD_ID, "active", saved_active)
-        if (
-            read_credential(_SELECTED_RECORD_ID, "selected") != saved_selected
-            or read_credential(_ACTIVE_RECORD_ID, "active") != saved_active
-        ):
-            raise LocalApprovalDeniedError(_DENIED)
 
+def _restore_repair_marker_state(
+    saved_selected: bytes,
+    saved_active: bytes | None,
+    expected_marker: dict[str, str],
+) -> None:
+    """Rollback only our own new marker, without deleting a foreign replacement."""
+    selected = read_credential(_SELECTED_RECORD_ID, "selected")
+    if selected is not None and selected != saved_selected:
+        # Never erase another process's unexpected selection.
+        new_marker = json.dumps(expected_marker, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+        if selected != new_marker:
+            raise LocalApprovalDeniedError(_DENIED)
+        delete_credential(_SELECTED_RECORD_ID, "selected")
+    if read_credential(_SELECTED_RECORD_ID, "selected") is None:
+        create_credential(_SELECTED_RECORD_ID, "selected", saved_selected)
+    active = read_credential(_ACTIVE_RECORD_ID, "active")
+    if active is not None and active != saved_active:
+        raise LocalApprovalDeniedError(_DENIED)
+    if saved_active is not None and active is None:
+        create_credential(_ACTIVE_RECORD_ID, "active", saved_active)
+    if (
+        read_credential(_SELECTED_RECORD_ID, "selected") != saved_selected
+        or read_credential(_ACTIVE_RECORD_ID, "active") != saved_active
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+
+
+def _switch_repair_marker_state(
+    replacement: WindowsRegisteredProject,
+    saved_selected: bytes,
+    saved_active: bytes | None,
+    expected_marker: dict[str, str],
+) -> None:
+    """Atomic-in-effect, fail-closed switch with original marker rollback."""
     try:
         # Revoke local old authority before selection changes. The old private
         # key and user-approved project binding are NOT deleted.
@@ -318,8 +326,33 @@ def repair_selected_project(
         if selected_project() != replacement or _active_marker() is not None:
             raise LocalApprovalDeniedError(_DENIED)
     except Exception:
-        restore()
+        _restore_repair_marker_state(saved_selected, saved_active, expected_marker)
         raise
+
+
+def repair_selected_project(
+    previous: WindowsRegisteredProject,
+    replacement: WindowsRegisteredProject,
+    *,
+    owner_confirm: Callable[[WindowsRegisteredProject, WindowsRegisteredProject], bool],
+) -> None:
+    """Switch only after new browser-approved enrollment; preserve old keys/folder.
+
+    Old markers are archived under the new registration before any current
+    marker changes. The caller must stop the old scheduled/foreground session.
+    """
+    if (
+        os.name != "nt"
+        or not isinstance(previous, WindowsRegisteredProject)
+        or not isinstance(replacement, WindowsRegisteredProject)
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+    if not callable(owner_confirm) or owner_confirm(previous, replacement) is not True:
+        raise LocalApprovalDeniedError("The owner declined Cloud device repair.")
+    _validate_repair_candidate(previous, replacement)
+    expected_marker = _verify_repair_signing_key(replacement)
+    saved_selected, saved_active = _archive_repair_marker_state(previous, replacement)
+    _switch_repair_marker_state(replacement, saved_selected, saved_active, expected_marker)
 
 
 def _active() -> WindowsActiveConnector | None:
@@ -562,6 +595,21 @@ def _next_failure_count(
     return failures + 1
 
 
+def _notify_owner_reapproval(
+    status_callback: Callable[[str], None] | None,
+    project: WindowsRegisteredProject,
+) -> None:
+    """Give an actionable policy 1008 recovery without leaking Cloud reasons."""
+    if status_callback is not None:
+        status_callback(
+            "Cloud rejected this device session (policy 1008). "
+            f"Review pairing and access at {project.origin}/devices. "
+            "If this device is missing, run: kicad-mcp-pro cloud remote --repair-device "
+            "and approve the new pairing in your browser. "
+            "The local project and saved credentials were not changed."
+        )
+
+
 async def run_connector(
     *,
     stop: asyncio.Event,
@@ -596,14 +644,7 @@ async def run_connector(
                 **({"allow_native_drc": True} if allow_native_drc else {}),
             )
         except CloudOwnerReapprovalRequiredError:
-            if status_callback is not None:
-                status_callback(
-                    "Cloud rejected this device session (policy 1008). "
-                    f"Review pairing and access at {project.origin}/devices. "
-                    "If this device is missing, run: kicad-mcp-pro cloud remote --repair-device "
-                    "and approve the new pairing in your browser. "
-                    "The local project and saved credentials were not changed."
-                )
+            _notify_owner_reapproval(status_callback, project)
             raise
         if result is None:
             return

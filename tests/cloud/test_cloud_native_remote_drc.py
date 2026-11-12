@@ -147,12 +147,14 @@ def test_managed_native_drc_extension_requires_a_separate_local_scope(tmp_path: 
         )["operation"]
         == "run_drc"
     )
+    long_summary = frame(operation="project_summary", deadlineUnixMs=NOW + 46_000)
+    summary_binding = VerifiedLocalBinding(
+        DEVICE, PROJECT, frozenset({"project_summary"}), SESSION, NOW + 100_000
+    )
     with pytest.raises(LocalReadDeniedError):
         _validate_frame(
-            frame(operation="project_summary", deadlineUnixMs=NOW + 46_000),
-            VerifiedLocalBinding(
-                DEVICE, PROJECT, frozenset({"project_summary"}), SESSION, NOW + 100_000
-            ),
+            long_summary,
+            summary_binding,
             local,
             NOW,
             allow_native_drc=True,

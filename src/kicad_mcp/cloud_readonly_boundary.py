@@ -74,6 +74,18 @@ def _reject_constant(_: str) -> None:
     raise LocalReadDeniedError(_READ_DENIED)
 
 
+def _read_deadline_limit(
+    now_ms: int, binding: VerifiedLocalBinding, operation: object, extended_native_drc: bool
+) -> int:
+    """Extend only an independently enabled, scoped native DRC request."""
+    budget = (
+        MAX_MANAGED_NATIVE_DRC_DEADLINE_MS
+        if extended_native_drc and operation == "run_drc"
+        else MAX_DEADLINE_MS
+    )
+    return min(now_ms + budget, binding.session_expires_unix_ms)
+
+
 def _validate_frame(
     frame: bytes,
     boundary: VerifiedLocalBinding,
@@ -123,15 +135,7 @@ def _validate_frame(
         or not (
             now_ms
             < deadline
-            <= min(
-                now_ms
-                + (
-                    MAX_MANAGED_NATIVE_DRC_DEADLINE_MS
-                    if extended_native_drc and operation == "run_drc"
-                    else MAX_DEADLINE_MS
-                ),
-                boundary.session_expires_unix_ms,
-            )
+            <= _read_deadline_limit(now_ms, boundary, operation, extended_native_drc)
         )
     ):
         raise LocalReadDeniedError(_READ_DENIED)

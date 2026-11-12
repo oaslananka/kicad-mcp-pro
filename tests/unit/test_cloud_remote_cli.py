@@ -310,7 +310,8 @@ def test_explicit_device_repair_routes_through_browser_owner_approval(
     def repaired(previous: object, **args: object) -> object:
         assert previous == state["project"]
         assert args["origin"] == cloud_user_cli.DEFAULT_CLOUD_ORIGIN
-        assert callable(args["approval"]) and callable(args["stop_previous"])
+        assert callable(args["approval"])
+        assert callable(args["stop_previous"])
         approved.append("owner-browser-repair")
         return previous
 

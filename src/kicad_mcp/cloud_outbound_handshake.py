@@ -558,14 +558,8 @@ def _validate_outbound_options(options: OutboundSessionOptions) -> None:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
 
 
-def _catalog_hello_metadata(options: OutboundSessionOptions) -> dict[str, object]:
-    """Bounded optional report: never broadens local/Cloud project authority."""
-    if type(options.advertise_catalog) is not bool:
-        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
-    if not options.advertise_catalog:
-        return {}
-    from kicad_mcp.runtime_capability_catalog import installed_catalog_revision
-
+def _catalog_operations(options: OutboundSessionOptions) -> list[str]:
+    """Advertise only operations granted by the selected signed Connector mode."""
     operations: list[str] = []
     if options.owner_managed_read and options.dispatcher_factory is not None:
         operations.append("project_summary")
@@ -581,6 +575,18 @@ def _catalog_hello_metadata(options: OutboundSessionOptions) -> dict[str, object
             operations.append("project_board_counts")
         if options.schematic_counts_pilot:
             operations.append("project_schematic_counts")
+    return operations
+
+
+def _catalog_hello_metadata(options: OutboundSessionOptions) -> dict[str, object]:
+    """Bounded optional report: never broadens local/Cloud project authority."""
+    if type(options.advertise_catalog) is not bool:
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    if not options.advertise_catalog:
+        return {}
+    from kicad_mcp.runtime_capability_catalog import installed_catalog_revision
+
+    operations = _catalog_operations(options)
     return {
         "catalog": {
             "schemaVersion": "1.0.0",
