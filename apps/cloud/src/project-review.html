@@ -3,18 +3,91 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <style>
-body{font:14px system-ui,sans-serif;margin:16px;color:CanvasText;background:Canvas}
-main{border:1px solid GrayText;border-radius:8px;padding:16px}
-h1{font-size:1.1rem}button{padding:8px 12px}
+:root{
+  color-scheme:dark;
+  --background:var(--color-background-primary,#111317);
+  --surface:var(--color-background-secondary,#1b1d22);
+  --line:var(--color-border-default,rgba(177,190,207,.22));
+  --foreground:var(--color-text-primary,#f4f7fb);
+  --muted:var(--color-text-secondary,#aab4c4);
+  --blue:#329fff;
+  font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+body{background:var(--background);color:var(--foreground);margin:0;padding:12px}
+main{border:1px solid var(--line);background:var(--surface);
+  border-radius:15px;padding:20px;max-width:640px;margin:0 auto}
+.header{display:flex;align-items:center;gap:12px}
+.mark{width:39px;height:39px;flex:none;border-radius:11px;
+  display:grid;place-items:center;background:rgba(50,159,255,.12);
+  color:var(--blue);border:1px solid rgba(50,159,255,.22);font-weight:750}
+.heading{flex:1;min-width:0}
+.eyebrow{margin:0 0 3px;font-size:10px;font-weight:750;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--muted)}
+h1{font-size:17px;line-height:1.25;letter-spacing:-.02em;margin:0;font-weight:720}
+.pill{font-size:10px;font-weight:730;letter-spacing:.06em;white-space:nowrap;
+  padding:6px 9px;border:1px solid rgba(50,159,255,.26);
+  border-radius:99px;color:var(--blue);background:rgba(50,159,255,.08)}
+#status{color:var(--muted);margin:18px 0 12px;font-size:13px}
+#details{border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:14px 0 16px}
+.detail-row{display:flex;align-items:baseline;justify-content:space-between;gap:15px;
+  padding:12px 0;line-height:1.4}
+.detail-row+.detail-row{border-top:1px solid var(--line)}
+.label{color:var(--muted);font-size:12px;flex:none}
+.value{text-align:right;font-weight:600;overflow-wrap:anywhere}
+.value.connected{color:#47d4a0}.value.disconnected{color:var(--muted)}
+#project-id{font:11px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;font-weight:500}
+.actions{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:18px}
+button{border:1px solid rgba(50,159,255,.32);border-radius:9px;
+  background:var(--blue);color:#06172a;font-weight:750;
+  min-height:44px;padding:10px 17px;cursor:pointer}
+button:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+button:hover:not(:disabled){filter:brightness(1.08)}
+button:disabled{opacity:.48;cursor:not-allowed}
+.note{color:var(--muted);font-size:11px;line-height:1.5}
+[hidden]{display:none!important}
+@media (prefers-color-scheme: light){
+  :root{color-scheme:light;--background:var(--color-background-primary,#f7f8fb);
+    --surface:var(--color-background-secondary,#fff);
+    --line:var(--color-border-default,#dce2ec);
+    --foreground:var(--color-text-primary,#16202e);
+    --muted:var(--color-text-secondary,#4f5c6d);--blue:#096ec6}
+  button{color:#fff}
+}
+@media(max-width:420px){
+  body{padding:8px}main{padding:16px;border-radius:12px}
+  .header{flex-wrap:wrap}.pill{margin-left:51px}
+  .detail-row{display:block}.value{text-align:left;margin-top:4px}
+  .actions{display:block}button{width:100%}.note{display:block;margin-top:12px}
+}
+@media(prefers-reduced-motion:reduce){button{transition:none}}
 </style>
 </head>
 <body>
-<main>
-<h1>KiCad Project Review</h1>
-<p id="status" role="status">Waiting for project data...</p>
-<div id="details"></div>
-<button id="refresh" disabled>Refresh access</button>
+<main aria-labelledby="review-title">
+  <div class="header">
+    <span class="mark" aria-hidden="true">K</span>
+    <div class="heading">
+      <p class="eyebrow">KiCad MCP ? Cloud</p>
+      <h1 id="review-title">Project review</h1>
+    </div>
+    <span class="pill">READ ONLY</span>
+  </div>
+  <p id="status" role="status" aria-live="polite">Waiting for authorized project data?</p>
+  <section id="details" hidden aria-label="Approved project">
+    <div class="detail-row"><span class="label">Project</span>
+      <strong class="value" id="project-name"></strong></div>
+    <div class="detail-row"><span class="label">Connector</span>
+      <strong class="value" id="project-connection"></strong></div>
+    <div class="detail-row"><span class="label">Project ID</span>
+      <code class="value" id="project-id"></code></div>
+  </section>
+  <div class="actions">
+    <button id="refresh" type="button" disabled>Refresh access</button>
+    <span class="note">Only explicitly granted metadata is shown. No PCB content or editing.</span>
+  </div>
 </main>
 <script>/*__PROJECT_REVIEW_BUNDLE__*/</script>
 </body>

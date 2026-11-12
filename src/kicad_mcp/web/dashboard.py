@@ -19,27 +19,27 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <title>KiCad MCP Pro Dashboard</title>
 <style>
   :root {
-    --bg-canvas: #0c1119;
-    --bg: #0c1119;
-    --surface: #141d29;
-    --surface-2: #202c3c;
-    --surface-hover: #253346;
-    --surface-active: #2d3e56;
+    --bg-canvas: #090a0d;
+    --bg: #090a0d;
+    --surface: #191b20;
+    --surface-2: #24272e;
+    --surface-hover: #2b313a;
+    --surface-active: #353d47;
     --border: rgba(180, 195, 208, 0.13);
     --border-strong: rgba(180, 195, 208, 0.28);
-    --text: #eef3fb;
-    --text-muted: #9baec4;
-    --text-dim: #91a4bc;
-    --accent: #79a9f1;
-    --accent-hover: #a6c5fc;
-    --accent-subtle: rgba(0, 216, 245, 0.12);
+    --text: #f4f7fa;
+    --text-muted: #a5afbf;
+    --text-dim: #8794a8;
+    --accent: #279fff;
+    --accent-hover: #73c0ff;
+    --accent-subtle: rgba(39, 159, 255, 0.12);
     --success: #22c55e;
     --success-subtle: rgba(34, 197, 94, 0.12);
     --warning: #f59e0b;
     --warning-subtle: rgba(245, 158, 11, 0.12);
     --error: #ef4444;
     --error-subtle: rgba(239, 68, 68, 0.12);
-    --info: #79a9f1;
+    --info: #279fff;
     --sidebar-w: 232px;
     --radius-sm: 6px;
     --radius-md: 10px;

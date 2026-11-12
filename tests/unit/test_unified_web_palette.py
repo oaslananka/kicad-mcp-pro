@@ -12,8 +12,8 @@ def test_cloud_and_local_share_calm_graphite_blue_tokens() -> None:
     cloud = CLOUD.read_text(encoding="utf-8")
     local = LOCAL.read_text(encoding="utf-8")
     for source in (cloud, local):
-        assert re.search(r"--accent:\s*#79a9f1\s*;", source, flags=re.I)
-        assert re.search(r"--bg:\s*#0c1119\s*;", source, flags=re.I)
+        assert re.search(r"--accent:\s*#279fff\s*;", source, flags=re.I)
+        assert re.search(r"--bg:\s*#090a0d\s*;", source, flags=re.I)
         assert "#00daf3" not in source.lower()
         assert "#00d8f5" not in source.lower()
         assert "rgba(0,218,243" not in source.replace(" ", "").lower()

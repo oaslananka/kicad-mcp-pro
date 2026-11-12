@@ -2,7 +2,7 @@ import { verifyOAuthQueryParams } from "@better-auth/oauth-provider";
 import type { Identity } from "./identity.js";
 import type { DeviceManagementPort } from "./devices.js";
 import type { GrantManagement } from "./grants.js";
-import {renderSignIn,renderAccount,renderNotice} from "./browser-ui.js";
+import {renderSignIn,renderAccount,renderNotice,renderSettings} from "./browser-ui.js";
 import {renderUsagePage} from "./usage-ui.js";
 
 export type BrowserIdentity =
@@ -199,7 +199,11 @@ export async function browserResponse(request:Request,identity:BrowserIdentity,p
   if((url.pathname==="/account"||url.pathname==="/overview") && request.method==="GET") return accountPage(request,identity,devices,grants);
   if(url.pathname==="/usage" && request.method==="GET") return usagePage(request,identity);
   if(url.pathname==="/settings" && request.method==="GET"){
-    return new Response(null,{status:303,headers:{"Location":"/account#security","Cache-Control":"no-store"}});
+    const session=await identity.api?.getSession({headers:request.headers});
+    if(!session?.user)return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});
+    return new Response(renderSettings(session.user.email??session.user.name??undefined),{
+      status:200,headers:htmlHeaders
+    });
   }
   if(url.pathname==="/projects" && request.method==="GET"){
     return new Response(null,{status:303,headers:{"Location":"/devices#registered-projects","Cache-Control":"no-store"}});

@@ -32,32 +32,6 @@ function Brand(){
   </a>;
 }
 function WorkspaceNav({kind,userEmail}:{kind:PageKind;userEmail?:string}){
-  if(kind==="devices")return <aside className="workspace-sidebar device-home-sidebar" aria-label="Workspace navigation">
-    <Brand/>
-    <nav className="sidebar-links" aria-label="Workspace">
-      <NavLink href="/devices" current={true}><Icon name="devices" size={17}/> Devices</NavLink>
-      <NavLink href="/usage" current={false}><Icon name="usage" size={17}/> Usage</NavLink>
-      <NavLink href="/connections" current={false}><Icon name="connections" size={17}/> AI connections</NavLink>
-      <NavLink href="/account#security" current={false}><Icon name="settings" size={17}/> Settings</NavLink>
-      <a href="https://oaslananka.github.io/kicad-mcp-pro/" target="_blank" rel="noopener noreferrer">
-        <Icon name="warning" size={17}/> Help center
-      </a>
-    </nav>
-    <div className="device-sidebar-bottom">
-      <a className="device-sidebar-usage" href="/usage">
-        <span><Icon name="usage" size={17}/> Tool calls</span>
-        <small>View actual usage</small>
-      </a>
-      <div className="sidebar-profile">
-        <span className="profile-avatar" aria-hidden="true">KC</span>
-        <span className="profile-identity">KiCad MCP workspace</span>
-      </div>
-      <div className="sidebar-footer-links"><a href="/connections">Privacy</a>
-        <span className="footer-dot" aria-hidden="true">·</span>
-        <a href="https://oaslananka.github.io/kicad-mcp-pro/" target="_blank" rel="noopener noreferrer">Docs</a>
-      </div>
-    </div>
-  </aside>;
   const cleanEmail=userEmail?.trim();
   const initials=cleanEmail && cleanEmail.includes("@")
     ? cleanEmail.slice(0,2).toUpperCase()
@@ -69,11 +43,11 @@ function WorkspaceNav({kind,userEmail}:{kind:PageKind;userEmail?:string}){
     <div className="sidebar-section-label">WORKSPACE</div>
     <nav className="sidebar-links" aria-label="Workspace">
       <NavLink href="/account" current={kind==="account"}><Icon name="overview" size={17}/> Overview</NavLink>
-      <NavLink href="/devices" current={false}><Icon name="devices" size={17}/> Devices</NavLink>
+      <NavLink href="/devices" current={kind==="devices"}><Icon name="devices" size={17}/> Devices</NavLink>
       <NavLink href="/devices#registered-projects" current={false}><Icon name="projects" size={17}/> Projects</NavLink>
       <NavLink href="/connections" current={kind==="connections"}><Icon name="connections" size={17}/> AI connections</NavLink>
       <NavLink href="/usage" current={kind==="usage"}><Icon name="usage" size={17}/> Usage</NavLink>
-      <NavLink href="/account#security" current={kind==="settings"}><Icon name="settings" size={17}/> Settings</NavLink>
+      <NavLink href="/settings" current={kind==="settings"}><Icon name="settings" size={17}/> Settings</NavLink>
     </nav>
     <div className="sidebar-profile">
       <span className="profile-avatar" aria-hidden="true">{initials}</span>
@@ -86,7 +60,7 @@ function WorkspaceNav({kind,userEmail}:{kind:PageKind;userEmail?:string}){
       <span className="footer-dot" aria-hidden="true">·</span>
       <a href="/connections">Privacy</a>
       <span className="footer-dot" aria-hidden="true">·</span>
-      <a href="/account#security">Security</a>
+      <a href="/settings">Security</a>
     </div>
   </aside>;
 }
@@ -95,7 +69,7 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
   return "<!doctype html>"+renderToStaticMarkup(
     <html lang="en"><head>
       <meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
-      <meta name="theme-color" content="#0b0b0d"/>
+      <meta name="theme-color" content="#090a0d"/>
       <meta name="description" content={kind==="home"?publicDescription:"Manage KiCad MCP Cloud connections and access."}/>
       <meta name="robots" content={kind==="home"?"index, follow, max-snippet:-1, max-image-preview:large":"noindex, nofollow"}/>
       {kind==="home"?<>
@@ -114,7 +88,7 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
       <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180"/>
       <link rel="manifest" href="/site.webmanifest"/>
       <link rel="stylesheet" href="/assets/ui.css"/><title>{title+" — KiCad MCP Cloud"}</title>
-    </head><body><div className={workspace?(kind==="devices"?"app-shell workspace-app device-home-app":"app-shell workspace-app"):"app-shell"}>
+    </head><body><div className={workspace?("app-shell workspace-app"):"app-shell"}>
       <a href="#main-content" className="skip-link">Skip to content</a>
       {workspace?<WorkspaceNav kind={kind} userEmail={userEmail}/>:<header className="site-header"><div className="header-inner">
         <Brand/>
@@ -126,7 +100,7 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
         </div>
       </div></header>}
       <main id="main-content" className={"site-main page-"+kind}>
-        {workspace?<div className="workspace-topbar"><span className="workspace-breadcrumb">KiCad MCP Cloud <span aria-hidden="true">/</span> Workspace</span>
+        {workspace?<div className="workspace-topbar"><span className="workspace-breadcrumb"><a href="/account">Workspace</a> <span aria-hidden="true">/</span> {title}</span>
           <div className="workspace-topbar-actions"><span><Icon name="lock" size={15}/> Local files stay private</span>
             <a href="https://oaslananka.github.io/kicad-mcp-pro/" target="_blank" rel="noopener noreferrer">Documentation <Icon name="arrow" size={14}/></a>
           </div></div>:null}
@@ -143,6 +117,42 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
     </div></body></html>
   );
 }
+export function SettingsHome({identity}:{readonly identity?:string}){
+  return <div className="page-stack settings-workspace">
+    <section className="card detail-card" aria-label="Account security">
+      <div className="card-kicker"><Icon name="shield" size={15}/> ACCOUNT &amp; SECURITY</div>
+      <h2>You're in control of every connection.</h2>
+      <p>Your account sign-in, AI permissions and paired computers are separate.
+         A connected app never automatically receives access to a KiCad project.</p>
+      {identity?<p className="settings-signed-in"><Icon name="check" size={15}/>
+        Signed in as <strong>{identity}</strong></p>:null}
+      <a className="button secondary" href="/account#security">Manage sign-in methods <Icon name="arrow" size={15}/></a>
+    </section>
+    <div className="overview-tiles" aria-label="Security controls">
+      <a className="overview-tile" href="/devices">
+        <span className="tile-icon"><Icon name="devices" size={20}/></span>
+        <span className="tile-body"><strong>Paired computers</strong>
+          <small>Check connection status and revoke a device if necessary.</small></span>
+        <Icon name="arrow" size={17} className="tile-arrow"/>
+      </a>
+      <a className="overview-tile" href="/devices#registered-projects">
+        <span className="tile-icon"><Icon name="projects" size={20}/></span>
+        <span className="tile-body"><strong>Project permissions</strong>
+          <small>Pause reads or remove an AI client's access to a project.</small></span>
+        <Icon name="arrow" size={17} className="tile-arrow"/>
+      </a>
+      <a className="overview-tile" href="/connections">
+        <span className="tile-icon"><Icon name="connections" size={20}/></span>
+        <span className="tile-body"><strong>Authorized AI apps</strong>
+          <small>Review and revoke OAuth connections.</small></span>
+        <Icon name="arrow" size={17} className="tile-arrow"/>
+      </a>
+    </div>
+    <p className="card-footnote-inline"><Icon name="lock" size={14}/>
+      Native remote project editing is not enabled. Changes require explicit local owner approval.</p>
+  </div>;
+}
+
 export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
   const cloudChoice=<>
     <span className="entry-choice-icon"><Icon name="connections" size={23}/></span>

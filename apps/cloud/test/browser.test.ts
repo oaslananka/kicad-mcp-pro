@@ -211,3 +211,20 @@ test("unconfigured providers cannot be linked",async()=>{
   }),onlyGithub,origin);
   assert.equal(forbidden?.status,404);
 });
+
+test("security settings has its own signed-in page in the shared workspace shell",async()=>{
+  const anonymous=await browserResponse(new Request(origin+"/settings"),mock(),origin);
+  assert.equal(anonymous?.status,303);
+  assert.equal(anonymous?.headers.get("location"),"/sign-in");
+  const signed=mock() as BrowserIdentity & {api:any};
+  signed.api={getSession:async()=>({user:{name:"Engineer",email:"engineer@example.com"}})};
+  const page=await browserResponse(new Request(origin+"/settings"),signed,origin);
+  assert.equal(page?.status,200);
+  const html=await page!.text();
+  assert.match(html,/<title>Security settings/);
+  assert.match(html,/href="\/settings" aria-current="page"/);
+  assert.match(html,/href="\/devices#registered-projects"/);
+  assert.match(html,/href="\/connections"/);
+  assert.match(html,/href="\/account#security"/);
+  assert.doesNotMatch(html,/device-home-app|Upgrade to Pro/);
+});
