@@ -21,9 +21,12 @@ from cryptography.hazmat.primitives.serialization import (
     PublicFormat,
     load_pem_private_key,
 )
-from websockets.exceptions import WebSocketException
+from websockets.exceptions import ConnectionClosed, WebSocketException
 
-from kicad_mcp.cloud_outbound_handshake import HandshakeReceipt, execute_owner_managed_read_session
+from kicad_mcp.cloud_outbound_handshake import (
+    HandshakeReceipt,
+    execute_owner_managed_read_session,
+)
 from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
@@ -58,6 +61,22 @@ _REGISTRATION_FIELDS = frozenset(
 )
 _MAX_READS = 16
 _SESSION_LIFETIME_MS = 280_000
+
+
+class CloudOwnerReapprovalRequiredError(ValueError):
+    """Cloud closed this signed socket for a policy reason, not a network outage."""
+
+
+def _is_remote_policy_rejection(error: BaseException) -> bool:
+    """Inspect only received close codes; never expose untrusted socket reasons."""
+    current: BaseException | None = error
+    for _ in range(4):
+        if current is None:
+            return False
+        if isinstance(current, ConnectionClosed):
+            return current.rcvd is not None and current.rcvd.code == 1008
+        current = current.__cause__
+    return False
 
 
 @dataclass(frozen=True, slots=True)
@@ -365,7 +384,11 @@ async def _attempt_authorized_session(
         return True
     except asyncio.CancelledError:
         raise
-    except (OSError, ValueError, WebSocketException):
+    except (OSError, ValueError, WebSocketException) as exc:
+        if _is_remote_policy_rejection(exc):
+            raise CloudOwnerReapprovalRequiredError(
+                "Cloud refused this signed device session (policy 1008)."
+            ) from exc
         return False
     finally:
         revoked.cancel()
@@ -416,7 +439,18 @@ async def run_connector(
         _notify_connection_attempt(status_callback, failures)
         runner_for_session = _session_runner_with_status(session_runner, status_callback)
 
-        result = await _attempt_authorized_session(project, selected, key, runner_for_session, stop)
+        try:
+            result = await _attempt_authorized_session(
+                project, selected, key, runner_for_session, stop
+            )
+        except CloudOwnerReapprovalRequiredError:
+            if status_callback is not None:
+                status_callback(
+                    "Cloud rejected this device session (policy 1008). "
+                    f"Review pairing and access at {project.origin}/devices. "
+                    "The local project and saved credentials were not changed."
+                )
+            raise
         if result is None:
             return
         failures = _next_failure_count(result, failures, status_callback)
@@ -445,6 +479,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     except KeyboardInterrupt:
         return 0
+    except CloudOwnerReapprovalRequiredError:
+        print(
+            "Cloud refused the signed device session (policy 1008). "
+            "Review this device in your Cloud workspace; local credentials are unchanged.",
+            file=sys.stderr,
+        )
+        return 3
     except (OSError, ValueError, TypeError):
         print("Windows Connector unavailable; check local owner registration.", file=sys.stderr)
         return 1

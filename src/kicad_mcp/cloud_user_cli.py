@@ -360,6 +360,7 @@ def remote(
         raise typer.BadParameter("Use --browse or --project-dir, not both.")
     origin = _verified_origin(cloud_origin)
     from kicad_mcp.cloud_windows_connector import (
+        CloudOwnerReapprovalRequiredError,
         activate,
         local_state,
         run_connector,
@@ -402,6 +403,8 @@ def remote(
 
     try:
         asyncio.run(run_connector(stop=asyncio.Event(), status_callback=show_status))
+    except CloudOwnerReapprovalRequiredError:
+        raise typer.Exit(code=3) from None
     except KeyboardInterrupt:
         typer.echo("\nDisconnected; device and project remain paired.")
 
