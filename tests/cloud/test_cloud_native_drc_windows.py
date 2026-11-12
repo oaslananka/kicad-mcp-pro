@@ -169,7 +169,7 @@ def test_windows_native_drc_discovers_installed_cli_without_path(
             json.dumps({"violations": [{}], "unconnected_items": [{}, {}]}),
             encoding="utf-8",
         )
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=5)
 
     monkeypatch.setattr(cloud_native_drc.subprocess, "run", native)
     counts = cloud_native_drc.summarize_native_pcb_drc(selected)
