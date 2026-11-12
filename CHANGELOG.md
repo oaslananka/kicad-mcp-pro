@@ -10,6 +10,29 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.13.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.12.0...mcp-server-v4.13.0) (2026-11-12)
+
+
+### Features
+
+* bind optional local capability revision to signed Cloud Connector ([#1692](https://github.com/oaslananka/kicad-mcp-pro/issues/1692)) ([8f41724](https://github.com/oaslananka/kicad-mcp-pro/commit/8f417247f4af8227bd584231f4137611022bcdd8))
+* **cloud:** integrate owner-scoped project picker and recovery UX ([#1695](https://github.com/oaslananka/kicad-mcp-pro/issues/1695)) ([d01be44](https://github.com/oaslananka/kicad-mcp-pro/commit/d01be44b831b96c8f6ea3474de402e49062d37b7))
+* **cloud:** introduce scoped category-based MCP capability discovery ([#1690](https://github.com/oaslananka/kicad-mcp-pro/issues/1690)) ([bbf743a](https://github.com/oaslananka/kicad-mcp-pro/commit/bbf743aa50db3240b03274015f36bf27078ef951))
+* generate versioned local MCP capability contract ([#1691](https://github.com/oaslananka/kicad-mcp-pro/issues/1691)) ([a2d1d5d](https://github.com/oaslananka/kicad-mcp-pro/commit/a2d1d5dd3a6c353f28485bbc633408b63d4d66fc))
+* **ux:** unify Cloud and local graphite design system ([#1703](https://github.com/oaslananka/kicad-mcp-pro/issues/1703)) ([6959ec4](https://github.com/oaslananka/kicad-mcp-pro/commit/6959ec4c7438c1a9c380cd2d11c4091af7f58370))
+
+
+### Bug Fixes
+
+* **cloud:** align project tool discovery with signed Connector claims ([#1693](https://github.com/oaslananka/kicad-mcp-pro/issues/1693)) ([bdaed69](https://github.com/oaslananka/kicad-mcp-pro/commit/bdaed696e4ac7a9abd10fccf40b82719e48bf790))
+* **cloud:** explain foreground remote when legacy task is absent ([#1697](https://github.com/oaslananka/kicad-mcp-pro/issues/1697)) ([4e5384d](https://github.com/oaslananka/kicad-mcp-pro/commit/4e5384d023aca8a7d0ef7879ed7bf722439dbf97))
+* **cloud:** fail fast when a signed read expires during worker startup ([#1700](https://github.com/oaslananka/kicad-mcp-pro/issues/1700)) ([7ee9b87](https://github.com/oaslananka/kicad-mcp-pro/commit/7ee9b87b394ec19bf7de0768fbdce41c1c4eb6d9))
+* **cloud:** preserve pairing status budget across owner retries ([#1701](https://github.com/oaslananka/kicad-mcp-pro/issues/1701)) ([4ab5492](https://github.com/oaslananka/kicad-mcp-pro/commit/4ab5492a4b31fc116049ee393db9e7f8f62c366c))
+* **cloud:** recover missing Windows Connector task and verify signed PCB reads ([#1694](https://github.com/oaslananka/kicad-mcp-pro/issues/1694)) ([9c3409b](https://github.com/oaslananka/kicad-mcp-pro/commit/9c3409b1f766f4b7268f11a9bd6476753d623747))
+* keep advisory-only project quality findings non-blocking ([#1688](https://github.com/oaslananka/kicad-mcp-pro/issues/1688)) ([9a8aea7](https://github.com/oaslananka/kicad-mcp-pro/commit/9a8aea768b6cef8e75bf42eabc93e10f4df1bbd7))
+* **release:** regenerate versioned capability catalog ([#1704](https://github.com/oaslananka/kicad-mcp-pro/issues/1704)) ([ccfa22f](https://github.com/oaslananka/kicad-mcp-pro/commit/ccfa22f92d2f9eb43b5d4db4d152d3da65bb8320))
+* truthful DRC exclusions and complete schematic discovery ([#1687](https://github.com/oaslananka/kicad-mcp-pro/issues/1687)) ([a8b96ef](https://github.com/oaslananka/kicad-mcp-pro/commit/a8b96ef047b0925012eace95cb3e8370103d5e9a))
+
 ## [4.12.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.11.0...mcp-server-v4.12.0) (2026-11-11)
 
 
