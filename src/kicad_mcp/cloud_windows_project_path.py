@@ -27,6 +27,7 @@ _DENIED = "Windows KiCad project presence inspection denied."
 _STEM = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}\Z", re.ASCII)
 _LOCAL_DRIVE = re.compile(r"[A-Za-z]:\\")
 _FILE_READ_ATTRIBUTES = 0x0080
+_FILE_GENERIC_READ = 0x80000000
 _FILE_SHARE_READ = 0x00000001
 _FILE_SHARE_WRITE = 0x00000002
 _OPEN_EXISTING = 3
@@ -111,12 +112,15 @@ def _path_parts(directory: Path) -> tuple[str, ...]:
     return (root, *parts[1:])
 
 
-def _open_checked(path: str, *, directory: bool, missing_ok: bool = False) -> int | None:
+def _open_checked(
+    path: str, *, directory: bool, missing_ok: bool = False, read_contents: bool = False
+) -> int | None:
     api = _api()
     handle = api.CreateFileW(
         path,
-        _FILE_READ_ATTRIBUTES,
-        _FILE_SHARE_READ | _FILE_SHARE_WRITE,  # lock against directory renames
+        _FILE_GENERIC_READ if read_contents else _FILE_READ_ATTRIBUTES,
+        (_FILE_SHARE_READ if read_contents else _FILE_SHARE_READ | _FILE_SHARE_WRITE),
+        # Data-read handles also exclude concurrent writers and delete/replace.
         None,
         _OPEN_EXISTING,
         _FILE_FLAG_OPEN_REPARSE_POINT | _FILE_FLAG_BACKUP_SEMANTICS,
@@ -195,5 +199,75 @@ def read_windows_project_presence(directory: Path, filename_stem: str) -> dict[s
                 if handle is not None:
                     _api().CloseHandle(handle)
             return result
+    except (OSError, ValueError, TypeError) as exc:
+        raise LocalReadDeniedError(_DENIED) from exc
+
+
+def _copy_pinned_input(source: str, destination: Path, *, limit: int, required: bool) -> None:
+    """Read from a checked Win32 file HANDLE, not a re-opened pathname.
+
+    Every directory ancestor remains pinned by the caller; the leaf's
+    no-reparse, single-link handle is opened without write/delete sharing.
+    """
+    import msvcrt  # Windows only; the CRT owns the handle after conversion.
+
+    handle = _open_checked(source, directory=False, missing_ok=not required, read_contents=True)
+    if handle is None:
+        if required:
+            raise LocalReadDeniedError(_DENIED)
+        return
+    try:
+        fd = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+    except (OSError, ValueError) as exc:
+        _api().CloseHandle(handle)
+        raise LocalReadDeniedError(_DENIED) from exc
+    try:
+        with os.fdopen(fd, "rb") as reader:
+            before = os.fstat(reader.fileno())
+            if not 0 <= before.st_size <= limit:
+                raise LocalReadDeniedError(_DENIED)
+            with destination.open("xb") as output:
+                remaining = limit
+                while True:
+                    chunk = reader.read(min(65536, remaining + 1))
+                    if not chunk:
+                        break
+                    if len(chunk) > remaining:
+                        raise LocalReadDeniedError(_DENIED)
+                    output.write(chunk)
+                    remaining -= len(chunk)
+            after = os.fstat(reader.fileno())
+            if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
+                raise LocalReadDeniedError(_DENIED)
+    except (OSError, ValueError) as exc:
+        raise LocalReadDeniedError(_DENIED) from exc
+
+
+def copy_windows_drc_inputs(directory: Path, filename_stem: str, scratch: Path) -> None:
+    """Copy only three owner-bound KiCad inputs for offline native DRC.
+
+    This is not a Cloud authorization or native command dispatcher.
+    The scratch folder is a caller-created private TemporaryDirectory.
+    """
+    if (
+        os.name != "nt"
+        or not isinstance(filename_stem, str)
+        or not _STEM.fullmatch(filename_stem)
+        or filename_stem in {".", ".."}
+        or not isinstance(scratch, Path)
+        or not scratch.is_dir()
+    ):
+        raise LocalReadDeniedError(_DENIED)
+    try:
+        with _pinned_project(directory) as pinned:
+            for extension, limit, required in (
+                (".kicad_pcb", 32 * 1024 * 1024, True),
+                (".kicad_pro", 4 * 1024 * 1024, False),
+                (".kicad_dru", 1024 * 1024, False),
+            ):
+                name = filename_stem + extension
+                _copy_pinned_input(
+                    pinned + os.sep + name, scratch / name, limit=limit, required=required
+                )
     except (OSError, ValueError, TypeError) as exc:
         raise LocalReadDeniedError(_DENIED) from exc

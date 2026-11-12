@@ -88,21 +88,34 @@ def summarize_native_pcb_drc(policy: OperatorProject) -> dict[str, int]:
     ):
         raise LocalReadDeniedError(_DENIED)
     executable = shutil.which("kicad-cli")
+    if os.name == "nt" and not executable:
+        # Reuse the product's installed-KiCad discovery, never a path from Cloud.
+        from kicad_mcp.discovery import discover_kicad_cli
+
+        candidate = discover_kicad_cli()
+        if candidate.is_file():
+            executable = str(candidate)
     if not executable:
         raise LocalReadDeniedError(_DENIED)
     fd: int | None = None
     try:
-        fd = _open_operator_directory(policy.directory)
+        if os.name != "nt":
+            fd = _open_operator_directory(policy.directory)
         with tempfile.TemporaryDirectory(prefix="kicad-mcp-drc-") as scratch:
             folder = Path(scratch)
             board = folder / (policy.filename_stem + ".kicad_pcb")
             project = folder / (policy.filename_stem + ".kicad_pro")
             output = folder / "drc.json"
-            _copy_bound_file(fd, board.name, board, _MAX_PCB_BYTES, required=True)
-            _copy_bound_file(fd, project.name, project, _MAX_PROJECT_BYTES, required=False)
+            if os.name == "nt":
+                from kicad_mcp.cloud_windows_project_path import copy_windows_drc_inputs
+
+                copy_windows_drc_inputs(policy.directory, policy.filename_stem, folder)
+            elif fd is not None:
+                _copy_bound_file(fd, board.name, board, _MAX_PCB_BYTES, required=True)
+                _copy_bound_file(fd, project.name, project, _MAX_PROJECT_BYTES, required=False)
             # Owner-selected project stem is validated, and source files are
             # copied without symlinks/hardlinks into a private scratch folder.
-            # Executable is resolved from the owner process PATH; shell=False,
+            # Executable is found using trusted local KiCad discovery; shell=False,
             # arguments are fixed and not interpolated as a command string.
             # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit  # noqa: E501
             completed = subprocess.run(  # nosec B603
