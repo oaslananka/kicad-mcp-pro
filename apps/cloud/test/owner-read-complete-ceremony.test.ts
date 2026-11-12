@@ -137,9 +137,10 @@ test("Chrome synthetic passkey: register → activate → scope approval → con
       server=createServer({key:await readFile(key),cert:await readFile(cert)},
         (_req,res)=>{res.writeHead(200,{"Content-Type":"text/html"});
           res.end("<!doctype html><title>Isolated ceremony fixture</title>");});
-      await new Promise<void>(resolve=>server!.listen(0,"::",resolve));
+      await new Promise<void>(resolve=>server!.listen(0,"::1",resolve));
       const address=server.address();
       assert.ok(address&&typeof address!=="string");
+      assert.equal(address.address,"::1","Synthetic HTTPS fixture must be loopback-only");
       const authority="https://localhost:"+address.port;
       const cloudOrigin="https://cloud.example.test";
       const owner="test-owner",clientId="trusted-oauth-client";
