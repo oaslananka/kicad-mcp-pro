@@ -856,3 +856,62 @@ def test_repair_requires_verified_old_connector_stop_before_selection_switch(
         )
     assert "browser-approval" in events
     assert previous.filename_stem == "demo" and folder.is_dir()
+
+
+def test_repair_rejects_foreign_cloud_before_reenrollment(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _folder, events, old, _selection = windows_cli
+    with pytest.raises(cloud_windows_user_cli.typer.BadParameter, match="trusted Cloud origin"):
+        cloud_windows_user_cli.repair_windows_project(
+            old,
+            origin="https://foreign-cloud.example",
+            alias="Lab PC",
+            approval=lambda *_: pytest.fail("no browser side effect"),
+            stop_previous=lambda: pytest.fail("no task side effect"),
+        )
+    assert events == []
+
+
+def test_repair_failed_owner_browser_pairing_retains_previous_selection(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _folder, events, old, _selection = windows_cli
+
+    def failed_enroll(**_opts: object) -> WindowsEnrolledDevice:
+        raise RuntimeError("browser declined")
+
+    monkeypatch.setattr(cloud_windows_user_cli, "enroll_windows_device", failed_enroll)
+    with pytest.raises(cloud_windows_user_cli.typer.BadParameter, match="not completed"):
+        cloud_windows_user_cli.repair_windows_project(
+            old,
+            origin=ORIGIN,
+            alias="Lab PC",
+            approval=lambda *_: events.append("owner-browser"),
+            stop_previous=lambda: pytest.fail("must not stop old task"),
+        )
+    assert events == []
+
+
+def test_repair_cannot_claim_success_after_new_pairing_if_local_switch_fails(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_connector
+
+    _folder, events, old, _selection = windows_cli
+
+    def unsafe_switch(*_args: object, **_kwargs: object) -> None:
+        raise OSError("simulated credential manager write failure")
+
+    monkeypatch.setattr(cloud_windows_connector, "repair_selected_project", unsafe_switch)
+    with pytest.raises(
+        cloud_windows_user_cli.typer.BadParameter, match="could not be switched safely"
+    ):
+        cloud_windows_user_cli.repair_windows_project(
+            old,
+            origin=ORIGIN,
+            alias="Lab PC",
+            approval=lambda *_: events.append("browser-approval"),
+            stop_previous=lambda: events.append("stop-old") or True,
+        )
+    assert events == ["enroll", "browser-approval", "register", "bind", "stop-old"]
