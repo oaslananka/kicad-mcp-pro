@@ -355,6 +355,7 @@ jobs:
             'tests/unit/test_cloud_windows_credentials.py'
             'tests/unit/test_cloud_windows_project_record.py'
             'tests/cloud/test_cloud_pair.py'
+            'tests/cloud/test_cloud_native_drc_windows.py'
             'tests/unit/test_cloud_user_cli.py'
             'tests/unit/test_dev_bootstrap.py'
             'tests/unit/test_runtime_helpers.py'
