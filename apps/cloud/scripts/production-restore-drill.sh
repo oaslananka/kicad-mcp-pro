@@ -33,11 +33,8 @@ if (( 8#$backup_mode & 077 )); then
   echo 'Encrypted backup permissions are too broad' >&2
   exit 2
 fi
-source_db="kicad-cloud-db-1"
-[[ "$(docker inspect "$source_db" --format '{{.State.Health.Status}}')" == healthy ]] || {
-  echo 'Production database is not healthy' >&2
-  exit 1
-}
+source "$(dirname "${BASH_SOURCE[0]}")/production-db-target.sh"
+source_db="$(kicad_cloud_database_container)"
 suffix="$(openssl rand -hex 8)"
 network="kicad-restore-drill-$suffix"
 target="kicad-restore-pg-$suffix"
@@ -89,8 +86,9 @@ query_target(){
     -v ON_ERROR_STOP=1 -U restore_fixture -d restore_fixture -c "$1"
 }
 query_live(){
-  docker exec -u postgres "$source_db" psql -X -q -A -t \
-    -v ON_ERROR_STOP=1 -U kicad_cloud -d kicad_cloud -c "$1"
+  docker exec "$source_db" sh -c \
+    'exec psql -X -q -A -t -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "$1"' \
+    sh "$1"
 }
 ledger_query="SELECT count(*)::text || ':' || coalesce(md5(string_agg(version::text || ':' || checksum, '|' ORDER BY version)), '') FROM schema_migrations"
 restored_ledger="$(query_target "$ledger_query")"

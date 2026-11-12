@@ -151,6 +151,12 @@ OAuth resource metadata, anonymous MCP denial and disabled signup.
 For a private single encrypted database snapshot, execute on the VPS:
     doppler run -p kicad-mcp-pro -c prd_cloud -- bash scripts/production-backup.sh
 
+The backup and restore scripts resolve the single healthy production
+PostgreSQL container from Coolify resource labels (kicad-mcp-cloud /
+kicad-cloud-postgres) or the legacy Compose container. They verify
+the database is kicad_cloud and refuse ambiguous, unhealthy or unrelated
+resources; no other Coolify database is touched.
+
 Production Doppler must contain KICAD_BACKUP_AGE_IDENTITY and its corresponding
 KICAD_BACKUP_AGE_RECIPIENT. The script streams a logical pg_dump through
 authenticated age encryption, verifies decryption and pg_restore archive
@@ -177,6 +183,12 @@ production age-encrypted backup into a disposable, isolated, tmpfs-only
 PostgreSQL 17 container and checks checksum ledger, security triggers
 and core metadata against the live DB. It does not modify production.
 See docs/PRODUCTION-DATABASE-RECOVERY-ACCEPTANCE.md.
+
+The offsite replication command additionally requires an explicitly
+configured owner-controlled SSH destination and separate-machine restore
+with its own secret-manager identity. An encrypted local backup and
+same-VPS full restore are not substitutes. Do not introduce unapproved
+storage spend or run live schema changes before independent recovery.
 
 This is NOT offsite disaster recovery. Migrations 007–012 remain blocked
 until an independently downloaded remote encrypted archive passes

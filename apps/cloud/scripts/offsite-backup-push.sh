@@ -42,10 +42,14 @@ src="$HOME/.local/share/kicad-cloud/backups/production-db-latest.pg.age"
 sha=$(sha256sum "$src" | awk '{print $1}')
 [[ "$sha" =~ ^[a-f0-9]{64}$ ]]
 filename="production-db-${sha:0:16}.pg.age"
-version=$(docker exec kicad-cloud-db-1 psql -U kicad_cloud -d kicad_cloud -At \
-  -c 'SELECT max(version) FROM schema_migrations')
-ledger=$(docker exec kicad-cloud-db-1 psql -U kicad_cloud -d kicad_cloud -At \
-  -c "SELECT count(*)::text || ':' || coalesce(md5(string_agg(version::text || ':' || checksum, '|' ORDER BY version)), '') FROM schema_migrations")
+source scripts/production-db-target.sh
+database_container="$(kicad_cloud_database_container)"
+query_live() {
+  docker exec "$database_container" sh -c \
+    'exec psql -X -q -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "$1"' sh "$1"
+}
+version=$(query_live 'SELECT max(version) FROM schema_migrations')
+ledger=$(query_live "SELECT count(*)::text || ':' || coalesce(md5(string_agg(version::text || ':' || checksum, '|' ORDER BY version)), '') FROM schema_migrations")
 [[ "$version" =~ ^[1-9][0-9]{0,2}$ && "$ledger" =~ ^[1-9][0-9]*:[a-f0-9]{32}$ && "${ledger%%:*}" == "$version" ]]
 # Destination is always immutable and contains only ciphertext.
 ssh "${ssh_opts[@]}" "$remote" test ! -e "$dir/$filename"
