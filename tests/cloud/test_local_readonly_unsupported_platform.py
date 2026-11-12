@@ -1,4 +1,4 @@
-"""Fail-closed tests when safe directory descriptor semantics are unavailable."""
+"""Fail-closed POSIX no-follow and independently pinned Windows handle behavior."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ NOW = 1_800_000_000_000
 SESSION = "44444444-4444-4444-8444-444444444444"
 
 
-def test_missing_nofollow_flag_rejected_even_for_valid_request(tmp_path: Path) -> None:
+def test_missing_nofollow_uses_only_platform_verified_path(tmp_path: Path) -> None:
     folder = tmp_path / "operator"
     folder.mkdir()
     (folder / "sample.kicad_pro").write_text("synthetic", encoding="utf-8")
@@ -43,10 +43,25 @@ def test_missing_nofollow_flag_rejected_even_for_valid_request(tmp_path: Path) -
             DEVICE, PROJECT, frozenset({"project_summary"}), SESSION, NOW + 60000
         )
         _raise_argument_2 = OperatorProject(DEVICE, PROJECT, folder, "sample")
-        with pytest.raises(LocalReadDeniedError):
-            inspect_readonly(
+        if os.name == "nt":
+            # Windows has an independent reparse-denying Win32 handle walk,
+            # not a POSIX O_NOFOLLOW dependency.
+            observed = inspect_readonly(
                 frame,
                 verified=_raise_argument_1,
                 operator_project=_raise_argument_2,
                 now_unix_ms=NOW,
             )
+            assert observed["files"] == {
+                "projectPresent": True,
+                "boardPresent": False,
+                "schematicPresent": False,
+            }
+        else:
+            with pytest.raises(LocalReadDeniedError):
+                inspect_readonly(
+                    frame,
+                    verified=_raise_argument_1,
+                    operator_project=_raise_argument_2,
+                    now_unix_ms=NOW,
+                )
