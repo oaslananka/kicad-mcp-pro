@@ -50,7 +50,7 @@ async def test_bound_worker_starts_real_scoped_mcp_and_rechecks_grants(tmp_path:
     async with bridge.connect(device_id=DEVICE, project_id=PROJECT, session_id=SESSION) as worker:
         result = await worker.inspect("kicad_get_project_info")
         assert result.is_error is not True
-        assert str(root) in str(result)
+        assert str(root) in "\n".join(item.text for item in result.content if item.type == "text")
         with pytest.raises(ProjectWorkerDeniedError):
             await worker.inspect("kicad_set_project")
         granted = False
