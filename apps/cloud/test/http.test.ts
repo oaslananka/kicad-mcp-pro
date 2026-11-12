@@ -1630,3 +1630,79 @@ test("signed Connector operations narrow project-scoped Cloud task discovery",as
     await new Promise<void>(done=>proxy.close(()=>done()));
   }
 });
+
+test("native DRC browser consent POST reaches HTTP router with owner and CSRF checks",async()=>{
+  const nativeCalls:string[]=[];
+  const deviceId=mockProject.deviceId;
+  const deviceManager={
+    async list(owner:string){
+      return owner==="owner-a"?[{
+        id:deviceId,alias:"Test device",enabled:true,revoked:false,
+        fingerprint:"a".repeat(64),createdAt:new Date()
+      }]:[];
+    },
+    async listProjects(owner:string){
+      return owner==="owner-a"?[{
+        id,deviceId,alias:"Disposable PCB",enabled:true,maxMode:"readonly" as const
+      }]:[];
+    },
+    async revokeDevice(){return false;}
+  };
+  const managed={
+    enabledProjectIds:async()=>[id],
+    nativeOperationsByProject:async()=>[],
+    setEnabled:async()=>true,
+    setNativeOperation:async(owner:string,device:string,project:string,
+      operation:string,enabled:boolean)=>{
+      nativeCalls.push([owner,device,project,operation,String(enabled)].join(":"));
+      return owner==="owner-a"&&device===deviceId&&project===id&&operation==="run_drc";
+    },
+    isEnabled:async()=>true
+  };
+  const mockIdentity={
+    handler:async()=>new Response(null,{status:404}),
+    $context:Promise.resolve({secret:"test-only-http-browser-csrf-secret-min-32"}),
+    api:{getSession:async()=>({
+      user:{id:"owner-a"},session:{id:"session-one"}
+    })}
+  };
+  const app=createHttpServer(config,inventory,verify,{
+    identity:mockIdentity as never,devices:deviceManager as never,
+    managedRead:managed as never,managedNativeReadEnabled:true,
+    pairingDevice:{} as never
+  });
+  await new Promise<void>(resolve=>app.listen(0,"127.0.0.1",resolve));
+  const base="http://127.0.0.1:"+(app.address() as AddressInfo).port;
+  try{
+    const view=await fetch(base+"/devices");
+    assert.equal(view.status,200);
+    const html=await view.text();
+    const form=/<form[^>]*action="\/devices\/projects\/native"[\s\S]*?name="csrf" value="([^"]+)"/.exec(html);
+    assert.ok(form,"Owner must see actionable native consent form");
+    const cookie=(view.headers.get("set-cookie")??"").split(";")[0];
+    assert.ok(cookie,"Native consent requires a bound browser cookie");
+    const submit=async(csrf:string,origin=config.publicOrigin)=>fetch(
+      base+"/devices/projects/native",{
+        method:"POST",redirect:"manual",
+        headers:{
+          Origin:origin,Cookie:cookie,
+          "Content-Type":"application/x-www-form-urlencoded"
+        },
+        body:new URLSearchParams({
+          device_id:deviceId,project_id:id,operation:"run_drc",enabled:"true",csrf
+        })
+      }
+    );
+    assert.equal((await submit(form[1]!,"https://untrusted.invalid")).status,403);
+    assert.equal((await submit("invalid")).status,403);
+    assert.deepEqual(nativeCalls,[],"Wrong-origin and forged-CSRF cannot grant DRC");
+    const allowed=await submit(form[1]!);
+    assert.equal(allowed.status,303,"Browser form must reach the owner native DRC action");
+    assert.equal(allowed.headers.get("location"),"/devices?access=native-on");
+    assert.deepEqual(nativeCalls,[
+      ["owner-a",deviceId,id,"run_drc","true"].join(":")
+    ]);
+  }finally{
+    await new Promise<void>(resolve=>app.close(()=>resolve()));
+  }
+});

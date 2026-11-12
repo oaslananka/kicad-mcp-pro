@@ -188,7 +188,7 @@ async function handleRequest(
       }
       if (identity && (path === "/devices/projects/browse" ||
         path === "/devices/projects/select" || path === "/devices/projects/rename" ||
-        path === "/sign-in" || path === "/account" || path === "/overview" || path === "/usage" || path === "/projects" || path === "/settings" || path === "/consent" || path === "/connections" || path === "/connections/revoke" || path === "/devices" || path === "/devices/revoke" || path === "/devices/delete" || path === "/devices/enable" || path === "/devices/projects/create" || path === "/devices/projects/grant" || path === "/devices/projects/managed" || path === "/devices/projects/delete" || path === "/devices/pairing" || path === "/devices/pairing/review" || path.startsWith("/auth/start/") || path.startsWith("/auth/link/"))) {
+        path === "/sign-in" || path === "/account" || path === "/overview" || path === "/usage" || path === "/projects" || path === "/settings" || path === "/consent" || path === "/connections" || path === "/connections/revoke" || path === "/devices" || path === "/devices/revoke" || path === "/devices/delete" || path === "/devices/enable" || path === "/devices/projects/create" || path === "/devices/projects/grant" || path === "/devices/projects/managed" || path === "/devices/projects/native" || path === "/devices/projects/delete" || path === "/devices/pairing" || path === "/devices/pairing/review" || path.startsWith("/auth/start/") || path.startsWith("/auth/link/"))) {
         const method=req.method??"GET";
         const headers=new Headers();
         for (const [name,value] of Object.entries(req.headers)) {
