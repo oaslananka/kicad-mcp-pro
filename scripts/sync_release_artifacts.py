@@ -7,7 +7,7 @@ import argparse
 
 if __package__:
     # Module entry point: python -m scripts.sync_release_artifacts.
-    from . import build_tool_effect_manifest, sync_mcp_metadata
+    from . import build_capability_catalog, build_tool_effect_manifest, sync_mcp_metadata
 else:
     # Script entry point: python scripts/sync_release_artifacts.py.
     # Avoid importing an unrelated third-party "scripts" namespace on Windows.
@@ -32,7 +32,12 @@ def main(argv: list[str] | None = None) -> int:
     metadata_status = sync_mcp_metadata.main(metadata_args)
     if metadata_status != 0:
         return metadata_status
-    return build_tool_effect_manifest.main(manifest_args)
+    manifest_status = build_tool_effect_manifest.main(manifest_args)
+    if manifest_status != 0:
+        return manifest_status
+    # The local capability catalog embeds the release packageVersion.
+    # A version bump must update it before CI tests assert exact parity.
+    return build_capability_catalog.main(manifest_args)
 
 
 if __name__ == "__main__":
