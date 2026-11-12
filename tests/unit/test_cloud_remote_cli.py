@@ -256,3 +256,25 @@ def test_foreground_setup_rejects_different_project_without_mutation(
             start_background=False,
         )
     assert state["calls"] == []
+
+
+def test_remote_policy_rejection_exits_with_actionable_status_no_traceback(
+    remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state, _folder = remote_fixture
+
+    async def denied(*, stop, status_callback) -> None:
+        status_callback(
+            "Cloud rejected this device session (policy 1008). "
+            "Review pairing at https://kicad-mcp-pro.oaslananka.dev/devices. "
+            "The local project and saved credentials were not changed."
+        )
+        raise cloud_windows_connector.CloudOwnerReapprovalRequiredError("test-only")
+
+    monkeypatch.setattr(cloud_windows_connector, "run_connector", denied)
+    result = CliRunner().invoke(server.app, ["remote"])
+    assert result.exit_code == 3, result.output
+    assert "policy 1008" in result.output
+    assert "/devices" in result.output
+    assert "Traceback" not in result.output
+    assert state["calls"] == ["task_removed"]
