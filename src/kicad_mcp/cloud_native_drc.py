@@ -73,6 +73,20 @@ def _copy_bound_file(
         os.close(fd)
 
 
+def _trusted_native_kicad_cli() -> str:
+    """Resolve only the locally installed CLI, never a Cloud-supplied command."""
+    executable = shutil.which("kicad-cli")
+    if os.name == "nt" and not executable:
+        from kicad_mcp.discovery import discover_kicad_cli
+
+        candidate = discover_kicad_cli()
+        if candidate.is_file():
+            executable = str(candidate)
+    if not executable:
+        raise LocalReadDeniedError(_DENIED)
+    return executable
+
+
 def summarize_native_pcb_drc(policy: OperatorProject) -> dict[str, int]:
     """Return *only* DRC issue counts; never expose project contents or paths.
 
@@ -87,16 +101,7 @@ def summarize_native_pcb_drc(policy: OperatorProject) -> dict[str, int]:
         or policy.filename_stem in {".", ".."}
     ):
         raise LocalReadDeniedError(_DENIED)
-    executable = shutil.which("kicad-cli")
-    if os.name == "nt" and not executable:
-        # Reuse the product's installed-KiCad discovery, never a path from Cloud.
-        from kicad_mcp.discovery import discover_kicad_cli
-
-        candidate = discover_kicad_cli()
-        if candidate.is_file():
-            executable = str(candidate)
-    if not executable:
-        raise LocalReadDeniedError(_DENIED)
+    executable = _trusted_native_kicad_cli()
     fd: int | None = None
     try:
         if os.name != "nt":
