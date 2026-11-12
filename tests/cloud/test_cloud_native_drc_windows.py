@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
@@ -177,7 +178,16 @@ def test_windows_native_drc_discovers_installed_cli_without_path(
 
 
 def test_native_windows_cli_drc_on_disposable_public_fixture(tmp_path: Path) -> None:
-    from kicad_mcp.cloud_native_drc import summarize_native_pcb_drc
+    """Real KiCad 10 through bounded post-authenticated managed READ framing.
+
+    The WebSocket peer is simulated; this does not claim live Cloud OAuth or
+    a real TLS session. It tests the native CLI and the actual reply boundary
+    in one expensive invocation rather than running KiCad twice.
+    """
+    from kicad_mcp.cloud_managed_read_transport import serve_authenticated_reads
+    from kicad_mcp.cloud_outbound_handshake import HandshakeReceipt
+    from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
+    from kicad_mcp.cloud_readonly_boundary import VerifiedLocalBinding
     from kicad_mcp.discovery import discover_kicad_cli
 
     cli = discover_kicad_cli()
@@ -192,9 +202,91 @@ def test_native_windows_cli_drc_on_disposable_public_fixture(tmp_path: Path) -> 
     for item in fixture.iterdir():
         originals[item.name] = item.read_bytes()
         shutil.copyfile(item, source / item.name)
+
+    request_id = "44444444-4444-4444-8444-444444444444"
+    session_id = "33333333-3333-4333-8333-333333333333"
+    now = 1_800_000_000_000
+    request = {
+        "kind": "connector.read_request",
+        "version": 1,
+        "requestId": request_id,
+        "deviceId": DEVICE,
+        "projectId": PROJECT,
+        "operation": "run_drc",
+        "deadlineUnixMs": now + 46_000,
+    }
+
+    class SimulatedAuthenticatedSocket:
+        def __init__(self) -> None:
+            self.messages = [
+                json.dumps(
+                    {
+                        "kind": "connector.authorized_read",
+                        "version": 1,
+                        "sequence": 1,
+                        "request": request,
+                    }
+                ),
+                json.dumps(
+                    {
+                        "kind": "connector.read_ack",
+                        "version": 1,
+                        "sequence": 1,
+                        "requestId": request_id,
+                    }
+                ),
+            ]
+            self.sent: list[dict[str, object]] = []
+
+        async def recv(self) -> str:
+            return self.messages.pop(0)
+
+        async def send(self, payload: str) -> None:
+            self.sent.append(json.loads(payload))
+
+    receipt = HandshakeReceipt(DEVICE, session_id)
     project = OperatorProject(DEVICE, PROJECT, source, "clean-led-kicad10")
-    summary = summarize_native_pcb_drc(project)
-    assert summary.keys() == {"violations", "unconnectedItems"}
-    assert summary["violations"] >= 0
-    assert summary["unconnectedItems"] >= 0
+    verified = VerifiedLocalBinding(
+        DEVICE, PROJECT, frozenset({"run_drc"}), session_id, now + 120_000
+    )
+    reader = LocalReadDispatch(
+        verified=verified,
+        operator_project=project,
+        current_authorization=lambda: True,
+        clock_ms=lambda: now,
+        max_reads=1,
+        native_drc=True,
+        managed_native_drc=True,
+    )
+    socket = SimulatedAuthenticatedSocket()
+    assert (
+        asyncio.run(
+            serve_authenticated_reads(
+                socket, receipt, lambda _: reader, max_reads=1, allow_native_drc=True
+            )
+        )
+        == receipt
+    )
+    assert socket.messages == []
+    assert len(socket.sent) == 1
+    envelope = socket.sent[0]
+    assert set(envelope) == {"kind", "version", "sequence", "result"}
+    assert envelope["kind"] == "connector.read_result"
+    result = envelope["result"]
+    assert isinstance(result, dict)
+    assert set(result) == {
+        "kind",
+        "version",
+        "requestId",
+        "projectId",
+        "operation",
+        "counts",
+    }
+    assert result["kind"] == "connector.local_drc_preview"
+    assert result["operation"] == "run_drc"
+    assert result["requestId"] == request_id
+    counts = result["counts"]
+    assert isinstance(counts, dict)
+    assert counts.keys() == {"violations", "unconnectedItems"}
+    assert all(type(value) is int and value >= 0 for value in counts.values())
     assert {f.name: f.read_bytes() for f in source.iterdir()} == originals
