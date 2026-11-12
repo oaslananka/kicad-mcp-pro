@@ -434,6 +434,44 @@ def test_connector_scheduled_entrypoint_requires_local_marker(
     assert connector.main(["run"]) == 0
 
 
+def test_scheduled_owner_policy_rejection_exits_without_credential_mutation(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    project, store, _directory = local_user_connector
+    connector.activate(project, owner_confirm=lambda _: True)
+    before = dict(store)
+
+    def policy_refused(task: object) -> None:
+        task.close()
+        raise connector.CloudOwnerReapprovalRequiredError("private server reason")
+
+    monkeypatch.setattr(connector.asyncio, "run", policy_refused)
+    assert connector.main(["run"]) == 3
+    text = capsys.readouterr().err
+    assert "policy 1008" in text
+    assert "credentials are unchanged" in text
+    assert "private server reason" not in text
+    assert store == before
+
+
+def test_policy_rejection_inspects_received_close_code_not_untrusted_reason() -> None:
+    from websockets.exceptions import ConnectionClosedError
+    from websockets.frames import Close
+
+    assert connector._is_remote_policy_rejection(
+        ConnectionClosedError(Close(1008, "untrusted reason"), Close(1008, "reply"), True)
+    )
+    assert not connector._is_remote_policy_rejection(
+        ConnectionClosedError(Close(1011, "failure"), Close(1011, "failure"), True)
+    )
+    assert not connector._is_remote_policy_rejection(OSError("transient network failure"))
+    # A deep exception cause chain cannot create an implicit policy decision.
+    chain = [OSError("opaque transport") for _ in range(5)]
+    for i in range(len(chain) - 1):
+        chain[i].__cause__ = chain[i + 1]
+    assert not connector._is_remote_policy_rejection(chain[0])
+
+
 @pytest.mark.asyncio
 async def test_connector_retries_transient_session_failures_and_cancels(
     local_user_connector, monkeypatch: pytest.MonkeyPatch
