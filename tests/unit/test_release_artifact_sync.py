@@ -106,3 +106,28 @@ def test_versioned_catalog_is_regenerated_after_release_metadata(
         ("effects", ["--check"]),
         ("catalog", ["--check"]),
     ]
+
+
+def test_release_artifact_sync_direct_script_invokes_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    events: list[tuple[str, list[str]]] = []
+    with monkeypatch.context() as patch:
+        patch.syspath_prepend(str(SYNC_SCRIPT.parent))
+        patch.setattr(sys, "argv", [str(SYNC_SCRIPT), "--check"])
+        for name in ("sync_mcp_metadata", "build_tool_effect_manifest", "build_capability_catalog"):
+            patch.setitem(
+                sys.modules,
+                name,
+                SimpleNamespace(main=lambda args, name=name: events.append((name, args)) or 0),
+            )
+        with pytest.raises(SystemExit) as result:
+            runpy.run_path(str(SYNC_SCRIPT), run_name="__main__")
+    assert result.value.code == 0
+    assert events == [
+        ("sync_mcp_metadata", ["--check"]),
+        ("build_tool_effect_manifest", ["--check"]),
+        ("build_capability_catalog", ["--check"]),
+    ]

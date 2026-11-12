@@ -11,6 +11,7 @@ if __package__:
 else:
     # Script entry point: python scripts/sync_release_artifacts.py.
     # Avoid importing an unrelated third-party "scripts" namespace on Windows.
+    import build_capability_catalog
     import build_tool_effect_manifest
     import sync_mcp_metadata
 
