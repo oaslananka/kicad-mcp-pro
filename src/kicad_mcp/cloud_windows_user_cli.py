@@ -312,6 +312,12 @@ def show_status() -> None:
         typer.echo(f"Local Windows Connector: {state} [{run_state}]")
     else:
         typer.echo(f"Local Windows Connector: {state}")
+    if state == "Configured (task unverified)":
+        typer.echo("No verified background task. A foreground Cloud session may still be active.")
+        typer.echo(
+            "To start a signed foreground connection: kicad-mcp-pro remote"
+            " (keep this terminal open)."
+        )
     try:
         project = selected_project()
         if project is None:

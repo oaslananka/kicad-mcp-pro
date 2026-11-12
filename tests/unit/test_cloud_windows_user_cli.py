@@ -331,6 +331,32 @@ def test_windows_status_includes_running_state_when_active(
     assert "Scheduled (connection unverified) [Running]" in status.output
 
 
+def test_windows_status_missing_legacy_task_explains_foreground_remote(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder, _events, _project, _selected = windows_cli
+    first = CliRunner().invoke(
+        app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
+    )
+    assert first.exit_code == 0, first.output
+    monkeypatch.setattr(
+        cloud_windows_user_cli, "scheduler_state", lambda: "Configured (task unverified)"
+    )
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "task_run_state",
+        lambda: (_ for _ in ()).throw(AssertionError("do not query absent task")),
+    )
+
+    status = CliRunner().invoke(app, ["cloud", "status"])
+    assert status.exit_code == 0, status.output
+    assert "No verified background task" in status.output
+    assert "foreground Cloud session may still be active" in status.output
+    assert "kicad-mcp-pro remote (keep this terminal open)" in status.output
+    assert "Connected" not in status.output
+    assert "Cloud owner grants/revocation" in status.output
+
+
 def test_windows_status_before_registration_does_not_trigger_cloud(
     windows_cli,
 ) -> None:
