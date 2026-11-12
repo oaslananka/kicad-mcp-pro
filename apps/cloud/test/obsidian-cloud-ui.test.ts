@@ -52,7 +52,9 @@ test("device/client views retain actual empty states and explicit revocation act
 });
 
 test("obsidian UI remains first-party with accessible responsive focus",()=>{
-  assert.match(uiCss,/--accent:#00daf3/);
+  assert.match(uiCss,/--accent:#79a9f1/);
+  assert.doesNotMatch(uiCss,/--accent:#00daf3/);
+  assert.match(uiCss,/\.overview-tiles\{display:block;/);
   assert.match(uiCss,/:focus-visible/);
   assert.match(uiCss,/prefers-reduced-motion/);
   assert.doesNotMatch(uiCss,/@import|url\(https?:/i);
