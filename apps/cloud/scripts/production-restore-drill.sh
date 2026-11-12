@@ -114,55 +114,84 @@ done
 
 echo 'PASS: encrypted live Cloud backup fully restored to isolated, disposable PostgreSQL 17 RAM; schema ledger, security triggers and metadata counts match production'
 if [[ "$rehearse_schema" == true ]]; then
-  # Run the exact source migration engine against the disposable restored
-  # clone, never a Doppler DATABASE_URL or live production target.
-  [[ -f dist/migrations-cli.js && -f db/012_pairing_device_budget.pgsql ]] || {
-    echo 'Reviewed migration build or manifest unavailable' >&2
+  # Same checksum-aware migration runner as production, but on the RAM-only
+  # cloned database. Never grant the test container a production DB URL.
+  for needed in node; do
+    command -v "$needed" >/dev/null || {
+      echo 'Migration rehearsal prerequisite unavailable' >&2; exit 2;
+    }
+  done
+  [[ -f dist/migrations-cli.js && -f dist/migrations.js &&
+     -f db/001_inventory.pgsql ]] || {
+    echo 'Reviewed migration build or SQL directory unavailable' >&2
     exit 2
   }
-  test_image='kicad-mcp-pro-cloud:production'
+  test_image="${KICAD_CLOUD_RESTORE_TEST_IMAGE:-kicad-mcp-pro-cloud:production}"
   docker image inspect "$test_image" >/dev/null || {
-    echo 'Existing approved runtime image unavailable' >&2
+    echo 'Existing reviewed migration runtime image unavailable' >&2
     exit 2
   }
-  run_migration(){
+  run_migration() {
     local action="$1"
-    docker run --rm --network "$network" --entrypoint node \
+    docker run --rm --network "$network" --read-only --pids-limit 64 \
+      --memory 384m --entrypoint node \
       --mount "type=bind,src=$PWD,dst=/app/workspace,readonly" \
       --workdir /app/workspace \
       -e "DATABASE_URL=postgresql://restore_fixture:$fixture_pass@$target:5432/restore_fixture" \
       "$test_image" /app/workspace/dist/migrations-cli.js "$action"
   }
-  before="$(run_migration --status)"
-  [[ "$before" == *'"current":6'* ]] || {
-    echo 'Restored schema is not reviewed baseline 006' >&2; exit 1;
+  source_version="$(query_live 'SELECT coalesce(max(version),0) FROM schema_migrations')"
+  [[ "$source_version" =~ ^[0-9]+$ ]] || {
+    echo 'Invalid source migration history' >&2; exit 1
   }
+  latest_version="$(node --input-type=module -e \
+    "import {migrationFiles} from './dist/migrations.js';process.stdout.write(String(migrationFiles.length))")"
+  [[ "$latest_version" =~ ^[0-9]+$ &&
+     "$latest_version" -ge "$source_version" ]] || {
+    echo 'Reviewed migration manifest is behind the live schema' >&2; exit 1
+  }
+  before="$(run_migration --status)"
+  [[ "$before" == *"\"current\":$source_version"* ]] || {
+    echo 'Restored snapshot migration history differs from the reviewed runner' >&2
+    exit 1
+  }
+  original_grants="$(query_target 'SELECT count(*)::text || chr(58) || count(*) FILTER (WHERE enabled) FROM connector_managed_read_access')"
   run_migration --apply >/dev/null
   after="$(run_migration --status)"
-  [[ "$after" == *'"current":12'* ]] || {
-    echo 'Clone migration failed to reach schema 012' >&2; exit 1;
+  [[ "$after" == *'"pending":[]'* && "$after" == *"\"current\":$latest_version"* ]] || {
+    echo 'Migrated clone did not reach the reviewed schema version' >&2; exit 1
   }
   [[ "$(run_migration --apply)" == "$after" ]] || {
-    echo 'Migrated clone did not apply idempotently' >&2; exit 1;
+    echo 'Migrated clone did not apply idempotently' >&2; exit 1
   }
-  for table in pairing_challenges device_credentials \
-    device_handshake_challenges connector_sessions \
-    pairing_review_budget pairing_device_budget; do
-    [[ "$(query_target "SELECT to_regclass('$table') IS NOT NULL")" == t ]] || {
-      echo 'Device table absent from migrated clone' >&2; exit 1;
+  [[ "$original_grants" == "$(query_target 'SELECT count(*)::text || chr(58) || count(*) FILTER (WHERE enabled) FROM connector_managed_read_access')" ]] || {
+    echo 'Existing managed project access changed during clone migration' >&2
+    exit 1
+  }
+  if (( latest_version >= 20 )); then
+    [[ "$(query_target "SELECT to_regclass('connector_write_proof_reservations') IS NOT NULL")" == t ]] || {
+      echo 'Write proof reservation table missing from clone' >&2; exit 1
     }
-  done
+  fi
+  if (( latest_version >= 21 )); then
+    [[ "$(query_target 'SELECT count(*) FROM connector_managed_read_access WHERE cardinality(native_operations)>0')" == 0 &&
+       "$(query_target "SELECT count(*) FROM pg_constraint WHERE conname='managed_native_read_operations_allowlist'")" == 1 ]] || {
+      echo 'Native operation permissions are unexpectedly enabled or unconstrained' >&2
+      exit 1
+    }
+  fi
   for q in 'SELECT count(*) FROM devices' \
     'SELECT count(*) FROM projects' \
     'SELECT count(*) FROM project_client_grants' \
     'SELECT count(*) FROM "users"' \
     'SELECT count(*) FROM "oauthClient"'; do
     [[ "$(query_live "$q")" == "$(query_target "$q")" ]] || {
-      echo 'Existing metadata count changed after clone migration' >&2; exit 1;
+      echo 'Existing metadata count changed during clone migration' >&2; exit 1
     }
   done
-  [[ "$(query_live 'SELECT max(version) FROM schema_migrations')" == 6 ]] || {
-    echo 'Live schema no longer at originally inspected version' >&2; exit 1;
+  [[ "$(query_live 'SELECT max(version) FROM schema_migrations')" == "$source_version" ]] || {
+    echo 'Live source schema changed during the rehearsal' >&2; exit 1
   }
-  echo 'PASS: production backup clone migrated 006 to 012 safely; counts preserved; repeat apply idempotent'
+  printf 'PASS: full backup clone migrated %s to %s with checked history, empty native grants, stable metadata and idempotent reapply\n' \
+    "$source_version" "$latest_version"
 fi
