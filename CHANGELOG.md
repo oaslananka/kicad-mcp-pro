@@ -10,6 +10,20 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.14.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.13.0...mcp-server-v4.14.0) (2026-11-12)
+
+
+### Features
+
+* **cloud:** unify graphite workspace and modernize portable MCP App ([#1707](https://github.com/oaslananka/kicad-mcp-pro/issues/1707)) ([3307b1c](https://github.com/oaslananka/kicad-mcp-pro/commit/3307b1cdfe3892cc440286d9a96792cff6969ad0))
+
+
+### Bug Fixes
+
+* **cloud:** compact accessible mobile workspace ([#1709](https://github.com/oaslananka/kicad-mcp-pro/issues/1709)) ([c7cf3ee](https://github.com/oaslananka/kicad-mcp-pro/commit/c7cf3eede6f83639218660ed3e67ca82cff82a72))
+* **cloud:** run isolated native PCB DRC safely on Windows ([#1706](https://github.com/oaslananka/kicad-mcp-pro/issues/1706)) ([e94e1cb](https://github.com/oaslananka/kicad-mcp-pro/commit/e94e1cb4e0094313eeb75337e5ec9d21d44c4941))
+* **cloud:** stop rejected remote sessions with recovery guidance ([#1708](https://github.com/oaslananka/kicad-mcp-pro/issues/1708)) ([36ee499](https://github.com/oaslananka/kicad-mcp-pro/commit/36ee4995a47134dff944597331ce054a01b4f8f6))
+
 ## [4.13.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.12.0...mcp-server-v4.13.0) (2026-11-12)
 
 
