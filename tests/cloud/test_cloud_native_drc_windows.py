@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -103,6 +105,75 @@ def test_windows_missing_binary_handle_capability_fails_closed(
     scratch.mkdir()
     with pytest.raises(LocalReadDeniedError):
         copy_windows_drc_inputs(selected.directory, selected.filename_stem, scratch)
+
+
+def test_windows_missing_required_handle_fails_closed(
+    selected: OperatorProject, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_project_path
+
+    original = cloud_windows_project_path._open_checked
+
+    def missing_board(path: str, **kwargs: object) -> int | None:
+        if path.endswith("LED.kicad_pcb"):
+            return None
+        return original(path, **kwargs)
+
+    monkeypatch.setattr(cloud_windows_project_path, "_open_checked", missing_board)
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    with pytest.raises(LocalReadDeniedError):
+        copy_windows_drc_inputs(selected.directory, selected.filename_stem, scratch)
+
+
+def test_windows_crt_conversion_failure_closes_handle(
+    selected: OperatorProject, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import msvcrt
+
+    def reject_handle(*_: object) -> int:
+        raise OSError("simulated conversion failure")
+
+    monkeypatch.setattr(msvcrt, "open_osfhandle", reject_handle)
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    with pytest.raises(LocalReadDeniedError):
+        copy_windows_drc_inputs(selected.directory, selected.filename_stem, scratch)
+
+
+def test_windows_rejects_invalid_project_name_and_directory(
+    selected: OperatorProject, tmp_path: Path
+) -> None:
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    with pytest.raises(LocalReadDeniedError):
+        copy_windows_drc_inputs(selected.directory, "../private", scratch)
+    with pytest.raises(LocalReadDeniedError):
+        copy_windows_drc_inputs(tmp_path / "not-present", "LED", scratch)
+
+
+def test_windows_native_drc_discovers_installed_cli_without_path(
+    selected: OperatorProject, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_native_drc, discovery
+
+    trusted_cli = tmp_path / "trusted-kicad-cli.exe"
+    trusted_cli.write_bytes(b"test executable placeholder")
+    monkeypatch.setattr(cloud_native_drc.shutil, "which", lambda _: None)
+    monkeypatch.setattr(discovery, "discover_kicad_cli", lambda: trusted_cli)
+
+    def native(argv: list[str], **_: object) -> SimpleNamespace:
+        assert argv[0] == str(trusted_cli)
+        assert argv[1:4] == ["pcb", "drc", "--format"]
+        Path(argv[-2]).write_text(
+            json.dumps({"violations": [{}], "unconnected_items": [{}, {}]}),
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(cloud_native_drc.subprocess, "run", native)
+    counts = cloud_native_drc.summarize_native_pcb_drc(selected)
+    assert counts == {"violations": 1, "unconnectedItems": 2}
 
 
 def test_native_windows_cli_drc_on_disposable_public_fixture(tmp_path: Path) -> None:
