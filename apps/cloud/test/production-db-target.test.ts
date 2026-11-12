@@ -13,8 +13,15 @@ case "$1" in
     [[ "$MOCK_DISCOVERY_FAIL" != 1 ]] || exit 1
     printf '%s\n' "$MOCK_MATCHES"
     ;;
-  container) [[ "$MOCK_LEGACY" == 1 ]] ;;
-  inspect) printf '%s\n' "$MOCK_HEALTH" ;;
+  container) [[ "$MOCK_LEGACY" != 0 ]] ;;
+  inspect)
+    if [[ "$2" == kicad-cloud-db-1 && "$3" == --format &&
+      "$4" == '{{.State.Running}}' ]]; then
+      if [[ "$MOCK_LEGACY" == stopped ]]; then printf 'false\n'; else printf 'true\n'; fi
+    else
+      printf '%s\n' "$MOCK_HEALTH"
+    fi
+    ;;
   exec) printf '%s\n' "$MOCK_DATABASE" ;;
   *) exit 2 ;;
 esac
@@ -28,6 +35,7 @@ test("KiCad Cloud backup target chooses only one healthy verified database",
       const cases=[
         {name:"Coolify production database",matches:"coolify-postgres",legacy:"0",health:"healthy",database:"kicad_cloud",ok:true,expected:"coolify-postgres"},
         {name:"legacy Compose fallback",matches:"",legacy:"1",health:"healthy",database:"kicad_cloud",ok:true,expected:"kicad-cloud-db-1"},
+        {name:"stopped legacy ignored",matches:"coolify-postgres",legacy:"stopped",health:"healthy",database:"kicad_cloud",ok:true,expected:"coolify-postgres"},
         {name:"no matching database",matches:"",legacy:"0",health:"healthy",database:"kicad_cloud",ok:false},
         {name:"two Coolify databases",matches:"db-one\ndb-two",legacy:"0",health:"healthy",database:"kicad_cloud",ok:false},
         {name:"legacy plus Coolify ambiguous",matches:"coolify-postgres",legacy:"1",health:"healthy",database:"kicad_cloud",ok:false},

@@ -14,7 +14,8 @@ kicad_cloud_database_container() {
   while IFS= read -r candidate; do
     [[ -z "$candidate" ]] || matches+=("$candidate")
   done <<< "$listing"
-  if docker container inspect kicad-cloud-db-1 >/dev/null 2>&1; then
+  if docker container inspect kicad-cloud-db-1 >/dev/null 2>&1 &&
+    [[ "$(docker inspect kicad-cloud-db-1 --format '{{.State.Running}}')" == true ]]; then
     matches+=(kicad-cloud-db-1)
   fi
   if [[ ${#matches[@]} -ne 1 ]]; then
