@@ -329,6 +329,8 @@ def _wait_for_owner_approval(
         "deviceCode": device_code,
         "signature": signature,
     }
+    # Keep quick approval responsive while leaving budget for a retry.
+    polling_started = time.monotonic()
     while True:
         remaining = expiry_ms - time.time_ns() // 1_000_000
         if remaining <= 0:
@@ -347,7 +349,10 @@ def _wait_for_owner_approval(
             start_owner_review = None
         elif approved:
             return
-        time.sleep(min(8.0, remaining / 1000))
+        # Cloud permits 40 source-status checks per 15 minutes. A full
+        # five-minute window at 8 s intervals can exhaust the next retry.
+        interval = 8.0 if time.monotonic() - polling_started < 32.0 else 24.0
+        time.sleep(min(interval, remaining / 1000))
 
 
 def start_enrollment(origin: str, alias: str, keyfile: Path) -> tuple[str, str, str, int]:
