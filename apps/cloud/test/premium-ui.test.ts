@@ -93,7 +93,8 @@ test("usage page never invents plan limits, activity or account identity",()=>{
   assert.match(html, /View connected devices/);
   assert.doesNotMatch(html, /473|10[.,]000|Standard Developer Plan|Active Plan|oaslananka@gmail.com/);
   assert.doesNotMatch(html, /Last 6 months, grouped by month|project_summary/);
-  assert.match(html, /<span class="profile-identity" title="Account">Account<\/span>/);
+  assert.match(html, /<a href="\/settings" class="sidebar-profile" aria-label="Account and security settings" title="Account">/);
+  assert.match(html, /<span class="profile-identity">Account<\/span>/);
   assert.match(html, /src="\/assets\/icon-32\.png"/);
   assert.doesNotMatch(html, /<link[^>]+type="image\/svg\+xml"/);
 });
