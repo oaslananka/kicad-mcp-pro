@@ -16,7 +16,7 @@ import type {RequestSourceResolver} from "./trusted-ingress.js";
 export type DeviceProofPort=Pick<PgDeviceHandshakes,"issue"|"verify"|"cancel">;
 export type ManagedReadGrantPort={
   isEnabled:(oauth:TrustedOAuthReadIdentity,deviceId:string,projectId:string,
-    operation:"project_summary")=>Promise<boolean>;
+    operation:ReadOperation)=>Promise<boolean>;
 };
 /**
  * High-assurance mode: a separately verified owner approval must be consumed.
@@ -261,6 +261,8 @@ export function attachConnectorWebSocket(
     /** Separate default-OFF owner-managed project switch; original OAuth and
      * signed device/session authorization remain mandatory for every read. */
     managedGrant?:ManagedReadGrantPort;
+    /** Default OFF; device must additionally claim this native operation. */
+    managedNativeRead?:boolean;
     /**
      * Explicit no-customer metadata pilot: the owner already granted the
      * OAuth client/project in Cloud and manually started a one-shot device
@@ -310,6 +312,8 @@ export function attachConnectorWebSocket(
   // approval dependency, even when used outside the production entrypoint.
   if(options.operatorLocalOnce&&options.ownerConsent)
     throw Error("Conflicting owner approval modes");
+  if(options.managedNativeRead&&!options.managedGrant)
+    throw Error("Managed native reads require independently scoped owner grants");
   if(options.managedGrant&&(options.operatorLocalOnce||options.ownerConsent))
     throw Error("Managed Connector cannot share one-shot approval modes");
   if(options.operatorNativeDrcOnce&&!options.operatorLocalOnce)
@@ -526,7 +530,7 @@ export function attachConnectorWebSocket(
             const allowed=await options.connections.authorizeOutgoingSummary(
               ws,waitingOAuth.get(pending)!,pending.projectId) &&
               (!options.managedGrant||await options.managedGrant.isEnabled(
-                waitingOAuth.get(pending)!,entry.device,pending.projectId,"project_summary"));
+                waitingOAuth.get(pending)!,entry.device,pending.projectId,pending.operation));
             entry.validating=undefined;
             clearTimeout(pending.timer);
             // The database grant check is asynchronous. Neither its start
@@ -616,26 +620,29 @@ export function attachConnectorWebSocket(
    */
   function prepareRead(oauth:TrustedOAuthReadIdentity,
     deviceId:string,projectId:string,operation:ReadOperation):PreparedRead|null{
-    if(operation==="run_drc"&&!(options.operatorLocalOnce&&options.operatorNativeDrcOnce))
+    if(operation==="run_drc"&&!(options.managedNativeRead||(options.operatorLocalOnce&&options.operatorNativeDrcOnce)))
       return null;
     if(operation==="project_worker_inspection"&&
-       !(options.operatorLocalOnce&&options.operatorInspectionOnce))return null;
+       !(options.managedNativeRead||(options.operatorLocalOnce&&options.operatorInspectionOnce)))return null;
     if(operation==="project_board_counts"&&
-       !(options.operatorLocalOnce&&options.operatorBoardCountsOnce))return null;
+       !(options.managedNativeRead||(options.operatorLocalOnce&&options.operatorBoardCountsOnce)))return null;
     if(operation==="project_schematic_counts"&&
-       !(options.operatorLocalOnce&&options.operatorSchematicCountsOnce))return null;
+       !(options.managedNativeRead||(options.operatorLocalOnce&&options.operatorSchematicCountsOnce)))return null;
     if(stopped||(!options.ownerConsent&&!options.operatorLocalOnce&&!options.managedGrant)||!oauth||
        typeof oauth.ownerSub!=="string"||!oauth.ownerSub||
        typeof oauth.clientId!=="string"||!oauth.clientId||
        !/^[0-9a-f-]{36}$/i.test(deviceId)||
        !/^[0-9a-f-]{36}$/i.test(projectId))return null;
     const active=readyDevices.get(socketKey(oauth.ownerSub,deviceId));
+    const managedDrc=Boolean(options.managedGrant&&options.managedNativeRead&&operation==="run_drc");
     if(!active||active.entry.phase!=="ready"||
        (active.entry.readSent&&!options.managedGrant)||active.entry.validating||
        active.entry.awaiting||active.socket.readyState!==WebSocket.OPEN||
-       (active.entry.sessionDeadline??0)-performance.now()<40_000||
+       (active.entry.sessionDeadline??0)-performance.now()<(managedDrc?75_000:40_000)||
        reservedSockets.has(active.socket))return null;
-    if(!allowsClaimedRead(active.entry.catalogClaim??null,operation))return null;
+    if(options.managedNativeRead&&operation!=="project_summary"&&
+       !active.entry.catalogClaim)return null;
+     if(!allowsClaimedRead(active.entry.catalogClaim??null,operation))return null;
     const intent=Object.freeze({
       requestId:randomUUID(),ownerSub:oauth.ownerSub,clientId:oauth.clientId,
       deviceId,projectId,origin:options.publicOrigin,
@@ -682,21 +689,24 @@ export function attachConnectorWebSocket(
   async function requestRead(oauth:TrustedOAuthReadIdentity,deviceId:string,
     projectId:string,prepared:PreparedRead|undefined,
     operation:ReadOperation):Promise<ReadResult|null>{
-    if(operation==="run_drc"&&!(options.operatorLocalOnce&&options.operatorNativeDrcOnce))
+    if(operation==="run_drc"&&!(options.managedNativeRead||(options.operatorLocalOnce&&options.operatorNativeDrcOnce)))
       return null;
     if(operation==="project_worker_inspection"&&
-       !(options.operatorLocalOnce&&options.operatorInspectionOnce))return null;
+       !(options.managedNativeRead||(options.operatorLocalOnce&&options.operatorInspectionOnce)))return null;
     if(operation==="project_board_counts"&&
-       !(options.operatorLocalOnce&&options.operatorBoardCountsOnce))return null;
+       !(options.managedNativeRead||(options.operatorLocalOnce&&options.operatorBoardCountsOnce)))return null;
     if(operation==="project_schematic_counts"&&
-       !(options.operatorLocalOnce&&options.operatorSchematicCountsOnce))return null;
+       !(options.managedNativeRead||(options.operatorLocalOnce&&options.operatorSchematicCountsOnce)))return null;
     if(stopped||(!options.ownerConsent&&!options.operatorLocalOnce&&!options.managedGrant)||!oauth||typeof oauth.ownerSub!=="string"||
       !/^[0-9a-f-]{36}$/i.test(deviceId)||
       !/^[0-9a-f-]{36}$/i.test(projectId))return null;
     const active=readyDevices.get(socketKey(oauth.ownerSub,deviceId));
     if(!active)return null;
     const {socket,entry}=active;
-    if(!allowsClaimedRead(entry.catalogClaim??null,operation))return null;
+    const managedDrc=Boolean(options.managedGrant&&options.managedNativeRead&&operation==="run_drc");
+    if(options.managedNativeRead&&operation!=="project_summary"&&
+       !entry.catalogClaim)return null;
+     if(!allowsClaimedRead(entry.catalogClaim??null,operation))return null;
     // Never dispatch using the old direct-consent shortcut.
     if(!prepared||typeof prepared!=="object")return null;
     const reserved=preparedIntents.get(prepared);
@@ -723,7 +733,7 @@ export function attachConnectorWebSocket(
     if(entry.phase!=="ready"||(entry.readSent&&!options.managedGrant)||
        entry.awaiting||entry.validating||
       socket.readyState!==WebSocket.OPEN||
-      (entry.sessionDeadline??0)-performance.now()<10_000)return null;
+      (entry.sessionDeadline??0)-performance.now()<(managedDrc?65_000:10_000))return null;
     const sequence=entry.readSequence.reserve();
     if(sequence===null)return null;
     if(!options.managedGrant)entry.readSent=true; // Preserve original one-shot semantics.
@@ -740,7 +750,7 @@ export function attachConnectorWebSocket(
     try{
       consented=await Promise.race([
         options.managedGrant ?
-          options.managedGrant.isEnabled(oauth,deviceId,projectId,"project_summary") :
+          options.managedGrant.isEnabled(oauth,deviceId,projectId,operation) :
         options.operatorLocalOnce ? Promise.resolve(true) :
           options.ownerConsent!.consume({oauth,deviceId,projectId,requestId,
             origin:options.publicOrigin,operation:"project_summary",
@@ -791,7 +801,7 @@ export function attachConnectorWebSocket(
     }
     if(preflightTimedOut){reject(socket);return null;}
     if(!allowed||entry.phase!=="ready"||socket.readyState!==WebSocket.OPEN||
-      (entry.sessionDeadline??0)-performance.now()<10_000)return null;
+      (entry.sessionDeadline??0)-performance.now()<(managedDrc?65_000:10_000))return null;
     if(performance.now()>=ownerExpiresAtMonotonic||Date.now()>=ownerExpiresAtUnixMs){
       reject(socket);return null;
     }
@@ -800,12 +810,17 @@ export function attachConnectorWebSocket(
         entry.awaiting=undefined;
         entry.validating=undefined;
         resolve(null);reject(socket);
-      },12_000);
+      },managedDrc?55_000:12_000);
       timer.unref();
       // Wall milliseconds remain in the wire frame; local authorization cannot
       // be extended by changing the host system clock.
-      const deadline=Math.min(Date.now()+8_000,ownerExpiresAtUnixMs);
-      const monotonicDeadline=Math.min(performance.now()+8_000,ownerExpiresAtMonotonic);
+      // The 30s managed intent is checked before dispatch. A signed, explicitly
+      // scoped DRC job then has its own bounded deadline for the Windows CLI.
+      // Legacy one-shot and metadata reads preserve their original 8s fence.
+      const deadline=managedDrc?Date.now()+50_000:
+        Math.min(Date.now()+8_000,ownerExpiresAtUnixMs);
+      const monotonicDeadline=managedDrc?performance.now()+50_000:
+        Math.min(performance.now()+8_000,ownerExpiresAtMonotonic);
       if(deadline<=Date.now()||monotonicDeadline<=performance.now()){
         clearTimeout(timer);resolve(null);reject(socket);return;
       }

@@ -99,8 +99,9 @@ async def serve_authenticated_reads(
     dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch],
     *,
     max_reads: int = _MAX_MANAGED_READS,
+    allow_native_drc: bool = False,
 ) -> HandshakeReceipt:
-    """Serve bounded serial project-summary reads on an already signed socket.
+    """Serve bounded serial, independently authorized READs on a signed socket.
 
     Does not grant any read by itself. Dispatcher's independently sourced
     authorization is checked around every file read and before each send;
@@ -112,11 +113,12 @@ async def serve_authenticated_reads(
         or not callable(dispatcher_factory)
         or type(max_reads) is not int
         or not 1 <= max_reads <= _MAX_MANAGED_READS
+        or type(allow_native_drc) is not bool
     ):
         raise CloudHandshakeDeniedError(_DENIED)
 
     dispatcher = dispatcher_factory(receipt)
-    if not isinstance(dispatcher, LocalReadDispatch) or dispatcher.native_drc:
+    if not isinstance(dispatcher, LocalReadDispatch) or dispatcher.native_drc != allow_native_drc:
         raise CloudHandshakeDeniedError(_DENIED)
     try:
         dispatcher.assert_transport_session(

@@ -1031,12 +1031,18 @@ test("native DRC count tool is separate, scoped, revocable and OFF unless opted 
   let reads=0;
   let grantActive=true;
   let revokeDuringRead=false;
+  let nativeGrantActive=true;
+  let revokeNativeGrantDuringRead=false;
   const scoped:Inventory={
     ...inventory,
     async getProject(owner,clientId,projectId){
       if(!grantActive)return null;
       return inventory.getProject(owner,clientId,projectId);
     }
+  };
+  const managed={
+    isEnabled:async(_oauth:unknown,_deviceId:string,_projectId:string,operation:string)=>
+      operation!=="run_drc"||nativeGrantActive
   };
   const relay={
     prepareOwnerSummary:testPrepared,
@@ -1050,6 +1056,7 @@ test("native DRC count tool is separate, scoped, revocable and OFF unless opted 
       projectId:string,prepared:{requestId:string}){
       reads++;
       if(revokeDuringRead)grantActive=false;
+      if(revokeNativeGrantDuringRead)nativeGrantActive=false;
       return {kind:"connector.local_drc_preview" as const,version:1 as const,
         requestId:prepared.requestId,projectId,operation:"run_drc" as const,
         counts:{violations:2,unconnectedItems:0}};
@@ -1060,7 +1067,7 @@ test("native DRC count tool is separate, scoped, revocable and OFF unless opted 
   });
   const enabled=createHttpServer(config,scoped,verify,{
     summaryRelay:()=>relay,mcpProjectPresenceEnabled:true,
-    mcpProjectNativeDrcEnabled:true
+    mcpProjectNativeDrcEnabled:true,managedRead:managed as never
   });
   try{
     for(const [proxy,isEnabled] of [[disabled,false],[enabled,true]] as const){
@@ -1108,6 +1115,14 @@ test("native DRC count tool is separate, scoped, revocable and OFF unless opted 
       assert.match(JSON.stringify(revoked.data),/"available":false/);
       assert.doesNotMatch(JSON.stringify(revoked.data),/"violations"/);
       assert.equal(reads,3);
+      grantActive=true;revokeDuringRead=false;revokeNativeGrantDuringRead=true;
+      const revokedNative=await invoke("tools/call",{
+        name:"get_project_drc_counts",arguments:{project_id:id}
+      },"test-user-a","get_project_drc_counts");
+      assert.equal(revokedNative.status,200);
+      assert.match(JSON.stringify(revokedNative.data),/"available":false/);
+      assert.doesNotMatch(JSON.stringify(revokedNative.data),/"violations"/);
+      assert.equal(reads,4,"The final managed operation grant must block stale DRC data");
     }
   }finally{
     grantActive=true;

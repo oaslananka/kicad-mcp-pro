@@ -101,6 +101,7 @@ export type CloudHttpServices={
   localDevWorkspace?:boolean;
   devices?:DeviceManagementPort;
   managedRead?:ManagedReadPort;
+  managedNativeReadEnabled?:boolean;
   pairings?:PairingReviewPort;
   pairingDevice?:PairingDevicePort;
   deviceSource?:RequestSourceResolver;
@@ -204,13 +205,14 @@ async function handleRequest(
           answer=await consentResponse(browserRequest,identity,config.publicOrigin,config.managementClientId);
         } else if (path==="/connections" || path==="/connections/revoke") {
           answer=await connectionsResponse(browserRequest,identity,config.publicOrigin,grants);
-        } else if(path==="/devices" || path==="/devices/revoke" || path==="/devices/delete" || path==="/devices/enable" || path==="/devices/projects/create" || path==="/devices/projects/grant" || path==="/devices/projects/managed" || path==="/devices/projects/delete" ||
+        } else if(path==="/devices" || path==="/devices/revoke" || path==="/devices/delete" || path==="/devices/enable" || path==="/devices/projects/create" || path==="/devices/projects/grant" || path==="/devices/projects/managed" || path==="/devices/projects/native" || path==="/devices/projects/delete" ||
           path==="/devices/projects/browse" || path==="/devices/projects/select" ||
           path==="/devices/projects/rename"){
           answer=await devicesResponse(browserRequest,identity,config.publicOrigin,
             devices,Boolean(pairingDevice),grants,
             summaryRelay?.()?.isDeviceConnected,services.managedRead,
-            services.localDevWorkspace?summaryRelay?.()?.localFolders:undefined);
+            services.localDevWorkspace?summaryRelay?.()?.localFolders:undefined,
+             services.managedNativeReadEnabled===true);
         } else if(path==="/devices/pairing" || path==="/devices/pairing/review"){
           answer=await pairingBrowserResponse(browserRequest,identity,config.publicOrigin,pairings);
         } else {
@@ -551,9 +553,7 @@ async function handleRequest(
             actor.sub,actor.clientId,actor.issuedAt))return null;
           if(services.managedRead&&!await services.managedRead.isEnabled(
             oauth,deviceId,projectId,"project_summary"))return null;
-          if(services.managedRead &&
-            !await services.managedRead.isEnabled(oauth,deviceId,projectId,"project_summary"))
-            return null;
+
           try{await verify(matched[1]);}catch{return null;}
           if(!await inventory.isAccessTokenAllowed(actor.sub,actor.clientId,actor.issuedAt))return null;
           const {projectPresent,boardPresent,schematicPresent}=result.files;
@@ -580,6 +580,8 @@ async function handleRequest(
           try{await verify(matched[1]);}catch{return null;}
           if(!await inventory.isAccessTokenAllowed(
             actor.sub,actor.clientId,actor.issuedAt))return null;
+          if(services.managedRead&&!await services.managedRead.isEnabled(
+            oauth,deviceId,projectId,"run_drc"))return null;
           return result.counts;
         } : undefined;
       const inspectionReader=services.mcpProjectInspectionEnabled&&summaryRelay?.()
@@ -606,6 +608,8 @@ async function handleRequest(
           try{await verify(matched[1]);}catch{return null;}
           if(!await inventory.isAccessTokenAllowed(
             actor.sub,actor.clientId,actor.issuedAt))return null;
+          if(services.managedRead&&!await services.managedRead.isEnabled(
+            oauth,deviceId,projectId,"project_worker_inspection"))return null;
           return result.status;
         } : undefined;
       const boardReader=services.mcpProjectBoardCountsEnabled&&summaryRelay?.()
@@ -630,6 +634,8 @@ async function handleRequest(
           try{await verify(matched[1]);}catch{return null;}
           if(!await inventory.isAccessTokenAllowed(actor.sub,actor.clientId,actor.issuedAt))
             return null;
+          if(services.managedRead&&!await services.managedRead.isEnabled(
+            oauth,deviceId,projectId,"project_board_counts"))return null;
           return {...result.counts,source:result.source};
         } : undefined;
       const schematicReader=services.mcpProjectSchematicCountsEnabled&&summaryRelay?.()
@@ -654,6 +660,8 @@ async function handleRequest(
           try{await verify(matched[1]);}catch{return null;}
           if(!await inventory.isAccessTokenAllowed(actor.sub,actor.clientId,actor.issuedAt))
             return null;
+          if(services.managedRead&&!await services.managedRead.isEnabled(
+            oauth,deviceId,projectId,"project_schematic_counts"))return null;
           return result.counts;
         } : undefined;
       const signedRelay=summaryRelay?.();

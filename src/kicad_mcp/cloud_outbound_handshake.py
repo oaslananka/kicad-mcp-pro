@@ -63,6 +63,7 @@ class OutboundSessionOptions:
     board_counts_pilot: bool = False
     schematic_counts_pilot: bool = False
     owner_managed_read: bool = False
+    managed_native_drc: bool = False
     # Opt-in ONLY after the target Cloud deployment accepts extended device.hello.
     # Legacy devices and servers retain the byte-identical v1 handshake by default.
     advertise_catalog: bool = False
@@ -539,6 +540,10 @@ def _validated_outbound_connection(
 
 
 def _validate_outbound_options(options: OutboundSessionOptions) -> None:
+    if type(options.managed_native_drc) is not bool or (
+        options.managed_native_drc and not options.owner_managed_read
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     if options.owner_managed_read and (
         options.dispatcher_factory is None
         or options.inspection_factory is not None
@@ -564,6 +569,8 @@ def _catalog_hello_metadata(options: OutboundSessionOptions) -> dict[str, object
     operations: list[str] = []
     if options.owner_managed_read and options.dispatcher_factory is not None:
         operations.append("project_summary")
+        if options.managed_native_drc:
+            operations.append("run_drc")
     elif options.dispatcher_factory is not None and options.operator_presence_pilot:
         operations.append("project_summary")
         if options.operator_native_drc_pilot:
@@ -602,7 +609,11 @@ async def _complete_outbound_operation(
         if options.dispatcher_factory is None:
             raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
         return await serve_authenticated_reads(
-            socket, receipt, options.dispatcher_factory, max_reads=options.managed_max_reads
+            socket,
+            receipt,
+            options.dispatcher_factory,
+            max_reads=options.managed_max_reads,
+            allow_native_drc=options.managed_native_drc,
         )
     if options.inspection_factory is not None:
         return await _complete_authorized_inspection(
@@ -931,6 +942,7 @@ async def execute_owner_managed_read_session(
     tls_context: ssl.SSLContext | None = None,
     max_reads: int = 16,
     on_ready: Callable[[HandshakeReceipt], None] | None = None,
+    allow_native_drc: bool = False,
 ) -> HandshakeReceipt:
     """One signed, owner-managed read-only session; no key loading or persistence.
 
@@ -940,7 +952,7 @@ async def execute_owner_managed_read_session(
     project grant, device signature and revocation. This function does NOT
     enroll a device, install a service, or grant unattended signer access.
     """
-    if not callable(dispatcher_factory):
+    if not callable(dispatcher_factory) or type(allow_native_drc) is not bool:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     return await _perform_outbound_session(
         origin=origin,
@@ -952,6 +964,8 @@ async def execute_owner_managed_read_session(
         options=OutboundSessionOptions(
             dispatcher_factory=dispatcher_factory,
             owner_managed_read=True,
+            managed_native_drc=allow_native_drc,
+            advertise_catalog=allow_native_drc,
             managed_max_reads=max_reads,
             on_ready=on_ready,
         ),

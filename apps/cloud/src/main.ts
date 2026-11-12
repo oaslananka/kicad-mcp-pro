@@ -28,6 +28,10 @@ const inventory = new PgGrantManagement(config.databaseUrl,Boolean(identity));
 const wsEnabled=process.env.CONNECTOR_WS_ENABLED==="true";
 // Managed mode is OFF unless explicitly enabled by the Cloud operator.
 const managedReadEnabled=process.env.CONNECTOR_MANAGED_READ_ENABLED==="true";
+// A separate OFF-by-default native read gate never authorizes an operation itself.
+const managedNativeReadEnabled=process.env.CONNECTOR_MANAGED_NATIVE_READ_ENABLED==="true";
+if(managedNativeReadEnabled&&!managedReadEnabled)
+  throw Error("Managed native reads require signed managed Connector mode");
 if(wsEnabled&&!localDevWorkspace&&!config.publicOrigin.startsWith("https://")){
   throw new Error("Connector WebSocket requires externally terminated HTTPS");
 }
@@ -91,8 +95,9 @@ const deviceSource=(wsEnabled||pairingDeviceEnabled)?
 // Lazy binding keeps all read surfaces absent when connector WS is disabled.
 let connectorRelay:ReturnType<typeof attachConnectorWebSocket>|null=null;
 const server=createHttpServer(config, inventory, createVerifier(config), {grants:inventory, identity:identity, localDevWorkspace, devices:deviceManagement, managedRead, pairings:pairingReview, pairingDevice:pairingDevice, deviceSource:deviceSource,
+  managedNativeReadEnabled,
   mcpProjectPresenceEnabled:operatorLocalOnce||managedReadEnabled,
-  mcpProjectNativeDrcEnabled:operatorNativeDrc,
+  mcpProjectNativeDrcEnabled:operatorNativeDrc||managedNativeReadEnabled,
   mcpProjectInspectionEnabled:operatorInspection,
   mcpProjectBoardCountsEnabled:operatorBoardCounts,
   mcpProjectSchematicCountsEnabled:operatorSchematicCounts,summaryRelay:()=>connectorRelay,
@@ -102,7 +107,7 @@ const connectorWs=wsEnabled&&connectorPool?attachConnectorWebSocket(server,{
   sourceOf:deviceSource!,
   proofs:new PgDeviceHandshakes(connectorPool),
   ...(ownerConsentRuntime?{ownerConsent:ownerConsentRuntime.consent}:{}),
-  ...(managedRead?{managedGrant:managedRead}:{}),
+  ...(managedRead?{managedGrant:managedRead,managedNativeRead:managedNativeReadEnabled}:{}),
   operatorLocalOnce,operatorNativeDrcOnce:operatorNativeDrc,
   operatorInspectionOnce:operatorInspection,
   operatorBoardCountsOnce:operatorBoardCounts,

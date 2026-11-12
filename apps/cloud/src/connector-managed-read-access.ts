@@ -79,6 +79,26 @@ export class PgManagedReadAccess {
     return result.rows.map(row=>row.project_id);
   }
 
+  /** Return only active, explicitly enabled native diagnostic capabilities. */
+  async nativeOperationsByProject(ownerSub:string):Promise<Array<{
+    projectId:string;operations:ManagedNativeOperation[]
+  }>>{
+    if(!ownerSub||ownerSub.length>256)return [];
+    const result=await this.pool.query<{project_id:string;native_operations:string[]}>(
+      "SELECT m.project_id,m.native_operations FROM connector_managed_read_access m "+
+      "JOIN projects p ON p.id=m.project_id "+
+      "JOIN devices d ON d.id=p.device_id AND d.owner_sub=p.owner_sub "+
+      "JOIN device_credentials c ON c.device_id=d.id AND c.owner_sub=d.owner_sub "+
+      "WHERE p.owner_sub=$1 AND m.enabled=true AND p.enabled=true AND "+
+      "d.enabled=true AND c.revoked_at IS NULL AND p.max_mode='readonly'",
+      [ownerSub]
+    );
+    return result.rows.map(row=>({
+      projectId:row.project_id,
+      operations:row.native_operations.filter(validNativeOperation)
+    }));
+  }
+
   /** Deny if absent, wrong operation, disabled, revoked or foreign-owned. */
   async isEnabled(oauth:TrustedOAuthReadIdentity,deviceId:string,projectId:string,
     operation:ReadOperation):Promise<boolean>{
