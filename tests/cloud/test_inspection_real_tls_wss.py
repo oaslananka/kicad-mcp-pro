@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 import ssl
 import time
 from pathlib import Path
@@ -29,6 +30,16 @@ from kicad_mcp.cloud_outbound_handshake import (
 )
 from kicad_mcp.cloud_project_worker_bridge import BoundConnectorProjectWorker
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
+from kicad_mcp.connection import reset_connection
+from kicad_mcp.project.stdio_worker import project_stdio_worker
+from kicad_mcp.server import build_server
+from tests.conftest import call_tool_text
+from tests.gui.test_kicad_gui_live_context import (
+    _discover_executables,
+    _launch_process,
+    _stop_process,
+    _wait_for_live_context,
+)
 
 DEVICE = "11111111-1111-4111-8111-111111111111"
 PROJECT = "55555555-5555-4555-8555-555555555555"
@@ -49,29 +60,82 @@ def _signature(frame: dict[str, object]) -> bytes:
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("operation", "requested_project"),
+    ("operation", "requested_project", "live_gui"),
     [
-        ("project_worker_inspection", PROJECT),
-        ("project_board_counts", PROJECT),
-        ("project_board_counts", FOREIGN_PROJECT),
-        ("run_drc", PROJECT),
+        ("project_worker_inspection", PROJECT, False),
+        ("project_board_counts", PROJECT, False),
+        ("project_board_counts", FOREIGN_PROJECT, False),
+        ("run_drc", PROJECT, False),
+        pytest.param(
+            "project_board_counts",
+            PROJECT,
+            True,
+            id="signed-wss-native-gui-ready-worker",
+            marks=[pytest.mark.gui, pytest.mark.slow],
+        ),
     ],
 )
 async def test_signed_real_tls_wss_reaches_scoped_mcp_without_exposing_paths(
-    tmp_path: Path, operation: str, requested_project: str
+    tmp_path: Path,
+    operation: str,
+    requested_project: str,
+    live_gui: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
 ) -> None:
+    if live_gui and os.environ.get("KICAD_MCP_ENABLE_CLOUD_WORKER_GUI") != "1":
+        pytest.skip("Set KICAD_MCP_ENABLE_CLOUD_WORKER_GUI=1 for signed WSS native GUI test")
     tls_server, ca_pem = _synthetic_tls(tmp_path)
     tls_client = ssl.create_default_context(cadata=ca_pem)
     signer = Ed25519PrivateKey.generate()
     verified = signer.public_key()
     project_dir = tmp_path / "secret project"
     project_dir.mkdir()
-    if operation == "project_board_counts":
-        fixture = Path(__file__).resolve().parents[1] / (
-            "fixtures/benchmark_projects/pass_minimal_mcu_board/demo.kicad_pcb"
+    if live_gui:
+        fixture_dir = (
+            Path(__file__).resolve().parents[2]
+            / "packages/kicad-fixtures/fixtures/clean-led-kicad10"
         )
-        copyfile(fixture, project_dir / "board.kicad_pcb")
-    (project_dir / "board.kicad_pro").write_text('{"confidential": "BOARD_SECRET"}')
+        for suffix in (".kicad_pro", ".kicad_pcb", ".kicad_sch"):
+            copyfile(
+                fixture_dir / f"clean-led-kicad10{suffix}",
+                project_dir / f"clean-led-kicad10{suffix}",
+            )
+    else:
+        if operation == "project_board_counts":
+            fixture = Path(__file__).resolve().parents[1] / (
+                "fixtures/benchmark_projects/pass_minimal_mcu_board/demo.kicad_pcb"
+            )
+            copyfile(fixture, project_dir / "board.kicad_pcb")
+        (project_dir / "board.kicad_pro").write_text('{"confidential": "BOARD_SECRET"}')
+    if live_gui:
+        executables = _discover_executables()
+        assert executables.pcb_editor is not None, "Explicit GUI test requires real KiCad"
+        for name, value in {
+            "KICAD_MCP_PROJECT_DIR": project_dir,
+            "KICAD_MCP_PROJECT_FILE": project_dir / "clean-led-kicad10.kicad_pro",
+            "KICAD_MCP_PCB_FILE": project_dir / "clean-led-kicad10.kicad_pcb",
+            "KICAD_MCP_SCH_FILE": project_dir / "clean-led-kicad10.kicad_sch",
+            "KICAD_MCP_OUTPUT_DIR": tmp_path / "mcp-output",
+        }.items():
+            monkeypatch.setenv(name, str(value))
+        pcb_server = build_server("pcb")
+        await call_tool_text(pcb_server, "kicad_set_project", {"project_dir": str(project_dir)})
+        editor = _launch_process(
+            "signed-wss-live-pcb",
+            executables.pcb_editor,
+            project_dir / "clean-led-kicad10.kicad_pcb",
+            tmp_path / "pcb-process",
+        )
+
+        def stop_editor() -> None:
+            try:
+                _stop_process(editor)
+            finally:
+                reset_connection()
+
+        request.addfinalizer(stop_editor)
+        await _wait_for_live_context(pcb_server, tmp_path / "gui-readiness", editor)
     seen: list[str] = []
     delivered: list[dict[str, object]] = []
 
@@ -171,8 +235,11 @@ async def test_signed_real_tls_wss_reaches_scoped_mcp_without_exposing_paths(
         assert payload["operation"] == operation
         if operation == "project_board_counts":
             assert payload["kind"] == "connector.local_board_counts"
-            assert payload["source"] == "file-backed"
-            assert payload["counts"]["footprints"] == 3
+            assert payload["source"] == ("live-gui" if live_gui else "file-backed")
+            if live_gui:
+                assert payload["counts"]["footprints"] > 0
+            else:
+                assert payload["counts"]["footprints"] == 3
             assert set(payload["counts"]) == {
                 "tracks",
                 "vias",
@@ -197,6 +264,9 @@ async def test_signed_real_tls_wss_reaches_scoped_mcp_without_exposing_paths(
         assert str(project_dir) not in json.dumps(response)
         assert "BOARD_SECRET" not in json.dumps(response)
         assert "cliPath" not in json.dumps(response)
+        if live_gui:
+            assert "LED_A" not in json.dumps(response)
+            assert "clean-led-kicad10.kicad_pcb" not in json.dumps(response)
         await ws.send(
             json.dumps(
                 {
@@ -228,7 +298,7 @@ async def test_signed_real_tls_wss_reaches_scoped_mcp_without_exposing_paths(
                 device_id=DEVICE,
                 project_id=PROJECT,
                 directory=project_dir,
-                filename_stem="board",
+                filename_stem="clean-led-kicad10" if live_gui else "board",
             ),
             current_authorization=lambda: True,
         )
@@ -238,6 +308,15 @@ async def test_signed_real_tls_wss_reaches_scoped_mcp_without_exposing_paths(
     ) as listener:
         assert listener.sockets
         origin = f"https://localhost:{listener.sockets[0].getsockname()[1]}"
+        if live_gui:
+            # This is a warm-worker transport acceptance, NOT cold-start acceptance.
+            # First-use stdio initialization can exceed the signed 40-second
+            # one-shot window. Prove the local worker is ready independently
+            # before exercising TLS/device/session binding over the same PCB.
+            async with asyncio.timeout(16):
+                async with project_stdio_worker(project_dir) as local_client:
+                    result = await local_client.call_tool("pcb_get_board_summary", {})
+                    assert not result.is_error
         reader = (
             execute_operator_board_counts_once
             if operation == "project_board_counts"
