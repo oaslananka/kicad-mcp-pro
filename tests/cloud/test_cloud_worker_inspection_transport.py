@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pytest
@@ -219,4 +221,45 @@ async def test_engine_status_consent_cannot_read_board_counts(tmp_path: Path) ->
 
     with pytest.raises((CloudHandshakeDeniedError, ValueError)):
         await _complete_authorized_inspection(socket, receipt, factory, board_counts=True)
+    assert socket.sent == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("phase", ["startup", "read"])
+async def test_read_deadline_cancels_worker_phase_without_sending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, phase: str
+) -> None:
+    """An expired signed read must not consume the entire longer session budget."""
+    attempted: list[str] = []
+
+    class SlowWorker:
+        async def inspect(self, name: str) -> None:
+            assert name == "kicad_get_server_info"
+            attempted.append("read")
+            await asyncio.sleep(3)
+            pytest.fail("Expired read should never complete")
+
+    @asynccontextmanager
+    async def slow_connect(
+        _self: BoundConnectorProjectWorker, *, device_id: str, project_id: str, session_id: str
+    ):
+        assert (device_id, project_id, session_id) == (DEVICE, PROJECT, SESSION)
+        attempted.append("connect")
+        if phase == "startup":
+            await asyncio.sleep(3)
+        yield SlowWorker()
+
+    monkeypatch.setattr(BoundConnectorProjectWorker, "connect", slow_connect)
+    socket = RecordingSocket(frame(deadlineUnixMs=int(time.time() * 1000) + 350))
+    started = time.monotonic()
+    async with asyncio.timeout(2):
+        with pytest.raises(CloudHandshakeDeniedError):
+            await _complete_authorized_inspection(
+                socket,
+                HandshakeReceipt(DEVICE, SESSION),
+                lambda _receipt: bound_worker(tmp_path),
+            )
+
+    assert time.monotonic() - started < 2
+    assert attempted == (["connect"] if phase == "startup" else ["connect", "read"])
     assert socket.sent == []

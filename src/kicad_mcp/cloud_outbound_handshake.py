@@ -414,10 +414,20 @@ async def _complete_authorized_inspection(
     inspector.assert_session_authorized(
         device_id=device_id, project_id=project_id, session_id=receipt.session_id
     )
-    async with inspector.connect(
-        device_id=device_id, project_id=project_id, session_id=receipt.session_id
-    ) as worker:
-        result = await worker.inspect(tool_name)
+    # The signed read has a shorter lifetime than the enclosing WSS session.
+    # Include worker initialization and the tool call in that budget instead
+    # of keeping the owner waiting for a result that can no longer be sent.
+    remaining_seconds = (frame["deadlineUnixMs"] - int(datetime.now(UTC).timestamp() * 1000)) / 1000
+    if remaining_seconds <= 0:
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    try:
+        async with asyncio.timeout(remaining_seconds):
+            async with inspector.connect(
+                device_id=device_id, project_id=project_id, session_id=receipt.session_id
+            ) as worker:
+                result = await worker.inspect(tool_name)
+    except TimeoutError as exc:
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED) from exc
     answer = _inspected_result_payload(
         result,
         frame,
