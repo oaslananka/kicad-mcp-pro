@@ -25,6 +25,7 @@ def test_release_artifact_sync_covers_all_version_derived_outputs() -> None:
 
     assert "sync_mcp_metadata" in script
     assert "build_tool_effect_manifest" in script
+    assert "build_capability_catalog" in script
 
 
 def _entrypoint_help(
@@ -68,3 +69,65 @@ def test_release_artifact_sync_can_run_as_module(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert "--check" in _entrypoint_help(monkeypatch, capsys, as_module=True)
+
+
+def test_versioned_catalog_is_regenerated_after_release_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts import sync_release_artifacts as release
+
+    events: list[tuple[str, list[str]]] = []
+    monkeypatch.setattr(
+        release.sync_mcp_metadata,
+        "main",
+        lambda args: events.append(("metadata", args)) or 0,
+    )
+    monkeypatch.setattr(
+        release.build_tool_effect_manifest,
+        "main",
+        lambda args: events.append(("effects", args)) or 0,
+    )
+    monkeypatch.setattr(
+        release.build_capability_catalog,
+        "main",
+        lambda args: events.append(("catalog", args)) or 0,
+    )
+
+    assert release.main(["--write"]) == 0
+    assert events == [
+        ("metadata", ["--write"]),
+        ("effects", []),
+        ("catalog", []),
+    ]
+    events.clear()
+    assert release.main(["--check"]) == 0
+    assert events == [
+        ("metadata", ["--check"]),
+        ("effects", ["--check"]),
+        ("catalog", ["--check"]),
+    ]
+
+
+def test_release_artifact_sync_direct_script_invokes_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    events: list[tuple[str, list[str]]] = []
+    with monkeypatch.context() as patch:
+        patch.syspath_prepend(str(SYNC_SCRIPT.parent))
+        patch.setattr(sys, "argv", [str(SYNC_SCRIPT), "--check"])
+        for name in ("sync_mcp_metadata", "build_tool_effect_manifest", "build_capability_catalog"):
+            patch.setitem(
+                sys.modules,
+                name,
+                SimpleNamespace(main=lambda args, name=name: events.append((name, args)) or 0),
+            )
+        with pytest.raises(SystemExit) as result:
+            runpy.run_path(str(SYNC_SCRIPT), run_name="__main__")
+    assert result.value.code == 0
+    assert events == [
+        ("sync_mcp_metadata", ["--check"]),
+        ("build_tool_effect_manifest", ["--check"]),
+        ("build_capability_catalog", ["--check"]),
+    ]
