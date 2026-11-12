@@ -84,7 +84,7 @@ export function renderDevicesPage(
     actions:enrollmentAvailable?<a className="button primary device-add-button" href="#connect-computer">
       <span className="device-add-plus" aria-hidden="true">+</span> Add a device
     </a>:null,
-    children:<div className="page-stack device-home-stack">
+    children:<div className="page-stack">
       {notice?<output className="output-notice">{notice}</output>:null}
 
       {!enrollmentAvailable && devices.length===0?<section className="card status-card" id="registered-projects"><div className="status-message">
