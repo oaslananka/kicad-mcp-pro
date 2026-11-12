@@ -190,9 +190,10 @@ with its own secret-manager identity. An encrypted local backup and
 same-VPS full restore are not substitutes. Do not introduce unapproved
 storage spend or run live schema changes before independent recovery.
 
-This is NOT offsite disaster recovery. Migrations 007–012 remain blocked
-until an independently downloaded remote encrypted archive passes
-another full restore. Never treat a same-host backup as offsite.
+This is NOT offsite disaster recovery. Production migrations 020 and 021
+and the managed native DRC rollout remain on hold until the encrypted
+archive is restored and verified on a separate owner-controlled host.
+The successful same-VPS 019-to-021 rehearsal is not offsite recovery.
 
 
 ## Current production-snapshot migration rehearsal
