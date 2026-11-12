@@ -77,17 +77,26 @@ async function csrf(secret:string,user:string,session:string,deviceId:string,sta
 }
 async function checkCsrf(req:Request,origin:string,secret:string,
   owner:{user:string;session:string},id:string,sent:string,
-  purpose="device-revoke-v1"):Promise<boolean>{
-  if(sent.length>250||!readCookie(req,origin))return false;
+  purpose="device-revoke-v1"):Promise<Response|null>{
+  if(sent.length>250)return error(403);
   const [stamp,nonce,sig,...rest]=sent.split(".");
   if(rest.length||!/^\d{13}$/.test(stamp)||
-    !/^[a-zA-Z0-9_-]{22}$/.test(nonce)||!/^[a-zA-Z0-9_-]{43}$/.test(sig))return false;
-  if(readCookie(req,origin)!==stamp+"."+nonce)return false;
-  const now=Date.now(),created=Number(stamp);
-  if(created>now+5000||now-created>FIVE_MINUTES)return false;
+    !/^[a-zA-Z0-9_-]{22}$/.test(nonce)||!/^[a-zA-Z0-9_-]{43}$/.test(sig))
+    return error(403);
   const a=Buffer.from(await signature(secret,owner.user,owner.session,id,stamp,nonce,purpose));
   const b=Buffer.from(sig);
-  return a.length===b.length&&timingSafeEqual(a,b);
+  if(a.length!==b.length||!timingSafeEqual(a,b))return error(403);
+  const now=Date.now(),created=Number(stamp);
+  if(created>now+5000)return error(403);
+  // A real owner may leave this page open past cookie expiry. A signed stale
+  // form is never executed, but may navigate to a freshly signed form.
+  // Forged signatures, wrong sessions and future timestamps still get 403.
+  if(now-created>FIVE_MINUTES)
+    return new Response(null,{status:303,headers:{
+      Location:"/devices?csrf=expired","Cache-Control":"no-store"
+    }});
+  if(readCookie(req,origin)!==stamp+"."+nonce)return error(403);
+  return null;
 }
 async function list(req:Request,identity:BrowserIdentity,origin:string,
   devices:DeviceManagementPort,enrollmentAvailable=true,
@@ -123,7 +132,9 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
   })));
   const url=new URL(req.url);
   const access=url.searchParams.get("access");
-  const note=url.searchParams.get("picker")==="unavailable"?
+  const note=url.searchParams.get("csrf")==="expired"?
+    "The form expired while you were reviewing it. No permissions were changed. Review the action and try again.":
+    url.searchParams.get("picker")==="unavailable"?
     "This device could not complete folder selection. Wait until it is Online and try Browse again.":
     url.searchParams.get("picker")==="cancelled"?
     "Folder selection cancelled. No project was added.":
@@ -205,7 +216,8 @@ async function revoke(req:Request,identity:BrowserIdentity,origin:string,
   const who=userOf(await identity.api.getSession({headers:req.headers}));
   if(!who)return error(401);
   const {secret}=await identity.$context;
-  if(!await checkCsrf(req,origin,secret,who,id,proof))return error(403);
+  const csrfIssue=await checkCsrf(req,origin,secret,who,id,proof);
+  if(csrfIssue)return csrfIssue;
   let success:boolean;
   try{success=await devices.revokeDevice(who.user,id);}
   catch{return error(503);}
@@ -231,7 +243,8 @@ async function deleteRevoked(req:Request,identity:BrowserIdentity,origin:string,
   const who=userOf(await identity.api.getSession({headers:req.headers}));
   if(!who)return error(401);
   const {secret}=await identity.$context;
-  if(!await checkCsrf(req,origin,secret,who,id,proof,"device-delete-v1"))return error(403);
+  const csrfIssue=await checkCsrf(req,origin,secret,who,id,proof,"device-delete-v1");
+  if(csrfIssue)return csrfIssue;
   let success:boolean;
   try{success=await devices.deleteRevokedDevice(who.user,id);}
   catch{return error(503);}
@@ -258,7 +271,8 @@ async function deleteProject(req:Request,identity:BrowserIdentity,origin:string,
   const who=userOf(await identity.api.getSession({headers:req.headers}));
   if(!who)return error(401);
   const {secret}=await identity.$context;
-  if(!await checkCsrf(req,origin,secret,who,id,proof,"project-delete-v1"))return error(403);
+  const csrfIssue=await checkCsrf(req,origin,secret,who,id,proof,"project-delete-v1");
+  if(csrfIssue)return csrfIssue;
   let success:boolean;
   try{success=await devices.deleteProject(who.user,id);}
   catch{return error(503);}
@@ -287,7 +301,8 @@ async function activate(req:Request,identity:BrowserIdentity,origin:string,
   const who=userOf(await identity.api.getSession({headers:req.headers}));
   if(!who)return error(401);
   const {secret}=await identity.$context;
-  if(!await checkCsrf(req,origin,secret,who,id,proof,action))return error(403);
+  const csrfIssue=await checkCsrf(req,origin,secret,who,id,proof,action);
+  if(csrfIssue)return csrfIssue;
   let success=false;
   try{
     if(action==="device-enable-v1"){
@@ -324,8 +339,8 @@ async function ownerGrant(req:Request,identity:BrowserIdentity,origin:string,
   const who=userOf(await identity.api.getSession({headers:req.headers}));
   if(!who)return error(401);
   const {secret}=await identity.$context;
-  if(!await checkCsrf(req,origin,secret,who,project,proof,"project-browser-grant-v1"))
-    return error(403);
+  const csrfIssue=await checkCsrf(req,origin,secret,who,project,proof,"project-browser-grant-v1");
+  if(csrfIssue)return csrfIssue;
   let updated=false;
   try{updated=await grants.setBrowserGrant(who.user,project,client,enabled==="true");}
   catch{return error(503);}
@@ -355,8 +370,8 @@ async function ownerManagedRead(req:Request,identity:BrowserIdentity,origin:stri
   const who=userOf(await identity.api.getSession({headers:req.headers}));
   if(!who)return error(401);
   const {secret}=await identity.$context;
-  if(!await checkCsrf(req,origin,secret,who,project,proof,"project-managed-read-v1"))
-    return error(403);
+  const csrfIssue=await checkCsrf(req,origin,secret,who,project,proof,"project-managed-read-v1");
+  if(csrfIssue)return csrfIssue;
   let updated:boolean;
   try{updated=await managedRead.setEnabled(who.user,device,project,enabled==="true");}
   catch{return error(503);}
@@ -385,8 +400,9 @@ async function folderBrowse(req:Request,identity:BrowserIdentity,origin:string,
   const who=userOf(await identity.api.getSession({headers:req.headers}));
   if(!who)return error(401);
   const {secret}=await identity.$context;
-  if(!await checkCsrf(req,origin,secret,who,device,fields.get("csrf")??"",
-    "project-native-picker-open-v1"))return error(403);
+  const csrfIssue=await checkCsrf(req,origin,secret,who,device,fields.get("csrf")??"",
+    "project-native-picker-open-v1");
+  if(csrfIssue)return csrfIssue;
   const own=await devices.list(who.user);
   if(!own.some(d=>d.id===device&&d.enabled&&!d.revoked))return error(404);
 
@@ -441,8 +457,9 @@ async function folderSelect(req:Request,identity:BrowserIdentity,origin:string,
   const who=userOf(await identity.api.getSession({headers:req.headers}));
   if(!who)return error(401);
   const {secret}=await identity.$context;
-  if(!await checkCsrf(req,origin,secret,who,device+":"+folder,
-    fields.get("csrf")??"","project-folder-select-v1"))return error(403);
+  const csrfIssue=await checkCsrf(req,origin,secret,who,device+":"+folder,
+    fields.get("csrf")??"","project-folder-select-v1");
+  if(csrfIssue)return csrfIssue;
   const own=await devices.list(who.user);
   if(!own.some(d=>d.id===device&&d.enabled&&!d.revoked))return error(404);
   const listing=await folders.listFolder(who.user,device,folder);
@@ -478,8 +495,9 @@ async function projectRename(req:Request,identity:BrowserIdentity,origin:string,
   const who=userOf(await identity.api.getSession({headers:req.headers}));
   if(!who)return error(401);
   const {secret}=await identity.$context;
-  if(!await checkCsrf(req,origin,secret,who,projectId,fields.get("csrf")??"",
-     "project-rename-v1"))return error(403);
+  const csrfIssue=await checkCsrf(req,origin,secret,who,projectId,fields.get("csrf")??"",
+     "project-rename-v1");
+  if(csrfIssue)return csrfIssue;
   try{
     if(!await devices.renameProject(who.user,projectId,alias))return error(404);
   }catch{return error(503);}

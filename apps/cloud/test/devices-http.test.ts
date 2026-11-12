@@ -94,6 +94,20 @@ test("HTTP device revocation uses verified browser session plus CSRF",async()=>{
       },body:form,redirect:"manual"
     });
     assert.equal(denied.status,403);
+    const originalNow=Date.now;
+    try{
+      Date.now=()=>Number(token.split(".")[0])+300_001;
+      const expired=await fetch(s.origin+"/devices/revoke",{
+        method:"POST",headers:{Origin:config.publicOrigin,
+          "Content-Type":"application/x-www-form-urlencoded"},
+        body:form,redirect:"manual"
+      });
+      assert.equal(expired.status,303,"no destructive action on expired signed form");
+      assert.equal(expired.headers.get("location"),"/devices?csrf=expired");
+      assert.deepEqual(calls,[],"expired revoke must not mutate device");
+    }finally{
+      Date.now=originalNow;
+    }
     const success=await fetch(s.origin+"/devices/revoke",{
       method:"POST",headers:{
         "Content-Type":"application/x-www-form-urlencoded",
@@ -270,6 +284,44 @@ test("owner approves only an OAuth-consented AI client's read-only project grant
     });
     assert.equal(bad.status,403);
     assert.equal(requests.length,0);
+    const missingCookie=await fetch(web.origin+"/devices/projects/grant",{
+      method:"POST",headers:{Origin:config.publicOrigin,
+        "Content-Type":"application/x-www-form-urlencoded"},
+      body:data,redirect:"manual"
+    });
+    assert.equal(missingCookie.status,403,
+      "a fresh signed token is never sufficient without its same-site cookie");
+    assert.equal(requests.length,0);
+    // Real browser reproduction: the owner reads the page for longer than
+    // five minutes, its SameSite CSRF cookie expires, and the signed form is
+    // sent anyway. No grant may be written; show a recoverable message.
+    const savedNow=Date.now;
+    const signedAt=Number(token.split(".")[0]);
+    assert.ok(Number.isFinite(signedAt));
+    try{
+      Date.now=()=>signedAt+300_001;
+      const expired=await fetch(web.origin+"/devices/projects/grant",{
+        method:"POST",headers:{Origin:config.publicOrigin,
+          "Content-Type":"application/x-www-form-urlencoded"},
+        body:data,redirect:"manual"
+      });
+      assert.equal(expired.status,303,"a signed expired form should safely refresh");
+      assert.equal(expired.headers.get("location"),"/devices?csrf=expired");
+      assert.equal(requests.length,0,"expiration must never create a grant");
+      const forged=new URLSearchParams(data);
+      forged.set("csrf",token.slice(0,-1)+(token.endsWith("A")?"B":"A"));
+      const forgedResponse=await fetch(web.origin+"/devices/projects/grant",{
+        method:"POST",headers:{Origin:config.publicOrigin,
+          "Content-Type":"application/x-www-form-urlencoded"},
+        body:forged,redirect:"manual"
+      });
+      assert.equal(forgedResponse.status,403,"forged signatures stay rejected");
+    }finally{
+      Date.now=savedNow;
+    }
+    const renewed=await fetch(web.origin+"/devices?csrf=expired");
+    assert.equal(renewed.status,200);
+    assert.match(await renewed.text(),/The form expired.*No permissions were changed/);
     const approved=await fetch(web.origin+"/devices/projects/grant",{
       method:"POST",headers,body:data,redirect:"manual"
     });
