@@ -1014,14 +1014,15 @@ body{line-height:1.5;letter-spacing:-.007em}
 /* Mobile workspace stays task-first: all six routes visible, profile and help in Settings. */
 @media(max-width:750px){
   .workspace-app .workspace-sidebar{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 12px;padding:9px 12px 8px;overflow:visible}
-  .workspace-app .workspace-sidebar>.brand{grid-column:1;grid-row:1;min-height:36px;padding:0;margin:0;max-width:100%}
+  .workspace-app .workspace-sidebar>.brand{grid-column:1;grid-row:1;min-height:44px;padding:0;margin:0;max-width:100%}
   .workspace-app .workspace-sidebar .sidebar-section-label{display:none}
-  .workspace-app .workspace-sidebar .sidebar-profile{grid-column:2;grid-row:1;display:grid;place-items:center;width:38px;height:38px;margin:0;padding:0;border-radius:12px;background:var(--surface-soft)}
+  .workspace-app .workspace-sidebar .sidebar-profile{grid-column:2;grid-row:1;display:grid;place-items:center;width:44px;height:44px;margin:0;padding:0;border-radius:12px;background:var(--surface-soft)}
   .workspace-app .workspace-sidebar .profile-identity{display:none}
   .workspace-app .workspace-sidebar .sidebar-footer-links{display:none}
   .workspace-app .workspace-sidebar .sidebar-links{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-column:1/-1;grid-row:2;gap:4px;margin:0;min-width:0}
   .workspace-app .workspace-sidebar .sidebar-links a{min-height:44px;min-width:0;width:100%;padding:7px 3px;justify-content:center;gap:3px;font-size:clamp(11px,2.9vw,12px);letter-spacing:-.02em;white-space:nowrap}
   .workspace-app .workspace-sidebar .sidebar-links a svg{width:14px;height:14px}
+  .workspace-app .device-actions button,.workspace-app .device-actions .button{min-height:44px}
 }
 .settings-support-links{display:flex;flex-wrap:wrap;gap:10px 18px;padding:12px 2px;color:var(--muted);font-size:12px}
 .settings-support-links a{color:var(--text-secondary);text-decoration:underline;text-decoration-color:var(--line-strong);text-underline-offset:3px}

@@ -14,6 +14,8 @@ test("mobile navigation stays compact while every workspace section is directly 
   assert.match(uiCss,/\.workspace-app \.workspace-sidebar \.sidebar-links\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/);
   assert.match(uiCss,/\.workspace-app \.workspace-sidebar \.sidebar-footer-links\{display:none\}/);
   assert.match(uiCss,/\.workspace-app \.workspace-sidebar \.sidebar-links a\{min-height:44px/);
+  assert.match(uiCss,/\.workspace-app \.workspace-sidebar \.sidebar-profile\{[^}]*width:44px;height:44px/);
+  assert.match(uiCss,/\.workspace-app \.device-actions button,[^}]*\{min-height:44px/);
   assert.doesNotMatch(uiCss,/\.device-home-app/);
 });
 
