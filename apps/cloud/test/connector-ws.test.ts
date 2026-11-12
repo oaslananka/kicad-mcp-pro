@@ -20,7 +20,8 @@ const migrations=[
   "001_inventory.pgsql","002_client_grants.pgsql","005_token_cutoff.pgsql",
   "007_device_pairing.pgsql","008_device_credentials.pgsql",
   "009_device_handshake.pgsql","010_connector_sessions.pgsql",
-  "019_connector_managed_read_access.pgsql"
+  "019_connector_managed_read_access.pgsql",
+  "021_connector_managed_native_operations.pgsql"
 ];
 
 function waitMessage(ws:WebSocket):Promise<Record<string,unknown>>{
