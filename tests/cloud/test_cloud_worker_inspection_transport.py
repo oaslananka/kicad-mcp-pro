@@ -6,10 +6,12 @@ import asyncio
 import json
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 
+import kicad_mcp.cloud_outbound_handshake as handshake_module
 from kicad_mcp.cloud_outbound_handshake import (
     CloudHandshakeDeniedError,
     HandshakeReceipt,
@@ -262,4 +264,37 @@ async def test_read_deadline_cancels_worker_phase_without_sending(
 
     assert time.monotonic() - started < 2
     assert attempted == (["connect"] if phase == "startup" else ["connect", "read"])
+    assert socket.sent == []
+
+
+@pytest.mark.anyio
+async def test_deadline_expires_after_validation_before_worker_creation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An already-expired request never launches a local subprocess."""
+    calls = 0
+
+    class ForwardClock(datetime):
+        @classmethod
+        def now(cls, tz=None) -> datetime:
+            nonlocal calls
+            calls += 1
+            current = datetime.now(tz)
+            return current if calls == 1 else current + timedelta(seconds=10)
+
+    inspector = bound_worker(tmp_path)
+
+    def reject_launch(**_kwargs: object) -> None:
+        pytest.fail("Expired authorization must not attempt worker creation")
+
+    monkeypatch.setattr(handshake_module, "datetime", ForwardClock)
+    monkeypatch.setattr(inspector, "connect", reject_launch)
+
+    socket = RecordingSocket(frame(deadlineUnixMs=int(time.time() * 1000) + 5000))
+    with pytest.raises(CloudHandshakeDeniedError):
+        await _complete_authorized_inspection(
+            socket, HandshakeReceipt(DEVICE, SESSION), lambda _receipt: inspector
+        )
+
+    assert calls == 2
     assert socket.sent == []
