@@ -404,8 +404,9 @@ def test_signed_move_save_failure_requires_recovery_not_success(
         raise OSError("disk full")
 
     monkeypatch.setattr(board, "save", fail_to_save, raising=False)
+    proof = signed()
     with pytest.raises(NativeWriteRecoveryError, match="native recovery required"):
-        execute(signed(), persist_to_disk=True)
+        execute(proof, persist_to_disk=True)
     assert board.calls == ["begin", "update", "push", "save"]
     assert target.read_bytes() == START.encode()
 
@@ -419,8 +420,9 @@ def test_signed_move_silent_noop_save_is_not_verified(
 
     folder, board, signed, execute = _fixture(monkeypatch, tmp_path)
     monkeypatch.setattr(board, "save", lambda: board.calls.append("save"), raising=False)
+    proof = signed()
     with pytest.raises(NativeWriteRecoveryError, match="native recovery required"):
-        execute(signed(), persist_to_disk=True)
+        execute(proof, persist_to_disk=True)
     assert board.calls == ["begin", "update", "push", "save"]
     assert (folder / "disposable.kicad_pcb").read_bytes() == START.encode()
 
@@ -445,8 +447,9 @@ def test_signed_move_wrong_saved_position_is_rejected_after_commit(
         )
 
     monkeypatch.setattr(board, "save", save_wrong_position, raising=False)
+    proof = signed()
     with pytest.raises(NativeWriteRecoveryError, match="native recovery required"):
-        execute(signed(), persist_to_disk=True)
+        execute(proof, persist_to_disk=True)
     assert board.calls == ["begin", "update", "push", "save"]
 
 
@@ -492,8 +495,9 @@ def test_signed_move_saved_wrong_rotation_is_rejected(
         )
 
     monkeypatch.setattr(board, "save", save_wrong_rotation, raising=False)
+    proof = signed(rotation=90)
     with pytest.raises(NativeWriteRecoveryError, match="native recovery required"):
-        execute(signed(rotation=90), persist_to_disk=True)
+        execute(proof, persist_to_disk=True)
     assert board.calls == ["begin", "update", "push", "save"]
 
 
@@ -520,8 +524,9 @@ def test_signed_move_duplicate_saved_reference_is_rejected(
         )
 
     monkeypatch.setattr(board, "save", save_duplicate, raising=False)
+    proof = signed()
     with pytest.raises(NativeWriteRecoveryError, match="native recovery required"):
-        execute(signed(), persist_to_disk=True)
+        execute(proof, persist_to_disk=True)
     assert board.calls == ["begin", "update", "push", "save"]
 
 
@@ -535,7 +540,8 @@ def test_signed_move_revocation_after_native_commit_never_saves(
     folder, board, signed, execute = _fixture(monkeypatch, tmp_path)
     monkeypatch.setattr(board, "save", lambda: board.calls.append("save"), raising=False)
     grants = iter([True, True, True, False])
+    proof = signed()
     with pytest.raises(NativeWriteRecoveryError, match="native recovery required"):
-        execute(signed(), persist_to_disk=True, authorized=lambda: next(grants))
+        execute(proof, persist_to_disk=True, authorized=lambda: next(grants))
     assert board.calls == ["begin", "update", "push"]
     assert (folder / "disposable.kicad_pcb").read_bytes() == START.encode()

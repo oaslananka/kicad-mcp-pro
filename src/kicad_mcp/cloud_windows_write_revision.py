@@ -122,7 +122,7 @@ def read_windows_board_snapshot(policy: OperatorProject) -> tuple[str, str]:
                 ):
                     raise LocalWriteDeniedError(_DENIED)
                 return hashlib.sha256(content).hexdigest(), content.decode("utf-8")
-    except (OSError, ValueError, TypeError, UnicodeDecodeError) as exc:
+    except (OSError, ValueError, TypeError) as exc:
         raise LocalWriteDeniedError(_DENIED) from exc
 
 

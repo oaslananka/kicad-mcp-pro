@@ -174,6 +174,27 @@ def _require_fresh_owner_permission(
         raise LocalWriteDeniedError(_DENIED) from exc
 
 
+def _persist_after_native_commit(
+    policy: OperatorProject,
+    folder_fd: int | None,
+    authorized: Callable[[], bool],
+    cancelled: Callable[[], bool],
+    persist: Callable[[], str],
+) -> str:
+    """A published native mutation must never appear safe to retry."""
+    try:
+        _assert_pinned_operator_directory(policy, folder_fd)
+        _require_fresh_owner_permission(authorized, cancelled)
+        digest = persist()
+        if not isinstance(digest, str) or re.fullmatch(r"[a-f0-9]{64}", digest) is None:
+            raise NativeWriteRecoveryError(_RECOVERY)
+        return digest
+    except Exception as exc:
+        # KiCad already published the undo step. No automatic second commit,
+        # discard or unsafe retry after a save/readback failure.
+        raise NativeWriteRecoveryError(_RECOVERY) from exc
+
+
 def run_offline_guarded_native_write(
     policy: OperatorProject,
     expected_board_sha256: str,
@@ -234,14 +255,4 @@ def run_offline_guarded_native_write(
             raise NativeWriteRecoveryError(_RECOVERY) from exc
         if after_commit is None:
             return None
-        try:
-            _assert_pinned_operator_directory(policy, folder_fd)
-            _require_fresh_owner_permission(authorized, cancelled)
-            digest = after_commit()
-            if not isinstance(digest, str) or re.fullmatch(r"[a-f0-9]{64}", digest) is None:
-                raise NativeWriteRecoveryError(_RECOVERY)
-            return digest
-        except Exception as exc:
-            # Native mutation already committed in KiCad. Disk persistence
-            # failure is ambiguous, never an ordinary denial/retry signal.
-            raise NativeWriteRecoveryError(_RECOVERY) from exc
+        return _persist_after_native_commit(policy, folder_fd, authorized, cancelled, after_commit)
