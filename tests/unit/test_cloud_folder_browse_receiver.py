@@ -8,6 +8,7 @@ filesystem fixtures run against this real operating system's temp directory.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from uuid import UUID
 
@@ -286,9 +287,15 @@ def test_real_windows_binding_persists_only_a_local_project_map(tmp_path: Path) 
     stored = json.loads((tmp_path / "bindings.json").read_text(encoding="utf-8"))
     assert stored[PROJECT_ID].endswith("board.kicad_pro")
     assert Path(stored[PROJECT_ID]).is_absolute()
-    # The mapping answer is the only place a path is ever returned.
-    answer = handle_folder_frame(service, frame("path", projectId=PROJECT_ID))
-    assert answer["path"].endswith("board.kicad_pro")  # type: ignore[index]
+    # Native path handoff is intentionally Windows-only: the signed
+    # receiver must deny POSIX fixture paths on Linux CI, not broaden the
+    # device path contract merely to satisfy a cross-platform test.
+    if os.name == "nt":
+        answer = handle_folder_frame(service, frame("path", projectId=PROJECT_ID))
+        assert answer["path"].endswith("board.kicad_pro")  # type: ignore[index]
+    else:
+        with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+            handle_folder_frame(service, frame("path", projectId=PROJECT_ID))
     assert UUID(PROJECT_ID)
     # A second bind with the stale token is refused (token consumed).
     assert (

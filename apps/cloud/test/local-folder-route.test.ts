@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {randomUUID} from "node:crypto";
+import {randomUUID,timingSafeEqual} from "node:crypto";
 import {test} from "node:test";
 import type {BrowserIdentity} from "../src/browser.js";
 import type {DeviceManagementPort} from "../src/devices.js";
@@ -12,6 +12,10 @@ const origin="http://127.0.0.1:8787";
 const deviceId=randomUUID();
 const projectId=randomUUID();
 const folderToken="an-opaque-native-token";
+function sameFolderToken(a:string,b:string):boolean{
+  const left=Buffer.from(a),right=Buffer.from(b);
+  return left.length===right.length&&timingSafeEqual(left,right);
+}
 const owner="local-dev-owner";
 const folderName="\u00C7izim 2026";
 
@@ -59,7 +63,7 @@ function fixture(local=true,selection:NativeFolderSelection={
     },
     listFolder:async(u,d,token)=>{
       if(u!==owner||d!==deviceId)return null;
-      if(token===folderToken)return listing;
+      if(sameFolderToken(token,folderToken))return listing;
       if(!local&&token==="root")return {
         folderId:"root",name:"This computer",parentId:null,project:false,
         more:false,folders:[{id:folderToken,name:folderName,project:true}]
@@ -68,7 +72,7 @@ function fixture(local=true,selection:NativeFolderSelection={
     },
     bindFolder:async(u,d,token,id)=>{
       bindings++;
-      return u===owner&&d===deviceId&&token===folderToken&&id===projectId;
+      return u===owner&&d===deviceId&&sameFolderToken(token,folderToken)&&id===projectId;
     }
   };
   const route=(url:string,request?:Request)=>

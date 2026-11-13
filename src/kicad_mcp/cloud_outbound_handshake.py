@@ -990,8 +990,10 @@ async def execute_owner_managed_read_session(
     folder browse frames are additionally answered on the same signed socket;
     it never grants reads, paths outside the bound root, or file contents.
     """
-    if not callable(dispatcher_factory) or type(allow_native_drc) is not bool or (
-        folder_service_factory is not None and not callable(folder_service_factory)
+    if (
+        not callable(dispatcher_factory)
+        or type(allow_native_drc) is not bool
+        or (folder_service_factory is not None and not callable(folder_service_factory))
     ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     return await _perform_outbound_session(

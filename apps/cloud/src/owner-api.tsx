@@ -13,7 +13,14 @@ import {hashToken} from "./usage.js";
 const REQUEST_ID=/^[A-Za-z0-9_-]{43}$/;
 const TOKEN_PREFIX="kmpc1_";
 const TOKEN_BODY=/^[A-Za-z0-9_-]{43}$/;
-const LABEL=/^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,63}$/;
+const ALLOWED_LABEL="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ._()-";
+function validLabel(label:string):boolean{
+  if(label.length<1||label.length>64)return false;
+  const first=label.charCodeAt(0);
+  if(!((first>=48&&first<=57)||(first>=65&&first<=90)||(first>=97&&first<=122)))
+    return false;
+  return [...label].every(char=>ALLOWED_LABEL.includes(char));
+}
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const REQUEST_TTL_MS=10*60_000;
 const MAX_PENDING=50;
@@ -29,7 +36,7 @@ export class PgOwnerApiAccess {
   /** A CLI-open request starts pending and anonymous; only browser approval
    * binds an owner, and only that approval can mint one token, once. */
   async startRequest(requestId:string,label:string):Promise<boolean>{
-    if(!REQUEST_ID.test(requestId)||!LABEL.test(label))return false;
+    if(!REQUEST_ID.test(requestId)||!validLabel(label))return false;
     const db=await this.pool.connect();
     try{
       await db.query("BEGIN");
@@ -227,7 +234,7 @@ async function readJson(request:Request,maxBytes:number):Promise<Record<string,u
 function sanitizedLabel(value:unknown):string|null{
   if(typeof value!=="string")return null;
   const clean=value.replace(/[\u0000-\u001f\u007f]/g,"").trim();
-  return LABEL.test(clean)?clean:null;
+  return validLabel(clean)?clean:null;
 }
 
 export type OwnerApiServices={

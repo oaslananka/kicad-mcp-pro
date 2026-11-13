@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {timingSafeEqual} from "node:crypto";
 import {test} from "node:test";
 import {createHttpServer} from "../src/http.js";
 import type {Config} from "../src/config.js";
@@ -32,7 +33,9 @@ const inventory:Inventory={
   }
 };
 const verify:Verifier=async token=>{
-  if(token!=="test-user-a")throw new Error("invalid");
+  const given=Buffer.from(token),expected=Buffer.from("test-user-a");
+  if(given.length!==expected.length||!timingSafeEqual(given,expected))
+    throw new Error("invalid");
   const actor:Actor={
     sub:"user-a",clientId:"test-client",
     scopes:new Set(["projects:read"]),issuedAt:Math.floor(Date.now()/1000)};

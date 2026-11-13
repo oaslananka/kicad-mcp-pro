@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
-import {cliApproveResponse,type PgOwnerApiAccess} from "../src/owner-api.js";
+import {cliApproveResponse,PgOwnerApiAccess} from "../src/owner-api.js";
 import {browserResponse} from "../src/browser.js";
 import type {BrowserIdentity} from "../src/browser.js";
+import type {Pool} from "pg";
 
 const origin="https://cloud.example.test";
 const requestId="A".repeat(43);
@@ -68,4 +69,12 @@ test("first sign-in returns the browser to pending command-line approval",async(
     "/api/owner/cli/approve?request_id="+requestId);
   assert.match(afterLogin?.headers.get("set-cookie")??"",/Max-Age=0/);
   assert.equal(f.approved(),0,"returning to approval never implicitly approves");
+});
+
+test("owner CLI validation refuses malformed computer labels without opening the DB",async()=>{
+  const pool={connect(){throw new Error("invalid label reached the database");}} as unknown as Pool;
+  const ownerApi=new PgOwnerApiAccess(pool);
+  for(const label of ["", "-computer", "A\\nB", "A<script>", "?stanbul", "A".repeat(65)]){
+    assert.equal(await ownerApi.startRequest(requestId,label),false,label);
+  }
 });
