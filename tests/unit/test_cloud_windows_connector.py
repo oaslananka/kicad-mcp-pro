@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1077,6 +1078,7 @@ async def test_foreground_signed_connector_passes_tool_activity_to_terminal(
     assert history == ["Connected", "Tool call 1: project_summary completed"]
 
 
+@pytest.mark.skipif(os.name != "nt", reason="requires native Win32 handles")
 @pytest.mark.asyncio
 async def test_windows_connector_native_write_runner_wires_revisions_and_executor(
     local_user_connector, monkeypatch: pytest.MonkeyPatch
