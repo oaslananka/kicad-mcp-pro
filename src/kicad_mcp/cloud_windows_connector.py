@@ -196,6 +196,166 @@ def remember_selected_project(project: WindowsRegisteredProject) -> None:
         raise LocalApprovalDeniedError(_DENIED)
 
 
+def _validate_repair_candidate(
+    previous: WindowsRegisteredProject,
+    replacement: WindowsRegisteredProject,
+) -> None:
+    """A repaired identity is new, but the Cloud owner and local folder cannot change."""
+    if (
+        previous.origin != replacement.origin
+        or previous.owner_sub != replacement.owner_sub
+        or previous.device_id == replacement.device_id
+        or previous.project_id == replacement.project_id
+        or previous.record_id == replacement.record_id
+        or previous.registration_id == replacement.registration_id
+        or previous.fingerprint == replacement.fingerprint
+        or previous.filename_stem != replacement.filename_stem
+        or selected_project() != previous
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+    old_selection = inspect_owner_selected_project(previous)
+    new_selection = inspect_owner_selected_project(replacement)
+    if (
+        old_selection.directory != new_selection.directory
+        or old_selection.filename_stem != new_selection.filename_stem
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+
+
+def _verify_repair_signing_key(replacement: WindowsRegisteredProject) -> dict[str, str]:
+    """Check that the staged registration is backed by its actual new Ed25519 key."""
+    import hashlib
+
+    expected_marker = {
+        "registrationId": replacement.registration_id,
+        "recordId": replacement.record_id,
+        "deviceId": replacement.device_id,
+        "projectId": replacement.project_id,
+    }
+    if _load_project_from_marker(expected_marker) != replacement:
+        raise LocalApprovalDeniedError(_DENIED)
+    key_blob = read_credential(replacement.record_id, "key")
+    if not key_blob:
+        raise LocalApprovalDeniedError(_DENIED)
+    try:
+        fresh_key = load_pem_private_key(key_blob, password=None)
+        if not isinstance(fresh_key, Ed25519PrivateKey):
+            raise LocalApprovalDeniedError(_DENIED)
+        public = fresh_key.public_key().public_bytes(
+            Encoding.DER, PublicFormat.SubjectPublicKeyInfo
+        )
+        if hashlib.sha256(public).hexdigest() != replacement.fingerprint:
+            raise LocalApprovalDeniedError(_DENIED)
+    except (ValueError, TypeError) as exc:
+        raise LocalApprovalDeniedError(_DENIED) from exc
+    return expected_marker
+
+
+def _archive_repair_marker_state(
+    previous: WindowsRegisteredProject,
+    replacement: WindowsRegisteredProject,
+) -> tuple[bytes, bytes | None]:
+    """Archive old selection/activation under the new registration, never overwrite."""
+    saved_selected = read_credential(_SELECTED_RECORD_ID, "selected")
+    saved_active = read_credential(_ACTIVE_RECORD_ID, "active")
+    if saved_selected is None:
+        raise LocalApprovalDeniedError(_DENIED)
+    if saved_active is not None:
+        # A foreign/stale active marker is not ours to replace or repair.
+        current = _active()
+        if current is None or current.project != previous:
+            raise LocalApprovalDeniedError(_DENIED)
+    create_credential(replacement.registration_id, "archived_selected", saved_selected)
+    if saved_active is not None:
+        create_credential(replacement.registration_id, "archived_active", saved_active)
+    if read_credential(replacement.registration_id, "archived_selected") != saved_selected or (
+        saved_active is not None
+        and read_credential(replacement.registration_id, "archived_active") != saved_active
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+    return saved_selected, saved_active
+
+
+def _restore_repair_marker_state(
+    saved_selected: bytes,
+    saved_active: bytes | None,
+    expected_marker: dict[str, str],
+) -> None:
+    """Rollback only our own new marker, without deleting a foreign replacement."""
+    selected = read_credential(_SELECTED_RECORD_ID, "selected")
+    if selected is not None and selected != saved_selected:
+        # Never erase another process's unexpected selection.
+        new_marker = json.dumps(expected_marker, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
+        if selected != new_marker:
+            raise LocalApprovalDeniedError(_DENIED)
+        delete_credential(_SELECTED_RECORD_ID, "selected")
+    if read_credential(_SELECTED_RECORD_ID, "selected") is None:
+        create_credential(_SELECTED_RECORD_ID, "selected", saved_selected)
+    active = read_credential(_ACTIVE_RECORD_ID, "active")
+    if active is not None and active != saved_active:
+        raise LocalApprovalDeniedError(_DENIED)
+    if saved_active is not None and active is None:
+        create_credential(_ACTIVE_RECORD_ID, "active", saved_active)
+    if (
+        read_credential(_SELECTED_RECORD_ID, "selected") != saved_selected
+        or read_credential(_ACTIVE_RECORD_ID, "active") != saved_active
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+
+
+def _switch_repair_marker_state(
+    replacement: WindowsRegisteredProject,
+    saved_selected: bytes,
+    saved_active: bytes | None,
+    expected_marker: dict[str, str],
+) -> None:
+    """Atomic-in-effect, fail-closed switch with original marker rollback."""
+    try:
+        # Revoke local old authority before selection changes. The old private
+        # key and user-approved project binding are NOT deleted.
+        if read_credential(_SELECTED_RECORD_ID, "selected") != saved_selected:
+            raise LocalApprovalDeniedError(_DENIED)
+        if read_credential(_ACTIVE_RECORD_ID, "active") != saved_active:
+            raise LocalApprovalDeniedError(_DENIED)
+        if saved_active is not None and not delete_credential(_ACTIVE_RECORD_ID, "active"):
+            raise LocalApprovalDeniedError(_DENIED)
+        if not delete_credential(_SELECTED_RECORD_ID, "selected"):
+            raise LocalApprovalDeniedError(_DENIED)
+        remember_selected_project(replacement)
+        if selected_project() != replacement or _active_marker() is not None:
+            raise LocalApprovalDeniedError(_DENIED)
+    except Exception:
+        _restore_repair_marker_state(saved_selected, saved_active, expected_marker)
+        raise
+
+
+def repair_selected_project(
+    previous: WindowsRegisteredProject,
+    replacement: WindowsRegisteredProject,
+    *,
+    owner_confirm: Callable[[WindowsRegisteredProject, WindowsRegisteredProject], bool],
+) -> None:
+    """Switch only after new browser-approved enrollment; preserve old keys/folder.
+
+    Old markers are archived under the new registration before any current
+    marker changes. The caller must stop the old scheduled/foreground session.
+    """
+    if (
+        os.name != "nt"
+        or not isinstance(previous, WindowsRegisteredProject)
+        or not isinstance(replacement, WindowsRegisteredProject)
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+    if not callable(owner_confirm) or owner_confirm(previous, replacement) is not True:
+        raise LocalApprovalDeniedError("The owner declined Cloud device repair.")
+    _validate_repair_candidate(previous, replacement)
+    expected_marker = _verify_repair_signing_key(replacement)
+    saved_selected, saved_active = _archive_repair_marker_state(previous, replacement)
+    _switch_repair_marker_state(replacement, saved_selected, saved_active, expected_marker)
+
+
 def _active() -> WindowsActiveConnector | None:
     """Reverify every vault identity and selected local project on each use."""
     marker = _active_marker()
@@ -273,6 +433,7 @@ def _dispatcher(
     project: WindowsRegisteredProject,
     selected: WindowsLocalProjectSelection,
     receipt: HandshakeReceipt,
+    allow_native_drc: bool = False,
 ) -> LocalReadDispatch:
     if receipt.device_id != project.device_id or not _current_authorization(project):
         raise LocalApprovalDeniedError(_DENIED)
@@ -280,7 +441,9 @@ def _dispatcher(
         verified=VerifiedLocalBinding(
             device_id=receipt.device_id,
             project_id=project.project_id,
-            operations=frozenset({"project_summary"}),
+            operations=frozenset(
+                {"project_summary", "run_drc"} if allow_native_drc else {"project_summary"}
+            ),
             session_id=receipt.session_id,
             session_expires_unix_ms=time.time_ns() // 1_000_000 + _SESSION_LIFETIME_MS,
         ),
@@ -292,7 +455,8 @@ def _dispatcher(
         ),
         current_authorization=lambda: _current_authorization(project),
         max_reads=_MAX_READS,
-        native_drc=False,
+        native_drc=allow_native_drc,
+        managed_native_drc=allow_native_drc,
     )
 
 
@@ -301,6 +465,7 @@ async def _run_owner_session(
     selected: WindowsLocalProjectSelection,
     key: Ed25519PrivateKey,
     runner: Callable[..., Awaitable[HandshakeReceipt]],
+    allow_native_drc: bool = False,
 ) -> HandshakeReceipt:
     """Bind one immutable identity and key to this particular socket session."""
     settings = {
@@ -309,9 +474,13 @@ async def _run_owner_session(
         "owner_sub": project.owner_sub,
         "device_id": project.device_id,
         "signing_key": key,
-        "dispatcher_factory": lambda receipt: _dispatcher(project, selected, receipt),
+        "dispatcher_factory": lambda receipt: _dispatcher(
+            project, selected, receipt, allow_native_drc=allow_native_drc
+        ),
         "max_reads": _MAX_READS,
     }
+    if allow_native_drc:
+        settings["allow_native_drc"] = True
     if runner is execute_owner_managed_read_session or getattr(
         runner, "_kicad_supports_folder_browse", False
     ):
@@ -369,6 +538,7 @@ def _session_runner_with_status(
         on_ready: Callable[[HandshakeReceipt], None] = report_ready,
         folder_service_factory: Callable[[HandshakeReceipt], LocalFolderBrowseService]
         | None = None,
+        allow_native_drc: bool = False,
     ) -> HandshakeReceipt:
         return await execute_owner_managed_read_session(
             origin=origin,
@@ -380,6 +550,7 @@ def _session_runner_with_status(
             max_reads=max_reads,
             on_ready=on_ready,
             folder_service_factory=folder_service_factory,
+            allow_native_drc=allow_native_drc,
         )
 
     signed_ready_runner._kicad_supports_folder_browse = True  # type: ignore[attr-defined]
@@ -392,9 +563,18 @@ async def _attempt_authorized_session(
     key: Ed25519PrivateKey,
     runner: Callable[..., Awaitable[HandshakeReceipt]],
     stop: asyncio.Event,
+    allow_native_drc: bool = False,
 ) -> bool | None:
     """One signed session: True completed, False network failure, None revoked."""
-    task = asyncio.create_task(_run_owner_session(project, selected, key, runner))
+    task = asyncio.create_task(
+        _run_owner_session(
+            project,
+            selected,
+            key,
+            runner,
+            **({"allow_native_drc": True} if allow_native_drc else {}),
+        )
+    )
     revoked = asyncio.create_task(stop.wait())
     try:
         if not await _await_authorized_session(project, task, revoked):
@@ -435,18 +615,34 @@ def _next_failure_count(
     return failures + 1
 
 
+def _notify_owner_reapproval(
+    status_callback: Callable[[str], None] | None,
+    project: WindowsRegisteredProject,
+) -> None:
+    """Give an actionable policy 1008 recovery without leaking Cloud reasons."""
+    if status_callback is not None:
+        status_callback(
+            "Cloud rejected this device session (policy 1008). "
+            f"Review pairing and access at {project.origin}/devices. "
+            "If this device is missing, run: kicad-mcp-pro cloud remote --repair-device "
+            "and approve the new pairing in your browser. "
+            "The local project and saved credentials were not changed."
+        )
+
+
 async def run_connector(
     *,
     stop: asyncio.Event,
     session_runner: Callable[..., Awaitable[HandshakeReceipt]] = execute_owner_managed_read_session,
     status_callback: Callable[[str], None] | None = None,
+    allow_native_drc: bool = False,
 ) -> None:
     """Local-only execution core; supervisor controls process startup/shutdown.
 
     No incoming listener; only an authenticated outbound device session.
     Session restarts are rate-limited, even after clean Cloud disconnects.
     """
-    if os.name != "nt":
+    if os.name != "nt" or type(allow_native_drc) is not bool:
         raise LocalApprovalDeniedError(_DENIED)
     failures = 0
     while not stop.is_set():
@@ -460,15 +656,15 @@ async def run_connector(
 
         try:
             result = await _attempt_authorized_session(
-                project, selected, key, runner_for_session, stop
+                project,
+                selected,
+                key,
+                runner_for_session,
+                stop,
+                **({"allow_native_drc": True} if allow_native_drc else {}),
             )
         except CloudOwnerReapprovalRequiredError:
-            if status_callback is not None:
-                status_callback(
-                    "Cloud rejected this device session (policy 1008). "
-                    f"Review pairing and access at {project.origin}/devices. "
-                    "The local project and saved credentials were not changed."
-                )
+            _notify_owner_reapproval(status_callback, project)
             raise
         if result is None:
             return
@@ -501,7 +697,9 @@ def main(argv: list[str] | None = None) -> int:
     except CloudOwnerReapprovalRequiredError:
         print(
             "Cloud refused the signed device session (policy 1008). "
-            "Review this device in your Cloud workspace; local credentials are unchanged.",
+            "Review the Cloud Devices page. If this device is missing, use an "
+            "interactive terminal: kicad-mcp-pro cloud remote --repair-device. "
+            "Local credentials are unchanged.",
             file=sys.stderr,
         )
         return 3

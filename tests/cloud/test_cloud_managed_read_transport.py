@@ -379,4 +379,65 @@ async def test_folder_service_is_required_before_any_browse_frame_is_answered() 
     receipt = HandshakeReceipt(DEVICE, SESSION)
     with pytest.raises(CloudHandshakeDeniedError):
         await serve_authenticated_reads(socket, receipt, _signed_socket_dispatch, max_reads=1)
+
+
+@pytest.mark.anyio
+async def test_managed_native_drc_requires_local_opt_in_and_returns_counts_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "board.kicad_pro").write_text('{"private": "NOT_FOR_CLOUD"}')
+    calls: list[OperatorProject] = []
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_read_dispatch.summarize_native_pcb_drc",
+        lambda selected: calls.append(selected) or {"violations": 17, "unconnectedItems": 4},
+    )
+    dispatcher = LocalReadDispatch(
+        verified=VerifiedLocalBinding(
+            device_id=DEVICE,
+            project_id=PROJECT,
+            operations=frozenset({"project_summary", "run_drc"}),
+            session_id=SESSION,
+            session_expires_unix_ms=int(time.time() * 1000) + 240_000,
+        ),
+        operator_project=OperatorProject(DEVICE, PROJECT, tmp_path, "board"),
+        current_authorization=lambda: True,
+        max_reads=2,
+        native_drc=True,
+    )
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    blocked = Socket([request(1, operation="run_drc")])
+    with pytest.raises(CloudHandshakeDeniedError):
+        await serve_authenticated_reads(blocked, receipt, lambda _: dispatcher, max_reads=1)
+    assert blocked.sent == []
+    assert calls == []
+
+    allowed = Socket([request(1), request(2, operation="run_drc")])
+    assert (
+        await serve_authenticated_reads(
+            allowed, receipt, lambda _: dispatcher, max_reads=2, allow_native_drc=True
+        )
+        == receipt
+    )
+    assert len(calls) == 1
+    assert [msg["result"]["operation"] for msg in allowed.sent] == [
+        "project_summary",
+        "run_drc",
+    ]
+    assert allowed.sent[1]["result"]["counts"] == {"violations": 17, "unconnectedItems": 4}
+    assert "NOT_FOR_CLOUD" not in json.dumps(allowed.sent)
+    assert str(tmp_path) not in json.dumps(allowed.sent)
+
+
+@pytest.mark.anyio
+async def test_native_transport_refuses_false_dispatcher_claim(tmp_path: Path) -> None:
+    dispatcher = build_dispatcher(tmp_path, [True])
+    socket = Socket([request(1, operation="run_drc")])
+    with pytest.raises(CloudHandshakeDeniedError):
+        await serve_authenticated_reads(
+            socket,
+            HandshakeReceipt(DEVICE, SESSION),
+            lambda _: dispatcher,
+            max_reads=1,
+            allow_native_drc=True,
+        )
     assert socket.sent == []

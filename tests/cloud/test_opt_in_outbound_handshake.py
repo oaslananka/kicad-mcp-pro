@@ -659,3 +659,32 @@ def test_folder_browse_session_uses_bounded_larger_inbound_frames(
             )
         )
     assert captured["max_size"] == 8192
+
+
+def test_managed_native_drc_claim_requires_managed_read_and_explicit_opt_in() -> None:
+    from kicad_mcp.cloud_outbound_handshake import (
+        CloudHandshakeDeniedError,
+        OutboundSessionOptions,
+        _catalog_hello_metadata,
+        _validate_outbound_options,
+    )
+
+    scoped = OutboundSessionOptions(
+        advertise_catalog=True,
+        owner_managed_read=True,
+        managed_native_drc=True,
+        dispatcher_factory=lambda _: None,
+    )
+    _validate_outbound_options(scoped)
+    claim = _catalog_hello_metadata(scoped)["catalog"]
+    assert claim["operations"] == ["project_summary", "run_drc"]
+    for invalid in (
+        OutboundSessionOptions(managed_native_drc=True, dispatcher_factory=lambda _: None),
+        OutboundSessionOptions(
+            owner_managed_read=True,
+            managed_native_drc=cast(Any, "yes"),
+            dispatcher_factory=lambda _: None,
+        ),
+    ):
+        with pytest.raises(CloudHandshakeDeniedError):
+            _validate_outbound_options(invalid)

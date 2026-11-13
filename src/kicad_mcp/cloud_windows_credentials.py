@@ -22,7 +22,18 @@ from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
 _DENIED = "local approval denied"
 _RECORD_ID = re.compile(r"[0-9a-f]{32}\Z", re.ASCII)
 _PARTS = frozenset(
-    {"key", "binding", "registration", "project_path", "active", "selected", "owner_api"}
+    {
+        "key",
+        "binding",
+        "registration",
+        "project_path",
+        "active",
+        "selected",
+        # Owner-approved recovery keeps the old selection in this same user vault.
+        "archived_selected",
+        "archived_active",
+        "owner_api",
+    }
 )
 _PREFIX = "KiCadMCPPro/Cloud/v1"
 _MAX_BLOB_BYTES = 2048

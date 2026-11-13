@@ -69,6 +69,7 @@ class OutboundSessionOptions:
     board_counts_pilot: bool = False
     schematic_counts_pilot: bool = False
     owner_managed_read: bool = False
+    managed_native_drc: bool = False
     # Opt-in ONLY after the target Cloud deployment accepts extended device.hello.
     # Legacy devices and servers retain the byte-identical v1 handshake by default.
     advertise_catalog: bool = False
@@ -549,6 +550,10 @@ def _validated_outbound_connection(
 
 
 def _validate_outbound_options(options: OutboundSessionOptions) -> None:
+    if type(options.managed_native_drc) is not bool or (
+        options.managed_native_drc and not options.owner_managed_read
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     if options.owner_managed_read and (
         options.dispatcher_factory is None
         or options.inspection_factory is not None
@@ -570,17 +575,13 @@ def _validate_outbound_options(options: OutboundSessionOptions) -> None:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
 
 
-def _catalog_hello_metadata(options: OutboundSessionOptions) -> dict[str, object]:
-    """Bounded optional report: never broadens local/Cloud project authority."""
-    if type(options.advertise_catalog) is not bool:
-        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
-    if not options.advertise_catalog:
-        return {}
-    from kicad_mcp.runtime_capability_catalog import installed_catalog_revision
-
+def _catalog_operations(options: OutboundSessionOptions) -> list[str]:
+    """Advertise only operations granted by the selected signed Connector mode."""
     operations: list[str] = []
     if options.owner_managed_read and options.dispatcher_factory is not None:
         operations.append("project_summary")
+        if options.managed_native_drc:
+            operations.append("run_drc")
     elif options.dispatcher_factory is not None and options.operator_presence_pilot:
         operations.append("project_summary")
         if options.operator_native_drc_pilot:
@@ -591,6 +592,18 @@ def _catalog_hello_metadata(options: OutboundSessionOptions) -> dict[str, object
             operations.append("project_board_counts")
         if options.schematic_counts_pilot:
             operations.append("project_schematic_counts")
+    return operations
+
+
+def _catalog_hello_metadata(options: OutboundSessionOptions) -> dict[str, object]:
+    """Bounded optional report: never broadens local/Cloud project authority."""
+    if type(options.advertise_catalog) is not bool:
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    if not options.advertise_catalog:
+        return {}
+    from kicad_mcp.runtime_capability_catalog import installed_catalog_revision
+
+    operations = _catalog_operations(options)
     return {
         "catalog": {
             "schemaVersion": "1.0.0",
@@ -629,6 +642,7 @@ async def _complete_outbound_operation(
             options.dispatcher_factory,
             max_reads=options.managed_max_reads,
             folder_service=folder_service,
+            allow_native_drc=options.managed_native_drc,
         )
     if options.inspection_factory is not None:
         return await _complete_authorized_inspection(
@@ -962,6 +976,7 @@ async def execute_owner_managed_read_session(
     max_reads: int = 16,
     folder_service_factory: Callable[[HandshakeReceipt], LocalFolderBrowseService] | None = None,
     on_ready: Callable[[HandshakeReceipt], None] | None = None,
+    allow_native_drc: bool = False,
 ) -> HandshakeReceipt:
     """One signed, owner-managed read-only session; no key loading or persistence.
 
@@ -975,7 +990,7 @@ async def execute_owner_managed_read_session(
     folder browse frames are additionally answered on the same signed socket;
     it never grants reads, paths outside the bound root, or file contents.
     """
-    if not callable(dispatcher_factory) or (
+    if not callable(dispatcher_factory) or type(allow_native_drc) is not bool or (
         folder_service_factory is not None and not callable(folder_service_factory)
     ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
@@ -989,6 +1004,8 @@ async def execute_owner_managed_read_session(
         options=OutboundSessionOptions(
             dispatcher_factory=dispatcher_factory,
             owner_managed_read=True,
+            managed_native_drc=allow_native_drc,
+            advertise_catalog=allow_native_drc,
             managed_max_reads=max_reads,
             folder_service_factory=folder_service_factory,
             on_ready=on_ready,

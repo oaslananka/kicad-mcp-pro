@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import {execFile} from "node:child_process";
+import {promisify} from "node:util";
+import {fileURLToPath} from "node:url";
 import {generateKeyPairSync,randomBytes,randomUUID,sign} from "node:crypto";
 import {createServer} from "node:http";
 import type {AddressInfo} from "node:net";
@@ -20,7 +23,8 @@ const migrations=[
   "001_inventory.pgsql","002_client_grants.pgsql","005_token_cutoff.pgsql",
   "007_device_pairing.pgsql","008_device_credentials.pgsql",
   "009_device_handshake.pgsql","010_connector_sessions.pgsql",
-  "019_connector_managed_read_access.pgsql"
+  "019_connector_managed_read_access.pgsql",
+  "021_connector_managed_native_operations.pgsql"
 ];
 
 function waitMessage(ws:WebSocket):Promise<Record<string,unknown>>{
@@ -65,7 +69,7 @@ function field(obj:Record<string,unknown>,key:string):string{
 
 async function startFixtureServer(
   db:Pool,operatorLocalOnce=false,nativeDrcOnce=false,inspectionOnce=false,
-  boardCountsOnce=false,schematicCountsOnce=false,managedMode=false
+  boardCountsOnce=false,schematicCountsOnce=false,managedMode=false,managedNative=false
 ){
   const server=createServer((_req,res)=>{res.writeHead(404);res.end();});
   await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
@@ -74,7 +78,7 @@ async function startFixtureServer(
     publicOrigin:"http://127.0.0.1:"+port,
     sourceOf:()=>"127.0.0.1",
     proofs:new PgDeviceHandshakes(db),
-    ...(managedMode?{managedGrant:new PgManagedReadAccess(db)}:operatorLocalOnce?{
+    ...(managedMode?{managedGrant:new PgManagedReadAccess(db),managedNativeRead:managedNative}:operatorLocalOnce?{
       operatorLocalOnce:true,
       operatorNativeDrcOnce:nativeDrcOnce,
       operatorInspectionOnce:inspectionOnce,
@@ -687,4 +691,102 @@ test("manual WSS project inspection uses exact grant and discards invalid typed 
     });
   }
   }
+});
+
+test("managed signed WSS native DRC is operation-scoped and revocation-safe",
+  {skip:!url,timeout:process.env.KICAD_NATIVE_DRC_ACCEPTANCE==="1"?100_000:40_000},
+  async()=>{
+  await inIsolatedDatabase(url!,migrations,async db=>{
+    const owner="managed-native-owner",clientId="native-client";
+    const keys=generateKeyPairSync("ed25519");
+    const der=keys.publicKey.export({format:"der",type:"spki"}) as Buffer;
+    const pair=new PgPairingChallenges(db,randomBytes(32));
+    const issued=await pair.issue("Native test",der);
+    await pair.review(issued.id,owner,issued.userCode,"approve");
+    const enrolled=await pair.enroll(issued.id,issued.deviceCode,
+      sign(null,redemptionProof(issued.id,issued.deviceCode),keys.privateKey));
+    assert.equal(enrolled.kind,"enrolled");
+    if(enrolled.kind!=="enrolled")return;
+    const device=enrolled.deviceId,project="99999999-9999-4999-8999-999999999999";
+    await db.query("UPDATE devices SET enabled=true WHERE id=$1",[device]);
+    await db.query("INSERT INTO projects(id,owner_sub,device_id,alias,enabled,max_mode) "+
+      "VALUES($1,$2,$3,'Native',true,'readonly')",[project,owner,device]);
+    await db.query("INSERT INTO project_client_grants(project_id,owner_sub,client_id,enabled,max_mode) "+
+      "VALUES($1,$2,$3,true,'readonly')",[project,owner,clientId]);
+    const policy=new PgManagedReadAccess(db);
+    assert.equal(await policy.setEnabled(owner,device,project,true),true);
+    assert.equal(await policy.setNativeOperation(owner,device,project,"run_drc",true),true);
+    const {server,port,attached}=await startFixtureServer(
+      db,false,false,false,false,false,true,true);
+    let ws:WebSocket|undefined;
+    try{
+      ws=await connect("ws://127.0.0.1:"+port+"/api/v1/connector/ws");
+      const catalog={schemaVersion:"1.0.0",catalogRevision:"f".repeat(64),
+        operations:["project_summary","run_drc"]};
+      const ch=await send(ws,{kind:"device.hello",version:1,ownerSub:owner,deviceId:device,catalog});
+      const proof=sign(null,deviceHandshakeProof(field(ch,"challengeId"),
+        device,field(ch,"nonce")),keys.privateKey).toString("base64url");
+      const sess=await send(ws,{kind:"device.proof",version:1,signature:proof});
+      const signed=sign(null,connectorSessionProof(field(sess,"sessionId"),
+        field(sess,"challengeId"),device,field(sess,"nonce"),
+        field(sess,"binding")),keys.privateKey).toString("base64url");
+      assert.equal((await send(ws,{kind:"connector.session_proof",version:1,signature:signed})).kind,
+        "connector.ready");
+      const oauth={ownerSub:owner,clientId,accessTokenIssuedAtSeconds:Math.floor(Date.now()/1000)};
+      for(const sequence of [1,2]){
+        const intent=attached.prepareOwnerDrc(oauth,device,project);
+        assert.ok(intent,"Native read must be explicitly enabled and claimed");
+        const outgoing=waitMessage(ws);
+        const pending=attached.requestDrc(oauth,device,project,intent);
+        const frame=await outgoing;
+        assert.equal(frame.kind,"connector.authorized_read");
+        assert.equal(frame.sequence,sequence);
+        const request=frame.request as Record<string,unknown>;
+        assert.equal(request.operation,"run_drc");
+        const remaining=(request.deadlineUnixMs as number)-Date.now();
+        assert.ok(remaining>40_000&&remaining<=50_000,
+          "Bounded managed DRC deadline must permit a real Windows CLI invocation");
+        let reply={kind:"connector.local_drc_preview",version:1,
+          requestId:request.requestId,projectId:project,operation:"run_drc",
+          counts:{violations:17,unconnectedItems:4}};
+        if(sequence===1&&process.env.KICAD_NATIVE_DRC_ACCEPTANCE==="1"){
+          // Opt-in: exact signed Cloud frame -> production Python dispatcher ->
+          // real KiCad CLI on a disposable public PCB copy -> bounded reply.
+          // This is loopback signed WS; it does NOT prove public TLS/OAuth.
+          const python=process.env.KICAD_NATIVE_DRC_PYTHON;
+          assert.ok(python,"Set KICAD_NATIVE_DRC_PYTHON for local acceptance");
+          const worker=fileURLToPath(new URL(
+            "../../../tests/cloud/managed_native_drc_acceptance_worker.py",
+            import.meta.url));
+          const source=fileURLToPath(new URL("../../../src",import.meta.url));
+          const {stdout,stderr}=await promisify(execFile)(python,
+            [worker,device,project,field(sess,"sessionId"),JSON.stringify(request)],
+            {timeout:44_000,maxBuffer:8_192,env:{...process.env,PYTHONPATH:source}});
+          assert.equal(stderr,"");
+          const actual=JSON.parse(stdout) as typeof reply;
+          assert.deepEqual(actual,reply,
+            "Real fixture must reach Cloud with the expected bounded DRC counts");
+          reply=actual;
+        }
+        if(sequence===2)assert.equal(await policy.setNativeOperation(owner,device,project,"run_drc",false),true);
+        const ack:Promise<Record<string,unknown>>|null=sequence===1?waitMessage(ws):null;
+        const closed:Promise<number>|null=sequence===2?waitClose(ws):null;
+        ws.send(JSON.stringify({kind:"connector.read_result",version:1,sequence,result:reply}));
+        const result=await pending;
+        if(sequence===1){
+          assert.deepEqual(result,reply);
+          assert.equal((await ack!).kind,"connector.read_ack");
+        }else{
+          assert.equal(result,null,"Revocation must discard an in-flight native result");
+          assert.equal(await closed,1008);
+        }
+      }
+      assert.equal(await policy.isEnabled(oauth,device,project,"run_drc"),false);
+      assert.equal(await policy.isEnabled(oauth,device,project,"project_summary"),true);
+    }finally{
+      ws?.terminate();
+      await attached.close();
+      await new Promise<void>(resolve=>server.close(()=>resolve()));
+    }
+  });
 });

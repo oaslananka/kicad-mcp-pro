@@ -42,12 +42,18 @@ class LocalReadDispatch:
         clock_ms: Callable[[], int] | None = None,
         max_reads: int = MAX_READS_PER_SESSION,
         native_drc: bool = False,
+        managed_native_drc: bool = False,
     ) -> None:
         if type(max_reads) is not int or not 1 <= max_reads <= MAX_READS_PER_SESSION:
             raise LocalReadDeniedError(_READ_DENIED)
-        if type(native_drc) is not bool:
+        if (
+            type(native_drc) is not bool
+            or type(managed_native_drc) is not bool
+            or (managed_native_drc and not native_drc)
+        ):
             raise LocalReadDeniedError(_READ_DENIED)
         self._native_drc = native_drc
+        self._managed_native_drc = managed_native_drc
         self._max_reads = max_reads
         self._verified = verified
         self._project = operator_project
@@ -102,6 +108,7 @@ class LocalReadDispatch:
             self._project,
             self._clock_ms(),
             allow_native_drc=self._native_drc,
+            extended_native_drc=self._managed_native_drc,
         )
         with self._lock:
             if self._closed or self._busy or body["requestId"] not in self._seen_request_ids:
@@ -142,6 +149,7 @@ class LocalReadDispatch:
                 self._project,
                 self._clock_ms(),
                 allow_native_drc=self._native_drc,
+                extended_native_drc=self._managed_native_drc,
             )
             request_id = initial["requestId"]
             if not isinstance(request_id, str):
@@ -176,6 +184,7 @@ class LocalReadDispatch:
                 self._project,
                 self._clock_ms(),
                 allow_native_drc=self._native_drc,
+                extended_native_drc=self._managed_native_drc,
             )
             if body["requestId"] != response["requestId"]:
                 raise LocalReadDeniedError(_READ_DENIED)

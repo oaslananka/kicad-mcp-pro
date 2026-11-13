@@ -3,7 +3,7 @@
 set -euo pipefail
 umask 077
 
-if [[ -z "$KICAD_BACKUP_AGE_IDENTITY" || -z "$KICAD_BACKUP_AGE_RECIPIENT" ]]; then
+if [[ -z "${KICAD_BACKUP_AGE_IDENTITY:-}" || -z "${KICAD_BACKUP_AGE_RECIPIENT:-}" ]]; then
   echo "Production backup key and recipient required from Doppler" >&2
   exit 2
 fi
@@ -14,11 +14,8 @@ for required_command in docker age age-keygen mktemp; do
   }
 done
 
-database_container="kicad-cloud-db-1"
-if [[ "$(docker inspect "$database_container" --format '{{.State.Health.Status}}')" != "healthy" ]]; then
-  echo "Production PostgreSQL is not healthy; aborting backup" >&2
-  exit 1
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/production-db-target.sh"
+database_container="$(kicad_cloud_database_container)"
 backup_dir="$HOME/.local/share/kicad-cloud/backups"
 if [[ -L "$backup_dir" ]]; then
   echo "Refusing a symlink for production backup directory" >&2
@@ -42,16 +39,20 @@ fi
 
 # Streams database data directly into authenticated age encryption; no
 # plaintext database dump touches disk or the production Docker volume.
-docker exec -u postgres "$database_container" pg_dump \
-  -U kicad_cloud -d kicad_cloud -Fc --no-owner --no-acl |
+docker exec "$database_container" sh -c \
+  'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc --no-owner --no-acl' |
   age -r "$KICAD_BACKUP_AGE_RECIPIENT" > "$partial"
 if [[ ! -s "$partial" ]]; then
   echo "Backup produced no encrypted data" >&2
   exit 1
 fi
 # Checks decryption and pg_restore's archive parser, not a complete restore.
-age -d -i "$key_dir/identity" "$partial" |
-  docker exec -i "$database_container" pg_restore --list >/dev/null
+# The archive parser may stop consuming stdin early; verify from RAM-only
+# storage so pipefail never converts an otherwise valid backup into SIGPIPE.
+age -d -i "$key_dir/identity" "$partial" > "$key_dir/verified.pgdump"
+[[ -s "$key_dir/verified.pgdump" ]] || exit 1
+docker exec -i "$database_container" pg_restore --list \
+  < "$key_dir/verified.pgdump" >/dev/null
 chmod 600 -- "$partial"
 mv -f -- "$partial" "$backup_dir/production-db-latest.pg.age"
 echo "Encrypted production DB snapshot verified and atomically replaced"

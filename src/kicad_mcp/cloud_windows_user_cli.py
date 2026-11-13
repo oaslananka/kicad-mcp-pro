@@ -228,6 +228,65 @@ def _reuse_owner_registration(
     )
 
 
+def repair_windows_project(
+    previous: WindowsRegisteredProject,
+    *,
+    origin: str,
+    alias: str,
+    approval: Callable[[str, str, str], None],
+    stop_previous: Callable[[], bool],
+) -> WindowsRegisteredProject:
+    """Recover an orphaned device through a *new* owner-browser pairing.
+
+    Stage the new key/project/binding before changing any old local markers.
+    No Cloud grants, local writes to KiCad files, or automatic approval.
+    """
+    from kicad_mcp.cloud_windows_connector import repair_selected_project
+
+    if previous.origin != origin or not callable(stop_previous):
+        raise typer.BadParameter("Device repair must use the existing trusted Cloud origin.")
+    previous_selected = inspect_owner_selected_project(previous)
+    typer.echo(
+        "Repair will pair a NEW device using browser approval. "
+        "The previous device key, registration and project files will be kept."
+    )
+    typer.echo("If the earlier Cloud device still exists, review/revoke it separately in Devices.")
+    try:
+        paired = enroll_windows_device(
+            origin=origin,
+            alias=alias,
+            owner_approval=approval,
+        )
+        replacement = register_windows_project(
+            paired,
+            alias=previous.filename_stem,
+            filename_stem=previous.filename_stem,
+        )
+        bind_owner_selected_project(
+            replacement, previous_selected.directory, owner_confirm=lambda _path: True
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise typer.BadParameter(
+            "New Cloud pairing was not completed; existing local selection is unchanged. "
+            "If Cloud enrolled a device, review it under Devices before retrying."
+        ) from exc
+    if not stop_previous():
+        raise typer.BadParameter(
+            "Old Connector task could not be stopped; the previous local selection was preserved. "
+            "The newly paired device may need owner review in Cloud Devices."
+        )
+    try:
+        repair_selected_project(previous, replacement, owner_confirm=lambda *_: True)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise typer.BadParameter(
+            "The new device was paired, but the local selection could not be switched safely. "
+            "Old keys and the archived selection were preserved for recovery."
+        ) from exc
+    typer.echo("New browser-approved device selected. Earlier credentials were preserved.")
+    typer.echo("Cloud project/app read permissions must be enabled separately in Devices.")
+    return replacement
+
+
 def setup_windows(
     *,
     origin: str,

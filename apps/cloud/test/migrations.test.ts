@@ -49,5 +49,5 @@ test("migration runner is repeatable, serialized and rejects altered history",
 });
 test("migrations require an explicit action",async()=>{
   const source=await import("../src/migrations.js");
-  assert.equal(source.migrationFiles.length,20);
+  assert.equal(source.migrationFiles.length,22);
 });

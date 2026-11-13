@@ -291,7 +291,11 @@ def _write_project_record(root: Path, record: dict[str, str]) -> None:
 
 
 def _select_remote_project(
-    origin: str, browse: bool, project_dir: Path | None, no_browser: bool
+    origin: str,
+    browse: bool,
+    project_dir: Path | None,
+    no_browser: bool,
+    repair_device: bool = False,
 ) -> WindowsRegisteredProject | None:
     """Reuse the owner-selected project or run first-time browser pairing."""
     from kicad_mcp.cloud_windows_connector import selected_project
@@ -299,6 +303,26 @@ def _select_remote_project(
     from kicad_mcp.cloud_windows_user_cli import setup_windows
 
     existing = selected_project()
+    if repair_device:
+        if existing is None:
+            raise typer.BadParameter("No saved device to repair; run cloud remote instead.")
+        if browse or project_dir is not None or existing.origin != origin:
+            raise typer.BadParameter(
+                "Recovery reuses the existing Cloud origin and KiCad folder. "
+                "Remove --browse / --project-dir for --repair-device."
+            )
+        from kicad_mcp.cloud_windows_task_scheduler import stop_and_remove_owner_task
+        from kicad_mcp.cloud_windows_user_cli import repair_windows_project
+
+        return repair_windows_project(
+            existing,
+            origin=origin,
+            alias=_resolve_device_alias(None),
+            approval=lambda page, challenge, code: _perform_approval(
+                page, challenge, code, no_browser
+            ),
+            stop_previous=stop_and_remove_owner_task,
+        )
     if existing is None:
         # A single command handles the first browser-approved pairing and folder selection.
         choose_folder = browse or (
@@ -336,6 +360,18 @@ def _select_remote_project(
     return existing
 
 
+def _verify_remote_foreground_options(browse: bool, project_dir: Path | None) -> None:
+    """Validate foreground use before touching the selected Windows device."""
+    if not _is_windows():
+        raise typer.BadParameter(
+            "Foreground remote is currently supported on Windows. Local MCP remains available."
+        )
+    if not _owner_terminal():
+        raise typer.BadParameter("Run this command in an interactive terminal.")
+    if browse and project_dir is not None:
+        raise typer.BadParameter("Use --browse or --project-dir, not both.")
+
+
 @cloud_app.command("remote")
 def remote(
     browse: Annotated[bool, typer.Option("--browse", help="Choose a local KiCad project.")] = False,
@@ -349,16 +385,26 @@ def remote(
         bool,
         typer.Option("--no-browser", help="Print the pairing URL instead of opening a browser."),
     ] = False,
+    allow_native_drc: Annotated[
+        bool,
+        typer.Option(
+            "--allow-native-drc",
+            help="Opt in to read-only native DRC counts for this foreground session only.",
+        ),
+    ] = False,
+    repair_device: Annotated[
+        bool,
+        typer.Option(
+            "--repair-device",
+            help=(
+                "Browser-approve a fresh device after policy 1008; "
+                "preserve old keys and project files."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Pair once; keep a verified foreground Cloud connection open."""
-    if not _is_windows():
-        raise typer.BadParameter(
-            "Foreground remote is currently supported on Windows. Local MCP remains available."
-        )
-    if not _owner_terminal():
-        raise typer.BadParameter("Run this command in an interactive terminal.")
-    if browse and project_dir is not None:
-        raise typer.BadParameter("Use --browse or --project-dir, not both.")
+    _verify_remote_foreground_options(browse, project_dir)
     origin = _verified_origin(cloud_origin)
     from kicad_mcp.cloud_windows_connector import (
         CloudOwnerReapprovalRequiredError,
@@ -369,7 +415,9 @@ def remote(
     from kicad_mcp.cloud_windows_local_selection import inspect_owner_selected_project
     from kicad_mcp.cloud_windows_task_scheduler import stop_and_remove_owner_task
 
-    existing = _select_remote_project(origin, browse, project_dir, no_browser)
+    existing = _select_remote_project(
+        origin, browse, project_dir, no_browser, repair_device=repair_device
+    )
     if existing is None:
         return
     if existing.origin != origin:
@@ -392,6 +440,12 @@ def remote(
     typer.echo(f"Project: {selected.filename_stem}")
     typer.echo(f"Cloud: {origin}")
     typer.echo("Connecting... Keep this terminal open; press Ctrl+C to disconnect.")
+    if allow_native_drc:
+        typer.echo(
+            "Read-only native DRC allowed for this foreground session only. "
+            "Cloud still requires a separate project diagnostic grant. "
+            "The original KiCad files remain untouched."
+        )
 
     def show_status(value: str) -> None:
         if value == "Connected":
@@ -403,7 +457,17 @@ def remote(
     import asyncio
 
     try:
-        asyncio.run(run_connector(stop=asyncio.Event(), status_callback=show_status))
+        if allow_native_drc:
+            asyncio.run(
+                run_connector(
+                    stop=asyncio.Event(),
+                    status_callback=show_status,
+                    allow_native_drc=True,
+                )
+            )
+        else:
+            # Preserve the exact legacy call signature for normal remote use.
+            asyncio.run(run_connector(stop=asyncio.Event(), status_callback=show_status))
     except CloudOwnerReapprovalRequiredError:
         raise typer.Exit(code=3) from None
     except KeyboardInterrupt:

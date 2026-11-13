@@ -233,6 +233,8 @@ test("owner-managed Connector On/Off stays session-bound and CSRF protected",asy
   const managed={
     enabledProjectIds:async(owner:string)=>owner==="owner-a"&&enabled?[project]:[],
     isEnabled:async()=>enabled,
+    nativeOperationsByProject:async()=>[],
+    setNativeOperation:async()=>false,
     setEnabled:async(owner:string,device:string,id:string,setting:boolean)=>{
       requests.push({owner,device,project:id,enabled:setting});
       if(owner!=="owner-a"||device!==f.ownId||id!==project)return false;
@@ -328,4 +330,68 @@ test("a project has an explicit owner-only permanent removal, separate from app 
   assert.deepEqual(removed,["owner-a:"+project]);
   assert.equal((await devicesResponse(post(project),f.identity,origin,
     {...devices,deleteProject:async()=>false}))?.status,404);
+});
+
+test("native Cloud diagnostic consent is explicit, owner-scoped and CSRF protected",async()=>{
+  const f=fixture();
+  const project=randomUUID(),attempts:string[]=[];
+  let drcEnabled=false;
+  const devices:DeviceManagementPort={...f.devices,
+    async listProjects(owner){return owner==="owner-a"?[{
+      id:project,deviceId:f.ownId,alias:"Sample",enabled:true,
+      maxMode:"readonly" as const
+    }]:[];}
+  };
+  const managed={
+    enabledProjectIds:async(owner:string)=>owner==="owner-a"?[project]:[],
+    nativeOperationsByProject:async(owner:string)=>owner==="owner-a"?[{
+      projectId:project,operations:drcEnabled?["run_drc"]:[] as string[]
+    }]:[],
+    setEnabled:async()=>true,
+    setNativeOperation:async(owner:string,device:string,id:string,operation:string,enabled:boolean)=>{
+      attempts.push(operation+":"+enabled);
+      if(owner!=="owner-a"||device!==f.ownId||id!==project||operation!=="run_drc")return false;
+      drcEnabled=enabled;return true;
+    },
+    isEnabled:async()=>true
+  };
+  const page=await devicesResponse(new Request(origin+"/devices"),f.identity,origin,
+    devices,true,undefined,undefined,managed as never,undefined,true);
+  assert.equal(page?.status,200);
+  const html=await page!.text();
+  assert.match(html,/Read-only KiCad diagnostics/);
+  assert.match(html,/action="\/devices\/projects\/native"/);
+  const nativeForm=/<form[^>]*action="\/devices\/projects\/native"[\s\S]*?name="csrf" value="([^"]+)"/.exec(html);
+  assert.ok(nativeForm,"Dedicated native consent form must have a new anti-CSRF token");
+  const cookie=(page!.headers.get("set-cookie")??"").split(";")[0];
+  const request=(operation:string,csrf:string,enabled=true,from=origin)=>
+    new Request(origin+"/devices/projects/native",{
+      method:"POST",
+      headers:{Origin:from,"Content-Type":"application/x-www-form-urlencoded",Cookie:cookie},
+      body:new URLSearchParams({
+        project_id:project,device_id:f.ownId,operation,csrf,enabled:String(enabled)
+      })
+    });
+  assert.equal((await devicesResponse(request("run_drc",nativeForm[1]!,true,
+    "https://attacker.invalid"),f.identity,origin,devices,true,undefined,
+    undefined,managed as never,undefined,true))?.status,403);
+  assert.equal((await devicesResponse(request("write_board",nativeForm[1]!),
+    f.identity,origin,devices,true,undefined,undefined,managed as never,undefined,true))?.status,400);
+  assert.equal((await devicesResponse(request("project_board_counts",nativeForm[1]!),
+    f.identity,origin,devices,true,undefined,undefined,managed as never,undefined,true))?.status,400);
+  assert.doesNotMatch(html,/name="operation" value="project_board_counts"/,
+    "Unimplemented local diagnostics must not appear as actionable controls");
+  assert.deepEqual(attempts,[]);
+  const success=await devicesResponse(request("run_drc",nativeForm[1]!),
+    f.identity,origin,devices,true,undefined,undefined,managed as never,undefined,true);
+  assert.equal(success?.status,303);
+  assert.equal(success?.headers.get("location"),"/devices?access=native-on");
+  assert.deepEqual(attempts,["run_drc:true"]);
+  const disabled=await devicesResponse(request("run_drc",nativeForm[1]!,false),
+    f.identity,origin,devices,true,undefined,undefined,managed as never,undefined,true);
+  assert.equal(disabled?.status,303);
+  assert.deepEqual(attempts,["run_drc:true","run_drc:false"]);
+  const absent=await devicesResponse(request("run_drc",nativeForm[1]!),
+    f.identity,origin,devices,true,undefined,undefined,managed as never,undefined,false);
+  assert.equal(absent?.status,405,"Production native switch is absent unless explicitly enabled");
 });

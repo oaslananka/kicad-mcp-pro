@@ -17,6 +17,7 @@ from pathlib import Path
 
 MAX_FRAME_BYTES = 1024
 MAX_DEADLINE_MS = 30_000
+MAX_MANAGED_NATIVE_DRC_DEADLINE_MS = 55_000
 MAX_SESSION_REMAINING_MS = 300_000
 MAX_DIRECTORY_ENTRIES = 128
 _READ_DENIED = "request denied"
@@ -73,6 +74,18 @@ def _reject_constant(_: str) -> None:
     raise LocalReadDeniedError(_READ_DENIED)
 
 
+def _read_deadline_limit(
+    now_ms: int, binding: VerifiedLocalBinding, operation: object, extended_native_drc: bool
+) -> int:
+    """Extend only an independently enabled, scoped native DRC request."""
+    budget = (
+        MAX_MANAGED_NATIVE_DRC_DEADLINE_MS
+        if extended_native_drc and operation == "run_drc"
+        else MAX_DEADLINE_MS
+    )
+    return min(now_ms + budget, binding.session_expires_unix_ms)
+
+
 def _validate_frame(
     frame: bytes,
     boundary: VerifiedLocalBinding,
@@ -80,7 +93,10 @@ def _validate_frame(
     now_ms: int,
     *,
     allow_native_drc: bool = False,
+    extended_native_drc: bool = False,
 ) -> dict[str, object]:
+    if type(extended_native_drc) is not bool or (extended_native_drc and not allow_native_drc):
+        raise LocalReadDeniedError(_READ_DENIED)
     if not isinstance(frame, bytes) or not (1 <= len(frame) <= MAX_FRAME_BYTES):
         raise LocalReadDeniedError(_READ_DENIED)
     if not isinstance(now_ms, int) or isinstance(now_ms, bool) or now_ms <= 0:
@@ -117,7 +133,9 @@ def _validate_frame(
         or operation not in boundary.operations
         or type(deadline) is not int
         or not (
-            now_ms < deadline <= min(now_ms + MAX_DEADLINE_MS, boundary.session_expires_unix_ms)
+            now_ms
+            < deadline
+            <= _read_deadline_limit(now_ms, boundary, operation, extended_native_drc)
         )
     ):
         raise LocalReadDeniedError(_READ_DENIED)

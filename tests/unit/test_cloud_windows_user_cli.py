@@ -747,3 +747,175 @@ def test_windows_reconnect_unverifiable_task_never_replaces_scheduler_entry(
     assert result.exit_code == 0
     assert "Unavailable" in result.output
     assert events == []
+
+
+def test_remote_exposes_explicit_repair_command_without_running_pairing() -> None:
+    from typer.main import get_command
+
+    options = CliRunner().invoke(app, ["cloud", "remote", "--help"])
+    assert options.exit_code == 0, options.output
+    # Rich inserts ANSI escapes within option text on Windows. Inspect the
+    # registered Click options, not presentation-dependent terminal bytes.
+    remote_command = get_command(cloud_user_cli.cloud_app).commands["remote"]
+    option_names = {
+        name for parameter in remote_command.params for name in getattr(parameter, "opts", ())
+    }
+    assert "--repair-device" in option_names
+    assert "--allow-native-drc" in option_names
+
+
+def test_browser_approved_device_repair_reuses_project_and_preserves_old_binding(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_connector
+
+    folder, events, previous, selection = windows_cli
+    new_device = WindowsEnrolledDevice(
+        record_id="d" * 32,
+        origin=previous.origin,
+        owner_sub=previous.owner_sub,
+        device_id="f9ee4be9-0aec-448e-9873-721ae113ec02",
+        fingerprint="d" * 64,
+    )
+    replacement = WindowsRegisteredProject(
+        registration_id="c" * 32,
+        record_id=new_device.record_id,
+        origin=previous.origin,
+        owner_sub=previous.owner_sub,
+        device_id=new_device.device_id,
+        fingerprint=new_device.fingerprint,
+        project_id="e9ee4be9-0aec-448e-9873-721ae113ec02",
+        filename_stem=previous.filename_stem,
+    )
+
+    def enroll(**options: object) -> WindowsEnrolledDevice:
+        events.append("fresh-pairing")
+        approval = options["owner_approval"]
+        assert callable(approval)
+        approval(ORIGIN + "/devices/pairing", "challenge", "TEST-CODE")
+        return new_device
+
+    def register(paired: WindowsEnrolledDevice, **options: object) -> WindowsRegisteredProject:
+        events.append("fresh-project")
+        assert paired == new_device
+        assert options["filename_stem"] == previous.filename_stem
+        return replacement
+
+    def bind(project, directory, *, owner_confirm):
+        events.append("bind-same-folder")
+        assert project == replacement
+        assert directory == folder
+        assert owner_confirm(directory) is True
+        return selection
+
+    def switch(old, new, *, owner_confirm):
+        events.append("switch")
+        assert old == previous
+        assert new == replacement
+        assert owner_confirm(old, new) is True
+
+    monkeypatch.setattr(cloud_windows_user_cli, "enroll_windows_device", enroll)
+    monkeypatch.setattr(cloud_windows_user_cli, "register_windows_project", register)
+    monkeypatch.setattr(cloud_windows_user_cli, "bind_owner_selected_project", bind)
+    monkeypatch.setattr(cloud_windows_connector, "repair_selected_project", switch)
+
+    got = cloud_windows_user_cli.repair_windows_project(
+        previous,
+        origin=ORIGIN,
+        alias="Lab PC",
+        approval=lambda *_args: events.append("browser-approval"),
+        stop_previous=lambda: events.append("stop-old") or True,
+    )
+    assert got == replacement
+    assert events == [
+        "fresh-pairing",
+        "browser-approval",
+        "fresh-project",
+        "bind-same-folder",
+        "stop-old",
+        "switch",
+    ]
+    assert selection.directory == folder
+
+
+def test_repair_requires_verified_old_connector_stop_before_selection_switch(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_connector
+
+    folder, events, previous, _selection = windows_cli
+
+    def unsafe_switch(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("old active Connector was not stopped; never switch credentials")
+
+    monkeypatch.setattr(cloud_windows_connector, "repair_selected_project", unsafe_switch)
+    with pytest.raises(Exception, match="previous local selection was preserved"):
+        cloud_windows_user_cli.repair_windows_project(
+            previous,
+            origin=ORIGIN,
+            alias="Lab PC",
+            approval=lambda *_args: events.append("browser-approval"),
+            stop_previous=lambda: False,
+        )
+    assert "browser-approval" in events
+    assert previous.filename_stem == "demo"
+    assert folder.is_dir()
+
+
+def test_repair_rejects_foreign_cloud_before_reenrollment(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _folder, events, old, _selection = windows_cli
+    with pytest.raises(cloud_windows_user_cli.typer.BadParameter, match="trusted Cloud origin"):
+        cloud_windows_user_cli.repair_windows_project(
+            old,
+            origin="https://foreign-cloud.example",
+            alias="Lab PC",
+            approval=lambda *_: pytest.fail("no browser side effect"),
+            stop_previous=lambda: pytest.fail("no task side effect"),
+        )
+    assert events == []
+
+
+def test_repair_failed_owner_browser_pairing_retains_previous_selection(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _folder, events, old, _selection = windows_cli
+
+    def failed_enroll(**_opts: object) -> WindowsEnrolledDevice:
+        raise RuntimeError("browser declined")
+
+    monkeypatch.setattr(cloud_windows_user_cli, "enroll_windows_device", failed_enroll)
+    with pytest.raises(cloud_windows_user_cli.typer.BadParameter, match="not completed"):
+        cloud_windows_user_cli.repair_windows_project(
+            old,
+            origin=ORIGIN,
+            alias="Lab PC",
+            approval=lambda *_: events.append("owner-browser"),
+            stop_previous=lambda: pytest.fail("must not stop old task"),
+        )
+    assert events == []
+
+
+def test_repair_cannot_claim_success_after_new_pairing_if_local_switch_fails(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_connector
+
+    _folder, events, old, _selection = windows_cli
+
+    def unsafe_switch(*_args: object, **_kwargs: object) -> None:
+        raise OSError("simulated credential manager write failure")
+
+    monkeypatch.setattr(cloud_windows_connector, "repair_selected_project", unsafe_switch)
+    with pytest.raises(
+        cloud_windows_user_cli.typer.BadParameter, match="could not be switched safely"
+    ):
+        cloud_windows_user_cli.repair_windows_project(
+            old,
+            origin=ORIGIN,
+            alias="Lab PC",
+            approval=lambda *_: events.append("browser-approval"),
+            stop_previous=lambda: events.append("stop-old") or True,
+        )
+    assert events == ["enroll", "browser-approval", "register", "bind", "stop-old"]

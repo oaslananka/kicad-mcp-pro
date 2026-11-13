@@ -14,12 +14,17 @@ function clientDisplayName(clientId:string):string {
   }
 }
 
+const NATIVE_DIAGNOSTICS=[
+  {id:"run_drc",label:"PCB DRC counts",detail:"Issue and unconnected-item totals from the local board"}
+] as const;
+
 export function renderDevicesPage(
   devices:ReadonlyArray<ManagedDevice & {csrf:string;deleteCsrf?:string;enableCsrf?:string;projectCsrf?:string;browseCsrf?:string;
     connectionState?:"connected"|"disconnected"}>,
   notice?:string,enrollmentAvailable=true,
   projects:ReadonlyArray<{id:string;deviceId:string;alias:string;enabled:boolean;localPath?:string;deleteCsrf?:string;renameCsrf?:string;grantCsrf?:string;
-    managedEnabled?:boolean;managedCsrf?:string}>=[],
+    managedEnabled?:boolean;managedCsrf?:string;
+    nativeEnabled?:ReadonlyArray<string>;nativeCsrf?:string}>=[],
   ownerSub?:string,clients:ReadonlyArray<string>=[],
   savedGrants:ReadonlyArray<BrowserGrantSummary>=[],sandboxMode=false,browseEnabled=false
 ):string {
@@ -59,6 +64,34 @@ export function renderDevicesPage(
                     </button>
                   </form>
                 </>:null}
+
+                {project.enabled&&project.managedEnabled&&project.nativeCsrf?
+                  <details className="project-native-access">
+                    <summary>Read-only KiCad diagnostics</summary>
+                    <p className="field-help">Only the bounded PCB DRC totals pilot is available here. The installed
+                      Connector must be started by the device owner with native DRC explicitly
+                      allowed, and the AI application needs its own read grant. Other KiCad
+                      diagnostics are not available through managed Cloud yet. No edits or raw
+                      KiCad project contents are permitted.</p>
+                    <div className="project-native-operations">
+                      {NATIVE_DIAGNOSTICS.map(item=>{
+                        const enabled=project.nativeEnabled?.includes(item.id)===true;
+                        return <form action="/devices/projects/native" method="post"
+                          className="project-native-operation" key={item.id}>
+                          <input type="hidden" name="project_id" value={project.id}/>
+                          <input type="hidden" name="device_id" value={project.deviceId}/>
+                          <input type="hidden" name="operation" value={item.id}/>
+                          <input type="hidden" name="csrf" value={project.nativeCsrf}/>
+                          <div><strong>{item.label}</strong>
+                            <small className="field-help">{item.detail}</small></div>
+                          <button className="button secondary" type="submit" name="enabled"
+                            value={enabled?"false":"true"}>
+                            {enabled?"Disable":"Enable"}
+                          </button>
+                        </form>;
+                      })}
+                    </div>
+                  </details>:null}
 
                 {project.enabled&&project.grantCsrf&&clients.some(client=>!savedGrants.some(
                   g=>g.projectId===project.id&&g.clientId===client))?
