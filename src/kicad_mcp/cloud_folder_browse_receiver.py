@@ -59,6 +59,22 @@ class LocalFolderBrowseService(Protocol):
     def project_path(self, project_id: str) -> str | None: ...
 
 
+def _required_folder_frame_fields(operation: str, message: dict[str, object]) -> set[str]:
+    """Require opaque local tokens only for operations that actually use them."""
+    expected = {"kind", "version", "requestId", "operation"}
+    if operation in ("list", "bind"):
+        expected.add("folderId")
+        folder_id = message.get("folderId")
+        if not isinstance(folder_id, str) or _FOLDER_ID.fullmatch(folder_id) is None:
+            raise CloudHandshakeDeniedError(_DENIED)
+    if operation in ("bind", "path"):
+        expected.add("projectId")
+        project_id = message.get("projectId")
+        if not isinstance(project_id, str) or _PROJECT_ID.fullmatch(project_id) is None:
+            raise CloudHandshakeDeniedError(_DENIED)
+    return expected
+
+
 def _decode_request(raw: object) -> dict[str, object]:
     """Strict bounded frame decode; any deviation denies the whole session."""
     if not isinstance(raw, str) or not 1 <= len(raw.encode("utf-8")) <= _MAX_REQUEST_BYTES:
@@ -77,18 +93,7 @@ def _decode_request(raw: object) -> dict[str, object]:
     request_id = message.get("requestId")
     if not isinstance(request_id, str) or _REQUEST_ID.fullmatch(request_id) is None:
         raise CloudHandshakeDeniedError(_DENIED)
-    expected = {"kind", "version", "requestId", "operation"}
-    if operation in ("list", "bind"):
-        expected = {*expected, "folderId"}
-        folder_id = message.get("folderId")
-        if not isinstance(folder_id, str) or _FOLDER_ID.fullmatch(folder_id) is None:
-            raise CloudHandshakeDeniedError(_DENIED)
-    if operation in ("bind", "path"):
-        expected = {*expected, "projectId"}
-        project_id = message.get("projectId")
-        if not isinstance(project_id, str) or _PROJECT_ID.fullmatch(project_id) is None:
-            raise CloudHandshakeDeniedError(_DENIED)
-    if set(message) != expected:
+    if set(message) != _required_folder_frame_fields(operation, message):
         raise CloudHandshakeDeniedError(_DENIED)
     return message
 
@@ -120,7 +125,7 @@ def _validated_list(listing: object, request_id: str, folder_id: str) -> dict[st
     if parent_id is not None:
         _bounded_text(parent_id, 64)
     raw_folders = listing["folders"]
-    if not isinstance(raw_folders, list) or not 0 <= len(raw_folders) <= MAX_CHILDREN:
+    if not isinstance(raw_folders, list) or len(raw_folders) > MAX_CHILDREN:
         raise CloudHandshakeDeniedError(_DENIED)
     folders: list[dict[str, object]] = []
     for item in raw_folders:

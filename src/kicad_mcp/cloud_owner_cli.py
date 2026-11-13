@@ -19,35 +19,44 @@ from kicad_mcp.cloud_owner_management import (
 )
 
 
+def _show_cloud_list_row(row: object) -> None:
+    """One readable owner record; nested entries remain inspectable."""
+    if not isinstance(row, dict):
+        typer.echo("  " + str(row))
+        return
+    text = "  " + " | ".join(
+        str(key) + ": " + str(item)
+        for key, item in row.items()
+        if not isinstance(item, (list, dict))
+    )
+    typer.echo(text)
+    for key, nested in row.items():
+        if isinstance(nested, list):
+            for item in nested:
+                typer.echo(
+                    "    "
+                    + key
+                    + ": "
+                    + json.dumps(item, ensure_ascii=False, separators=(",", ":"))
+                )
+
+
+def _show_cloud_list(key: str, rows: list[object]) -> None:
+    if not rows:
+        typer.echo("No " + key.replace("_", " ") + " found.")
+        return
+    typer.echo(key.replace("_", " ").title() + ":")
+    for row in rows:
+        _show_cloud_list_row(row)
+
+
 def _display(value: dict[str, Any], as_json: bool) -> None:
     if as_json:
         typer.echo(json.dumps(value, ensure_ascii=False, indent=2))
         return
     for key, rows in value.items():
         if isinstance(rows, list):
-            if not rows:
-                typer.echo("No " + key.replace("_", " ") + " found.")
-                continue
-            typer.echo(key.replace("_", " ").title() + ":")
-            for row in rows:
-                if isinstance(row, dict):
-                    text = "  " + " | ".join(
-                        str(k) + ": " + str(v)
-                        for k, v in row.items()
-                        if not isinstance(v, (list, dict))
-                    )
-                    typer.echo(text)
-                    for nested_key, nested_rows in row.items():
-                        if isinstance(nested_rows, list):
-                            for item in nested_rows:
-                                typer.echo(
-                                    "    "
-                                    + nested_key
-                                    + ": "
-                                    + json.dumps(item, ensure_ascii=False, separators=(",", ":"))
-                                )
-                else:
-                    typer.echo("  " + str(row))
+            _show_cloud_list(key, rows)
         elif isinstance(rows, dict):
             typer.echo(key.replace("_", " ").title() + ":")
             for name, amount in rows.items():
@@ -66,14 +75,10 @@ def _request(
         raise typer.Exit(1) from exc
 
 
-def _add_project_on_paired_device(
-    origin: str, directory: Path, *, filename: str | None, name: str | None
-) -> tuple[str, str]:
-    """Register a KiCad folder against this already paired device, then bind it locally.
-
-    Selecting a folder or a file never uploads it. A failed local bind is
-    compensated by removing only the newly created Cloud project record.
-    """
+def _select_paired_local_project(
+    origin: str, directory: Path, filename: str | None
+) -> tuple[str, object, str, Path]:
+    """Resolve only one local file and its existing signed device identity."""
     from kicad_mcp.cloud_folder_browse_receiver import default_bindings_file
     from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
     from kicad_mcp.cloud_windows_connector import selected_project
@@ -113,25 +118,19 @@ def _add_project_on_paired_device(
         raise CloudManagementError(
             "Select one KiCad project with --file (available: " + available[:250] + ")."
         )
-    chosen = matches[0]
-    label = name if name is not None else directory.name
-    if not label or len(label) > 64 or not label.strip():
-        raise CloudManagementError("Cloud project name must contain 1 to 64 characters.")
-    api = CloudOwnerApi(origin)
-    reply = api.authorized(
-        "POST",
-        "/api/owner/v1/projects",
-        payload={"deviceId": device.device_id, "alias": label},
-    )
-    project_id = reply.get("id")
+    return device.device_id, browser, str(matches[0]["id"]), directory
+
+
+def _commit_local_project_binding(
+    api: CloudOwnerApi, browser: object, folder_token: str, project_id: str
+) -> None:
+    """Never leave a misleading new Cloud record when local mapping fails."""
+    from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
+
+    if not isinstance(browser, LocalFolderBrowser):
+        raise CloudManagementError("Local project browser is unavailable.")
     try:
-        if not isinstance(project_id, str):
-            raise ValueError("invalid Cloud project id")
-        UUID(project_id)
-    except (ValueError, TypeError, AttributeError) as exc:
-        raise CloudManagementError("Cloud did not confirm a valid project identity.") from exc
-    try:
-        if browser.bind(str(chosen["id"]), project_id) is not True:
+        if browser.bind(folder_token, project_id) is not True:
             raise ValueError("local project map was not saved")
     except (OSError, ValueError, TypeError, RuntimeError) as exc:
         try:
@@ -146,6 +145,32 @@ def _add_project_on_paired_device(
         raise CloudManagementError(
             "The local project binding failed; its new Cloud record was removed."
         ) from exc
+
+
+def _add_project_on_paired_device(
+    origin: str, directory: Path, *, filename: str | None, name: str | None
+) -> tuple[str, str]:
+    """Register one owner-chosen local KiCad file without uploading its contents."""
+    device_id, browser, folder_token, resolved = _select_paired_local_project(
+        origin, directory, filename
+    )
+    label = name if name is not None else resolved.name
+    if not label or len(label) > 64 or not label.strip():
+        raise CloudManagementError("Cloud project name must contain 1 to 64 characters.")
+    api = CloudOwnerApi(origin)
+    reply = api.authorized(
+        "POST",
+        "/api/owner/v1/projects",
+        payload={"deviceId": device_id, "alias": label},
+    )
+    project_id = reply.get("id")
+    try:
+        if not isinstance(project_id, str):
+            raise ValueError("invalid Cloud project id")
+        UUID(project_id)
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise CloudManagementError("Cloud did not confirm a valid project identity.") from exc
+    _commit_local_project_binding(api, browser, folder_token, project_id)
     return project_id, label
 
 

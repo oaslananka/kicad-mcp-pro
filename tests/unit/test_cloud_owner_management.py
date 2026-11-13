@@ -21,6 +21,7 @@ def test_owner_api_uses_verified_tls_and_never_forwards_token_on_redirect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[tuple[object, ...]] = []
+    tls_settings: list[dict[str, object]] = []
 
     class FakeReply:
         status = 200
@@ -39,8 +40,16 @@ def test_owner_api_uses_verified_tls_and_never_forwards_token_on_redirect(
         def clear(self) -> None:
             calls.append(("clear",))
 
-    monkeypatch.setattr(cloud_owner_management.urllib3, "PoolManager", lambda **_: FakePool())
+    def secure_pool(**kwargs: object) -> FakePool:
+        tls_settings.append(kwargs)
+        return FakePool()
+
+    monkeypatch.setattr(cloud_owner_management.urllib3, "PoolManager", secure_pool)
     answer = CloudOwnerApi(_ORIGIN).request("GET", "/api/owner/v1/devices", token=_TOKEN)
+    assert len(tls_settings) == 1
+    assert tls_settings[0]["cert_reqs"] == "CERT_REQUIRED"
+    assert tls_settings[0]["retries"] is False
+    assert "ssl_context" not in tls_settings[0]
     assert answer == {"devices": []}
     method, url, params = calls[0]
     assert method == "GET"

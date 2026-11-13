@@ -14,7 +14,6 @@ import os
 import re
 import secrets
 import socket
-import ssl
 import time
 import webbrowser
 from pathlib import Path
@@ -162,9 +161,11 @@ class CloudOwnerApi:
             headers["Content-Type"] = "application/json"
         if token is not None:
             headers["Authorization"] = "Bearer " + token
+        # urllib3 builds the verified TLS client context using the platform
+        # trust store. We explicitly require certificate verification while
+        # preserving its standard hostname check (no custom context override).
         pool = urllib3.PoolManager(
-            cert_reqs=ssl.CERT_REQUIRED,
-            ssl_context=ssl.create_default_context(),
+            cert_reqs="CERT_REQUIRED",
             timeout=urllib3.Timeout(connect=5, read=9),
             retries=False,
         )
@@ -209,44 +210,20 @@ class CloudOwnerApi:
         return self.request(method, path, payload=payload, token=token)
 
 
-def authorize(
-    origin: str,
-    *,
-    no_browser: bool = False,
-    label: str | None = None,
-    timeout_seconds: int = 600,
-) -> None:
-    """One human-approved browser journey, then reusable private CLI access."""
-    api = CloudOwnerApi(origin)
-    current = load_token(api.origin)
-    if current:
-        try:
-            api.request("GET", "/api/owner/v1/devices", token=current)
-            print("Cloud management already connected.")
+def _open_owner_approval(url: str, no_browser: bool) -> None:
+    """Browser approval is optional only when the owner chose --no-browser."""
+    print("Approve command-line access in your browser: " + url)
+    if no_browser:
+        return
+    try:
+        if webbrowser.open(url, new=2, autoraise=True):
             return
-        except CloudManagementError:
-            # Do not silently replace credentials on a temporary outage.
-            raise CloudManagementError(
-                "Existing Cloud access could not be verified. Try again later or log out."
-            ) from None
-    request_id = secrets.token_urlsafe(32)
-    if not _REQUEST_ID.fullmatch(request_id):
-        raise CloudManagementError("Could not create a Cloud approval request.")
-    hostname = label if label is not None else socket.gethostname()
-    safe_label = re.sub(r"[^A-Za-z0-9 ._()-]", "", hostname)[:64].strip() or "My computer"
-    started = api.request(
-        "POST", "/api/owner/cli/start", payload={"requestId": request_id, "label": safe_label}
-    )
-    expected_url = api.origin + "/api/owner/cli/approve?request_id=" + request_id
-    if started.get("status") != "pending" or started.get("approveUrl") != expected_url:
-        raise CloudManagementError("Cloud returned an untrusted approval destination.")
-    print("Approve command-line access in your browser: " + expected_url)
-    if not no_browser:
-        try:
-            if not webbrowser.open(expected_url, new=2, autoraise=True):
-                print("Open the link above to continue.")
-        except (OSError, webbrowser.Error):
-            print("Open the link above to continue.")
+    except (OSError, webbrowser.Error):
+        pass
+    print("Open the link above to continue.")
+
+
+def _await_owner_cli_approval(api: CloudOwnerApi, request_id: str, timeout_seconds: int) -> None:
     deadline = time.monotonic() + min(600, max(1, timeout_seconds))
     while time.monotonic() < deadline:
         state = api.request("POST", "/api/owner/cli/poll", payload={"requestId": request_id})
@@ -264,3 +241,42 @@ def authorize(
             raise CloudManagementError("Unexpected Cloud approval state.")
         time.sleep(2)
     raise CloudManagementError("Cloud approval timed out. Start a new login.")
+
+
+def _verify_existing_owner_access(api: CloudOwnerApi, token: str) -> None:
+    try:
+        api.request("GET", "/api/owner/v1/devices", token=token)
+        print("Cloud management already connected.")
+    except CloudManagementError:
+        # A temporary network outage must not silently replace credentials.
+        raise CloudManagementError(
+            "Existing Cloud access could not be verified. Try again later or log out."
+        ) from None
+
+
+def authorize(
+    origin: str,
+    *,
+    no_browser: bool = False,
+    label: str | None = None,
+    timeout_seconds: int = 600,
+) -> None:
+    """One human-approved browser journey, then reusable private CLI access."""
+    api = CloudOwnerApi(origin)
+    current = load_token(api.origin)
+    if current:
+        _verify_existing_owner_access(api, current)
+        return
+    request_id = secrets.token_urlsafe(32)
+    if not _REQUEST_ID.fullmatch(request_id):
+        raise CloudManagementError("Could not create a Cloud approval request.")
+    hostname = label if label is not None else socket.gethostname()
+    safe_label = re.sub(r"[^A-Za-z0-9 ._()-]", "", hostname)[:64].strip() or "My computer"
+    started = api.request(
+        "POST", "/api/owner/cli/start", payload={"requestId": request_id, "label": safe_label}
+    )
+    expected_url = api.origin + "/api/owner/cli/approve?request_id=" + request_id
+    if started.get("status") != "pending" or started.get("approveUrl") != expected_url:
+        raise CloudManagementError("Cloud returned an untrusted approval destination.")
+    _open_owner_approval(expected_url, no_browser)
+    _await_owner_cli_approval(api, request_id, timeout_seconds)

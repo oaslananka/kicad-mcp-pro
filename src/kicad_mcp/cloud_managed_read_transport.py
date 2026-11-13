@@ -95,8 +95,11 @@ async def _serve_one_authenticated_read(
     dispatcher: LocalReadDispatch,
     receipt: HandshakeReceipt,
     expected_sequence: int,
-) -> None:
-    frame = _decode_sequenced_request(await socket.recv(), expected_sequence)
+    raw: str | None = None,
+) -> dict[str, object]:
+    frame = _decode_sequenced_request(
+        raw if raw is not None else await socket.recv(), expected_sequence
+    )
     response = await asyncio.to_thread(dispatcher.read, frame, sequence=expected_sequence)
     # The local grant can be revoked during inspection. Never interpret the
     # initial read as permission to send later.
@@ -115,6 +118,7 @@ async def _serve_one_authenticated_read(
         )
     )
     _validate_read_ack(await socket.recv(), expected_sequence, response["requestId"])
+    return response
 
 
 async def _serve_folder_request(
@@ -186,27 +190,9 @@ async def serve_authenticated_reads(
                         continue
                     if kind != "connector.authorized_read":
                         raise CloudHandshakeDeniedError(_DENIED)
-                    frame = _decode_sequenced_request(raw, reads_served + 1)
-                    response = await asyncio.to_thread(
-                        dispatcher.read, frame, sequence=reads_served + 1
+                    response = await _serve_one_authenticated_read(
+                        socket, dispatcher, receipt, reads_served + 1, raw
                     )
-                    # The local grant can be revoked during inspection. Never
-                    # interpret the initial read as permission to send later.
-                    dispatcher.assert_delivery_authorized(
-                        frame, device_id=receipt.device_id, session_id=receipt.session_id
-                    )
-                    await socket.send(
-                        json.dumps(
-                            {
-                                "kind": "connector.read_result",
-                                "version": 1,
-                                "sequence": reads_served + 1,
-                                "result": response,
-                            },
-                            separators=(",", ":"),
-                        )
-                    )
-                    _validate_read_ack(await socket.recv(), reads_served + 1, response["requestId"])
                     reads_served += 1
                     operation = response.get("operation")
                     safe = operation if operation in {"project_summary", "run_drc"} else "read"
