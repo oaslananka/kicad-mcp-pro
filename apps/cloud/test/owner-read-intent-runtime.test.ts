@@ -40,7 +40,16 @@ test("opt-in fails before private-key access unless trusted services are enabled
   },CLOUD,ready),/Exact independent owner HTTPS origin/);
 });
 
-test("only an owner-owned, private, regular Ed25519 key can enable delivery",async()=>{
+test("owner-intent delivery fails closed without POSIX file identity",{
+  skip:typeof process.getuid==="function"?"POSIX file identity is available on this platform":false
+},async()=>{
+  await assert.rejects(openConfiguredOwnerIntentDelivery(enabled("/missing/key"),CLOUD,ready),
+    /Owner-intent delivery requires POSIX file identity/);
+});
+
+test("only an owner-owned, private, regular Ed25519 key can enable delivery",{
+  skip:typeof process.getuid!=="function"?"Requires POSIX file identity; non-POSIX denial is tested separately":false
+},async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),"cloud-owner-intent-"));
   try{
     const key=path.join(dir,"signer.pem");
