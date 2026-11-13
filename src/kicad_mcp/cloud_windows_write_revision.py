@@ -48,7 +48,13 @@ def _open_pinned_board_fd(parent: str, stem: str, binary: int) -> int:
     if handle is None:
         raise LocalWriteDeniedError(_DENIED)
     try:
-        return msvcrt.open_osfhandle(handle, os.O_RDONLY | binary)
+        opener = getattr(msvcrt, "open_osfhandle", None)
+        if not callable(opener):
+            raise LocalWriteDeniedError(_DENIED)
+        fd = opener(handle, os.O_RDONLY | binary)
+        if type(fd) is not int:
+            raise LocalWriteDeniedError(_DENIED)
+        return int(fd)
     except (OSError, ValueError):
         _api().CloseHandle(handle)
         raise

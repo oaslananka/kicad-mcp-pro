@@ -72,7 +72,14 @@ def consume_windows_write_marker(directory: Path, session_id: str, request_id: s
             if not handle or handle == ctypes.c_void_p(-1).value:
                 return False
             try:
-                fd = msvcrt.open_osfhandle(handle, os.O_WRONLY | binary)
+                opener = getattr(msvcrt, "open_osfhandle", None)
+                if not callable(opener):
+                    api.CloseHandle(handle)
+                    return False
+                fd = opener(handle, os.O_WRONLY | binary)
+                if type(fd) is not int:
+                    api.CloseHandle(handle)
+                    return False
             except (OSError, ValueError):
                 api.CloseHandle(handle)
                 return False
