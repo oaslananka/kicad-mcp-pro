@@ -65,6 +65,7 @@ export type LocalFolderPort={
   chooseFolder:(owner:string,deviceId:string)=>Promise<NativeFolderSelection|null>;
   listFolder:(owner:string,deviceId:string,folderId:string)=>Promise<LocalFolderListing|null>;
   bindFolder:(owner:string,deviceId:string,folderId:string,projectId:string)=>Promise<boolean>;
+  supportsBrowse?:(owner:string,deviceId:string)=>boolean;
 };
 type FolderPending={
   requestId:string;operation:"list"|"bind"|"choose"|"path";timer:NodeJS.Timeout;
@@ -143,6 +144,7 @@ type Entry={
   queued:number; pending:Promise<void>; timer:NodeJS.Timeout | null;
   lastPong:number; sessionDeadline?:number; readSent?:boolean;
   readSequence:ConnectorReadSequence;
+  folderBrowseSupported:boolean;
   pendingCatalogClaim?:ConnectorCapabilityClaim;
   catalogClaim?:ConnectorCapabilityClaim;
   awaiting?:PendingRead; validating?:PendingRead; folderPending?:FolderPending;
@@ -150,6 +152,7 @@ type Entry={
 const hello=z.strictObject({
   kind:z.literal("device.hello"),version:z.literal(1),
   ownerSub:z.string().min(1).max(256),deviceId:z.uuid(),
+  folderBrowse:z.literal(1).optional(),
   catalog:ConnectorCapabilityClaimSchema.optional()
 });
 const proof=z.strictObject({kind:z.literal("device.proof"),version:z.literal(1),
@@ -376,7 +379,7 @@ export function attachConnectorWebSocket(
         ipOpen.set(ip,(ipOpen.get(ip)??0)+1);
         const entry:Entry={phase:"new",owner:"",device:"",challenge:"",
           nonce:"",queued:0,pending:Promise.resolve(),timer:null,lastPong:Date.now(),
-          readSequence:new ConnectorReadSequence(options.managedGrant?16:1)};
+          readSequence:new ConnectorReadSequence(options.managedGrant?16:1),folderBrowseSupported:false};
         function expire(ms:number):void{
           if(entry.timer)clearTimeout(entry.timer);
           entry.timer=setTimeout(()=>{entry.phase="closed";reject(ws);},ms);
@@ -427,6 +430,7 @@ export function attachConnectorWebSocket(
               fail();return;
             }
             entry.owner=parsed.data.ownerSub;entry.device=parsed.data.deviceId;
+            entry.folderBrowseSupported=parsed.data.folderBrowse===1;
             entry.pendingCatalogClaim=parsed.data.catalog;
             const issue=await options.proofs.issue(entry.owner,entry.device);
             if(issue.kind!=="issued"){fail();return;}
@@ -886,6 +890,7 @@ export function attachConnectorWebSocket(
     const active=readyDevices.get(socketKey(owner,deviceId));
     if(!active||active.entry.phase!=="ready"||
        active.socket.readyState!==WebSocket.OPEN||
+       !active.entry.folderBrowseSupported||
        active.entry.folderPending||active.entry.awaiting||active.entry.validating||
        (active.entry.sessionDeadline??0)-performance.now()<8_000)return null;
     // A signed session is renewed by the Connector on expiry. Do not
@@ -915,6 +920,12 @@ export function attachConnectorWebSocket(
     });
   }
   const localFolders:LocalFolderPort={
+    supportsBrowse(owner,deviceId){
+      const active=readyDevices.get(socketKey(owner,deviceId));
+      return Boolean(folderBrowse&&!stopped&&active?.entry.phase==="ready"&&
+        active.entry.folderBrowseSupported&&active.socket.readyState===WebSocket.OPEN&&
+        (active.entry.sessionDeadline??0)>performance.now());
+    },
     async getProjectPath(owner,deviceId,projectId){
       const value=await queryFolder(owner,deviceId,"path","",projectId);
       return typeof value==="string"?value:null;

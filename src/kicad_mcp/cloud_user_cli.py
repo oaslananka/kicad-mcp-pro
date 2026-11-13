@@ -406,6 +406,33 @@ def _verify_remote_foreground_options(
     return False
 
 
+def _prepare_remote_connector(existing: WindowsRegisteredProject, interactive: bool) -> None:
+    """Preserve owner task authority and local opt-in before a signed session."""
+    from kicad_mcp.cloud_windows_connector import activate, local_state
+    from kicad_mcp.cloud_windows_task_scheduler import (
+        scheduler_state,
+        stop_and_remove_owner_task,
+    )
+
+    # Interactive owners may remove their own verified scheduled task.
+    # A headless previously-paired session cannot alter tasks or activation.
+    if interactive:
+        if not stop_and_remove_owner_task():
+            raise typer.BadParameter(
+                "Could not stop the existing Connector task safely. "
+                "Registration and permissions were preserved."
+            )
+    elif scheduler_state() != "Configured (task unverified)":
+        raise typer.BadParameter(
+            "A scheduled Connector already exists; use cloud reconnect interactively."
+        )
+    state = local_state()
+    if state == "Off" and interactive:
+        activate(existing, owner_confirm=lambda _project: True)
+    elif state != "Configured (not connected)":
+        raise typer.BadParameter("Local Connector registration requires repair.")
+
+
 @cloud_app.command("remote")
 def remote(
     browse: Annotated[bool, typer.Option("--browse", help="Choose a local KiCad project.")] = False,
@@ -444,12 +471,9 @@ def remote(
     origin = _verified_origin(cloud_origin)
     from kicad_mcp.cloud_windows_connector import (
         CloudOwnerReapprovalRequiredError,
-        activate,
-        local_state,
         run_connector,
     )
     from kicad_mcp.cloud_windows_local_selection import inspect_owner_selected_project
-    from kicad_mcp.cloud_windows_task_scheduler import stop_and_remove_owner_task
 
     existing = _select_remote_project(
         origin, browse, project_dir, no_browser, repair_device=repair_device
@@ -459,27 +483,7 @@ def remote(
     if existing.origin != origin:
         raise typer.BadParameter("This device is paired with a different Cloud site.")
 
-    # The interactive owner can replace their own verified scheduler task.
-    # Headless resume is deliberately read-only with respect to task and
-    # activation state: it cannot replace a task or turn a disabled device on.
-    if interactive:
-        if not stop_and_remove_owner_task():
-            raise typer.BadParameter(
-                "Could not stop the existing Connector task safely. "
-                "Registration and permissions were preserved."
-            )
-    else:
-        from kicad_mcp.cloud_windows_task_scheduler import scheduler_state
-
-        if scheduler_state() != "Configured (task unverified)":
-            raise typer.BadParameter(
-                "A scheduled Connector already exists; use cloud reconnect interactively."
-            )
-    state = local_state()
-    if state == "Off" and interactive:
-        activate(existing, owner_confirm=lambda _project: True)
-    elif state != "Configured (not connected)":
-        raise typer.BadParameter("Local Connector registration requires repair.")
+    _prepare_remote_connector(existing, interactive)
     selected = inspect_owner_selected_project(existing)
     typer.echo("\nKiCad MCP Pro Remote")
     typer.echo(f"Project: {selected.filename_stem}")

@@ -63,3 +63,14 @@ test("production fallback has no local project control or owner file paths",()=>
   assert.doesNotMatch(html,/\/assets\/device-projects\.js/);
   assert.doesNotMatch(html,/class="device-projects-menu"/);
 });
+
+test("Online legacy Connector shows a clear upgrade path instead of dead Browse",()=>{
+  const id=randomUUID();
+  const device={id,alias:"Old Windows machine",enabled:true,revoked:false,
+    fingerprint:"f".repeat(64),createdAt:new Date(),csrf:"revoke",
+    browseNeedsUpgrade:true,connectionState:"connected" as const};
+  const html=renderDevicesPage([device],undefined,true,[],"owner",[],[],false,true);
+  assert.match(html,/Update the KiCad MCP Pro Connector/);
+  assert.doesNotMatch(html,/action="\/devices\/projects\/browse"/);
+  assert.match(html,/Online/);
+});

@@ -20,7 +20,7 @@ const NATIVE_DIAGNOSTICS=[
 
 export function renderDevicesPage(
   devices:ReadonlyArray<ManagedDevice & {csrf:string;deleteCsrf?:string;enableCsrf?:string;projectCsrf?:string;browseCsrf?:string;
-    connectionState?:"connected"|"disconnected"}>,
+    connectionState?:"connected"|"disconnected";browseNeedsUpgrade?:boolean}>,
   notice?:string,enrollmentAvailable=true,
   projects:ReadonlyArray<{id:string;deviceId:string;alias:string;enabled:boolean;localPath?:string;deleteCsrf?:string;renameCsrf?:string;grantCsrf?:string;
     managedEnabled?:boolean;managedCsrf?:string;
@@ -307,6 +307,11 @@ export function renderDevicesPage(
                       <Icon name="arrow" size={15}/>
                     </button>
                   </form>:null}
+                  {d.browseNeedsUpgrade?<p className="field-help">
+                    Update the KiCad MCP Pro Connector on this computer to
+                    add projects by browsing local folders. This device is Online,
+                    but its current Connector does not support remote Browse.
+                  </p>:null}
                 </div>
               </details>:null}
           </li>)}</ul>}

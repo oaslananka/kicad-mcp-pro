@@ -600,17 +600,23 @@ def _catalog_hello_metadata(options: OutboundSessionOptions) -> dict[str, object
     """Bounded optional report: never broadens local/Cloud project authority."""
     if type(options.advertise_catalog) is not bool:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    # Independent of native diagnostic catalog: browser folder selection
+    # is an owner-only opaque-token capability, not a grant to AI clients.
+    browser: dict[str, object] = (
+        {"folderBrowse": 1} if options.folder_service_factory is not None else {}
+    )
     if not options.advertise_catalog:
-        return {}
+        return browser
     from kicad_mcp.runtime_capability_catalog import installed_catalog_revision
 
     operations = _catalog_operations(options)
     return {
+        **browser,
         "catalog": {
             "schemaVersion": "1.0.0",
             "catalogRevision": installed_catalog_revision(),
             "operations": operations,
-        }
+        },
     }
 
 

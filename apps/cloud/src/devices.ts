@@ -127,9 +127,13 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
     projectCsrf:devices.createProject?
       await csrf(secret,who.user,who.session,d.id,stamp,nonce,"project-create-v1"):undefined,
     browseCsrf:identity.api&&localFolders&&d.enabled&&!d.revoked&&
-      (identity.localDevSandbox||deviceConnection?.(who.user,d.id))?
+      (identity.localDevSandbox||(deviceConnection?.(who.user,d.id)&&
+        localFolders.supportsBrowse?.(who.user,d.id)))?
       await csrf(secret,who.user,who.session,d.id,stamp,nonce,"project-native-picker-open-v1"):
       undefined,
+    browseNeedsUpgrade:!identity.localDevSandbox&&Boolean(localFolders)&&
+      d.enabled&&!d.revoked&&Boolean(deviceConnection?.(who.user,d.id))&&
+      !localFolders?.supportsBrowse?.(who.user,d.id),
     connectionState: deviceConnection&&d.enabled&&!d.revoked?
       (deviceConnection(who.user,d.id)?"connected" as const:"disconnected" as const):undefined
   })));

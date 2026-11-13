@@ -94,12 +94,12 @@ function connect(port:number):Promise<WebSocket>{
 }
 
 /** Drive the real three-step signed handshake order against the local WSS. */
-async function readySession(port:number,ownerSub:string):Promise<WebSocket>{
+async function readySession(port:number,ownerSub:string,folderBrowse=true):Promise<WebSocket>{
   const ws=await connect(port);
   await new Promise<void>((resolve,reject)=>{
     const next=waitMessage(ws);
     ws.send(JSON.stringify({kind:"device.hello",version:1,
-      ownerSub:ownerSub,deviceId}));
+      ownerSub:ownerSub,deviceId,...(folderBrowse?{folderBrowse:1}:{})}));
     next.then(message=>{
       assert.equal(message.kind,"device.challenge");
       ws.send(JSON.stringify({kind:"device.proof",version:1,
@@ -135,11 +135,26 @@ test("folder browse modes are mutually exclusive",async()=>{
   }
 });
 
+test("older signed devices remain Online without offering a broken Browse action",async()=>{
+  const wss=await attach("production");
+  let ws:WebSocket|undefined;
+  try{
+    ws=await readySession(wss.port,owner,false);
+    assert.equal(wss.attached.isDeviceConnected(owner,deviceId),true);
+    assert.equal(wss.attached.localFolders.supportsBrowse?.(owner,deviceId),false);
+    assert.equal(await wss.attached.localFolders.listFolder(owner,deviceId,"root"),null);
+    assert.equal(wss.attached.isDeviceConnected(owner,deviceId),true);
+  }finally{
+    ws?.close();await wss.close();
+  }
+});
+
 test("production owner browses real signed device folders without local-dev owner",async()=>{
   const wss=await attach("production");
   let ws:WebSocket|undefined;
   try{
     ws=await readySession(wss.port,owner);
+    assert.equal(wss.attached.localFolders.supportsBrowse?.(owner,deviceId),true);
     // Offline / unowned device can never be asked to browse.
     assert.equal(await wss.attached.localFolders.listFolder(owner,randomUUID(),"root"),null);
     assert.equal(await wss.attached.localFolders.listFolder("someone-else",deviceId,"root"),null);

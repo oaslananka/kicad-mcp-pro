@@ -56,6 +56,7 @@ function fixture(local=true,selection:NativeFolderSelection={
   const listing={folderId:folderToken,name:folderName,parentId:null,project:true,
     more:false,folders:[]};
   const folders:LocalFolderPort={
+    supportsBrowse:()=>true, // A compatible signed Connector fixture.
     getProjectPath:async()=>null,
     chooseFolder:async(u,d)=>{
       chooserCalls++;

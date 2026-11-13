@@ -688,3 +688,16 @@ def test_managed_native_drc_claim_requires_managed_read_and_explicit_opt_in() ->
     ):
         with pytest.raises(CloudHandshakeDeniedError):
             _validate_outbound_options(invalid)
+
+
+def test_owner_folder_browse_is_advertised_independently_of_native_catalog() -> None:
+    from kicad_mcp.cloud_outbound_handshake import OutboundSessionOptions, _catalog_hello_metadata
+
+    metadata = _catalog_hello_metadata(
+        OutboundSessionOptions(
+            owner_managed_read=True,
+            folder_service_factory=lambda _receipt: None,  # type: ignore[arg-type]
+        )
+    )
+    assert metadata == {"folderBrowse": 1}
+    assert _catalog_hello_metadata(OutboundSessionOptions()) == {}
