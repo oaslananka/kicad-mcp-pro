@@ -57,6 +57,9 @@ def windows_cli(
     )
     state = {"selected": None, "connector": "Off"}
 
+    from kicad_mcp import cloud_owner_management
+
+    monkeypatch.setattr(cloud_owner_management, "load_token", lambda _origin: None)
     monkeypatch.setattr(cloud_user_cli, "_is_windows", lambda: True)
     monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
     monkeypatch.setattr(
@@ -127,6 +130,90 @@ def windows_cli(
         lambda: events.append("disable") or state.update(connector="Off") or True,
     )
     return folder, events, project, selected
+
+
+@pytest.mark.parametrize(
+    ("devices", "expected"),
+    [
+        (
+            [
+                {
+                    "id": "19ee4be9-0aec-448e-9873-721ae113ec02",
+                    "projects": [{"id": "29ee4be9-0aec-448e-9873-721ae113ec02"}],
+                }
+            ],
+            "Cloud project: Registered",
+        ),
+        (
+            [{"id": "19ee4be9-0aec-448e-9873-721ae113ec02", "projects": []}],
+            "Local registration is stale",
+        ),
+        ([], "Local registration is stale"),
+        ([{"id": "19ee4be9-0aec-448e-9873-721ae113ec02"}], "Cloud project: Not verified"),
+    ],
+)
+def test_windows_status_reconciles_saved_project_against_cloud(
+    windows_cli: tuple[Path, list[str], WindowsRegisteredProject, WindowsLocalProjectSelection],
+    monkeypatch: pytest.MonkeyPatch,
+    devices: list[dict[str, object]],
+    expected: str,
+) -> None:
+    from kicad_mcp import cloud_owner_management
+
+    _folder, _events, project, _selected = windows_cli
+    monkeypatch.setattr(cloud_windows_user_cli, "selected_project", lambda: project)
+    monkeypatch.setattr(cloud_owner_management, "load_token", lambda _origin: "kmpc1_" + "a" * 43)
+    queries: list[tuple[str, str]] = []
+
+    def query(_self: object, method: str, path: str, *, token: str) -> dict[str, object]:
+        assert token == "kmpc1_" + "a" * 43
+        queries.append((method, path))
+        return {"devices": devices}
+
+    monkeypatch.setattr(cloud_owner_management.CloudOwnerApi, "request", query)
+    result = CliRunner().invoke(app, ["cloud", "status"])
+    assert result.exit_code == 0, result.output
+    assert expected in result.output
+    assert queries == [("GET", "/api/owner/v1/devices")]
+
+
+def test_windows_status_without_cloud_token_never_contacts_api(
+    windows_cli: tuple[Path, list[str], WindowsRegisteredProject, WindowsLocalProjectSelection],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_owner_management
+
+    _folder, _events, project, _selected = windows_cli
+    monkeypatch.setattr(cloud_windows_user_cli, "selected_project", lambda: project)
+    monkeypatch.setattr(cloud_owner_management, "load_token", lambda _origin: None)
+    monkeypatch.setattr(
+        cloud_owner_management.CloudOwnerApi,
+        "request",
+        lambda *_args, **_kwargs: pytest.fail("No Cloud token must not call API"),
+    )
+    result = CliRunner().invoke(app, ["cloud", "status"])
+    assert result.exit_code == 0, result.output
+    assert "Cloud project: Not verified" in result.output
+
+
+def test_windows_status_cloud_outage_is_not_called_deletion(
+    windows_cli: tuple[Path, list[str], WindowsRegisteredProject, WindowsLocalProjectSelection],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_owner_management
+
+    _folder, _events, project, _selected = windows_cli
+    monkeypatch.setattr(cloud_windows_user_cli, "selected_project", lambda: project)
+    monkeypatch.setattr(cloud_owner_management, "load_token", lambda _origin: "kmpc1_" + "a" * 43)
+
+    def unavailable(*_args: object, **_kwargs: object) -> None:
+        raise cloud_owner_management.CloudManagementError("Offline")
+
+    monkeypatch.setattr(cloud_owner_management.CloudOwnerApi, "request", unavailable)
+    result = CliRunner().invoke(app, ["cloud", "status"])
+    assert result.exit_code == 0, result.output
+    assert "Cloud account could not be checked" in result.output
+    assert "Local registration is stale" not in result.output
 
 
 def test_windows_cli_first_setup_is_owner_approved_and_does_not_claim_connected(

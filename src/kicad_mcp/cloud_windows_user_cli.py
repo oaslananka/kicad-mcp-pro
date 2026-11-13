@@ -364,6 +364,34 @@ def setup_windows(
         typer.echo(f"Manage permissions: {origin}/devices")
 
 
+def _cloud_project_state(project: WindowsRegisteredProject) -> str:
+    """Check the Cloud owner's live records; local selection is not a Cloud grant."""
+    from kicad_mcp.cloud_owner_management import CloudManagementError, CloudOwnerApi, load_token
+
+    try:
+        token = load_token(project.origin)
+        if token is None:
+            return "unverified"
+        reply = CloudOwnerApi(project.origin).request("GET", "/api/owner/v1/devices", token=token)
+    except CloudManagementError:
+        return "unavailable"
+
+    devices = reply.get("devices")
+    if not isinstance(devices, list) or not all(isinstance(d, dict) for d in devices):
+        return "unavailable"
+    matching = next((d for d in devices if d.get("id") == project.device_id), None)
+    if matching is None:
+        return "missing_device"
+    projects = matching.get("projects")
+    if not isinstance(projects, list) or not all(isinstance(p, dict) for p in projects):
+        return "unavailable"
+    return (
+        "registered"
+        if any(p.get("id") == project.project_id for p in projects)
+        else "missing_project"
+    )
+
+
 def show_status() -> None:
     state = scheduler_state()
     run_state = task_run_state() if state == "Scheduled (connection unverified)" else None
@@ -387,6 +415,23 @@ def show_status() -> None:
         typer.echo(f"Device: {project.device_id}")
         typer.echo(f"Project: {selected.filename_stem} ({project.project_id})")
         typer.echo(f"Directory: {selected.directory}")
+        cloud_state = _cloud_project_state(project)
+        if cloud_state == "registered":
+            typer.echo("Cloud project: Registered (check client permissions in Devices).")
+        elif cloud_state in {"missing_device", "missing_project"}:
+            typer.echo(
+                "Cloud project: Not found in this account. Local registration is stale "
+                "or belongs to another account; re-add from Cloud Devices."
+            )
+        else:
+            typer.echo(
+                "Cloud project: Not verified. "
+                + (
+                    "Run cloud login to check Cloud registrations."
+                    if cloud_state == "unverified"
+                    else "Cloud account could not be checked; retry when online."
+                )
+            )
         typer.echo("Cloud owner grants/revocation are managed in the Devices page.")
     except (OSError, ValueError):
         typer.echo("Existing local registration needs repair. Cloud access not verified.")
