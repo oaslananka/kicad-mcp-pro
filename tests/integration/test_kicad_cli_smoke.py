@@ -17,6 +17,8 @@ from pathlib import Path
 import pytest
 
 from kicad_mcp.config import get_config, reset_config
+from kicad_mcp.models.pcb import StackupLayerSpec
+from kicad_mcp.tools.pcb import _apply_stackup_to_board, _parse_stackup_specs_from_board_text
 
 KICAD_MAJOR_VERSION = 10
 
@@ -169,3 +171,71 @@ def test_kicad_cli_exports_board_stats_without_gui(kicad_cli_path: Path, tmp_pat
     assert result.returncode == 0, output
     assert stats_file.exists(), output
     assert stats_file.stat().st_size > 0, output
+
+
+def _four_layer_stackup_specs() -> list[StackupLayerSpec]:
+    def dielectric(name: str, layer_type: str, thickness_mm: float) -> StackupLayerSpec:
+        return StackupLayerSpec(
+            name=name, type=layer_type, thickness_mm=thickness_mm, material="FR4", epsilon_r=4.4
+        )
+
+    return [
+        StackupLayerSpec(name="F.Mask", thickness_mm=0.01),
+        StackupLayerSpec(name="F.Cu", thickness_mm=0.035),
+        dielectric("dielectric_1", "prepreg", 0.1),
+        StackupLayerSpec(name="In1.Cu", thickness_mm=0.0152),
+        dielectric("dielectric_2", "core", 0.4796),
+        StackupLayerSpec(name="In2.Cu", thickness_mm=0.0152),
+        dielectric("dielectric_3", "prepreg", 0.1),
+        StackupLayerSpec(name="B.Cu", thickness_mm=0.035),
+        StackupLayerSpec(name="B.Mask", thickness_mm=0.01),
+    ]
+
+
+def _resaved_by_kicad(cli_path: Path, board_file: Path) -> str:
+    result = _run_kicad_cli(cli_path, "pcb", "upgrade", "--force", str(board_file))
+    assert result.returncode == 0, _combined_output(result)
+    return board_file.read_text(encoding="utf-8")
+
+
+def _copper_in_layer_table(board_text: str) -> list[str]:
+    table_start = board_text.index("(layers")
+    table = board_text[table_start : board_text.index("(setup", table_start)]
+    return re.findall(r'\(\d+\s+"((?:F|B|In\d+)\.Cu)"', table)
+
+
+@pytest.mark.parametrize("kicad10_layer_ids", [False, True], ids=["kicad8-ids", "kicad10-ids"])
+def test_pcb_stackup_writer_survives_a_kicad_resave(
+    kicad_cli_path: Path, tmp_path: Path, kicad10_layer_ids: bool
+) -> None:
+    """KiCad must keep the inner copper layers the stackup writer adds (issue: they became
+    dielectrics because the layer table was never updated)."""
+    board_file = _write_minimal_project(tmp_path / "project")
+    if kicad10_layer_ids:
+        _resaved_by_kicad(kicad_cli_path, board_file)  # renumber B.Cu 31 -> 2 first
+
+    board_file.write_text(
+        _apply_stackup_to_board(
+            board_file.read_text(encoding="utf-8"), _four_layer_stackup_specs()
+        ),
+        encoding="utf-8",
+    )
+    resaved = _resaved_by_kicad(kicad_cli_path, board_file)
+
+    assert sorted(_copper_in_layer_table(resaved)) == ["B.Cu", "F.Cu", "In1.Cu", "In2.Cu"]
+    parsed = _parse_stackup_specs_from_board_text(resaved)
+    assert parsed is not None
+    assert [layer.name for layer in parsed if layer.name.endswith("_Cu")] == [
+        "F_Cu",
+        "In1_Cu",
+        "In2_Cu",
+        "B_Cu",
+    ]
+    assert [layer.name for layer in parsed if layer.name.startswith("dielectric")] == [
+        "dielectric_1",
+        "dielectric_2",
+        "dielectric_3",
+    ]
+    general = re.search(r"\(general\s*\(thickness\s+([\d.]+)\)", resaved)
+    assert general is not None
+    assert float(general.group(1)) == pytest.approx(0.8)
