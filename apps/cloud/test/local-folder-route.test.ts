@@ -16,6 +16,32 @@ function sameFolderToken(a:string,b:string):boolean{
   const left=Buffer.from(a),right=Buffer.from(b);
   return left.length===right.length&&timingSafeEqual(left,right);
 }
+
+test("project paths share one serial Connector budget and are not fetched during read-only navigation",async()=>{
+  const f=fixture();
+  const ids=[randomUUID(),randomUUID()];
+  const calls:string[]=[];
+  let active=0;
+  f.devices.listProjects=async()=>ids.map(id=>({id,deviceId,alias:id,enabled:true}));
+  f.folders.getProjectPath=async(user,device,id)=>{
+    assert.equal(user,owner);
+    assert.equal(device,deviceId);
+    active++;
+    assert.equal(active,1,"a signed Connector permits only one local RPC at a time");
+    await new Promise<void>(resolve=>setImmediate(resolve));
+    calls.push(id);
+    active--;
+    return "C:/Fixtures/"+id+".kicad_pro";
+  };
+  const response=await f.route("/devices");
+  assert.equal(response?.status,200);
+  const html=await response!.text();
+  for(const id of ids)assert.ok(html.includes("C:/Fixtures/"+id+".kicad_pro"));
+  assert.deepEqual(calls,ids);
+  await f.route("/devices?csrf-refresh=1");
+  await f.route("/projects");
+  assert.deepEqual(calls,ids,"refreshing a form or reading Projects must not inspect local paths");
+});
 const owner="local-dev-owner";
 const folderName="\u00C7izim 2026";
 
@@ -77,8 +103,7 @@ function fixture(local=true,selection:NativeFolderSelection={
     }
   };
   const route=(url:string,request?:Request)=>
-    devicesResponse(request??new Request(origin+url),identity,origin,devices,
-      true,undefined,()=>true,undefined,folders);
+    devicesResponse(request??new Request(origin+url),identity,origin,devices,{enrollmentAvailable:true,deviceConnection:()=>true,localFolders:folders});
   return {route,listing,identity,devices,folders,getName:()=>name,
     bindings:()=>bindings,removed:()=>removed,chooserCalls:()=>chooserCalls};
 }

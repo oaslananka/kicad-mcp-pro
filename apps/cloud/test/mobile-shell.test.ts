@@ -6,7 +6,7 @@ import {uiCss} from "../src/ui-styles.js";
 
 test("mobile navigation stays compact while every workspace section is directly reachable",()=>{
   const html=renderPage({title:"Devices",kind:"devices",children:null});
-  for(const href of ["/account","/devices","/devices#registered-projects",
+  for(const href of ["/account","/devices","/projects",
                      "/connections","/usage","/settings"]){
     assert.ok(html.includes('href="'+href+'"'),"Missing "+href);
   }

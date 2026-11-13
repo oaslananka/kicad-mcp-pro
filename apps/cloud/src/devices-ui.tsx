@@ -1,5 +1,6 @@
 import {renderPage} from "./ui-shell.js";
 import {Icon} from "./ui-icons.js";
+import {CopyValue} from "./copy-value.js";
 import type {ManagedDevice} from "./device-management.js";
 import type {BrowserGrantSummary} from "./grants.js";
 
@@ -18,33 +19,35 @@ const NATIVE_DIAGNOSTICS=[
   {id:"run_drc",label:"PCB DRC counts",detail:"Issue and unconnected-item totals from the local board"}
 ] as const;
 
-export function renderDevicesPage(
-  devices:ReadonlyArray<ManagedDevice & {csrf:string;deleteCsrf?:string;enableCsrf?:string;projectCsrf?:string;browseCsrf?:string;
-    connectionState?:"connected"|"disconnected";browseNeedsUpgrade?:boolean}>,
-  notice?:string,enrollmentAvailable=true,
-  projects:ReadonlyArray<{id:string;deviceId:string;alias:string;enabled:boolean;localPath?:string;deleteCsrf?:string;renameCsrf?:string;grantCsrf?:string;
-    managedEnabled?:boolean;managedCsrf?:string;
-    nativeEnabled?:ReadonlyArray<string>;nativeCsrf?:string}>=[],
-  ownerSub?:string,clients:ReadonlyArray<string>=[],
-  savedGrants:ReadonlyArray<BrowserGrantSummary>=[],sandboxMode=false,browseEnabled=false,
-  writeClients:ReadonlyArray<string>=[]
-):string {
-  const deviceNames=new Map(devices.map(d=>[d.id,d.alias]));
-  const renderProjectAccess=(project:(typeof projects)[number])=><>
-                <details className="project-access-details">
-                  <summary>Manage access</summary>
-                  <p className="field-help">Choose exactly which AI clients may read or edit
-                    this project. New access is read-only; editing requires a separate
-                    OAuth write consent and an explicit per-app grant. Cloud editing is
-                    not active until a compatible Connector and the write service are available.</p>
-                {project.grantCsrf&&savedGrants.some(g=>g.projectId===project.id)?
-                  <div className="project-grants">
+type Device=ManagedDevice & {csrf:string;deleteCsrf?:string;enableCsrf?:string;projectCsrf?:string;browseCsrf?:string;
+  connectionState?:"connected"|"disconnected";browseNeedsUpgrade?:boolean};
+type Project={id:string;deviceId:string;alias:string;enabled:boolean;localPath?:string;deleteCsrf?:string;renameCsrf?:string;grantCsrf?:string;
+  managedEnabled?:boolean;managedCsrf?:string;nativeEnabled?:ReadonlyArray<string>;nativeCsrf?:string};
+export type DevicePageOptions=Readonly<{
+  projects?:ReadonlyArray<Project>;ownerSub?:string;clients?:ReadonlyArray<string>;
+  savedGrants?:ReadonlyArray<BrowserGrantSummary>;sandboxMode?:boolean;browseEnabled?:boolean;
+  writeClients?:ReadonlyArray<string>;userEmail?:string;
+}>;
+type ViewContext=Readonly<{
+  devices:ReadonlyArray<Device>;projects:ReadonlyArray<Project>;enrollmentAvailable:boolean;
+  ownerSub?:string;clients:ReadonlyArray<string>;savedGrants:ReadonlyArray<BrowserGrantSummary>;
+  sandboxMode:boolean;browseEnabled:boolean;writeClients:ReadonlyArray<string>;
+}>;
+
+function grantModeLabel(mode:BrowserGrantSummary["maxMode"]):string{
+  if(mode==="readonly")return "Read only";
+  if(mode==="write")return "Edit permission saved ? remote editing not active";
+  return "Other permission (not remote editing)";
+}
+function SavedProjectGrants({project,grants,writeClients}:Readonly<{
+  project:Project;grants:ReadonlyArray<BrowserGrantSummary>;writeClients:ReadonlyArray<string>;
+}>){
+  if(!project.grantCsrf||grants.length===0)return null;
+  return (                  <div className="project-grants">
                     <strong>Applications with access</strong>
-                    <ul>{savedGrants.filter(g=>g.projectId===project.id).map(g=><li key={g.clientId}>
+                    <ul>{grants.map(g=><li key={g.clientId}>
                       <span className="grant-client">{clientDisplayName(g.clientId)}</span>{" "}
-                      <span className="permission-tag">{g.maxMode==="readonly"?"Read only":
-                        g.maxMode==="write"?"Edit permission saved ? remote editing not active":
-                        "Other permission (not remote editing)"}</span>
+                      <span className="permission-tag">{grantModeLabel(g.maxMode)}</span>
                       {project.grantCsrf&&g.maxMode==="readonly"&&writeClients.includes(g.clientId)?
                         <form method="post" action="/devices/projects/grant">
                           <input type="hidden" name="project_id" value={project.id}/>
@@ -72,22 +75,11 @@ export function renderDevicesPage(
                         </button>
                       </form>
                     </li>)}</ul>
-                  </div>:null}
-
-                {project.enabled&&project.managedCsrf?<>
-                  <p>Project summary access: {project.managedEnabled?"Enabled":"Paused"}</p>
-                  <form method="post" action="/devices/projects/managed">
-                    <input type="hidden" name="project_id" value={project.id}/>
-                    <input type="hidden" name="device_id" value={project.deviceId}/>
-                    <input type="hidden" name="csrf" value={project.managedCsrf}/>
-                    <button className="button secondary" name="enabled" value={project.managedEnabled?"false":"true"} type="submit">
-                      {project.managedEnabled?"Pause project reads":"Enable project reads"}
-                    </button>
-                  </form>
-                </>:null}
-
-                {project.enabled&&project.managedEnabled&&project.nativeCsrf?
-                  <details className="project-native-access">
+                  </div>);
+}
+function ProjectDiagnostics({project}:Readonly<{project:Project}>){
+  if(!project.enabled||!project.managedEnabled||!project.nativeCsrf)return null;
+  return (                  <details className="project-native-access">
                     <summary>Read-only KiCad diagnostics</summary>
                     <p className="field-help">Only the bounded PCB DRC totals pilot is available here. The installed
                       Connector must be started by the device owner with native DRC explicitly
@@ -112,18 +104,44 @@ export function renderDevicesPage(
                         </form>;
                       })}
                     </div>
-                  </details>:null}
+                  </details>);
+}
 
-                {project.enabled&&project.grantCsrf&&clients.some(client=>!savedGrants.some(
-                  g=>g.projectId===project.id&&g.clientId===client))?
+function ProjectAccess({project,context}:Readonly<{project:Project;context:ViewContext}>){
+  const {clients,writeClients,savedGrants}=context;
+  const projectGrants=savedGrants.filter(grant=>grant.projectId===project.id);
+  const grantedClients=new Set(projectGrants.map(grant=>grant.clientId));
+  const availableClients=clients.filter(client=>!grantedClients.has(client));
+  const availableWriters=writeClients.filter(client=>!grantedClients.has(client));
+  return (                <details className="project-access-details">
+                  <summary>Manage access</summary>
+                  <p className="field-help">Choose exactly which AI clients may read or edit
+                    this project. New access is read-only; editing requires a separate
+                    OAuth write consent and an explicit per-app grant. Cloud editing is
+                    not active until a compatible Connector and the write service are available.</p>
+                <SavedProjectGrants project={project} grants={projectGrants} writeClients={writeClients}/>
+
+                {project.enabled&&project.managedCsrf?<>
+                  <p>Project summary access: {project.managedEnabled?"Enabled":"Paused"}</p>
+                  <form method="post" action="/devices/projects/managed">
+                    <input type="hidden" name="project_id" value={project.id}/>
+                    <input type="hidden" name="device_id" value={project.deviceId}/>
+                    <input type="hidden" name="csrf" value={project.managedCsrf}/>
+                    <button className="button secondary" name="enabled" value={project.managedEnabled?"false":"true"} type="submit">
+                      {project.managedEnabled?"Pause project reads":"Enable project reads"}
+                    </button>
+                  </form>
+                </>:null}
+
+                <ProjectDiagnostics project={project}/>
+
+                {project.enabled&&project.grantCsrf&&availableClients.length>0?
                   <form method="post" action="/devices/projects/grant">
                     <input type="hidden" name="project_id" value={project.id}/>
                     <input type="hidden" name="csrf" value={project.grantCsrf}/>
                     <label>AI application{" "}
                       <select name="client_id" required={true}>
-                        {clients.filter(client=>!savedGrants.some(g=>
-                          g.projectId===project.id&&g.clientId===client)).map(
-                            client=><option value={client} key={client}>{clientDisplayName(client)}</option>)}
+                        {availableClients.map(client=><option value={client} key={client}>{clientDisplayName(client)}</option>)}
                       </select>
                     </label>
                     <div className="action-row">
@@ -131,17 +149,14 @@ export function renderDevicesPage(
                         type="submit">Allow reading</button>
                     </div>
                   </form>:null}
-                {project.enabled&&project.grantCsrf&&writeClients.some(client=>!savedGrants.some(
-                  g=>g.projectId===project.id&&g.clientId===client))?
+                {project.enabled&&project.grantCsrf&&availableWriters.length>0?
                   <form method="post" action="/devices/projects/grant">
                     <input type="hidden" name="project_id" value={project.id}/>
                     <input type="hidden" name="csrf" value={project.grantCsrf}/>
                     <input type="hidden" name="mode" value="write"/>
                     <label>AI application approved for editing{" "}
                       <select name="client_id" required={true}>
-                        {writeClients.filter(client=>!savedGrants.some(g=>
-                          g.projectId===project.id&&g.clientId===client)).map(client=>
-                          <option value={client} key={client}>{clientDisplayName(client)}</option>)}
+                        {availableWriters.map(client=><option value={client} key={client}>{clientDisplayName(client)}</option>)}
                       </select>
                     </label>
                     <p className="field-help">This saves a separate write permission.
@@ -149,60 +164,24 @@ export function renderDevicesPage(
                     <button className="button secondary" name="enabled" value="true"
                       type="submit">Allow reading and editing</button>
                   </form>:null}
-                </details>
-  </>;
+                </details>);
+}
 
-  return renderPage({title:"Devices",kind:"devices",eyebrow:"Workspace / Devices",
-    summary:"Machines your AI clients can reach through KiCad MCP Cloud.",
-    actions:enrollmentAvailable?<a className="button primary device-add-button" href="#connect-computer">
-      <span className="device-add-plus" aria-hidden="true">+</span> Add a device
-    </a>:null,
-    children:<div className="page-stack">
-      {notice?<output className="output-notice">{notice}</output>:null}
-
-      {!enrollmentAvailable && devices.length===0?<section className="card status-card" id="registered-projects"><div className="status-message">
-        <span className="status-pill pending">Not enabled</span>
-        <h2>Local KiCad devices aren't available yet</h2>
-        <p>Device enrollment and management are not enabled on this deployment. No pairing or local project control is available. The device schema and recovery checks must be approved before activation.</p>
-        <div className="state-detail">
-          <div><span>Cloud account</span><small>Available</small></div>
-          <div><span>Device enrollment</span><small>Not enabled</small></div>
-          <div><span>Remote KiCad execution</span><small>Not enabled</small></div>
-        </div>
-      </div></section>:
-        <>
-      {/* Enrolled Devices Section */}
-      <section className="card device-card device-list-card"
-        id={browseEnabled?"registered-projects":undefined} aria-labelledby="device-list-title">
-        <div className="card-header">
-          <h2 id="device-list-title">Your devices</h2>
-          <span className="list-count">{devices.length===1?"1 device":String(devices.length)+" devices"}</span>
-        </div>
-        {devices.length===0?<div className="empty-state">
-          <div className="empty-icon"><Icon name="devices" size={21}/></div>
-          <div>
-            <h3>No devices yet</h3>
-            <p>{sandboxMode?"Connect this computer with the local development Connector.":
-              "Run kicad-mcp-pro cloud setup --browse on your computer to connect."}</p>
-          </div>
-        </div>:
-          <ul className="connections-list device-list">{devices.map(d=><li className="device-row" key={d.id}>
-            <span className={d.enabled&&!d.revoked&&d.connectionState==="connected"?"device-dot connected":"device-dot"} aria-hidden="true"/>
-            <div className="device-summary">
-              <h3>{d.alias}</h3>
-              <p>{d.revoked?"Revoked":!d.enabled?"Disabled":
-                d.connectionState==="connected"?"Cloud session active":
-                d.connectionState==="disconnected"?
-                  (sandboxMode?"Local Connector disconnected":"Run kicad-mcp-pro cloud reconnect to restore the background connection"):
-                "Cloud status unknown"}</p>
-            </div>
-            <div className="device-actions">
-              <span role="status" aria-label={d.revoked?"Revoked":!d.enabled?"Disabled":
-                d.connectionState==="connected"?"Connected":d.connectionState==="disconnected"?"Offline":"Status unknown"}
-                className={d.revoked?"status-pill danger":d.enabled&&d.connectionState==="connected"?
-                  "status-pill ready":"status-pill neutral"}>
-                {d.revoked?"Revoked":!d.enabled?"Disabled":d.connectionState==="connected"?"Online":d.connectionState==="disconnected"?"Offline":"Status unknown"}
-              </span>
+function deviceStatus(device:Device,sandboxMode:boolean){
+  if(device.revoked)return {label:"Revoked",description:"Revoked",ariaLabel:"Revoked",tone:"danger",online:false};
+  if(!device.enabled)return {label:"Disabled",description:"Disabled",ariaLabel:"Disabled",tone:"neutral",online:false};
+  if(device.connectionState==="connected")return {label:"Online",description:"Cloud session active",ariaLabel:"Connected",tone:"ready",online:true};
+  if(device.connectionState==="disconnected"){
+    const description=sandboxMode?"Local Connector disconnected":"Run kicad-mcp-pro cloud reconnect to restore the background connection";
+    return {label:"Offline",description,ariaLabel:"Offline",tone:"neutral",online:false};
+  }
+  return {label:"Status unknown",description:"Cloud status unknown",ariaLabel:"Status unknown",tone:"neutral",online:false};
+}
+function DeviceActions({device:d,enrollmentAvailable,state}:Readonly<{
+  device:Device;enrollmentAvailable:boolean;state:ReturnType<typeof deviceStatus>;
+}>){
+  return <div className="device-actions">
+    <output aria-label={state.ariaLabel} className={"status-pill "+state.tone}>{state.label}</output>
               {enrollmentAvailable&&!d.revoked&&!d.enabled&&d.enableCsrf?
                 <form action="/devices/enable" method="post">
                   <input type="hidden" name="device_id" value={d.id}/>
@@ -228,15 +207,11 @@ export function renderDevicesPage(
                   <button className="button device-revoke-button" type="submit"
                     title="Revoke this device and disable its project access">Revoke</button>
                 </form>:null}
-            </div>
-            {d.enabled&&!d.revoked&&browseEnabled?
-              <details className="device-projects-menu" data-device-id={d.id} open={true}>
-                <summary><Icon name="projects" size={15}/> Projects
-                  <span>{projects.filter(p=>p.deviceId===d.id).length}</span>
-                </summary>
-                <div className="device-projects-content">
-                  {projects.filter(p=>p.deviceId===d.id).map(p=>
-                    <div className="device-linked-project" key={p.id}>
+  </div>;
+}
+
+function LinkedProject({project:p,device:d,context}:Readonly<{project:Project;device:Device;context:ViewContext}>){
+  return (<div className="device-linked-project" id={"project-"+p.id}>
                       <div className="device-project-main">
                         <div className="device-project-title">
                           <Icon name="projects" size={17}/>
@@ -260,7 +235,7 @@ export function renderDevicesPage(
                           data-open-project-dialog={"project-remove-"+p.id}>Remove</button>:null}
                       </div>
                       <div className="device-project-permissions">
-                        {renderProjectAccess(p)}
+                        <ProjectAccess project={p} context={context}/>
                       </div>
                       {p.renameCsrf?<dialog className="project-action-dialog project-rename-dialog"
                         id={"project-rename-"+p.id} aria-labelledby={"project-rename-title-"+p.id}>
@@ -269,7 +244,7 @@ export function renderDevicesPage(
                         <form action="/devices/projects/rename" method="post">
                           <input type="hidden" name="project_id" value={p.id}/>
                           <input type="hidden" name="csrf" value={p.renameCsrf}/>
-                          <label>Project name
+                          <label>Project name{" "}
                             <input name="alias" required={true} maxLength={64}
                               defaultValue={p.alias}/>
                           </label>
@@ -298,7 +273,18 @@ export function renderDevicesPage(
                           </div>
                         </form>
                       </dialog>:null}
-                    </div>)}
+                    </div>);
+}
+function DeviceProjects({device:d,context}:Readonly<{device:Device;context:ViewContext}>){
+  const {projects,browseEnabled}=context;
+  if(!d.enabled||d.revoked||!browseEnabled)return null;
+  const localProjects=projects.filter(project=>project.deviceId===d.id);
+  return (<details className="device-projects-menu" data-device-id={d.id} open={true}>
+                <summary><Icon name="projects" size={15}/> Projects
+                  <span>{localProjects.length}</span>
+                </summary>
+                <div className="device-projects-content">
+                  {localProjects.map(project=><LinkedProject key={project.id} project={project} device={d} context={context}/>)}
                   {d.browseCsrf?<form action="/devices/projects/browse" method="post"
                     className="device-native-browse-form">
                     <input type="hidden" name="device_id" value={d.id}/>
@@ -314,15 +300,44 @@ export function renderDevicesPage(
                     but its current Connector does not support remote Browse.
                   </p>:null}
                 </div>
-              </details>:null}
-          </li>)}</ul>}
+              </details>);
+}
+function DeviceRow({device,context}:Readonly<{device:Device;context:ViewContext}>){
+  const state=deviceStatus(device,context.sandboxMode);
+  return <li className="device-row">
+    <span className={state.online?"device-dot connected":"device-dot"} aria-hidden="true"/>
+    <div className="device-summary"><h3>{device.alias}</h3><p>{state.description}</p></div>
+    <DeviceActions device={device} enrollmentAvailable={context.enrollmentAvailable} state={state}/>
+    <DeviceProjects device={device} context={context}/>
+  </li>;
+}
+
+function DeviceList({context}:Readonly<{context:ViewContext}>){
+  const {devices,browseEnabled,sandboxMode}=context;
+  return (      <section className="card device-card device-list-card"
+        id={browseEnabled?"registered-projects":undefined} aria-labelledby="device-list-title">
+        <div className="card-header">
+          <h2 id="device-list-title">Your devices</h2>
+          <span className="list-count">{devices.length===1?"1 device":String(devices.length)+" devices"}</span>
+        </div>
+        {devices.length===0?<div className="empty-state">
+          <div className="empty-icon"><Icon name="devices" size={21}/></div>
+          <div>
+            <h3>No devices yet</h3>
+            <p>{sandboxMode?"Connect this computer with the local development Connector.":
+              "Run kicad-mcp-pro cloud setup --browse on your computer to connect."}</p>
+          </div>
+        </div>:
+          <ul className="connections-list device-list">{devices.map(device=><DeviceRow key={device.id} device={device} context={context}/>)}</ul>}
         <div className="device-list-footer">
           Your projects and permissions are managed under each device.
         </div>
-      </section>
+      </section>);
+}
 
-      {/* Quickstart / Pairing Guidance */}
-      {devices.length===0?<section className="card quickstart-card" id="connect-computer">
+function PairingSetup({context}:Readonly<{context:ViewContext}>){
+  const {devices,sandboxMode}=context;
+  return (devices.length===0?<section className="card quickstart-card" id="connect-computer">
         <div className="card-kicker"><Icon name="cpu" size={15}/> PAIR YOUR COMPUTER</div>
         <h2>Connect your computer</h2>
         {sandboxMode?<><p>Local development only. This workspace only accepts
@@ -330,7 +345,7 @@ export function renderDevicesPage(
           <a className="text-link" href="/devices">Review connected devices</a></>:
           <><p>Run this once on your Windows computer. Choose your KiCad folder,
               then sign-in and approve pairing in the browser.</p>
-            <div className="local-setup-command"><code>kicad-mcp-pro cloud setup --browse</code></div>
+            <CopyValue value="kicad-mcp-pro cloud setup --browse" label="setup command"/>
             <p className="field-help">The read-only Connector reconnects when you sign in to Windows.
               You do not need to keep a terminal open. AI app access is granted separately.</p></>}
       </section>:
@@ -342,15 +357,18 @@ export function renderDevicesPage(
             network-enabled Cloud setup; remote pairing is unavailable here.</p>:
           <><p>On your other Windows computer, select its KiCad folder,
               then sign-in and approve pairing in the browser:</p>
-            <div className="local-setup-command"><code>kicad-mcp-pro cloud setup --browse</code></div>
+            <CopyValue value="kicad-mcp-pro cloud setup --browse" label="setup command"/>
             <p className="field-help">The Connector reconnects at Windows sign-in.
-              Existing paired devices can use <code>kicad-mcp-pro cloud reconnect</code>
+              Existing paired devices can use <code>kicad-mcp-pro cloud reconnect</code>{" "}
               if their background connection stops.</p></>}
         </div>
-      </section>}
-
-                {/* Registered Projects Section */}
-          {!sandboxMode&&!browseEnabled?<section className={projects.length>0?"card projects-card":"card projects-card empty-projects-card"} id="registered-projects">
+      </section>);
+}
+function RegisteredProjects({context}:Readonly<{context:ViewContext}>){
+  const {devices,projects,enrollmentAvailable,sandboxMode,browseEnabled}=context;
+  if(sandboxMode||browseEnabled)return null;
+  const deviceNames=new Map(devices.map(device=>[device.id,device.alias]));
+  return (<section className={projects.length>0?"card projects-card":"card projects-card empty-projects-card"} id="registered-projects">
             <h2>Your projects</h2>
             {enrollmentAvailable&&!sandboxMode?devices.filter(d=>!d.revoked&&d.enabled&&d.projectCsrf).map(d=>
               <details className="device-register" key={d.id}>
@@ -367,8 +385,8 @@ export function renderDevicesPage(
                   <button className="button secondary" type="submit">Register project name</button>
                 </form>
               </details>):null}
-            {projects.length>0?<>
-              <ul className="connections-list">{projects.map(project=><li className="project-item" key={project.id}>
+            {projects.length>0?
+              <ul className="connections-list">{projects.map(project=><li className="project-item" id={"project-"+project.id} key={project.id}>
                 <strong>{project.alias}</strong>
                 {project.renameCsrf?<details className="project-rename">
                   <summary>Rename project</summary>
@@ -383,7 +401,7 @@ export function renderDevicesPage(
                 <p>On device: {deviceNames.get(project.deviceId)??"Previously registered device"}.
                   {project.enabled?" Registered.":" Disabled."}</p>
 
-                {renderProjectAccess(project)}
+                <ProjectAccess project={project} context={context}/>
                 {project.deleteCsrf?
                   <details className="device-advanced project-delete">
                     <summary>Remove project from Cloud</summary>
@@ -396,18 +414,33 @@ export function renderDevicesPage(
                     </form>
                   </details>:null}
               </li>)}</ul>
-            </>:<div className="project-empty">
+            :<div className="project-empty">
               <h3>No KiCad projects yet</h3>
               <p>{sandboxMode?"Project selection comes next. No local project is shared yet.":
                 <>Use <code>kicad-mcp-pro cloud setup --browse</code> on your
                   computer to pair it. Then choose a project using Browse on its Online card.</>}</p>
             </div>}
 
-          </section>:null}
-        </>}
-
-      {/* Where you use it: Application Shortcuts */}
-      <section className="card client-shortcuts">
+          </section>);
+}
+function UnavailableDevices(){
+  return (<section className="card status-card" id="registered-projects"><div className="status-message">
+        <span className="status-pill pending">Not enabled</span>
+        <h2>Local KiCad devices aren't available yet</h2>
+        <p>Device enrollment and management are not enabled on this deployment. No pairing or local project control is available. The device schema and recovery checks must be approved before activation.</p>
+        <div className="state-detail">
+          <div><span>Cloud account</span><small>Available</small></div>
+          <div><span>Device enrollment</span><small>Not enabled</small></div>
+          <div><span>Remote KiCad execution</span><small>Not enabled</small></div>
+        </div>
+      </div></section>);
+}
+function DeviceContents({context}:Readonly<{context:ViewContext}>){
+  if(!context.enrollmentAvailable&&context.devices.length===0)return <UnavailableDevices/>;
+  return <><DeviceList context={context}/><PairingSetup context={context}/><RegisteredProjects context={context}/></>;
+}
+function ClientShortcuts(){
+  return (      <section className="card client-shortcuts">
         <h2>Where you use it</h2>
         <p>Connect your preferred AI client, then grant it access to a registered project.</p>
         <ul>
@@ -424,10 +457,13 @@ export function renderDevicesPage(
             <span><strong>Other MCP clients</strong><small>Check endpoint details and authentication.</small></span>
             <b>Details <Icon name="arrow" size={14}/></b></a></li>
         </ul>
-      </section>
+      </section>);
+}
 
-      {/* Advanced Identity Inspection */}
-      {enrollmentAvailable&&ownerSub&&!sandboxMode?<details className="advanced-identity">
+function AdvancedIdentity({context}:Readonly<{context:ViewContext}>){
+  const {enrollmentAvailable,ownerSub,sandboxMode,projects,devices}=context;
+  if(!enrollmentAvailable||!ownerSub||sandboxMode)return null;
+  return (<details className="advanced-identity">
         <summary>Advanced: local Connector account ID</summary>
         <p>Only needed when configuring the local Connector manually: <code>{ownerSub}</code></p>
         {(/^[A-Za-z0-9_.:@-]{1,256}$/.test(ownerSub))?
@@ -443,8 +479,23 @@ export function renderDevicesPage(
               <p>Registration does not enable the Connector or grant client access.</p>
             </div>
           ):null}
-      </details>:null}
-       {sandboxMode||browseEnabled?<script src="/assets/device-projects.js" defer={true}/>:null}
-    </div>
-  });
+      </details>);
+}
+export function renderDevicesPage(devices:ReadonlyArray<Device>,notice?:string,enrollmentAvailable=true,
+  {projects=[],ownerSub,clients=[],savedGrants=[],sandboxMode=false,browseEnabled=false,writeClients=[],userEmail}:DevicePageOptions={}
+):string{
+  const context={devices,projects,enrollmentAvailable,ownerSub,clients,savedGrants,sandboxMode,browseEnabled,writeClients};
+  return renderPage({title:"Devices",kind:"devices",eyebrow:"Workspace / Devices",userEmail,
+    summary:"Machines your AI clients can reach through KiCad MCP Cloud.",
+    actions:enrollmentAvailable?<a className="button primary device-add-button" href="#connect-computer">
+      <span className="device-add-plus" aria-hidden="true">+</span> Add a device
+    </a>:null,
+    children:<div className="page-stack">
+      {notice?<output className="output-notice">{notice}</output>:null}
+      <DeviceContents context={context}/>
+      <ClientShortcuts/>
+      <AdvancedIdentity context={context}/>
+      {sandboxMode||browseEnabled?<script src="/assets/device-projects.js" defer={true}/>:null}
+      {enrollmentAvailable&&!sandboxMode?<script src="/assets/copy-value.js" defer={true}/>:null}
+    </div>});
 }

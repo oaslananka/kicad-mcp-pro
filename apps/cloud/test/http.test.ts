@@ -507,12 +507,12 @@ test("workspace routes reach browser auth flow through the HTTP server",async()=
   await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
   try {
     const base="http://127.0.0.1:"+(server.address() as AddressInfo).port;
-    for(const path of ["/usage","/overview"]) {
+    for(const path of ["/usage","/overview","/projects"]) {
       const response=await fetch(base+path,{redirect:"manual"});
       assert.equal(response.status,303,path+" should require sign-in");
       assert.equal(response.headers.get("location"),"/sign-in");
     }
-    for(const [path,target] of [["/settings","/sign-in"],["/projects","/devices#registered-projects"]]) {
+    for(const [path,target] of [["/settings","/sign-in"]]) {
       const response=await fetch(base+path,{redirect:"manual"});
       assert.equal(response.status,303,path+" should redirect to its workspace page");
       assert.equal(response.headers.get("location"),target);

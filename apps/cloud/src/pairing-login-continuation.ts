@@ -44,7 +44,7 @@ export const pairingLoginContinuationClient=String.raw`"use strict";
     return;
   }
 
-  if(window.location.pathname==="/account"){
+  if(window.location.pathname==="/account"||window.location.pathname==="/projects"){
     let pending;
     try{
       const raw=window.sessionStorage.getItem(key);

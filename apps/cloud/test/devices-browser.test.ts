@@ -67,28 +67,22 @@ test("authenticated devices page reports only actual owner-bound connector sessi
     checks.push(owner+":"+device);
     return owner==="owner-a"&&device===f.ownId;
   };
-  const page=await devicesResponse(
-    new Request(origin+"/devices"),f.identity,origin,f.devices,true,undefined,connected);
+  const page=await devicesResponse(new Request(origin+"/devices"),f.identity,origin,f.devices,{enrollmentAvailable:true,deviceConnection:connected});
   assert.equal(page?.status,200);
   const html=await page!.text();
   assert.match(html,/Cloud session active/);
   assert.deepEqual(checks,["owner-a:"+f.ownId]);
-  const offline=await devicesResponse(
-    new Request(origin+"/devices"),f.identity,origin,f.devices,true,undefined,()=>false);
+  const offline=await devicesResponse(new Request(origin+"/devices"),f.identity,origin,f.devices,{enrollmentAvailable:true,deviceConnection:()=>false});
   const offlineHtml=await offline!.text();
   assert.match(offlineHtml,/kicad-mcp-pro cloud reconnect/);
   assert.doesNotMatch(offlineHtml,/Run kicad-mcp-pro remote to connect/);
   const anonymous=fixture(null);
   let called=false;
-  const unauthenticated=await devicesResponse(
-    new Request(origin+"/devices"),anonymous.identity,origin,anonymous.devices,true,
-    undefined,()=>{called=true;return true;});
+  const unauthenticated=await devicesResponse(new Request(origin+"/devices"),anonymous.identity,origin,anonymous.devices,{enrollmentAvailable:true,deviceConnection:()=>{called=true;return true;}});
   assert.equal(unauthenticated?.status,303);
   assert.equal(called,false,"anonymous view must never query any device connection");
   const other=fixture("owner-b");
-  const outsider=await devicesResponse(
-    new Request(origin+"/devices"),other.identity,origin,other.devices,true,
-    undefined,()=>{called=true;return true;});
+  const outsider=await devicesResponse(new Request(origin+"/devices"),other.identity,origin,other.devices,{enrollmentAvailable:true,deviceConnection:()=>{called=true;return true;}});
   assert.equal(outsider?.status,200);
   assert.doesNotMatch(await outsider!.text(),/Cloud session active/);
   assert.equal(called,false,"foreign account cannot enumerate ready sockets");
@@ -208,7 +202,7 @@ test("no device manager cannot mutate devices",async()=>{
 
 test("schema-ready inventory remains disabled without explicitly enabled device pairing",async()=>{
   const empty=fixture("owner-b");
-  const gated=await devicesResponse(new Request(origin+"/devices"),empty.identity,origin,empty.devices,false);
+  const gated=await devicesResponse(new Request(origin+"/devices"),empty.identity,origin,empty.devices,{enrollmentAvailable:false});
   assert.equal(gated?.status,200);
   const html=await gated!.text();
   assert.match(html,/not enabled on this deployment/);
@@ -217,7 +211,7 @@ test("schema-ready inventory remains disabled without explicitly enabled device 
   // Existing users must retain credential-revocation even if new enrollment
   // is disabled. Do not hide live devices behind a feature flag.
   const existing=fixture();
-  const response=await devicesResponse(new Request(origin+"/devices"),existing.identity,origin,existing.devices,false);
+  const response=await devicesResponse(new Request(origin+"/devices"),existing.identity,origin,existing.devices,{enrollmentAvailable:false});
   assert.equal(response?.status,200);
   const detail=await response!.text();
   assert.match(detail,/Revoke this device/);
@@ -243,8 +237,7 @@ test("owner-managed Connector On/Off stays session-bound and CSRF protected",asy
       enabled=setting;return true;
     }
   };
-  const get=()=>devicesResponse(new Request(origin+"/devices"),f.identity,origin,
-    devices,true,undefined,undefined,managed);
+  const get=()=>devicesResponse(new Request(origin+"/devices"),f.identity,origin,devices,{enrollmentAvailable:true,managedRead:managed});
   const first=await get();
   assert.equal(first?.status,200);
   const html=await first!.text();
@@ -260,13 +253,10 @@ test("owner-managed Connector On/Off stays session-bound and CSRF protected",asy
         enabled:String(setting),csrf:submittedToken})
     });
   };
-  assert.equal((await devicesResponse(submit(true,token,"https://evil.invalid"),
-    f.identity,origin,devices,true,undefined,undefined,managed))?.status,403);
-  assert.equal((await devicesResponse(submit(true,"invalid"),
-    f.identity,origin,devices,true,undefined,undefined,managed))?.status,403);
+  assert.equal((await devicesResponse(submit(true,token,"https://evil.invalid"),f.identity,origin,devices,{enrollmentAvailable:true,managedRead:managed}))?.status,403);
+  assert.equal((await devicesResponse(submit(true,"invalid"),f.identity,origin,devices,{enrollmentAvailable:true,managedRead:managed}))?.status,403);
   assert.equal(requests.length,0);
-  const enabledReply=await devicesResponse(submit(true),f.identity,origin,devices,true,
-    undefined,undefined,managed);
+  const enabledReply=await devicesResponse(submit(true),f.identity,origin,devices,{enrollmentAvailable:true,managedRead:managed});
   assert.equal(enabledReply?.status,303);
   assert.equal(enabledReply?.headers.get("location"),"/devices?access=reads-on");
   assert.equal(requests.length,1);
@@ -285,8 +275,7 @@ test("owner-managed Connector On/Off stays session-bound and CSRF protected",asy
       enabled:"false",csrf:newestToken})
   });
   assert.ok(offToken&&newestToken);
-  const disabledReply=await devicesResponse(offRequest,f.identity,origin,devices,true,
-    undefined,undefined,managed);
+  const disabledReply=await devicesResponse(offRequest,f.identity,origin,devices,{enrollmentAvailable:true,managedRead:managed});
   assert.equal(disabledReply?.status,303);
   assert.equal(disabledReply?.headers.get("location"),"/devices?access=reads-off");
   assert.equal(requests.at(-1)?.enabled,false);
@@ -357,8 +346,7 @@ test("native Cloud diagnostic consent is explicit, owner-scoped and CSRF protect
     },
     isEnabled:async()=>true
   };
-  const page=await devicesResponse(new Request(origin+"/devices"),f.identity,origin,
-    devices,true,undefined,undefined,managed as never,undefined,true);
+  const page=await devicesResponse(new Request(origin+"/devices"),f.identity,origin,devices,{enrollmentAvailable:true,managedRead:managed as never,nativeReadEnabled:true});
   assert.equal(page?.status,200);
   const html=await page!.text();
   assert.match(html,/Read-only KiCad diagnostics/);
@@ -375,25 +363,19 @@ test("native Cloud diagnostic consent is explicit, owner-scoped and CSRF protect
       })
     });
   assert.equal((await devicesResponse(request("run_drc",nativeForm[1]!,true,
-    "https://attacker.invalid"),f.identity,origin,devices,true,undefined,
-    undefined,managed as never,undefined,true))?.status,403);
-  assert.equal((await devicesResponse(request("write_board",nativeForm[1]!),
-    f.identity,origin,devices,true,undefined,undefined,managed as never,undefined,true))?.status,400);
-  assert.equal((await devicesResponse(request("project_board_counts",nativeForm[1]!),
-    f.identity,origin,devices,true,undefined,undefined,managed as never,undefined,true))?.status,400);
+    "https://attacker.invalid"),f.identity,origin,devices,{enrollmentAvailable:true,managedRead:managed as never,nativeReadEnabled:true}))?.status,403);
+  assert.equal((await devicesResponse(request("write_board",nativeForm[1]!),f.identity,origin,devices,{enrollmentAvailable:true,managedRead:managed as never,nativeReadEnabled:true}))?.status,400);
+  assert.equal((await devicesResponse(request("project_board_counts",nativeForm[1]!),f.identity,origin,devices,{enrollmentAvailable:true,managedRead:managed as never,nativeReadEnabled:true}))?.status,400);
   assert.doesNotMatch(html,/name="operation" value="project_board_counts"/,
     "Unimplemented local diagnostics must not appear as actionable controls");
   assert.deepEqual(attempts,[]);
-  const success=await devicesResponse(request("run_drc",nativeForm[1]!),
-    f.identity,origin,devices,true,undefined,undefined,managed as never,undefined,true);
+  const success=await devicesResponse(request("run_drc",nativeForm[1]!),f.identity,origin,devices,{enrollmentAvailable:true,managedRead:managed as never,nativeReadEnabled:true});
   assert.equal(success?.status,303);
   assert.equal(success?.headers.get("location"),"/devices?access=native-on");
   assert.deepEqual(attempts,["run_drc:true"]);
-  const disabled=await devicesResponse(request("run_drc",nativeForm[1]!,false),
-    f.identity,origin,devices,true,undefined,undefined,managed as never,undefined,true);
+  const disabled=await devicesResponse(request("run_drc",nativeForm[1]!,false),f.identity,origin,devices,{enrollmentAvailable:true,managedRead:managed as never,nativeReadEnabled:true});
   assert.equal(disabled?.status,303);
   assert.deepEqual(attempts,["run_drc:true","run_drc:false"]);
-  const absent=await devicesResponse(request("run_drc",nativeForm[1]!),
-    f.identity,origin,devices,true,undefined,undefined,managed as never,undefined,false);
+  const absent=await devicesResponse(request("run_drc",nativeForm[1]!),f.identity,origin,devices,{enrollmentAvailable:true,managedRead:managed as never,nativeReadEnabled:false});
   assert.equal(absent?.status,405,"Production native switch is absent unless explicitly enabled");
 });

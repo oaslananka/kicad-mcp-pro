@@ -21,6 +21,7 @@ import {publicAsset} from "./public-assets.js";
 import {pairingReviewClient} from "./pairing-review-client.js";
 import {deviceProjectsClient} from "./device-projects-client.js";
 import {pairingLoginContinuationClient} from "./pairing-login-continuation.js";
+import {copyValueClient} from "./copy-value.js";
 import {ownerApiResponse,cliApproveResponse,type PgOwnerApiAccess} from "./owner-api.js";
 import {extractToolCall,callStatusFromResponse,type PgUsage} from "./usage.js";
 import type {TrustedOAuthReadIdentity} from "./connector-read-gate.js";
@@ -182,6 +183,12 @@ async function handleRequest(
         res.end(pairingReviewClient);
         return;
       }
+      if (path === "/assets/copy-value.js" && req.method === "GET") {
+        res.writeHead(200,{...noCache,"Content-Type":"text/javascript; charset=utf-8",
+          "Referrer-Policy":"no-referrer"});
+        res.end(copyValueClient);
+        return;
+      }
       // Read-only static UI script used by the production device project
       // dialogs as well as the local sandbox. It never contains owner data.
       if (path === "/assets/device-projects.js" && req.method === "GET"){
@@ -214,14 +221,14 @@ async function handleRequest(
           answer=await consentResponse(browserRequest,identity,config.publicOrigin,config.managementClientId);
         } else if (path==="/connections" || path==="/connections/revoke") {
           answer=await connectionsResponse(browserRequest,identity,config.publicOrigin,grants);
-        } else if(path==="/devices" || path==="/devices/revoke" || path==="/devices/delete" || path==="/devices/enable" || path==="/devices/projects/create" || path==="/devices/projects/grant" || path==="/devices/projects/managed" || path==="/devices/projects/native" || path==="/devices/projects/delete" ||
+        } else if(path==="/projects" || path==="/devices" || path==="/devices/revoke" || path==="/devices/delete" || path==="/devices/enable" || path==="/devices/projects/create" || path==="/devices/projects/grant" || path==="/devices/projects/managed" || path==="/devices/projects/native" || path==="/devices/projects/delete" ||
           path==="/devices/projects/browse" || path==="/devices/projects/select" ||
           path==="/devices/projects/rename" || path==="/devices/projects/folders"){
-          answer=await devicesResponse(browserRequest,identity,config.publicOrigin,
-            devices,Boolean(pairingDevice),grants,
-            summaryRelay?.()?.isDeviceConnected,services.managedRead,
-            summaryRelay?.()?.localFolders,
-            services.managedNativeReadEnabled===true);
+          answer=await devicesResponse(browserRequest,identity,config.publicOrigin,devices,{
+            enrollmentAvailable:Boolean(pairingDevice),grants,
+            deviceConnection:summaryRelay?.()?.isDeviceConnected,
+            managedRead:services.managedRead,localFolders:summaryRelay?.()?.localFolders,
+            nativeReadEnabled:services.managedNativeReadEnabled===true});
         } else if(path==="/devices/pairing" || path==="/devices/pairing/review"){
           answer=await pairingBrowserResponse(browserRequest,identity,config.publicOrigin,pairings);
         } else if(path==="/api/owner/cli/approve"){

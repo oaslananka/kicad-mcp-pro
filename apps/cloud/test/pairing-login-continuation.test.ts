@@ -8,7 +8,7 @@ import type {BrowserIdentity} from "../src/browser.js";
 const challenge="11111111-1111-4111-8111-111111111111";
 const code="ABCDEF-123456";
 const key="kicad-pairing-return-v1";
-function script(path:"/devices/pairing"|"/account",hash:string,store=new Map<string,string>(),
+function script(path:"/devices/pairing"|"/account"|"/projects",hash:string,store=new Map<string,string>(),
   time=1_800_000,signedInReview=false){
   const redirects:string[]=[];
   const history:string[]=[];
@@ -62,6 +62,17 @@ test("invalid, duplicated or expired pairing fragments are never resumed",()=>{
   assert.deepEqual(script("/account","",storage).redirects,[]);
   assert.equal(storage.has(key),false);
   assert.deepEqual(script("/devices/pairing","").redirects,[]);
+});
+
+test("project landing resumes a pending pairing once without approving it",()=>{
+  const store=new Map<string,string>();
+  script("/devices/pairing",`#challenge=${challenge}&code=${code}`,store);
+  assert.deepEqual(script("/projects","",store,1_800_300).redirects,
+    [`/devices/pairing#challenge=${challenge}&code=${code}`]);
+  assert.equal(store.has(key),false);
+  assert.deepEqual(script("/projects","",store).redirects,[]);
+  const expired=new Map([[key,JSON.stringify({challenge,code,created:0})]]);
+  assert.deepEqual(script("/projects","",expired).redirects,[]);
 });
 
 test("signed-out pairing offers existing social login, no implicit approval",async()=>{

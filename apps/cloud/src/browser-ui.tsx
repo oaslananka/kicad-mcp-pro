@@ -1,7 +1,7 @@
 import {renderPage,Landing,SignIn,Account,Notice,SettingsHome} from "./ui-shell.js";
 export function renderLanding(identityEnabled:boolean){
   return renderPage({title:"KiCad MCP Cloud",kind:"home",navEnabled:identityEnabled,
-    eyebrow:"Cloud console",summary:"Connect an AI assistant, pair a computer with your approval, then choose exactly which KiCad projects it can read.",
+    eyebrow:"Cloud workspace",summary:"Connect an AI assistant, pair a computer with your approval and choose the KiCad projects you share.",
     children:<Landing identityEnabled={identityEnabled}/>});
 }
 export function renderSignIn(query:string,providers:ReadonlyArray<"google"|"github">=["google","github"],pairing=false){
@@ -17,10 +17,10 @@ export function renderAccount(name:string,
   return renderPage({title:"Workspace overview",kind:"account",eyebrow:"Workspace / Overview",
     summary:"Your account, connected AI apps, and device availability in one place.",
     userEmail:email||(name.includes("@")?name:undefined),
-    children:<>{localDevSandbox?<aside className="setup-next-step" role="status">
+    children:<>{localDevSandbox?<output className="setup-next-step">
       <strong>Local development workspace</strong>
       <span>Sandbox account on this computer only. No real Cloud login, OAuth consent, remote access or device pairing is active.</span>
-    </aside>:null}<Account name={name} providers={providers} linked={linked} snapshot={snapshot}/></>});
+    </output>:null}<Account name={name} providers={providers} linked={linked} snapshot={snapshot}/></>});
 }
 export function renderNotice(title:string,message:string){
   return renderPage({title,kind:"notice",eyebrow:"Account access",children:<Notice message={message}/>});

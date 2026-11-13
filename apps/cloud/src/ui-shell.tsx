@@ -2,9 +2,9 @@ import type {ReactNode} from "react";
 import {renderToStaticMarkup} from "react-dom/server";
 import {Icon} from "./ui-icons.js";
 
-export type PageKind="home"|"sign-in"|"account"|"consent"|"connections"|"devices"|"notice"|"usage"|"settings";
-type Props={title:string;eyebrow?:string;summary?:string;kind:PageKind;children:ReactNode;navEnabled?:boolean;actions?:ReactNode;userEmail?:string};
-const workspacePages=new Set<PageKind>(["account","connections","devices","usage","settings"]);
+export type PageKind="home"|"sign-in"|"account"|"projects"|"consent"|"connections"|"devices"|"notice"|"usage"|"settings";
+type Props=Readonly<{title:string;eyebrow?:string;summary?:string;kind:PageKind;children:ReactNode;navEnabled?:boolean;actions?:ReactNode;userEmail?:string}>;
+const workspacePages=new Set<PageKind>(["account","projects","connections","devices","usage","settings"]);
 // The Python Streamable HTTP transport stays; no Tauri desktop binary is required.
 const httpGuideUrl="https://oaslananka.github.io/kicad-mcp-pro/installation/";
 const localHttpCommand="uvx kicad-mcp-pro --transport streamable-http --host 127.0.0.1 --port 3334";
@@ -22,31 +22,31 @@ const publicSchema=JSON.stringify({
   image:"https://kicad-mcp-pro.oaslananka.dev/assets/icon-512.png",
   author:{"@type":"Organization",name:"KiCad MCP Pro",url:"https://github.com/oaslananka/kicad-mcp-pro"}
 });
-function NavLink({href,current,children}:{href:string;current:boolean;children:ReactNode}){
+function NavLink({href,current,children}:Readonly<{href:string;current:boolean;children:ReactNode}>){
   return <a href={href} aria-current={current?"page":undefined}>{children}</a>;
 }
-function Brand(){
-  return <a href="/" className="brand" aria-label="KiCad MCP Cloud workspace home">
+function Brand({workspace=false}:Readonly<{workspace?:boolean}>){
+  return <a href={workspace?"/projects":"/"} className="brand" aria-label="KiCad MCP Cloud workspace home">
     <span className="brand-mark"><img className="brand-logo" src="/assets/icon-32.png" alt="" width={24} height={24} srcSet="/assets/icon-32.png 1x, /assets/icon-64.png 2x" decoding="async"/></span>
     <span className="brand-title">KiCad MCP <small>Cloud workspace</small></span>
   </a>;
 }
-function WorkspaceNav({kind,userEmail}:{kind:PageKind;userEmail?:string}){
+function WorkspaceNav({kind,userEmail}:Readonly<{kind:PageKind;userEmail?:string}>){
   const cleanEmail=userEmail?.trim();
-  const initials=cleanEmail && cleanEmail.includes("@")
+  const initials=cleanEmail?.includes("@")
     ? cleanEmail.slice(0,2).toUpperCase()
     : "OA";
   const displayEmail=cleanEmail||"Account";
 
   return <aside className="workspace-sidebar" aria-label="Workspace navigation">
-    <Brand/>
+    <Brand workspace/>
     <div className="sidebar-section-label">WORKSPACE</div>
     <nav className="sidebar-links" aria-label="Workspace">
-      <NavLink href="/account" current={kind==="account"}><Icon name="overview" size={17}/> Overview</NavLink>
+      <NavLink href="/projects" current={kind==="projects"}><Icon name="projects" size={17}/> Projects</NavLink>
       <NavLink href="/devices" current={kind==="devices"}><Icon name="devices" size={17}/> Devices</NavLink>
-      <NavLink href="/devices#registered-projects" current={false}><Icon name="projects" size={17}/> Projects</NavLink>
       <NavLink href="/connections" current={kind==="connections"}><Icon name="connections" size={17}/> AI connections</NavLink>
       <NavLink href="/usage" current={kind==="usage"}><Icon name="usage" size={17}/> Usage</NavLink>
+      <NavLink href="/account" current={kind==="account"}><Icon name="overview" size={17}/> Overview</NavLink>
       <NavLink href="/settings" current={kind==="settings"}><Icon name="settings" size={17}/> Settings</NavLink>
     </nav>
     <a href="/settings" className="sidebar-profile" aria-label="Account and security settings" title={displayEmail}>
@@ -64,12 +64,24 @@ function WorkspaceNav({kind,userEmail}:{kind:PageKind;userEmail?:string}){
     </div>
   </aside>;
 }
+function PublicHeader({kind,navEnabled}:Pick<Props,"kind"|"navEnabled">){
+  const home=kind==="home";
+  return <header className="site-header"><div className="header-inner">
+    <Brand/>
+    <div className="header-right">
+      <span className="release-label"><Icon name="shield" size={15}/> Your projects. Your permissions.</span>
+      <nav className="public-nav" aria-label="Primary"><NavLink href="/" current={home}>Overview</NavLink>
+        <a href={home?"#http-setup":httpGuideUrl} target={home?undefined:"_blank"} rel={home?undefined:"noopener noreferrer"}>HTTP setup</a>
+        {navEnabled?<NavLink href="/projects" current={false}>Workspace</NavLink>:null}</nav>
+    </div>
+  </div></header>;
+}
 export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,actions,userEmail}:Props):string{
   const workspace=workspacePages.has(kind);
   return "<!doctype html>"+renderToStaticMarkup(
     <html lang="en"><head>
       <meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
-      <meta name="theme-color" content="#090a0d"/>
+      <meta name="theme-color" content="#0c0f10"/>
       <meta name="description" content={kind==="home"?publicDescription:"Manage KiCad MCP Cloud connections and access."}/>
       <meta name="robots" content={kind==="home"?"index, follow, max-snippet:-1, max-image-preview:large":"noindex, nofollow"}/>
       {kind==="home"?<>
@@ -90,17 +102,9 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
       <link rel="stylesheet" href="/assets/ui.css"/><title>{title+" — KiCad MCP Cloud"}</title>
     </head><body><div className={workspace?("app-shell workspace-app"):"app-shell"}>
       <a href="#main-content" className="skip-link">Skip to content</a>
-      {workspace?<WorkspaceNav kind={kind} userEmail={userEmail}/>:<header className="site-header"><div className="header-inner">
-        <Brand/>
-        <div className="header-right">
-          <span className="release-label"><Icon name="shield" size={15}/> Your projects. Your permissions.</span>
-          <nav className="public-nav" aria-label="Primary"><NavLink href="/" current={kind==="home"}>Overview</NavLink>
-            <a href={kind==="home"?"#http-setup":httpGuideUrl} target={kind==="home"?undefined:"_blank"} rel={kind==="home"?undefined:"noopener noreferrer"}>HTTP setup</a>
-            {navEnabled?<NavLink href="/account" current={false}>Workspace</NavLink>:null}</nav>
-        </div>
-      </div></header>}
+      {workspace?<WorkspaceNav kind={kind} userEmail={userEmail}/>:<PublicHeader kind={kind} navEnabled={navEnabled}/>}
       <main id="main-content" className={"site-main page-"+kind}>
-        {workspace?<div className="workspace-topbar"><span className="workspace-breadcrumb"><a href="/account">Workspace</a> <span aria-hidden="true">/</span> {title}</span>
+        {workspace?<div className="workspace-topbar"><span className="workspace-breadcrumb"><a href="/projects">Workspace</a> <span aria-hidden="true">/</span> {title}</span>
           <div className="workspace-topbar-actions"><span><Icon name="lock" size={15}/> Local files stay private</span>
             <a href="https://oaslananka.github.io/kicad-mcp-pro/" target="_blank" rel="noopener noreferrer">Documentation <Icon name="arrow" size={14}/></a>
           </div></div>:null}
@@ -161,7 +165,7 @@ export function SettingsHome({identity}:{readonly identity?:string}){
 export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
   const cloudChoice=<>
     <span className="entry-choice-icon"><Icon name="connections" size={23}/></span>
-    <span className="entry-choice-copy"><small>02 · OPTIONAL / REMOTE</small><strong>Connect through Cloud</strong>
+    <span className="entry-choice-copy"><small>CLOUD WORKSPACE</small><strong>Connect through Cloud</strong>
       <span>{identityEnabled?"Sign in. Pair your computer. Approve each project and AI client separately.":
         "Cloud sign-in is unavailable on this deployment. Pair your computer after account access is enabled."}</span>
       <b>{identityEnabled?"Open Cloud setup":"Cloud sign-in unavailable"} {identityEnabled?<Icon name="arrow" size={15}/>:null}</b></span>
@@ -173,13 +177,13 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
         <span className={identityEnabled?"status-pill neutral":"status-pill pending"}>
           {identityEnabled?"Account sign-in available":"Account access pending"}
         </span>
-        <div className="landing-product-label"><Icon name="shield" size={15}/> HTTP FIRST · CLOUD OPTIONAL</div>
+        <div className="landing-product-label"><Icon name="shield" size={15}/> YOUR COMPUTER · YOUR PROJECTS</div>
         <h2>Connect KiCad to AI.<br/><span className="landing-accent">Stay in control.</span></h2>
-        <p>Run a local MCP server over HTTP. Add Cloud only when you need remote AI access, and approve the exact projects you share.</p>
+        <p>Connect your computer, choose a KiCad project and bring your AI assistant. Your files stay local. You decide which apps have access.</p>
         <div className="action-row">
-          <a className="button primary" href="#http-setup">Start local HTTP <Icon name="arrow" size={17}/></a>
-          {identityEnabled?<a className="button secondary" href="/sign-in">Open Cloud workspace <Icon name="arrow" size={16}/></a>
+          {identityEnabled?<a className="button primary" href="/sign-in">Connect your computer <Icon name="arrow" size={16}/></a>
             :<span className="button disabled" aria-disabled="true">Cloud sign-in pending</span>}
+          <a className="button secondary" href="#http-setup">Start local HTTP <Icon name="arrow" size={17}/></a>
         </div>
         <p className="hero-note"><Icon name="shield" size={16}/> Local HTTP requires no Cloud account. Remote project access needs explicit approval.</p>
       </div>
@@ -203,15 +207,15 @@ export function Landing({identityEnabled}:{readonly identityEnabled:boolean}){
       </div>
     </section>
     <section className="entry-choices" aria-label="Choose how to start">
-      <a className="entry-choice entry-choice-primary" href="#http-setup">
-        <span className="entry-choice-icon"><Icon name="cpu" size={23}/></span>
-        <span className="entry-choice-copy"><small>01 · LOCAL / NO ACCOUNT</small><strong>Run the HTTP server</strong>
-          <span>Keep KiCad projects on your computer. Connect an AI client.</span><b>View the command <Icon name="arrow" size={15}/></b></span>
-        <Icon name="arrow" size={19} className="entry-choice-arrow"/>
-      </a>
       {identityEnabled?
         <a className="entry-choice entry-choice-cloud" href="/sign-in">{cloudChoice}</a>:
         <div className="entry-choice entry-choice-cloud unavailable" aria-disabled="true">{cloudChoice}</div>}
+      <a className="entry-choice entry-choice-primary" href="#http-setup">
+        <span className="entry-choice-icon"><Icon name="cpu" size={23}/></span>
+        <span className="entry-choice-copy"><small>LOCAL · NO ACCOUNT NEEDED</small><strong>Use KiCad MCP locally</strong>
+          <span>Keep KiCad projects on your computer. Connect an AI client.</span><b>View the command <Icon name="arrow" size={15}/></b></span>
+        <Icon name="arrow" size={19} className="entry-choice-arrow"/>
+      </a>
     </section>
     <section className="card http-setup-callout" id="http-setup" aria-labelledby="http-start-title">
       <div className="http-setup-heading">
@@ -278,30 +282,29 @@ export function SignIn({query,providers,pairing=false}:{
         <input type="hidden" name="oauth_query" value={query}/><button className="button provider" type="submit">
           <span className="provider-logo github"><Icon name="github" size={21}/></span> Continue with GitHub <Icon name="arrow" size={17} className="provider-arrow"/></button>
       </form>}</div>
-      {providers.length===0?<p className="auth-unavailable" role="status">Account sign-in is temporarily unavailable. Your local KiCad workspace continues to work without Cloud.</p>:null}
+      {providers.length===0?<output className="auth-unavailable">Account sign-in is temporarily unavailable. Your local KiCad workspace continues to work without Cloud.</output>:null}
       {pairing?<script defer={true} src="/assets/pairing-login-continuation.js"></script>:null}
       <div className="auth-footnote"><Icon name="shield" size={19}/><p>Signing in does not pair a device or share a project. Access requires independent, explicit approval.</p></div>
       <a className="auth-download-link" href={httpGuideUrl} target="_blank" rel="noopener noreferrer">Prefer local use? Set up HTTP without Cloud <Icon name="arrow" size={15}/></a>
     </div>
   </section>;
 }
+type WorkspaceSnapshot={devices:number;projects:number;clients:number;grants:number};
+function workspaceNextAction(snapshot?:WorkspaceSnapshot){
+  if(!snapshot)return {id:"review-devices",title:"See what's connected",detail:"Review your computers and project access.",href:"/devices",label:"Open devices"};
+  if(snapshot.devices===0)return {id:"pair-device",title:"Connect your first computer",detail:"Start with your KiCad device. Signing in shares nothing.",href:"/devices",label:"Review devices"};
+  if(snapshot.projects===0)return {id:"add-project",title:"Choose a KiCad project",detail:"Register only a project you wish to authorize.",href:"/devices#registered-projects",label:"Review projects"};
+  if(snapshot.clients===0)return {id:"connect-client",title:"Connect an AI tool",detail:"Choose an assistant and review its access request.",href:"/connections",label:"Manage AI connections"};
+  if(snapshot.grants===0)return {id:"grant-access",title:"Decide what AI can see",detail:"Project access is separate from account consent.",href:"/devices#registered-projects",label:"Review permissions"};
+  return {id:"review-access",title:"Review your connections",detail:"Saved permissions and current device status are separate.",href:"/devices",label:"Review access"};
+}
 export function Account({name,providers=["google","github"],linked=[],snapshot}:{
   readonly name:string;
   readonly providers?:ReadonlyArray<"google"|"github">;
   readonly linked?:ReadonlyArray<"google"|"github">;
-  readonly snapshot?:{devices:number;projects:number;clients:number;grants:number};
+  readonly snapshot?:WorkspaceSnapshot;
 }){
-  const nextAction = !snapshot
-    ? {id:"review-devices",title:"See what's connected",detail:"Review your computers and project access.",href:"/devices",label:"Open devices"}
-    : snapshot.devices===0
-    ? {id:"pair-device",title:"Connect your first computer",detail:"Start with your KiCad device. Signing in shares nothing.",href:"/devices",label:"Review devices"}
-    : snapshot.projects===0
-    ? {id:"add-project",title:"Choose a KiCad project",detail:"Register only a project you wish to authorize.",href:"/devices#registered-projects",label:"Review projects"}
-    : snapshot.clients===0
-    ? {id:"connect-client",title:"Connect an AI tool",detail:"Choose an assistant and review its access request.",href:"/connections",label:"Manage AI connections"}
-    : snapshot.grants===0
-    ? {id:"grant-access",title:"Decide what AI can see",detail:"Project access is separate from account consent.",href:"/devices#registered-projects",label:"Review permissions"}
-    : {id:"review-access",title:"Review your connections",detail:"Saved permissions and current device status are separate.",href:"/devices",label:"Review access"};
+  const nextAction=workspaceNextAction(snapshot);
   return <div className="page-stack account-dashboard">
     <script defer={true} src="/assets/pairing-login-continuation.js"></script>
     <section className="account-welcome" aria-label="Account status">
@@ -333,7 +336,7 @@ export function Account({name,providers=["google","github"],linked=[],snapshot}:
         </a>)}
       </div>
       <p className="card-footnote-inline"><Icon name="lock" size={13}/> Saved permissions do not guarantee a connected device or an active KiCad session.</p>
-    </section>:<p role="status">Workspace snapshot unavailable. Review devices and connections below.</p>}
+    </section>:<output>Workspace snapshot unavailable. Review devices and connections below.</output>}
     <section className="overview-tiles" aria-label="Workspace areas">
       <a className="overview-tile" href="/devices">
         <span className="tile-icon"><Icon name="devices" size={20}/></span>

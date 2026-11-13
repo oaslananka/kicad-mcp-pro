@@ -104,7 +104,7 @@ async function startSocialLogin(request:Request,identity:BrowserIdentity,
       "Origin":publicOrigin,
       ...(request.headers.get("cookie")?{"Cookie":request.headers.get("cookie")!}:{})
     },
-    body:JSON.stringify({provider,callbackURL:publicOrigin+"/account",...(signed?{oauth_query:signed}:{})})
+    body:JSON.stringify({provider,callbackURL:publicOrigin+"/projects",...(signed?{oauth_query:signed}:{})})
   }));
   return approvedProviderRedirect(authResponse,provider);
 }
@@ -179,49 +179,41 @@ async function startSocialLink(request:Request,identity:BrowserIdentity,
   return approvedProviderRedirect(reply,provider);
 }
 
+function socialProvider(path:string,prefix:string):SocialName|null{
+  if(path===prefix+"google")return "google";
+  if(path===prefix+"github")return "github";
+  return null;
+}
+async function socialResponse(request:Request,identity:BrowserIdentity,publicOrigin:string,
+  provider:SocialName,start:typeof startSocialLogin,returnTo:string):Promise<Response|null>{
+  // The OAuth start endpoint requires the CSRF-checked first-party POST.
+  // A direct browser GET must never begin OAuth; guide the visitor to the form.
+  if(request.method==="GET")return new Response(null,{status:303,headers:{
+    Location:returnTo,"Cache-Control":"no-store"}});
+  if(request.method!=="POST")return null;
+  if(!availableProviders(identity).includes(provider))
+    return page("Sign-in unavailable","This provider is not enabled.",404);
+  return start(request,identity,publicOrigin,provider);
+}
+async function settingsPage(request:Request,identity:BrowserIdentity):Promise<Response>{
+  const session=await identity.api?.getSession({headers:request.headers});
+  if(!session?.user)return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});
+  return new Response(renderSettings(session.user.email??session.user.name??undefined),{
+    status:200,headers:htmlHeaders
+  });
+}
 export async function browserResponse(request:Request,identity:BrowserIdentity,publicOrigin:string,devices?:DeviceManagementPort,grants?:GrantManagement,usage?:UsagePort):Promise<Response|null> {
   const url=new URL(request.url);
   if(url.pathname==="/sign-in" && request.method==="GET") {
     if(identity.localDevSandbox && !url.search)return new Response(null,{status:303,headers:{"Location":"/account","Cache-Control":"no-store"}});
     return signInPage(url,identity);
   }
-  let provider: "google" | "github" | null = null;
-  if (url.pathname === "/auth/start/google") provider = "google";
-  else if (url.pathname === "/auth/start/github") provider = "github";
-  // The OAuth start endpoint requires the CSRF-checked first-party POST.
-  // A direct browser GET must never begin OAuth; guide the visitor to the form.
-  if (provider && request.method === "GET") {
-    return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});
-  }
-  if(provider && request.method==="POST") {
-    if(!availableProviders(identity).includes(provider)){
-      return page("Sign-in unavailable","This provider is not enabled.",404);
-    }
-    return startSocialLogin(request,identity,publicOrigin,provider);
-  }
-  let linkProvider:SocialName|null=null;
-  if(url.pathname==="/auth/link/google")linkProvider="google";
-  else if(url.pathname==="/auth/link/github")linkProvider="github";
-  if(linkProvider && request.method==="GET"){
-    return new Response(null,{status:303,headers:{"Location":"/account","Cache-Control":"no-store"}});
-  }
-  if(linkProvider && request.method==="POST"){
-    if(!availableProviders(identity).includes(linkProvider)){
-      return page("Sign-in unavailable","This provider is not enabled.",404);
-    }
-    return startSocialLink(request,identity,publicOrigin,linkProvider);
-  }
+  const provider=socialProvider(url.pathname,"/auth/start/");
+  if(provider)return socialResponse(request,identity,publicOrigin,provider,startSocialLogin,"/sign-in");
+  const linkProvider=socialProvider(url.pathname,"/auth/link/");
+  if(linkProvider)return socialResponse(request,identity,publicOrigin,linkProvider,startSocialLink,"/account");
   if((url.pathname==="/account"||url.pathname==="/overview") && request.method==="GET") return accountPage(request,identity,publicOrigin,devices,grants);
   if(url.pathname==="/usage" && request.method==="GET") return usagePage(request,identity,usage);
-  if(url.pathname==="/settings" && request.method==="GET"){
-    const session=await identity.api?.getSession({headers:request.headers});
-    if(!session?.user)return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});
-    return new Response(renderSettings(session.user.email??session.user.name??undefined),{
-      status:200,headers:htmlHeaders
-    });
-  }
-  if(url.pathname==="/projects" && request.method==="GET"){
-    return new Response(null,{status:303,headers:{"Location":"/devices#registered-projects","Cache-Control":"no-store"}});
-  }
+  if(url.pathname==="/settings" && request.method==="GET")return settingsPage(request,identity);
   return null;
 }
