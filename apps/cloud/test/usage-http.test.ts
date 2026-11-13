@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {timingSafeEqual} from "node:crypto";
+import {createHash,timingSafeEqual} from "node:crypto";
 import {test} from "node:test";
 import {createHttpServer} from "../src/http.js";
 import type {Config} from "../src/config.js";
@@ -11,10 +11,11 @@ import pg from "pg";
 
 const url=process.env.TEST_DATABASE_URL;
 const projectId="3fa85f64-5717-4562-b3fc-2c963f66afa6";
-const sameTestIdentity=(a:string,b:string):boolean=>{
-  const left=Buffer.from(a),right=Buffer.from(b);
-  return left.length===right.length&&timingSafeEqual(left,right);
-};
+const sameTestIdentity=(a:string,b:string):boolean=>
+  timingSafeEqual(
+    createHash("sha256").update(a).digest(),
+    createHash("sha256").update(b).digest()
+  );
 const mockProject:Project={
   id:projectId,alias:"USB-C Controller",
   deviceId:"d108b5f4-22f2-4b3c-b62d-55163fa34814",
@@ -37,9 +38,7 @@ const inventory:Inventory={
   }
 };
 const verify:Verifier=async token=>{
-  const given=Buffer.from(token),expected=Buffer.from("test-user-a");
-  if(given.length!==expected.length||!timingSafeEqual(given,expected))
-    throw new Error("invalid");
+  if(!sameTestIdentity(token,"test-user-a"))throw new Error("invalid");
   const actor:Actor={
     sub:"user-a",clientId:"test-client",
     scopes:new Set(["projects:read"]),issuedAt:Math.floor(Date.now()/1000)};

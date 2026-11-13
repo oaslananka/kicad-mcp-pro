@@ -25,7 +25,21 @@ function validLabel(label:string):boolean{
     return false;
   return [...label].every(char=>ALLOWED_LABEL.includes(char));
 }
-const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const HEX_DIGITS="0123456789abcdefABCDEF";
+function validUuid(value:unknown):value is string{
+  if(typeof value!=="string"||value.length!==36)return false;
+  for(let i=0;i<value.length;i++){
+    const ch=value[i];
+    if(i===8||i===13||i===18||i===23){
+      if(ch!=="-")return false;
+    }else if(i===14){
+      if(!"12345678".includes(ch))return false;
+    }else if(i===19){
+      if(!"89abAB".includes(ch))return false;
+    }else if(!HEX_DIGITS.includes(ch))return false;
+  }
+  return true;
+}
 const REQUEST_TTL_MS=10*60_000;
 const MAX_PENDING=50;
 const MAX_POLLS=240;
@@ -349,7 +363,7 @@ export async function ownerApiResponse(request:Request,origin:string,
        !["deviceId","alias"].every(key=>Object.hasOwn(body,key)))
       return apiError(400,"invalid_request");
     const {deviceId,alias}=body;
-    if(typeof deviceId!=="string"||!UUID.test(deviceId))return apiError(400,"invalid_request");
+    if(typeof deviceId!=="string"||!validUuid(deviceId))return apiError(400,"invalid_request");
     if(typeof alias!=="string")return apiError(400,"invalid_request");
     let created:string|null;
     try{created=await devices.createProject(owner,deviceId,alias);}
@@ -370,7 +384,7 @@ export async function ownerApiResponse(request:Request,origin:string,
     if(!body||Object.keys(body).length!==expected.length||
        !expected.every(key=>Object.hasOwn(body,key)))
       return apiError(400,"invalid_request");
-    if(typeof body.projectId!=="string"||!UUID.test(body.projectId))
+    if(typeof body.projectId!=="string"||!validUuid(body.projectId))
       return apiError(400,"invalid_request");
     if(action==="rename"){
       if(typeof body.alias!=="string")return apiError(400,"invalid_request");
@@ -409,7 +423,7 @@ export async function ownerApiResponse(request:Request,origin:string,
        !["projectId","clientId","enabled"].every(key=>Object.hasOwn(body,key)))
       return apiError(400,"invalid_request");
     const {projectId,clientId,enabled}=body;
-    if(typeof projectId!=="string"||!UUID.test(projectId)||
+    if(typeof projectId!=="string"||!validUuid(projectId)||
        typeof clientId!=="string"||clientId.length<1||clientId.length>1024||
        typeof enabled!=="boolean")
       return apiError(400,"invalid_request");

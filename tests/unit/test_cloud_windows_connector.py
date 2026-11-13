@@ -1041,3 +1041,36 @@ def test_signed_device_dispatch_reads_cloud_added_second_project(
             )
     finally:
         dispatch.close()
+
+
+@pytest.mark.asyncio
+async def test_foreground_signed_connector_passes_tool_activity_to_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    history: list[str] = []
+    receipt = HandshakeReceipt(
+        "19ee4be9-0aec-448e-9873-721ae113ec02",
+        "39ee4be9-0aec-448e-9873-721ae113ec02",
+    )
+
+    async def signed_session(**kwargs: object) -> HandshakeReceipt:
+        on_ready = kwargs["on_ready"]
+        on_activity = kwargs["on_activity"]
+        assert callable(on_ready) and callable(on_activity)
+        on_ready(receipt)
+        on_activity("Tool call 1: project_summary completed")
+        return receipt
+
+    monkeypatch.setattr(connector, "execute_owner_managed_read_session", signed_session)
+    runner = connector._session_runner_with_status(signed_session, history.append)
+    result = await runner(
+        origin="https://cloud.example",
+        trusted_origin="https://cloud.example",
+        owner_sub="owner",
+        device_id=receipt.device_id,
+        signing_key=Ed25519PrivateKey.generate(),
+        dispatcher_factory=lambda _: None,
+        max_reads=1,
+    )
+    assert result == receipt
+    assert history == ["Connected", "Tool call 1: project_summary completed"]

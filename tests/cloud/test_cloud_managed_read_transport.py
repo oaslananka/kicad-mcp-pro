@@ -101,10 +101,17 @@ async def test_two_successive_reads_on_same_authenticated_socket(tmp_path: Path)
     socket = Socket([request(1), request(2)])
     dispatcher = build_dispatcher(tmp_path, grant)
     receipt = HandshakeReceipt(DEVICE, SESSION)
+    events: list[str] = []
     assert (
-        await serve_authenticated_reads(socket, receipt, lambda _: dispatcher, max_reads=2)
+        await serve_authenticated_reads(
+            socket, receipt, lambda _: dispatcher, max_reads=2, on_activity=events.append
+        )
         == receipt
     )
+    assert events == [
+        "Tool call 1: project_summary completed",
+        "Tool call 2: project_summary completed",
+    ]
     assert [item["sequence"] for item in socket.sent] == [1, 2]
     for item in socket.sent:
         assert item["result"]["files"]["projectPresent"] is True
@@ -349,10 +356,15 @@ async def test_folder_frames_are_answered_without_consuming_read_sequences(
         return dispatcher
 
     # Serve one interleaved folder frame, then one read: sequences untouched.
+    events: list[str] = []
     served = await serve_authenticated_reads(
-        socket, receipt, factory, max_reads=1, folder_service=service
+        socket, receipt, factory, max_reads=1, folder_service=service, on_activity=events.append
     )
     assert served == receipt
+    assert events == [
+        "Folder browsing request completed",
+        "Tool call 1: project_summary completed",
+    ]
     kinds = [item["kind"] for item in socket.sent]
     assert kinds == ["connector.local_browser_result", "connector.read_result"]
     folder_result = socket.sent[0]
@@ -566,3 +578,37 @@ def test_project_resolver_cannot_switch_device_or_leak_local_failure(
     message = json.loads(request(1, projectId=OTHER_PROJECT))["request"]
     with pytest.raises(LocalReadDeniedError, match="request denied"):
         dispatcher.read(json.dumps(message).encode(), sequence=1)
+
+
+@pytest.mark.anyio
+async def test_activity_logger_exception_never_invalidates_a_signed_read(tmp_path: Path) -> None:
+    dispatcher = build_dispatcher(tmp_path, [True])
+    socket = Socket([request(1)])
+
+    def broken_terminal(_message: str) -> None:
+        raise OSError("terminal output unavailable")
+
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    assert (
+        await serve_authenticated_reads(
+            socket, receipt, lambda _: dispatcher, max_reads=1, on_activity=broken_terminal
+        )
+        == receipt
+    )
+    assert len(socket.sent) == 1
+    assert socket.sent[0]["result"]["operation"] == "project_summary"
+
+
+@pytest.mark.anyio
+async def test_untrusted_activity_callback_type_is_refused(tmp_path: Path) -> None:
+    socket = Socket([request(1)])
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    with pytest.raises(CloudHandshakeDeniedError):
+        await serve_authenticated_reads(
+            socket,
+            receipt,
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+            on_activity="unsafe",  # type: ignore[arg-type]
+        )
+    assert socket.sent == []

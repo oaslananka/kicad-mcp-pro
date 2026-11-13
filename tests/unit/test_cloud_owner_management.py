@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
@@ -586,3 +588,320 @@ def test_cloud_owner_api_rejects_malformed_token_and_unsupported_paths() -> None
         api.request("GET", "/api/owner/v1/devices", token=_TOKEN[:10])
     with pytest.raises(CloudManagementError, match="valid"):
         cloud_owner_management.save_token(_ORIGIN, "invalid")
+
+
+def test_cloud_add_project_registers_second_project_and_keeps_file_local(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_folder_browse_receiver, cloud_windows_connector
+
+    directory = tmp_path / "KiCad Projects" / "Motor Controller"
+    directory.mkdir(parents=True)
+    project_file = directory / "motor.kicad_pro"
+    project_file.write_text("OWNER_PRIVATE_FILE", encoding="utf-8")
+    binding_file = tmp_path / "local-bindings.json"
+    cloud_id = "7d81dc49-8adc-4c52-9224-52d4b74fc543"
+    device_id = "7ddbf90b-4a3c-4d5f-86e5-74a074e2e598"
+    device = SimpleNamespace(origin=_ORIGIN, device_id=device_id)
+    monkeypatch.setattr(cloud_windows_connector, "selected_project", lambda: device)
+    monkeypatch.setattr(cloud_folder_browse_receiver, "default_bindings_file", lambda: binding_file)
+    requests: list[tuple[str, str, object]] = []
+
+    def fake_cloud(self: CloudOwnerApi, method: str, route: str, *, payload: dict[str, object]):
+        requests.append((method, route, payload))
+        return {"id": cloud_id}
+
+    monkeypatch.setattr(CloudOwnerApi, "authorized", fake_cloud)
+    result = cloud_owner_cli._add_project_on_paired_device(
+        _ORIGIN, directory, filename=None, name=None
+    )
+    assert result == (cloud_id, "Motor Controller")
+    assert requests == [
+        ("POST", "/api/owner/v1/projects", {"deviceId": device_id, "alias": "Motor Controller"})
+    ]
+    assert binding_file.is_file()
+    saved = binding_file.read_text(encoding="utf-8")
+    assert cloud_id in saved
+    assert json.loads(saved)[cloud_id] == str(project_file)
+    assert project_file.read_text(encoding="utf-8") == "OWNER_PRIVATE_FILE"
+
+
+def test_add_project_folder_with_multiple_files_requires_explicit_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_folder_browse_receiver, cloud_windows_connector
+
+    folder = tmp_path / "my boards"
+    folder.mkdir()
+    for stem in ("first", "second"):
+        (folder / f"{stem}.kicad_pro").write_text("PRIVATE", encoding="utf-8")
+    monkeypatch.setattr(
+        cloud_windows_connector,
+        "selected_project",
+        lambda: SimpleNamespace(origin=_ORIGIN, device_id="7ddbf90b-4a3c-4d5f-86e5-74a074e2e598"),
+    )
+    monkeypatch.setattr(
+        cloud_folder_browse_receiver, "default_bindings_file", lambda: tmp_path / "bindings.json"
+    )
+    requested: list[dict[str, object]] = []
+
+    def cloud(self: CloudOwnerApi, method: str, path: str, *, payload: dict[str, object]):
+        requested.append(payload)
+        return {"id": "7d81dc49-8adc-4c52-9224-52d4b74fc543"}
+
+    monkeypatch.setattr(CloudOwnerApi, "authorized", cloud)
+    with pytest.raises(CloudManagementError, match="--file"):
+        cloud_owner_cli._add_project_on_paired_device(_ORIGIN, folder, filename=None, name=None)
+    assert requested == []
+    project_id, label = cloud_owner_cli._add_project_on_paired_device(
+        _ORIGIN, folder, filename="second.kicad_pro", name="Chosen board"
+    )
+    assert project_id == "7d81dc49-8adc-4c52-9224-52d4b74fc543"
+    assert label == "Chosen board"
+    content = (tmp_path / "bindings.json").read_text(encoding="utf-8")
+    assert "second.kicad_pro" in content
+    assert "first.kicad_pro" not in content
+    assert all((folder / f"{stem}.kicad_pro").is_file() for stem in ("first", "second"))
+
+
+def test_add_project_local_bind_failure_removes_only_new_cloud_record(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import (
+        cloud_folder_browse_receiver,
+        cloud_local_folder_browser,
+        cloud_windows_connector,
+    )
+
+    folder = tmp_path / "board"
+    folder.mkdir()
+    (folder / "board.kicad_pro").write_text("PRIVATE", encoding="utf-8")
+    cloud_id = "7d81dc49-8adc-4c52-9224-52d4b74fc543"
+    monkeypatch.setattr(
+        cloud_windows_connector,
+        "selected_project",
+        lambda: SimpleNamespace(origin=_ORIGIN, device_id="7ddbf90b-4a3c-4d5f-86e5-74a074e2e598"),
+    )
+    monkeypatch.setattr(
+        cloud_folder_browse_receiver, "default_bindings_file", lambda: tmp_path / "bindings.json"
+    )
+    monkeypatch.setattr(cloud_local_folder_browser.LocalFolderBrowser, "bind", lambda *_args: False)
+    actions: list[str] = []
+
+    def post(self: CloudOwnerApi, method: str, route: str, *, payload: dict[str, object]):
+        actions.append(route)
+        return {"id": cloud_id} if route.endswith("/projects") else {"removed": True}
+
+    monkeypatch.setattr(CloudOwnerApi, "authorized", post)
+    with pytest.raises(CloudManagementError, match="Cloud record was removed"):
+        cloud_owner_cli._add_project_on_paired_device(_ORIGIN, folder, filename=None, name=None)
+    assert actions == ["/api/owner/v1/projects", "/api/owner/v1/projects/remove"]
+    assert (folder / "board.kicad_pro").read_text(encoding="utf-8") == "PRIVATE"
+
+
+def test_add_project_does_not_create_cloud_record_without_paired_device(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from kicad_mcp import cloud_windows_connector
+
+    monkeypatch.setattr(cloud_windows_connector, "selected_project", lambda: None)
+    monkeypatch.setattr(
+        CloudOwnerApi,
+        "authorized",
+        lambda *_args, **_kw: pytest.fail("No orphan project must be created"),
+    )
+    with pytest.raises(CloudManagementError, match="Pair this computer"):
+        cloud_owner_cli._add_project_on_paired_device(_ORIGIN, tmp_path, filename=None, name=None)
+
+
+def test_cloud_add_project_command_accepts_folder_path_without_pairing_again(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(cloud_owner_cli, "os", SimpleNamespace(name="nt"))
+    project_id = "7d81dc49-8adc-4c52-9224-52d4b74fc543"
+    called: list[tuple[str, Path, str | None, str | None]] = []
+
+    def add(origin: str, path: Path, *, filename: str | None, name: str | None):
+        called.append((origin, path, filename, name))
+        return project_id, "Motor Controller"
+
+    monkeypatch.setattr(cloud_owner_cli, "_add_project_on_paired_device", add)
+    result = CliRunner().invoke(app, ["cloud", "add-project", "--path", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert called == [(_ORIGIN, tmp_path, None, None)]
+    assert project_id in result.output
+    assert "registered and bound locally" in result.output
+
+
+@pytest.mark.parametrize(
+    ("failure", "message"),
+    [
+        ("different-owner", "different Cloud site"),
+        ("file-instead-of-folder", "project folder"),
+        ("missing-path", "unavailable"),
+        ("empty-folder", "no selectable KiCad project"),
+        ("empty-name", "project name"),
+        ("symbolic-link", "not a link"),
+    ],
+)
+def test_cloud_add_project_refuses_invalid_folder_or_device_before_cloud_mutation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: str, message: str
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_folder_browse_receiver, cloud_windows_connector
+
+    folder = tmp_path / "Board Folder"
+    folder.mkdir()
+    project_file = folder / "board.kicad_pro"
+    project_file.write_text("KEEP_PRIVATE", encoding="utf-8")
+    monkeypatch.setattr(
+        cloud_windows_connector,
+        "selected_project",
+        lambda: SimpleNamespace(
+            origin="https://another-cloud.example" if failure == "different-owner" else _ORIGIN,
+            device_id="7ddbf90b-4a3c-4d5f-86e5-74a074e2e598",
+        ),
+    )
+    monkeypatch.setattr(
+        cloud_folder_browse_receiver,
+        "default_bindings_file",
+        lambda: tmp_path / "never-created.json",
+    )
+    monkeypatch.setattr(
+        CloudOwnerApi,
+        "authorized",
+        lambda *_args, **_kwargs: pytest.fail("Invalid path must not create a Cloud project"),
+    )
+    selected: Path = folder
+    if failure == "file-instead-of-folder":
+        selected = project_file
+    elif failure == "missing-path":
+        selected = tmp_path / "not-present"
+    elif failure == "empty-folder":
+        selected = tmp_path / "Empty"
+        selected.mkdir()
+    elif failure == "symbolic-link":
+        original = Path.is_symlink
+        monkeypatch.setattr(
+            Path,
+            "is_symlink",
+            lambda self: self == folder or original(self),
+        )
+    with pytest.raises(CloudManagementError, match=message):
+        cloud_owner_cli._add_project_on_paired_device(
+            _ORIGIN,
+            selected,
+            filename=None,
+            name="" if failure == "empty-name" else None,
+        )
+    assert project_file.read_text(encoding="utf-8") == "KEEP_PRIVATE"
+    assert not (tmp_path / "never-created.json").exists()
+
+
+def test_cloud_add_project_rejects_unconfirmed_cloud_identity_without_binding(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_folder_browse_receiver, cloud_windows_connector
+
+    folder = tmp_path / "valid"
+    folder.mkdir()
+    (folder / "valid.kicad_pro").write_text("PRIVATE", encoding="utf-8")
+    monkeypatch.setattr(
+        cloud_windows_connector,
+        "selected_project",
+        lambda: SimpleNamespace(origin=_ORIGIN, device_id="7ddbf90b-4a3c-4d5f-86e5-74a074e2e598"),
+    )
+    monkeypatch.setattr(
+        cloud_folder_browse_receiver,
+        "default_bindings_file",
+        lambda: tmp_path / "bindings.json",
+    )
+    monkeypatch.setattr(CloudOwnerApi, "authorized", lambda *_a, **_kw: {"id": None})
+    with pytest.raises(CloudManagementError, match="valid project identity"):
+        cloud_owner_cli._add_project_on_paired_device(
+            _ORIGIN,
+            folder,
+            filename=None,
+            name=None,
+        )
+    assert not (tmp_path / "bindings.json").exists()
+
+
+def test_failed_cloud_project_registration_rollback_reports_manual_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import (
+        cloud_folder_browse_receiver,
+        cloud_local_folder_browser,
+        cloud_windows_connector,
+    )
+
+    folder = tmp_path / "board"
+    folder.mkdir()
+    (folder / "board.kicad_pro").write_text("PRIVATE", encoding="utf-8")
+    cid = "7d81dc49-8adc-4c52-9224-52d4b74fc543"
+    monkeypatch.setattr(
+        cloud_windows_connector,
+        "selected_project",
+        lambda: SimpleNamespace(origin=_ORIGIN, device_id="7ddbf90b-4a3c-4d5f-86e5-74a074e2e598"),
+    )
+    monkeypatch.setattr(
+        cloud_folder_browse_receiver, "default_bindings_file", lambda: tmp_path / "bindings.json"
+    )
+    monkeypatch.setattr(cloud_local_folder_browser.LocalFolderBrowser, "bind", lambda *_: False)
+    calls: list[str] = []
+
+    def fail_rollback(self: CloudOwnerApi, method: str, route: str, *, payload: dict[str, object]):
+        calls.append(route)
+        if route.endswith("/remove"):
+            raise CloudManagementError("Cloud disconnected")
+        return {"id": cid}
+
+    monkeypatch.setattr(CloudOwnerApi, "authorized", fail_rollback)
+    with pytest.raises(CloudManagementError, match="rollback could not be confirmed") as error:
+        cloud_owner_cli._add_project_on_paired_device(_ORIGIN, folder, filename=None, name=None)
+    assert cid in str(error.value)
+    assert calls == ["/api/owner/v1/projects", "/api/owner/v1/projects/remove"]
+    assert (folder / "board.kicad_pro").read_text(encoding="utf-8") == "PRIVATE"
+
+
+def test_cloud_add_project_command_rejects_non_windows_and_surfaces_local_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(cloud_owner_cli, "os", SimpleNamespace(name="posix"))
+    result = CliRunner().invoke(app, ["cloud", "add-project", "--path", str(tmp_path)])
+    assert result.exit_code != 0
+    assert "requires a paired Windows device" in result.output
+
+    monkeypatch.setattr(cloud_owner_cli, "os", SimpleNamespace(name="nt"))
+
+    def denied(*_args: object, **_kwargs: object) -> tuple[str, str]:
+        raise CloudManagementError("Select one KiCad project with --file.")
+
+    monkeypatch.setattr(cloud_owner_cli, "_add_project_on_paired_device", denied)
+    result = CliRunner().invoke(app, ["cloud", "add-project", "--path", str(tmp_path)])
+    assert result.exit_code != 0
+    assert "Select one KiCad project with --file." in result.output

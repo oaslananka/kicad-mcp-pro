@@ -411,3 +411,45 @@ def test_local_project_path_boundary_rejects_hostile_or_ambiguous_paths(
 
     with pytest.raises(CloudHandshakeDeniedError):
         handle_folder_frame(Malformed(), frame("path", projectId=PROJECT_ID))
+
+
+@pytest.mark.parametrize(
+    "invalid_listing",
+    [
+        None,
+        [],
+        {"unexpected": "not part of the device folder contract"},
+        {"folderId": "different"},
+        {"project": "not-a-bool"},
+        {"more": 1},
+        {"folders": "wrong-type"},
+        {"folders": [{}]},
+        {"folders": [{"id": "child-token", "name": "Board", "project": "yes"}]},
+        {"folders": [{"id": "child-token", "name": "Board"}]},
+    ],
+)
+def test_device_folder_listing_rejects_inconsistent_native_response(
+    invalid_listing: object,
+) -> None:
+    """A device's malformed listing must never appear as an owner-approved folder."""
+
+    class BrokenList(FakeService):
+        def list(self, folder_id: str) -> object:
+            valid = super().list(folder_id)
+            if isinstance(invalid_listing, dict):
+                return {**valid, **invalid_listing}
+            return invalid_listing
+
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        handle_folder_frame(BrokenList(), frame("list", folderId="root"))
+
+
+def test_device_folder_browser_rejects_wrong_local_project_id(tmp_path: Path) -> None:
+    service = _realistic_service(tmp_path)
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        service.project_path("not-an-owner-approved-uuid")
+
+
+def test_folder_browser_requires_absolute_selected_device_directory() -> None:
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        device_folder_service(Path("relative/KiCad"))

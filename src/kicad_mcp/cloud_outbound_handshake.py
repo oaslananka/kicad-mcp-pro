@@ -79,6 +79,7 @@ class OutboundSessionOptions:
     # owner_managed_read; never combined with pilot or inspection modes.
     folder_service_factory: Callable[[HandshakeReceipt], LocalFolderBrowseService] | None = None
     on_ready: Callable[[HandshakeReceipt], None] | None = None
+    on_activity: Callable[[str], None] | None = None
 
 
 def _endpoint(*, origin: str, trusted_origin: str) -> str:
@@ -643,6 +644,7 @@ async def _complete_outbound_operation(
             max_reads=options.managed_max_reads,
             folder_service=folder_service,
             allow_native_drc=options.managed_native_drc,
+            on_activity=options.on_activity,
         )
     if options.inspection_factory is not None:
         return await _complete_authorized_inspection(
@@ -977,6 +979,7 @@ async def execute_owner_managed_read_session(
     folder_service_factory: Callable[[HandshakeReceipt], LocalFolderBrowseService] | None = None,
     on_ready: Callable[[HandshakeReceipt], None] | None = None,
     allow_native_drc: bool = False,
+    on_activity: Callable[[str], None] | None = None,
 ) -> HandshakeReceipt:
     """One signed, owner-managed read-only session; no key loading or persistence.
 
@@ -994,6 +997,7 @@ async def execute_owner_managed_read_session(
         not callable(dispatcher_factory)
         or type(allow_native_drc) is not bool
         or (folder_service_factory is not None and not callable(folder_service_factory))
+        or (on_activity is not None and not callable(on_activity))
     ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     return await _perform_outbound_session(
@@ -1011,5 +1015,6 @@ async def execute_owner_managed_read_session(
             managed_max_reads=max_reads,
             folder_service_factory=folder_service_factory,
             on_ready=on_ready,
+            on_activity=on_activity,
         ),
     )

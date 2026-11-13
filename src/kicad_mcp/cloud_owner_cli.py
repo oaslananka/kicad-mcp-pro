@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+import os
+from pathlib import Path
+from typing import Annotated, Any
+from uuid import UUID
 
 import typer
 
@@ -63,6 +66,89 @@ def _request(
         raise typer.Exit(1) from exc
 
 
+def _add_project_on_paired_device(
+    origin: str, directory: Path, *, filename: str | None, name: str | None
+) -> tuple[str, str]:
+    """Register a KiCad folder against this already paired device, then bind it locally.
+
+    Selecting a folder or a file never uploads it. A failed local bind is
+    compensated by removing only the newly created Cloud project record.
+    """
+    from kicad_mcp.cloud_folder_browse_receiver import default_bindings_file
+    from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
+    from kicad_mcp.cloud_windows_connector import selected_project
+
+    try:
+        device = selected_project()
+        if device is None:
+            raise CloudManagementError("Pair this computer first with cloud remote.")
+        if device.origin != origin:
+            raise CloudManagementError("This device belongs to a different Cloud site.")
+        if directory.is_symlink() or directory.is_junction():
+            raise CloudManagementError("Select a real local KiCad folder, not a link.")
+        directory = directory.expanduser().resolve(strict=True)
+        if not directory.is_dir():
+            raise CloudManagementError("Select a local KiCad project folder, not a file.")
+        browser = LocalFolderBrowser([directory.parent], default_bindings_file())
+        selection = browser.choose_native(lambda: directory)
+    except (OSError, ValueError, RuntimeError) as exc:
+        if isinstance(exc, CloudManagementError):
+            raise
+        raise CloudManagementError("Local KiCad folder or device pairing is unavailable.") from exc
+
+    options = selection.get("projects")
+    if selection.get("status") != "selected" or not isinstance(options, list):
+        raise CloudManagementError("The chosen folder has no selectable KiCad project.")
+    matches = [
+        entry
+        for entry in options
+        if isinstance(entry, dict)
+        and (
+            filename is None
+            or filename in {entry.get("name"), str(entry.get("name")) + ".kicad_pro"}
+        )
+    ]
+    if len(matches) != 1:
+        available = ", ".join(str(x.get("name")) for x in options if isinstance(x, dict))
+        raise CloudManagementError(
+            "Select one KiCad project with --file (available: " + available[:250] + ")."
+        )
+    chosen = matches[0]
+    label = name if name is not None else directory.name
+    if not label or len(label) > 64 or not label.strip():
+        raise CloudManagementError("Cloud project name must contain 1 to 64 characters.")
+    api = CloudOwnerApi(origin)
+    reply = api.authorized(
+        "POST",
+        "/api/owner/v1/projects",
+        payload={"deviceId": device.device_id, "alias": label},
+    )
+    project_id = reply.get("id")
+    try:
+        if not isinstance(project_id, str):
+            raise ValueError("invalid Cloud project id")
+        UUID(project_id)
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise CloudManagementError("Cloud did not confirm a valid project identity.") from exc
+    try:
+        if browser.bind(str(chosen["id"]), project_id) is not True:
+            raise ValueError("local project map was not saved")
+    except (OSError, ValueError, TypeError, RuntimeError) as exc:
+        try:
+            api.authorized(
+                "POST", "/api/owner/v1/projects/remove", payload={"projectId": project_id}
+            )
+        except CloudManagementError as rollback_exc:
+            raise CloudManagementError(
+                "The local binding failed and the Cloud rollback could not be confirmed. "
+                "Review this Cloud project ID: " + project_id
+            ) from rollback_exc
+        raise CloudManagementError(
+            "The local project binding failed; its new Cloud record was removed."
+        ) from exc
+    return project_id, label
+
+
 def show_cloud_projects(origin: str, json_output: bool = False) -> None:
     """List only projects actually returned by the owner Cloud account."""
     reply = _request(origin, "GET", "/api/owner/v1/devices")
@@ -118,6 +204,31 @@ def register_owner_commands(app: typer.Typer, default_origin: str) -> None:
         except CloudManagementError as exc:
             typer.echo(str(exc), err=True)
             raise typer.Exit(1) from exc
+
+    @app.command("add-project")
+    def add_project_owner(
+        path: Annotated[Path, typer.Option("--path", help="Local KiCad project folder.")],
+        project_file: str | None = typer.Option(
+            None, "--file", help="Project file name if the folder contains several."
+        ),
+        name: str | None = typer.Option(None, "--name", help="Cloud display name."),
+        cloud_origin: str = typer.Option(default_origin, "--cloud-origin"),
+    ) -> None:
+        """Add one local KiCad project to this already paired Cloud device."""
+        if os.name != "nt":
+            typer.echo("Cloud add-project currently requires a paired Windows device.", err=True)
+            raise typer.Exit(1)
+        try:
+            origin = CloudOwnerApi(cloud_origin).origin
+            project_id, label = _add_project_on_paired_device(
+                origin, path, filename=project_file, name=name
+            )
+        except CloudManagementError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(1) from exc
+        typer.echo("Cloud project registered and bound locally: " + label)
+        typer.echo("Project ID: " + project_id)
+        typer.echo("Start or keep cloud remote connected to make this project available.")
 
     @app.command("devices")
     def devices_owner(

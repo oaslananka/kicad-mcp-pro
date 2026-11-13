@@ -30,6 +30,16 @@ _SESSION_TIMEOUT_SECONDS = 295
 _FOLDER_REQUEST_KIND = "connector.local_browser_request"
 
 
+def _report_activity(callback: Callable[[str], None] | None, message: str) -> None:
+    """Diagnostic callbacks are best-effort, never part of local authorization."""
+    if callback is None:
+        return
+    try:
+        callback(message)
+    except Exception:
+        return  # A broken console must never cancel a signed MCP response.
+
+
 class AuthenticatedReadSocket(Protocol):
     """A socket *already* authenticated by the existing signed WSS handshake."""
 
@@ -126,6 +136,7 @@ async def serve_authenticated_reads(
     max_reads: int = _MAX_MANAGED_READS,
     folder_service: LocalFolderBrowseService | None = None,
     allow_native_drc: bool = False,
+    on_activity: Callable[[str], None] | None = None,
 ) -> HandshakeReceipt:
     """Serve bounded serial, independently authorized READs on a signed socket.
 
@@ -146,6 +157,7 @@ async def serve_authenticated_reads(
         or not 1 <= max_reads <= _MAX_MANAGED_READS
         or (folder_service is not None and not callable(getattr(folder_service, "list", None)))
         or type(allow_native_drc) is not bool
+        or (on_activity is not None and not callable(on_activity))
     ):
         raise CloudHandshakeDeniedError(_DENIED)
 
@@ -170,6 +182,7 @@ async def serve_authenticated_reads(
                         if folder_service is None:
                             raise CloudHandshakeDeniedError(_DENIED)
                         await _serve_folder_request(socket, folder_service, raw)
+                        _report_activity(on_activity, "Folder browsing request completed")
                         continue
                     if kind != "connector.authorized_read":
                         raise CloudHandshakeDeniedError(_DENIED)
@@ -195,6 +208,9 @@ async def serve_authenticated_reads(
                     )
                     _validate_read_ack(await socket.recv(), reads_served + 1, response["requestId"])
                     reads_served += 1
+                    operation = response.get("operation")
+                    safe = operation if operation in {"project_summary", "run_drc"} else "read"
+                    _report_activity(on_activity, f"Tool call {reads_served}: {safe} completed")
         except TimeoutError as exc:
             raise CloudHandshakeDeniedError(_DENIED) from exc
         return receipt
