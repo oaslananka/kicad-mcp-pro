@@ -1386,8 +1386,10 @@ async def test_pcb_set_stackup_persists_file_and_supports_impedance_lookup(
     assert "Configured stackup with 5 layers." in configured
     assert "Total thickness: 1.4320 mm" in configured
     assert "(stackup" in pcb_text
-    assert '(layer "F.Cu" 0' in pcb_text
-    assert "(layer dielectric 1" in pcb_text
+    assert '(layer "F.Cu"' in pcb_text
+    assert '(layer "F.Cu" 0' not in pcb_text
+    assert '(layer "dielectric 1"' in pcb_text
+    assert '(layer "In1.Cu"' in pcb_text
     assert "(epsilon_r 4.2000)" in pcb_text
     assert '"name": "dielectric_1"' in state_text
     assert "Board stackup (5 layers)" in stackup

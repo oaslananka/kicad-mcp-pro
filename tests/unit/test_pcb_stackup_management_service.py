@@ -142,11 +142,34 @@ def test_set_stackup_preserves_state_transaction_reload_and_message() -> None:
         ]
     )
     assert events == [
-        ("state", ["F_Cu", "dielectric_1", "B_Cu"]),
         ("apply", "board", ["F_Cu", "dielectric_1", "B_Cu"]),
         ("transaction", "board::updated"),
+        ("state", ["F_Cu", "dielectric_1", "B_Cu"]),
         "reload",
     ]
+
+
+def test_set_stackup_does_not_persist_state_when_the_board_rejects_it() -> None:
+    written: list[object] = []
+
+    def reject(_current: str, _layers: list[StackupLayerSpec]) -> str:
+        raise ValueError("Stackup copper layers must be listed top to bottom")
+
+    service = PcbStackupManagementService(
+        current_stackup_specs=_layers,
+        total_stackup_thickness_mm=_total,
+        configured_board_file=lambda: None,
+        board_file_diagnostics=_no_diagnostics,
+        is_copper_stackup_layer=lambda layer: layer.material.casefold() == "copper",
+        write_stackup_state=lambda layers: written.append(layers) or Path("stackup.json"),
+        transactional_board_write=lambda mutator: mutator("board"),
+        apply_stackup_to_board=reject,
+        reload_board_after_file_sync=lambda: "reloaded",
+    )
+
+    with pytest.raises(ValueError, match="top to bottom"):
+        service.set_stackup([layer.model_dump() for layer in _layers()])
+    assert written == []
 
 
 def test_set_stackup_rejects_profiles_without_two_copper_layers() -> None:

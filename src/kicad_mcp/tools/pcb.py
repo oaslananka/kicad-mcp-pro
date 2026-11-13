@@ -156,6 +156,26 @@ DECOUPLING_RULES: dict[str, dict[str, object]] = {
     "10u": {"max_dist_mm": 10.0, "prefer_side": "same"},
 }
 STACKUP_STATE_FILE = "stackup_profile.json"
+# Stackup entries that are neither copper nor dielectric:
+# key -> (board-file name, KiCad stackup type, carries a thickness).
+_STACKUP_TECH_LAYERS: dict[str, tuple[str, str, bool]] = {
+    "F_SilkS": ("F.SilkS", "Top Silk Screen", False),
+    "F_Paste": ("F.Paste", "Top Solder Paste", False),
+    "F_Mask": ("F.Mask", "Top Solder Mask", True),
+    "B_Mask": ("B.Mask", "Bottom Solder Mask", True),
+    "B_Paste": ("B.Paste", "Bottom Solder Paste", False),
+    "B_SilkS": ("B.SilkS", "Bottom Silk Screen", False),
+}
+_DIELECTRIC_NAME_RE = re.compile(r"dielectric[ _]?(\d+)", re.IGNORECASE)
+# Layer-table ids of the stackup technical layers: (KiCad 8 and older, KiCad 9+).
+_TECH_LAYER_TABLE_IDS: dict[str, tuple[int, int]] = {
+    "F_Mask": (39, 1),
+    "B_Mask": (38, 3),
+    "F_SilkS": (37, 5),
+    "B_SilkS": (36, 7),
+    "F_Paste": (35, 13),
+    "B_Paste": (34, 15),
+}
 _COPPER_LAYER_SEQUENCE = [
     "F_Cu",
     "In1_Cu",
@@ -325,12 +345,210 @@ def _board_file_layer_name(layer_name: str) -> str:
     return canonical.replace("_", ".")
 
 
+def _stackup_layer_key(name: str) -> str:
+    return name.strip().replace(".", "_")
+
+
 def _is_copper_stackup_layer(layer: StackupLayerSpec) -> bool:
-    normalized_name = layer.name.replace(".", "_")
-    material = layer.material.casefold()
-    return (normalized_name in CANONICAL_LAYER_NAMES and normalized_name.endswith("_Cu")) or (
-        material == "copper"
+    """Return whether a stackup entry is copper, judged by its layer name only.
+
+    ``StackupLayerSpec.material`` defaults to ``"Copper"``, so a material-based
+    test would turn every dielectric that omits its material into copper.
+    """
+    key = _stackup_layer_key(layer.name)
+    return key in CANONICAL_LAYER_NAMES and key.endswith("_Cu")
+
+
+def _is_tech_stackup_layer(layer: StackupLayerSpec) -> bool:
+    """Return whether a stackup entry is a silkscreen, paste or solder-mask layer."""
+    return _stackup_layer_key(layer.name) in _STACKUP_TECH_LAYERS
+
+
+def _is_dielectric_stackup_layer(layer: StackupLayerSpec) -> bool:
+    return not _is_copper_stackup_layer(layer) and not _is_tech_stackup_layer(layer)
+
+
+def _stackup_layer_has_thickness(layer: StackupLayerSpec) -> bool:
+    """Silkscreen and paste carry no thickness in a KiCad stackup; everything else does."""
+    tech = _STACKUP_TECH_LAYERS.get(_stackup_layer_key(layer.name))
+    return tech is None or tech[2]
+
+
+def _validate_stackup_copper_sequence(layers: list[StackupLayerSpec]) -> list[str]:
+    """Check that copper layers run F.Cu, In1.Cu ... In(n-2).Cu, B.Cu, top to bottom.
+
+    KiCad derives the copper layer count from these names, so a gap or a reordering
+    cannot be represented in a board file.
+    """
+    copper = [
+        _board_file_layer_name(layer.name) for layer in layers if _is_copper_stackup_layer(layer)
+    ]
+    inner_count = max(len(copper) - 2, 0)
+    expected = ["F.Cu", *(f"In{index}.Cu" for index in range(1, inner_count + 1)), "B.Cu"]
+    if len(copper) < 2 or copper != expected:
+        raise ValueError(
+            "Stackup copper layers must be listed top to bottom as "
+            f"{', '.join(expected)} (got: {', '.join(copper) or 'none'})."
+        )
+    return copper
+
+
+def _direct_child_spans(block: str) -> list[tuple[str, int, int]]:
+    """Return ``(keyword, start, end)`` for each direct child list of an S-expression."""
+    spans: list[tuple[str, int, int]] = []
+    depth = 0
+    in_string = False
+    escaped = False
+    index = 0
+    while index < len(block):
+        char = block[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "(" and depth == 1:
+            child, length = _extract_block(block, index)
+            if not child:
+                break
+            keyword = re.match(r'\(\s*([^\s()"]+)', child)
+            spans.append((keyword.group(1) if keyword else "", index, index + length))
+            index += length
+            continue
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth <= 0:
+                break
+        index += 1
+    return spans
+
+
+def _child_span(block: str, keyword: str) -> tuple[int, int] | None:
+    return next(
+        ((start, end) for name, start, end in _direct_child_spans(block) if name == keyword),
+        None,
     )
+
+
+def _layer_table_type(layer: StackupLayerSpec) -> str:
+    layer_type = layer.type.casefold()
+    if layer_type in {"power", "ground", "gnd", "plane"}:
+        return "power"
+    if layer_type in {"mixed", "jumper"}:
+        return layer_type
+    return "signal"
+
+
+def _drop_line(text: str, start: int, end: int) -> str:
+    """Remove ``text[start:end]`` together with its line's indentation and line break."""
+    line_start = text.rfind("\n", 0, start) + 1
+    if text[line_start:start].strip():
+        line_start = start
+    line_end = end
+    while line_end < len(text) and text[line_end] in " \t":
+        line_end += 1
+    if line_end < len(text) and text[line_end] == "\n":
+        line_end += 1
+    return text[:line_start] + text[line_end:]
+
+
+def _layer_table_entries(table: str) -> dict[str, tuple[int, int, int]]:
+    """Map each layer-table name to ``(layer id, start, end)`` within ``table``."""
+    entries: dict[str, tuple[int, int, int]] = {}
+    for _keyword, start, end in _direct_child_spans(table):
+        entry = re.match(rf"\(\s*(\d+)\s+{STRING_PATTERN}", table[start:end])
+        if entry is not None:
+            entries[entry.group(2)] = (int(entry.group(1)), start, end)
+    return entries
+
+
+def _line_indent(text: str, position: int) -> str:
+    line_start = text.rfind("\n", 0, position) + 1
+    indent = text[line_start:position]
+    return indent if not indent.strip() else ""
+
+
+def _check_dropped_layers_are_unused(content: str, removals: list[str]) -> None:
+    used = {name.replace("_", ".") for name in _infer_layers_from_board_items(content)}
+    if busy := sorted(set(removals) & used):
+        raise ValueError(
+            "The new stackup drops copper layers that still carry board items: "
+            f"{', '.join(busy)}. Move or delete those items first."
+        )
+
+
+def _sync_layer_table_with_stackup(content: str, layers: list[StackupLayerSpec]) -> str:
+    """Make the root ``(layers ...)`` table agree with the stackup.
+
+    KiCad resolves stackup entries through this table and takes the copper layer
+    count from it. A stackup naming a layer the table lacks (an inner copper layer,
+    or a solder mask on a minimal board) is loaded with that entry turned into a
+    dielectric, so the table has to follow the stackup: inner copper layers are added
+    or, when nothing uses them, removed, and missing mask/silk/paste layers are added.
+    """
+    table_span = _child_span(content, "layers")
+    if table_span is None:
+        return content
+    table_start, table_end = table_span
+    table = content[table_start:table_end]
+    entries = _layer_table_entries(table)
+    legacy = entries.get("B.Cu", (2, 0, 0))[0] == 31  # KiCad 8 numbering: B.Cu = 31
+
+    wanted_inner = {
+        name: layer
+        for layer in layers
+        if _is_copper_stackup_layer(layer)
+        and (name := _board_file_layer_name(layer.name)) not in {"F.Cu", "B.Cu"}
+    }
+    removals = [n for n in entries if re.fullmatch(r"In\d+\.Cu", n) and n not in wanted_inner]
+    copper_additions = [name for name in wanted_inner if name not in entries]
+    tech_additions = [
+        (_TECH_LAYER_TABLE_IDS[key][0 if legacy else 1], file_name)
+        for layer in layers
+        if (key := _stackup_layer_key(layer.name)) in _STACKUP_TECH_LAYERS
+        and (file_name := _STACKUP_TECH_LAYERS[key][0]) not in entries
+    ]
+    if not (removals or copper_additions or tech_additions):
+        return content
+    if removals:
+        _check_dropped_layers_are_unused(content, removals)
+
+    edits: list[tuple[int, int, str]] = [
+        (entries[name][1], entries[name][2], "") for name in removals
+    ]
+    if copper_additions:
+        if "B.Cu" not in entries:
+            raise ValueError("The board layer table has no B.Cu entry to add inner layers before.")
+        b_cu_start = entries["B.Cu"][1]
+        indent = _line_indent(table, b_cu_start)
+        inserted = "".join(
+            f"({index if legacy else 2 * index + 2} {_sexpr_string(name)} "
+            f"{_layer_table_type(wanted_inner[name])})\n{indent}"
+            for name in copper_additions
+            for index in [int(name[2:-3])]
+        )
+        edits.append((b_cu_start, b_cu_start, inserted))
+    if tech_additions and entries:
+        last_end = max(end for _layer_id, _start, end in entries.values())
+        indent = _line_indent(table, max(start for _layer_id, start, _end in entries.values()))
+        inserted = "".join(
+            f"\n{indent}({layer_id} {_sexpr_string(name)} user)"
+            for layer_id, name in tech_additions
+        )
+        edits.append((last_end, last_end, inserted))
+
+    for start, end, replacement in sorted(edits, reverse=True):
+        if replacement:
+            table = table[:start] + replacement + table[end:]
+        else:
+            table = _drop_line(table, start, end)
+    return content[:table_start] + table + content[table_end:]
 
 
 def _indent_block(block: str, level: int) -> str:
@@ -413,17 +631,20 @@ def _stackup_layer_name(index: int, raw_layer: object) -> tuple[str, str]:
     return name, final_name
 
 
-def _stackup_layer_from_kipy(index: int, layer: object) -> StackupLayerSpec:
+def _stackup_layer_from_kipy(index: int, layer: object) -> StackupLayerSpec | None:
     name, final_name = _stackup_layer_name(index, getattr(layer, "layer", ""))
     normalized_name = name.replace(".", "_")
     thickness_nm = int(getattr(layer, "thickness", 0))
+    if not thickness_nm:
+        # Silkscreen and paste have no thickness in KiCad; they add nothing to the board.
+        return None
     material = _stackup_layer_material(normalized_name, getattr(layer, "material_name", ""))
     raw_type = getattr(layer, "type_name", "") or getattr(layer, "type", "")
     layer_type = _stackup_layer_type(normalized_name, raw_type)
     spec_kwargs: dict[str, Any] = {
         "name": final_name,
         "type": layer_type,
-        "thickness_mm": nm_to_mm(thickness_nm) if thickness_nm else 0.18,
+        "thickness_mm": nm_to_mm(thickness_nm),
         "material": material,
     }
     epsilon_r = getattr(layer, "epsilon_r", None)
@@ -441,8 +662,9 @@ def _stackup_specs_from_board() -> list[StackupLayerSpec] | None:
 
     stackup = get_board().get_stackup()
     specs = [
-        _stackup_layer_from_kipy(index, layer)
+        spec
         for index, layer in enumerate(getattr(stackup, "layers", []))
+        if (spec := _stackup_layer_from_kipy(index, layer)) is not None
     ]
     return specs or None
 
@@ -459,20 +681,44 @@ def _extract_board_stackup_block(content: str) -> str | None:
     return stackup_block or None
 
 
-def _parse_single_stackup_layer(layer_block: str) -> StackupLayerSpec | None:
+def _stackup_layer_name_from_header(layer_block: str) -> str | None:
+    """Map a stackup ``(layer ...)`` header to a spec name, or ``None`` if unrecognised.
+
+    Accepts KiCad's own syntax (``(layer "F.Cu" ...)``, ``(layer "dielectric 1" ...)``)
+    and the positional form older releases of this server wrote
+    (``(layer "F.Cu" 0 ...)``, ``(layer dielectric 1 ...)``).
+    """
     stripped = layer_block.lstrip()
-    quoted = re.match(r'\(layer\s+"([^"]+)"\s+(\d+)', stripped)
-    dielectric = re.match(r"\(layer\s+dielectric\s+(\d+)", stripped)
-    if quoted is not None:
-        layer_name = resolve_layer_name(quoted.group(1))
-    elif dielectric is not None:
-        layer_name = f"dielectric_{dielectric.group(1)}"
-    else:
+    bare = re.match(r"\(layer\s+dielectric\s+(\d+)", stripped)
+    if bare is not None:
+        return f"dielectric_{bare.group(1)}"
+    quoted = re.match(rf"\(layer\s+{STRING_PATTERN}", stripped)
+    if quoted is None:
+        return None
+    raw_name = quoted.group(1)
+    if (dielectric := _DIELECTRIC_NAME_RE.fullmatch(raw_name.strip())) is not None:
+        return f"dielectric_{dielectric.group(1)}"
+    key = _stackup_layer_key(raw_name)
+    if (key in CANONICAL_LAYER_NAMES and key.endswith("_Cu")) or key in _STACKUP_TECH_LAYERS:
+        return key
+    return None
+
+
+def _parse_single_stackup_layer(layer_block: str) -> StackupLayerSpec | None:
+    layer_name = _stackup_layer_name_from_header(layer_block)
+    if layer_name is None:
         return None
 
     thickness_match = re.search(rf"\(thickness\s+({FLOAT_PATTERN})\)", layer_block)
-    if thickness_match is None:
+    if thickness_match is None or float(thickness_match.group(1)) <= 0:
+        # Silkscreen and paste entries carry no thickness.
         return None
+    if layer_name.endswith("_Cu"):
+        default_material = "Copper"
+    elif layer_name in _STACKUP_TECH_LAYERS:
+        default_material = "Not specified"
+    else:
+        default_material = "FR4"
 
     type_match = re.search(r'\(type\s+"([^"]+)"\)', layer_block)
     material_match = re.search(r'\(material\s+"([^"]+)"\)', layer_block)
@@ -486,7 +732,7 @@ def _parse_single_stackup_layer(layer_block: str) -> StackupLayerSpec | None:
             "name": layer_name,
             "type": type_match.group(1) if type_match else "signal",
             "thickness_mm": float(thickness_match.group(1)),
-            "material": material_match.group(1) if material_match else "FR4",
+            "material": material_match.group(1) if material_match else default_material,
             "epsilon_r": float(epsilon_text) if epsilon_text is not None else None,
             "loss_tangent": float(loss_text) if loss_text is not None else None,
         }
@@ -532,38 +778,96 @@ def _current_stackup_specs(*, prefer_project_state: bool = False) -> list[Stacku
 
 
 def _total_stackup_thickness_mm(layers: list[StackupLayerSpec]) -> float:
-    return round(sum(layer.thickness_mm for layer in layers), 4)
+    return round(
+        sum(layer.thickness_mm for layer in layers if _stackup_layer_has_thickness(layer)), 4
+    )
 
 
 def _render_general_block(total_thickness_mm: float) -> str:
     return f"(general\n\t(thickness {total_thickness_mm:.4f})\n)"
 
 
-def _render_stackup_layer_block(layer: StackupLayerSpec, order: int) -> str:
-    if _is_copper_stackup_layer(layer):
-        header = f'(layer "{_board_file_layer_name(layer.name)}" {order}'
+def _set_general_thickness(content: str, total_thickness_mm: float) -> str:
+    """Set ``(general (thickness ...))`` while keeping the block's other children."""
+    general_span = _child_span(content, "general")
+    if general_span is None:
+        return _replace_or_append_root_block(
+            content, "general", _render_general_block(total_thickness_mm)
+        )
+    start, end = general_span
+    general = content[start:end]
+    thickness = f"(thickness {total_thickness_mm:.4f})"
+    if (thickness_span := _child_span(general, "thickness")) is not None:
+        updated = general[: thickness_span[0]] + thickness + general[thickness_span[1] :]
     else:
-        header = f"(layer dielectric {order}"
-    lines = [
-        header,
-        f'\t(type "{layer.type}")',
-        f"\t(thickness {layer.thickness_mm:.4f})",
-        f'\t(material "{layer.material}")',
-    ]
+        updated = _replace_or_append_child_block(general, "thickness", thickness)
+    return content[:start] + updated + content[end:]
+
+
+def _dielectric_property_lines(layer: StackupLayerSpec) -> list[str]:
+    lines: list[str] = []
     if layer.epsilon_r is not None:
         lines.append(f"\t(epsilon_r {layer.epsilon_r:.4f})")
     if layer.loss_tangent is not None:
         lines.append(f"\t(loss_tangent {layer.loss_tangent:.4f})")
+    return lines
+
+
+def _render_stackup_layer_block(layer: StackupLayerSpec, dielectric_index: int) -> str:
+    """Render one stackup entry in KiCad's own board-file syntax."""
+    tech = _STACKUP_TECH_LAYERS.get(_stackup_layer_key(layer.name))
+    material_given = layer.material.casefold() != "copper"
+    if _is_copper_stackup_layer(layer):
+        lines = [
+            f"(layer {_sexpr_string(_board_file_layer_name(layer.name))}",
+            '\t(type "copper")',
+            f"\t(thickness {layer.thickness_mm:.4f})",
+        ]
+    elif tech is not None:
+        file_name, kicad_type, has_thickness = tech
+        lines = [f"(layer {_sexpr_string(file_name)}", f"\t(type {_sexpr_string(kicad_type)})"]
+        if has_thickness:
+            lines.append(f"\t(thickness {layer.thickness_mm:.4f})")
+            if material_given:
+                lines.append(f"\t(material {_sexpr_string(layer.material)})")
+            lines.extend(_dielectric_property_lines(layer))
+    else:
+        layer_type = layer.type.casefold() if layer.type.casefold() == "prepreg" else "core"
+        lines = [
+            f'(layer "dielectric {dielectric_index}"',
+            f'\t(type "{layer_type}")',
+            f"\t(thickness {layer.thickness_mm:.4f})",
+            f"\t(material {_sexpr_string(layer.material if material_given else 'FR4')})",
+            *_dielectric_property_lines(layer),
+        ]
     lines.append(")")
     return "\n".join(lines)
 
 
-def _render_stackup_block(layers: list[StackupLayerSpec]) -> str:
-    blocks = [_render_stackup_layer_block(layer, order) for order, layer in enumerate(layers)]
-    rendered_layers = "\n".join(_indent_block(block, 1) for block in blocks)
-    return (
-        f'(stackup\n{rendered_layers}\n\t(copper_finish "None")\n\t(dielectric_constraints no)\n)'
-    )
+def _existing_stackup_properties(content: str) -> list[str]:
+    """Return the non-layer children (finish, edge plating, ...) of the board's stackup."""
+    stackup = _extract_board_stackup_block(content)
+    if not stackup:
+        return []
+    return [
+        stackup[start:end]
+        for keyword, start, end in _direct_child_spans(stackup)
+        if keyword != "layer"
+    ]
+
+
+def _render_stackup_block(
+    layers: list[StackupLayerSpec], properties: list[str] | None = None
+) -> str:
+    blocks: list[str] = []
+    dielectric_index = 0
+    for layer in layers:
+        if _is_dielectric_stackup_layer(layer):
+            dielectric_index += 1
+        blocks.append(_render_stackup_layer_block(layer, dielectric_index))
+    blocks.extend(properties or ['(copper_finish "None")', "(dielectric_constraints no)"])
+    rendered = "\n".join(_indent_block(block, 1) for block in blocks)
+    return f"(stackup\n{rendered}\n)"
 
 
 def _copper_layer_order(layer_name: str) -> int:
@@ -602,7 +906,7 @@ def _impedance_context_for_layer(
         (
             specs[index]
             for index in range(target_index - 1, -1, -1)
-            if not _is_copper_stackup_layer(specs[index])
+            if _is_dielectric_stackup_layer(specs[index])
         ),
         None,
     )
@@ -610,7 +914,7 @@ def _impedance_context_for_layer(
         (
             specs[index]
             for index in range(target_index + 1, len(specs))
-            if not _is_copper_stackup_layer(specs[index])
+            if _is_dielectric_stackup_layer(specs[index])
         ),
         None,
     )
@@ -668,12 +972,16 @@ def _required_creepage_mm(
 
 
 def _apply_stackup_to_board(content: str, layers: list[StackupLayerSpec]) -> str:
-    updated = _replace_or_append_root_block(
-        content,
-        "general",
-        _render_general_block(_total_stackup_thickness_mm(layers)),
-    )
-    stackup_block = _render_stackup_block(layers)
+    """Write ``layers`` as the board stackup, keeping KiCad's layer table in step.
+
+    KiCad reads the copper layer count from the root ``(layers ...)`` table, so inner
+    copper layers are added to (or, when unused, removed from) that table as well.
+    """
+    _validate_stackup_copper_sequence(layers)
+    updated = _normalize_board_content(content)
+    updated = _sync_layer_table_with_stackup(updated, layers)
+    updated = _set_general_thickness(updated, _total_stackup_thickness_mm(layers))
+    stackup_block = _render_stackup_block(layers, _existing_stackup_properties(updated))
     match = re.search(r"(?m)^\s*\(setup\b", updated)
     if match is None:
         setup_block = "(setup\n" + _indent_block(stackup_block, 1) + "\n)"

@@ -87,10 +87,12 @@ class PcbStackupManagementService:
         if copper_count < 2:
             raise ValueError("A valid stackup needs at least two copper layers.")
 
-        state_path = self.write_stackup_state(payload.layers)
         self.transactional_board_write(
             lambda current: self.apply_stackup_to_board(current, payload.layers)
         )
+        # Persist the profile only once the board accepted it, so a rejected stackup
+        # never becomes the "current" one that later tools read back.
+        state_path = self.write_stackup_state(payload.layers)
         reload_message = self.reload_board_after_file_sync()
         return "\n".join(
             [
