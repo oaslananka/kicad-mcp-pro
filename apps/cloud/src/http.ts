@@ -182,8 +182,9 @@ async function handleRequest(
         res.end(pairingReviewClient);
         return;
       }
-      if (path === "/assets/device-projects.js" && req.method === "GET" &&
-          services.localDevWorkspace){
+      // Read-only static UI script used by the production device project
+      // dialogs as well as the local sandbox. It never contains owner data.
+      if (path === "/assets/device-projects.js" && req.method === "GET"){
         res.writeHead(200,{...noCache,"Content-Type":"text/javascript; charset=utf-8",
           "Referrer-Policy":"no-referrer"});
         res.end(deviceProjectsClient);
@@ -215,7 +216,7 @@ async function handleRequest(
           answer=await connectionsResponse(browserRequest,identity,config.publicOrigin,grants);
         } else if(path==="/devices" || path==="/devices/revoke" || path==="/devices/delete" || path==="/devices/enable" || path==="/devices/projects/create" || path==="/devices/projects/grant" || path==="/devices/projects/managed" || path==="/devices/projects/native" || path==="/devices/projects/delete" ||
           path==="/devices/projects/browse" || path==="/devices/projects/select" ||
-          path==="/devices/projects/rename"){
+          path==="/devices/projects/rename" || path==="/devices/projects/folders"){
           answer=await devicesResponse(browserRequest,identity,config.publicOrigin,
             devices,Boolean(pairingDevice),grants,
             summaryRelay?.()?.isDeviceConnected,services.managedRead,
