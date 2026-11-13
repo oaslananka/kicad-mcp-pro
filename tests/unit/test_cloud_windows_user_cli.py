@@ -861,6 +861,131 @@ def test_windows_reconnect_unverifiable_task_never_replaces_scheduler_entry(
     assert events == []
 
 
+def _stub_headless_owner_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make all live native owner seams use the fixture's simulated vault."""
+    from kicad_mcp import cloud_windows_connector, cloud_windows_local_selection
+
+    monkeypatch.setattr(
+        cloud_windows_local_selection,
+        "inspect_owner_selected_project",
+        lambda project: cloud_windows_user_cli.inspect_owner_selected_project(project),
+    )
+
+    monkeypatch.setattr(
+        cloud_windows_connector,
+        "selected_project",
+        lambda: cloud_windows_user_cli.selected_project(),
+    )
+    monkeypatch.setattr(
+        cloud_windows_connector, "local_state", lambda: cloud_windows_user_cli.local_state()
+    )
+
+
+def test_headless_remote_resumes_existing_enabled_device_without_task_modification(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_connector, cloud_windows_task_scheduler
+
+    folder, events, _project, _selected = windows_cli
+    paired = CliRunner().invoke(
+        app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
+    )
+    assert paired.exit_code == 0, paired.output
+    events.clear()
+    _stub_headless_owner_binding(monkeypatch)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    monkeypatch.setattr(
+        cloud_windows_task_scheduler, "scheduler_state", lambda: "Configured (task unverified)"
+    )
+    monkeypatch.setattr(
+        cloud_windows_task_scheduler,
+        "stop_and_remove_owner_task",
+        lambda: pytest.fail("A headless resume must never remove a scheduler task"),
+    )
+
+    async def connected(*, stop, status_callback) -> None:
+        events.append("signed-session")
+        status_callback("Connected")
+
+    monkeypatch.setattr(cloud_windows_connector, "run_connector", connected)
+    result = CliRunner().invoke(app, ["cloud", "remote", "--no-browser"])
+    assert result.exit_code == 0, result.output
+    assert events == ["signed-session"]
+    assert "Cloud acknowledged this device's signed session" in result.output
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        ("--repair-device",),
+        ("--browse",),
+        ("--allow-native-drc",),
+    ],
+)
+def test_headless_remote_cannot_change_pairing_or_native_policy(
+    windows_cli, monkeypatch: pytest.MonkeyPatch, flag: tuple[str, ...]
+) -> None:
+    from kicad_mcp import cloud_windows_task_scheduler
+
+    folder, events, _project, _selected = windows_cli
+    assert (
+        CliRunner()
+        .invoke(app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)])
+        .exit_code
+        == 0
+    )
+    events.clear()
+    _stub_headless_owner_binding(monkeypatch)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    monkeypatch.setattr(
+        cloud_windows_task_scheduler, "scheduler_state", lambda: "Configured (task unverified)"
+    )
+    result = CliRunner().invoke(app, ["cloud", "remote", *flag])
+    assert result.exit_code != 0
+    assert "interactive owner terminal" in result.output
+    assert not events
+
+
+def test_headless_remote_requires_enabled_device_and_absent_verified_task(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_task_scheduler
+
+    folder, events, _project, _selected = windows_cli
+    _stub_headless_owner_binding(monkeypatch)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    first = CliRunner().invoke(app, ["cloud", "remote", "--no-browser"])
+    assert first.exit_code != 0
+    assert "paired" in first.output.lower()
+    assert not events
+
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    assert (
+        CliRunner()
+        .invoke(app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)])
+        .exit_code
+        == 0
+    )
+    events.clear()
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    monkeypatch.setattr(
+        cloud_windows_task_scheduler, "scheduler_state", lambda: "Scheduled (connection unverified)"
+    )
+    already_scheduled = CliRunner().invoke(app, ["cloud", "remote", "--no-browser"])
+    assert already_scheduled.exit_code != 0
+    assert "paired" in already_scheduled.output.lower()
+    assert not events
+
+    monkeypatch.setattr(
+        cloud_windows_task_scheduler, "scheduler_state", lambda: "Configured (task unverified)"
+    )
+    monkeypatch.setattr(cloud_windows_user_cli, "local_state", lambda: "Off")
+    disabled = CliRunner().invoke(app, ["cloud", "remote", "--no-browser"])
+    assert disabled.exit_code != 0
+    assert "paired" in disabled.output.lower()
+    assert not events
+
+
 def test_remote_exposes_explicit_repair_command_without_running_pairing() -> None:
     from typer.main import get_command
 

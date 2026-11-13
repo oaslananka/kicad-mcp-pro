@@ -360,16 +360,50 @@ def _select_remote_project(
     return existing
 
 
-def _verify_remote_foreground_options(browse: bool, project_dir: Path | None) -> None:
-    """Validate foreground use before touching the selected Windows device."""
+def _verify_remote_foreground_options(
+    browse: bool, project_dir: Path | None, repair_device: bool, allow_native_drc: bool
+) -> bool:
+    """Allow headless resume only of an already approved, locally enabled device.
+
+    A noninteractive process cannot pair/repair a device, choose another folder,
+    opt in to native KiCad operations, enable a disabled Connector or take over
+    an existing owner-owned scheduled task. Browser consent remains mandatory
+    for first-time registration. Return whether an owner terminal is present.
+    """
     if not _is_windows():
         raise typer.BadParameter(
             "Foreground remote is currently supported on Windows. Local MCP remains available."
         )
-    if not _owner_terminal():
-        raise typer.BadParameter("Run this command in an interactive terminal.")
     if browse and project_dir is not None:
         raise typer.BadParameter("Use --browse or --project-dir, not both.")
+    if _owner_terminal():
+        return True
+    if browse or project_dir is not None or repair_device or allow_native_drc:
+        raise typer.BadParameter(
+            "Device pairing, repair, folder changes and native DRC require "
+            "an interactive owner terminal."
+        )
+
+    from kicad_mcp.cloud_windows_connector import local_state, selected_project
+    from kicad_mcp.cloud_windows_task_scheduler import scheduler_state
+
+    try:
+        if (
+            selected_project() is None
+            or local_state() != "Configured (not connected)"
+            or scheduler_state() != "Configured (task unverified)"
+        ):
+            raise typer.BadParameter(
+                "A paired and locally enabled device without a running owner task is "
+                "required. First pair interactively, or use cloud reconnect."
+            )
+    except (OSError, ValueError, RuntimeError) as exc:
+        if isinstance(exc, typer.BadParameter):
+            raise
+        raise typer.BadParameter(
+            "A paired and locally enabled device is required for headless resume."
+        ) from exc
+    return False
 
 
 @cloud_app.command("remote")
@@ -404,7 +438,9 @@ def remote(
     ] = False,
 ) -> None:
     """Pair once; keep a verified foreground Cloud connection open."""
-    _verify_remote_foreground_options(browse, project_dir)
+    interactive = _verify_remote_foreground_options(
+        browse, project_dir, repair_device, allow_native_drc
+    )
     origin = _verified_origin(cloud_origin)
     from kicad_mcp.cloud_windows_connector import (
         CloudOwnerReapprovalRequiredError,
@@ -423,15 +459,24 @@ def remote(
     if existing.origin != origin:
         raise typer.BadParameter("This device is paired with a different Cloud site.")
 
-    # Exactly one user-owned session: remove the legacy scheduled task, which
-    # otherwise opens a blank Python console and may contend for the socket.
-    if not stop_and_remove_owner_task():
-        raise typer.BadParameter(
-            "Could not stop the existing Connector task safely. "
-            "Registration and permissions were preserved."
-        )
+    # The interactive owner can replace their own verified scheduler task.
+    # Headless resume is deliberately read-only with respect to task and
+    # activation state: it cannot replace a task or turn a disabled device on.
+    if interactive:
+        if not stop_and_remove_owner_task():
+            raise typer.BadParameter(
+                "Could not stop the existing Connector task safely. "
+                "Registration and permissions were preserved."
+            )
+    else:
+        from kicad_mcp.cloud_windows_task_scheduler import scheduler_state
+
+        if scheduler_state() != "Configured (task unverified)":
+            raise typer.BadParameter(
+                "A scheduled Connector already exists; use cloud reconnect interactively."
+            )
     state = local_state()
-    if state == "Off":
+    if state == "Off" and interactive:
         activate(existing, owner_confirm=lambda _project: True)
     elif state != "Configured (not connected)":
         raise typer.BadParameter("Local Connector registration requires repair.")
