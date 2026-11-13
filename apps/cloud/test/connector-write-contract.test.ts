@@ -53,3 +53,18 @@ test("v1 write contract matches the shared Python/TypeScript golden fixture",()=
   const golden=JSON.parse(fixtureFile) as unknown;
   assert.deepEqual(parseUntrustedWriteRequest(golden,binding,now),fixture());
 });
+
+test("v2 independently pins disk and live KiCad board revisions",()=>{
+  const previous=fixture();
+  const candidate={...previous,version:2,
+    command:{...previous.command,expectedLiveBoardSha256:"b".repeat(64)}};
+  assert.deepEqual(parseUntrustedWriteRequest(candidate,binding,now),candidate);
+  assert.equal(candidate.command.expectedBoardSha256===candidate.command.expectedLiveBoardSha256,false);
+  for(const invalid of [
+    {...candidate,command:{...previous.command}},
+    {...candidate,command:{...candidate.command,expectedLiveBoardSha256:"B".repeat(64)}},
+    {...candidate,command:{...candidate.command,expectedLiveBoardSha256:"b".repeat(63)}},
+    {...candidate,command:{...candidate.command,expectedLiveBoardSha256:"b".repeat(64),localPath:"C:\\\\other"}},
+    {...candidate,version:1}
+  ])assert.equal(parseUntrustedWriteRequest(invalid,binding,now),null);
+});

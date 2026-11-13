@@ -27,7 +27,12 @@ def selected(tmp_path: Path) -> OperatorProject:
     return OperatorProject(DEVICE, PROJECT, folder, "TEST")
 
 
-def _fake_success(monkeypatch: pytest.MonkeyPatch, selected: OperatorProject) -> list[str]:
+def _fake_success(
+    monkeypatch: pytest.MonkeyPatch,
+    selected: OperatorProject,
+    *,
+    exit_code: int = 0,
+) -> list[str]:
     original = (
         (selected.directory / "TEST.kicad_pcb").read_bytes()
         if (selected.directory / "TEST.kicad_pcb").is_file()
@@ -50,7 +55,7 @@ def _fake_success(monkeypatch: pytest.MonkeyPatch, selected: OperatorProject) ->
             encoding="utf-8",
         )
         invoked.append("native")
-        return SimpleNamespace(returncode=0)
+        return SimpleNamespace(returncode=exit_code)
 
     monkeypatch.setattr(
         "kicad_mcp.cloud_native_drc.shutil.which", lambda name: "/usr/bin/kicad-cli"
@@ -59,10 +64,11 @@ def _fake_success(monkeypatch: pytest.MonkeyPatch, selected: OperatorProject) ->
     return invoked
 
 
+@pytest.mark.parametrize("exit_code", [0, 5])
 def test_drc_returns_counts_only_on_private_copies(
-    monkeypatch: pytest.MonkeyPatch, selected: OperatorProject
+    monkeypatch: pytest.MonkeyPatch, selected: OperatorProject, exit_code: int
 ) -> None:
-    calls = _fake_success(monkeypatch, selected)
+    calls = _fake_success(monkeypatch, selected, exit_code=exit_code)
     assert summarize_native_pcb_drc(selected) == {"violations": 2, "unconnectedItems": 1}
     assert calls == ["native"]
     assert (selected.directory / "TEST.kicad_pcb").read_text() == "PRIVATE BOARD"
@@ -103,7 +109,9 @@ def test_missing_cli_denied(monkeypatch: pytest.MonkeyPatch, selected: OperatorP
         summarize_native_pcb_drc(selected)
 
 
-@pytest.mark.parametrize("mode", ["timeout", "failure", "bad_json", "report_missing"])
+@pytest.mark.parametrize(
+    "mode", ["timeout", "failure", "invalid_status_with_report", "bad_json", "report_missing"]
+)
 def test_fail_closed_on_native_or_output_failure(
     monkeypatch: pytest.MonkeyPatch, selected: OperatorProject, mode: str
 ) -> None:
@@ -115,6 +123,11 @@ def test_fail_closed_on_native_or_output_failure(
             raise TimeoutExpired("kicad-cli", 40)
         if mode == "bad_json":
             Path(argv[6]).write_text('{"violations":[]}', encoding="utf-8")
+        if mode == "invalid_status_with_report":
+            Path(argv[6]).write_text(
+                json.dumps({"violations": [{}], "unconnected_items": []}), encoding="utf-8"
+            )
+            return SimpleNamespace(returncode=3)
         if mode == "failure":
             return SimpleNamespace(returncode=9)
         return SimpleNamespace(returncode=0)

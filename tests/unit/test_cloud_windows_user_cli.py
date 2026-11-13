@@ -57,6 +57,9 @@ def windows_cli(
     )
     state = {"selected": None, "connector": "Off"}
 
+    from kicad_mcp import cloud_owner_management
+
+    monkeypatch.setattr(cloud_owner_management, "load_token", lambda _origin: None)
     monkeypatch.setattr(cloud_user_cli, "_is_windows", lambda: True)
     monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
     monkeypatch.setattr(
@@ -129,6 +132,108 @@ def windows_cli(
     return folder, events, project, selected
 
 
+@pytest.mark.parametrize(
+    ("devices", "expected"),
+    [
+        (
+            [
+                {
+                    "id": "19ee4be9-0aec-448e-9873-721ae113ec02",
+                    "projects": [{"id": "29ee4be9-0aec-448e-9873-721ae113ec02"}],
+                }
+            ],
+            "Cloud project: Registered",
+        ),
+        (
+            [{"id": "19ee4be9-0aec-448e-9873-721ae113ec02", "projects": []}],
+            "Local registration is stale",
+        ),
+        ([], "Local registration is stale"),
+        ([{"id": "19ee4be9-0aec-448e-9873-721ae113ec02"}], "Cloud project: Not verified"),
+    ],
+)
+def test_windows_status_reconciles_saved_project_against_cloud(
+    windows_cli: tuple[Path, list[str], WindowsRegisteredProject, WindowsLocalProjectSelection],
+    monkeypatch: pytest.MonkeyPatch,
+    devices: list[dict[str, object]],
+    expected: str,
+) -> None:
+    from kicad_mcp import cloud_owner_management
+
+    _folder, _events, project, _selected = windows_cli
+    monkeypatch.setattr(cloud_windows_user_cli, "selected_project", lambda: project)
+    monkeypatch.setattr(cloud_owner_management, "load_token", lambda _origin: "kmpc1_" + "a" * 43)
+    queries: list[tuple[str, str]] = []
+
+    def query(_self: object, method: str, path: str, *, token: str) -> dict[str, object]:
+        assert token == "kmpc1_" + "a" * 43
+        queries.append((method, path))
+        return {"devices": devices}
+
+    monkeypatch.setattr(cloud_owner_management.CloudOwnerApi, "request", query)
+    result = CliRunner().invoke(app, ["cloud", "status"])
+    assert result.exit_code == 0, result.output
+    assert expected in result.output
+    assert queries == [("GET", "/api/owner/v1/devices")]
+
+
+def test_windows_status_missing_task_shows_exact_reconnect_action(
+    windows_cli: tuple[Path, list[str], WindowsRegisteredProject, WindowsLocalProjectSelection],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _folder, events, _project, _selected = windows_cli
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "scheduler_state",
+        lambda: "Configured (task unverified)",
+    )
+    result = CliRunner().invoke(app, ["cloud", "status"])
+    assert result.exit_code == 0, result.output
+    assert "kicad-mcp-pro cloud reconnect" in result.output
+    assert "owner-owned task restoration" in result.output
+    assert "Connected" not in result.output
+    assert not events
+
+
+def test_windows_status_without_cloud_token_never_contacts_api(
+    windows_cli: tuple[Path, list[str], WindowsRegisteredProject, WindowsLocalProjectSelection],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_owner_management
+
+    _folder, _events, project, _selected = windows_cli
+    monkeypatch.setattr(cloud_windows_user_cli, "selected_project", lambda: project)
+    monkeypatch.setattr(cloud_owner_management, "load_token", lambda _origin: None)
+    monkeypatch.setattr(
+        cloud_owner_management.CloudOwnerApi,
+        "request",
+        lambda *_args, **_kwargs: pytest.fail("No Cloud token must not call API"),
+    )
+    result = CliRunner().invoke(app, ["cloud", "status"])
+    assert result.exit_code == 0, result.output
+    assert "Cloud project: Not verified" in result.output
+
+
+def test_windows_status_cloud_outage_is_not_called_deletion(
+    windows_cli: tuple[Path, list[str], WindowsRegisteredProject, WindowsLocalProjectSelection],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_owner_management
+
+    _folder, _events, project, _selected = windows_cli
+    monkeypatch.setattr(cloud_windows_user_cli, "selected_project", lambda: project)
+    monkeypatch.setattr(cloud_owner_management, "load_token", lambda _origin: "kmpc1_" + "a" * 43)
+
+    def unavailable(*_args: object, **_kwargs: object) -> None:
+        raise cloud_owner_management.CloudManagementError("Offline")
+
+    monkeypatch.setattr(cloud_owner_management.CloudOwnerApi, "request", unavailable)
+    result = CliRunner().invoke(app, ["cloud", "status"])
+    assert result.exit_code == 0, result.output
+    assert "Cloud account could not be checked" in result.output
+    assert "Local registration is stale" not in result.output
+
+
 def test_windows_cli_first_setup_is_owner_approved_and_does_not_claim_connected(
     windows_cli,
 ) -> None:
@@ -138,7 +243,6 @@ def test_windows_cli_first_setup_is_owner_approved_and_does_not_claim_connected(
     )
     assert result.exit_code == 0, result.output
     assert events == [
-        "owner_confirm",
         "enroll",
         "browser_approval",
         "register",
@@ -147,6 +251,8 @@ def test_windows_cli_first_setup_is_owner_approved_and_does_not_claim_connected(
         "schedule",
     ]
     assert "Connector scheduled (connection unverified)" in result.output
+    assert "reconnects at sign-in" in result.output
+    assert "kicad-mcp-pro cloud disable" in result.output
     assert "Cloud owner must separately approve access" in result.output
     assert "Connected!" not in result.output
 
@@ -182,7 +288,7 @@ def test_windows_headless_setup_refuses_before_cloud(
     assert not events
 
 
-def test_windows_cancel_refuses_before_cloud(
+def test_windows_setup_uses_browser_approval_not_redundant_terminal_confirmation(
     windows_cli,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -191,10 +297,16 @@ def test_windows_cancel_refuses_before_cloud(
     result = CliRunner().invoke(
         app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
     )
-    assert result.exit_code == 0
-    assert "Setup paused" in result.output
-    assert "cloud setup --browse" in result.output
-    assert not events
+    assert result.exit_code == 0, result.output
+    assert "Approve this device in the browser" in result.output
+    assert events == [
+        "enroll",
+        "browser_approval",
+        "register",
+        "bind",
+        "remember",
+        "schedule",
+    ]
 
 
 def test_expired_owner_browser_approval_has_actionable_retry_message(
@@ -216,7 +328,7 @@ def test_expired_owner_browser_approval_has_actionable_retry_message(
     assert "approval expired" in result.output
     assert "five minutes" in result.output
     assert "Windows Cloud registration was not fully completed" not in result.output
-    assert events == ["owner_confirm"]
+    assert events == []
 
 
 def test_owner_denial_returns_specific_cli_message_and_creates_no_device(
@@ -240,7 +352,7 @@ def test_owner_denial_returns_specific_cli_message_and_creates_no_device(
     assert "denied" in result.output
     assert "registered" in result.output
     assert "Windows Cloud registration was not fully completed" not in result.output
-    assert events == ["owner_confirm"]
+    assert events == []
 
 
 def test_windows_registration_failure_includes_diagnostic_details(
@@ -265,7 +377,7 @@ def test_windows_registration_failure_includes_diagnostic_details(
     assert "Windows Cloud registration was not fully completed" in result.output
     assert "HTTP 403: untrusted_ingress" in result.output
     assert "Review your Cloud Devices page" in result.output
-    assert events == ["owner_confirm"]
+    assert events == []
 
 
 def test_windows_empty_project_refuses_before_cloud(
@@ -747,3 +859,300 @@ def test_windows_reconnect_unverifiable_task_never_replaces_scheduler_entry(
     assert result.exit_code == 0
     assert "Unavailable" in result.output
     assert events == []
+
+
+def _stub_headless_owner_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make all live native owner seams use the fixture's simulated vault."""
+    from kicad_mcp import cloud_windows_connector, cloud_windows_local_selection
+
+    monkeypatch.setattr(
+        cloud_windows_local_selection,
+        "inspect_owner_selected_project",
+        lambda project: cloud_windows_user_cli.inspect_owner_selected_project(project),
+    )
+
+    monkeypatch.setattr(
+        cloud_windows_connector,
+        "selected_project",
+        lambda: cloud_windows_user_cli.selected_project(),
+    )
+    monkeypatch.setattr(
+        cloud_windows_connector, "local_state", lambda: cloud_windows_user_cli.local_state()
+    )
+
+
+def test_headless_remote_resumes_existing_enabled_device_without_task_modification(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_connector, cloud_windows_task_scheduler
+
+    folder, events, _project, _selected = windows_cli
+    paired = CliRunner().invoke(
+        app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
+    )
+    assert paired.exit_code == 0, paired.output
+    events.clear()
+    _stub_headless_owner_binding(monkeypatch)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    monkeypatch.setattr(
+        cloud_windows_task_scheduler, "scheduler_state", lambda: "Configured (task unverified)"
+    )
+    monkeypatch.setattr(
+        cloud_windows_task_scheduler,
+        "stop_and_remove_owner_task",
+        lambda: pytest.fail("A headless resume must never remove a scheduler task"),
+    )
+
+    async def connected(*, stop, status_callback) -> None:
+        events.append("signed-session")
+        status_callback("Connected")
+
+    monkeypatch.setattr(cloud_windows_connector, "run_connector", connected)
+    result = CliRunner().invoke(app, ["cloud", "remote", "--no-browser"])
+    assert result.exit_code == 0, result.output
+    assert events == ["signed-session"]
+    assert "Cloud acknowledged this device's signed session" in result.output
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        ("--repair-device",),
+        ("--browse",),
+        ("--allow-native-drc",),
+    ],
+)
+def test_headless_remote_cannot_change_pairing_or_native_policy(
+    windows_cli, monkeypatch: pytest.MonkeyPatch, flag: tuple[str, ...]
+) -> None:
+    from kicad_mcp import cloud_windows_task_scheduler
+
+    folder, events, _project, _selected = windows_cli
+    assert (
+        CliRunner()
+        .invoke(app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)])
+        .exit_code
+        == 0
+    )
+    events.clear()
+    _stub_headless_owner_binding(monkeypatch)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    monkeypatch.setattr(
+        cloud_windows_task_scheduler, "scheduler_state", lambda: "Configured (task unverified)"
+    )
+    result = CliRunner().invoke(app, ["cloud", "remote", *flag])
+    assert result.exit_code != 0
+    assert "interactive owner terminal" in result.output
+    assert not events
+
+
+def test_headless_remote_requires_enabled_device_and_absent_verified_task(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_task_scheduler
+
+    folder, events, _project, _selected = windows_cli
+    _stub_headless_owner_binding(monkeypatch)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    first = CliRunner().invoke(app, ["cloud", "remote", "--no-browser"])
+    assert first.exit_code != 0
+    assert "paired" in first.output.lower()
+    assert not events
+
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    assert (
+        CliRunner()
+        .invoke(app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)])
+        .exit_code
+        == 0
+    )
+    events.clear()
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    monkeypatch.setattr(
+        cloud_windows_task_scheduler, "scheduler_state", lambda: "Scheduled (connection unverified)"
+    )
+    already_scheduled = CliRunner().invoke(app, ["cloud", "remote", "--no-browser"])
+    assert already_scheduled.exit_code != 0
+    assert "paired" in already_scheduled.output.lower()
+    assert not events
+
+    monkeypatch.setattr(
+        cloud_windows_task_scheduler, "scheduler_state", lambda: "Configured (task unverified)"
+    )
+    monkeypatch.setattr(cloud_windows_user_cli, "local_state", lambda: "Off")
+    disabled = CliRunner().invoke(app, ["cloud", "remote", "--no-browser"])
+    assert disabled.exit_code != 0
+    assert "paired" in disabled.output.lower()
+    assert not events
+
+
+def test_remote_exposes_explicit_repair_command_without_running_pairing() -> None:
+    from typer.main import get_command
+
+    options = CliRunner().invoke(app, ["cloud", "remote", "--help"])
+    assert options.exit_code == 0, options.output
+    # Rich inserts ANSI escapes within option text on Windows. Inspect the
+    # registered Click options, not presentation-dependent terminal bytes.
+    remote_command = get_command(cloud_user_cli.cloud_app).commands["remote"]
+    option_names = {
+        name for parameter in remote_command.params for name in getattr(parameter, "opts", ())
+    }
+    assert "--repair-device" in option_names
+    assert "--allow-native-drc" in option_names
+
+
+def test_browser_approved_device_repair_reuses_project_and_preserves_old_binding(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_connector
+
+    folder, events, previous, selection = windows_cli
+    new_device = WindowsEnrolledDevice(
+        record_id="d" * 32,
+        origin=previous.origin,
+        owner_sub=previous.owner_sub,
+        device_id="f9ee4be9-0aec-448e-9873-721ae113ec02",
+        fingerprint="d" * 64,
+    )
+    replacement = WindowsRegisteredProject(
+        registration_id="c" * 32,
+        record_id=new_device.record_id,
+        origin=previous.origin,
+        owner_sub=previous.owner_sub,
+        device_id=new_device.device_id,
+        fingerprint=new_device.fingerprint,
+        project_id="e9ee4be9-0aec-448e-9873-721ae113ec02",
+        filename_stem=previous.filename_stem,
+    )
+
+    def enroll(**options: object) -> WindowsEnrolledDevice:
+        events.append("fresh-pairing")
+        approval = options["owner_approval"]
+        assert callable(approval)
+        approval(ORIGIN + "/devices/pairing", "challenge", "TEST-CODE")
+        return new_device
+
+    def register(paired: WindowsEnrolledDevice, **options: object) -> WindowsRegisteredProject:
+        events.append("fresh-project")
+        assert paired == new_device
+        assert options["filename_stem"] == previous.filename_stem
+        return replacement
+
+    def bind(project, directory, *, owner_confirm):
+        events.append("bind-same-folder")
+        assert project == replacement
+        assert directory == folder
+        assert owner_confirm(directory) is True
+        return selection
+
+    def switch(old, new, *, owner_confirm):
+        events.append("switch")
+        assert old == previous
+        assert new == replacement
+        assert owner_confirm(old, new) is True
+
+    monkeypatch.setattr(cloud_windows_user_cli, "enroll_windows_device", enroll)
+    monkeypatch.setattr(cloud_windows_user_cli, "register_windows_project", register)
+    monkeypatch.setattr(cloud_windows_user_cli, "bind_owner_selected_project", bind)
+    monkeypatch.setattr(cloud_windows_connector, "repair_selected_project", switch)
+
+    got = cloud_windows_user_cli.repair_windows_project(
+        previous,
+        origin=ORIGIN,
+        alias="Lab PC",
+        approval=lambda *_args: events.append("browser-approval"),
+        stop_previous=lambda: events.append("stop-old") or True,
+    )
+    assert got == replacement
+    assert events == [
+        "fresh-pairing",
+        "browser-approval",
+        "fresh-project",
+        "bind-same-folder",
+        "stop-old",
+        "switch",
+    ]
+    assert selection.directory == folder
+
+
+def test_repair_requires_verified_old_connector_stop_before_selection_switch(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_connector
+
+    folder, events, previous, _selection = windows_cli
+
+    def unsafe_switch(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("old active Connector was not stopped; never switch credentials")
+
+    monkeypatch.setattr(cloud_windows_connector, "repair_selected_project", unsafe_switch)
+    with pytest.raises(Exception, match="previous local selection was preserved"):
+        cloud_windows_user_cli.repair_windows_project(
+            previous,
+            origin=ORIGIN,
+            alias="Lab PC",
+            approval=lambda *_args: events.append("browser-approval"),
+            stop_previous=lambda: False,
+        )
+    assert "browser-approval" in events
+    assert previous.filename_stem == "demo"
+    assert folder.is_dir()
+
+
+def test_repair_rejects_foreign_cloud_before_reenrollment(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _folder, events, old, _selection = windows_cli
+    with pytest.raises(cloud_windows_user_cli.typer.BadParameter, match="trusted Cloud origin"):
+        cloud_windows_user_cli.repair_windows_project(
+            old,
+            origin="https://foreign-cloud.example",
+            alias="Lab PC",
+            approval=lambda *_: pytest.fail("no browser side effect"),
+            stop_previous=lambda: pytest.fail("no task side effect"),
+        )
+    assert events == []
+
+
+def test_repair_failed_owner_browser_pairing_retains_previous_selection(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _folder, events, old, _selection = windows_cli
+
+    def failed_enroll(**_opts: object) -> WindowsEnrolledDevice:
+        raise RuntimeError("browser declined")
+
+    monkeypatch.setattr(cloud_windows_user_cli, "enroll_windows_device", failed_enroll)
+    with pytest.raises(cloud_windows_user_cli.typer.BadParameter, match="not completed"):
+        cloud_windows_user_cli.repair_windows_project(
+            old,
+            origin=ORIGIN,
+            alias="Lab PC",
+            approval=lambda *_: events.append("owner-browser"),
+            stop_previous=lambda: pytest.fail("must not stop old task"),
+        )
+    assert events == []
+
+
+def test_repair_cannot_claim_success_after_new_pairing_if_local_switch_fails(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_connector
+
+    _folder, events, old, _selection = windows_cli
+
+    def unsafe_switch(*_args: object, **_kwargs: object) -> None:
+        raise OSError("simulated credential manager write failure")
+
+    monkeypatch.setattr(cloud_windows_connector, "repair_selected_project", unsafe_switch)
+    with pytest.raises(
+        cloud_windows_user_cli.typer.BadParameter, match="could not be switched safely"
+    ):
+        cloud_windows_user_cli.repair_windows_project(
+            old,
+            origin=ORIGIN,
+            alias="Lab PC",
+            approval=lambda *_: events.append("browser-approval"),
+            stop_previous=lambda: events.append("stop-old") or True,
+        )
+    assert events == ["enroll", "browser-approval", "register", "bind", "stop-old"]

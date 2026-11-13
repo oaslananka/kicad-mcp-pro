@@ -51,6 +51,13 @@ def verify_operator_board_revision(
     Paths and expected hash must come from separately trusted local policy
     and an independently verified signed command, respectively.
     """
+    if os.name == "nt":
+        from kicad_mcp.cloud_windows_write_revision import verify_windows_board_revision
+
+        if _directory_fd is not None:
+            raise LocalWriteDeniedError(_DENIED)
+        verify_windows_board_revision(operator_project, expected_sha256)
+        return
     nofollow = getattr(os, "O_NOFOLLOW", None)
     nonblock = getattr(os, "O_NONBLOCK", None)
     getuid = getattr(os, "getuid", None)

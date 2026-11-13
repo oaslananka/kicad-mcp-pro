@@ -228,6 +228,65 @@ def _reuse_owner_registration(
     )
 
 
+def repair_windows_project(
+    previous: WindowsRegisteredProject,
+    *,
+    origin: str,
+    alias: str,
+    approval: Callable[[str, str, str], None],
+    stop_previous: Callable[[], bool],
+) -> WindowsRegisteredProject:
+    """Recover an orphaned device through a *new* owner-browser pairing.
+
+    Stage the new key/project/binding before changing any old local markers.
+    No Cloud grants, local writes to KiCad files, or automatic approval.
+    """
+    from kicad_mcp.cloud_windows_connector import repair_selected_project
+
+    if previous.origin != origin or not callable(stop_previous):
+        raise typer.BadParameter("Device repair must use the existing trusted Cloud origin.")
+    previous_selected = inspect_owner_selected_project(previous)
+    typer.echo(
+        "Repair will pair a NEW device using browser approval. "
+        "The previous device key, registration and project files will be kept."
+    )
+    typer.echo("If the earlier Cloud device still exists, review/revoke it separately in Devices.")
+    try:
+        paired = enroll_windows_device(
+            origin=origin,
+            alias=alias,
+            owner_approval=approval,
+        )
+        replacement = register_windows_project(
+            paired,
+            alias=previous.filename_stem,
+            filename_stem=previous.filename_stem,
+        )
+        bind_owner_selected_project(
+            replacement, previous_selected.directory, owner_confirm=lambda _path: True
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise typer.BadParameter(
+            "New Cloud pairing was not completed; existing local selection is unchanged. "
+            "If Cloud enrolled a device, review it under Devices before retrying."
+        ) from exc
+    if not stop_previous():
+        raise typer.BadParameter(
+            "Old Connector task could not be stopped; the previous local selection was preserved. "
+            "The newly paired device may need owner review in Cloud Devices."
+        )
+    try:
+        repair_selected_project(previous, replacement, owner_confirm=lambda *_: True)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise typer.BadParameter(
+            "The new device was paired, but the local selection could not be switched safely. "
+            "Old keys and the archived selection were preserved for recovery."
+        ) from exc
+    typer.echo("New browser-approved device selected. Earlier credentials were preserved.")
+    typer.echo("Cloud project/app read permissions must be enabled separately in Devices.")
+    return replacement
+
+
 def setup_windows(
     *,
     origin: str,
@@ -265,16 +324,16 @@ def setup_windows(
 
     typer.echo(f"KiCad project: {directory} ({stem})")
     typer.echo("Cloud will register a device/project identity; local project files stay local.")
-    # Foreground remote is an explicit local action followed by browser device
-    # approval, so do not ask for the same consent a second time in the terminal.
-    # Keep legacy background setup confirmation unchanged.
-    if start_background and not typer.confirm(
-        "Approve pairing and the selected read-only local Connector?", default=False
-    ):
-        typer.echo("Setup paused. No device or project was registered.")
-        typer.echo("When ready, run: kicad-mcp-pro cloud setup (or cloud setup --browse)")
-        return
-
+    # Both foreground and background setup require an interactive owner and
+    # a fresh explicit browser pairing approval. Do not repeat that approval
+    # as a second terminal confirmation: the browser is the consent surface.
+    # This still does not grant AI clients read/write access to any project.
+    if start_background:
+        typer.echo(
+            "After browser approval, a read-only Windows Connector task starts automatically "
+            "and reconnects at sign-in. Stop it any time with: kicad-mcp-pro cloud disable."
+        )
+    typer.echo("Approve this device in the browser to finish pairing.")
     project = _enroll_selected_windows_project(
         origin=origin, alias=alias, stem=stem, directory=directory, approval=approval
     )
@@ -305,6 +364,34 @@ def setup_windows(
         typer.echo(f"Manage permissions: {origin}/devices")
 
 
+def _cloud_project_state(project: WindowsRegisteredProject) -> str:
+    """Check the Cloud owner's live records; local selection is not a Cloud grant."""
+    from kicad_mcp.cloud_owner_management import CloudManagementError, CloudOwnerApi, load_token
+
+    try:
+        token = load_token(project.origin)
+        if token is None:
+            return "unverified"
+        reply = CloudOwnerApi(project.origin).request("GET", "/api/owner/v1/devices", token=token)
+    except CloudManagementError:
+        return "unavailable"
+
+    devices = reply.get("devices")
+    if not isinstance(devices, list) or not all(isinstance(d, dict) for d in devices):
+        return "unavailable"
+    matching = next((d for d in devices if d.get("id") == project.device_id), None)
+    if matching is None:
+        return "missing_device"
+    projects = matching.get("projects")
+    if not isinstance(projects, list) or not all(isinstance(p, dict) for p in projects):
+        return "unavailable"
+    return (
+        "registered"
+        if any(p.get("id") == project.project_id for p in projects)
+        else "missing_project"
+    )
+
+
 def show_status() -> None:
     state = scheduler_state()
     run_state = task_run_state() if state == "Scheduled (connection unverified)" else None
@@ -314,6 +401,10 @@ def show_status() -> None:
         typer.echo(f"Local Windows Connector: {state}")
     if state == "Configured (task unverified)":
         typer.echo("No verified background task. A foreground Cloud session may still be active.")
+        typer.echo(
+            "For automatic connection, run: kicad-mcp-pro cloud reconnect "
+            "(confirm the owner-owned task restoration)."
+        )
         typer.echo(
             "To start a signed foreground connection: kicad-mcp-pro remote"
             " (keep this terminal open)."
@@ -328,6 +419,23 @@ def show_status() -> None:
         typer.echo(f"Device: {project.device_id}")
         typer.echo(f"Project: {selected.filename_stem} ({project.project_id})")
         typer.echo(f"Directory: {selected.directory}")
+        cloud_state = _cloud_project_state(project)
+        if cloud_state == "registered":
+            typer.echo("Cloud project: Registered (check client permissions in Devices).")
+        elif cloud_state in {"missing_device", "missing_project"}:
+            typer.echo(
+                "Cloud project: Not found in this account. Local registration is stale "
+                "or belongs to another account; re-add from Cloud Devices."
+            )
+        else:
+            typer.echo(
+                "Cloud project: Not verified. "
+                + (
+                    "Run cloud login to check Cloud registrations."
+                    if cloud_state == "unverified"
+                    else "Cloud account could not be checked; retry when online."
+                )
+            )
         typer.echo("Cloud owner grants/revocation are managed in the Devices page.")
     except (OSError, ValueError):
         typer.echo("Existing local registration needs repair. Cloud access not verified.")

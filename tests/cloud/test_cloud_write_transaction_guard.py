@@ -337,3 +337,48 @@ def test_unexpected_native_status_never_counts_as_commit_success(tmp_path: Path)
     native.stage_result = False
     deny(lambda: run(policy, digest, native))
     assert native.calls == ["begin", "stage", "discard"]
+
+
+@POSIX
+def test_postcommit_persistence_callback_is_authorized_and_returns_digest(
+    tmp_path: Path,
+) -> None:
+    policy, _board, sha = approved(tmp_path)
+    native = StubNative()
+    grants: list[str] = []
+
+    def authorized() -> bool:
+        grants.append("checked")
+        return True
+
+    result = run_offline_guarded_native_write(
+        policy,
+        sha,
+        authorized=authorized,
+        cancelled=lambda: False,
+        native=native,
+        after_commit=lambda: sha,
+    )
+    assert result == sha
+    assert native.calls == ["begin", "stage", "commit"]
+    assert len(grants) == 3, "permission must be current before postcommit persistence"
+
+
+@POSIX
+def test_postcommit_persistence_failure_requires_reconciliation(tmp_path: Path) -> None:
+    policy, _board, sha = approved(tmp_path)
+    native = StubNative()
+
+    def failed() -> str:
+        raise OSError("disk readback unavailable")
+
+    with pytest.raises(NativeWriteRecoveryError, match="native recovery required"):
+        run_offline_guarded_native_write(
+            policy,
+            sha,
+            authorized=lambda: True,
+            cancelled=lambda: False,
+            native=native,
+            after_commit=failed,
+        )
+    assert native.calls == ["begin", "stage", "commit"]

@@ -13,6 +13,10 @@ import json
 from collections.abc import Callable
 from typing import Protocol
 
+from kicad_mcp.cloud_folder_browse_receiver import (
+    LocalFolderBrowseService,
+    handle_folder_frame,
+)
 from kicad_mcp.cloud_outbound_handshake import (
     CloudHandshakeDeniedError,
     HandshakeReceipt,
@@ -23,6 +27,17 @@ from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 _DENIED = "handshake denied"
 _MAX_MANAGED_READS = 16
 _SESSION_TIMEOUT_SECONDS = 295
+_FOLDER_REQUEST_KIND = "connector.local_browser_request"
+
+
+def _report_activity(callback: Callable[[str], None] | None, message: str) -> None:
+    """Diagnostic callbacks are best-effort, never part of local authorization."""
+    if callback is None:
+        return
+    try:
+        callback(message)
+    except Exception:
+        return  # A broken console must never cancel a signed MCP response.
 
 
 class AuthenticatedReadSocket(Protocol):
@@ -51,6 +66,15 @@ def _decode_sequenced_request(raw: str | bytes, expected_sequence: int) -> bytes
     )
 
 
+def _top_level_kind(raw: str) -> object:
+    """Cheap kind probe for dispatch; full validation happens per protocol."""
+    try:
+        message = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    return message.get("kind") if isinstance(message, dict) else None
+
+
 def _validate_read_ack(raw: str | bytes, expected_sequence: int, request_id: object) -> None:
     if not isinstance(raw, str):
         raise CloudHandshakeDeniedError(_DENIED)
@@ -71,8 +95,11 @@ async def _serve_one_authenticated_read(
     dispatcher: LocalReadDispatch,
     receipt: HandshakeReceipt,
     expected_sequence: int,
-) -> None:
-    frame = _decode_sequenced_request(await socket.recv(), expected_sequence)
+    raw: str | None = None,
+) -> dict[str, object]:
+    frame = _decode_sequenced_request(
+        raw if raw is not None else await socket.recv(), expected_sequence
+    )
     response = await asyncio.to_thread(dispatcher.read, frame, sequence=expected_sequence)
     # The local grant can be revoked during inspection. Never interpret the
     # initial read as permission to send later.
@@ -91,6 +118,50 @@ async def _serve_one_authenticated_read(
         )
     )
     _validate_read_ack(await socket.recv(), expected_sequence, response["requestId"])
+    return response
+
+
+async def _serve_folder_request(
+    socket: AuthenticatedReadSocket, service: LocalFolderBrowseService, raw: str
+) -> None:
+    """Answer one owner-initiated opaque-token folder frame; sequences untouched."""
+    response = await asyncio.to_thread(handle_folder_frame, service, raw)
+    encoded = json.dumps(response, separators=(",", ":"), ensure_ascii=False)
+    if len(encoded.encode("utf-8")) > 8192:
+        raise CloudHandshakeDeniedError(_DENIED)
+    await socket.send(encoded)
+
+
+async def _serve_signed_read_frames(
+    socket: AuthenticatedReadSocket,
+    dispatcher: LocalReadDispatch,
+    receipt: HandshakeReceipt,
+    max_reads: int,
+    folder_service: LocalFolderBrowseService | None,
+    on_activity: Callable[[str], None] | None,
+) -> None:
+    """Process authenticated frames without charging folder requests as reads."""
+    reads_served = 0
+    while reads_served < max_reads:
+        raw = await socket.recv()
+        if not isinstance(raw, str):
+            raise CloudHandshakeDeniedError(_DENIED)
+        kind = _top_level_kind(raw)
+        if kind == _FOLDER_REQUEST_KIND:
+            if folder_service is None:
+                raise CloudHandshakeDeniedError(_DENIED)
+            await _serve_folder_request(socket, folder_service, raw)
+            _report_activity(on_activity, "Folder browsing request completed")
+            continue
+        if kind != "connector.authorized_read":
+            raise CloudHandshakeDeniedError(_DENIED)
+        response = await _serve_one_authenticated_read(
+            socket, dispatcher, receipt, reads_served + 1, raw
+        )
+        reads_served += 1
+        operation = response.get("operation")
+        safe = operation if operation in {"project_summary", "run_drc"} else "read"
+        _report_activity(on_activity, f"Tool call {reads_served}: {safe} completed")
 
 
 async def serve_authenticated_reads(
@@ -99,24 +170,35 @@ async def serve_authenticated_reads(
     dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch],
     *,
     max_reads: int = _MAX_MANAGED_READS,
+    folder_service: LocalFolderBrowseService | None = None,
+    allow_native_drc: bool = False,
+    on_activity: Callable[[str], None] | None = None,
 ) -> HandshakeReceipt:
-    """Serve bounded serial project-summary reads on an already signed socket.
+    """Serve bounded serial, independently authorized READs on a signed socket.
 
     Does not grant any read by itself. Dispatcher's independently sourced
     authorization is checked around every file read and before each send;
     Cloud must also recheck OAuth/client/project and owner On/Off after receipt.
     The caller owns the signed socket lifecycle and handles disconnect/retry.
+
+    When an owner-operated folder browse service is attached, interleaved
+    ``connector.local_browser_request`` frames are answered between reads
+    without consuming or altering any read sequence. Frame handling remains
+    fail-closed: any invalid frame ends the signed session.
     """
     if (
         not isinstance(receipt, HandshakeReceipt)
         or not callable(dispatcher_factory)
         or type(max_reads) is not int
         or not 1 <= max_reads <= _MAX_MANAGED_READS
+        or (folder_service is not None and not callable(getattr(folder_service, "list", None)))
+        or type(allow_native_drc) is not bool
+        or (on_activity is not None and not callable(on_activity))
     ):
         raise CloudHandshakeDeniedError(_DENIED)
 
     dispatcher = dispatcher_factory(receipt)
-    if not isinstance(dispatcher, LocalReadDispatch) or dispatcher.native_drc:
+    if not isinstance(dispatcher, LocalReadDispatch) or dispatcher.native_drc != allow_native_drc:
         raise CloudHandshakeDeniedError(_DENIED)
     try:
         dispatcher.assert_transport_session(
@@ -124,10 +206,9 @@ async def serve_authenticated_reads(
         )
         try:
             async with asyncio.timeout(_SESSION_TIMEOUT_SECONDS):
-                for expected_sequence in range(1, max_reads + 1):
-                    await _serve_one_authenticated_read(
-                        socket, dispatcher, receipt, expected_sequence
-                    )
+                await _serve_signed_read_frames(
+                    socket, dispatcher, receipt, max_reads, folder_service, on_activity
+                )
         except TimeoutError as exc:
             raise CloudHandshakeDeniedError(_DENIED) from exc
         return receipt

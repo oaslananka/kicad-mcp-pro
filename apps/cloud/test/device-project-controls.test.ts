@@ -63,3 +63,34 @@ test("production fallback has no local project control or owner file paths",()=>
   assert.doesNotMatch(html,/\/assets\/device-projects\.js/);
   assert.doesNotMatch(html,/class="device-projects-menu"/);
 });
+
+test("Online legacy Connector shows a clear upgrade path instead of dead Browse",()=>{
+  const id=randomUUID();
+  const device={id,alias:"Old Windows machine",enabled:true,revoked:false,
+    fingerprint:"f".repeat(64),createdAt:new Date(),csrf:"revoke",
+    browseNeedsUpgrade:true,connectionState:"connected" as const};
+  const html=renderDevicesPage([device],undefined,true,[],"owner",[],[],false,true);
+  assert.match(html,/Update the KiCad MCP Pro Connector/);
+  assert.doesNotMatch(html,/action="\/devices\/projects\/browse"/);
+  assert.match(html,/Online/);
+});
+
+test("production device-first projects have working action dialogs without duplicate projects card",()=>{
+  const id=randomUUID(),project=randomUUID();
+  const html=renderDevicesPage([{
+    id,alias:"Remote KiCad",enabled:true,revoked:false,
+    fingerprint:"d".repeat(64),createdAt:new Date(),csrf:"revoke",
+    connectionState:"connected",browseCsrf:"browse"
+  }],undefined,true,[{
+    id:project,deviceId:id,alias:"Control board",enabled:true,
+    renameCsrf:"rename",deleteCsrf:"remove",grantCsrf:"grant"
+  }],"owner",[],[],false,true);
+
+  assert.equal((html.match(/class="device-linked-project"/g)||[]).length,1);
+  assert.match(html,/data-open-project-dialog="project-rename-/);
+  assert.match(html,/data-open-project-dialog="project-remove-/);
+  assert.match(html,/src="\/assets\/device-projects\.js"/);
+  assert.match(html,/id="registered-projects"/);
+  assert.doesNotMatch(html,/<h2>Your projects<\/h2>/);
+  assert.doesNotMatch(html,/Advanced: register a project name/);
+});

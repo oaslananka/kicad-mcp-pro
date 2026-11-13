@@ -18,6 +18,8 @@ import { PgGrantManagement } from "./grants.js";
 import { configuredIdentity } from "./identity.js";
 import {createLocalDevIdentity} from "./local-dev-identity.js";
 import {recoverLocalDevSessions} from "./local-dev-recovery.js";
+import {PgUsage} from "./usage.js";
+import {PgOwnerApiAccess} from "./owner-api.js";
 
 const config = loadConfig();
 const localDevWorkspace=process.env.AUTH_MODE==="local_dev";
@@ -28,6 +30,10 @@ const inventory = new PgGrantManagement(config.databaseUrl,Boolean(identity));
 const wsEnabled=process.env.CONNECTOR_WS_ENABLED==="true";
 // Managed mode is OFF unless explicitly enabled by the Cloud operator.
 const managedReadEnabled=process.env.CONNECTOR_MANAGED_READ_ENABLED==="true";
+// A separate OFF-by-default native read gate never authorizes an operation itself.
+const managedNativeReadEnabled=process.env.CONNECTOR_MANAGED_NATIVE_READ_ENABLED==="true";
+if(managedNativeReadEnabled&&!managedReadEnabled)
+  throw Error("Managed native reads require signed managed Connector mode");
 if(wsEnabled&&!localDevWorkspace&&!config.publicOrigin.startsWith("https://")){
   throw new Error("Connector WebSocket requires externally terminated HTTPS");
 }
@@ -81,6 +87,15 @@ if(pairingDeviceEnabled&&(!identity||(!localDevWorkspace&&!config.publicOrigin.s
 }
 const pairingDevice=pairingDeviceEnabled&&connectorPool?
   new PgPairingDeviceAPI(connectorPool,process.env.BETTER_AUTH_SECRET??""):undefined;
+// Observation-only tool-call telemetry, ON for database-backed deployments.
+// Recorded values are counts per client/tool/status; no quota, allowance or
+// content. Set USAGE_TELEMETRY_ENABLED=false to disable the insert path.
+const usageEnabled=process.env.USAGE_TELEMETRY_ENABLED!=="false";
+const usage=usageEnabled&&connectorPool?new PgUsage(connectorPool):undefined;
+// Browser-approved command-line management needs the same database-backed
+// token store and built-in identity as the approval page. Without identity,
+// no approval can complete, so the surface is not constructed at all.
+const ownerApi=identity&&connectorPool?new PgOwnerApiAccess(connectorPool):undefined;
 // Enabling either public device surface requires an explicit, fixed
 // cloudflared TCP peer allowlist; no trust-all or unverified header fallback.
 // Device source trust is explicit and mutually exclusive; only an accepted,
@@ -91,23 +106,27 @@ const deviceSource=(wsEnabled||pairingDeviceEnabled)?
 // Lazy binding keeps all read surfaces absent when connector WS is disabled.
 let connectorRelay:ReturnType<typeof attachConnectorWebSocket>|null=null;
 const server=createHttpServer(config, inventory, createVerifier(config), {grants:inventory, identity:identity, localDevWorkspace, devices:deviceManagement, managedRead, pairings:pairingReview, pairingDevice:pairingDevice, deviceSource:deviceSource,
+  managedNativeReadEnabled,
   mcpProjectPresenceEnabled:operatorLocalOnce||managedReadEnabled,
-  mcpProjectNativeDrcEnabled:operatorNativeDrc,
+  mcpProjectNativeDrcEnabled:operatorNativeDrc||managedNativeReadEnabled,
   mcpProjectInspectionEnabled:operatorInspection,
   mcpProjectBoardCountsEnabled:operatorBoardCounts,
   mcpProjectSchematicCountsEnabled:operatorSchematicCounts,summaryRelay:()=>connectorRelay,
-  ...(ownerIntentDelivery?{ownerIntentDelivery}:{})});
+  ...(ownerIntentDelivery?{ownerIntentDelivery}:{}),
+  ...(usage?{usage}:{}),
+  ...(ownerApi?{ownerApi}:{})});
 const connectorWs=wsEnabled&&connectorPool?attachConnectorWebSocket(server,{
   publicOrigin:config.publicOrigin,
   sourceOf:deviceSource!,
   proofs:new PgDeviceHandshakes(connectorPool),
   ...(ownerConsentRuntime?{ownerConsent:ownerConsentRuntime.consent}:{}),
-  ...(managedRead?{managedGrant:managedRead}:{}),
+  ...(managedRead?{managedGrant:managedRead,managedNativeRead:managedNativeReadEnabled}:{}),
   operatorLocalOnce,operatorNativeDrcOnce:operatorNativeDrc,
   operatorInspectionOnce:operatorInspection,
   operatorBoardCountsOnce:operatorBoardCounts,
   operatorSchematicCountsOnce:operatorSchematicCounts,
   localDevFolderBrowse:localDevWorkspace,
+  productionFolderBrowse:!localDevWorkspace,
   connections:new BoundConnectorConnections(
     new PgConnectorSessions(connectorPool),
     new PgConnectorReadGate(connectorPool))

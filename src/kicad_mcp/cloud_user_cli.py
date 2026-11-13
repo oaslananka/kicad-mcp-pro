@@ -21,6 +21,7 @@ from typing import Annotated
 
 import typer
 
+from kicad_mcp.cloud_owner_cli import register_owner_commands
 from kicad_mcp.cloud_windows_enrollment import WindowsRegisteredProject
 
 DEFAULT_CLOUD_ORIGIN = "https://kicad-mcp-pro.oaslananka.dev"
@@ -290,7 +291,11 @@ def _write_project_record(root: Path, record: dict[str, str]) -> None:
 
 
 def _select_remote_project(
-    origin: str, browse: bool, project_dir: Path | None, no_browser: bool
+    origin: str,
+    browse: bool,
+    project_dir: Path | None,
+    no_browser: bool,
+    repair_device: bool = False,
 ) -> WindowsRegisteredProject | None:
     """Reuse the owner-selected project or run first-time browser pairing."""
     from kicad_mcp.cloud_windows_connector import selected_project
@@ -298,6 +303,26 @@ def _select_remote_project(
     from kicad_mcp.cloud_windows_user_cli import setup_windows
 
     existing = selected_project()
+    if repair_device:
+        if existing is None:
+            raise typer.BadParameter("No saved device to repair; run cloud remote instead.")
+        if browse or project_dir is not None or existing.origin != origin:
+            raise typer.BadParameter(
+                "Recovery reuses the existing Cloud origin and KiCad folder. "
+                "Remove --browse / --project-dir for --repair-device."
+            )
+        from kicad_mcp.cloud_windows_task_scheduler import stop_and_remove_owner_task
+        from kicad_mcp.cloud_windows_user_cli import repair_windows_project
+
+        return repair_windows_project(
+            existing,
+            origin=origin,
+            alias=_resolve_device_alias(None),
+            approval=lambda page, challenge, code: _perform_approval(
+                page, challenge, code, no_browser
+            ),
+            stop_previous=stop_and_remove_owner_task,
+        )
     if existing is None:
         # A single command handles the first browser-approved pairing and folder selection.
         choose_folder = browse or (
@@ -335,6 +360,79 @@ def _select_remote_project(
     return existing
 
 
+def _verify_remote_foreground_options(
+    browse: bool, project_dir: Path | None, repair_device: bool, allow_native_drc: bool
+) -> bool:
+    """Allow headless resume only of an already approved, locally enabled device.
+
+    A noninteractive process cannot pair/repair a device, choose another folder,
+    opt in to native KiCad operations, enable a disabled Connector or take over
+    an existing owner-owned scheduled task. Browser consent remains mandatory
+    for first-time registration. Return whether an owner terminal is present.
+    """
+    if not _is_windows():
+        raise typer.BadParameter(
+            "Foreground remote is currently supported on Windows. Local MCP remains available."
+        )
+    if browse and project_dir is not None:
+        raise typer.BadParameter("Use --browse or --project-dir, not both.")
+    if _owner_terminal():
+        return True
+    if browse or project_dir is not None or repair_device or allow_native_drc:
+        raise typer.BadParameter(
+            "Device pairing, repair, folder changes and native DRC require "
+            "an interactive owner terminal."
+        )
+
+    from kicad_mcp.cloud_windows_connector import local_state, selected_project
+    from kicad_mcp.cloud_windows_task_scheduler import scheduler_state
+
+    try:
+        if (
+            selected_project() is None
+            or local_state() != "Configured (not connected)"
+            or scheduler_state() != "Configured (task unverified)"
+        ):
+            raise typer.BadParameter(
+                "A paired and locally enabled device without a running owner task is "
+                "required. First pair interactively, or use cloud reconnect."
+            )
+    except (OSError, ValueError, RuntimeError) as exc:
+        if isinstance(exc, typer.BadParameter):
+            raise
+        raise typer.BadParameter(
+            "A paired and locally enabled device is required for headless resume."
+        ) from exc
+    return False
+
+
+def _prepare_remote_connector(existing: WindowsRegisteredProject, interactive: bool) -> None:
+    """Preserve owner task authority and local opt-in before a signed session."""
+    from kicad_mcp.cloud_windows_connector import activate, local_state
+    from kicad_mcp.cloud_windows_task_scheduler import (
+        scheduler_state,
+        stop_and_remove_owner_task,
+    )
+
+    # Interactive owners may remove their own verified scheduled task.
+    # A headless previously-paired session cannot alter tasks or activation.
+    if interactive:
+        if not stop_and_remove_owner_task():
+            raise typer.BadParameter(
+                "Could not stop the existing Connector task safely. "
+                "Registration and permissions were preserved."
+            )
+    elif scheduler_state() != "Configured (task unverified)":
+        raise typer.BadParameter(
+            "A scheduled Connector already exists; use cloud reconnect interactively."
+        )
+    state = local_state()
+    if state == "Off" and interactive:
+        activate(existing, owner_confirm=lambda _project: True)
+    elif state != "Configured (not connected)":
+        raise typer.BadParameter("Local Connector registration requires repair.")
+
+
 @cloud_app.command("remote")
 def remote(
     browse: Annotated[bool, typer.Option("--browse", help="Choose a local KiCad project.")] = False,
@@ -348,49 +446,55 @@ def remote(
         bool,
         typer.Option("--no-browser", help="Print the pairing URL instead of opening a browser."),
     ] = False,
+    allow_native_drc: Annotated[
+        bool,
+        typer.Option(
+            "--allow-native-drc",
+            help="Opt in to read-only native DRC counts for this foreground session only.",
+        ),
+    ] = False,
+    repair_device: Annotated[
+        bool,
+        typer.Option(
+            "--repair-device",
+            help=(
+                "Browser-approve a fresh device after policy 1008; "
+                "preserve old keys and project files."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Pair once; keep a verified foreground Cloud connection open."""
-    if not _is_windows():
-        raise typer.BadParameter(
-            "Foreground remote is currently supported on Windows. Local MCP remains available."
-        )
-    if not _owner_terminal():
-        raise typer.BadParameter("Run this command in an interactive terminal.")
-    if browse and project_dir is not None:
-        raise typer.BadParameter("Use --browse or --project-dir, not both.")
+    interactive = _verify_remote_foreground_options(
+        browse, project_dir, repair_device, allow_native_drc
+    )
     origin = _verified_origin(cloud_origin)
     from kicad_mcp.cloud_windows_connector import (
         CloudOwnerReapprovalRequiredError,
-        activate,
-        local_state,
         run_connector,
     )
     from kicad_mcp.cloud_windows_local_selection import inspect_owner_selected_project
-    from kicad_mcp.cloud_windows_task_scheduler import stop_and_remove_owner_task
 
-    existing = _select_remote_project(origin, browse, project_dir, no_browser)
+    existing = _select_remote_project(
+        origin, browse, project_dir, no_browser, repair_device=repair_device
+    )
     if existing is None:
         return
     if existing.origin != origin:
         raise typer.BadParameter("This device is paired with a different Cloud site.")
 
-    # Exactly one user-owned session: remove the legacy scheduled task, which
-    # otherwise opens a blank Python console and may contend for the socket.
-    if not stop_and_remove_owner_task():
-        raise typer.BadParameter(
-            "Could not stop the existing Connector task safely. "
-            "Registration and permissions were preserved."
-        )
-    state = local_state()
-    if state == "Off":
-        activate(existing, owner_confirm=lambda _project: True)
-    elif state != "Configured (not connected)":
-        raise typer.BadParameter("Local Connector registration requires repair.")
+    _prepare_remote_connector(existing, interactive)
     selected = inspect_owner_selected_project(existing)
     typer.echo("\nKiCad MCP Pro Remote")
     typer.echo(f"Project: {selected.filename_stem}")
     typer.echo(f"Cloud: {origin}")
     typer.echo("Connecting... Keep this terminal open; press Ctrl+C to disconnect.")
+    if allow_native_drc:
+        typer.echo(
+            "Read-only native DRC allowed for this foreground session only. "
+            "Cloud still requires a separate project diagnostic grant. "
+            "The original KiCad files remain untouched."
+        )
 
     def show_status(value: str) -> None:
         if value == "Connected":
@@ -402,7 +506,17 @@ def remote(
     import asyncio
 
     try:
-        asyncio.run(run_connector(stop=asyncio.Event(), status_callback=show_status))
+        if allow_native_drc:
+            asyncio.run(
+                run_connector(
+                    stop=asyncio.Event(),
+                    status_callback=show_status,
+                    allow_native_drc=True,
+                )
+            )
+        else:
+            # Preserve the exact legacy call signature for normal remote use.
+            asyncio.run(run_connector(stop=asyncio.Event(), status_callback=show_status))
     except CloudOwnerReapprovalRequiredError:
         raise typer.Exit(code=3) from None
     except KeyboardInterrupt:
@@ -417,9 +531,22 @@ def login(
     no_browser: bool = typer.Option(
         False, "--no-browser", help="Display the login URL without launching a browser."
     ),
+    web_only: bool = typer.Option(
+        False, "--web-only", help="Sign in without connecting CLI management."
+    ),
 ) -> None:
-    """Open first-party Cloud sign-in, supporting GitHub and Google when configured."""
+    """Sign in once in the browser and enable Cloud management in this CLI."""
     origin = _verified_origin(cloud_origin)
+    if not web_only:
+        from kicad_mcp.cloud_owner_management import CloudManagementError, authorize
+
+        try:
+            authorize(origin, no_browser=no_browser)
+        except CloudManagementError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(1) from exc
+        typer.echo("To connect a KiCad device, run: kicad-mcp-pro cloud setup")
+        return
     url = origin + "/sign-in"
     typer.echo(f"Cloud sign-in: {url}")
     if not no_browser:
@@ -819,8 +946,19 @@ def register_project(
 
 
 @cloud_app.command()
-def projects() -> None:
-    """List registered KiCad Cloud projects and bound device."""
+def projects(
+    cloud: bool = typer.Option(
+        False, "--cloud", help="List projects from Cloud, not the local Connector."
+    ),
+    cloud_origin: str = typer.Option(DEFAULT_CLOUD_ORIGIN, "--cloud-origin"),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable Cloud response."),
+) -> None:
+    """List local projects, or use --cloud for your Cloud account's projects."""
+    if cloud:
+        from kicad_mcp.cloud_owner_cli import show_cloud_projects
+
+        show_cloud_projects(cloud_origin, json_output=json_output)
+        return
     if _is_windows():
         from kicad_mcp.cloud_windows_user_cli import show_status
 
@@ -974,3 +1112,7 @@ def run() -> None:
     result = connector(["run"])
     if result:
         raise typer.Exit(result)
+
+
+# Cloud management commands reuse one browser-approved owner token.
+register_owner_commands(cloud_app, DEFAULT_CLOUD_ORIGIN)

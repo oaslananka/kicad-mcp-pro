@@ -3,13 +3,14 @@ import {makeSignature} from "better-auth/crypto";
 import type {BrowserIdentity} from "./browser.js";
 import type {PgDeviceManagement} from "./device-management.js";
 import {renderDevicesPage} from "./devices-ui.js";
-import {renderLocalFolderPage} from "./local-folder-page.js";
+import {renderLocalFolderPage,renderRemoteFolderPage} from "./local-folder-page.js";
 import {validProjectAlias} from "./device-management.js";
 import type {LocalFolderPort} from "./connector-ws.js";
 import type {GrantManagement,BrowserGrantSummary} from "./grants.js";
 import type {PgManagedReadAccess} from "./connector-managed-read-access.js";
 
-export type ManagedReadPort=Pick<PgManagedReadAccess,"enabledProjectIds"|"setEnabled"|"isEnabled">;
+export type ManagedReadPort=Pick<PgManagedReadAccess,
+  "enabledProjectIds"|"setEnabled"|"setNativeOperation"|"nativeOperationsByProject"|"isEnabled">;
 export type DeviceConnectionLookup=(ownerSub:string,deviceId:string)=>boolean;
 export type DeviceManagementPort=Pick<PgDeviceManagement,"list"|"revokeDevice"> &
   Partial<Pick<PgDeviceManagement,"deleteRevokedDevice"|"deleteProject">> &
@@ -37,14 +38,15 @@ type DeviceReply={
   projects?:Parameters<typeof renderDevicesPage>[3];
   ownerSub?:string;
   clients?:ReadonlyArray<string>;
+  writeClients?:ReadonlyArray<string>;
   savedGrants?:ReadonlyArray<BrowserGrantSummary>;
   sandboxMode?:boolean;
   localFolders?:LocalFolderPort;
 };
 function reply({status,devices=[],message,stateCookie,enrollmentAvailable=true,
-  projects=[],ownerSub,clients=[],savedGrants=[],sandboxMode=false,localFolders}:DeviceReply):Response{
+  projects=[],ownerSub,clients=[],writeClients=[],savedGrants=[],sandboxMode=false,localFolders}:DeviceReply):Response{
   const response=new Response(renderDevicesPage(devices,message,enrollmentAvailable,projects,
-    ownerSub,clients,savedGrants,sandboxMode,Boolean(localFolders)),{status,headers:{
+    ownerSub,clients,savedGrants,sandboxMode,Boolean(localFolders),writeClients),{status,headers:{
     "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store",
     // Preserve Origin on same-origin form POSTs; Chrome sends Origin: null
     // under no-referrer. Cross-site referrers remain hidden.
@@ -102,7 +104,7 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
   devices:DeviceManagementPort,enrollmentAvailable=true,
   grants?:Pick<GrantManagement,"setBrowserGrant"|"listBrowserGrants">,
   deviceConnection?:DeviceConnectionLookup,managedRead?:ManagedReadPort,
-  localFolders?:LocalFolderPort):Promise<Response>{
+  localFolders?:LocalFolderPort,nativeReadEnabled=false):Promise<Response>{
   if(!identity.api||!identity.$context)return error(503);
   const who=userOf(await identity.api.getSession({headers:req.headers}));
   if(!who)return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});
@@ -124,9 +126,14 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
       await csrf(secret,who.user,who.session,d.id,stamp,nonce,"device-enable-v1"):undefined,
     projectCsrf:devices.createProject?
       await csrf(secret,who.user,who.session,d.id,stamp,nonce,"project-create-v1"):undefined,
-    browseCsrf:identity.localDevSandbox&&localFolders?
+    browseCsrf:identity.api&&localFolders&&d.enabled&&!d.revoked&&
+      (identity.localDevSandbox||(deviceConnection?.(who.user,d.id)&&
+        localFolders.supportsBrowse?.(who.user,d.id)))?
       await csrf(secret,who.user,who.session,d.id,stamp,nonce,"project-native-picker-open-v1"):
       undefined,
+    browseNeedsUpgrade:!identity.localDevSandbox&&Boolean(localFolders)&&
+      d.enabled&&!d.revoked&&Boolean(deviceConnection?.(who.user,d.id))&&
+      !localFolders?.supportsBrowse?.(who.user,d.id),
     connectionState: deviceConnection&&d.enabled&&!d.revoked?
       (deviceConnection(who.user,d.id)?"connected" as const:"disconnected" as const):undefined
   })));
@@ -146,13 +153,18 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
     "Revoked device and its registered projects were permanently removed.":
     url.searchParams.has("revoked")?
       "Device revoked. Its sessions and project access were disabled.":
-    access==="granted"?"Project summary access was granted to the selected AI app.":
+    access==="granted"?"Project read access was granted to the selected AI app.":
+    access==="write-configured"?
+      "This AI app's edit permission is configured. Actual remote edits also require a compatible Connector and the live write service.":
     access==="removed"?"The selected AI app's project access was removed.":
     access==="reads-on"?"Project summary access was enabled.":
-    access==="reads-off"?"Project summary access was paused.":undefined;
+    access==="reads-off"?"Project summary access was paused.":
+    access==="native-on"?"This read-only KiCad diagnostic was enabled.":
+    access==="native-off"?"This read-only KiCad diagnostic was disabled.":undefined;
   const projects=devices.listProjects?
     await devices.listProjects(who.user):[];
   let clients:string[]=[];
+  let writeClients:string[]=[];
   if(enrollmentAvailable&&grants?.setBrowserGrant&&identity.api.getOAuthConsents){
     try{
       const consents=await identity.api.getOAuthConsents({headers:req.headers});
@@ -161,6 +173,10 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
           typeof c.clientId==="string"&&c.clientId.length<=1024&&
           Array.isArray(c.scopes)&&c.scopes.includes("projects:read"))
           .map(c=>c.clientId))].slice(0,100);
+        writeClients=[...new Set(consents.filter(c=>c.userId===who.user&&
+          typeof c.clientId==="string"&&c.clientId.length<=1024&&
+          Array.isArray(c.scopes)&&c.scopes.includes("projects:read")&&
+          c.scopes.includes("projects:write")).map(c=>c.clientId))].slice(0,100);
       }
     }catch{return error(503);}
   }
@@ -171,6 +187,9 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
     catch{return error(503);}
   }
   const managedIds=new Set(managedRead?await managedRead.enabledProjectIds(who.user):[]);
+  const nativeRows=managedRead&&nativeReadEnabled?
+    await managedRead.nativeOperationsByProject(who.user):[];
+  const nativeByProject=new Map(nativeRows.map(row=>[row.projectId,row.operations]));
   // Only one local RPC may be outstanding on a signed Connector socket.
   // Serialize path lookups so every project in a multi-project folder gets
   // its own accurate path rather than an intermittent "unavailable".
@@ -189,6 +208,9 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
     renameCsrf:devices.renameProject?
       await csrf(secret,who.user,who.session,project.id,stamp,nonce,"project-rename-v1"):undefined,
     managedEnabled:managedRead?managedIds.has(project.id):undefined,
+    nativeEnabled:nativeReadEnabled?nativeByProject.get(project.id)??[]:undefined,
+    nativeCsrf:nativeReadEnabled&&managedRead?
+      await csrf(secret,who.user,who.session,project.id,stamp,nonce,"project-managed-native-v1"):undefined,
     managedCsrf:managedRead?
       await csrf(secret,who.user,who.session,project.id,stamp,nonce,"project-managed-read-v1"):undefined,
     grantCsrf:grants?.setBrowserGrant?
@@ -197,7 +219,7 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
   })));
   return reply({status:200,devices:rows,message:note,
     stateCookie:cookie(stamp+"."+nonce,origin,300),enrollmentAvailable,
-    projects:scoped,ownerSub:who.user,clients,savedGrants,
+    projects:scoped,ownerSub:who.user,clients,writeClients,savedGrants,
     sandboxMode:identity.localDevSandbox===true,localFolders});
 }
 async function revoke(req:Request,identity:BrowserIdentity,origin:string,
@@ -329,24 +351,31 @@ async function ownerGrant(req:Request,identity:BrowserIdentity,origin:string,
   const raw=await req.text();
   if(raw.length>2048)return error(413);
   const fields=new URLSearchParams(raw);
-  const names=["project_id","client_id","enabled","csrf"];
-  if([...fields.keys()].length!==names.length||
-    names.some(name=>fields.getAll(name).length!==1))return error(400);
+  const required=["project_id","client_id","enabled","csrf"];
+  const names=[...fields.keys()];
+  if(names.length!==required.length+(fields.has("mode")?1:0)||
+    required.some(name=>fields.getAll(name).length!==1)||
+    (fields.has("mode")&&fields.getAll("mode").length!==1)||
+    names.some(name=>![...required,"mode"].includes(name)))return error(400);
   const project=fields.get("project_id")??"",client=fields.get("client_id")??"";
   const enabled=fields.get("enabled"),proof=fields.get("csrf")??"";
+  const mode=fields.get("mode")??"readonly";
   if(!DEVICE_ID.test(project)||!client||client.length>1024||
-    (enabled!=="true"&&enabled!=="false"))return error(400);
+    (enabled!=="true"&&enabled!=="false")||
+    (mode!=="readonly"&&mode!=="write"))return error(400);
   const who=userOf(await identity.api.getSession({headers:req.headers}));
   if(!who)return error(401);
   const {secret}=await identity.$context;
   const csrfIssue=await checkCsrf(req,origin,secret,who,project,proof,"project-browser-grant-v1");
   if(csrfIssue)return csrfIssue;
   let updated=false;
-  try{updated=await grants.setBrowserGrant(who.user,project,client,enabled==="true");}
+  try{updated=await grants.setBrowserGrant(who.user,project,client,enabled==="true",mode);}
   catch{return error(503);}
   if(!updated)return error(404);
   return new Response(null,{status:303,headers:{
-    Location:enabled==="true"?"/devices?access=granted":"/devices?access=removed",
+    Location:enabled==="true"?(mode==="write"?
+      "/devices?access=write-configured":"/devices?access=granted"):
+      "/devices?access=removed",
     "Cache-Control":"no-store","Set-Cookie":cookie("",origin,0)}});
 }
 
@@ -383,10 +412,67 @@ async function ownerManagedRead(req:Request,identity:BrowserIdentity,origin:stri
 
 
 
-/** Browsing is permitted only inside an explicit, synthetic local Cloud session. */
+
+/** Web navigation asks a signed owner device for opaque folder tokens only. */
+async function showRemoteFolders(identity:BrowserIdentity,origin:string,
+  folders:LocalFolderPort,who:NonNullable<ReturnType<typeof userOf>>,
+  device:string,folderId:string):Promise<Response>{
+  if(!identity.$context)return error(503);
+  const listing=await folders.listFolder(who.user,device,folderId);
+  if(!listing)return new Response(null,{status:303,headers:{
+    Location:"/devices?picker=unavailable","Cache-Control":"no-store"}});
+  const {secret}=await identity.$context;
+  const stamp=String(Date.now()),nonce=randomBytes(16).toString("base64url");
+  const key=(folder:string)=>device+":"+folder;
+  const openToken=(folder:string)=>csrf(secret,who.user,who.session,key(folder),
+    stamp,nonce,"project-folder-open-v1");
+  const selectToken=(folder:string)=>csrf(secret,who.user,who.session,key(folder),
+    stamp,nonce,"project-folder-select-v1");
+  const choices=await Promise.all(listing.folders.map(async entry=>({
+    id:entry.id,name:entry.name,project:entry.project,
+    openCsrf:await openToken(entry.id),
+    ...(entry.project?{selectCsrf:await selectToken(entry.id)}:{})
+  })));
+  const current=listing.project?await selectToken(listing.folderId):undefined;
+  const parent=listing.parentId?await openToken(listing.parentId):undefined;
+  return new Response(renderRemoteFolderPage(device,listing,choices,current,parent),{
+    status:200,headers:{
+      "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store",
+      "Set-Cookie":cookie(stamp+"."+nonce,origin,300),
+      "Referrer-Policy":"same-origin","X-Content-Type-Options":"nosniff",
+      "Content-Security-Policy":"default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    }
+  });
+}
+
+async function folderOpen(req:Request,identity:BrowserIdentity,origin:string,
+  devices:DeviceManagementPort,folders?:LocalFolderPort):Promise<Response>{
+  if(!folders||!identity.api||!identity.$context)return error(404);
+  if(req.headers.get("origin")!==origin)return error(403);
+  if(req.headers.get("content-type")?.split(";")[0].trim()!=="application/x-www-form-urlencoded")
+    return error(415);
+  const raw=await req.text();
+  if(raw.length>750)return error(413);
+  const fields=new URLSearchParams(raw);
+  if([...fields.keys()].length!==3||
+     ["device_id","folder_id","csrf"].some(x=>fields.getAll(x).length!==1))
+    return error(400);
+  const device=fields.get("device_id")??"",folder=fields.get("folder_id")??"";
+  if(!DEVICE_ID.test(device)||!/^[A-Za-z0-9_-]{1,64}$/.test(folder))return error(400);
+  const who=userOf(await identity.api.getSession({headers:req.headers}));
+  if(!who)return error(401);
+  const {secret}=await identity.$context;
+  const check=await checkCsrf(req,origin,secret,who,device+":"+folder,
+    fields.get("csrf")??"","project-folder-open-v1");
+  if(check)return check;
+  const own=await devices.list(who.user);
+  if(!own.some(d=>d.id===device&&d.enabled&&!d.revoked))return error(404);
+  return showRemoteFolders(identity,origin,folders,who,device,folder);
+}
+/** Local-dev native picker, or production web folder browser. */
 async function folderBrowse(req:Request,identity:BrowserIdentity,origin:string,
   devices:DeviceManagementPort,folders?:LocalFolderPort):Promise<Response>{
-  if(!identity.localDevSandbox||!folders||!identity.api||!identity.$context)return error(404);
+  if(!folders||!identity.api||!identity.$context)return error(404);
   if(req.headers.get("origin")!==origin)return error(403);
   if(req.headers.get("content-type")?.split(";")[0].trim()!=="application/x-www-form-urlencoded")
     return error(415);
@@ -406,8 +492,10 @@ async function folderBrowse(req:Request,identity:BrowserIdentity,origin:string,
   const own=await devices.list(who.user);
   if(!own.some(d=>d.id===device&&d.enabled&&!d.revoked))return error(404);
 
-  // This is a user-clicked POST, never an auto-prefetched GET.
-  // The native modal appears on the selected device, not the Cloud host.
+  // In production the browser browses the selected signed remote device.
+  // Never open a native modal on someone else's monitor.
+  if(!identity.localDevSandbox)
+    return showRemoteFolders(identity,origin,folders,who,device,"root");
   const selection=await folders.chooseFolder(who.user,device);
   if(!selection)return new Response(null,{status:303,headers:{
     Location:"/devices?picker=unavailable","Cache-Control":"no-store"
@@ -440,7 +528,7 @@ async function folderBrowse(req:Request,identity:BrowserIdentity,origin:string,
  * only after a real signed device has confirmed this actual KiCad folder. */
 async function folderSelect(req:Request,identity:BrowserIdentity,origin:string,
   devices:DeviceManagementPort,folders?:LocalFolderPort):Promise<Response>{
-  if(!identity.localDevSandbox||!folders||!identity.api||!identity.$context||
+  if(!folders||!identity.api||!identity.$context||
      !devices.createProject||!devices.deleteProject)return error(404);
   if(req.headers.get("origin")!==origin)return error(403);
   if(req.headers.get("content-type")?.split(";")[0].trim()!=="application/x-www-form-urlencoded")
@@ -507,16 +595,60 @@ async function projectRename(req:Request,identity:BrowserIdentity,origin:string,
   }});
 }
 
+
+// Only native DRC is implemented by the current owner-managed Windows worker.
+// Keep other diagnostic grants unavailable until their device-side acceptance passes.
+const MANAGED_NATIVE_OPERATIONS=["run_drc"] as const;
+type ManagedNativeOperation=(typeof MANAGED_NATIVE_OPERATIONS)[number];
+function managedNativeOperation(value:string|null):value is ManagedNativeOperation{
+  return MANAGED_NATIVE_OPERATIONS.some(operation=>operation===value);
+}
+
+/** This form cannot be submitted by AI clients or from a foreign origin. */
+async function ownerManagedNativeRead(req:Request,identity:BrowserIdentity,origin:string,
+  managedRead:ManagedReadPort):Promise<Response>{
+  if(!identity.api||!identity.$context)return error(503);
+  if(req.headers.get("origin")!==origin)return error(403);
+  if(req.headers.get("content-type")?.split(";")[0].trim()!=="application/x-www-form-urlencoded")
+    return error(415);
+  const raw=await req.text();
+  if(raw.length>2048)return error(413);
+  const fields=new URLSearchParams(raw);
+  const names=["project_id","device_id","operation","enabled","csrf"];
+  if([...fields.keys()].length!==names.length||
+    names.some(name=>fields.getAll(name).length!==1))return error(400);
+  const project=fields.get("project_id")??"",device=fields.get("device_id")??"";
+  const operation=fields.get("operation"),enabled=fields.get("enabled");
+  const proof=fields.get("csrf")??"";
+  if(!DEVICE_ID.test(project)||!DEVICE_ID.test(device)||
+    !managedNativeOperation(operation)||(enabled!=="true"&&enabled!=="false"))
+    return error(400);
+  const who=userOf(await identity.api.getSession({headers:req.headers}));
+  if(!who)return error(401);
+  const {secret}=await identity.$context;
+  const csrfIssue=await checkCsrf(req,origin,secret,who,project,proof,
+    "project-managed-native-v1");
+  if(csrfIssue)return csrfIssue;
+  let updated:boolean;
+  try{updated=await managedRead.setNativeOperation(
+    who.user,device,project,operation,enabled==="true");}
+  catch{return error(503);}
+  if(!updated)return error(404);
+  return new Response(null,{status:303,headers:{
+    Location:enabled==="true"?"/devices?access=native-on":"/devices?access=native-off",
+    "Cache-Control":"no-store","Set-Cookie":cookie("",origin,0)}});
+}
+
 /** Authenticated browser-only management, never usable in external auth mode. */
 export async function devicesResponse(req:Request,identity:BrowserIdentity,origin:string,
   devices?:DeviceManagementPort,enrollmentAvailable=true,
   grants?:Pick<GrantManagement,"setBrowserGrant"|"listBrowserGrants">,
   deviceConnection?:DeviceConnectionLookup,managedRead?:ManagedReadPort,
-  localFolders?:LocalFolderPort):Promise<Response|null>{
+  localFolders?:LocalFolderPort,nativeReadEnabled=false):Promise<Response|null>{
   const path=new URL(req.url).pathname;
   if(!["/devices","/devices/revoke","/devices/delete","/devices/enable","/devices/projects/create",
-    "/devices/projects/grant","/devices/projects/managed","/devices/projects/delete",
-    "/devices/projects/browse","/devices/projects/select","/devices/projects/rename"].includes(path))
+    "/devices/projects/grant","/devices/projects/managed","/devices/projects/native","/devices/projects/delete",
+    "/devices/projects/browse","/devices/projects/folders","/devices/projects/select","/devices/projects/rename"].includes(path))
     return null;
   if(!devices)return error(503);
   // A direct navigation is never a removal command. Keep users in the
@@ -527,7 +659,7 @@ export async function devicesResponse(req:Request,identity:BrowserIdentity,origi
     }});
   if(path==="/devices"&&req.method==="GET")
     return list(req,identity,origin,devices,enrollmentAvailable,grants,deviceConnection,
-      managedRead,localFolders);
+      managedRead,localFolders,nativeReadEnabled);
   if(path==="/devices/revoke"&&req.method==="POST")return revoke(req,identity,origin,devices);
   if(path==="/devices/delete"&&req.method==="POST")
     return deleteRevoked(req,identity,origin,devices);
@@ -539,6 +671,8 @@ export async function devicesResponse(req:Request,identity:BrowserIdentity,origi
     return new Response(null,{status:303,headers:{
       Location:"/devices","Cache-Control":"no-store"
     }});
+  if(path==="/devices/projects/folders"&&req.method==="POST")
+    return folderOpen(req,identity,origin,devices,localFolders);
   if(path==="/devices/projects/select"&&req.method==="POST")
     return folderSelect(req,identity,origin,devices,localFolders);
   if(path==="/devices/projects/rename"&&req.method==="POST")
@@ -549,6 +683,8 @@ export async function devicesResponse(req:Request,identity:BrowserIdentity,origi
     if(path==="/devices/projects/grant"&&grants)return ownerGrant(req,identity,origin,grants);
     if(path==="/devices/projects/managed"&&managedRead)
       return ownerManagedRead(req,identity,origin,managedRead);
+    if(path==="/devices/projects/native"&&managedRead&&nativeReadEnabled)
+      return ownerManagedNativeRead(req,identity,origin,managedRead);
   }
   return error(405);
 }

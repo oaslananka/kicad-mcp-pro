@@ -2,7 +2,10 @@ import {KeyObject,sign} from "node:crypto";
 import {MAX_WRITE_FRAME_BYTES,parseUntrustedWriteRequest} from "./connector-write-contract.js";
 
 export const MAX_SIGNED_WRITE_PROPOSAL_BYTES=2048;
-const domain=Buffer.from("kicad-cloud-signed-write-proposal-v1\0","utf8");
+const domains={
+  1:Buffer.from("kicad-cloud-signed-write-proposal-v1\0","utf8"),
+  2:Buffer.from("kicad-cloud-signed-write-proposal-v2\0","utf8")
+} as const;
 type Binding=Parameters<typeof parseUntrustedWriteRequest>[1];
 
 /**
@@ -28,14 +31,14 @@ export function createOfflineSignedWriteProposal(
   if(payload.length>MAX_WRITE_FRAME_BYTES)return null;
   let signature:Buffer;
   try{
-    signature=sign(null,Buffer.concat([domain,payload]),issuerKey);
+    signature=sign(null,Buffer.concat([domains[request.version],payload]),issuerKey);
   }catch{
     return null;
   }
   if(signature.length!==64)return null;
   const envelope=Buffer.from(JSON.stringify({
     kind:"connector.signed_write_proposal",
-    version:1,
+    version:request.version,
     payload:payload.toString("base64url"),
     signature:signature.toString("base64url")
   }),"utf8");

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {randomUUID} from "node:crypto";
+import {randomUUID,timingSafeEqual} from "node:crypto";
 import {test} from "node:test";
 import type {BrowserIdentity} from "../src/browser.js";
 import type {DeviceManagementPort} from "../src/devices.js";
@@ -12,6 +12,10 @@ const origin="http://127.0.0.1:8787";
 const deviceId=randomUUID();
 const projectId=randomUUID();
 const folderToken="an-opaque-native-token";
+function sameFolderToken(a:string,b:string):boolean{
+  const left=Buffer.from(a),right=Buffer.from(b);
+  return left.length===right.length&&timingSafeEqual(left,right);
+}
 const owner="local-dev-owner";
 const folderName="\u00C7izim 2026";
 
@@ -52,15 +56,24 @@ function fixture(local=true,selection:NativeFolderSelection={
   const listing={folderId:folderToken,name:folderName,parentId:null,project:true,
     more:false,folders:[]};
   const folders:LocalFolderPort={
+    supportsBrowse:()=>true, // A compatible signed Connector fixture.
     getProjectPath:async()=>null,
     chooseFolder:async(u,d)=>{
       chooserCalls++;
       return u===owner&&d===deviceId?selection:null;
     },
-    listFolder:async(u,d,token)=>u===owner&&d===deviceId&&token===folderToken?listing:null,
+    listFolder:async(u,d,token)=>{
+      if(u!==owner||d!==deviceId)return null;
+      if(sameFolderToken(token,folderToken))return listing;
+      if(!local&&token==="root")return {
+        folderId:"root",name:"This computer",parentId:null,project:false,
+        more:false,folders:[{id:folderToken,name:folderName,project:true}]
+      };
+      return null;
+    },
     bindFolder:async(u,d,token,id)=>{
       bindings++;
-      return u===owner&&d===deviceId&&token===folderToken&&id===projectId;
+      return u===owner&&d===deviceId&&sameFolderToken(token,folderToken)&&id===projectId;
     }
   };
   const route=(url:string,request?:Request)=>
@@ -144,7 +157,11 @@ test("only same-origin CSRF-proven POST may open the native picker",async()=>{
   assert.equal((await f.route("/devices/projects/browse",forged))?.status,403);
   assert.equal(f.chooserCalls(),0);
   const live=fixture(false);
-  assert.equal((await live.route("/devices/projects/browse",post))?.status,404);
+  const badProduction=ownerPost("/devices/projects/browse",{
+    device_id:deviceId,csrf:"bad"
+  },"kicad-devices=bad");
+  assert.equal((await live.route("/devices/projects/browse",badProduction))?.status,403);
+  assert.equal(live.chooserCalls(),0);
 });
 
 test("cancel and invalid folder selection create no project",async()=>{
@@ -200,4 +217,48 @@ test("two .kicad_pro files in one selected folder are separate project choices",
   assert.match(html,/value="MainBoard"/);
   assert.match(html,/value="Antenna"/);
   assert.doesNotMatch(html,/C:\\Users\\|folder-browser-list/);
+});
+
+test("production owner browses remote KiCad directory and saves Cloud binding",async()=>{
+  const f=fixture(false);
+  const view=await beginSelection(f);
+  assert.equal(view?.status,200);
+  assert.equal(f.chooserCalls(),0,"remote browser must not open a native device picker");
+  const html=await view!.text();
+  assert.match(html,/This computer/);
+  assert.match(html,new RegExp(folderName));
+  assert.match(html,/action="\/devices\/projects\/folders"/);
+  assert.doesNotMatch(html,/C:\\Users\\|\.kicad_sch/);
+  const select=html.slice(html.indexOf('action="/devices/projects/select"'));
+  assert.ok(select.length>0);
+  const proof=/name="csrf" value="([^"]+)"/.exec(select)?.[1];
+  assert.ok(proof,"selected remote folder needs owner-bound CSRF");
+  const cookie=view!.headers.get("set-cookie")?.split(";")[0]??"";
+  const result=await f.route("/devices/projects/select",ownerPost(
+    "/devices/projects/select",{device_id:deviceId,folder_id:folderToken,
+      alias:folderName,csrf:proof},cookie));
+  assert.equal(result?.status,303);
+  assert.equal(f.bindings(),1);
+  assert.equal(f.getName(),folderName);
+  assert.equal(f.removed(),0);
+});
+
+test("remote browser rejects paths, forged origin and unknown folder tokens",async()=>{
+  const f=fixture(false);
+  const view=await beginSelection(f);
+  assert.equal(view?.status,200);
+  const html=await view!.text();
+  const folderForm=html.slice(html.indexOf('action="/devices/projects/folders"'));
+  const proof=/name="csrf" value="([^"]+)"/.exec(folderForm)?.[1];
+  assert.ok(proof);
+  const cookie=view!.headers.get("set-cookie")?.split(";")[0]??"";
+  const forged=await f.route("/devices/projects/folders",ownerPost(
+    "/devices/projects/folders",{device_id:deviceId,folder_id:folderToken,
+      csrf:proof},cookie,"https://attacker.invalid"));
+  assert.equal(forged?.status,403);
+  const path=await f.route("/devices/projects/folders",ownerPost(
+    "/devices/projects/folders",{device_id:deviceId,
+      folder_id:"C:\\Users\\Secret",csrf:proof},cookie));
+  assert.equal(path?.status,400);
+  assert.equal(f.bindings(),0);
 });

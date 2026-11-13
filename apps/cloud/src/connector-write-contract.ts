@@ -1,7 +1,7 @@
 import {z} from "zod";
 
 /**
- * Offline-only, untrusted v1 write payload. Neither parsing nor constructing
+ * Offline-only, untrusted v1/v2 write payload. Neither parsing nor constructing
  * this value authorizes a write, opens a route, or starts a KiCad mutation.
  * The future authenticated Connector must separately verify the owner grant,
  * client OAuth scope, signed one-shot command, local binding, board revision,
@@ -11,6 +11,7 @@ import {z} from "zod";
  * cannot discover or interpret this as an advertised capability.
  */
 export const WRITE_CONTRACT_VERSION=1 as const;
+export const WRITE_CONTRACT_VERSION_V2=2 as const;
 export const MAX_WRITE_FRAME_BYTES=1024;
 export const MAX_WRITE_DEADLINE_MS=10_000;
 
@@ -19,25 +20,39 @@ const FootprintReference=z.string().regex(/^[A-Z]{1,3}[1-9][0-9]{0,5}$/);
 const Coordinate=z.number().finite().min(-1000).max(1000);
 const Angle=z.number().finite().min(-360).max(360);
 
-export const WriteCommandSchema=z.strictObject({
+const writeCommandFields={
   operation:z.literal("pcb_move_footprint"),
   reference:FootprintReference,
   xMm:Coordinate,
   yMm:Coordinate,
   rotationDeg:Angle.nullable(),
   expectedBoardSha256:BoardRevision
+};
+export const WriteCommandSchema=z.strictObject(writeCommandFields);
+export const WriteCommandV2Schema=z.strictObject({
+  ...writeCommandFields,
+  // KiCad GUI normalizes board serialization; disk and live revisions are
+  // separate signed facts. A stale live board must never be edited.
+  expectedLiveBoardSha256:BoardRevision
 });
-
-export const ConnectorWriteRequestSchema=z.strictObject({
+const requestFields={
   kind:z.literal("connector.write_request"),
-  version:z.literal(WRITE_CONTRACT_VERSION),
   requestId:z.uuid(),
   deviceId:z.uuid(),
   projectId:z.uuid(),
   sessionId:z.uuid(),
-  deadlineUnixMs:z.number().int().safe().positive(),
-  command:WriteCommandSchema
-});
+  deadlineUnixMs:z.number().int().safe().positive()
+};
+export const ConnectorWriteRequestSchema=z.discriminatedUnion("version",[
+  z.strictObject({
+    ...requestFields,version:z.literal(WRITE_CONTRACT_VERSION),
+    command:WriteCommandSchema
+  }),
+  z.strictObject({
+    ...requestFields,version:z.literal(WRITE_CONTRACT_VERSION_V2),
+    command:WriteCommandV2Schema
+  })
+]);
 export type ConnectorWriteRequest=z.infer<typeof ConnectorWriteRequestSchema>;
 
 /** Pure shape/binding check. NEVER use this result as proof of consent. */

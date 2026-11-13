@@ -131,6 +131,37 @@ def test_invalid_binding_or_deadline_denied(
         reader.read(invalid, sequence=1)
 
 
+def test_managed_native_drc_extension_requires_a_separate_local_scope(tmp_path: Path) -> None:
+    from kicad_mcp.cloud_readonly_boundary import _validate_frame
+
+    verified = VerifiedLocalBinding(DEVICE, PROJECT, frozenset({"run_drc"}), SESSION, NOW + 100_000)
+    local = OperatorProject(DEVICE, PROJECT, tmp_path, "TEST")
+    extended = frame(deadlineUnixMs=NOW + 46_000)
+    with pytest.raises(LocalReadDeniedError):
+        _validate_frame(extended, verified, local, NOW, allow_native_drc=True)
+    with pytest.raises(LocalReadDeniedError):
+        _validate_frame(extended, verified, local, NOW, extended_native_drc=True)
+    assert (
+        _validate_frame(
+            extended, verified, local, NOW, allow_native_drc=True, extended_native_drc=True
+        )["operation"]
+        == "run_drc"
+    )
+    long_summary = frame(operation="project_summary", deadlineUnixMs=NOW + 46_000)
+    summary_binding = VerifiedLocalBinding(
+        DEVICE, PROJECT, frozenset({"project_summary"}), SESSION, NOW + 100_000
+    )
+    with pytest.raises(LocalReadDeniedError):
+        _validate_frame(
+            long_summary,
+            summary_binding,
+            local,
+            NOW,
+            allow_native_drc=True,
+            extended_native_drc=True,
+        )
+
+
 def test_native_transport_requires_separate_explicit_pilot_flag(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

@@ -140,7 +140,10 @@ def summarize_native_pcb_drc(policy: OperatorProject) -> dict[str, int]:
                 check=False,
                 timeout=40,
             )
-            if completed.returncode != 0:
+            # KiCad CLI returns 5 when the DRC report contains violations.
+            # Treat only documented report-bearing exits as valid, then
+            # validate the bounded JSON itself before releasing any counts.
+            if completed.returncode not in (0, 5):
                 raise LocalReadDeniedError(_DENIED)
             report = output.stat()
             if not stat.S_ISREG(report.st_mode) or not (1 <= report.st_size <= _MAX_REPORT_BYTES):

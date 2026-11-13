@@ -2,8 +2,10 @@ import { verifyOAuthQueryParams } from "@better-auth/oauth-provider";
 import type { Identity } from "./identity.js";
 import type { DeviceManagementPort } from "./devices.js";
 import type { GrantManagement } from "./grants.js";
+import type { UsagePort } from "./usage.js";
 import {renderSignIn,renderAccount,renderNotice,renderSettings} from "./browser-ui.js";
 import {renderUsagePage} from "./usage-ui.js";
+import {readCliReturnCookie,cliReturnCookie} from "./owner-cli-return.js";
 
 export type BrowserIdentity =
   Pick<Identity,"handler"> & Partial<Pick<Identity,"$context"|"api"|"options">> & {localDevSandbox?:true};
@@ -107,9 +109,13 @@ async function startSocialLogin(request:Request,identity:BrowserIdentity,
   return approvedProviderRedirect(authResponse,provider);
 }
 
-async function accountPage(request:Request,identity:BrowserIdentity,devices?:DeviceManagementPort,grants?:GrantManagement):Promise<Response> {
+async function accountPage(request:Request,identity:BrowserIdentity,origin:string,devices?:DeviceManagementPort,grants?:GrantManagement):Promise<Response> {
   const session=await identity.api?.getSession({headers:request.headers});
   if(!session?.user) return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});
+  const cliRequest=readCliReturnCookie(request,origin);
+  if(cliRequest)return new Response(null,{status:303,headers:{
+    "Location":"/api/owner/cli/approve?request_id="+cliRequest,
+    "Set-Cookie":cliReturnCookie(origin,"",0),"Cache-Control":"no-store"}});
   const linked=await identity.api?.listUserAccounts?.({headers:request.headers});
   const names=(linked??[]).map(account=>account.providerId)
     .filter((provider):provider is SocialName=>provider==="google"||provider==="github");
@@ -133,12 +139,21 @@ async function accountPage(request:Request,identity:BrowserIdentity,devices?:Dev
   });
 }
 
-async function usagePage(request:Request,identity:BrowserIdentity):Promise<Response>{
+async function usagePage(request:Request,identity:BrowserIdentity,
+  usage?:UsagePort):Promise<Response>{
   const session=await identity.api?.getSession({headers:request.headers});
   if(!session?.user) return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});
-  return new Response(renderUsagePage(undefined,session.user.email??session.user.name??undefined),{
-    status:200,headers:htmlHeaders
-  });
+  const email=session.user.email??session.user.name??undefined;
+  if(!usage)return new Response(renderUsagePage(null,email),{status:200,headers:htmlHeaders});
+  // A failed lookup means state is unavailable, never an empty workspace.
+  try{
+    const summary=await usage.summary(session.user.id);
+    const recent=summary?await usage.recent(session.user.id,20):[];
+    return new Response(renderUsagePage(summary?{summary,recent}:null,email),
+      {status:200,headers:htmlHeaders});
+  }catch{
+    return new Response(renderUsagePage(null,email),{status:200,headers:htmlHeaders});
+  }
 }
 
 async function startSocialLink(request:Request,identity:BrowserIdentity,
@@ -164,7 +179,7 @@ async function startSocialLink(request:Request,identity:BrowserIdentity,
   return approvedProviderRedirect(reply,provider);
 }
 
-export async function browserResponse(request:Request,identity:BrowserIdentity,publicOrigin:string,devices?:DeviceManagementPort,grants?:GrantManagement):Promise<Response|null> {
+export async function browserResponse(request:Request,identity:BrowserIdentity,publicOrigin:string,devices?:DeviceManagementPort,grants?:GrantManagement,usage?:UsagePort):Promise<Response|null> {
   const url=new URL(request.url);
   if(url.pathname==="/sign-in" && request.method==="GET") {
     if(identity.localDevSandbox && !url.search)return new Response(null,{status:303,headers:{"Location":"/account","Cache-Control":"no-store"}});
@@ -196,8 +211,8 @@ export async function browserResponse(request:Request,identity:BrowserIdentity,p
     }
     return startSocialLink(request,identity,publicOrigin,linkProvider);
   }
-  if((url.pathname==="/account"||url.pathname==="/overview") && request.method==="GET") return accountPage(request,identity,devices,grants);
-  if(url.pathname==="/usage" && request.method==="GET") return usagePage(request,identity);
+  if((url.pathname==="/account"||url.pathname==="/overview") && request.method==="GET") return accountPage(request,identity,publicOrigin,devices,grants);
+  if(url.pathname==="/usage" && request.method==="GET") return usagePage(request,identity,usage);
   if(url.pathname==="/settings" && request.method==="GET"){
     const session=await identity.api?.getSession({headers:request.headers});
     if(!session?.user)return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});

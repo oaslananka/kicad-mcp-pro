@@ -278,3 +278,65 @@ def test_remote_policy_rejection_exits_with_actionable_status_no_traceback(
     assert "/devices" in result.output
     assert "Traceback" not in result.output
     assert state["calls"] == ["task_removed"]
+
+
+@pytest.mark.parametrize("invalid", ["no-saved-device", "foreign-cloud", "changed-folder"])
+def test_device_repair_fails_closed_without_changing_existing_project(
+    remote_fixture: tuple[dict[str, Any], Path], invalid: str
+) -> None:
+    state, folder = remote_fixture
+    if invalid == "no-saved-device":
+        state["project"] = None
+    elif invalid == "foreign-cloud":
+        state["project"].origin = "https://other-cloud.example"
+    path = folder if invalid == "changed-folder" else None
+    with pytest.raises(typer.BadParameter):
+        cloud_user_cli._select_remote_project(
+            cloud_user_cli.DEFAULT_CLOUD_ORIGIN,
+            browse=False,
+            project_dir=path,
+            no_browser=False,
+            repair_device=True,
+        )
+    assert state["calls"] == []
+
+
+def test_explicit_device_repair_routes_through_browser_owner_approval(
+    remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state, _ = remote_fixture
+    approved: list[str] = []
+
+    def repaired(previous: object, **args: object) -> object:
+        assert previous == state["project"]
+        assert args["origin"] == cloud_user_cli.DEFAULT_CLOUD_ORIGIN
+        assert callable(args["approval"])
+        assert callable(args["stop_previous"])
+        approved.append("owner-browser-repair")
+        return previous
+
+    monkeypatch.setattr(cloud_windows_user_cli, "repair_windows_project", repaired)
+    result = cloud_user_cli._select_remote_project(
+        cloud_user_cli.DEFAULT_CLOUD_ORIGIN, False, None, False, True
+    )
+    assert result == state["project"]
+    assert approved == ["owner-browser-repair"]
+    assert state["calls"] == []
+
+
+def test_native_drc_requires_a_foreground_opt_in_on_the_actual_remote_command(
+    remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state, _folder = remote_fixture
+
+    async def native(*, stop: asyncio.Event, status_callback, allow_native_drc: bool) -> None:
+        assert isinstance(stop, asyncio.Event)
+        assert allow_native_drc is True
+        status_callback("Connected")
+        state["calls"].append("native-drc")
+
+    monkeypatch.setattr(cloud_windows_connector, "run_connector", native)
+    result = CliRunner().invoke(server.app, ["remote", "--allow-native-drc"])
+    assert result.exit_code == 0, result.output
+    assert "Read-only native DRC allowed" in result.output
+    assert state["calls"] == ["task_removed", "native-drc"]

@@ -22,12 +22,12 @@ def simulated_storage_support_for_mocked_cli_flows(monkeypatch) -> None:
     monkeypatch.setattr("kicad_mcp.cloud_user_cli._is_windows", lambda: False)
 
 
-def test_login_opens_only_first_party_browser_and_saves_no_local_token(monkeypatch) -> None:
+def test_login_web_only_preserves_first_party_browser_without_cli_grant(monkeypatch) -> None:
     seen: list[str] = []
     monkeypatch.setattr(
         "kicad_mcp.cloud_user_cli.webbrowser.open", lambda url, **_kwargs: seen.append(url) or True
     )
-    result = CliRunner().invoke(app, ["cloud", "login"])
+    result = CliRunner().invoke(app, ["cloud", "login", "--web-only"])
     assert result.exit_code == 0, result.output
     assert seen == ["https://kicad-mcp-pro.oaslananka.dev/sign-in"]
     assert "Browser login does not grant device or project access." in result.output
@@ -39,7 +39,7 @@ def test_login_headless_prints_link_but_never_launches_browser(monkeypatch) -> N
         "kicad_mcp.cloud_user_cli.webbrowser.open",
         lambda *_args, **_kw: pytest.fail("no browser expected"),
     )
-    result = CliRunner().invoke(app, ["cloud", "login", "--no-browser"])
+    result = CliRunner().invoke(app, ["cloud", "login", "--no-browser", "--web-only"])
     assert result.exit_code == 0, result.output
     assert "https://kicad-mcp-pro.oaslananka.dev/sign-in" in result.output
 
@@ -189,7 +189,7 @@ def test_login_browser_launch_exception_prints_link(monkeypatch) -> None:
         "kicad_mcp.cloud_user_cli.webbrowser.open",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("desktop offline")),
     )
-    result = CliRunner().invoke(app, ["cloud", "login"])
+    result = CliRunner().invoke(app, ["cloud", "login", "--web-only"])
     assert result.exit_code == 0
     assert "Open the link above in your preferred browser" in result.output
 
@@ -1089,3 +1089,19 @@ def test_cloud_setup_interactive_nonproject_cwd_uses_native_picker(
     assert result.exit_code == 0, result.output
     assert calls == ["browse", "reconnect"]
     assert not (tmp_path / "cloud").exists()
+
+
+def test_cloud_login_connects_cli_in_one_browser_approval(monkeypatch) -> None:
+    seen: list[tuple[str, bool]] = []
+
+    def approve(origin: str, *, no_browser: bool = False) -> None:
+        seen.append((origin, no_browser))
+
+    monkeypatch.setattr("kicad_mcp.cloud_owner_management.authorize", approve)
+    direct = CliRunner().invoke(app, ["cloud", "login"])
+    assert direct.exit_code == 0, direct.output
+    assert seen == [("https://kicad-mcp-pro.oaslananka.dev", False)]
+    assert "cloud setup" in direct.output
+    headless = CliRunner().invoke(app, ["cloud", "login", "--no-browser"])
+    assert headless.exit_code == 0, headless.output
+    assert seen[-1] == ("https://kicad-mcp-pro.oaslananka.dev", True)

@@ -334,15 +334,31 @@ async def _session_until_stopped(
     session_runner: Callable[..., Awaitable[HandshakeReceipt]],
 ) -> None:
     async def run_session() -> HandshakeReceipt:
-        return await session_runner(
-            origin=record["cloudOrigin"],
-            trusted_origin=record["cloudOrigin"],
-            owner_sub=record["ownerSub"],
-            device_id=record["deviceId"],
-            signing_key=signing_key,
-            dispatcher_factory=_dispatcher_factory(root, record, project),
-            max_reads=_MAX_READS,
-        )
+        options = {
+            "origin": record["cloudOrigin"],
+            "trusted_origin": record["cloudOrigin"],
+            "owner_sub": record["ownerSub"],
+            "device_id": record["deviceId"],
+            "signing_key": signing_key,
+            "dispatcher_factory": _dispatcher_factory(root, record, project),
+            "max_reads": _MAX_READS,
+        }
+        if session_runner is execute_owner_managed_read_session:
+            from kicad_mcp.cloud_folder_browse_receiver import (
+                LocalFolderBrowseService,
+                device_folder_service,
+            )
+
+            def folder_factory(receipt: HandshakeReceipt) -> LocalFolderBrowseService:
+                if receipt.device_id != record["deviceId"] or not _is_enabled(root, record):
+                    raise LocalApprovalDeniedError(_DENIED)
+                return device_folder_service(
+                    project.project_directory,
+                    authorization=lambda: _is_enabled(root, record),
+                )
+
+            options["folder_service_factory"] = folder_factory
+        return await session_runner(**options)
 
     session_task = asyncio.create_task(run_session())
     stop_task = asyncio.create_task(stop_event.wait())

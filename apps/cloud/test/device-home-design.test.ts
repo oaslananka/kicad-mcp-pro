@@ -57,3 +57,15 @@ test("disabled enrollment does not present a fake Add a device action",()=>{
  assert.doesNotMatch(html,/class="device-add-button"/);
  assert.match(html,/not enabled on this deployment/);
 });
+test("first pairing advertises persistent one-browser Windows setup, not fragile foreground remote",()=>{
+  const first=renderDevicesPage([],undefined,true,[],"owner",[],[],false);
+  assert.match(first,/kicad-mcp-pro cloud setup --browse/);
+  assert.match(first,/sign-in/);
+  assert.doesNotMatch(first,/<code>kicad-mcp-pro remote<\/code>/);
+
+  const next=renderDevicesPage([device("Paired computer","connected")],
+    undefined,true,[],"owner",[],[],false);
+  assert.match(next,/kicad-mcp-pro cloud setup --browse/);
+  assert.match(next,/sign-in/);
+  assert.doesNotMatch(next,/<code>kicad-mcp-pro remote<\/code>/);
+});

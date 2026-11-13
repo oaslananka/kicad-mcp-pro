@@ -22,7 +22,9 @@ export const migrationFiles = [
   "017_owner_read_webauthn_challenge_one_use.pgsql",
   "018_owner_read_passkey_activation.pgsql",
   "019_connector_managed_read_access.pgsql",
-  "020_connector_write_proof_reservations.pgsql"
+  "020_connector_write_proof_reservations.pgsql",
+  "021_connector_managed_native_operations.pgsql",
+  "022_usage_and_owner_api.pgsql"
 ] as const;
 
 type Migration = {version:number;file:string;sql:string;checksum:string};

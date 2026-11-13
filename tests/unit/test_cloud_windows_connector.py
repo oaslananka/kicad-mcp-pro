@@ -590,6 +590,7 @@ async def test_cloud_policy_1008_stops_reconnect_without_changing_owner_pairing(
     assert statuses[0] == "Connecting"
     assert any("1008" in status for status in statuses)
     assert any("/devices" in status for status in statuses)
+    assert any("--repair-device" in status for status in statuses)
     assert not any("Connected" == status for status in statuses)
     assert connector.selected_project() is None, "no implicit write to selected credentials"
     assert connector.local_state() == "Configured (not connected)"
@@ -629,3 +630,448 @@ async def test_nonpolicy_websocket_close_remains_retryable(
     )
     assert calls == 2
     assert any("Disconnected" in status and "reconnecting" in status for status in statuses)
+
+
+def test_explicit_repair_switches_to_new_signed_identity_without_erasing_old(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old, vault, folder = local_user_connector
+    connector.remember_selected_project(old)
+    connector.activate(old, owner_confirm=lambda _: True)
+    old_selected = vault[(connector._SELECTED_RECORD_ID, "selected")]
+    old_active = vault[(connector._ACTIVE_RECORD_ID, "active")]
+    old_key = vault[(old.record_id, "key")]
+    key = Ed25519PrivateKey.generate()
+    public = key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+    new = WindowsRegisteredProject(
+        registration_id="c" * 32,
+        record_id="d" * 32,
+        origin=old.origin,
+        owner_sub=old.owner_sub,
+        device_id="f9ee4be9-0aec-448e-9873-721ae113ec02",
+        fingerprint=hashlib.sha256(public).hexdigest(),
+        project_id="e9ee4be9-0aec-448e-9873-721ae113ec02",
+        filename_stem=old.filename_stem,
+    )
+    record = {
+        "registrationId": new.registration_id,
+        "recordId": new.record_id,
+        "origin": new.origin,
+        "ownerSub": new.owner_sub,
+        "deviceId": new.device_id,
+        "fingerprint": new.fingerprint,
+        "projectId": new.project_id,
+        "filenameStem": new.filename_stem,
+    }
+    vault[(new.registration_id, "registration")] = json.dumps(record).encode()
+    vault[(new.record_id, "key")] = key.private_bytes(
+        Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+    )
+    monkeypatch.setattr(
+        connector,
+        "inspect_project_reference",
+        lambda **kw: SimpleNamespace(
+            fingerprint=(
+                old.fingerprint if kw["registration_id"] == old.registration_id else new.fingerprint
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        connector,
+        "inspect_owner_selected_project",
+        lambda project: WindowsLocalProjectSelection(
+            registration_id=project.registration_id,
+            record_id=project.record_id,
+            device_id=project.device_id,
+            project_id=project.project_id,
+            filename_stem=project.filename_stem,
+            directory=folder,
+        ),
+    )
+    before = dict(vault)
+    with pytest.raises(LocalApprovalDeniedError):
+        connector.repair_selected_project(old, new, owner_confirm=lambda *_: False)
+    assert vault == before
+
+    connector.repair_selected_project(old, new, owner_confirm=lambda *_: True)
+    assert connector.selected_project() == new
+    assert connector.local_state() == "Off"
+    assert vault[(old.record_id, "key")] == old_key
+    assert vault[(new.registration_id, "archived_selected")] == old_selected
+    assert vault[(new.registration_id, "archived_active")] == old_active
+    connector.activate(new, owner_confirm=lambda _: True)
+    assert connector._current_authorization(new) is True
+    assert connector._current_authorization(old) is False
+
+
+def test_repair_rolls_back_selected_and_active_markers_when_switch_fails(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old, vault, folder = local_user_connector
+    connector.remember_selected_project(old)
+    connector.activate(old, owner_confirm=lambda _: True)
+    before_selected = vault[(connector._SELECTED_RECORD_ID, "selected")]
+    before_active = vault[(connector._ACTIVE_RECORD_ID, "active")]
+    new_key = Ed25519PrivateKey.generate()
+    new_public = new_key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+    new = WindowsRegisteredProject(
+        registration_id="c" * 32,
+        record_id="d" * 32,
+        origin=old.origin,
+        owner_sub=old.owner_sub,
+        device_id="f9ee4be9-0aec-448e-9873-721ae113ec02",
+        fingerprint=hashlib.sha256(new_public).hexdigest(),
+        project_id="e9ee4be9-0aec-448e-9873-721ae113ec02",
+        filename_stem="demo",
+    )
+    monkeypatch.setattr(
+        connector,
+        "inspect_owner_selected_project",
+        lambda project: WindowsLocalProjectSelection(
+            project.registration_id,
+            project.record_id,
+            project.device_id,
+            project.project_id,
+            project.filename_stem,
+            folder,
+        ),
+    )
+    monkeypatch.setattr(
+        connector,
+        "inspect_project_reference",
+        lambda **kw: SimpleNamespace(
+            fingerprint=(
+                old.fingerprint if kw["registration_id"] == old.registration_id else new.fingerprint
+            )
+        ),
+    )
+    # The caller has staged this new, owner-approved registration; a local
+    # failure during the final selected-marker write must restore old authority.
+    vault[(new.registration_id, "registration")] = json.dumps(
+        {
+            "registrationId": new.registration_id,
+            "recordId": new.record_id,
+            "origin": new.origin,
+            "ownerSub": new.owner_sub,
+            "deviceId": new.device_id,
+            "fingerprint": new.fingerprint,
+            "projectId": new.project_id,
+            "filenameStem": new.filename_stem,
+        }
+    ).encode()
+    vault[(new.record_id, "key")] = new_key.private_bytes(
+        Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+    )
+    old_create = connector.create_credential
+
+    def fails_once(record_id: str, part: str, data: bytes) -> None:
+        if record_id == connector._SELECTED_RECORD_ID and part == "selected":
+            monkeypatch.setattr(connector, "create_credential", old_create)
+            raise OSError("simulated storage interruption")
+        return old_create(record_id, part, data)
+
+    monkeypatch.setattr(connector, "create_credential", fails_once)
+    with pytest.raises((OSError, LocalApprovalDeniedError)):
+        connector.repair_selected_project(old, new, owner_confirm=lambda *_: True)
+    assert vault[(connector._SELECTED_RECORD_ID, "selected")] == before_selected
+    assert vault[(connector._ACTIVE_RECORD_ID, "active")] == before_active
+    assert vault[(new.registration_id, "archived_selected")] == before_selected
+
+
+def _staged_repair_candidate(
+    local_user_connector: tuple[WindowsRegisteredProject, dict[tuple[str, str], bytes], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[WindowsRegisteredProject, WindowsRegisteredProject, dict[tuple[str, str], bytes], Path]:
+    """Fully synthetic two-key Windows vault; never contacts the real system."""
+    previous, vault, folder = local_user_connector
+    connector.remember_selected_project(previous)
+    connector.activate(previous, owner_confirm=lambda _: True)
+    signing_key = Ed25519PrivateKey.generate()
+    public = signing_key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+    replacement = WindowsRegisteredProject(
+        registration_id="c" * 32,
+        record_id="d" * 32,
+        origin=previous.origin,
+        owner_sub=previous.owner_sub,
+        device_id="f9ee4be9-0aec-448e-9873-721ae113ec02",
+        fingerprint=hashlib.sha256(public).hexdigest(),
+        project_id="e9ee4be9-0aec-448e-9873-721ae113ec02",
+        filename_stem=previous.filename_stem,
+    )
+    vault[(replacement.registration_id, "registration")] = json.dumps(
+        {
+            "registrationId": replacement.registration_id,
+            "recordId": replacement.record_id,
+            "origin": replacement.origin,
+            "ownerSub": replacement.owner_sub,
+            "deviceId": replacement.device_id,
+            "fingerprint": replacement.fingerprint,
+            "projectId": replacement.project_id,
+            "filenameStem": replacement.filename_stem,
+        }
+    ).encode()
+    vault[(replacement.record_id, "key")] = signing_key.private_bytes(
+        Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+    )
+    monkeypatch.setattr(
+        connector,
+        "inspect_project_reference",
+        lambda **kw: SimpleNamespace(
+            fingerprint=(
+                previous.fingerprint
+                if kw["registration_id"] == previous.registration_id
+                else replacement.fingerprint
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        connector,
+        "inspect_owner_selected_project",
+        lambda project: WindowsLocalProjectSelection(
+            registration_id=project.registration_id,
+            record_id=project.record_id,
+            device_id=project.device_id,
+            project_id=project.project_id,
+            filename_stem=project.filename_stem,
+            directory=folder,
+        ),
+    )
+    return previous, replacement, vault, folder
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("origin", "https://untrusted.example"),
+        ("owner_sub", "foreign-owner"),
+        ("device_id", "19ee4be9-0aec-448e-9873-721ae113ec02"),
+        ("project_id", "29ee4be9-0aec-448e-9873-721ae113ec02"),
+        ("record_id", "b" * 32),
+        ("registration_id", "a" * 32),
+        ("fingerprint", "0" * 64),
+        ("filename_stem", "another-project"),
+    ],
+)
+def test_repair_rejects_cross_identity_or_reused_keys_before_mutation(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch, field: str, value: str
+) -> None:
+    from dataclasses import replace
+
+    old, candidate, vault, _folder = _staged_repair_candidate(local_user_connector, monkeypatch)
+    forged = replace(candidate, **{field: value})
+    before = dict(vault)
+    with pytest.raises(LocalApprovalDeniedError):
+        connector.repair_selected_project(old, forged, owner_confirm=lambda *_: True)
+    assert vault == before
+    assert connector.selected_project() == old
+
+
+def test_repair_rejects_foreign_folder_before_any_credential_change(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    old, candidate, vault, folder = _staged_repair_candidate(local_user_connector, monkeypatch)
+    unrelated = tmp_path / "foreign"
+    unrelated.mkdir()
+    monkeypatch.setattr(
+        connector,
+        "inspect_owner_selected_project",
+        lambda project: WindowsLocalProjectSelection(
+            project.registration_id,
+            project.record_id,
+            project.device_id,
+            project.project_id,
+            project.filename_stem,
+            unrelated if project == candidate else folder,
+        ),
+    )
+    before = dict(vault)
+    with pytest.raises(LocalApprovalDeniedError):
+        connector.repair_selected_project(old, candidate, owner_confirm=lambda *_: True)
+    assert vault == before
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    [
+        "missing-registration",
+        "missing-key",
+        "invalid-key",
+        "wrong-algorithm",
+        "wrong-signing-key",
+        "missing-selection",
+        "foreign-active",
+    ],
+)
+def test_repair_rejects_unverified_new_private_key_or_vault_state(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch, corruption: str
+) -> None:
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    old, candidate, vault, _ = _staged_repair_candidate(local_user_connector, monkeypatch)
+    if corruption == "missing-registration":
+        vault.pop((candidate.registration_id, "registration"))
+    elif corruption == "missing-key":
+        vault.pop((candidate.record_id, "key"))
+    elif corruption == "invalid-key":
+        vault[(candidate.record_id, "key")] = b"not a private key"
+    elif corruption == "wrong-algorithm":
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        vault[(candidate.record_id, "key")] = key.private_bytes(
+            Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+        )
+    elif corruption == "wrong-signing-key":
+        vault[(candidate.record_id, "key")] = Ed25519PrivateKey.generate().private_bytes(
+            Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+        )
+    elif corruption == "missing-selection":
+        vault.pop((connector._SELECTED_RECORD_ID, "selected"))
+    elif corruption == "foreign-active":
+        monkeypatch.setattr(connector, "_active", lambda: SimpleNamespace(project=candidate))
+    before = dict(vault)
+    with pytest.raises(LocalApprovalDeniedError):
+        connector.repair_selected_project(old, candidate, owner_confirm=lambda *_: True)
+    assert vault == before
+
+
+def test_repair_refuses_unverifiable_archive_without_switching_old_authority(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    old, candidate, vault, _ = _staged_repair_candidate(local_user_connector, monkeypatch)
+    previous_selected = vault[(connector._SELECTED_RECORD_ID, "selected")]
+    previous_active = vault[(connector._ACTIVE_RECORD_ID, "active")]
+    read = connector.read_credential
+
+    def corrupt_archive(record_id: str, part: str) -> bytes | None:
+        if record_id == candidate.registration_id and part == "archived_selected":
+            return b"corrupt archive"
+        return read(record_id, part)
+
+    monkeypatch.setattr(connector, "read_credential", corrupt_archive)
+    with pytest.raises(LocalApprovalDeniedError):
+        connector.repair_selected_project(old, candidate, owner_confirm=lambda *_: True)
+    assert vault[(connector._SELECTED_RECORD_ID, "selected")] == previous_selected
+    assert vault[(connector._ACTIVE_RECORD_ID, "active")] == previous_active
+
+
+@pytest.mark.parametrize("step", ["delete-old-active", "delete-old-selection", "post-switch"])
+def test_repair_restores_old_authority_if_marker_switch_is_interrupted(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch, step: str
+) -> None:
+    old, candidate, vault, _ = _staged_repair_candidate(local_user_connector, monkeypatch)
+    previous_selected = vault[(connector._SELECTED_RECORD_ID, "selected")]
+    previous_active = vault[(connector._ACTIVE_RECORD_ID, "active")]
+    if step.startswith("delete-old"):
+        original_delete = connector.delete_credential
+        blocked = (
+            connector._ACTIVE_RECORD_ID
+            if step == "delete-old-active"
+            else connector._SELECTED_RECORD_ID
+        )
+
+        def refuse_one(record_id: str, part: str) -> bool:
+            if record_id == blocked:
+                return False
+            return original_delete(record_id, part)
+
+        monkeypatch.setattr(connector, "delete_credential", refuse_one)
+    else:
+        original_remember = connector.remember_selected_project
+
+        def force_bad_postcondition(project: WindowsRegisteredProject) -> None:
+            original_remember(project)
+            monkeypatch.setattr(connector, "_active_marker", lambda: {"invalid": True})
+
+        monkeypatch.setattr(connector, "remember_selected_project", force_bad_postcondition)
+
+    with pytest.raises(LocalApprovalDeniedError):
+        connector.repair_selected_project(old, candidate, owner_confirm=lambda *_: True)
+    assert vault[(connector._SELECTED_RECORD_ID, "selected")] == previous_selected
+    assert vault[(connector._ACTIVE_RECORD_ID, "active")] == previous_active
+    assert vault[(old.record_id, "key")]
+
+
+def test_signed_device_dispatch_reads_cloud_added_second_project(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A device-bound project must be usable, not just displayed as Registered."""
+    import time
+
+    from kicad_mcp.cloud_folder_browse_receiver import default_bindings_file
+    from kicad_mcp.cloud_readonly_boundary import LocalReadDeniedError
+
+    _ = default_bindings_file  # The real default is not used in this disposable test.
+    project, _store, _directory = local_user_connector
+    connector.activate(project, owner_confirm=lambda _: True)
+    second_id = "4a775779-a8b0-4d64-b287-4539f4823032"
+    second_dir = tmp_path / "other"
+    second_dir.mkdir()
+    (second_dir / "second.kicad_pro").write_text("{}", encoding="utf-8")
+    bindings = tmp_path / "local-bindings.json"
+    bindings.write_text(
+        json.dumps({second_id: str(second_dir / "second.kicad_pro")}), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_folder_browse_receiver.default_bindings_file",
+        lambda: bindings,
+    )
+    receipt = HandshakeReceipt(
+        device_id=project.device_id, session_id="b390e00c-3260-4d7f-a09f-e816d0b63043"
+    )
+    selected = connector.inspect_owner_selected_project(project)
+    dispatch = connector._dispatcher(project, selected, receipt)
+    try:
+        frame = json.dumps(
+            {
+                "kind": "connector.read_request",
+                "version": 1,
+                "requestId": "0b9fd53b-ff7c-477d-917a-5e921edc2e02",
+                "deviceId": project.device_id,
+                "projectId": second_id,
+                "operation": "project_summary",
+                "deadlineUnixMs": int(time.time() * 1000) + 25_000,
+            }
+        ).encode()
+        result = dispatch.read(frame, sequence=1)
+        assert result["projectId"] == second_id
+        assert result["files"]["projectPresent"] is True
+        bindings.unlink()
+        with pytest.raises(LocalReadDeniedError):
+            dispatch.assert_delivery_authorized(
+                frame, device_id=receipt.device_id, session_id=receipt.session_id
+            )
+    finally:
+        dispatch.close()
+
+
+@pytest.mark.asyncio
+async def test_foreground_signed_connector_passes_tool_activity_to_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    history: list[str] = []
+    receipt = HandshakeReceipt(
+        "19ee4be9-0aec-448e-9873-721ae113ec02",
+        "39ee4be9-0aec-448e-9873-721ae113ec02",
+    )
+
+    async def signed_session(**kwargs: object) -> HandshakeReceipt:
+        on_ready = kwargs["on_ready"]
+        on_activity = kwargs["on_activity"]
+        assert callable(on_ready)
+        assert callable(on_activity)
+        on_ready(receipt)
+        on_activity("Tool call 1: project_summary completed")
+        return receipt
+
+    monkeypatch.setattr(connector, "execute_owner_managed_read_session", signed_session)
+    runner = connector._session_runner_with_status(signed_session, history.append)
+    result = await runner(
+        origin="https://cloud.example",
+        trusted_origin="https://cloud.example",
+        owner_sub="owner",
+        device_id=receipt.device_id,
+        signing_key=Ed25519PrivateKey.generate(),
+        dispatcher_factory=lambda _: None,
+        max_reads=1,
+    )
+    assert result == receipt
+    assert history == ["Connected", "Tool call 1: project_summary completed"]

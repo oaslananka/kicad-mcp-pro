@@ -566,3 +566,138 @@ def test_catalog_hello_reports_only_explicit_inspection_pilots() -> None:
         "project_board_counts",
         "project_schematic_counts",
     ]
+
+
+# --- Owner-operated local folder browse factory on the managed read session ---
+
+
+def _folder_factory(_: HandshakeReceipt) -> object:
+    """Opaque stand-in; the receiver service contract is tested elsewhere."""
+    return object()
+
+
+def test_folder_browse_factory_denied_without_owner_managed_session() -> None:
+    from kicad_mcp.cloud_outbound_handshake import (
+        OutboundSessionOptions,
+        _validate_outbound_options,
+    )
+
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        _validate_outbound_options(
+            OutboundSessionOptions(
+                dispatcher_factory=lambda _: None,
+                folder_service_factory=_folder_factory,  # type: ignore[arg-type]
+            )
+        )
+
+
+def test_folder_browse_factory_requires_callable_and_managed_read() -> None:
+    from kicad_mcp.cloud_outbound_handshake import (
+        OutboundSessionOptions,
+        _validate_outbound_options,
+    )
+
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        _validate_outbound_options(
+            OutboundSessionOptions(
+                owner_managed_read=True,
+                dispatcher_factory=lambda _: None,
+                folder_service_factory="not callable",  # type: ignore[arg-type]
+            )
+        )
+
+
+def test_folder_browse_factory_does_not_broaden_other_session_modes() -> None:
+    from kicad_mcp.cloud_outbound_handshake import (
+        OutboundSessionOptions,
+        _validate_outbound_options,
+    )
+
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        _validate_outbound_options(
+            OutboundSessionOptions(
+                operator_presence_pilot=True,
+                dispatcher_factory=lambda _: None,
+                folder_service_factory=_folder_factory,  # type: ignore[arg-type]
+            )
+        )
+
+
+def test_folder_browse_session_uses_bounded_larger_inbound_frames(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, object] = {}
+
+    class Denied:
+        async def __aenter__(self) -> object:
+            raise CloudHandshakeDeniedError("handshake denied")
+
+        async def __aexit__(self, *_exc: object) -> bool:
+            return False
+
+    def fake_connect(_endpoint: str, **kwargs: object) -> Denied:
+        captured.update(kwargs)
+        return Denied()
+
+    monkeypatch.setattr(cloud_outbound_handshake, "connect", fake_connect)
+    _server_tls, pem = _synthetic_tls(tmp_path)
+    tls = ssl.create_default_context(cadata=pem)
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        asyncio.run(
+            cloud_outbound_handshake._perform_outbound_session(
+                origin="https://localhost",
+                trusted_origin="https://localhost",
+                owner_sub=OWNER,
+                device_id=DEVICE,
+                signing_key=Ed25519PrivateKey.generate(),
+                tls_context=tls,
+                options=cloud_outbound_handshake.OutboundSessionOptions(
+                    owner_managed_read=True,
+                    dispatcher_factory=lambda _: None,
+                    folder_service_factory=_folder_factory,  # type: ignore[arg-type]
+                ),
+            )
+        )
+    assert captured["max_size"] == 8192
+
+
+def test_managed_native_drc_claim_requires_managed_read_and_explicit_opt_in() -> None:
+    from kicad_mcp.cloud_outbound_handshake import (
+        CloudHandshakeDeniedError,
+        OutboundSessionOptions,
+        _catalog_hello_metadata,
+        _validate_outbound_options,
+    )
+
+    scoped = OutboundSessionOptions(
+        advertise_catalog=True,
+        owner_managed_read=True,
+        managed_native_drc=True,
+        dispatcher_factory=lambda _: None,
+    )
+    _validate_outbound_options(scoped)
+    claim = _catalog_hello_metadata(scoped)["catalog"]
+    assert claim["operations"] == ["project_summary", "run_drc"]
+    for invalid in (
+        OutboundSessionOptions(managed_native_drc=True, dispatcher_factory=lambda _: None),
+        OutboundSessionOptions(
+            owner_managed_read=True,
+            managed_native_drc=cast(Any, "yes"),
+            dispatcher_factory=lambda _: None,
+        ),
+    ):
+        with pytest.raises(CloudHandshakeDeniedError):
+            _validate_outbound_options(invalid)
+
+
+def test_owner_folder_browse_is_advertised_independently_of_native_catalog() -> None:
+    from kicad_mcp.cloud_outbound_handshake import OutboundSessionOptions, _catalog_hello_metadata
+
+    metadata = _catalog_hello_metadata(
+        OutboundSessionOptions(
+            owner_managed_read=True,
+            folder_service_factory=lambda _receipt: None,  # type: ignore[arg-type]
+        )
+    )
+    assert metadata == {"folderBrowse": 1}
+    assert _catalog_hello_metadata(OutboundSessionOptions()) == {}

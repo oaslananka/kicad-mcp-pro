@@ -14,7 +14,7 @@ import ssl
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -30,8 +30,14 @@ from kicad_mcp.cloud_device_proofs import (
 from kicad_mcp.cloud_project_worker_bridge import BoundConnectorProjectWorker
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 
+if TYPE_CHECKING:
+    # Imported lazily at runtime inside _complete_outbound_operation to avoid
+    # a circular dependency with the managed read transport module.
+    from kicad_mcp.cloud_folder_browse_receiver import LocalFolderBrowseService
+
 CONNECTOR_WS_PATH = "/api/v1/connector/ws"
 _HANDSHAKE_DENIED = "handshake denied"
+_FOLDER_SESSION_MAX_PAYLOAD = 8192
 
 _DEVICE_UUID = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
@@ -63,11 +69,17 @@ class OutboundSessionOptions:
     board_counts_pilot: bool = False
     schematic_counts_pilot: bool = False
     owner_managed_read: bool = False
+    managed_native_drc: bool = False
     # Opt-in ONLY after the target Cloud deployment accepts extended device.hello.
     # Legacy devices and servers retain the byte-identical v1 handshake by default.
     advertise_catalog: bool = False
     managed_max_reads: int = 16
+    # Optional owner-operated opaque-token folder browse service, answered
+    # interleaved between managed reads on the same signed socket. Requires
+    # owner_managed_read; never combined with pilot or inspection modes.
+    folder_service_factory: Callable[[HandshakeReceipt], LocalFolderBrowseService] | None = None
     on_ready: Callable[[HandshakeReceipt], None] | None = None
+    on_activity: Callable[[str], None] | None = None
 
 
 def _endpoint(*, origin: str, trusted_origin: str) -> str:
@@ -539,6 +551,10 @@ def _validated_outbound_connection(
 
 
 def _validate_outbound_options(options: OutboundSessionOptions) -> None:
+    if type(options.managed_native_drc) is not bool or (
+        options.managed_native_drc and not options.owner_managed_read
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     if options.owner_managed_read and (
         options.dispatcher_factory is None
         or options.inspection_factory is not None
@@ -551,19 +567,22 @@ def _validate_outbound_options(options: OutboundSessionOptions) -> None:
         or not 1 <= options.managed_max_reads <= 16
     ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
-
-
-def _catalog_hello_metadata(options: OutboundSessionOptions) -> dict[str, object]:
-    """Bounded optional report: never broadens local/Cloud project authority."""
-    if type(options.advertise_catalog) is not bool:
+    # The folder browse factory is an owner-managed read-session-only extra:
+    # it never broadens proof-only, pilot or inspection modes, and the factory
+    # itself must be callable before any network access happens.
+    if options.folder_service_factory is not None and (
+        not options.owner_managed_read or not callable(options.folder_service_factory)
+    ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
-    if not options.advertise_catalog:
-        return {}
-    from kicad_mcp.runtime_capability_catalog import installed_catalog_revision
 
+
+def _catalog_operations(options: OutboundSessionOptions) -> list[str]:
+    """Advertise only operations granted by the selected signed Connector mode."""
     operations: list[str] = []
     if options.owner_managed_read and options.dispatcher_factory is not None:
         operations.append("project_summary")
+        if options.managed_native_drc:
+            operations.append("run_drc")
     elif options.dispatcher_factory is not None and options.operator_presence_pilot:
         operations.append("project_summary")
         if options.operator_native_drc_pilot:
@@ -574,12 +593,30 @@ def _catalog_hello_metadata(options: OutboundSessionOptions) -> dict[str, object
             operations.append("project_board_counts")
         if options.schematic_counts_pilot:
             operations.append("project_schematic_counts")
+    return operations
+
+
+def _catalog_hello_metadata(options: OutboundSessionOptions) -> dict[str, object]:
+    """Bounded optional report: never broadens local/Cloud project authority."""
+    if type(options.advertise_catalog) is not bool:
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    # Independent of native diagnostic catalog: browser folder selection
+    # is an owner-only opaque-token capability, not a grant to AI clients.
+    browser: dict[str, object] = (
+        {"folderBrowse": 1} if options.folder_service_factory is not None else {}
+    )
+    if not options.advertise_catalog:
+        return browser
+    from kicad_mcp.runtime_capability_catalog import installed_catalog_revision
+
+    operations = _catalog_operations(options)
     return {
+        **browser,
         "catalog": {
             "schemaVersion": "1.0.0",
             "catalogRevision": installed_catalog_revision(),
             "operations": operations,
-        }
+        },
     }
 
 
@@ -601,8 +638,19 @@ async def _complete_outbound_operation(
 
         if options.dispatcher_factory is None:
             raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+        folder_service = (
+            options.folder_service_factory(receipt)
+            if options.folder_service_factory is not None
+            else None
+        )
         return await serve_authenticated_reads(
-            socket, receipt, options.dispatcher_factory, max_reads=options.managed_max_reads
+            socket,
+            receipt,
+            options.dispatcher_factory,
+            max_reads=options.managed_max_reads,
+            folder_service=folder_service,
+            allow_native_drc=options.managed_native_drc,
+            on_activity=options.on_activity,
         )
     if options.inspection_factory is not None:
         return await _complete_authorized_inspection(
@@ -667,7 +715,11 @@ async def _perform_outbound_session(
                 ssl=context,
                 origin=None,
                 compression=None,
-                max_size=1024,
+                max_size=(
+                    _FOLDER_SESSION_MAX_PAYLOAD
+                    if session_options.folder_service_factory is not None
+                    else 1024
+                ),
                 max_queue=2,
                 open_timeout=3,
                 close_timeout=2,
@@ -930,7 +982,10 @@ async def execute_owner_managed_read_session(
     dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch],
     tls_context: ssl.SSLContext | None = None,
     max_reads: int = 16,
+    folder_service_factory: Callable[[HandshakeReceipt], LocalFolderBrowseService] | None = None,
     on_ready: Callable[[HandshakeReceipt], None] | None = None,
+    allow_native_drc: bool = False,
+    on_activity: Callable[[str], None] | None = None,
 ) -> HandshakeReceipt:
     """One signed, owner-managed read-only session; no key loading or persistence.
 
@@ -939,8 +994,17 @@ async def execute_owner_managed_read_session(
     before every result. Cloud separately verifies owner On/Off, OAuth client,
     project grant, device signature and revocation. This function does NOT
     enroll a device, install a service, or grant unattended signer access.
+
+    When ``folder_service_factory`` is supplied, owner-initiated opaque-token
+    folder browse frames are additionally answered on the same signed socket;
+    it never grants reads, paths outside the bound root, or file contents.
     """
-    if not callable(dispatcher_factory):
+    if (
+        not callable(dispatcher_factory)
+        or type(allow_native_drc) is not bool
+        or (folder_service_factory is not None and not callable(folder_service_factory))
+        or (on_activity is not None and not callable(on_activity))
+    ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     return await _perform_outbound_session(
         origin=origin,
@@ -952,7 +1016,11 @@ async def execute_owner_managed_read_session(
         options=OutboundSessionOptions(
             dispatcher_factory=dispatcher_factory,
             owner_managed_read=True,
+            managed_native_drc=allow_native_drc,
+            advertise_catalog=allow_native_drc,
             managed_max_reads=max_reads,
+            folder_service_factory=folder_service_factory,
             on_ready=on_ready,
+            on_activity=on_activity,
         ),
     )

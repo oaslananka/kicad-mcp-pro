@@ -151,6 +151,12 @@ OAuth resource metadata, anonymous MCP denial and disabled signup.
 For a private single encrypted database snapshot, execute on the VPS:
     doppler run -p kicad-mcp-pro -c prd_cloud -- bash scripts/production-backup.sh
 
+The backup and restore scripts resolve the single healthy production
+PostgreSQL container from Coolify resource labels (kicad-mcp-cloud /
+kicad-cloud-postgres) or the legacy Compose container. They verify
+the database is kicad_cloud and refuse ambiguous, unhealthy or unrelated
+resources; no other Coolify database is touched.
+
 Production Doppler must contain KICAD_BACKUP_AGE_IDENTITY and its corresponding
 KICAD_BACKUP_AGE_RECIPIENT. The script streams a logical pg_dump through
 authenticated age encryption, verifies decryption and pg_restore archive
@@ -178,17 +184,38 @@ PostgreSQL 17 container and checks checksum ledger, security triggers
 and core metadata against the live DB. It does not modify production.
 See docs/PRODUCTION-DATABASE-RECOVERY-ACCEPTANCE.md.
 
-This is NOT offsite disaster recovery. Migrations 007–012 remain blocked
-until an independently downloaded remote encrypted archive passes
-another full restore. Never treat a same-host backup as offsite.
+The offsite replication command additionally requires an explicitly
+configured owner-controlled SSH destination and separate-machine restore
+with its own secret-manager identity. An encrypted local backup and
+same-VPS full restore are not substitutes. Do not introduce unapproved
+storage spend or run live schema changes before independent recovery.
+
+This is NOT offsite disaster recovery. Production migrations 020 and 021
+and the managed native DRC rollout remain on hold until the encrypted
+archive is restored and verified on a separate owner-controlled host.
+The successful same-VPS 019-to-021 rehearsal is not offsite recovery.
 
 
-## Schema 007-012 production-snapshot rehearsal
+## Current production-snapshot migration rehearsal
 
-The optional --rehearse-schema switch on
-scripts/production-restore-drill.sh invokes the real Cloud migration
-engine against an isolated RAM-backed database cloned from the latest
-encrypted production snapshot. On 27 October 2026 it passed migration
-006 to 012 with preserved metadata and idempotent replay, while
-production remained on 006. Offsite full restore is still required
-before live migration.
+The optional `--rehearse-schema` mode of
+`scripts/production-restore-drill.sh` uses the **same checksum-aware
+migration runner** as production, against an isolated, RAM-backed copy
+of the encrypted production snapshot. It detects the live schema
+version and the reviewed migration manifest's latest version; it
+does **not** hardcode the October 2026 schema 006 to 012 transition.
+The test must run from a checkout with built `dist` and the SQL files;
+the operator must point `KICAD_CLOUD_RESTORE_TEST_IMAGE` to an
+already-reviewed local Cloud runtime image, which supplies Node.js
+dependencies. This does not update the live database or deploy an image.
+
+The acceptance checks require historical checksums to match, all
+pending migrations to apply once and reapply idempotently, security
+and project metadata counts to remain unchanged, and newly introduced
+native operation permissions to be empty. A passing **same-host**
+rehearsal is not offsite disaster recovery; independent encrypted
+cross-machine restore remains a separate gate.
+
+Earlier 27 October 2026 evidence demonstrated a 006-to-012 schema
+rehearsal. That historical test cannot stand in for today's
+production-snapshot migration acceptance.

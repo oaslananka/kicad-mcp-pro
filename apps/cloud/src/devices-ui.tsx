@@ -14,29 +14,55 @@ function clientDisplayName(clientId:string):string {
   }
 }
 
+const NATIVE_DIAGNOSTICS=[
+  {id:"run_drc",label:"PCB DRC counts",detail:"Issue and unconnected-item totals from the local board"}
+] as const;
+
 export function renderDevicesPage(
   devices:ReadonlyArray<ManagedDevice & {csrf:string;deleteCsrf?:string;enableCsrf?:string;projectCsrf?:string;browseCsrf?:string;
-    connectionState?:"connected"|"disconnected"}>,
+    connectionState?:"connected"|"disconnected";browseNeedsUpgrade?:boolean}>,
   notice?:string,enrollmentAvailable=true,
   projects:ReadonlyArray<{id:string;deviceId:string;alias:string;enabled:boolean;localPath?:string;deleteCsrf?:string;renameCsrf?:string;grantCsrf?:string;
-    managedEnabled?:boolean;managedCsrf?:string}>=[],
+    managedEnabled?:boolean;managedCsrf?:string;
+    nativeEnabled?:ReadonlyArray<string>;nativeCsrf?:string}>=[],
   ownerSub?:string,clients:ReadonlyArray<string>=[],
-  savedGrants:ReadonlyArray<BrowserGrantSummary>=[],sandboxMode=false,browseEnabled=false
+  savedGrants:ReadonlyArray<BrowserGrantSummary>=[],sandboxMode=false,browseEnabled=false,
+  writeClients:ReadonlyArray<string>=[]
 ):string {
   const deviceNames=new Map(devices.map(d=>[d.id,d.alias]));
   const renderProjectAccess=(project:(typeof projects)[number])=><>
                 <details className="project-access-details">
                   <summary>Manage access</summary>
-                  <p className="field-help">Choose which AI apps may read this project's summary.
-                    Remote editing is not available in this Cloud version.</p>
+                  <p className="field-help">Choose exactly which AI clients may read or edit
+                    this project. New access is read-only; editing requires a separate
+                    OAuth write consent and an explicit per-app grant. Cloud editing is
+                    not active until a compatible Connector and the write service are available.</p>
                 {project.grantCsrf&&savedGrants.some(g=>g.projectId===project.id)?
                   <div className="project-grants">
                     <strong>Applications with access</strong>
                     <ul>{savedGrants.filter(g=>g.projectId===project.id).map(g=><li key={g.clientId}>
                       <span className="grant-client">{clientDisplayName(g.clientId)}</span>{" "}
                       <span className="permission-tag">{g.maxMode==="readonly"?"Read only":
-                        g.maxMode==="write"?"Edit configured (not active)":
+                        g.maxMode==="write"?"Edit permission saved ? remote editing not active":
                         "Other permission (not remote editing)"}</span>
+                      {project.grantCsrf&&g.maxMode==="readonly"&&writeClients.includes(g.clientId)?
+                        <form method="post" action="/devices/projects/grant">
+                          <input type="hidden" name="project_id" value={project.id}/>
+                          <input type="hidden" name="client_id" value={g.clientId}/>
+                          <input type="hidden" name="csrf" value={project.grantCsrf}/>
+                          <input type="hidden" name="mode" value="write"/>
+                          <button className="button secondary" type="submit"
+                            name="enabled" value="true">Allow editing</button>
+                        </form>:null}
+                      {project.grantCsrf&&g.maxMode==="write"?
+                        <form method="post" action="/devices/projects/grant">
+                          <input type="hidden" name="project_id" value={project.id}/>
+                          <input type="hidden" name="client_id" value={g.clientId}/>
+                          <input type="hidden" name="csrf" value={project.grantCsrf}/>
+                          <input type="hidden" name="mode" value="readonly"/>
+                          <button className="button secondary" type="submit"
+                            name="enabled" value="true">Keep read only</button>
+                        </form>:null}
                       <form method="post" action="/devices/projects/grant">
                         <input type="hidden" name="project_id" value={project.id}/>
                         <input type="hidden" name="client_id" value={g.clientId}/>
@@ -60,6 +86,34 @@ export function renderDevicesPage(
                   </form>
                 </>:null}
 
+                {project.enabled&&project.managedEnabled&&project.nativeCsrf?
+                  <details className="project-native-access">
+                    <summary>Read-only KiCad diagnostics</summary>
+                    <p className="field-help">Only the bounded PCB DRC totals pilot is available here. The installed
+                      Connector must be started by the device owner with native DRC explicitly
+                      allowed, and the AI application needs its own read grant. Other KiCad
+                      diagnostics are not available through managed Cloud yet. No edits or raw
+                      KiCad project contents are permitted.</p>
+                    <div className="project-native-operations">
+                      {NATIVE_DIAGNOSTICS.map(item=>{
+                        const enabled=project.nativeEnabled?.includes(item.id)===true;
+                        return <form action="/devices/projects/native" method="post"
+                          className="project-native-operation" key={item.id}>
+                          <input type="hidden" name="project_id" value={project.id}/>
+                          <input type="hidden" name="device_id" value={project.deviceId}/>
+                          <input type="hidden" name="operation" value={item.id}/>
+                          <input type="hidden" name="csrf" value={project.nativeCsrf}/>
+                          <div><strong>{item.label}</strong>
+                            <small className="field-help">{item.detail}</small></div>
+                          <button className="button secondary" type="submit" name="enabled"
+                            value={enabled?"false":"true"}>
+                            {enabled?"Disable":"Enable"}
+                          </button>
+                        </form>;
+                      })}
+                    </div>
+                  </details>:null}
+
                 {project.enabled&&project.grantCsrf&&clients.some(client=>!savedGrants.some(
                   g=>g.projectId===project.id&&g.clientId===client))?
                   <form method="post" action="/devices/projects/grant">
@@ -73,8 +127,27 @@ export function renderDevicesPage(
                       </select>
                     </label>
                     <div className="action-row">
-                      <button className="button primary" name="enabled" value="true" type="submit">Allow project summary</button>
+                      <button className="button primary" name="enabled" value="true"
+                        type="submit">Allow reading</button>
                     </div>
+                  </form>:null}
+                {project.enabled&&project.grantCsrf&&writeClients.some(client=>!savedGrants.some(
+                  g=>g.projectId===project.id&&g.clientId===client))?
+                  <form method="post" action="/devices/projects/grant">
+                    <input type="hidden" name="project_id" value={project.id}/>
+                    <input type="hidden" name="csrf" value={project.grantCsrf}/>
+                    <input type="hidden" name="mode" value="write"/>
+                    <label>AI application approved for editing{" "}
+                      <select name="client_id" required={true}>
+                        {writeClients.filter(client=>!savedGrants.some(g=>
+                          g.projectId===project.id&&g.clientId===client)).map(client=>
+                          <option value={client} key={client}>{clientDisplayName(client)}</option>)}
+                      </select>
+                    </label>
+                    <p className="field-help">This saves a separate write permission.
+                      It does not enable remote editing until the Connector supports it.</p>
+                    <button className="button secondary" name="enabled" value="true"
+                      type="submit">Allow reading and editing</button>
                   </form>:null}
                 </details>
   </>;
@@ -99,7 +172,8 @@ export function renderDevicesPage(
       </div></section>:
         <>
       {/* Enrolled Devices Section */}
-      <section className="card device-card device-list-card" aria-labelledby="device-list-title">
+      <section className="card device-card device-list-card"
+        id={browseEnabled?"registered-projects":undefined} aria-labelledby="device-list-title">
         <div className="card-header">
           <h2 id="device-list-title">Your devices</h2>
           <span className="list-count">{devices.length===1?"1 device":String(devices.length)+" devices"}</span>
@@ -109,7 +183,7 @@ export function renderDevicesPage(
           <div>
             <h3>No devices yet</h3>
             <p>{sandboxMode?"Connect this computer with the local development Connector.":
-              "Run kicad-mcp-pro remote on your computer to connect."}</p>
+              "Run kicad-mcp-pro cloud setup --browse on your computer to connect."}</p>
           </div>
         </div>:
           <ul className="connections-list device-list">{devices.map(d=><li className="device-row" key={d.id}>
@@ -119,7 +193,7 @@ export function renderDevicesPage(
               <p>{d.revoked?"Revoked":!d.enabled?"Disabled":
                 d.connectionState==="connected"?"Cloud session active":
                 d.connectionState==="disconnected"?
-                  (sandboxMode?"Local Connector disconnected":"Run kicad-mcp-pro remote to connect"):
+                  (sandboxMode?"Local Connector disconnected":"Run kicad-mcp-pro cloud reconnect to restore the background connection"):
                 "Cloud status unknown"}</p>
             </div>
             <div className="device-actions">
@@ -155,7 +229,7 @@ export function renderDevicesPage(
                     title="Revoke this device and disable its project access">Revoke</button>
                 </form>:null}
             </div>
-            {sandboxMode&&d.enabled&&!d.revoked&&browseEnabled?
+            {d.enabled&&!d.revoked&&browseEnabled?
               <details className="device-projects-menu" data-device-id={d.id} open={true}>
                 <summary><Icon name="projects" size={15}/> Projects
                   <span>{projects.filter(p=>p.deviceId===d.id).length}</span>
@@ -234,6 +308,11 @@ export function renderDevicesPage(
                       <Icon name="arrow" size={15}/>
                     </button>
                   </form>:null}
+                  {d.browseNeedsUpgrade?<p className="field-help">
+                    Update the KiCad MCP Pro Connector on this computer to
+                    add projects by browsing local folders. This device is Online,
+                    but its current Connector does not support remote Browse.
+                  </p>:null}
                 </div>
               </details>:null}
           </li>)}</ul>}
@@ -249,9 +328,11 @@ export function renderDevicesPage(
         {sandboxMode?<><p>Local development only. This workspace only accepts
           connections from this computer. Its existing Connector is configured locally.</p>
           <a className="text-link" href="/devices">Review connected devices</a></>:
-          <><p>Run this once to pair your computer and keep the Cloud session open:</p>
-            <div className="local-setup-command"><code>kicad-mcp-pro remote</code></div>
-            <p className="field-help">Choose your KiCad folder in the native picker when prompted.</p></>}
+          <><p>Run this once on your Windows computer. Choose your KiCad folder,
+              then sign-in and approve pairing in the browser.</p>
+            <div className="local-setup-command"><code>kicad-mcp-pro cloud setup --browse</code></div>
+            <p className="field-help">The read-only Connector reconnects when you sign in to Windows.
+              You do not need to keep a terminal open. AI app access is granted separately.</p></>}
       </section>:
       <section className="card pair-another-card" id="connect-computer">
         <h2><Icon name="cpu" size={16}/> Connect another computer</h2>
@@ -259,14 +340,17 @@ export function renderDevicesPage(
           {sandboxMode?<p>Local development only. This Cloud instance accepts connections
             from this computer (127.0.0.1). Additional computers need a separate
             network-enabled Cloud setup; remote pairing is unavailable here.</p>:
-          <><p>On your other computer, run:</p>
-            <div className="local-setup-command"><code>kicad-mcp-pro remote</code></div>
-            <p className="field-help">Approve the browser pairing once; future connections reuse it.</p></>}
+          <><p>On your other Windows computer, select its KiCad folder,
+              then sign-in and approve pairing in the browser:</p>
+            <div className="local-setup-command"><code>kicad-mcp-pro cloud setup --browse</code></div>
+            <p className="field-help">The Connector reconnects at Windows sign-in.
+              Existing paired devices can use <code>kicad-mcp-pro cloud reconnect</code>
+              if their background connection stops.</p></>}
         </div>
       </section>}
 
                 {/* Registered Projects Section */}
-          {!sandboxMode?<section className={projects.length>0?"card projects-card":"card projects-card empty-projects-card"} id="registered-projects">
+          {!sandboxMode&&!browseEnabled?<section className={projects.length>0?"card projects-card":"card projects-card empty-projects-card"} id="registered-projects">
             <h2>Your projects</h2>
             {enrollmentAvailable&&!sandboxMode?devices.filter(d=>!d.revoked&&d.enabled&&d.projectCsrf).map(d=>
               <details className="device-register" key={d.id}>
@@ -315,7 +399,8 @@ export function renderDevicesPage(
             </>:<div className="project-empty">
               <h3>No KiCad projects yet</h3>
               <p>{sandboxMode?"Project selection comes next. No local project is shared yet.":
-                <>Run <code>kicad-mcp-pro remote</code> on your computer to choose a project.</>}</p>
+                <>Use <code>kicad-mcp-pro cloud setup --browse</code> on your
+                  computer to pair it. Then choose a project using Browse on its Online card.</>}</p>
             </div>}
 
           </section>:null}
@@ -359,7 +444,7 @@ export function renderDevicesPage(
             </div>
           ):null}
       </details>:null}
-       {sandboxMode?<script src="/assets/device-projects.js" defer={true}/>:null}
+       {sandboxMode||browseEnabled?<script src="/assets/device-projects.js" defer={true}/>:null}
     </div>
   });
 }

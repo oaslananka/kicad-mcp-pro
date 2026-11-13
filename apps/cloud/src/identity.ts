@@ -86,7 +86,7 @@ export function createIdentity(
         resource: config.audience,
         loginPage: "/sign-in",
         consentPage: "/consent",
-        scopes: ["openid", "profile", "offline_access", "projects:read", "projects:manage"]
+        scopes: ["openid", "profile", "offline_access", "projects:read", "projects:write", "projects:manage"]
       }),
       cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" })
     ]

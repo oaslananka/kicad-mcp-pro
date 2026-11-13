@@ -132,6 +132,19 @@ def _locked_operator_directory(policy: OperatorProject) -> Iterator[int]:
             os.close(folder_fd)
 
 
+@contextmanager
+def _locked_cross_platform_project(policy: OperatorProject) -> Iterator[int | None]:
+    if os.name == "nt":
+        from kicad_mcp.cloud_windows_write_lock import lock_windows_operator_project
+
+        _validate_policy(policy)
+        with lock_windows_operator_project(policy.directory, policy.filename_stem):
+            yield None
+        return
+    with _locked_operator_directory(policy) as folder_fd:
+        yield folder_fd
+
+
 def _assert_same_operator_directory(policy: OperatorProject, folder_fd: int) -> None:
     try:
         pinned = os.fstat(folder_fd)
@@ -145,6 +158,12 @@ def _assert_same_operator_directory(policy: OperatorProject, folder_fd: int) -> 
         raise LocalWriteDeniedError(_DENIED) from exc
 
 
+def _assert_pinned_operator_directory(policy: OperatorProject, folder_fd: int | None) -> None:
+    if folder_fd is not None:
+        _assert_same_operator_directory(policy, folder_fd)
+    # Windows holds _pinned_project handles inside its Win32 transaction lock.
+
+
 def _require_fresh_owner_permission(
     authorized: Callable[[], bool], cancelled: Callable[[], bool]
 ) -> None:
@@ -155,6 +174,27 @@ def _require_fresh_owner_permission(
         raise LocalWriteDeniedError(_DENIED) from exc
 
 
+def _persist_after_native_commit(
+    policy: OperatorProject,
+    folder_fd: int | None,
+    authorized: Callable[[], bool],
+    cancelled: Callable[[], bool],
+    persist: Callable[[], str],
+) -> str:
+    """A published native mutation must never appear safe to retry."""
+    try:
+        _assert_pinned_operator_directory(policy, folder_fd)
+        _require_fresh_owner_permission(authorized, cancelled)
+        digest = persist()
+        if not isinstance(digest, str) or re.fullmatch(r"[a-f0-9]{64}", digest) is None:
+            raise NativeWriteRecoveryError(_RECOVERY)
+        return digest
+    except Exception as exc:
+        # KiCad already published the undo step. No automatic second commit,
+        # discard or unsafe retry after a save/readback failure.
+        raise NativeWriteRecoveryError(_RECOVERY) from exc
+
+
 def run_offline_guarded_native_write(
     policy: OperatorProject,
     expected_board_sha256: str,
@@ -162,7 +202,8 @@ def run_offline_guarded_native_write(
     authorized: Callable[[], bool],
     cancelled: Callable[[], bool],
     native: NativeWriteTransaction,
-) -> None:
+    after_commit: Callable[[], str] | None = None,
+) -> str | None:
     """Stage then commit a native transaction under two pinned SHA checks.
 
     The trusted caller must have already consumed an authenticated one-use
@@ -171,10 +212,14 @@ def run_offline_guarded_native_write(
     Any ambiguous begin/commit or unproven discard requires manual native
     state reconciliation; the request must not be retried automatically.
     """
-    if not callable(authorized) or not callable(cancelled):
+    if (
+        not callable(authorized)
+        or not callable(cancelled)
+        or (after_commit is not None and not callable(after_commit))
+    ):
         raise LocalWriteDeniedError(_DENIED)
-    with _locked_operator_directory(policy) as folder_fd:
-        _assert_same_operator_directory(policy, folder_fd)
+    with _locked_cross_platform_project(policy) as folder_fd:
+        _assert_pinned_operator_directory(policy, folder_fd)
         _require_fresh_owner_permission(authorized, cancelled)
         verify_operator_board_revision(policy, expected_board_sha256, _directory_fd=folder_fd)
         # A throwing begin may have created a native transaction before the
@@ -190,7 +235,7 @@ def run_offline_guarded_native_write(
         try:
             if native.stage() is not None:
                 raise LocalWriteDeniedError(_DENIED)
-            _assert_same_operator_directory(policy, folder_fd)
+            _assert_pinned_operator_directory(policy, folder_fd)
             verify_operator_board_revision(policy, expected_board_sha256, _directory_fd=folder_fd)
             _require_fresh_owner_permission(authorized, cancelled)
         except Exception as exc:
@@ -208,3 +253,6 @@ def run_offline_guarded_native_write(
             # Commit may already have been published. Calling discard here
             # could silently hide an ambiguous edit; require reconciliation.
             raise NativeWriteRecoveryError(_RECOVERY) from exc
+        if after_commit is None:
+            return None
+        return _persist_after_native_commit(policy, folder_fd, authorized, cancelled, after_commit)

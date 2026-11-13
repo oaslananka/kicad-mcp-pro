@@ -60,3 +60,77 @@ export function renderLocalFolderPage(
     </div>
   });
 }
+
+import type {LocalFolderListing} from "./connector-ws.js";
+
+export type RemoteFolderChoice={
+  id:string;name:string;project:boolean;openCsrf:string;selectCsrf?:string;
+};
+export function renderRemoteFolderPage(
+  deviceId:string,listing:LocalFolderListing,
+  choices:ReadonlyArray<RemoteFolderChoice>,
+  currentSelectCsrf?:string,parentCsrf?:string
+):string{
+  return renderPage({
+    title:"Choose project folder",kind:"devices",
+    summary:"Browse folders on your connected computer. Your files stay on that computer.",
+    actions:<a className="button secondary" href="/devices">Back to devices</a>,
+    children:<div className="page-stack device-folder-workspace">
+      <section className="card folder-browser" aria-label="Remote device folder browser">
+        <div className="folder-browser-label">
+          <Icon name="projects" size={18}/> Connected computer
+        </div>
+        <h2>{listing.name}</h2>
+        <p className="field-help">
+          Only folder names are displayed. Select a folder containing a KiCad project.
+          No design files are uploaded.
+        </p>
+        {listing.parentId&&parentCsrf?<form action="/devices/projects/folders" method="post">
+          <input type="hidden" name="device_id" value={deviceId}/>
+          <input type="hidden" name="folder_id" value={listing.parentId}/>
+          <input type="hidden" name="csrf" value={parentCsrf}/>
+          <button type="submit" className="button secondary">Back one folder</button>
+        </form>:null}
+        {currentSelectCsrf&&listing.project?<form className="folder-select-form"
+          action="/devices/projects/select" method="post">
+          <input type="hidden" name="device_id" value={deviceId}/>
+          <input type="hidden" name="folder_id" value={listing.folderId}/>
+          <input type="hidden" name="csrf" value={currentSelectCsrf}/>
+          <label>Project name
+            <input name="alias" required={true} maxLength={64}
+              defaultValue={safeAlias(listing.name)} autoComplete="off"/>
+          </label>
+          <button type="submit" className="button primary">Add this project</button>
+        </form>:null}
+        {choices.length?<ul className="remote-folder-list">
+          {choices.map(folder=><li key={folder.id} className="remote-folder-item">
+            <div className="device-project-title"><Icon name="projects" size={18}/>
+              <strong>{folder.name}</strong>
+              {folder.project?<small>KiCad project</small>:null}
+            </div>
+            <form action="/devices/projects/folders" method="post">
+              <input type="hidden" name="device_id" value={deviceId}/>
+              <input type="hidden" name="folder_id" value={folder.id}/>
+              <input type="hidden" name="csrf" value={folder.openCsrf}/>
+              <button className="button secondary" type="submit">Open folder</button>
+            </form>
+            {folder.project&&folder.selectCsrf?<form className="folder-select-form"
+              action="/devices/projects/select" method="post">
+              <input type="hidden" name="device_id" value={deviceId}/>
+              <input type="hidden" name="folder_id" value={folder.id}/>
+              <input type="hidden" name="csrf" value={folder.selectCsrf}/>
+              <label>Project name
+                <input name="alias" required={true} maxLength={64}
+                  defaultValue={safeAlias(folder.name)} autoComplete="off"/>
+              </label>
+              <button className="button primary" type="submit">Add project</button>
+            </form>:null}
+          </li>)}
+        </ul>:<p className="field-help">No subfolders here. Go back to choose another folder.</p>}
+        {listing.more?<p className="field-help">
+          Showing the first 35 folders. Narrow your selection on the computer if needed.
+        </p>:null}
+      </section>
+    </div>
+  });
+}

@@ -16,7 +16,7 @@ import type {RequestSourceResolver} from "./trusted-ingress.js";
 export type DeviceProofPort=Pick<PgDeviceHandshakes,"issue"|"verify"|"cancel">;
 export type ManagedReadGrantPort={
   isEnabled:(oauth:TrustedOAuthReadIdentity,deviceId:string,projectId:string,
-    operation:"project_summary")=>Promise<boolean>;
+    operation:ReadOperation)=>Promise<boolean>;
 };
 /**
  * High-assurance mode: a separately verified owner approval must be consumed.
@@ -65,6 +65,7 @@ export type LocalFolderPort={
   chooseFolder:(owner:string,deviceId:string)=>Promise<NativeFolderSelection|null>;
   listFolder:(owner:string,deviceId:string,folderId:string)=>Promise<LocalFolderListing|null>;
   bindFolder:(owner:string,deviceId:string,folderId:string,projectId:string)=>Promise<boolean>;
+  supportsBrowse?:(owner:string,deviceId:string)=>boolean;
 };
 type FolderPending={
   requestId:string;operation:"list"|"bind"|"choose"|"path";timer:NodeJS.Timeout;
@@ -143,6 +144,7 @@ type Entry={
   queued:number; pending:Promise<void>; timer:NodeJS.Timeout | null;
   lastPong:number; sessionDeadline?:number; readSent?:boolean;
   readSequence:ConnectorReadSequence;
+  folderBrowseSupported:boolean;
   pendingCatalogClaim?:ConnectorCapabilityClaim;
   catalogClaim?:ConnectorCapabilityClaim;
   awaiting?:PendingRead; validating?:PendingRead; folderPending?:FolderPending;
@@ -150,6 +152,7 @@ type Entry={
 const hello=z.strictObject({
   kind:z.literal("device.hello"),version:z.literal(1),
   ownerSub:z.string().min(1).max(256),deviceId:z.uuid(),
+  folderBrowse:z.literal(1).optional(),
   catalog:ConnectorCapabilityClaimSchema.optional()
 });
 const proof=z.strictObject({kind:z.literal("device.proof"),version:z.literal(1),
@@ -261,6 +264,8 @@ export function attachConnectorWebSocket(
     /** Separate default-OFF owner-managed project switch; original OAuth and
      * signed device/session authorization remain mandatory for every read. */
     managedGrant?:ManagedReadGrantPort;
+    /** Default OFF; device must additionally claim this native operation. */
+    managedNativeRead?:boolean;
     /**
      * Explicit no-customer metadata pilot: the owner already granted the
      * OAuth client/project in Cloud and manually started a one-shot device
@@ -278,6 +283,8 @@ export function attachConnectorWebSocket(
     operatorSchematicCountsOnce?:boolean;
     /** Explicit single-user, loopback development only. Never used in production. */
     localDevFolderBrowse?:boolean;
+    /** Signed device owner folder browse in production; separate from local-dev. */
+    productionFolderBrowse?:boolean;
     maxConnections?:number;
     sourceOf:RequestSourceResolver;
   }
@@ -310,6 +317,8 @@ export function attachConnectorWebSocket(
   // approval dependency, even when used outside the production entrypoint.
   if(options.operatorLocalOnce&&options.ownerConsent)
     throw Error("Conflicting owner approval modes");
+  if(options.managedNativeRead&&!options.managedGrant)
+    throw Error("Managed native reads require independently scoped owner grants");
   if(options.managedGrant&&(options.operatorLocalOnce||options.ownerConsent))
     throw Error("Managed Connector cannot share one-shot approval modes");
   if(options.operatorNativeDrcOnce&&!options.operatorLocalOnce)
@@ -320,8 +329,11 @@ export function attachConnectorWebSocket(
     throw Error("PCB counts require explicit local one-shot mode");
   if(options.operatorSchematicCountsOnce&&!options.operatorLocalOnce)
     throw Error("Schematic counts require explicit local one-shot mode");
+  if(options.localDevFolderBrowse&&options.productionFolderBrowse)
+    throw Error("Conflicting folder browse modes");
+  const folderBrowse=Boolean(options.localDevFolderBrowse||options.productionFolderBrowse);
   const wss=new WebSocketServer({noServer:true,perMessageDeflate:false,
-    maxPayload:options.localDevFolderBrowse?8192:1024,clientTracking:true});
+    maxPayload:folderBrowse?8192:1024,clientTracking:true});
   const sockets=new Set<WebSocket>();
   const readyDevices=new Map<string,{socket:WebSocket,entry:Entry}>();
   const socketKey=(owner:string,device:string)=>JSON.stringify([owner,device]);
@@ -367,7 +379,7 @@ export function attachConnectorWebSocket(
         ipOpen.set(ip,(ipOpen.get(ip)??0)+1);
         const entry:Entry={phase:"new",owner:"",device:"",challenge:"",
           nonce:"",queued:0,pending:Promise.resolve(),timer:null,lastPong:Date.now(),
-          readSequence:new ConnectorReadSequence(options.managedGrant?16:1)};
+          readSequence:new ConnectorReadSequence(options.managedGrant?16:1),folderBrowseSupported:false};
         function expire(ms:number):void{
           if(entry.timer)clearTimeout(entry.timer);
           entry.timer=setTimeout(()=>{entry.phase="closed";reject(ws);},ms);
@@ -407,7 +419,7 @@ export function attachConnectorWebSocket(
         }
         async function frame(payload:Buffer,isBinary:boolean):Promise<void>{
           if(entry.phase==="closed"||isBinary||payload.length===0||
-             payload.length>(options.localDevFolderBrowse?8192:1024)){
+             payload.length>(folderBrowse?8192:1024)){
             fail();return;
           }
           const raw=asJson(payload);
@@ -418,6 +430,7 @@ export function attachConnectorWebSocket(
               fail();return;
             }
             entry.owner=parsed.data.ownerSub;entry.device=parsed.data.deviceId;
+            entry.folderBrowseSupported=parsed.data.folderBrowse===1;
             entry.pendingCatalogClaim=parsed.data.catalog;
             const issue=await options.proofs.issue(entry.owner,entry.device);
             if(issue.kind!=="issued"){fail();return;}
@@ -472,7 +485,7 @@ export function attachConnectorWebSocket(
           }
           // Device-local folder selection is a separate *owner-only* sandbox
           // request. No file contents, paths, OAuth tokens or tool results.
-          if(entry.phase==="ready"&&options.localDevFolderBrowse&&entry.folderPending){
+          if(entry.phase==="ready"&&folderBrowse&&entry.folderPending){
             const pending=entry.folderPending;
             entry.folderPending=undefined;
             clearTimeout(pending.timer);
@@ -526,7 +539,7 @@ export function attachConnectorWebSocket(
             const allowed=await options.connections.authorizeOutgoingSummary(
               ws,waitingOAuth.get(pending)!,pending.projectId) &&
               (!options.managedGrant||await options.managedGrant.isEnabled(
-                waitingOAuth.get(pending)!,entry.device,pending.projectId,"project_summary"));
+                waitingOAuth.get(pending)!,entry.device,pending.projectId,pending.operation));
             entry.validating=undefined;
             clearTimeout(pending.timer);
             // The database grant check is asynchronous. Neither its start
@@ -616,26 +629,29 @@ export function attachConnectorWebSocket(
    */
   function prepareRead(oauth:TrustedOAuthReadIdentity,
     deviceId:string,projectId:string,operation:ReadOperation):PreparedRead|null{
-    if(operation==="run_drc"&&!(options.operatorLocalOnce&&options.operatorNativeDrcOnce))
+    if(operation==="run_drc"&&!(options.managedNativeRead||(options.operatorLocalOnce&&options.operatorNativeDrcOnce)))
       return null;
     if(operation==="project_worker_inspection"&&
-       !(options.operatorLocalOnce&&options.operatorInspectionOnce))return null;
+       !(options.managedNativeRead||(options.operatorLocalOnce&&options.operatorInspectionOnce)))return null;
     if(operation==="project_board_counts"&&
-       !(options.operatorLocalOnce&&options.operatorBoardCountsOnce))return null;
+       !(options.managedNativeRead||(options.operatorLocalOnce&&options.operatorBoardCountsOnce)))return null;
     if(operation==="project_schematic_counts"&&
-       !(options.operatorLocalOnce&&options.operatorSchematicCountsOnce))return null;
+       !(options.managedNativeRead||(options.operatorLocalOnce&&options.operatorSchematicCountsOnce)))return null;
     if(stopped||(!options.ownerConsent&&!options.operatorLocalOnce&&!options.managedGrant)||!oauth||
        typeof oauth.ownerSub!=="string"||!oauth.ownerSub||
        typeof oauth.clientId!=="string"||!oauth.clientId||
        !/^[0-9a-f-]{36}$/i.test(deviceId)||
        !/^[0-9a-f-]{36}$/i.test(projectId))return null;
     const active=readyDevices.get(socketKey(oauth.ownerSub,deviceId));
+    const managedDrc=Boolean(options.managedGrant&&options.managedNativeRead&&operation==="run_drc");
     if(!active||active.entry.phase!=="ready"||
        (active.entry.readSent&&!options.managedGrant)||active.entry.validating||
        active.entry.awaiting||active.socket.readyState!==WebSocket.OPEN||
-       (active.entry.sessionDeadline??0)-performance.now()<40_000||
+       (active.entry.sessionDeadline??0)-performance.now()<(managedDrc?75_000:40_000)||
        reservedSockets.has(active.socket))return null;
-    if(!allowsClaimedRead(active.entry.catalogClaim??null,operation))return null;
+    if(options.managedNativeRead&&operation!=="project_summary"&&
+       !active.entry.catalogClaim)return null;
+     if(!allowsClaimedRead(active.entry.catalogClaim??null,operation))return null;
     const intent=Object.freeze({
       requestId:randomUUID(),ownerSub:oauth.ownerSub,clientId:oauth.clientId,
       deviceId,projectId,origin:options.publicOrigin,
@@ -682,21 +698,24 @@ export function attachConnectorWebSocket(
   async function requestRead(oauth:TrustedOAuthReadIdentity,deviceId:string,
     projectId:string,prepared:PreparedRead|undefined,
     operation:ReadOperation):Promise<ReadResult|null>{
-    if(operation==="run_drc"&&!(options.operatorLocalOnce&&options.operatorNativeDrcOnce))
+    if(operation==="run_drc"&&!(options.managedNativeRead||(options.operatorLocalOnce&&options.operatorNativeDrcOnce)))
       return null;
     if(operation==="project_worker_inspection"&&
-       !(options.operatorLocalOnce&&options.operatorInspectionOnce))return null;
+       !(options.managedNativeRead||(options.operatorLocalOnce&&options.operatorInspectionOnce)))return null;
     if(operation==="project_board_counts"&&
-       !(options.operatorLocalOnce&&options.operatorBoardCountsOnce))return null;
+       !(options.managedNativeRead||(options.operatorLocalOnce&&options.operatorBoardCountsOnce)))return null;
     if(operation==="project_schematic_counts"&&
-       !(options.operatorLocalOnce&&options.operatorSchematicCountsOnce))return null;
+       !(options.managedNativeRead||(options.operatorLocalOnce&&options.operatorSchematicCountsOnce)))return null;
     if(stopped||(!options.ownerConsent&&!options.operatorLocalOnce&&!options.managedGrant)||!oauth||typeof oauth.ownerSub!=="string"||
       !/^[0-9a-f-]{36}$/i.test(deviceId)||
       !/^[0-9a-f-]{36}$/i.test(projectId))return null;
     const active=readyDevices.get(socketKey(oauth.ownerSub,deviceId));
     if(!active)return null;
     const {socket,entry}=active;
-    if(!allowsClaimedRead(entry.catalogClaim??null,operation))return null;
+    const managedDrc=Boolean(options.managedGrant&&options.managedNativeRead&&operation==="run_drc");
+    if(options.managedNativeRead&&operation!=="project_summary"&&
+       !entry.catalogClaim)return null;
+     if(!allowsClaimedRead(entry.catalogClaim??null,operation))return null;
     // Never dispatch using the old direct-consent shortcut.
     if(!prepared||typeof prepared!=="object")return null;
     const reserved=preparedIntents.get(prepared);
@@ -723,7 +742,7 @@ export function attachConnectorWebSocket(
     if(entry.phase!=="ready"||(entry.readSent&&!options.managedGrant)||
        entry.awaiting||entry.validating||
       socket.readyState!==WebSocket.OPEN||
-      (entry.sessionDeadline??0)-performance.now()<10_000)return null;
+      (entry.sessionDeadline??0)-performance.now()<(managedDrc?65_000:10_000))return null;
     const sequence=entry.readSequence.reserve();
     if(sequence===null)return null;
     if(!options.managedGrant)entry.readSent=true; // Preserve original one-shot semantics.
@@ -740,7 +759,7 @@ export function attachConnectorWebSocket(
     try{
       consented=await Promise.race([
         options.managedGrant ?
-          options.managedGrant.isEnabled(oauth,deviceId,projectId,"project_summary") :
+          options.managedGrant.isEnabled(oauth,deviceId,projectId,operation) :
         options.operatorLocalOnce ? Promise.resolve(true) :
           options.ownerConsent!.consume({oauth,deviceId,projectId,requestId,
             origin:options.publicOrigin,operation:"project_summary",
@@ -791,7 +810,7 @@ export function attachConnectorWebSocket(
     }
     if(preflightTimedOut){reject(socket);return null;}
     if(!allowed||entry.phase!=="ready"||socket.readyState!==WebSocket.OPEN||
-      (entry.sessionDeadline??0)-performance.now()<10_000)return null;
+      (entry.sessionDeadline??0)-performance.now()<(managedDrc?65_000:10_000))return null;
     if(performance.now()>=ownerExpiresAtMonotonic||Date.now()>=ownerExpiresAtUnixMs){
       reject(socket);return null;
     }
@@ -800,12 +819,17 @@ export function attachConnectorWebSocket(
         entry.awaiting=undefined;
         entry.validating=undefined;
         resolve(null);reject(socket);
-      },12_000);
+      },managedDrc?55_000:12_000);
       timer.unref();
       // Wall milliseconds remain in the wire frame; local authorization cannot
       // be extended by changing the host system clock.
-      const deadline=Math.min(Date.now()+8_000,ownerExpiresAtUnixMs);
-      const monotonicDeadline=Math.min(performance.now()+8_000,ownerExpiresAtMonotonic);
+      // The 30s managed intent is checked before dispatch. A signed, explicitly
+      // scoped DRC job then has its own bounded deadline for the Windows CLI.
+      // Legacy one-shot and metadata reads preserve their original 8s fence.
+      const deadline=managedDrc?Date.now()+50_000:
+        Math.min(Date.now()+8_000,ownerExpiresAtUnixMs);
+      const monotonicDeadline=managedDrc?performance.now()+50_000:
+        Math.min(performance.now()+8_000,ownerExpiresAtMonotonic);
       if(deadline<=Date.now()||monotonicDeadline<=performance.now()){
         clearTimeout(timer);resolve(null);reject(socket);return;
       }
@@ -852,13 +876,21 @@ export function attachConnectorWebSocket(
   }
   async function queryFolder(owner:string,deviceId:string,operation:"list"|"bind"|"choose"|"path",
     folderId:string,projectId?:string):Promise<LocalFolderListing|NativeFolderSelection|string|boolean|null>{
-    if(!options.localDevFolderBrowse||owner!=="local-dev-owner"||
-       (operation!=="choose"&&operation!=="path"&&(folderId.length<1||folderId.length>64))||
-       ((operation==="bind"||operation==="path")&&
-         (!projectId||!z.uuid().safeParse(projectId).success)))return null;
+    // The owner/device pair is taken from the authenticated signed session.
+    // Browser-supplied tokens never become filesystem paths on the server.
+    if(!folderBrowse||!owner||owner.length>256)return null;
+    if(options.localDevFolderBrowse&&owner!=="local-dev-owner")return null;
+    if(options.productionFolderBrowse&&owner==="local-dev-owner")return null;
+    if((operation==="list"||operation==="bind")&&
+       (folderId.length<1||folderId.length>64||
+        !/^[A-Za-z0-9_-]+$/.test(folderId)))return null;
+    if((operation==="choose"||operation==="path")&&folderId!=="")return null;
+    if((operation==="bind"||operation==="path")&&
+      (!projectId||!z.uuid().safeParse(projectId).success))return null;
     const active=readyDevices.get(socketKey(owner,deviceId));
     if(!active||active.entry.phase!=="ready"||
        active.socket.readyState!==WebSocket.OPEN||
+       !active.entry.folderBrowseSupported||
        active.entry.folderPending||active.entry.awaiting||active.entry.validating||
        (active.entry.sessionDeadline??0)-performance.now()<8_000)return null;
     // A signed session is renewed by the Connector on expiry. Do not
@@ -888,6 +920,12 @@ export function attachConnectorWebSocket(
     });
   }
   const localFolders:LocalFolderPort={
+    supportsBrowse(owner,deviceId){
+      const active=readyDevices.get(socketKey(owner,deviceId));
+      return Boolean(folderBrowse&&!stopped&&active?.entry.phase==="ready"&&
+        active.entry.folderBrowseSupported&&active.socket.readyState===WebSocket.OPEN&&
+        (active.entry.sessionDeadline??0)>performance.now());
+    },
     async getProjectPath(owner,deviceId,projectId){
       const value=await queryFolder(owner,deviceId,"path","",projectId);
       return typeof value==="string"?value:null;
