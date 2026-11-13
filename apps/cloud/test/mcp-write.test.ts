@@ -56,31 +56,32 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     async isAccessTokenAllowed() { return tokenValid; }
   };
 
-  const verify: Verifier = async (token: string): Promise<Actor> => {
-    if (token === "token-read-only") {
-      return {
-        sub: "user-a",
-        clientId: "test-client",
-        scopes: new Set(["projects:read"]),
-        issuedAt: Math.floor(Date.now() / 1000)
-      };
+  const tokenActors: Record<string, Actor> = {
+    "token-read-only": {
+      sub: "user-a",
+      clientId: "test-client",
+      scopes: new Set(["projects:read"]),
+      issuedAt: Math.floor(Date.now() / 1000)
+    },
+    "token-write": {
+      sub: "user-a",
+      clientId: "test-client",
+      scopes: new Set(["projects:read", "projects:write"]),
+      issuedAt: Math.floor(Date.now() / 1000)
+    },
+    "token-foreign": {
+      sub: "user-b",
+      clientId: "foreign-client",
+      scopes: new Set(["projects:read", "projects:write"]),
+      issuedAt: Math.floor(Date.now() / 1000)
     }
-    if (token === "token-write") {
-      return {
-        sub: "user-a",
-        clientId: "test-client",
-        scopes: new Set(["projects:read", "projects:write"]),
-        issuedAt: Math.floor(Date.now() / 1000)
-      };
-    }
-    if (token === "token-foreign") {
-      return {
-        sub: "user-b",
-        clientId: "foreign-client",
-        scopes: new Set(["projects:read", "projects:write"]),
-        issuedAt: Math.floor(Date.now() / 1000)
-      };
-    }
+  };
+
+  const verify: Verifier = async (rawCredential: string): Promise<Actor> => {
+    const actor = Object.prototype.hasOwnProperty.call(tokenActors, rawCredential)
+      ? tokenActors[rawCredential]
+      : undefined;
+    if (actor) return actor;
     throw Error("invalid_token");
   };
 
@@ -145,14 +146,15 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     await new Promise<void>(resolve => disabledServer.listen(0, "127.0.0.1", resolve));
     await new Promise<void>(resolve => enabledServer.listen(0, "127.0.0.1", resolve));
 
-    const disabledOrigin = "http://127.0.0.1:" + (disabledServer.address() as AddressInfo).port;
-    const enabledOrigin = "http://127.0.0.1:" + (enabledServer.address() as AddressInfo).port;
+    const disabledPort = (disabledServer.address() as AddressInfo).port;
+    const enabledPort = (enabledServer.address() as AddressInfo).port;
 
-    const invoke = async (origin: string, token: string, method: string, params: Record<string, any> = {}, id = 1, toolName?: string) => {
-      const res = await fetch(origin + "/mcp", {
+    const invoke = async (serverPort: number, credentialKey: string, method: string, params: Record<string, any> = {}, id = 1, toolName?: string) => {
+      const targetUrl = new URL("/mcp", `http://127.0.0.1:${serverPort}`);
+      const res = await fetch(targetUrl, {
         method: "POST",
         headers: {
-          "Authorization": "Bearer " + token,
+          "Authorization": "Bearer " + credentialKey,
           "Content-Type": "application/json",
           "Accept": "application/json, text/event-stream",
           "MCP-Protocol-Version": "2026-07-28",
@@ -185,17 +187,17 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     };
 
     // 1. Tool is absent when write is disabled
-    const listDisabled = await invoke(disabledOrigin, "token-write", "tools/list", {}, 1);
+    const listDisabled = await invoke(disabledPort, "token-write", "tools/list", {}, 1);
     const disabledTools = (listDisabled.data.result?.tools ?? []).map((t: { name: string }) => t.name);
     assert.equal(disabledTools.includes("pcb_move_footprint"), false);
 
     // 2. Tool is present when write is enabled
-    const listEnabled = await invoke(enabledOrigin, "token-write", "tools/list", {}, 2);
+    const listEnabled = await invoke(enabledPort, "token-write", "tools/list", {}, 2);
     const enabledTools = (listEnabled.data.result?.tools ?? []).map((t: { name: string }) => t.name);
     assert.equal(enabledTools.includes("pcb_move_footprint"), true);
 
     // 3. Insufficient scope (read-only token)
-    const readOnlyCall = await invoke(enabledOrigin, "token-read-only", "tools/call", {
+    const readOnlyCall = await invoke(enabledPort, "token-read-only", "tools/call", {
       name: "pcb_move_footprint",
       arguments: { project_id: projectId, reference: "R1", x_mm: 10, y_mm: 20 }
     }, 3, "pcb_move_footprint");
@@ -204,7 +206,7 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     assert.equal(writeExecuted, false);
 
     // 4. Foreign client / user
-    const foreignCall = await invoke(enabledOrigin, "token-foreign", "tools/call", {
+    const foreignCall = await invoke(enabledPort, "token-foreign", "tools/call", {
       name: "pcb_move_footprint",
       arguments: { project_id: projectId, reference: "R1", x_mm: 10, y_mm: 20 }
     }, 4, "pcb_move_footprint");
@@ -213,7 +215,7 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     assert.equal(writeExecuted, false);
 
     // 5. Successful write execution with disk save
-    const successCall = await invoke(enabledOrigin, "token-write", "tools/call", {
+    const successCall = await invoke(enabledPort, "token-write", "tools/call", {
       name: "pcb_move_footprint",
       arguments: {
         project_id: projectId,
@@ -234,7 +236,7 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     // 6. Preflight denial fails closed
     writeExecuted = false;
     preflightAllowed = false;
-    const deniedCall = await invoke(enabledOrigin, "token-write", "tools/call", {
+    const deniedCall = await invoke(enabledPort, "token-write", "tools/call", {
       name: "pcb_move_footprint",
       arguments: { project_id: projectId, reference: "R1", x_mm: 0, y_mm: 0 }
     }, 6, "pcb_move_footprint");
@@ -245,7 +247,7 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     // 7. Token revocation fails closed
     preflightAllowed = true;
     tokenValid = false;
-    const revokedCall = await invoke(enabledOrigin, "token-write", "tools/call", {
+    const revokedCall = await invoke(enabledPort, "token-write", "tools/call", {
       name: "pcb_move_footprint",
       arguments: { project_id: projectId, reference: "R1", x_mm: 0, y_mm: 0 }
     }, 7, "pcb_move_footprint");
