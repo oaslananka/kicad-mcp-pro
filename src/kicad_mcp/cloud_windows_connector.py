@@ -650,7 +650,6 @@ def _session_runner_with_status(
             on_activity=status_callback,
         )
 
-
     signed_ready_runner._kicad_supports_folder_browse = True  # type: ignore[attr-defined]
     return signed_ready_runner
 

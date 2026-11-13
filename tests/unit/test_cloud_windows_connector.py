@@ -1148,4 +1148,3 @@ async def test_windows_connector_native_write_runner_wires_revisions_and_executo
     res = native_write.write_executor(b'{"proof": true}', True)
     assert res["nativeCommitted"] is True
     assert res["session_id"] == receipt.session_id
-
