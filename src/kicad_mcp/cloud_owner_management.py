@@ -142,10 +142,13 @@ class CloudOwnerApi:
         payload: dict[str, object] | None = None,
         token: str | None = None,
     ) -> dict[str, Any]:
+        route = path.partition("?")[0]
         if (
             method not in {"GET", "POST"}
             or not path.startswith("/api/owner/")
             or ("://" in path or "\\" in path or "#" in path)
+            or "%" in route
+            or any(component in {".", ".."} for component in route.split("/"))
         ):
             raise CloudManagementError("Unsupported Cloud management request.")
         if token is not None and not _TOKEN.fullmatch(token):

@@ -988,3 +988,56 @@ def test_repair_restores_old_authority_if_marker_switch_is_interrupted(
     assert vault[(connector._SELECTED_RECORD_ID, "selected")] == previous_selected
     assert vault[(connector._ACTIVE_RECORD_ID, "active")] == previous_active
     assert vault[(old.record_id, "key")]
+
+
+def test_signed_device_dispatch_reads_cloud_added_second_project(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A device-bound project must be usable, not just displayed as Registered."""
+    import time
+
+    from kicad_mcp.cloud_folder_browse_receiver import default_bindings_file
+    from kicad_mcp.cloud_readonly_boundary import LocalReadDeniedError
+
+    _ = default_bindings_file  # The real default is not used in this disposable test.
+    project, _store, _directory = local_user_connector
+    connector.activate(project, owner_confirm=lambda _: True)
+    second_id = "4a775779-a8b0-4d64-b287-4539f4823032"
+    second_dir = tmp_path / "other"
+    second_dir.mkdir()
+    (second_dir / "second.kicad_pro").write_text("{}", encoding="utf-8")
+    bindings = tmp_path / "local-bindings.json"
+    bindings.write_text(
+        json.dumps({second_id: str(second_dir / "second.kicad_pro")}), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_folder_browse_receiver.default_bindings_file",
+        lambda: bindings,
+    )
+    receipt = HandshakeReceipt(
+        device_id=project.device_id, session_id="b390e00c-3260-4d7f-a09f-e816d0b63043"
+    )
+    selected = connector.inspect_owner_selected_project(project)
+    dispatch = connector._dispatcher(project, selected, receipt)
+    try:
+        frame = json.dumps(
+            {
+                "kind": "connector.read_request",
+                "version": 1,
+                "requestId": "0b9fd53b-ff7c-477d-917a-5e921edc2e02",
+                "deviceId": project.device_id,
+                "projectId": second_id,
+                "operation": "project_summary",
+                "deadlineUnixMs": int(time.time() * 1000) + 25_000,
+            }
+        ).encode()
+        result = dispatch.read(frame, sequence=1)
+        assert result["projectId"] == second_id
+        assert result["files"]["projectPresent"] is True
+        bindings.unlink()
+        with pytest.raises(LocalReadDeniedError):
+            dispatch.assert_delivery_authorized(
+                frame, device_id=receipt.device_id, session_id=receipt.session_id
+            )
+    finally:
+        dispatch.close()

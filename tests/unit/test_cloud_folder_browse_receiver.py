@@ -323,3 +323,91 @@ def test_default_bindings_file_is_a_fixed_per_user_path() -> None:
     assert path.is_absolute()
     assert path.parts[-2:] == ("connector", "folder-bindings.json")
     assert ".kicad-mcp-cloud" in path.parts
+
+
+def test_selected_native_folder_returns_only_tokenized_projects() -> None:
+    class Selected(FakeService):
+        def choose(self) -> dict[str, object]:
+            return {
+                "status": "selected",
+                "folderId": "opaque-folder",
+                "name": "KiCad Lab",
+                "projects": [
+                    {"id": "opaque-project-a", "name": "Motor"},
+                    {"id": "opaque-project-b", "name": "Controller"},
+                ],
+            }
+
+    selected = handle_folder_frame(Selected(), frame("choose"))
+    assert selected == {
+        "kind": "connector.local_browser_result",
+        "version": 1,
+        "requestId": DEVICE_REQUEST_ID,
+        "operation": "choose",
+        "status": "selected",
+        "folderId": "opaque-folder",
+        "name": "KiCad Lab",
+        "projects": [
+            {"id": "opaque-project-a", "name": "Motor"},
+            {"id": "opaque-project-b", "name": "Controller"},
+        ],
+    }
+    assert "C:\\" not in json.dumps(selected)
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [
+        {"status": "selected", "folderId": "token", "name": "Board", "projects": []},
+        {"status": "selected", "folderId": "token", "name": "Board", "projects": [None]},
+        {
+            "status": "selected",
+            "folderId": "token",
+            "name": "Board",
+            "projects": [{"id": "opaque"}],
+        },
+        {
+            "status": "selected",
+            "folderId": 123,
+            "name": "Board",
+            "projects": [{"id": "id", "name": "Board"}],
+        },
+        {
+            "status": "selected",
+            "folderId": "token",
+            "name": "",
+            "projects": [{"id": "id", "name": "Board"}],
+        },
+        {"status": "cancelled", "folderId": "unexpected"},
+        {"status": "not-valid"},
+    ],
+)
+def test_invalid_native_folder_selection_fails_closed(selection: dict[str, object]) -> None:
+    class Selected(FakeService):
+        def choose(self) -> dict[str, object]:
+            return selection
+
+    with pytest.raises(CloudHandshakeDeniedError):
+        handle_folder_frame(Selected(), frame("choose"))
+
+
+@pytest.mark.parametrize(
+    "project_path",
+    [
+        "",
+        "relative/board.kicad_pro",
+        "C:\\Projects\\board.txt",
+        "C:\\Projects\\board.kicad_pro\n",
+        "C:\\Projects\\board.kicad_pro" + ("x" * 2048),
+    ],
+)
+def test_local_project_path_boundary_rejects_hostile_or_ambiguous_paths(
+    project_path: str,
+) -> None:
+    class Malformed(FakeService):
+        def project_path(self, project_id: str) -> str | None:
+            assert project_id == PROJECT_ID
+            return project_path
+
+    with pytest.raises(CloudHandshakeDeniedError):
+        handle_folder_frame(Malformed(), frame("path", projectId=PROJECT_ID))

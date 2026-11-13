@@ -441,3 +441,128 @@ async def test_native_transport_refuses_false_dispatcher_claim(tmp_path: Path) -
             allow_native_drc=True,
         )
     assert socket.sent == []
+
+
+# --- Multiple owner-bound projects on one signed Connector session ------------
+
+OTHER_PROJECT = "44444444-4444-4444-8444-444444444444"
+
+
+@pytest.mark.anyio
+async def test_owner_bound_second_project_is_readable_on_same_device(tmp_path: Path) -> None:
+    """A Cloud-added project must not be a registration with an unusable MCP route."""
+    primary = tmp_path / "primary"
+    secondary = tmp_path / "secondary"
+    primary.mkdir()
+    secondary.mkdir()
+    (primary / "board.kicad_pro").write_text("PRIMARY_PRIVATE")
+    (secondary / "other.kicad_pro").write_text("OTHER_PRIVATE")
+
+    allowed = {OTHER_PROJECT: secondary}
+    device_grant = [True]
+
+    def resolve(project_id: str) -> OperatorProject | None:
+        folder = allowed.get(project_id)
+        return OperatorProject(DEVICE, project_id, folder, "other") if folder is not None else None
+
+    dispatcher = LocalReadDispatch(
+        verified=VerifiedLocalBinding(
+            device_id=DEVICE,
+            project_id=PROJECT,
+            operations=frozenset({"project_summary"}),
+            session_id=SESSION,
+            session_expires_unix_ms=int(time.time() * 1000) + 240_000,
+        ),
+        operator_project=OperatorProject(DEVICE, PROJECT, primary, "board"),
+        current_authorization=lambda: device_grant[0],
+        project_resolver=resolve,
+        max_reads=3,
+    )
+    socket = Socket(
+        [
+            request(1),
+            request(2, projectId=OTHER_PROJECT),
+            request(3),
+        ]
+    )
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    assert (
+        await serve_authenticated_reads(socket, receipt, lambda _: dispatcher, max_reads=3)
+        == receipt
+    )
+    assert [msg["result"]["projectId"] for msg in socket.sent] == [PROJECT, OTHER_PROJECT, PROJECT]
+    for msg in socket.sent:
+        assert msg["result"]["files"]["projectPresent"] is True
+        assert "PRIVATE" not in json.dumps(msg)
+        assert str(tmp_path) not in json.dumps(msg)
+
+
+@pytest.mark.anyio
+async def test_removed_or_unbound_second_project_never_delivers_a_read(tmp_path: Path) -> None:
+    folder = tmp_path / "other"
+    folder.mkdir()
+    (folder / "other.kicad_pro").write_text("{}")
+    allowed = {OTHER_PROJECT: folder}
+    primary = build_dispatcher(tmp_path, [True])
+    mapped = LocalReadDispatch(
+        verified=primary._verified,
+        operator_project=primary._project,
+        current_authorization=lambda: True,
+        project_resolver=lambda pid: (
+            OperatorProject(DEVICE, pid, allowed[pid], "other") if pid in allowed else None
+        ),
+        max_reads=2,
+    )
+    raw = json.loads(request(1, projectId=OTHER_PROJECT))["request"]
+    frame = json.dumps(raw).encode()
+    result = mapped.read(frame, sequence=1)
+    assert result["projectId"] == OTHER_PROJECT
+    del allowed[OTHER_PROJECT]
+    with pytest.raises(LocalReadDeniedError):
+        mapped.assert_delivery_authorized(frame, device_id=DEVICE, session_id=SESSION)
+
+    rejected = Socket([request(1, projectId=OTHER_PROJECT)])
+    with pytest.raises(LocalReadDeniedError):
+        await serve_authenticated_reads(
+            rejected,
+            HandshakeReceipt(DEVICE, SESSION),
+            lambda _: LocalReadDispatch(
+                verified=primary._verified,
+                operator_project=primary._project,
+                current_authorization=lambda: True,
+                project_resolver=lambda _id: None,
+            ),
+            max_reads=1,
+        )
+    assert rejected.sent == []
+
+
+@pytest.mark.parametrize("malicious", ["wrong_device", "raiser", "wrong_project"])
+def test_project_resolver_cannot_switch_device_or_leak_local_failure(
+    tmp_path: Path, malicious: str
+) -> None:
+    def resolve(project_id: str) -> OperatorProject:
+        if malicious == "raiser":
+            raise RuntimeError("secret absolute path from invalid mapping")
+        return OperatorProject(
+            "99999999-9999-4999-8999-999999999999" if malicious == "wrong_device" else DEVICE,
+            PROJECT if malicious == "wrong_project" else project_id,
+            tmp_path,
+            "board",
+        )
+
+    dispatcher = LocalReadDispatch(
+        verified=VerifiedLocalBinding(
+            device_id=DEVICE,
+            project_id=PROJECT,
+            operations=frozenset({"project_summary"}),
+            session_id=SESSION,
+            session_expires_unix_ms=int(time.time() * 1000) + 240_000,
+        ),
+        operator_project=OperatorProject(DEVICE, PROJECT, tmp_path, "board"),
+        current_authorization=lambda: True,
+        project_resolver=resolve,
+    )
+    message = json.loads(request(1, projectId=OTHER_PROJECT))["request"]
+    with pytest.raises(LocalReadDeniedError, match="request denied"):
+        dispatcher.read(json.dumps(message).encode(), sequence=1)

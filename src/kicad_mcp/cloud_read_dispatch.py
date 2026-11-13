@@ -6,12 +6,15 @@ device/session binding and operator-approved local project mapping.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import replace as replace_dataclass
 
 from kicad_mcp.cloud_native_drc import summarize_native_pcb_drc
 from kicad_mcp.cloud_readonly_boundary import (
+    MAX_FRAME_BYTES,
     LocalReadDeniedError,
     OperatorProject,
     VerifiedLocalBinding,
@@ -43,6 +46,7 @@ class LocalReadDispatch:
         max_reads: int = MAX_READS_PER_SESSION,
         native_drc: bool = False,
         managed_native_drc: bool = False,
+        project_resolver: Callable[[str], OperatorProject | None] | None = None,
     ) -> None:
         if type(max_reads) is not int or not 1 <= max_reads <= MAX_READS_PER_SESSION:
             raise LocalReadDeniedError(_READ_DENIED)
@@ -57,6 +61,12 @@ class LocalReadDispatch:
         self._max_reads = max_reads
         self._verified = verified
         self._project = operator_project
+        if project_resolver is not None and not callable(project_resolver):
+            raise LocalReadDeniedError(_READ_DENIED)
+        # Only the independently trusted device-side caller may supply this
+        # resolver. An MCP request carries a project ID, never a local path.
+        self._project_resolver = project_resolver
+        self._request_projects: dict[str, tuple[VerifiedLocalBinding, OperatorProject]] = {}
         if not callable(current_authorization):
             raise LocalReadDeniedError(_READ_DENIED)
         # Never derive this predicate from a Cloud message or local wire claim.
@@ -76,6 +86,29 @@ class LocalReadDispatch:
             raise LocalReadDeniedError(_READ_DENIED) from exc
         if authorized is not True:
             raise LocalReadDeniedError(_READ_DENIED)
+
+    def _resolve_project(self, frame: bytes) -> tuple[VerifiedLocalBinding, OperatorProject]:
+        if self._project_resolver is None:
+            return self._verified, self._project
+        if not isinstance(frame, bytes) or not 1 <= len(frame) <= MAX_FRAME_BYTES:
+            raise LocalReadDeniedError(_READ_DENIED)
+        try:
+            message = json.loads(frame.decode("utf-8"))
+            project_id = message.get("projectId") if isinstance(message, dict) else None
+            if not isinstance(project_id, str):
+                raise LocalReadDeniedError(_READ_DENIED)
+            if project_id == self._verified.project_id:
+                return self._verified, self._project
+            selected = self._project_resolver(project_id)
+        except (OSError, ValueError, TypeError, KeyError, RuntimeError) as exc:
+            raise LocalReadDeniedError(_READ_DENIED) from exc
+        if (
+            not isinstance(selected, OperatorProject)
+            or selected.device_id != self._verified.device_id
+            or selected.project_id != project_id
+        ):
+            raise LocalReadDeniedError(_READ_DENIED)
+        return replace_dataclass(self._verified, project_id=project_id), selected
 
     @property
     def native_drc(self) -> bool:
@@ -102,16 +135,22 @@ class LocalReadDispatch:
         """
         self.assert_transport_session(device_id=device_id, session_id=session_id)
         self._authorize_now()
+        binding, project = self._resolve_project(frame)
         body = _validate_frame(
             frame,
-            self._verified,
-            self._project,
+            binding,
+            project,
             self._clock_ms(),
             allow_native_drc=self._native_drc,
             extended_native_drc=self._managed_native_drc,
         )
         with self._lock:
-            if self._closed or self._busy or body["requestId"] not in self._seen_request_ids:
+            if (
+                self._closed
+                or self._busy
+                or body["requestId"] not in self._seen_request_ids
+                or self._request_projects.get(body["requestId"]) != (binding, project)
+            ):
                 raise LocalReadDeniedError(_READ_DENIED)
         self._authorize_now()
         self.assert_transport_session(device_id=device_id, session_id=session_id)
@@ -120,6 +159,7 @@ class LocalReadDispatch:
         """Invalidate this session, including any pending read response."""
         with self._lock:
             self._closed = True
+            self._request_projects.clear()
 
     def read(self, frame: bytes, *, sequence: int) -> dict[str, object]:
         """Inspect only approved local project file presence; deny all other work.
@@ -143,10 +183,11 @@ class LocalReadDispatch:
 
         try:
             self._authorize_now()
+            binding, project = self._resolve_project(frame)
             initial = _validate_frame(
                 frame,
-                self._verified,
-                self._project,
+                binding,
+                project,
                 self._clock_ms(),
                 allow_native_drc=self._native_drc,
                 extended_native_drc=self._managed_native_drc,
@@ -158,30 +199,33 @@ class LocalReadDispatch:
                 if self._closed or request_id in self._seen_request_ids:
                     raise LocalReadDeniedError(_READ_DENIED)
                 self._seen_request_ids.add(request_id)
+                self._request_projects[request_id] = (binding, project)
 
             if initial["operation"] == "run_drc" and self._native_drc:
-                counts = summarize_native_pcb_drc(self._project)
+                counts = summarize_native_pcb_drc(project)
                 response: dict[str, object] = {
                     "kind": "connector.local_drc_preview",
                     "version": 1,
                     "requestId": request_id,
-                    "projectId": self._project.project_id,
+                    "projectId": project.project_id,
                     "operation": "run_drc",
                     "counts": counts,
                 }
             else:
                 response = inspect_readonly(
                     frame,
-                    verified=self._verified,
-                    operator_project=self._project,
+                    verified=binding,
+                    operator_project=project,
                     now_unix_ms=self._clock_ms(),
                 )
             # Recheck signed request expiry before return, including if local
             # file metadata inspection was blocked or time advanced.
+            if self._resolve_project(frame) != (binding, project):
+                raise LocalReadDeniedError(_READ_DENIED)
             body = _validate_frame(
                 frame,
-                self._verified,
-                self._project,
+                binding,
+                project,
                 self._clock_ms(),
                 allow_native_drc=self._native_drc,
                 extended_native_drc=self._managed_native_drc,

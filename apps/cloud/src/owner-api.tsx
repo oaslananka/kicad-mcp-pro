@@ -10,9 +10,13 @@ import type {GrantManagement,BrowserGrantSummary} from "./grants.js";
 import type {PgUsage,UsageEvent} from "./usage.js";
 import {hashToken} from "./usage.js";
 
-const REQUEST_ID=/^[A-Za-z0-9_-]{43}$/;
+const OPAQUE_CHARS="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
+function validRequestId(value:unknown):value is string{
+  return typeof value==="string"&&value.length===43&&
+    [...value].every(char=>OPAQUE_CHARS.includes(char));
+}
 const TOKEN_PREFIX="kmpc1_";
-const TOKEN_BODY=/^[A-Za-z0-9_-]{43}$/;
+
 const ALLOWED_LABEL="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ._()-";
 function validLabel(label:string):boolean{
   if(label.length<1||label.length>64)return false;
@@ -36,7 +40,7 @@ export class PgOwnerApiAccess {
   /** A CLI-open request starts pending and anonymous; only browser approval
    * binds an owner, and only that approval can mint one token, once. */
   async startRequest(requestId:string,label:string):Promise<boolean>{
-    if(!REQUEST_ID.test(requestId)||!validLabel(label))return false;
+    if(!validRequestId(requestId)||!validLabel(label))return false;
     const db=await this.pool.connect();
     try{
       await db.query("BEGIN");
@@ -59,7 +63,7 @@ export class PgOwnerApiAccess {
   }
 
   async getRequest(requestId:string):Promise<{state:string;label:string}|null>{
-    if(!REQUEST_ID.test(requestId))return null;
+    if(!validRequestId(requestId))return null;
     const rows=await this.pool.query<{state:string;label:string;created_at:Date;poll_count:number}>(
       "SELECT state,label,created_at,poll_count FROM owner_api_cli_requests "+
       "WHERE request_id=$1",[requestId]);
@@ -77,7 +81,7 @@ export class PgOwnerApiAccess {
 
   /** Owner-browser approval binds exactly one account, once, atomically. */
   async approveRequest(ownerSub:string,requestId:string):Promise<boolean>{
-    if(!ownerSub||ownerSub.length>256||!REQUEST_ID.test(requestId))return false;
+    if(!ownerSub||ownerSub.length>256||!validRequestId(requestId))return false;
     const rows=await this.pool.query(
       "UPDATE owner_api_cli_requests SET owner_sub=$1,state='approved',updated_at=statement_timestamp() "+
       "WHERE request_id=$2 AND state='pending' "+
@@ -94,7 +98,7 @@ export class PgOwnerApiAccess {
 
   /** Exactly one token is ever issued per approved request. */
   async issueToken(requestId:string):Promise<{token:string;expiresAt:Date}|null>{
-    if(!REQUEST_ID.test(requestId))return null;
+    if(!validRequestId(requestId))return null;
     const db=await this.pool.connect();
     try{
       await db.query("BEGIN");
@@ -120,7 +124,7 @@ export class PgOwnerApiAccess {
   }
 
   async verifyToken(token:string):Promise<string|null>{
-    if(!token.startsWith(TOKEN_PREFIX)||!TOKEN_BODY.test(token.slice(TOKEN_PREFIX.length)))
+    if(!token.startsWith(TOKEN_PREFIX)||!validRequestId(token.slice(TOKEN_PREFIX.length)))
       return null;
     const rows=await this.pool.query<{owner_sub:string}>(
       "SELECT owner_sub FROM owner_api_tokens WHERE token_hash=$1 AND revoked_at IS NULL "+
@@ -263,7 +267,7 @@ export async function ownerApiResponse(request:Request,origin:string,
        !["requestId","label"].every(key=>Object.hasOwn(body,key)))
       return apiError(400,"invalid_request");
     const {requestId,label}=body;
-    if(typeof requestId!=="string"||!REQUEST_ID.test(requestId))
+    if(typeof requestId!=="string"||!validRequestId(requestId))
       return apiError(400,"invalid_request");
     const safeLabel=sanitizedLabel(label);
     if(!safeLabel)return apiError(400,"invalid_request");
@@ -279,7 +283,7 @@ export async function ownerApiResponse(request:Request,origin:string,
       return apiError(415,"unsupported_media_type");
     const body=await readJson(request,128);
     if(!body||Object.keys(body).length!==1||typeof body.requestId!=="string"||
-       !REQUEST_ID.test(body.requestId))
+       !validRequestId(body.requestId))
       return apiError(400,"invalid_request");
     const requestId=body.requestId;
     let state:{state:string;label:string}|null;

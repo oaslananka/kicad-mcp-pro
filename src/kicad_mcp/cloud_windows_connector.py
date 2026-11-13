@@ -14,6 +14,7 @@ import secrets
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import (
@@ -437,6 +438,31 @@ def _dispatcher(
 ) -> LocalReadDispatch:
     if receipt.device_id != project.device_id or not _current_authorization(project):
         raise LocalApprovalDeniedError(_DENIED)
+
+    def resolve_bound_project(project_id: str) -> OperatorProject | None:
+        """Use only an owner-selected, current-user local project binding.
+
+        Cloud supplies the signed project ID, never a path. This mapping is
+        reread at each use so removing a local binding immediately invalidates
+        an in-flight or subsequent operation on that project.
+        """
+        if not _current_authorization(project):
+            return None
+        from kicad_mcp.cloud_folder_browse_receiver import default_bindings_file
+        from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
+
+        browser = LocalFolderBrowser([selected.directory.parent], default_bindings_file())
+        mapped = browser.get_project_path(project_id)
+        if mapped is None:
+            return None
+        file = Path(mapped)
+        return OperatorProject(
+            device_id=project.device_id,
+            project_id=project_id,
+            directory=file.parent,
+            filename_stem=file.stem,
+        )
+
     return LocalReadDispatch(
         verified=VerifiedLocalBinding(
             device_id=receipt.device_id,
@@ -454,6 +480,7 @@ def _dispatcher(
             filename_stem=selected.filename_stem,
         ),
         current_authorization=lambda: _current_authorization(project),
+        project_resolver=resolve_bound_project,
         max_reads=_MAX_READS,
         native_drc=allow_native_drc,
         managed_native_drc=allow_native_drc,

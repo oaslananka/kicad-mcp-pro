@@ -11,6 +11,10 @@ import pg from "pg";
 
 const url=process.env.TEST_DATABASE_URL;
 const projectId="3fa85f64-5717-4562-b3fc-2c963f66afa6";
+const sameTestIdentity=(a:string,b:string):boolean=>{
+  const left=Buffer.from(a),right=Buffer.from(b);
+  return left.length===right.length&&timingSafeEqual(left,right);
+};
 const mockProject:Project={
   id:projectId,alias:"USB-C Controller",
   deviceId:"d108b5f4-22f2-4b3c-b62d-55163fa34814",
@@ -20,16 +24,16 @@ const mockProject:Project={
 const inventory:Inventory={
   async isAccessTokenAllowed(){return true;},
   async listDevices(owner,clientId):Promise<Device[]>{
-    return owner==="user-a"&&clientId==="test-client"
+    return sameTestIdentity(owner,"user-a")&&sameTestIdentity(clientId,"test-client")
       ?[{id:mockProject.deviceId,alias:"Workstation",enabled:true,
         lastSeenAt:null,connected:false}]
       :[];
   },
   async listProjects(owner,clientId){
-    return owner==="user-a"&&clientId==="test-client"?[mockProject]:[];
+    return sameTestIdentity(owner,"user-a")&&sameTestIdentity(clientId,"test-client")?[mockProject]:[];
   },
   async getProject(owner,clientId,id){
-    return owner==="user-a"&&clientId==="test-client"&&id===projectId?mockProject:null;
+    return sameTestIdentity(owner,"user-a")&&sameTestIdentity(clientId,"test-client")&&sameTestIdentity(id,projectId)?mockProject:null;
   }
 };
 const verify:Verifier=async token=>{
