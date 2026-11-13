@@ -177,6 +177,24 @@ def test_windows_status_reconciles_saved_project_against_cloud(
     assert queries == [("GET", "/api/owner/v1/devices")]
 
 
+def test_windows_status_missing_task_shows_exact_reconnect_action(
+    windows_cli: tuple[Path, list[str], WindowsRegisteredProject, WindowsLocalProjectSelection],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _folder, events, _project, _selected = windows_cli
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "scheduler_state",
+        lambda: "Configured (task unverified)",
+    )
+    result = CliRunner().invoke(app, ["cloud", "status"])
+    assert result.exit_code == 0, result.output
+    assert "kicad-mcp-pro cloud reconnect" in result.output
+    assert "owner-owned task restoration" in result.output
+    assert "Connected" not in result.output
+    assert not events
+
+
 def test_windows_status_without_cloud_token_never_contacts_api(
     windows_cli: tuple[Path, list[str], WindowsRegisteredProject, WindowsLocalProjectSelection],
     monkeypatch: pytest.MonkeyPatch,
@@ -225,7 +243,6 @@ def test_windows_cli_first_setup_is_owner_approved_and_does_not_claim_connected(
     )
     assert result.exit_code == 0, result.output
     assert events == [
-        "owner_confirm",
         "enroll",
         "browser_approval",
         "register",
@@ -234,6 +251,8 @@ def test_windows_cli_first_setup_is_owner_approved_and_does_not_claim_connected(
         "schedule",
     ]
     assert "Connector scheduled (connection unverified)" in result.output
+    assert "reconnects at sign-in" in result.output
+    assert "kicad-mcp-pro cloud disable" in result.output
     assert "Cloud owner must separately approve access" in result.output
     assert "Connected!" not in result.output
 
@@ -269,7 +288,7 @@ def test_windows_headless_setup_refuses_before_cloud(
     assert not events
 
 
-def test_windows_cancel_refuses_before_cloud(
+def test_windows_setup_uses_browser_approval_not_redundant_terminal_confirmation(
     windows_cli,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -278,10 +297,16 @@ def test_windows_cancel_refuses_before_cloud(
     result = CliRunner().invoke(
         app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
     )
-    assert result.exit_code == 0
-    assert "Setup paused" in result.output
-    assert "cloud setup --browse" in result.output
-    assert not events
+    assert result.exit_code == 0, result.output
+    assert "Approve this device in the browser" in result.output
+    assert events == [
+        "enroll",
+        "browser_approval",
+        "register",
+        "bind",
+        "remember",
+        "schedule",
+    ]
 
 
 def test_expired_owner_browser_approval_has_actionable_retry_message(
@@ -303,7 +328,7 @@ def test_expired_owner_browser_approval_has_actionable_retry_message(
     assert "approval expired" in result.output
     assert "five minutes" in result.output
     assert "Windows Cloud registration was not fully completed" not in result.output
-    assert events == ["owner_confirm"]
+    assert events == []
 
 
 def test_owner_denial_returns_specific_cli_message_and_creates_no_device(
@@ -327,7 +352,7 @@ def test_owner_denial_returns_specific_cli_message_and_creates_no_device(
     assert "denied" in result.output
     assert "registered" in result.output
     assert "Windows Cloud registration was not fully completed" not in result.output
-    assert events == ["owner_confirm"]
+    assert events == []
 
 
 def test_windows_registration_failure_includes_diagnostic_details(
@@ -352,7 +377,7 @@ def test_windows_registration_failure_includes_diagnostic_details(
     assert "Windows Cloud registration was not fully completed" in result.output
     assert "HTTP 403: untrusted_ingress" in result.output
     assert "Review your Cloud Devices page" in result.output
-    assert events == ["owner_confirm"]
+    assert events == []
 
 
 def test_windows_empty_project_refuses_before_cloud(

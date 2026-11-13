@@ -324,16 +324,16 @@ def setup_windows(
 
     typer.echo(f"KiCad project: {directory} ({stem})")
     typer.echo("Cloud will register a device/project identity; local project files stay local.")
-    # Foreground remote is an explicit local action followed by browser device
-    # approval, so do not ask for the same consent a second time in the terminal.
-    # Keep legacy background setup confirmation unchanged.
-    if start_background and not typer.confirm(
-        "Approve pairing and the selected read-only local Connector?", default=False
-    ):
-        typer.echo("Setup paused. No device or project was registered.")
-        typer.echo("When ready, run: kicad-mcp-pro cloud setup (or cloud setup --browse)")
-        return
-
+    # Both foreground and background setup require an interactive owner and
+    # a fresh explicit browser pairing approval. Do not repeat that approval
+    # as a second terminal confirmation: the browser is the consent surface.
+    # This still does not grant AI clients read/write access to any project.
+    if start_background:
+        typer.echo(
+            "After browser approval, a read-only Windows Connector task starts automatically "
+            "and reconnects at sign-in. Stop it any time with: kicad-mcp-pro cloud disable."
+        )
+    typer.echo("Approve this device in the browser to finish pairing.")
     project = _enroll_selected_windows_project(
         origin=origin, alias=alias, stem=stem, directory=directory, approval=approval
     )
@@ -401,6 +401,10 @@ def show_status() -> None:
         typer.echo(f"Local Windows Connector: {state}")
     if state == "Configured (task unverified)":
         typer.echo("No verified background task. A foreground Cloud session may still be active.")
+        typer.echo(
+            "For automatic connection, run: kicad-mcp-pro cloud reconnect "
+            "(confirm the owner-owned task restoration)."
+        )
         typer.echo(
             "To start a signed foreground connection: kicad-mcp-pro remote"
             " (keep this terminal open)."
