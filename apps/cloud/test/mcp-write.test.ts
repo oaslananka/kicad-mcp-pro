@@ -148,9 +148,11 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
 
     const disabledPort = (disabledServer.address() as AddressInfo).port;
     const enabledPort = (enabledServer.address() as AddressInfo).port;
+    const disabledMcpUrl = new URL(`http://127.0.0.1:${disabledPort}/mcp`);
+    const enabledMcpUrl = new URL(`http://127.0.0.1:${enabledPort}/mcp`);
 
-    const invoke = async (serverPort: number, credentialKey: string, method: string, params: Record<string, any> = {}, id = 1, toolName?: string) => {
-      const targetUrl = new URL("/mcp", `http://127.0.0.1:${serverPort}`);
+    const invoke = async (target: "enabled" | "disabled", credentialKey: string, method: string, params: Record<string, any> = {}, id = 1, toolName?: string) => {
+      const targetUrl = target === "enabled" ? enabledMcpUrl : disabledMcpUrl;
       const res = await fetch(targetUrl, {
         method: "POST",
         headers: {
@@ -187,17 +189,17 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     };
 
     // 1. Tool is absent when write is disabled
-    const listDisabled = await invoke(disabledPort, "token-write", "tools/list", {}, 1);
+    const listDisabled = await invoke("disabled", "token-write", "tools/list", {}, 1);
     const disabledTools = (listDisabled.data.result?.tools ?? []).map((t: { name: string }) => t.name);
     assert.equal(disabledTools.includes("pcb_move_footprint"), false);
 
     // 2. Tool is present when write is enabled
-    const listEnabled = await invoke(enabledPort, "token-write", "tools/list", {}, 2);
+    const listEnabled = await invoke("enabled", "token-write", "tools/list", {}, 2);
     const enabledTools = (listEnabled.data.result?.tools ?? []).map((t: { name: string }) => t.name);
     assert.equal(enabledTools.includes("pcb_move_footprint"), true);
 
     // 3. Insufficient scope (read-only token)
-    const readOnlyCall = await invoke(enabledPort, "token-read-only", "tools/call", {
+    const readOnlyCall = await invoke("enabled", "token-read-only", "tools/call", {
       name: "pcb_move_footprint",
       arguments: { project_id: projectId, reference: "R1", x_mm: 10, y_mm: 20 }
     }, 3, "pcb_move_footprint");
@@ -206,7 +208,7 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     assert.equal(writeExecuted, false);
 
     // 4. Foreign client / user
-    const foreignCall = await invoke(enabledPort, "token-foreign", "tools/call", {
+    const foreignCall = await invoke("enabled", "token-foreign", "tools/call", {
       name: "pcb_move_footprint",
       arguments: { project_id: projectId, reference: "R1", x_mm: 10, y_mm: 20 }
     }, 4, "pcb_move_footprint");
@@ -215,7 +217,7 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     assert.equal(writeExecuted, false);
 
     // 5. Successful write execution with disk save
-    const successCall = await invoke(enabledPort, "token-write", "tools/call", {
+    const successCall = await invoke("enabled", "token-write", "tools/call", {
       name: "pcb_move_footprint",
       arguments: {
         project_id: projectId,
@@ -236,7 +238,7 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     // 6. Preflight denial fails closed
     writeExecuted = false;
     preflightAllowed = false;
-    const deniedCall = await invoke(enabledPort, "token-write", "tools/call", {
+    const deniedCall = await invoke("enabled", "token-write", "tools/call", {
       name: "pcb_move_footprint",
       arguments: { project_id: projectId, reference: "R1", x_mm: 0, y_mm: 0 }
     }, 6, "pcb_move_footprint");
@@ -247,7 +249,7 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     // 7. Token revocation fails closed
     preflightAllowed = true;
     tokenValid = false;
-    const revokedCall = await invoke(enabledPort, "token-write", "tools/call", {
+    const revokedCall = await invoke("enabled", "token-write", "tools/call", {
       name: "pcb_move_footprint",
       arguments: { project_id: projectId, reference: "R1", x_mm: 0, y_mm: 0 }
     }, 7, "pcb_move_footprint");
