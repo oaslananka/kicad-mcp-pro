@@ -172,7 +172,8 @@ export function renderDevicesPage(
       </div></section>:
         <>
       {/* Enrolled Devices Section */}
-      <section className="card device-card device-list-card" aria-labelledby="device-list-title">
+      <section className="card device-card device-list-card"
+        id={browseEnabled?"registered-projects":undefined} aria-labelledby="device-list-title">
         <div className="card-header">
           <h2 id="device-list-title">Your devices</h2>
           <span className="list-count">{devices.length===1?"1 device":String(devices.length)+" devices"}</span>
@@ -182,7 +183,7 @@ export function renderDevicesPage(
           <div>
             <h3>No devices yet</h3>
             <p>{sandboxMode?"Connect this computer with the local development Connector.":
-              "Run kicad-mcp-pro remote on your computer to connect."}</p>
+              "Run kicad-mcp-pro cloud setup --browse on your computer to connect."}</p>
           </div>
         </div>:
           <ul className="connections-list device-list">{devices.map(d=><li className="device-row" key={d.id}>
@@ -192,7 +193,7 @@ export function renderDevicesPage(
               <p>{d.revoked?"Revoked":!d.enabled?"Disabled":
                 d.connectionState==="connected"?"Cloud session active":
                 d.connectionState==="disconnected"?
-                  (sandboxMode?"Local Connector disconnected":"Run kicad-mcp-pro remote to connect"):
+                  (sandboxMode?"Local Connector disconnected":"Run kicad-mcp-pro cloud reconnect to restore the background connection"):
                 "Cloud status unknown"}</p>
             </div>
             <div className="device-actions">
@@ -327,9 +328,11 @@ export function renderDevicesPage(
         {sandboxMode?<><p>Local development only. This workspace only accepts
           connections from this computer. Its existing Connector is configured locally.</p>
           <a className="text-link" href="/devices">Review connected devices</a></>:
-          <><p>Run this once to pair your computer and keep the Cloud session open:</p>
-            <div className="local-setup-command"><code>kicad-mcp-pro remote</code></div>
-            <p className="field-help">Choose your KiCad folder in the native picker when prompted.</p></>}
+          <><p>Run this once on your Windows computer. Choose your KiCad folder,
+              then sign-in and approve pairing in the browser.</p>
+            <div className="local-setup-command"><code>kicad-mcp-pro cloud setup --browse</code></div>
+            <p className="field-help">The read-only Connector reconnects when you sign in to Windows.
+              You do not need to keep a terminal open. AI app access is granted separately.</p></>}
       </section>:
       <section className="card pair-another-card" id="connect-computer">
         <h2><Icon name="cpu" size={16}/> Connect another computer</h2>
@@ -337,14 +340,17 @@ export function renderDevicesPage(
           {sandboxMode?<p>Local development only. This Cloud instance accepts connections
             from this computer (127.0.0.1). Additional computers need a separate
             network-enabled Cloud setup; remote pairing is unavailable here.</p>:
-          <><p>On your other computer, run:</p>
-            <div className="local-setup-command"><code>kicad-mcp-pro remote</code></div>
-            <p className="field-help">Approve the browser pairing once; future connections reuse it.</p></>}
+          <><p>On your other Windows computer, select its KiCad folder,
+              then sign-in and approve pairing in the browser:</p>
+            <div className="local-setup-command"><code>kicad-mcp-pro cloud setup --browse</code></div>
+            <p className="field-help">The Connector reconnects at Windows sign-in.
+              Existing paired devices can use <code>kicad-mcp-pro cloud reconnect</code>
+              if their background connection stops.</p></>}
         </div>
       </section>}
 
                 {/* Registered Projects Section */}
-          {!sandboxMode?<section className={projects.length>0?"card projects-card":"card projects-card empty-projects-card"} id="registered-projects">
+          {!sandboxMode&&!browseEnabled?<section className={projects.length>0?"card projects-card":"card projects-card empty-projects-card"} id="registered-projects">
             <h2>Your projects</h2>
             {enrollmentAvailable&&!sandboxMode?devices.filter(d=>!d.revoked&&d.enabled&&d.projectCsrf).map(d=>
               <details className="device-register" key={d.id}>
@@ -393,7 +399,8 @@ export function renderDevicesPage(
             </>:<div className="project-empty">
               <h3>No KiCad projects yet</h3>
               <p>{sandboxMode?"Project selection comes next. No local project is shared yet.":
-                <>Run <code>kicad-mcp-pro remote</code> on your computer to choose a project.</>}</p>
+                <>Use <code>kicad-mcp-pro cloud setup --browse</code> on your
+                  computer to pair it. Then choose a project using Browse on its Online card.</>}</p>
             </div>}
 
           </section>:null}
@@ -437,7 +444,7 @@ export function renderDevicesPage(
             </div>
           ):null}
       </details>:null}
-       {sandboxMode?<script src="/assets/device-projects.js" defer={true}/>:null}
+       {sandboxMode||browseEnabled?<script src="/assets/device-projects.js" defer={true}/>:null}
     </div>
   });
 }
