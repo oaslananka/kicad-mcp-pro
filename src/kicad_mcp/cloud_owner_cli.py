@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID
@@ -194,6 +195,82 @@ def show_cloud_projects(origin: str, json_output: bool = False) -> None:
     _display({"projects": rows}, json_output)
 
 
+def _disconnect_local_cloud_device(origin: str) -> bool:
+    """Disconnect the locally paired device for this Cloud without deleting it."""
+    if os.name == "nt":
+        return _stop_windows_cloud_device(origin)
+    if os.name == "posix" and sys.platform.startswith("linux"):
+        return _stop_linux_cloud_device(origin)
+    return False
+
+
+def _stop_windows_cloud_device(origin: str) -> bool:
+    from kicad_mcp.cloud_windows_connector import selected_project
+    from kicad_mcp.cloud_windows_task_scheduler import disable_windows_connector
+
+    try:
+        selected = selected_project()
+        if selected is None or selected.origin != origin:
+            return False
+        stopped = disable_windows_connector()
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise CloudManagementError(
+            "Cloud CLI logged out, but the local device could not be stopped. "
+            "Run cloud disable and verify Cloud Devices."
+        ) from exc
+    if stopped is not True:
+        raise CloudManagementError(
+            "Cloud CLI logged out, but local device shutdown was not confirmed. "
+            "Run cloud disable and verify Cloud Devices."
+        )
+    return True
+
+
+def _stop_linux_cloud_device(origin: str) -> bool:
+    from kicad_mcp.cloud_local_registry import default_registry_root
+    from kicad_mcp.cloud_managed_connector import _disable
+    from kicad_mcp.cloud_registered_pilot import _single_registered_identity
+
+    root = default_registry_root()
+    if not (root / "projects").exists():
+        return False
+    try:
+        current = _single_registered_identity(root)
+        if current.get("cloudOrigin") != origin:
+            return False
+        stopped = _disable()
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise CloudManagementError(
+            "Cloud CLI logged out, but Linux Connector shutdown needs local review."
+        ) from exc
+    if stopped != 0:
+        raise CloudManagementError(
+            "Cloud CLI logged out, but Linux Connector shutdown was not confirmed."
+        )
+    return True
+
+
+def _logout_current_cloud_owner(api: CloudOwnerApi) -> tuple[bool, bool]:
+    """Local disconnect is not contingent on a healthy Cloud HTTP connection."""
+    token = load_token(api.origin)
+    local_failure: CloudManagementError | None = None
+    stopped = False
+    try:
+        stopped = _disconnect_local_cloud_device(api.origin)
+    except CloudManagementError as exc:
+        local_failure = exc
+
+    if token:
+        # Never silently erase credentials without Cloud confirming revocation.
+        response = api.request("POST", "/api/owner/v1/logout", token=token)
+        if response.get("revoked") is not True:
+            raise CloudManagementError("Cloud did not confirm revocation.")
+        forget_token(api.origin)
+    if local_failure is not None:
+        raise local_failure
+    return bool(token), stopped
+
+
 def register_owner_commands(app: typer.Typer, default_origin: str) -> None:
     @app.command("authorize")
     def authorize_owner(
@@ -214,18 +291,19 @@ def register_owner_commands(app: typer.Typer, default_origin: str) -> None:
     def logout_owner(
         cloud_origin: str = typer.Option(default_origin, "--cloud-origin"),
     ) -> None:
-        """Revoke only this CLI's management token; preserve all Cloud projects."""
+        """Log out this CLI and stop its same-Cloud local device Connector."""
         try:
             api = CloudOwnerApi(cloud_origin)
-            token = load_token(api.origin)
-            if not token:
+            had_token, stopped = _logout_current_cloud_owner(api)
+            if not had_token and not stopped:
                 typer.echo("Cloud CLI is already disconnected.")
                 return
-            response = api.request("POST", "/api/owner/v1/logout", token=token)
-            if response.get("revoked") is not True:
-                raise CloudManagementError("Cloud did not confirm revocation.")
-            forget_token(api.origin)
-            typer.echo("Cloud CLI access revoked. Projects and devices are unchanged.")
+            typer.echo("Cloud CLI logged out." if had_token else "No active CLI token.")
+            typer.echo(
+                "Local Connector stopped; device pairing and KiCad projects preserved."
+                if stopped
+                else "No same-Cloud local device was connected."
+            )
         except CloudManagementError as exc:
             typer.echo(str(exc), err=True)
             raise typer.Exit(1) from exc

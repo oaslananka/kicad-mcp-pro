@@ -345,6 +345,8 @@ def test_owner_cli_authorize_and_logout_are_explicit_and_preserve_projects(
     monkeypatch.setattr(cloud_owner_cli, "load_token", lambda _origin: _TOKEN)
     monkeypatch.setattr(cloud_owner_cli, "forget_token", forgotten.append)
     monkeypatch.setattr(CloudOwnerApi, "request", fake_logout)
+    # This contract test must not stop the runner machine's real Connector.
+    monkeypatch.setattr(cloud_owner_cli, "_disconnect_local_cloud_device", lambda _origin: False)
     runner = CliRunner()
     result = runner.invoke(app, ["cloud", "authorize", "--no-browser", "--label", "Lab PC"])
     assert result.exit_code == 0, result.output
@@ -354,7 +356,8 @@ def test_owner_cli_authorize_and_logout_are_explicit_and_preserve_projects(
     assert result.exit_code == 0, result.output
     assert posted == [("POST", "/api/owner/v1/logout", _TOKEN)]
     assert forgotten == [_ORIGIN]
-    assert "Projects and devices are unchanged" in result.output
+    assert "Cloud CLI logged out." in result.output
+    assert "No same-Cloud local device was connected." in result.output
 
     monkeypatch.setattr(cloud_owner_cli, "load_token", lambda _origin: None)
     result = runner.invoke(app, ["cloud", "logout"])
@@ -369,6 +372,11 @@ def test_cli_logout_requires_server_revoke_before_forgetting_token(
     deleted: list[str] = []
     monkeypatch.setattr(cloud_owner_cli, "load_token", lambda _origin: _TOKEN)
     monkeypatch.setattr(cloud_owner_cli, "forget_token", deleted.append)
+    monkeypatch.setattr(
+        cloud_owner_cli,
+        "_disconnect_local_cloud_device",
+        lambda _origin: True,
+    )
     monkeypatch.setattr(
         CloudOwnerApi,
         "request",
@@ -914,3 +922,197 @@ def test_cloud_add_project_command_rejects_non_windows_and_surfaces_local_error(
     result = CliRunner().invoke(app, ["cloud", "add-project", "--path", str(tmp_path)])
     assert result.exit_code != 0
     assert "Select one KiCad project with --file." in result.output
+
+
+def test_cli_logout_disables_local_connector_after_cloud_token_revoke(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(cloud_owner_cli, "load_token", lambda _origin: _TOKEN)
+    monkeypatch.setattr(
+        CloudOwnerApi,
+        "request",
+        lambda _self, _method, _path, *, token: (
+            events.append("remote-revoked") or {"revoked": True}
+        ),
+    )
+    monkeypatch.setattr(
+        cloud_owner_cli,
+        "forget_token",
+        lambda _origin: events.append("token-forgotten"),
+    )
+    monkeypatch.setattr(
+        cloud_owner_cli,
+        "_disconnect_local_cloud_device",
+        lambda _origin: events.append("device-stopped") or True,
+    )
+    response = CliRunner().invoke(app, ["cloud", "logout"])
+    assert response.exit_code == 0, response.output
+    assert events == ["device-stopped", "remote-revoked", "token-forgotten"]
+    assert "Local Connector stopped" in response.output
+    assert "device pairing and KiCad projects preserved" in response.output
+
+
+def test_logout_without_management_token_still_disables_local_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cloud_owner_cli, "load_token", lambda _origin: None)
+    monkeypatch.setattr(CloudOwnerApi, "request", lambda *_a, **_kw: pytest.fail("No token"))
+    monkeypatch.setattr(
+        cloud_owner_cli,
+        "_disconnect_local_cloud_device",
+        lambda _origin: True,
+    )
+    response = CliRunner().invoke(app, ["cloud", "logout"])
+    assert response.exit_code == 0, response.output
+    assert "Local Connector stopped" in response.output
+    assert "No active CLI token." in response.output
+
+
+def test_windows_logout_only_stops_device_for_matching_cloud(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_windows_connector, cloud_windows_task_scheduler
+
+    monkeypatch.setattr(cloud_owner_cli, "os", SimpleNamespace(name="nt"))
+    selected = SimpleNamespace(origin="https://other.example", device_id="foreign")
+    monkeypatch.setattr(cloud_windows_connector, "selected_project", lambda: selected)
+    events: list[str] = []
+    monkeypatch.setattr(
+        cloud_windows_task_scheduler,
+        "disable_windows_connector",
+        lambda: events.append("disabled") or True,
+    )
+    assert cloud_owner_cli._disconnect_local_cloud_device(_ORIGIN) is False
+    assert events == []
+    selected.origin = _ORIGIN
+    assert cloud_owner_cli._disconnect_local_cloud_device(_ORIGIN) is True
+    assert events == ["disabled"]
+
+
+def test_windows_logout_unverified_connector_stop_is_not_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_windows_connector, cloud_windows_task_scheduler
+
+    monkeypatch.setattr(cloud_owner_cli, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        cloud_windows_connector,
+        "selected_project",
+        lambda: SimpleNamespace(origin=_ORIGIN),
+    )
+    monkeypatch.setattr(
+        cloud_windows_task_scheduler,
+        "disable_windows_connector",
+        lambda: False,
+    )
+    with pytest.raises(CloudManagementError, match="not confirmed"):
+        cloud_owner_cli._disconnect_local_cloud_device(_ORIGIN)
+
+
+def test_linux_logout_stops_only_registered_same_cloud_service(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_local_registry, cloud_managed_connector, cloud_registered_pilot
+
+    (tmp_path / "projects").mkdir()
+    monkeypatch.setattr(cloud_owner_cli, "os", SimpleNamespace(name="posix"))
+    monkeypatch.setattr(cloud_owner_cli, "sys", SimpleNamespace(platform="linux"))
+    monkeypatch.setattr(cloud_local_registry, "default_registry_root", lambda: tmp_path)
+    record = {"cloudOrigin": "https://other-cloud.example"}
+    monkeypatch.setattr(cloud_registered_pilot, "_single_registered_identity", lambda _: record)
+    stopped: list[str] = []
+    monkeypatch.setattr(
+        cloud_managed_connector,
+        "_disable",
+        lambda: stopped.append("service") or 0,
+    )
+    assert cloud_owner_cli._disconnect_local_cloud_device(_ORIGIN) is False
+    assert stopped == []
+    record["cloudOrigin"] = _ORIGIN
+    assert cloud_owner_cli._disconnect_local_cloud_device(_ORIGIN) is True
+    assert stopped == ["service"]
+
+
+def test_linux_logout_does_not_claim_success_when_service_stop_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_local_registry, cloud_managed_connector, cloud_registered_pilot
+
+    (tmp_path / "projects").mkdir()
+    monkeypatch.setattr(cloud_owner_cli, "os", SimpleNamespace(name="posix"))
+    monkeypatch.setattr(cloud_owner_cli, "sys", SimpleNamespace(platform="linux"))
+    monkeypatch.setattr(cloud_local_registry, "default_registry_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        cloud_registered_pilot,
+        "_single_registered_identity",
+        lambda _: {"cloudOrigin": _ORIGIN},
+    )
+    monkeypatch.setattr(cloud_managed_connector, "_disable", lambda: 1)
+    with pytest.raises(CloudManagementError, match="not confirmed"):
+        cloud_owner_cli._disconnect_local_cloud_device(_ORIGIN)
+
+
+def test_logout_network_failure_still_revokes_local_device_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(cloud_owner_cli, "load_token", lambda _origin: _TOKEN)
+    monkeypatch.setattr(
+        cloud_owner_cli,
+        "_disconnect_local_cloud_device",
+        lambda _origin: events.append("local-off") or True,
+    )
+    monkeypatch.setattr(
+        CloudOwnerApi,
+        "request",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            CloudManagementError("Cloud unreachable, retry logout")
+        ),
+    )
+    monkeypatch.setattr(
+        cloud_owner_cli,
+        "forget_token",
+        lambda _origin: pytest.fail("unrevoked Cloud token must remain for retry"),
+    )
+    response = CliRunner().invoke(app, ["cloud", "logout"])
+    assert response.exit_code != 0
+    assert "Cloud unreachable" in response.output
+    assert events == ["local-off"]
+
+
+def test_logout_remote_revocation_continues_after_unverified_local_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(cloud_owner_cli, "load_token", lambda _origin: _TOKEN)
+
+    def local_failure(_origin: str) -> bool:
+        events.append("local-stop-failed")
+        raise CloudManagementError("local device shutdown was not confirmed")
+
+    monkeypatch.setattr(cloud_owner_cli, "_disconnect_local_cloud_device", local_failure)
+    monkeypatch.setattr(
+        CloudOwnerApi,
+        "request",
+        lambda *_args, **_kw: events.append("remote-revoked") or {"revoked": True},
+    )
+    monkeypatch.setattr(
+        cloud_owner_cli,
+        "forget_token",
+        lambda _origin: events.append("local-token-forgotten"),
+    )
+    result = CliRunner().invoke(app, ["cloud", "logout"])
+    assert result.exit_code != 0
+    assert "not confirmed" in result.output
+    assert events == ["local-stop-failed", "remote-revoked", "local-token-forgotten"]
