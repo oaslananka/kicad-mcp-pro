@@ -89,7 +89,6 @@ def test_windows_issuer_denies_wrong_algorithm(
     pem = public.public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
     der = public.public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
     monkeypatch.setattr(cloud_windows_write_issuer, "read_credential", lambda _record, _part: pem)
+    fingerprint = hashlib.sha256(der).hexdigest()
     with pytest.raises(LocalWriteDeniedError, match="request denied"):
-        load_pinned_windows_write_issuer_key(
-            RECORD, expected_spki_sha256=hashlib.sha256(der).hexdigest()
-        )
+        load_pinned_windows_write_issuer_key(RECORD, expected_spki_sha256=fingerprint)

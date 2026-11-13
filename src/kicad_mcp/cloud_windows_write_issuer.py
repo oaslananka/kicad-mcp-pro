@@ -17,7 +17,6 @@ from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_public_key
 
-from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
 from kicad_mcp.cloud_windows_credentials import read_credential
 from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
 
@@ -53,5 +52,5 @@ def load_pinned_windows_write_issuer_key(
         if not hmac.compare_digest(hashlib.sha256(der).hexdigest(), expected_spki_sha256):
             raise LocalWriteDeniedError(_DENIED)
         return key
-    except (OSError, ValueError, TypeError, UnsupportedAlgorithm, LocalApprovalDeniedError) as exc:
+    except (OSError, ValueError, TypeError, UnsupportedAlgorithm) as exc:
         raise LocalWriteDeniedError(_DENIED) from exc

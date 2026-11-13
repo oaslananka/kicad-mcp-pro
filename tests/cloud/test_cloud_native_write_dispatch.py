@@ -187,8 +187,9 @@ def test_signed_native_move_uses_canonical_transaction_and_reports_unsaved_state
     assert _coord_nm(board.footprint.position, "x") == 3500000
     assert _coord_nm(board.footprint.position, "y") == 4250000
     assert (folder / "disposable.kicad_pcb").read_bytes() == original
+    replay_proof = signed()
     with pytest.raises(LocalWriteDeniedError, match="request denied"):
-        execute(signed())
+        execute(replay_proof)
     assert board.calls == ["begin", "update", "push"], "replay must never rerun native IPC"
 
 
@@ -198,11 +199,13 @@ def test_signed_move_does_not_enter_native_transaction_for_invalid_proof_or_revi
     tmp_path: Path,
 ) -> None:
     folder, board, signed, execute = _fixture(monkeypatch, tmp_path)
+    wrong_reference = signed(reference="R2")
     with pytest.raises(LocalWriteDeniedError):
-        execute(signed(reference="R2"))
+        execute(wrong_reference)
     assert board.calls == [], "unknown footprint was denied before beginning"
+    stale_revision = signed(request_id="55555555-5555-4555-8555-555555555555", digest="0" * 64)
     with pytest.raises(LocalWriteDeniedError):
-        execute(signed(request_id="55555555-5555-4555-8555-555555555555", digest="0" * 64))
+        execute(stale_revision)
     assert board.calls == [], "stale on-disk revision was denied before beginning"
     assert (folder / "disposable.kicad_pcb").read_bytes() == START.encode()
 
@@ -214,7 +217,12 @@ def test_signed_move_revoke_before_commit_discards_without_changing_file(
 ) -> None:
     folder, board, signed, execute = _fixture(monkeypatch, tmp_path)
     permissions = iter([True, True, False])
+    proposal = signed()
+
+    def current_permission() -> bool:
+        return next(permissions)
+
     with pytest.raises(LocalWriteDeniedError):
-        execute(signed(), authorized=lambda: next(permissions))
+        execute(proposal, authorized=current_permission)
     assert board.calls == ["begin", "update", "drop"]
     assert (folder / "disposable.kicad_pcb").read_bytes() == START.encode()
