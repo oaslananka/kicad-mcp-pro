@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {assertLandingStructuredData} from "./production-page-check.mjs";
 const origin=process.env.PUBLIC_ORIGIN??"https://kicad-mcp-pro.oaslananka.dev";
 const parsedOrigin=new URL(origin);
 assert.equal(parsedOrigin.origin,origin);
@@ -15,7 +16,7 @@ const page=await landingResponse.text();
 assert.match(page,/KiCad MCP Cloud/);
 assert.match(page,/href="\/sign-in"/,
   "Public overview must link to the enabled sign-in route");
-assert.doesNotMatch(page,/<script[\s>]/i);
+assertLandingStructuredData(page,origin);
 assert.doesNotMatch(page,/Account access pending/,
   "Public overview must not claim sign-in is disabled");
 
@@ -93,4 +94,4 @@ const authorizationMetadata=await fetch(
   `${origin}/.well-known/oauth-authorization-server/api/auth`,
   options);
 assert.equal(authorizationMetadata.status,200,"OAuth discovery must be reachable");
-console.log("Production smoke PASS: HTTPS, UI/CSS, OAuth discovery, anonymous MCP 401, GitHub-only login and protected account");
+console.log("Production smoke PASS: HTTPS, UI/CSS, OAuth discovery, anonymous MCP 401, configured login providers and protected account");

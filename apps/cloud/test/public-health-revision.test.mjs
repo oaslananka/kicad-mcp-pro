@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {readPublicHealthRevision} from "../scripts/read-public-health-revision.mjs";
+import {assertLandingStructuredData} from "../scripts/production-page-check.mjs";
 
 const REVISION="a".repeat(40);
 const ORIGIN="https://pcb.example.test/";
@@ -59,4 +60,17 @@ test("Cloud production container allows only its two required build helpers",()=
   const exceptions=ignore.split("\n").filter(line=>line.startsWith("!scripts/"));
   assert.deepEqual(exceptions,expected.map(path=>"!"+path));
   assert.doesNotMatch(dockerfile,/COPY scripts\s+\.\/scripts/);
+});
+test("landing smoke permits inert canonical JSON-LD and rejects executable or unexpected scripts",()=>{
+  const origin="https://pcb.example.test";
+  const data={"@context":"https://schema.org","@type":"SoftwareApplication",url:origin+"/"};
+  const valid='<script type="application/ld+json">'+JSON.stringify(data)+"</script>";
+  assert.doesNotThrow(()=>assertLandingStructuredData(valid,origin));
+  for(const page of ["",valid+'<script src="/unexpected.js"></script>',
+      '<script type="text/javascript">alert(1)</script>',
+      valid.replace('type="application/ld+json"','type="application/ld+json" onload="bad()"'),
+      valid.replace(origin,"https://foreign.example.test"),
+      valid.replace(JSON.stringify(data),"not-json")]){
+    assert.throws(()=>assertLandingStructuredData(page,origin));
+  }
 });
