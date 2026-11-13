@@ -255,3 +255,128 @@ async def test_invalid_session_read_budgets_are_rejected(tmp_path: Path, max_rea
             lambda _: dispatcher,
             max_reads=max_reads,  # type: ignore[arg-type]
         )
+
+
+# --- Bounded local-folder browse frames on the same signed socket -------------
+
+FOLDER_REQUEST = "0f4a2c1e-7b60-4d21-9d3a-2f8f6e1c4b55"
+BROWSE_PROJECT = "44444444-4444-4444-8444-444444444444"
+
+
+def folder_frame(operation: str, **extra: object) -> str:
+    body: dict[str, object] = {
+        "kind": "connector.local_browser_request",
+        "version": 1,
+        "requestId": FOLDER_REQUEST,
+        "operation": operation,
+    }
+    body.update(extra)
+    return json.dumps(body)
+
+
+class ScriptedSocket:
+    """Delivers queued frames verbatim; records every outgoing frame."""
+
+    def __init__(self, incoming: list[str]) -> None:
+        self.pending = list(incoming)
+        self.sent: list[dict[str, object]] = []
+
+    async def recv(self) -> str:
+        if not self.pending:
+            raise AssertionError("test socket unexpectedly drained")
+        return self.pending.pop(0)
+
+    async def send(self, value: str) -> None:
+        self.sent.append(json.loads(value))
+        message = self.sent[-1]
+        # Cloud signs every read result with an immediate sequence ack.
+        if message.get("kind") == "connector.read_result":
+            self.pending.append(
+                json.dumps(
+                    {
+                        "kind": "connector.read_ack",
+                        "version": 1,
+                        "sequence": message["sequence"],
+                        "requestId": message["result"]["requestId"],
+                    }
+                )
+            )
+
+
+class StagedFolderService:
+    def __init__(self) -> None:
+        self.listed: list[str] = []
+        self.bound: list[tuple[str, str]] = []
+
+    def list(self, folder_id: str) -> dict[str, object]:
+        self.listed.append(folder_id)
+        return {
+            "folderId": folder_id,
+            "name": "KiCad Projects",
+            "parentId": None,
+            "project": False,
+            "more": False,
+            "folders": [{"id": "child", "name": "Board1", "project": True}],
+        }
+
+    def bind(self, folder_id: str, project_id: str) -> bool:
+        self.bound.append((folder_id, project_id))
+        return True
+
+    def choose(self) -> dict[str, object]:
+        return {"status": "cancelled"}
+
+    def project_path(self, project_id: str) -> str | None:
+        return None
+
+
+def _signed_socket_dispatch(db_dispatcher: LocalReadDispatch) -> LocalReadDispatch:
+    """Dispatcher factory form; the same object proves scope/scope isolation."""
+    return db_dispatcher
+
+
+@pytest.mark.anyio
+async def test_folder_frames_are_answered_without_consuming_read_sequences(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "board.kicad_pro").write_text('{"secret": true}')
+    dispatcher = build_dispatcher(tmp_path, [True])
+    service = StagedFolderService()
+    socket = ScriptedSocket([folder_frame("list", folderId="root"), request(1)])
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+
+    def factory(_receipt: HandshakeReceipt) -> LocalReadDispatch:
+        return dispatcher
+
+    # Serve one interleaved folder frame, then one read: sequences untouched.
+    served = await serve_authenticated_reads(
+        socket, receipt, factory, max_reads=1, folder_service=service
+    )
+    assert served == receipt
+    kinds = [item["kind"] for item in socket.sent]
+    assert kinds == ["connector.local_browser_result", "connector.read_result"]
+    folder_result = socket.sent[0]
+    assert folder_result == {
+        "kind": "connector.local_browser_result",
+        "version": 1,
+        "requestId": FOLDER_REQUEST,
+        "operation": "list",
+        "folderId": "root",
+        "name": "KiCad Projects",
+        "parentId": None,
+        "project": False,
+        "more": False,
+        "folders": [{"id": "child", "name": "Board1", "project": True}],
+    }
+    read_result = socket.sent[1]
+    assert read_result["sequence"] == 1
+    assert read_result["result"]["files"]["projectPresent"] is True
+
+
+@pytest.mark.anyio
+async def test_folder_service_is_required_before_any_browse_frame_is_answered() -> None:
+    socket = ScriptedSocket([folder_frame("list", folderId="root")])
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    with pytest.raises(CloudHandshakeDeniedError):
+        await serve_authenticated_reads(socket, receipt, _signed_socket_dispatch, max_reads=1)
+    assert socket.sent == []

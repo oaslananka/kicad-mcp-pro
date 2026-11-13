@@ -18,6 +18,8 @@ import { PgGrantManagement } from "./grants.js";
 import { configuredIdentity } from "./identity.js";
 import {createLocalDevIdentity} from "./local-dev-identity.js";
 import {recoverLocalDevSessions} from "./local-dev-recovery.js";
+import {PgUsage} from "./usage.js";
+import {PgOwnerApiAccess} from "./owner-api.js";
 
 const config = loadConfig();
 const localDevWorkspace=process.env.AUTH_MODE==="local_dev";
@@ -81,6 +83,15 @@ if(pairingDeviceEnabled&&(!identity||(!localDevWorkspace&&!config.publicOrigin.s
 }
 const pairingDevice=pairingDeviceEnabled&&connectorPool?
   new PgPairingDeviceAPI(connectorPool,process.env.BETTER_AUTH_SECRET??""):undefined;
+// Observation-only tool-call telemetry, ON for database-backed deployments.
+// Recorded values are counts per client/tool/status; no quota, allowance or
+// content. Set USAGE_TELEMETRY_ENABLED=false to disable the insert path.
+const usageEnabled=process.env.USAGE_TELEMETRY_ENABLED!=="false";
+const usage=usageEnabled&&connectorPool?new PgUsage(connectorPool):undefined;
+// Browser-approved command-line management needs the same database-backed
+// token store and built-in identity as the approval page. Without identity,
+// no approval can complete, so the surface is not constructed at all.
+const ownerApi=identity&&connectorPool?new PgOwnerApiAccess(connectorPool):undefined;
 // Enabling either public device surface requires an explicit, fixed
 // cloudflared TCP peer allowlist; no trust-all or unverified header fallback.
 // Device source trust is explicit and mutually exclusive; only an accepted,
@@ -96,7 +107,9 @@ const server=createHttpServer(config, inventory, createVerifier(config), {grants
   mcpProjectInspectionEnabled:operatorInspection,
   mcpProjectBoardCountsEnabled:operatorBoardCounts,
   mcpProjectSchematicCountsEnabled:operatorSchematicCounts,summaryRelay:()=>connectorRelay,
-  ...(ownerIntentDelivery?{ownerIntentDelivery}:{})});
+  ...(ownerIntentDelivery?{ownerIntentDelivery}:{}),
+  ...(usage?{usage}:{}),
+  ...(ownerApi?{ownerApi}:{})});
 const connectorWs=wsEnabled&&connectorPool?attachConnectorWebSocket(server,{
   publicOrigin:config.publicOrigin,
   sourceOf:deviceSource!,
@@ -108,6 +121,7 @@ const connectorWs=wsEnabled&&connectorPool?attachConnectorWebSocket(server,{
   operatorBoardCountsOnce:operatorBoardCounts,
   operatorSchematicCountsOnce:operatorSchematicCounts,
   localDevFolderBrowse:localDevWorkspace,
+  productionFolderBrowse:!localDevWorkspace,
   connections:new BoundConnectorConnections(
     new PgConnectorSessions(connectorPool),
     new PgConnectorReadGate(connectorPool))

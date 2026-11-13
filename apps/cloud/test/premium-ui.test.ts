@@ -5,7 +5,8 @@ import {renderConnectionsPage} from "../src/connections-ui.js";
 import {renderConsentPage} from "../src/consent-ui.js";
 import {renderDevicesPage} from "../src/devices-ui.js";
 import {renderPairingReviewPage} from "../src/pairing-review-ui.js";
-import {renderUsagePage, type UsageMetrics} from "../src/usage-ui.js";
+import {renderUsagePage, type UsagePageMetrics} from "../src/usage-ui.js";
+import type {UsageSummary} from "../src/usage.js";
 import {uiCss} from "../src/ui-styles.js";
 
 test("premium visual language is first-party, consistent and responsive",()=>{
@@ -88,8 +89,8 @@ test("HTTP-first landing offers a working local transport and optional Cloud",()
 
 test("usage page never invents plan limits, activity or account identity",()=>{
   const html = renderUsagePage();
-  assert.match(html, /Usage data is not available yet/);
-  assert.match(html, /No verified tool-call counts/);
+  assert.match(html, /No tool-call activity recorded yet/);
+  assert.match(html, /Nothing is estimated and no usage limit is implied/);
   assert.match(html, /View connected devices/);
   assert.doesNotMatch(html, /473|10[.,]000|Standard Developer Plan|Active Plan|oaslananka@gmail.com/);
   assert.doesNotMatch(html, /Last 6 months, grouped by month|project_summary/);
@@ -99,18 +100,29 @@ test("usage page never invents plan limits, activity or account identity",()=>{
   assert.doesNotMatch(html, /<link[^>]+type="image\/svg\+xml"/);
 });
 
-test("usage metrics render only when supplied by a verified data provider",()=>{
-  const metrics: UsageMetrics = {
-    totalCallsThisMonth: 2, monthlyQuota: 42, dailyAverage: 1,
-    daysRemainingInMonth: 7, resetDateLabel: "Next month",
-    monthlyHistory: [{month:"Nov",calls:2}],
-    toolBreakdown: [{name:"project_summary",count:2,percentage:100}],
-    recentActivity: []
+test("usage page renders only supplied observations and never quota language",()=>{
+  const summary: UsageSummary = {
+    windowDays: 30, totalCalls: 2,
+    byTool: [{tool:"list_projects",count:2}],
+    byClient: [{clientId:"test-client",count:2}],
+    byStatus: [{status:"success",count:2}],
+    byDay: [{day:"2026-11-13",calls:2}],
+    firstAt: "2026-11-13T10:00:00.000Z",
+    lastAt: "2026-11-13T10:01:00.000Z"
+  };
+  const metrics: UsagePageMetrics = {
+    summary,
+    recent: [{id:2,at:"2026-11-13T10:01:00.000Z",tool:"list_projects",
+      clientId:"test-client",status:"success"}]
   };
   const html = renderUsagePage(metrics,"example@example.com");
-  assert.match(html, /Calls over time/);
-  assert.match(html, /Most used tools/);
-  assert.match(html, /project_summary/);
+  assert.match(html, /2 calls recorded/);
+  assert.match(html, /list_projects/);
+  assert.match(html, /test-client/);
   assert.match(html, /example@example.com/);
+  assert.match(html, /Calls per day/);
+  assert.match(html, /Most used tools/);
+  // No quota, allowance or entitlement vocabulary anywhere on the page.
+  assert.doesNotMatch(html, /quota|allowance|allowance|MONTHLY|plan|left this month|remaining/i);
   assert.doesNotMatch(html, /473|10[.,]000|Standard Developer Plan|oaslananka@gmail.com/);
 });

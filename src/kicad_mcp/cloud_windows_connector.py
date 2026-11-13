@@ -23,6 +23,7 @@ from cryptography.hazmat.primitives.serialization import (
 )
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
+from kicad_mcp.cloud_folder_browse_receiver import LocalFolderBrowseService, device_folder_service
 from kicad_mcp.cloud_outbound_handshake import (
     HandshakeReceipt,
     execute_owner_managed_read_session,
@@ -302,15 +303,29 @@ async def _run_owner_session(
     runner: Callable[..., Awaitable[HandshakeReceipt]],
 ) -> HandshakeReceipt:
     """Bind one immutable identity and key to this particular socket session."""
-    return await runner(
-        origin=project.origin,
-        trusted_origin=project.origin,
-        owner_sub=project.owner_sub,
-        device_id=project.device_id,
-        signing_key=key,
-        dispatcher_factory=lambda receipt: _dispatcher(project, selected, receipt),
-        max_reads=_MAX_READS,
-    )
+    settings = {
+        "origin": project.origin,
+        "trusted_origin": project.origin,
+        "owner_sub": project.owner_sub,
+        "device_id": project.device_id,
+        "signing_key": key,
+        "dispatcher_factory": lambda receipt: _dispatcher(project, selected, receipt),
+        "max_reads": _MAX_READS,
+    }
+    if runner is execute_owner_managed_read_session or getattr(
+        runner, "_kicad_supports_folder_browse", False
+    ):
+
+        def folder_factory(receipt: HandshakeReceipt) -> LocalFolderBrowseService:
+            if receipt.device_id != project.device_id or not _current_authorization(project):
+                raise LocalApprovalDeniedError(_DENIED)
+            return device_folder_service(
+                selected.directory,
+                authorization=lambda: _current_authorization(project),
+            )
+
+        settings["folder_service_factory"] = folder_factory
+    return await runner(**settings)
 
 
 async def _await_authorized_session(
@@ -352,6 +367,8 @@ def _session_runner_with_status(
         dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch],
         max_reads: int,
         on_ready: Callable[[HandshakeReceipt], None] = report_ready,
+        folder_service_factory: Callable[[HandshakeReceipt], LocalFolderBrowseService]
+        | None = None,
     ) -> HandshakeReceipt:
         return await execute_owner_managed_read_session(
             origin=origin,
@@ -362,8 +379,10 @@ def _session_runner_with_status(
             dispatcher_factory=dispatcher_factory,
             max_reads=max_reads,
             on_ready=on_ready,
+            folder_service_factory=folder_service_factory,
         )
 
+    signed_ready_runner._kicad_supports_folder_browse = True  # type: ignore[attr-defined]
     return signed_ready_runner
 
 

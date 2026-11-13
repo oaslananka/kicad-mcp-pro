@@ -155,7 +155,7 @@ export function renderDevicesPage(
                     title="Revoke this device and disable its project access">Revoke</button>
                 </form>:null}
             </div>
-            {sandboxMode&&d.enabled&&!d.revoked&&browseEnabled?
+            {d.enabled&&!d.revoked&&browseEnabled?
               <details className="device-projects-menu" data-device-id={d.id} open={true}>
                 <summary><Icon name="projects" size={15}/> Projects
                   <span>{projects.filter(p=>p.deviceId===d.id).length}</span>

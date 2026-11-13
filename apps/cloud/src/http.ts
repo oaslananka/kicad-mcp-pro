@@ -21,6 +21,8 @@ import {publicAsset} from "./public-assets.js";
 import {pairingReviewClient} from "./pairing-review-client.js";
 import {deviceProjectsClient} from "./device-projects-client.js";
 import {pairingLoginContinuationClient} from "./pairing-login-continuation.js";
+import {ownerApiResponse,cliApproveResponse,type PgOwnerApiAccess} from "./owner-api.js";
+import {extractToolCall,callStatusFromResponse,type PgUsage} from "./usage.js";
 import type {TrustedOAuthReadIdentity} from "./connector-read-gate.js";
 import type {PreparedOwnerSummary,SummaryReadResult,PreparedOwnerDrc,DrcReadResult,
   PreparedOwnerInspection,InspectionReadResult,
@@ -105,6 +107,12 @@ export type CloudHttpServices={
   pairingDevice?:PairingDevicePort;
   deviceSource?:RequestSourceResolver;
   summaryRelay?:()=>SummaryRelay|null;
+  // Browser-approved command-line management access. Absent unless a
+  // database-backed token store and built-in identity are configured.
+  ownerApi?:PgOwnerApiAccess;
+  // Observation-only tool-call telemetry for the served MCP surface.
+  // Missing tables or failures never fail a tool call.
+  usage?:PgUsage;
   // Metadata-only, owner-granted + manually started local one-shot pilot.
   // Never enable this from an untrusted request or merely from WS presence.
   mcpProjectPresenceEnabled?:boolean;
@@ -185,9 +193,9 @@ async function handleRequest(
         res.end(uiCss);
         return;
       }
-      if (identity && (path === "/devices/projects/browse" ||
+      if (identity && (path === "/devices/projects/browse" || path === "/devices/projects/folders" ||
         path === "/devices/projects/select" || path === "/devices/projects/rename" ||
-        path === "/sign-in" || path === "/account" || path === "/overview" || path === "/usage" || path === "/projects" || path === "/settings" || path === "/consent" || path === "/connections" || path === "/connections/revoke" || path === "/devices" || path === "/devices/revoke" || path === "/devices/delete" || path === "/devices/enable" || path === "/devices/projects/create" || path === "/devices/projects/grant" || path === "/devices/projects/managed" || path === "/devices/projects/delete" || path === "/devices/pairing" || path === "/devices/pairing/review" || path.startsWith("/auth/start/") || path.startsWith("/auth/link/"))) {
+        path === "/sign-in" || path === "/account" || path === "/overview" || path === "/usage" || path === "/projects" || path === "/settings" || path === "/consent" || path === "/connections" || path === "/connections/revoke" || path === "/devices" || path === "/devices/revoke" || path === "/devices/delete" || path === "/devices/enable" || path === "/devices/projects/create" || path === "/devices/projects/grant" || path === "/devices/projects/managed" || path === "/devices/projects/delete" || path === "/devices/pairing" || path === "/devices/pairing/review" || path === "/api/owner/cli/approve" || path.startsWith("/auth/start/") || path.startsWith("/auth/link/"))) {
         const method=req.method??"GET";
         const headers=new Headers();
         for (const [name,value] of Object.entries(req.headers)) {
@@ -210,11 +218,17 @@ async function handleRequest(
           answer=await devicesResponse(browserRequest,identity,config.publicOrigin,
             devices,Boolean(pairingDevice),grants,
             summaryRelay?.()?.isDeviceConnected,services.managedRead,
-            services.localDevWorkspace?summaryRelay?.()?.localFolders:undefined);
+            services.localDevWorkspace?summaryRelay?.()?.localFolders:identity&&summaryRelay?.()?.localFolders?summaryRelay?.()?.localFolders:undefined);
         } else if(path==="/devices/pairing" || path==="/devices/pairing/review"){
           answer=await pairingBrowserResponse(browserRequest,identity,config.publicOrigin,pairings);
+        } else if(path==="/api/owner/cli/approve"){
+          // Browser-only approval of one command-line pairing request. The
+          // page is absent when no token store is configured; never 404-quiet.
+          answer=services.ownerApi?await cliApproveResponse(browserRequest,
+            identity,config.publicOrigin,services.ownerApi):null;
         } else {
-          answer=await browserResponse(browserRequest,identity,config.publicOrigin,devices,grants);
+          answer=await browserResponse(browserRequest,identity,config.publicOrigin,devices,grants,
+            services.usage);
         }
         if (answer) {
           const responseHeaders=Object.fromEntries(answer.headers);
@@ -299,6 +313,36 @@ async function handleRequest(
         });
         res.end(Buffer.from(await reply.arrayBuffer()));
         return;
+      }
+      // Browser-approved command-line management surface: unauthenticated
+      // start/poll pairing endpoints plus token-authenticated owner reads.
+      // Host and Origin validation above already applied; CLI callers send
+      // no Origin header and remain allowed by the fail-closed policy.
+      if ((path === "/api/owner/cli/start" || path === "/api/owner/cli/poll" ||
+           path.startsWith("/api/owner/v1/")) && services.ownerApi) {
+        const method=req.method ?? "GET";
+        const headers=new Headers();
+        for (const [name,value] of Object.entries(req.headers)) {
+          if (typeof value==="string" &&
+              !["host","connection","content-length","transfer-encoding"].includes(name)){
+            headers.set(name,value);
+          }
+        }
+        const payload=method==="GET" || method==="HEAD" ? undefined : await requestBody(req);
+        const apiRequest=new Request(config.publicOrigin+(req.url??"/"),{
+          method,headers,body:payload?.toString("utf8")});
+        const answer=await ownerApiResponse(apiRequest,config.publicOrigin,{
+          ownerApi:services.ownerApi,devices,
+          ...(grants?{grants}:{}),
+          ...(services.usage?{usage:services.usage}:{}),
+          deviceConnection:summaryRelay?.()?.isDeviceConnected});
+        if(answer){
+          const outgoing=Object.fromEntries(answer.headers);
+          delete outgoing["content-length"];
+          res.writeHead(answer.status,outgoing);
+          res.end(Buffer.from(await answer.arrayBuffer()));
+          return;
+        }
       }
       const grantRoute = /^\/api\/v1\/projects\/([0-9a-f-]{36})\/grants$/.exec(path);
       if (grantRoute && req.method === "PUT" && grants) {
@@ -666,10 +710,19 @@ async function handleRequest(
       } finally {
         await handler.close();
       }
+      const outBody=Buffer.from(await output.arrayBuffer());
+      // Observation-only telemetry: exactly one record per deterministically
+      // attributable tools/call request/response pair. An SSE or unmatchable
+      // body records nothing; a recording failure never affects the response.
+      const toolCall=extractToolCall(bytes.toString("utf8"));
+      if(services.usage&&toolCall&&actor.sub){
+        const status=callStatusFromResponse(outBody.toString("utf8"),toolCall.id);
+        if(status)void services.usage.record(actor.sub,actor.clientId,toolCall.tool,status);
+      }
       const outHeaders = Object.fromEntries(output.headers);
       delete outHeaders["set-cookie"];
       res.writeHead(output.status, { ...noCache, ...outHeaders });
-      res.end(Buffer.from(await output.arrayBuffer()));
+      res.end(outBody);
     } catch (error) {
       if (!res.headersSent) {
         deny(res, error instanceof Error && error.message === "REQUEST_TOO_LARGE" ? 413 : 500,

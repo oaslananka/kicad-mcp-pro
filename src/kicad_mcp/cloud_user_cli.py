@@ -21,6 +21,7 @@ from typing import Annotated
 
 import typer
 
+from kicad_mcp.cloud_owner_cli import register_owner_commands
 from kicad_mcp.cloud_windows_enrollment import WindowsRegisteredProject
 
 DEFAULT_CLOUD_ORIGIN = "https://kicad-mcp-pro.oaslananka.dev"
@@ -417,9 +418,22 @@ def login(
     no_browser: bool = typer.Option(
         False, "--no-browser", help="Display the login URL without launching a browser."
     ),
+    web_only: bool = typer.Option(
+        False, "--web-only", help="Sign in without connecting CLI management."
+    ),
 ) -> None:
-    """Open first-party Cloud sign-in, supporting GitHub and Google when configured."""
+    """Sign in once in the browser and enable Cloud management in this CLI."""
     origin = _verified_origin(cloud_origin)
+    if not web_only:
+        from kicad_mcp.cloud_owner_management import CloudManagementError, authorize
+
+        try:
+            authorize(origin, no_browser=no_browser)
+        except CloudManagementError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(1) from exc
+        typer.echo("To connect a KiCad device, run: kicad-mcp-pro cloud setup")
+        return
     url = origin + "/sign-in"
     typer.echo(f"Cloud sign-in: {url}")
     if not no_browser:
@@ -819,8 +833,19 @@ def register_project(
 
 
 @cloud_app.command()
-def projects() -> None:
-    """List registered KiCad Cloud projects and bound device."""
+def projects(
+    cloud: bool = typer.Option(
+        False, "--cloud", help="List projects from Cloud, not the local Connector."
+    ),
+    cloud_origin: str = typer.Option(DEFAULT_CLOUD_ORIGIN, "--cloud-origin"),
+    json_output: bool = typer.Option(False, "--json", help="Machine-readable Cloud response."),
+) -> None:
+    """List local projects, or use --cloud for your Cloud account's projects."""
+    if cloud:
+        from kicad_mcp.cloud_owner_cli import show_cloud_projects
+
+        show_cloud_projects(cloud_origin, json_output=json_output)
+        return
     if _is_windows():
         from kicad_mcp.cloud_windows_user_cli import show_status
 
@@ -974,3 +999,7 @@ def run() -> None:
     result = connector(["run"])
     if result:
         raise typer.Exit(result)
+
+
+# Cloud management commands reuse one browser-approved owner token.
+register_owner_commands(cloud_app, DEFAULT_CLOUD_ORIGIN)

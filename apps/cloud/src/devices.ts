@@ -3,7 +3,7 @@ import {makeSignature} from "better-auth/crypto";
 import type {BrowserIdentity} from "./browser.js";
 import type {PgDeviceManagement} from "./device-management.js";
 import {renderDevicesPage} from "./devices-ui.js";
-import {renderLocalFolderPage} from "./local-folder-page.js";
+import {renderLocalFolderPage,renderRemoteFolderPage} from "./local-folder-page.js";
 import {validProjectAlias} from "./device-management.js";
 import type {LocalFolderPort} from "./connector-ws.js";
 import type {GrantManagement,BrowserGrantSummary} from "./grants.js";
@@ -124,7 +124,8 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
       await csrf(secret,who.user,who.session,d.id,stamp,nonce,"device-enable-v1"):undefined,
     projectCsrf:devices.createProject?
       await csrf(secret,who.user,who.session,d.id,stamp,nonce,"project-create-v1"):undefined,
-    browseCsrf:identity.localDevSandbox&&localFolders?
+    browseCsrf:identity.api&&localFolders&&d.enabled&&!d.revoked&&
+      (identity.localDevSandbox||deviceConnection?.(who.user,d.id))?
       await csrf(secret,who.user,who.session,d.id,stamp,nonce,"project-native-picker-open-v1"):
       undefined,
     connectionState: deviceConnection&&d.enabled&&!d.revoked?
@@ -383,10 +384,67 @@ async function ownerManagedRead(req:Request,identity:BrowserIdentity,origin:stri
 
 
 
-/** Browsing is permitted only inside an explicit, synthetic local Cloud session. */
+
+/** Web navigation asks a signed owner device for opaque folder tokens only. */
+async function showRemoteFolders(identity:BrowserIdentity,origin:string,
+  folders:LocalFolderPort,who:NonNullable<ReturnType<typeof userOf>>,
+  device:string,folderId:string):Promise<Response>{
+  if(!identity.$context)return error(503);
+  const listing=await folders.listFolder(who.user,device,folderId);
+  if(!listing)return new Response(null,{status:303,headers:{
+    Location:"/devices?picker=unavailable","Cache-Control":"no-store"}});
+  const {secret}=await identity.$context;
+  const stamp=String(Date.now()),nonce=randomBytes(16).toString("base64url");
+  const key=(folder:string)=>device+":"+folder;
+  const openToken=(folder:string)=>csrf(secret,who.user,who.session,key(folder),
+    stamp,nonce,"project-folder-open-v1");
+  const selectToken=(folder:string)=>csrf(secret,who.user,who.session,key(folder),
+    stamp,nonce,"project-folder-select-v1");
+  const choices=await Promise.all(listing.folders.map(async entry=>({
+    id:entry.id,name:entry.name,project:entry.project,
+    openCsrf:await openToken(entry.id),
+    ...(entry.project?{selectCsrf:await selectToken(entry.id)}:{})
+  })));
+  const current=listing.project?await selectToken(listing.folderId):undefined;
+  const parent=listing.parentId?await openToken(listing.parentId):undefined;
+  return new Response(renderRemoteFolderPage(device,listing,choices,current,parent),{
+    status:200,headers:{
+      "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store",
+      "Set-Cookie":cookie(stamp+"."+nonce,origin,300),
+      "Referrer-Policy":"same-origin","X-Content-Type-Options":"nosniff",
+      "Content-Security-Policy":"default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    }
+  });
+}
+
+async function folderOpen(req:Request,identity:BrowserIdentity,origin:string,
+  devices:DeviceManagementPort,folders?:LocalFolderPort):Promise<Response>{
+  if(!folders||!identity.api||!identity.$context)return error(404);
+  if(req.headers.get("origin")!==origin)return error(403);
+  if(req.headers.get("content-type")?.split(";")[0].trim()!=="application/x-www-form-urlencoded")
+    return error(415);
+  const raw=await req.text();
+  if(raw.length>750)return error(413);
+  const fields=new URLSearchParams(raw);
+  if([...fields.keys()].length!==3||
+     ["device_id","folder_id","csrf"].some(x=>fields.getAll(x).length!==1))
+    return error(400);
+  const device=fields.get("device_id")??"",folder=fields.get("folder_id")??"";
+  if(!DEVICE_ID.test(device)||!/^[A-Za-z0-9_-]{1,64}$/.test(folder))return error(400);
+  const who=userOf(await identity.api.getSession({headers:req.headers}));
+  if(!who)return error(401);
+  const {secret}=await identity.$context;
+  const check=await checkCsrf(req,origin,secret,who,device+":"+folder,
+    fields.get("csrf")??"","project-folder-open-v1");
+  if(check)return check;
+  const own=await devices.list(who.user);
+  if(!own.some(d=>d.id===device&&d.enabled&&!d.revoked))return error(404);
+  return showRemoteFolders(identity,origin,folders,who,device,folder);
+}
+/** Local-dev native picker, or production web folder browser. */
 async function folderBrowse(req:Request,identity:BrowserIdentity,origin:string,
   devices:DeviceManagementPort,folders?:LocalFolderPort):Promise<Response>{
-  if(!identity.localDevSandbox||!folders||!identity.api||!identity.$context)return error(404);
+  if(!folders||!identity.api||!identity.$context)return error(404);
   if(req.headers.get("origin")!==origin)return error(403);
   if(req.headers.get("content-type")?.split(";")[0].trim()!=="application/x-www-form-urlencoded")
     return error(415);
@@ -406,8 +464,10 @@ async function folderBrowse(req:Request,identity:BrowserIdentity,origin:string,
   const own=await devices.list(who.user);
   if(!own.some(d=>d.id===device&&d.enabled&&!d.revoked))return error(404);
 
-  // This is a user-clicked POST, never an auto-prefetched GET.
-  // The native modal appears on the selected device, not the Cloud host.
+  // In production the browser browses the selected signed remote device.
+  // Never open a native modal on someone else's monitor.
+  if(!identity.localDevSandbox)
+    return showRemoteFolders(identity,origin,folders,who,device,"root");
   const selection=await folders.chooseFolder(who.user,device);
   if(!selection)return new Response(null,{status:303,headers:{
     Location:"/devices?picker=unavailable","Cache-Control":"no-store"
@@ -440,7 +500,7 @@ async function folderBrowse(req:Request,identity:BrowserIdentity,origin:string,
  * only after a real signed device has confirmed this actual KiCad folder. */
 async function folderSelect(req:Request,identity:BrowserIdentity,origin:string,
   devices:DeviceManagementPort,folders?:LocalFolderPort):Promise<Response>{
-  if(!identity.localDevSandbox||!folders||!identity.api||!identity.$context||
+  if(!folders||!identity.api||!identity.$context||
      !devices.createProject||!devices.deleteProject)return error(404);
   if(req.headers.get("origin")!==origin)return error(403);
   if(req.headers.get("content-type")?.split(";")[0].trim()!=="application/x-www-form-urlencoded")
@@ -516,7 +576,7 @@ export async function devicesResponse(req:Request,identity:BrowserIdentity,origi
   const path=new URL(req.url).pathname;
   if(!["/devices","/devices/revoke","/devices/delete","/devices/enable","/devices/projects/create",
     "/devices/projects/grant","/devices/projects/managed","/devices/projects/delete",
-    "/devices/projects/browse","/devices/projects/select","/devices/projects/rename"].includes(path))
+    "/devices/projects/browse","/devices/projects/folders","/devices/projects/select","/devices/projects/rename"].includes(path))
     return null;
   if(!devices)return error(503);
   // A direct navigation is never a removal command. Keep users in the
@@ -539,6 +599,8 @@ export async function devicesResponse(req:Request,identity:BrowserIdentity,origi
     return new Response(null,{status:303,headers:{
       Location:"/devices","Cache-Control":"no-store"
     }});
+  if(path==="/devices/projects/folders"&&req.method==="POST")
+    return folderOpen(req,identity,origin,devices,localFolders);
   if(path==="/devices/projects/select"&&req.method==="POST")
     return folderSelect(req,identity,origin,devices,localFolders);
   if(path==="/devices/projects/rename"&&req.method==="POST")

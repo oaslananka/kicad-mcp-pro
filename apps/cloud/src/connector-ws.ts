@@ -278,6 +278,8 @@ export function attachConnectorWebSocket(
     operatorSchematicCountsOnce?:boolean;
     /** Explicit single-user, loopback development only. Never used in production. */
     localDevFolderBrowse?:boolean;
+    /** Signed device owner folder browse in production; separate from local-dev. */
+    productionFolderBrowse?:boolean;
     maxConnections?:number;
     sourceOf:RequestSourceResolver;
   }
@@ -320,8 +322,11 @@ export function attachConnectorWebSocket(
     throw Error("PCB counts require explicit local one-shot mode");
   if(options.operatorSchematicCountsOnce&&!options.operatorLocalOnce)
     throw Error("Schematic counts require explicit local one-shot mode");
+  if(options.localDevFolderBrowse&&options.productionFolderBrowse)
+    throw Error("Conflicting folder browse modes");
+  const folderBrowse=Boolean(options.localDevFolderBrowse||options.productionFolderBrowse);
   const wss=new WebSocketServer({noServer:true,perMessageDeflate:false,
-    maxPayload:options.localDevFolderBrowse?8192:1024,clientTracking:true});
+    maxPayload:folderBrowse?8192:1024,clientTracking:true});
   const sockets=new Set<WebSocket>();
   const readyDevices=new Map<string,{socket:WebSocket,entry:Entry}>();
   const socketKey=(owner:string,device:string)=>JSON.stringify([owner,device]);
@@ -407,7 +412,7 @@ export function attachConnectorWebSocket(
         }
         async function frame(payload:Buffer,isBinary:boolean):Promise<void>{
           if(entry.phase==="closed"||isBinary||payload.length===0||
-             payload.length>(options.localDevFolderBrowse?8192:1024)){
+             payload.length>(folderBrowse?8192:1024)){
             fail();return;
           }
           const raw=asJson(payload);
@@ -472,7 +477,7 @@ export function attachConnectorWebSocket(
           }
           // Device-local folder selection is a separate *owner-only* sandbox
           // request. No file contents, paths, OAuth tokens or tool results.
-          if(entry.phase==="ready"&&options.localDevFolderBrowse&&entry.folderPending){
+          if(entry.phase==="ready"&&folderBrowse&&entry.folderPending){
             const pending=entry.folderPending;
             entry.folderPending=undefined;
             clearTimeout(pending.timer);
@@ -852,10 +857,17 @@ export function attachConnectorWebSocket(
   }
   async function queryFolder(owner:string,deviceId:string,operation:"list"|"bind"|"choose"|"path",
     folderId:string,projectId?:string):Promise<LocalFolderListing|NativeFolderSelection|string|boolean|null>{
-    if(!options.localDevFolderBrowse||owner!=="local-dev-owner"||
-       (operation!=="choose"&&operation!=="path"&&(folderId.length<1||folderId.length>64))||
-       ((operation==="bind"||operation==="path")&&
-         (!projectId||!z.uuid().safeParse(projectId).success)))return null;
+    // The owner/device pair is taken from the authenticated signed session.
+    // Browser-supplied tokens never become filesystem paths on the server.
+    if(!folderBrowse||!owner||owner.length>256)return null;
+    if(options.localDevFolderBrowse&&owner!=="local-dev-owner")return null;
+    if(options.productionFolderBrowse&&owner==="local-dev-owner")return null;
+    if((operation==="list"||operation==="bind")&&
+       (folderId.length<1||folderId.length>64||
+        !/^[A-Za-z0-9_-]+$/.test(folderId)))return null;
+    if((operation==="choose"||operation==="path")&&folderId!=="")return null;
+    if((operation==="bind"||operation==="path")&&
+      (!projectId||!z.uuid().safeParse(projectId).success))return null;
     const active=readyDevices.get(socketKey(owner,deviceId));
     if(!active||active.entry.phase!=="ready"||
        active.socket.readyState!==WebSocket.OPEN||

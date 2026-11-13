@@ -354,7 +354,7 @@ h3{font-size:15px;line-height:1.4;font-weight:650;margin:0 0 5px}
 .usage-banner{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 26px;background:linear-gradient(135deg,rgba(39,159,255,0.08),rgba(101,150,223,0.04)),var(--surface);border-color:rgba(39,159,255,0.22)}
 .usage-banner-content h2{font-size:22px;letter-spacing:-0.03em;margin:4px 0 6px;color:var(--text)}
 .banner-kicker{font-size:10px;letter-spacing:0.12em;font-weight:750;color:var(--accent);text-transform:uppercase}
-.plan-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(39,159,255,0.12);border:1px solid rgba(39,159,255,0.28);border-radius:20px;color:var(--accent);font-size:12px;font-weight:650}
+.plan-badge,.verified-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:rgba(39,159,255,0.12);border:1px solid rgba(39,159,255,0.28);border-radius:20px;color:var(--accent);font-size:12px;font-weight:650}
 .usage-stats-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
 .stat-card{padding:22px;display:flex;flex-direction:column;gap:10px}
 .stat-hero{display:flex;align-items:baseline;gap:6px}
