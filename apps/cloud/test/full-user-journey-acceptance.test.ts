@@ -47,7 +47,7 @@ test("Full 12-step real-world autonomous user journey acceptance on Windows loop
   {skip:!databaseUrl,timeout:30_000},async()=>{
   await inIsolatedDatabase(databaseUrl!,migrations,async db=>{
     const scopedConnectionString = (db as unknown as {options:{connectionString:string}}).options.connectionString;
-    const sessionSecret = "isolated-product-journey-secret-32-plus-bytes";
+    const sessionSecret = randomBytes(32).toString("hex");
     const ownerSub = "journey-test-owner";
     const clientId = "chatgpt-client";
 
@@ -129,17 +129,21 @@ test("Full 12-step real-world autonomous user journey acceptance on Windows loop
       } as unknown as BrowserIdentity;
 
       let tokenScope = new Set(["projects:read", "projects:write"]);
-      const tokenRegistry: Record<string, () => Actor> = {
-        "valid-chatgpt-token": () => ({
+      const tokenActors: Record<string, Actor> = {
+        "valid-chatgpt-token": {
           sub: ownerSub,
           clientId,
           scopes: tokenScope,
           issuedAt: Math.floor(Date.now() / 1000)
-        })
+        }
       };
-      const verifier: Verifier = async (rawToken: string): Promise<Actor> => {
-        const factory = tokenRegistry[rawToken];
-        if (factory) return factory();
+      const verifier: Verifier = async (rawCredential: string): Promise<Actor> => {
+        const actor = Object.prototype.hasOwnProperty.call(tokenActors, rawCredential)
+          ? tokenActors[rawCredential]
+          : undefined;
+        if (actor) {
+          return {...actor, scopes: tokenScope};
+        }
         throw Error("invalid_token");
       };
 
