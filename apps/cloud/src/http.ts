@@ -257,7 +257,9 @@ async function handleRequest(
         json(res, 200, {
           resource: config.audience,
           authorization_servers: [config.issuer],
-          scopes_supported: ["projects:read", "projects:write"],
+          // Initial discovery is least-privilege. OAuth supports projects:write,
+          // but clients request it only when editing needs step-up consent.
+          scopes_supported: ["projects:read"],
           bearer_methods_supported: ["header"]
         });
         return;

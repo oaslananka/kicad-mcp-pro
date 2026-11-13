@@ -94,9 +94,12 @@ test("public health and OAuth resource discovery are metadata-only", async () =>
   assert.equal(health.status, 200);
   assert.equal((await health.json()).remoteConnector, "not_implemented");
   const meta = await fetch(endpoint+"/.well-known/oauth-protected-resource");
-  assert.equal((await meta.json()).resource, config.audience);
+  const metadata=await meta.json();
+  assert.equal(metadata.resource,config.audience);
+  assert.deepEqual(metadata.scopes_supported,["projects:read"],
+    "MCP discovery must not ask every new client for write access");
   const nested = await fetch(endpoint+"/.well-known/oauth-protected-resource/mcp");
-  assert.equal((await nested.json()).resource, config.audience);
+  assert.deepEqual((await nested.json()).scopes_supported,["projects:read"]);
 });
 test("MCP denies anonymous and invalid bearer traffic before tool discovery", async () => {
   const anon = await fetch(endpoint+"/mcp", {method:"POST",body:payload("tools/list"),headers:{"Content-Type":"application/json"}});

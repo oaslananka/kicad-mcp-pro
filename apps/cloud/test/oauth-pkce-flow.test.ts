@@ -57,7 +57,7 @@ test("real MCP OAuth server: authorize redirect, session consent and PKCE code e
     await pool.query('INSERT INTO "oauthClient"("id","clientId","redirectUris","tokenEndpointAuthMethod","grantTypes","responseTypes","scopes","requirePKCE") VALUES($1,$1,$2,$3,$4,$5,$6,true)',
       ["fixture-mcp-client",JSON.stringify(["http://127.0.0.1:8888/callback"]),"none",
         JSON.stringify(["authorization_code","refresh_token"]),JSON.stringify(["code"]),
-        JSON.stringify(["openid","profile","offline_access","projects:read"])]);
+        JSON.stringify(["openid","profile","offline_access","projects:read","projects:write"])]);
     await pool.query('INSERT INTO "oauthClientResource"("id","clientId","resourceId") VALUES($1,$2,$3)',
       ["fixture-link","fixture-mcp-client",publicOrigin+"/mcp"]);
     const verifier=randomBytes(48).toString("base64url");
@@ -65,7 +65,7 @@ test("real MCP OAuth server: authorize redirect, session consent and PKCE code e
     const state=randomBytes(18).toString("base64url");
     const params=new URLSearchParams({client_id:"fixture-mcp-client",response_type:"code",
       redirect_uri:"http://127.0.0.1:8888/callback",
-      scope:"openid profile offline_access projects:read",state,
+      scope:"openid profile offline_access projects:read projects:write",state,
       code_challenge:challenge,code_challenge_method:"S256",
       resource:publicOrigin+"/mcp"
     });
@@ -118,6 +118,8 @@ test("real MCP OAuth server: authorize redirect, session consent and PKCE code e
     // of writing a custom decoder or dynamic RegExp in the test, send the
     // same signed query that the server put in the consent redirect.
     assert.match(form,/name="oauth_query" value="/);
+    assert.match(form,/Edit approved projects/,
+      "the user must explicitly see the write permission in OAuth consent");
     const csrf=/name="csrf" value="([^"]+)"/.exec(form)?.[1]??"";
     assert.ok(csrf);
     const csrfCookie=consent.headers.get("set-cookie")?.split(";")[0]??"";
@@ -156,6 +158,8 @@ test("real MCP OAuth server: authorize redirect, session consent and PKCE code e
     assert.equal(authenticatedActor.sub,"owner-pkce");
     assert.equal(authenticatedActor.clientId,"fixture-mcp-client");
     assert.ok(authenticatedActor.scopes.has("projects:read"));
+    assert.ok(authenticatedActor.scopes.has("projects:write"),
+      "real OAuth PKCE must issue write only when it was requested and approved");
     const mcp=async(method:string,token:string,params:Record<string,unknown>={})=>
       fetch(address+"/mcp",{
         method:"POST",
@@ -179,6 +183,8 @@ test("real MCP OAuth server: authorize redirect, session consent and PKCE code e
     assert.ok(names.includes("list_projects"));
     assert.ok(names.includes("get_service_status"));
     assert.ok(!names.includes("pcb_delete_items"));
+    assert.ok(!names.includes("pcb_move_footprint"),
+      "OAuth write scope never enables an unavailable native edit tool");
     const projects=await mcp("tools/call",tokens.access_token as string,{
       name:"list_projects",arguments:{}
     });
@@ -277,6 +283,7 @@ test("real MCP OAuth server: authorize redirect, session consent and PKCE code e
     await pool.query('INSERT INTO "oauthClientResource"("id","clientId","resourceId") VALUES($1,$2,$3)',
       ["confidential-link",confidentialId,publicOrigin+"/mcp"]);
     params.set("client_id",confidentialId);
+    params.set("scope","openid profile offline_access projects:read");
     params.set("state",randomBytes(16).toString("base64url"));
     const pending=await browserNavigate(cookie);
     assert.ok([302,303].includes(pending.status));
