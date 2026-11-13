@@ -35,19 +35,22 @@ class LocalWriteMarker:
 
     def consume_once(self, session_id: str, request_id: str) -> bool:
         """Durably consume one UUID exactly once, failing closed on all errors."""
-        nofollow = getattr(os, "O_NOFOLLOW", None)
-        getuid = getattr(os, "getuid", None)
         if (
-            os.name != "posix"
-            or type(nofollow) is not int
-            or not callable(getuid)
-            or not isinstance(self._directory, Path)
+            not isinstance(self._directory, Path)
             or not self._directory.is_absolute()
             or not isinstance(session_id, str)
             or _UUID.fullmatch(session_id) is None
             or not isinstance(request_id, str)
             or _UUID.fullmatch(request_id) is None
         ):
+            return False
+        if os.name == "nt":
+            from kicad_mcp.cloud_windows_write_marker import consume_windows_write_marker
+
+            return consume_windows_write_marker(self._directory, session_id, request_id)
+        nofollow = getattr(os, "O_NOFOLLOW", None)
+        getuid = getattr(os, "getuid", None)
+        if os.name != "posix" or type(nofollow) is not int or not callable(getuid):
             return False
 
         # The UUID is a validated basename only; the directory comes from

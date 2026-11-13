@@ -132,6 +132,19 @@ def _locked_operator_directory(policy: OperatorProject) -> Iterator[int]:
             os.close(folder_fd)
 
 
+@contextmanager
+def _locked_cross_platform_project(policy: OperatorProject) -> Iterator[int | None]:
+    if os.name == "nt":
+        from kicad_mcp.cloud_windows_write_lock import lock_windows_operator_project
+
+        _validate_policy(policy)
+        with lock_windows_operator_project(policy.directory, policy.filename_stem):
+            yield None
+        return
+    with _locked_operator_directory(policy) as folder_fd:
+        yield folder_fd
+
+
 def _assert_same_operator_directory(policy: OperatorProject, folder_fd: int) -> None:
     try:
         pinned = os.fstat(folder_fd)
@@ -143,6 +156,12 @@ def _assert_same_operator_directory(policy: OperatorProject, folder_fd: int) -> 
             raise LocalWriteDeniedError(_DENIED)
     except (OSError, ValueError, TypeError) as exc:
         raise LocalWriteDeniedError(_DENIED) from exc
+
+
+def _assert_pinned_operator_directory(policy: OperatorProject, folder_fd: int | None) -> None:
+    if folder_fd is not None:
+        _assert_same_operator_directory(policy, folder_fd)
+    # Windows holds _pinned_project handles inside its Win32 transaction lock.
 
 
 def _require_fresh_owner_permission(
@@ -173,8 +192,8 @@ def run_offline_guarded_native_write(
     """
     if not callable(authorized) or not callable(cancelled):
         raise LocalWriteDeniedError(_DENIED)
-    with _locked_operator_directory(policy) as folder_fd:
-        _assert_same_operator_directory(policy, folder_fd)
+    with _locked_cross_platform_project(policy) as folder_fd:
+        _assert_pinned_operator_directory(policy, folder_fd)
         _require_fresh_owner_permission(authorized, cancelled)
         verify_operator_board_revision(policy, expected_board_sha256, _directory_fd=folder_fd)
         # A throwing begin may have created a native transaction before the
@@ -190,7 +209,7 @@ def run_offline_guarded_native_write(
         try:
             if native.stage() is not None:
                 raise LocalWriteDeniedError(_DENIED)
-            _assert_same_operator_directory(policy, folder_fd)
+            _assert_pinned_operator_directory(policy, folder_fd)
             verify_operator_board_revision(policy, expected_board_sha256, _directory_fd=folder_fd)
             _require_fresh_owner_permission(authorized, cancelled)
         except Exception as exc:
