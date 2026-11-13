@@ -132,6 +132,79 @@ async def _serve_folder_request(
     await socket.send(encoded)
 
 
+async def _serve_write_revisions_request(
+    socket: AuthenticatedReadSocket,
+    raw: str,
+    allow_native_write: bool,
+    revisions_preparer: Callable[[], dict[str, str]] | None,
+) -> None:
+    if not allow_native_write or revisions_preparer is None:
+        raise CloudHandshakeDeniedError(_DENIED)
+    req = _read_strict_json(raw, "connector.prepare_write_revisions")
+    if (
+        req.get("version") != 1
+        or not isinstance(req.get("requestId"), str)
+        or not isinstance(req.get("deviceId"), str)
+        or not isinstance(req.get("projectId"), str)
+    ):
+        raise CloudHandshakeDeniedError(_DENIED)
+    revisions = await asyncio.to_thread(revisions_preparer)
+    await socket.send(
+        json.dumps(
+            {
+                "kind": "connector.write_revisions_result",
+                "version": 1,
+                "requestId": req["requestId"],
+                **revisions,
+            },
+            separators=(",", ":"),
+        )
+    )
+
+
+async def _serve_authorized_write_request(
+    socket: AuthenticatedReadSocket,
+    raw: str,
+    allow_native_write: bool,
+    write_executor: Callable[[bytes, bool], dict[str, object]] | None,
+    fallback_seq: int,
+) -> dict[str, object]:
+    if not allow_native_write or write_executor is None:
+        raise CloudHandshakeDeniedError(_DENIED)
+    envelope = _read_strict_json(raw, "connector.authorized_write")
+    if envelope.get("version") != 1 or not isinstance(envelope.get("proof"), dict):
+        raise CloudHandshakeDeniedError(_DENIED)
+    proof_bytes = json.dumps(envelope["proof"], separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
+    persist = bool(envelope.get("persistToDisk", True))
+    result = await asyncio.to_thread(write_executor, proof_bytes, persist)
+    seq_val = envelope.get("sequence")
+    seq = int(seq_val) if isinstance(seq_val, (int, str)) else fallback_seq
+    await socket.send(
+        json.dumps(
+            {
+                "kind": "connector.write_result",
+                "version": 1,
+                "sequence": seq,
+                "result": result,
+            },
+            separators=(",", ":"),
+        )
+    )
+    raw_ack = await socket.recv()
+    if not isinstance(raw_ack, str):
+        raise CloudHandshakeDeniedError(_DENIED)
+    ack = _read_strict_json(raw_ack, "connector.write_ack")
+    if (
+        ack.get("version") != 1
+        or ack.get("sequence") != seq
+        or ack.get("requestId") != result.get("requestId")
+    ):
+        raise CloudHandshakeDeniedError(_DENIED)
+    return result
+
+
 async def _serve_signed_read_frames(
     socket: AuthenticatedReadSocket,
     dispatcher: LocalReadDispatch,
@@ -157,64 +230,15 @@ async def _serve_signed_read_frames(
             _report_activity(on_activity, "Folder browsing request completed")
             continue
         if kind == "connector.prepare_write_revisions":
-            if not allow_native_write or revisions_preparer is None:
-                raise CloudHandshakeDeniedError(_DENIED)
-            req = _read_strict_json(raw, "connector.prepare_write_revisions")
-            if (
-                req.get("version") != 1
-                or not isinstance(req.get("requestId"), str)
-                or not isinstance(req.get("deviceId"), str)
-                or not isinstance(req.get("projectId"), str)
-            ):
-                raise CloudHandshakeDeniedError(_DENIED)
-            revisions = await asyncio.to_thread(revisions_preparer)
-            await socket.send(
-                json.dumps(
-                    {
-                        "kind": "connector.write_revisions_result",
-                        "version": 1,
-                        "requestId": req["requestId"],
-                        **revisions,
-                    },
-                    separators=(",", ":"),
-                )
+            await _serve_write_revisions_request(
+                socket, raw, allow_native_write, revisions_preparer
             )
             _report_activity(on_activity, "Write revision preparation completed")
             continue
         if kind == "connector.authorized_write":
-            if not allow_native_write or write_executor is None:
-                raise CloudHandshakeDeniedError(_DENIED)
-            envelope = _read_strict_json(raw, "connector.authorized_write")
-            if envelope.get("version") != 1 or not isinstance(envelope.get("proof"), dict):
-                raise CloudHandshakeDeniedError(_DENIED)
-            proof_bytes = json.dumps(
-                envelope["proof"], separators=(",", ":"), ensure_ascii=False
-            ).encode("utf-8")
-            persist = bool(envelope.get("persistToDisk", True))
-            result = await asyncio.to_thread(write_executor, proof_bytes, persist)
-            seq_val = envelope.get("sequence")
-            seq = int(seq_val) if isinstance(seq_val, (int, str)) else reads_served + 1
-            await socket.send(
-                json.dumps(
-                    {
-                        "kind": "connector.write_result",
-                        "version": 1,
-                        "sequence": seq,
-                        "result": result,
-                    },
-                    separators=(",", ":"),
-                )
+            result = await _serve_authorized_write_request(
+                socket, raw, allow_native_write, write_executor, reads_served + 1
             )
-            raw_ack = await socket.recv()
-            if not isinstance(raw_ack, str):
-                raise CloudHandshakeDeniedError(_DENIED)
-            ack = _read_strict_json(raw_ack, "connector.write_ack")
-            if (
-                ack.get("version") != 1
-                or ack.get("sequence") != seq
-                or ack.get("requestId") != result.get("requestId")
-            ):
-                raise CloudHandshakeDeniedError(_DENIED)
             reads_served += 1
             operation = result.get("operation")
             safe = operation if operation == "pcb_move_footprint" else "write"

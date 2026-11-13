@@ -58,6 +58,14 @@ class HandshakeReceipt:
 
 
 @dataclass(frozen=True)
+class ManagedNativeWriteConfig:
+    """Bounded, owner-approved local native write execution handlers."""
+
+    revisions_preparer: Callable[[], dict[str, str]]
+    write_executor: Callable[[bytes, bool], dict[str, object]]
+
+
+@dataclass(frozen=True)
 class OutboundSessionOptions:
     """Explicit operation mode layered onto the shared signed handshake."""
 
@@ -588,26 +596,36 @@ def _validate_outbound_options(options: OutboundSessionOptions) -> None:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
 
 
+def _managed_read_catalog(options: OutboundSessionOptions) -> list[str]:
+    ops = ["project_summary"]
+    if options.managed_native_drc:
+        ops.append("run_drc")
+    if options.managed_native_write:
+        ops.append("move_footprint")
+    return ops
+
+
+def _operator_inspection_catalog(options: OutboundSessionOptions) -> list[str]:
+    ops = ["project_worker_inspection"]
+    if options.board_counts_pilot:
+        ops.append("project_board_counts")
+    if options.schematic_counts_pilot:
+        ops.append("project_schematic_counts")
+    return ops
+
+
 def _catalog_operations(options: OutboundSessionOptions) -> list[str]:
     """Advertise only operations granted by the selected signed Connector mode."""
-    operations: list[str] = []
     if options.owner_managed_read and options.dispatcher_factory is not None:
-        operations.append("project_summary")
-        if options.managed_native_drc:
-            operations.append("run_drc")
-        if options.managed_native_write:
-            operations.append("move_footprint")
-    elif options.dispatcher_factory is not None and options.operator_presence_pilot:
-        operations.append("project_summary")
+        return _managed_read_catalog(options)
+    if options.dispatcher_factory is not None and options.operator_presence_pilot:
+        ops = ["project_summary"]
         if options.operator_native_drc_pilot:
-            operations.append("run_drc")
-    elif options.inspection_factory is not None and options.operator_inspection_pilot:
-        operations.append("project_worker_inspection")
-        if options.board_counts_pilot:
-            operations.append("project_board_counts")
-        if options.schematic_counts_pilot:
-            operations.append("project_schematic_counts")
-    return operations
+            ops.append("run_drc")
+        return ops
+    if options.inspection_factory is not None and options.operator_inspection_pilot:
+        return _operator_inspection_catalog(options)
+    return []
 
 
 def _catalog_hello_metadata(options: OutboundSessionOptions) -> dict[str, object]:
@@ -1002,9 +1020,7 @@ async def execute_owner_managed_read_session(
     folder_service_factory: Callable[[HandshakeReceipt], LocalFolderBrowseService] | None = None,
     on_ready: Callable[[HandshakeReceipt], None] | None = None,
     allow_native_drc: bool = False,
-    allow_native_write: bool = False,
-    revisions_preparer: Callable[[], dict[str, str]] | None = None,
-    write_executor: Callable[[bytes, bool], dict[str, object]] | None = None,
+    native_write: ManagedNativeWriteConfig | None = None,
     on_activity: Callable[[str], None] | None = None,
 ) -> HandshakeReceipt:
     """One signed, owner-managed session; no key loading or persistence.
@@ -1022,10 +1038,13 @@ async def execute_owner_managed_read_session(
     if (
         not callable(dispatcher_factory)
         or type(allow_native_drc) is not bool
-        or type(allow_native_write) is not bool
-        or (allow_native_write and (revisions_preparer is None or write_executor is None))
-        or (revisions_preparer is not None and not callable(revisions_preparer))
-        or (write_executor is not None and not callable(write_executor))
+        or (
+            native_write is not None
+            and (
+                not callable(native_write.revisions_preparer)
+                or not callable(native_write.write_executor)
+            )
+        )
         or (folder_service_factory is not None and not callable(folder_service_factory))
         or (on_activity is not None and not callable(on_activity))
     ):
@@ -1041,10 +1060,12 @@ async def execute_owner_managed_read_session(
             dispatcher_factory=dispatcher_factory,
             owner_managed_read=True,
             managed_native_drc=allow_native_drc,
-            managed_native_write=allow_native_write,
-            revisions_preparer=revisions_preparer,
-            write_executor=write_executor,
-            advertise_catalog=allow_native_drc or allow_native_write,
+            managed_native_write=native_write is not None,
+            revisions_preparer=(
+                native_write.revisions_preparer if native_write is not None else None
+            ),
+            write_executor=native_write.write_executor if native_write is not None else None,
+            advertise_catalog=allow_native_drc or (native_write is not None),
             managed_max_reads=max_reads,
             folder_service_factory=folder_service_factory,
             on_ready=on_ready,

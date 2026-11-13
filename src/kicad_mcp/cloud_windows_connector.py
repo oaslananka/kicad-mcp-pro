@@ -30,6 +30,7 @@ from websockets.exceptions import ConnectionClosed, WebSocketException
 from kicad_mcp.cloud_folder_browse_receiver import LocalFolderBrowseService, device_folder_service
 from kicad_mcp.cloud_outbound_handshake import (
     HandshakeReceipt,
+    ManagedNativeWriteConfig,
     execute_owner_managed_read_session,
 )
 from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
@@ -522,6 +523,7 @@ async def _run_owner_session(
             execute_verified_signed_pcb_move,
             prepare_native_write_revisions,
         )
+        from kicad_mcp.cloud_outbound_handshake import ManagedNativeWriteConfig
         from kicad_mcp.cloud_windows_write_marker import (
             consume_windows_write_marker,
             default_windows_write_marker_directory,
@@ -532,13 +534,6 @@ async def _run_owner_session(
             project_id=project.project_id,
             directory=selected.directory,
             filename_stem=selected.filename_stem,
-        )
-
-        settings["allow_native_write"] = True
-        settings["revisions_preparer"] = lambda: prepare_native_write_revisions(
-            operator_project,
-            authorized=lambda: _current_authorization(project),
-            cancelled=lambda: not _current_authorization(project),
         )
 
         marker_dir = default_windows_write_marker_directory()
@@ -571,7 +566,14 @@ async def _run_owner_session(
                 persist_to_disk=persist,
             )
 
-        settings["write_executor"] = _execute_write
+        settings["native_write"] = ManagedNativeWriteConfig(
+            revisions_preparer=lambda: prepare_native_write_revisions(
+                operator_project,
+                authorized=lambda: _current_authorization(project),
+                cancelled=lambda: not _current_authorization(project),
+            ),
+            write_executor=_execute_write,
+        )
 
     if runner is execute_owner_managed_read_session or getattr(
         runner, "_kicad_supports_folder_browse", False
@@ -631,9 +633,7 @@ def _session_runner_with_status(
         folder_service_factory: Callable[[HandshakeReceipt], LocalFolderBrowseService]
         | None = None,
         allow_native_drc: bool = False,
-        allow_native_write: bool = False,
-        revisions_preparer: Callable[[], dict[str, str]] | None = None,
-        write_executor: Callable[[bytes, bool], dict[str, object]] | None = None,
+        native_write: ManagedNativeWriteConfig | None = None,
     ) -> HandshakeReceipt:
         return await execute_owner_managed_read_session(
             origin=origin,
@@ -646,11 +646,10 @@ def _session_runner_with_status(
             on_ready=on_ready,
             folder_service_factory=folder_service_factory,
             allow_native_drc=allow_native_drc,
-            allow_native_write=allow_native_write,
-            revisions_preparer=revisions_preparer,
-            write_executor=write_executor,
+            native_write=native_write,
             on_activity=status_callback,
         )
+
 
     signed_ready_runner._kicad_supports_folder_browse = True  # type: ignore[attr-defined]
     return signed_ready_runner

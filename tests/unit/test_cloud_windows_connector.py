@@ -1139,14 +1139,13 @@ async def test_windows_connector_native_write_runner_wires_revisions_and_executo
         ),
         3,
     )
-    assert received_kwargs["allow_native_write"] is True
-    revisions_preparer = received_kwargs["revisions_preparer"]
-    assert callable(revisions_preparer)
-    revisions = revisions_preparer()
+    native_write = received_kwargs["native_write"]
+    assert callable(native_write.revisions_preparer)
+    revisions = native_write.revisions_preparer()
     assert "expectedBoardSha256" in revisions
-    write_executor = received_kwargs["write_executor"]
-    assert callable(write_executor)
+    assert callable(native_write.write_executor)
 
-    res = write_executor(b'{"proof": true}', True)
+    res = native_write.write_executor(b'{"proof": true}', True)
     assert res["nativeCommitted"] is True
     assert res["session_id"] == receipt.session_id
+
