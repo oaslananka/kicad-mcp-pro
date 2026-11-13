@@ -170,7 +170,11 @@ test("remote MCP host guidance uses configured HTTPS origin and never implies a 
   assert.match(html,/not imply a running KiCad engine/);
   assert.match(html,/help\.openai\.com\/en\/articles\/12584461-connecting-custom-mcp-servers-in-chatgpt/);
   assert.match(html,/support\.claude\.com\/en\/articles\/11175166-get-started-with-custom-connectors-using-remote-mcp/);
-  assert.doesNotMatch(html.replace('<script src="/assets/copy-value.js" defer=""></script>',""),/api[_-]?key|<script[\s>]/i);
+  const scripts=[...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
+  assert.equal(scripts.length,1);
+  assert.equal(scripts[0][1],' src="/assets/copy-value.js" defer=""');
+  assert.equal(scripts[0][2],"","only the allowlisted external asset may execute");
+  assert.doesNotMatch(html,/api[_-]?key/i);
   assert.match(uiCss,/\.mcp-client-guides/);
   const dev=renderConnectionsPage([],undefined,"http://127.0.0.1:8787");
   assert.match(dev,/not public HTTPS/);
