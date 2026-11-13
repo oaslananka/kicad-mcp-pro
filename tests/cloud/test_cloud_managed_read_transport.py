@@ -746,3 +746,157 @@ async def test_managed_write_denied_when_allow_native_write_is_false(tmp_path: P
             max_reads=1,
             allow_native_write=False,
         )
+
+
+@pytest.mark.anyio
+async def test_managed_prepare_revisions_denied_when_not_allowed_or_no_preparer(
+    tmp_path: Path,
+) -> None:
+    frame = json.dumps(
+        {
+            "kind": "connector.prepare_write_revisions",
+            "version": 1,
+            "requestId": "req1",
+            "deviceId": DEVICE,
+            "projectId": PROJECT,
+        }
+    )
+    socket = Socket([frame])
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        await serve_authenticated_reads(
+            socket,
+            receipt,
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+            allow_native_write=False,
+            revisions_preparer=None,
+        )
+
+
+@pytest.mark.anyio
+async def test_managed_prepare_revisions_denied_on_malformed_request(
+    tmp_path: Path,
+) -> None:
+    frame = json.dumps(
+        {
+            "kind": "connector.prepare_write_revisions",
+            "version": 2,
+            "requestId": "req1",
+        }
+    )
+    socket = Socket([frame])
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        await serve_authenticated_reads(
+            socket,
+            receipt,
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+            allow_native_write=True,
+            revisions_preparer=lambda: {},
+        )
+
+
+@pytest.mark.anyio
+async def test_managed_write_denied_on_malformed_envelope_or_non_dict_proof(
+    tmp_path: Path,
+) -> None:
+    frame = json.dumps(
+        {
+            "kind": "connector.authorized_write",
+            "version": 1,
+            "sequence": 1,
+            "proof": "not-a-dict",
+        }
+    )
+    socket = Socket([frame])
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        await serve_authenticated_reads(
+            socket,
+            receipt,
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+            allow_native_write=True,
+            write_executor=lambda *_: {},
+        )
+
+
+@pytest.mark.anyio
+async def test_managed_write_denied_on_non_str_ack_or_mismatched_ack(
+    tmp_path: Path,
+) -> None:
+    proof_obj = {
+        "kind": "connector.signed_write_proposal",
+        "version": 2,
+        "payload": "dGVzdA",
+        "signature": "c2ln",
+    }
+    write_frame = json.dumps(
+        {
+            "kind": "connector.authorized_write",
+            "version": 1,
+            "sequence": 1,
+            "proof": proof_obj,
+            "persistToDisk": True,
+        }
+    )
+
+    class NonStrAckSocket:
+        def __init__(self) -> None:
+            self.incoming: asyncio.Queue[object] = asyncio.Queue()
+            self.incoming.put_nowait(write_frame)
+
+        async def recv(self) -> object:
+            return await self.incoming.get()
+
+        async def send(self, val: str) -> None:
+            msg = json.loads(val)
+            if msg.get("kind") == "connector.write_result":
+                self.incoming.put_nowait(12345)  # non-str triggers line 210
+
+    socket1 = NonStrAckSocket()
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        await serve_authenticated_reads(
+            socket1,  # type: ignore[arg-type]
+            receipt,
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+            allow_native_write=True,
+            write_executor=lambda *_: {"requestId": "req1"},
+        )
+
+    class MismatchedAckSocket:
+        def __init__(self) -> None:
+            self.incoming: asyncio.Queue[object] = asyncio.Queue()
+            self.incoming.put_nowait(write_frame)
+
+        async def recv(self) -> object:
+            return await self.incoming.get()
+
+        async def send(self, val: str) -> None:
+            msg = json.loads(val)
+            if msg.get("kind") == "connector.write_result":
+                self.incoming.put_nowait(
+                    json.dumps(
+                        {
+                            "kind": "connector.write_ack",
+                            "version": 1,
+                            "sequence": 999,  # mismatched sequence triggers line 217
+                            "requestId": "different-req",
+                        }
+                    )
+                )
+
+    socket2 = MismatchedAckSocket()
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        await serve_authenticated_reads(
+            socket2,  # type: ignore[arg-type]
+            receipt,
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+            allow_native_write=True,
+            write_executor=lambda *_: {"requestId": "req1"},
+        )

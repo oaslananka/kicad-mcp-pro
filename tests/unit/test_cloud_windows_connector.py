@@ -1078,7 +1078,6 @@ async def test_foreground_signed_connector_passes_tool_activity_to_terminal(
     assert history == ["Connected", "Tool call 1: project_summary completed"]
 
 
-@pytest.mark.skipif(os.name != "nt", reason="requires native Win32 handles")
 @pytest.mark.asyncio
 async def test_windows_connector_native_write_runner_wires_revisions_and_executor(
     local_user_connector, monkeypatch: pytest.MonkeyPatch
@@ -1100,6 +1099,20 @@ async def test_windows_connector_native_write_runner_wires_revisions_and_executo
             return pcb_content
 
     monkeypatch.setattr("kicad_mcp.connection.get_board", lambda: FakeBoard())
+    if os.name != "nt":
+        monkeypatch.setattr(
+            "kicad_mcp.cloud_native_write_dispatch.read_windows_board_revision",
+            lambda *_: "0" * 64,
+        )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_native_write_dispatch.execute_verified_signed_pcb_move",
+        lambda proof, issuer_key, verified, operator_project, consume_once, **kwargs: {
+            "requestId": "test-req",
+            "operation": "pcb_move_footprint",
+            "nativeCommitted": True,
+            "session_id": verified.session_id,
+        },
+    )
     connector.activate(project, owner_confirm=lambda _: True)
     stop = asyncio.Event()
     received_kwargs: dict[str, object] = {}
@@ -1133,3 +1146,7 @@ async def test_windows_connector_native_write_runner_wires_revisions_and_executo
     assert "expectedBoardSha256" in revisions
     write_executor = received_kwargs["write_executor"]
     assert callable(write_executor)
+
+    res = write_executor(b'{"proof": true}', True)
+    assert res["nativeCommitted"] is True
+    assert res["session_id"] == receipt.session_id
