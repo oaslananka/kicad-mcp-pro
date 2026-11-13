@@ -561,7 +561,7 @@ async def _run_owner_session(
                     consume_windows_write_marker(
                         marker_dir,
                         sid,
-                        req_id,  # type: ignore[arg-type]
+                        req_id,
                     )
                     if marker_dir is not None
                     else False

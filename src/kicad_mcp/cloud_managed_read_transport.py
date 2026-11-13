@@ -192,7 +192,8 @@ async def _serve_signed_read_frames(
             ).encode("utf-8")
             persist = bool(envelope.get("persistToDisk", True))
             result = await asyncio.to_thread(write_executor, proof_bytes, persist)
-            seq = int(envelope.get("sequence", reads_served + 1))
+            seq_val = envelope.get("sequence")
+            seq = int(seq_val) if isinstance(seq_val, (int, str)) else reads_served + 1
             await socket.send(
                 json.dumps(
                     {
