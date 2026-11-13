@@ -168,7 +168,7 @@ def test_cli_devices_projects_access_and_write_routes_are_real(
             return {"events": []}
         if path.endswith("/usage?days=7"):
             return {"summary": {"count": 14}}
-        return {"updated": True, "maxMode": "readonly"}
+        return {"updated": True, "maxMode": body.get("maxMode", "readonly") if body else "readonly"}
 
     monkeypatch.setattr(cloud_owner_cli, "_request", fake_request)
     runner = CliRunner()
@@ -203,6 +203,20 @@ def test_cli_devices_projects_access_and_write_routes_are_real(
             ],
             "readonly",
         ),
+        (
+            [
+                "cloud",
+                "set-access",
+                "--project-id",
+                "project-id",
+                "--client-id",
+                "approved-ai",
+                "--enabled",
+                "--mode",
+                "write",
+            ],
+            "write",
+        ),
     ]
     for args, expected in cases:
         result = runner.invoke(app, args)
@@ -226,6 +240,32 @@ def test_cli_devices_projects_access_and_write_routes_are_real(
             "enabled": False,
         },
     ) in routes
+    assert (
+        "POST",
+        "/api/owner/v1/access/set",
+        {
+            "projectId": "project-id",
+            "clientId": "approved-ai",
+            "enabled": True,
+            "maxMode": "write",
+        },
+    ) in routes
+    invalid = runner.invoke(
+        app,
+        [
+            "cloud",
+            "set-access",
+            "--project-id",
+            "project-id",
+            "--client-id",
+            "approved-ai",
+            "--enabled",
+            "--mode",
+            "manufacturing",
+        ],
+    )
+    assert invalid.exit_code != 0
+    assert "Mode must be readonly or write" in invalid.output
 
 
 def test_owner_api_without_approval_fails_without_exposing_files(

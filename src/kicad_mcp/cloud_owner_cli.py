@@ -356,7 +356,7 @@ def _register_owner_access_commands(app: typer.Typer, default_origin: str) -> No
         cloud_origin: str = typer.Option(default_origin, "--cloud-origin"),
         json_output: bool = typer.Option(False, "--json"),
     ) -> None:
-        """List saved project/client permissions (current Cloud mode: read-only)."""
+        """List saved per-client project read and write policies."""
         _display(_request(cloud_origin, "GET", "/api/owner/v1/access"), json_output)
 
     @app.command("set-access")
@@ -364,16 +364,23 @@ def _register_owner_access_commands(app: typer.Typer, default_origin: str) -> No
         project_id: str = typer.Option(..., "--project-id"),
         client_id: str = typer.Option(..., "--client-id"),
         enabled: bool = typer.Option(..., "--enabled/--disabled"),
+        mode: str = typer.Option(
+            "readonly", "--mode", help="readonly or write (explicit OAuth consent required)."
+        ),
         cloud_origin: str = typer.Option(default_origin, "--cloud-origin"),
         json_output: bool = typer.Option(False, "--json"),
     ) -> None:
-        """Allow or disable read-only Cloud access to one project for one AI client."""
-        result = _request(
-            cloud_origin,
-            "POST",
-            "/api/owner/v1/access/set",
-            body={"projectId": project_id, "clientId": client_id, "enabled": enabled},
-        )
+        """Save project-specific client policy. Write does not activate a native Connector."""
+        if mode not in ("readonly", "write"):
+            raise typer.BadParameter("Mode must be readonly or write.")
+        body: dict[str, object] = {
+            "projectId": project_id,
+            "clientId": client_id,
+            "enabled": enabled,
+        }
+        if mode == "write":
+            body["maxMode"] = "write"
+        result = _request(cloud_origin, "POST", "/api/owner/v1/access/set", body=body)
         _display(result, json_output)
 
     @app.command("revoke-client")

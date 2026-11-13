@@ -7,7 +7,8 @@ const scopeDetails:Record<string,[string,string]>={
   openid:["Identify your account","The app can confirm which account approved access."],
   profile:["Basic account profile","The app can view basic profile information."],
   offline_access:["Stay connected","The app can request refreshed access without a new sign-in each time."],
-  "projects:read":["Read approved projects","The app can list only projects you grant access to separately."]
+  "projects:read":["Read approved projects","The app can list only projects you grant access to separately."],
+  "projects:write":["Edit approved projects","The app can request changes only to projects where you separately enable editing. This does not grant access to other projects."]
 };
 export function renderConsentPage(view:ConsentView):string {
   if(view.kind==="notice")return renderPage({title:"Authorization unavailable",kind:"notice",

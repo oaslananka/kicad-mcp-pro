@@ -26,22 +26,43 @@ export function renderDevicesPage(
     managedEnabled?:boolean;managedCsrf?:string;
     nativeEnabled?:ReadonlyArray<string>;nativeCsrf?:string}>=[],
   ownerSub?:string,clients:ReadonlyArray<string>=[],
-  savedGrants:ReadonlyArray<BrowserGrantSummary>=[],sandboxMode=false,browseEnabled=false
+  savedGrants:ReadonlyArray<BrowserGrantSummary>=[],sandboxMode=false,browseEnabled=false,
+  writeClients:ReadonlyArray<string>=[]
 ):string {
   const deviceNames=new Map(devices.map(d=>[d.id,d.alias]));
   const renderProjectAccess=(project:(typeof projects)[number])=><>
                 <details className="project-access-details">
                   <summary>Manage access</summary>
-                  <p className="field-help">Choose which AI apps may read this project's summary.
-                    Remote editing is not available in this Cloud version.</p>
+                  <p className="field-help">Choose exactly which AI clients may read or edit
+                    this project. New access is read-only; editing requires a separate
+                    OAuth write consent and an explicit per-app grant. Cloud editing is
+                    not active until a compatible Connector and the write service are available.</p>
                 {project.grantCsrf&&savedGrants.some(g=>g.projectId===project.id)?
                   <div className="project-grants">
                     <strong>Applications with access</strong>
                     <ul>{savedGrants.filter(g=>g.projectId===project.id).map(g=><li key={g.clientId}>
                       <span className="grant-client">{clientDisplayName(g.clientId)}</span>{" "}
                       <span className="permission-tag">{g.maxMode==="readonly"?"Read only":
-                        g.maxMode==="write"?"Edit configured (not active)":
+                        g.maxMode==="write"?"Edit permission saved ? remote editing not active":
                         "Other permission (not remote editing)"}</span>
+                      {project.grantCsrf&&g.maxMode==="readonly"&&writeClients.includes(g.clientId)?
+                        <form method="post" action="/devices/projects/grant">
+                          <input type="hidden" name="project_id" value={project.id}/>
+                          <input type="hidden" name="client_id" value={g.clientId}/>
+                          <input type="hidden" name="csrf" value={project.grantCsrf}/>
+                          <input type="hidden" name="mode" value="write"/>
+                          <button className="button secondary" type="submit"
+                            name="enabled" value="true">Allow editing</button>
+                        </form>:null}
+                      {project.grantCsrf&&g.maxMode==="write"?
+                        <form method="post" action="/devices/projects/grant">
+                          <input type="hidden" name="project_id" value={project.id}/>
+                          <input type="hidden" name="client_id" value={g.clientId}/>
+                          <input type="hidden" name="csrf" value={project.grantCsrf}/>
+                          <input type="hidden" name="mode" value="readonly"/>
+                          <button className="button secondary" type="submit"
+                            name="enabled" value="true">Keep read only</button>
+                        </form>:null}
                       <form method="post" action="/devices/projects/grant">
                         <input type="hidden" name="project_id" value={project.id}/>
                         <input type="hidden" name="client_id" value={g.clientId}/>
@@ -106,8 +127,27 @@ export function renderDevicesPage(
                       </select>
                     </label>
                     <div className="action-row">
-                      <button className="button primary" name="enabled" value="true" type="submit">Allow project summary</button>
+                      <button className="button primary" name="enabled" value="true"
+                        type="submit">Allow reading</button>
                     </div>
+                  </form>:null}
+                {project.enabled&&project.grantCsrf&&writeClients.some(client=>!savedGrants.some(
+                  g=>g.projectId===project.id&&g.clientId===client))?
+                  <form method="post" action="/devices/projects/grant">
+                    <input type="hidden" name="project_id" value={project.id}/>
+                    <input type="hidden" name="csrf" value={project.grantCsrf}/>
+                    <input type="hidden" name="mode" value="write"/>
+                    <label>AI application approved for editing{" "}
+                      <select name="client_id" required={true}>
+                        {writeClients.filter(client=>!savedGrants.some(g=>
+                          g.projectId===project.id&&g.clientId===client)).map(client=>
+                          <option value={client} key={client}>{clientDisplayName(client)}</option>)}
+                      </select>
+                    </label>
+                    <p className="field-help">This saves a separate write permission.
+                      It does not enable remote editing until the Connector supports it.</p>
+                    <button className="button secondary" name="enabled" value="true"
+                      type="submit">Allow reading and editing</button>
                   </form>:null}
                 </details>
   </>;

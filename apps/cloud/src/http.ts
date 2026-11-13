@@ -257,7 +257,7 @@ async function handleRequest(
         json(res, 200, {
           resource: config.audience,
           authorization_servers: [config.issuer],
-          scopes_supported: ["projects:read"],
+          scopes_supported: ["projects:read", "projects:write"],
           bearer_methods_supported: ["header"]
         });
         return;

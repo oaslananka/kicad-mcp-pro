@@ -419,20 +419,25 @@ export async function ownerApiResponse(request:Request,origin:string,
     if(request.headers.get("content-type")?.split(";")[0]?.trim()!=="application/json")
       return apiError(415,"unsupported_media_type");
     const body=await readJson(request,2048);
-    if(!body||Object.keys(body).length!==3||
-       !["projectId","clientId","enabled"].every(key=>Object.hasOwn(body,key)))
+    const required=["projectId","clientId","enabled"];
+    if(!body||Object.keys(body).length!==required.length+
+        (Object.hasOwn(body,"maxMode")?1:0)||
+       !required.every(key=>Object.hasOwn(body,key))||
+       Object.keys(body).some(key=>![...required,"maxMode"].includes(key)))
       return apiError(400,"invalid_request");
     const {projectId,clientId,enabled}=body;
+    const maxMode=body.maxMode??"readonly";
     if(typeof projectId!=="string"||!validUuid(projectId)||
        typeof clientId!=="string"||clientId.length<1||clientId.length>1024||
-       typeof enabled!=="boolean")
+       typeof enabled!=="boolean"||(maxMode!=="readonly"&&maxMode!=="write"))
       return apiError(400,"invalid_request");
-    // setBrowserGrant is readonly-only by construction; no mode is accepted.
+    // Saving a write grant never claims that remote KiCad execution is enabled.
     let updated:boolean;
-    try{updated=await grants.setBrowserGrant(owner,projectId,clientId,enabled);}
+    try{updated=await grants.setBrowserGrant(owner,projectId,clientId,enabled,maxMode);}
     catch{return apiError(503,"unavailable");}
     if(!updated)return apiError(404,"not_found");
-    return jsonBody({updated:true,maxMode:"readonly"});
+    return jsonBody({updated:true,maxMode:enabled?maxMode:"readonly",
+      remoteEditingAvailable:false});
   }
   if(path==="/api/owner/v1/access/revoke"&&request.method==="POST"){
     if(!grants?.revokeClient)return apiError(503,"unavailable");

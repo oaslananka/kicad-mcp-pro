@@ -38,14 +38,15 @@ type DeviceReply={
   projects?:Parameters<typeof renderDevicesPage>[3];
   ownerSub?:string;
   clients?:ReadonlyArray<string>;
+  writeClients?:ReadonlyArray<string>;
   savedGrants?:ReadonlyArray<BrowserGrantSummary>;
   sandboxMode?:boolean;
   localFolders?:LocalFolderPort;
 };
 function reply({status,devices=[],message,stateCookie,enrollmentAvailable=true,
-  projects=[],ownerSub,clients=[],savedGrants=[],sandboxMode=false,localFolders}:DeviceReply):Response{
+  projects=[],ownerSub,clients=[],writeClients=[],savedGrants=[],sandboxMode=false,localFolders}:DeviceReply):Response{
   const response=new Response(renderDevicesPage(devices,message,enrollmentAvailable,projects,
-    ownerSub,clients,savedGrants,sandboxMode,Boolean(localFolders)),{status,headers:{
+    ownerSub,clients,savedGrants,sandboxMode,Boolean(localFolders),writeClients),{status,headers:{
     "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store",
     // Preserve Origin on same-origin form POSTs; Chrome sends Origin: null
     // under no-referrer. Cross-site referrers remain hidden.
@@ -148,7 +149,9 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
     "Revoked device and its registered projects were permanently removed.":
     url.searchParams.has("revoked")?
       "Device revoked. Its sessions and project access were disabled.":
-    access==="granted"?"Project summary access was granted to the selected AI app.":
+    access==="granted"?"Project read access was granted to the selected AI app.":
+    access==="write-configured"?
+      "This AI app's edit permission is configured. Actual remote edits also require a compatible Connector and the live write service.":
     access==="removed"?"The selected AI app's project access was removed.":
     access==="reads-on"?"Project summary access was enabled.":
     access==="reads-off"?"Project summary access was paused.":
@@ -157,6 +160,7 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
   const projects=devices.listProjects?
     await devices.listProjects(who.user):[];
   let clients:string[]=[];
+  let writeClients:string[]=[];
   if(enrollmentAvailable&&grants?.setBrowserGrant&&identity.api.getOAuthConsents){
     try{
       const consents=await identity.api.getOAuthConsents({headers:req.headers});
@@ -165,6 +169,10 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
           typeof c.clientId==="string"&&c.clientId.length<=1024&&
           Array.isArray(c.scopes)&&c.scopes.includes("projects:read"))
           .map(c=>c.clientId))].slice(0,100);
+        writeClients=[...new Set(consents.filter(c=>c.userId===who.user&&
+          typeof c.clientId==="string"&&c.clientId.length<=1024&&
+          Array.isArray(c.scopes)&&c.scopes.includes("projects:read")&&
+          c.scopes.includes("projects:write")).map(c=>c.clientId))].slice(0,100);
       }
     }catch{return error(503);}
   }
@@ -207,7 +215,7 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
   })));
   return reply({status:200,devices:rows,message:note,
     stateCookie:cookie(stamp+"."+nonce,origin,300),enrollmentAvailable,
-    projects:scoped,ownerSub:who.user,clients,savedGrants,
+    projects:scoped,ownerSub:who.user,clients,writeClients,savedGrants,
     sandboxMode:identity.localDevSandbox===true,localFolders});
 }
 async function revoke(req:Request,identity:BrowserIdentity,origin:string,
@@ -339,24 +347,31 @@ async function ownerGrant(req:Request,identity:BrowserIdentity,origin:string,
   const raw=await req.text();
   if(raw.length>2048)return error(413);
   const fields=new URLSearchParams(raw);
-  const names=["project_id","client_id","enabled","csrf"];
-  if([...fields.keys()].length!==names.length||
-    names.some(name=>fields.getAll(name).length!==1))return error(400);
+  const required=["project_id","client_id","enabled","csrf"];
+  const names=[...fields.keys()];
+  if(names.length!==required.length+(fields.has("mode")?1:0)||
+    required.some(name=>fields.getAll(name).length!==1)||
+    (fields.has("mode")&&fields.getAll("mode").length!==1)||
+    names.some(name=>![...required,"mode"].includes(name)))return error(400);
   const project=fields.get("project_id")??"",client=fields.get("client_id")??"";
   const enabled=fields.get("enabled"),proof=fields.get("csrf")??"";
+  const mode=fields.get("mode")??"readonly";
   if(!DEVICE_ID.test(project)||!client||client.length>1024||
-    (enabled!=="true"&&enabled!=="false"))return error(400);
+    (enabled!=="true"&&enabled!=="false")||
+    (mode!=="readonly"&&mode!=="write"))return error(400);
   const who=userOf(await identity.api.getSession({headers:req.headers}));
   if(!who)return error(401);
   const {secret}=await identity.$context;
   const csrfIssue=await checkCsrf(req,origin,secret,who,project,proof,"project-browser-grant-v1");
   if(csrfIssue)return csrfIssue;
   let updated=false;
-  try{updated=await grants.setBrowserGrant(who.user,project,client,enabled==="true");}
+  try{updated=await grants.setBrowserGrant(who.user,project,client,enabled==="true",mode);}
   catch{return error(503);}
   if(!updated)return error(404);
   return new Response(null,{status:303,headers:{
-    Location:enabled==="true"?"/devices?access=granted":"/devices?access=removed",
+    Location:enabled==="true"?(mode==="write"?
+      "/devices?access=write-configured":"/devices?access=granted"):
+      "/devices?access=removed",
     "Cache-Control":"no-store","Set-Cookie":cookie("",origin,0)}});
 }
 

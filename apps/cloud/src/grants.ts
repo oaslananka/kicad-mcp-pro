@@ -13,7 +13,8 @@ export type GrantInput = {
 export interface GrantManagement {
   setGrant(ownerSub: string, actorClientId: string, projectId: string, grant: GrantInput): Promise<boolean>;
   revokeClient(ownerSub: string, clientId: string): Promise<number>;
-  setBrowserGrant?(ownerSub:string,projectId:string,clientId:string,enabled:boolean):Promise<boolean>;
+  setBrowserGrant?(ownerSub:string,projectId:string,clientId:string,enabled:boolean,
+    mode?:"readonly"|"write"):Promise<boolean>;
   listBrowserGrants?(ownerSub:string):Promise<BrowserGrantSummary[]>;
 }
 
@@ -83,12 +84,15 @@ export class PgGrantManagement extends PgInventory implements GrantManagement {
   /**
    * Owner's browser-only consent grant. Must not re-enable a client whose
    * OAuth consent predates the revocation cutoff; serialize with revokeClient.
-   * Never accepts a write/manufacturing mode or local project path.
+   * Editing requires a fresh explicit owner grant and actual OAuth write
+   * consent. The saved policy does NOT enable a remote KiCad write tool.
    */
-  async setBrowserGrant(owner:string,projectId:string,clientId:string,enabled:boolean):Promise<boolean>{
+  async setBrowserGrant(owner:string,projectId:string,clientId:string,enabled:boolean,
+    mode:"readonly"|"write"="readonly"):Promise<boolean>{
     const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     if(!this.builtInTokenStore||!owner||owner.length>256||!uuid.test(projectId)||
-      !clientId||clientId.length>1024||typeof enabled!=="boolean")return false;
+      !clientId||clientId.length>1024||typeof enabled!=="boolean"||
+      (mode!=="readonly"&&mode!=="write"))return false;
     const db=await this.pool.connect();
     try{
       await db.query("BEGIN");
@@ -113,17 +117,21 @@ export class PgGrantManagement extends PgInventory implements GrantManagement {
       const project=await db.query(
         "SELECT p.id FROM projects p JOIN devices d ON d.id=p.device_id AND d.owner_sub=p.owner_sub "+
         "JOIN device_credentials k ON k.device_id=d.id AND k.owner_sub=d.owner_sub "+
-        "WHERE p.id=$1 AND p.owner_sub=$2 AND p.max_mode='readonly' AND p.enabled=true "+
+        "WHERE p.id=$1 AND p.owner_sub=$2 AND p.max_mode IN ('readonly','write') "+
+        "AND p.enabled=true "+
         "AND d.enabled=true AND k.revoked_at IS NULL FOR UPDATE OF p,d,k",
         [projectId,owner]);
       if(project.rowCount!==1){await db.query("ROLLBACK");return false;}
       if(enabled){
+        const requiredScopes=mode==="write"?
+          ["projects:read","projects:write"]:["projects:read"];
         const consent=await db.query<{created_at:Date}>(
           'SELECT c."createdAt" AS created_at FROM "oauthConsent" c '+
           'JOIN "oauthClient" o ON o."clientId"=c."clientId" '+
           'WHERE c."userId"=$1 AND c."clientId"=$2 AND c."scopes" @> $3::jsonb '+
-          'AND o."disabled" IS DISTINCT FROM true ORDER BY c."createdAt" DESC LIMIT 1 '+
-          'FOR SHARE OF c,o',[owner,clientId,JSON.stringify(["projects:read"])]);
+          'AND o."scopes" @> $3::jsonb AND o."disabled" IS DISTINCT FROM true '+
+          'ORDER BY c."createdAt" DESC LIMIT 1 FOR SHARE OF c,o',
+          [owner,clientId,JSON.stringify(requiredScopes)]);
         const created=consent.rows[0]?.created_at;
         if(!created){await db.query("ROLLBACK");return false;}
         const revoked=await db.query<{revoked_at:Date}>(
@@ -133,12 +141,18 @@ export class PgGrantManagement extends PgInventory implements GrantManagement {
           await db.query("ROLLBACK");return false;
         }
       }
+      // This owner action raises the project ceiling for this explicitly
+      // approved client only. Other clients remain at their own saved modes.
+      if(mode==="write"){
+        await db.query("UPDATE projects SET max_mode='write' WHERE id=$1 AND owner_sub=$2",
+          [projectId,owner]);
+      }
       await db.query(
         "INSERT INTO project_client_grants(project_id,owner_sub,client_id,enabled,max_mode) "+
-        "VALUES($1,$2,$3,$4,'readonly') ON CONFLICT(project_id,client_id) DO UPDATE SET "+
-        "enabled=excluded.enabled,max_mode='readonly' "+
+        "VALUES($1,$2,$3,$4,$5) ON CONFLICT(project_id,client_id) DO UPDATE SET "+
+        "enabled=excluded.enabled,max_mode=excluded.max_mode "+
         "WHERE project_client_grants.owner_sub=excluded.owner_sub",
-        [projectId,owner,clientId,enabled]);
+        [projectId,owner,clientId,enabled,mode]);
       await db.query(
         "INSERT INTO client_grant_audit(owner_sub,actor_client_id,project_id,operation) "+
         "VALUES($1,$2,$3,'grant.set')",[owner,"owner-browser",projectId]);

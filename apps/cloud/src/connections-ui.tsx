@@ -7,7 +7,8 @@ const scopesInfo=new Map<string,string>([
   ["openid","Identify your account"],
   ["profile","View your basic profile"],
   ["offline_access","Keep connection without repeated login"],
-  ["projects:read","List projects you explicitly allow"]
+  ["projects:read","List projects you explicitly allow"],
+  ["projects:write","Request editing on projects you separately approve"]
 ]);
 
 export function renderConnectionsPage(
