@@ -100,6 +100,32 @@ def read_windows_board_revision(policy: OperatorProject) -> str:
         raise LocalWriteDeniedError(_DENIED) from exc
 
 
+def read_windows_board_snapshot(policy: OperatorProject) -> tuple[str, str]:
+    """Independently inspect a saved PCB using the same pinned Win32 handle."""
+    _check_revision_inputs(policy)
+    try:
+        binary = getattr(os, "O_BINARY", None)
+        if type(binary) is not int:
+            raise LocalWriteDeniedError(_DENIED)
+        with _pinned_project(policy.directory) as parent:
+            fd = _open_pinned_board_fd(parent, policy.filename_stem, binary)
+            with os.fdopen(fd, "rb") as reader:
+                before = os.fstat(reader.fileno())
+                if not 1 <= before.st_size <= _MAX_BOARD_BYTES:
+                    raise LocalWriteDeniedError(_DENIED)
+                content = reader.read(before.st_size + 1)
+                after = os.fstat(reader.fileno())
+                if (
+                    len(content) != before.st_size
+                    or before.st_size != after.st_size
+                    or before.st_mtime_ns != after.st_mtime_ns
+                ):
+                    raise LocalWriteDeniedError(_DENIED)
+                return hashlib.sha256(content).hexdigest(), content.decode("utf-8")
+    except (OSError, ValueError, TypeError, UnicodeDecodeError) as exc:
+        raise LocalWriteDeniedError(_DENIED) from exc
+
+
 def verify_windows_board_revision(policy: OperatorProject, expected_sha256: str) -> None:
     """Pin and hash the real local PCB, refusing stale or substituted boards."""
     _check_revision_inputs(policy, expected_sha256)

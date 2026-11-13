@@ -116,13 +116,14 @@ def _fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         digest: str | None = None,
         version: int = 1,
         live_digest: str | None = None,
+        rotation: float | None = None,
     ) -> bytes:
         command = {
             "operation": "pcb_move_footprint",
             "reference": reference,
             "xMm": 3.5,
             "yMm": 4.25,
-            "rotationDeg": None,
+            "rotationDeg": rotation,
             "expectedBoardSha256": digest or hashlib.sha256(START.encode()).hexdigest(),
         }
         if version == 2:
@@ -162,6 +163,7 @@ def _fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         *,
         authorized: Callable[[], bool] = lambda: True,
         cancelled: Callable[[], bool] = lambda: False,
+        persist_to_disk: bool = False,
     ) -> dict[str, object]:
         return execute_verified_signed_pcb_move(
             proof,
@@ -173,6 +175,7 @@ def _fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             cancelled=cancelled,
             service=service,
             now_unix_ms=NOW,
+            persist_to_disk=persist_to_disk,
         )
 
     return folder, board, signed, execute
@@ -353,4 +356,186 @@ def test_revision_prepare_denies_racing_live_board_snapshot(
             policy, authorized=lambda: True, cancelled=lambda: False, get_board=lambda: board
         )
     assert board.calls == []
+    assert (folder / "disposable.kicad_pcb").read_bytes() == START.encode()
+
+
+@WINDOWS
+def test_signed_move_can_save_verified_native_board_on_disposable_project(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder, board, signed, execute = _fixture(monkeypatch, tmp_path)
+    target = folder / "disposable.kicad_pcb"
+    original_sha = hashlib.sha256(target.read_bytes()).hexdigest()
+
+    def save() -> None:
+        board.calls.append("save")
+        target.write_text(
+            "(kicad_pcb (version 20250114) (generator pcbnew)\n"
+            '  (footprint "Test:R"\n'
+            '    (layer "F.Cu")\n'
+            "    (at 3.5 4.25 0)\n"
+            '    (property "Reference" "R1")\n'
+            "  )\n)\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(board, "save", save, raising=False)
+    result = execute(signed(), persist_to_disk=True)
+    assert result["nativeCommitted"] is True
+    assert result["savedToDisk"] is True
+    assert result["diskBoardSha256"] == hashlib.sha256(target.read_bytes()).hexdigest()
+    assert result["diskBoardSha256"] != original_sha
+    assert board.calls == ["begin", "update", "push", "save"]
+
+
+@WINDOWS
+def test_signed_move_save_failure_requires_recovery_not_success(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from kicad_mcp.cloud_write_transaction_guard import NativeWriteRecoveryError
+
+    folder, board, signed, execute = _fixture(monkeypatch, tmp_path)
+    target = folder / "disposable.kicad_pcb"
+
+    def fail_to_save() -> None:
+        board.calls.append("save")
+        raise OSError("disk full")
+
+    monkeypatch.setattr(board, "save", fail_to_save, raising=False)
+    with pytest.raises(NativeWriteRecoveryError, match="native recovery required"):
+        execute(signed(), persist_to_disk=True)
+    assert board.calls == ["begin", "update", "push", "save"]
+    assert target.read_bytes() == START.encode()
+
+
+@WINDOWS
+def test_signed_move_silent_noop_save_is_not_verified(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from kicad_mcp.cloud_write_transaction_guard import NativeWriteRecoveryError
+
+    folder, board, signed, execute = _fixture(monkeypatch, tmp_path)
+    monkeypatch.setattr(board, "save", lambda: board.calls.append("save"), raising=False)
+    with pytest.raises(NativeWriteRecoveryError, match="native recovery required"):
+        execute(signed(), persist_to_disk=True)
+    assert board.calls == ["begin", "update", "push", "save"]
+    assert (folder / "disposable.kicad_pcb").read_bytes() == START.encode()
+
+
+@WINDOWS
+def test_signed_move_wrong_saved_position_is_rejected_after_commit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from kicad_mcp.cloud_write_transaction_guard import NativeWriteRecoveryError
+
+    folder, board, signed, execute = _fixture(monkeypatch, tmp_path)
+    target = folder / "disposable.kicad_pcb"
+
+    def save_wrong_position() -> None:
+        board.calls.append("save")
+        target.write_text(
+            '(kicad_pcb\n  (footprint "Test:R"\n'
+            '    (layer "F.Cu")\n    (at 9 9 0)\n'
+            '    (property "Reference" "R1")\n  )\n)\n',
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(board, "save", save_wrong_position, raising=False)
+    with pytest.raises(NativeWriteRecoveryError, match="native recovery required"):
+        execute(signed(), persist_to_disk=True)
+    assert board.calls == ["begin", "update", "push", "save"]
+
+
+@WINDOWS
+def test_signed_move_saved_correct_rotation_is_verified(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder, board, signed, execute = _fixture(monkeypatch, tmp_path)
+    target = folder / "disposable.kicad_pcb"
+
+    def save() -> None:
+        board.calls.append("save")
+        target.write_text(
+            '(kicad_pcb\n  (footprint "Test:R"\n    (layer "F.Cu")\n'
+            '    (at 3.5 4.25 90)\n    (property "Reference" "R1")\n  )\n)\n',
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(board, "save", save, raising=False)
+    result = execute(signed(rotation=90), persist_to_disk=True)
+    assert result["nativeCommitted"] is True
+    assert result["savedToDisk"] is True
+    assert board.calls == ["begin", "update", "push", "save"]
+
+
+@WINDOWS
+def test_signed_move_saved_wrong_rotation_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from kicad_mcp.cloud_write_transaction_guard import NativeWriteRecoveryError
+
+    folder, board, signed, execute = _fixture(monkeypatch, tmp_path)
+    target = folder / "disposable.kicad_pcb"
+
+    def save_wrong_rotation() -> None:
+        board.calls.append("save")
+        target.write_text(
+            '(kicad_pcb\n  (footprint "Test:R"\n    (layer "F.Cu")\n'
+            '    (at 3.5 4.25 0)\n    (property "Reference" "R1")\n  )\n)\n',
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(board, "save", save_wrong_rotation, raising=False)
+    with pytest.raises(NativeWriteRecoveryError, match="native recovery required"):
+        execute(signed(rotation=90), persist_to_disk=True)
+    assert board.calls == ["begin", "update", "push", "save"]
+
+
+@WINDOWS
+def test_signed_move_duplicate_saved_reference_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from kicad_mcp.cloud_write_transaction_guard import NativeWriteRecoveryError
+
+    folder, board, signed, execute = _fixture(monkeypatch, tmp_path)
+    target = folder / "disposable.kicad_pcb"
+
+    def save_duplicate() -> None:
+        board.calls.append("save")
+        target.write_text(
+            "(kicad_pcb\n"
+            '  (footprint "Test:R"\n    (layer "F.Cu")\n'
+            '    (at 3.5 4.25 0)\n    (property "Reference" "R1")\n  )\n'
+            '  (footprint "Test:R"\n    (layer "F.Cu")\n'
+            '    (at 3.5 4.25 0)\n    (property "Reference" "R1")\n  )\n'
+            ")\n",
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(board, "save", save_duplicate, raising=False)
+    with pytest.raises(NativeWriteRecoveryError, match="native recovery required"):
+        execute(signed(), persist_to_disk=True)
+    assert board.calls == ["begin", "update", "push", "save"]
+
+
+@WINDOWS
+def test_signed_move_revocation_after_native_commit_never_saves(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from kicad_mcp.cloud_write_transaction_guard import NativeWriteRecoveryError
+
+    folder, board, signed, execute = _fixture(monkeypatch, tmp_path)
+    monkeypatch.setattr(board, "save", lambda: board.calls.append("save"), raising=False)
+    grants = iter([True, True, True, False])
+    with pytest.raises(NativeWriteRecoveryError, match="native recovery required"):
+        execute(signed(), persist_to_disk=True, authorized=lambda: next(grants))
+    assert board.calls == ["begin", "update", "push"]
     assert (folder / "disposable.kicad_pcb").read_bytes() == START.encode()

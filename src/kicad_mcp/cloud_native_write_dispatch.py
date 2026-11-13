@@ -4,14 +4,15 @@ This is the device-side execution boundary, not a public Cloud route. The
 caller must supply an independently pinned server issuer, a signed session
 binding, the owner-selected local project, a crash-durable replay consumer
 and current local authorization. It never accepts client-selected paths.
-The KiCad push commits an in-memory undo unit; saving the PCB to disk is a
-separate, still-unimplemented Cloud acceptance requirement.
+A trusted local caller may additionally request a pinned save and independent
+on-disk footprint-position readback. Public Cloud WRITE is not enabled here.
 """
 
 from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
@@ -19,7 +20,10 @@ from typing import TYPE_CHECKING, cast
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
-from kicad_mcp.cloud_windows_write_revision import read_windows_board_revision
+from kicad_mcp.cloud_windows_write_revision import (
+    read_windows_board_revision,
+    read_windows_board_snapshot,
+)
 from kicad_mcp.cloud_write_board_revision import MAX_BOARD_BYTES
 from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
 from kicad_mcp.cloud_write_native_ipc import (
@@ -167,6 +171,82 @@ def _native_move(
     )
 
 
+def _saved_disk_move_matches(
+    content: str,
+    reference: str,
+    command: dict[str, object],
+) -> bool:
+    """Check a unique persisted footprint, including requested rotation."""
+    from kicad_mcp.tools.board_file import FLOAT_PATTERN, _parse_board_footprint_blocks
+
+    entry = _parse_board_footprint_blocks(content).get(reference)
+    if (
+        len(re.findall(r'\(property\s+"Reference"\s+"' + re.escape(reference) + r'"', content)) != 1
+        or not isinstance(entry, dict)
+        or not isinstance(entry.get("x_mm"), (int, float))
+        or not isinstance(entry.get("y_mm"), (int, float))
+        or mm_to_nm(float(entry["x_mm"])) != mm_to_nm(float(cast(float, command["xMm"])))
+        or mm_to_nm(float(entry["y_mm"])) != mm_to_nm(float(cast(float, command["yMm"])))
+    ):
+        return False
+    rotation = command.get("rotationDeg")
+    if rotation is None:
+        return True
+    block = entry.get("block")
+    if not isinstance(block, str):
+        return False
+    at = re.search(
+        rf"(?m)^\s*\(at\s+{FLOAT_PATTERN}\s+{FLOAT_PATTERN}(?:\s+({FLOAT_PATTERN}))?\)",
+        block,
+    )
+    if at is None:
+        return False
+    actual = float(at.group(1) or "0")
+    difference = (actual - float(cast(float, rotation)) + 180) % 360 - 180
+    return abs(difference) <= 0.001
+
+
+def _persist_native_move(
+    service: PcbTransactionLifecycleService,
+    policy: OperatorProject,
+    command: dict[str, object],
+) -> str:
+    """Save only the already committed owner-bound live board, then read disk."""
+    board = service.get_board()
+    _require_approved_live_board(board, policy)
+    reference = cast(str, command["reference"])
+    x_nm = mm_to_nm(float(cast(float, command["xMm"])))
+    y_nm = mm_to_nm(float(cast(float, command["yMm"])))
+
+    def matches_target(current: object) -> bool:
+        footprint = _footprint(current, reference)
+        return (
+            _coord_nm(footprint.position, "x") == x_nm
+            and _coord_nm(footprint.position, "y") == y_nm
+        )
+
+    if not matches_target(board):
+        raise LocalWriteDeniedError(_DENIED)
+    save = getattr(board, "save", None)
+    if not callable(save):
+        raise LocalWriteDeniedError(_DENIED)
+    # Reuse the canonical serial native IPC command queue for a real save.
+    if service.run_mutation("pcb_save", save) is False:
+        raise LocalWriteDeniedError(_DENIED)
+    fresh_board = service.get_board()
+    _require_approved_live_board(fresh_board, policy)
+    if not matches_target(fresh_board):
+        raise LocalWriteDeniedError(_DENIED)
+    digest, content = read_windows_board_snapshot(policy)
+    if hmac.compare_digest(digest, cast(str, command["expectedBoardSha256"])):
+        raise LocalWriteDeniedError(_DENIED)
+
+    # Verify the saved file rather than trusting KiCad's save acknowledgement.
+    if not _saved_disk_move_matches(content, reference, command):
+        raise LocalWriteDeniedError(_DENIED)
+    return digest
+
+
 def execute_verified_signed_pcb_move(
     proof: bytes,
     *,
@@ -178,6 +258,7 @@ def execute_verified_signed_pcb_move(
     cancelled: Callable[[], bool],
     service: PcbTransactionLifecycleService | None = None,
     now_unix_ms: int | None = None,
+    persist_to_disk: bool = False,
 ) -> dict[str, object]:
     """Execute exactly one authenticated native PCB move, never an arbitrary tool.
 
@@ -185,7 +266,7 @@ def execute_verified_signed_pcb_move(
     remain current at both native preflight and precommit. No disk-save or
     manufacture status is implied by a successful in-memory KiCad transaction.
     """
-    if not callable(authorized) or not callable(cancelled):
+    if not callable(authorized) or not callable(cancelled) or type(persist_to_disk) is not bool:
         raise LocalWriteDeniedError(_DENIED)
     now = time.time_ns() // 1_000_000 if now_unix_ms is None else now_unix_ms
     request = verify_offline_signed_write_proof(
@@ -213,17 +294,23 @@ def execute_verified_signed_pcb_move(
     except Exception as exc:
         raise LocalWriteDeniedError(_DENIED) from exc
     adapter = _native_move(service, operator_project, command)
-    run_offline_guarded_native_write(
+    disk_sha = run_offline_guarded_native_write(
         operator_project,
         cast(str, command["expectedBoardSha256"]),
         authorized=authorized,
         cancelled=cancelled,
         native=adapter,
+        after_commit=(
+            (lambda: _persist_native_move(service, operator_project, command))
+            if persist_to_disk
+            else None
+        ),
     )
     return {
         "requestId": request["requestId"],
         "projectId": operator_project.project_id,
         "operation": "pcb_move_footprint",
         "nativeCommitted": True,
-        "savedToDisk": False,
+        "savedToDisk": disk_sha is not None,
+        **({"diskBoardSha256": disk_sha} if disk_sha is not None else {}),
     }

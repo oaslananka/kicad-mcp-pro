@@ -181,7 +181,8 @@ def run_offline_guarded_native_write(
     authorized: Callable[[], bool],
     cancelled: Callable[[], bool],
     native: NativeWriteTransaction,
-) -> None:
+    after_commit: Callable[[], str] | None = None,
+) -> str | None:
     """Stage then commit a native transaction under two pinned SHA checks.
 
     The trusted caller must have already consumed an authenticated one-use
@@ -190,7 +191,11 @@ def run_offline_guarded_native_write(
     Any ambiguous begin/commit or unproven discard requires manual native
     state reconciliation; the request must not be retried automatically.
     """
-    if not callable(authorized) or not callable(cancelled):
+    if (
+        not callable(authorized)
+        or not callable(cancelled)
+        or (after_commit is not None and not callable(after_commit))
+    ):
         raise LocalWriteDeniedError(_DENIED)
     with _locked_cross_platform_project(policy) as folder_fd:
         _assert_pinned_operator_directory(policy, folder_fd)
@@ -226,4 +231,17 @@ def run_offline_guarded_native_write(
         except Exception as exc:
             # Commit may already have been published. Calling discard here
             # could silently hide an ambiguous edit; require reconciliation.
+            raise NativeWriteRecoveryError(_RECOVERY) from exc
+        if after_commit is None:
+            return None
+        try:
+            _assert_pinned_operator_directory(policy, folder_fd)
+            _require_fresh_owner_permission(authorized, cancelled)
+            digest = after_commit()
+            if not isinstance(digest, str) or re.fullmatch(r"[a-f0-9]{64}", digest) is None:
+                raise NativeWriteRecoveryError(_RECOVERY)
+            return digest
+        except Exception as exc:
+            # Native mutation already committed in KiCad. Disk persistence
+            # failure is ambiguous, never an ordinary denial/retry signal.
             raise NativeWriteRecoveryError(_RECOVERY) from exc
