@@ -20,6 +20,8 @@ import {createLocalDevIdentity} from "./local-dev-identity.js";
 import {recoverLocalDevSessions} from "./local-dev-recovery.js";
 import {PgUsage} from "./usage.js";
 import {PgOwnerApiAccess} from "./owner-api.js";
+import {PgConnectorWritePreflight} from "./connector-write-preflight.js";
+import {openPinnedOfflineWriteIssuer} from "./connector-write-issuer.js";
 
 const config = loadConfig();
 const localDevWorkspace=process.env.AUTH_MODE==="local_dev";
@@ -32,14 +34,20 @@ const wsEnabled=process.env.CONNECTOR_WS_ENABLED==="true";
 const managedReadEnabled=process.env.CONNECTOR_MANAGED_READ_ENABLED==="true";
 // A separate OFF-by-default native read gate never authorizes an operation itself.
 const managedNativeReadEnabled=process.env.CONNECTOR_MANAGED_NATIVE_READ_ENABLED==="true";
+const managedNativeWriteEnabled=process.env.CONNECTOR_MANAGED_NATIVE_WRITE_ENABLED==="true";
 if(managedNativeReadEnabled&&!managedReadEnabled)
   throw Error("Managed native reads require signed managed Connector mode");
+if(managedNativeWriteEnabled&&!managedReadEnabled)
+  throw Error("Managed native writes require signed managed Connector mode");
 if(wsEnabled&&!localDevWorkspace&&!config.publicOrigin.startsWith("https://")){
   throw new Error("Connector WebSocket requires externally terminated HTTPS");
 }
 const connectorPool=(wsEnabled||Boolean(identity))?new Pool({connectionString:config.databaseUrl}):null;
 // Only the isolated, single-worker sandbox may expire its own stale sockets.
 if(localDevWorkspace&&connectorPool)await recoverLocalDevSessions(connectorPool);
+const writeIssuer = (managedNativeWriteEnabled && process.env.OFFLINE_WRITE_ISSUER_KEY_PATH && process.env.OFFLINE_WRITE_ISSUER_PUBKEY_SHA256)
+  ? await openPinnedOfflineWriteIssuer(process.env.OFFLINE_WRITE_ISSUER_KEY_PATH, process.env.OFFLINE_WRITE_ISSUER_PUBKEY_SHA256)
+  : undefined;
 // Explicitly independent PostgreSQL role; never issue owner approvals here.
 // With the default flag OFF, reads remain disabled even if WSS is enabled.
 const ownerConsentRuntime=await openOwnerConsentRuntime(
@@ -112,6 +120,9 @@ const server=createHttpServer(config, inventory, createVerifier(config), {grants
   mcpProjectInspectionEnabled:operatorInspection,
   mcpProjectBoardCountsEnabled:operatorBoardCounts,
   mcpProjectSchematicCountsEnabled:operatorSchematicCounts,summaryRelay:()=>connectorRelay,
+  mcpProjectWriteEnabled:managedNativeWriteEnabled,
+  ...(connectorPool&&managedNativeWriteEnabled?{writePreflight:new PgConnectorWritePreflight(connectorPool)}:{}),
+  ...(writeIssuer?{writeIssuer}:{}),
   ...(ownerIntentDelivery?{ownerIntentDelivery}:{}),
   ...(usage?{usage}:{}),
   ...(ownerApi?{ownerApi}:{})});

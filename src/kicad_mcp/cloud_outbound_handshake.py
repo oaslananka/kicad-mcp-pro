@@ -70,6 +70,9 @@ class OutboundSessionOptions:
     schematic_counts_pilot: bool = False
     owner_managed_read: bool = False
     managed_native_drc: bool = False
+    managed_native_write: bool = False
+    revisions_preparer: Callable[[], dict[str, str]] | None = None
+    write_executor: Callable[[bytes, bool], dict[str, object]] | None = None
     # Opt-in ONLY after the target Cloud deployment accepts extended device.hello.
     # Legacy devices and servers retain the byte-identical v1 handshake by default.
     advertise_catalog: bool = False
@@ -555,6 +558,15 @@ def _validate_outbound_options(options: OutboundSessionOptions) -> None:
         options.managed_native_drc and not options.owner_managed_read
     ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    if type(options.managed_native_write) is not bool or (
+        options.managed_native_write
+        and (
+            not options.owner_managed_read
+            or not callable(options.revisions_preparer)
+            or not callable(options.write_executor)
+        )
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     if options.owner_managed_read and (
         options.dispatcher_factory is None
         or options.inspection_factory is not None
@@ -583,6 +595,8 @@ def _catalog_operations(options: OutboundSessionOptions) -> list[str]:
         operations.append("project_summary")
         if options.managed_native_drc:
             operations.append("run_drc")
+        if options.managed_native_write:
+            operations.append("move_footprint")
     elif options.dispatcher_factory is not None and options.operator_presence_pilot:
         operations.append("project_summary")
         if options.operator_native_drc_pilot:
@@ -650,6 +664,9 @@ async def _complete_outbound_operation(
             max_reads=options.managed_max_reads,
             folder_service=folder_service,
             allow_native_drc=options.managed_native_drc,
+            allow_native_write=options.managed_native_write,
+            revisions_preparer=options.revisions_preparer,
+            write_executor=options.write_executor,
             on_activity=options.on_activity,
         )
     if options.inspection_factory is not None:
@@ -985,9 +1002,12 @@ async def execute_owner_managed_read_session(
     folder_service_factory: Callable[[HandshakeReceipt], LocalFolderBrowseService] | None = None,
     on_ready: Callable[[HandshakeReceipt], None] | None = None,
     allow_native_drc: bool = False,
+    allow_native_write: bool = False,
+    revisions_preparer: Callable[[], dict[str, str]] | None = None,
+    write_executor: Callable[[bytes, bool], dict[str, object]] | None = None,
     on_activity: Callable[[str], None] | None = None,
 ) -> HandshakeReceipt:
-    """One signed, owner-managed read-only session; no key loading or persistence.
+    """One signed, owner-managed session; no key loading or persistence.
 
     The caller must provide the *already-authorized* enrolled signing identity
     and a dispatcher whose independent, current local permission is checked
@@ -1002,6 +1022,10 @@ async def execute_owner_managed_read_session(
     if (
         not callable(dispatcher_factory)
         or type(allow_native_drc) is not bool
+        or type(allow_native_write) is not bool
+        or (allow_native_write and (revisions_preparer is None or write_executor is None))
+        or (revisions_preparer is not None and not callable(revisions_preparer))
+        or (write_executor is not None and not callable(write_executor))
         or (folder_service_factory is not None and not callable(folder_service_factory))
         or (on_activity is not None and not callable(on_activity))
     ):
@@ -1017,7 +1041,10 @@ async def execute_owner_managed_read_session(
             dispatcher_factory=dispatcher_factory,
             owner_managed_read=True,
             managed_native_drc=allow_native_drc,
-            advertise_catalog=allow_native_drc,
+            managed_native_write=allow_native_write,
+            revisions_preparer=revisions_preparer,
+            write_executor=write_executor,
+            advertise_catalog=allow_native_drc or allow_native_write,
             managed_max_reads=max_reads,
             folder_service_factory=folder_service_factory,
             on_ready=on_ready,

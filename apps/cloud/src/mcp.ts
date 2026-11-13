@@ -46,6 +46,25 @@ export type ProjectSchematicCounts=Readonly<{
 }>;
 export type ProjectSchematicCountsReader=
   (deviceId:string,projectId:string)=>Promise<ProjectSchematicCounts|null>;
+export type ProjectWriteResult = Readonly<{
+  success: boolean;
+  operation: "pcb_move_footprint";
+  nativeCommitted: boolean;
+  savedToDisk: boolean;
+  diskBoardSha256?: string;
+  message?: string;
+}>;
+export type ProjectWriteExecutor = (
+  deviceId: string,
+  projectId: string,
+  command: {
+    reference: string;
+    xMm: number;
+    yMm: number;
+    rotationDeg?: number | null;
+    saveToDisk?: boolean;
+  }
+) => Promise<ProjectWriteResult | null>;
 
 // The local device owns the actual project. This Cloud lookup only resolves
 // an already granted opaque project ID for the current OAuth client. A lone
@@ -74,7 +93,8 @@ export function createCloudMcpHandler(
   boardCounts?:ProjectBoardCountsReader,
   schematicCounts?:ProjectSchematicCountsReader,
   isDeviceConnected?:(ownerSub:string,deviceId:string)=>boolean,
-  getDeviceCapabilityClaim?:(ownerSub:string,deviceId:string)=>ConnectorCapabilityClaim|null
+  getDeviceCapabilityClaim?:(ownerSub:string,deviceId:string)=>ConnectorCapabilityClaim|null,
+  projectWrite?:ProjectWriteExecutor
 ) {
   return createMcpHandler(() => {
     const mcp = new McpServer({ name: "kicad-mcp-pro-cloud", version: "0.1.0" });
@@ -110,9 +130,9 @@ export function createCloudMcpHandler(
         boardCounts||schematicCounts ? "local_project_read_pilot" :
         projectDrc ? "local_native_drc_pilot" :
         projectPresence ? "local_presence_pilot" : "foundation_only",
-      remoteKiCadExecution: nativeReadEnabled,
+      remoteKiCadExecution: nativeReadEnabled || Boolean(projectWrite),
       devicePairing: localReadEnabled,
-      projectManagementWrites: false,
+      projectManagementWrites: Boolean(projectWrite),
       message: localReadEnabled
         ? "Only enabled, project-granted owner-foreground read operations are available. Device connection is not proof of KiCad GUI, project contents or permission to execute."
         : "Cloud inventory is read-only. No owner-operated remote reads are enabled."
@@ -285,6 +305,38 @@ export function createCloudMcpHandler(
         try{counts=await schematicCounts(project.deviceId,project.id);}
         catch{counts=null;}
         return text(counts?{available:true,counts}:{available:false});
+      });
+    }
+    if(projectWrite){
+      mcp.registerTool("pcb_move_footprint",{
+        description:"Move an owner-approved PCB footprint by reference designator with atomic local locking and optional disk persistence. Requires projects:write OAuth scope and active owner-connected device session.",
+        inputSchema:z.object({
+          project_id:z.string().uuid().optional(),
+          reference:z.string().regex(/^[A-Z]{1,3}[1-9][0-9]{0,5}$/),
+          x_mm:z.number().finite().min(-1000).max(1000),
+          y_mm:z.number().finite().min(-1000).max(1000),
+          rotation_deg:z.number().finite().min(-360).max(360).nullable().optional(),
+          save_to_disk:z.boolean().optional()
+        }),annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:false,openWorldHint:false}
+      },async ({project_id,reference,x_mm,y_mm,rotation_deg,save_to_disk})=>{
+        if(!actor.scopes.has("projects:write")){
+          return text({success:false,reason:"insufficient_scope_write_required"});
+        }
+        const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
+        if(!project)return text({success:false,selectionRequired});
+        let result:ProjectWriteResult|null=null;
+        try{
+          result=await projectWrite(project.deviceId,project.id,{
+            reference,
+            xMm:x_mm,
+            yMm:y_mm,
+            rotationDeg:rotation_deg??null,
+            saveToDisk:save_to_disk??true
+          });
+        }catch{
+          result=null;
+        }
+        return text(result?{...result}:{success:false,reason:"write_execution_failed"});
       });
     }
     return mcp;

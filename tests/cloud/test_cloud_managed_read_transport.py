@@ -60,16 +60,17 @@ class Socket:
         self.sent.append(message)
         if self.grant is not None and len(self.sent) == self.revoke_after:
             self.grant[0] = False
-        self.incoming.put_nowait(
-            json.dumps(
-                {
-                    "kind": "connector.read_ack",
-                    "version": 1,
-                    "sequence": message["sequence"],
-                    "requestId": message["result"]["requestId"],
-                }
+        if message.get("kind") == "connector.read_result":
+            self.incoming.put_nowait(
+                json.dumps(
+                    {
+                        "kind": "connector.read_ack",
+                        "version": 1,
+                        "sequence": message["sequence"],
+                        "requestId": message["result"]["requestId"],
+                    }
+                )
             )
-        )
         if self.scheduled:
             self.incoming.put_nowait(self.scheduled.pop(0))
 
@@ -613,3 +614,135 @@ async def test_untrusted_activity_callback_type_is_refused(tmp_path: Path) -> No
             on_activity="unsafe",  # type: ignore[arg-type]
         )
     assert socket.sent == []
+
+
+@pytest.mark.anyio
+async def test_managed_write_revisions_returns_prepared_shas(tmp_path: Path) -> None:
+    req = json.dumps(
+        {
+            "kind": "connector.prepare_write_revisions",
+            "version": 1,
+            "requestId": "55555555-5555-4555-8555-555555555555",
+            "deviceId": DEVICE,
+            "projectId": PROJECT,
+        }
+    )
+    socket = Socket([req, request(1)])
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    revisions = {
+        "expectedBoardSha256": "a" * 64,
+        "expectedLiveBoardSha256": "b" * 64,
+    }
+    await serve_authenticated_reads(
+        socket,
+        receipt,
+        lambda _: build_dispatcher(tmp_path, [True]),
+        max_reads=1,
+        allow_native_write=True,
+        revisions_preparer=lambda: revisions,
+        write_executor=lambda proof, persist: {"requestId": "x"},
+    )
+    assert len(socket.sent) == 2
+    assert socket.sent[0] == {
+        "kind": "connector.write_revisions_result",
+        "version": 1,
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "expectedBoardSha256": "a" * 64,
+        "expectedLiveBoardSha256": "b" * 64,
+    }
+
+
+@pytest.mark.anyio
+async def test_managed_authorized_write_executes_and_receives_ack(tmp_path: Path) -> None:
+    proof_obj = {
+        "kind": "connector.signed_write_proposal",
+        "version": 2,
+        "payload": "dGVzdA",
+        "signature": "c2ln",
+    }
+    write_frame = json.dumps(
+        {
+            "kind": "connector.authorized_write",
+            "version": 1,
+            "sequence": 1,
+            "proof": proof_obj,
+            "persistToDisk": True,
+        }
+    )
+    ack_frame = json.dumps(
+        {
+            "kind": "connector.write_ack",
+            "version": 1,
+            "sequence": 1,
+            "requestId": "77777777-7777-4777-8777-777777777777",
+        }
+    )
+
+    class CustomSocket:
+        def __init__(self) -> None:
+            self.incoming: asyncio.Queue[str] = asyncio.Queue()
+            self.incoming.put_nowait(write_frame)
+            self.sent: list[dict[str, object]] = []
+
+        async def recv(self) -> str:
+            return await self.incoming.get()
+
+        async def send(self, val: str) -> None:
+            msg = json.loads(val)
+            self.sent.append(msg)
+            if msg.get("kind") == "connector.write_result":
+                self.incoming.put_nowait(ack_frame)
+
+    socket = CustomSocket()
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    calls: list[tuple[bytes, bool]] = []
+
+    def execute(proof: bytes, persist: bool) -> dict[str, object]:
+        calls.append((proof, persist))
+        return {
+            "requestId": "77777777-7777-4777-8777-777777777777",
+            "projectId": PROJECT,
+            "operation": "pcb_move_footprint",
+            "nativeCommitted": True,
+            "savedToDisk": True,
+            "diskBoardSha256": "c" * 64,
+        }
+
+    await serve_authenticated_reads(
+        socket,  # type: ignore[arg-type]
+        receipt,
+        lambda _: build_dispatcher(tmp_path, [True]),
+        max_reads=1,
+        allow_native_write=True,
+        revisions_preparer=lambda: {"expectedBoardSha256": "a" * 64},
+        write_executor=execute,
+    )
+    assert len(calls) == 1
+    assert calls[0][1] is True
+    assert json.loads(calls[0][0]) == proof_obj
+    assert len(socket.sent) == 1
+    assert socket.sent[0]["kind"] == "connector.write_result"
+    assert socket.sent[0]["result"]["operation"] == "pcb_move_footprint"
+    assert socket.sent[0]["result"]["savedToDisk"] is True
+
+
+@pytest.mark.anyio
+async def test_managed_write_denied_when_allow_native_write_is_false(tmp_path: Path) -> None:
+    write_frame = json.dumps(
+        {
+            "kind": "connector.authorized_write",
+            "version": 1,
+            "sequence": 1,
+            "proof": {},
+        }
+    )
+    socket = Socket([write_frame])
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        await serve_authenticated_reads(
+            socket,
+            receipt,
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+            allow_native_write=False,
+        )

@@ -139,6 +139,30 @@ type ReadResult=SummaryReadResult|DrcReadResult|InspectionReadResult|
 type PendingRead={requestId:string;projectId:string;operation:ReadOperation;sequence:number;
   deadline:number;monotonicDeadline:number;
   resolve:(value:ReadResult|null)=>void;timer:NodeJS.Timeout};
+export type PreparedWriteRevisions = Readonly<{
+  expectedBoardSha256: string;
+  expectedLiveBoardSha256?: string;
+}>;
+export type WriteOperationResult = Readonly<{
+  requestId: string;
+  projectId: string;
+  operation: "pcb_move_footprint";
+  nativeCommitted: boolean;
+  savedToDisk: boolean;
+  diskBoardSha256?: string;
+}>;
+type RevisionsPending = {
+  requestId: string;
+  timer: NodeJS.Timeout;
+  resolve: (value: PreparedWriteRevisions | null) => void;
+};
+type WritePending = {
+  requestId: string;
+  projectId: string;
+  sequence: number;
+  timer: NodeJS.Timeout;
+  resolve: (value: WriteOperationResult | null) => void;
+};
 type Entry={
   phase:State; owner:string; device:string; challenge:string; nonce:string;
   queued:number; pending:Promise<void>; timer:NodeJS.Timeout | null;
@@ -148,6 +172,7 @@ type Entry={
   pendingCatalogClaim?:ConnectorCapabilityClaim;
   catalogClaim?:ConnectorCapabilityClaim;
   awaiting?:PendingRead; validating?:PendingRead; folderPending?:FolderPending;
+  revisionsPending?:RevisionsPending; writePending?:WritePending;
 };
 const hello=z.strictObject({
   kind:z.literal("device.hello"),version:z.literal(1),
@@ -215,6 +240,26 @@ const readResult=z.strictObject({
         counts=>counts.populated<=counts.components&&counts.dnp<=counts.components&&
           counts.inBom<=counts.components,"Invalid schematic counts")
     })  ])
+});
+const writeRevisionsResult = z.strictObject({
+  kind: z.literal("connector.write_revisions_result"),
+  version: z.literal(1),
+  requestId: z.uuid(),
+  expectedBoardSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  expectedLiveBoardSha256: z.string().regex(/^[a-f0-9]{64}$/).optional()
+});
+const writeResult = z.strictObject({
+  kind: z.literal("connector.write_result"),
+  version: z.literal(1),
+  sequence: z.number().int().min(1).max(16),
+  result: z.strictObject({
+    requestId: z.uuid(),
+    projectId: z.uuid(),
+    operation: z.literal("pcb_move_footprint"),
+    nativeCommitted: z.boolean(),
+    savedToDisk: z.boolean(),
+    diskBoardSha256: z.string().regex(/^[a-f0-9]{64}$/).optional()
+  })
 });
 const CLOSE_POLICY=1008;
 const MAX_SOCKETS=96;
@@ -312,6 +357,12 @@ export function attachConnectorWebSocket(
   isDeviceConnected:(ownerSub:string,deviceId:string)=>boolean;
   /** Authenticated claim only; an advertised operation is not a grant. */
   getDeviceCapabilityClaim:(ownerSub:string,deviceId:string)=>ConnectorCapabilityClaim|null;
+  prepareWriteRevisions:(owner:string,deviceId:string,
+    projectId:string)=>Promise<PreparedWriteRevisions|null>;
+  requestWrite:(oauth:TrustedOAuthReadIdentity,deviceId:string,
+    projectId:string,proof:object,persistToDisk?:boolean)=>Promise<WriteOperationResult|null>;
+  getTrustedContext:(ownerSub:string,
+    deviceId:string)=>import("./connector-read-gate.js").TrustedConnectorContext|null;
   localFolders:LocalFolderPort}{
   // Never let a lightweight pilot setting downgrade an independent owner
   // approval dependency, even when used outside the production entrypoint.
@@ -403,6 +454,16 @@ export function attachConnectorWebSocket(
             clearTimeout(entry.folderPending.timer);
             entry.folderPending.resolve(null);
             entry.folderPending=undefined;
+          }
+          if(entry.revisionsPending){
+            clearTimeout(entry.revisionsPending.timer);
+            entry.revisionsPending.resolve(null);
+            entry.revisionsPending=undefined;
+          }
+          if(entry.writePending){
+            clearTimeout(entry.writePending.timer);
+            entry.writePending.resolve(null);
+            entry.writePending=undefined;
           }
           reject(ws);
         }
@@ -514,6 +575,41 @@ export function attachConnectorWebSocket(
             }else{pending.resolve(reply.data.ok);}
             return;
           }
+          if(entry.phase==="ready"&&entry.revisionsPending){
+            const pending=entry.revisionsPending;
+            entry.revisionsPending=undefined;
+            clearTimeout(pending.timer);
+            const reply=writeRevisionsResult.safeParse(raw);
+            if(!reply.success||pending.requestId!==reply.data.requestId){
+              pending.resolve(null);fail();return;
+            }
+            pending.resolve({
+              expectedBoardSha256:reply.data.expectedBoardSha256,
+              ...(reply.data.expectedLiveBoardSha256?{expectedLiveBoardSha256:reply.data.expectedLiveBoardSha256}:{})
+            });
+            return;
+          }
+          if(entry.phase==="ready"&&entry.writePending){
+            const pending=entry.writePending;
+            entry.writePending=undefined;
+            clearTimeout(pending.timer);
+            const reply=writeResult.safeParse(raw);
+            if(!reply.success||reply.data.sequence!==pending.sequence||
+               reply.data.result.requestId!==pending.requestId||
+               reply.data.result.projectId!==pending.projectId){
+              pending.resolve(null);fail();return;
+            }
+            try{
+              send({
+                kind:"connector.write_ack",version:1,
+                sequence:pending.sequence,requestId:pending.requestId
+              });
+            }catch{
+              pending.resolve(null);fail();return;
+            }
+            pending.resolve(reply.data.result);
+            return;
+          }
           // A result is meaningful only if this same authenticated socket
           // has an outstanding, pre-authorized server-originated request.
           if(entry.phase==="ready"&&entry.awaiting){
@@ -594,6 +690,16 @@ export function attachConnectorWebSocket(
             clearTimeout(entry.folderPending.timer);
             entry.folderPending.resolve(null);
             entry.folderPending=undefined;
+          }
+          if(entry.revisionsPending){
+            clearTimeout(entry.revisionsPending.timer);
+            entry.revisionsPending.resolve(null);
+            entry.revisionsPending=undefined;
+          }
+          if(entry.writePending){
+            clearTimeout(entry.writePending.timer);
+            entry.writePending.resolve(null);
+            entry.writePending=undefined;
           }
           const count=(ipOpen.get(ip)??1)-1;
           if(count<=0)ipOpen.delete(ip);else ipOpen.set(ip,count);
@@ -955,9 +1061,104 @@ export function attachConnectorWebSocket(
     const claim=readyDevices.get(socketKey(ownerSub,deviceId))?.entry.catalogClaim;
     return claim?{...claim,operations:[...claim.operations]}:null;
   }
+  async function prepareWriteRevisions(
+    owner: string, deviceId: string, projectId: string
+  ): Promise<PreparedWriteRevisions | null> {
+    if (stopped || !owner || !/^[0-9a-f-]{36}$/i.test(deviceId) || !/^[0-9a-f-]{36}$/i.test(projectId)) return null;
+    const active = readyDevices.get(socketKey(owner, deviceId));
+    if (!active || active.entry.phase !== "ready" || active.socket.readyState !== WebSocket.OPEN ||
+        active.entry.awaiting || active.entry.validating || active.entry.folderPending ||
+        active.entry.revisionsPending || active.entry.writePending ||
+        (active.entry.sessionDeadline ?? 0) - performance.now() < 8_000) return null;
+    if (active.entry.catalogClaim && !active.entry.catalogClaim.operations.includes("move_footprint")) {
+      return null;
+    }
+    const requestId = randomUUID();
+    return new Promise<PreparedWriteRevisions | null>(resolve => {
+      const timer = setTimeout(() => {
+        if (active.entry.revisionsPending?.requestId === requestId) {
+          active.entry.revisionsPending = undefined;
+        }
+        resolve(null);
+      }, 5_000);
+      timer.unref();
+      active.entry.revisionsPending = { requestId, timer, resolve };
+      try {
+        active.socket.send(JSON.stringify({
+          kind: "connector.prepare_write_revisions",
+          version: 1,
+          requestId,
+          deviceId,
+          projectId
+        }));
+      } catch {
+        clearTimeout(timer);
+        active.entry.revisionsPending = undefined;
+        resolve(null);
+      }
+    });
+  }
+  async function requestWrite(
+    oauth: TrustedOAuthReadIdentity, deviceId: string, projectId: string,
+    proof: object, persistToDisk: boolean = true
+  ): Promise<WriteOperationResult | null> {
+    if (stopped || !oauth || !/^[0-9a-f-]{36}$/i.test(deviceId) || !/^[0-9a-f-]{36}$/i.test(projectId)) return null;
+    const active = readyDevices.get(socketKey(oauth.ownerSub, deviceId));
+    if (!active || active.entry.phase !== "ready" || active.socket.readyState !== WebSocket.OPEN ||
+        active.entry.awaiting || active.entry.validating || active.entry.folderPending ||
+        active.entry.revisionsPending || active.entry.writePending ||
+        (active.entry.sessionDeadline ?? 0) - performance.now() < 10_000) return null;
+    if (active.entry.catalogClaim && !active.entry.catalogClaim.operations.includes("move_footprint")) {
+      return null;
+    }
+    const sequence = active.entry.readSequence.reserve();
+    if (sequence === null) return null;
+    const proposal = proof as { payload?: string };
+    if (!proposal || typeof proposal.payload !== "string") return null;
+    let decodedPayload: { requestId?: string };
+    try {
+      decodedPayload = JSON.parse(Buffer.from(proposal.payload, "base64url").toString("utf8"));
+    } catch {
+      return null;
+    }
+    const requestId = decodedPayload.requestId;
+    if (!requestId || typeof requestId !== "string") return null;
+
+    return new Promise<WriteOperationResult | null>(resolve => {
+      const timer = setTimeout(() => {
+        if (active.entry.writePending?.requestId === requestId) {
+          active.entry.writePending = undefined;
+        }
+        resolve(null);
+        reject(active.socket);
+      }, 12_000);
+      timer.unref();
+      active.entry.writePending = { requestId, projectId, sequence, timer, resolve };
+      try {
+        active.socket.send(JSON.stringify({
+          kind: "connector.authorized_write",
+          version: 1,
+          sequence,
+          proof,
+          persistToDisk
+        }));
+      } catch {
+        clearTimeout(timer);
+        active.entry.writePending = undefined;
+        resolve(null);
+        reject(active.socket);
+      }
+    });
+  }
+  function getTrustedContext(ownerSub: string, deviceId: string): import("./connector-read-gate.js").TrustedConnectorContext | null {
+    const active = readyDevices.get(socketKey(ownerSub, deviceId));
+    if (!active || active.entry.phase !== "ready" || active.socket.readyState !== WebSocket.OPEN) return null;
+    return options.connections.getTrustedContext(active.socket);
+  }
   return {prepareOwnerSummary,requestSummary,prepareOwnerDrc,requestDrc,
     prepareOwnerInspection,requestInspection,prepareOwnerBoardCounts,requestBoardCounts,
-    prepareOwnerSchematicCounts,requestSchematicCounts,isDeviceConnected,
+    prepareOwnerSchematicCounts,requestSchematicCounts,prepareWriteRevisions,requestWrite,
+    getTrustedContext,isDeviceConnected,
     getDeviceCapabilityClaim,localFolders,
     close:async()=>{
     if(stopped)return;

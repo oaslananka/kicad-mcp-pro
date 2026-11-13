@@ -114,6 +114,14 @@ export class BoundConnectorConnections{
   }
 
   /** Disconnect is idempotent and fences the in-process socket immediately. */
+  getTrustedContext(socket:object):{
+    deviceId:string;sessionId:string;connectionBinding:string;
+  }|null{
+    const e=socket&&this.sockets.get(socket);
+    if(!e||e.state!=="active"||!e.sessionId||!e.binding)return null;
+    return {deviceId:e.deviceId,sessionId:e.sessionId,connectionBinding:e.binding};
+  }
+
   async disconnect(socket:object):Promise<void>{
     const e=socket&&this.sockets.get(socket);
     if(!e)return;
