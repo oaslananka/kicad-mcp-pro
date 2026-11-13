@@ -56,8 +56,8 @@ def _require_approved_live_board(board: object, policy: OperatorProject) -> tupl
     return actual_path, actual_name
 
 
-def _require_saved_live_snapshot(board: object, expected: str) -> None:
-    """A dirty/normalized KiCad snapshot is never silently accepted."""
+def _require_expected_live_snapshot(board: object, expected: str) -> None:
+    """Require the exact, separately pinned live revision (v2), or v1 disk SHA."""
     if not isinstance(expected, str) or len(expected) != 64:
         raise LocalWriteDeniedError(_DENIED)
     get_snapshot = getattr(board, "get_as_string", None)
@@ -88,11 +88,19 @@ class OfflineTrustedPcbIpcAdapter:
         policy: OperatorProject,
         expected_board_sha256: str,
         command: Callable[[Board], object],
+        expected_live_board_sha256: str | None = None,
         verifier: Callable[[Board, object], bool],
     ) -> None:
         self._service = service
         self._policy = policy
-        self._expected = expected_board_sha256
+        # Disk bytes are checked by the external guarded transaction. v1
+        # preserves its strict live=disk behaviour; v2 pins the live KiCad
+        # serialization independently, as signed by the Cloud issuer.
+        self._expected_live = (
+            expected_board_sha256
+            if expected_live_board_sha256 is None
+            else expected_live_board_sha256
+        )
         self._command = command
         self._verifier = verifier
         self._started = False
@@ -107,7 +115,7 @@ class OfflineTrustedPcbIpcAdapter:
             if self._identity is not None and identity != self._identity:
                 raise LocalWriteDeniedError(_DENIED)
             if compare_bytes:
-                _require_saved_live_snapshot(board, self._expected)
+                _require_expected_live_snapshot(board, self._expected_live)
             self._identity = identity
         except Exception as exc:
             raise LocalWriteDeniedError(_DENIED) from exc

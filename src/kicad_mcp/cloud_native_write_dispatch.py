@@ -103,6 +103,7 @@ def _native_move(
         service=service,
         policy=policy,
         expected_board_sha256=cast(str, command["expectedBoardSha256"]),
+        expected_live_board_sha256=cast(str | None, command.get("expectedLiveBoardSha256")),
         command=stage,
         verifier=verify,
     )

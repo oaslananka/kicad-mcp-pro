@@ -97,3 +97,25 @@ test("issuer does not add file paths, credentials or authorization claims",()=>{
     "proof generation is deterministic; one-use storage is a separate required gate");
   assert.deepEqual(candidate,command(),"input must not be mutated");
 });
+
+test("v2 signature binds separately pinned live and disk SHA under a distinct domain",()=>{
+  const old=command();
+  const candidate={...old,version:2,
+    command:{...old.command,expectedLiveBoardSha256:"b".repeat(64)}};
+  const raw=issue(candidate);
+  assert.ok(raw);
+  if(!raw)return;
+  const envelope=JSON.parse(raw.toString("utf8")) as Record<string,unknown>;
+  assert.equal(envelope.version,2);
+  const payload=Buffer.from(String(envelope.payload),"base64url");
+  const signature=Buffer.from(String(envelope.signature),"base64url");
+  assert.deepEqual(JSON.parse(payload.toString("utf8")),candidate);
+  assert.ok(verify(null,Buffer.concat([
+    Buffer.from("kicad-cloud-signed-write-proposal-v2\0"),payload
+  ]),keyPair.publicKey,signature));
+  assert.equal(verify(null,Buffer.concat([
+    Buffer.from("kicad-cloud-signed-write-proposal-v1\0"),payload
+  ]),keyPair.publicKey,signature),false);
+  assert.equal(issue({...candidate,version:1}),null);
+  assert.equal(issue({...candidate,command:{...old.command}}),null);
+});

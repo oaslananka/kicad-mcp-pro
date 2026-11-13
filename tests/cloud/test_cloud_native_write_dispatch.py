@@ -33,6 +33,7 @@ REQUEST = "44444444-4444-4444-8444-444444444444"
 NOW = 1_800_000_000_000
 START = "(kicad_pcb (version 20250114) (generator pcbnew))\n"
 PREFIX = b"kicad-cloud-signed-write-proposal-v1\x00"
+PREFIX_V2 = b"kicad-cloud-signed-write-proposal-v2\x00"
 
 
 class FakeBoard:
@@ -109,7 +110,12 @@ def _fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         return True
 
     def signed(
-        *, reference: str = "R1", request_id: str = REQUEST, digest: str | None = None
+        *,
+        reference: str = "R1",
+        request_id: str = REQUEST,
+        digest: str | None = None,
+        version: int = 1,
+        live_digest: str | None = None,
     ) -> bytes:
         command = {
             "operation": "pcb_move_footprint",
@@ -119,10 +125,12 @@ def _fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             "rotationDeg": None,
             "expectedBoardSha256": digest or hashlib.sha256(START.encode()).hexdigest(),
         }
+        if version == 2:
+            command["expectedLiveBoardSha256"] = live_digest
         payload = json.dumps(
             {
                 "kind": "connector.write_request",
-                "version": 1,
+                "version": version,
                 "requestId": request_id,
                 "deviceId": DEVICE,
                 "projectId": PROJECT,
@@ -140,9 +148,11 @@ def _fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         return json.dumps(
             {
                 "kind": "connector.signed_write_proposal",
-                "version": 1,
+                "version": version,
                 "payload": encode(payload),
-                "signature": encode(private.sign(PREFIX + payload)),
+                "signature": encode(
+                    private.sign((PREFIX_V2 if version == 2 else PREFIX) + payload)
+                ),
             },
             separators=(",", ":"),
         ).encode("utf-8")
@@ -225,4 +235,50 @@ def test_signed_move_revoke_before_commit_discards_without_changing_file(
     with pytest.raises(LocalWriteDeniedError):
         execute(proposal, authorized=current_permission)
     assert board.calls == ["begin", "update", "drop"]
+    assert (folder / "disposable.kicad_pcb").read_bytes() == START.encode()
+
+
+@WINDOWS
+def test_v2_separately_pins_normalized_live_and_raw_disk_board_snapshots(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder, board, signed, execute = _fixture(monkeypatch, tmp_path)
+    board.contents = START + "(normalized-by-live-kicad)"
+    live_sha = hashlib.sha256(board.contents.encode("utf-8")).hexdigest()
+    disk_bytes = (folder / "disposable.kicad_pcb").read_bytes()
+    proof = signed(version=2, live_digest=live_sha)
+    result = execute(proof)
+    assert result["nativeCommitted"] is True
+    assert result["savedToDisk"] is False
+    assert board.calls == ["begin", "update", "push"]
+    assert (folder / "disposable.kicad_pcb").read_bytes() == disk_bytes
+
+
+@WINDOWS
+def test_v2_rejects_stale_live_sha_before_begin_without_mutating_disk(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder, board, signed, execute = _fixture(monkeypatch, tmp_path)
+    board.contents = START + "(normalized-by-live-kicad)"
+    stale_live_sha = "0" * 64
+    proof = signed(version=2, live_digest=stale_live_sha)
+    with pytest.raises(LocalWriteDeniedError, match="request denied"):
+        execute(proof)
+    assert board.calls == []
+    assert (folder / "disposable.kicad_pcb").read_bytes() == START.encode()
+
+
+@WINDOWS
+def test_v1_still_rejects_different_live_and_disk_sha(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    folder, board, signed, execute = _fixture(monkeypatch, tmp_path)
+    board.contents = START + "(normalized-by-live-kicad)"
+    proof = signed()
+    with pytest.raises(LocalWriteDeniedError, match="request denied"):
+        execute(proof)
+    assert board.calls == []
     assert (folder / "disposable.kicad_pcb").read_bytes() == START.encode()
