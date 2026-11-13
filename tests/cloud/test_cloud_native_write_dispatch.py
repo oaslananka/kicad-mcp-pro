@@ -282,3 +282,75 @@ def test_v1_still_rejects_different_live_and_disk_sha(
         execute(proof)
     assert board.calls == []
     assert (folder / "disposable.kicad_pcb").read_bytes() == START.encode()
+
+
+@WINDOWS
+def test_revision_prepare_returns_distinct_approved_disk_and_live_shas(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from kicad_mcp.cloud_native_write_dispatch import prepare_native_write_revisions
+
+    folder, board, _signed, _execute = _fixture(monkeypatch, tmp_path)
+    board.contents = START + "(kicad normalized)"
+    policy = OperatorProject(DEVICE, PROJECT, folder, "disposable")
+    revisions = prepare_native_write_revisions(
+        policy, authorized=lambda: True, cancelled=lambda: False, get_board=lambda: board
+    )
+    assert revisions == {
+        "expectedBoardSha256": hashlib.sha256(START.encode()).hexdigest(),
+        "expectedLiveBoardSha256": hashlib.sha256(board.contents.encode()).hexdigest(),
+    }
+    assert revisions["expectedBoardSha256"] != revisions["expectedLiveBoardSha256"]
+    assert board.calls == []
+
+
+@WINDOWS
+def test_revision_prepare_denies_wrong_active_board_or_revocation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from kicad_mcp.cloud_native_write_dispatch import prepare_native_write_revisions
+
+    folder, board, _signed, _execute = _fixture(monkeypatch, tmp_path)
+    policy = OperatorProject(DEVICE, PROJECT, folder, "disposable")
+    board.project.path = str(tmp_path / "another owner project")
+    with pytest.raises(LocalWriteDeniedError, match="request denied"):
+        prepare_native_write_revisions(
+            policy, authorized=lambda: True, cancelled=lambda: False, get_board=lambda: board
+        )
+    board.project.path = str(folder)
+    permissions = iter((True, False))
+
+    def current_permission() -> bool:
+        return next(permissions)
+
+    with pytest.raises(LocalWriteDeniedError, match="request denied"):
+        prepare_native_write_revisions(
+            policy, authorized=current_permission, cancelled=lambda: False, get_board=lambda: board
+        )
+    assert board.calls == []
+    assert (folder / "disposable.kicad_pcb").read_bytes() == START.encode()
+
+
+@WINDOWS
+def test_revision_prepare_denies_racing_live_board_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from kicad_mcp.cloud_native_write_dispatch import prepare_native_write_revisions
+
+    folder, board, _signed, _execute = _fixture(monkeypatch, tmp_path)
+    policy = OperatorProject(DEVICE, PROJECT, folder, "disposable")
+    versions = iter((START, START + "(changed while preparing)"))
+
+    def change_during_preparation() -> str:
+        return next(versions)
+
+    board.get_as_string = change_during_preparation  # type: ignore[method-assign]
+    with pytest.raises(LocalWriteDeniedError, match="request denied"):
+        prepare_native_write_revisions(
+            policy, authorized=lambda: True, cancelled=lambda: False, get_board=lambda: board
+        )
+    assert board.calls == []
+    assert (folder / "disposable.kicad_pcb").read_bytes() == START.encode()

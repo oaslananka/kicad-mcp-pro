@@ -10,6 +10,8 @@ separate, still-unimplemented Cloud acceptance requirement.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
@@ -17,6 +19,8 @@ from typing import TYPE_CHECKING, cast
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
+from kicad_mcp.cloud_windows_write_revision import read_windows_board_revision
+from kicad_mcp.cloud_write_board_revision import MAX_BOARD_BYTES
 from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
 from kicad_mcp.cloud_write_native_ipc import (
     OfflineTrustedPcbIpcAdapter,
@@ -56,6 +60,60 @@ def _footprint(board: object, reference: str) -> _FootprintLike:
     if len(matches) != 1:
         raise LocalWriteDeniedError(_DENIED)
     return cast(_FootprintLike, matches[0])
+
+
+def _live_board_sha256(board: object) -> str:
+    snapshot_reader = getattr(board, "get_as_string", None)
+    if not callable(snapshot_reader):
+        raise LocalWriteDeniedError(_DENIED)
+    snapshot = snapshot_reader()
+    if not isinstance(snapshot, str):
+        raise LocalWriteDeniedError(_DENIED)
+    bytes_out = snapshot.encode("utf-8")
+    if not 1 <= len(bytes_out) <= MAX_BOARD_BYTES:
+        raise LocalWriteDeniedError(_DENIED)
+    return hashlib.sha256(bytes_out).hexdigest()
+
+
+def prepare_native_write_revisions(
+    policy: OperatorProject,
+    *,
+    authorized: Callable[[], bool],
+    cancelled: Callable[[], bool],
+    get_board: Callable[[], object] | None = None,
+) -> dict[str, str]:
+    """Prepare bounded, path-free disk/live revisions for a future signed edit.
+
+    The caller must already have checked the owner/client project grant on
+    the authenticated Connector. A preparation is not permission to mutate.
+    The signed v2 command must bind both returned digests; the native writer
+    separately reopens/rechecks the disk file under its transaction lock.
+    """
+    if not callable(authorized) or not callable(cancelled):
+        raise LocalWriteDeniedError(_DENIED)
+    if get_board is None:
+        from kicad_mcp.connection import get_board as get_current_board
+
+        get_board = get_current_board
+    try:
+        if authorized() is not True or cancelled() is not False:
+            raise LocalWriteDeniedError(_DENIED)
+        board = get_board()
+        _require_approved_live_board(board, policy)
+        disk = read_windows_board_revision(policy)
+        live = _live_board_sha256(board)
+        current = get_board()
+        _require_approved_live_board(current, policy)
+        if (
+            not hmac.compare_digest(disk, read_windows_board_revision(policy))
+            or not hmac.compare_digest(live, _live_board_sha256(current))
+            or authorized() is not True
+            or cancelled() is not False
+        ):
+            raise LocalWriteDeniedError(_DENIED)
+        return {"expectedBoardSha256": disk, "expectedLiveBoardSha256": live}
+    except Exception as exc:
+        raise LocalWriteDeniedError(_DENIED) from exc
 
 
 def _native_move(

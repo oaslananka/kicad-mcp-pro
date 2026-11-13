@@ -131,3 +131,29 @@ def test_windows_rejects_posix_file_descriptor_parameter(tmp_path: Path) -> None
     with pytest.raises(LocalWriteDeniedError, match="request denied"):
         verify_operator_board_revision(policy, digest, _directory_fd=1)
     assert board.read_bytes() == PCB
+
+
+@WINDOWS
+def test_windows_project_digest_reader_uses_same_pinned_handle_checks(tmp_path: Path) -> None:
+    from kicad_mcp.cloud_windows_write_revision import read_windows_board_revision
+
+    policy, board, expected = _board(tmp_path)
+    assert read_windows_board_revision(policy) == expected
+    assert board.read_bytes() == PCB
+    board.write_bytes(PCB + b"changed locally")
+    assert read_windows_board_revision(policy) == hashlib.sha256(board.read_bytes()).hexdigest()
+
+
+@WINDOWS
+def test_windows_project_digest_reader_denies_aliased_source(tmp_path: Path) -> None:
+    from kicad_mcp.cloud_windows_write_revision import read_windows_board_revision
+
+    policy, board, _expected = _board(tmp_path)
+    alias = tmp_path / "linked.kicad_pcb"
+    os.link(board, alias)
+    try:
+        with pytest.raises(LocalWriteDeniedError, match="request denied"):
+            read_windows_board_revision(policy)
+    finally:
+        alias.unlink()
+    assert board.read_bytes() == PCB

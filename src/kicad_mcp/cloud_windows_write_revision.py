@@ -25,7 +25,7 @@ _SHA256 = re.compile(r"[0-9a-f]{64}", re.ASCII)
 _DENIED = "request denied"
 
 
-def _check_revision_inputs(policy: OperatorProject, expected_sha256: str) -> None:
+def _check_revision_inputs(policy: OperatorProject, expected_sha256: str | None = None) -> None:
     if (
         os.name != "nt"
         or not isinstance(policy, OperatorProject)
@@ -34,8 +34,10 @@ def _check_revision_inputs(policy: OperatorProject, expected_sha256: str) -> Non
         or not isinstance(policy.filename_stem, str)
         or _NAME.fullmatch(policy.filename_stem) is None
         or policy.filename_stem in {".", ".."}
-        or not isinstance(expected_sha256, str)
-        or _SHA256.fullmatch(expected_sha256) is None
+        or (
+            expected_sha256 is not None
+            and (not isinstance(expected_sha256, str) or _SHA256.fullmatch(expected_sha256) is None)
+        )
     ):
         raise LocalWriteDeniedError(_DENIED)
 
@@ -79,9 +81,13 @@ def _digest_pinned_board(reader: BinaryIO) -> str:
     return digest.hexdigest()
 
 
-def verify_windows_board_revision(policy: OperatorProject, expected_sha256: str) -> None:
-    """Pin and hash the real local PCB, refusing stale or substituted boards."""
-    _check_revision_inputs(policy, expected_sha256)
+def read_windows_board_revision(policy: OperatorProject) -> str:
+    """Return only the SHA-256 of a pinned, owner-selected Windows PCB.
+
+    This read is not remote authorization; the caller must independently
+    validate current project, device, client and signed session authority.
+    """
+    _check_revision_inputs(policy)
     try:
         binary = getattr(os, "O_BINARY", None)
         if type(binary) is not int:
@@ -89,8 +95,14 @@ def verify_windows_board_revision(policy: OperatorProject, expected_sha256: str)
         with _pinned_project(policy.directory) as parent:
             fd = _open_pinned_board_fd(parent, policy.filename_stem, binary)
             with os.fdopen(fd, "rb") as reader:
-                actual = _digest_pinned_board(reader)
-        if not hmac.compare_digest(actual, expected_sha256):
-            raise LocalWriteDeniedError(_DENIED)
+                return _digest_pinned_board(reader)
     except (OSError, ValueError, TypeError) as exc:
         raise LocalWriteDeniedError(_DENIED) from exc
+
+
+def verify_windows_board_revision(policy: OperatorProject, expected_sha256: str) -> None:
+    """Pin and hash the real local PCB, refusing stale or substituted boards."""
+    _check_revision_inputs(policy, expected_sha256)
+    actual = read_windows_board_revision(policy)
+    if not hmac.compare_digest(actual, expected_sha256):
+        raise LocalWriteDeniedError(_DENIED)
