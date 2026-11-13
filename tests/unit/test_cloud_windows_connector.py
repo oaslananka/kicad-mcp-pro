@@ -1056,7 +1056,8 @@ async def test_foreground_signed_connector_passes_tool_activity_to_terminal(
     async def signed_session(**kwargs: object) -> HandshakeReceipt:
         on_ready = kwargs["on_ready"]
         on_activity = kwargs["on_activity"]
-        assert callable(on_ready) and callable(on_activity)
+        assert callable(on_ready)
+        assert callable(on_activity)
         on_ready(receipt)
         on_activity("Tool call 1: project_summary completed")
         return receipt

@@ -132,6 +132,38 @@ async def _serve_folder_request(
     await socket.send(encoded)
 
 
+async def _serve_signed_read_frames(
+    socket: AuthenticatedReadSocket,
+    dispatcher: LocalReadDispatch,
+    receipt: HandshakeReceipt,
+    max_reads: int,
+    folder_service: LocalFolderBrowseService | None,
+    on_activity: Callable[[str], None] | None,
+) -> None:
+    """Process authenticated frames without charging folder requests as reads."""
+    reads_served = 0
+    while reads_served < max_reads:
+        raw = await socket.recv()
+        if not isinstance(raw, str):
+            raise CloudHandshakeDeniedError(_DENIED)
+        kind = _top_level_kind(raw)
+        if kind == _FOLDER_REQUEST_KIND:
+            if folder_service is None:
+                raise CloudHandshakeDeniedError(_DENIED)
+            await _serve_folder_request(socket, folder_service, raw)
+            _report_activity(on_activity, "Folder browsing request completed")
+            continue
+        if kind != "connector.authorized_read":
+            raise CloudHandshakeDeniedError(_DENIED)
+        response = await _serve_one_authenticated_read(
+            socket, dispatcher, receipt, reads_served + 1, raw
+        )
+        reads_served += 1
+        operation = response.get("operation")
+        safe = operation if operation in {"project_summary", "run_drc"} else "read"
+        _report_activity(on_activity, f"Tool call {reads_served}: {safe} completed")
+
+
 async def serve_authenticated_reads(
     socket: AuthenticatedReadSocket,
     receipt: HandshakeReceipt,
@@ -174,29 +206,9 @@ async def serve_authenticated_reads(
         )
         try:
             async with asyncio.timeout(_SESSION_TIMEOUT_SECONDS):
-                reads_served = 0
-                while reads_served < max_reads:
-                    # A folder frame may arrive between reads. Dispatch on the
-                    # top-level kind without consuming the read sequence budget.
-                    raw = await socket.recv()
-                    if not isinstance(raw, str):
-                        raise CloudHandshakeDeniedError(_DENIED)
-                    kind = _top_level_kind(raw)
-                    if kind == _FOLDER_REQUEST_KIND:
-                        if folder_service is None:
-                            raise CloudHandshakeDeniedError(_DENIED)
-                        await _serve_folder_request(socket, folder_service, raw)
-                        _report_activity(on_activity, "Folder browsing request completed")
-                        continue
-                    if kind != "connector.authorized_read":
-                        raise CloudHandshakeDeniedError(_DENIED)
-                    response = await _serve_one_authenticated_read(
-                        socket, dispatcher, receipt, reads_served + 1, raw
-                    )
-                    reads_served += 1
-                    operation = response.get("operation")
-                    safe = operation if operation in {"project_summary", "run_drc"} else "read"
-                    _report_activity(on_activity, f"Tool call {reads_served}: {safe} completed")
+                await _serve_signed_read_frames(
+                    socket, dispatcher, receipt, max_reads, folder_service, on_activity
+                )
         except TimeoutError as exc:
             raise CloudHandshakeDeniedError(_DENIED) from exc
         return receipt

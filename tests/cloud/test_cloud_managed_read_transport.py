@@ -576,8 +576,9 @@ def test_project_resolver_cannot_switch_device_or_leak_local_failure(
         project_resolver=resolve,
     )
     message = json.loads(request(1, projectId=OTHER_PROJECT))["request"]
+    encoded = json.dumps(message).encode()
     with pytest.raises(LocalReadDeniedError, match="request denied"):
-        dispatcher.read(json.dumps(message).encode(), sequence=1)
+        dispatcher.read(encoded, sequence=1)
 
 
 @pytest.mark.anyio

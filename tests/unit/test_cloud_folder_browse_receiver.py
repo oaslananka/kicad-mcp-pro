@@ -210,8 +210,10 @@ def test_hostile_or_malformed_frames_fail_closed(raw: str) -> None:
 
 
 def test_oversized_frame_is_denied() -> None:
+    service = FakeService()
+    request_frame = frame("list", folderId="r" * 2000)
     with pytest.raises(CloudHandshakeDeniedError):
-        handle_folder_frame(FakeService(), frame("list", folderId="r" * 2000))
+        handle_folder_frame(service, request_frame)
 
 
 def test_service_level_revocation_stops_every_operation(tmp_path: Path) -> None:
@@ -270,8 +272,9 @@ def test_real_windows_folder_listing_is_root_confined(tmp_path: Path) -> None:
     assert listing["project"] is True  # type: ignore[index]
     assert listing["folders"] == []  # type: ignore[index]
     # Unknown and off-root tokens never re-enter the filesystem.
+    invalid_frame = frame("list", folderId="made-up-token")
     with pytest.raises(CloudHandshakeDeniedError):
-        handle_folder_frame(service, frame("list", folderId="made-up-token"))
+        handle_folder_frame(service, invalid_frame)
 
 
 def test_real_windows_binding_persists_only_a_local_project_map(tmp_path: Path) -> None:
@@ -294,8 +297,9 @@ def test_real_windows_binding_persists_only_a_local_project_map(tmp_path: Path) 
         answer = handle_folder_frame(service, frame("path", projectId=PROJECT_ID))
         assert answer["path"].endswith("board.kicad_pro")  # type: ignore[index]
     else:
+        path_request = frame("path", projectId=PROJECT_ID)
         with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
-            handle_folder_frame(service, frame("path", projectId=PROJECT_ID))
+            handle_folder_frame(service, path_request)
     assert UUID(PROJECT_ID)
     # A second bind with the stale token is refused (token consumed).
     assert (
@@ -387,8 +391,10 @@ def test_invalid_native_folder_selection_fails_closed(selection: dict[str, objec
         def choose(self) -> dict[str, object]:
             return selection
 
+    service = Selected()
+    choose_request = frame("choose")
     with pytest.raises(CloudHandshakeDeniedError):
-        handle_folder_frame(Selected(), frame("choose"))
+        handle_folder_frame(service, choose_request)
 
 
 @pytest.mark.parametrize(
@@ -409,8 +415,10 @@ def test_local_project_path_boundary_rejects_hostile_or_ambiguous_paths(
             assert project_id == PROJECT_ID
             return project_path
 
+    service = Malformed()
+    path_request = frame("path", projectId=PROJECT_ID)
     with pytest.raises(CloudHandshakeDeniedError):
-        handle_folder_frame(Malformed(), frame("path", projectId=PROJECT_ID))
+        handle_folder_frame(service, path_request)
 
 
 @pytest.mark.parametrize(
@@ -440,8 +448,10 @@ def test_device_folder_listing_rejects_inconsistent_native_response(
                 return {**valid, **invalid_listing}
             return invalid_listing
 
+    service = BrokenList()
+    listing_request = frame("list", folderId="root")
     with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
-        handle_folder_frame(BrokenList(), frame("list", folderId="root"))
+        handle_folder_frame(service, listing_request)
 
 
 def test_device_folder_browser_rejects_wrong_local_project_id(tmp_path: Path) -> None:
@@ -451,5 +461,6 @@ def test_device_folder_browser_rejects_wrong_local_project_id(tmp_path: Path) ->
 
 
 def test_folder_browser_requires_absolute_selected_device_directory() -> None:
+    relative_directory = Path("relative/KiCad")
     with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
-        device_folder_service(Path("relative/KiCad"))
+        device_folder_service(relative_directory)

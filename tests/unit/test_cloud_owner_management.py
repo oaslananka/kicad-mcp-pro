@@ -80,8 +80,9 @@ def test_owner_api_refuses_http_redirect_and_oversized_body(
             pass
 
     monkeypatch.setattr(cloud_owner_management.urllib3, "PoolManager", lambda **_: FakePool())
+    owner_api = CloudOwnerApi(_ORIGIN)
     with pytest.raises(CloudManagementError, match="HTTP 302"):
-        CloudOwnerApi(_ORIGIN).request("GET", "/api/owner/v1/devices", token=_TOKEN)
+        owner_api.request("GET", "/api/owner/v1/devices", token=_TOKEN)
     with pytest.raises(CloudManagementError, match="HTTPS"):
         CloudOwnerApi("http://untrusted.invalid")
 
@@ -566,8 +567,9 @@ def test_cloud_management_request_denies_malformed_success_responses(
             "PoolManager",
             lambda raw=raw, **_kwargs: Pool(raw),
         )
+        owner_api = CloudOwnerApi(_ORIGIN)
         with pytest.raises(CloudManagementError):
-            CloudOwnerApi(_ORIGIN).request("GET", "/api/owner/v1/devices")
+            owner_api.request("GET", "/api/owner/v1/devices")
 
 
 def test_cloud_owner_authorize_fails_cleanly_when_browser_open_raises(

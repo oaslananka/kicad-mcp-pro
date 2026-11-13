@@ -271,7 +271,7 @@ def _logout_current_cloud_owner(api: CloudOwnerApi) -> tuple[bool, bool]:
     return bool(token), stopped
 
 
-def register_owner_commands(app: typer.Typer, default_origin: str) -> None:
+def _register_owner_session_commands(app: typer.Typer, default_origin: str) -> None:
     @app.command("authorize")
     def authorize_owner(
         cloud_origin: str = typer.Option(default_origin, "--cloud-origin"),
@@ -333,6 +333,8 @@ def register_owner_commands(app: typer.Typer, default_origin: str) -> None:
         typer.echo("Project ID: " + project_id)
         typer.echo("Start or keep cloud remote connected to make this project available.")
 
+
+def _register_owner_access_commands(app: typer.Typer, default_origin: str) -> None:
     @app.command("devices")
     def devices_owner(
         cloud_origin: str = typer.Option(default_origin, "--cloud-origin"),
@@ -386,6 +388,8 @@ def register_owner_commands(app: typer.Typer, default_origin: str) -> None:
         )
         _display(result, json_output)
 
+
+def _register_owner_project_commands(app: typer.Typer, default_origin: str) -> None:
     @app.command("rename-project")
     def rename_project(
         project_id: str = typer.Option(..., "--project-id"),
@@ -416,6 +420,8 @@ def register_owner_commands(app: typer.Typer, default_origin: str) -> None:
         if not json_output:
             typer.echo("Local KiCad files were not changed.")
 
+
+def _register_owner_activity_commands(app: typer.Typer, default_origin: str) -> None:
     @app.command("usage")
     def usage_owner(
         days: int = typer.Option(30, "--days", min=1, max=365),
@@ -437,3 +443,11 @@ def register_owner_commands(app: typer.Typer, default_origin: str) -> None:
         _display(
             _request(cloud_origin, "GET", "/api/owner/v1/logs?limit=" + str(limit)), json_output
         )
+
+
+def register_owner_commands(app: typer.Typer, default_origin: str) -> None:
+    """Register the account, access, project and activity commands once."""
+    _register_owner_session_commands(app, default_origin)
+    _register_owner_access_commands(app, default_origin)
+    _register_owner_project_commands(app, default_origin)
+    _register_owner_activity_commands(app, default_origin)
