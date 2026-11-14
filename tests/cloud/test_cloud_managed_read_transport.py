@@ -858,15 +858,25 @@ async def test_managed_write_denied_on_non_str_ack_or_mismatched_ack(
 
     socket1 = NonStrAckSocket()
     receipt = HandshakeReceipt(DEVICE, SESSION)
+
+    def dispatch_factory(_: HandshakeReceipt) -> LocalReadDispatch:
+        return build_dispatcher(tmp_path, [True])
+
+    def revs_prep() -> dict[str, str]:
+        return {"revisions": {}}
+
+    def executor(*_: object) -> dict[str, object]:
+        return {"requestId": "req1"}
+
     with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
         await serve_authenticated_reads(
             socket1,  # type: ignore[arg-type]
             receipt,
-            lambda _: build_dispatcher(tmp_path, [True]),
+            dispatch_factory,
             max_reads=1,
             allow_native_write=True,
-            revisions_preparer=lambda: {"revisions": {}},
-            write_executor=lambda *_: {"requestId": "req1"},
+            revisions_preparer=revs_prep,
+            write_executor=executor,
         )
 
     class MismatchedAckSocket:
@@ -896,11 +906,11 @@ async def test_managed_write_denied_on_non_str_ack_or_mismatched_ack(
         await serve_authenticated_reads(
             socket2,  # type: ignore[arg-type]
             receipt,
-            lambda _: build_dispatcher(tmp_path, [True]),
+            dispatch_factory,
             max_reads=1,
             allow_native_write=True,
-            revisions_preparer=lambda: {"revisions": {}},
-            write_executor=lambda *_: {"requestId": "req1"},
+            revisions_preparer=revs_prep,
+            write_executor=executor,
         )
 
 
@@ -908,13 +918,16 @@ async def test_managed_write_denied_on_non_str_ack_or_mismatched_ack(
 async def test_signed_read_frames_denials_on_valid_session(tmp_path: Path) -> None:
     receipt = HandshakeReceipt(DEVICE, SESSION)
 
+    def dispatch_factory(_: HandshakeReceipt) -> LocalReadDispatch:
+        return build_dispatcher(tmp_path, [True])
+
     # 1. Folder frame without folder_service attached
     socket_no_folder = ScriptedSocket([folder_frame("list", folderId="root")])
     with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
         await serve_authenticated_reads(
             socket_no_folder,
             receipt,
-            lambda _: build_dispatcher(tmp_path, [True]),
+            dispatch_factory,
             max_reads=1,
             folder_service=None,
         )
@@ -926,7 +939,7 @@ async def test_signed_read_frames_denials_on_valid_session(tmp_path: Path) -> No
         await serve_authenticated_reads(
             socket_unknown,
             receipt,
-            lambda _: build_dispatcher(tmp_path, [True]),
+            dispatch_factory,
             max_reads=1,
         )
 
@@ -938,10 +951,11 @@ async def test_signed_read_frames_denials_on_valid_session(tmp_path: Path) -> No
         async def send(self, val: str) -> None:
             pass
 
+    binary_socket = BinaryFrameSocket()
     with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
         await serve_authenticated_reads(
-            BinaryFrameSocket(),  # type: ignore[arg-type]
+            binary_socket,  # type: ignore[arg-type]
             receipt,
-            lambda _: build_dispatcher(tmp_path, [True]),
+            dispatch_factory,
             max_reads=1,
         )
