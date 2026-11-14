@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.15.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-npm-v4.14.0...mcp-npm-v4.15.0) (2026-11-14)
+
+
+### Miscellaneous Chores
+
+* **mcp-npm:** Synchronize kicad-mcp-pro versions
+
 ## [4.14.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-npm-v4.13.0...mcp-npm-v4.14.0) (2026-11-12)
 
 

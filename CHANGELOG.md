@@ -10,6 +10,25 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.15.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.14.0...mcp-server-v4.15.0) (2026-11-14)
+
+
+### Features
+
+* **cloud:** device-first projects, CLI management, usage and native DRC ([#1713](https://github.com/oaslananka/kicad-mcp-pro/issues/1713)) ([f981158](https://github.com/oaslananka/kicad-mcp-pro/commit/f981158c1ed3796169b578f99503a1f323c3275d))
+* **cloud:** Simplify project workspace and AI setup ([#1715](https://github.com/oaslananka/kicad-mcp-pro/issues/1715)) ([86acfb0](https://github.com/oaslananka/kicad-mcp-pro/commit/86acfb0bbdd1374280f1425748505652715108a5))
+
+
+### Bug Fixes
+
+* **cloud:** recover expired owner forms without changing grants ([#1711](https://github.com/oaslananka/kicad-mcp-pro/issues/1711)) ([cc6144c](https://github.com/oaslananka/kicad-mcp-pro/commit/cc6144cffc8475e135c0f1bf2336ddbe7adf94d0))
+* **pcb:** write stackups KiCad keeps and sync the layer table ([#1716](https://github.com/oaslananka/kicad-mcp-pro/issues/1716)) ([24c735d](https://github.com/oaslananka/kicad-mcp-pro/commit/24c735d32180dcfa79307eeee783b2a178c179f0))
+
+
+### Documentation
+
+* include Patreon in sponsor menu ([#1712](https://github.com/oaslananka/kicad-mcp-pro/issues/1712)) ([ec1f3b1](https://github.com/oaslananka/kicad-mcp-pro/commit/ec1f3b19aba9a8a764f607666ad5d46bec787b8e))
+
 ## [4.14.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.13.0...mcp-server-v4.14.0) (2026-11-12)
 
 
