@@ -28,6 +28,9 @@ from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 _DENIED = "handshake denied"
 _MAX_MANAGED_READS = 16
 _SESSION_TIMEOUT_SECONDS = 295
+# Refresh well before the signed server-side five-minute session lease expires.
+# Only the idle recv waits for this deadline; an in-flight tool is never cut short.
+_SESSION_REFRESH_SECONDS = 240
 _FOLDER_REQUEST_KIND = "connector.local_browser_request"
 _WRITE_REQUEST_KIND = "connector.authorized_write"
 
@@ -297,8 +300,20 @@ async def _serve_signed_read_frames(
 ) -> None:
     """Process authenticated frames without charging folder or write prep requests as reads."""
     reads_served = 0
+    loop = asyncio.get_running_loop()
+    refresh_deadline = loop.time() + _SESSION_REFRESH_SECONDS
     while reads_served < max_reads:
-        raw = await socket.recv()
+        remaining = refresh_deadline - loop.time()
+        if remaining <= 0:
+            _report_activity(on_activity, "Refreshing signed Cloud session")
+            return
+        try:
+            raw = await asyncio.wait_for(socket.recv(), timeout=remaining)
+        except TimeoutError:
+            # This is an expected idle lease refresh, not a failed handshake.
+            # Work already dispatched runs to its normal per-command deadline.
+            _report_activity(on_activity, "Refreshing signed Cloud session")
+            return
         if not isinstance(raw, str):
             raise CloudHandshakeDeniedError(_DENIED)
         reads_served += await _serve_one_signed_frame(

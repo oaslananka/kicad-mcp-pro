@@ -1148,3 +1148,10 @@ async def test_windows_connector_native_write_runner_wires_revisions_and_executo
     res = native_write.write_executor(b'{"proof": true}', True)
     assert res["nativeCommitted"] is True
     assert res["session_id"] == receipt.session_id
+
+
+def test_successful_long_signed_session_refreshs_quickly_without_handshake_flood() -> None:
+    assert connector._session_retry_delay(True, 241.0, 0, 0.5) == 2.0
+    assert connector._session_retry_delay(True, 16.0, 0, 0.5) == 16.0
+    assert connector._session_retry_delay(False, 241.0, 2, 0.5) == 61.0
+    assert connector._session_retry_delay(True, 241.0, 3, 1.0) == 3.0
