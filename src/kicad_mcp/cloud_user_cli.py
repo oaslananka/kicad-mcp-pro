@@ -493,7 +493,7 @@ def remote(
     typer.secho("\n  KiCad MCP Pro  /  Cloud Connector", fg=typer.colors.MAGENTA, bold=True)
     typer.echo(f"  Device project  {selected.filename_stem}")
     typer.echo(f"  Cloud           {origin}")
-    typer.echo("  Terminal is your connection: close or press Ctrl+C to disconnect.")
+    typer.echo("  Keep this terminal open; press Ctrl+C to disconnect.")
     typer.echo("  Add Project opens Windows Explorer on this computer.")
     typer.secho("  ────────────────────────────────────────────────", fg=typer.colors.BRIGHT_BLACK)
     if allow_native_drc:
@@ -511,7 +511,7 @@ def remote(
         stamp = datetime.now().astimezone().strftime("%H:%M:%S")
         if value == "Connected":
             category, icon, color = "ONLINE", "●", typer.colors.GREEN
-            detail = "Signed Cloud session established"
+            detail = "Cloud acknowledged this device's signed session"
         elif value.startswith("Tool call "):
             category, icon, color = "TOOL", "◆", typer.colors.CYAN
             detail = value
