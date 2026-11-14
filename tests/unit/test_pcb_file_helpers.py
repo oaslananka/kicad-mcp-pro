@@ -11,10 +11,12 @@ from kicad_mcp.tools.pcb import (
     _append_to_footprint_block,
     _apply_stackup_to_board,
     _copper_layer_order,
+    _direct_child_spans,
     _impedance_context_for_layer,
     _inner_layer_graphic_block,
     _parse_netlist_text,
     _parse_stackup_specs_from_board_text,
+    _quoted_character_state,
     _replace_or_append_child_block,
     _stackup_layer_from_kipy,
     _strategy_board_positions,
@@ -409,3 +411,27 @@ def test_netlist_parser_and_non_cluster_placement_strategies(
     assert linear["J1"][0] <= linear["U1"][0] <= linear["U2"][0]
     assert star["J1"] == (50.0, 40.0)
     assert star["U1"] != star["U2"]
+
+
+@pytest.mark.parametrize(
+    ("char", "in_string", "escaped", "expected"),
+    [
+        ('"', False, False, (True, False)),
+        ("(", False, False, (False, False)),
+        ('"', True, True, (True, False)),
+        ("\\", True, False, (True, True)),
+        ('"', True, False, (False, False)),
+        ("(", True, False, (True, False)),
+    ],
+)
+def test_stackup_quoted_character_state_handles_escaped_quotes_and_parentheses(
+    char: str, in_string: bool, escaped: bool, expected: tuple[bool, bool]
+) -> None:
+    assert _quoted_character_state(char, in_string, escaped) == expected
+
+
+def test_stackup_direct_child_spans_ignore_quoted_parentheses_and_escaped_quotes() -> None:
+    parent = '(root "literal ( not a child \\"quoted\\" )" (first 1) (second 2))'
+    spans = _direct_child_spans(parent)
+    assert [name for name, _, _ in spans] == ["first", "second"]
+    assert [parent[start:end] for _, start, end in spans] == ["(first 1)", "(second 2)"]
