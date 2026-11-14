@@ -19,7 +19,7 @@ and its workspace configuration. Hosted AI-client authentication has not yet
 been accepted against the production deployment.
 
 An account login authorizes only the Cloud account. The owner must also
-grant that OAuth client access to an eligible project under **Devices & projects**,
+grant that OAuth client access to an eligible project under **Devices**,
 then start the separately enabled local one-shot Connector operation. The
 Cloud portal does not proxy arbitrary local tools or store KiCad design
 content. Existing account-free local MCP clients remain supported.
@@ -96,7 +96,7 @@ transport, built-in identity and device pairing; it does **not** coexist with
 the per-read approval or manual one-shot modes. It is not deployed by default.
 
 The signed-in owner controls a separate per-project **Turn Connector On / Off**
-switch under **Devices & projects**. Missing database switch rows are OFF; enabling checks
+switch under **Devices**. Missing database switch rows are OFF; enabling checks
 enrolled device and read-only project ownership. The usual OAuth client/project
 grant, access-token revocation and signed device session checks remain
 mandatory **for every read**; disabling access discards in-flight results.
@@ -109,6 +109,11 @@ acceptance is not yet complete. A Cloud test passing does not demonstrate an
 end-to-end continuously running local client.
 
 ## Device connection status
+
+The signed-in **Devices** page is the default Cloud workspace after login.
+Each paired computer contains its projects, folder Browse, Rename/Remove and
+per-client access actions. Projects remain reachable from the separate library
+view, but the primary management flow stays on the selected device.
 
 The signed-in **Devices** page shows whether the device has a currently
 authenticated, open Cloud Connector WebSocket session. It is scoped to the

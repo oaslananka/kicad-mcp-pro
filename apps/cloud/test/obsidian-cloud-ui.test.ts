@@ -51,8 +51,8 @@ test("device/client views retain actual empty states and explicit revocation act
   assert.match(active,/name="csrf" value="csrf"/);
 });
 
-test("obsidian UI remains first-party with accessible responsive focus",()=>{
-  assert.match(uiCss,/--accent:#72d6b2/);
+test("Cloud UI stays first-party, accessible and responsive with the current theme",()=>{
+  assert.match(uiCss,/--accent:#a99bff/);
   assert.doesNotMatch(uiCss,/--accent:#00daf3/);
   assert.match(uiCss,/\.overview-tiles\{display:block;/);
   assert.match(uiCss,/:focus-visible/);

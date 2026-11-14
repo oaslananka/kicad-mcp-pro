@@ -104,7 +104,7 @@ async function startSocialLogin(request:Request,identity:BrowserIdentity,
       "Origin":publicOrigin,
       ...(request.headers.get("cookie")?{"Cookie":request.headers.get("cookie")!}:{})
     },
-    body:JSON.stringify({provider,callbackURL:publicOrigin+"/projects",...(signed?{oauth_query:signed}:{})})
+    body:JSON.stringify({provider,callbackURL:publicOrigin+"/devices",...(signed?{oauth_query:signed}:{})})
   }));
   return approvedProviderRedirect(authResponse,provider);
 }

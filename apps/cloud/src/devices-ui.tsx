@@ -494,7 +494,7 @@ export function renderDevicesPage(devices:ReadonlyArray<Device>,notice?:string,e
     children:<div className="page-stack">
       {notice?<output className="output-notice">{notice}</output>:null}
       <DeviceContents context={context}/>
-      <ClientShortcuts/>
+      {context.clients.length===0?<ClientShortcuts/>:null}
       <AdvancedIdentity context={context}/>
       {sandboxMode||browseEnabled?<script src="/assets/device-projects.js" defer={true}/>:null}
       {enrollmentAvailable&&!sandboxMode?<script src="/assets/copy-value.js" defer={true}/>:null}
