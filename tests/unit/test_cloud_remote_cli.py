@@ -67,6 +67,46 @@ def test_remote_reuses_existing_pairing(
     assert "Keep this terminal open" in result.output
 
 
+def test_foreground_terminal_stream_distinguishes_tool_folder_network_and_errors(
+    remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state, _folder = remote_fixture
+
+    async def emit_activity(*, stop, status_callback) -> None:
+        assert isinstance(stop, asyncio.Event)
+        for message in (
+            "Connecting",
+            "Connected",
+            "Tool call 1: read started",
+            "Tool call 1: project_summary completed (12 ms)",
+            "Tool call 2: write failed",
+            "Opening Windows project folder dialog",
+            "Folder selection cancelled",
+            "Cloud disconnected; reconnecting",
+        ):
+            status_callback(message)
+        state["calls"].append("foreground")
+
+    monkeypatch.setattr(cloud_windows_connector, "run_connector", emit_activity)
+    result = CliRunner().invoke(server.app, ["cloud", "remote"])
+    assert result.exit_code == 0, result.output
+    assert state["calls"] == ["task_removed", "foreground"]
+    for expected in (
+        "CONNECT",
+        "ONLINE",
+        "TOOL",
+        "FOLDER",
+        "NETWORK",
+        "read started",
+        "project_summary completed (12 ms)",
+        "write failed",
+        "Folder selection cancelled",
+        "Cloud disconnected",
+    ):
+        assert expected in result.output, expected
+    assert "Manage projects:" in result.output
+
+
 def test_first_pairing_chooses_folder_and_launches_foreground(
     remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:

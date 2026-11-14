@@ -387,6 +387,35 @@ async def test_folder_frames_are_answered_without_consuming_read_sequences(
 
 
 @pytest.mark.anyio
+async def test_native_folder_choice_cancel_logs_outcome_without_binding_project(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "board.kicad_pro").write_text("{}", encoding="utf-8")
+    dispatcher = build_dispatcher(tmp_path, [True])
+    service = StagedFolderService()
+    socket = ScriptedSocket([folder_frame("choose"), request(1)])
+    events: list[str] = []
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    result = await serve_authenticated_reads(
+        socket,
+        receipt,
+        lambda _: dispatcher,
+        max_reads=1,
+        folder_service=service,
+        on_activity=events.append,
+    )
+    assert result == receipt
+    assert events[:2] == [
+        "Opening Windows project folder dialog",
+        "Folder selection cancelled",
+    ]
+    assert events[2] == "Tool call 1: read started"
+    assert service.bound == []
+    assert socket.sent[0]["kind"] == "connector.local_browser_result"
+    assert socket.sent[0]["status"] == "cancelled"
+
+
+@pytest.mark.anyio
 async def test_folder_service_is_required_before_any_browse_frame_is_answered() -> None:
     socket = ScriptedSocket([folder_frame("list", folderId="root")])
     receipt = HandshakeReceipt(DEVICE, SESSION)

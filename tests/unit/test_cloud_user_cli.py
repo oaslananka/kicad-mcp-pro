@@ -1125,3 +1125,25 @@ def test_windows_cloud_connect_starts_existing_foreground_remote_without_a_backg
     custom = CliRunner().invoke(app, ["cloud", "connect", "--alias", "Lab PC"])
     assert custom.exit_code == 0, custom.output
     assert calls[-1]["alias"] == "Lab PC"
+
+
+def test_windows_connect_new_device_uses_foreground_pairing_and_never_schedules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_user_cli as cli
+    from kicad_mcp import cloud_windows_user_cli as windows
+
+    paired: list[dict[str, object]] = []
+    remote: list[dict[str, object]] = []
+    monkeypatch.setattr(cli, "_is_windows", lambda: True)
+    monkeypatch.setattr(windows, "setup_windows", lambda **options: paired.append(options))
+    monkeypatch.setattr(cli, "remote", lambda **options: remote.append(options))
+    result = CliRunner().invoke(app, ["cloud", "connect", "--new-device", "--alias", "Bench PC"])
+    assert result.exit_code == 0, result.output
+    assert len(paired) == 1 and len(remote) == 1
+    assert paired[0]["new_device"] is True
+    assert paired[0]["start_background"] is False
+    assert paired[0]["browse"] is True
+    assert paired[0]["alias"] == "Bench PC"
+    assert remote[0]["alias"] == "Bench PC"
+    assert remote[0]["repair_device"] is False
