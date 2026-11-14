@@ -26,7 +26,7 @@ function NavLink({href,current,children}:Readonly<{href:string;current:boolean;c
   return <a href={href} aria-current={current?"page":undefined}>{children}</a>;
 }
 function Brand({workspace=false}:Readonly<{workspace?:boolean}>){
-  return <a href={workspace?"/projects":"/"} className="brand" aria-label="KiCad MCP Cloud workspace home">
+  return <a href={workspace?"/devices":"/"} className="brand" aria-label="KiCad MCP Cloud workspace home">
     <span className="brand-mark"><img className="brand-logo" src="/assets/icon-32.png" alt="" width={24} height={24} srcSet="/assets/icon-32.png 1x, /assets/icon-64.png 2x" decoding="async"/></span>
     <span className="brand-title">KiCad MCP <small>Cloud workspace</small></span>
   </a>;
@@ -42,8 +42,8 @@ function WorkspaceNav({kind,userEmail}:Readonly<{kind:PageKind;userEmail?:string
     <Brand workspace/>
     <div className="sidebar-section-label">WORKSPACE</div>
     <nav className="sidebar-links" aria-label="Workspace">
-      <NavLink href="/projects" current={kind==="projects"}><Icon name="projects" size={17}/> Projects</NavLink>
       <NavLink href="/devices" current={kind==="devices"}><Icon name="devices" size={17}/> Devices</NavLink>
+      <NavLink href="/projects" current={kind==="projects"}><Icon name="projects" size={17}/> Projects</NavLink>
       <NavLink href="/connections" current={kind==="connections"}><Icon name="connections" size={17}/> AI connections</NavLink>
       <NavLink href="/usage" current={kind==="usage"}><Icon name="usage" size={17}/> Usage</NavLink>
       <NavLink href="/account" current={kind==="account"}><Icon name="overview" size={17}/> Overview</NavLink>
@@ -72,7 +72,7 @@ function PublicHeader({kind,navEnabled}:Pick<Props,"kind"|"navEnabled">){
       <span className="release-label"><Icon name="shield" size={15}/> Your projects. Your permissions.</span>
       <nav className="public-nav" aria-label="Primary"><NavLink href="/" current={home}>Overview</NavLink>
         <a href={home?"#http-setup":httpGuideUrl} target={home?undefined:"_blank"} rel={home?undefined:"noopener noreferrer"}>HTTP setup</a>
-        {navEnabled?<NavLink href="/projects" current={false}>Workspace</NavLink>:null}</nav>
+        {navEnabled?<NavLink href="/devices" current={false}>Workspace</NavLink>:null}</nav>
     </div>
   </div></header>;
 }
@@ -81,7 +81,7 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
   return "<!doctype html>"+renderToStaticMarkup(
     <html lang="en"><head>
       <meta charSet="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
-      <meta name="theme-color" content="#0c0f10"/>
+      <meta name="theme-color" content="#0f0e0d"/>
       <meta name="description" content={kind==="home"?publicDescription:"Manage KiCad MCP Cloud connections and access."}/>
       <meta name="robots" content={kind==="home"?"index, follow, max-snippet:-1, max-image-preview:large":"noindex, nofollow"}/>
       {kind==="home"?<>
@@ -104,7 +104,7 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
       <a href="#main-content" className="skip-link">Skip to content</a>
       {workspace?<WorkspaceNav kind={kind} userEmail={userEmail}/>:<PublicHeader kind={kind} navEnabled={navEnabled}/>}
       <main id="main-content" className={"site-main page-"+kind}>
-        {workspace?<div className="workspace-topbar"><span className="workspace-breadcrumb"><a href="/projects">Workspace</a> <span aria-hidden="true">/</span> {title}</span>
+        {workspace?<div className="workspace-topbar"><span className="workspace-breadcrumb"><a href="/devices">Workspace</a> <span aria-hidden="true">/</span> {title}</span>
           <div className="workspace-topbar-actions"><span><Icon name="lock" size={15}/> Local files stay private</span>
             <a href="https://oaslananka.github.io/kicad-mcp-pro/" target="_blank" rel="noopener noreferrer">Documentation <Icon name="arrow" size={14}/></a>
           </div></div>:null}

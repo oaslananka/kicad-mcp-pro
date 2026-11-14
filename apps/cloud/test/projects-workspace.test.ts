@@ -108,7 +108,7 @@ test("production projects route renders only the signed-in owner's inventory and
   }
 });
 
-test("social sign-in lands on projects while provider linking retains account security",async()=>{
+test("social sign-in lands on devices while provider linking retains account security",async()=>{
   const origin="https://cloud.example.test";
   let callback="";
   const identity={handler:async(request:Request)=>{
@@ -119,5 +119,5 @@ test("social sign-in lands on projects while provider linking retains account se
     method:"POST",headers:{Origin:origin,"Content-Type":"application/x-www-form-urlencoded"},
     body:"oauth_query="}),identity,origin);
   assert.equal(response?.status,303);
-  assert.equal(callback,origin+"/projects");
+  assert.equal(callback,origin+"/devices");
 });
