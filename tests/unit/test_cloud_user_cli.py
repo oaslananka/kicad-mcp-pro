@@ -1140,7 +1140,8 @@ def test_windows_connect_new_device_uses_foreground_pairing_and_never_schedules(
     monkeypatch.setattr(cli, "remote", lambda **options: remote.append(options))
     result = CliRunner().invoke(app, ["cloud", "connect", "--new-device", "--alias", "Bench PC"])
     assert result.exit_code == 0, result.output
-    assert len(paired) == 1 and len(remote) == 1
+    assert len(paired) == 1
+    assert len(remote) == 1
     assert paired[0]["new_device"] is True
     assert paired[0]["start_background"] is False
     assert paired[0]["browse"] is True

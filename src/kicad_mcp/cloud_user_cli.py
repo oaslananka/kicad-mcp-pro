@@ -434,6 +434,37 @@ def _prepare_remote_connector(existing: WindowsRegisteredProject, interactive: b
         raise typer.BadParameter("Local Connector registration requires repair.")
 
 
+def _display_cloud_status(value: str, origin: str) -> None:
+    """Show sanitized Cloud activity without logging tool arguments or private paths."""
+    from datetime import datetime
+
+    # Only short, locally produced status messages are styled. Never
+    # print MCP argument contents, access keys, paths or file contents.
+    stamp = datetime.now().astimezone().strftime("%H:%M:%S")
+    if value == "Connected":
+        category, icon, color = "ONLINE", "●", typer.colors.GREEN
+        detail = "Cloud acknowledged this device's signed session"
+    elif value.startswith("Tool call "):
+        category, icon, color = "TOOL", "◆", typer.colors.CYAN
+        detail = value
+        if value.endswith("failed"):
+            color = typer.colors.RED
+    elif "folder" in value.lower() or "dialog" in value.lower():
+        category, icon, color = "FOLDER", "▣", typer.colors.MAGENTA
+        detail = value
+    elif "reconnect" in value.lower() or "disconnected" in value.lower():
+        category, icon, color = "NETWORK", "↻", typer.colors.YELLOW
+        detail = value
+    else:
+        category, icon, color = "CONNECT", "·", typer.colors.BLUE
+        detail = value
+    typer.echo(f"  {stamp}  ", nl=False)
+    typer.secho(f"{icon} {category:<8}", fg=color, bold=True, nl=False)
+    typer.echo("  " + detail)
+    if value == "Connected":
+        typer.echo(f"             Manage projects: {origin}/devices")
+
+
 @cloud_app.command("remote")
 def remote(
     browse: Annotated[bool, typer.Option("--browse", help="Choose a local KiCad project.")] = False,
@@ -504,33 +535,7 @@ def remote(
         )
 
     def show_status(value: str) -> None:
-        from datetime import datetime
-
-        # Only short, locally produced status messages are styled. Never
-        # print MCP argument contents, access keys, paths or file contents.
-        stamp = datetime.now().astimezone().strftime("%H:%M:%S")
-        if value == "Connected":
-            category, icon, color = "ONLINE", "●", typer.colors.GREEN
-            detail = "Cloud acknowledged this device's signed session"
-        elif value.startswith("Tool call "):
-            category, icon, color = "TOOL", "◆", typer.colors.CYAN
-            detail = value
-            if value.endswith("failed"):
-                color = typer.colors.RED
-        elif "folder" in value.lower() or "dialog" in value.lower():
-            category, icon, color = "FOLDER", "▣", typer.colors.MAGENTA
-            detail = value
-        elif "reconnect" in value.lower() or "disconnected" in value.lower():
-            category, icon, color = "NETWORK", "↻", typer.colors.YELLOW
-            detail = value
-        else:
-            category, icon, color = "CONNECT", "·", typer.colors.BLUE
-            detail = value
-        typer.echo(f"  {stamp}  ", nl=False)
-        typer.secho(f"{icon} {category:<8}", fg=color, bold=True, nl=False)
-        typer.echo("  " + detail)
-        if value == "Connected":
-            typer.echo(f"             Manage projects: {origin}/devices")
+        _display_cloud_status(value, origin)
 
     import asyncio
 
@@ -590,6 +595,39 @@ def login(
     typer.echo("To pair this computer, run: kicad-mcp-pro cloud setup (or cloud connect)")
 
 
+def _connect_windows_foreground(
+    origin: str, alias: str, project_dir: Path | None, no_browser: bool, new_device: bool
+) -> None:
+    """Pair only when requested, then use one visible owner-controlled session."""
+    if new_device:
+        from kicad_mcp.cloud_windows_user_cli import setup_windows
+
+        # A new owner-approved identity must remain a foreground process,
+        # never silently create another Task Scheduler background service.
+        setup_windows(
+            origin=origin,
+            alias=_resolve_device_alias(alias),
+            project_dir=project_dir,
+            browse=project_dir is None,
+            new_device=True,
+            approval=lambda page, challenge, code: _perform_approval(
+                page, challenge, code, no_browser
+            ),
+            picker=_browse_local_project_folder,
+            owner_terminal=_owner_terminal,
+            start_background=False,
+        )
+    remote(
+        browse=False,
+        project_dir=project_dir,
+        cloud_origin=origin,
+        no_browser=no_browser,
+        allow_native_drc=False,
+        repair_device=False,
+        alias=None if alias == _DEFAULT_DEVICE_ALIAS else alias,
+    )
+
+
 @cloud_app.command()
 def connect(
     alias: str = typer.Option(
@@ -619,33 +657,7 @@ def connect(
         raise typer.BadParameter("Device name must be 1 to 80 printable characters.")
     origin = _verified_origin(cloud_origin)
     if _is_windows():
-        if new_device:
-            from kicad_mcp.cloud_windows_user_cli import setup_windows
-
-            # A new owner-approved identity must remain a foreground process,
-            # never silently create another Task Scheduler background service.
-            setup_windows(
-                origin=origin,
-                alias=_resolve_device_alias(alias),
-                project_dir=project_dir,
-                browse=project_dir is None,
-                new_device=True,
-                approval=lambda page, challenge, code: _perform_approval(
-                    page, challenge, code, no_browser
-                ),
-                picker=_browse_local_project_folder,
-                owner_terminal=_owner_terminal,
-                start_background=False,
-            )
-        remote(
-            browse=False,
-            project_dir=project_dir,
-            cloud_origin=origin,
-            no_browser=no_browser,
-            allow_native_drc=False,
-            repair_device=False,
-            alias=None if alias == _DEFAULT_DEVICE_ALIAS else alias,
-        )
+        _connect_windows_foreground(origin, alias, project_dir, no_browser, new_device)
         return
     _require_local_pairing_storage()
     from kicad_mcp.cloud_local_registry import default_registry_root
