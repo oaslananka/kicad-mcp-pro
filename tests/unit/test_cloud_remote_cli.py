@@ -144,11 +144,12 @@ def test_different_folder_does_not_override_pairing(
     assert "already paired" in result.output
 
 
-def test_noninteractive_session_rejected_before_mutation(
+def test_noninteractive_unpaired_session_rejected_before_mutation(
     remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     state, _ = remote_fixture
     monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    monkeypatch.setattr("kicad_mcp.cloud_windows_connector.selected_project", lambda: None)
     result = CliRunner().invoke(server.app, ["remote"])
     assert result.exit_code != 0
     assert state["calls"] == []

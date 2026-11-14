@@ -717,6 +717,20 @@ def _next_failure_count(
     return failures + 1
 
 
+# A clean, fully-lived signed lease needs a quick next handshake. The
+# initial/short sessions and all transport failures keep bounded backoff
+# to respect the Cloud rate limit (five device challenges per minute).
+_LONG_LIVED_SESSION_SECONDS = 225.0
+
+
+def _session_retry_delay(
+    succeeded: bool, elapsed_seconds: float, failures: int, jitter: float
+) -> float:
+    if succeeded and elapsed_seconds >= _LONG_LIVED_SESSION_SECONDS:
+        return 1.0 + 2.0 * jitter
+    return reconnect_delay_seconds(failures, jitter)
+
+
 def _notify_owner_reapproval(
     status_callback: Callable[[str], None] | None,
     project: WindowsRegisteredProject,
@@ -766,6 +780,7 @@ async def run_connector(
         _notify_connection_attempt(status_callback, failures)
         runner_for_session = _session_runner_with_status(session_runner, status_callback)
 
+        session_started = time.monotonic()
         try:
             result = await _attempt_authorized_session(
                 project,
@@ -783,7 +798,12 @@ async def run_connector(
         if result is None:
             return
         failures = _next_failure_count(result, failures, status_callback)
-        delay = reconnect_delay_seconds(failures, secrets.randbelow(1001) / 1000)
+        delay = _session_retry_delay(
+            result,
+            time.monotonic() - session_started,
+            failures,
+            secrets.randbelow(1001) / 1000,
+        )
         try:
             await asyncio.wait_for(stop.wait(), timeout=delay)
         except TimeoutError:

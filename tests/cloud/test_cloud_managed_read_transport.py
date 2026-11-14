@@ -988,3 +988,86 @@ async def test_signed_read_frames_denials_on_valid_session(tmp_path: Path) -> No
             dispatch_factory,
             max_reads=1,
         )
+
+
+@pytest.mark.anyio
+async def test_signed_session_rotates_at_idle_without_false_disconnect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_managed_read_transport as transport
+
+    monkeypatch.setattr(transport, "_SESSION_REFRESH_SECONDS", 0.02)
+    socket = Socket([])
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    activity: list[str] = []
+    assert (
+        await serve_authenticated_reads(
+            socket,
+            receipt,
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=2,
+            on_activity=activity.append,
+        )
+        == receipt
+    )
+    assert activity == ["Refreshing signed Cloud session"]
+    assert socket.sent == []
+
+
+@pytest.mark.anyio
+async def test_signed_session_does_not_cut_off_started_read_at_refresh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_managed_read_transport as transport
+    from kicad_mcp import cloud_read_dispatch
+
+    (tmp_path / "board.kicad_pro").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(transport, "_SESSION_REFRESH_SECONDS", 0.02)
+    original = cloud_read_dispatch.inspect_readonly
+
+    def slow_inspect(*args: object, **kwargs: object) -> object:
+        time.sleep(0.06)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(cloud_read_dispatch, "inspect_readonly", slow_inspect)
+    socket = Socket([request(1)])
+    activity: list[str] = []
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    assert (
+        await serve_authenticated_reads(
+            socket,
+            receipt,
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+            on_activity=activity.append,
+        )
+        == receipt
+    )
+    assert socket.sent[0]["kind"] == "connector.read_result"
+    assert activity[0] == "Tool call 1: read started"
+    assert activity[1].startswith("Tool call 1: project_summary completed")
+    assert "Refreshing signed Cloud session" not in activity
+
+
+@pytest.mark.anyio
+async def test_signed_session_deadline_already_elapsed_rotates_without_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_managed_read_transport as transport
+
+    monkeypatch.setattr(transport, "_SESSION_REFRESH_SECONDS", 0.0)
+    socket = Socket([])
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    events: list[str] = []
+    assert (
+        await serve_authenticated_reads(
+            socket,
+            receipt,
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+            on_activity=events.append,
+        )
+        == receipt
+    )
+    assert events == ["Refreshing signed Cloud session"]
+    assert socket.sent == []
