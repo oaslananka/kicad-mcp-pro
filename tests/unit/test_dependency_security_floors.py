@@ -36,9 +36,9 @@ def test_opentelemetry_api_security_floor_uses_patched_family() -> None:
 
     dependencies = pyproject["project"]["dependencies"]
     for package in ("opentelemetry-sdk", "opentelemetry-exporter-otlp"):
-        assert any(f"{package}>=1.45.1" in item.lower() for item in dependencies)
+        assert any(f"{package}>=1.45.2" in item.lower() for item in dependencies)
     for package in ("opentelemetry-api", "opentelemetry-sdk", "opentelemetry-exporter-otlp"):
-        _assert_all_locked_versions_patched(lock["package"], package, "1.45.1")
+        _assert_all_locked_versions_patched(lock["package"], package, "1.45.2")
 
 
 def test_pypdf_security_floor_blocks_known_dependabot_regressions() -> None:
@@ -72,16 +72,16 @@ def test_opentelemetry_otlp_exporters_share_patched_runtime_floor() -> None:
         "opentelemetry-exporter-otlp-proto-grpc",
         "opentelemetry-exporter-otlp-proto-http",
     ):
-        _assert_all_locked_versions_patched(uv_lock["package"], name, "1.45.1")
+        _assert_all_locked_versions_patched(uv_lock["package"], name, "1.45.2")
 
 
 def test_dnspython_security_floor_blocks_parser_cpu_regression() -> None:
-    """GHSA-45c3-73f7-pv4m is fixed in dnspython 2.9.0 or newer.
+    """GHSA-vvf4-9x63-8xvv requires dnspython 2.9.2 or newer.
 
     This transitive runtime dependency enters through email-validator.
     """
     lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
-    _assert_all_locked_versions_patched(lock["package"], "dnspython", "2.9.0")
+    _assert_all_locked_versions_patched(lock["package"], "dnspython", "2.9.2")
 
 
 def test_cryptography_security_floor_is_patched() -> None:
@@ -148,13 +148,13 @@ def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
     lock = json.loads((APP / "package-lock.json").read_text(encoding="utf-8"))
 
     assert Version(package["overrides"]["@hono/node-server"]) >= Version("2.1.6")
-    assert package["overrides"]["hono"] == "4.13.13"
+    assert Version(package["overrides"]["hono"]) >= Version("4.13.16")
     assert package["overrides"]["fast-uri"] == "3.1.9"  # nosec B101
     assert package["overrides"]["qs"] == "6.16.1"
 
     patched = {
         "node_modules/@hono/node-server": "2.1.6",
-        "node_modules/hono": "4.13.13",
+        "node_modules/hono": "4.13.16",
         "node_modules/fast-uri": "3.1.9",
         "node_modules/qs": "6.16.1",
         "node_modules/ip-address": "10.7.4",
@@ -165,6 +165,7 @@ def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
     )
     for path, minimum in patched.items():
         assert Version(lock["packages"][path]["version"]) >= Version(minimum)
+    assert lock["packages"]["node_modules/hono"]["version"] == package["overrides"]["hono"]
 
 
 def test_fastmcp_runtime_locked_to_patched_security_floor() -> None:
