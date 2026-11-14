@@ -10,6 +10,18 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.16.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.15.1...mcp-server-v4.16.0) (2026-11-14)
+
+
+### Features
+
+* **cloud:** native project picker, foreground connector and account activity ([#1725](https://github.com/oaslananka/kicad-mcp-pro/issues/1725)) ([243e152](https://github.com/oaslananka/kicad-mcp-pro/commit/243e1524b78114517e59d87275b04bfec30b00f4))
+
+
+### Bug Fixes
+
+* **cloud:** refine device-first workspace and project cards ([#1723](https://github.com/oaslananka/kicad-mcp-pro/issues/1723)) ([9057586](https://github.com/oaslananka/kicad-mcp-pro/commit/90575868e790c16a22f0c29507c26c657f340e19))
+
 ## [4.15.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.15.0...mcp-server-v4.15.1) (2026-11-14)
 
 
