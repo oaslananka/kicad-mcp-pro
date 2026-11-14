@@ -575,9 +575,10 @@ async def _run_owner_session(
             write_executor=_execute_write,
         )
 
-    if runner is execute_owner_managed_read_session or getattr(
-        runner, "_kicad_supports_folder_browse", False
-    ):
+    # Only the foreground, owner-operated terminal session may open a GUI.
+    # Background scheduled tasks stay read-only but cannot show an invisible
+    # Windows dialog or claim that native folder selection is available.
+    if getattr(runner, "_kicad_supports_folder_browse", False):
 
         def folder_factory(receipt: HandshakeReceipt) -> LocalFolderBrowseService:
             if receipt.device_id != project.device_id or not _current_authorization(project):

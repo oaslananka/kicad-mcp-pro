@@ -46,7 +46,8 @@ test("project workspace explains each missing prerequisite without claiming exec
 test("project workspace keeps controls reachable, escapes names and separates saved write permission from availability",()=>{
   const html=renderProjectsPage([device],[{...project,alias:"<svg onload=bad>"}],
     [client],[{projectId,clientId:client,maxMode:"write"}]);
-  assert.match(html,/href="\/projects" aria-current="page"/);
+  assert.match(html,/<title>Projects/);
+  assert.match(html,/href="\/devices" class="brand"/);
   assert.match(html,/&lt;svg onload=bad&gt;/);
   assert.ok(html.includes('href="/devices#project-'+projectId+'"'));
   assert.match(html,/Read &amp; edit permission saved/);
@@ -94,7 +95,7 @@ test("production projects route renders only the signed-in owner's inventory and
     assert.match(html,/<title>Projects/);
     assert.match(html,/Motor controller/);
     assert.match(html,/Studio PC/);
-    assert.match(html,/owner@example.test/);
+    assert.doesNotMatch(html,/owner@example.test/); // No email drift in the sidebar.
     assert.match(html,/data-project-state="status-unknown"/);
     assert.match(html,/pairing-login-continuation\.js/);
     const requestId="r".repeat(43);

@@ -1105,3 +1105,23 @@ def test_cloud_login_connects_cli_in_one_browser_approval(monkeypatch) -> None:
     headless = CliRunner().invoke(app, ["cloud", "login", "--no-browser"])
     assert headless.exit_code == 0, headless.output
     assert seen[-1] == ("https://kicad-mcp-pro.oaslananka.dev", True)
+
+
+def test_windows_cloud_connect_starts_existing_foreground_remote_without_a_background_task(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_user_cli as cli
+
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(cli, "_is_windows", lambda: True)
+    monkeypatch.setattr(cli, "remote", lambda **options: calls.append(options))
+    result = CliRunner().invoke(app, ["cloud", "connect"])
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    assert calls[0]["browse"] is False
+    assert calls[0]["repair_device"] is False
+    assert calls[0]["alias"] is None
+
+    custom = CliRunner().invoke(app, ["cloud", "connect", "--alias", "Lab PC"])
+    assert custom.exit_code == 0, custom.output
+    assert calls[-1]["alias"] == "Lab PC"

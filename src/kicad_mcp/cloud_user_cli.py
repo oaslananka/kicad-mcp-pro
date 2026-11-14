@@ -296,6 +296,7 @@ def _select_remote_project(
     project_dir: Path | None,
     no_browser: bool,
     repair_device: bool = False,
+    alias: str | None = None,
 ) -> WindowsRegisteredProject | None:
     """Reuse the owner-selected project or run first-time browser pairing."""
     from kicad_mcp.cloud_windows_connector import selected_project
@@ -335,7 +336,7 @@ def _select_remote_project(
         )
         setup_windows(
             origin=origin,
-            alias=_resolve_device_alias(None),
+            alias=_resolve_device_alias(alias),
             project_dir=project_dir,
             browse=choose_folder,
             new_device=False,
@@ -463,6 +464,10 @@ def remote(
             ),
         ),
     ] = False,
+    alias: Annotated[
+        str | None,
+        typer.Option("--alias", help="Display name for a new computer pairing."),
+    ] = None,
 ) -> None:
     """Pair once; keep a verified foreground Cloud connection open."""
     interactive = _verify_remote_foreground_options(
@@ -476,7 +481,7 @@ def remote(
     from kicad_mcp.cloud_windows_local_selection import inspect_owner_selected_project
 
     existing = _select_remote_project(
-        origin, browse, project_dir, no_browser, repair_device=repair_device
+        origin, browse, project_dir, no_browser, repair_device=repair_device, alias=alias
     )
     if existing is None:
         return
@@ -485,10 +490,12 @@ def remote(
 
     _prepare_remote_connector(existing, interactive)
     selected = inspect_owner_selected_project(existing)
-    typer.echo("\nKiCad MCP Pro Remote")
-    typer.echo(f"Project: {selected.filename_stem}")
-    typer.echo(f"Cloud: {origin}")
-    typer.echo("Connecting... Keep this terminal open; press Ctrl+C to disconnect.")
+    typer.secho("\n  KiCad MCP Pro  /  Cloud Connector", fg=typer.colors.MAGENTA, bold=True)
+    typer.echo(f"  Device project  {selected.filename_stem}")
+    typer.echo(f"  Cloud           {origin}")
+    typer.echo("  Terminal is your connection: close or press Ctrl+C to disconnect.")
+    typer.echo("  Add Project opens Windows Explorer on this computer.")
+    typer.secho("  ────────────────────────────────────────────────", fg=typer.colors.BRIGHT_BLACK)
     if allow_native_drc:
         typer.echo(
             "Read-only native DRC allowed for this foreground session only. "
@@ -497,11 +504,33 @@ def remote(
         )
 
     def show_status(value: str) -> None:
+        from datetime import datetime
+
+        # Only short, locally produced status messages are styled. Never
+        # print MCP argument contents, access keys, paths or file contents.
+        stamp = datetime.now().astimezone().strftime("%H:%M:%S")
         if value == "Connected":
-            typer.echo("Connected — Cloud acknowledged this device's signed session.")
-            typer.echo(f"Manage AI access: {origin}/devices")
+            category, icon, color = "ONLINE", "●", typer.colors.GREEN
+            detail = "Signed Cloud session established"
+        elif value.startswith("Tool call "):
+            category, icon, color = "TOOL", "◆", typer.colors.CYAN
+            detail = value
+            if value.endswith("failed"):
+                color = typer.colors.RED
+        elif "folder" in value.lower() or "dialog" in value.lower():
+            category, icon, color = "FOLDER", "▣", typer.colors.MAGENTA
+            detail = value
+        elif "reconnect" in value.lower() or "disconnected" in value.lower():
+            category, icon, color = "NETWORK", "↻", typer.colors.YELLOW
+            detail = value
         else:
-            typer.echo(value)
+            category, icon, color = "CONNECT", "·", typer.colors.BLUE
+            detail = value
+        typer.echo(f"  {stamp}  ", nl=False)
+        typer.secho(f"{icon} {category:<8}", fg=color, bold=True, nl=False)
+        typer.echo("  " + detail)
+        if value == "Connected":
+            typer.echo(f"             Manage projects: {origin}/devices")
 
     import asyncio
 
@@ -520,7 +549,7 @@ def remote(
     except CloudOwnerReapprovalRequiredError:
         raise typer.Exit(code=3) from None
     except KeyboardInterrupt:
-        typer.echo("\nDisconnected; device and project remain paired.")
+        typer.echo("\nDisconnected. Pairing stays saved; run cloud connect to return.")
 
 
 @cloud_app.command()
@@ -585,24 +614,37 @@ def connect(
         ),
     ] = False,
 ) -> None:
-    """Start browser-approved device pairing without granting project access."""
+    """On Windows connect in a visible terminal; other platforms keep explicit pairing."""
     if not alias or len(alias) > 80 or any(ord(char) < 32 for char in alias):
         raise typer.BadParameter("Device name must be 1 to 80 printable characters.")
     origin = _verified_origin(cloud_origin)
     if _is_windows():
-        from kicad_mcp.cloud_windows_user_cli import setup_windows
+        if new_device:
+            from kicad_mcp.cloud_windows_user_cli import setup_windows
 
-        setup_windows(
-            origin=origin,
-            alias=_resolve_device_alias(alias),
-            project_dir=project_dir,
+            # A new owner-approved identity must remain a foreground process,
+            # never silently create another Task Scheduler background service.
+            setup_windows(
+                origin=origin,
+                alias=_resolve_device_alias(alias),
+                project_dir=project_dir,
+                browse=project_dir is None,
+                new_device=True,
+                approval=lambda page, challenge, code: _perform_approval(
+                    page, challenge, code, no_browser
+                ),
+                picker=_browse_local_project_folder,
+                owner_terminal=_owner_terminal,
+                start_background=False,
+            )
+        remote(
             browse=False,
-            new_device=new_device,
-            approval=lambda page, challenge, code: _perform_approval(
-                page, challenge, code, no_browser
-            ),
-            picker=_browse_local_project_folder,
-            owner_terminal=_owner_terminal,
+            project_dir=project_dir,
+            cloud_origin=origin,
+            no_browser=no_browser,
+            allow_native_drc=False,
+            repair_device=False,
+            alias=None if alias == _DEFAULT_DEVICE_ALIAS else alias,
         )
         return
     _require_local_pairing_storage()

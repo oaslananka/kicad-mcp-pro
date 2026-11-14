@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from pathlib import Path
 from uuid import UUID
@@ -109,10 +110,10 @@ async def test_two_successive_reads_on_same_authenticated_socket(tmp_path: Path)
         )
         == receipt
     )
-    assert events == [
-        "Tool call 1: project_summary completed",
-        "Tool call 2: project_summary completed",
-    ]
+    assert events[0] == "Tool call 1: read started"
+    assert re.fullmatch(r"Tool call 1: project_summary completed \(\d+ ms\)", events[1])
+    assert events[2] == "Tool call 2: read started"
+    assert re.fullmatch(r"Tool call 2: project_summary completed \(\d+ ms\)", events[3])
     assert [item["sequence"] for item in socket.sent] == [1, 2]
     for item in socket.sent:
         assert item["result"]["files"]["projectPresent"] is True
@@ -362,10 +363,9 @@ async def test_folder_frames_are_answered_without_consuming_read_sequences(
         socket, receipt, factory, max_reads=1, folder_service=service, on_activity=events.append
     )
     assert served == receipt
-    assert events == [
-        "Folder browsing request completed",
-        "Tool call 1: project_summary completed",
-    ]
+    assert events[0] == "Folder request completed"
+    assert events[1] == "Tool call 1: read started"
+    assert re.fullmatch(r"Tool call 1: project_summary completed \(\d+ ms\)", events[2])
     kinds = [item["kind"] for item in socket.sent]
     assert kinds == ["connector.local_browser_result", "connector.read_result"]
     folder_result = socket.sent[0]

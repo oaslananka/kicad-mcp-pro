@@ -31,36 +31,28 @@ function Brand({workspace=false}:Readonly<{workspace?:boolean}>){
     <span className="brand-title">KiCad MCP <small>Cloud workspace</small></span>
   </a>;
 }
-function WorkspaceNav({kind,userEmail}:Readonly<{kind:PageKind;userEmail?:string}>){
-  const cleanEmail=userEmail?.trim();
-  const initials=cleanEmail?.includes("@")
-    ? cleanEmail.slice(0,2).toUpperCase()
-    : "OA";
-  const displayEmail=cleanEmail||"Account";
-
+function WorkspaceNav({kind}:Readonly<{kind:PageKind}>){
   return <aside className="workspace-sidebar" aria-label="Workspace navigation">
     <Brand workspace/>
-    <div className="sidebar-section-label">WORKSPACE</div>
     <nav className="sidebar-links" aria-label="Workspace">
+      <span className="sidebar-section-label">WORKSPACE</span>
       <NavLink href="/devices" current={kind==="devices"}><Icon name="devices" size={17}/> Devices</NavLink>
-      <NavLink href="/projects" current={kind==="projects"}><Icon name="projects" size={17}/> Projects</NavLink>
+      <span className="sidebar-section-label">CONNECT</span>
       <NavLink href="/connections" current={kind==="connections"}><Icon name="connections" size={17}/> AI connections</NavLink>
-      <NavLink href="/usage" current={kind==="usage"}><Icon name="usage" size={17}/> Usage</NavLink>
-      <NavLink href="/account" current={kind==="account"}><Icon name="overview" size={17}/> Overview</NavLink>
+      <span className="sidebar-section-label">MONITOR</span>
+      <NavLink href="/usage" current={kind==="usage"}><Icon name="usage" size={17}/> Activity</NavLink>
+      <span className="sidebar-section-label">ACCOUNT</span>
       <NavLink href="/settings" current={kind==="settings"}><Icon name="settings" size={17}/> Settings</NavLink>
     </nav>
-    <a href="/settings" className="sidebar-profile" aria-label="Account and security settings" title={displayEmail}>
-      <span className="profile-avatar" aria-hidden="true">{initials}</span>
-      <span className="profile-identity">{displayEmail}</span>
+    <a href="/account" className="sidebar-profile"
+       aria-label="Account overview" aria-current={kind==="account"?"page":undefined}>
+      <span className="profile-avatar" aria-hidden="true"><Icon name="overview" size={17}/></span>
+      <span className="profile-identity">Account</span>
     </a>
     <div className="sidebar-footer-links">
       <a href="https://oaslananka.github.io/kicad-mcp-pro/" target="_blank" rel="noopener noreferrer">Docs</a>
       <span className="footer-dot" aria-hidden="true">·</span>
       <a href="https://github.com/oaslananka/kicad-mcp-pro" target="_blank" rel="noopener noreferrer">GitHub</a>
-      <span className="footer-dot" aria-hidden="true">·</span>
-      <a href="/connections">Privacy</a>
-      <span className="footer-dot" aria-hidden="true">·</span>
-      <a href="/settings">Security</a>
     </div>
   </aside>;
 }
@@ -76,7 +68,7 @@ function PublicHeader({kind,navEnabled}:Pick<Props,"kind"|"navEnabled">){
     </div>
   </div></header>;
 }
-export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,actions,userEmail}:Props):string{
+export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,actions}:Props):string{
   const workspace=workspacePages.has(kind);
   return "<!doctype html>"+renderToStaticMarkup(
     <html lang="en"><head>
@@ -102,7 +94,7 @@ export function renderPage({title,eyebrow,summary,kind,children,navEnabled=true,
       <link rel="stylesheet" href="/assets/ui.css"/><title>{title+" — KiCad MCP Cloud"}</title>
     </head><body><div className={workspace?("app-shell workspace-app"):"app-shell"}>
       <a href="#main-content" className="skip-link">Skip to content</a>
-      {workspace?<WorkspaceNav kind={kind} userEmail={userEmail}/>:<PublicHeader kind={kind} navEnabled={navEnabled}/>}
+      {workspace?<WorkspaceNav kind={kind}/>:<PublicHeader kind={kind} navEnabled={navEnabled}/>}
       <main id="main-content" className={"site-main page-"+kind}>
         {workspace?<div className="workspace-topbar"><span className="workspace-breadcrumb"><a href="/devices">Workspace</a> <span aria-hidden="true">/</span> {title}</span>
           <div className="workspace-topbar-actions"><span><Icon name="lock" size={15}/> Local files stay private</span>
@@ -298,11 +290,12 @@ function workspaceNextAction(snapshot?:WorkspaceSnapshot){
   if(snapshot.grants===0)return {id:"grant-access",title:"Decide what AI can see",detail:"Project access is separate from account consent.",href:"/devices#registered-projects",label:"Review permissions"};
   return {id:"review-access",title:"Review your connections",detail:"Saved permissions and current device status are separate.",href:"/devices",label:"Review access"};
 }
-export function Account({name,providers=["google","github"],linked=[],snapshot}:{
+export function Account({name,providers=["google","github"],linked=[],snapshot,observedTotal}:{
   readonly name:string;
   readonly providers?:ReadonlyArray<"google"|"github">;
   readonly linked?:ReadonlyArray<"google"|"github">;
   readonly snapshot?:WorkspaceSnapshot;
+  readonly observedTotal?:number;
 }){
   const nextAction=workspaceNextAction(snapshot);
   return <div className="page-stack account-dashboard">
@@ -320,6 +313,14 @@ export function Account({name,providers=["google","github"],linked=[],snapshot}:
         <h2>{nextAction.title}</h2><p>{nextAction.detail}</p></div>
       <a className="button primary" href={nextAction.href}>{nextAction.label} <Icon name="arrow" size={18}/></a>
     </section>
+    {observedTotal!==undefined?<a className="card cloud-activity-summary" href="/usage"
+      aria-label={observedTotal.toLocaleString()+" recorded Cloud MCP tool calls; view activity"}>
+      <span><Icon name="usage" size={19}/> Cloud tool calls</span>
+      <strong>{observedTotal.toLocaleString()}</strong>
+      <small>Recorded for this account since telemetry began; view Activity <Icon name="arrow" size={14}/></small>
+    </a>:<p className="cloud-activity-unavailable">
+      Cloud tool-call totals are unavailable. View <a href="/usage">Activity</a> for details.
+    </p>}
     {snapshot?<section className="card detail-card workspace-snapshot-card" aria-label="Workspace snapshot">
       <div className="card-kicker">WORKSPACE SNAPSHOT</div>
       <h2>Workspace snapshot</h2>

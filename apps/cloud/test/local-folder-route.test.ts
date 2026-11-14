@@ -244,20 +244,19 @@ test("two .kicad_pro files in one selected folder are separate project choices",
   assert.doesNotMatch(html,/C:\\Users\\|folder-browser-list/);
 });
 
-test("production owner browses remote KiCad directory and saves Cloud binding",async()=>{
+test("production owner opens native Windows folder chooser and saves only chosen folder token",async()=>{
   const f=fixture(false);
   const view=await beginSelection(f);
   assert.equal(view?.status,200);
-  assert.equal(f.chooserCalls(),0,"remote browser must not open a native device picker");
+  assert.equal(f.chooserCalls(),1,"signed production Connector must invoke native directory selection");
   const html=await view!.text();
-  assert.match(html,/This computer/);
+  assert.match(html,/Folder selected on your computer/);
   assert.match(html,new RegExp(folderName));
-  assert.match(html,/action="\/devices\/projects\/folders"/);
+  assert.doesNotMatch(html,/action="\/devices\/projects\/folders"/);
   assert.doesNotMatch(html,/C:\\Users\\|\.kicad_sch/);
   const select=html.slice(html.indexOf('action="/devices/projects/select"'));
-  assert.ok(select.length>0);
   const proof=/name="csrf" value="([^"]+)"/.exec(select)?.[1];
-  assert.ok(proof,"selected remote folder needs owner-bound CSRF");
+  assert.ok(proof);
   const cookie=view!.headers.get("set-cookie")?.split(";")[0]??"";
   const result=await f.route("/devices/projects/select",ownerPost(
     "/devices/projects/select",{device_id:deviceId,folder_id:folderToken,
@@ -268,22 +267,19 @@ test("production owner browses remote KiCad directory and saves Cloud binding",a
   assert.equal(f.removed(),0);
 });
 
-test("remote browser rejects paths, forged origin and unknown folder tokens",async()=>{
+test("production native dialog cancel never registers a project",async()=>{
+  const f=fixture(false,{status:"cancelled"});
+  const response=await beginSelection(f);
+  assert.equal(response?.status,303);
+  assert.equal(response?.headers.get("location"),"/devices?picker=cancelled");
+  assert.equal(f.chooserCalls(),1);
+  assert.equal(f.bindings(),0);
+});
+
+test("obsolete browser folder navigation is unavailable",async()=>{
   const f=fixture(false);
-  const view=await beginSelection(f);
-  assert.equal(view?.status,200);
-  const html=await view!.text();
-  const folderForm=html.slice(html.indexOf('action="/devices/projects/folders"'));
-  const proof=/name="csrf" value="([^"]+)"/.exec(folderForm)?.[1];
-  assert.ok(proof);
-  const cookie=view!.headers.get("set-cookie")?.split(";")[0]??"";
-  const forged=await f.route("/devices/projects/folders",ownerPost(
-    "/devices/projects/folders",{device_id:deviceId,folder_id:folderToken,
-      csrf:proof},cookie,"https://attacker.invalid"));
-  assert.equal(forged?.status,403);
-  const path=await f.route("/devices/projects/folders",ownerPost(
-    "/devices/projects/folders",{device_id:deviceId,
-      folder_id:"C:\\Users\\Secret",csrf:proof},cookie));
-  assert.equal(path?.status,400);
+  const request=ownerPost("/devices/projects/folders",
+    {device_id:deviceId,folder_id:"root",csrf:"not-valid"},"kicad-devices=bad");
+  assert.equal(await f.route("/devices/projects/folders",request),null);
   assert.equal(f.bindings(),0);
 });

@@ -13,14 +13,15 @@ export function renderAccount(name:string,
   providers:ReadonlyArray<"google"|"github">=["google","github"],
   linked:ReadonlyArray<"google"|"github">=[],
   snapshot?:{devices:number;projects:number;clients:number;grants:number},
-  email?:string,localDevSandbox=false){
+  email?:string,localDevSandbox=false,observedTotal?:number){
   return renderPage({title:"Workspace overview",kind:"account",eyebrow:"Workspace / Overview",
     summary:"Your account, connected AI apps, and device availability in one place.",
     userEmail:email||(name.includes("@")?name:undefined),
     children:<>{localDevSandbox?<output className="setup-next-step">
       <strong>Local development workspace</strong>
       <span>Sandbox account on this computer only. No real Cloud login, OAuth consent, remote access or device pairing is active.</span>
-    </output>:null}<Account name={name} providers={providers} linked={linked} snapshot={snapshot}/></>});
+    </output>:null}<Account name={name} providers={providers} linked={linked} snapshot={snapshot}
+      observedTotal={observedTotal}/></>});
 }
 export function renderNotice(title:string,message:string){
   return renderPage({title,kind:"notice",eyebrow:"Account access",children:<Notice message={message}/>});

@@ -96,6 +96,17 @@ export class PgUsage {
     }
   }
 
+  /** All recorded Cloud MCP tool calls for this single authenticated owner.
+   * Older calls made before telemetry was enabled are not reconstructed. */
+  async allTime(ownerSub: string): Promise<number | null> {
+    if (!ownerSub || ownerSub.length > MAX_OWNER) return null;
+    const result=await this.pool.query<{n:string}>(
+      "SELECT count(*)::text AS n FROM usage_tool_calls WHERE owner_sub=$1",
+      [ownerSub]);
+    const value=Number(result.rows[0]?.n);
+    return Number.isSafeInteger(value)&&value>=0?value:null;
+  }
+
   async summary(ownerSub: string, windowDays = 30): Promise<UsageSummary | null> {
     if (!ownerSub || ownerSub.length > MAX_OWNER || !Number.isInteger(windowDays) ||
         windowDays < 1 || windowDays > 365) return null;
@@ -184,6 +195,7 @@ export function hashToken(token: string): string {
 
 /** Read surface used by the authenticated /usage browser page. */
 export interface UsagePort {
+  allTime?(ownerSub: string): Promise<number | null>;
   summary(ownerSub: string, windowDays?: number): Promise<UsageSummary | null>;
   recent(ownerSub: string, limit?: number): Promise<UsageEvent[]>;
 }

@@ -5,7 +5,7 @@ import type {PgDeviceManagement,ManagedDevice} from "./device-management.js";
 import {renderDevicesPage,type DevicePageOptions} from "./devices-ui.js";
 import {renderProjectsPage} from "./projects-ui.js";
 import {readCliReturnCookie,cliReturnCookie} from "./owner-cli-return.js";
-import {renderLocalFolderPage,renderRemoteFolderPage} from "./local-folder-page.js";
+import {renderLocalFolderPage} from "./local-folder-page.js";
 import {validProjectAlias} from "./device-management.js";
 import type {LocalFolderPort} from "./connector-ws.js";
 import type {GrantManagement,BrowserGrantSummary} from "./grants.js";
@@ -449,63 +449,7 @@ async function ownerManagedRead(req:Request,identity:BrowserIdentity,origin:stri
 
 
 
-/** Web navigation asks a signed owner device for opaque folder tokens only. */
-async function showRemoteFolders(identity:BrowserIdentity,origin:string,
-  folders:LocalFolderPort,who:NonNullable<ReturnType<typeof userOf>>,
-  device:string,folderId:string):Promise<Response>{
-  if(!identity.$context)return error(503);
-  const listing=await folders.listFolder(who.user,device,folderId);
-  if(!listing)return new Response(null,{status:303,headers:{
-    Location:"/devices?picker=unavailable","Cache-Control":"no-store"}});
-  const {secret}=await identity.$context;
-  const stamp=String(Date.now()),nonce=randomBytes(16).toString("base64url");
-  const key=(folder:string)=>device+":"+folder;
-  const openToken=(folder:string)=>csrf(secret,who.user,who.session,key(folder),
-    stamp,nonce,"project-folder-open-v1");
-  const selectToken=(folder:string)=>csrf(secret,who.user,who.session,key(folder),
-    stamp,nonce,"project-folder-select-v1");
-  const choices=await Promise.all(listing.folders.map(async entry=>({
-    id:entry.id,name:entry.name,project:entry.project,
-    openCsrf:await openToken(entry.id),
-    ...(entry.project?{selectCsrf:await selectToken(entry.id)}:{})
-  })));
-  const current=listing.project?await selectToken(listing.folderId):undefined;
-  const parent=listing.parentId?await openToken(listing.parentId):undefined;
-  return new Response(renderRemoteFolderPage(device,listing,choices,current,parent),{
-    status:200,headers:{
-      "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store",
-      "Set-Cookie":cookie(stamp+"."+nonce,origin,300),
-      "Referrer-Policy":"same-origin","X-Content-Type-Options":"nosniff",
-      "Content-Security-Policy":"default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
-    }
-  });
-}
-
-async function folderOpen(req:Request,identity:BrowserIdentity,origin:string,
-  devices:DeviceManagementPort,folders?:LocalFolderPort):Promise<Response>{
-  if(!folders||!identity.api||!identity.$context)return error(404);
-  if(req.headers.get("origin")!==origin)return error(403);
-  if(req.headers.get("content-type")?.split(";")[0].trim()!=="application/x-www-form-urlencoded")
-    return error(415);
-  const raw=await req.text();
-  if(raw.length>750)return error(413);
-  const fields=new URLSearchParams(raw);
-  if([...fields.keys()].length!==3||
-     ["device_id","folder_id","csrf"].some(x=>fields.getAll(x).length!==1))
-    return error(400);
-  const device=fields.get("device_id")??"",folder=fields.get("folder_id")??"";
-  if(!DEVICE_ID.test(device)||!/^[A-Za-z0-9_-]{1,64}$/.test(folder))return error(400);
-  const who=userOf(await identity.api.getSession({headers:req.headers}));
-  if(!who)return error(401);
-  const {secret}=await identity.$context;
-  const check=await checkCsrf(req,origin,secret,who,device+":"+folder,
-    fields.get("csrf")??"","project-folder-open-v1");
-  if(check)return check;
-  const own=await devices.list(who.user);
-  if(!own.some(d=>d.id===device&&d.enabled&&!d.revoked))return error(404);
-  return showRemoteFolders(identity,origin,folders,who,device,folder);
-}
-/** Local-dev native picker, or production web folder browser. */
+/** Signed owner action asks the foreground Connector to open its native folder dialog. */
 async function folderBrowse(req:Request,identity:BrowserIdentity,origin:string,
   devices:DeviceManagementPort,folders?:LocalFolderPort):Promise<Response>{
   if(!folders||!identity.api||!identity.$context)return error(404);
@@ -528,10 +472,14 @@ async function folderBrowse(req:Request,identity:BrowserIdentity,origin:string,
   const own=await devices.list(who.user);
   if(!own.some(d=>d.id===device&&d.enabled&&!d.revoked))return error(404);
 
-  // In production the browser browses the selected signed remote device.
-  // Never open a native modal on someone else's monitor.
-  if(!identity.localDevSandbox)
-    return showRemoteFolders(identity,origin,folders,who,device,"root");
+  // A native folder picker runs ONLY on the explicitly connected owner's
+  // computer. The server receives opaque tokens, never the Windows path or
+  // uploaded project files. The device advertises Browse only in an
+  // interactive foreground session.
+  if(!folders.supportsBrowse?.(who.user,device))
+    return new Response(null,{status:303,headers:{
+      Location:"/devices?picker=unavailable","Cache-Control":"no-store"
+    }});
   const selection=await folders.chooseFolder(who.user,device);
   if(!selection)return new Response(null,{status:303,headers:{
     Location:"/devices?picker=unavailable","Cache-Control":"no-store"
@@ -701,7 +649,6 @@ function devicePost(req:Request,identity:BrowserIdentity,origin:string,
     case "/devices/delete":return deleteRevoked(req,identity,origin,devices);
     case "/devices/projects/delete":return deleteProject(req,identity,origin,devices);
     case "/devices/projects/browse":return folderBrowse(req,identity,origin,devices,services.localFolders);
-    case "/devices/projects/folders":return folderOpen(req,identity,origin,devices,services.localFolders);
     case "/devices/projects/select":return folderSelect(req,identity,origin,devices,services.localFolders);
     case "/devices/projects/rename":return projectRename(req,identity,origin,devices);
     default:return enrollmentPost(req,identity,origin,devices,services);
@@ -713,7 +660,7 @@ export async function devicesResponse(req:Request,identity:BrowserIdentity,origi
   const path=new URL(req.url).pathname;
   if(!["/projects","/devices","/devices/revoke","/devices/delete","/devices/enable","/devices/projects/create",
     "/devices/projects/grant","/devices/projects/managed","/devices/projects/native","/devices/projects/delete",
-    "/devices/projects/browse","/devices/projects/folders","/devices/projects/select","/devices/projects/rename"].includes(path))return null;
+    "/devices/projects/browse","/devices/projects/select","/devices/projects/rename"].includes(path))return null;
   if(["/devices","/projects"].includes(path)&&req.method==="GET")return list(req,identity,origin,devices,services);
   if(!devices)return error(503);
   // GET navigation never removes a device or opens a local folder picker.

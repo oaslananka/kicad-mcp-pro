@@ -16,7 +16,7 @@ test("devices retain functional setup while using the same workspace shell as ev
  assert.match(html,/<title>Devices/);
  assert.match(html,/class="app-shell workspace-app"/);
  assert.doesNotMatch(html,/device-home-app|device-home-sidebar/);
- assert.match(html,/href="\/account"[^>]*>.*Overview/);
+ assert.match(html,/href="\/account"[^>]*>[\s\S]*?Account<\/span>/);
  assert.match(html,/href="\/devices" aria-current="page"[^>]*>.*Devices/);
  assert.match(html,/href="\/connections"/);
  assert.match(html,/href="\/settings"/);
@@ -56,14 +56,14 @@ test("disabled enrollment does not present a fake Add a device action",()=>{
  assert.doesNotMatch(html,/class="device-add-button"/);
  assert.match(html,/not enabled on this deployment/);
 });
-test("first pairing advertises persistent one-browser Windows setup, not fragile foreground remote",()=>{
+test("first pairing advertises terminal-owned foreground Cloud connection",()=>{
   const first=renderDevicesPage([],undefined,true,{projects:[],ownerSub:"owner",clients:[],savedGrants:[],sandboxMode:false});
-  assert.match(first,/kicad-mcp-pro cloud setup --browse/);
+  assert.match(first,/kicad-mcp-pro cloud connect/);
   assert.match(first,/sign-in/);
-  assert.doesNotMatch(first,/<code>kicad-mcp-pro remote<\/code>/);
+  assert.match(first,/Keep the terminal open/);
 
   const next=renderDevicesPage([device("Paired computer","connected")],undefined,true,{projects:[],ownerSub:"owner",clients:[],savedGrants:[],sandboxMode:false});
-  assert.match(next,/kicad-mcp-pro cloud setup --browse/);
+  assert.match(next,/kicad-mcp-pro cloud connect/);
   assert.match(next,/sign-in/);
-  assert.doesNotMatch(next,/<code>kicad-mcp-pro remote<\/code>/);
+  assert.match(next,/Keep the terminal open/);
 });

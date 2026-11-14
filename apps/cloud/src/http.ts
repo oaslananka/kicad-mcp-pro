@@ -212,7 +212,7 @@ async function handleRequest(
         res.end(uiCss);
         return;
       }
-      if (identity && (path === "/devices/projects/browse" || path === "/devices/projects/folders" ||
+      if (identity && (path === "/devices/projects/browse" ||
         path === "/devices/projects/select" || path === "/devices/projects/rename" ||
         path === "/sign-in" || path === "/account" || path === "/overview" || path === "/usage" || path === "/projects" || path === "/settings" || path === "/consent" || path === "/connections" || path === "/connections/revoke" || path === "/devices" || path === "/devices/revoke" || path === "/devices/delete" || path === "/devices/enable" || path === "/devices/projects/create" || path === "/devices/projects/grant" || path === "/devices/projects/managed" || path === "/devices/projects/native" || path === "/devices/projects/delete" || path === "/devices/pairing" || path === "/devices/pairing/review" || path === "/api/owner/cli/approve" || path.startsWith("/auth/start/") || path.startsWith("/auth/link/"))) {
         const method=req.method??"GET";
@@ -233,7 +233,7 @@ async function handleRequest(
           answer=await connectionsResponse(browserRequest,identity,config.publicOrigin,grants);
         } else if(path==="/projects" || path==="/devices" || path==="/devices/revoke" || path==="/devices/delete" || path==="/devices/enable" || path==="/devices/projects/create" || path==="/devices/projects/grant" || path==="/devices/projects/managed" || path==="/devices/projects/native" || path==="/devices/projects/delete" ||
           path==="/devices/projects/browse" || path==="/devices/projects/select" ||
-          path==="/devices/projects/rename" || path==="/devices/projects/folders"){
+          path==="/devices/projects/rename"){
           answer=await devicesResponse(browserRequest,identity,config.publicOrigin,devices,{
             enrollmentAvailable:Boolean(pairingDevice),grants,
             deviceConnection:summaryRelay?.()?.isDeviceConnected,
