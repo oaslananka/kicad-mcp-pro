@@ -184,7 +184,7 @@ fail_under = 83
 
 [dependency-groups]
 release = [
-    "pypi-attestations==0.0.30",
+    "pypi-attestations==0.0.31",
 ]
 dev = [
     # httpx2 keeps starlette.testclient from emitting its httpx deprecation
