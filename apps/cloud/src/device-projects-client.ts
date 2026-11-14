@@ -1,5 +1,5 @@
 /** Small CSP-compliant browser enhancement for local device/project management. */
-export const deviceProjectsClient=String.raw`"use strict";
+export const deviceProjectsClient=`"use strict";
 (() => {
   const storagePrefix="kicad-mcp-cloud:device-projects:v1:";
   const menus=document.querySelectorAll("details.device-projects-menu[data-device-id]");
@@ -10,6 +10,7 @@ export const deviceProjectsClient=String.raw`"use strict";
       if(saved==="closed")menu.open=false;
       else if(saved==="open")menu.open=true;
     }catch{/* Private browsing or disabled storage: default open. */}
+    if(menu.querySelector(":target"))menu.open=true;
     menu.addEventListener("toggle",()=>{
       try{window.localStorage.setItem(key,menu.open?"open":"closed");}
       catch{/* Keep native details usable without storage. */}

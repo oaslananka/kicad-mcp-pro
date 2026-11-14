@@ -16,7 +16,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
     PublicFormat,
@@ -27,6 +30,7 @@ from websockets.exceptions import ConnectionClosed, WebSocketException
 from kicad_mcp.cloud_folder_browse_receiver import LocalFolderBrowseService, device_folder_service
 from kicad_mcp.cloud_outbound_handshake import (
     HandshakeReceipt,
+    ManagedNativeWriteConfig,
     execute_owner_managed_read_session,
 )
 from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
@@ -493,21 +497,84 @@ async def _run_owner_session(
     key: Ed25519PrivateKey,
     runner: Callable[..., Awaitable[HandshakeReceipt]],
     allow_native_drc: bool = False,
+    allow_native_write: bool = False,
+    issuer_key: Ed25519PublicKey | None = None,
 ) -> HandshakeReceipt:
     """Bind one immutable identity and key to this particular socket session."""
-    settings = {
+    receipt_holder: list[HandshakeReceipt] = []
+
+    def _make_dispatcher(receipt: HandshakeReceipt) -> LocalReadDispatch:
+        receipt_holder.append(receipt)
+        return _dispatcher(project, selected, receipt, allow_native_drc=allow_native_drc)
+
+    settings: dict[str, object] = {
         "origin": project.origin,
         "trusted_origin": project.origin,
         "owner_sub": project.owner_sub,
         "device_id": project.device_id,
         "signing_key": key,
-        "dispatcher_factory": lambda receipt: _dispatcher(
-            project, selected, receipt, allow_native_drc=allow_native_drc
-        ),
+        "dispatcher_factory": _make_dispatcher,
         "max_reads": _MAX_READS,
     }
     if allow_native_drc:
         settings["allow_native_drc"] = True
+    if allow_native_write and issuer_key is not None:
+        from kicad_mcp.cloud_native_write_dispatch import (
+            execute_verified_signed_pcb_move,
+            prepare_native_write_revisions,
+        )
+        from kicad_mcp.cloud_outbound_handshake import ManagedNativeWriteConfig
+        from kicad_mcp.cloud_windows_write_marker import (
+            consume_windows_write_marker,
+            default_windows_write_marker_directory,
+        )
+
+        operator_project = OperatorProject(
+            device_id=project.device_id,
+            project_id=project.project_id,
+            directory=selected.directory,
+            filename_stem=selected.filename_stem,
+        )
+
+        marker_dir = default_windows_write_marker_directory()
+
+        def _execute_write(proof_bytes: bytes, persist: bool) -> dict[str, object]:
+            sid = receipt_holder[0].session_id if receipt_holder else ""
+            verified = VerifiedLocalBinding(
+                device_id=project.device_id,
+                project_id=project.project_id,
+                operations=frozenset({"pcb_move_footprint"}),
+                session_id=sid,
+                session_expires_unix_ms=time.time_ns() // 1_000_000 + _SESSION_LIFETIME_MS,
+            )
+            return execute_verified_signed_pcb_move(
+                proof_bytes,
+                issuer_key=issuer_key,
+                verified=verified,
+                operator_project=operator_project,
+                consume_once=lambda sid, req_id: (
+                    consume_windows_write_marker(
+                        marker_dir,
+                        sid,
+                        req_id,
+                    )
+                    if marker_dir is not None
+                    else False
+                ),
+                authorized=lambda: _current_authorization(project),
+                cancelled=lambda: not _current_authorization(project),
+                persist_to_disk=persist,
+            )
+
+        settings["native_write"] = ManagedNativeWriteConfig(
+            revisions_preparer=lambda: prepare_native_write_revisions(
+                operator_project,
+                authorized=lambda: _current_authorization(project),
+                cancelled=lambda: not _current_authorization(project),
+            ),
+            write_executor=_execute_write,
+        )
+
     if runner is execute_owner_managed_read_session or getattr(
         runner, "_kicad_supports_folder_browse", False
     ):
@@ -566,6 +633,7 @@ def _session_runner_with_status(
         folder_service_factory: Callable[[HandshakeReceipt], LocalFolderBrowseService]
         | None = None,
         allow_native_drc: bool = False,
+        native_write: ManagedNativeWriteConfig | None = None,
     ) -> HandshakeReceipt:
         return await execute_owner_managed_read_session(
             origin=origin,
@@ -578,6 +646,7 @@ def _session_runner_with_status(
             on_ready=on_ready,
             folder_service_factory=folder_service_factory,
             allow_native_drc=allow_native_drc,
+            native_write=native_write,
             on_activity=status_callback,
         )
 
@@ -592,6 +661,8 @@ async def _attempt_authorized_session(
     runner: Callable[..., Awaitable[HandshakeReceipt]],
     stop: asyncio.Event,
     allow_native_drc: bool = False,
+    allow_native_write: bool = False,
+    issuer_key: Ed25519PublicKey | None = None,
 ) -> bool | None:
     """One signed session: True completed, False network failure, None revoked."""
     task = asyncio.create_task(
@@ -600,7 +671,9 @@ async def _attempt_authorized_session(
             selected,
             key,
             runner,
-            **({"allow_native_drc": True} if allow_native_drc else {}),
+            allow_native_drc=allow_native_drc,
+            allow_native_write=allow_native_write,
+            issuer_key=issuer_key,
         )
     )
     revoked = asyncio.create_task(stop.wait())
@@ -664,13 +737,23 @@ async def run_connector(
     session_runner: Callable[..., Awaitable[HandshakeReceipt]] = execute_owner_managed_read_session,
     status_callback: Callable[[str], None] | None = None,
     allow_native_drc: bool = False,
+    allow_native_write: bool = False,
+    issuer_key: Ed25519PublicKey | None = None,
 ) -> None:
     """Local-only execution core; supervisor controls process startup/shutdown.
 
     No incoming listener; only an authenticated outbound device session.
     Session restarts are rate-limited, even after clean Cloud disconnects.
     """
-    if os.name != "nt" or type(allow_native_drc) is not bool:
+    if (
+        os.name != "nt"
+        or type(allow_native_drc) is not bool
+        or type(allow_native_write) is not bool
+        or (
+            allow_native_write
+            and (issuer_key is None or not isinstance(issuer_key, Ed25519PublicKey))
+        )
+    ):
         raise LocalApprovalDeniedError(_DENIED)
     failures = 0
     while not stop.is_set():
@@ -689,7 +772,9 @@ async def run_connector(
                 key,
                 runner_for_session,
                 stop,
-                **({"allow_native_drc": True} if allow_native_drc else {}),
+                allow_native_drc=allow_native_drc,
+                allow_native_write=allow_native_write,
+                issuer_key=issuer_key,
             )
         except CloudOwnerReapprovalRequiredError:
             _notify_owner_reapproval(status_callback, project)

@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import {spawn} from "node:child_process";
 import {createServer} from "node:http";
 import {type AddressInfo} from "node:net";
+import {fileURLToPath} from "node:url";
 import {test} from "node:test";
 
 async function execute(env:Record<string,string>):Promise<number|null>{
   return new Promise((resolve,reject)=>{
     const child=spawn(process.execPath,["healthcheck.mjs"],{
-      cwd:new URL("../",import.meta.url).pathname,
+      cwd:fileURLToPath(new URL("../",import.meta.url)),
       env:{...process.env,...env},
       stdio:"ignore"
     });

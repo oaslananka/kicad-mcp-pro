@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1075,3 +1076,75 @@ async def test_foreground_signed_connector_passes_tool_activity_to_terminal(
     )
     assert result == receipt
     assert history == ["Connected", "Tool call 1: project_summary completed"]
+
+
+@pytest.mark.asyncio
+async def test_windows_connector_native_write_runner_wires_revisions_and_executor(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project, _store, directory = local_user_connector
+    pcb_content = "(kicad_pcb (version 20240108))"
+    (directory / "demo.kicad_pcb").write_text(pcb_content, encoding="utf-8")
+
+    class FakeProject:
+        path = str(directory)
+
+    class FakeBoard:
+        name = "demo.kicad_pcb"
+
+        def get_project(self) -> object:
+            return FakeProject()
+
+        def get_as_string(self) -> str:
+            return pcb_content
+
+    monkeypatch.setattr("kicad_mcp.connection.get_board", lambda: FakeBoard())
+    if os.name != "nt":
+        monkeypatch.setattr(
+            "kicad_mcp.cloud_native_write_dispatch.read_windows_board_revision",
+            lambda *_: "0" * 64,
+        )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_native_write_dispatch.execute_verified_signed_pcb_move",
+        lambda proof, issuer_key, verified, operator_project, consume_once, **kwargs: {
+            "requestId": "test-req",
+            "operation": "pcb_move_footprint",
+            "nativeCommitted": True,
+            "session_id": verified.session_id,
+        },
+    )
+    connector.activate(project, owner_confirm=lambda _: True)
+    stop = asyncio.Event()
+    received_kwargs: dict[str, object] = {}
+    issuer_private = Ed25519PrivateKey.generate()
+    issuer_public = issuer_private.public_key()
+    receipt = HandshakeReceipt(project.device_id, "33333333-3333-4333-8333-333333333333")
+
+    async def fake_session(**kwargs: object) -> HandshakeReceipt:
+        received_kwargs.update(kwargs)
+        # Exercise dispatcher_factory
+        dispatcher_factory = kwargs["dispatcher_factory"]
+        assert callable(dispatcher_factory)
+        dispatch = dispatcher_factory(receipt)
+        dispatch.close()
+        stop.set()
+        return receipt
+
+    await asyncio.wait_for(
+        connector.run_connector(
+            stop=stop,
+            session_runner=fake_session,
+            allow_native_write=True,
+            issuer_key=issuer_public,
+        ),
+        3,
+    )
+    native_write = received_kwargs["native_write"]
+    assert callable(native_write.revisions_preparer)
+    revisions = native_write.revisions_preparer()
+    assert "expectedBoardSha256" in revisions
+    assert callable(native_write.write_executor)
+
+    res = native_write.write_executor(b'{"proof": true}', True)
+    assert res["nativeCommitted"] is True
+    assert res["session_id"] == receipt.session_id

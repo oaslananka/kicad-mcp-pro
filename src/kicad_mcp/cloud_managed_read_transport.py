@@ -132,6 +132,122 @@ async def _serve_folder_request(
     await socket.send(encoded)
 
 
+async def _serve_write_revisions_request(
+    socket: AuthenticatedReadSocket,
+    raw: str,
+    allow_native_write: bool,
+    revisions_preparer: Callable[[], dict[str, str]] | None,
+) -> None:
+    if not allow_native_write or revisions_preparer is None:
+        raise CloudHandshakeDeniedError(_DENIED)
+    req = _read_strict_json(raw, "connector.prepare_write_revisions")
+    if (
+        req.get("version") != 1
+        or not isinstance(req.get("requestId"), str)
+        or not isinstance(req.get("deviceId"), str)
+        or not isinstance(req.get("projectId"), str)
+    ):
+        raise CloudHandshakeDeniedError(_DENIED)
+    revisions = await asyncio.to_thread(revisions_preparer)
+    await socket.send(
+        json.dumps(
+            {
+                "kind": "connector.write_revisions_result",
+                "version": 1,
+                "requestId": req["requestId"],
+                **revisions,
+            },
+            separators=(",", ":"),
+        )
+    )
+
+
+async def _serve_authorized_write_request(
+    socket: AuthenticatedReadSocket,
+    raw: str,
+    allow_native_write: bool,
+    write_executor: Callable[[bytes, bool], dict[str, object]] | None,
+    fallback_seq: int,
+) -> dict[str, object]:
+    if not allow_native_write or write_executor is None:
+        raise CloudHandshakeDeniedError(_DENIED)
+    envelope = _read_strict_json(raw, "connector.authorized_write")
+    if envelope.get("version") != 1 or not isinstance(envelope.get("proof"), dict):
+        raise CloudHandshakeDeniedError(_DENIED)
+    proof_bytes = json.dumps(envelope["proof"], separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
+    persist = bool(envelope.get("persistToDisk", True))
+    result = await asyncio.to_thread(write_executor, proof_bytes, persist)
+    seq_val = envelope.get("sequence")
+    seq = int(seq_val) if isinstance(seq_val, (int, str)) else fallback_seq
+    await socket.send(
+        json.dumps(
+            {
+                "kind": "connector.write_result",
+                "version": 1,
+                "sequence": seq,
+                "result": result,
+            },
+            separators=(",", ":"),
+        )
+    )
+    raw_ack = await socket.recv()
+    if not isinstance(raw_ack, str):
+        raise CloudHandshakeDeniedError(_DENIED)
+    ack = _read_strict_json(raw_ack, "connector.write_ack")
+    if (
+        ack.get("version") != 1
+        or ack.get("sequence") != seq
+        or ack.get("requestId") != result.get("requestId")
+    ):
+        raise CloudHandshakeDeniedError(_DENIED)
+    return result
+
+
+async def _serve_one_signed_frame(
+    socket: AuthenticatedReadSocket,
+    raw: str,
+    reads_served: int,
+    dispatcher: LocalReadDispatch,
+    receipt: HandshakeReceipt,
+    folder_service: LocalFolderBrowseService | None,
+    on_activity: Callable[[str], None] | None,
+    allow_native_write: bool = False,
+    revisions_preparer: Callable[[], dict[str, str]] | None = None,
+    write_executor: Callable[[bytes, bool], dict[str, object]] | None = None,
+) -> int:
+    """Serve a single authenticated frame; return 1 if frame counts as a read/write, else 0."""
+    kind = _top_level_kind(raw)
+    if kind == _FOLDER_REQUEST_KIND:
+        if folder_service is None:
+            raise CloudHandshakeDeniedError(_DENIED)
+        await _serve_folder_request(socket, folder_service, raw)
+        _report_activity(on_activity, "Folder browsing request completed")
+        return 0
+    if kind == "connector.prepare_write_revisions":
+        await _serve_write_revisions_request(socket, raw, allow_native_write, revisions_preparer)
+        _report_activity(on_activity, "Write revision preparation completed")
+        return 0
+    if kind == "connector.authorized_write":
+        result = await _serve_authorized_write_request(
+            socket, raw, allow_native_write, write_executor, reads_served + 1
+        )
+        operation = result.get("operation")
+        safe = operation if operation == "pcb_move_footprint" else "write"
+        _report_activity(on_activity, f"Tool call {reads_served + 1}: {safe} completed")
+        return 1
+    if kind != "connector.authorized_read":
+        raise CloudHandshakeDeniedError(_DENIED)
+    response = await _serve_one_authenticated_read(
+        socket, dispatcher, receipt, reads_served + 1, raw
+    )
+    operation = response.get("operation")
+    safe = operation if operation in {"project_summary", "run_drc"} else "read"
+    _report_activity(on_activity, f"Tool call {reads_served + 1}: {safe} completed")
+    return 1
+
+
 async def _serve_signed_read_frames(
     socket: AuthenticatedReadSocket,
     dispatcher: LocalReadDispatch,
@@ -139,29 +255,28 @@ async def _serve_signed_read_frames(
     max_reads: int,
     folder_service: LocalFolderBrowseService | None,
     on_activity: Callable[[str], None] | None,
+    allow_native_write: bool = False,
+    revisions_preparer: Callable[[], dict[str, str]] | None = None,
+    write_executor: Callable[[bytes, bool], dict[str, object]] | None = None,
 ) -> None:
-    """Process authenticated frames without charging folder requests as reads."""
+    """Process authenticated frames without charging folder or write prep requests as reads."""
     reads_served = 0
     while reads_served < max_reads:
         raw = await socket.recv()
         if not isinstance(raw, str):
             raise CloudHandshakeDeniedError(_DENIED)
-        kind = _top_level_kind(raw)
-        if kind == _FOLDER_REQUEST_KIND:
-            if folder_service is None:
-                raise CloudHandshakeDeniedError(_DENIED)
-            await _serve_folder_request(socket, folder_service, raw)
-            _report_activity(on_activity, "Folder browsing request completed")
-            continue
-        if kind != "connector.authorized_read":
-            raise CloudHandshakeDeniedError(_DENIED)
-        response = await _serve_one_authenticated_read(
-            socket, dispatcher, receipt, reads_served + 1, raw
+        reads_served += await _serve_one_signed_frame(
+            socket,
+            raw,
+            reads_served,
+            dispatcher,
+            receipt,
+            folder_service,
+            on_activity,
+            allow_native_write,
+            revisions_preparer,
+            write_executor,
         )
-        reads_served += 1
-        operation = response.get("operation")
-        safe = operation if operation in {"project_summary", "run_drc"} else "read"
-        _report_activity(on_activity, f"Tool call {reads_served}: {safe} completed")
 
 
 async def serve_authenticated_reads(
@@ -172,9 +287,12 @@ async def serve_authenticated_reads(
     max_reads: int = _MAX_MANAGED_READS,
     folder_service: LocalFolderBrowseService | None = None,
     allow_native_drc: bool = False,
+    allow_native_write: bool = False,
+    revisions_preparer: Callable[[], dict[str, str]] | None = None,
+    write_executor: Callable[[bytes, bool], dict[str, object]] | None = None,
     on_activity: Callable[[str], None] | None = None,
 ) -> HandshakeReceipt:
-    """Serve bounded serial, independently authorized READs on a signed socket.
+    """Serve bounded serial, independently authorized READs/WRITEs on a signed socket.
 
     Does not grant any read by itself. Dispatcher's independently sourced
     authorization is checked around every file read and before each send;
@@ -193,6 +311,10 @@ async def serve_authenticated_reads(
         or not 1 <= max_reads <= _MAX_MANAGED_READS
         or (folder_service is not None and not callable(getattr(folder_service, "list", None)))
         or type(allow_native_drc) is not bool
+        or type(allow_native_write) is not bool
+        or (allow_native_write and (revisions_preparer is None or write_executor is None))
+        or (revisions_preparer is not None and not callable(revisions_preparer))
+        or (write_executor is not None and not callable(write_executor))
         or (on_activity is not None and not callable(on_activity))
     ):
         raise CloudHandshakeDeniedError(_DENIED)
@@ -207,7 +329,15 @@ async def serve_authenticated_reads(
         try:
             async with asyncio.timeout(_SESSION_TIMEOUT_SECONDS):
                 await _serve_signed_read_frames(
-                    socket, dispatcher, receipt, max_reads, folder_service, on_activity
+                    socket,
+                    dispatcher,
+                    receipt,
+                    max_reads,
+                    folder_service,
+                    on_activity,
+                    allow_native_write=allow_native_write,
+                    revisions_preparer=revisions_preparer,
+                    write_executor=write_executor,
                 )
         except TimeoutError as exc:
             raise CloudHandshakeDeniedError(_DENIED) from exc

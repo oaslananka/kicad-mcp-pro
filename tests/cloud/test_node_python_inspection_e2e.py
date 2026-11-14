@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import ssl
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -35,6 +36,8 @@ ROOT = Path(__file__).resolve().parents[2]
 APP = ROOT / "apps" / "cloud"
 PEER = APP / "test" / "inspection-python.fixture.ts"
 TSX = APP / "node_modules" / ".bin" / "tsx"
+TSX_ENTRY = APP / "node_modules" / "tsx" / "dist" / "cli.mjs"
+NODE = shutil.which("node") or "node"
 
 
 @pytest.mark.anyio
@@ -52,7 +55,7 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(
         "::1",
     }:
         pytest.fail("Cross-language fixture requires a loopback PostgreSQL database")
-    if not TSX.is_file():
+    if not TSX_ENTRY.is_file() and not TSX.is_file():
         pytest.skip("Local Cloud Node dependencies unavailable")
     tls_server, pem = _synthetic_tls(tmp_path)
     del tls_server  # The Node HTTPS server reads the cert and key from the fixture paths.
@@ -77,8 +80,9 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(
         copyfile(source, project_dir / f"board.{ext}")
     cert_file = tmp_path / "temporary-test-server.crt"
     tls_key = tmp_path / "temporary-test-server.key"
+    spawn_args = [NODE, str(TSX_ENTRY)] if TSX_ENTRY.is_file() else [str(TSX)]
     peer = await asyncio.create_subprocess_exec(
-        str(TSX),
+        *spawn_args,
         str(PEER),
         str(cert_file),
         str(tls_key),

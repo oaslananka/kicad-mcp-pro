@@ -19,8 +19,7 @@ test("device project menus default open and expose compact owner-scoped actions"
     localPath:"C:\\Projects\\Main\\Antenna.kicad_pro",
     renameCsrf:"rename-antenna",deleteCsrf:"delete-antenna"
   }];
-  const html=renderDevicesPage([device],undefined,true,projects,"local-dev-owner",
-    [],[],true,true);
+  const html=renderDevicesPage([device],undefined,true,{projects,ownerSub:"local-dev-owner",clients:[],savedGrants:[],sandboxMode:true,browseEnabled:true});
   assert.match(html,/class="device-projects-menu"[^>]*open=""/);
   assert.ok(html.includes('data-device-id="'+id+'"'));
   assert.equal((html.match(/class="device-linked-project"/g)||[]).length,2);
@@ -55,10 +54,10 @@ test("production fallback has no local project control or owner file paths",()=>
     id,alias:"Remote workstation",enabled:true,revoked:false,
     fingerprint:"a".repeat(64),createdAt:new Date(),csrf:"csrf",
     connectionState:"connected"
-  }],undefined,true,[{
+  }],undefined,true,{projects:[{
     id:projectId,deviceId:id,alias:"Project",enabled:true,
     localPath:"C:\\Private\\Sensitive.kicad_pro"
-  }],"owner",[],[],false,false);
+  }],ownerSub:"owner",clients:[],savedGrants:[],sandboxMode:false,browseEnabled:false});
   assert.doesNotMatch(html,/Sensitive\.kicad_pro/);
   assert.doesNotMatch(html,/\/assets\/device-projects\.js/);
   assert.doesNotMatch(html,/class="device-projects-menu"/);
@@ -69,7 +68,7 @@ test("Online legacy Connector shows a clear upgrade path instead of dead Browse"
   const device={id,alias:"Old Windows machine",enabled:true,revoked:false,
     fingerprint:"f".repeat(64),createdAt:new Date(),csrf:"revoke",
     browseNeedsUpgrade:true,connectionState:"connected" as const};
-  const html=renderDevicesPage([device],undefined,true,[],"owner",[],[],false,true);
+  const html=renderDevicesPage([device],undefined,true,{projects:[],ownerSub:"owner",clients:[],savedGrants:[],sandboxMode:false,browseEnabled:true});
   assert.match(html,/Update the KiCad MCP Pro Connector/);
   assert.doesNotMatch(html,/action="\/devices\/projects\/browse"/);
   assert.match(html,/Online/);
@@ -81,10 +80,10 @@ test("production device-first projects have working action dialogs without dupli
     id,alias:"Remote KiCad",enabled:true,revoked:false,
     fingerprint:"d".repeat(64),createdAt:new Date(),csrf:"revoke",
     connectionState:"connected",browseCsrf:"browse"
-  }],undefined,true,[{
+  }],undefined,true,{projects:[{
     id:project,deviceId:id,alias:"Control board",enabled:true,
     renameCsrf:"rename",deleteCsrf:"remove",grantCsrf:"grant"
-  }],"owner",[],[],false,true);
+  }],ownerSub:"owner",clients:[],savedGrants:[],sandboxMode:false,browseEnabled:true});
 
   assert.equal((html.match(/class="device-linked-project"/g)||[]).length,1);
   assert.match(html,/data-open-project-dialog="project-rename-/);

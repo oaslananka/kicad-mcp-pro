@@ -24,6 +24,8 @@ from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError, _unique
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 from kicad_mcp.cloud_readonly_boundary import LocalReadDeniedError, inspect_readonly
 
+pytestmark = pytest.mark.skipif(os.name != "posix", reason="Systemd user connector is POSIX-only")
+
 DEVICE = "11111111-1111-4111-8111-111111111111"
 PROJECT = "22222222-2222-4222-8222-222222222222"
 SESSION = "33333333-3333-4333-8333-333333333333"

@@ -1,8 +1,10 @@
 import {randomBytes,timingSafeEqual} from "node:crypto";
 import {makeSignature} from "better-auth/crypto";
 import type {BrowserIdentity} from "./browser.js";
-import type {PgDeviceManagement} from "./device-management.js";
-import {renderDevicesPage} from "./devices-ui.js";
+import type {PgDeviceManagement,ManagedDevice} from "./device-management.js";
+import {renderDevicesPage,type DevicePageOptions} from "./devices-ui.js";
+import {renderProjectsPage} from "./projects-ui.js";
+import {readCliReturnCookie,cliReturnCookie} from "./owner-cli-return.js";
 import {renderLocalFolderPage,renderRemoteFolderPage} from "./local-folder-page.js";
 import {validProjectAlias} from "./device-management.js";
 import type {LocalFolderPort} from "./connector-ws.js";
@@ -35,18 +37,22 @@ type DeviceReply={
   message?:string;
   stateCookie?:string;
   enrollmentAvailable?:boolean;
-  projects?:Parameters<typeof renderDevicesPage>[3];
+  projects?:NonNullable<DevicePageOptions["projects"]>;
   ownerSub?:string;
   clients?:ReadonlyArray<string>;
   writeClients?:ReadonlyArray<string>;
   savedGrants?:ReadonlyArray<BrowserGrantSummary>;
   sandboxMode?:boolean;
   localFolders?:LocalFolderPort;
+  projectView?:boolean;
+  userEmail?:string;
 };
 function reply({status,devices=[],message,stateCookie,enrollmentAvailable=true,
-  projects=[],ownerSub,clients=[],writeClients=[],savedGrants=[],sandboxMode=false,localFolders}:DeviceReply):Response{
-  const response=new Response(renderDevicesPage(devices,message,enrollmentAvailable,projects,
-    ownerSub,clients,savedGrants,sandboxMode,Boolean(localFolders),writeClients),{status,headers:{
+  projects=[],ownerSub,clients=[],writeClients=[],savedGrants=[],sandboxMode=false,localFolders,
+  projectView=false,userEmail}:DeviceReply):Response{
+  const html=projectView?renderProjectsPage(devices,projects,clients,savedGrants,
+    enrollmentAvailable,sandboxMode,userEmail):renderDevicesPage(devices,message,enrollmentAvailable,{projects,ownerSub,clients,savedGrants,sandboxMode,browseEnabled:Boolean(localFolders),writeClients,userEmail});
+  const response=new Response(html,{status,headers:{
     "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store",
     // Preserve Origin on same-origin form POSTs; Chrome sends Origin: null
     // under no-referrer. Cross-site referrers remain hidden.
@@ -100,127 +106,153 @@ async function checkCsrf(req:Request,origin:string,secret:string,
   if(readCookie(req,origin)!==stamp+"."+nonce)return error(403);
   return null;
 }
+export type DeviceRequestServices=Readonly<{
+  enrollmentAvailable?:boolean;
+  grants?:Pick<GrantManagement,"setBrowserGrant"|"listBrowserGrants">;
+  deviceConnection?:DeviceConnectionLookup;
+  managedRead?:ManagedReadPort;
+  localFolders?:LocalFolderPort;
+  nativeReadEnabled?:boolean;
+}>;
+type FormContext=Readonly<{secret:string;owner:{user:string;session:string};stamp:string;nonce:string}>;
+type ProjectRows=NonNullable<DevicePageOptions["projects"]>;
+function formToken(context:FormContext,id:string,purpose="device-revoke-v1"){
+  return csrf(context.secret,context.owner.user,context.owner.session,id,context.stamp,context.nonce,purpose);
+}
+function deviceConnectionState(device:ManagedDevice,context:FormContext,services:DeviceRequestServices,sandboxMode:boolean){
+  const {deviceConnection,localFolders}=services;
+  const active=device.enabled&&!device.revoked;
+  const online=active&&Boolean(deviceConnection?.(context.owner.user,device.id));
+  let connectionState:"connected"|"disconnected"|undefined;
+  if(active&&deviceConnection)connectionState=online?"connected":"disconnected";
+  let supported=false;
+  if(!sandboxMode&&online)supported=Boolean(localFolders?.supportsBrowse?.(context.owner.user,device.id));
+  return {connectionState,
+    canBrowse:Boolean(localFolders&&active&&(sandboxMode||supported)),
+    browseNeedsUpgrade:!sandboxMode&&Boolean(localFolders)&&active&&online&&!supported};
+}
+async function deviceRow(device:ManagedDevice,devices:DeviceManagementPort,context:FormContext,
+  services:DeviceRequestServices,sandboxMode:boolean){
+  const connection=deviceConnectionState(device,context,services,sandboxMode);
+  return {...device,
+    csrf:await formToken(context,device.id),
+    deleteCsrf:device.revoked&&devices.deleteRevokedDevice?await formToken(context,device.id,"device-delete-v1"):undefined,
+    enableCsrf:devices.enableDevice?await formToken(context,device.id,"device-enable-v1"):undefined,
+    projectCsrf:devices.createProject?await formToken(context,device.id,"project-create-v1"):undefined,
+    browseCsrf:connection.canBrowse?await formToken(context,device.id,"project-native-picker-open-v1"):undefined,
+    browseNeedsUpgrade:connection.browseNeedsUpgrade,connectionState:connection.connectionState};
+}
+const pickerNotices=new Map([
+  ["unavailable","This device could not complete folder selection. Wait until it is Online and try Browse again."],
+  ["cancelled","Folder selection cancelled. No project was added."],
+  ["invalid","That folder does not contain a KiCad project (.kicad_pro). Select the project folder."]
+]);
+const actionNotices=new Map([
+  ["project-removed","Project removed from Cloud. Its saved AI app permissions were deleted; local files are untouched."],
+  ["deleted","Revoked device and its registered projects were permanently removed."],
+  ["revoked","Device revoked. Its sessions and project access were disabled."]
+]);
+const accessNotices=new Map([
+  ["granted","Project read access was granted to the selected AI app."],
+  ["write-configured","This AI app's edit permission is configured. Actual remote edits also require a compatible Connector and the live write service."],
+  ["removed","The selected AI app's project access was removed."],
+  ["reads-on","Project summary access was enabled."],
+  ["reads-off","Project summary access was paused."],
+  ["native-on","This read-only KiCad diagnostic was enabled."],
+  ["native-off","This read-only KiCad diagnostic was disabled."]
+]);
+function deviceNotice(url:URL):string|undefined{
+  if(url.searchParams.get("csrf")==="expired")return "The form expired while you were reviewing it. No permissions were changed. Review the action and try again.";
+  const picker=pickerNotices.get(url.searchParams.get("picker")??"");
+  if(picker)return picker;
+  for(const [key,message] of actionNotices){if(url.searchParams.has(key))return message;}
+  return accessNotices.get(url.searchParams.get("access")??"");
+}
+async function browserAccess(req:Request,identity:BrowserIdentity,owner:string,services:DeviceRequestServices){
+  const {enrollmentAvailable=true,grants}=services;
+  let clients:string[]=[],writeClients:string[]=[];
+  if(enrollmentAvailable&&grants?.setBrowserGrant&&identity.api?.getOAuthConsents){
+    const consents=await identity.api.getOAuthConsents({headers:req.headers});
+    if(Array.isArray(consents)){
+      const readable=consents.filter(consent=>consent.userId===owner&&
+        typeof consent.clientId==="string"&&consent.clientId.length<=1024&&
+        Array.isArray(consent.scopes)&&consent.scopes.includes("projects:read"));
+      clients=[...new Set(readable.map(consent=>consent.clientId))].slice(0,100);
+      writeClients=[...new Set(readable.filter(consent=>consent.scopes.includes("projects:write"))
+        .map(consent=>consent.clientId))].slice(0,100);
+    }
+  }
+  // A failed policy lookup must never appear as "no saved permissions".
+  const savedGrants=enrollmentAvailable&&grants?.listBrowserGrants?await grants.listBrowserGrants(owner):[];
+  return {clients,writeClients,savedGrants};
+}
+async function projectLocalPaths(req:Request,identity:BrowserIdentity,owner:string,projects:ProjectRows,
+  localFolders:LocalFolderPort|undefined,projectView:boolean):Promise<Map<string,string>>{
+  const url=new URL(req.url);
+  if(projectView||!identity.localDevSandbox||!localFolders||url.searchParams.get("csrf-refresh")==="1")return new Map();
+  // One signed Connector socket permits one local RPC at a time.
+  return projects.reduce(async(pending,project)=>{
+    const paths=await pending;
+    const value=await localFolders.getProjectPath(owner,project.deviceId,project.id);
+    if(value)paths.set(project.id,value);
+    return paths;
+  },Promise.resolve(new Map<string,string>()));
+}
+async function projectReadAccess(owner:string,{managedRead,nativeReadEnabled=false}:DeviceRequestServices){
+  const managedIds=new Set(managedRead?await managedRead.enabledProjectIds(owner):[]);
+  const nativeRows=managedRead&&nativeReadEnabled?await managedRead.nativeOperationsByProject(owner):[];
+  const nativeByProject=new Map(nativeRows.map(row=>[row.projectId,row.operations]));
+  return {managedIds,nativeByProject};
+}
+async function projectRows(projects:ProjectRows,devices:DeviceManagementPort,context:FormContext,
+  services:DeviceRequestServices,localPaths:ReadonlyMap<string,string>,readAccess:Awaited<ReturnType<typeof projectReadAccess>>){
+  const {managedRead,nativeReadEnabled=false,grants}=services;
+  const {managedIds,nativeByProject}=readAccess;
+  return Promise.all(projects.map(async project=>({...project,
+    localPath:localPaths.get(project.id),
+    deleteCsrf:devices.deleteProject?await formToken(context,project.id,"project-delete-v1"):undefined,
+    renameCsrf:devices.renameProject?await formToken(context,project.id,"project-rename-v1"):undefined,
+    managedEnabled:managedRead?managedIds.has(project.id):undefined,
+    nativeEnabled:nativeReadEnabled?nativeByProject.get(project.id)??[]:undefined,
+    nativeCsrf:nativeReadEnabled&&managedRead?await formToken(context,project.id,"project-managed-native-v1"):undefined,
+    managedCsrf:managedRead?await formToken(context,project.id,"project-managed-read-v1"):undefined,
+    grantCsrf:grants?.setBrowserGrant?await formToken(context,project.id,"project-browser-grant-v1"):undefined
+  })));
+}
 async function list(req:Request,identity:BrowserIdentity,origin:string,
-  devices:DeviceManagementPort,enrollmentAvailable=true,
-  grants?:Pick<GrantManagement,"setBrowserGrant"|"listBrowserGrants">,
-  deviceConnection?:DeviceConnectionLookup,managedRead?:ManagedReadPort,
-  localFolders?:LocalFolderPort,nativeReadEnabled=false):Promise<Response>{
+  devices:DeviceManagementPort|undefined,services:DeviceRequestServices):Promise<Response>{
   if(!identity.api||!identity.$context)return error(503);
-  const who=userOf(await identity.api.getSession({headers:req.headers}));
+  const session=await identity.api.getSession({headers:req.headers});
+  const who=userOf(session);
   if(!who)return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});
-  let list:Awaited<ReturnType<DeviceManagementPort["list"]>>;
-  try{list=await devices.list(who.user);}
+  const projectView=new URL(req.url).pathname==="/projects";
+  const cliRequest=projectView?readCliReturnCookie(req,origin):null;
+  if(cliRequest)return new Response(null,{status:303,headers:{
+    Location:"/api/owner/cli/approve?request_id="+cliRequest,
+    "Set-Cookie":cliReturnCookie(origin,"",0),"Cache-Control":"no-store"}});
+  if(!devices)return reply({status:503,enrollmentAvailable:false,projectView,userEmail:session?.user?.email});
+  let deviceList:Awaited<ReturnType<DeviceManagementPort["list"]>>;
+  try{deviceList=await devices.list(who.user);}
   catch(cause){
-    // Production intentionally remains below device-credential migration 008.
-    // Show a clearly disabled page; never claim an empty live inventory.
-    if(pendingSchema(cause))return reply({status:200,enrollmentAvailable:false});
+    // Missing device-credential migration is unavailable inventory, not an empty workspace.
+    if(pendingSchema(cause))return reply({status:200,enrollmentAvailable:false,projectView});
     return error(503);
   }
   const {secret}=await identity.$context;
-  const stamp=String(Date.now()),nonce=randomBytes(16).toString("base64url");
-  const rows=await Promise.all(list.map(async d=>({...d,
-    csrf:await csrf(secret,who.user,who.session,d.id,stamp,nonce),
-    deleteCsrf:d.revoked&&devices.deleteRevokedDevice?
-      await csrf(secret,who.user,who.session,d.id,stamp,nonce,"device-delete-v1"):undefined,
-    enableCsrf:devices.enableDevice?
-      await csrf(secret,who.user,who.session,d.id,stamp,nonce,"device-enable-v1"):undefined,
-    projectCsrf:devices.createProject?
-      await csrf(secret,who.user,who.session,d.id,stamp,nonce,"project-create-v1"):undefined,
-    browseCsrf:identity.api&&localFolders&&d.enabled&&!d.revoked&&
-      (identity.localDevSandbox||(deviceConnection?.(who.user,d.id)&&
-        localFolders.supportsBrowse?.(who.user,d.id)))?
-      await csrf(secret,who.user,who.session,d.id,stamp,nonce,"project-native-picker-open-v1"):
-      undefined,
-    browseNeedsUpgrade:!identity.localDevSandbox&&Boolean(localFolders)&&
-      d.enabled&&!d.revoked&&Boolean(deviceConnection?.(who.user,d.id))&&
-      !localFolders?.supportsBrowse?.(who.user,d.id),
-    connectionState: deviceConnection&&d.enabled&&!d.revoked?
-      (deviceConnection(who.user,d.id)?"connected" as const:"disconnected" as const):undefined
-  })));
-  const url=new URL(req.url);
-  const access=url.searchParams.get("access");
-  const note=url.searchParams.get("csrf")==="expired"?
-    "The form expired while you were reviewing it. No permissions were changed. Review the action and try again.":
-    url.searchParams.get("picker")==="unavailable"?
-    "This device could not complete folder selection. Wait until it is Online and try Browse again.":
-    url.searchParams.get("picker")==="cancelled"?
-    "Folder selection cancelled. No project was added.":
-    url.searchParams.get("picker")==="invalid"?
-    "That folder does not contain a KiCad project (.kicad_pro). Select the project folder.":
-    url.searchParams.has("project-removed")?
-    "Project removed from Cloud. Its saved AI app permissions were deleted; local files are untouched.":
-    url.searchParams.has("deleted")?
-    "Revoked device and its registered projects were permanently removed.":
-    url.searchParams.has("revoked")?
-      "Device revoked. Its sessions and project access were disabled.":
-    access==="granted"?"Project read access was granted to the selected AI app.":
-    access==="write-configured"?
-      "This AI app's edit permission is configured. Actual remote edits also require a compatible Connector and the live write service.":
-    access==="removed"?"The selected AI app's project access was removed.":
-    access==="reads-on"?"Project summary access was enabled.":
-    access==="reads-off"?"Project summary access was paused.":
-    access==="native-on"?"This read-only KiCad diagnostic was enabled.":
-    access==="native-off"?"This read-only KiCad diagnostic was disabled.":undefined;
-  const projects=devices.listProjects?
-    await devices.listProjects(who.user):[];
-  let clients:string[]=[];
-  let writeClients:string[]=[];
-  if(enrollmentAvailable&&grants?.setBrowserGrant&&identity.api.getOAuthConsents){
-    try{
-      const consents=await identity.api.getOAuthConsents({headers:req.headers});
-      if(Array.isArray(consents)){
-        clients=[...new Set(consents.filter(c=>c.userId===who.user&&
-          typeof c.clientId==="string"&&c.clientId.length<=1024&&
-          Array.isArray(c.scopes)&&c.scopes.includes("projects:read"))
-          .map(c=>c.clientId))].slice(0,100);
-        writeClients=[...new Set(consents.filter(c=>c.userId===who.user&&
-          typeof c.clientId==="string"&&c.clientId.length<=1024&&
-          Array.isArray(c.scopes)&&c.scopes.includes("projects:read")&&
-          c.scopes.includes("projects:write")).map(c=>c.clientId))].slice(0,100);
-      }
-    }catch{return error(503);}
-  }
-  // Never present a failed policy lookup as "no saved permissions".
-  let savedGrants:BrowserGrantSummary[]=[];
-  if(enrollmentAvailable&&grants?.listBrowserGrants){
-    try{savedGrants=await grants.listBrowserGrants(who.user);}
-    catch{return error(503);}
-  }
-  const managedIds=new Set(managedRead?await managedRead.enabledProjectIds(who.user):[]);
-  const nativeRows=managedRead&&nativeReadEnabled?
-    await managedRead.nativeOperationsByProject(who.user):[];
-  const nativeByProject=new Map(nativeRows.map(row=>[row.projectId,row.operations]));
-  // Only one local RPC may be outstanding on a signed Connector socket.
-  // Serialize path lookups so every project in a multi-project folder gets
-  // its own accurate path rather than an intermittent "unavailable".
-  const localPaths=new Map<string,string>();
-  if(identity.localDevSandbox&&localFolders&&
-     url.searchParams.get("csrf-refresh")!=="1"){
-    for(const project of projects){
-      const value=await localFolders.getProjectPath(who.user,project.deviceId,project.id);
-      if(value)localPaths.set(project.id,value);
-    }
-  }
-  const scoped=await Promise.all(projects.map(async project=>({...project,
-    localPath:localPaths.get(project.id),
-    deleteCsrf:devices.deleteProject?
-      await csrf(secret,who.user,who.session,project.id,stamp,nonce,"project-delete-v1"):undefined,
-    renameCsrf:devices.renameProject?
-      await csrf(secret,who.user,who.session,project.id,stamp,nonce,"project-rename-v1"):undefined,
-    managedEnabled:managedRead?managedIds.has(project.id):undefined,
-    nativeEnabled:nativeReadEnabled?nativeByProject.get(project.id)??[]:undefined,
-    nativeCsrf:nativeReadEnabled&&managedRead?
-      await csrf(secret,who.user,who.session,project.id,stamp,nonce,"project-managed-native-v1"):undefined,
-    managedCsrf:managedRead?
-      await csrf(secret,who.user,who.session,project.id,stamp,nonce,"project-managed-read-v1"):undefined,
-    grantCsrf:grants?.setBrowserGrant?
-      await csrf(secret,who.user,who.session,project.id,stamp,nonce,"project-browser-grant-v1"):
-      undefined
-  })));
-  return reply({status:200,devices:rows,message:note,
-    stateCookie:cookie(stamp+"."+nonce,origin,300),enrollmentAvailable,
-    projects:scoped,ownerSub:who.user,clients,writeClients,savedGrants,
-    sandboxMode:identity.localDevSandbox===true,localFolders});
+  const context={secret,owner:who,stamp:String(Date.now()),nonce:randomBytes(16).toString("base64url")};
+  const rows=await Promise.all(deviceList.map(device=>deviceRow(device,devices,context,services,identity.localDevSandbox===true)));
+  const projects=devices.listProjects?await devices.listProjects(who.user):[];
+  let access:Awaited<ReturnType<typeof browserAccess>>;
+  try{access=await browserAccess(req,identity,who.user,services);}
+  catch{return error(503);}
+  const readAccess=await projectReadAccess(who.user,services);
+  const localPaths=await projectLocalPaths(req,identity,who.user,projects,services.localFolders,projectView);
+  const scoped=await projectRows(projects,devices,context,services,localPaths,readAccess);
+  return reply({status:200,devices:rows,message:deviceNotice(new URL(req.url)),
+    stateCookie:projectView?undefined:cookie(context.stamp+"."+context.nonce,origin,300),
+    enrollmentAvailable:services.enrollmentAvailable,projects:scoped,ownerSub:who.user,...access,
+    sandboxMode:identity.localDevSandbox===true,localFolders:services.localFolders,projectView,
+    userEmail:session?.user?.email});
 }
 async function revoke(req:Request,identity:BrowserIdentity,origin:string,
   devices:DeviceManagementPort):Promise<Response>{
@@ -342,6 +374,15 @@ async function activate(req:Request,identity:BrowserIdentity,origin:string,
   }});
 }
 
+function validGrantFields(fields:URLSearchParams):boolean{
+  const required=["project_id","client_id","enabled","csrf"];
+  const names=[...fields.keys()];
+  const hasMode=fields.has("mode");
+  return names.length===required.length+(hasMode?1:0)&&
+    required.every(name=>fields.getAll(name).length===1)&&
+    (!hasMode||fields.getAll("mode").length===1)&&
+    names.every(name=>[...required,"mode"].includes(name));
+}
 async function ownerGrant(req:Request,identity:BrowserIdentity,origin:string,
   grants:Pick<GrantManagement,"setBrowserGrant">):Promise<Response>{
   if(!identity.api||!identity.$context||!grants.setBrowserGrant)return error(503);
@@ -351,12 +392,7 @@ async function ownerGrant(req:Request,identity:BrowserIdentity,origin:string,
   const raw=await req.text();
   if(raw.length>2048)return error(413);
   const fields=new URLSearchParams(raw);
-  const required=["project_id","client_id","enabled","csrf"];
-  const names=[...fields.keys()];
-  if(names.length!==required.length+(fields.has("mode")?1:0)||
-    required.some(name=>fields.getAll(name).length!==1)||
-    (fields.has("mode")&&fields.getAll("mode").length!==1)||
-    names.some(name=>![...required,"mode"].includes(name)))return error(400);
+  if(!validGrantFields(fields))return error(400);
   const project=fields.get("project_id")??"",client=fields.get("client_id")??"";
   const enabled=fields.get("enabled"),proof=fields.get("csrf")??"";
   const mode=fields.get("mode")??"readonly";
@@ -372,10 +408,10 @@ async function ownerGrant(req:Request,identity:BrowserIdentity,origin:string,
   try{updated=await grants.setBrowserGrant(who.user,project,client,enabled==="true",mode);}
   catch{return error(503);}
   if(!updated)return error(404);
+  let access="removed";
+  if(enabled==="true")access=mode==="write"?"write-configured":"granted";
   return new Response(null,{status:303,headers:{
-    Location:enabled==="true"?(mode==="write"?
-      "/devices?access=write-configured":"/devices?access=granted"):
-      "/devices?access=removed",
+    Location:"/devices?access="+access,
     "Cache-Control":"no-store","Set-Cookie":cookie("",origin,0)}});
 }
 
@@ -601,7 +637,7 @@ async function projectRename(req:Request,identity:BrowserIdentity,origin:string,
 const MANAGED_NATIVE_OPERATIONS=["run_drc"] as const;
 type ManagedNativeOperation=(typeof MANAGED_NATIVE_OPERATIONS)[number];
 function managedNativeOperation(value:string|null):value is ManagedNativeOperation{
-  return MANAGED_NATIVE_OPERATIONS.some(operation=>operation===value);
+  return value!==null&&(MANAGED_NATIVE_OPERATIONS as readonly string[]).includes(value);
 }
 
 /** This form cannot be submitted by AI clients or from a foreign origin. */
@@ -639,52 +675,50 @@ async function ownerManagedNativeRead(req:Request,identity:BrowserIdentity,origi
     "Cache-Control":"no-store","Set-Cookie":cookie("",origin,0)}});
 }
 
-/** Authenticated browser-only management, never usable in external auth mode. */
-export async function devicesResponse(req:Request,identity:BrowserIdentity,origin:string,
-  devices?:DeviceManagementPort,enrollmentAvailable=true,
-  grants?:Pick<GrantManagement,"setBrowserGrant"|"listBrowserGrants">,
-  deviceConnection?:DeviceConnectionLookup,managedRead?:ManagedReadPort,
-  localFolders?:LocalFolderPort,nativeReadEnabled=false):Promise<Response|null>{
-  const path=new URL(req.url).pathname;
-  if(!["/devices","/devices/revoke","/devices/delete","/devices/enable","/devices/projects/create",
-    "/devices/projects/grant","/devices/projects/managed","/devices/projects/native","/devices/projects/delete",
-    "/devices/projects/browse","/devices/projects/folders","/devices/projects/select","/devices/projects/rename"].includes(path))
-    return null;
-  if(!devices)return error(503);
-  // A direct navigation is never a removal command. Keep users in the
-  // authenticated device list rather than rendering an unhelpful JSON 404.
-  if(path==="/devices/delete"&&req.method==="GET")
-    return new Response(null,{status:303,headers:{
-      Location:"/devices","Cache-Control":"no-store"
-    }});
-  if(path==="/devices"&&req.method==="GET")
-    return list(req,identity,origin,devices,enrollmentAvailable,grants,deviceConnection,
-      managedRead,localFolders,nativeReadEnabled);
-  if(path==="/devices/revoke"&&req.method==="POST")return revoke(req,identity,origin,devices);
-  if(path==="/devices/delete"&&req.method==="POST")
-    return deleteRevoked(req,identity,origin,devices);
-  if(path==="/devices/projects/delete"&&req.method==="POST")
-    return deleteProject(req,identity,origin,devices);
-  if(path==="/devices/projects/browse"&&req.method==="POST")
-    return folderBrowse(req,identity,origin,devices,localFolders);
-  if(path==="/devices/projects/browse"&&req.method==="GET")
-    return new Response(null,{status:303,headers:{
-      Location:"/devices","Cache-Control":"no-store"
-    }});
-  if(path==="/devices/projects/folders"&&req.method==="POST")
-    return folderOpen(req,identity,origin,devices,localFolders);
-  if(path==="/devices/projects/select"&&req.method==="POST")
-    return folderSelect(req,identity,origin,devices,localFolders);
-  if(path==="/devices/projects/rename"&&req.method==="POST")
-    return projectRename(req,identity,origin,devices);
-  if(enrollmentAvailable && req.method==="POST"){
-    if(path==="/devices/enable")return activate(req,identity,origin,devices,"device-enable-v1");
-    if(path==="/devices/projects/create")return activate(req,identity,origin,devices,"project-create-v1");
-    if(path==="/devices/projects/grant"&&grants)return ownerGrant(req,identity,origin,grants);
-    if(path==="/devices/projects/managed"&&managedRead)
-      return ownerManagedRead(req,identity,origin,managedRead);
-    if(path==="/devices/projects/native"&&managedRead&&nativeReadEnabled)
-      return ownerManagedNativeRead(req,identity,origin,managedRead);
+function enrollmentPost(req:Request,identity:BrowserIdentity,origin:string,
+  devices:DeviceManagementPort,services:DeviceRequestServices):Promise<Response>|Response{
+  const {enrollmentAvailable=true,grants,managedRead,nativeReadEnabled=false}=services;
+  if(!enrollmentAvailable)return error(405);
+  switch(new URL(req.url).pathname){
+    case "/devices/enable":return activate(req,identity,origin,devices,"device-enable-v1");
+    case "/devices/projects/create":return activate(req,identity,origin,devices,"project-create-v1");
+    case "/devices/projects/grant":
+      if(grants)return ownerGrant(req,identity,origin,grants);
+      break;
+    case "/devices/projects/managed":
+      if(managedRead)return ownerManagedRead(req,identity,origin,managedRead);
+      break;
+    case "/devices/projects/native":
+      if(managedRead&&nativeReadEnabled)return ownerManagedNativeRead(req,identity,origin,managedRead);
+      break;
   }
   return error(405);
+}
+function devicePost(req:Request,identity:BrowserIdentity,origin:string,
+  devices:DeviceManagementPort,services:DeviceRequestServices):Promise<Response>|Response{
+  switch(new URL(req.url).pathname){
+    case "/devices/revoke":return revoke(req,identity,origin,devices);
+    case "/devices/delete":return deleteRevoked(req,identity,origin,devices);
+    case "/devices/projects/delete":return deleteProject(req,identity,origin,devices);
+    case "/devices/projects/browse":return folderBrowse(req,identity,origin,devices,services.localFolders);
+    case "/devices/projects/folders":return folderOpen(req,identity,origin,devices,services.localFolders);
+    case "/devices/projects/select":return folderSelect(req,identity,origin,devices,services.localFolders);
+    case "/devices/projects/rename":return projectRename(req,identity,origin,devices);
+    default:return enrollmentPost(req,identity,origin,devices,services);
+  }
+}
+/** Authenticated browser-only management, never usable in external auth mode. */
+export async function devicesResponse(req:Request,identity:BrowserIdentity,origin:string,
+  devices?:DeviceManagementPort,services:DeviceRequestServices={}):Promise<Response|null>{
+  const path=new URL(req.url).pathname;
+  if(!["/projects","/devices","/devices/revoke","/devices/delete","/devices/enable","/devices/projects/create",
+    "/devices/projects/grant","/devices/projects/managed","/devices/projects/native","/devices/projects/delete",
+    "/devices/projects/browse","/devices/projects/folders","/devices/projects/select","/devices/projects/rename"].includes(path))return null;
+  if(["/devices","/projects"].includes(path)&&req.method==="GET")return list(req,identity,origin,devices,services);
+  if(!devices)return error(503);
+  // GET navigation never removes a device or opens a local folder picker.
+  if(["/devices/delete","/devices/projects/browse"].includes(path)&&req.method==="GET")
+    return new Response(null,{status:303,headers:{Location:"/devices","Cache-Control":"no-store"}});
+  if(req.method!=="POST")return error(405);
+  return devicePost(req,identity,origin,devices,services);
 }

@@ -146,7 +146,7 @@ test("project shortcut has one destination in empty, unavailable and registered 
   const device={id:"device",alias:"Lab",enabled:true,revoked:false,
     fingerprint:"private",createdAt:new Date(),csrf:"csrf"};
   const pages=[renderDevicesPage([],undefined,false),renderDevicesPage([]),
-    renderDevicesPage([device],undefined,true,[{id:"project",deviceId:"device",alias:"Board",enabled:true}])];
+    renderDevicesPage([device],undefined,true,{projects:[{id:"project",deviceId:"device",alias:"Board",enabled:true}]})];
   for(const page of pages)assert.equal((page.match(/id="registered-projects"/g)??[]).length,1);
   assert.match(renderAccount("Engineer"),/href="\/devices#registered-projects"/);
 });
@@ -163,14 +163,18 @@ test("unknown permission names cannot resolve inherited object properties",()=>{
 test("remote MCP host guidance uses configured HTTPS origin and never implies a live KiCad device",()=>{
   const html=renderConnectionsPage([],undefined,"https://cloud.example.test");
   assert.match(html,/https:\/\/cloud\.example\.test\/mcp/);
-  assert.match(html,/Open Plugins, choose Add custom MCP server/);
-  assert.match(html,/Open Customize \/ Connectors/);
+  assert.match(html,/Setup guides by app/);
+  assert.match(html,/Add a custom remote connector/);
   assert.match(html,/href="\/devices"/);
   assert.match(html,/endpoint alone does not grant project access/);
   assert.match(html,/not imply a running KiCad engine/);
   assert.match(html,/help\.openai\.com\/en\/articles\/12584461-connecting-custom-mcp-servers-in-chatgpt/);
   assert.match(html,/support\.claude\.com\/en\/articles\/11175166-get-started-with-custom-connectors-using-remote-mcp/);
-  assert.doesNotMatch(html,/api[_-]?key|<script[\s>]/i);
+  const scripts=[...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script[^>]*>/gi)];
+  assert.equal(scripts.length,1);
+  assert.equal(scripts[0][1],' src="/assets/copy-value.js" defer=""');
+  assert.equal(scripts[0][2],"","only the allowlisted external asset may execute");
+  assert.doesNotMatch(html,/api[_-]?key/i);
   assert.match(uiCss,/\.mcp-client-guides/);
   const dev=renderConnectionsPage([],undefined,"http://127.0.0.1:8787");
   assert.match(dev,/not public HTTPS/);
@@ -190,13 +194,9 @@ test("device and project controls show aliases while keeping opaque IDs in forms
   const deviceId="11111111-1111-4111-8111-111111111111";
   const projectId="22222222-2222-4222-8222-222222222222";
   const deviceName="Main Lab";
-  const html=renderDevicesPage(
-    [{id:deviceId,alias:deviceName,enabled:true,revoked:false,
+  const html=renderDevicesPage([{id:deviceId,alias:deviceName,enabled:true,revoked:false,
       fingerprint:"secret-test-fingerprint-42",createdAt:new Date(),
-      csrf:"device-csrf",projectCsrf:"project-csrf",connectionState:"connected"}],
-    undefined,true,
-    [{id:projectId,deviceId,alias:"Controller PCB",enabled:true,grantCsrf:"grant-csrf"}],
-    "private-account-id",["authorized-client"]);
+      csrf:"device-csrf",projectCsrf:"project-csrf",connectionState:"connected"}],undefined,true,{projects:[{id:projectId,deviceId,alias:"Controller PCB",enabled:true,grantCsrf:"grant-csrf"}],ownerSub:"private-account-id",clients:["authorized-client"]});
   assert.match(html,/>Main Lab</);
   assert.match(html,/>Controller PCB</);
   assert.match(html,/On device: Main Lab/);
@@ -215,12 +215,8 @@ test("device and project controls show aliases while keeping opaque IDs in forms
   assert.match(html,/name="device_id" value="11111111-1111-4111-8111-111111111111"/);
   assert.match(html,/name="client_id"/);
   assert.match(html,/name="csrf"/);
-  const withGrants=renderDevicesPage(
-    [{id:deviceId,alias:deviceName,enabled:true,revoked:false,
-      fingerprint:"unused",createdAt:new Date(),csrf:"device-csrf"}],
-    undefined,true,
-    [{id:projectId,deviceId,alias:"Controller PCB",enabled:true,grantCsrf:"grant-csrf"}],
-    undefined,[],[{projectId,clientId:"client<svg onload=bad>",maxMode:"readonly"}]);
+  const withGrants=renderDevicesPage([{id:deviceId,alias:deviceName,enabled:true,revoked:false,
+      fingerprint:"unused",createdAt:new Date(),csrf:"device-csrf"}],undefined,true,{projects:[{id:projectId,deviceId,alias:"Controller PCB",enabled:true,grantCsrf:"grant-csrf"}],clients:[],savedGrants:[{projectId,clientId:"client<svg onload=bad>",maxMode:"readonly"}]});
   assert.match(withGrants,/Applications with access/);
   assert.match(uiCss,/\.project-grants li/);
   assert.match(withGrants,/Read only/);
@@ -228,31 +224,22 @@ test("device and project controls show aliases while keeping opaque IDs in forms
   assert.match(withGrants,/value="false"/);
   assert.match(withGrants,/client&lt;svg onload=bad&gt;/);
   assert.equal(withGrants.includes("<svg onload=bad>"),false);
-  const escaped=renderDevicesPage(
-    [{id:deviceId,alias:"<script>device</script>",enabled:true,revoked:false,
-      fingerprint:"secret",createdAt:new Date(),csrf:"csrf"}],
-    undefined,true,
-    [{id:projectId,deviceId,alias:"<svg onload=bad>",enabled:false}]);
+  const escaped=renderDevicesPage([{id:deviceId,alias:"<script>device</script>",enabled:true,revoked:false,
+      fingerprint:"secret",createdAt:new Date(),csrf:"csrf"}],undefined,true,{projects:[{id:projectId,deviceId,alias:"<svg onload=bad>",enabled:false}]});
   assert.equal(escaped.includes("<svg onload=bad>"),false);
   assert.match(escaped,/&lt;script&gt;device&lt;\/script&gt;/);
   assert.match(escaped,/&lt;svg onload=bad&gt;/);
   // Browsers interpret HTML tag names without case sensitivity: defend against
   // mixed-case spellings without attempting to parse HTML using a regex.
-  const mixedCase=renderDevicesPage(
-    [{id:deviceId,alias:"<ScRiPt>alert(1)</sCrIpT>",enabled:true,revoked:false,
-      fingerprint:"secret",createdAt:new Date(),csrf:"csrf"}],
-    undefined,true,
-    [{id:projectId,deviceId,alias:"<SVG onload=bad>",enabled:false}]);
+  const mixedCase=renderDevicesPage([{id:deviceId,alias:"<ScRiPt>alert(1)</sCrIpT>",enabled:true,revoked:false,
+      fingerprint:"secret",createdAt:new Date(),csrf:"csrf"}],undefined,true,{projects:[{id:projectId,deviceId,alias:"<SVG onload=bad>",enabled:false}]});
   assert.equal(mixedCase.includes("<ScRiPt>"),false);
   assert.equal(mixedCase.includes("<SVG onload=bad>"),false);
   assert.match(mixedCase,/&lt;ScRiPt&gt;alert\(1\)&lt;\/sCrIpT&gt;/);
   assert.match(mixedCase,/&lt;SVG onload=bad&gt;/);
   // Display copyable commands only for safe server-controlled identifiers.
-  const risky=renderDevicesPage(
-    [{id:deviceId,alias:"Device",enabled:true,revoked:false,
-      fingerprint:"x",createdAt:new Date(),csrf:"csrf"}],
-    undefined,true,[{id:projectId,deviceId,alias:"Project",enabled:true}],
-    "unsafe'$(touch /tmp/not-allowed)");
+  const risky=renderDevicesPage([{id:deviceId,alias:"Device",enabled:true,revoked:false,
+      fingerprint:"x",createdAt:new Date(),csrf:"csrf"}],undefined,true,{projects:[{id:projectId,deviceId,alias:"Project",enabled:true}],ownerSub:"unsafe'$(touch /tmp/not-allowed)"});
   assert.doesNotMatch(risky,/cloud register-project/);
 });
 
@@ -274,12 +261,10 @@ test("project permission UI names ChatGPT clearly and never offers a duplicate g
   const project={id:"22222222-2222-4222-8222-222222222222",
     deviceId:device.id,alias:"Controller",enabled:true,grantCsrf:"grant"};
   const client="https://chatgpt.com/oauth/client.json";
-  const ungranted=renderDevicesPage([device],undefined,true,[project],
-    undefined,[client]);
+  const ungranted=renderDevicesPage([device],undefined,true,{projects:[project],clients:[client]});
   assert.match(ungranted,/>ChatGPT<\/option>/);
   assert.match(ungranted,/Allow reading/);
-  const granted=renderDevicesPage([device],undefined,true,[project],
-    undefined,[client],[{projectId:project.id,clientId:client,maxMode:"readonly"}]);
+  const granted=renderDevicesPage([device],undefined,true,{projects:[project],clients:[client],savedGrants:[{projectId:project.id,clientId:client,maxMode:"readonly"}]});
   assert.match(granted,/class="grant-client">ChatGPT<\/span>/);
   assert.match(granted,/Remove this app access/);
   assert.doesNotMatch(granted,/Allow reading/);
@@ -297,8 +282,7 @@ test("explicit write OAuth consent enables a per-app edit policy toggle, never a
   const reader="https://claude.ai/oauth/client.json";
   const base=(grants:ReadonlyArray<{projectId:string;clientId:string;
     maxMode:"readonly"|"write"}>,writers:string[])=>
-    renderDevicesPage([device],undefined,true,[project],undefined,
-      [writer,reader],grants,false,false,writers);
+    renderDevicesPage([device],undefined,true,{projects:[project],clients:[writer,reader],savedGrants:grants,sandboxMode:false,browseEnabled:false,writeClients:writers});
   const readonly=base([],[]);
   assert.match(readonly,/Allow reading/);
   assert.doesNotMatch(readonly,/Allow reading and editing/);

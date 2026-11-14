@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { Config } from "./config.js";
 import type { Inventory } from "./store.js";
@@ -21,6 +22,7 @@ import {publicAsset} from "./public-assets.js";
 import {pairingReviewClient} from "./pairing-review-client.js";
 import {deviceProjectsClient} from "./device-projects-client.js";
 import {pairingLoginContinuationClient} from "./pairing-login-continuation.js";
+import {copyValueClient} from "./copy-value.js";
 import {ownerApiResponse,cliApproveResponse,type PgOwnerApiAccess} from "./owner-api.js";
 import {extractToolCall,callStatusFromResponse,type PgUsage} from "./usage.js";
 import type {TrustedOAuthReadIdentity} from "./connector-read-gate.js";
@@ -55,6 +57,12 @@ type SummaryRelay={
     projectId:string)=>PreparedOwnerSchematicCounts|null;
   requestSchematicCounts?:(oauth:TrustedOAuthReadIdentity,deviceId:string,
     projectId:string,prepared:PreparedOwnerSchematicCounts)=>Promise<SchematicCountsReadResult|null>;
+  prepareWriteRevisions?:(ownerSub:string,deviceId:string,
+    projectId:string)=>Promise<import("./connector-ws.js").PreparedWriteRevisions|null>;
+  requestWrite?:(oauth:TrustedOAuthReadIdentity,deviceId:string,
+    projectId:string,proof:object,persistToDisk:boolean)=>Promise<import("./connector-ws.js").WriteOperationResult|null>;
+  getTrustedContext?:(ownerSub:string,
+    deviceId:string)=>import("./connector-read-gate.js").TrustedConnectorContext|null;
 };
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -122,6 +130,9 @@ export type CloudHttpServices={
   mcpProjectInspectionEnabled?:boolean;
   mcpProjectBoardCountsEnabled?:boolean;
   mcpProjectSchematicCountsEnabled?:boolean;
+  mcpProjectWriteEnabled?:boolean;
+  writePreflight?:import("./connector-write-preflight.js").PgConnectorWritePreflight;
+  writeIssuer?:import("./connector-write-issuer.js").OfflineWriteProofIssuer;
   // Trusted Cloud-to-owner HTTPS delivery only. If absent, /prepare
   // cannot claim success; a bearer client must never self-register scope.
   ownerIntentDelivery?:(scope:PreparedOwnerSummary)=>Promise<string|null>;
@@ -182,6 +193,12 @@ async function handleRequest(
         res.end(pairingReviewClient);
         return;
       }
+      if (path === "/assets/copy-value.js" && req.method === "GET") {
+        res.writeHead(200,{...noCache,"Content-Type":"text/javascript; charset=utf-8",
+          "Referrer-Policy":"no-referrer"});
+        res.end(copyValueClient);
+        return;
+      }
       // Read-only static UI script used by the production device project
       // dialogs as well as the local sandbox. It never contains owner data.
       if (path === "/assets/device-projects.js" && req.method === "GET"){
@@ -214,14 +231,14 @@ async function handleRequest(
           answer=await consentResponse(browserRequest,identity,config.publicOrigin,config.managementClientId);
         } else if (path==="/connections" || path==="/connections/revoke") {
           answer=await connectionsResponse(browserRequest,identity,config.publicOrigin,grants);
-        } else if(path==="/devices" || path==="/devices/revoke" || path==="/devices/delete" || path==="/devices/enable" || path==="/devices/projects/create" || path==="/devices/projects/grant" || path==="/devices/projects/managed" || path==="/devices/projects/native" || path==="/devices/projects/delete" ||
+        } else if(path==="/projects" || path==="/devices" || path==="/devices/revoke" || path==="/devices/delete" || path==="/devices/enable" || path==="/devices/projects/create" || path==="/devices/projects/grant" || path==="/devices/projects/managed" || path==="/devices/projects/native" || path==="/devices/projects/delete" ||
           path==="/devices/projects/browse" || path==="/devices/projects/select" ||
           path==="/devices/projects/rename" || path==="/devices/projects/folders"){
-          answer=await devicesResponse(browserRequest,identity,config.publicOrigin,
-            devices,Boolean(pairingDevice),grants,
-            summaryRelay?.()?.isDeviceConnected,services.managedRead,
-            summaryRelay?.()?.localFolders,
-            services.managedNativeReadEnabled===true);
+          answer=await devicesResponse(browserRequest,identity,config.publicOrigin,devices,{
+            enrollmentAvailable:Boolean(pairingDevice),grants,
+            deviceConnection:summaryRelay?.()?.isDeviceConnected,
+            managedRead:services.managedRead,localFolders:summaryRelay?.()?.localFolders,
+            nativeReadEnabled:services.managedNativeReadEnabled===true});
         } else if(path==="/devices/pairing" || path==="/devices/pairing/review"){
           answer=await pairingBrowserResponse(browserRequest,identity,config.publicOrigin,pairings);
         } else if(path==="/api/owner/cli/approve"){
@@ -711,10 +728,97 @@ async function handleRequest(
             oauth,deviceId,projectId,"project_schematic_counts"))return null;
           return result.counts;
         } : undefined;
+      const writer = services.mcpProjectWriteEnabled && summaryRelay?.()
+        ? async (
+            deviceId: string,
+            projectId: string,
+            command: {
+              reference: string;
+              xMm: number;
+              yMm: number;
+              rotationDeg?: number | null;
+              saveToDisk?: boolean;
+            }
+          ): Promise<import("./mcp.js").ProjectWriteResult | null> => {
+            if (!actor.scopes.has("projects:read") || !actor.scopes.has("projects:write")) return null;
+            const project = await inventory.getProject(actor.sub, actor.clientId, projectId);
+            if (!project || project.deviceId !== deviceId) return null;
+            if (!await inventory.isAccessTokenAllowed(actor.sub, actor.clientId, actor.issuedAt)) return null;
+            try { await verify(matched[1]); } catch { return null; }
+            const relay = summaryRelay();
+            if (!relay?.prepareWriteRevisions || !relay.requestWrite || !relay.getTrustedContext) return null;
+            const connection = relay.getTrustedContext(actor.sub, deviceId);
+            if (!connection) return null;
+            if (services.writePreflight) {
+              const policyAllowed = await services.writePreflight.checkCurrentPolicy(actor, connection, projectId);
+              if (!policyAllowed) return null;
+            }
+            const revisions = await relay.prepareWriteRevisions(actor.sub, deviceId, projectId);
+            if (!revisions) return null;
+            const requestId = randomUUID();
+            const nowMs = Date.now();
+            const deadlineUnixMs = nowMs + 8_000;
+            if (services.writePreflight) {
+              const reserved = await services.writePreflight.reserveAuthorizedWrite(actor, connection, projectId, requestId, deadlineUnixMs);
+              if (!reserved) return null;
+            }
+            const candidate = {
+              kind: "connector.write_request",
+              version: revisions.expectedLiveBoardSha256 ? 2 : 1,
+              requestId,
+              deviceId,
+              projectId,
+              sessionId: connection.sessionId,
+              deadlineUnixMs,
+              command: {
+                operation: "pcb_move_footprint",
+                reference: command.reference,
+                xMm: command.xMm,
+                yMm: command.yMm,
+                rotationDeg: command.rotationDeg ?? null,
+                expectedBoardSha256: revisions.expectedBoardSha256,
+                ...(revisions.expectedLiveBoardSha256 ? { expectedLiveBoardSha256: revisions.expectedLiveBoardSha256 } : {})
+              }
+            };
+            const binding = {
+              deviceId,
+              projectId,
+              sessionId: connection.sessionId,
+              sessionExpiresUnixMs: nowMs + 60_000,
+              allowedOperations: ["pcb_move_footprint"] as const
+            };
+            if (!services.writeIssuer) return null;
+            const proofBuf = services.writeIssuer(candidate, binding, nowMs);
+            if (!proofBuf) return null;
+            const proposalObj: object = JSON.parse(proofBuf.toString("utf8"));
+            const oauth = {
+              ownerSub: actor.sub,
+              clientId: actor.clientId,
+              accessTokenIssuedAtSeconds: actor.issuedAt
+            };
+            const result = await relay.requestWrite(
+              oauth,
+              deviceId,
+              projectId,
+              proposalObj,
+              command.saveToDisk ?? true
+            );
+            if (!result || result.requestId !== requestId || result.projectId !== projectId) return null;
+            if (!await inventory.isAccessTokenAllowed(actor.sub, actor.clientId, actor.issuedAt)) return null;
+            return {
+              success: true,
+              operation: "pcb_move_footprint",
+              nativeCommitted: result.nativeCommitted,
+              savedToDisk: result.savedToDisk,
+              ...(result.diskBoardSha256 ? { diskBoardSha256: result.diskBoardSha256 } : {})
+            };
+          }
+        : undefined;
       const signedRelay=summaryRelay?.();
       const handler=createCloudMcpHandler(
         inventory,actor,presenceReader,drcReader,inspectionReader,boardReader,schematicReader,
-        signedRelay?.isDeviceConnected,signedRelay?.getDeviceCapabilityClaim);
+        signedRelay?.isDeviceConnected,signedRelay?.getDeviceCapabilityClaim,
+        writer);
       let output: Response;
       try {
         output = await handler.fetch(request);

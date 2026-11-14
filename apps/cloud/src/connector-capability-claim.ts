@@ -10,8 +10,8 @@ export const ConnectorCapabilityClaimSchema=z.strictObject({
   catalogRevision:z.string().regex(/^[0-9a-f]{64}$/),
   operations:z.array(z.enum([
     "project_summary","run_drc","project_worker_inspection",
-    "project_board_counts","project_schematic_counts"
-  ])).max(5).refine(items=>new Set(items).size===items.length,"duplicate operation")
+    "project_board_counts","project_schematic_counts","move_footprint"
+  ])).max(6).refine(items=>new Set(items).size===items.length,"duplicate operation")
 });
 
 export type ConnectorCapabilityClaim=z.infer<typeof ConnectorCapabilityClaimSchema>;

@@ -70,6 +70,11 @@ test("production HTTP serves device actions and navigates remote nested folders"
     assert.equal(asset.status,200);
     assert.match(asset.headers.get("content-type")??"",/text\/javascript/);
     assert.match(await asset.text(),/showModal/);
+    const copy=await fetch(url+"/assets/copy-value.js");
+    assert.equal(copy.status,200);
+    assert.match(copy.headers.get("content-type")??"",/text\/javascript/);
+    assert.equal(copy.headers.get("x-content-type-options"),"nosniff");
+    assert.match(await copy.text(),/navigator\.clipboard\.writeText/);
     const browseCsrf=/<form[^>]*action="\/devices\/projects\/browse"[^>]*[\s\S]*?name="csrf" value="([^"]+)"/
       .exec(html)?.[1];
     assert.ok(browseCsrf);

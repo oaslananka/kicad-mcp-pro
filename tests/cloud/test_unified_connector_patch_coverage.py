@@ -297,3 +297,39 @@ def test_inspection_session_rejects_authorization_exceptions() -> None:
 def test_http_project_binding_reports_unbound_before_first_call() -> None:
     """Avoid treating a newly initialized shared HTTP server as a pinned project."""
     assert HttpProjectBinding().is_bound is False
+
+
+def test_outbound_handshake_validates_managed_native_write_options() -> None:
+    from kicad_mcp.cloud_outbound_handshake import (
+        OutboundSessionOptions,
+        _catalog_operations,
+        _validate_outbound_options,
+    )
+
+    opts_invalid = OutboundSessionOptions(
+        managed_native_write=True,
+        owner_managed_read=False,
+    )
+    with pytest.raises(CloudHandshakeDeniedError):
+        _validate_outbound_options(opts_invalid)
+
+    opts_missing_executor = OutboundSessionOptions(
+        managed_native_write=True,
+        owner_managed_read=True,
+        dispatcher_factory=lambda _: None,  # type: ignore[return-value]
+        revisions_preparer=lambda: {},
+        write_executor=None,
+    )
+    with pytest.raises(CloudHandshakeDeniedError):
+        _validate_outbound_options(opts_missing_executor)
+
+    opts_valid = OutboundSessionOptions(
+        managed_native_write=True,
+        owner_managed_read=True,
+        dispatcher_factory=lambda _: None,  # type: ignore[return-value]
+        revisions_preparer=lambda: {},
+        write_executor=lambda *_: {},
+    )
+    _validate_outbound_options(opts_valid)
+    ops = _catalog_operations(opts_valid)
+    assert "move_footprint" in ops
