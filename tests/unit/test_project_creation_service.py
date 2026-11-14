@@ -63,7 +63,9 @@ def test_create_checks_workspace_boundary_before_refusing_existing_dir(tmp_path:
     )
 
     service.create(str(tmp_path), "demo")
-    assert checked == [(tmp_path, tmp_path.resolve())]
+    assert checked[0] == (tmp_path, tmp_path.resolve())
+    assert (tmp_path, tmp_path / "demo") in checked
+    assert all(root == tmp_path for root, _candidate in checked)
 
 
 def test_create_reports_unavailable_format_migration(tmp_path: Path) -> None:
