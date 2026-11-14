@@ -1194,4 +1194,27 @@ body{line-height:1.5;letter-spacing:-.007em}
   .device-linked-project{padding:12px}
 }
 
+/* One semantic navigation hierarchy without extra mobile rows. */
+.workspace-app .workspace-sidebar .sidebar-links .sidebar-section-label{
+  display:block;margin:14px 9px 4px;font-size:10px;line-height:1.3
+}
+.workspace-app .workspace-sidebar .sidebar-links .sidebar-section-label:first-child{margin-top:0}
+@media(max-width:750px){
+  .workspace-app .workspace-sidebar .sidebar-links .sidebar-section-label{display:none}
+  .workspace-app .workspace-sidebar .sidebar-links{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .workspace-app .workspace-sidebar .sidebar-links a{font-size:clamp(10px,2.7vw,12px)}
+}
+
+
+.cloud-activity-summary{display:flex;align-items:center;flex-wrap:wrap;gap:10px 18px;
+  padding:17px 20px;text-decoration:none;color:var(--text)}
+.cloud-activity-summary>span{display:flex;align-items:center;gap:10px;font-weight:650}
+.cloud-activity-summary>span svg{color:var(--accent)}
+.cloud-activity-summary>strong{font-size:26px;font-variant-numeric:tabular-nums}
+.cloud-activity-summary>small{margin-left:auto;color:var(--muted)}
+.cloud-activity-unavailable{color:var(--muted);font-size:12px}
+.cloud-usage-lifetime{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.cloud-usage-lifetime>span{font-size:12px;font-weight:650;color:var(--muted)}
+.cloud-usage-lifetime>strong{font-size:clamp(24px,3vw,38px);color:var(--text);font-variant-numeric:tabular-nums}
+.cloud-usage-lifetime>small{font-size:12px;color:var(--muted)}
 `;

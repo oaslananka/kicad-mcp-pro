@@ -104,6 +104,7 @@ test("real MCP tool calls record measured usage on the served HTTP path",
       // before the response round-trip returns in practice. Confirm via a
       // short settled read.
       await new Promise(resolve=>setTimeout(resolve,150));
+      assert.equal(await usage.allTime("user-a"),3);
       const summary=await usage.summary("user-a");
       assert.ok(summary,"telemetry must exist for the served account");
       assert.equal(summary.totalCalls,3);

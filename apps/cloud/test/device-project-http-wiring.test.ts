@@ -9,7 +9,7 @@ import type {BrowserIdentity} from "../src/browser.js";
 import type {DeviceManagementPort} from "../src/devices.js";
 import type {LocalFolderPort} from "../src/connector-ws.js";
 
-test("production HTTP serves device actions and navigates remote nested folders",async()=>{
+test("production HTTP opens the signed native folder chooser without leaking paths",async()=>{
   const origin="http://127.0.0.1",id=randomUUID(),owner="browser-owner";
   const config:Config={
     host:"127.0.0.1",port:0,publicOrigin:origin,
@@ -38,7 +38,13 @@ test("production HTTP serves device actions and navigates remote nested folders"
   const folderCalls:string[]=[];
   const localFolders:LocalFolderPort={
     supportsBrowse:(u,d)=>u===owner&&d===id,
-    getProjectPath:async()=>null,chooseFolder:async()=>null,
+    getProjectPath:async()=>null,
+    chooseFolder:async(u,d)=>{
+      folderCalls.push("choose");
+      return u===owner&&d===id?{status:"selected" as const,
+        folderId:"child-token",name:"Motor Board",
+        projects:[{id:"child-token",name:"MotorBoard"}]}:null;
+    },
     bindFolder:async()=>false,
     listFolder:async(u,d,folderId)=>{
       folderCalls.push(folderId);
@@ -83,33 +89,27 @@ test("production HTTP serves device actions and navigates remote nested folders"
       "Content-Type":"application/x-www-form-urlencoded"
     });
     const cookie=(page.headers.get("set-cookie")??"").split(";")[0];
-    const root=await fetch(url+"/devices/projects/browse",{
+    const picker=await fetch(url+"/devices/projects/browse",{
       method:"POST",headers:postHeaders(cookie),
       body:new URLSearchParams({device_id:id,csrf:browseCsrf})
     });
-    assert.equal(root.status,200);
-    const rootHtml=await root.text();
-    assert.match(rootHtml,/Motor Board/);
-    const folderForm=/<form action="\/devices\/projects\/folders" method="post">([\s\S]*?)<\/form>/
-      .exec(rootHtml)?.[1]??"";
-    const openCsrf=/name="csrf" value="([^"]+)"/.exec(folderForm)?.[1];
-    assert.ok(openCsrf);
-    const folderCookie=(root.headers.get("set-cookie")??"").split(";")[0];
+    assert.equal(picker.status,200);
+    const pickerHtml=await picker.text();
+    assert.match(pickerHtml,/Folder selected on your computer/);
+    assert.match(pickerHtml,/Motor Board/);
+    assert.match(pickerHtml,/Add this project/);
+    assert.doesNotMatch(pickerHtml,/action="\/devices\/projects\/folders"/);
+    assert.doesNotMatch(pickerHtml,/C:\\Users\\|\.kicad_sch/);
+    const pickerCookie=(picker.headers.get("set-cookie")??"").split(";")[0];
+    const token=/name="csrf" value="([^"]+)"/.exec(pickerHtml)?.[1];
+    assert.ok(token);
     const forged=await fetch(url+"/devices/projects/folders",{
-      method:"POST",headers:postHeaders(folderCookie,"https://attacker.example"),
-      body:new URLSearchParams({device_id:id,folder_id:"child-token",csrf:openCsrf}),
+      method:"POST",headers:postHeaders(pickerCookie,"https://attacker.example"),
+      body:new URLSearchParams({device_id:id,folder_id:"child-token",csrf:token}),
       redirect:"manual"
     });
-    assert.equal(forged.status,403);
-    assert.deepEqual(folderCalls,["root"]);
-    const child=await fetch(url+"/devices/projects/folders",{
-      method:"POST",headers:postHeaders(folderCookie),
-      body:new URLSearchParams({device_id:id,folder_id:"child-token",csrf:openCsrf}),
-      redirect:"manual"
-    });
-    assert.equal(child.status,200);
-    assert.match(await child.text(),/Add this project/);
-    assert.deepEqual(folderCalls,["root","child-token"]);
+    assert.equal(forged.status,403,"cross-origin requests are blocked before routing");
+    assert.deepEqual(folderCalls,["choose"]);
   }finally{
     await new Promise<void>(resolve=>server.close(()=>resolve()));
   }

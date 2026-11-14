@@ -109,7 +109,8 @@ async function startSocialLogin(request:Request,identity:BrowserIdentity,
   return approvedProviderRedirect(authResponse,provider);
 }
 
-async function accountPage(request:Request,identity:BrowserIdentity,origin:string,devices?:DeviceManagementPort,grants?:GrantManagement):Promise<Response> {
+async function accountPage(request:Request,identity:BrowserIdentity,origin:string,
+  devices?:DeviceManagementPort,grants?:GrantManagement,usage?:UsagePort):Promise<Response> {
   const session=await identity.api?.getSession({headers:request.headers});
   if(!session?.user) return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});
   const cliRequest=readCliReturnCookie(request,origin);
@@ -134,7 +135,15 @@ async function accountPage(request:Request,identity:BrowserIdentity,origin:strin
       }
     }catch{ /* State is unavailable, not an empty workspace. */ }
   }
-  return new Response(renderAccount(session.user.name??"User",availableProviders(identity),names,snapshot,session.user.email,identity.localDevSandbox===true),{
+  let observedTotal:number|undefined;
+  if(usage?.allTime){
+    try{
+      const count=await usage.allTime(session.user.id);
+      if(count!==null&&Number.isSafeInteger(count)&&count>=0)observedTotal=count;
+    }catch{ /* A failed telemetry lookup must never pretend that calls were zero. */ }
+  }
+  return new Response(renderAccount(session.user.name??"User",availableProviders(identity),names,
+    snapshot,session.user.email,identity.localDevSandbox===true,observedTotal),{
     status:200,headers:htmlHeaders
   });
 }
@@ -147,9 +156,11 @@ async function usagePage(request:Request,identity:BrowserIdentity,
   if(!usage)return new Response(renderUsagePage(null,email),{status:200,headers:htmlHeaders});
   // A failed lookup means state is unavailable, never an empty workspace.
   try{
-    const summary=await usage.summary(session.user.id);
+    const [summary,allTime]=await Promise.all([
+      usage.summary(session.user.id),usage.allTime?.(session.user.id)
+    ]);
     const recent=summary?await usage.recent(session.user.id,20):[];
-    return new Response(renderUsagePage(summary?{summary,recent}:null,email),
+    return new Response(renderUsagePage(summary?{summary,recent}:null,email,allTime??undefined),
       {status:200,headers:htmlHeaders});
   }catch{
     return new Response(renderUsagePage(null,email),{status:200,headers:htmlHeaders});
@@ -212,7 +223,7 @@ export async function browserResponse(request:Request,identity:BrowserIdentity,p
   if(provider)return socialResponse(request,identity,publicOrigin,provider,startSocialLogin,"/sign-in");
   const linkProvider=socialProvider(url.pathname,"/auth/link/");
   if(linkProvider)return socialResponse(request,identity,publicOrigin,linkProvider,startSocialLink,"/account");
-  if((url.pathname==="/account"||url.pathname==="/overview") && request.method==="GET") return accountPage(request,identity,publicOrigin,devices,grants);
+  if((url.pathname==="/account"||url.pathname==="/overview") && request.method==="GET") return accountPage(request,identity,publicOrigin,devices,grants,usage);
   if(url.pathname==="/usage" && request.method==="GET") return usagePage(request,identity,usage);
   if(url.pathname==="/settings" && request.method==="GET")return settingsPage(request,identity);
   return null;

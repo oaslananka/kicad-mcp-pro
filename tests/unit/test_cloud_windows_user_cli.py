@@ -500,10 +500,41 @@ def test_windows_reconnect_requires_existing_user_selection(
     assert not events
 
 
-def test_windows_cloud_connect_uses_same_onboarding_contract(
+def test_windows_cloud_connect_pairs_then_runs_visible_foreground_without_task(
     windows_cli,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    folder, events, _project, _selected = windows_cli
+    from kicad_mcp import cloud_windows_connector
+
+    folder, events, _project, selected = windows_cli
+
+    def activate(_project, *, owner_confirm) -> None:
+        events.append("activate_foreground")
+        assert owner_confirm(_project)
+
+    async def foreground(*, stop, status_callback) -> None:
+        events.append("foreground_session")
+        status_callback("Connected")
+
+    monkeypatch.setattr(cloud_windows_connector, "activate", activate)
+    monkeypatch.setattr(
+        cloud_windows_connector,
+        "selected_project",
+        cloud_windows_user_cli.selected_project,
+    )
+    monkeypatch.setattr(
+        cloud_windows_connector, "local_state", lambda: "Configured (not connected)"
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_windows_task_scheduler.stop_and_remove_owner_task",
+        lambda: events.append("verified_task_stopped") or True,
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_windows_local_selection.inspect_owner_selected_project",
+        lambda _project: selected,
+    )
+    monkeypatch.setattr(cloud_windows_connector, "run_connector", foreground)
+
     result = CliRunner().invoke(
         app,
         [
@@ -517,9 +548,19 @@ def test_windows_cloud_connect_uses_same_onboarding_contract(
         ],
     )
     assert result.exit_code == 0, result.output
-    assert "browser_approval" in events
-    assert "register" in events
-    assert "Connector scheduled (connection unverified)" in result.output
+    assert events == [
+        "enroll",
+        "browser_approval",
+        "register",
+        "bind",
+        "remember",
+        "activate_foreground",
+        "verified_task_stopped",
+        "foreground_session",
+    ]
+    assert "Keep this terminal open" in result.output
+    assert "Cloud acknowledged this device" in result.output
+    assert "Connector scheduled" not in result.output
 
 
 def test_native_posix_guards_still_exist(

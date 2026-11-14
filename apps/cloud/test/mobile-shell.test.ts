@@ -6,8 +6,7 @@ import {uiCss} from "../src/ui-styles.js";
 
 test("mobile navigation stays compact while every workspace section is directly reachable",()=>{
   const html=renderPage({title:"Devices",kind:"devices",children:null});
-  for(const href of ["/account","/devices","/projects",
-                     "/connections","/usage","/settings"]){
+  for(const href of ["/account","/devices","/connections","/usage","/settings"]){
     assert.ok(html.includes('href="'+href+'"'),"Missing "+href);
   }
   assert.match(uiCss,/\.workspace-app \.workspace-sidebar\{display:grid;grid-template-columns:minmax\(0,1fr\) auto/);
@@ -23,8 +22,8 @@ test("mobile navigation stays compact while every workspace section is directly 
 
 test("account security and help links remain accessible with a compact mobile profile",()=>{
   const html=renderPage({title:"Devices",kind:"devices",children:null,userEmail:"someone@example.invalid"});
-  assert.match(html,/href="\/settings" class="sidebar-profile"/);
-  assert.match(html,/aria-label="Account and security settings"/);
+  assert.match(html,/href="\/account" class="sidebar-profile"/);
+  assert.match(html,/aria-label="Account overview"/);
   const settings=renderSettings("someone@example.invalid");
   assert.match(settings,/href="https:\/\/oaslananka.github.io\/kicad-mcp-pro\/"/);
   assert.match(settings,/href="https:\/\/oaslananka.github.io\/kicad-mcp-pro\/privacy\/"/);

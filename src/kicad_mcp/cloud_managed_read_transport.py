@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Callable
+from time import perf_counter
 from typing import Protocol
 
 from kicad_mcp.cloud_folder_browse_receiver import (
@@ -28,6 +29,7 @@ _DENIED = "handshake denied"
 _MAX_MANAGED_READS = 16
 _SESSION_TIMEOUT_SECONDS = 295
 _FOLDER_REQUEST_KIND = "connector.local_browser_request"
+_WRITE_REQUEST_KIND = "connector.authorized_write"
 
 
 def _report_activity(callback: Callable[[str], None] | None, message: str) -> None:
@@ -123,13 +125,14 @@ async def _serve_one_authenticated_read(
 
 async def _serve_folder_request(
     socket: AuthenticatedReadSocket, service: LocalFolderBrowseService, raw: str
-) -> None:
+) -> dict[str, object]:
     """Answer one owner-initiated opaque-token folder frame; sequences untouched."""
     response = await asyncio.to_thread(handle_folder_frame, service, raw)
     encoded = json.dumps(response, separators=(",", ":"), ensure_ascii=False)
     if len(encoded.encode("utf-8")) > 8192:
         raise CloudHandshakeDeniedError(_DENIED)
     await socket.send(encoded)
+    return response
 
 
 async def _serve_write_revisions_request(
@@ -171,7 +174,7 @@ async def _serve_authorized_write_request(
 ) -> dict[str, object]:
     if not allow_native_write or write_executor is None:
         raise CloudHandshakeDeniedError(_DENIED)
-    envelope = _read_strict_json(raw, "connector.authorized_write")
+    envelope = _read_strict_json(raw, _WRITE_REQUEST_KIND)
     if envelope.get("version") != 1 or not isinstance(envelope.get("proof"), dict):
         raise CloudHandshakeDeniedError(_DENIED)
     proof_bytes = json.dumps(envelope["proof"], separators=(",", ":"), ensure_ascii=False).encode(
@@ -205,6 +208,36 @@ async def _serve_authorized_write_request(
     return result
 
 
+async def _serve_folder_frame(
+    socket: AuthenticatedReadSocket,
+    raw: str,
+    folder_service: LocalFolderBrowseService | None,
+    on_activity: Callable[[str], None] | None,
+) -> int:
+    """Handle the owner-initiated native folder dialog without consuming a tool slot."""
+    if folder_service is None:
+        raise CloudHandshakeDeniedError(_DENIED)
+    # The operation is still strictly validated by handle_folder_frame.
+    # This hint contains no user path, device key or private project data.
+    try:
+        operation = json.loads(raw).get("operation")
+    except (ValueError, TypeError, AttributeError):
+        operation = None
+    if operation == "choose":
+        _report_activity(on_activity, "Opening Windows project folder dialog")
+    result = await _serve_folder_request(socket, folder_service, raw)
+    if operation == "choose":
+        status = result.get("status")
+        _report_activity(
+            on_activity,
+            "Folder selection "
+            + (status if status in {"selected", "cancelled", "invalid"} else "finished"),
+        )
+    else:
+        _report_activity(on_activity, "Folder request completed")
+    return 0
+
+
 async def _serve_one_signed_frame(
     socket: AuthenticatedReadSocket,
     raw: str,
@@ -220,31 +253,34 @@ async def _serve_one_signed_frame(
     """Serve a single authenticated frame; return 1 if frame counts as a read/write, else 0."""
     kind = _top_level_kind(raw)
     if kind == _FOLDER_REQUEST_KIND:
-        if folder_service is None:
-            raise CloudHandshakeDeniedError(_DENIED)
-        await _serve_folder_request(socket, folder_service, raw)
-        _report_activity(on_activity, "Folder browsing request completed")
-        return 0
+        return await _serve_folder_frame(socket, raw, folder_service, on_activity)
     if kind == "connector.prepare_write_revisions":
         await _serve_write_revisions_request(socket, raw, allow_native_write, revisions_preparer)
         _report_activity(on_activity, "Write revision preparation completed")
         return 0
-    if kind == "connector.authorized_write":
-        result = await _serve_authorized_write_request(
-            socket, raw, allow_native_write, write_executor, reads_served + 1
-        )
-        operation = result.get("operation")
-        safe = operation if operation == "pcb_move_footprint" else "write"
-        _report_activity(on_activity, f"Tool call {reads_served + 1}: {safe} completed")
-        return 1
-    if kind != "connector.authorized_read":
+    if kind not in {_WRITE_REQUEST_KIND, "connector.authorized_read"}:
         raise CloudHandshakeDeniedError(_DENIED)
-    response = await _serve_one_authenticated_read(
-        socket, dispatcher, receipt, reads_served + 1, raw
-    )
-    operation = response.get("operation")
-    safe = operation if operation in {"project_summary", "run_drc"} else "read"
-    _report_activity(on_activity, f"Tool call {reads_served + 1}: {safe} completed")
+    sequence = reads_served + 1
+    is_write = kind == _WRITE_REQUEST_KIND
+    label = "write" if is_write else "read"
+    start = perf_counter()
+    _report_activity(on_activity, f"Tool call {sequence}: {label} started")
+    try:
+        if is_write:
+            result = await _serve_authorized_write_request(
+                socket, raw, allow_native_write, write_executor, sequence
+            )
+        else:
+            result = await _serve_one_authenticated_read(socket, dispatcher, receipt, sequence, raw)
+    except Exception:
+        _report_activity(on_activity, f"Tool call {sequence}: {label} failed")
+        raise
+    operation = result.get("operation")
+    safe = operation if operation in {"project_summary", "run_drc", "pcb_move_footprint"} else label
+    elapsed = round((perf_counter() - start) * 1000)
+    # "completed" means the device sent its acknowledged response. It does
+    # not assert a successful PCB operation or an external Cloud MCP outcome.
+    _report_activity(on_activity, f"Tool call {sequence}: {safe} completed ({elapsed} ms)")
     return 1
 
 

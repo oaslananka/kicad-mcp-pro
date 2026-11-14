@@ -59,6 +59,9 @@ test("usage recorder stores bounded observations and aggregates honestly", { ski
     await usage.record("owner-a", "client-a", "", "success");
     await usage.record("owner-a", "client-a", "list_projects", "quota" as never);
 
+    assert.equal(await usage.allTime("owner-a"),4);
+    assert.equal(await usage.allTime("owner-b"),1);
+    assert.equal(await usage.allTime("owner-unknown"),0);
     const summary = await usage.summary("owner-a");
     assert.ok(summary);
     assert.equal(summary.totalCalls, 4);

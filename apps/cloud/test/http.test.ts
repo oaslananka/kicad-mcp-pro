@@ -536,7 +536,7 @@ test("signed-in workspace Usage route displays honest no-data state",async()=>{
     assert.equal(response.status,200);
     const html=await response.text();
     assert.match(html,/No tool-call activity recorded yet/);
-    assert.match(html,/example@example.com/);
+    assert.doesNotMatch(html,/example@example.com/); // Stable account label, not route-dependent email.
     assert.match(html,/src="\/assets\/icon-32\.png"/);
     assert.doesNotMatch(html,/473|10[.,]000|Standard Developer Plan/);
   }finally{

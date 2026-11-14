@@ -16,10 +16,10 @@ function formatDate(iso:string|null):string{
 }
 
 export function renderUsagePage(
-  metrics:UsagePageMetrics|null=null,userEmail?:string):string{
+  metrics:UsagePageMetrics|null=null,userEmail?:string,allTime?:number):string{
   if(!metrics){
     return renderPage({
-      title:"Usage",
+      title:"Activity",
       kind:"usage",
       eyebrow:"Workspace / Usage",
       summary:"Observed MCP tool-call activity for your account.",
@@ -28,10 +28,17 @@ export function renderUsagePage(
         <div className="page-stack usage-dashboard">
           <section className="card detail-card" aria-label="Usage data unavailable">
             <div className="notice-icon"><Icon name="usage" size={23}/></div>
-            <h2>No tool-call activity recorded yet</h2>
-            <p>Counts appear once AI clients make verified tool calls through
-              this Cloud account. Nothing is estimated and no usage limit is
-              implied.</p>
+            <h2>{allTime===0?"0 Cloud tool calls recorded":
+              allTime!==undefined?"No Cloud tool calls in the last 30 days":
+              "No tool-call activity recorded yet"}</h2>
+            <p>{allTime===0?"There are no verified Cloud MCP calls for this account yet.":
+              allTime!==undefined?"Older recorded calls remain in your total.":
+              "Counts appear once AI clients make verified tool calls through this Cloud account."}
+              {" "}Nothing is estimated and no usage limit is implied.</p>
+            {allTime!==undefined?<div className="cloud-usage-lifetime">
+              <span>All recorded Cloud MCP calls</span><strong>{allTime.toLocaleString()}</strong>
+              <small>Since telemetry began, for this account only</small>
+            </div>:<p>Cloud telemetry is unavailable or not enabled; counts cannot be verified.</p>}
             <a className="button secondary" href="/devices">View connected devices</a>
           </section>
         </div>
@@ -42,13 +49,18 @@ export function renderUsagePage(
   const maxDay=Math.max(1,...summary.byDay.map(d=>d.calls));
   const maxTool=Math.max(1,...summary.byTool.map(t=>t.count));
   return renderPage({
-    title:"Usage",
+    title:"Activity",
     kind:"usage",
     eyebrow:"Workspace / Metrics & Activity",
     summary:"Observed MCP tool-call counts by tool, client and outcome. Observed counts only; nothing is estimated or promised.",
     userEmail,
     children:(
       <div className="page-stack usage-dashboard">
+        {allTime!==undefined?<section className="card cloud-usage-lifetime" aria-label="All recorded Cloud calls">
+          <span>ALL RECORDED CLOUD MCP CALLS</span>
+          <strong>{allTime.toLocaleString()}</strong>
+          <small>Verified for this account since telemetry was enabled, not lifetime before tracking</small>
+        </section>:<p>All-time Cloud total is unavailable.</p>}
         <section className="card usage-banner" aria-label="Observed tool calls">
           <div className="usage-banner-content">
             <span className="banner-kicker">OBSERVED TOOL CALLS</span>

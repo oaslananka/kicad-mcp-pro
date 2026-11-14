@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from pathlib import Path
 from uuid import UUID
@@ -109,10 +110,10 @@ async def test_two_successive_reads_on_same_authenticated_socket(tmp_path: Path)
         )
         == receipt
     )
-    assert events == [
-        "Tool call 1: project_summary completed",
-        "Tool call 2: project_summary completed",
-    ]
+    assert events[0] == "Tool call 1: read started"
+    assert re.fullmatch(r"Tool call 1: project_summary completed \(\d+ ms\)", events[1])
+    assert events[2] == "Tool call 2: read started"
+    assert re.fullmatch(r"Tool call 2: project_summary completed \(\d+ ms\)", events[3])
     assert [item["sequence"] for item in socket.sent] == [1, 2]
     for item in socket.sent:
         assert item["result"]["files"]["projectPresent"] is True
@@ -362,10 +363,9 @@ async def test_folder_frames_are_answered_without_consuming_read_sequences(
         socket, receipt, factory, max_reads=1, folder_service=service, on_activity=events.append
     )
     assert served == receipt
-    assert events == [
-        "Folder browsing request completed",
-        "Tool call 1: project_summary completed",
-    ]
+    assert events[0] == "Folder request completed"
+    assert events[1] == "Tool call 1: read started"
+    assert re.fullmatch(r"Tool call 1: project_summary completed \(\d+ ms\)", events[2])
     kinds = [item["kind"] for item in socket.sent]
     assert kinds == ["connector.local_browser_result", "connector.read_result"]
     folder_result = socket.sent[0]
@@ -384,6 +384,35 @@ async def test_folder_frames_are_answered_without_consuming_read_sequences(
     read_result = socket.sent[1]
     assert read_result["sequence"] == 1
     assert read_result["result"]["files"]["projectPresent"] is True
+
+
+@pytest.mark.anyio
+async def test_native_folder_choice_cancel_logs_outcome_without_binding_project(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "board.kicad_pro").write_text("{}", encoding="utf-8")
+    dispatcher = build_dispatcher(tmp_path, [True])
+    service = StagedFolderService()
+    socket = ScriptedSocket([folder_frame("choose"), request(1)])
+    events: list[str] = []
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    result = await serve_authenticated_reads(
+        socket,
+        receipt,
+        lambda _: dispatcher,
+        max_reads=1,
+        folder_service=service,
+        on_activity=events.append,
+    )
+    assert result == receipt
+    assert events[:2] == [
+        "Opening Windows project folder dialog",
+        "Folder selection cancelled",
+    ]
+    assert events[2] == "Tool call 1: read started"
+    assert service.bound == []
+    assert socket.sent[0]["kind"] == "connector.local_browser_result"
+    assert socket.sent[0]["status"] == "cancelled"
 
 
 @pytest.mark.anyio

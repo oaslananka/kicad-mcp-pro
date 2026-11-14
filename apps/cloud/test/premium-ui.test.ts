@@ -94,7 +94,7 @@ test("usage page never invents plan limits, activity or account identity",()=>{
   assert.match(html, /View connected devices/);
   assert.doesNotMatch(html, /473|10[.,]000|Standard Developer Plan|Active Plan|oaslananka@gmail.com/);
   assert.doesNotMatch(html, /Last 6 months, grouped by month|project_summary/);
-  assert.match(html, /<a href="\/settings" class="sidebar-profile" aria-label="Account and security settings" title="Account">/);
+  assert.match(html, /<a href="\/account" class="sidebar-profile" aria-label="Account overview"/);
   assert.match(html, /<span class="profile-identity">Account<\/span>/);
   assert.match(html, /src="\/assets\/icon-32\.png"/);
   assert.doesNotMatch(html, /<link[^>]+type="image\/svg\+xml"/);
@@ -119,7 +119,7 @@ test("usage page renders only supplied observations and never quota language",()
   assert.match(html, /2 calls recorded/);
   assert.match(html, /list_projects/);
   assert.match(html, /test-client/);
-  assert.match(html, /example@example.com/);
+  assert.doesNotMatch(html, /example@example.com/); // Sidebar account label is stable across pages.
   assert.match(html, /Calls per day/);
   assert.match(html, /Most used tools/);
   // No quota, allowance or entitlement vocabulary anywhere on the page.

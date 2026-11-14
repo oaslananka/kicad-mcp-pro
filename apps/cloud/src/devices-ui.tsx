@@ -118,7 +118,7 @@ function ProjectAccess({project,context}:Readonly<{project:Project;context:ViewC
                   <p className="field-help">Choose exactly which AI clients may read or edit
                     this project. New access is read-only; editing requires a separate
                     OAuth write consent and an explicit per-app grant. Cloud editing is
-                    not active until a compatible Connector and the write service are available.</p>
+                    not active until the Connector and Cloud write capability are available.</p>
                 <SavedProjectGrants project={project} grants={projectGrants} writeClients={writeClients}/>
 
                 {project.enabled&&project.managedCsrf?<>
@@ -172,7 +172,7 @@ function deviceStatus(device:Device,sandboxMode:boolean){
   if(!device.enabled)return {label:"Disabled",description:"Disabled",ariaLabel:"Disabled",tone:"neutral",online:false};
   if(device.connectionState==="connected")return {label:"Online",description:"Cloud session active",ariaLabel:"Connected",tone:"ready",online:true};
   if(device.connectionState==="disconnected"){
-    const description=sandboxMode?"Local Connector disconnected":"Run kicad-mcp-pro cloud reconnect to restore the background connection";
+    const description=sandboxMode?"Local Connector disconnected":"Run kicad-mcp-pro cloud connect in your terminal; keep it open to reconnect";
     return {label:"Offline",description,ariaLabel:"Offline",tone:"neutral",online:false};
   }
   return {label:"Status unknown",description:"Cloud status unknown",ariaLabel:"Status unknown",tone:"neutral",online:false};
@@ -297,8 +297,8 @@ function DeviceProjects({device:d,context}:Readonly<{device:Device;context:ViewC
                   </form>:null}
                   {d.browseNeedsUpgrade?<p className="field-help">
                     Update the KiCad MCP Pro Connector on this computer to
-                    add projects by browsing local folders. This device is Online,
-                    but its current Connector does not support remote Browse.
+                    add projects with the Windows folder picker. This device is online, but native folder selection requires
+                    an owner-operated terminal session.
                   </p>:null}
                 </div>
               </details>);
@@ -326,7 +326,7 @@ function DeviceList({context}:Readonly<{context:ViewContext}>){
           <div>
             <h3>No devices yet</h3>
             <p>{sandboxMode?"Connect this computer with the local development Connector.":
-              "Run kicad-mcp-pro cloud setup --browse on your computer to connect."}</p>
+              "Run kicad-mcp-pro cloud connect on your computer to connect."}</p>
           </div>
         </div>:
           <ul className="connections-list device-list">{devices.map(device=><DeviceRow key={device.id} device={device} context={context}/>)}</ul>}
@@ -344,11 +344,12 @@ function PairingSetup({context}:Readonly<{context:ViewContext}>){
         {sandboxMode?<><p>Local development only. This workspace only accepts
           connections from this computer. Its existing Connector is configured locally.</p>
           <a className="text-link" href="/devices">Review connected devices</a></>:
-          <><p>Run this once on your Windows computer. Choose your KiCad folder,
+          <><p>Run on your Windows computer. Choose your KiCad folder,
               then sign-in and approve pairing in the browser.</p>
-            <CopyValue value="kicad-mcp-pro cloud setup --browse" label="setup command"/>
-            <p className="field-help">The read-only Connector reconnects when you sign in to Windows.
-              You do not need to keep a terminal open. AI app access is granted separately.</p></>}
+            <CopyValue value="kicad-mcp-pro cloud connect" label="setup command"/>
+            <p className="field-help">Keep the terminal open to see connection and activity logs.
+              Close it to disconnect. On the first connection, approve pairing in your browser.
+              AI app access is granted separately.</p></>}
       </section>:
       <section className="card pair-another-card" id="connect-computer">
         <h2><Icon name="cpu" size={16}/> Connect another computer</h2>
@@ -356,12 +357,12 @@ function PairingSetup({context}:Readonly<{context:ViewContext}>){
           {sandboxMode?<p>Local development only. This Cloud instance accepts connections
             from this computer (127.0.0.1). Additional computers need a separate
             network-enabled Cloud setup; remote pairing is unavailable here.</p>:
-          <><p>On your other Windows computer, select its KiCad folder,
+          <><p>On your other Windows computer, run the command below to select its KiCad folder,
               then sign-in and approve pairing in the browser:</p>
-            <CopyValue value="kicad-mcp-pro cloud setup --browse" label="setup command"/>
-            <p className="field-help">The Connector reconnects at Windows sign-in.
-              Existing paired devices can use <code>kicad-mcp-pro cloud reconnect</code>{" "}
-              if their background connection stops.</p></>}
+            <CopyValue value="kicad-mcp-pro cloud connect" label="setup command"/>
+            <p className="field-help">Keep the terminal open. If this computer is already paired,
+              run <code>kicad-mcp-pro cloud connect</code> to reconnect without re-pairing.
+              The terminal displays connection and request logs.</p></>}
         </div>
       </section>);
 }
@@ -418,7 +419,7 @@ function RegisteredProjects({context}:Readonly<{context:ViewContext}>){
             :<div className="project-empty">
               <h3>No KiCad projects yet</h3>
               <p>{sandboxMode?"Project selection comes next. No local project is shared yet.":
-                <>Use <code>kicad-mcp-pro cloud setup --browse</code> on your
+                <>Use <code>kicad-mcp-pro cloud connect</code> on your
                   computer to pair it. Then choose a project using Browse on its Online card.</>}</p>
             </div>}
 

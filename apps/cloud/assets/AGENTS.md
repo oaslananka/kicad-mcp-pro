@@ -6,8 +6,10 @@ Use the HTTPS MCP endpoint and standard OAuth discovery to access only explicitl
 ## Installation
 
 Install KiCad MCP Pro on the owner's computer using the [official installation guide](https://oaslananka.github.io/kicad-mcp-pro/installation/).
-Run `kicad-mcp-pro cloud setup` locally; `--browse` can open a native folder picker
-for a KiCad project. Approve device pairing in your own browser.
+Run `kicad-mcp-pro cloud connect` in a local terminal. On first use, choose a
+KiCad project folder in the native Explorer dialog and approve browser pairing.
+Keep the terminal open while using Cloud; new project selection uses the same
+signed foreground device and does not upload local paths or files.
 Project paths and KiCad files are not uploaded by this setup guidance.
 
 ## Configuration

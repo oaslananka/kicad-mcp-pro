@@ -15,8 +15,8 @@ const project={id:projectId,deviceId,alias:"RoyalBlue54L-Feather long PCB title"
 test("signed-in workspace prioritizes Devices without removing old project deep links",()=>{
   const html=renderPage({title:"Devices",kind:"devices",children:null});
   assert.match(html,/href="\/devices" class="brand"/);
-  assert.ok(html.indexOf('href="/devices"')<html.indexOf('href="/projects"'));
-  assert.match(html,/href="\/projects"/);
+  assert.doesNotMatch(html,/href="\/projects"/); // Projects live within Devices.
+  assert.match(html,/href="\/usage"/);
   assert.match(html,/href="\/devices" aria-current="page"/);
 });
 
