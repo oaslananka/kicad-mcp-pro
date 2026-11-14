@@ -865,6 +865,7 @@ async def test_managed_write_denied_on_non_str_ack_or_mismatched_ack(
             lambda _: build_dispatcher(tmp_path, [True]),
             max_reads=1,
             allow_native_write=True,
+            revisions_preparer=lambda: {"revisions": {}},
             write_executor=lambda *_: {"requestId": "req1"},
         )
 
@@ -884,7 +885,7 @@ async def test_managed_write_denied_on_non_str_ack_or_mismatched_ack(
                         {
                             "kind": "connector.write_ack",
                             "version": 1,
-                            "sequence": 999,  # mismatched sequence triggers line 217
+                            "sequence": 999,  # mismatched sequence triggers line 204
                             "requestId": "different-req",
                         }
                     )
@@ -898,5 +899,49 @@ async def test_managed_write_denied_on_non_str_ack_or_mismatched_ack(
             lambda _: build_dispatcher(tmp_path, [True]),
             max_reads=1,
             allow_native_write=True,
+            revisions_preparer=lambda: {"revisions": {}},
             write_executor=lambda *_: {"requestId": "req1"},
+        )
+
+
+@pytest.mark.anyio
+async def test_signed_read_frames_denials_on_valid_session(tmp_path: Path) -> None:
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+
+    # 1. Folder frame without folder_service attached
+    socket_no_folder = ScriptedSocket([folder_frame("list", folderId="root")])
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        await serve_authenticated_reads(
+            socket_no_folder,
+            receipt,
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+            folder_service=None,
+        )
+
+    # 2. Unknown kind frame
+    unknown_frame = json.dumps({"kind": "connector.unknown_action", "version": 1})
+    socket_unknown = ScriptedSocket([unknown_frame])
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        await serve_authenticated_reads(
+            socket_unknown,
+            receipt,
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+        )
+
+    # 3. Non-string raw frame
+    class BinaryFrameSocket:
+        async def recv(self) -> object:
+            return b"\x00\x01\x02"
+
+        async def send(self, val: str) -> None:
+            pass
+
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        await serve_authenticated_reads(
+            BinaryFrameSocket(),  # type: ignore[arg-type]
+            receipt,
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
         )

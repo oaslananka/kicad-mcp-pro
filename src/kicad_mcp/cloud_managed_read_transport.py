@@ -205,6 +205,49 @@ async def _serve_authorized_write_request(
     return result
 
 
+async def _serve_one_signed_frame(
+    socket: AuthenticatedReadSocket,
+    raw: str,
+    reads_served: int,
+    dispatcher: LocalReadDispatch,
+    receipt: HandshakeReceipt,
+    folder_service: LocalFolderBrowseService | None,
+    on_activity: Callable[[str], None] | None,
+    allow_native_write: bool = False,
+    revisions_preparer: Callable[[], dict[str, str]] | None = None,
+    write_executor: Callable[[bytes, bool], dict[str, object]] | None = None,
+) -> int:
+    """Serve a single authenticated frame; return 1 if frame counts as a read/write, else 0."""
+    kind = _top_level_kind(raw)
+    if kind == _FOLDER_REQUEST_KIND:
+        if folder_service is None:
+            raise CloudHandshakeDeniedError(_DENIED)
+        await _serve_folder_request(socket, folder_service, raw)
+        _report_activity(on_activity, "Folder browsing request completed")
+        return 0
+    if kind == "connector.prepare_write_revisions":
+        await _serve_write_revisions_request(socket, raw, allow_native_write, revisions_preparer)
+        _report_activity(on_activity, "Write revision preparation completed")
+        return 0
+    if kind == "connector.authorized_write":
+        result = await _serve_authorized_write_request(
+            socket, raw, allow_native_write, write_executor, reads_served + 1
+        )
+        operation = result.get("operation")
+        safe = operation if operation == "pcb_move_footprint" else "write"
+        _report_activity(on_activity, f"Tool call {reads_served + 1}: {safe} completed")
+        return 1
+    if kind != "connector.authorized_read":
+        raise CloudHandshakeDeniedError(_DENIED)
+    response = await _serve_one_authenticated_read(
+        socket, dispatcher, receipt, reads_served + 1, raw
+    )
+    operation = response.get("operation")
+    safe = operation if operation in {"project_summary", "run_drc"} else "read"
+    _report_activity(on_activity, f"Tool call {reads_served + 1}: {safe} completed")
+    return 1
+
+
 async def _serve_signed_read_frames(
     socket: AuthenticatedReadSocket,
     dispatcher: LocalReadDispatch,
@@ -222,37 +265,18 @@ async def _serve_signed_read_frames(
         raw = await socket.recv()
         if not isinstance(raw, str):
             raise CloudHandshakeDeniedError(_DENIED)
-        kind = _top_level_kind(raw)
-        if kind == _FOLDER_REQUEST_KIND:
-            if folder_service is None:
-                raise CloudHandshakeDeniedError(_DENIED)
-            await _serve_folder_request(socket, folder_service, raw)
-            _report_activity(on_activity, "Folder browsing request completed")
-            continue
-        if kind == "connector.prepare_write_revisions":
-            await _serve_write_revisions_request(
-                socket, raw, allow_native_write, revisions_preparer
-            )
-            _report_activity(on_activity, "Write revision preparation completed")
-            continue
-        if kind == "connector.authorized_write":
-            result = await _serve_authorized_write_request(
-                socket, raw, allow_native_write, write_executor, reads_served + 1
-            )
-            reads_served += 1
-            operation = result.get("operation")
-            safe = operation if operation == "pcb_move_footprint" else "write"
-            _report_activity(on_activity, f"Tool call {reads_served}: {safe} completed")
-            continue
-        if kind != "connector.authorized_read":
-            raise CloudHandshakeDeniedError(_DENIED)
-        response = await _serve_one_authenticated_read(
-            socket, dispatcher, receipt, reads_served + 1, raw
+        reads_served += await _serve_one_signed_frame(
+            socket,
+            raw,
+            reads_served,
+            dispatcher,
+            receipt,
+            folder_service,
+            on_activity,
+            allow_native_write,
+            revisions_preparer,
+            write_executor,
         )
-        reads_served += 1
-        operation = response.get("operation")
-        safe = operation if operation in {"project_summary", "run_drc"} else "read"
-        _report_activity(on_activity, f"Tool call {reads_served}: {safe} completed")
 
 
 async def serve_authenticated_reads(
