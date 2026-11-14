@@ -191,3 +191,13 @@ def test_new_files_are_exclusively_created_if_target_appears_during_creation(
         service.create(str(workspace), "demo", confirm_overwrite=False)
 
     assert target.read_text(encoding="utf-8") == "IMPORTANT_NEW_OWNER_CONTENT"
+
+
+def test_null_byte_is_rejected_at_service_boundary(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    service = _service(workspace)
+
+    with pytest.raises(ValueError, match="single filesystem name component"):
+        service.create(str(workspace), "invalid\x00name")
+
+    assert not list(workspace.iterdir())

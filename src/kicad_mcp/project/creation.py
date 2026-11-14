@@ -53,29 +53,17 @@ class ProjectCreationService:
     reset_connection: Callable[[], None]
     reset_live_edit: Callable[[], None]
 
-    def create(self, path: str, name: str, *, confirm_overwrite: bool = False) -> str:
-        # A project name is a basename, not an output path. Validate it at the
-        # service boundary as well as at the MCP adapter boundary.
-        if (
-            not name
-            or name in {".", ".."}
-            or any(char in name for char in ("/", "\\", ":", "\\x00"))
-        ):
-            raise ValueError("Project name must be a single filesystem name component.")
-
-        cfg = self.get_config()
-        base_dir = Path(path).expanduser().resolve()
-        if cfg.workspace_root is not None:
-            self.assert_within(cfg.workspace, base_dir)
-        project_dir = base_dir / name
+    def _checked_output_files(
+        self, cfg: ProjectCreationConfigProtocol, project_dir: Path, name: str
+    ) -> tuple[Path, Path, Path]:
+        """Reject project directories and output paths outside the selected location."""
         resolved_dir = project_dir.resolve()
         if resolved_dir != project_dir:
             raise ValueError("Project directory must not resolve through a symlink.")
         if cfg.workspace_root is not None:
             self.assert_within(cfg.workspace, resolved_dir)
 
-        project_file, pcb_file, sch_file = self.new_project_files(project_dir, name)
-        output_files = (project_file, pcb_file, sch_file)
+        output_files = self.new_project_files(project_dir, name)
         for output_file in output_files:
             if output_file.is_symlink():
                 raise ValueError("Project files must not be symlinks.")
@@ -86,6 +74,25 @@ class ProjectCreationService:
                 raise ValueError("Project files must stay in their new project directory.") from exc
             if cfg.workspace_root is not None:
                 self.assert_within(cfg.workspace, resolved_file)
+        return output_files
+
+    def create(self, path: str, name: str, *, confirm_overwrite: bool = False) -> str:
+        # A project name is a basename, not an output path. Validate it at the
+        # service boundary as well as at the MCP adapter boundary.
+        if (
+            not name
+            or name in {".", ".."}
+            or any(char in name for char in ("/", "\\", ":", "\x00"))
+        ):
+            raise ValueError("Project name must be a single filesystem name component.")
+
+        cfg = self.get_config()
+        base_dir = Path(path).expanduser().resolve()
+        if cfg.workspace_root is not None:
+            self.assert_within(cfg.workspace, base_dir)
+        project_dir = base_dir / name
+        output_files = self._checked_output_files(cfg, project_dir, name)
+        project_file, pcb_file, sch_file = output_files
 
         if project_dir.exists() and not project_dir.is_dir():
             raise ValueError("Project directory path is not a directory.")
