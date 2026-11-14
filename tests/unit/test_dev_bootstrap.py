@@ -38,7 +38,7 @@ def test_bootstrap_plan_is_repository_scoped_and_exact() -> None:
         "pnpm": "11.28.6",
         "python": "3.13.17",
         "task": "3.52.0",
-        "uv": "0.13.5",
+        "uv": "0.13.7",
     }
     for path in (plan.cache_root, plan.tool_root, plan.venv_root, plan.environment_file):
         assert path == ROOT or ROOT in path.parents

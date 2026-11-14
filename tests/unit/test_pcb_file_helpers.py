@@ -188,16 +188,18 @@ def test_apply_stackup_removes_unused_inner_layers_and_refuses_used_ones() -> No
         "\n)\n",
         '\n\t(segment (start 0 0) (end 1 0) (width 0.2) (layer "In2.Cu") (net 0))\n)\n',
     )
+    two_layer = _two_layer_stackup()
     with pytest.raises(ValueError, match=r"still carry board items: In2\.Cu"):
-        _apply_stackup_to_board(with_track, _two_layer_stackup())
+        _apply_stackup_to_board(with_track, two_layer)
 
 
 def test_apply_stackup_rejects_copper_layers_out_of_kicad_order() -> None:
     stackup = _four_layer_stackup()
     skipped_in1 = [stackup[0], stackup[1], stackup[4], stackup[5], stackup[6]]
 
+    base_board = _kicad10_two_layer_board()
     with pytest.raises(ValueError, match=r"F\.Cu, In1\.Cu, B\.Cu \(got: F\.Cu, In2\.Cu, B\.Cu\)"):
-        _apply_stackup_to_board(_kicad10_two_layer_board(), skipped_in1)
+        _apply_stackup_to_board(base_board, skipped_in1)
 
 
 def test_apply_stackup_treats_dielectrics_without_material_as_fr4_cores() -> None:

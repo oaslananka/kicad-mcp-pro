@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1.7
 ARG KICAD_APPIMAGE_URL
-ARG UV_VERSION=0.13.5
+ARG UV_VERSION=0.13.7
 
-FROM ghcr.io/astral-sh/uv:${UV_VERSION}@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff AS uv-bin
+FROM ghcr.io/astral-sh/uv:${UV_VERSION}@sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490 AS uv-bin
 
 FROM debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc AS kicad-extract
 ARG KICAD_APPIMAGE_URL

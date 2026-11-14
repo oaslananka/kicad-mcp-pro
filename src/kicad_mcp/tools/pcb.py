@@ -156,10 +156,11 @@ DECOUPLING_RULES: dict[str, dict[str, object]] = {
     "10u": {"max_dist_mm": 10.0, "prefer_side": "same"},
 }
 STACKUP_STATE_FILE = "stackup_profile.json"
+_FRONT_SILKSCREEN_LAYER = "F.SilkS"
 # Stackup entries that are neither copper nor dielectric:
 # key -> (board-file name, KiCad stackup type, carries a thickness).
 _STACKUP_TECH_LAYERS: dict[str, tuple[str, str, bool]] = {
-    "F_SilkS": ("F.SilkS", "Top Silk Screen", False),
+    "F_SilkS": (_FRONT_SILKSCREEN_LAYER, "Top Silk Screen", False),
     "F_Paste": ("F.Paste", "Top Solder Paste", False),
     "F_Mask": ("F.Mask", "Top Solder Mask", True),
     "B_Mask": ("B.Mask", "Bottom Solder Mask", True),
@@ -393,6 +394,17 @@ def _validate_stackup_copper_sequence(layers: list[StackupLayerSpec]) -> list[st
     return copper
 
 
+def _quoted_character_state(char: str, in_string: bool, escaped: bool) -> tuple[bool, bool]:
+    """Advance the lexer quote state without interpreting parentheses inside strings."""
+    if not in_string:
+        return char == '"', False
+    if escaped:
+        return True, False
+    if char == "\\":
+        return True, True
+    return char != '"', False
+
+
 def _direct_child_spans(block: str) -> list[tuple[str, int, int]]:
     """Return ``(keyword, start, end)`` for each direct child list of an S-expression."""
     spans: list[tuple[str, int, int]] = []
@@ -402,16 +414,11 @@ def _direct_child_spans(block: str) -> list[tuple[str, int, int]]:
     index = 0
     while index < len(block):
         char = block[index]
-        if in_string:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == '"':
-                in_string = False
-        elif char == '"':
-            in_string = True
-        elif char == "(" and depth == 1:
+        if in_string or char == '"':
+            in_string, escaped = _quoted_character_state(char, in_string, escaped)
+            index += 1
+            continue
+        if char == "(" and depth == 1:
             child, length = _extract_block(block, index)
             if not child:
                 break
@@ -483,23 +490,13 @@ def _check_dropped_layers_are_unused(content: str, removals: list[str]) -> None:
         )
 
 
-def _sync_layer_table_with_stackup(content: str, layers: list[StackupLayerSpec]) -> str:
-    """Make the root ``(layers ...)`` table agree with the stackup.
-
-    KiCad resolves stackup entries through this table and takes the copper layer
-    count from it. A stackup naming a layer the table lacks (an inner copper layer,
-    or a solder mask on a minimal board) is loaded with that entry turned into a
-    dielectric, so the table has to follow the stackup: inner copper layers are added
-    or, when nothing uses them, removed, and missing mask/silk/paste layers are added.
-    """
-    table_span = _child_span(content, "layers")
-    if table_span is None:
-        return content
-    table_start, table_end = table_span
-    table = content[table_start:table_end]
-    entries = _layer_table_entries(table)
-    legacy = entries.get("B.Cu", (2, 0, 0))[0] == 31  # KiCad 8 numbering: B.Cu = 31
-
+def _stackup_layer_table_edits(
+    content: str,
+    table: str,
+    entries: dict[str, tuple[int, int, int]],
+    layers: list[StackupLayerSpec],
+    legacy: bool,
+) -> list[tuple[int, int, str]]:
     wanted_inner = {
         name: layer
         for layer in layers
@@ -514,8 +511,6 @@ def _sync_layer_table_with_stackup(content: str, layers: list[StackupLayerSpec])
         if (key := _stackup_layer_key(layer.name)) in _STACKUP_TECH_LAYERS
         and (file_name := _STACKUP_TECH_LAYERS[key][0]) not in entries
     ]
-    if not (removals or copper_additions or tech_additions):
-        return content
     if removals:
         _check_dropped_layers_are_unused(content, removals)
 
@@ -543,6 +538,29 @@ def _sync_layer_table_with_stackup(content: str, layers: list[StackupLayerSpec])
         )
         edits.append((last_end, last_end, inserted))
 
+    return edits
+
+
+def _sync_layer_table_with_stackup(content: str, layers: list[StackupLayerSpec]) -> str:
+    """Make the root ``(layers ...)`` table agree with the stackup.
+
+    KiCad resolves stackup entries through this table and takes the copper layer
+    count from it. A stackup naming a layer the table lacks (an inner copper layer,
+    or a solder mask on a minimal board) is loaded with that entry turned into a
+    dielectric, so the table has to follow the stackup: inner copper layers are added
+    or, when nothing uses them, removed, and missing mask/silk/paste layers are added.
+    """
+    table_span = _child_span(content, "layers")
+    if table_span is None:
+        return content
+    table_start, table_end = table_span
+    table = content[table_start:table_end]
+    entries = _layer_table_entries(table)
+    legacy = entries.get("B.Cu", (2, 0, 0))[0] == 31  # KiCad 8 numbering: B.Cu = 31
+
+    edits = _stackup_layer_table_edits(content, table, entries, layers, legacy)
+    if not edits:
+        return content
     for start, end, replacement in sorted(edits, reverse=True):
         if replacement:
             table = table[:start] + replacement + table[end:]
@@ -1422,7 +1440,7 @@ def _board_file_layers(content: str) -> list[dict[str, object]]:
             {"index": 31, "name": "B.Cu", "type": "signal"},
             {"index": 34, "name": "F.Paste", "type": "surface"},
             {"index": 35, "name": "B.Paste", "type": "surface"},
-            {"index": 36, "name": "F.SilkS", "type": "user"},
+            {"index": 36, "name": _FRONT_SILKSCREEN_LAYER, "type": "user"},
             {"index": 37, "name": "B.SilkS", "type": "user"},
             {"index": 38, "name": "F.Mask", "type": "user"},
             {"index": 39, "name": "B.Mask", "type": "user"},
@@ -3697,7 +3715,7 @@ def _register_board_graphics_tools(mcp: FastMCP) -> None:
         x_mm: float,
         y_mm: float,
         width_mm: float = 20.0,
-        layer: str = "F.SilkS",
+        layer: str = _FRONT_SILKSCREEN_LAYER,
         threshold: int = 128,
         invert: bool = False,
         max_pixels: int = 64,
