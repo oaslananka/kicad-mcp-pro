@@ -1,0 +1,207 @@
+{
+  "cases": [
+    {
+      "drc_observations": [
+        {
+          "duration_ms": 4725.325,
+          "exit_code": 5,
+          "status": "violations",
+          "violation_count": 3
+        },
+        {
+          "duration_ms": 4724.276,
+          "exit_code": 5,
+          "status": "violations",
+          "violation_count": 3
+        },
+        {
+          "duration_ms": 5524.525,
+          "exit_code": 5,
+          "status": "violations",
+          "violation_count": 3
+        }
+      ],
+      "drc_p50_ms": 4725.325,
+      "drc_p95_ms": 5524.525,
+      "fixture_id": "mcu",
+      "is_autonomous_reference_success": false,
+      "native_peak_rss_kib": null,
+      "native_peak_rss_note": "not measured; no peak RSS claim",
+      "pcb_footprint_source_count": 3,
+      "qualifies_944_min_1000_components": false,
+      "root": "tests/fixtures/benchmark_projects/pass_minimal_mcu_board",
+      "sources_sha256": {
+        "demo.kicad_pcb": "5004a7d46fdc0c2aba6b1bad83983cb3171b603f17eea05821a51f871167eae2",
+        "demo.kicad_pro": "c4e66785059971a3b92142bd2f768e3fe462a5083ca7f788c55e8ce0df9eda40",
+        "demo.kicad_sch": "c66dcaf7626dfb030610b96d12ea1df091a66aa16d827a3c19715b4b3754cacc"
+      }
+    },
+    {
+      "drc_observations": [
+        {
+          "duration_ms": 4801.923,
+          "exit_code": 5,
+          "status": "violations",
+          "violation_count": 3
+        },
+        {
+          "duration_ms": 4794.968,
+          "exit_code": 5,
+          "status": "violations",
+          "violation_count": 3
+        },
+        {
+          "duration_ms": 6324.577,
+          "exit_code": 5,
+          "status": "violations",
+          "violation_count": 3
+        }
+      ],
+      "drc_p50_ms": 4801.923,
+      "drc_p95_ms": 6324.577,
+      "fixture_id": "sensor",
+      "is_autonomous_reference_success": false,
+      "native_peak_rss_kib": null,
+      "native_peak_rss_note": "not measured; no peak RSS claim",
+      "pcb_footprint_source_count": 3,
+      "qualifies_944_min_1000_components": false,
+      "root": "tests/fixtures/benchmark_projects/pass_sensor_node",
+      "sources_sha256": {
+        "demo.kicad_pcb": "b5a6efecb42758a37c77b0d426f8a9d5886e1930f66be8c3e047ec73f829cacc",
+        "demo.kicad_pro": "c4e66785059971a3b92142bd2f768e3fe462a5083ca7f788c55e8ce0df9eda40",
+        "demo.kicad_sch": "3afbfc858112b8fc7ae7356ad98af5e1c96b6a3ef8636ec9797a4849d030d677"
+      }
+    },
+    {
+      "drc_observations": [
+        {
+          "duration_ms": 8610.08,
+          "exit_code": 5,
+          "status": "violations",
+          "violation_count": 201
+        },
+        {
+          "duration_ms": 7760.901,
+          "exit_code": 5,
+          "status": "violations",
+          "violation_count": 201
+        },
+        {
+          "duration_ms": 7799.93,
+          "exit_code": 5,
+          "status": "violations",
+          "violation_count": 201
+        }
+      ],
+      "drc_p50_ms": 7799.93,
+      "drc_p95_ms": 8610.08,
+      "fixture_id": "large",
+      "is_autonomous_reference_success": false,
+      "native_peak_rss_kib": null,
+      "native_peak_rss_note": "not measured; no peak RSS claim",
+      "pcb_footprint_source_count": 36,
+      "qualifies_944_min_1000_components": false,
+      "root": "packages/kicad-fixtures/fixtures/large-board",
+      "sources_sha256": {
+        "large-board.kicad_dru": "bda258858e17e5955f905126414d2cced4cb6284c44d0984f1ada299452bd052",
+        "large-board.kicad_pcb": "976cc3dd14f091d8b7416b0d81f47f8ddd26c1ceddde939fb56ee1b5b94fe399",
+        "large-board.kicad_pro": "6d13f4f7882a88374cc353918591c5c95d0afc1c2656521f3ef599e062b47282",
+        "large-board.kicad_sch": "8812dfdc31f00572006d88641736c23fccb7f65019aa1f9650d72a7b19f64a6f"
+      }
+    },
+    {
+      "drc_observations": [
+        {
+          "duration_ms": 330.554,
+          "exit_code": 3,
+          "status": "native_error",
+          "violation_count": null
+        },
+        {
+          "duration_ms": 379.646,
+          "exit_code": 3,
+          "status": "native_error",
+          "violation_count": null
+        },
+        {
+          "duration_ms": 482.311,
+          "exit_code": 3,
+          "status": "native_error",
+          "violation_count": null
+        }
+      ],
+      "drc_p50_ms": 379.646,
+      "drc_p95_ms": 482.311,
+      "fixture_id": "esp32-gallery",
+      "is_autonomous_reference_success": false,
+      "native_peak_rss_kib": null,
+      "native_peak_rss_note": "not measured; no peak RSS claim",
+      "pcb_footprint_source_count": 0,
+      "qualifies_944_min_1000_components": false,
+      "root": "examples/gallery/esp32-c3-wroom-02-breakout",
+      "sources_sha256": {
+        "esp32-c3-wroom-02-breakout.kicad_pcb": "91f3e1d82a5c288e7c8337b558149f5af9f0b86ec1043b0e576733d6b6493584",
+        "esp32-c3-wroom-02-breakout.kicad_pro": "0efc2ae1a4db360a50e202df2f3e3b9a35681c0fa1904134da205ee1d3fbc704",
+        "esp32-c3-wroom-02-breakout.kicad_sch": "b4845b432646d31e09cf4a38e3f57c762680263291c7ecfa79de56c58f64cf68"
+      }
+    }
+  ],
+  "classification": "existing_fixture_readiness_not_agent_outcome",
+  "execution_platform": {
+    "architecture": "x86_64",
+    "os": "linux"
+  },
+  "kicad_cli_version": "10.0.6",
+  "limitations": [
+    "Existing repo fixtures are not clean-start autonomous reference boards.",
+    "DRC execution or a valid parse is not equivalent to a passing DRC.",
+    "Footprint source count is not a verified component or hierarchy count.",
+    "No native peak RSS, inspect/update latency, or graph equivalence was measured."
+  ],
+  "peak_rss_measured": false,
+  "reference_corpus": [
+    {
+      "attempt_manifest_entry_count_unverified": null,
+      "autonomous_success_verified_by_this_audit": false,
+      "board_id": "esp32-c6-usbc",
+      "input_files_sha256": {
+        "benchmark.json": "557a39290a3a7e87b4b43b7414fbe6691800cfc20b0ec4a32f5bea9bc985fdee",
+        "original-prompt.md": "07fb0a2932875ce809ee943daebeba711f1aeea87ea3f2e590df8dc7318db5c2",
+        "specification.md": "9f7b31f1235312f847fcafd4e2054e6e5327b84753f9a43a0f6eedf52a2d8ef6"
+      },
+      "reference_path": "docs/evidence/reference-boards/esp32-c6-usbc/v1",
+      "status": "requires_independent_attempt_and_native_evidence",
+      "warning": "Input specifications and attempt metadata alone are NOT a completed autonomous KiCad board or manufacturing result."
+    },
+    {
+      "attempt_manifest_entry_count_unverified": 3,
+      "autonomous_success_verified_by_this_audit": false,
+      "board_id": "stm32f072-usbc",
+      "input_files_sha256": {
+        "attempt-manifest.json": "0bdf9016f3a437c3613cdb8bd02307a77b12b25a0c2a16f8b583d8f92744651f",
+        "benchmark.json": "fbc8f6aafbbae024647ab906cd13cafddfb96530f37c40d6fc4b0fbcacf57139",
+        "original-prompt.md": "3c2528a9ce84ec8222a4175b530cc13906ecced6a66633d098818fc792cbf356",
+        "specification.md": "16c7f67ad693a30ab434f32be01280aa041cf3ce9347e92f4a4ce58ce7ce9e34"
+      },
+      "reference_path": "docs/evidence/reference-boards/stm32f072-usbc/v1",
+      "status": "requires_independent_attempt_and_native_evidence",
+      "warning": "Input specifications and attempt metadata alone are NOT a completed autonomous KiCad board or manufacturing result."
+    },
+    {
+      "attempt_manifest_entry_count_unverified": null,
+      "autonomous_success_verified_by_this_audit": false,
+      "board_id": "rp2350-usbc",
+      "input_files_sha256": {
+        "benchmark.json": "45e5e023ce1813c1dce8d940cbf06226bcd7565625044e766a735fda3a2fa4c2",
+        "original-prompt.md": "07a0be4ac3e291b85c73f779fe4a9d8e492fe996c39f26ab50a881cd7a8a8c3f",
+        "specification.md": "219b1ecf07062e7b54bacc12060daf64bfa9230e6bcbbe8a103b5dce293933fe"
+      },
+      "reference_path": "docs/evidence/reference-boards/rp2350-usbc/v1",
+      "status": "requires_independent_attempt_and_native_evidence",
+      "warning": "Input specifications and attempt metadata alone are NOT a completed autonomous KiCad board or manufacturing result."
+    }
+  ],
+  "sample_count_per_case": 3,
+  "schema_version": "native-fixture-readiness.v0",
+  "source_sha": "cb86198078d2256c49c30ea704f030d492d33673"
+}

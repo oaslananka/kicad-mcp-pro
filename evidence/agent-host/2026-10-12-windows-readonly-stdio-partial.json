@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "agent-native-host-partial.v1",
+  "observedOn": "2026-10-12",
+  "sourceRevision": "ed7bb77eda6e2f1ac087942a5b0302cab718b71f",
+  "serverVersion": "4.3.0",
+  "kicadCliVersion": "10.0.7",
+  "platform": "windows",
+  "transport": "stdio",
+  "operatingMode": "readonly",
+  "profile": "default",
+  "environment": "isolated-user-config",
+  "hosts": [
+    {
+      "id": "claude-code",
+      "version": "2.1.296",
+      "configurationListed": true,
+      "connectionObserved": "connected",
+      "skillDiscovery": "not-run",
+      "nativeToolCall": "not-run"
+    },
+    {
+      "id": "codex",
+      "version": "0.151.0",
+      "configurationListed": true,
+      "connectionObserved": "not-verified",
+      "skillDiscovery": "not-run",
+      "nativeToolCall": "not-run"
+    }
+  ],
+  "independentSdkProbe": {
+    "sdkVersion": "2.2.0",
+    "initializeSucceeded": true,
+    "discoveredToolCount": 24,
+    "readonlyTool": "kicad_get_server_info",
+    "readonlyCallSucceeded": true,
+    "designMutationToolsExposed": false,
+    "sessionProjectSelectorDiscovered": true
+  },
+  "catalogPromotionAuthorized": false,
+  "realHostToolInvocationEstablished": false,
+  "fullNativeHostSmokeAttested": false
+}

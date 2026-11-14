@@ -1,0 +1,180 @@
+{
+  "all_expectations_met": true,
+  "cases": [
+    {
+      "case_id": "unrelated-u8-edit-keeps-proof-valid",
+      "escaped": false,
+      "must_block": false,
+      "passed": true,
+      "primary_freshness": "still_valid",
+      "reason_codes": [],
+      "release_approved": true,
+      "release_state": "satisfied",
+      "scenario": "unrelated_component_edit",
+      "waiver_freshness": null
+    },
+    {
+      "case_id": "usb-geometry-edit-blocks",
+      "escaped": false,
+      "must_block": true,
+      "passed": true,
+      "primary_freshness": "invalidated",
+      "reason_codes": [
+        "required_evidence_invalidated"
+      ],
+      "release_approved": false,
+      "release_state": "blocked",
+      "scenario": "usb_entity_edit",
+      "waiver_freshness": null
+    },
+    {
+      "case_id": "stackup-edit-blocks",
+      "escaped": false,
+      "must_block": true,
+      "passed": true,
+      "primary_freshness": "invalidated",
+      "reason_codes": [
+        "required_evidence_invalidated"
+      ],
+      "release_approved": false,
+      "release_state": "blocked",
+      "scenario": "stackup_entity_edit",
+      "waiver_freshness": null
+    },
+    {
+      "case_id": "contract-edit-blocks",
+      "escaped": false,
+      "must_block": true,
+      "passed": true,
+      "primary_freshness": "invalidated",
+      "reason_codes": [
+        "required_evidence_invalidated"
+      ],
+      "release_approved": false,
+      "release_state": "blocked",
+      "scenario": "contract_entity_edit",
+      "waiver_freshness": null
+    },
+    {
+      "case_id": "exact-usb-hash-change-blocks",
+      "escaped": false,
+      "must_block": true,
+      "passed": true,
+      "primary_freshness": "invalidated",
+      "reason_codes": [
+        "required_evidence_invalidated"
+      ],
+      "release_approved": false,
+      "release_state": "blocked",
+      "scenario": "usb_hash_change",
+      "waiver_freshness": null
+    },
+    {
+      "case_id": "unknown-mutation-scope-blocks",
+      "escaped": false,
+      "must_block": true,
+      "passed": true,
+      "primary_freshness": "requires_recheck",
+      "reason_codes": [
+        "required_evidence_requires_recheck"
+      ],
+      "release_approved": false,
+      "release_state": "blocked",
+      "scenario": "unknown_mutation_scope",
+      "waiver_freshness": null
+    },
+    {
+      "case_id": "missing-current-stackup-hash-blocks",
+      "escaped": false,
+      "must_block": true,
+      "passed": true,
+      "primary_freshness": "requires_recheck",
+      "reason_codes": [
+        "required_evidence_requires_recheck"
+      ],
+      "release_approved": false,
+      "release_state": "blocked",
+      "scenario": "missing_stackup_hash",
+      "waiver_freshness": null
+    },
+    {
+      "case_id": "missing-freshness-assessment-blocks",
+      "escaped": false,
+      "must_block": true,
+      "passed": true,
+      "primary_freshness": "still_valid",
+      "reason_codes": [
+        "required_evidence_requires_recheck"
+      ],
+      "release_approved": false,
+      "release_state": "blocked",
+      "scenario": "missing_freshness_assessment",
+      "waiver_freshness": null
+    },
+    {
+      "case_id": "dependency-edge-deletion-blocks",
+      "escaped": false,
+      "must_block": true,
+      "passed": true,
+      "primary_freshness": "invalidated",
+      "reason_codes": [
+        "required_evidence_invalidated"
+      ],
+      "release_approved": false,
+      "release_state": "blocked",
+      "scenario": "dependency_edge_removed",
+      "waiver_freshness": null
+    },
+    {
+      "case_id": "tampered-persisted-evidence-record-blocks",
+      "escaped": false,
+      "must_block": true,
+      "passed": true,
+      "primary_freshness": "requires_recheck",
+      "reason_codes": [
+        "required_evidence_requires_recheck"
+      ],
+      "release_approved": false,
+      "release_state": "blocked",
+      "scenario": "tampered_evidence_record",
+      "waiver_freshness": null
+    },
+    {
+      "case_id": "fresh-reviewed-waiver-is-explicit-exception",
+      "escaped": false,
+      "must_block": false,
+      "passed": true,
+      "primary_freshness": "invalidated",
+      "reason_codes": [
+        "explicit_reviewed_waiver"
+      ],
+      "release_approved": true,
+      "release_state": "waived",
+      "scenario": "fresh_reviewed_waiver",
+      "waiver_freshness": "still_valid"
+    },
+    {
+      "case_id": "stale-reviewed-waiver-does-not-escape",
+      "escaped": false,
+      "must_block": true,
+      "passed": true,
+      "primary_freshness": "invalidated",
+      "reason_codes": [
+        "required_evidence_invalidated",
+        "waiver_approval_evidence_missing_or_stale"
+      ],
+      "release_approved": false,
+      "release_state": "blocked",
+      "scenario": "stale_reviewed_waiver",
+      "waiver_freshness": "requires_recheck"
+    }
+  ],
+  "corpus_sha256": "befc4409dc503a3a36747d9281f4cf15b3f5bac66e491030e35092932c09c7d2",
+  "escape_count": 0,
+  "escape_rate": 0.0,
+  "schema_version": 1,
+  "stale_cases": 10,
+  "target_escape_rate": 0.0,
+  "target_met": true,
+  "total_cases": 12
+}

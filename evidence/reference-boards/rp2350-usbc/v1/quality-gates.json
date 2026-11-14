@@ -1,0 +1,23 @@
+{
+  "schema_version": "pcb-reference-board-quality.v1",
+  "board_id": "rp2350-usbc",
+  "benchmark_version": "v1",
+  "rules": [
+    {"id": "erc-consumed", "type": "attempt_validation", "validation_kind": "erc"},
+    {"id": "drc-consumed", "type": "attempt_validation", "validation_kind": "drc"},
+    {
+      "id": "board-envelope",
+      "type": "board_outline",
+      "max_width_mm": 58.0,
+      "max_height_mm": 34.0
+    },
+    {"id": "bom-present", "type": "artifact", "path": "BOM.csv", "kind": "file"},
+    {"id": "gerbers-present", "type": "artifact", "path": "Gerbers", "kind": "directory"},
+    {
+      "id": "manufacturing-report-present",
+      "type": "artifact",
+      "path": "manufacturing-report.md",
+      "kind": "file"
+    }
+  ]
+}

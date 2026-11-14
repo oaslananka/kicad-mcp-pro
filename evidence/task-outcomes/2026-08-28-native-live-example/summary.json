@@ -1,0 +1,61 @@
+{
+  "attempts_total": 1,
+  "benchmark_id": "native-live-transaction-example",
+  "benchmark_version": "v1",
+  "drc_executed_and_consumed_tasks": 1,
+  "drc_required_tasks": 1,
+  "duplicate_application_incidents": 0,
+  "failed_attempts": 0,
+  "failure_categories": {},
+  "file_corruption_incidents": 0,
+  "file_corruption_status": "insufficient_evidence",
+  "infrastructure_invalid_attempts": 0,
+  "manufacturing_release_tasks": 0,
+  "manufacturing_reproducibility": {
+    "denominator": 0,
+    "numerator": 0,
+    "status": "insufficient_evidence",
+    "target": 1.0
+  },
+  "manufacturing_reproducible_tasks": 0,
+  "mutation_attempts": 2,
+  "mutation_recovery": {
+    "confidence_interval": {
+      "lower": 0.20654931437723745,
+      "upper": 1.0
+    },
+    "denominator": 1,
+    "numerator": 1,
+    "rate": 1.0,
+    "status": "insufficient_evidence",
+    "target": 0.99
+  },
+  "recovery_required_mutations": 1,
+  "required_drc_execution": {
+    "confidence_interval": {
+      "lower": 0.20654931437723745,
+      "upper": 1.0
+    },
+    "denominator": 1,
+    "numerator": 1,
+    "rate": 1.0,
+    "status": "insufficient_evidence",
+    "target": 1.0
+  },
+  "schema_version": "pcb-task-outcome-summary.v1",
+  "state_divergence_incidents": 0,
+  "successful_attempts": 1,
+  "successful_recoveries": 1,
+  "task_success": {
+    "confidence_interval": {
+      "lower": 0.20654931437723745,
+      "upper": 1.0
+    },
+    "denominator": 1,
+    "numerator": 1,
+    "rate": 1.0,
+    "status": "insufficient_evidence",
+    "target": 0.95
+  },
+  "valid_attempts": 1
+}

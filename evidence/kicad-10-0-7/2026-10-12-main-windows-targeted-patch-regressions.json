@@ -1,0 +1,108 @@
+{
+  "artifactId": 11724038722,
+  "artifactName": "kicad-10-0-7-windows-native",
+  "artifactSha256ByReport": {
+    "differential/summary.json": "a8233c94bcd15d57e8b27b3d3a98826816370df03142265a0dfbaf902e287599",
+    "erc-units.json": "29955dda2a4983223dba4f570c870d7ba861e7daf7e0ff6a47647b1cc2301abb",
+    "flat-root-pdf.json": "4b9a50b05d42bfc9e1e0bd33748780be4b46b5700989a4950dbb42cf8220c429",
+    "gerber-drill-marks.json": "6e1d61be5622f0b2958874999a7d29391959e4176d49e72ac6e74006fda0cb87",
+    "provenance.json": "66b891d2092b163741b25b4dac04800de9186e086232c12a21b64e96cbcc5a1e"
+  },
+  "crossPlatformDifferences": {
+    "ercViolationCountPerUnit": {
+      "linux": 4,
+      "windows": 5
+    },
+    "linuxSourceRevision": "8e31947f9e136ea1e33d07e89d9cd599a3263592",
+    "pdfPageOrdering": "Windows reports FlatRoot1 before FlatRoot2; Linux reports reverse; both valid independent page identities"
+  },
+  "globalPromotionApproved": false,
+  "installer": {
+    "authenticode": "Valid",
+    "sha256": "ce3881b6a9188eb34ac1ebaaec7651149e8a025206410addfb11a1a9656ecf95",
+    "shaCheckedBeforeExecution": true,
+    "version": "10.0.7"
+  },
+  "kicadCliVersion": "10.0.7",
+  "latestVerifiedRetained": "10.0.6",
+  "nativeCanary": {
+    "divergence": 0,
+    "expectedStepsPassed": 32,
+    "failingFixtures": 0,
+    "falseFail": 0,
+    "falsePass": 0,
+    "invalidInfrastructure": 0,
+    "semanticMatches": 5,
+    "semanticTotal": 5,
+    "totalSteps": 32
+  },
+  "nativeSchematicBomGuiQualified": false,
+  "observedAtUtc": "2026-10-12",
+  "patchProbeScopes": {
+    "erc-json-unit-scale": {
+      "diagnostic": "footprint_link_issues",
+      "positions": {
+        "in": {
+          "x": 0.5905511811023622,
+          "y": 0.5511811023622046
+        },
+        "mils": {
+          "x": 590.5511811023622,
+          "y": 551.1811023622047
+        },
+        "mm": {
+          "x": 15.0,
+          "y": 14.0
+        }
+      },
+      "status": "pass",
+      "symbol": "J1",
+      "upstream": "25582",
+      "violationCountEachUnit": 5
+    },
+    "gerber-drill-marks": {
+      "copperFlashCount": {
+        "npth": 0,
+        "pth": 1
+      },
+      "npthDrillMm": 3.2,
+      "npthLocationMm": {
+        "x": 50,
+        "y": 50
+      },
+      "savedDrillMarkStyle": "full",
+      "status": "pass",
+      "upstream": "25532"
+    },
+    "multi-root-schematic-plot": {
+      "pageCount": 2,
+      "pages": [
+        {
+          "page": 1,
+          "root": "FlatRoot1",
+          "title": "erc-power-pin-error"
+        },
+        {
+          "page": 2,
+          "root": "FlatRoot2",
+          "title": "clean-led-kicad10"
+        }
+      ],
+      "status": "pass",
+      "upstream": "25198"
+    }
+  },
+  "runner": "windows-2025",
+  "schemaVersion": "kicad-107-windows-targeted-patch-regressions.v1",
+  "scope": "Native Windows CLI with signed exact-pinned installer; neither BOM GUI nor editor Python plotting API",
+  "sourceRevision": "5d5324b1c90d65eebec545d7f83c455b05b6042b",
+  "status": "three-targeted-windows-cli-regressions-pass",
+  "unqualified": [
+    "windows-and-macos-schematic-editor-bom-export-field-and-cancel",
+    "windows-native-pcb-editor-python-plot-api-drill-marks",
+    "expanded-ipc-board-objects-with-unpublished-kicad-python-0.9",
+    "jammy-22.04-kicad-10.0.7",
+    "autonomous-manufacturing-reference-board"
+  ],
+  "workflowRunId": 38199126080
+}
