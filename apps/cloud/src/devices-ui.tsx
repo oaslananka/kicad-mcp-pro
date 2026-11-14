@@ -219,11 +219,12 @@ function LinkedProject({project:p,device:d,context}:Readonly<{project:Project;de
                         </div>
                         <div className="device-project-location">
                           <span>On this computer</span>
-                          {p.localPath?<code className="device-project-path" title={p.localPath}>
-                            {p.localPath}</code>:
+                          {context.sandboxMode&&p.localPath?
+                            <code className="device-project-path" title={p.localPath}>
+                              {p.localPath}</code>:
                             <small>{d.connectionState!=="connected"?
-                              "Device offline · path unavailable":
-                              "Local path unavailable · reconnect or reselect project"}</small>}
+                              "Device offline \u00b7 reconnect to access from Cloud":
+                              "File path kept private on your computer"}</small>}
                         </div>
                       </div>
                       <div className="device-project-toolbar">
