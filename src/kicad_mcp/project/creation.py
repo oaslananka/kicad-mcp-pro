@@ -53,32 +53,72 @@ class ProjectCreationService:
     reset_connection: Callable[[], None]
     reset_live_edit: Callable[[], None]
 
+    def _checked_output_files(
+        self, cfg: ProjectCreationConfigProtocol, project_dir: Path, name: str
+    ) -> tuple[Path, Path, Path]:
+        """Reject project directories and output paths outside the selected location."""
+        resolved_dir = project_dir.resolve()
+        if resolved_dir != project_dir:
+            raise ValueError("Project directory must not resolve through a symlink.")
+        if cfg.workspace_root is not None:
+            self.assert_within(cfg.workspace, resolved_dir)
+
+        output_files = self.new_project_files(project_dir, name)
+        for output_file in output_files:
+            if output_file.is_symlink():
+                raise ValueError("Project files must not be symlinks.")
+            resolved_file = output_file.resolve()
+            try:
+                resolved_file.relative_to(resolved_dir)
+            except ValueError as exc:
+                raise ValueError("Project files must stay in their new project directory.") from exc
+            if cfg.workspace_root is not None:
+                self.assert_within(cfg.workspace, resolved_file)
+        return output_files
+
     def create(self, path: str, name: str, *, confirm_overwrite: bool = False) -> str:
+        # A project name is a basename, not an output path. Validate it at the
+        # service boundary as well as at the MCP adapter boundary.
+        if (
+            not name
+            or name in {".", ".."}
+            or any(char in name for char in ("/", "\\", ":", "\x00"))
+        ):
+            raise ValueError("Project name must be a single filesystem name component.")
+
         cfg = self.get_config()
         base_dir = Path(path).expanduser().resolve()
         if cfg.workspace_root is not None:
             self.assert_within(cfg.workspace, base_dir)
         project_dir = base_dir / name
-        if project_dir.exists() and any(project_dir.iterdir()) and not confirm_overwrite:
+        output_files = self._checked_output_files(cfg, project_dir, name)
+        project_file, pcb_file, sch_file = output_files
+
+        if project_dir.exists() and not project_dir.is_dir():
+            raise ValueError("Project directory path is not a directory.")
+        if not confirm_overwrite and (
+            (project_dir.is_dir() and any(project_dir.iterdir()))
+            or any(output_file.exists() for output_file in output_files)
+        ):
             return (
                 "Refusing to create a project over an existing non-empty directory.\n"
                 f"- Directory: {project_dir}\n"
                 "Choose a new name/path or rerun with confirm_overwrite=true."
             )
         project_dir.mkdir(parents=True, exist_ok=True)
-
-        project_file, pcb_file, sch_file = self.new_project_files(project_dir, name)
-        project_file.write_text(
-            json.dumps(self.new_project_payload(cfg.kicad_cli, project_file), indent=2),
-            encoding="utf-8",
+        file_mode = "w" if confirm_overwrite else "x"
+        project_payload = json.dumps(
+            self.new_project_payload(cfg.kicad_cli, project_file), indent=2
         )
-        pcb_file.write_text(
-            f"(kicad_pcb (version {GENERATED_SEXPR_DIALECT_VERSION}) "
-            '(generator "kicad-mcp-pro"))\n',
-            encoding="utf-8",
-        )
-        sch_file.write_text(
-            (
+        with project_file.open(file_mode, encoding="utf-8") as output:
+            output.write(project_payload)
+        with pcb_file.open(file_mode, encoding="utf-8") as output:
+            output.write(
+                f"(kicad_pcb (version {GENERATED_SEXPR_DIALECT_VERSION}) "
+                '(generator "kicad-mcp-pro"))\n'
+            )
+        with sch_file.open(file_mode, encoding="utf-8") as output:
+            output.write(
                 "(kicad_sch\n"
                 f"\t(version {GENERATED_SEXPR_DIALECT_VERSION})\n"
                 '\t(generator "kicad-mcp-pro")\n'
@@ -88,9 +128,7 @@ class ProjectCreationService:
                 '\t(sheet_instances (path "/" (page "1")))\n'
                 "\t(embedded_fonts no)\n"
                 ")\n"
-            ),
-            encoding="utf-8",
-        )
+            )
 
         format_upgrades = [
             (pcb_file, "pcb", self.upgrade_file(pcb_file, "pcb", project_dir)),
