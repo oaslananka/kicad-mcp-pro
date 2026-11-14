@@ -10,6 +10,15 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.15.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.15.0...mcp-server-v4.15.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **cloud:** clarify private remote project paths on devices page ([#1717](https://github.com/oaslananka/kicad-mcp-pro/issues/1717)) ([a839226](https://github.com/oaslananka/kicad-mcp-pro/commit/a8392263ea649fc55cc0ed800fd73c63463d48fc))
+* **project:** validate project creation paths before file writes ([#1720](https://github.com/oaslananka/kicad-mcp-pro/issues/1720)) ([e9fbf98](https://github.com/oaslananka/kicad-mcp-pro/commit/e9fbf9834a484aff323c3a9407e0e8b017d2a79f))
+* **security:** patch dependency alerts and harden generated-file upgrades ([#1719](https://github.com/oaslananka/kicad-mcp-pro/issues/1719)) ([006faca](https://github.com/oaslananka/kicad-mcp-pro/commit/006facac7b40a6790d2723f80e5bc45b9c7a7a6b))
+
 ## [4.15.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.14.0...mcp-server-v4.15.0) (2026-11-14)
 
 
