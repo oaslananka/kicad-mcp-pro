@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import cast
 
 from defusedxml import ElementTree as SafeET
-from defusedxml.common import DefusedXmlException
 
 from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
 from kicad_mcp.cloud_windows_connector import (
@@ -237,7 +236,7 @@ def _require_owned_task(xml: str, sid: str, executable: str) -> None:
             or os.path.normcase(command) != os.path.normcase(executable)
         ):
             raise LocalApprovalDeniedError(_DENIED)
-    except (ET.ParseError, ValueError, TypeError, DefusedXmlException) as exc:
+    except (ET.ParseError, ValueError, TypeError) as exc:
         raise LocalApprovalDeniedError(_DENIED) from exc
 
 

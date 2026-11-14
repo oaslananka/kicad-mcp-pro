@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WRITER_FILES = (
     "src/kicad_mcp/library/local_authoring.py",
@@ -206,3 +208,41 @@ def test_generated_format_migrator_reports_missing_footprint_output(tmp_path: Pa
 
     assert result.upgraded is False
     assert "did not produce" in result.detail
+
+
+@pytest.mark.parametrize("kind,suffix", [("pcb", ".kicad_pcb"), ("fp", ".kicad_mod")])
+def test_format_upgrade_does_not_follow_target_symlink_swapped_during_cli(
+    tmp_path: Path, kind: str, suffix: str
+) -> None:
+    """A concurrent symlink replacement must never overwrite a file outside allowed_root."""
+    from kicad_mcp.file_formats import upgrade_generated_file
+
+    allowed_root = tmp_path / "allowed"
+    allowed_root.mkdir()
+    target = allowed_root / f"generated{suffix}"
+    original = '(footprint "C_0603"\n)\n' if kind == "fp" else "(kicad_pcb)\n"
+    target.write_text(original, encoding="utf-8")
+    outside = tmp_path / "unrelated-owner-file.txt"
+    outside.write_text("keep-existing-owner-content", encoding="utf-8")
+
+    def run_cli(*args: str) -> tuple[int, str, str]:
+        target.unlink()
+        try:
+            target.symlink_to(outside)
+        except (OSError, NotImplementedError):
+            pytest.skip("The test host cannot create file symlinks")
+        if kind == "fp":
+            output_dir = Path(args[4])
+            output_dir.mkdir()
+            (output_dir / "C_0603.kicad_mod").write_text("migrated-footprint", encoding="utf-8")
+        else:
+            Path(args[-1]).write_text("migrated-board", encoding="utf-8")
+        return 0, "", ""
+
+    result = upgrade_generated_file(target, kind, run_cli, allowed_root=allowed_root)
+    assert result.upgraded is True
+    assert outside.read_text(encoding="utf-8") == "keep-existing-owner-content"
+    assert not target.is_symlink()
+    assert target.read_text(encoding="utf-8") == (
+        "migrated-footprint" if kind == "fp" else "migrated-board"
+    )

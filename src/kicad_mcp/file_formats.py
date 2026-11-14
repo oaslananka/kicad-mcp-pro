@@ -7,7 +7,9 @@ KiCad-enabled tool adapters may migrate generated files after writing them.
 
 from __future__ import annotations
 
+import os
 import re
+import stat
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -35,6 +37,30 @@ def _resolve_generated_path(path: Path, allowed_root: Path) -> Path:
     return (resolved_root / relative_path).resolve(strict=True)
 
 
+def _commit_upgraded_file(safe_path: Path, content: str, original_mode: int) -> None:
+    """Atomically replace the file, not a symlink substituted during conversion.
+
+    Preserve the original file's mode, captured before invoking the KiCad CLI,
+    rather than trusting the mode of a potentially swapped symlink.
+    """
+    staged: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix=".kicad-mcp-format-",
+            dir=safe_path.parent,
+            delete=False,
+        ) as output:
+            staged = Path(output.name)
+            output.write(content)
+        os.chmod(staged, original_mode)
+        os.replace(staged, safe_path)
+    finally:
+        if staged is not None:
+            staged.unlink(missing_ok=True)
+
+
 def _upgrade_non_footprint(
     safe_path: Path,
     kind: NonFootprintGeneratedFileKind,
@@ -42,6 +68,7 @@ def _upgrade_non_footprint(
 ) -> GeneratedFormatUpgradeResult:
     try:
         original = safe_path.read_text(encoding="utf-8")
+        original_mode = stat.S_IMODE(safe_path.stat().st_mode)
     except OSError as exc:
         return GeneratedFormatUpgradeResult(upgraded=False, detail=str(exc))
 
@@ -67,13 +94,14 @@ def _upgrade_non_footprint(
                 upgraded=False,
                 detail="KiCad format upgrade did not preserve the temporary output file.",
             )
-        safe_path.write_text(temp_file.read_text(encoding="utf-8"), encoding="utf-8")
+        _commit_upgraded_file(safe_path, temp_file.read_text(encoding="utf-8"), original_mode)
         return GeneratedFormatUpgradeResult(upgraded=True)
 
 
 def _upgrade_footprint(safe_path: Path, run_cli: RunCli) -> GeneratedFormatUpgradeResult:
     try:
         content = safe_path.read_text(encoding="utf-8")
+        original_mode = stat.S_IMODE(safe_path.stat().st_mode)
     except OSError as exc:
         return GeneratedFormatUpgradeResult(upgraded=False, detail=str(exc))
 
@@ -121,7 +149,7 @@ def _upgrade_footprint(safe_path: Path, run_cli: RunCli) -> GeneratedFormatUpgra
                 upgraded=False,
                 detail="KiCad footprint upgrade did not produce the expected output file.",
             )
-        safe_path.write_text(upgraded_file.read_text(encoding="utf-8"), encoding="utf-8")
+        _commit_upgraded_file(safe_path, upgraded_file.read_text(encoding="utf-8"), original_mode)
         return GeneratedFormatUpgradeResult(upgraded=True)
 
 

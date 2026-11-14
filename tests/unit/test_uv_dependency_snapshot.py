@@ -27,13 +27,16 @@ def test_snapshot_includes_security_fixed_versions_and_full_graph() -> None:
     for name, minimum in {
         "gitpython": "3.2.1",
         "pypdf": "6.21.1",
-        "opentelemetry-api": "1.45.1",
+        "opentelemetry-api": "1.45.2",
     }.items():
         assert Version(packages[name]["package_url"].split("@")[-1]) >= Version(minimum)
     assert packages["opentelemetry-api"]["scope"] == "runtime"
     assert packages["pypdf"]["scope"] == "development"
     assert packages["gitpython"]["relationship"] == "direct"
-    assert "pkg:pypi/opentelemetry-api@1.45.1" in packages["opentelemetry-sdk"]["dependencies"]
+    assert (
+        packages["opentelemetry-api"]["package_url"]
+        in packages["opentelemetry-sdk"]["dependencies"]
+    )
 
 
 def test_submission_bound_to_main_branch_with_strict_sha() -> None:

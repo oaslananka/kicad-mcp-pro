@@ -167,8 +167,9 @@ def test_set_stackup_does_not_persist_state_when_the_board_rejects_it() -> None:
         reload_board_after_file_sync=lambda: "reloaded",
     )
 
+    invalid_layers = [layer.model_dump() for layer in _layers()]
     with pytest.raises(ValueError, match="top to bottom"):
-        service.set_stackup([layer.model_dump() for layer in _layers()])
+        service.set_stackup(invalid_layers)
     assert written == []
 
 

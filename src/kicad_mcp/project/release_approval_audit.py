@@ -169,19 +169,20 @@ def _rows(connection: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def _event_from_row(row: sqlite3.Row, expected_previous: str | None) -> ReleaseApprovalAuditEvent:
-    sequence = int(row["sequence"])
-    decision = ReleaseApprovalAuditDecision(str(row["decision"]))
-    project_key = str(row["project_key"])
-    contract_id = str(row["contract_id"])
-    contract_version = int(row["contract_version"])
-    evidence_id = str(row["evidence_id"])
-    evidence_json = str(row["evidence_record_json"])
-    actor = str(row["actor"])
-    scope = str(row["scope"])
-    rationale = str(row["rationale"])
-    recorded_text = str(row["recorded_at"])
-    previous = row["previous_event_sha256"]
-    stored_event_sha256 = str(row["event_sha256"])
+    values = dict(row)
+    sequence = int(values["sequence"])
+    decision = ReleaseApprovalAuditDecision(str(values["decision"]))
+    project_key = str(values["project_key"])
+    contract_id = str(values["contract_id"])
+    contract_version = int(values["contract_version"])
+    evidence_id = str(values["evidence_id"])
+    evidence_json = str(values["evidence_record_json"])
+    actor = str(values["actor"])
+    scope = str(values["scope"])
+    rationale = str(values["rationale"])
+    recorded_text = str(values["recorded_at"])
+    previous = values["previous_event_sha256"]
+    stored_event_sha256 = str(values["event_sha256"])
     try:
         evidence_payload = json.loads(evidence_json)
         record = EvidenceRecord.model_validate(evidence_payload)
@@ -192,7 +193,7 @@ def _event_from_row(row: sqlite3.Row, expected_previous: str | None) -> ReleaseA
 
     canonical_json = canonical_evidence_record_json(record)
     digest = evidence_record_sha256(record)
-    if canonical_json != evidence_json or digest != str(row["evidence_sha256"]):
+    if canonical_json != evidence_json or digest != str(values["evidence_sha256"]):
         raise ReleaseApprovalAuditIntegrityError(
             f"evidence snapshot digest mismatch at sequence {sequence}"
         )
@@ -264,9 +265,10 @@ def _verify_connection(connection: sqlite3.Connection) -> tuple[ReleaseApprovalA
     previous_hash: str | None = None
     expected_sequence = 1
     for row in _rows(connection):
-        if int(row["sequence"]) != expected_sequence:
+        values = dict(row)
+        if int(values["sequence"]) != expected_sequence:
             raise ReleaseApprovalAuditIntegrityError(
-                f"audit sequence gap: expected {expected_sequence}, got {row['sequence']}"
+                f"audit sequence gap: expected {expected_sequence}, got {values['sequence']}"
             )
         event = _event_from_row(row, previous_hash)
         events.append(event)

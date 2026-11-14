@@ -11,10 +11,12 @@ from kicad_mcp.tools.pcb import (
     _append_to_footprint_block,
     _apply_stackup_to_board,
     _copper_layer_order,
+    _direct_child_spans,
     _impedance_context_for_layer,
     _inner_layer_graphic_block,
     _parse_netlist_text,
     _parse_stackup_specs_from_board_text,
+    _quoted_character_state,
     _replace_or_append_child_block,
     _stackup_layer_from_kipy,
     _strategy_board_positions,
@@ -188,16 +190,18 @@ def test_apply_stackup_removes_unused_inner_layers_and_refuses_used_ones() -> No
         "\n)\n",
         '\n\t(segment (start 0 0) (end 1 0) (width 0.2) (layer "In2.Cu") (net 0))\n)\n',
     )
+    two_layer = _two_layer_stackup()
     with pytest.raises(ValueError, match=r"still carry board items: In2\.Cu"):
-        _apply_stackup_to_board(with_track, _two_layer_stackup())
+        _apply_stackup_to_board(with_track, two_layer)
 
 
 def test_apply_stackup_rejects_copper_layers_out_of_kicad_order() -> None:
     stackup = _four_layer_stackup()
     skipped_in1 = [stackup[0], stackup[1], stackup[4], stackup[5], stackup[6]]
 
+    base_board = _kicad10_two_layer_board()
     with pytest.raises(ValueError, match=r"F\.Cu, In1\.Cu, B\.Cu \(got: F\.Cu, In2\.Cu, B\.Cu\)"):
-        _apply_stackup_to_board(_kicad10_two_layer_board(), skipped_in1)
+        _apply_stackup_to_board(base_board, skipped_in1)
 
 
 def test_apply_stackup_treats_dielectrics_without_material_as_fr4_cores() -> None:
@@ -407,3 +411,27 @@ def test_netlist_parser_and_non_cluster_placement_strategies(
     assert linear["J1"][0] <= linear["U1"][0] <= linear["U2"][0]
     assert star["J1"] == (50.0, 40.0)
     assert star["U1"] != star["U2"]
+
+
+@pytest.mark.parametrize(
+    ("char", "in_string", "escaped", "expected"),
+    [
+        ('"', False, False, (True, False)),
+        ("(", False, False, (False, False)),
+        ('"', True, True, (True, False)),
+        ("\\", True, False, (True, True)),
+        ('"', True, False, (False, False)),
+        ("(", True, False, (True, False)),
+    ],
+)
+def test_stackup_quoted_character_state_handles_escaped_quotes_and_parentheses(
+    char: str, in_string: bool, escaped: bool, expected: tuple[bool, bool]
+) -> None:
+    assert _quoted_character_state(char, in_string, escaped) == expected
+
+
+def test_stackup_direct_child_spans_ignore_quoted_parentheses_and_escaped_quotes() -> None:
+    parent = '(root "literal ( not a child \\"quoted\\" )" (first 1) (second 2))'
+    spans = _direct_child_spans(parent)
+    assert [name for name, _, _ in spans] == ["first", "second"]
+    assert [parent[start:end] for _, start, end in spans] == ["(first 1)", "(second 2)"]
