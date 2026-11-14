@@ -93,3 +93,23 @@ test("production device-first projects have working action dialogs without dupli
   assert.doesNotMatch(html,/<h2>Your projects<\/h2>/);
   assert.doesNotMatch(html,/Advanced: register a project name/);
 });
+
+
+test("Cloud project location copy distinguishes private paths from offline state",()=>{
+  const id=randomUUID(),projectId=randomUUID();
+  const device={
+    id,alias:"Owner computer",enabled:true,revoked:false,
+    fingerprint:"f".repeat(64),createdAt:new Date(),csrf:"revoke"
+  };
+  const opts={
+    projects:[{id:projectId,deviceId:id,alias:"PCB",enabled:true,
+      localPath:"C:\\Private\\Design.kicad_pro"}],
+    ownerSub:"owner",clients:[],savedGrants:[],sandboxMode:false,browseEnabled:true
+  };
+  const connected=renderDevicesPage([{...device,connectionState:"connected" as const}],undefined,true,opts);
+  assert.match(connected,/File path kept private on your computer/);
+  assert.doesNotMatch(connected,/Local path unavailable|Design\.kicad_pro/);
+  const disconnected=renderDevicesPage([{...device,connectionState:"disconnected" as const}],undefined,true,opts);
+  assert.match(disconnected,/Device offline.*reconnect to access from Cloud/);
+  assert.doesNotMatch(disconnected,/Design\.kicad_pro/);
+});
