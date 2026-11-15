@@ -38,3 +38,15 @@ for outside contributions must be preserved in the applicable source files.
 The original MIT license text is retained in `LICENSES/MIT.txt`.
 The earlier [transition review](docs/legal/licensing-transition-review.md)
 records rights questions requiring resolution before final distribution.
+
+
+## MIT-origin contributions
+
+Previously MIT-licensed source portions, including outside contributor work
+submitted under the project's historical MIT terms, retain their MIT grants
+and notices. The complete historic [MIT license](LICENSES/MIT.txt) is included.
+The GNU Project lists the Expat/MIT license as compatible with GNU GPL
+(https://www.gnu.org/licenses/license-list.html#Expat); this compatibility
+permits covered MIT portions to be combined with the current project-authored
+AGPLv3 source without requiring contributors to assign their copyrights or
+sign a CLA. It does not alter the independent rights of any contributor.

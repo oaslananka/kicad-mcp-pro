@@ -1,6 +1,6 @@
 # Licensing transition review
 
-Status: historical pre-transition review. A later AGPL-3.0-only proposal is assessed separately; external contribution rights still require verification before merge.
+Status: historical review of **PolyForm Noncommercial / dual licensing**, with an AGPL-specific compatibility note below.
 
 At the time of this review, KiCad MCP Pro was distributed under the MIT License. This review records the conditions that must be satisfied before the project considers a future source-available/noncommercial or dual-licensing transition.
 
@@ -55,4 +55,22 @@ A future implementation PR should not be opened until the rights review is compl
 
 This document does not grant permission to relicense any contributor's work, does not alter the MIT License, does not create a CLA, and is not a substitute for legal review when contributor rights or third-party obligations are unclear.
 
-This historical review is not current license metadata; see [LICENSING.md](../../LICENSING.md). Its external contribution concerns remain relevant to final release acceptance.
+This historical review is not current license metadata; see [LICENSING.md](../../LICENSING.md).
+The conditions above concern restrictive source-available / commercial dual licensing
+and do not automatically carry over to an OSI-approved AGPL-3.0-only combination.
+
+## November 2026 AGPL-specific compatibility boundary
+
+- The pre-transition root MIT/Expat permission includes redistribution and
+  sublicensing. The GNU Project explicitly lists Expat/MIT as GPL-compatible:
+  https://www.gnu.org/licenses/license-list.html#Expat
+- Original MIT-licensed portions retain their original license grants, copyrights,
+  and notices; the historical complete text is preserved in
+  [LICENSES/MIT.txt](../../LICENSES/MIT.txt). Compatible MIT portions may be
+  combined with current project-authored AGPLv3 code without a new contributor CLA.
+- This does **not** claim that all historical contributors assigned copyright to
+  the maintainer, revoke older MIT permissions, or automatically relicense an
+  independently owned or third-party component lacking compatible permissions.
+- Publishing still requires normal code/dependency provenance checks and exact
+  CI/package/notice validation. Any identified noncompatible material must be
+  separately licensed, excluded, or corrected before distribution.
