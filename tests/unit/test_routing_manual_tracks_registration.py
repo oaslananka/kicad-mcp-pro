@@ -5,6 +5,7 @@ import importlib.util
 import inspect
 from types import ModuleType
 
+import pytest
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 from kicad_mcp.pcb.geometry import point_xy_mm
@@ -102,4 +103,54 @@ def test_registration_preserves_order_signatures_metadata_and_delegation() -> No
     assert service.calls == [
         ("single", 1.0, 2.0, 3.0, 4.0, "F_Cu", 0.3, "DATA"),
         ("pads", "R1", "1", "U2", "3", "F_Cu", 0.25),
+    ]
+
+
+def test_default_adapter_maps_realistic_kicad_kiid_pad_owners(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KiCad IPC pads expose owner KIIDs; shared mapping recovers footprint refs."""
+    from types import SimpleNamespace
+
+    from kipy.board_types import Net
+    from kipy.geometry import Vector2
+
+    adapter = _adapter()
+
+    def pad(owner: str, ident: str, number: str, x_mm: float) -> SimpleNamespace:
+        net = Net()
+        net.name = "MID"
+        return SimpleNamespace(
+            id=SimpleNamespace(value=ident),
+            parent=SimpleNamespace(value=owner),
+            number=number,
+            net=net,
+            position=Vector2.from_xy_mm(x_mm, 10),
+        )
+
+    p1 = pad("fp-1", "pad-1", "2", 10.95)
+    p2 = pad("fp-2", "pad-2", "1", 19.05)
+
+    def footprint(ref: str, part: SimpleNamespace) -> SimpleNamespace:
+        return SimpleNamespace(
+            reference_field=SimpleNamespace(text=SimpleNamespace(value=ref)),
+            definition=SimpleNamespace(pads=[part]),
+        )
+
+    board = SimpleNamespace(
+        get_pads=lambda: [p1, p2],
+        get_footprints=lambda: [footprint("R1", p1), footprint("R2", p2)],
+    )
+    monkeypatch.setattr(adapter, "get_board", lambda: board)
+    writes: list[tuple[str, list[TrackSpec]]] = []
+    monkeypatch.setattr(
+        adapter, "_write_tracks", lambda operation, specs: writes.append((operation, specs))
+    )
+
+    service = adapter._default_dependencies().service
+    result = service.route_pad_to_pad("R1", "2", "R2", "1")
+
+    assert "single-segment" in result
+    assert writes == [
+        ("route_from_pad_to_pad", [TrackSpec(10.95, 10, 19.05, 10, "F_Cu", 0.25, "MID")])
     ]

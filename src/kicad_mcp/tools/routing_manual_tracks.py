@@ -5,16 +5,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import cast
 
 from kipy.board_types import Net, Track
 from kipy.geometry import Vector2
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..connection import get_board
-from ..models.common import _PadLike
-from ..pcb.board_access import board_pads
+from ..pcb.board_access import board_footprints, board_pads
 from ..pcb.live_edit_runtime import execute_live_board_mutation
+from ..pcb.pad_mapping import MappedPad, map_pads_to_footprints
 from ..routing.manual_tracks import RoutingManualTrackService, TrackSpec
 from ..utils.layers import resolve_layer
 from ..utils.units import mm_to_nm
@@ -48,10 +47,15 @@ def _write_tracks(operation: str, specs: list[TrackSpec]) -> None:
     )
 
 
+def _mapped_live_pads() -> list[MappedPad]:
+    board = get_board()
+    return map_pads_to_footprints(board_pads(board), board_footprints(board))
+
+
 def _default_dependencies() -> RoutingManualTrackDependencies:
     return RoutingManualTrackDependencies(
         service=RoutingManualTrackService(
-            list_pads=lambda: cast(list[_PadLike], board_pads(get_board())),
+            list_pads=_mapped_live_pads,
             write_tracks=_write_tracks,
         )
     )
