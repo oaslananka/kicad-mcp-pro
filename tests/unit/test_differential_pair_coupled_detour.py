@@ -57,7 +57,7 @@ def test_obstacle_forces_matched_dogleg_without_new_copper_intersections() -> No
 def test_coupled_route_is_repeatable_and_uses_one_copper_layer() -> None:
     obstacle = SegmentObstacle(3.75, 0.2, 4.25, 0.55, 0.25)
     plus, minus, measurements = _plan((obstacle,))
-    assert (plus, minus, measurements) == _plan((obstacle,))
+    assert _plan((obstacle,)) == (plus, minus, measurements)
     assert all(item.layer == "F_Cu" for item in (*plus, *minus))
     assert all(item.net_name == "USB_D_P" for item in plus)
     assert all(item.net_name == "USB_D_N" for item in minus)
@@ -97,5 +97,6 @@ def test_rejects_unsafe_pad_spacing_before_search(
 
 
 def test_blocked_departure_refuses_instead_of_crossing_a_pad() -> None:
+    blocked = (CircleObstacle(0.8, 0.375, 0.85),)
     with pytest.raises(RoutePlanningError, match="obstacle|route|clear"):
-        _plan((CircleObstacle(0.8, 0.375, 0.85),))
+        _plan(blocked)

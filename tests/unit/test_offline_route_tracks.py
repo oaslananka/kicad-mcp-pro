@@ -86,5 +86,6 @@ def test_candidate_rejects_unicode_digit_layer() -> None:
     from kicad_mcp.pcb.offline_route_tracks import render_candidate_board
 
     original = _FIXTURE.read_text(encoding="utf-8")
+    bad_layer = TrackSpec(1, 1, 5, 5, "In2\u0663_Cu", 0.25, "MID")
     with pytest.raises(ValueError, match="copper layer"):
-        render_candidate_board(original, [TrackSpec(1, 1, 5, 5, "In2?_Cu", 0.25, "MID")])
+        render_candidate_board(original, [bad_layer])
