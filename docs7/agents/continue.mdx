@@ -1,0 +1,50 @@
+---
+title: 'Continue Integration'
+description: 'Add the server to your assistant config — global ~/.continue/config.yaml, or a project block under .continue/:'
+---
+
+[Continue](https://continue.dev) is an open-source assistant for VS Code and
+JetBrains. Recent versions configure MCP servers as a `mcpServers` **list** in
+YAML (`config.yaml`), replacing the old
+`experimental.modelContextProtocolServers` JSON block.
+
+## Quick Start
+
+Add the server to your assistant config — global `~/.continue/config.yaml`, or a
+project block under `.continue/`:
+
+```yaml
+name: KiCad MCP
+version: 1.0.0
+schema: v1
+mcpServers:
+  - name: kicad
+    type: stdio
+    command: uvx
+    args:
+      - kicad-mcp-pro
+    env:
+      KICAD_MCP_PROJECT_DIR: /absolute/path/to/your/kicad-project
+      KICAD_MCP_PROFILE: pcb_only
+      KICAD_MCP_OPERATING_MODE: readonly
+```
+
+Ready-to-copy: [`docs/examples/clients/continue.config.yaml`](/files/examples/clients/continue.config.yaml).
+
+MCP tools are available in Continue's **agent** mode. Each entry takes
+`name`, `command`, `args`, optional `env`, and optional `cwd`; `type: stdio` is
+the default and may be omitted.
+
+## Verification
+
+```bash
+kicad-mcp-pro doctor
+```
+
+Open Continue in **Agent** mode and confirm the `kicad` tools appear in the tool
+list, then ask it to inspect the project.
+
+## Example Prompt
+
+> Use the kicad MCP server. Inspect this KiCad project, run DRC and ERC, and
+> summarize the results. Do not modify any files.

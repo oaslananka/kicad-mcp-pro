@@ -1,0 +1,79 @@
+{
+  "differentialCases": [
+    {
+      "customPass": null,
+      "fixtureId": "gallery-esp32-c3-wroom-02-breakout",
+      "nativeEqualsCustom": true,
+      "nativePass": null,
+      "operation": "redacted",
+      "status": "match"
+    },
+    {
+      "customPass": null,
+      "fixtureId": "clean-led-kicad10",
+      "nativeEqualsCustom": true,
+      "nativePass": null,
+      "operation": "redacted",
+      "status": "match"
+    },
+    {
+      "customPass": false,
+      "fixtureId": "clean-led-kicad10",
+      "nativeEqualsCustom": true,
+      "nativePass": false,
+      "operation": "redacted",
+      "status": "match"
+    },
+    {
+      "customPass": false,
+      "fixtureId": "drc-courtyard-error",
+      "nativeEqualsCustom": true,
+      "nativePass": false,
+      "operation": "redacted",
+      "status": "match"
+    },
+    {
+      "customPass": null,
+      "fixtureId": "clean-led-kicad10",
+      "nativeEqualsCustom": true,
+      "nativePass": null,
+      "operation": "redacted",
+      "status": "match"
+    }
+  ],
+  "differentialMatches": 5,
+  "differentialTotal": 5,
+  "divergence_count": 0,
+  "evidenceSource": {
+    "artifactId": 11685825197,
+    "recordDate": "2026-10-11",
+    "summarySha256": "3bf704904988b55fa2d320cacc717e562ada4e9b3db6acb185099699f85e1381",
+    "workflowRun": 38093783089
+  },
+  "failedFixtureIds": [],
+  "failedStepIds": [],
+  "failures": 0,
+  "false_fail_count": 0,
+  "false_pass_count": 0,
+  "guiExit": 0,
+  "infrastructure_invalid_count": 0,
+  "installerSha256": "fbc27419b841a9a2a8b143b5875a87b8bd943ffcf487d53c78a8fb6d24c59e27",
+  "installerSignature": "valid",
+  "nativeExit": 0,
+  "nativeFailures": 0,
+  "nativeSteps": 32,
+  "runner": "macos-15",
+  "schemaVersion": "macos-kicad-107-gui-ipc-qualification.v1",
+  "scope": "signed official macOS KiCad 10.0.7 native CLI and live PCB Editor IPC; no manufacturing claim",
+  "skips": 0,
+  "sourceRevision": "d0ce717cee95630f0a7d8f65a3f725005a82a48f",
+  "symbolLibraryBinding": "signed-app-bundle",
+  "testCount": 2,
+  "tests": [
+    "test_gui_closed_reports_structured_file_backed_fallback[asyncio]",
+    "test_open_pcb_editor_uses_live_board_context_and_project_switches[asyncio]"
+  ],
+  "unavailable_authority_count": 0,
+  "verdict": "pass",
+  "versionVerified": true
+}

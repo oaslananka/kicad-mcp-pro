@@ -1,0 +1,50 @@
+---
+title: 'KiCad 10.0.4 Gap Audit Report'
+description: 'This report outlines the feature parity gap analysis between KiCad 10.0.4 headless/CLI surface capabilities and the existing tools offered by the KiCad MCP…'
+---
+
+This report outlines the feature parity gap analysis between KiCad 10.0.4 headless/CLI surface capabilities and the existing tools offered by the KiCad MCP server.
+
+## Gap Analysis Matrix
+
+| KiCad surface | Official command/API | Existing MCP tool | Status | Evidence | Test file | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Jobset Run** | `kicad-cli jobset run --file &lt;jobset&gt; --output &lt;output&gt; --stop-on-error &lt;project&gt;` | None | `missing` | `kicad-cli jobset run --help` | `tests/integration/test_jobset_tools.py` | Add `jobset_run` and `jobset_validate` tools. |
+| **Footprint SVG Export** | `kicad-cli fp export svg` | `fp_export` | `partial` | `kicad-cli fp export --help` shows only `svg` is supported. | `tests/integration/test_fp_sym_cli_tools.py` | Need `fp_export_svg` and `fp_upgrade` with correct parameters. |
+| **Symbol SVG Export** | `kicad-cli sym export svg` | `sym_export` | `partial` | `kicad-cli sym export --help` shows only `svg` is supported. | `tests/integration/test_fp_sym_cli_tools.py` | Need `sym_export_svg` and `sym_upgrade` with correct parameters. |
+| **Schematic exports (DXF/SVG/PS/Python-BOM)** | `kicad-cli sch export dxf/svg/ps/python-bom` | `export_sch_svg`, `export_sch_dxf`, `export_sch_python_bom` (draft modifications only) | `partial` | `kicad-cli sch export --help` | `tests/integration/test_export_cli_parity.py` | Need clean, standard schematic export wrappers for DXF, SVG, Postscript, and Legacy Python BOM, plus schematic upgrade tool. |
+| **PCB 3D exports (BREP/GLB/GENCAD/PLY/STL/U3D/VRML)** | `kicad-cli pcb export brep/glb/gencad/ply/stl/u3d/vrml` | None (except STEP/STEPZ/XAO) | `partial` | `kicad-cli pcb export --help` | `tests/integration/test_export_cli_parity.py` | Expose remaining 3D formats via the CLI with standard 3D export options. |
+| **PCB Postscript / Stats export** | `kicad-cli pcb export ps/stats` | None (except basic stats via get_board_stats) | `partial` | `kicad-cli pcb export --help` | `tests/integration/test_export_cli_parity.py` | Expose `pcb_export_ps` and `pcb_export_stats` tools. |
+| **PCB render options** | `kicad-cli pcb render` | `export_3d_render` | `partial` | `kicad-cli pcb render --help` | `tests/integration/test_export_cli_parity.py` | Expand render options to support side, quality, preset, background, lights, zoom, rotate, perspective, floor, etc. |
+| **PCB Import** | `kicad-cli pcb import --format &lt;format&gt;` | `mfg_import_allegro` (blocked), `mfg_import_pads`, `mfg_import_geda` | `partial` | `kicad-cli pcb import --help` | `tests/integration/test_export_cli_parity.py` | Standardize to `pcb_import_board` and block/remove unsupported formats (e.g. Allegro). |
+| **PCB / Schematic Upgrade** | `kicad-cli pcb/sch upgrade` | `pcb_upgrade`, `sch_upgrade` | `supported` | `kicad-cli pcb/sch upgrade --help` | `tests/integration/test_manufacturing_tools.py` | Already implemented but verify safety defaults (`dry_run=True` by default). |
+| **Empty Project Reads** | Internal file parsing | Various read tools | `partial` | Tracebacks or exceptions on empty projects | `tests/integration/test_empty_project_read_tools.py` | Read tools should handle empty/minimal projects cleanly without raising exceptions. |
+| **IPC Lifecycle** | Socket connection | `kicad_get_server_info` | `partial` | Disconnect and reconnection bugs | `tests/integration/test_ipc_lifecycle.py` | Add a connection lifecycle wrapper with caching and automatic retries. |
+| **SPICE Model Assignment** | Schematic properties | None | `missing` | `.kicad_sch` property mappings | `tests/unit/test_spice_model_assignment.py` | Add tools for assigning SPICE models and managing simulation libraries. |
+| **DRC Exclusions** | `.kicad_dru` / Board properties | None | `missing` | DRC exclusion storage in `.kicad_dru` | `tests/unit/test_drc_exclusions.py` | Add tools to list, create, and remove DRC exclusions. |
+| **ERC Rule Severity** | `.kicad_pro` rule configuration | None | `missing` | Severity settings in project config | `tests/unit/test_erc_rules.py` | Add rules for listing, editing, and resetting ERC rule severity. |
+| **Net Statistics** | Board analysis | None | `missing` | Track/pad/via metrics | `tests/integration/test_pcb_net_inspector.py` | Add `pcb_get_net_statistics` and `pcb_net_inspector`. |
+| **3D Model Management** | Footprint references | None | `missing` | Footprint file models | `tests/integration/test_library_3d_models.py` | Add tools for footprint 3D model paths, bulk assignment, and search. |
+| **Test Points** | Footprint placement | None | `missing` | Test point insertion and coverage | `tests/integration/test_manufacturing_test_points.py` | Add tools for ICT test points and coverage checks. |
+| **Embedded Project Files** | Project metadata | None | `blocked` | KiCad 10 has no native embedded project files support | `tests/integration/test_project_embedded_files.py` | Only document/raise unsupported error as KiCad 10 has no native support. |
+| **Variants** | Project variant schema | `variant_list` | `partial` | KiCad variant properties | `tests/integration/test_variants_extended.py` | Add `variant_clone`, `variant_delete`, and extended variant support. |
+| **Subcircuit templates** | template libraries | `sch_apply_subcircuit_template` | `partial` | YAML templates | `tests/unit/test_subcircuit_templates.py` | Add new minimal templates for nrf52840, ch32v003, etc. |
+
+## Actions Plan
+
+1. **Phase 1**: Fix readme version drift and tools reference checks.
+2. **Phase 2**: Implement missing CLI Parity wrappers (`jobset_run`, footprint/symbol SVG exports and upgrades, schematic DXF/SVG/PS/Python-BOM exports, PCB 3D exports, render options, unified import, and safe upgrades).
+3. **Phase 3**: Harden empty project reads and IPC lifecycle reconnection.
+4. **Phase 4**: Implement SPICE model assignment and libraries.
+5. **Phase 5**: Implement DRC exclusions and ERC rule severity configurations.
+6. **Phase 6**: Implement Net stats, Net inspector, and Board stats alignment.
+7. **Phase 7**: Implement 3D model management.
+8. **Phase 8**: Implement test point tools.
+9. **Phase 9**: Implement embedded project files (as blocked / unsupported).
+10. **Phase 10**: Implement extended variant tools.
+11. **Phase 11**: Harden library searches, component sourcing, and footprint generator.
+12. **Phase 12**: Add new DFM profiles and manufacturer checks.
+13. **Phase 13**: Add new subcircuit templates.
+14. **Phase 14**: Implement Path validation helper and structured error formats.
+15. **Phase 15**: Register all tools and profiles.
+16. **Phase 16**: Run validation and tests.

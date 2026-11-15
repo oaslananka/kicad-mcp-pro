@@ -1,0 +1,47 @@
+---
+title: 'Coding Standards'
+description: 'This page defines the coding standards used for KiCad MCP Pro contributions.'
+---
+
+This page defines the coding standards used for KiCad MCP Pro contributions.
+
+## General rules
+
+- Keep public tool behavior deterministic, documented, and test-covered.
+- Prefer small, typed functions with explicit error handling.
+- Keep KiCad-driving behavior behind adapter seams so pure logic remains testable.
+- Do not log credentials, private board data, customer-specific paths, or generated manufacturing files.
+- Document heuristic or partial behavior honestly in code, docs, and tool verdicts.
+
+## Python
+
+- Use Python 3.13-compatible syntax.
+- Format and lint with Ruff.
+- Maintain type coverage with mypy-compatible annotations for public interfaces and non-trivial internal APIs.
+- Keep filesystem, subprocess, and network behavior behind narrow utility functions or adapters.
+- Add unit tests for pure logic and fixture-based tests for KiCad artifact parsing.
+
+## TypeScript and JavaScript
+
+- Use TypeScript for integration code where possible.
+- Run formatter, linter, typecheck, and unit tests before opening a PR.
+- Validate user-controlled paths with canonicalization and allowed-root checks.
+- Avoid direct shell interpolation of untrusted values.
+
+## Shell and workflow code
+
+- Use `set -euo pipefail` in non-trivial shell scripts.
+- Quote variables.
+- Pass GitHub expressions through `env:` before shell use.
+- Pin third-party GitHub Actions to full commit SHAs.
+- Keep default workflow permissions to `contents: read` unless a job needs more.
+
+## Documentation
+
+- Update generated tool docs and metadata when public tool contracts change.
+- Keep examples free of secrets and private board data.
+- Link policy pages from the docs navigation when they are used as release or OpenSSF evidence.
+
+## Enforcement
+
+Coding standards are enforced through PR review, the pull request template, Ruff, mypy, TypeScript checks, CodeQL, Gitleaks, dependency audit, workflow-security checks, generated-doc checks, and CI.

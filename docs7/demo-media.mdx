@@ -1,0 +1,62 @@
+---
+title: 'Demo Media'
+description: 'The README reserves one short demo GIF slot immediately after the badges block. The source of truth for the terminal sequence is docs/assets/demo.cast, a…'
+---
+
+The README reserves one short demo GIF slot immediately after the badges block.
+The source of truth for the terminal sequence is `docs/assets/demo.cast`, a
+deterministic asciinema v2 cast rendered with `scripts/generate_synthetic_demo.py`.
+
+## Synthetic Cast
+
+Generate or refresh the deterministic cast with:
+
+```bash
+pnpm run assets:demo
+```
+
+The generator writes `docs/assets/demo.cast` with fixed timestamps and redacted,
+realistic JSON output. It does not include real hostnames, local paths, tokens,
+or project-specific secrets. The sequence is approximately 30 seconds long:
+
+1. `kicad-mcp-pro health --json`
+2. redacted health JSON
+3. `kicad-mcp-pro doctor --json`
+4. redacted doctor JSON
+5. `kicad-mcp-pro serve`
+6. startup banner and cursor fade
+
+If `agg` is available on `PATH`, `pnpm run assets:demo` also converts the cast to
+`docs/assets/demo.gif` with:
+
+```bash
+agg --speed 1.2 --theme monokai --font-size 18 docs/assets/demo.cast docs/assets/demo.gif
+```
+
+If `agg` is not available, the command writes a deterministic fallback
+`docs/assets/demo.gif` with Pillow so README rendering and link checks still
+pass. The fallback is intentionally simple and should be replaced by the `agg`
+terminal render before final marketplace submission when the tool is available.
+
+## Re-recording Flow
+
+For a fresh terminal capture, install both `asciinema` and `agg`, then run:
+
+```bash
+bash scripts/record_demo.sh
+```
+
+The script records `docs/assets/demo.cast` with an idle limit of 2 seconds and
+converts it to `docs/assets/demo.gif` using the Monokai theme. If the resulting
+GIF exceeds 2 MB, the script retries the conversion with a smaller font size and
+prints a warning. Keep the final GIF small enough for GitHub README rendering.
+
+## Replacement Rules
+
+- Preserve the filenames `docs/assets/demo.cast` and `docs/assets/demo.gif`.
+- Keep the demo under 45 seconds.
+- Do not include real local paths, hostnames, bearer tokens, API keys, or auth
+  cookies.
+- Keep the first visible command focused on `health --json`.
+- Keep the final visible state on `serve` so reviewers see the stdio MCP server
+  startup posture.

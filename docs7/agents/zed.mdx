@@ -1,0 +1,50 @@
+---
+title: 'Zed Integration'
+description: 'Open zed: open settings (or edit ~/.config/zed/settings.json) and add:'
+---
+
+[Zed](https://zed.dev) connects to MCP servers as **context servers**. A custom
+(non-extension) server is declared in the `context_servers` block of Zed's
+`settings.json`.
+
+## Quick Start
+
+Open **`zed: open settings`** (or edit `~/.config/zed/settings.json`) and add:
+
+```json
+{
+  "context_servers": {
+    "kicad": {
+      "command": "uvx",
+      "args": ["kicad-mcp-pro"],
+      "env": {
+        "KICAD_MCP_PROJECT_DIR": "/absolute/path/to/your/kicad-project",
+        "KICAD_MCP_PROFILE": "pcb_only",
+        "KICAD_MCP_OPERATING_MODE": "readonly"
+      }
+    }
+  }
+}
+```
+
+Ready-to-copy: [`docs/examples/clients/zed.settings.json`](/files/examples/clients/zed.settings.json).
+
+A remote (HTTP) server uses `url` (and optional `headers`) instead of `command`:
+
+```json
+{ "context_servers": { "kicad": { "url": "http://127.0.0.1:8765/mcp" } } }
+```
+
+## Verification
+
+```bash
+kicad-mcp-pro doctor
+```
+
+In the **Agent Panel → Settings** the `kicad` context server shows a green
+indicator when it is running, and its tools become available to the agent.
+
+## Example Prompt
+
+> Use the kicad MCP server. Inspect this KiCad project, run DRC and ERC, and
+> summarize the results. Do not modify any files.

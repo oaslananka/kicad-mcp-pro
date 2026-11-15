@@ -1,0 +1,206 @@
+---
+title: 'Release Integrity'
+description: 'Release integrity controls are emitted only from the canonical repository, oaslananka/kicad-mcp-pro.'
+---
+
+Release integrity controls are emitted only from the canonical repository,
+`oaslananka/kicad-mcp-pro`.
+
+
+## Release evidence target
+
+Current target: **evidence-backed professional release integrity**. The project does not claim a formal SLSA level.
+
+Each release artifact class should provide the strongest evidence supported by its ecosystem: checksums, SBOMs, GitHub artifact attestations, package-registry provenance, container digests, and post-publish verification. A future formal level can be defined per artifact class after the evidence map is stable.
+
+Release assets are currently attached after the GitHub Release is published,
+so they can still be replaced. The per-family asset and upload map, and the
+ratchet that blocks new post-publication mutations, are documented in
+[Release asset immutability](development/release-asset-immutability)
+(#1179).
+
+## Python SBOM
+
+The Python publish workflow generates a CycloneDX SBOM as release evidence:
+
+```text
+release-evidence/sbom.cdx.json
+```
+
+Download the `python-release-evidence` Actions artifact or the corresponding
+`kicad-mcp-pro-python-sbom.cdx.json` GitHub Release asset and keep it with
+the matching Python distributions.
+
+## SHA256SUMS
+
+Release checksums are published as workflow evidence, separate from the PyPI
+distribution upload directory:
+
+```text
+release-evidence/SHA256SUMS.txt
+```
+
+In workflow artifacts, download `python-release-evidence` next to the
+`python-dist` wheel and source distribution artifacts before verification.
+
+Verify a downloaded artifact:
+
+```bash
+sha256sum --check SHA256SUMS.txt
+```
+
+On Windows PowerShell:
+
+```powershell
+Get-FileHash .\kicad_mcp_pro-<version>-py3-none-any.whl -Algorithm SHA256
+```
+
+Compare the hash with the matching line in `SHA256SUMS.txt`.
+
+## PyPI publication identity and Sigstore
+
+The Python publishing jobs use PyPI trusted publishing with GitHub Actions OIDC,
+and verify PEP 740 publication attestations for both the wheel and source archive.
+These attestations are signed using Sigstore and checked against the canonical
+`oaslananka/kicad-mcp-pro` publisher, `publish-python.yml` workflow, `pypi`
+environment, and exact artifact digest. The release pipeline verifies this contract
+with the repository-pinned `pypi-attestations` library. To repeat the verification
+with the downloaded release checksum file:
+
+```bash
+uv run --frozen --group release python scripts/generate_release_evidence.py \
+  verify-pypi-provenance \
+  --repository pypi --package kicad-mcp-pro --version <version> \
+  --checksums kicad-mcp-pro-python-SHA256SUMS.txt \
+  --publisher-repository oaslananka/kicad-mcp-pro \
+  --publisher-workflow publish-python.yml --publisher-environment pypi
+```
+
+This verifies **PyPI publication provenance**, not a separately distributed
+Sigstore signature file for the GitHub Release wheel. The repository does not
+publish a standalone wheel signature bundle for `4.0.2`, so a plain
+`python -m sigstore verify identity &lt;wheel&gt;` command is not a working substitute.
+
+## GitHub Artifact Attestations
+
+The Python workflow publishes a **CycloneDX SBOM attestation**, signed for the
+wheel and source archive with GitHub Actions. Verify the downloaded artifact:
+
+```bash
+gh attestation verify kicad_mcp_pro-<version>-py3-none-any.whl \
+  --repo oaslananka/kicad-mcp-pro \
+  --predicate-type https://cyclonedx.org/bom
+```
+
+For the source archive:
+
+```bash
+gh attestation verify kicad_mcp_pro-<version>.tar.gz \
+  --repo oaslananka/kicad-mcp-pro \
+  --predicate-type https://cyclonedx.org/bom
+```
+
+The GitHub CLI defaults to the SLSA v1 provenance predicate and will not find
+the CycloneDX attestation without the explicit `--predicate-type`. A valid SBOM
+attestation proves its signed statement and artifact digest, **not** SLSA build
+provenance or absence of vulnerabilities. PyPI PEP 740 publication provenance
+is separately verified above. Do not treat either mechanism as a replacement
+for the other.
+
+## GHCR Image Digest and Provenance
+
+Inspect the published image digest:
+
+```bash
+docker buildx imagetools inspect ghcr.io/oaslananka/kicad-mcp-pro:<version>
+```
+
+Pull by digest for reproducible deployment:
+
+```bash
+docker pull ghcr.io/oaslananka/kicad-mcp-pro@sha256:<digest>
+```
+
+Verify the keyless Sigstore signature:
+
+```bash
+cosign verify \
+  --certificate-identity-regexp "https://github.com/oaslananka/kicad-mcp-pro/.github/workflows/publish-mcp-container.yml@refs/tags/mcp-server-v.*" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  ghcr.io/oaslananka/kicad-mcp-pro@sha256:<digest>
+```
+
+The Docker workflow publishes BuildKit provenance and SBOM attestations only
+when the image is pushed.
+
+## Archived GUI installer integrity (historical)
+
+The retired Tauri GUI release workflow previously built the Linux, Windows, and macOS installers from the exact `kicad-mcp-gui-v*` tag commit and publishes three evidence files with the installers:
+
+```text
+kicad-mcp-pro-gui-SHA256SUMS.txt
+kicad-mcp-pro-gui-sbom.cdx.json
+kicad-mcp-pro-gui-release-evidence.json
+```
+
+The evidence JSON records the source commit, release tag, normalized installer inventory, platform classification, size, SHA-256 digest, and the actual platform-signing status. The CycloneDX 1.6 SBOM is generated deterministically from the committed `src-tauri/Cargo.lock`. Before publication the workflow verifies the installer directory against the generated evidence; after upload it downloads the GitHub Release assets and requires the published inventory and installer digests to match exactly.
+
+Verify a downloaded GUI installer with the published checksum file and the correct signed predicate type:
+
+```bash
+sha256sum --check kicad-mcp-pro-gui-SHA256SUMS.txt
+# SLSA provenance and CycloneDX SBOM are separate attestations.
+gh attestation verify <installer-file> --repo oaslananka/kicad-mcp-pro \
+  --predicate-type https://slsa.dev/provenance/v1
+gh attestation verify <installer-file> --repo oaslananka/kicad-mcp-pro \
+  --predicate-type https://cyclonedx.org/bom
+```
+
+**Historical release limit:** GUI v4.5.0 has a signed CycloneDX SBOM for its installers, but no SLSA provenance attestation. The separate SLSA signing step applies only to **future GUI release runs** after this workflow change; it does not retroactively sign existing installers. Missing SLSA must be treated as missing evidence, not inferred from the SBOM.
+
+Both predicates bind to the installer SHA-256 digest but make different claims. Require the expected signer workflow, release tag/source SHA and verified subject digest when assessing a specific release. Neither signed attestation replaces platform code signing. Windows Authenticode, Apple code signing/notarization, and Linux package signing remain separately reported and must not be inferred from GitHub attestations.
+
+## PyPI Trusted Publishing
+
+The Python workflow uses short-lived GitHub OIDC credentials and PyPI Trusted
+Publishing. The required publisher identities are:
+
+| Index | Repository | Workflow | Environment | Allowed ref |
+| --- | --- | --- | --- | --- |
+| PyPI | `oaslananka/kicad-mcp-pro` | `publish-python.yml` | `pypi` | tag `mcp-server-v*` |
+| TestPyPI | `oaslananka/kicad-mcp-pro` | `publish-python.yml` | `testpypi` | branch `main` |
+
+Repository renames change the OIDC identity. Update both PyPI and TestPyPI
+Trusted Publisher records before publishing from a renamed repository. A
+publisher record for the former repository name is not accepted as current
+provenance.
+
+After upload, the workflow queries the PyPI Integrity API for every wheel and
+source distribution. It requires a PEP 740 publish attestation whose digest, repository,
+workflow, and environment match the expected release identity. The pinned
+`pypi-attestations` verifier then validates the Sigstore-backed attestation
+cryptographically against the canonical repository. A
+matching file digest without matching Trusted Publisher provenance is a release
+failure.
+
+Independent verification can use the PyPI attestations CLI:
+
+```bash
+pypi-attestations verify pypi \
+  --repository https://github.com/oaslananka/kicad-mcp-pro \
+  https://files.pythonhosted.org/.../kicad_mcp_pro-<version>-py3-none-any.whl
+```
+
+Only the protected OIDC Trusted Publisher workflow is authorized to publish
+Python artifacts. An OIDC outage blocks publication until trusted publishing
+and its provenance checks have been restored.
+
+## DockerHub
+
+DockerHub publishing is not enabled. GHCR is the canonical container registry.
+If DockerHub support is added later, it must be manual or tag gated, protected by
+the `release` environment, and documented with the exact digest and provenance
+verification path.
+
+
+See also [`release-signing.md`](security/release-signing) for artifact-signing and verification policy.

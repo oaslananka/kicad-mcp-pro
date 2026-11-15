@@ -1,0 +1,241 @@
+---
+title: 'Reviewer Test Prompts'
+description: 'These prompts are copy-paste runnable in Claude Desktop, Cursor, VS Code MCP, or any MCP client connected to KiCad MCP Pro.'
+---
+
+These prompts are copy-paste runnable in Claude Desktop, Cursor, VS Code MCP, or any MCP client connected to KiCad MCP Pro.
+
+Fixture project root: `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro`.
+Use absolute paths in the actual client configuration when running locally.
+A wrong path failure means the client pointed to a missing file; it is not a server bug.
+
+## p1-health
+
+### Exact Prompt
+
+```text
+Call kicad-mcp-pro's health check and tell me which subsystems are ready.
+```
+
+### Fixture
+
+- Fixture project root: `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro`.
+- Fixture directory: `tests/fixtures/benchmark_projects/pass_sensor_node/`.
+- Use an absolute path in the client configuration if the client requires one.
+- Do not substitute a private board or unpublished customer design.
+
+### Expected Tool Call Sequence
+
+1. `kicad_get_version`
+
+### PASS Response Shape
+
+- PASS criterion: Response includes version string and KiCad CLI status.
+- The response names the fixture project.
+- The response includes a concise status summary.
+- The response separates warnings from blockers.
+- The response does not expose local usernames or hostnames.
+- The response does not invent successful writes when a tool was read-only.
+- The response describes next actions when a gate blocks export.
+
+### Typical Wrong-Path Failure
+
+- Failure shape: the client passes a path that does not exist on the reviewer machine.
+- Expected server behavior: return a clear path or project selection error.
+- Reason it is not a server bug: MCP clients must provide a valid local fixture path.
+- Reviewer fix: use the repository checkout path and the fixture path listed above.
+- Retest: rerun the same prompt after correcting the path.
+
+### Reviewer Notes
+
+- Keep this test in a clean checkout.
+- Do not run against private work files.
+- Do not paste environment variables containing secrets.
+- Keep screenshots cropped to the client and terminal content only.
+- Record the result in the listing review notes if requested.
+
+## p2-set-project-quality-gate
+
+### Exact Prompt
+
+```text
+Set the KiCad project to `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro` and run the full project quality gate without exporting manufacturing files.
+```
+
+### Fixture
+
+- Fixture project root: `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro`.
+- Fixture directory: `tests/fixtures/benchmark_projects/pass_sensor_node/`.
+- Use an absolute path in the client configuration if the client requires one.
+- Do not substitute a private board or unpublished customer design.
+
+### Expected Tool Call Sequence
+
+1. `kicad_set_project`
+2. `project_quality_gate`
+
+### PASS Response Shape
+
+- PASS criterion: Response includes gate status, blocking issues, and next action.
+- The response names the fixture project.
+- The response includes a concise status summary.
+- The response separates warnings from blockers.
+- The response does not expose local usernames or hostnames.
+- The response does not invent successful writes when a tool was read-only.
+- The response describes next actions when a gate blocks export.
+
+### Typical Wrong-Path Failure
+
+- Failure shape: the client passes a path that does not exist on the reviewer machine.
+- Expected server behavior: return a clear path or project selection error.
+- Reason it is not a server bug: MCP clients must provide a valid local fixture path.
+- Reviewer fix: use the repository checkout path and the fixture path listed above.
+- Retest: rerun the same prompt after correcting the path.
+
+### Reviewer Notes
+
+- Keep this test in a clean checkout.
+- Do not run against private work files.
+- Do not paste environment variables containing secrets.
+- Keep screenshots cropped to the client and terminal content only.
+- Record the result in the listing review notes if requested.
+
+## p3-schematic-connectivity
+
+### Exact Prompt
+
+```text
+Inspect schematic connectivity for `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro` without editing files, then summarize any open connectivity risks.
+```
+
+### Fixture
+
+- Fixture project root: `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro`.
+- Fixture directory: `tests/fixtures/benchmark_projects/pass_sensor_node/`.
+- Use an absolute path in the client configuration if the client requires one.
+- Do not substitute a private board or unpublished customer design.
+
+### Expected Tool Call Sequence
+
+1. `kicad_set_project`
+2. `schematic_connectivity_gate`
+
+### PASS Response Shape
+
+- PASS criterion: Response reports connectivity status and does not claim file writes.
+- The response names the fixture project.
+- The response includes a concise status summary.
+- The response separates warnings from blockers.
+- The response does not expose local usernames or hostnames.
+- The response does not invent successful writes when a tool was read-only.
+- The response describes next actions when a gate blocks export.
+
+### Typical Wrong-Path Failure
+
+- Failure shape: the client passes a path that does not exist on the reviewer machine.
+- Expected server behavior: return a clear path or project selection error.
+- Reason it is not a server bug: MCP clients must provide a valid local fixture path.
+- Reviewer fix: use the repository checkout path and the fixture path listed above.
+- Retest: rerun the same prompt after correcting the path.
+
+### Reviewer Notes
+
+- Keep this test in a clean checkout.
+- Do not run against private work files.
+- Do not paste environment variables containing secrets.
+- Keep screenshots cropped to the client and terminal content only.
+- Record the result in the listing review notes if requested.
+
+## p4-pcb-state
+
+### Exact Prompt
+
+```text
+Open `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro` and inspect PCB board state, layer summary, and placement quality without modifying the board.
+```
+
+### Fixture
+
+- Fixture project root: `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro`.
+- Fixture directory: `tests/fixtures/benchmark_projects/pass_sensor_node/`.
+- Use an absolute path in the client configuration if the client requires one.
+- Do not substitute a private board or unpublished customer design.
+
+### Expected Tool Call Sequence
+
+1. `kicad_set_project`
+2. `pcb_get_board_state`
+3. `pcb_placement_quality_gate`
+
+### PASS Response Shape
+
+- PASS criterion: Response includes board state and placement status.
+- The response names the fixture project.
+- The response includes a concise status summary.
+- The response separates warnings from blockers.
+- The response does not expose local usernames or hostnames.
+- The response does not invent successful writes when a tool was read-only.
+- The response describes next actions when a gate blocks export.
+
+### Typical Wrong-Path Failure
+
+- Failure shape: the client passes a path that does not exist on the reviewer machine.
+- Expected server behavior: return a clear path or project selection error.
+- Reason it is not a server bug: MCP clients must provide a valid local fixture path.
+- Reviewer fix: use the repository checkout path and the fixture path listed above.
+- Retest: rerun the same prompt after correcting the path.
+
+### Reviewer Notes
+
+- Keep this test in a clean checkout.
+- Do not run against private work files.
+- Do not paste environment variables containing secrets.
+- Keep screenshots cropped to the client and terminal content only.
+- Record the result in the listing review notes if requested.
+
+## p5-manufacturing-export-gate
+
+### Exact Prompt
+
+```text
+Attempt the gated manufacturing export flow for `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro` and explain whether export is allowed by project_quality_gate.
+```
+
+### Fixture
+
+- Fixture project root: `tests/fixtures/benchmark_projects/pass_sensor_node/demo.kicad_pro`.
+- Fixture directory: `tests/fixtures/benchmark_projects/pass_sensor_node/`.
+- Use an absolute path in the client configuration if the client requires one.
+- Do not substitute a private board or unpublished customer design.
+
+### Expected Tool Call Sequence
+
+1. `kicad_set_project`
+2. `project_quality_gate`
+3. `export_manufacturing_package`
+
+### PASS Response Shape
+
+- PASS criterion: Response explains gate-controlled export behavior and does not bypass blockers.
+- The response names the fixture project.
+- The response includes a concise status summary.
+- The response separates warnings from blockers.
+- The response does not expose local usernames or hostnames.
+- The response does not invent successful writes when a tool was read-only.
+- The response describes next actions when a gate blocks export.
+
+### Typical Wrong-Path Failure
+
+- Failure shape: the client passes a path that does not exist on the reviewer machine.
+- Expected server behavior: return a clear path or project selection error.
+- Reason it is not a server bug: MCP clients must provide a valid local fixture path.
+- Reviewer fix: use the repository checkout path and the fixture path listed above.
+- Retest: rerun the same prompt after correcting the path.
+
+### Reviewer Notes
+
+- Keep this test in a clean checkout.
+- Do not run against private work files.
+- Do not paste environment variables containing secrets.
+- Keep screenshots cropped to the client and terminal content only.
+- Record the result in the listing review notes if requested.

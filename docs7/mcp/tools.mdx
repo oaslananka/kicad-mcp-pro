@@ -1,0 +1,534 @@
+---
+title: 'MCP Tool Catalog'
+description: 'Machine-maintained from kicad-mcp-pro source via scripts/generatetoolsreference.py.'
+---
+
+Machine-maintained from `kicad-mcp-pro` source via
+`scripts/generate_tools_reference.py`.
+
+The canonical source catalog remains
+`docs/tools-reference.generated.md`; this page is refreshed by `pnpm run docs:tools`.
+
+Machine-maintained catalog. Refresh with `pnpm run docs:tools`.
+
+Total public tools: 257.
+
+| Tool | Profile(s) | Read-Only | Destructive | Open-World | Headless | Requires KiCad Running | Summary |
+|---|---|---:|---:|---:|---:|---:|---|
+| `add_footprint_inner_layer_graphic` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | yes | no | Inject an inner-layer graphic primitive into a footprint block. |
+| `check_design_for_manufacture` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | Run a lightweight DFM check using available DRC data. This KiCad MCP Pro tool supports production EDA automation work... |
+| `check_power_integrity` | agent_full, analysis, critic, full, power | yes | no | no | no | no | Run a lightweight PDN mesh voltage-drop check for a power net. |
+| `dfm_calculate_manufacturing_cost` | agent_full, critic, full, manufacturing, release_manager | no | no | no | yes | no | Estimate fabrication cost from board area, layers, and via count. |
+| `dfm_load_manufacturer_profile` | agent_full, critic, full, manufacturing, release_manager | no | no | no | yes | no | Load a bundled manufacturer DFM profile for subsequent checks. This KiCad MCP Pro tool supports production EDA automa... |
+| `dfm_run_manufacturer_check` | agent_full, critic, full, manufacturing, release_manager | no | no | no | yes | no | Run a manufacturer-aware DFM review using the active bundled profile. |
+| `drc_export_rules` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | no | yes | yes | yes | no | Export the active custom DRC rules file for sharing or CI. |
+| `drc_list_rules` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | List known DRC rules from the active ``.kicad_dru`` file. This KiCad MCP Pro tool supports production EDA automation... |
+| `drc_rule_create` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | no | no | no | yes | no | Create or update a custom DRC rule in the active ``.kicad_dru`` file. |
+| `drc_rule_delete` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | no | no | no | yes | no | Delete a custom DRC rule from the active rules file. |
+| `drc_rule_enable` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | no | no | no | yes | no | Enable or disable a custom DRC rule. This KiCad MCP Pro tool supports production EDA automation workflows for MCP cli... |
+| `emc_check_decoupling_placement` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Review whether ICs have nearby decoupling capacitors. This KiCad MCP Pro tool supports production EDA automation work... |
+| `emc_check_differential_pair_symmetry` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Review diff-pair skew and width symmetry. This KiCad MCP Pro tool supports production EDA automation workflows for MC... |
+| `emc_check_ground_plane_voids` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Review GND plane presence and a simple void-risk proxy. |
+| `emc_check_high_speed_routing_rules` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Review a high-speed net class for a short-stub proxy. |
+| `emc_check_return_path_continuity` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Check EMC return-path continuity for a signal or all critical high-speed nets. |
+| `emc_check_split_plane_crossing` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Warn when routed signals share layers with split non-ground planes. |
+| `emc_check_via_stitching` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Estimate via-stitching density from existing ground vias. This KiCad MCP Pro tool supports production EDA automation... |
+| `emc_run_full_compliance` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Run a lightweight EMC sweep with at least ten heuristic checks. |
+| `export_3d_render` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Render the board to a PNG image. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `export_3d_step` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Export a STEP model for the active board. This KiCad MCP Pro tool supports production EDA automation workflows for MC... |
+| `export_bom` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Export a bill of materials. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `export_drill` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Export drill files. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `export_dxf` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Export a board layer to DXF when supported. This KiCad MCP Pro tool supports production EDA automation workflows for... |
+| `export_gerber` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Export Gerber manufacturing files. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `export_ipc2581` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Export IPC-2581 manufacturing data. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clie... |
+| `export_manufacturing_package` | agent_full, full, manufacturing, release_manager | no | yes | yes | yes | no | Generate the standard set of manufacturing exports. This KiCad MCP Pro tool supports production EDA automation workfl... |
+| `export_netlist` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Export a KiCad schematic netlist. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `export_odb` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Export an ODB++ manufacturing package when supported by KiCad 10+. |
+| `export_pcb_pdf` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Export the PCB to PDF. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `export_pick_and_place` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Export assembly position data. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `export_sch_pdf` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Export the schematic to PDF. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `export_spice_netlist` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Export a SPICE netlist. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `export_step` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Alias for STEP export with an optional explicit output path. |
+| `export_stepz` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Export a gzip-compressed STEPZ model using KiCad's stpz CLI command. |
+| `export_svg` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Export a board layer to SVG when supported. This KiCad MCP Pro tool supports production EDA automation workflows for... |
+| `export_xao` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Export an XAO model for the active board using KiCad CLI. |
+| `get_board_stats` | agent_full, full, manufacturing, release_manager | yes | no | no | yes | no | Export board statistics and return a readable preview. This KiCad MCP Pro tool supports production EDA automation wor... |
+| `get_courtyard_violations` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | Return only courtyard issues from DRC. This KiCad MCP Pro tool supports production EDA automation workflows for MCP c... |
+| `get_silk_to_pad_violations` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | Return silkscreen overlap issues from DRC. This KiCad MCP Pro tool supports production EDA automation workflows for M... |
+| `get_unconnected_nets` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | Return only unconnected net issues from DRC. This KiCad MCP Pro tool supports production EDA automation workflows for... |
+| `kicad_create_new_project` | all | no | no | no | yes | no | Create a new minimal KiCad project structure and activate it. |
+| `kicad_get_project_info` | all | yes | no | no | yes | no | Show the currently configured KiCad project paths. This KiCad MCP Pro tool supports production EDA automation workflo... |
+| `kicad_get_server_info` | all | yes | no | no | yes | no | Return versioned server information and capability diagnostics for clients. This KiCad MCP Pro tool supports producti... |
+| `kicad_get_tools_in_category` | all | yes | no | no | no | no | Get the tool names available in a specific category. This KiCad MCP Pro tool supports production EDA automation workf... |
+| `kicad_get_version` | all | yes | no | no | yes | no | Get KiCad version information and current connection status. This KiCad MCP Pro tool supports production EDA automati... |
+| `kicad_help` | all | yes | no | no | yes | no | Show a concise startup guide and all tool categories. This KiCad MCP Pro tool supports production EDA automation work... |
+| `kicad_list_recent_projects` | all | yes | no | no | yes | no | List recently opened KiCad projects from KiCad's config files. This KiCad MCP Pro tool supports production EDA automa... |
+| `kicad_list_tool_categories` | all | yes | no | no | no | no | List all available tool categories and capabilities. This KiCad MCP Pro tool supports production EDA automation workf... |
+| `kicad_scan_directory` | all | yes | no | no | yes | no | Scan a directory and report any KiCad project files it contains. |
+| `kicad_set_project` | all | no | yes | no | yes | no | Set the active KiCad project directory and file paths. This KiCad MCP Pro tool supports production EDA automation wor... |
+| `lib_assign_footprint` | agent_full, builder, full, schematic, schematic_only, simulation | no | no | no | yes | no | Assign a footprint property to a schematic symbol. This KiCad MCP Pro tool supports production EDA automation workflo... |
+| `lib_assign_lcsc_to_symbol` | agent_full, builder, full, schematic, schematic_only, simulation | no | no | no | yes | no | Assign an LCSC part code to a schematic symbol property. |
+| `lib_bind_part_to_symbol` | agent_full, builder, full, schematic, schematic_only, simulation | no | no | no | yes | no | Assign a live part (LCSC/MPN) to a schematic symbol and optionally its footprint. |
+| `lib_check_stock_availability` | agent_full, builder, full, schematic, schematic_only, simulation | yes | no | no | yes | no | Check live stock availability for the requested schematic references. This KiCad MCP Pro tool supports production EDA... |
+| `lib_create_custom_symbol` | agent_full, builder, full, schematic, schematic_only, simulation | no | no | no | yes | no | Create a simple custom symbol in the active project directory. |
+| `lib_find_alternative_parts` | agent_full, builder, full, schematic, schematic_only, simulation | yes | no | no | yes | no | Find nearby alternative parts for the supplied LCSC code. This KiCad MCP Pro tool supports production EDA automation... |
+| `lib_generate_footprint_ipc7351` | agent_full, builder, full, schematic, schematic_only, simulation | no | no | no | yes | no | Generate an IPC-7351B compliant KiCad footprint (.kicad_mod) and save it. |
+| `lib_generate_symbol_from_pintable` | agent_full, builder, full, schematic, schematic_only, simulation | no | no | no | yes | no | Generate a KiCad symbol (.kicad_sym) from a pin table and save it. |
+| `lib_get_bom_with_pricing` | agent_full, builder, full, schematic, schematic_only, simulation | yes | no | no | yes | no | Generate a live BOM summary with unit and extended pricing. |
+| `lib_get_component_details` | agent_full, builder, full, schematic, schematic_only, simulation | yes | no | no | yes | no | Return live component detail for a specific LCSC code or MPN. |
+| `lib_get_datasheet_url` | agent_full, builder, full, schematic, schematic_only, simulation | yes | no | no | yes | no | Return a datasheet URL from the symbol library when available. |
+| `lib_get_footprint_3d_model` | agent_full, builder, full, schematic, schematic_only, simulation | yes | no | no | yes | no | Return the configured 3D model path for a footprint. This KiCad MCP Pro tool supports production EDA automation workf... |
+| `lib_get_footprint_info` | agent_full, builder, full, schematic, schematic_only, simulation | yes | no | no | yes | no | Return details for a single footprint. This KiCad MCP Pro tool supports production EDA automation workflows for MCP c... |
+| `lib_get_symbol_info` | agent_full, builder, full, schematic, schematic_only, simulation | yes | no | no | yes | no | Return details for a single symbol. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clie... |
+| `lib_list_footprints` | agent_full, builder, full, schematic, schematic_only, simulation | yes | no | no | yes | no | List footprints in a specific library. This KiCad MCP Pro tool supports production EDA automation workflows for MCP c... |
+| `lib_list_libraries` | agent_full, builder, full, schematic, schematic_only, simulation | yes | no | no | yes | no | List configured symbol and footprint libraries. This KiCad MCP Pro tool supports production EDA automation workflows... |
+| `lib_rebuild_index` | agent_full, builder, full, schematic, schematic_only, simulation | no | no | no | yes | no | Rebuild the in-memory symbol search index. This KiCad MCP Pro tool supports production EDA automation workflows for M... |
+| `lib_recommend_part` | agent_full, builder, full, schematic, schematic_only, simulation | yes | no | no | yes | no | Recommend a purchasable part given electrical requirements. |
+| `lib_search_components` | agent_full, builder, full, schematic, schematic_only, simulation | yes | no | no | yes | no | Search live component sources for purchasable parts. This KiCad MCP Pro tool supports production EDA automation workf... |
+| `lib_search_footprints` | agent_full, builder, full, schematic, schematic_only, simulation | yes | no | no | yes | no | Search footprint libraries by footprint name. This KiCad MCP Pro tool supports production EDA automation workflows fo... |
+| `lib_search_symbols` | agent_full, builder, full, schematic, schematic_only, simulation | yes | no | no | yes | no | Search symbol libraries by name, description, or keywords. This KiCad MCP Pro tool supports production EDA automation... |
+| `manufacturing_quality_gate` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | Evaluate manufacturing readiness against the active or requested DFM profile. |
+| `mfg_check_import_support` | agent_full, full, manufacturing | yes | no | yes | yes | no | Report whether the detected KiCad CLI advertises a given board-import format. |
+| `mfg_correct_cpl_rotations` | agent_full, full, manufacturing | no | no | no | yes | no | Apply JLCPCB CPL rotation corrections to a KiCad-exported pick-and-place CSV. |
+| `mfg_generate_release_manifest` | agent_full, full, manufacturing | no | no | yes | yes | no | Generate a SHA256-signed release manifest for the manufacturing package. |
+| `mfg_generate_test_plan` | agent_full, full, manufacturing | no | no | no | yes | no | Generate a bring-up test plan from the project design intent. |
+| `mfg_import_allegro` | agent_full, full, manufacturing | no | yes | yes | yes | no | Import an Allegro board into a KiCad project directory. This KiCad MCP Pro tool supports production EDA automation wo... |
+| `mfg_import_geda` | agent_full, full, manufacturing | no | yes | yes | yes | no | Import a gEDA PCB into a KiCad project directory. This KiCad MCP Pro tool supports production EDA automation workflow... |
+| `mfg_import_pads` | agent_full, full, manufacturing | no | yes | yes | yes | no | Import a PADS PCB into a KiCad project directory. This KiCad MCP Pro tool supports production EDA automation workflow... |
+| `mfg_panelize` | agent_full, full, manufacturing | no | yes | yes | yes | no | Panelize the active PCB using KiKit. |
+| `pcb_add_barcode` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | yes | no | Add a production barcode marker to the board file. This KiCad MCP Pro tool supports production EDA automation workflo... |
+| `pcb_add_blind_via` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | no | Add a blind or buried via between the requested copper layers. |
+| `pcb_add_circle` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | no | Add a board graphic circle. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_add_copper_zone` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Backward-compatible alias for pcb_add_zone(). This KiCad MCP Pro tool supports production EDA automation workflows fo... |
+| `pcb_add_fiducial_marks` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | yes | no | Append simple fiducial footprints near the board corners. This KiCad MCP Pro tool supports production EDA automation... |
+| `pcb_add_microvia` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | no | Add a microvia between adjacent copper layers. This KiCad MCP Pro tool supports production EDA automation workflows f... |
+| `pcb_add_mounting_holes` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | yes | no | Append standard mounting-hole footprints around the current board frame. |
+| `pcb_add_rectangle` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | no | Add a board graphic rectangle. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_add_segment` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | no | Add a board graphic segment. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_add_teardrops` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Create small copper helper zones at simple pad-to-track junctions. |
+| `pcb_add_text` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | no | Add board text. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_add_track` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Add a single track segment. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_add_tracks_bulk` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | no | Add multiple tracks in a single operation. This KiCad MCP Pro tool supports production EDA automation workflows for M... |
+| `pcb_add_via` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Add a via. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_add_zone` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Add a copper zone with an arbitrary polygon outline on one copper layer. |
+| `pcb_align_footprints` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | no | no | yes | no | Arrange selected footprints into a straight row or column. This KiCad MCP Pro tool supports production EDA automation... |
+| `pcb_auto_place_by_schematic` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | yes | no | Place PCB footprints from the current schematic using deterministic heuristics. |
+| `pcb_auto_place_force_directed` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | yes | no | Run a force-directed spring-embedder placement algorithm on a set of components. |
+| `pcb_bga_fanout` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | no | no | yes | no | Generate a BGA fanout via-placement plan (dog-ear or inline strategy). |
+| `pcb_block_create_from_selection` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | no | no | yes | no | Capture a reusable PCB design block from selected footprint references. |
+| `pcb_block_list` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | no | no | no | yes | no | List stored PCB design blocks created from selected footprints. This KiCad MCP Pro tool supports production EDA autom... |
+| `pcb_block_place` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | no | no | yes | no | Place a stored PCB design block by cloning its saved footprint blocks. |
+| `pcb_check_creepage_clearance` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | no | no | no | yes | no | Run a heuristic creepage clearance review against pad spacing. This KiCad MCP Pro tool supports production EDA automa... |
+| `pcb_delete_items` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Delete items by UUID. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_delete_object` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Delete a single PCB object by UUID through KiCad IPC. |
+| `pcb_export_3d_pdf` | agent_full, full, high_speed, minimal, pcb, power, schematic, simulation | no | yes | yes | yes | no | Export the active PCB as a KiCad 10 3D PDF. |
+| `pcb_get_board_as_string` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | yes | no | no | yes | no | Return the current board as a bounded S-expression string. |
+| `pcb_get_board_summary` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | yes | no | no | yes | no | Summarize the current board. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_get_design_rules` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | yes | no | no | yes | no | Read the active board design rules file when available. This KiCad MCP Pro tool supports production EDA automation wo... |
+| `pcb_get_footprint_layers` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | yes | no | no | yes | no | List every layer referenced by a footprint block, including inner layers. |
+| `pcb_get_footprints` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | yes | no | no | yes | no | List board footprints. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_get_impedance_for_trace` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | yes | no | no | yes | no | Estimate trace impedance for the supplied width on the named stackup layer. |
+| `pcb_get_layers` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | yes | no | no | yes | no | List enabled board layers. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_get_nets` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | yes | no | no | yes | no | List all board nets. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_get_pads` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | yes | no | no | no | yes | List board pads. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_get_ratsnest` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | yes | no | no | yes | no | Report currently unconnected board items using the latest DRC view. |
+| `pcb_get_selection` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | yes | no | no | yes | no | List currently selected items in the PCB editor. This KiCad MCP Pro tool supports production EDA automation workflows... |
+| `pcb_get_shapes` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | yes | no | no | no | yes | List graphical board shapes. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_get_stackup` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | yes | no | no | yes | no | Show the current stackup. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_get_tracks` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | yes | no | no | yes | no | List board tracks. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_get_vias` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | yes | no | no | yes | no | List board vias. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_get_zones` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager | yes | no | no | yes | no | List all board copper zones. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_group_by_function` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | no | no | yes | no | Cluster existing footprints into named functional groups. This KiCad MCP Pro tool supports production EDA automation... |
+| `pcb_highlight_net` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | no | no | no | no | Attempt to highlight a net in the GUI when supported. |
+| `pcb_move_component` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Move a PCB component by reference using the live footprint operation. |
+| `pcb_move_footprint` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Move a footprint to an absolute location. This KiCad MCP Pro tool supports production EDA automation workflows for MC... |
+| `pcb_place_component` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Place an already-synced PCB component at an absolute location. |
+| `pcb_place_decoupling_caps` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | yes | no | Move capacitor footprints into a tight row near a target IC footprint. |
+| `pcb_placement_quality_gate` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | Evaluate whether footprint placement is overlap-free and inside the board frame. |
+| `pcb_placement_quality_report` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | no | no | no | yes | no | Return a structured placement-quality report for capable MCP clients. |
+| `pcb_quality_gate` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | Evaluate whether the PCB is physically clean enough to proceed. |
+| `pcb_refill_zones` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | no | no | no | no | Refill all copper zones. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_route_trace` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Route a trace segment through the KiCad IPC-backed track tool. |
+| `pcb_save` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | no | no | no | no | Save the active board. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_score_placement` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | no | no | no | yes | no | Score PCB placement quality and explain both hard failures and softer warnings. |
+| `pcb_set_board_outline` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | no | Draw a rectangular board outline on Edge.Cuts. This KiCad MCP Pro tool supports production EDA automation workflows f... |
+| `pcb_set_design_rules` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | yes | no | Write board-level manufacturing constraints into the active .kicad_dru file. |
+| `pcb_set_footprint_layer` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Set the footprint copper side. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `pcb_set_keepout_zone` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Add a rectangular PCB keepout / rule area to the active board. |
+| `pcb_set_net_class` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | no | Assign a net class when the runtime supports it. This KiCad MCP Pro tool supports production EDA automation workflows... |
+| `pcb_set_stackup` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | yes | no | Set the active board stackup using a file-backed profile. |
+| `pcb_sync_from_schematic` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | no | no | yes | no | Sync missing PCB footprints from schematic footprint assignments. |
+| `pcb_transfer_quality_gate` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | Evaluate whether named schematic pad nets transferred cleanly onto PCB pads. |
+| `pdn_calculate_voltage_drop` | agent_full, analysis, critic, full, power | no | no | no | no | no | Estimate DC voltage drop and trace resistance. This KiCad MCP Pro tool supports production EDA automation workflows f... |
+| `pdn_check_copper_weight` | agent_full, analysis, critic, full, power | no | no | no | no | no | Check whether the routed copper for a net looks sufficient for the load current. |
+| `pdn_generate_power_plane` | agent_full, analysis, critic, full, power | no | no | no | no | no | Generate a rectangular copper plane on the requested copper layer. |
+| `pdn_recommend_decoupling_caps` | agent_full, analysis, critic, full, power | no | no | no | no | no | Recommend local and bulk decoupling from a simple PDN heuristic. |
+| `project_auto_fix_loop` | all | no | yes | no | yes | no | Run the project quality gate and automatically apply server-side fixes. |
+| `project_design_report` | all | no | no | no | yes | no | Generate a comprehensive design-status report. |
+| `project_full_validation_loop` | all | no | no | no | yes | no | Run ERC/DRC/project gates in a bounded fix-and-rerun validation loop. |
+| `project_gate_trend` | all | no | no | no | yes | no | Return persisted quality-gate trend history for one gate. This KiCad MCP Pro tool supports production EDA automation... |
+| `project_generate_design_prompt` | all | no | no | no | yes | no | Generate a professional workflow prompt tailored to the resolved project spec. |
+| `project_get_design_intent` | all | yes | no | no | yes | no | Show the persisted project design intent used by placement and release gates. |
+| `project_get_design_spec` | all | yes | no | no | yes | no | Return the resolved project design spec with explicit and inferred fields. |
+| `project_get_next_action` | all | yes | no | no | yes | no | Return the next high-priority action derived from the current project gate. |
+| `project_infer_design_spec` | all | no | no | no | yes | no | Infer a design spec from the active PCB without writing it to disk. |
+| `project_quality_gate` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | Run the full project quality gate across schematic, PCB, DFM, and parity checks. |
+| `project_quality_gate_report` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | no | no | no | yes | no | Return the full project gate in structured form for capable MCP clients. |
+| `project_set_design_intent` | all | no | yes | no | yes | no | Call this FIRST to store design intent for placement, routing, and gates. |
+| `project_validate_design_spec` | all | no | no | no | yes | no | Validate the resolved design spec against the active project PCB. |
+| `route_apply_tuning_profile` | agent_full, builder, full, high_speed, pcb, pcb_only | no | no | no | yes | no | Assign a named tuning profile to a net or wildcard net group. |
+| `route_autoroute_freerouting` | agent_full, builder, full, high_speed, pcb, pcb_only | no | yes | no | yes | no | Run FreeRouting after placement; do not skip this post-placement routing step. |
+| `route_create_tuning_profile` | agent_full, builder, full, high_speed, pcb, pcb_only | no | no | no | yes | no | Create or update a KiCad 10-style time-domain tuning profile. |
+| `route_differential_pair` | agent_full, builder, full, high_speed, pcb, pcb_only | no | no | no | yes | no | Write differential-pair routing constraints for a pair of nets. |
+| `route_export_dsn` | agent_full, builder, full, high_speed, pcb, pcb_only | no | yes | yes | yes | no | Stage a Specctra DSN file for FreeRouting. This KiCad MCP Pro tool supports production EDA automation workflows for M... |
+| `route_from_pad_to_pad` | agent_full, builder, full, high_speed, pcb, pcb_only | no | no | no | no | yes | Create a simple orthogonal route between two pads. This KiCad MCP Pro tool supports production EDA automation workflo... |
+| `route_import_ses` | agent_full, builder, full, high_speed, pcb, pcb_only | no | yes | yes | yes | no | Stage a Specctra SES file and explain the KiCad import step. |
+| `route_list_tuning_profiles` | agent_full, builder, full, high_speed, pcb, pcb_only | no | no | no | yes | no | List configured time-domain tuning profiles. This KiCad MCP Pro tool supports production EDA automation workflows for... |
+| `route_set_net_class_rules` | agent_full, builder, full, high_speed, pcb, pcb_only | no | yes | no | yes | no | Write net-class routing constraints into the active .kicad_dru file. |
+| `route_single_track` | agent_full, builder, full, high_speed, pcb, pcb_only | no | no | no | no | yes | Route a single straight track segment. This KiCad MCP Pro tool supports production EDA automation workflows for MCP c... |
+| `route_tune_length` | agent_full, builder, full, high_speed, pcb, pcb_only | no | no | no | yes | no | Write a length-tuning rule and report the current delta for a net. |
+| `route_tune_time_domain` | agent_full, builder, full, high_speed, pcb, pcb_only | no | no | no | yes | no | Create a KiCad 10-inspired time-domain tuning rule with a length fallback. |
+| `run_drc` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | Run PCB design rule checks. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `run_erc` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | Run schematic electrical rule checks. This KiCad MCP Pro tool supports production EDA automation workflows for MCP cl... |
+| `sch_add_bus` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Add a schematic bus, snapping endpoints to the 2.54 mm grid by default. |
+| `sch_add_bus_wire_entry` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Add a bus wire entry marker, snapping its anchor to the 2.54 mm grid by default. |
+| `sch_add_component` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | yes | Add a schematic component through the hybrid IPC reload path. |
+| `sch_add_global_label` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Add a global label, preserving the requested shape and rotation. |
+| `sch_add_hierarchical_label` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Add a hierarchical label, preserving the requested shape and rotation. |
+| `sch_add_jumper` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Add a jumper symbol to the schematic. This KiCad MCP Pro tool supports production EDA automation workflows for MCP cl... |
+| `sch_add_label` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Add a schematic label, snapping its anchor to the 2.54 mm grid by default. |
+| `sch_add_missing_junctions` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | yes | no | Insert missing schematic junctions at T-intersection wire endpoints. This KiCad MCP Pro tool supports production EDA... |
+| `sch_add_no_connect` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Add a no-connect marker, snapping it to the 2.54 mm grid by default. |
+| `sch_add_power_symbol` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Add a power symbol, snapping its anchor to the 2.54 mm grid by default. |
+| `sch_add_symbol` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Add a schematic symbol at an absolute coordinate. |
+| `sch_add_wire` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Add a schematic wire, snapping endpoints to the 2.54 mm grid by default. |
+| `sch_analyze_net_compilation` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | no | no | Preview how netlist-aware schematic compilation will resolve endpoints and wires. |
+| `sch_annotate` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Renumber schematic references sequentially. This KiCad MCP Pro tool supports production EDA automation workflows for... |
+| `sch_auto_place_functional` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | yes | no | Place schematic symbols into semantically meaningful zones on the sheet. |
+| `sch_auto_place_symbols` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Auto-place selected references using deterministic cluster, linear, or star layouts. |
+| `sch_auto_resize_sheet` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | yes | no | Automatically grow the sheet to fit all currently placed symbols. |
+| `sch_build_circuit` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | no | no | Build (overwrite) the active schematic from structured symbol, wire, and label inputs. |
+| `sch_check_power_flags` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | no | no | Check whether common power nets appear to be flagged. This KiCad MCP Pro tool supports production EDA automation work... |
+| `sch_create_sheet` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | no | no | Create a child schematic sheet and add it to the active top-level schematic. |
+| `sch_delete_symbol` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Remove a placed symbol and any directly attached wire segments. |
+| `sch_delete_wire` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Remove a specific wire segment using its UUID or unique UUID prefix. |
+| `sch_find_free_placement` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | yes | no | Find N collision-free placement coordinates for new symbols. |
+| `sch_get_bounding_boxes` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | yes | no | no | yes | no | Return the estimated bounding box of every symbol in the active schematic. |
+| `sch_get_connectivity_graph` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | yes | no | no | no | no | Summarize the active schematic as a textual net connectivity graph. |
+| `sch_get_labels` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | yes | no | no | no | no | List all labels in the schematic. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `sch_get_net_names` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | yes | no | no | no | no | List unique net names derived from labels. This KiCad MCP Pro tool supports production EDA automation workflows for M... |
+| `sch_get_pin_positions` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | yes | no | no | no | no | Calculate absolute pin positions for a given symbol placement. This KiCad MCP Pro tool supports production EDA automa... |
+| `sch_get_sheet_info` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | yes | no | no | no | no | Return metadata for a specific child sheet. This KiCad MCP Pro tool supports production EDA automation workflows for... |
+| `sch_get_symbols` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | yes | no | no | no | no | List all schematic symbols. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `sch_get_template_info` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | yes | no | no | yes | no | Return full details for a subcircuit template. |
+| `sch_get_wires` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | yes | no | no | no | no | List all wires in the schematic. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `sch_instantiate_template` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | yes | no | Instantiate a subcircuit template — returns a structured action plan. |
+| `sch_list_sheets` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | no | no | List child sheets from the active top-level schematic. This KiCad MCP Pro tool supports production EDA automation wor... |
+| `sch_list_swappable_pins` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | yes | no | List candidate pins and units that can participate in a swap workflow. |
+| `sch_list_templates` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | yes | no | List all available reference subcircuit templates. |
+| `sch_modify_property` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | yes | Modify a schematic symbol property by reference. This KiCad MCP Pro tool supports production EDA automation workflows... |
+| `sch_move_symbol` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Move an existing symbol instance to a new absolute coordinate. |
+| `sch_reload` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | no | no | Ask KiCad to reload the active schematic. This KiCad MCP Pro tool supports production EDA automation workflows for MC... |
+| `sch_route_wire_between_pins` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Route deterministic Manhattan wire segments between two placed symbol pins. |
+| `sch_set_hop_over` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | yes | no | Toggle KiCad 10 hop-over display in the active project settings. |
+| `sch_set_sheet_size` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | yes | no | Change the schematic sheet (paper) size. |
+| `sch_swap_gates` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | yes | no | Record a gate-swap back-annotation intent for a multi-unit component. |
+| `sch_swap_pins` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | yes | no | Record a pin-swap back-annotation intent for a component. |
+| `sch_trace_net` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | no | no | Trace a named net through the active schematic and matching child sheets. |
+| `sch_update_properties` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Update a property on a placed symbol. This KiCad MCP Pro tool supports production EDA automation workflows for MCP cl... |
+| `schematic_connectivity_gate` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | no | no | no | yes | no | Evaluate whether schematic structure and hierarchy look electrically meaningful. This KiCad MCP Pro tool supports pro... |
+| `schematic_quality_gate` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | Evaluate whether the schematic is clean enough to proceed. This KiCad MCP Pro tool supports production EDA automation... |
+| `si_bind_interfaces_to_net_classes` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Map interface specs from the project design intent to KiCad net classes. |
+| `si_calculate_decoupling_placement` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Estimate decoupling placement quality around an IC power pin. This KiCad MCP Pro tool supports production EDA automat... |
+| `si_calculate_trace_impedance` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Estimate PCB trace impedance using quasi-static interconnect formulas. This KiCad MCP Pro tool supports production ED... |
+| `si_calculate_trace_width_for_impedance` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Solve for a trace width that meets the requested impedance target. |
+| `si_check_differential_pair_skew` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Estimate differential-pair length skew and delay mismatch from board tracks. |
+| `si_check_via_stub` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Estimate via-stub resonance and risk for selected vias on the active board. |
+| `si_generate_stackup` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Generate a practical board stackup recommendation and target trace geometry. |
+| `si_list_dielectric_materials` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | List all built-in dielectric materials with Er, loss tangent, and frequency range. |
+| `si_synthesize_stackup_for_interfaces` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Synthesise a PCB stackup that meets the impedance requirements of the given interfaces. |
+| `si_validate_length_matching` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Validate that each net group is matched within the supplied tolerance. |
+| `sim_add_spice_directive` | agent_full, full, high_speed, simulation | no | yes | no | yes | no | Persist a SPICE directive used by future MCP simulation runs. |
+| `sim_check_stability` | agent_full, full, high_speed, simulation | no | no | no | yes | no | Estimate loop crossover and phase margin from an AC sweep. |
+| `sim_run_ac_analysis` | agent_full, full, high_speed, simulation | no | no | no | yes | no | Run a small-signal AC sweep. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `sim_run_dc_sweep` | agent_full, full, high_speed, simulation | no | no | no | yes | no | Run a DC sweep for an independent source. This KiCad MCP Pro tool supports production EDA automation workflows for MC... |
+| `sim_run_operating_point` | agent_full, full, high_speed, simulation | no | no | no | yes | no | Run a DC operating-point analysis. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
+| `sim_run_transient` | agent_full, full, high_speed, simulation | no | no | no | yes | no | Run a transient time-domain simulation. This KiCad MCP Pro tool supports production EDA automation workflows for MCP... |
+| `studio_push_context` | all | no | no | no | yes | no | Update the active IDE context pushed by KiCad Studio. This KiCad MCP Pro tool supports production EDA automation work... |
+| `thermal_calculate_via_count` | agent_full, analysis, critic, full, power | no | no | no | no | no | Estimate thermal via count from package heat and board thermal resistance. |
+| `thermal_check_copper_pour` | agent_full, analysis, critic, full, power | no | no | no | no | no | Check whether the board already has copper pour support for the net. |
+| `tune_diff_pair_length` | agent_full, builder, full, high_speed, pcb, pcb_only | no | no | no | yes | no | Write matched-length rules for both nets in a differential pair. |
+| `validate_design` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | Run DRC and ERC and summarize readiness. This KiCad MCP Pro tool supports production EDA automation workflows for MCP... |
+| `validate_footprints_vs_schematic` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | Compare PCB footprint references against the schematic symbol references. This KiCad MCP Pro tool supports production... |
+| `variant_create` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | yes | no | Create a new design variant, optionally cloning an existing variant. |
+| `variant_diff_bom` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | yes | no | Diff the effective BOM between two design variants. This KiCad MCP Pro tool supports production EDA automation workfl... |
+| `variant_export_bom` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | yes | yes | no | Export a variant-specific BOM into the project output directory. |
+| `variant_list` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | no | no | yes | no | List available design variants and basic component counts. This KiCad MCP Pro tool supports production EDA automation... |
+| `variant_set_active` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | yes | no | Set the active design variant for the current project. This KiCad MCP Pro tool supports production EDA automation wor... |
+| `variant_set_component_override` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | yes | no | Override component population, value, or footprint in a variant. This KiCad MCP Pro tool supports production EDA auto... |
+| `vcs_commit_checkpoint` | agent_full, builder, full, high_speed, release_manager | no | yes | no | yes | no | Commit the current project state as a named checkpoint. This KiCad MCP Pro tool supports production EDA automation wo... |
+| `vcs_diff_with_checkpoint` | agent_full, builder, full, high_speed, release_manager | no | no | no | yes | no | Show the current project diff versus a checkpoint commit. This KiCad MCP Pro tool supports production EDA automation... |
+| `vcs_init_git` | agent_full, builder, full, high_speed, release_manager | no | no | no | yes | no | Initialize a Git repository for the KiCad project directory. This KiCad MCP Pro tool supports production EDA automati... |
+| `vcs_list_checkpoints` | agent_full, builder, full, high_speed, release_manager | no | no | no | yes | no | List checkpoint commits created by the MCP tool. This KiCad MCP Pro tool supports production EDA automation workflows... |
+| `vcs_restore_checkpoint` | agent_full, builder, full, high_speed, release_manager | no | yes | no | yes | no | Restore project files and keep a recovery branch for the stashed pre-restore state. |
+| `vcs_tag_release` | agent_full, builder, full, high_speed, release_manager | no | no | no | yes | no | Create an annotated release tag after the full project quality gate passes. |
+
+### Per-Tool Annotation Notes
+
+- `add_footprint_inner_layer_graphic`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `check_design_for_manufacture`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `check_power_integrity`: profiles=agent_full, analysis, critic, full, power; readOnly=yes; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `dfm_calculate_manufacturing_cost`: profiles=agent_full, critic, full, manufacturing, release_manager; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `dfm_load_manufacturer_profile`: profiles=agent_full, critic, full, manufacturing, release_manager; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `dfm_run_manufacturer_check`: profiles=agent_full, critic, full, manufacturing, release_manager; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `drc_export_rules`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `drc_list_rules`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `drc_rule_create`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `drc_rule_delete`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `drc_rule_enable`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `emc_check_decoupling_placement`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `emc_check_differential_pair_symmetry`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `emc_check_ground_plane_voids`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `emc_check_high_speed_routing_rules`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `emc_check_return_path_continuity`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `emc_check_split_plane_crossing`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `emc_check_via_stitching`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `emc_run_full_compliance`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `export_3d_render`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_3d_step`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_bom`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_drill`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_dxf`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_gerber`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_ipc2581`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_manufacturing_package`: profiles=agent_full, full, manufacturing, release_manager; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_netlist`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_odb`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_pcb_pdf`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_pick_and_place`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_sch_pdf`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_spice_netlist`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_step`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_stepz`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_svg`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `export_xao`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `get_board_stats`: profiles=agent_full, full, manufacturing, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `get_courtyard_violations`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `get_silk_to_pad_violations`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `get_unconnected_nets`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `kicad_create_new_project`: profiles=all; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `kicad_get_project_info`: profiles=all; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `kicad_get_server_info`: profiles=all; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `kicad_get_tools_in_category`: profiles=all; readOnly=yes; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `kicad_get_version`: profiles=all; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `kicad_help`: profiles=all; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `kicad_list_recent_projects`: profiles=all; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `kicad_list_tool_categories`: profiles=all; readOnly=yes; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `kicad_scan_directory`: profiles=all; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `kicad_set_project`: profiles=all; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_assign_footprint`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_assign_lcsc_to_symbol`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_bind_part_to_symbol`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_check_stock_availability`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_create_custom_symbol`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_find_alternative_parts`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_generate_footprint_ipc7351`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_generate_symbol_from_pintable`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_get_bom_with_pricing`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_get_component_details`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_get_datasheet_url`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_get_footprint_3d_model`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_get_footprint_info`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_get_symbol_info`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_list_footprints`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_list_libraries`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_rebuild_index`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_recommend_part`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_search_components`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_search_footprints`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `lib_search_symbols`: profiles=agent_full, builder, full, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `manufacturing_quality_gate`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `mfg_check_import_support`: profiles=agent_full, full, manufacturing; readOnly=yes; destructive=no; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `mfg_correct_cpl_rotations`: profiles=agent_full, full, manufacturing; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `mfg_generate_release_manifest`: profiles=agent_full, full, manufacturing; readOnly=no; destructive=no; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `mfg_generate_test_plan`: profiles=agent_full, full, manufacturing; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `mfg_import_allegro`: profiles=agent_full, full, manufacturing; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `mfg_import_geda`: profiles=agent_full, full, manufacturing; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `mfg_import_pads`: profiles=agent_full, full, manufacturing; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `mfg_panelize`: profiles=agent_full, full, manufacturing; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `pcb_add_barcode`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_add_blind_via`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `pcb_add_circle`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `pcb_add_copper_zone`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `pcb_add_fiducial_marks`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_add_microvia`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `pcb_add_mounting_holes`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_add_rectangle`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `pcb_add_segment`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `pcb_add_teardrops`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `pcb_add_text`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `pcb_add_track`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `pcb_add_tracks_bulk`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `pcb_add_via`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `pcb_add_zone`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `pcb_align_footprints`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_auto_place_by_schematic`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_auto_place_force_directed`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_bga_fanout`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_block_create_from_selection`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_block_list`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_block_place`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_check_creepage_clearance`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_delete_items`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `pcb_delete_object`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `pcb_export_3d_pdf`: profiles=agent_full, full, high_speed, minimal, pcb, power, schematic, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `pcb_get_board_as_string`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_get_board_summary`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_get_design_rules`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_get_footprint_layers`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_get_footprints`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_get_impedance_for_trace`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_get_layers`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_get_nets`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_get_pads`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `pcb_get_ratsnest`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_get_selection`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_get_shapes`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `pcb_get_stackup`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_get_tracks`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_get_vias`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_get_zones`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, minimal, pcb, pcb_only, power, release_manager; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_group_by_function`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_highlight_net`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `pcb_move_component`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `pcb_move_footprint`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `pcb_place_component`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `pcb_place_decoupling_caps`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_placement_quality_gate`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_placement_quality_report`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_quality_gate`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_refill_zones`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `pcb_route_trace`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `pcb_save`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `pcb_score_placement`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_set_board_outline`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `pcb_set_design_rules`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_set_footprint_layer`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `pcb_set_keepout_zone`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `pcb_set_net_class`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `pcb_set_stackup`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_sync_from_schematic`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only, power; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pcb_transfer_quality_gate`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `pdn_calculate_voltage_drop`: profiles=agent_full, analysis, critic, full, power; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `pdn_check_copper_weight`: profiles=agent_full, analysis, critic, full, power; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `pdn_generate_power_plane`: profiles=agent_full, analysis, critic, full, power; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `pdn_recommend_decoupling_caps`: profiles=agent_full, analysis, critic, full, power; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `project_auto_fix_loop`: profiles=all; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `project_design_report`: profiles=all; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `project_full_validation_loop`: profiles=all; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `project_gate_trend`: profiles=all; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `project_generate_design_prompt`: profiles=all; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `project_get_design_intent`: profiles=all; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `project_get_design_spec`: profiles=all; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `project_get_next_action`: profiles=all; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `project_infer_design_spec`: profiles=all; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `project_quality_gate`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `project_quality_gate_report`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `project_set_design_intent`: profiles=all; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `project_validate_design_spec`: profiles=all; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `route_apply_tuning_profile`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `route_autoroute_freerouting`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `route_create_tuning_profile`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `route_differential_pair`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `route_export_dsn`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `route_from_pad_to_pad`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `route_import_ses`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `route_list_tuning_profiles`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `route_set_net_class_rules`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `route_single_track`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `route_tune_length`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `route_tune_time_domain`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `run_drc`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `run_erc`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sch_add_bus`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_add_bus_wire_entry`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_add_component`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `sch_add_global_label`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_add_hierarchical_label`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_add_jumper`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_add_label`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_add_missing_junctions`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sch_add_no_connect`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_add_power_symbol`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_add_symbol`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_add_wire`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_analyze_net_compilation`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_annotate`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_auto_place_functional`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sch_auto_place_symbols`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_auto_resize_sheet`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sch_build_circuit`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_check_power_flags`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_create_sheet`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_delete_symbol`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_delete_wire`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_find_free_placement`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sch_get_bounding_boxes`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sch_get_connectivity_graph`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_get_labels`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_get_net_names`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_get_pin_positions`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_get_sheet_info`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_get_symbols`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_get_template_info`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sch_get_wires`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=yes; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_instantiate_template`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sch_list_sheets`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_list_swappable_pins`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sch_list_templates`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sch_modify_property`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=yes.
+- `sch_move_symbol`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_reload`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_route_wire_between_pins`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_set_hop_over`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sch_set_sheet_size`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sch_swap_gates`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sch_swap_pins`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sch_trace_net`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sch_update_properties`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `schematic_connectivity_gate`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `schematic_quality_gate`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `si_bind_interfaces_to_net_classes`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `si_calculate_decoupling_placement`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `si_calculate_trace_impedance`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `si_calculate_trace_width_for_impedance`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `si_check_differential_pair_skew`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `si_check_via_stub`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `si_generate_stackup`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `si_list_dielectric_materials`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `si_synthesize_stackup_for_interfaces`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `si_validate_length_matching`: profiles=agent_full, analysis, critic, full, high_speed; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `sim_add_spice_directive`: profiles=agent_full, full, high_speed, simulation; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sim_check_stability`: profiles=agent_full, full, high_speed, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sim_run_ac_analysis`: profiles=agent_full, full, high_speed, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sim_run_dc_sweep`: profiles=agent_full, full, high_speed, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sim_run_operating_point`: profiles=agent_full, full, high_speed, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `sim_run_transient`: profiles=agent_full, full, high_speed, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `studio_push_context`: profiles=all; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `thermal_calculate_via_count`: profiles=agent_full, analysis, critic, full, power; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `thermal_check_copper_pour`: profiles=agent_full, analysis, critic, full, power; readOnly=no; destructive=no; openWorld=no; headless=no; requiresKiCadRunning=no.
+- `tune_diff_pair_length`: profiles=agent_full, builder, full, high_speed, pcb, pcb_only; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `validate_design`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `validate_footprints_vs_schematic`: profiles=agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic; readOnly=yes; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `variant_create`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `variant_diff_bom`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `variant_export_bom`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=yes; headless=yes; requiresKiCadRunning=no.
+- `variant_list`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `variant_set_active`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `variant_set_component_override`: profiles=agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `vcs_commit_checkpoint`: profiles=agent_full, builder, full, high_speed, release_manager; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `vcs_diff_with_checkpoint`: profiles=agent_full, builder, full, high_speed, release_manager; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `vcs_init_git`: profiles=agent_full, builder, full, high_speed, release_manager; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `vcs_list_checkpoints`: profiles=agent_full, builder, full, high_speed, release_manager; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `vcs_restore_checkpoint`: profiles=agent_full, builder, full, high_speed, release_manager; readOnly=no; destructive=yes; openWorld=no; headless=yes; requiresKiCadRunning=no.
+- `vcs_tag_release`: profiles=agent_full, builder, full, high_speed, release_manager; readOnly=no; destructive=no; openWorld=no; headless=yes; requiresKiCadRunning=no.

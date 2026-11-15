@@ -1,0 +1,59 @@
+---
+title: 'ADR-0003: Export Tool Naming and Aliases'
+description: 'A review flagged that the same export format appeared under multiple tool names (K3), risking agents picking the wrong tool and reviewers seeing an…'
+---
+
+**Status:** Accepted
+**Date:** 2026-06-16
+**Deciders:** @oaslananka
+
+## Context
+
+A review flagged that the same export format appeared under multiple tool names
+(K3), risking agents picking the wrong tool and reviewers seeing an uncurated
+surface. Investigating the actual **registered** surface (the `mcp.tool()(...)`
+calls in `src/kicad_mcp/tools/export.py`) showed the duplication is narrower than the
+raw function inventory suggests:
+
+- The `sch_export_*` and `pcb_export_*` functions (e.g. `sch_export_svg`,
+  `pcb_export_glb`) are **internal helpers**, not registered tools. Only the
+  `export_*` wrappers are registered, so they are not agent-facing duplicates.
+- `export_stepz` exports KiCad's `stpz` (gzip-compressed STEP) format with a distinct
+  `--format`/extension — a different output, **not** a duplicate of `export_step`.
+- `pcb_export_3d_pdf` (3D PDF) and `pcb_export_stats` (structured JSON stats) are the
+  sole registered tool for their respective outputs; `get_board_stats` returns a
+  human-readable text preview for a different purpose.
+
+The one genuine case of two registered tools producing the **same** output is STEP:
+`export_step` and `export_3d_step` both emit `board.step`.
+
+## Decision
+
+1. The canonical naming convention for export tools is **`export_&lt;format&gt;`** — the
+   dominant existing root. One canonical tool per output format.
+2. A genuine same-output duplicate is kept for backward compatibility as a
+   **deprecated alias** through the central registrar `src/kicad_mcp/tools/aliases.py`
+   (`register_alias` + `notify_deprecated`): the alias stays registered and functional,
+   delegates to the canonical tool, logs a one-time deprecation warning, and is recorded
+   in `ALIASES`.
+3. Applying this now: **`export_3d_step` becomes a deprecated alias of `export_step`.**
+4. `export_stepz`, `pcb_export_3d_pdf`, `pcb_export_stats`, and `get_board_stats` are
+   **not** aliased — each is the only tool for a distinct output and was misread as a
+   duplicate.
+
+## Consequences
+
+- Public tool names are not removed or silently renamed; deprecated names keep working
+  and emit a one-time, structured deprecation log (work order rule 6).
+- New export tools must follow `export_&lt;format&gt;`; a new same-format duplicate must be
+  registered via `register_alias`, not as a second canonical tool.
+- The alias registrar is reusable for future surface curation (e.g. the orphaned-tool
+  cleanup in ADR-tracked Phase 1 work).
+
+## Verification
+
+- `tests/unit/test_tool_registry_consistency.py` (no cross-category name collisions) and
+  `tests/integration/test_tool_surface_snapshot.py` stay green.
+- `tests/integration/test_export_alias.py` asserts `export_3d_step` is registered, is in
+  `ALIASES` mapped to `export_step`, and delegates to the same output.
+- `pnpm run docs:tools` reflects the deprecated-alias docstring.

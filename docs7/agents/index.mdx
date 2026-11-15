@@ -1,0 +1,80 @@
+---
+title: 'KiCad MCP — AI Agent Integration Guide'
+description: 'kiCad-mcp-pro is an MCP server that exposes KiCad PCB design capabilities as tools for AI agents: board inspection, schematic/PCB review, DRC/ERC, DFM,…'
+---
+
+kiCad-mcp-pro is an MCP server that exposes KiCad PCB design capabilities as tools for AI agents: board inspection, schematic/PCB review, DRC/ERC, DFM, manufacturing export, SPICE simulation, and more.
+
+## Supported Agents
+
+| Agent | Local STDIO | Remote HTTP | Skills | App UI |
+|-------|------------|-------------|--------|--------|
+| [Claude Code](agents/claude-code) | ✅ Supported | ✅ Supported | ✅ Supported | — |
+| [Codex CLI](agents/codex) | ✅ Supported | ✅ Supported | AGENTS.md + Agent Skills | — |
+| [Gemini CLI](agents/gemini-cli) | ✅ Supported | ✅ Supported | Agent Skills | — |
+| [OpenCode](agents/opencode) | ✅ Supported | ✅ Supported | — | ✅ Plugin |
+| [VS Code / Copilot](agents/vscode-copilot) | ✅ Supported | ✅ Supported | Agent Skills | Experimental |
+| [Cursor](agents/cursor) | ✅ Supported | ⚠️ Verify | ✅ Supported | — |
+| [Claude Desktop](agents/claude-desktop) | ✅ Supported | — | — | — |
+| [.mcpb bundle](agents/mcpb) | ✅ Supported | — | — | ✅ 1-file install |
+| [Claude.ai Web](agents/claude-ai) | ❌ No | ✅ Supported | — | Limited |
+| [ChatGPT Web](agents/chatgpt-app) | ❌ No | ✅ Supported | — | ✅ Apps SDK |
+| [Antigravity](agents/antigravity) | ⚠️ Verify | ✅ Supported | — | — |
+| [Cline](agents/cline) | ✅ Supported | ✅ Supported | ✅ Reusable | — |
+| [Windsurf](agents/windsurf) | ✅ Supported | ✅ Supported | — | — |
+| [Continue](agents/continue) | ✅ Supported | ✅ Supported | — | — |
+| [Zed](agents/zed) | ✅ Supported | ✅ Supported | — | — |
+
+## Quick Start
+
+For a client-by-client copy-paste setup overview, see the [Quickstart Matrix](agents/quickstart).
+For bounded review/build/release tool surfaces, see [Progressive-Disclosure Profiles](agents/progressive-disclosure).
+
+
+```bash
+# Install
+pipx install kicad-mcp-pro
+
+# Run diagnostics
+kicad-mcp-pro doctor
+
+# Generate config for your agent
+kicad-mcp-pro mcp-config generate --client claude
+
+# Or configure MCP and bundled skills together from a KiCad project directory
+uvx kicad-mcp-pro quickstart
+```
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    AI Agent Host                         │
+│  (Claude Code, Codex, Gemini CLI, ChatGPT, etc.)        │
+└──────────┬──────────────────────────────────┬───────────┘
+           │ STDIO / HTTP                     │ HTTP
+           ▼                                  ▼
+┌──────────────────────┐         ┌──────────────────────────┐
+│  Local KiCad MCP     │         │  Remote KiCad MCP Cloud  │
+│  (uvx kicad-mcp-pro) │         │  (Public HTTPS endpoint) │
+│  Full tool access    │         │  Read-only tools         │
+│  Direct file access  │         │  Upload analysis         │
+└──────────────────────┘         └──────────────────────────┘
+```
+
+## Deployment Profiles
+
+See `integrations/common/profiles.md` for the four deployment profiles:
+1. **Local STDIO** — maximum capability, direct KiCad CLI access
+2. **Local HTTP** — loopback-only for IDE integration
+3. **Remote Cloud** — public HTTPS for ChatGPT/Claude.ai web
+4. **Hybrid Bridge** — cloud + local bridge (V2)
+
+## Security
+
+> **Always start with read-only mode.** Enable write tools only for trusted projects.
+
+- Destructive tools require explicit user approval
+- Remote apps cannot directly access your local KiCad installation
+- Uploaded project archives may contain untrusted content
+- See [security.md](agents/security) for detailed guidance

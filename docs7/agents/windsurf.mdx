@@ -1,0 +1,54 @@
+---
+title: 'Windsurf Integration'
+description: 'Add the server to ~/.codeium/windsurf/mcpconfig.json (the file Cascade reads), or use Cascade → Plugins / MCP → Add custom server → View raw config:'
+---
+
+[Windsurf](https://windsurf.com) (the Codeium agentic IDE) connects to MCP
+servers from its Cascade panel.
+
+## Quick Start
+
+Add the server to `~/.codeium/windsurf/mcp_config.json` (the file Cascade reads),
+or use **Cascade → Plugins / MCP → Add custom server → View raw config**:
+
+```json
+{
+  "mcpServers": {
+    "kicad": {
+      "command": "uvx",
+      "args": ["kicad-mcp-pro"],
+      "env": {
+        "KICAD_MCP_PROJECT_DIR": "/absolute/path/to/your/kicad-project",
+        "KICAD_MCP_PROFILE": "pcb_only",
+        "KICAD_MCP_OPERATING_MODE": "readonly"
+      }
+    }
+  }
+}
+```
+
+Ready-to-copy: [`docs/examples/clients/windsurf.mcp.json`](/files/examples/clients/windsurf.mcp.json).
+
+After editing the file, press **Refresh** in the Cascade MCP panel. The config
+supports `${ENV_VAR}` interpolation for `command`, `args`, `env`, `serverUrl`,
+and `headers`.
+
+A remote (HTTP) server uses `serverUrl` instead of `command`:
+
+```json
+{ "mcpServers": { "kicad": { "serverUrl": "http://127.0.0.1:8765/mcp" } } }
+```
+
+## Verification
+
+```bash
+kicad-mcp-pro doctor
+```
+
+In the Cascade **MCP** panel the `kicad` server shows a green dot and its tool
+count once it has started.
+
+## Example Prompt
+
+> Use the kicad MCP server. Inspect this KiCad project, run DRC and ERC, and
+> summarize the results. Do not modify any files.

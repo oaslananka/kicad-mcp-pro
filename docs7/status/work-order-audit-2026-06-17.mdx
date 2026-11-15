@@ -1,0 +1,57 @@
+---
+title: 'KICAD-MCP-PROMT Work-Order Audit'
+description: 'This audit maps the external work order to the current repository state. It is a status snapshot, not a replacement for the machine-readable parity matrix.'
+---
+
+Date: 2026-06-17
+
+This audit maps the external work order to the current repository state. It is a
+status snapshot, not a replacement for the machine-readable parity matrix.
+
+## Completed Or Gated
+
+| Work order | Evidence |
+|---|---|
+| P0-T1 architecture overview | Root `ARCHITECTURE.md` and linked development architecture docs. |
+| P0-T2 registry/profile consistency | `tests/unit/test_tool_registry_consistency.py`. |
+| P0-T3 tool-surface snapshot | `tests/integration/test_tool_surface_snapshot.py` and committed snapshot data. |
+| P0-T4 capability parity matrix | `docs/compatibility/capability-parity-matrix.yaml`, generator, tool, tests, regression baseline. |
+| P1-T2 profile source of truth | `scripts/build_toolsets.py` generates `integrations/common/toolsets.json`; parity tests enforce drift-free output. |
+| P1-T3 fail-capable SI gates | `src/kicad_mcp/verdicts.py` and `tests/unit/test_si_gate_verdicts.py`. |
+| P1-T5 error/idempotency contract | `ErrorPayload` transient fields, idempotency annotations, and contract tests. |
+| P1-T7 FreeRouting honesty | DSN/SES flow surfaces human-gated KiCad limitations instead of silently claiming full headless import. |
+| P1-T8 error/doc consolidation | Error catalog and docs sync tests are present. |
+| P2-T2 round-trip safety tests | `tests/integration/test_roundtrip_fidelity.py` guards non-trivial schematic round trips. |
+| P2-T5 reproducible manufacturing exports | Manufacturing export tests assert stable content hashes and provenance. |
+| P5-T1 governance | Maintainer, governance, and contributing docs are present. |
+| P5-T2 security threat model | Threat model plus path/rate-limit/security-control tests are present. |
+| P5-T6 parity regression maintenance | `parity:check:regression` enforces the committed coverage baseline. |
+
+## Partial, With Honest Limits
+
+| Work order | Current state | Remaining work |
+|---|---|---|
+| P1-T1 export consolidation | Central alias registrar exists; `export_3d_step` is a deprecated alias of `export_step`. | Keep enforcing one public tool per identical output; ADR documents why STEPZ and helper functions are not treated as duplicate agent-facing tools. |
+| P1-T4 structured verdict outputs | Shared verdict models and several high-traffic gates are structured. | Continue converting remaining high-traffic read/quality tools to stable structured payloads. |
+| P1-T6 doc-code honesty | README/docs now label first-order physics and auth-gated sourcing honestly. | Keep parity notes synchronized as solver/API capabilities mature. |
+| P2-T1 AST-safe schematic writing | Guarded `roundtrip_edit` exists and refuses unsafe serializer loss. | Migrate every remaining regex/string schematic writer through the guarded AST path or explicit unsafe fallback. |
+| P2-T3 live KiCad E2E | KiCad-marked E2E tests exist and skip when KiCad is unavailable. | Run/expand in a KiCad-equipped CI lane. |
+| P2-T4 unresolved-net surfacing | Schematic connectivity tests cover warnings for unresolved nets. | Keep expanding structured warnings into all mutating schematic/routing paths. |
+| P3-T1 impedance field solver | Closed-form estimates are labeled; field-solver seam exists. | Integrate a real 2D/2.5D solver or return solver-unavailable for solver mode. |
+| P3-T2 PDN | Lumped and mesh-style PDN checks exist with method labels. | Add full copper-plane field solve/current-density model. |
+| P3-T3 high-speed channel | Lossy-line/optional ngspice seam exists. | Add full S-parameter/IBIS-AMI class channel analysis. |
+| P3-T4 thermal | 2D finite-difference spreading exists. | Add full 3D FEA/airflow/stack conduction model. |
+| P3-T5 EMC | Layout heuristic checks exist and are labeled partial. | Tie checks to real EM/standard-named numeric margins. |
+| P4-T1 routing | FreeRouting orchestration is honest about SES import requiring KiCad GUI. | Build full deterministic headless DSN/SES application or an alternative constraint router. |
+| P4-T2 placement | Deterministic convergence replaces default wall-clock stopping. | Add deeper electrical, thermal, return-path, and incremental placement scoring. |
+| P4-T3 sourcing/footprints | JLCPCB, Nexar, DigiKey, and Mouser clients exist; SOT-23 generation and footprint validation exist. | Expand package generators and enforce datasheet/IPC/AVL hard gates. |
+| P4-T4 edit/ingest mode | Edit-impact tools and selective revalidation tests exist. | Expand semantic diff coverage and gate-preservation proofs for larger real projects. |
+| P5-T3 sign-off report | Sign-off report builder and tests exist. | Fully hard-gate every manufacturing handoff on evidence-linked requirements. |
+| P5-T4 release hardening | Ruleset and release tests exist. | Continue validating post-publish SBOM/provenance in release dry-runs. |
+| P5-T5 runtime hardening | IPC lifecycle, task timeout/cancel, bridge rate limit tests exist. | Keep replacing brittle substring error handling with structured errors across adapters. |
+
+## Current Verification
+
+- `task verify` passes locally.
+- `uv run --all-extras python scripts/build_parity_matrix.py --check-regression` passes with
+  75.0% programmatic coverage at the committed baseline.

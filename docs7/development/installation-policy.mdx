@@ -1,0 +1,35 @@
+---
+title: 'Installation Policy'
+description: 'This page describes how KiCad MCP Pro should be installable by users and contributors.'
+---
+
+This page describes how KiCad MCP Pro should be installable by users and contributors.
+
+## User installation
+
+Supported user-facing installation channels are documented in [`../installation.md`](installation) and may include:
+
+- Python package installation from PyPI;
+- npm wrapper installation from npm;
+- Docker images from GHCR;
+- GUI bundles from GitHub Releases where available;
+- source checkout for contributors and advanced users.
+
+Installation instructions must identify prerequisites, expected package names, and verification commands.
+
+## Uninstall and cleanup
+
+The project should avoid writing persistent files outside user-selected configuration, cache, project, or package-manager directories. Uninstall should normally be handled by the package manager used for installation. Documentation should call out any persistent user configuration that may remain.
+
+## Developer installation
+
+Developer setup must be reproducible from repository files using FLOSS tooling:
+
+```bash
+corepack enable
+corepack pnpm install --frozen-lockfile
+uv sync --all-extras --frozen
+task ci
+```
+
+External tools such as KiCad, Docker, Node.js, Python, uv, pnpm, and Rust must be documented when they are needed for a specific workflow.

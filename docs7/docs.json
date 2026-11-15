@@ -1,0 +1,333 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "KiCad MCP Pro",
+  "colors": {
+    "primary": "#1976D2",
+    "light": "#26A69A",
+    "dark": "#0D47A1"
+  },
+  "logo": "/images/icon.svg",
+  "favicon": "/images/icon.svg",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Home",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "index"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Getting Started",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "how-to/index",
+              "accessibility",
+              "internationalization",
+              "installation",
+              "client-configuration",
+              "configuration",
+              "troubleshooting",
+              "faq",
+              "comparison"
+            ]
+          },
+          {
+            "group": "Tutorials",
+            "pages": [
+              {
+                "group": "Overview",
+                "pages": [
+                  "tutorials/getting-started"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference and Status",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "reference/index",
+              "tools-reference",
+              "tools-agent-workflow",
+              "tools-reference.generated",
+              "errors",
+              "api-stability",
+              "maintenance-policy",
+              "status/capability-levels",
+              "status/runtime-matrix",
+              "status/runtime-policy-matrix",
+              "compatibility/capability-parity.generated",
+              "status/work-order-audit-2026-06-17"
+            ]
+          },
+          {
+            "group": "MCP Reference",
+            "pages": [
+              {
+                "group": "Overview",
+                "pages": [
+                  "mcp/index",
+                  "mcp/api-reference",
+                  "mcp/tools",
+                  "mcp/transport",
+                  "mcp/deployment"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Install, Packaging, and Distribution",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "install/docker",
+              "install/client-config-generator",
+              "publishing",
+              "public-listing"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Integrations",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "integration/kicad-studio",
+              "integration/companion-plugin",
+              "integration/claude-desktop",
+              "integration/cursor",
+              "integration/claude-code"
+            ]
+          },
+          {
+            "group": "Agent Guides",
+            "pages": [
+              {
+                "group": "Overview",
+                "pages": [
+                  "agents/index",
+                  "agents/install",
+                  "agents/quickstart",
+                  "agents/compatibility",
+                  "agents/security",
+                  "agents/toolsets",
+                  "agents/prompts",
+                  "agents/troubleshooting",
+                  "agents/antigravity",
+                  "agents/chatgpt-app",
+                  "agents/claude-ai",
+                  "agents/claude-code",
+                  "agents/claude-desktop",
+                  "agents/mcpb",
+                  "agents/cline",
+                  "agents/codex",
+                  "agents/continue",
+                  "agents/cursor",
+                  "agents/gemini-cli",
+                  "agents/opencode",
+                  "agents/vscode-copilot",
+                  "agents/windsurf",
+                  "agents/zed"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "KiCad 10",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "kicad10/variants",
+              "kicad10/time-domain",
+              "kicad10/graphical-drc",
+              "compatibility/kicad-10-0-6-feature-parity",
+              "status/kicad-10-0-6-baseline",
+              "compatibility/kicad-10-to-11-migration",
+              "compatibility/kicad-adapter-matrix.generated",
+              "development/kicad-10-0-4-canary-report",
+              "development/kicad-10-0-4-gap-audit"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Workflows",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "workflows/first-pcb",
+              "workflows/read-only-agent-review",
+              "workflows/schematic-to-pcb",
+              "workflows/professional-circuit-design",
+              "workflows/spice-simulation",
+              "workflows/high-speed-review",
+              "workflows/live-preview",
+              "workflows/manufacturing-export"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Operations and Release",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "deployment/repository-topology",
+              "autonomy",
+              "repository-operations",
+              "branch-protection",
+              "deployment/docker",
+              "deployment/http-mode",
+              "release-process",
+              "openssf-best-practices",
+              "openssf-silver-evidence",
+              "repo-maturity-report",
+              "openssf-evidence",
+              "openssf-gap-analysis",
+              "openssf-proposal-links",
+              "legal/dependency-license-awareness",
+              "release",
+              "release-readiness-2026-07-03",
+              "status/distribution-readiness",
+              "demo-media"
+            ]
+          },
+          {
+            "group": "Automation",
+            "pages": [
+              {
+                "group": "Overview",
+                "pages": [
+                  "automation/failure-classifier",
+                  "automation/review-thread-gate"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Security and Privacy",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "privacy",
+              "deployment/security",
+              "security/threat-model",
+              "security/release-integrity",
+              "security/release-security",
+              "security/release-signing",
+              "security/requirements",
+              "security/sonar-vulnerability-disposition",
+              "security/input-validation",
+              "security/assurance-case",
+              "security/scorecard-exceptions",
+              "security/rustsec-gtk3-unic-disposition",
+              "security/github-actions-policy",
+              "workflow-security"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Submission",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "submission/README",
+              "submission/anthropic-directory",
+              "submission/chatgpt-apps",
+              "submission/openai-mcp-registry",
+              "submission/kicad-pcm",
+              "submission/reviewer-test-prompts",
+              "submission/safety-and-permissions"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Development",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "development",
+              "development/reproducible-bootstrap",
+              "development/contributing",
+              "testing",
+              "development/coding-standards",
+              "development/testing-policy",
+              "development/reference-board-corpus",
+              "development/codecov",
+              "development/dependency-management",
+              "development/commit-conventions",
+              "development/release-process",
+              "development/release-asset-immutability",
+              "development/installation-policy",
+              "development/dependency-audit-2026-06",
+              "development/architecture",
+              "explanation/architecture",
+              "development/contributing-fixtures",
+              "development/principles",
+              "development/roadmap-2026",
+              "rfcs/README",
+              "development/v2-migration"
+            ]
+          },
+          {
+            "group": "Architecture Decisions",
+            "pages": [
+              {
+                "group": "Overview",
+                "pages": [
+                  "adr/README",
+                  "adr/0001-repository-topology",
+                  "adr/0002-version-single-source",
+                  "adr/0003-export-tool-naming",
+                  "adr/0005-public-metadata-sources",
+                  "adr/0006-mcp-2026-stateless-compatibility-lane",
+                  "adr/0007-kicad-adapter-selection-and-swig-retirement"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/oaslananka/kicad-mcp-pro"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/oaslananka/kicad-mcp-pro"
+    }
+  }
+}

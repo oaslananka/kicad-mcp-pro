@@ -1,0 +1,63 @@
+---
+title: 'Cline Integration'
+description: 'Cline reads MCP servers from mcpServers in its settings JSON:'
+---
+
+[Cline](https://cline.bot) is an autonomous coding agent for VS Code (and a CLI).
+It speaks MCP over stdio and HTTP.
+
+## Quick Start
+
+Cline reads MCP servers from `mcpServers` in its settings JSON:
+
+- **IDE:** open the Cline panel → **MCP Servers** → **Configure** (this edits
+  `cline_mcp_settings.json` in the extension's storage), or add a project-scoped
+  config under `.cline/`.
+- **CLI:** edit `~/.cline/mcp.json`, or run `cline config mcp`.
+
+```json
+{
+  "mcpServers": {
+    "kicad": {
+      "command": "uvx",
+      "args": ["kicad-mcp-pro"],
+      "env": {
+        "KICAD_MCP_PROJECT_DIR": "/absolute/path/to/your/kicad-project",
+        "KICAD_MCP_PROFILE": "pcb_only",
+        "KICAD_MCP_OPERATING_MODE": "readonly"
+      },
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+Ready-to-copy: [`docs/examples/clients/cline.mcp.json`](/files/examples/clients/cline.mcp.json).
+
+Keep `autoApprove` empty so Cline asks before each tool call; add specific
+read-only tool names there once you trust the workflow. Leave
+`KICAD_MCP_OPERATING_MODE=readonly` until you intend to let the agent modify
+files.
+
+## Verification
+
+```bash
+cline mcp list
+kicad-mcp-pro doctor
+```
+
+In the Cline panel the `kicad` server should show a green status with its tools
+listed.
+
+## Skills and rules
+
+Cline supports project rules and skills under `.cline/`. The shared KiCad review
+rule in `integrations/common/` and the PCB-review skill shipped for Claude
+Code / Cursor can be reused verbatim — drop the rule into `.cline/rules/` and the
+skill folder into `.cline/skills/`.
+
+## Example Prompt
+
+> Use the kicad MCP server. Inspect this KiCad project, run DRC and ERC, and
+> summarize the results. Do not modify any files.

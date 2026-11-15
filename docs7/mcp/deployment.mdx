@@ -1,0 +1,22 @@
+---
+title: 'MCP Deployment'
+description: 'Use the deployment mode that matches the trust boundary of the KiCad project.'
+---
+
+Use the deployment mode that matches the trust boundary of the KiCad project.
+
+| Mode                    | Use when                                                           | Reference                                    |
+| ----------------------- | ------------------------------------------------------------------ | -------------------------------------------- |
+| Local stdio             | The MCP client launches the server directly.                       | [Transport](mcp/transport)                    |
+| Local Streamable HTTP   | The extension or another local client connects over loopback.      | [Transport](mcp/transport)                    |
+| Docker                  | You want a repeatable containerized runtime.                       | [Docker deployment](deployment/docker) |
+| Tunnel or reverse proxy | A remote connector needs HTTPS access to a local or hosted server. | [Docker deployment](deployment/docker) |
+
+## Security Defaults
+
+- Bind HTTP servers to `127.0.0.1` unless a trusted reverse proxy controls access.
+- Set a strong bearer token before exposing HTTP outside loopback.
+- Mount project directories read-only for inspection workflows.
+- Keep generated manufacturing/output paths separated from source projects.
+
+Supply-chain and release-integrity controls are documented in [release integrity](security/release-integrity).

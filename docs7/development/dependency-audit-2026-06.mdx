@@ -1,0 +1,42 @@
+---
+title: 'Dependency audit follow-ups — 2026-06'
+description: 'This note records the follow-up decisions for Renovate Dependency Dashboard items split into issues #175-#180.'
+---
+
+This note records the follow-up decisions for Renovate Dependency Dashboard items split into issues #175-#180.
+
+## #175 — npm `mcp`
+
+Decision: no repository change required.
+
+The deprecated npm package named `mcp` is not declared by this repository. The production MCP server uses the Python `mcp[cli]` package in `pyproject.toml`; the root `package.json` only contains JavaScript development tooling. Treat the dashboard warning as a package-name collision unless a future lockfile or manifest introduces the npm package explicitly.
+
+## #176 — `husky`
+
+Decision: removed.
+
+The repository had no `.husky/` directory and no `prepare` script, so the root `husky` dev dependency was unused. Git-hook behavior remains covered by the explicit `hooks:*` package scripts and CI checks.
+
+## #177 — Python `docker`
+
+Decision: removed from the `freerouting` extra.
+
+The FreeRouting integration invokes the Docker CLI through `subprocess` and falls back to a configured FreeRouting JAR. It does not import or use the Docker SDK for Python, so keeping `docker` in the optional extra only expanded the dependency graph without enabling functionality. The `freerouting` extra is retained as an empty compatibility extra because Dockerfile and user workflows may still request it.
+
+## #178 — `mkdocs-minify-plugin`
+
+Decision: removed.
+
+Docs builds do not require minification for correctness. Removing the plugin avoids an inactive dependency while keeping Material for MkDocs, redirects, glightbox, and mkdocstrings intact.
+
+## #179 — `pystray`
+
+Decision: retained as an isolated optional extra.
+
+The tray integration imports `pystray` lazily, has tests for the missing-dependency path, and is only installed through `kicad-mcp-pro[tray]`. There is no runtime dependency for default installs. Revisit if a maintained, cross-platform tray replacement becomes available.
+
+## #180 — `radon`
+
+Decision: removed.
+
+The only repository reference was an unused helper script. There was no package script, workflow, or test invoking it, so the dependency and helper script were removed.

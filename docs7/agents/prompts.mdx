@@ -1,0 +1,42 @@
+---
+title: 'Example Prompts for AI Agents'
+description: 'These prompts are designed to test and verify KiCad MCP integration with any agent.'
+---
+
+These prompts are designed to test and verify KiCad MCP integration with any agent.
+
+## Read-only Smoke Test
+
+> Use the kicad MCP server. Inspect this KiCad project, identify the board, schematic, KiCad version, run the available quality gates, and summarize whether the project is ready for PCB review. Do not modify files.
+
+## ERC/DRC Analysis
+
+> Use kicad MCP read-only tools to run ERC and DRC. Group issues by severity, explain likely causes, and propose a safe fix plan. Do not edit until I approve.
+
+## Manufacturing Readiness
+
+> Use kicad MCP to check whether this board is manufacturing-ready for JLCPCB/PCBWay. Run quality gates, inspect BOM/POS/export readiness, and produce a release checklist. Do not generate files yet.
+
+## Write (Guarded)
+
+> Use kicad MCP to fix the approved issue only. Before any write operation, show the exact tool and intended change. After editing, run ERC/DRC and summarize changed files.
+
+## Board Summary
+
+> Use the kicad MCP server to get a summary of this board: component count, layer stackup, net count, and any existing DRC issues.
+
+## Schematic Review
+
+> Use the kicad MCP server to review the schematic. List all components, check for ERC violations, and verify power connectivity.
+
+## Full Manufacturing Package
+
+> Use kicad MCP to prepare a complete manufacturing package for this board. Run all quality gates, export all manufacturing files (Gerber, drill, BOM, PnP, STEP, PDF), and generate a release manifest.
+
+## Component Placement Review
+
+> Use kicad MCP to review component placement on this board. Check for overlapping components, clearance violations, and placement density issues.
+
+## Quick Validation
+
+> Run `validate_design` on this project and show me the results.

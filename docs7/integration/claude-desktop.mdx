@@ -1,0 +1,20 @@
+---
+title: 'Claude Desktop'
+description: 'Claude Desktop can use either stdio or streamable HTTP.'
+---
+
+Claude Desktop can use either stdio or streamable HTTP.
+
+## Stdio
+
+Start from `docs/examples/clients/claude-desktop.json`.
+
+## HTTP
+
+If you want a local bridge, start the server first:
+
+```bash
+kicad-mcp-pro --transport http
+```
+
+Then point the client at `http://127.0.0.1:3334/mcp`, or at your custom port if you override `KICAD_MCP_PORT`. If you want the same port convention as KiCad Studio, use `27185`.

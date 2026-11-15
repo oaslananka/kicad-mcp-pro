@@ -1,0 +1,18 @@
+---
+title: 'Graphical DRC Rules'
+description: 'For KiCad 10 graphical DRC editor compatibility, the drcrule tools manage the active .kicaddru file directly.'
+---
+
+For KiCad 10 graphical DRC editor compatibility, the `drc_rule_*` tools manage the active `.kicad_dru` file directly.
+
+## Tools
+
+- `drc_list_rules(include_custom=True)`
+- `drc_rule_create(...)`
+- `drc_rule_delete(rule_name)`
+- `drc_rule_enable(rule_name, enabled=True)`
+- `drc_export_rules(output_path=None)`
+
+## Behavior
+
+Custom rules are written directly into `.kicad_dru` through an S-expression-aware parser rather than regex block replacement. Enable/disable state is stored in `.kicad-mcp/drc_rules_state.json`, and disabled rules are neutralized with `severity ignore` when needed.

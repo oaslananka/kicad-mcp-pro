@@ -1,0 +1,20 @@
+---
+title: 'Professional Circuit Design Workflow'
+description: 'Use the professionalcircuitdesign prompt when an agent is creating a board from scratch or taking a schematic through manufacturing export.'
+---
+
+Use the `professional_circuit_design` prompt when an agent is creating a board
+from scratch or taking a schematic through manufacturing export.
+
+The v3 workflow adds three guardrails:
+
+- `project_set_design_intent()` should be called before schematic capture so
+  placement and quality gates do not fall back to generic defaults.
+- `sch_add_missing_junctions()` should be called after generated wiring so
+  KiCad net connectivity matches what is visible on the page.
+- `pcb_sync_from_schematic()` runs a pre-sync gate and blocks dirty schematic
+  transfer unless `force=True` is deliberately used for debugging.
+
+After placement, run the `post_placement_routing` prompt. It standardizes the
+DSN export, FreeRouting, SES import, zone refill, and DRC loop so agents do not
+skip routing cleanup.

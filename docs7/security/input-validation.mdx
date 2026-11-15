@@ -1,0 +1,55 @@
+---
+title: 'Input Validation and Trust Boundaries'
+description: 'KiCad MCP Pro accepts structured input from MCP clients, integration adapters, workflow metadata, package managers, and user-provided KiCad projects. This…'
+---
+
+KiCad MCP Pro accepts structured input from MCP clients, integration adapters, workflow metadata, package managers, and user-provided KiCad projects. This page documents the validation rules used to keep those inputs inside the expected trust boundary.
+
+## General rules
+
+- Prefer typed schemas and explicit enums over free-form strings.
+- Treat every MCP argument, uploaded path, archive member, workflow expression, issue title, and environment variable as untrusted until validated.
+- Normalize and canonicalize before authorization decisions.
+- Validate both syntax and authorization: a path can be syntactically safe but still outside the allowed workspace.
+- Fail closed with actionable errors; do not silently broaden permissions.
+
+## Filesystem paths
+
+Filesystem access must follow this sequence:
+
+1. Reject empty values, embedded NUL bytes, parent-directory traversal, and encoded traversal variants.
+2. Resolve the candidate to an absolute normalized path.
+3. Resolve symlinks with a realpath check when the target must already exist.
+4. Confirm the real path is inside an allowed workspace root.
+5. Check expected type: directory, regular file, or non-existing child path expected to be created.
+6. Enforce extension allowlists for KiCad project artifacts such as `.kicad_proj`, `.kicad_pcb`, and `.kicad_sch`.
+
+When a file may not exist yet, validate the parent directory with realpath containment before accepting the child name.
+
+## KiCad project input
+
+KiCad project files are treated as data, not as trusted code. Tools that parse KiCad artifacts should:
+
+- bound maximum input sizes where practical;
+- tolerate malformed or partial S-expressions without crashing;
+- avoid executing scripts or plugins embedded in a project;
+- keep generated manufacturing output in explicit output directories;
+- report heuristic confidence honestly in tool results.
+
+## Web, HTTP, and MCP transport input
+
+HTTP or remote-MCP mode must not infer filesystem or subprocess permissions from network reachability. Any future authenticated transport must validate:
+
+- allowed origin or authentication context;
+- requested tool profile;
+- workspace boundary;
+- destructive-operation intent;
+- audit-safe logging that avoids secrets and private design data.
+
+## CI/CD metadata
+
+GitHub Actions steps must not interpolate untrusted metadata directly into shell scripts. Use `env:` bindings and quoted variables for branch names, tag names, pull-request titles, release notes, and user-provided text. Publishing jobs must use protected environments and job-scoped permissions.
+
+## Verification
+
+Validation behavior is checked through a combination of unit tests, CodeQL, workflow-security checks, Gitleaks, dependency audit, and fuzzing for shared parser helpers.

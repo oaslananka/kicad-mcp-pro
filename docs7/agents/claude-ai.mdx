@@ -1,0 +1,36 @@
+---
+title: 'Claude.ai Web Integration'
+description: 'Claude.ai Pro/Max users can add a custom connector to a remote KiCad MCP server.'
+---
+
+Claude.ai Pro/Max users can add a custom connector to a remote KiCad MCP server.
+
+> **Important**: Claude.ai custom connectors require a **publicly reachable remote MCP endpoint**. They cannot connect to local STDIO servers. For local KiCad access, use Claude Desktop or Claude Code with STDIO transport.
+
+## Requirements
+
+- Claude Pro/Max account
+- A publicly hosted KiCad MCP remote server
+- (Team/Enterprise) Organization Owner adds connector first
+
+## Setup
+
+1. Go to **Settings → Customize → Connectors → Add custom connector**
+2. Enter MCP server URL: `https://mcp.kicad.example.com/mcp`
+3. Complete OAuth flow if required
+
+## V1 Tools (Read-only)
+
+- `search_kicad_docs` — documentation search
+- `analyze_uploaded_project` — uploaded project zip analysis
+- `summarize_project` — project summary
+- `explain_drc_report` — DRC interpretation
+- `explain_erc_report` — ERC interpretation
+- `generate_manufacturing_readiness_report` — readiness report
+- `generate_agent_config` — config snippet generation
+
+## Limitations
+
+- No direct local KiCad access
+- Project analysis via upload only
+- Report generation without local file write

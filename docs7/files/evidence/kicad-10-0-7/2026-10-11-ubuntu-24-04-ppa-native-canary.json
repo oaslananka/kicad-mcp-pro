@@ -1,0 +1,456 @@
+{
+  "schemaVersion": "kicad-native-cli-canary-evidence.v1",
+  "recordDate": "2026-10-11",
+  "executionDateUTC": "2026-10-10",
+  "scope": "Ubuntu 24.04.5 amd64; real signed stable PPA package installation in a disposable isolated container, native CLI and synthetic-fixture differential only; not Linux GUI/IPC, autonomous reference-board manufacturing, all Ubuntu releases or production KiCad support",
+  "sourceRevision": "2fdde9b98f45960237c633a1eeae60134609a6db",
+  "compatibilityRange": "10.0.x",
+  "executionEnvironment": {
+    "distribution": "Ubuntu 24.04.5 LTS",
+    "arch": "amd64",
+    "containerImage": "ubuntu@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55",
+    "projectMountReadOnly": true,
+    "canaryExecutedAsNonRoot": true,
+    "packageInstallationScope": "disposable container only; host KiCad remained at 10.0.6",
+    "executionPlatform": "isolated Docker on Ubuntu host (not GitHub-hosted Actions)"
+  },
+  "toolchain": {
+    "uv": "0.12.19",
+    "python": "3.13.12"
+  },
+  "nativePackageProvenance": {
+    "origin": "ppa:kicad/kicad-10.0-releases",
+    "aptRepository": "https://ppa.launchpadcontent.net/kicad/kicad-10.0-releases/ubuntu",
+    "installation": "apt repository metadata authenticated and packages installed via apt in isolated Ubuntu noble root filesystem",
+    "kicadPackage": "kicad",
+    "kicadPackageVersion": "10.0.7~ubuntu24.04.1",
+    "kicadPackageSha256FromSignedIndex": "ce96f7c3bd935a021c65b301427f74c1c16b211210b49ce9b40309ce5ecfbb33",
+    "symbolsPackage": "kicad-symbols",
+    "symbolsPackageVersion": "10.0.7~ubuntu24.04.1",
+    "symbolsPackageSha256FromSignedIndex": "3fbd4a8528760697456bfbd8da677d255e4cea2dcd3e938ad9ebe6006f861da3",
+    "cliVersionOutput": "10.0.7",
+    "cliBuildVersion": "10.0.7-10.0.7~ubuntu24.04.1",
+    "ipcBuildFlag": "KICAD_IPC_API=ON"
+  },
+  "evidenceFileSha256": {
+    "summary.json": "d07c2edb473dfee3523d6e88052568eb40aba60aa37631a955891a15458bd461",
+    "differential/summary.json": "10ab5cc0bc81b430a898bede35a2d52e3cf0c1d17da586460779bb1882a91520"
+  },
+  "runs": [
+    {
+      "version": "10.0.7",
+      "canaryStatus": "passed",
+      "stepCount": 32,
+      "skippedStepCount": 1,
+      "failingFixtures": [],
+      "differential": {
+        "matched": 5,
+        "total": 5,
+        "falsePass": 0,
+        "falseFail": 0,
+        "divergence": 0,
+        "infrastructureInvalid": 0,
+        "unavailableAuthority": 0,
+        "comparisons": [
+          {
+            "fixture_id": "gallery-esp32-c3-wroom-02-breakout",
+            "fixture_hash": "sha256:b4845b432646d31e09cf4a38e3f57c762680263291c7ecfa79de56c58f64cf68",
+            "operation": "connectivity.net-compilation",
+            "comparison_method": "pin-membership-sha256.v1",
+            "status": "match",
+            "native_result_hash": "sha256:1f6a245bebead6d148ed69be7b71e0f7002da0600134bc033102af57bd87cf10",
+            "custom_result_hash": "sha256:1f6a245bebead6d148ed69be7b71e0f7002da0600134bc033102af57bd87cf10"
+          },
+          {
+            "fixture_id": "clean-led-kicad10",
+            "fixture_hash": "sha256:7460ea575de1083ebebec0efba2c8560c186e5a81c3cd2e37c775eea03927aa2",
+            "operation": "geometry.board-outline-size",
+            "comparison_method": "board-outline-width-height-0.0001mm-sha256.v1",
+            "status": "match",
+            "native_result_hash": "sha256:1771ff76bf9fb74180baf23a5107615e17bed1bed79b1573d8693954c7d84d54",
+            "custom_result_hash": "sha256:1771ff76bf9fb74180baf23a5107615e17bed1bed79b1573d8693954c7d84d54"
+          },
+          {
+            "fixture_id": "clean-led-kicad10",
+            "fixture_hash": "sha256:7d0f2b23782fa9d6d434db863387aa13d24820f828cb41098a36d0a49caabaf4",
+            "operation": "drc.findings-and-severities",
+            "comparison_method": "finding-bucket-type-severity-sha256.v1",
+            "status": "match",
+            "native_result_hash": "sha256:189a8147f28fa4cbe5aa15baf66b92851ae3eeda5ee069dc88c4064862a42da9",
+            "custom_result_hash": "sha256:189a8147f28fa4cbe5aa15baf66b92851ae3eeda5ee069dc88c4064862a42da9",
+            "native_pass": false,
+            "custom_pass": false
+          },
+          {
+            "fixture_id": "drc-courtyard-error",
+            "fixture_hash": "sha256:c8911cca294c85a9b6d61db6088b03af239b1c852396490698b67dd2149122bd",
+            "operation": "drc.findings-and-severities",
+            "comparison_method": "finding-bucket-type-severity-sha256.v1",
+            "status": "match",
+            "native_result_hash": "sha256:8aaa37ffd6b5e727fec59f6257fc1c7ea1af510e677ff02d39e8f17d6a5c21eb",
+            "custom_result_hash": "sha256:8aaa37ffd6b5e727fec59f6257fc1c7ea1af510e677ff02d39e8f17d6a5c21eb",
+            "native_pass": false,
+            "custom_pass": false
+          },
+          {
+            "fixture_id": "clean-led-kicad10",
+            "fixture_hash": "sha256:7460ea575de1083ebebec0efba2c8560c186e5a81c3cd2e37c775eea03927aa2",
+            "operation": "export.manufacturing-inventory",
+            "comparison_method": "manufacturing-category-basename-sha256.v1",
+            "status": "match",
+            "native_result_hash": "sha256:0697d28d2589307c802e8e30afac1af996cedfd28aea3364744daef0055b8829",
+            "custom_result_hash": "sha256:0697d28d2589307c802e8e30afac1af996cedfd28aea3364744daef0055b8829"
+          }
+        ]
+      },
+      "steps": [
+        {
+          "name": "version",
+          "fixture": "compatibility",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": []
+        },
+        {
+          "name": "clean-erc",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "reports/clean-erc.json"
+          ]
+        },
+        {
+          "name": "dirty-erc",
+          "fixture": "erc-power-pin-error",
+          "ok": true,
+          "returncode": 5,
+          "expectsFailure": false,
+          "expectsViolations": true,
+          "outputs": [
+            "reports/dirty-erc.json"
+          ]
+        },
+        {
+          "name": "clean-drc",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "reports/clean-drc.json"
+          ]
+        },
+        {
+          "name": "dirty-drc",
+          "fixture": "drc-courtyard-error",
+          "ok": true,
+          "returncode": 5,
+          "expectsFailure": false,
+          "expectsViolations": true,
+          "outputs": [
+            "reports/dirty-drc.json"
+          ]
+        },
+        {
+          "name": "schematic-pdf",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "reports/schematic.pdf"
+          ]
+        },
+        {
+          "name": "schematic-pdf-no-property-popups",
+          "fixture": "kicad-10-0-3-regressions",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "reports/schematic-no-property-popups.pdf"
+          ]
+        },
+        {
+          "name": "pcb-pdf",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "reports/pcb.pdf"
+          ]
+        },
+        {
+          "name": "pcb-svg",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "graphics/pcb-svg"
+          ]
+        },
+        {
+          "name": "pcb-dxf",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "graphics/pcb.dxf"
+          ]
+        },
+        {
+          "name": "bom",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "reports/bom.csv"
+          ]
+        },
+        {
+          "name": "netlist",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "reports/netlist.net"
+          ]
+        },
+        {
+          "name": "differential-connectivity-netlist",
+          "fixture": "gallery-esp32-c3-wroom-02-breakout",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "differential/connectivity-native.net"
+          ]
+        },
+        {
+          "name": "board-stats",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "reports/board-stats.txt"
+          ]
+        },
+        {
+          "name": "pads-import-capability",
+          "fixture": "kicad-10-0-3-regressions",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": []
+        },
+        {
+          "name": "allegro-import-capability",
+          "fixture": "kicad-10-0-3-regressions",
+          "ok": true,
+          "returncode": 0,
+          "skipped": true,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [],
+          "reason": "Optional capability not advertised: allegro"
+        },
+        {
+          "name": "step",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "graphics/board.step"
+          ]
+        },
+        {
+          "name": "path-with-spaces-board-stats",
+          "fixture": "paths-with-spaces",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "reports/path-with-spaces-board-stats.txt"
+          ]
+        },
+        {
+          "name": "unicode-path-board-stats",
+          "fixture": "unicode-path-çöğü",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "reports/unicode-path-board-stats.txt"
+          ]
+        },
+        {
+          "name": "read-only-output-failure",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 4,
+          "expectsFailure": true,
+          "expectsViolations": false,
+          "outputs": []
+        },
+        {
+          "name": "gerbers",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "manufacturing/gerbers"
+          ]
+        },
+        {
+          "name": "drill",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "manufacturing/drill"
+          ]
+        },
+        {
+          "name": "ipc2581",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "manufacturing/board.ipc2581"
+          ]
+        },
+        {
+          "name": "schematic-dxf",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "graphics/schematic.dxf"
+          ]
+        },
+        {
+          "name": "schematic-svg",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "graphics/schematic.svg"
+          ]
+        },
+        {
+          "name": "schematic-python-bom",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "reports/python_bom.py"
+          ]
+        },
+        {
+          "name": "pcb-render",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "graphics/render.png"
+          ]
+        },
+        {
+          "name": "pcb-export-stepz",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "graphics/board.stepz"
+          ]
+        },
+        {
+          "name": "spice-netlist",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "reports/simulation.cir"
+          ]
+        },
+        {
+          "name": "pcb-export-brep",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "graphics/board.brep"
+          ]
+        },
+        {
+          "name": "pcb-export-glb",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "graphics/board.glb"
+          ]
+        },
+        {
+          "name": "pcb-export-stl",
+          "fixture": "clean-led-kicad10",
+          "ok": true,
+          "returncode": 0,
+          "expectsFailure": false,
+          "expectsViolations": false,
+          "outputs": [
+            "graphics/board.stl"
+          ]
+        }
+      ]
+    }
+  ]
+}

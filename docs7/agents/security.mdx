@@ -1,0 +1,97 @@
+---
+title: 'Security Guide'
+description: 'KiCad MCP can read and modify PCB/schematic project files when write tools are enabled. This guide explains the security model and best practices.'
+---
+
+## Overview
+
+KiCad MCP can read and modify PCB/schematic project files when write tools are enabled. This guide explains the security model and best practices.
+
+## Principles
+
+1. **Default deny** — Always start with read-only mode.
+2. **Least privilege** — Enable only the tools needed for the task.
+3. **Explicit consent** — Every destructive operation requires user approval.
+4. **Defense in depth** — Multiple layers of protection: operating mode, tool filtering, sandboxing, and path validation.
+
+## Operating Modes
+
+| Mode | Description | When to Use |
+|------|-------------|-------------|
+| `readonly` | All write tools return denial | Default for untrusted projects |
+| `write` | Write tools available with approval | Trusted projects, active design |
+| `manufacturing` | Export tools + quality gates | Release preparation |
+| `experimental` | All tools including auto-fix loops | Advanced users only |
+
+## Path Safety
+
+- `KICAD_MCP_PROJECT_DIR` is required and enforced
+- Path traversal attacks are blocked
+- Workspace-relative paths are validated
+- No write access outside the project directory
+- `KICAD_MCP_OUTPUT_DIR` limits export destinations
+
+## Prompt Injection Defense
+
+KiCad project files (schematic text, net names, component values, BOM notes) are untrusted inputs:
+
+- **No system prompt override** from project file content
+- **No command injection** from net names, reference designators, or file names
+- **DRC/ERC reports** treated as data, not instructions
+- **BOM supplier URLs** treated as untrusted
+- **All output paths** sanitized before use
+
+## Remote Web Apps
+
+Remote web apps (ChatGPT, Claude.ai) **cannot directly access your local KiCad installation** unless you explicitly run a local bridge:
+
+1. Remote tools are read-only by default
+2. Uploaded project archives are analyzed in an isolated environment
+3. Local bridge requires explicit pairing with user approval
+4. All bridge sessions are short-lived with rotating tokens
+
+## Sandboxing
+
+VS Code and other MCP hosts support sandboxing:
+- **Filesystem:** Restrict read/write to specific directories
+- **Network:** Restrict allowed domains for outbound connections
+- Deny access to sensitive paths (`~/.ssh`, `~/.gnupg`, etc.)
+
+## Tool Metadata
+
+Each tool includes metadata for security decisions:
+
+```json
+{
+  "readOnlyHint": true,
+  "destructiveHint": false,
+  "requiresLocalFilesystem": true,
+  "category": "analysis"
+}
+```
+
+## Write Tool Approval
+
+Write tools require at one of these protections:
+1. **Operating mode** `readonly` blocks all writes
+2. **Tool filtering** (include/exclude lists) limits available tools
+3. **Agent-level approval** (prompt/never/per-tool)
+4. **Sandbox** restricts filesystem access
+
+## Best Practices
+
+```bash
+# Start safe
+export KICAD_MCP_OPERATING_MODE=readonly
+
+# For trusted projects, enable write mode
+export KICAD_MCP_OPERATING_MODE=write
+
+# Set project root explicitly
+export KICAD_MCP_PROJECT_DIR=/path/to/project
+```
+
+- Review all tool calls before approving destructive operations
+- Never enable write mode for projects from untrusted sources
+- Use `kicad-mcp-pro doctor` to audit your current configuration
+- Keep the server and dependencies updated
