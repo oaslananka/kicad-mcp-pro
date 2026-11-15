@@ -80,7 +80,7 @@ def test_checked_mcp_manifest_has_public_registry_listing_metadata() -> None:
         "KiCad 8.x is deprecated and limited to file-level read and migration workflows."
     ]
     assert registry_meta["supportedMcpProtocolVersions"] == ["2026-07-28", "2025-11-25"]
-    assert registry_meta["license"] == "MIT"
+    assert registry_meta["license"] == "AGPL-3.0-only"
     assert registry_meta["canonicalRepository"] == ("https://github.com/oaslananka/kicad-mcp-pro")
     assert registry_meta["changelog"] == (
         "https://github.com/oaslananka/kicad-mcp-pro/blob/main/CHANGELOG.md"
