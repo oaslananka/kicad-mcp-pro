@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import secrets
 import shutil
 import subprocess
 from pathlib import Path
@@ -69,6 +70,41 @@ def _run_drc(kicad_cli: Path, pcb_file: Path, report_file: Path) -> Report:
     if problems := connectivity_evidence_problems(parsed):
         raise RoutePreflightError("Native DRC did not verify connectivity: " + "; ".join(problems))
     return cast(Report, parsed)
+
+
+def _validate_native_custom_rule_loading(
+    kicad_cli: Path,
+    candidate_pcb: Path,
+    rules_file: Path,
+) -> None:
+    """Prove KiCad compiled project custom rules, not merely exited zero.
+
+    Append a deliberately failing width rule to the disposable candidate
+    copy. KiCad may ignore a malformed .kicad_dru and return success.
+    """
+    marker = f"KICAD_MCP_RULE_LOAD_SENTINEL_{secrets.token_hex(8)}"
+    sentinel = (
+        f'\n(rule "{marker}"\n (constraint track_width (min 900.0000mm))\n (severity error))\n'
+    )
+    with rules_file.open("a", encoding="utf-8") as output:
+        output.write(sentinel)
+    report = _run_drc(
+        kicad_cli,
+        candidate_pcb,
+        candidate_pcb.parent / "rules-probe.json",
+    )
+    violations = report.get("violations")
+    if not isinstance(violations, list) or not any(
+        isinstance(entry, dict)
+        and entry.get("type") == "track_width"
+        and marker in str(entry.get("description", ""))
+        and entry.get("severity") == "error"
+        for entry in violations
+    ):
+        raise RoutePreflightError(
+            "Native KiCad custom rule loading could not be verified; "
+            "unsafe to accept routing preflight"
+        )
 
 
 def run_route_drc_preflight(
@@ -153,6 +189,12 @@ def run_route_drc_preflight(
             raise RoutePreflightError("KiCad native PCB candidate readback failed")
         baseline = _run_drc(kicad_cli, before / board_name, before / "report.json")
         candidate = _run_drc(kicad_cli, after / board_name, after / "report.json")
+        if custom_rules.is_file():
+            _validate_native_custom_rule_loading(
+                kicad_cli,
+                after / board_name,
+                after / custom_rules.name,
+            )
         for source, initial_hash in source_hashes.items():
             if hashlib.sha256(source.read_bytes()).hexdigest() != initial_hash:
                 raise RoutePreflightError("Project DRC rules changed during preflight")

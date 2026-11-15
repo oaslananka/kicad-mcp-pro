@@ -61,6 +61,7 @@ def test_preflight_keeps_custom_drc_rules_in_both_native_copies(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import re
     from types import SimpleNamespace
 
     from kicad_mcp.pcb import route_drc_preflight as module
@@ -84,11 +85,25 @@ def test_preflight_keeps_custom_drc_rules_in_both_native_copies(
     after = {"violations": [], "unconnected_items": []}
 
     monkeypatch.setattr(module.subprocess, "run", fake_run)
-    monkeypatch.setattr(
-        module,
-        "_run_drc",
-        lambda _cli, board, _report: before if board.parent.name == "baseline" else after,
-    )
+
+    def fake_drc(_cli: Path, board: Path, report: Path) -> dict[str, object]:
+        if report.name == "rules-probe.json":
+            rule_text = (board.parent / "demo.kicad_dru").read_text(encoding="utf-8")
+            marker = re.search(r"KICAD_MCP_RULE_LOAD_SENTINEL_[0-9a-f]+", rule_text)
+            assert marker is not None
+            return {
+                "violations": [
+                    {
+                        "type": "track_width",
+                        "description": "Track width (rule '" + marker.group() + "')",
+                        "severity": "error",
+                    }
+                ],
+                "unconnected_items": [],
+            }
+        return before if board.parent.name == "baseline" else after
+
+    monkeypatch.setattr(module, "_run_drc", fake_drc)
     result = module.run_route_drc_preflight(
         "(kicad_pcb test native board)",
         _candidate(),
