@@ -77,9 +77,10 @@ def test_registration_preserves_order_signatures_metadata_and_delegation() -> No
     assert [tool.name for tool in tools] == [
         "route_single_track",
         "route_from_pad_to_pad",
+        "route_plan_between_pads",
     ]
 
-    single, pads = tools
+    single, pads, preview = tools
     assert str(inspect.signature(single.fn)) == (
         "(x1_mm: 'float', y1_mm: 'float', x2_mm: 'float', y2_mm: 'float', "
         "layer: 'str' = 'F_Cu', width_mm: 'float' = 0.25, "
@@ -94,7 +95,7 @@ def test_registration_preserves_order_signatures_metadata_and_delegation() -> No
     assert "same named net" in (pads.fn.__doc__ or "")
     assert "enabled" in (pads.fn.__doc__ or "")
 
-    for tool_name in ("route_single_track", "route_from_pad_to_pad"):
+    for tool_name in ("route_single_track", "route_from_pad_to_pad", "route_plan_between_pads"):
         metadata = get_tool_metadata(tool_name)
         assert metadata is not None
         assert metadata.headless_compatible is False
@@ -207,3 +208,51 @@ def test_layer_validator_rejects_disabled_board_copper(
     p = Pad()
     p.padstack.layers = [BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu]
     assert not adapter._validate_endpoint_layer(p, p, "B_Cu")
+
+
+def test_route_plan_preview_is_registered_as_readonly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp.tools.metadata import infer_tool_annotations
+
+    adapter = _adapter()
+    server = FastMCP("routing-preview-registration")
+    adapter.register(server, adapter.RoutingManualTrackDependencies(service=FakeService()))
+
+    previews = [
+        tool for tool in server._tool_manager.list_tools() if tool.name == "route_plan_between_pads"
+    ]
+    assert len(previews) == 1
+    preview = previews[0]
+    assert "READ-ONLY" in (preview.fn.__doc__ or "")
+    assert infer_tool_annotations("route_plan_between_pads").read_only_hint is True
+
+    monkeypatch.setattr(
+        adapter, "_preview_route_between_pads", lambda *_args: '{"candidateOnly":true}'
+    )
+    assert "candidateOnly" in preview.fn("R1", "2", "R2", "1")
+
+
+def test_route_plan_preview_never_inherits_write_tier() -> None:
+    from kicad_mcp.capabilities import AccessTier, get
+    from kicad_mcp.operating_modes import OperatingMode, tool_required_mode
+
+    capability = get("route_plan_between_pads")
+    assert capability is not None
+    assert capability.tier is AccessTier.READ
+    assert capability.writes_files is False
+    assert capability.writes_kicad_gui_state is False
+    assert tool_required_mode("route_plan_between_pads") is OperatingMode.READONLY
+
+
+def test_route_plan_is_exposed_readonly_without_write_tools() -> None:
+    from kicad_mcp.operating_modes import OperatingMode
+    from kicad_mcp.server import build_server
+
+    server = build_server("expert")
+    server.operating_mode = OperatingMode.READONLY
+    server.filter_runtime_tools = False
+    names = {tool.name for tool in server.list_tools_sync()}
+
+    assert "route_plan_between_pads" in names
+    assert "route_from_pad_to_pad" not in names

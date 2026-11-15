@@ -549,4 +549,24 @@ def _register_router_tools() -> None:
             )
 
 
+# A nonmutating, native-IPC route preview is a READ capability even though
+# routing tools are generally board writers. Keep this contract explicit so
+# privilege and tool-effect metadata cannot infer an accidental WRITE tier.
+register(
+    CapabilityRecord(
+        name="route_plan_between_pads",
+        profiles=_PCB_PROFILES,
+        tier=AccessTier.READ,
+        category="routing",
+        runtime=RuntimeRequirement.KICAD_IPC,
+        writes_files=False,
+        writes_kicad_gui_state=False,
+        supports_dry_run=True,
+        verification_level="experimental",
+        maturity=ToolMaturity.BETA,
+        advisory_level=AdvisoryLevel.REQUIRES_EVIDENCE,
+    )
+)
+
+
 _register_router_tools()

@@ -4,20 +4,25 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from typing import cast
 
-from kipy.board_types import Net, Track
+from kipy.board_types import Net, Pad, Track
 from kipy.geometry import Vector2
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..connection import get_board
 from ..pcb.board_access import board_footprints, board_pads
+from ..pcb.geometry import point_xy_mm
 from ..pcb.live_edit_runtime import execute_live_board_mutation
 from ..pcb.pad_mapping import MappedPad, map_pads_to_footprints
-from ..routing.manual_tracks import RoutingManualTrackService, TrackSpec
+from ..routing.manual_tracks import RoutingManualTrackService, TrackSpec, _find_pad
+from ..routing.path_planner import RoutePlanningError, plan_hv45_path
 from ..utils.layers import resolve_layer, resolve_layer_name
 from ..utils.units import mm_to_nm
 from .metadata import requires_kicad_running
+from .routing_obstacle_snapshot import snapshot_route_obstacles
 
 
 @dataclass(frozen=True)
@@ -88,6 +93,72 @@ def _default_dependencies() -> RoutingManualTrackDependencies:
     )
 
 
+def _preview_route_between_pads(
+    ref1: str,
+    pad1: str,
+    ref2: str,
+    pad2: str,
+    layer: str = "F_Cu",
+    width_mm: float = 0.25,
+    clearance_mm: float = 0.20,
+) -> str:
+    """Read current native board geometry and produce a candidate, without writing."""
+    try:
+        board = get_board()
+        mapped = map_pads_to_footprints(board_pads(board), board_footprints(board))
+        start = _find_pad(mapped, ref1, pad1)
+        end = _find_pad(mapped, ref2, pad2)
+        if start is None or end is None:
+            raise RoutePlanningError("One or both named pads were not found")
+        start_pad, end_pad = cast(Pad, start.pad), cast(Pad, end.pad)
+        start_net, end_net = start_pad.net.name or "", end_pad.net.name or ""
+        if not start_net or start_net != end_net:
+            raise RoutePlanningError("Pads must belong to the same nonempty net")
+        if not _validate_endpoint_layer(start_pad, end_pad, layer):
+            raise RoutePlanningError("Pads do not support the requested enabled copper layer")
+        identities = (start_pad.id.value, end_pad.id.value)
+        if not all(identities):
+            raise RoutePlanningError("Native pad identities unavailable")
+        obstacles = snapshot_route_obstacles(board, layer, frozenset(identities))
+        path = plan_hv45_path(
+            point_xy_mm(start_pad.position),
+            point_xy_mm(end_pad.position),
+            obstacles,
+            track_width_mm=width_mm,
+            clearance_mm=clearance_mm,
+        )
+    except (RoutePlanningError, ValueError) as exc:
+        return json.dumps({"status": "refused", "candidateOnly": True, "reason": str(exc)})
+    segments = [
+        {
+            "x1_mm": a[0],
+            "y1_mm": a[1],
+            "x2_mm": b[0],
+            "y2_mm": b[1],
+            "layer": layer,
+            "width_mm": width_mm,
+            "net_name": start_net,
+        }
+        for a, b in zip(path, path[1:], strict=False)
+    ]
+    return json.dumps(
+        {
+            "status": "candidate",
+            "candidateOnly": True,
+            "drcVerified": False,
+            "noBoardMutation": True,
+            "net": start_net,
+            "path_mm": path,
+            "segments": segments,
+            "warning": (
+                "Geometry preview only. Board may have unsupported DRC constraints. "
+                "Review and verify independent native DRC before applying."
+            ),
+        },
+        sort_keys=True,
+    )
+
+
 def register(
     mcp: FastMCP,
     dependencies: RoutingManualTrackDependencies | None = None,
@@ -141,3 +212,22 @@ def register(
             layer,
             width_mm,
         )
+
+    @mcp.tool()
+    @requires_kicad_running
+    def route_plan_between_pads(
+        ref1: str,
+        pad1: str,
+        ref2: str,
+        pad2: str,
+        layer: str = "F_Cu",
+        width_mm: float = 0.25,
+        clearance_mm: float = 0.20,
+    ) -> str:
+        """READ-ONLY preview of a bounded H/V/45 route between same-net pads.
+
+        No copper is created or saved. Unsupported pad shapes, board zones or
+        contours refuse planning. DRC remains UNVERIFIED until independent
+        validation; the returned segments must not be applied blindly.
+        """
+        return _preview_route_between_pads(ref1, pad1, ref2, pad2, layer, width_mm, clearance_mm)

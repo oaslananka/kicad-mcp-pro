@@ -233,6 +233,9 @@ def _category_names_for_tool(tool_name: str) -> set[str]:
 
 
 def _is_experimental_tool(tool_name: str) -> bool:
+    # Read-only candidate generation is not an experimental board mutation.
+    if tool_name == "route_plan_between_pads":
+        return False
     categories = _category_names_for_tool(tool_name)
     return (
         tool_name in EXPERIMENTAL_TOOL_NAMES

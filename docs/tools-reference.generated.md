@@ -1,6 +1,6 @@
 Machine-maintained catalog. Refresh with `pnpm run docs:tools`.
 
-Total public tools: 388.
+Total public tools: 389.
 
 | Tool | Profile(s) | Read-Only | Destructive | Open-World | Idempotent | Headless | Requires KiCad Running | Summary |
 |---|---|---:|---:|---:|---:|---:|---:|---|
@@ -250,6 +250,7 @@ Total public tools: 388.
 | `route_from_pad_to_pad` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | no | yes | Connect same-net pads on an enabled copper layer using orthogonal tracks. |
 | `route_import_ses` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | yes | yes | no | yes | no | Stage a routed Specctra SES and surface the required KiCad GUI import step. |
 | `route_list_tuning_profiles` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | yes | no | List configured time-domain tuning profiles. This KiCad MCP Pro tool supports production EDA automation workflows for... |
+| `route_plan_between_pads` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | yes | no | no | yes | no | yes | READ-ONLY preview of a bounded H/V/45 route between same-net pads. |
 | `route_set_net_class_rules` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | yes | no | yes | yes | no | Write net-class routing constraints into the active .kicad_dru file. |
 | `route_single_track` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | no | yes | Route a single straight track segment. This KiCad MCP Pro tool supports production EDA automation workflows for MCP c... |
 | `route_tune_length` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | yes | no | Write a length-tuning rule and report the current delta for a net. |
@@ -641,6 +642,7 @@ Total public tools: 388.
 - `route_from_pad_to_pad`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=yes.
 - `route_import_ses`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=yes; openWorld=yes; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `route_list_tuning_profiles`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
+- `route_plan_between_pads`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=no; requiresKiCadRunning=yes.
 - `route_set_net_class_rules`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=yes; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.
 - `route_single_track`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=yes.
 - `route_tune_length`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.

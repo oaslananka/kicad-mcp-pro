@@ -94,11 +94,11 @@
       ]
     },
     "expert": {
-      "callableTools": 388,
-      "catalogCharacters": 228191,
+      "callableTools": 389,
+      "catalogCharacters": 229133,
       "catalogReductionVsExpertPct": 0.0,
-      "declaredTools": 388,
-      "estimatedCatalogTokens": 57048,
+      "declaredTools": 389,
+      "estimatedCatalogTokens": 57284,
       "forbiddenToolExposures": 8,
       "goldenCases": 65,
       "goldenCasesCovered": 55,
@@ -359,6 +359,7 @@
         "route_from_pad_to_pad",
         "route_import_ses",
         "route_list_tuning_profiles",
+        "route_plan_between_pads",
         "route_set_net_class_rules",
         "route_single_track",
         "route_tune_length",
