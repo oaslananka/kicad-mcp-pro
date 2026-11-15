@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from typing import cast
@@ -105,6 +106,10 @@ def _preview_route_between_pads(
     """Read current native board geometry and produce a candidate, without writing."""
     try:
         board = get_board()
+        original_text = board.get_as_string()
+        if not isinstance(original_text, str) or not original_text:
+            raise RoutePlanningError("Native board revision is unavailable")
+        revision = hashlib.sha256(original_text.encode("utf-8")).hexdigest()
         mapped = map_pads_to_footprints(board_pads(board), board_footprints(board))
         start = _find_pad(mapped, ref1, pad1)
         end = _find_pad(mapped, ref2, pad2)
@@ -129,6 +134,11 @@ def _preview_route_between_pads(
             track_width_mm=width_mm,
             clearance_mm=clearance_mm,
         )
+        updated_text = board.get_as_string()
+        if not isinstance(updated_text, str) or (
+            hashlib.sha256(updated_text.encode("utf-8")).hexdigest() != revision
+        ):
+            raise RoutePlanningError("Native board changed while planning; retry preview")
     except (RoutePlanningError, ValueError) as exc:
         return json.dumps({"status": "refused", "candidateOnly": True, "reason": str(exc)})
     segments = [
@@ -143,9 +153,24 @@ def _preview_route_between_pads(
         }
         for a, b in zip(path, path[1:], strict=False)
     ]
+    candidate_payload = {
+        "boardRevision": revision,
+        "ref1": ref1,
+        "pad1": pad1,
+        "ref2": ref2,
+        "pad2": pad2,
+        "clearance_mm": clearance_mm,
+        "segments": segments,
+    }
+    candidate_id = hashlib.sha256(
+        json.dumps(candidate_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
     return json.dumps(
         {
             "status": "candidate",
+            "schemaVersion": "route-preview.v1",
+            "boardRevision": revision,
+            "candidateId": candidate_id,
             "candidateOnly": True,
             "drcVerified": False,
             "noBoardMutation": True,
@@ -153,8 +178,8 @@ def _preview_route_between_pads(
             "path_mm": path,
             "segments": segments,
             "warning": (
-                "Geometry preview only. Board may have unsupported DRC constraints. "
-                "Review and verify independent native DRC before applying."
+                "Candidate is bound to boardRevision; refuse application if the board changed. "
+                "Geometry preview only. Review and verify independent native DRC before applying."
             ),
         },
         sort_keys=True,
@@ -229,7 +254,9 @@ def register(
         """READ-ONLY preview of a bounded H/V/45 route between same-net pads.
 
         No copper is created or saved. Unsupported pad shapes, board zones or
-        contours refuse planning. DRC remains UNVERIFIED until independent
-        validation; the returned segments must not be applied blindly.
+        contours refuse planning. The boardRevision and candidateId identify
+        the native board snapshot and planned geometry; re-plan after any edit
+        or reconnect. DRC remains UNVERIFIED until independent validation;
+        the returned segments must not be applied blindly.
         """
         return _preview_route_between_pads(ref1, pad1, ref2, pad2, layer, width_mm, clearance_mm)

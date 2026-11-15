@@ -225,6 +225,8 @@ def test_route_plan_preview_is_registered_as_readonly(
     assert len(previews) == 1
     preview = previews[0]
     assert "READ-ONLY" in (preview.fn.__doc__ or "")
+    assert "boardRevision" in (preview.fn.__doc__ or "")
+    assert "candidateId" in (preview.fn.__doc__ or "")
     assert infer_tool_annotations("route_plan_between_pads").read_only_hint is True
 
     monkeypatch.setattr(
@@ -256,3 +258,176 @@ def test_route_plan_is_exposed_readonly_without_write_tools() -> None:
 
     assert "route_plan_between_pads" in names
     assert "route_from_pad_to_pad" not in names
+
+
+def test_preview_issues_board_bound_candidate_revision(monkeypatch: pytest.MonkeyPatch) -> None:
+    import hashlib
+    import json
+    from types import SimpleNamespace
+
+    from kipy.geometry import Vector2
+
+    from kicad_mcp.pcb.pad_mapping import MappedPad
+
+    adapter = _adapter()
+    net = SimpleNamespace(name="MID")
+
+    def pad(number: str, x: float, identity: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            number=number,
+            net=net,
+            id=SimpleNamespace(value=identity),
+            position=Vector2.from_xy_mm(x, 10),
+        )
+
+    first = MappedPad(pad=pad("2", 10, "pad-1"), pad_id="pad-1", reference="R1")
+    second = MappedPad(pad=pad("1", 20, "pad-2"), pad_id="pad-2", reference="R2")
+    board = SimpleNamespace(get_as_string=lambda: "(kicad_pcb original)", marker="board")
+    monkeypatch.setattr(adapter, "get_board", lambda: board)
+    monkeypatch.setattr(adapter, "board_pads", lambda _board: [])
+    monkeypatch.setattr(adapter, "board_footprints", lambda _board: [])
+    monkeypatch.setattr(adapter, "map_pads_to_footprints", lambda *_args: [first, second])
+    monkeypatch.setattr(adapter, "_validate_endpoint_layer", lambda *_args: True)
+    monkeypatch.setattr(adapter, "snapshot_route_obstacles", lambda *_args, **_kwargs: ())
+    monkeypatch.setattr(
+        adapter,
+        "plan_hv45_path",
+        lambda *_args, **_kwargs: (
+            (10.0, 10.0),
+            (20.0, 10.0),
+        ),
+    )
+
+    data = json.loads(adapter._preview_route_between_pads("R1", "2", "R2", "1"))
+    assert data["status"] == "candidate"
+    assert data["schemaVersion"] == "route-preview.v1"
+    assert data["boardRevision"] == hashlib.sha256(b"(kicad_pcb original)").hexdigest()
+    assert len(data["candidateId"]) == 64
+    assert data["candidateOnly"] is True
+    assert data["drcVerified"] is False
+    assert (
+        data["candidateId"]
+        == json.loads(adapter._preview_route_between_pads("R1", "2", "R2", "1"))["candidateId"]
+    )
+
+
+def test_preview_rejects_board_revision_change_during_plan(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+    from types import SimpleNamespace
+
+    from kipy.geometry import Vector2
+
+    from kicad_mcp.pcb.pad_mapping import MappedPad
+
+    adapter = _adapter()
+    reads = iter(("(kicad_pcb old)", "(kicad_pcb changed)"))
+    board = SimpleNamespace(get_as_string=lambda: next(reads))
+    net = SimpleNamespace(name="MID")
+
+    def mapped(ref: str, number: str, x: float, identity: str) -> MappedPad:
+        return MappedPad(
+            pad=SimpleNamespace(
+                number=number,
+                id=SimpleNamespace(value=identity),
+                net=net,
+                position=Vector2.from_xy_mm(x, 10),
+            ),
+            pad_id=identity,
+            reference=ref,
+        )
+
+    first = mapped("R1", "2", 10, "one")
+    second = mapped("R2", "1", 20, "two")
+    monkeypatch.setattr(adapter, "get_board", lambda: board)
+    monkeypatch.setattr(adapter, "board_pads", lambda _board: [])
+    monkeypatch.setattr(adapter, "board_footprints", lambda _board: [])
+    monkeypatch.setattr(adapter, "map_pads_to_footprints", lambda *_args: [first, second])
+    monkeypatch.setattr(adapter, "_validate_endpoint_layer", lambda *_args: True)
+    monkeypatch.setattr(adapter, "snapshot_route_obstacles", lambda *_args, **_kwargs: ())
+    monkeypatch.setattr(
+        adapter,
+        "plan_hv45_path",
+        lambda *_args, **_kwargs: (
+            (10.0, 10.0),
+            (20.0, 10.0),
+        ),
+    )
+    result = json.loads(adapter._preview_route_between_pads("R1", "2", "R2", "1"))
+    assert result["status"] == "refused"
+    assert "changed" in result["reason"]
+    assert "segments" not in result
+
+
+def _setup_preview_revision_test(
+    monkeypatch: pytest.MonkeyPatch, snapshots: tuple[str, ...]
+) -> ModuleType:
+    from types import SimpleNamespace
+
+    from kipy.geometry import Vector2
+
+    from kicad_mcp.pcb.pad_mapping import MappedPad
+
+    adapter = _adapter()
+    seq = iter(snapshots)
+    board = SimpleNamespace(get_as_string=lambda: next(seq))
+    net = SimpleNamespace(name="MID")
+
+    def mapped(ref: str, number: str, x: float, identity: str) -> MappedPad:
+        return MappedPad(
+            pad=SimpleNamespace(
+                number=number,
+                id=SimpleNamespace(value=identity),
+                net=net,
+                position=Vector2.from_xy_mm(x, 10),
+            ),
+            pad_id=identity,
+            reference=ref,
+        )
+
+    monkeypatch.setattr(adapter, "get_board", lambda: board)
+    monkeypatch.setattr(adapter, "board_pads", lambda _board: [])
+    monkeypatch.setattr(adapter, "board_footprints", lambda _board: [])
+    monkeypatch.setattr(
+        adapter,
+        "map_pads_to_footprints",
+        lambda *_args: [mapped("R1", "2", 10, "one"), mapped("R2", "1", 20, "two")],
+    )
+    monkeypatch.setattr(adapter, "_validate_endpoint_layer", lambda *_args: True)
+    monkeypatch.setattr(adapter, "snapshot_route_obstacles", lambda *_args, **_kwargs: ())
+    monkeypatch.setattr(
+        adapter,
+        "plan_hv45_path",
+        lambda *_args, **_kwargs: ((10.0, 10.0), (20.0, 10.0)),
+    )
+    return adapter
+
+
+def test_preview_has_immutable_board_revision_and_candidate_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import hashlib
+    import json
+
+    board = "(kicad_pcb original)"
+    adapter = _setup_preview_revision_test(monkeypatch, (board, board))
+    result = json.loads(adapter._preview_route_between_pads("R1", "2", "R2", "1"))
+    assert result["status"] == "candidate"
+    assert result["schemaVersion"] == "route-preview.v1"
+    assert result["boardRevision"] == hashlib.sha256(board.encode()).hexdigest()
+    assert len(result["candidateId"]) == 64
+    assert result["candidateOnly"] is True
+    assert result["drcVerified"] is False
+
+
+def test_preview_refuses_if_live_board_changed_while_planning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import json
+
+    adapter = _setup_preview_revision_test(monkeypatch, ("(kicad_pcb before)", "(kicad_pcb after)"))
+    result = json.loads(adapter._preview_route_between_pads("R1", "2", "R2", "1"))
+    assert result["status"] == "refused"
+    assert "changed" in result["reason"].lower()
+    assert "segments" not in result

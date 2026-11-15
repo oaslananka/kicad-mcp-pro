@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 
 Report = dict[str, object]
 ReportEntry = dict[str, object]
@@ -143,3 +144,74 @@ def connectivity_evidence_problems(report: Report) -> list[str]:
     if isinstance(severities, list) and "error" not in severities:
         problems.append("The DRC report did not include error-level violations.")
     return problems
+
+
+def _violation_identity(entry: ReportEntry) -> str:
+    """Use finding type and exact native item identity, not only issue totals.
+
+    Descriptions, UUIDs and locations distinguish same-type violations on
+    different copper. Report timestamps and source paths are intentionally
+    excluded so identical saved-board issues remain stable across DRC runs.
+    """
+    kind = entry.get("type")
+    if not isinstance(kind, str) or not kind:
+        raise ValueError("DRC violation type is missing or malformed")
+    items = entry.get("items", [])
+    if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+        raise ValueError("DRC violation items must be a list of objects")
+    normalized_items = sorted(
+        json.dumps(
+            {
+                "uuid": item.get("uuid"),
+                "description": item.get("description"),
+                "pos": item.get("pos"),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        for item in items
+    )
+    return json.dumps(
+        {
+            "type": kind,
+            "severity": normalize_report_severity(entry.get("severity")),
+            "excluded": entry.get("excluded", False),
+            "description": entry.get("description", ""),
+            "items": normalized_items,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
+def newly_reported_drc_violations(
+    before: Report,
+    after: Report,
+) -> list[ReportEntry]:
+    """Return native PCB violations newly introduced by an attempted change.
+
+    Compares a multiset of native finding identities. This detects a new
+    violation replacing an old one even when the total count stays constant.
+    Does NOT evaluate unrouted connections: check those separately with the
+    native DRC unconnected_items list. Invalid/missing evidence fails closed.
+    """
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        raise ValueError("Both DRC reports must be objects")
+
+    def entries(report: Report) -> list[ReportEntry]:
+        raw = report.get("violations")
+        if not isinstance(raw, list) or any(not isinstance(item, dict) for item in raw):
+            raise ValueError("DRC violations must be a list of objects")
+        return raw
+
+    remaining = Counter(_violation_identity(item) for item in entries(before))
+    introduced: list[ReportEntry] = []
+    for item in entries(after):
+        identity = _violation_identity(item)
+        if remaining[identity]:
+            remaining[identity] -= 1
+        else:
+            introduced.append(item)
+    return introduced
