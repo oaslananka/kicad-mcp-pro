@@ -408,7 +408,7 @@
         },
         "routing": {
           "availableCount": 14,
-          "blockedCount": 1,
+          "blockedCount": 9,
           "canarySurfaces": [
             "write",
             "export"
@@ -423,9 +423,9 @@
           "selectedBackends": {
             "local-engine": 1,
             "transactional-pcb-file": 13,
-            "unavailable": 1
+            "unavailable": 9
           },
-          "toolCount": 15
+          "toolCount": 23
         },
         "schematic": {
           "availableCount": 92,
@@ -732,7 +732,7 @@
           "toolCount": 2
         },
         "routing": {
-          "availableCount": 15,
+          "availableCount": 23,
           "blockedCount": 0,
           "canarySurfaces": [
             "write",
@@ -747,10 +747,11 @@
           ],
           "selectedBackends": {
             "freerouting": 1,
+            "kicad-gui-ipc": 8,
             "local-engine": 1,
             "transactional-pcb-file": 13
           },
-          "toolCount": 15
+          "toolCount": 23
         },
         "schematic": {
           "availableCount": 93,
@@ -1057,7 +1058,7 @@
           "toolCount": 2
         },
         "routing": {
-          "availableCount": 15,
+          "availableCount": 23,
           "blockedCount": 0,
           "canarySurfaces": [
             "write",
@@ -1072,10 +1073,11 @@
           ],
           "selectedBackends": {
             "freerouting": 1,
+            "kicad-11-headless-ipc": 8,
             "local-engine": 1,
             "transactional-pcb-file": 13
           },
-          "toolCount": 15
+          "toolCount": 23
         },
         "schematic": {
           "availableCount": 93,
@@ -1199,7 +1201,7 @@
     "previewBaseline": "11.x",
     "publicSupportClaim": "KiCad 11 remains preview until native canaries pass.",
     "stableBaseline": "10.0.x",
-    "toolCount": 388
+    "toolCount": 396
   },
   "tools": [
     {
@@ -6894,6 +6896,78 @@
       "category": "routing",
       "routes": {
         "degradedNoKiCad": {
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": "transactional-board-write-and-route-validation"
+        },
+        "kicad10Gui": {
+          "available": true,
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": "ipc-transaction-and-postcondition-check"
+        },
+        "kicad11Headless": {
+          "available": true,
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": "ipc-transaction-and-postcondition-check"
+        }
+      },
+      "runtime": "kicad_ipc",
+      "tier": "write",
+      "tool": "route_apply_candidate",
+      "writesFiles": false
+    },
+    {
+      "category": "routing",
+      "routes": {
+        "degradedNoKiCad": {
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": "transactional-board-write-and-route-validation"
+        },
+        "kicad10Gui": {
+          "available": true,
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": "ipc-transaction-and-postcondition-check"
+        },
+        "kicad11Headless": {
+          "available": true,
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": "ipc-transaction-and-postcondition-check"
+        }
+      },
+      "runtime": "kicad_ipc",
+      "tier": "write",
+      "tool": "route_apply_coupled_differential_pair_candidate",
+      "writesFiles": false
+    },
+    {
+      "category": "routing",
+      "routes": {
+        "degradedNoKiCad": {
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": "transactional-board-write-and-route-validation"
+        },
+        "kicad10Gui": {
+          "available": true,
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": "ipc-transaction-and-postcondition-check"
+        },
+        "kicad11Headless": {
+          "available": true,
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": "ipc-transaction-and-postcondition-check"
+        }
+      },
+      "runtime": "kicad_ipc",
+      "tier": "write",
+      "tool": "route_apply_one_through_via_candidate",
+      "writesFiles": false
+    },
+    {
+      "category": "routing",
+      "routes": {
+        "degradedNoKiCad": {
           "available": true,
           "backend": "transactional-pcb-file",
           "mutationGuard": "transactional-board-write-and-route-validation"
@@ -6913,6 +6987,30 @@
       "tier": "write",
       "tool": "route_apply_ses",
       "writesFiles": true
+    },
+    {
+      "category": "routing",
+      "routes": {
+        "degradedNoKiCad": {
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": "transactional-board-write-and-route-validation"
+        },
+        "kicad10Gui": {
+          "available": true,
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": "ipc-transaction-and-postcondition-check"
+        },
+        "kicad11Headless": {
+          "available": true,
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": "ipc-transaction-and-postcondition-check"
+        }
+      },
+      "runtime": "kicad_ipc",
+      "tier": "write",
+      "tool": "route_apply_straight_differential_pair_candidate",
+      "writesFiles": false
     },
     {
       "category": "routing",
@@ -7104,6 +7202,102 @@
       "runtime": "none",
       "tier": "read",
       "tool": "route_list_tuning_profiles",
+      "writesFiles": false
+    },
+    {
+      "category": "routing",
+      "routes": {
+        "degradedNoKiCad": {
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": null
+        },
+        "kicad10Gui": {
+          "available": true,
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": null
+        },
+        "kicad11Headless": {
+          "available": true,
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": null
+        }
+      },
+      "runtime": "kicad_ipc",
+      "tier": "read",
+      "tool": "route_plan_between_pads",
+      "writesFiles": false
+    },
+    {
+      "category": "routing",
+      "routes": {
+        "degradedNoKiCad": {
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": null
+        },
+        "kicad10Gui": {
+          "available": true,
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": null
+        },
+        "kicad11Headless": {
+          "available": true,
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": null
+        }
+      },
+      "runtime": "kicad_ipc",
+      "tier": "read",
+      "tool": "route_plan_coupled_differential_pair",
+      "writesFiles": false
+    },
+    {
+      "category": "routing",
+      "routes": {
+        "degradedNoKiCad": {
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": null
+        },
+        "kicad10Gui": {
+          "available": true,
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": null
+        },
+        "kicad11Headless": {
+          "available": true,
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": null
+        }
+      },
+      "runtime": "kicad_ipc",
+      "tier": "read",
+      "tool": "route_plan_one_through_via",
+      "writesFiles": false
+    },
+    {
+      "category": "routing",
+      "routes": {
+        "degradedNoKiCad": {
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": null
+        },
+        "kicad10Gui": {
+          "available": true,
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": null
+        },
+        "kicad11Headless": {
+          "available": true,
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": null
+        }
+      },
+      "runtime": "kicad_ipc",
+      "tier": "read",
+      "tool": "route_plan_straight_differential_pair",
       "writesFiles": false
     },
     {
