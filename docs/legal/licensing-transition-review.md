@@ -55,7 +55,7 @@ A future implementation PR should not be opened until the rights review is compl
 
 This document does not grant permission to relicense any contributor's work, does not alter the MIT License, does not create a CLA, and is not a substitute for legal review when contributor rights or third-party obligations are unclear.
 
-This historical review is not current license metadata; see [LICENSING.md](../../LICENSING.md).
+This historical review is not current license metadata; see [LICENSING.md](https://github.com/oaslananka/kicad-mcp-pro/blob/main/LICENSING.md).
 The conditions above concern restrictive source-available / commercial dual licensing
 and do not automatically carry over to an OSI-approved AGPL-3.0-only combination.
 
@@ -66,7 +66,7 @@ and do not automatically carry over to an OSI-approved AGPL-3.0-only combination
   https://www.gnu.org/licenses/license-list.html#Expat
 - Original MIT-licensed portions retain their original license grants, copyrights,
   and notices; the historical complete text is preserved in
-  [LICENSES/MIT.txt](../../LICENSES/MIT.txt). Compatible MIT portions may be
+  [LICENSES/MIT.txt](https://github.com/oaslananka/kicad-mcp-pro/blob/main/LICENSES/MIT.txt). Compatible MIT portions may be
   combined with current project-authored AGPLv3 code without a new contributor CLA.
 - This does **not** claim that all historical contributors assigned copyright to
   the maintainer, revoke older MIT permissions, or automatically relicense an
