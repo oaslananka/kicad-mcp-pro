@@ -28,6 +28,7 @@ class TrackSpec:
 
 
 TrackWriter = Callable[[str, list[TrackSpec]], None]
+LayerValidator = Callable[[object, object, str], bool]
 
 
 def _find_pad(
@@ -61,6 +62,7 @@ class RoutingManualTrackService:
 
     list_pads: PadProvider
     write_tracks: TrackWriter
+    validate_layer: LayerValidator
 
     def route_single(
         self,
@@ -112,6 +114,10 @@ class RoutingManualTrackService:
             return "Both pads must belong to a named net; no track created."
         if start_net != end_net:
             return f"Pads belong to different nets ({start_net}, {end_net}); no track created."
+        if not self.validate_layer(start_pad, end_pad, layer):
+            return (
+                f"One or both pads do not support enabled copper layer {layer}; no track created."
+            )
 
         start_x, start_y = point_xy_mm(start_pad.position)
         end_x, end_y = point_xy_mm(end_pad.position)

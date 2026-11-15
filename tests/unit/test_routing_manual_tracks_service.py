@@ -26,6 +26,8 @@ def _pad(reference: str, number: str, x_mm: float, y_mm: float, net_name: str) -
 
 def _service(
     pads: list[MappedPad] | None = None,
+    *,
+    layer_validator=None,
 ) -> tuple[RoutingManualTrackService, list[tuple[str, list[TrackSpec]]]]:
     writes: list[tuple[str, list[TrackSpec]]] = []
 
@@ -35,6 +37,7 @@ def _service(
     service = RoutingManualTrackService(
         list_pads=lambda: list(pads or []),
         write_tracks=write_tracks,
+        validate_layer=layer_validator or (lambda _start, _end, _layer: True),
     )
     return service, writes
 
@@ -125,7 +128,11 @@ def test_live_write_failure_does_not_claim_route_success() -> None:
     def failed_write(_operation: str, _specs: list[TrackSpec]) -> None:
         raise RuntimeError("KiCad mutation was rejected")
 
-    service = RoutingManualTrackService(list_pads=lambda: pads, write_tracks=failed_write)
+    service = RoutingManualTrackService(
+        list_pads=lambda: pads,
+        write_tracks=failed_write,
+        validate_layer=lambda _start, _end, _layer: True,
+    )
     with pytest.raises(RuntimeError, match="KiCad mutation was rejected"):
         service.route_single(1.0, 2.0, 5.0, 8.0)
     with pytest.raises(RuntimeError, match="KiCad mutation was rejected"):
@@ -226,4 +233,17 @@ def test_pad_to_pad_unmapped_identity_fails_closed() -> None:
     )
 
     assert "not found" in service.route_pad_to_pad("R1", "1", "R2", "2")
+    assert writes == []
+
+
+def test_pad_to_pad_rejects_wrong_copper_layer_without_writing() -> None:
+    service, writes = _service(
+        [_pad("R1", "1", 1.0, 2.0, "MID"), _pad("R2", "1", 5.0, 2.0, "MID")],
+        layer_validator=lambda _first, _second, layer: layer == "F_Cu",
+    )
+
+    result = service.route_pad_to_pad("R1", "1", "R2", "1", "B_Cu")
+
+    assert "layer" in result.lower()
+    assert "no track created" in result
     assert writes == []

@@ -15,7 +15,7 @@ from ..pcb.board_access import board_footprints, board_pads
 from ..pcb.live_edit_runtime import execute_live_board_mutation
 from ..pcb.pad_mapping import MappedPad, map_pads_to_footprints
 from ..routing.manual_tracks import RoutingManualTrackService, TrackSpec
-from ..utils.layers import resolve_layer
+from ..utils.layers import resolve_layer, resolve_layer_name
 from ..utils.units import mm_to_nm
 from .metadata import requires_kicad_running
 
@@ -52,11 +52,38 @@ def _mapped_live_pads() -> list[MappedPad]:
     return map_pads_to_footprints(board_pads(board), board_footprints(board))
 
 
+def _validate_endpoint_layer(start_pad: object, end_pad: object, layer: str) -> bool:
+    """Require an enabled copper layer on both native padstacks.
+
+    PadStack.copper_layers stores *geometry templates*, not connectivity:
+    a PTH PST_NORMAL stack stores only F_Cu geometry even when its
+    PadStack.layers contains both outer copper layers.
+    """
+    try:
+        canonical = resolve_layer_name(layer)
+    except ValueError:
+        return False
+    if not canonical.endswith("_Cu"):
+        return False
+
+    layer_id = resolve_layer(canonical)
+    enabled_layers = get_board().get_enabled_layers()
+    if layer_id not in enabled_layers:
+        return False
+    for pad in (start_pad, end_pad):
+        stack = getattr(pad, "padstack", None)
+        layers = getattr(stack, "layers", ()) if stack is not None else ()
+        if layer_id not in layers:
+            return False
+    return True
+
+
 def _default_dependencies() -> RoutingManualTrackDependencies:
     return RoutingManualTrackDependencies(
         service=RoutingManualTrackService(
             list_pads=_mapped_live_pads,
             write_tracks=_write_tracks,
+            validate_layer=_validate_endpoint_layer,
         )
     )
 
@@ -100,7 +127,12 @@ def register(
         layer: str = "F_Cu",
         width_mm: float = 0.25,
     ) -> str:
-        """Create a simple orthogonal route between two pads."""
+        """Connect same-net pads on an enabled copper layer using orthogonal tracks.
+
+        Pads must share the same named net and support the requested enabled
+        copper layer. This raw track writer does not guarantee DRC-clean routing;
+        save and verify the resulting board independently.
+        """
         return deps.service.route_pad_to_pad(
             ref1,
             pad1,

@@ -90,7 +90,9 @@ def test_registration_preserves_order_signatures_metadata_and_delegation() -> No
         "layer: 'str' = 'F_Cu', width_mm: 'float' = 0.25) -> 'str'"
     )
     assert "Route a single straight track segment" in (single.fn.__doc__ or "")
-    assert "Create a simple orthogonal route between two pads" in (pads.fn.__doc__ or "")
+    assert "same-net pads on an enabled copper layer" in (pads.fn.__doc__ or "")
+    assert "same named net" in (pads.fn.__doc__ or "")
+    assert "enabled" in (pads.fn.__doc__ or "")
 
     for tool_name in ("route_single_track", "route_from_pad_to_pad"):
         metadata = get_tool_metadata(tool_name)
@@ -112,7 +114,7 @@ def test_default_adapter_maps_realistic_kicad_kiid_pad_owners(
     """KiCad IPC pads expose owner KIIDs; shared mapping recovers footprint refs."""
     from types import SimpleNamespace
 
-    from kipy.board_types import Net
+    from kipy.board_types import BoardLayer, Net
     from kipy.geometry import Vector2
 
     adapter = _adapter()
@@ -125,6 +127,7 @@ def test_default_adapter_maps_realistic_kicad_kiid_pad_owners(
             parent=SimpleNamespace(value=owner),
             number=number,
             net=net,
+            padstack=SimpleNamespace(layers=[BoardLayer.BL_F_Cu]),
             position=Vector2.from_xy_mm(x_mm, 10),
         )
 
@@ -140,6 +143,7 @@ def test_default_adapter_maps_realistic_kicad_kiid_pad_owners(
     board = SimpleNamespace(
         get_pads=lambda: [p1, p2],
         get_footprints=lambda: [footprint("R1", p1), footprint("R2", p2)],
+        get_enabled_layers=lambda: [BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu],
     )
     monkeypatch.setattr(adapter, "get_board", lambda: board)
     writes: list[tuple[str, list[TrackSpec]]] = []
@@ -154,3 +158,52 @@ def test_default_adapter_maps_realistic_kicad_kiid_pad_owners(
     assert writes == [
         ("route_from_pad_to_pad", [TrackSpec(10.95, 10, 19.05, 10, "F_Cu", 0.25, "MID")])
     ]
+
+
+def test_layer_validator_preserves_through_hole_on_back_copper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from kipy.board_types import BoardLayer, Pad, PadType
+    from kipy.proto.board.board_types_pb2 import PadStackType
+
+    adapter = _adapter()
+    board = SimpleNamespace(
+        get_enabled_layers=lambda: [BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu],
+    )
+    monkeypatch.setattr(adapter, "get_board", lambda: board)
+
+    through_hole = Pad()
+    through_hole.pad_type = PadType.PT_PTH
+    through_hole.padstack.type = PadStackType.PST_NORMAL
+    through_hole.padstack.layers = [BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu]
+    assert through_hole.padstack.copper_layer(BoardLayer.BL_B_Cu) is None
+
+    assert adapter._validate_endpoint_layer(through_hole, through_hole, "B_Cu")
+    assert adapter._validate_endpoint_layer(through_hole, through_hole, "F_Cu")
+
+    front_only = Pad()
+    front_only.pad_type = PadType.PT_SMD
+    front_only.padstack.layers = [BoardLayer.BL_F_Cu, BoardLayer.BL_F_Mask]
+    assert adapter._validate_endpoint_layer(front_only, through_hole, "F_Cu")
+    assert not adapter._validate_endpoint_layer(front_only, through_hole, "B_Cu")
+    assert not adapter._validate_endpoint_layer(front_only, through_hole, "F_SilkS")
+    assert not adapter._validate_endpoint_layer(through_hole, through_hole, "In1_Cu")
+    assert not adapter._validate_endpoint_layer(front_only, through_hole, "INVALID")
+    assert not adapter._validate_endpoint_layer(SimpleNamespace(), through_hole, "F_Cu")
+
+
+def test_layer_validator_rejects_disabled_board_copper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from kipy.board_types import BoardLayer, Pad
+
+    adapter = _adapter()
+    board = SimpleNamespace(get_enabled_layers=lambda: [BoardLayer.BL_F_Cu])
+    monkeypatch.setattr(adapter, "get_board", lambda: board)
+    p = Pad()
+    p.padstack.layers = [BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu]
+    assert not adapter._validate_endpoint_layer(p, p, "B_Cu")
