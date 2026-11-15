@@ -18,7 +18,9 @@ The expected settings and third-party Action repositories are recorded in `.gith
 
 Every workflow declares `contents: read` at workflow scope. Write permissions are permitted only at job scope and must exactly match the matrix in `.github/actions-policy.json`.
 
-Publishing jobs receive only the scopes required for their destination. Examples include `id-token: write` for trusted publishing, `packages: write` for the container registry, and `contents: write` only where a release or documentation deployment must update repository state.
+Publishing jobs receive only the scopes required for their destination. Examples include `id-token: write` for trusted publishing, `packages: write` for the container registry, and `contents: write` only where a release updates repository state. GitHub Pages
+documentation deployment uses `pages: write` and `id-token: write` at the
+deploy job; it does not need repository contents write access.
 
 A new write scope requires all of the following in the same pull request:
 

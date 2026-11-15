@@ -25,7 +25,6 @@
     "google/osv-scanner-action",
     "googleapis/release-please-action",
     "ossf/scorecard-action",
-    "peaceiris/actions-gh-pages",
     "pypa/gh-action-pypi-publish",
     "sigstore/cosign-installer",
     "SonarSource/sonarqube-scan-action"
@@ -51,7 +50,8 @@
     },
     "docs.yml": {
       "deploy": [
-        "contents"
+        "id-token",
+        "pages"
       ]
     },
     "osv-inventory-weekly.yml": {
