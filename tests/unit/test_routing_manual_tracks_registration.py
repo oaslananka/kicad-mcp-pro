@@ -528,3 +528,31 @@ def test_coupled_pair_write_is_hidden_and_denied_even_by_name_in_readonly() -> N
         assert "MODE_FORBIDDEN" in str(rejected.content)
 
     anyio.run(check)
+
+
+def test_one_via_mcp_tools_enforce_read_only_and_named_write_denial() -> None:
+    import anyio
+
+    from kicad_mcp.capabilities import AccessTier, get
+    from kicad_mcp.operating_modes import OperatingMode, tool_required_mode
+    from kicad_mcp.server import build_server
+
+    read = "route_plan_one_through_via"
+    write = "route_apply_one_through_via_candidate"
+    assert get(read) is not None and get(read).tier is AccessTier.READ
+    assert get(write) is not None and get(write).tier is AccessTier.WRITE
+    assert tool_required_mode(read) is OperatingMode.READONLY
+    assert tool_required_mode(write) is OperatingMode.WRITE
+    server = build_server("expert")
+    server.operating_mode = OperatingMode.READONLY
+    server.filter_runtime_tools = False
+
+    async def verify() -> None:
+        visible = {item.name for item in await server.list_tools()}
+        assert read in visible
+        assert write not in visible
+        attempted = await server.call_tool(write, {"candidate_id": "invalid"})
+        assert attempted.is_error is True
+        assert "MODE_FORBIDDEN" in str(attempted.content)
+
+    anyio.run(verify)

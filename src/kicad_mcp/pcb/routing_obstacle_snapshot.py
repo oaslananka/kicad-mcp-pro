@@ -176,7 +176,7 @@ def snapshot_route_obstacles(
             if getattr(getattr(pad, "id", None), "value", None) in excluded_pad_ids
         ]
         if (
-            expected_endpoint_count not in (2, 4)
+            expected_endpoint_count not in (1, 2, 4)
             or len(excluded_points) != expected_endpoint_count
             or not all(x1 < x < x2 and y1 < y < y2 for x, y in excluded_points)
         ):

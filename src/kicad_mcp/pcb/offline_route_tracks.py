@@ -19,9 +19,26 @@ def main() -> None:
     baseline_file, candidate_file, spec_file = (Path(value) for value in sys.argv[1:4])
     if not all(path.is_file() for path in (baseline_file, candidate_file, spec_file)):
         raise RuntimeError("Missing disposable candidate inputs")
-    specs = json.loads(spec_file.read_text(encoding="utf-8"))
+    payload = json.loads(spec_file.read_text(encoding="utf-8"))
+    through_via = None
+    if isinstance(payload, dict):
+        if set(payload) != {"segments", "through_via"}:
+            raise RuntimeError("Unsupported native via payload")
+        through_via = payload["through_via"]
+        specs = payload["segments"]
+    else:
+        specs = payload
     if not isinstance(specs, list) or not 1 <= len(specs) <= 128:
         raise RuntimeError("Unsupported number of candidate segments")
+    if through_via is not None:
+        if not isinstance(through_via, dict) or set(through_via) != {
+            "x_mm",
+            "y_mm",
+            "diameter_mm",
+            "drill_mm",
+            "net_name",
+        }:
+            raise RuntimeError("Invalid native through-via specification")
 
     board = pcbnew.LoadBoard(str(baseline_file))
     before = len(list(board.GetTracks()))
@@ -43,11 +60,33 @@ def main() -> None:
         track.SetWidth(pcbnew.FromMM(spec["width_mm"]))
         track.SetNet(net)
         board.Add(track)
+    if through_via is not None:
+        net = board.FindNet(through_via["net_name"])
+        if net is None:
+            raise RuntimeError("Native through-via net is absent")
+        via = pcbnew.PCB_VIA(board)
+        via.SetPosition(
+            pcbnew.VECTOR2I(
+                pcbnew.FromMM(through_via["x_mm"]),
+                pcbnew.FromMM(through_via["y_mm"]),
+            )
+        )
+        via.SetWidth(pcbnew.FromMM(through_via["diameter_mm"]))
+        via.SetDrill(pcbnew.FromMM(through_via["drill_mm"]))
+        via.SetViaType(pcbnew.VIATYPE_THROUGH)
+        via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
+        via.SetNet(net)
+        board.Add(via)
     pcbnew.SaveBoard(str(candidate_file), board)
 
     reopened = pcbnew.LoadBoard(str(candidate_file))
-    if len(list(reopened.GetTracks())) != before + len(specs):
+    expected = before + len(specs) + int(through_via is not None)
+    if len(list(reopened.GetTracks())) != expected:
         raise RuntimeError("Disposable board readback failed")
+    if through_via is not None:
+        vias = [track for track in reopened.GetTracks() if isinstance(track, pcbnew.PCB_VIA)]
+        if len(vias) != 1 or vias[0].GetNetname() != through_via["net_name"]:
+            raise RuntimeError("Native through-via readback failed")
     print("NATIVE_PREFLIGHT_SAVED_REOPENED", len(specs))
 
 

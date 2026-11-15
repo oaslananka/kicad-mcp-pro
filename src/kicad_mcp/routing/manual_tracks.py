@@ -27,6 +27,17 @@ class TrackSpec:
     net_name: str = ""
 
 
+@dataclass(frozen=True)
+class ViaSpec:
+    """Single full-stack through-via candidate (never a blind/micro via)."""
+
+    x_mm: float
+    y_mm: float
+    diameter_mm: float
+    drill_mm: float
+    net_name: str
+
+
 TrackWriter = Callable[[str, list[TrackSpec]], None]
 LayerValidator = Callable[[object, object, str], bool]
 

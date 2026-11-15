@@ -295,3 +295,28 @@ def test_paired_outline_requires_all_four_pad_identities() -> None:
             frozenset({"p1", "p2", "n1", "n2"}),
             require_outline=True,
         )
+
+
+def test_one_via_uses_one_endpoint_per_layer_without_disabling_outline_checks() -> None:
+    from kipy.board_types import BoardRectangle
+
+    outline = BoardRectangle()
+    outline.layer = BoardLayer.BL_Edge_Cuts
+    outline.top_left = Vector2.from_xy_mm(0, 0)
+    outline.bottom_right = Vector2.from_xy_mm(30, 20)
+    pad = _pad("start-only", 10, 10)
+    result = snapshot_route_obstacles(
+        _board(pads=[pad], shapes=[outline]),
+        "F_Cu",
+        frozenset({"start-only"}),
+        require_outline=True,
+        expected_endpoint_count=1,
+    )
+    assert len(result) == 4
+    with pytest.raises(RoutePlanningError, match="endpoints"):
+        snapshot_route_obstacles(
+            _board(pads=[pad], shapes=[outline]),
+            "F_Cu",
+            frozenset({"start-only"}),
+            require_outline=True,
+        )

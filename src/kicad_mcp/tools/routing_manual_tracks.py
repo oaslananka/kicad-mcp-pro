@@ -10,8 +10,9 @@ from dataclasses import dataclass
 from typing import cast
 
 from kipy.board import Board
-from kipy.board_types import Net, Pad, Track
+from kipy.board_types import Net, Pad, Track, Via
 from kipy.geometry import Vector2
+from kipy.proto.board.board_types_pb2 import ViaType
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
@@ -23,7 +24,7 @@ from ..pcb.pad_mapping import MappedPad, map_pads_to_footprints
 from ..pcb.route_drc_preflight import RoutePreflightError, run_route_drc_preflight
 from ..pcb.routing_obstacle_snapshot import snapshot_route_obstacles
 from ..routing.differential_pair_candidate import inspect_straight_pair
-from ..routing.manual_tracks import RoutingManualTrackService, TrackSpec, _find_pad
+from ..routing.manual_tracks import RoutingManualTrackService, TrackSpec, ViaSpec, _find_pad
 from ..routing.path_planner import RoutePlanningError, plan_hv45_path
 from ..utils.layers import resolve_layer, resolve_layer_name
 from ..utils.units import mm_to_nm
@@ -46,6 +47,38 @@ def _track_from_spec(spec: TrackSpec) -> Track:
         net.name = spec.net_name
         track.net = net
     return track
+
+
+def _via_from_spec(spec: ViaSpec) -> Via:
+    """Create one through via using the existing KiCad IPC model."""
+    via = Via()
+    via.position = Vector2.from_xy_mm(spec.x_mm, spec.y_mm)
+    via.diameter = mm_to_nm(spec.diameter_mm)
+    via.drill_diameter = mm_to_nm(spec.drill_mm)
+    via.type = ViaType.VT_THROUGH
+    net = Net()
+    net.name = spec.net_name
+    via.net = net
+    return via
+
+
+def _verify_route_items(
+    live_board: Board,
+    created: list[Track | Via],
+    expected_count: int,
+    via_required: bool,
+) -> bool:
+    ids = [getattr(getattr(item, "id", None), "value", None) for item in created]
+    if len(ids) != expected_count or not all(ids) or len(set(ids)) != expected_count:
+        return False
+    current = {
+        getattr(getattr(item, "id", None), "value", None) for item in live_board.get_tracks()
+    }
+    if via_required:
+        current.update(
+            getattr(getattr(item, "id", None), "value", None) for item in live_board.get_vias()
+        )
+    return set(ids) <= current
 
 
 def _write_tracks(operation: str, specs: list[TrackSpec]) -> None:
@@ -249,6 +282,8 @@ def _publish_route_specs(
     revision: str,
     evidence: dict[str, bool | int],
     candidate_id: str,
+    *,
+    through_via: ViaSpec | None = None,
 ) -> str:
     """Publish one or multiple preflighted tracks as one native KiCad undo."""
 
@@ -271,23 +306,18 @@ def _publish_route_specs(
     if not started.startswith("Transaction group started."):
         return refused("Could not start an exclusive native KiCad transaction")
 
-    def verify_created(live_board: Board, created: list[Track]) -> bool:
-        created_ids = [getattr(getattr(item, "id", None), "value", None) for item in created]
-        if len(created_ids) != len(specs) or not all(created_ids):
-            return False
-        current = {
-            getattr(getattr(item, "id", None), "value", None) for item in live_board.get_tracks()
-        }
-        return len(set(created_ids)) == len(created_ids) and set(created_ids) <= current
-
     try:
         if hashlib.sha256(get_board().get_as_string().encode("utf-8")).hexdigest() != revision:
             raise RoutePlanningError("Native board changed before staged application")
-        tracks = [_track_from_spec(spec) for spec in specs]
+        items: list[Track | Via] = [_track_from_spec(spec) for spec in specs]
+        if through_via is not None:
+            items.append(_via_from_spec(through_via))
         execute_live_board_mutation(
             "route_apply_candidate",
-            lambda live_board: cast(list[Track], list(live_board.create_items(tracks))),
-            verifier=verify_created,
+            lambda live_board: cast(list[Track | Via], list(live_board.create_items(items))),
+            verifier=lambda board, created: _verify_route_items(
+                board, created, len(items), through_via is not None
+            ),
         )
         if hashlib.sha256(get_board().get_as_string().encode("utf-8")).hexdigest() != revision:
             raise RoutePlanningError("Native board changed while staging the route")

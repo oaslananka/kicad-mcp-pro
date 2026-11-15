@@ -159,7 +159,7 @@ Built-in prompt helpers for the critic/fixer loop:
 
 Machine-maintained catalog. Refresh with `pnpm run docs:tools`.
 
-Total public tools: 394.
+Total public tools: 396.
 
 | Tool | Profile(s) | Read-Only | Destructive | Open-World | Idempotent | Headless | Requires KiCad Running | Summary |
 |---|---|---:|---:|---:|---:|---:|---:|---|
@@ -402,6 +402,7 @@ Total public tools: 394.
 | `project_validate_design_spec` | agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release, release_manager, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Validate the resolved design spec against the active project PCB. |
 | `route_apply_candidate` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | no | yes | Apply an unchanged H/V/45 candidate only after native KiCad DRC preflight. |
 | `route_apply_coupled_differential_pair_candidate` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | no | yes | WRITE both P/N lanes as ONE native Undo only after joint KiCad DRC. |
+| `route_apply_one_through_via_candidate` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | no | yes | WRITE two traces plus one via in ONE native Undo after KiCad DRC. |
 | `route_apply_ses` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | yes | no | Apply a routed Specctra SES to the active board headlessly -- no GUI step. |
 | `route_apply_straight_differential_pair_candidate` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | no | yes | WRITE both matched straight lanes in one KiCad Undo after native DRC. |
 | `route_apply_tuning_profile` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | yes | no | Assign a named tuning profile to a net or wildcard net group. |
@@ -414,6 +415,7 @@ Total public tools: 394.
 | `route_list_tuning_profiles` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | yes | no | List configured time-domain tuning profiles. This KiCad MCP Pro tool supports production EDA automation workflows for... |
 | `route_plan_between_pads` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | yes | no | no | yes | no | yes | READ-ONLY preview of a bounded H/V/45 route between same-net pads. |
 | `route_plan_coupled_differential_pair` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | no | yes | READ-only bounded H/V/45 obstacle-aware matched USB P/N route preview. |
+| `route_plan_one_through_via` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | no | yes | READ-only one-through-via plan between opposite-layer SMD pads. |
 | `route_plan_straight_differential_pair` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | no | yes | READ-only matched straight differential-pair preview. |
 | `route_set_net_class_rules` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | yes | no | yes | yes | no | Write net-class routing constraints into the active .kicad_dru file. |
 | `route_single_track` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | no | yes | Route a single straight track segment. This KiCad MCP Pro tool supports production EDA automation workflows for MCP c... |
@@ -799,6 +801,7 @@ Total public tools: 394.
 - `project_validate_design_spec`: profiles=agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release, release_manager, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `route_apply_candidate`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=yes.
 - `route_apply_coupled_differential_pair_candidate`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=yes.
+- `route_apply_one_through_via_candidate`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=yes.
 - `route_apply_ses`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `route_apply_straight_differential_pair_candidate`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=yes.
 - `route_apply_tuning_profile`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
@@ -811,6 +814,7 @@ Total public tools: 394.
 - `route_list_tuning_profiles`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `route_plan_between_pads`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=yes; destructive=no; openWorld=no; idempotent=yes; headless=no; requiresKiCadRunning=yes.
 - `route_plan_coupled_differential_pair`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=yes.
+- `route_plan_one_through_via`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=yes.
 - `route_plan_straight_differential_pair`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=yes.
 - `route_set_net_class_rules`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=yes; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.
 - `route_single_track`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=yes.
