@@ -530,6 +530,7 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
             "route_single_track",
             "route_from_pad_to_pad",
             "route_plan_between_pads",
+            "route_apply_candidate",
             "route_export_dsn",
             "route_import_ses",
             "route_apply_ses",

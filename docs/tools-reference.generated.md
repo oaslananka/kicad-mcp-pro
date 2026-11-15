@@ -1,6 +1,6 @@
 Machine-maintained catalog. Refresh with `pnpm run docs:tools`.
 
-Total public tools: 389.
+Total public tools: 390.
 
 | Tool | Profile(s) | Read-Only | Destructive | Open-World | Idempotent | Headless | Requires KiCad Running | Summary |
 |---|---|---:|---:|---:|---:|---:|---:|---|
@@ -241,6 +241,7 @@ Total public tools: 389.
 | `project_set_design_intent` | agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release_manager, schematic, schematic_authoring, schematic_only, simulation | no | yes | no | yes | yes | no | Persist high-level project design intent and structural group constraints. |
 | `project_signoff_report` | agent_full, analysis, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, pcb, pcb_layout, power, release_manager, schematic, schematic_authoring | no | no | no | no | yes | no | Produce the single manufacturing sign-off report. |
 | `project_validate_design_spec` | agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release, release_manager, schematic, schematic_authoring, schematic_only, simulation | no | no | no | no | yes | no | Validate the resolved design spec against the active project PCB. |
+| `route_apply_candidate` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | no | yes | Apply an unchanged H/V/45 candidate only after native KiCad DRC preflight. |
 | `route_apply_ses` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | yes | no | Apply a routed Specctra SES to the active board headlessly -- no GUI step. |
 | `route_apply_tuning_profile` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | no | no | no | yes | no | Assign a named tuning profile to a net or wildcard net group. |
 | `route_autoroute_freerouting` | agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only | no | yes | no | no | yes | no | Run FreeRouting after placement, then surface the KiCad import step. |
@@ -633,6 +634,7 @@ Total public tools: 389.
 - `project_set_design_intent`: profiles=agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release_manager, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=yes; openWorld=no; idempotent=yes; headless=yes; requiresKiCadRunning=no.
 - `project_signoff_report`: profiles=agent_full, analysis, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, pcb, pcb_layout, power, release_manager, schematic, schematic_authoring; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `project_validate_design_spec`: profiles=agent_full, analysis, beginner, builder, critic, expert, full, high_speed, manufacturing, manufacturing_release, minimal, pcb, pcb_layout, pcb_only, power, read_only_inspection, release, release_manager, schematic, schematic_authoring, schematic_only, simulation; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
+- `route_apply_candidate`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=no; requiresKiCadRunning=yes.
 - `route_apply_ses`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `route_apply_tuning_profile`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=no; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.
 - `route_autoroute_freerouting`: profiles=agent_full, builder, expert, full, high_speed, pcb, pcb_layout, pcb_only; readOnly=no; destructive=yes; openWorld=no; idempotent=no; headless=yes; requiresKiCadRunning=no.

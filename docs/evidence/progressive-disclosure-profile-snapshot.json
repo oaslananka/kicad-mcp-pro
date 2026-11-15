@@ -94,11 +94,11 @@
       ]
     },
     "expert": {
-      "callableTools": 389,
-      "catalogCharacters": 229263,
+      "callableTools": 390,
+      "catalogCharacters": 230147,
       "catalogReductionVsExpertPct": 0.0,
-      "declaredTools": 389,
-      "estimatedCatalogTokens": 57316,
+      "declaredTools": 390,
+      "estimatedCatalogTokens": 57537,
       "forbiddenToolExposures": 8,
       "goldenCases": 65,
       "goldenCasesCovered": 55,
@@ -350,6 +350,7 @@
         "project_set_design_intent",
         "project_signoff_report",
         "project_validate_design_spec",
+        "route_apply_candidate",
         "route_apply_ses",
         "route_apply_tuning_profile",
         "route_autoroute_freerouting",

@@ -78,9 +78,10 @@ def test_registration_preserves_order_signatures_metadata_and_delegation() -> No
         "route_single_track",
         "route_from_pad_to_pad",
         "route_plan_between_pads",
+        "route_apply_candidate",
     ]
 
-    single, pads, preview = tools
+    single, pads, preview, apply = tools
     assert str(inspect.signature(single.fn)) == (
         "(x1_mm: 'float', y1_mm: 'float', x2_mm: 'float', y2_mm: 'float', "
         "layer: 'str' = 'F_Cu', width_mm: 'float' = 0.25, "
@@ -95,7 +96,12 @@ def test_registration_preserves_order_signatures_metadata_and_delegation() -> No
     assert "same named net" in (pads.fn.__doc__ or "")
     assert "enabled" in (pads.fn.__doc__ or "")
 
-    for tool_name in ("route_single_track", "route_from_pad_to_pad", "route_plan_between_pads"):
+    for tool_name in (
+        "route_single_track",
+        "route_from_pad_to_pad",
+        "route_plan_between_pads",
+        "route_apply_candidate",
+    ):
         metadata = get_tool_metadata(tool_name)
         assert metadata is not None
         assert metadata.headless_compatible is False
@@ -431,3 +437,22 @@ def test_preview_refuses_if_live_board_changed_while_planning(
     assert result["status"] == "refused"
     assert "changed" in result["reason"].lower()
     assert "segments" not in result
+
+
+def test_route_apply_requires_write_and_never_inherits_read_only() -> None:
+    from kicad_mcp.capabilities import AccessTier, get
+    from kicad_mcp.operating_modes import OperatingMode, tool_required_mode
+    from kicad_mcp.server import build_server
+
+    capability = get("route_apply_candidate")
+    assert capability is not None
+    assert capability.tier is AccessTier.WRITE
+    assert capability.writes_kicad_gui_state is True
+    assert capability.writes_files is False
+    assert tool_required_mode("route_apply_candidate") is OperatingMode.WRITE
+    server = build_server("expert")
+    server.operating_mode = OperatingMode.READONLY
+    server.filter_runtime_tools = False
+    names = {tool.name for tool in server.list_tools_sync()}
+    assert "route_plan_between_pads" in names
+    assert "route_apply_candidate" not in names

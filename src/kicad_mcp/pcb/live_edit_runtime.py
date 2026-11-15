@@ -33,6 +33,7 @@ REVIEWED_LIVE_MUTATIONS: Final[dict[str, bool]] = {
     "pcb_add_teardrops": False,
     "route_single_track": False,
     "route_from_pad_to_pad": False,
+    "route_apply_candidate": True,
     "pdn_generate_power_plane": False,
     "pcb_set_origin": False,
     "pcb_set_title_block_info": False,

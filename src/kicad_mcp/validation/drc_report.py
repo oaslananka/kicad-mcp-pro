@@ -215,3 +215,27 @@ def newly_reported_drc_violations(
         else:
             introduced.append(item)
     return introduced
+
+
+def evaluate_route_drc(before: Report, after: Report) -> dict[str, bool | int]:
+    """Refuse a routing candidate that adds native DRC errors or fails to connect pads.
+
+    Both reports must explicitly contain native violations and unconnected items.
+    Report counts alone cannot establish non-regression: use finding identity.
+    """
+
+    def count_unconnected(report: Report) -> int:
+        entries = report.get("unconnected_items")
+        if not isinstance(entries, list) or any(not isinstance(item, dict) for item in entries):
+            raise ValueError("Native DRC unconnected_items list is missing or malformed")
+        return len(entries)
+
+    previous = count_unconnected(before)
+    current = count_unconnected(after)
+    introduced = newly_reported_drc_violations(before, after)
+    return {
+        "accepted": not introduced and current < previous,
+        "introducedViolations": len(introduced),
+        "unconnectedBefore": previous,
+        "unconnectedAfter": current,
+    }

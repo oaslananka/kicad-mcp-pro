@@ -74,3 +74,58 @@ def test_removed_violation_is_not_a_regression() -> None:
 def test_invalid_drc_report_refuses_success(report: dict[str, object]) -> None:
     with pytest.raises(ValueError):
         newly_reported_drc_violations(_report(), report)
+
+
+def test_route_drc_accepts_improvement_without_any_new_native_finding() -> None:
+    from kicad_mcp.validation.drc_report import evaluate_route_drc
+
+    before = {
+        "violations": [_finding("clearance", "existing")],
+        "unconnected_items": [{"id": "a"}, {"id": "b"}],
+    }
+    after = {"violations": [_finding("clearance", "existing")], "unconnected_items": [{"id": "a"}]}
+
+    result = evaluate_route_drc(before, after)
+
+    assert result["accepted"] is True
+    assert result["introducedViolations"] == 0
+    assert result["unconnectedBefore"] == 2
+    assert result["unconnectedAfter"] == 1
+
+
+def test_route_drc_rejects_same_count_changed_violation() -> None:
+    from kicad_mcp.validation.drc_report import evaluate_route_drc
+
+    before = {
+        "violations": [_finding("clearance", "existing")],
+        "unconnected_items": [{"id": "a"}, {"id": "b"}],
+    }
+    after = {"violations": [_finding("clearance", "new")], "unconnected_items": [{"id": "a"}]}
+
+    result = evaluate_route_drc(before, after)
+
+    assert result["accepted"] is False
+    assert result["introducedViolations"] == 1
+
+
+def test_route_drc_rejects_no_real_connectivity_improvement() -> None:
+    from kicad_mcp.validation.drc_report import evaluate_route_drc
+
+    result = evaluate_route_drc(
+        {"violations": [], "unconnected_items": [{"id": "a"}]},
+        {"violations": [], "unconnected_items": [{"id": "a"}]},
+    )
+
+    assert result["accepted"] is False
+
+
+def test_route_drc_rejects_untrusted_or_incomplete_reports() -> None:
+    from kicad_mcp.validation.drc_report import evaluate_route_drc
+
+    with pytest.raises(ValueError):
+        evaluate_route_drc({"violations": []}, {"violations": [], "unconnected_items": []})
+    with pytest.raises(ValueError):
+        evaluate_route_drc(
+            {"violations": [], "unconnected_items": []},
+            {"violations": [], "unconnected_items": "invalid"},
+        )
