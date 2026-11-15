@@ -8,8 +8,8 @@ import pytest
 from kipy.board_types import BoardLayer, Pad, Track
 from kipy.geometry import Vector2
 
+from kicad_mcp.pcb.routing_obstacle_snapshot import snapshot_route_obstacles
 from kicad_mcp.routing.path_planner import CircleObstacle, RoutePlanningError, SegmentObstacle
-from kicad_mcp.tools.routing_obstacle_snapshot import snapshot_route_obstacles
 
 
 def _board(*, pads=(), tracks=(), vias=(), zones=(), shapes=()):
@@ -128,3 +128,33 @@ def test_unknown_via_layers_are_not_silent() -> None:
     via.padstack.layers = []
     with pytest.raises(RoutePlanningError, match="via layer"):
         snapshot_route_obstacles(_board(vias=[via]), "F_Cu", frozenset())
+
+
+def test_required_board_outline_does_not_default_to_open_space() -> None:
+    start = _pad("start", 10, 10)
+    end = _pad("end", 20, 10)
+    with pytest.raises(RoutePlanningError, match="board outline"):
+        snapshot_route_obstacles(
+            _board(pads=[start, end]),
+            "F_Cu",
+            frozenset({"start", "end"}),
+            require_outline=True,
+        )
+
+
+def test_rectangle_outline_satisfies_required_boundary() -> None:
+    from kipy.board_types import BoardRectangle
+
+    outline = BoardRectangle()
+    outline.layer = BoardLayer.BL_Edge_Cuts
+    outline.top_left = Vector2.from_xy_mm(0, 0)
+    outline.bottom_right = Vector2.from_xy_mm(30, 20)
+    start = _pad("start", 10, 10)
+    end = _pad("end", 20, 10)
+    result = snapshot_route_obstacles(
+        _board(pads=[start, end], shapes=[outline]),
+        "F_Cu",
+        frozenset({"start", "end"}),
+        require_outline=True,
+    )
+    assert len(result) == 4

@@ -17,12 +17,12 @@ from ..pcb.board_access import board_footprints, board_pads
 from ..pcb.geometry import point_xy_mm
 from ..pcb.live_edit_runtime import execute_live_board_mutation
 from ..pcb.pad_mapping import MappedPad, map_pads_to_footprints
+from ..pcb.routing_obstacle_snapshot import snapshot_route_obstacles
 from ..routing.manual_tracks import RoutingManualTrackService, TrackSpec, _find_pad
 from ..routing.path_planner import RoutePlanningError, plan_hv45_path
 from ..utils.layers import resolve_layer, resolve_layer_name
 from ..utils.units import mm_to_nm
 from .metadata import requires_kicad_running
-from .routing_obstacle_snapshot import snapshot_route_obstacles
 
 
 @dataclass(frozen=True)
@@ -119,7 +119,9 @@ def _preview_route_between_pads(
         identities = (start_pad.id.value, end_pad.id.value)
         if not all(identities):
             raise RoutePlanningError("Native pad identities unavailable")
-        obstacles = snapshot_route_obstacles(board, layer, frozenset(identities))
+        obstacles = snapshot_route_obstacles(
+            board, layer, frozenset(identities), require_outline=True
+        )
         path = plan_hv45_path(
             point_xy_mm(start_pad.position),
             point_xy_mm(end_pad.position),

@@ -12,17 +12,17 @@ from typing import Protocol, cast
 from kipy.board_types import BoardRectangle
 from kipy.proto.board.board_types_pb2 import BoardLayer, PadStackShape
 
-from ..pcb.board_access import (
+from ..routing.path_planner import CircleObstacle, Obstacle, RoutePlanningError, SegmentObstacle
+from ..utils.layers import resolve_layer
+from ..utils.units import nm_to_mm
+from .board_access import (
     board_pads,
     board_shapes,
     board_tracks,
     board_vias,
     board_zones,
 )
-from ..pcb.geometry import point_xy_mm
-from ..routing.path_planner import CircleObstacle, Obstacle, RoutePlanningError, SegmentObstacle
-from ..utils.layers import resolve_layer
-from ..utils.units import nm_to_mm
+from .geometry import point_xy_mm
 
 
 class _PadLocation(Protocol):
@@ -77,6 +77,8 @@ def snapshot_route_obstacles(
     board: object,
     layer: str,
     excluded_pad_ids: frozenset[str],
+    *,
+    require_outline: bool = False,
 ) -> tuple[Obstacle, ...]:
     """Read all supported copper obstacles on one layer, or refuse incomplete state."""
     layer_id = resolve_layer(layer)
@@ -123,6 +125,10 @@ def snapshot_route_obstacles(
 
     if len(edge_rectangles) > 1:
         raise RoutePlanningError("Multiple board edge rectangles require geometry review")
+    if require_outline and not edge_rectangles:
+        raise RoutePlanningError(
+            "No supported board outline; route planning requires a closed rectangle"
+        )
     if edge_rectangles:
         x1, y1, x2, y2 = edge_rectangles[0]
         excluded_points = [
