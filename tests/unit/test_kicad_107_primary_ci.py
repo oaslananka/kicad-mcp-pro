@@ -83,7 +83,7 @@ def test_107_installer_has_second_official_mirror_without_weakening_verification
     source = INSTALLER.read_text(encoding="utf-8")
     assert "readonly base_url='https://mirrors.mit.edu/kicad/appimage/stable'" in source
     assert "readonly fallback_base_url='https://mirror.nju.edu.cn/kicad/appimage/stable'" in source
-    assert 'if ! curl --fail --location' in source
+    assert "if ! curl --fail --location" in source
     assert 'rm -f -- "$archive"' in source
     assert '"$fallback_base_url/$archive_name"' in source
     assert source.index('"$fallback_base_url/$archive_name"') < source.index(
