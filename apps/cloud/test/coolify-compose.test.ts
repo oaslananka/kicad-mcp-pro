@@ -37,6 +37,13 @@ test("Coolify Git application Compose is private and preserves dedicated ingress
   assert.equal(api.environment.GOOGLE_CLIENT_SECRET,env.GOOGLE_CLIENT_SECRET);
   assert.equal(api.environment.CONNECTOR_WS_ENABLED,"false");
   assert.equal(api.environment.CONNECTOR_MANAGED_READ_ENABLED,"false");
+  assert.equal(api.environment.CONNECTOR_MANAGED_NATIVE_WRITE_ENABLED,"false");
+  assert.equal(api.environment.OFFLINE_WRITE_ISSUER_PUBKEY_SHA256,"");
+  assert.equal(api.environment.OFFLINE_WRITE_ISSUER_KEY_PATH,"/run/write-issuer/issuer.pem");
+  assert.deepEqual(api.volumes,[{
+    type:"volume",source:"write_issuer",target:"/run/write-issuer",read_only:true
+  }]);
+  assert.equal(parsed.volumes.write_issuer.name,"kicad-cloud-write-issuer");
   assert.equal(api.ports,undefined,"API must never publish a host port");
   assert.equal(api.networks.tunnel_ingress.ipv4_address,env.KICAD_INGRESS_APP_IP);
   assert.equal(parsed.networks.tunnel_ingress.external,true);

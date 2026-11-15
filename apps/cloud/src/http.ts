@@ -138,6 +138,19 @@ export type CloudHttpServices={
   ownerIntentDelivery?:(scope:PreparedOwnerSummary)=>Promise<string|null>;
 };
 
+/** Never advertise native writes before signed proof + DB authorization
+ * path is fully configured. Discovery alone does not grant OAuth permissions.
+ */
+function nativeWriteReady(services:CloudHttpServices):boolean{
+  if(services.mcpProjectWriteEnabled!==true||
+     typeof services.writeIssuer!=="function"||!services.writePreflight)
+    return false;
+  const relay=services.summaryRelay?.();
+  return typeof relay?.prepareWriteRevisions==="function"&&
+    typeof relay.requestWrite==="function"&&
+    typeof relay.getTrustedContext==="function";
+}
+
 /** Named optional services prevent misleading positional dependency wiring. */
 export function createHttpServer(
   config:Config,inventory:Inventory,verify:Verifier,services:CloudHttpServices={}
@@ -238,7 +251,8 @@ async function handleRequest(
             enrollmentAvailable:Boolean(pairingDevice),grants,
             deviceConnection:summaryRelay?.()?.isDeviceConnected,
             managedRead:services.managedRead,localFolders:summaryRelay?.()?.localFolders,
-            nativeReadEnabled:services.managedNativeReadEnabled===true});
+            nativeReadEnabled:services.managedNativeReadEnabled===true,
+            nativeWriteAvailable:nativeWriteReady(services)});
         } else if(path==="/devices/pairing" || path==="/devices/pairing/review"){
           answer=await pairingBrowserResponse(browserRequest,identity,config.publicOrigin,pairings);
         } else if(path==="/api/owner/cli/approve"){
@@ -268,6 +282,7 @@ async function handleRequest(
           (services.mcpProjectNativeDrcEnabled||services.mcpProjectInspectionEnabled||
            services.mcpProjectBoardCountsEnabled||services.mcpProjectSchematicCountsEnabled)
           ? "operator_one_shot_read" : "not_implemented",
+          nativeWriteReady:nativeWriteReady(services),
           revision: /^[0-9a-f]{40}$/.test(process.env.APP_REVISION ?? "") ? process.env.APP_REVISION : "unknown" });
         return;
       }
@@ -275,9 +290,10 @@ async function handleRequest(
         json(res, 200, {
           resource: config.audience,
           authorization_servers: [config.issuer],
-          // Initial discovery is least-privilege. OAuth supports projects:write,
-          // but clients request it only when editing needs step-up consent.
-          scopes_supported: ["projects:read"],
+          // Initial discovery is read-only. A configured native writer may
+          // advertise a separate opt-in scope; never grant it automatically.
+          scopes_supported: nativeWriteReady(services)
+            ? ["projects:read","projects:write"] : ["projects:read"],
           bearer_methods_supported: ["header"]
         });
         return;
@@ -728,7 +744,7 @@ async function handleRequest(
             oauth,deviceId,projectId,"project_schematic_counts"))return null;
           return result.counts;
         } : undefined;
-      const writer = services.mcpProjectWriteEnabled && summaryRelay?.()
+      const writer = nativeWriteReady(services) && summaryRelay?.()
         ? async (
             deviceId: string,
             projectId: string,

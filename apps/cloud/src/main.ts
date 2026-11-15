@@ -45,6 +45,10 @@ if(wsEnabled&&!localDevWorkspace&&!config.publicOrigin.startsWith("https://")){
 const connectorPool=(wsEnabled||Boolean(identity))?new Pool({connectionString:config.databaseUrl}):null;
 // Only the isolated, single-worker sandbox may expire its own stale sockets.
 if(localDevWorkspace&&connectorPool)await recoverLocalDevSessions(connectorPool);
+if(managedNativeWriteEnabled &&
+   (!connectorPool||!process.env.OFFLINE_WRITE_ISSUER_KEY_PATH||
+    !process.env.OFFLINE_WRITE_ISSUER_PUBKEY_SHA256))
+  throw Error("Native write requires a pinned issuer and signed connector database");
 const writeIssuer = (managedNativeWriteEnabled && process.env.OFFLINE_WRITE_ISSUER_KEY_PATH && process.env.OFFLINE_WRITE_ISSUER_PUBKEY_SHA256)
   ? await openPinnedOfflineWriteIssuer(process.env.OFFLINE_WRITE_ISSUER_KEY_PATH, process.env.OFFLINE_WRITE_ISSUER_PUBKEY_SHA256)
   : undefined;
@@ -120,7 +124,7 @@ const server=createHttpServer(config, inventory, createVerifier(config), {grants
   mcpProjectInspectionEnabled:operatorInspection,
   mcpProjectBoardCountsEnabled:operatorBoardCounts,
   mcpProjectSchematicCountsEnabled:operatorSchematicCounts,summaryRelay:()=>connectorRelay,
-  mcpProjectWriteEnabled:managedNativeWriteEnabled,
+  mcpProjectWriteEnabled:managedNativeWriteEnabled&&Boolean(writeIssuer)&&Boolean(connectorPool),
   ...(connectorPool&&managedNativeWriteEnabled?{writePreflight:new PgConnectorWritePreflight(connectorPool)}:{}),
   ...(writeIssuer?{writeIssuer}:{}),
   ...(ownerIntentDelivery?{ownerIntentDelivery}:{}),

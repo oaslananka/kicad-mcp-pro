@@ -41,6 +41,7 @@ type DeviceReply={
   ownerSub?:string;
   clients?:ReadonlyArray<string>;
   writeClients?:ReadonlyArray<string>;
+  nativeWriteAvailable?:boolean;
   savedGrants?:ReadonlyArray<BrowserGrantSummary>;
   sandboxMode?:boolean;
   localFolders?:LocalFolderPort;
@@ -48,10 +49,11 @@ type DeviceReply={
   userEmail?:string;
 };
 function reply({status,devices=[],message,stateCookie,enrollmentAvailable=true,
-  projects=[],ownerSub,clients=[],writeClients=[],savedGrants=[],sandboxMode=false,localFolders,
+  projects=[],ownerSub,clients=[],writeClients=[],nativeWriteAvailable=false,
+  savedGrants=[],sandboxMode=false,localFolders,
   projectView=false,userEmail}:DeviceReply):Response{
   const html=projectView?renderProjectsPage(devices,projects,clients,savedGrants,
-    enrollmentAvailable,sandboxMode,userEmail):renderDevicesPage(devices,message,enrollmentAvailable,{projects,ownerSub,clients,savedGrants,sandboxMode,browseEnabled:Boolean(localFolders),writeClients,userEmail});
+    enrollmentAvailable,sandboxMode,userEmail):renderDevicesPage(devices,message,enrollmentAvailable,{projects,ownerSub,clients,savedGrants,sandboxMode,browseEnabled:Boolean(localFolders),writeClients,nativeWriteAvailable,userEmail});
   const response=new Response(html,{status,headers:{
     "Content-Type":"text/html; charset=utf-8","Cache-Control":"no-store",
     // Preserve Origin on same-origin form POSTs; Chrome sends Origin: null
@@ -113,6 +115,7 @@ export type DeviceRequestServices=Readonly<{
   managedRead?:ManagedReadPort;
   localFolders?:LocalFolderPort;
   nativeReadEnabled?:boolean;
+  nativeWriteAvailable?:boolean;
 }>;
 type FormContext=Readonly<{secret:string;owner:{user:string;session:string};stamp:string;nonce:string}>;
 type ProjectRows=NonNullable<DevicePageOptions["projects"]>;
@@ -252,6 +255,7 @@ async function list(req:Request,identity:BrowserIdentity,origin:string,
     stateCookie:projectView?undefined:cookie(context.stamp+"."+context.nonce,origin,300),
     enrollmentAvailable:services.enrollmentAvailable,projects:scoped,ownerSub:who.user,...access,
     sandboxMode:identity.localDevSandbox===true,localFolders:services.localFolders,projectView,
+    nativeWriteAvailable:services.nativeWriteAvailable,
     userEmail:session?.user?.email});
 }
 async function revoke(req:Request,identity:BrowserIdentity,origin:string,

@@ -36,10 +36,23 @@ services:
       CONNECTOR_WS_ENABLED: ${CONNECTOR_WS_ENABLED:-false}
       PAIRING_DEVICE_API_ENABLED: ${PAIRING_DEVICE_API_ENABLED:-false}
       CONNECTOR_MANAGED_READ_ENABLED: ${CONNECTOR_MANAGED_READ_ENABLED:-false}
+      # Native write remains OFF unless the owner configures a separately pinned
+      # Ed25519 issuer and explicitly enables this Cloud feature.
+      CONNECTOR_MANAGED_NATIVE_WRITE_ENABLED: ${CONNECTOR_MANAGED_NATIVE_WRITE_ENABLED:-false}
+      OFFLINE_WRITE_ISSUER_KEY_PATH: /run/write-issuer/issuer.pem
+      OFFLINE_WRITE_ISSUER_PUBKEY_SHA256: ${OFFLINE_WRITE_ISSUER_PUBKEY_SHA256:-}
       CONNECTOR_OPERATOR_ONESHOT_ENABLED: ${CONNECTOR_OPERATOR_ONESHOT_ENABLED:-false}
       CONNECTOR_OPERATOR_NATIVE_DRC_ENABLED: ${CONNECTOR_OPERATOR_NATIVE_DRC_ENABLED:-false}
       CONNECTOR_INGRESS_MODE: ${CONNECTOR_INGRESS_MODE:-cloudflare}
       TRUSTED_CLOUDFLARED_PEERS: ${TRUSTED_CLOUDFLARED_PEERS:-}
+    # Existing Cloud uses read-only image and private ingress. This isolated
+    # named volume is never populated by Compose, code, or an MCP request.
+    # Only the owner-controlled local host may provision the private key.
+    volumes:
+      - type: volume
+        source: write_issuer
+        target: /run/write-issuer
+        read_only: true
     expose:
       - "8787"
     networks:
@@ -54,3 +67,8 @@ networks:
   tunnel_ingress:
     external: true
     name: ${KICAD_INGRESS_NETWORK:?Existing isolated ingress network required}
+
+
+volumes:
+  write_issuer:
+    name: kicad-cloud-write-issuer

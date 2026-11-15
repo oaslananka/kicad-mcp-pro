@@ -141,10 +141,22 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     writeIssuer,
     writePreflight: writePreflight as never
   });
+  const missingIssuerServer = createHttpServer(config, inventory, verify, {
+    summaryRelay: () => relay as never,
+    mcpProjectWriteEnabled: true,
+    writePreflight: writePreflight as never
+  });
+  const missingPolicyServer = createHttpServer(config, inventory, verify, {
+    summaryRelay: () => relay as never,
+    mcpProjectWriteEnabled: true,
+    writeIssuer
+  });
 
   try {
     await new Promise<void>(resolve => disabledServer.listen(0, "127.0.0.1", resolve));
     await new Promise<void>(resolve => enabledServer.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>(resolve => missingIssuerServer.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>(resolve => missingPolicyServer.listen(0, "127.0.0.1", resolve));
 
     const disabledPort = (disabledServer.address() as AddressInfo).port;
     const enabledPort = (enabledServer.address() as AddressInfo).port;
@@ -188,10 +200,53 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
       return { status: res.status, data };
     };
 
+    const metadata = async (url:URL)=>(
+      await (await fetch(new URL("/.well-known/oauth-protected-resource",url))).json()
+    ) as {scopes_supported:string[]};
+    const health = async (url:URL)=>(
+      await (await fetch(new URL("/health",url))).json()
+    ) as {nativeWriteReady?:boolean};
+    const incompleteSigner = new URL("http://127.0.0.1:"+
+      (missingIssuerServer.address() as AddressInfo).port+"/mcp");
+    const incompletePolicy = new URL("http://127.0.0.1:"+
+      (missingPolicyServer.address() as AddressInfo).port+"/mcp");
+    assert.deepEqual((await metadata(disabledMcpUrl)).scopes_supported,["projects:read"]);
+    assert.deepEqual((await metadata(enabledMcpUrl)).scopes_supported,
+      ["projects:read","projects:write"]);
+    assert.deepEqual((await metadata(incompleteSigner)).scopes_supported,["projects:read"]);
+    assert.deepEqual((await metadata(incompletePolicy)).scopes_supported,["projects:read"]);
+    assert.equal((await health(enabledMcpUrl)).nativeWriteReady,true);
+    for(const url of [disabledMcpUrl,incompleteSigner,incompletePolicy]){
+      assert.equal((await health(url)).nativeWriteReady,false);
+    }
+
     // 1. Tool is absent when write is disabled
     const listDisabled = await invoke("disabled", "token-write", "tools/list", {}, 1);
     const disabledTools = (listDisabled.data.result?.tools ?? []).map((t: { name: string }) => t.name);
     assert.equal(disabledTools.includes("pcb_move_footprint"), false);
+
+    // A switch without a signer or DB-backed grant policy must never offer a write tool.
+    for(const incompleteUrl of [incompleteSigner,incompletePolicy]){
+      const r=await fetch(incompleteUrl,{
+        method:"POST",
+        headers:{
+          Authorization:"Bearer token-write",
+          "Content-Type":"application/json",
+          Accept:"application/json, text/event-stream",
+          "MCP-Protocol-Version":"2026-07-28",
+          "Mcp-Method":"tools/list"
+        },
+        body:JSON.stringify({jsonrpc:"2.0",id:92,method:"tools/list",params:{
+          _meta:{
+            "io.modelcontextprotocol/clientInfo":{name:"test-client",version:"1.0.0"},
+            "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+            "io.modelcontextprotocol/clientCapabilities":{}
+          }
+        }})
+      });
+      assert.equal(r.status,200);
+      assert.doesNotMatch(await r.text(),/pcb_move_footprint/);
+    }
 
     // 2. Tool is present when write is enabled
     const listEnabled = await invoke("enabled", "token-write", "tools/list", {}, 2);
@@ -259,5 +314,7 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
   } finally {
     if (disabledServer.listening) await new Promise<void>(resolve => disabledServer.close(() => resolve()));
     if (enabledServer.listening) await new Promise<void>(resolve => enabledServer.close(() => resolve()));
+    if (missingIssuerServer.listening) await new Promise<void>(resolve => missingIssuerServer.close(() => resolve()));
+    if (missingPolicyServer.listening) await new Promise<void>(resolve => missingPolicyServer.close(() => resolve()));
   }
 });
