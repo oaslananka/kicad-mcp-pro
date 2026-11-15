@@ -34,14 +34,14 @@ def _metadata_for(path: Path) -> str:
     raise ValueError(f"Unsupported distribution artifact: {path}")
 
 
-def _validate_metadata(path: Path, metadata: str) -> None:
+def _validate_metadata(path: Path, metadata: str, expected_license: str) -> None:
     if "License-Expression:" in metadata:
         raise ValueError(
             f"{path.name} uses License-Expression metadata, which PyPI rejected for this project. "
             "Use legacy License metadata until the release workflow is migrated."
         )
-    if "License: MIT" not in metadata:
-        raise ValueError(f"{path.name} is missing the expected License: MIT metadata field.")
+    if f"License: {expected_license}" not in metadata:
+        raise ValueError(f"{path.name} is missing the expected License: {expected_license} metadata field.")
     if "License-File: LICENSE" not in metadata:
         raise ValueError(
             f"{path.name} is missing the expected License-File: LICENSE metadata field."
@@ -86,7 +86,7 @@ def main() -> int:
         )
 
     for artifact in artifacts:
-        _validate_metadata(artifact, _metadata_for(artifact))
+        _validate_metadata(artifact, _metadata_for(artifact), project["license"]["text"])
     return 0
 
 
