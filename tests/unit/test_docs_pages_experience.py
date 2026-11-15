@@ -15,7 +15,9 @@ def test_docs_publish_uses_native_pages_artifact_and_least_privilege() -> None:
     workflow = yaml.safe_load(source)
     events = workflow.get("on", workflow.get(True))
 
-    assert "push" in events and "pull_request" in events and "workflow_dispatch" in events
+    assert "push" in events
+    assert "pull_request" in events
+    assert "workflow_dispatch" in events
     assert workflow["permissions"] == {"contents": "read"}
     assert workflow["jobs"]["build"]["permissions"] == {"contents": "read"}
     assert workflow["jobs"]["deploy"]["permissions"] == {
