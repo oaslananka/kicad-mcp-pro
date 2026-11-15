@@ -286,6 +286,21 @@ for mode in ("matched", "mismatched"):
         check=False,
     )
     assert result.returncode == 0, result.stderr[-1200:]
+    preflight = run_route_drc_preflight(
+        board.read_text(encoding="utf-8"),
+        [
+            TrackSpec(10.95, 8.5, 19.05, 8.5, "F_Cu", 0.25, "USB_D_P"),
+            TrackSpec(10.95, 9.25, 19.05, 9.25, "F_Cu", 0.25, "USB_D_N"),
+        ],
+        project_file=tmp_path / "demo.kicad_pro",
+        kicad_cli=cli,
+        pair_nets=frozenset(("USB_D_P", "USB_D_N")),
+    )
+    assert preflight["accepted"] is True
+    assert preflight["introducedViolations"] == 0
+    assert preflight["unconnectedBefore"] == 2
+    assert preflight["unconnectedAfter"] == 0
+
     for mode, should_violate in (("matched", False), ("mismatched", True)):
         case = tmp_path / mode
         report = case / "report.json"

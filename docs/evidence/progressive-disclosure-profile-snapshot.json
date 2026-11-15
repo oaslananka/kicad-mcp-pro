@@ -3,7 +3,7 @@
     "build": {
       "callableTools": 24,
       "catalogCharacters": 9377,
-      "catalogReductionVsExpertPct": 95.9,
+      "catalogReductionVsExpertPct": 96.0,
       "declaredTools": 24,
       "estimatedCatalogTokens": 2345,
       "forbiddenToolExposures": 2,
@@ -18,7 +18,7 @@
       "readOnlyCases": 25,
       "readOnlyCasesCovered": 5,
       "readOnlyCoveragePct": 20.0,
-      "toolReductionVsExpertPct": 93.8,
+      "toolReductionVsExpertPct": 93.9,
       "tools": [
         "kicad_get_project_info",
         "kicad_get_tools_in_category",
@@ -49,7 +49,7 @@
     "default": {
       "callableTools": 25,
       "catalogCharacters": 9612,
-      "catalogReductionVsExpertPct": 95.8,
+      "catalogReductionVsExpertPct": 95.9,
       "declaredTools": 25,
       "estimatedCatalogTokens": 2403,
       "forbiddenToolExposures": 0,
@@ -94,11 +94,11 @@
       ]
     },
     "expert": {
-      "callableTools": 390,
-      "catalogCharacters": 230147,
+      "callableTools": 392,
+      "catalogCharacters": 232482,
       "catalogReductionVsExpertPct": 0.0,
-      "declaredTools": 390,
-      "estimatedCatalogTokens": 57537,
+      "declaredTools": 392,
+      "estimatedCatalogTokens": 58121,
       "forbiddenToolExposures": 8,
       "goldenCases": 65,
       "goldenCasesCovered": 55,
@@ -352,6 +352,7 @@
         "project_validate_design_spec",
         "route_apply_candidate",
         "route_apply_ses",
+        "route_apply_straight_differential_pair_candidate",
         "route_apply_tuning_profile",
         "route_autoroute_freerouting",
         "route_create_tuning_profile",
@@ -361,6 +362,7 @@
         "route_import_ses",
         "route_list_tuning_profiles",
         "route_plan_between_pads",
+        "route_plan_straight_differential_pair",
         "route_set_net_class_rules",
         "route_single_track",
         "route_tune_length",
@@ -523,7 +525,7 @@
       "readOnlyCases": 25,
       "readOnlyCasesCovered": 8,
       "readOnlyCoveragePct": 32.0,
-      "toolReductionVsExpertPct": 93.8,
+      "toolReductionVsExpertPct": 93.9,
       "tools": [
         "check_design_for_manufacture",
         "dfm_run_manufacturer_check",
@@ -554,7 +556,7 @@
     "review": {
       "callableTools": 25,
       "catalogCharacters": 9612,
-      "catalogReductionVsExpertPct": 95.8,
+      "catalogReductionVsExpertPct": 95.9,
       "declaredTools": 25,
       "estimatedCatalogTokens": 2403,
       "forbiddenToolExposures": 0,

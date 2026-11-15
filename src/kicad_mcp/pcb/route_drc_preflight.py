@@ -25,22 +25,36 @@ class RoutePreflightError(ValueError):
     """The offline DRC acceptance evidence is unavailable or not trustworthy."""
 
 
-def _validate_specs(specs: list[TrackSpec]) -> None:
+def _validate_specs(
+    specs: list[TrackSpec],
+    *,
+    pair_nets: frozenset[str] | None = None,
+) -> None:
     if not 1 <= len(specs) <= 128:
         raise RoutePreflightError("Routing requires 1-128 segments")
     first = specs[0]
     if not first.net_name or not first.layer.endswith("_Cu"):
         raise RoutePreflightError("Candidate must specify a named net and copper layer")
+    if pair_nets is not None and (
+        len(pair_nets) != 2 or "" in pair_nets or first.net_name not in pair_nets
+    ):
+        raise RoutePreflightError("Paired candidate net scope must contain two named nets")
     for spec in specs:
         numbers = (spec.x1_mm, spec.y1_mm, spec.x2_mm, spec.y2_mm, spec.width_mm)
         if not all(math.isfinite(value) for value in numbers):
             raise RoutePreflightError("Candidate contains non-finite geometry")
         if not 0 < spec.width_mm <= 5:
             raise RoutePreflightError("Candidate track width is invalid")
-        if spec.net_name != first.net_name or spec.layer != first.layer:
-            raise RoutePreflightError("Candidate must remain on one net and one copper layer")
+        if (
+            spec.net_name not in (pair_nets or frozenset((first.net_name,)))
+            or spec.layer != first.layer
+            or spec.width_mm != first.width_mm
+        ):
+            raise RoutePreflightError("Candidate net, copper layer or width mismatch")
         if spec.x1_mm == spec.x2_mm and spec.y1_mm == spec.y2_mm:
             raise RoutePreflightError("Zero-length copper segment refused")
+    if pair_nets is not None and {spec.net_name for spec in specs} != pair_nets:
+        raise RoutePreflightError("Paired candidate net scope does not match its tracks")
 
 
 def _run_drc(kicad_cli: Path, pcb_file: Path, report_file: Path) -> Report:
@@ -113,6 +127,7 @@ def run_route_drc_preflight(
     *,
     project_file: Path,
     kicad_cli: Path,
+    pair_nets: frozenset[str] | None = None,
 ) -> dict[str, bool | int]:
     """Run baseline and candidate DRC with KiCad's own CLI on disposable files.
 
@@ -125,7 +140,7 @@ def run_route_drc_preflight(
         raise RoutePreflightError("Native KiCad CLI executable is unavailable")
     if not isinstance(board_snapshot, str) or not board_snapshot.startswith("(kicad_pcb"):
         raise RoutePreflightError("Native board snapshot is unavailable")
-    _validate_specs(segments)
+    _validate_specs(segments, pair_nets=pair_nets)
     python_name = "python.exe" if kicad_cli.suffix.lower() == ".exe" else "python3"
     native_python = kicad_cli.parent / python_name
     if not native_python.is_file():

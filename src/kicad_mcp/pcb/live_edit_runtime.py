@@ -34,6 +34,7 @@ REVIEWED_LIVE_MUTATIONS: Final[dict[str, bool]] = {
     "route_single_track": False,
     "route_from_pad_to_pad": False,
     "route_apply_candidate": True,
+    "route_apply_straight_differential_pair_candidate": True,
     "pdn_generate_power_plane": False,
     "pcb_set_origin": False,
     "pcb_set_title_block_info": False,

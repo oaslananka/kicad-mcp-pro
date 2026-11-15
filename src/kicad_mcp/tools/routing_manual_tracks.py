@@ -22,6 +22,7 @@ from ..pcb.live_edit_runtime import execute_live_board_mutation, get_live_edit_s
 from ..pcb.pad_mapping import MappedPad, map_pads_to_footprints
 from ..pcb.route_drc_preflight import RoutePreflightError, run_route_drc_preflight
 from ..pcb.routing_obstacle_snapshot import snapshot_route_obstacles
+from ..routing.differential_pair_candidate import inspect_straight_pair
 from ..routing.manual_tracks import RoutingManualTrackService, TrackSpec, _find_pad
 from ..routing.path_planner import RoutePlanningError, plan_hv45_path
 from ..utils.layers import resolve_layer, resolve_layer_name
@@ -240,6 +241,22 @@ def _apply_route_candidate(
     if hashlib.sha256(get_board().get_as_string().encode("utf-8")).hexdigest() != revision:
         return refused("Native board changed during DRC preflight")
 
+    return _publish_route_specs(specs, revision, evidence, candidate_id)
+
+
+def _publish_route_specs(
+    specs: list[TrackSpec],
+    revision: str,
+    evidence: dict[str, bool | int],
+    candidate_id: str,
+) -> str:
+    """Publish one or multiple preflighted tracks as one native KiCad undo."""
+
+    def refused(reason: str) -> str:
+        return json.dumps(
+            {"status": "refused", "committed": False, "reason": reason}, sort_keys=True
+        )
+
     service = get_live_edit_service()
     try:
         started = service.begin()
@@ -318,6 +335,256 @@ def _apply_route_candidate(
         },
         sort_keys=True,
     )
+
+
+def _preview_straight_differential_pair(
+    p_ref1: str,
+    p_pad1: str,
+    p_ref2: str,
+    p_pad2: str,
+    n_ref1: str,
+    n_pad1: str,
+    n_ref2: str,
+    n_pad2: str,
+    layer: str = "F_Cu",
+    width_mm: float = 0.25,
+    gap_mm: float = 0.5,
+    clearance_mm: float = 0.2,
+    max_skew_mm: float = 0.1,
+) -> str:
+    """Read-only matched straight-pair preview; no autonomous bend or impedance claim."""
+
+    def refused(reason: str) -> str:
+        return json.dumps(
+            {
+                "status": "refused",
+                "candidateOnly": True,
+                "reason": reason,
+            },
+            sort_keys=True,
+        )
+
+    try:
+        plus = json.loads(
+            _preview_route_between_pads(
+                p_ref1, p_pad1, p_ref2, p_pad2, layer, width_mm, clearance_mm
+            )
+        )
+        minus = json.loads(
+            _preview_route_between_pads(
+                n_ref1, n_pad1, n_ref2, n_pad2, layer, width_mm, clearance_mm
+            )
+        )
+        if plus.get("status") != "candidate" or minus.get("status") != "candidate":
+            return refused("Both lanes require safe native candidate paths")
+        revision = plus.get("boardRevision")
+        if not isinstance(revision, str) or revision != minus.get("boardRevision"):
+            return refused("Board changed while previewing the paired routes")
+        if not isinstance(plus.get("segments"), list) or not isinstance(
+            minus.get("segments"), list
+        ):
+            return refused("Invalid native paired segment evidence")
+        if len(plus["segments"]) != 1 or len(minus["segments"]) != 1:
+            return refused("Only exactly one straight segment per USB lane is supported")
+        specs = [TrackSpec(**item) for item in (plus["segments"][0], minus["segments"][0])]
+        matching = inspect_straight_pair(specs[0], specs[1], gap_mm=gap_mm, max_skew_mm=max_skew_mm)
+        if hashlib.sha256(get_board().get_as_string().encode("utf-8")).hexdigest() != revision:
+            return refused("Native board changed during pair preview")
+        segments = plus["segments"] + minus["segments"]
+        payload = {
+            "boardRevision": revision,
+            "positivePads": (p_ref1, p_pad1, p_ref2, p_pad2),
+            "negativePads": (n_ref1, n_pad1, n_ref2, n_pad2),
+            "gapMm": gap_mm,
+            "maxSkewMm": max_skew_mm,
+            "clearanceMm": clearance_mm,
+            "segments": segments,
+        }
+        digest = hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+        return json.dumps(
+            {
+                "status": "candidate",
+                "schemaVersion": "differential-pair-preview.v1",
+                "candidateId": digest,
+                "boardRevision": revision,
+                "candidateOnly": True,
+                "drcVerified": False,
+                "noBoardMutation": True,
+                "netPlus": specs[0].net_name,
+                "netMinus": specs[1].net_name,
+                "segments": segments,
+                "geometry": matching,
+                "warning": (
+                    "Straight pair geometry only; combined native DRC is required before write. "
+                    "Physical impedance and stackup are NOT verified."
+                ),
+            },
+            sort_keys=True,
+        )
+    except (RoutePlanningError, TypeError, ValueError, KeyError) as exc:
+        return refused(str(exc))
+
+
+def _apply_straight_differential_pair(
+    candidate_id: str,
+    p_ref1: str,
+    p_pad1: str,
+    p_ref2: str,
+    p_pad2: str,
+    n_ref1: str,
+    n_pad1: str,
+    n_ref2: str,
+    n_pad2: str,
+    layer: str = "F_Cu",
+    width_mm: float = 0.25,
+    gap_mm: float = 0.5,
+    clearance_mm: float = 0.2,
+    max_skew_mm: float = 0.1,
+) -> str:
+    """Atomic two-net write only after matched preview and combined native DRC."""
+
+    def refused(reason: str, **details: object) -> str:
+        return json.dumps(
+            {"status": "refused", "committed": False, "reason": reason, **details},
+            sort_keys=True,
+        )
+
+    try:
+        preview = json.loads(
+            _preview_straight_differential_pair(
+                p_ref1,
+                p_pad1,
+                p_ref2,
+                p_pad2,
+                n_ref1,
+                n_pad1,
+                n_ref2,
+                n_pad2,
+                layer,
+                width_mm,
+                gap_mm,
+                clearance_mm,
+                max_skew_mm,
+            )
+        )
+        if preview.get("status") != "candidate":
+            return refused(preview.get("reason", "No matched straight pair candidate"))
+        if not isinstance(candidate_id, str) or candidate_id != preview["candidateId"]:
+            return refused("Stale or wrong matched differential pair candidate ID")
+        board_text = get_board().get_as_string()
+        revision = preview["boardRevision"]
+        if hashlib.sha256(board_text.encode("utf-8")).hexdigest() != revision:
+            return refused("Native board changed before pair DRC preflight")
+        specs = [TrackSpec(**item) for item in preview["segments"]]
+        inspect_straight_pair(specs[0], specs[1], gap_mm=gap_mm, max_skew_mm=max_skew_mm)
+        config = get_config()
+        if config.project_file is None:
+            return refused("Project DRC rules file is unavailable")
+        evidence = run_route_drc_preflight(
+            board_text,
+            specs,
+            project_file=config.project_file,
+            kicad_cli=config.kicad_cli,
+            pair_nets=frozenset((specs[0].net_name, specs[1].net_name)),
+        )
+    except (RoutePreflightError, RoutePlanningError, KeyError, TypeError, ValueError) as exc:
+        return refused(str(exc))
+    if not evidence["accepted"]:
+        return refused("Native KiCad differential pair DRC rejected the candidate", **evidence)
+    if hashlib.sha256(get_board().get_as_string().encode("utf-8")).hexdigest() != revision:
+        return refused("Native board changed during differential pair DRC preflight")
+    outcome = json.loads(_publish_route_specs(specs, revision, evidence, candidate_id))
+    if outcome.get("status") == "applied":
+        outcome["pairGeometry"] = preview["geometry"]
+        outcome["warning"] = (
+            "Both lanes committed as one KiCad undo step, not saved. "
+            "Explicit pcb_save and native DRC/reopen required; no impedance certification."
+        )
+    return json.dumps(outcome, sort_keys=True)
+
+
+def _register_straight_pair_tools(mcp: FastMCP) -> None:
+    """Keep specialized USB tool schemas out of the core routing registration."""
+
+    @mcp.tool()
+    @requires_kicad_running
+    def route_plan_straight_differential_pair(
+        p_ref1: str,
+        p_pad1: str,
+        p_ref2: str,
+        p_pad2: str,
+        n_ref1: str,
+        n_pad1: str,
+        n_ref2: str,
+        n_pad2: str,
+        layer: str = "F_Cu",
+        width_mm: float = 0.25,
+        gap_mm: float = 0.5,
+        clearance_mm: float = 0.2,
+        max_skew_mm: float = 0.1,
+    ) -> str:
+        """READ-only matched straight differential-pair preview.
+
+        Only one H/V/45 segment per lane, exactly parallel and correctly
+        spaced. Does not verify physical impedance or create any copper.
+        """
+        return _preview_straight_differential_pair(
+            p_ref1,
+            p_pad1,
+            p_ref2,
+            p_pad2,
+            n_ref1,
+            n_pad1,
+            n_ref2,
+            n_pad2,
+            layer,
+            width_mm,
+            gap_mm,
+            clearance_mm,
+            max_skew_mm,
+        )
+
+    @mcp.tool()
+    @requires_kicad_running
+    def route_apply_straight_differential_pair_candidate(
+        candidate_id: str,
+        p_ref1: str,
+        p_pad1: str,
+        p_ref2: str,
+        p_pad2: str,
+        n_ref1: str,
+        n_pad1: str,
+        n_ref2: str,
+        n_pad2: str,
+        layer: str = "F_Cu",
+        width_mm: float = 0.25,
+        gap_mm: float = 0.5,
+        clearance_mm: float = 0.2,
+        max_skew_mm: float = 0.1,
+    ) -> str:
+        """WRITE both matched straight lanes in one KiCad Undo after native DRC.
+
+        Reject missing project evidence, stale identity, incorrect geometry
+        and DRC regressions. Never automatically save the user's board.
+        """
+        return _apply_straight_differential_pair(
+            candidate_id,
+            p_ref1,
+            p_pad1,
+            p_ref2,
+            p_pad2,
+            n_ref1,
+            n_pad1,
+            n_ref2,
+            n_pad2,
+            layer,
+            width_mm,
+            gap_mm,
+            clearance_mm,
+            max_skew_mm,
+        )
 
 
 def register(
@@ -416,3 +683,5 @@ def register(
         return _apply_route_candidate(
             candidate_id, ref1, pad1, ref2, pad2, layer, width_mm, clearance_mm
         )
+
+    _register_straight_pair_tools(mcp)

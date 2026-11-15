@@ -588,4 +588,37 @@ register(
 )
 
 
+# Straight-pair preview is READ; atomic two-track application is WRITE.
+register(
+    CapabilityRecord(
+        name="route_plan_straight_differential_pair",
+        profiles=_PCB_PROFILES,
+        tier=AccessTier.READ,
+        category="routing",
+        runtime=RuntimeRequirement.KICAD_IPC,
+        writes_files=False,
+        writes_kicad_gui_state=False,
+        supports_dry_run=True,
+        verification_level="experimental",
+        maturity=ToolMaturity.BETA,
+        advisory_level=AdvisoryLevel.REQUIRES_EVIDENCE,
+    )
+)
+register(
+    CapabilityRecord(
+        name="route_apply_straight_differential_pair_candidate",
+        profiles=_PCB_PROFILES,
+        tier=AccessTier.WRITE,
+        category="routing",
+        runtime=RuntimeRequirement.KICAD_IPC,
+        writes_files=False,
+        writes_kicad_gui_state=True,
+        supports_dry_run=False,
+        supports_rollback=True,
+        verification_level="experimental",
+        maturity=ToolMaturity.BETA,
+        advisory_level=AdvisoryLevel.REQUIRES_EVIDENCE,
+    )
+)
+
 _register_router_tools()

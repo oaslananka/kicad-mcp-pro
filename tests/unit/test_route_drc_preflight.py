@@ -112,3 +112,21 @@ def test_preflight_keeps_custom_drc_rules_in_both_native_copies(
     )
     assert result["accepted"] is True
     assert inspected == [True]
+
+
+def test_native_preflight_pair_nets_are_explicitly_scoped() -> None:
+    from kicad_mcp.pcb.route_drc_preflight import RoutePreflightError, _validate_specs
+
+    plus = TrackSpec(10.95, 8.5, 19.05, 8.5, "F_Cu", 0.25, "USB_D_P")
+    minus = TrackSpec(10.95, 9.25, 19.05, 9.25, "F_Cu", 0.25, "USB_D_N")
+    with pytest.raises(RoutePreflightError, match="net"):
+        _validate_specs([plus, minus])
+    _validate_specs(
+        [plus, minus],
+        pair_nets=frozenset(("USB_D_P", "USB_D_N")),
+    )
+    with pytest.raises(RoutePreflightError, match="net"):
+        _validate_specs(
+            [plus, minus],
+            pair_nets=frozenset(("USB_D_P", "MID")),
+        )

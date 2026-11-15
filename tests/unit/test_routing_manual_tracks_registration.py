@@ -79,9 +79,11 @@ def test_registration_preserves_order_signatures_metadata_and_delegation() -> No
         "route_from_pad_to_pad",
         "route_plan_between_pads",
         "route_apply_candidate",
+        "route_plan_straight_differential_pair",
+        "route_apply_straight_differential_pair_candidate",
     ]
 
-    single, pads, preview, apply = tools
+    single, pads, preview, apply, pair_preview, pair_apply = tools
     assert str(inspect.signature(single.fn)) == (
         "(x1_mm: 'float', y1_mm: 'float', x2_mm: 'float', y2_mm: 'float', "
         "layer: 'str' = 'F_Cu', width_mm: 'float' = 0.25, "
@@ -101,6 +103,8 @@ def test_registration_preserves_order_signatures_metadata_and_delegation() -> No
         "route_from_pad_to_pad",
         "route_plan_between_pads",
         "route_apply_candidate",
+        "route_plan_straight_differential_pair",
+        "route_apply_straight_differential_pair_candidate",
     ):
         metadata = get_tool_metadata(tool_name)
         assert metadata is not None
@@ -456,3 +460,43 @@ def test_route_apply_requires_write_and_never_inherits_read_only() -> None:
     names = {tool.name for tool in server.list_tools_sync()}
     assert "route_plan_between_pads" in names
     assert "route_apply_candidate" not in names
+
+
+def test_straight_pair_tools_separate_read_visibility_and_write_execution() -> None:
+    from kicad_mcp.capabilities import AccessTier, get
+    from kicad_mcp.operating_modes import OperatingMode, tool_required_mode
+    from kicad_mcp.server import build_server
+
+    read = "route_plan_straight_differential_pair"
+    write = "route_apply_straight_differential_pair_candidate"
+    assert get(read) is not None and get(read).tier is AccessTier.READ
+    assert get(write) is not None and get(write).tier is AccessTier.WRITE
+    assert tool_required_mode(read) is OperatingMode.READONLY
+    assert tool_required_mode(write) is OperatingMode.WRITE
+    server = build_server("expert")
+    server.operating_mode = OperatingMode.READONLY
+    server.filter_runtime_tools = False
+    tool_names = {item.name for item in server.list_tools_sync()}
+    assert read in tool_names
+    assert write not in tool_names
+
+
+def test_named_straight_pair_write_is_rejected_at_runtime_in_readonly_mode() -> None:
+    import anyio
+
+    from kicad_mcp.operating_modes import OperatingMode
+    from kicad_mcp.server import build_server
+
+    server = build_server("expert")
+    server.operating_mode = OperatingMode.READONLY
+    server.filter_runtime_tools = False
+
+    async def verify() -> None:
+        result = await server.call_tool(
+            "route_apply_straight_differential_pair_candidate",
+            {"candidate_id": "invalid"},
+        )
+        assert result.is_error is True
+        assert "MODE_FORBIDDEN" in str(result.content)
+
+    anyio.run(verify)
