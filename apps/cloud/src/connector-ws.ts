@@ -1139,6 +1139,7 @@ export function attachConnectorWebSocket(
           kind: "connector.authorized_write",
           version: 1,
           sequence,
+          projectId,
           proof,
           persistToDisk
         }));

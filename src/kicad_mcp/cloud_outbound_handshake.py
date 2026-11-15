@@ -61,8 +61,8 @@ class HandshakeReceipt:
 class ManagedNativeWriteConfig:
     """Bounded, owner-approved local native write execution handlers."""
 
-    revisions_preparer: Callable[[], dict[str, str]]
-    write_executor: Callable[[bytes, bool], dict[str, object]]
+    revisions_preparer: Callable[[str], dict[str, str]]
+    write_executor: Callable[[str, bytes, bool], dict[str, object]]
 
 
 @dataclass(frozen=True)
@@ -79,8 +79,8 @@ class OutboundSessionOptions:
     owner_managed_read: bool = False
     managed_native_drc: bool = False
     managed_native_write: bool = False
-    revisions_preparer: Callable[[], dict[str, str]] | None = None
-    write_executor: Callable[[bytes, bool], dict[str, object]] | None = None
+    revisions_preparer: Callable[[str], dict[str, str]] | None = None
+    write_executor: Callable[[str, bytes, bool], dict[str, object]] | None = None
     # Opt-in ONLY after the target Cloud deployment accepts extended device.hello.
     # Legacy devices and servers retain the byte-identical v1 handshake by default.
     advertise_catalog: bool = False

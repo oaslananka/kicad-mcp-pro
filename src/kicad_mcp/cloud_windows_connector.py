@@ -15,6 +15,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
@@ -48,6 +49,7 @@ from kicad_mcp.cloud_windows_local_selection import (
     inspect_owner_selected_project,
 )
 from kicad_mcp.cloud_windows_project_record import inspect_project_reference
+from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
 
 _DENIED = "Windows Connector is unavailable; local authorization was not verified."
 _ACTIVE_RECORD_ID = "0" * 32  # Reserved only for the current user's app-namespaced vault.
@@ -491,6 +493,38 @@ def _dispatcher(
     )
 
 
+def resolve_owner_write_project(
+    registered: WindowsRegisteredProject,
+    selected: WindowsLocalProjectSelection,
+    project_id: str,
+) -> OperatorProject:
+    """Select only the original owner project or an explicit local folder binding.
+
+    The project ID is an *untrusted selector*. The subsequent Ed25519 proof
+    verifier and the owner/current OAuth grant must agree on this exact ID,
+    and the Win32 guarded KiCad transaction independently checks its path,
+    disk revision and live board identity before a native mutation.
+    """
+    try:
+        if not isinstance(project_id, str) or str(UUID(project_id)) != project_id:
+            raise LocalWriteDeniedError("request denied")
+        if project_id == registered.project_id:
+            return OperatorProject(
+                registered.device_id, project_id, selected.directory, selected.filename_stem
+            )
+        from kicad_mcp.cloud_folder_browse_receiver import default_bindings_file
+        from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
+
+        browser = LocalFolderBrowser([selected.directory.parent], default_bindings_file())
+        file_path = browser.get_project_path(project_id)
+        if file_path is None:
+            raise LocalWriteDeniedError("request denied")
+        file = Path(file_path)
+        return OperatorProject(registered.device_id, project_id, file.parent, file.stem)
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        raise LocalWriteDeniedError("request denied") from exc
+
+
 async def _run_owner_session(
     project: WindowsRegisteredProject,
     selected: WindowsLocalProjectSelection,
@@ -529,20 +563,30 @@ async def _run_owner_session(
             default_windows_write_marker_directory,
         )
 
-        operator_project = OperatorProject(
-            device_id=project.device_id,
-            project_id=project.project_id,
-            directory=selected.directory,
-            filename_stem=selected.filename_stem,
-        )
-
         marker_dir = default_windows_write_marker_directory()
 
-        def _execute_write(proof_bytes: bytes, persist: bool) -> dict[str, object]:
+        def _approved_write_target(project_id: str, target: OperatorProject) -> bool:
+            if not _current_authorization(project):
+                return False
+            try:
+                return resolve_owner_write_project(project, selected, project_id) == target
+            except LocalWriteDeniedError:
+                return False
+
+        def _prepare_write(project_id: str) -> dict[str, str]:
+            target = resolve_owner_write_project(project, selected, project_id)
+            return prepare_native_write_revisions(
+                target,
+                authorized=lambda: _approved_write_target(project_id, target),
+                cancelled=lambda: not _approved_write_target(project_id, target),
+            )
+
+        def _execute_write(project_id: str, proof_bytes: bytes, persist: bool) -> dict[str, object]:
+            target = resolve_owner_write_project(project, selected, project_id)
             sid = receipt_holder[0].session_id if receipt_holder else ""
             verified = VerifiedLocalBinding(
                 device_id=project.device_id,
-                project_id=project.project_id,
+                project_id=project_id,
                 operations=frozenset({"pcb_move_footprint"}),
                 session_id=sid,
                 session_expires_unix_ms=time.time_ns() // 1_000_000 + _SESSION_LIFETIME_MS,
@@ -551,27 +595,19 @@ async def _run_owner_session(
                 proof_bytes,
                 issuer_key=issuer_key,
                 verified=verified,
-                operator_project=operator_project,
+                operator_project=target,
                 consume_once=lambda sid, req_id: (
-                    consume_windows_write_marker(
-                        marker_dir,
-                        sid,
-                        req_id,
-                    )
+                    consume_windows_write_marker(marker_dir, sid, req_id)
                     if marker_dir is not None
                     else False
                 ),
-                authorized=lambda: _current_authorization(project),
-                cancelled=lambda: not _current_authorization(project),
+                authorized=lambda: _approved_write_target(project_id, target),
+                cancelled=lambda: not _approved_write_target(project_id, target),
                 persist_to_disk=persist,
             )
 
         settings["native_write"] = ManagedNativeWriteConfig(
-            revisions_preparer=lambda: prepare_native_write_revisions(
-                operator_project,
-                authorized=lambda: _current_authorization(project),
-                cancelled=lambda: not _current_authorization(project),
-            ),
+            revisions_preparer=_prepare_write,
             write_executor=_execute_write,
         )
 

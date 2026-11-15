@@ -13,6 +13,7 @@ import json
 from collections.abc import Callable
 from time import perf_counter
 from typing import Protocol
+from uuid import UUID
 
 from kicad_mcp.cloud_folder_browse_receiver import (
     LocalFolderBrowseService,
@@ -33,6 +34,18 @@ _SESSION_TIMEOUT_SECONDS = 295
 _SESSION_REFRESH_SECONDS = 240
 _FOLDER_REQUEST_KIND = "connector.local_browser_request"
 _WRITE_REQUEST_KIND = "connector.authorized_write"
+
+
+def _canonical_project_id(value: object) -> str:
+    """An untrusted Cloud-supplied project id is a lookup only, never approval."""
+    if not isinstance(value, str) or len(value) != 36:
+        raise CloudHandshakeDeniedError(_DENIED)
+    try:
+        if str(UUID(value)) != value:
+            raise CloudHandshakeDeniedError(_DENIED)
+    except (TypeError, ValueError) as exc:
+        raise CloudHandshakeDeniedError(_DENIED) from exc
+    return value
 
 
 def _report_activity(callback: Callable[[str], None] | None, message: str) -> None:
@@ -142,7 +155,7 @@ async def _serve_write_revisions_request(
     socket: AuthenticatedReadSocket,
     raw: str,
     allow_native_write: bool,
-    revisions_preparer: Callable[[], dict[str, str]] | None,
+    revisions_preparer: Callable[[str], dict[str, str]] | None,
 ) -> None:
     if not allow_native_write or revisions_preparer is None:
         raise CloudHandshakeDeniedError(_DENIED)
@@ -154,7 +167,8 @@ async def _serve_write_revisions_request(
         or not isinstance(req.get("projectId"), str)
     ):
         raise CloudHandshakeDeniedError(_DENIED)
-    revisions = await asyncio.to_thread(revisions_preparer)
+    project_id = _canonical_project_id(req["projectId"])
+    revisions = await asyncio.to_thread(revisions_preparer, project_id)
     await socket.send(
         json.dumps(
             {
@@ -172,7 +186,7 @@ async def _serve_authorized_write_request(
     socket: AuthenticatedReadSocket,
     raw: str,
     allow_native_write: bool,
-    write_executor: Callable[[bytes, bool], dict[str, object]] | None,
+    write_executor: Callable[[str, bytes, bool], dict[str, object]] | None,
     fallback_seq: int,
 ) -> dict[str, object]:
     if not allow_native_write or write_executor is None:
@@ -180,11 +194,14 @@ async def _serve_authorized_write_request(
     envelope = _read_strict_json(raw, _WRITE_REQUEST_KIND)
     if envelope.get("version") != 1 or not isinstance(envelope.get("proof"), dict):
         raise CloudHandshakeDeniedError(_DENIED)
+    project_id = _canonical_project_id(envelope.get("projectId"))
     proof_bytes = json.dumps(envelope["proof"], separators=(",", ":"), ensure_ascii=False).encode(
         "utf-8"
     )
-    persist = bool(envelope.get("persistToDisk", True))
-    result = await asyncio.to_thread(write_executor, proof_bytes, persist)
+    persist = envelope.get("persistToDisk", True)
+    if type(persist) is not bool:
+        raise CloudHandshakeDeniedError(_DENIED)
+    result = await asyncio.to_thread(write_executor, project_id, proof_bytes, persist)
     seq_val = envelope.get("sequence")
     seq = int(seq_val) if isinstance(seq_val, (int, str)) else fallback_seq
     await socket.send(
@@ -250,8 +267,8 @@ async def _serve_one_signed_frame(
     folder_service: LocalFolderBrowseService | None,
     on_activity: Callable[[str], None] | None,
     allow_native_write: bool = False,
-    revisions_preparer: Callable[[], dict[str, str]] | None = None,
-    write_executor: Callable[[bytes, bool], dict[str, object]] | None = None,
+    revisions_preparer: Callable[[str], dict[str, str]] | None = None,
+    write_executor: Callable[[str, bytes, bool], dict[str, object]] | None = None,
 ) -> int:
     """Serve a single authenticated frame; return 1 if frame counts as a read/write, else 0."""
     kind = _top_level_kind(raw)
@@ -295,8 +312,8 @@ async def _serve_signed_read_frames(
     folder_service: LocalFolderBrowseService | None,
     on_activity: Callable[[str], None] | None,
     allow_native_write: bool = False,
-    revisions_preparer: Callable[[], dict[str, str]] | None = None,
-    write_executor: Callable[[bytes, bool], dict[str, object]] | None = None,
+    revisions_preparer: Callable[[str], dict[str, str]] | None = None,
+    write_executor: Callable[[str, bytes, bool], dict[str, object]] | None = None,
 ) -> None:
     """Process authenticated frames without charging folder or write prep requests as reads."""
     reads_served = 0
@@ -339,8 +356,8 @@ async def serve_authenticated_reads(
     folder_service: LocalFolderBrowseService | None = None,
     allow_native_drc: bool = False,
     allow_native_write: bool = False,
-    revisions_preparer: Callable[[], dict[str, str]] | None = None,
-    write_executor: Callable[[bytes, bool], dict[str, object]] | None = None,
+    revisions_preparer: Callable[[str], dict[str, str]] | None = None,
+    write_executor: Callable[[str, bytes, bool], dict[str, object]] | None = None,
     on_activity: Callable[[str], None] | None = None,
 ) -> HandshakeReceipt:
     """Serve bounded serial, independently authorized READs/WRITEs on a signed socket.
