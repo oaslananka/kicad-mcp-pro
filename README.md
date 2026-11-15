@@ -20,7 +20,6 @@
   <a href="https://pypi.org/project/kicad-mcp-pro/"><img src="https://img.shields.io/pypi/v/kicad-mcp-pro?label=pypi" alt="PyPI Version" /></a>
   <a href="https://www.npmjs.com/package/kicad-mcp-pro"><img src="https://img.shields.io/npm/v/kicad-mcp-pro?label=npm" alt="npm Version" /></a>
   <a href="https://pypi.org/project/kicad-mcp-pro/"><img src="https://img.shields.io/pypi/pyversions/kicad-mcp-pro?label=python" alt="Python Version" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL-3.0-only-yellow.svg" alt="AGPL-3.0-only license" /></a>
   <a href="https://doi.org/10.5281/zenodo.21283791"><img src="https://zenodo.org/badge/1255527274.svg" alt="DOI" /></a>
 </p>
 
@@ -36,6 +35,7 @@
 <!-- parity-coverage-badge:end -->
 
 <p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-blue" alt="AGPL-3.0-only license" /></a>
   <a href="https://pepy.tech/projects/kicad-mcp-pro"><img src="https://img.shields.io/pepy/dt/kicad-mcp-pro?label=PyPI%20total" alt="PyPI total downloads" /></a>
   <a href="https://www.npmjs.com/package/kicad-mcp-pro"><img src="https://img.shields.io/npm/dt/kicad-mcp-pro?label=npm%20total" alt="npm total downloads" /></a>
   <a href="https://gitgem.org/github/oaslananka/kicad-mcp-pro"><img src="https://gitgem.org/api/badge/github/oaslananka/kicad-mcp-pro.svg" alt="GitGem" /></a>
