@@ -42,7 +42,6 @@ def prepare_owner_windows_write_marker_directory() -> Path:
     reparse-point ancestor cannot redirect the directory outside this profile.
     Every subsequent marker/lock use reopens and revalidates the full path.
     """
-    from kicad_mcp.cloud_readonly_boundary import LocalReadDeniedError
     from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
 
     path = default_windows_write_marker_directory()
@@ -53,7 +52,7 @@ def prepare_owner_windows_write_marker_directory() -> Path:
             path.mkdir(exist_ok=True)
             with _pinned_project(path):
                 return path
-    except (LocalReadDeniedError, OSError, ValueError, TypeError) as exc:
+    except (OSError, ValueError, TypeError) as exc:
         raise LocalWriteDeniedError("request denied") from exc
 
 
