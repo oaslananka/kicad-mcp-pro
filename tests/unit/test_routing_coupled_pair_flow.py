@@ -145,3 +145,126 @@ def test_new_native_drc_violation_refuses_before_write(monkeypatch: pytest.Monke
     assert response["status"] == "refused"
     assert response["introducedViolations"] == 1
     assert stats == {"preflight": 1, "publish": 0}
+
+
+def test_apply_coupled_pair_rejects_preview_failure_without_any_drc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stats = _arrange(monkeypatch)
+    monkeypatch.setattr(
+        adapter,
+        "_preview_coupled_pair",
+        lambda **_kwargs: json.dumps({"status": "refused", "reason": "Copper obstacle"}),
+    )
+    outcome = json.loads(adapter._apply_coupled_pair("correct-hash", **_args()))
+    assert outcome["status"] == "refused"
+    assert "Copper obstacle" in outcome["reason"]
+    assert stats == {"preflight": 0, "publish": 0}
+
+
+@pytest.mark.parametrize("candidate_id", [None, 42, [], {}])
+def test_apply_coupled_pair_rejects_nonstring_candidate_id(
+    monkeypatch: pytest.MonkeyPatch,
+    candidate_id: object,
+) -> None:
+    stats = _arrange(monkeypatch)
+    outcome = json.loads(adapter._apply_coupled_pair(candidate_id, **_args()))
+    assert outcome["status"] == "refused"
+    assert "candidate ID" in outcome["reason"]
+    assert stats == {"preflight": 0, "publish": 0}
+
+
+def test_apply_coupled_pair_rejects_changed_board_before_native_drc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stats = _arrange(monkeypatch)
+    monkeypatch.setattr(
+        adapter,
+        "get_board",
+        lambda: SimpleNamespace(get_as_string=lambda: "(kicad_pcb new revision)"),
+    )
+    result = json.loads(adapter._apply_coupled_pair("correct-hash", **_args()))
+    assert result["status"] == "refused"
+    assert "changed before paired DRC" in result["reason"]
+    assert stats == {"preflight": 0, "publish": 0}
+
+
+def test_apply_coupled_pair_refuses_without_native_project_rules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stats = _arrange(monkeypatch)
+    monkeypatch.setattr(
+        adapter,
+        "get_config",
+        lambda: SimpleNamespace(project_file=None, kicad_cli="fake_cli"),
+    )
+    result = json.loads(adapter._apply_coupled_pair("correct-hash", **_args()))
+    assert result["status"] == "refused"
+    assert "rules file is unavailable" in result["reason"]
+    assert stats == {"preflight": 0, "publish": 0}
+
+
+def test_apply_coupled_pair_fails_closed_when_native_drc_cannot_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp.pcb.route_drc_preflight import RoutePreflightError
+
+    stats = _arrange(monkeypatch)
+
+    def cannot_run(*_args: object, **_kwargs: object) -> dict[str, int | bool]:
+        stats["preflight"] += 1
+        raise RoutePreflightError("native executable unavailable")
+
+    monkeypatch.setattr(adapter, "run_route_drc_preflight", cannot_run)
+    result = json.loads(adapter._apply_coupled_pair("correct-hash", **_args()))
+    assert result["status"] == "refused"
+    assert "native executable unavailable" in result["reason"]
+    assert stats == {"preflight": 1, "publish": 0}
+
+
+def test_apply_coupled_pair_refuses_board_change_during_drc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stats = _arrange(monkeypatch)
+    reads = iter(["(kicad_pcb stable paired board)", "(kicad_pcb changed during DRC)"])
+    monkeypatch.setattr(
+        adapter,
+        "get_board",
+        lambda: SimpleNamespace(get_as_string=lambda: next(reads)),
+    )
+    result = json.loads(adapter._apply_coupled_pair("correct-hash", **_args()))
+    assert result["status"] == "refused"
+    assert "changed during coupled DRC" in result["reason"]
+    assert stats == {"preflight": 1, "publish": 0}
+
+
+def test_apply_coupled_pair_preserves_native_publisher_refusal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stats = _arrange(monkeypatch)
+
+    def refuse(*_args: object, **_kwargs: object) -> str:
+        stats["publish"] += 1
+        return json.dumps({"status": "refused", "committed": False, "reason": "IPC stage failed"})
+
+    monkeypatch.setattr(adapter, "_publish_route_specs", refuse)
+    result = json.loads(adapter._apply_coupled_pair("correct-hash", **_args()))
+    assert result["status"] == "refused"
+    assert result["committed"] is False
+    assert "pairGeometry" not in result
+    assert "warning" not in result
+    assert stats == {"preflight": 1, "publish": 1}
+
+
+def test_apply_coupled_pair_refuses_invalid_preview_geometry_before_drc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stats = _arrange(monkeypatch)
+    monkeypatch.setattr(
+        adapter,
+        "_preview_coupled_pair",
+        lambda **_kwargs: json.dumps({"status": "candidate", "candidateId": "correct-hash"}),
+    )
+    result = json.loads(adapter._apply_coupled_pair("correct-hash", **_args()))
+    assert result["status"] == "refused"
+    assert stats == {"preflight": 0, "publish": 0}

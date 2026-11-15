@@ -320,3 +320,142 @@ def test_one_via_uses_one_endpoint_per_layer_without_disabling_outline_checks() 
             frozenset({"start-only"}),
             require_outline=True,
         )
+
+
+@pytest.mark.parametrize("layer", ["F_SilkS", "Edge_Cuts", "B_Mask"])
+def test_route_snapshot_rejects_non_copper_layer_even_on_empty_board(layer: str) -> None:
+    with pytest.raises(RoutePlanningError, match="copper layer"):
+        snapshot_route_obstacles(_board(), layer, frozenset())
+
+
+def test_snapshot_rejects_pad_without_stable_identity_or_padstack() -> None:
+    pad = _pad("fixture", 10, 10)
+    pad.id.value = ""
+    with pytest.raises(RoutePlanningError, match="stable native identity"):
+        snapshot_route_obstacles(_board(pads=[pad]), "F_Cu", frozenset())
+    malformed = SimpleNamespace(id=SimpleNamespace(value="fixture"), padstack=None)
+    with pytest.raises(RoutePlanningError, match="Pad stack unavailable"):
+        snapshot_route_obstacles(_board(pads=[malformed]), "F_Cu", frozenset())
+
+
+def test_zero_dimension_pad_fails_closed_and_offset_expands_envelope() -> None:
+    pad = _pad("other", 12, 10)
+    pad.padstack.copper_layers[0].size = Vector2.from_xy_mm(0, 1)
+    with pytest.raises(RoutePlanningError, match="usable dimensions"):
+        snapshot_route_obstacles(_board(pads=[pad]), "F_Cu", frozenset())
+
+    pad.padstack.copper_layers[0].size = Vector2.from_xy_mm(1, 1)
+    centered = snapshot_route_obstacles(_board(pads=[pad]), "F_Cu", frozenset())[0]
+    pad.padstack.copper_layers[0].offset = Vector2.from_xy_mm(0.2, 0.3)
+    shifted = snapshot_route_obstacles(_board(pads=[pad]), "F_Cu", frozenset())[0]
+    assert isinstance(centered, CircleObstacle)
+    assert isinstance(shifted, CircleObstacle)
+    assert shifted.radius_mm > centered.radius_mm
+
+
+@pytest.mark.parametrize("width", [0, -100_000])
+def test_native_track_with_nonpositive_width_is_never_ignored(width: int) -> None:
+    track = Track()
+    track.start = Vector2.from_xy_mm(1, 1)
+    track.end = Vector2.from_xy_mm(2, 1)
+    track.layer = BoardLayer.BL_F_Cu
+    track.width = width
+    with pytest.raises(RoutePlanningError, match="invalid width"):
+        snapshot_route_obstacles(_board(tracks=[track]), "F_Cu", frozenset())
+
+
+def test_native_via_is_an_obstacle_on_copper_but_ignored_on_other_layers() -> None:
+    from kipy.board_types import Via
+
+    via = Via()
+    via.position = Vector2.from_xy_mm(15, 10)
+    via.diameter = 600_000
+    via.padstack.layers = [BoardLayer.BL_F_Cu]
+    front = snapshot_route_obstacles(_board(vias=[via]), "F_Cu", frozenset())
+    back = snapshot_route_obstacles(_board(vias=[via]), "B_Cu", frozenset())
+    assert back == ()
+    assert front == (CircleObstacle(15, 10, 0.3),)
+
+
+def test_zero_via_diameter_must_be_rejected() -> None:
+    from kipy.board_types import Via
+
+    via = Via()
+    via.position = Vector2.from_xy_mm(15, 10)
+    via.diameter = 0
+    via.padstack.layers = [BoardLayer.BL_F_Cu]
+    with pytest.raises(RoutePlanningError, match="diameter"):
+        snapshot_route_obstacles(_board(vias=[via]), "F_Cu", frozenset())
+
+
+def test_missing_via_stack_fails_closed() -> None:
+    via = SimpleNamespace(position=Vector2.from_xy_mm(15, 10), padstack=None)
+    with pytest.raises(RoutePlanningError, match="Via stack unavailable"):
+        snapshot_route_obstacles(_board(vias=[via]), "F_Cu", frozenset())
+
+
+def test_copper_zone_on_other_layer_not_treated_as_unbounded_obstacle() -> None:
+    foreign = SimpleNamespace(layers=[BoardLayer.BL_B_Cu])
+    assert snapshot_route_obstacles(_board(zones=[foreign]), "F_Cu", frozenset()) == ()
+
+
+def test_unknown_zone_layer_membership_refuses_planning() -> None:
+    unknown = SimpleNamespace(layers=None)
+    with pytest.raises(RoutePlanningError, match="zone"):
+        snapshot_route_obstacles(_board(zones=[unknown]), "F_Cu", frozenset())
+
+
+def test_unrelated_fabrication_shapes_are_not_copper_obstacles() -> None:
+    other_layer = SimpleNamespace(layer=BoardLayer.BL_F_SilkS)
+    assert snapshot_route_obstacles(_board(shapes=[other_layer]), "F_Cu", frozenset()) == ()
+
+
+def _outline(x1: float, y1: float, x2: float, y2: float):
+    from kipy.board_types import BoardRectangle
+
+    rect = BoardRectangle()
+    rect.layer = BoardLayer.BL_Edge_Cuts
+    rect.top_left = Vector2.from_xy_mm(x1, y1)
+    rect.bottom_right = Vector2.from_xy_mm(x2, y2)
+    return rect
+
+
+@pytest.mark.parametrize(
+    ("outline", "message"),
+    [
+        (_outline(30, 20, 0, 0), "Invalid board edge rectangle"),
+        (_outline(0, 0, 0, 20), "Invalid board edge rectangle"),
+    ],
+)
+def test_nonpositive_or_inverted_rectangular_outline_fails_closed(
+    outline: object, message: str
+) -> None:
+    with pytest.raises(RoutePlanningError, match=message):
+        snapshot_route_obstacles(_board(shapes=[outline]), "F_Cu", frozenset())
+
+
+def test_multiple_rectangles_have_no_unambiguous_board_interior() -> None:
+    with pytest.raises(RoutePlanningError, match="Multiple board edge"):
+        snapshot_route_obstacles(
+            _board(shapes=[_outline(0, 0, 30, 20), _outline(2, 2, 25, 15)]),
+            "F_Cu",
+            frozenset(),
+        )
+
+
+def test_zero_length_board_edge_segment_is_not_accepted() -> None:
+    edge = _edge_line((0, 0), (0, 0))
+    with pytest.raises(RoutePlanningError, match="segment geometry"):
+        snapshot_route_obstacles(_board(shapes=[edge]), "F_Cu", frozenset())
+
+
+def test_outline_requires_bounded_endpoint_count() -> None:
+    pads = [_pad("a", 10, 10), _pad("b", 20, 10)]
+    with pytest.raises(RoutePlanningError, match="endpoints"):
+        snapshot_route_obstacles(
+            _board(pads=pads, shapes=[_outline(0, 0, 30, 20)]),
+            "F_Cu",
+            frozenset({"a", "b"}),
+            expected_endpoint_count=3,
+            require_outline=True,
+        )

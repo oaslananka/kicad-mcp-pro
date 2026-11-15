@@ -116,3 +116,128 @@ def test_correct_candidate_passes_one_via_to_shared_atomic_publisher(
     assert result["status"] == "applied"
     assert result["saved"] is False
     assert stats == {"preflight": 1, "publish": 1}
+
+
+def test_preview_refusal_is_never_promoted_into_an_apply(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stats = _arrange(monkeypatch)
+    monkeypatch.setattr(
+        adapter,
+        "_preview_one_via",
+        lambda *_a, **_kw: json.dumps({"status": "refused", "reason": "No safe route"}),
+    )
+    outcome = json.loads(adapter._apply_one_via("correct", **_params()))
+    assert outcome["status"] == "refused"
+    assert "No safe route" in outcome["reason"]
+    assert stats == {"preflight": 0, "publish": 0}
+
+
+def test_apply_never_runs_native_drc_if_board_revision_has_changed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stats = _arrange(monkeypatch)
+    monkeypatch.setattr(
+        adapter,
+        "get_board",
+        lambda: SimpleNamespace(get_as_string=lambda: "(kicad_pcb changed externally)"),
+    )
+    result = json.loads(adapter._apply_one_via("correct", **_params()))
+    assert result["status"] == "refused"
+    assert "changed" in result["reason"].lower()
+    assert stats == {"preflight": 0, "publish": 0}
+
+
+def test_apply_refuses_when_native_project_rules_are_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stats = _arrange(monkeypatch)
+    monkeypatch.setattr(
+        adapter,
+        "get_config",
+        lambda: SimpleNamespace(project_file=None, kicad_cli=Path("fake-cli")),
+    )
+    result = json.loads(adapter._apply_one_via("correct", **_params()))
+    assert result["status"] == "refused"
+    assert "project rules unavailable" in result["reason"]
+    assert stats == {"preflight": 0, "publish": 0}
+
+
+def test_apply_refuses_native_drc_engine_errors_without_writing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp.pcb.route_drc_preflight import RoutePreflightError
+
+    stats = _arrange(monkeypatch)
+
+    def broken(*_args: object, **_kwargs: object) -> dict:
+        stats["preflight"] += 1
+        raise RoutePreflightError("Native CLI unavailable")
+
+    monkeypatch.setattr(adapter, "run_route_drc_preflight", broken)
+    result = json.loads(adapter._apply_one_via("correct", **_params()))
+    assert result["status"] == "refused"
+    assert "Native CLI unavailable" in result["reason"]
+    assert stats == {"preflight": 1, "publish": 0}
+
+
+def test_apply_refuses_if_board_changes_during_native_drc_preflight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stats = _arrange(monkeypatch)
+    reads = iter(["(kicad_pcb immutable)", "(kicad_pcb edited during DRC)"])
+    monkeypatch.setattr(
+        adapter,
+        "get_board",
+        lambda: SimpleNamespace(get_as_string=lambda: next(reads)),
+    )
+    result = json.loads(adapter._apply_one_via("correct", **_params()))
+    assert result["status"] == "refused"
+    assert "changed during" in result["reason"]
+    assert stats == {"preflight": 1, "publish": 0}
+
+
+def test_apply_preserves_native_publisher_refusal_without_claiming_geometry_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stats = _arrange(monkeypatch)
+
+    def refused(*_args: object, **_kwargs: object) -> str:
+        stats["publish"] += 1
+        return json.dumps(
+            {"status": "refused", "committed": False, "reason": "Native undo unavailable"}
+        )
+
+    monkeypatch.setattr(adapter, "_publish_route_specs", refused)
+    result = json.loads(adapter._apply_one_via("correct", **_params()))
+    assert result["status"] == "refused"
+    assert result["committed"] is False
+    assert "warning" not in result
+    assert "viaGeometry" not in result
+    assert stats == {"preflight": 1, "publish": 1}
+
+
+@pytest.mark.parametrize("candidate_id", [None, 42, [], {}])
+def test_nonstring_candidate_id_never_reaches_drc_or_native_write(
+    monkeypatch: pytest.MonkeyPatch,
+    candidate_id: object,
+) -> None:
+    stats = _arrange(monkeypatch)
+    result = json.loads(adapter._apply_one_via(candidate_id, **_params()))
+    assert result["status"] == "refused"
+    assert "candidate ID" in result["reason"]
+    assert stats == {"preflight": 0, "publish": 0}
+
+
+def test_apply_refuses_malformed_candidate_without_native_side_effects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stats = _arrange(monkeypatch)
+    monkeypatch.setattr(
+        adapter,
+        "_preview_one_via",
+        lambda *_a, **_kw: json.dumps({"status": "candidate", "candidateId": "correct"}),
+    )
+    result = json.loads(adapter._apply_one_via("correct", **_params()))
+    assert result["status"] == "refused"
+    assert stats == {"preflight": 0, "publish": 0}
