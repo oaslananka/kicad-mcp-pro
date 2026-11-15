@@ -381,3 +381,67 @@ def test_native_drc_requires_a_foreground_opt_in_on_the_actual_remote_command(
     assert result.exit_code == 0, result.output
     assert "Read-only native DRC allowed" in result.output
     assert state["calls"] == ["task_removed", "native-drc"]
+
+
+def test_explicit_owner_write_opt_in_forwards_only_pinned_issuer(
+    remote_fixture: tuple[dict[str, Any], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from kicad_mcp import cloud_windows_write_issuer
+
+    state, _folder = remote_fixture
+    state["project"].record_id = "a" * 32
+    key = Ed25519PrivateKey.generate().public_key()
+    captured: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        cloud_windows_write_issuer,
+        "load_pinned_windows_write_issuer_key",
+        lambda record: key if record == "a" * 32 else None,
+    )
+
+    async def foreground(**options: object) -> None:
+        captured.append(options)
+
+    monkeypatch.setattr(cloud_windows_connector, "run_connector", foreground)
+    result = CliRunner().invoke(server.app, ["cloud", "remote", "--enable-native-write"])
+    assert result.exit_code == 0, result.output
+    assert state["calls"] == ["task_removed"]
+    assert len(captured) == 1
+    assert captured[0]["allow_native_write"] is True
+    assert captured[0]["issuer_key"] is key
+    assert captured[0]["allow_native_drc"] is False
+    assert "Cloud still requires separate client and project edit permission" in result.output
+
+
+def test_remote_missing_pinned_issuer_does_not_touch_owner_task_or_project(
+    remote_fixture: tuple[dict[str, Any], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_windows_write_issuer
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    state, _folder = remote_fixture
+    state["project"].record_id = "a" * 32
+    monkeypatch.setattr(
+        cloud_windows_write_issuer,
+        "load_pinned_windows_write_issuer_key",
+        lambda _record: (_ for _ in ()).throw(LocalWriteDeniedError("request denied")),
+    )
+    result = CliRunner().invoke(server.app, ["cloud", "remote", "--enable-native-write"])
+    assert result.exit_code != 0
+    assert "owner-pinned Cloud write issuer" in result.output
+    assert state["calls"] == []
+
+
+def test_remote_write_opt_in_rejects_noninteractive_even_if_pairing_exists(
+    remote_fixture: tuple[dict[str, Any], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state, _folder = remote_fixture
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    result = CliRunner().invoke(server.app, ["cloud", "remote", "--enable-native-write"])
+    assert result.exit_code != 0
+    assert state["calls"] == []

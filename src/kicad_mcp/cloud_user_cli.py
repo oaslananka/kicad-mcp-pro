@@ -362,7 +362,11 @@ def _select_remote_project(
 
 
 def _verify_remote_foreground_options(
-    browse: bool, project_dir: Path | None, repair_device: bool, allow_native_drc: bool
+    browse: bool,
+    project_dir: Path | None,
+    repair_device: bool,
+    allow_native_drc: bool,
+    allow_native_write: bool = False,
 ) -> bool:
     """Allow headless resume only of an already approved, locally enabled device.
 
@@ -379,9 +383,9 @@ def _verify_remote_foreground_options(
         raise typer.BadParameter("Use --browse or --project-dir, not both.")
     if _owner_terminal():
         return True
-    if browse or project_dir is not None or repair_device or allow_native_drc:
+    if browse or project_dir is not None or repair_device or allow_native_drc or allow_native_write:
         raise typer.BadParameter(
-            "Device pairing, repair, folder changes and native DRC require "
+            "Device pairing, repair, folder changes and native KiCad operations require "
             "an interactive owner terminal."
         )
 
@@ -485,6 +489,16 @@ def remote(
             help="Opt in to read-only native DRC counts for this foreground session only.",
         ),
     ] = False,
+    allow_native_write: Annotated[
+        bool,
+        typer.Option(
+            "--enable-native-write",
+            help=(
+                "Owner opt-in to signed PCB edits in this foreground session only. "
+                "Requires a trusted issuer plus separate Cloud OAuth/project grants."
+            ),
+        ),
+    ] = False,
     repair_device: Annotated[
         bool,
         typer.Option(
@@ -502,7 +516,7 @@ def remote(
 ) -> None:
     """Pair once; keep a verified foreground Cloud connection open."""
     interactive = _verify_remote_foreground_options(
-        browse, project_dir, repair_device, allow_native_drc
+        browse, project_dir, repair_device, allow_native_drc, allow_native_write
     )
     origin = _verified_origin(cloud_origin)
     from kicad_mcp.cloud_windows_connector import (
@@ -519,6 +533,19 @@ def remote(
     if existing.origin != origin:
         raise typer.BadParameter("This device is paired with a different Cloud site.")
 
+    trusted_issuer = None
+    if allow_native_write:
+        from kicad_mcp.cloud_windows_write_issuer import load_pinned_windows_write_issuer_key
+        from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+        try:
+            trusted_issuer = load_pinned_windows_write_issuer_key(existing.record_id)
+        except LocalWriteDeniedError:
+            raise typer.BadParameter(
+                "Native edits require an owner-pinned Cloud write issuer. "
+                "First run cloud trust-write-issuer with a verified public key."
+            ) from None
+
     _prepare_remote_connector(existing, interactive)
     selected = inspect_owner_selected_project(existing)
     typer.secho("\n  KiCad MCP Pro  /  Cloud Connector", fg=typer.colors.MAGENTA, bold=True)
@@ -527,6 +554,11 @@ def remote(
     typer.echo("  Keep this terminal open; press Ctrl+C to disconnect.")
     typer.echo("  Add Project opens Windows Explorer on this computer.")
     typer.secho("  ────────────────────────────────────────────────", fg=typer.colors.BRIGHT_BLACK)
+    if allow_native_write:
+        typer.echo(
+            "Signed native PCB editing opted in for this terminal only. "
+            "Cloud still requires separate client and project edit permission."
+        )
     if allow_native_drc:
         typer.echo(
             "Read-only native DRC allowed for this foreground session only. "
@@ -540,7 +572,17 @@ def remote(
     import asyncio
 
     try:
-        if allow_native_drc:
+        if allow_native_write:
+            asyncio.run(
+                run_connector(
+                    stop=asyncio.Event(),
+                    status_callback=show_status,
+                    allow_native_write=True,
+                    issuer_key=trusted_issuer,
+                    allow_native_drc=allow_native_drc,
+                )
+            )
+        elif allow_native_drc:
             asyncio.run(
                 run_connector(
                     stop=asyncio.Event(),
@@ -596,9 +638,19 @@ def login(
 
 
 def _connect_windows_foreground(
-    origin: str, alias: str, project_dir: Path | None, no_browser: bool, new_device: bool
+    origin: str,
+    alias: str,
+    project_dir: Path | None,
+    no_browser: bool,
+    new_device: bool,
+    allow_native_write: bool = False,
 ) -> None:
     """Pair only when requested, then use one visible owner-controlled session."""
+    if new_device and allow_native_write:
+        raise typer.BadParameter(
+            "Pair a new computer with read-only access first; "
+            "native edits require a separate opt-in."
+        )
     if new_device:
         from kicad_mcp.cloud_windows_user_cli import setup_windows
 
@@ -623,6 +675,7 @@ def _connect_windows_foreground(
         cloud_origin=origin,
         no_browser=no_browser,
         allow_native_drc=False,
+        allow_native_write=allow_native_write,
         repair_device=False,
         alias=None if alias == _DEFAULT_DEVICE_ALIAS else alias,
     )
@@ -641,6 +694,11 @@ def connect(
         "--new-device",
         help="Pair a distinct new device after browser approval, preserving existing local keys.",
     ),
+    enable_native_write: bool = typer.Option(
+        False,
+        "--enable-native-write",
+        help="Use owner-pinned issuer for signed native edits in this terminal only.",
+    ),
     project_dir: Annotated[
         Path | None,
         typer.Option("--project-dir", "-p", help="Select a local KiCad project on Windows."),
@@ -657,7 +715,9 @@ def connect(
         raise typer.BadParameter("Device name must be 1 to 80 printable characters.")
     origin = _verified_origin(cloud_origin)
     if _is_windows():
-        _connect_windows_foreground(origin, alias, project_dir, no_browser, new_device)
+        _connect_windows_foreground(
+            origin, alias, project_dir, no_browser, new_device, enable_native_write
+        )
         return
     _require_local_pairing_storage()
     from kicad_mcp.cloud_local_registry import default_registry_root
@@ -702,6 +762,57 @@ def connect(
         "device, project and signing key before enabling the Connector."
     )
     typer.echo("Pairing alone does not enable the persistent Connector or project access.")
+
+
+@cloud_app.command("trust-write-issuer")
+def trust_write_issuer(
+    public_key_file: Annotated[
+        Path,
+        typer.Option(
+            "--public-key-file",
+            help="Owner-obtained, independently verified Ed25519 issuer PUBLIC key PEM file.",
+        ),
+    ],
+    sha256: Annotated[
+        str,
+        typer.Option(
+            "--sha256",
+            help="Independently verified SHA-256 fingerprint of Ed25519 SPKI (64 hex chars).",
+        ),
+    ],
+    cloud_origin: Annotated[
+        str, typer.Option("--cloud-origin", help="Trusted HTTPS Cloud origin.")
+    ] = DEFAULT_CLOUD_ORIGIN,
+) -> None:
+    """Trust an owner-approved write issuer; never enable a project grant by itself."""
+    if not _is_windows() or not _owner_terminal():
+        raise typer.BadParameter(
+            "Write issuer trust requires an interactive Windows owner terminal."
+        )
+    from kicad_mcp.cloud_windows_connector import selected_project
+    from kicad_mcp.cloud_windows_write_issuer import trust_owner_windows_write_issuer
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    existing = selected_project()
+    if existing is None or existing.origin != _verified_origin(cloud_origin):
+        raise typer.BadParameter("First pair this computer with the trusted Cloud site.")
+    try:
+        if public_key_file.is_symlink() or not public_key_file.is_file():
+            raise OSError("issuer file is not an ordinary file")
+        if not 80 <= public_key_file.stat().st_size <= 512:
+            raise OSError("issuer file size is invalid")
+        pem = public_key_file.read_bytes()
+        trust_owner_windows_write_issuer(existing.record_id, pem, expected_spki_sha256=sha256)
+    except (OSError, LocalWriteDeniedError):
+        raise typer.BadParameter(
+            "Issuer public key or independently verified fingerprint is invalid, "
+            "or a different issuer is already trusted. Nothing was enabled."
+        ) from None
+    typer.echo(
+        "Issuer public key pinned to this Windows owner identity. "
+        "To opt in locally, run cloud connect --enable-native-write. "
+        "Cloud also requires explicit OAuth and per-project edit permission."
+    )
 
 
 def _resolve_device_alias(alias: str | None) -> str:
