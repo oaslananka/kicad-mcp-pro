@@ -17,7 +17,7 @@
       "web": "https://github.com/oaslananka/kicad-mcp-pro"
     }
   },
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "resources": {
     "homepage": "https://github.com/oaslananka/kicad-mcp-pro",
     "documentation": "https://oaslananka.github.io/kicad-mcp-pro/",

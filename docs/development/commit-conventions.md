@@ -31,10 +31,6 @@ chore(release): sync generated metadata
 | `ci` | Workflow or CI-only change. |
 | `security` | Security hardening when `fix` is not specific enough. |
 
-## DCO sign-off
-
-Contributions use the Developer Certificate of Origin process described in `CONTRIBUTING.md`. Use `git commit -s` when practical.
-
 ## Breaking changes
 
 Breaking public behavior must be discussed first and should include an issue or RFC, migration notes, tests, changelog/release-note entry, and compatibility matrix update when applicable.

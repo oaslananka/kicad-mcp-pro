@@ -20,9 +20,7 @@
   <a href="https://pypi.org/project/kicad-mcp-pro/"><img src="https://img.shields.io/pypi/v/kicad-mcp-pro?label=pypi" alt="PyPI Version" /></a>
   <a href="https://www.npmjs.com/package/kicad-mcp-pro"><img src="https://img.shields.io/npm/v/kicad-mcp-pro?label=npm" alt="npm Version" /></a>
   <a href="https://pypi.org/project/kicad-mcp-pro/"><img src="https://img.shields.io/pypi/pyversions/kicad-mcp-pro?label=python" alt="Python Version" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="MIT License" /></a>
   <a href="https://doi.org/10.5281/zenodo.21283791"><img src="https://zenodo.org/badge/1255527274.svg" alt="DOI" /></a>
-  <a href="https://gitgem.org/github/oaslananka/kicad-mcp-pro"><img src="https://gitgem.org/api/badge/github/oaslananka/kicad-mcp-pro.svg" alt="GitGem" /></a>
 </p>
 
 <p>
@@ -32,17 +30,21 @@
   <a href="https://www.bestpractices.dev/projects/12686"><img src="https://www.bestpractices.dev/projects/12686/badge" alt="OpenSSF Best Practices: Passing" /></a>
 </p>
 
-<p>
-  <a href="https://pepy.tech/project/kicad-mcp-pro"><img src="https://static.pepy.tech/badge/kicad-mcp-pro" alt="PyPI total downloads" /></a>
-  <a href="https://www.npmjs.com/package/kicad-mcp-pro"><img src="https://img.shields.io/npm/dt/kicad-mcp-pro?label=npm%20downloads" alt="npm total downloads" /></a>
-</p>
-
 <!-- parity-coverage-badge:start -->
 [![KiCad programmatic parity](https://img.shields.io/badge/KiCad_programmatic_parity-84.4%25-green)](docs/compatibility/capability-parity.generated.md)
 <!-- parity-coverage-badge:end -->
 
-<p>
-  <a href="https://www.buymeacoffee.com/oaslananka"><img src="https://img.shields.io/badge/sponsor-Buy%20me%20a%20coffee-ffdd00?logo=buymeacoffee&logoColor=black" alt="Buy me a coffee" /></a>
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--only-blue" alt="AGPL-3.0-only license" /></a>
+  <a href="https://pepy.tech/projects/kicad-mcp-pro"><img src="https://img.shields.io/pepy/dt/kicad-mcp-pro?label=PyPI%20total" alt="PyPI total downloads" /></a>
+  <a href="https://www.npmjs.com/package/kicad-mcp-pro"><img src="https://img.shields.io/npm/dt/kicad-mcp-pro?label=npm%20total" alt="npm total downloads" /></a>
+  <a href="https://gitgem.org/github/oaslananka/kicad-mcp-pro"><img src="https://gitgem.org/api/badge/github/oaslananka/kicad-mcp-pro.svg" alt="GitGem" /></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/sponsors/oaslananka"><img src="https://img.shields.io/badge/GitHub-Sponsors-ea4aaa?logo=githubsponsors" alt="GitHub Sponsors" /></a>
+  <a href="https://www.buymeacoffee.com/oaslananka"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Support-ffdd00?logo=buymeacoffee&amp;logoColor=black" alt="Buy Me a Coffee" /></a>
+  <a href="https://github.com/oaslananka/kicad-mcp-pro"><img src="https://img.shields.io/github/stars/oaslananka/kicad-mcp-pro?label=Stars&amp;color=8e65d3" alt="Stars" /></a>
 </p>
 
 </div>
@@ -385,7 +387,7 @@ metadata):
 @software{aslan_kicad_mcp_pro,
   author  = {Aslan, Osman},
   title   = {KiCad MCP Pro},
-  license = {MIT},
+  license = {AGPL-3.0-only},
   url     = {https://github.com/oaslananka/kicad-mcp-pro},
   doi     = {10.5281/zenodo.21283791}
 }
@@ -396,4 +398,4 @@ always resolves to the most recent version.
 
 ## License
 
-KiCad MCP Pro is available under the [MIT License](LICENSE).
+KiCad MCP Pro project-authored source is licensed under [GNU AGPL v3.0](LICENSE).

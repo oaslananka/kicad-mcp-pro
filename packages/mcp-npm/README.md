@@ -44,7 +44,7 @@ package. Tools that invoke KiCad also need a compatible KiCad environment.
 
 **MCP registry name:** `io.github.oaslananka/kicad-mcp-pro`
 
-**License:** MIT
+**License:** AGPL-3.0-only
 
 This is a Python-backed launcher, not a standalone JavaScript implementation.
 MCP tool availability and KiCad compatibility follow the Python server's

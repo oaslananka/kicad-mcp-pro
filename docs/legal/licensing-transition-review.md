@@ -1,12 +1,12 @@
 # Licensing transition review
 
-Status: review only — no license change is authorized by this document.
+Status: historical review of **PolyForm Noncommercial / dual licensing**, with an AGPL-specific compatibility note below.
 
-KiCad MCP Pro is currently distributed under the MIT License. This review records the conditions that must be satisfied before the project considers a future source-available/noncommercial or dual-licensing transition.
+At the time of this review, KiCad MCP Pro was distributed under the MIT License. This review records the conditions that must be satisfied before the project considers a future source-available/noncommercial or dual-licensing transition.
 
 ## Current boundary
 
-- `LICENSE` remains MIT.
+- At the time of this review, `LICENSE` was MIT.
 - Existing releases, tags, forks, and copies already distributed under MIT keep the rights granted by those MIT terms.
 - This review does not attempt to revoke, narrow, or rewrite rights already granted for prior releases.
 - No current README, package metadata, release metadata, or source file should claim PolyForm or another restrictive license until a separate approved transition is complete.
@@ -55,4 +55,22 @@ A future implementation PR should not be opened until the rights review is compl
 
 This document does not grant permission to relicense any contributor's work, does not alter the MIT License, does not create a CLA, and is not a substitute for legal review when contributor rights or third-party obligations are unclear.
 
-Until the evidence above is complete, the repository should continue to present its current code and releases as MIT-licensed.
+This historical review is not current license metadata; see [LICENSING.md](../../LICENSING.md).
+The conditions above concern restrictive source-available / commercial dual licensing
+and do not automatically carry over to an OSI-approved AGPL-3.0-only combination.
+
+## November 2026 AGPL-specific compatibility boundary
+
+- The pre-transition root MIT/Expat permission includes redistribution and
+  sublicensing. The GNU Project explicitly lists Expat/MIT as GPL-compatible:
+  https://www.gnu.org/licenses/license-list.html#Expat
+- Original MIT-licensed portions retain their original license grants, copyrights,
+  and notices; the historical complete text is preserved in
+  [LICENSES/MIT.txt](../../LICENSES/MIT.txt). Compatible MIT portions may be
+  combined with current project-authored AGPLv3 code without a new contributor CLA.
+- This does **not** claim that all historical contributors assigned copyright to
+  the maintainer, revoke older MIT permissions, or automatically relicense an
+  independently owned or third-party component lacking compatible permissions.
+- Publishing still requires normal code/dependency provenance checks and exact
+  CI/package/notice validation. Any identified noncompatible material must be
+  separately licensed, excluded, or corrected before distribution.
