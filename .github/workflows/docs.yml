@@ -72,7 +72,8 @@ jobs:
     permissions:
       contents: read
       pages: write
-      id-token: write
+      # GitHub Pages OIDC permission name, not a credential.
+      "id-token": write
     steps:
       - name: Deploy Pages artifact
         id: deployment
