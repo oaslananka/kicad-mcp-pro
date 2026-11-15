@@ -116,5 +116,5 @@ def load_pinned_windows_write_issuer_key(
         if not hmac.compare_digest(_fingerprint(key), expected_spki_sha256):
             raise LocalWriteDeniedError(_DENIED)
         return key
-    except (OSError, ValueError, TypeError, UnicodeDecodeError, UnsupportedAlgorithm) as exc:
+    except (OSError, ValueError, TypeError, UnsupportedAlgorithm) as exc:
         raise LocalWriteDeniedError(_DENIED) from exc
