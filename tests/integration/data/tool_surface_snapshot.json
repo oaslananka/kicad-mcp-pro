@@ -5551,6 +5551,66 @@
   {
     "destructive": false,
     "experimental": false,
+    "headless": false,
+    "idempotent": false,
+    "name": "route_apply_candidate",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "builder",
+      "expert",
+      "full",
+      "high_speed",
+      "pcb",
+      "pcb_layout",
+      "pcb_only"
+    ],
+    "read_only": false,
+    "requires_kicad_running": true
+  },
+  {
+    "destructive": false,
+    "experimental": false,
+    "headless": false,
+    "idempotent": false,
+    "name": "route_apply_coupled_differential_pair_candidate",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "builder",
+      "expert",
+      "full",
+      "high_speed",
+      "pcb",
+      "pcb_layout",
+      "pcb_only"
+    ],
+    "read_only": false,
+    "requires_kicad_running": true
+  },
+  {
+    "destructive": false,
+    "experimental": false,
+    "headless": false,
+    "idempotent": false,
+    "name": "route_apply_one_through_via_candidate",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "builder",
+      "expert",
+      "full",
+      "high_speed",
+      "pcb",
+      "pcb_layout",
+      "pcb_only"
+    ],
+    "read_only": false,
+    "requires_kicad_running": true
+  },
+  {
+    "destructive": false,
+    "experimental": false,
     "headless": true,
     "idempotent": false,
     "name": "route_apply_ses",
@@ -5567,6 +5627,26 @@
     ],
     "read_only": false,
     "requires_kicad_running": false
+  },
+  {
+    "destructive": false,
+    "experimental": false,
+    "headless": false,
+    "idempotent": false,
+    "name": "route_apply_straight_differential_pair_candidate",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "builder",
+      "expert",
+      "full",
+      "high_speed",
+      "pcb",
+      "pcb_layout",
+      "pcb_only"
+    ],
+    "read_only": false,
+    "requires_kicad_running": true
   },
   {
     "destructive": false,
@@ -5727,6 +5807,86 @@
     ],
     "read_only": false,
     "requires_kicad_running": false
+  },
+  {
+    "destructive": false,
+    "experimental": false,
+    "headless": false,
+    "idempotent": true,
+    "name": "route_plan_between_pads",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "builder",
+      "expert",
+      "full",
+      "high_speed",
+      "pcb",
+      "pcb_layout",
+      "pcb_only"
+    ],
+    "read_only": true,
+    "requires_kicad_running": true
+  },
+  {
+    "destructive": false,
+    "experimental": false,
+    "headless": false,
+    "idempotent": false,
+    "name": "route_plan_coupled_differential_pair",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "builder",
+      "expert",
+      "full",
+      "high_speed",
+      "pcb",
+      "pcb_layout",
+      "pcb_only"
+    ],
+    "read_only": false,
+    "requires_kicad_running": true
+  },
+  {
+    "destructive": false,
+    "experimental": false,
+    "headless": false,
+    "idempotent": false,
+    "name": "route_plan_one_through_via",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "builder",
+      "expert",
+      "full",
+      "high_speed",
+      "pcb",
+      "pcb_layout",
+      "pcb_only"
+    ],
+    "read_only": false,
+    "requires_kicad_running": true
+  },
+  {
+    "destructive": false,
+    "experimental": false,
+    "headless": false,
+    "idempotent": false,
+    "name": "route_plan_straight_differential_pair",
+    "open_world": false,
+    "profiles": [
+      "agent_full",
+      "builder",
+      "expert",
+      "full",
+      "high_speed",
+      "pcb",
+      "pcb_layout",
+      "pcb_only"
+    ],
+    "read_only": false,
+    "requires_kicad_running": true
   },
   {
     "destructive": true,
