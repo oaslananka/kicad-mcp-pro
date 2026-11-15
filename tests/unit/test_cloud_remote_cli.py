@@ -401,6 +401,13 @@ def test_explicit_owner_write_opt_in_forwards_only_pinned_issuer(
         "load_pinned_windows_write_issuer_key",
         lambda record: key if record == "a" * 32 else None,
     )
+    from kicad_mcp import cloud_windows_write_marker
+
+    monkeypatch.setattr(
+        cloud_windows_write_marker,
+        "prepare_owner_windows_write_marker_directory",
+        lambda: _folder,
+    )
 
     async def foreground(**options: object) -> None:
         captured.append(options)
@@ -444,4 +451,31 @@ def test_remote_write_opt_in_rejects_noninteractive_even_if_pairing_exists(
     monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
     result = CliRunner().invoke(server.app, ["cloud", "remote", "--enable-native-write"])
     assert result.exit_code != 0
+    assert state["calls"] == []
+
+
+def test_write_opt_in_rejects_untrusted_marker_storage_before_owner_task(
+    remote_fixture: tuple[dict[str, Any], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from kicad_mcp import cloud_windows_write_issuer, cloud_windows_write_marker
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    state, _folder = remote_fixture
+    state["project"].record_id = "a" * 32
+    monkeypatch.setattr(
+        cloud_windows_write_issuer,
+        "load_pinned_windows_write_issuer_key",
+        lambda _record: Ed25519PrivateKey.generate().public_key(),
+    )
+    monkeypatch.setattr(
+        cloud_windows_write_marker,
+        "prepare_owner_windows_write_marker_directory",
+        lambda: (_ for _ in ()).throw(LocalWriteDeniedError("request denied")),
+    )
+    result = CliRunner().invoke(server.app, ["cloud", "remote", "--enable-native-write"])
+    assert result.exit_code != 0
+    assert "replay" in result.output.casefold()
     assert state["calls"] == []

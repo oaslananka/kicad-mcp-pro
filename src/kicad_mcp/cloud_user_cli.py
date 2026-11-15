@@ -545,6 +545,16 @@ def remote(
                 "Native edits require an owner-pinned Cloud write issuer. "
                 "First run cloud trust-write-issuer with a verified public key."
             ) from None
+        from kicad_mcp.cloud_windows_write_marker import (
+            prepare_owner_windows_write_marker_directory,
+        )
+
+        try:
+            prepare_owner_windows_write_marker_directory()
+        except LocalWriteDeniedError:
+            raise typer.BadParameter(
+                "Protected replay storage is unavailable. No native edits were enabled."
+            ) from None
 
     _prepare_remote_connector(existing, interactive)
     selected = inspect_owner_selected_project(existing)
@@ -791,6 +801,7 @@ def trust_write_issuer(
         )
     from kicad_mcp.cloud_windows_connector import selected_project
     from kicad_mcp.cloud_windows_write_issuer import trust_owner_windows_write_issuer
+    from kicad_mcp.cloud_windows_write_marker import prepare_owner_windows_write_marker_directory
     from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
 
     existing = selected_project()
@@ -802,6 +813,7 @@ def trust_write_issuer(
         if not 80 <= public_key_file.stat().st_size <= 512:
             raise OSError("issuer file size is invalid")
         pem = public_key_file.read_bytes()
+        prepare_owner_windows_write_marker_directory()
         trust_owner_windows_write_issuer(existing.record_id, pem, expected_spki_sha256=sha256)
     except (OSError, LocalWriteDeniedError):
         raise typer.BadParameter(

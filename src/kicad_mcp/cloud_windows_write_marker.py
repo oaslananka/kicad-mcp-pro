@@ -34,6 +34,29 @@ def default_windows_write_marker_directory() -> Path | None:
     return Path(appdata) / "KiCadMCPPro" / "Cloud" / "write-markers"
 
 
+def prepare_owner_windows_write_marker_directory() -> Path:
+    """Provision only the paired Windows owner's fixed private replay directory.
+
+    This is a local owner-terminal setup action, NOT a Connector frame/route.
+    Pin the already-existing user Cloud parent before creation so that a
+    reparse-point ancestor cannot redirect the directory outside this profile.
+    Every subsequent marker/lock use reopens and revalidates the full path.
+    """
+    from kicad_mcp.cloud_readonly_boundary import LocalReadDeniedError
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    path = default_windows_write_marker_directory()
+    if os.name != "nt" or path is None:
+        raise LocalWriteDeniedError("request denied")
+    try:
+        with _pinned_project(path.parent):
+            path.mkdir(exist_ok=True)
+            with _pinned_project(path):
+                return path
+    except (LocalReadDeniedError, OSError, ValueError, TypeError) as exc:
+        raise LocalWriteDeniedError("request denied") from exc
+
+
 def consume_windows_write_marker(directory: Path, session_id: str, request_id: str) -> bool:
     """Consume a validated request ID exactly once, never creating a directory.
 

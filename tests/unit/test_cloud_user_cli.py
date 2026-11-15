@@ -1216,6 +1216,13 @@ def test_windows_owner_can_trust_explicit_independently_verified_public_issuer(
             (record, key, expected_spki_sha256)
         ),
     )
+    from kicad_mcp import cloud_windows_write_marker
+
+    monkeypatch.setattr(
+        cloud_windows_write_marker,
+        "prepare_owner_windows_write_marker_directory",
+        lambda: tmp_path,
+    )
     pem = tmp_path / "trusted-issuer.pem"
     pem.write_bytes(b"x" * 120)
     sha256 = "a" * 64
@@ -1288,6 +1295,13 @@ def test_write_issuer_cli_negative_paths_leave_owner_vault_and_project_untouched
             raise LocalWriteDeniedError("request denied")
 
     monkeypatch.setattr(cloud_windows_write_issuer, "trust_owner_windows_write_issuer", trust)
+    from kicad_mcp import cloud_windows_write_marker
+
+    monkeypatch.setattr(
+        cloud_windows_write_marker,
+        "prepare_owner_windows_write_marker_directory",
+        lambda: tmp_path,
+    )
     pem = tmp_path / "issuer.pem"
     if case != "missing_file":
         pem.write_bytes(b"A" * (513 if case == "oversize" else 120))
@@ -1296,3 +1310,43 @@ def test_write_issuer_cli_negative_paths_leave_owner_vault_and_project_untouched
     )
     assert result.exit_code != 0
     assert writes == (["attempt"] if case == "denied" else [])
+
+
+def test_owner_trust_bootstraps_write_marker_without_network(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli as cli
+    from kicad_mcp import (
+        cloud_windows_connector,
+        cloud_windows_write_issuer,
+        cloud_windows_write_marker,
+    )
+
+    monkeypatch.setattr(cli, "_is_windows", lambda: True)
+    monkeypatch.setattr(cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(
+        cloud_windows_connector,
+        "selected_project",
+        lambda: SimpleNamespace(origin=cli.DEFAULT_CLOUD_ORIGIN, record_id="a" * 32),
+    )
+    events: list[str] = []
+    monkeypatch.setattr(
+        cloud_windows_write_marker,
+        "prepare_owner_windows_write_marker_directory",
+        lambda: events.append("marker") or tmp_path,
+    )
+    monkeypatch.setattr(
+        cloud_windows_write_issuer,
+        "trust_owner_windows_write_issuer",
+        lambda *args, **kwargs: events.append("pin"),
+    )
+    keyfile = tmp_path / "test.pem"
+    keyfile.write_bytes(b"x" * 120)
+    result = CliRunner().invoke(
+        app,
+        ["cloud", "trust-write-issuer", "--public-key-file", str(keyfile), "--sha256", "a" * 64],
+    )
+    assert result.exit_code == 0, result.output
+    assert events == ["marker", "pin"]

@@ -159,8 +159,9 @@ kicad-mcp-pro cloud connect --enable-native-write
 ```
 
 The key and fingerprint are pinned to the current Windows user's credential
-store; a different issuer cannot replace them silently. Neither command gives
-an AI app access to any design. The AI client must separately request and
+store; a different issuer cannot replace them silently. The foreground
+owner command also checks and prepares the Windows-local replay-protection
+directory. Neither command gives an AI app access to any design. The AI client must separately request and
 receive OAuth projects:write consent, then the owner must allow editing for
 that **specific client and project** in Cloud Devices. Existing clients
 and projects remain read-only. The write service and real KiCad save/reopen
