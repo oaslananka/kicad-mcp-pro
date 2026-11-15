@@ -14,7 +14,7 @@ function validNativeOperation(operation:unknown):operation is ManagedNativeOpera
 
 /**
  * Additional owner-managed Connector switch. OFF unless an authenticated
- * owner explicitly enables an enrolled, read-only project. Not a replacement
+ * owner explicitly enables an enrolled project for reads, including write-enabled projects. Not a replacement
  * for current OAuth project/client grants or signed device session checks.
  * Native operations require distinct, explicit opt-in and are never inherited
  * from the existing project-summary switch.
@@ -31,7 +31,7 @@ export class PgManagedReadAccess {
       "SELECT p.id,$4 FROM projects p JOIN devices d ON d.id=p.device_id "+
       "AND d.owner_sub=p.owner_sub WHERE p.owner_sub=$1 AND p.device_id=$2 "+
       "AND p.id=$3 AND ($4=false OR (p.enabled=true AND d.enabled=true "+
-      "AND p.max_mode='readonly' AND EXISTS (SELECT 1 FROM device_credentials c "+
+      "AND p.max_mode IN ('readonly','write') AND EXISTS (SELECT 1 FROM device_credentials c "+
       "WHERE c.device_id=d.id AND c.owner_sub=d.owner_sub AND c.revoked_at IS NULL))) "+
       "ON CONFLICT(project_id) DO UPDATE SET enabled=excluded.enabled,"+
       "native_operations=CASE WHEN excluded.enabled THEN "+
@@ -55,7 +55,7 @@ export class PgManagedReadAccess {
       "ELSE array_remove(m.native_operations,$4::text) END,updated_at=now() "+
       "FROM projects p JOIN devices d ON d.id=p.device_id AND d.owner_sub=p.owner_sub "+
       "WHERE m.project_id=p.id AND p.owner_sub=$1 AND p.device_id=$2 AND p.id=$3 "+
-      "AND p.max_mode='readonly' AND (NOT $5 OR "+
+      "AND p.max_mode IN ('readonly','write') AND (NOT $5 OR "+
       "(m.enabled=true AND p.enabled=true AND d.enabled=true AND "+
       "EXISTS (SELECT 1 FROM device_credentials c WHERE c.device_id=d.id "+
       "AND c.owner_sub=d.owner_sub AND c.revoked_at IS NULL))) "+
@@ -73,7 +73,7 @@ export class PgManagedReadAccess {
       "JOIN devices d ON d.id=p.device_id AND d.owner_sub=p.owner_sub "+
       "JOIN device_credentials c ON c.device_id=d.id AND c.owner_sub=d.owner_sub "+
       "WHERE p.owner_sub=$1 AND m.enabled=true AND p.enabled=true "+
-      "AND d.enabled=true AND c.revoked_at IS NULL AND p.max_mode='readonly'",
+      "AND d.enabled=true AND c.revoked_at IS NULL AND p.max_mode IN ('readonly','write')",
       [ownerSub]
     );
     return result.rows.map(row=>row.project_id);
@@ -90,7 +90,7 @@ export class PgManagedReadAccess {
       "JOIN devices d ON d.id=p.device_id AND d.owner_sub=p.owner_sub "+
       "JOIN device_credentials c ON c.device_id=d.id AND c.owner_sub=d.owner_sub "+
       "WHERE p.owner_sub=$1 AND m.enabled=true AND p.enabled=true AND "+
-      "d.enabled=true AND c.revoked_at IS NULL AND p.max_mode='readonly'",
+      "d.enabled=true AND c.revoked_at IS NULL AND p.max_mode IN ('readonly','write')",
       [ownerSub]
     );
     return result.rows.map(row=>({
@@ -111,7 +111,7 @@ export class PgManagedReadAccess {
       "JOIN device_credentials c ON c.device_id=d.id AND c.owner_sub=d.owner_sub "+
       "WHERE p.id=$1 AND p.device_id=$2 AND p.owner_sub=$3 "+
       "AND m.enabled=true AND p.enabled=true AND d.enabled=true AND c.revoked_at IS NULL "+
-      "AND p.max_mode='readonly' "+
+      "AND p.max_mode IN ('readonly','write') "+
       "AND ($4='project_summary' OR $4=ANY(m.native_operations)) LIMIT 1",
       [projectId,deviceId,oauth.ownerSub,operation]
     );

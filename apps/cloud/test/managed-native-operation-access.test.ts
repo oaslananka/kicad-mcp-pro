@@ -75,5 +75,30 @@ test("owner native operations require distinct explicit grant, with no resurrect
     assert.equal(await policy.setEnabled(owner,device,project,true),true);
     assert.equal(await policy.isEnabled(oauth,device,project,"run_drc"),false,
       "Pausing and resuming project access cannot restore old native grants");
+    // A user granting WRITE must not lose explicitly approved READ capabilities.
+    await db.query("UPDATE projects SET max_mode='write' WHERE id=$1",[project]);
+    assert.equal(await policy.isEnabled(oauth,device,project,"project_summary"),true,
+      "Enabling write must not silently disable previously approved project reads");
+    assert.deepEqual(await policy.enabledProjectIds(owner),[project],
+      "Owner Devices must still show managed read enabled on a writable project");
+    assert.equal(await policy.isEnabled(oauth,device,project,"run_drc"),false,
+      "Upgrading to write must not invent native diagnostic permissions");
+    assert.equal(await policy.setNativeOperation(owner,device,project,"run_drc",true),true,
+      "Native diagnostic access remains a distinct explicit owner operation");
+    assert.equal(await policy.isEnabled(oauth,device,project,"run_drc"),true);
+    assert.deepEqual(await policy.nativeOperationsByProject(owner),
+      [{projectId:project,operations:["run_drc"]}]);
+    assert.equal(await policy.setEnabled(owner,device,project,false),true,
+      "Revoking project reads must still work in write mode");
+    assert.equal(await policy.isEnabled(oauth,device,project,"project_summary"),false);
+    assert.equal(await policy.setEnabled(owner,device,project,true),true,
+      "Owner can restore separately approved reads without granting edits");
+    assert.equal(await policy.isEnabled(oauth,device,project,"run_drc"),false,
+      "Re-enabled summary does not resurrect revoked native operations");
+    await db.query("UPDATE projects SET max_mode='manufacturing' WHERE id=$1",[project]);
+    assert.equal(await policy.isEnabled(oauth,device,project,"project_summary"),false,
+      "Manufacturing mode never inherits Cloud read grants");
+    assert.deepEqual(await policy.enabledProjectIds(owner),[]);
+    assert.equal(await policy.setNativeOperation(owner,device,project,"run_drc",true),false);
   });
 });
