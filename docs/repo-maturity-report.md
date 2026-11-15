@@ -37,7 +37,7 @@ Gold / foundation-grade is not a current target for this solo-maintainer reposit
 | --- | --- | --- |
 | README | Passed | `README.md` describes project scope, identity, install options, and docs. |
 | LICENSE | Passed | `LICENSE` is present; GitHub API reports MIT. |
-| CONTRIBUTING | Passed | `CONTRIBUTING.md` documents DCO, setup, quality gates, and PR process. |
+| CONTRIBUTING | Passed | `CONTRIBUTING.md` documents no-signature contributions, setup, quality gates, and PR process. |
 | CODE_OF_CONDUCT | Passed | `CODE_OF_CONDUCT.md` is present. |
 | SECURITY | Passed | `SECURITY.md` documents private reporting and response targets. |
 | SUPPORT | Passed | `SUPPORT.md` documents issue, discussion, security, and conduct channels. |

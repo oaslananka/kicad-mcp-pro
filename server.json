@@ -4,7 +4,7 @@
   "title": "KiCad MCP Pro",
   "description": "Production-grade MCP server for KiCad EDA\u2014PCB design, DRC, simulation, BOM, DFM, and manufacturing.",
   "websiteUrl": "https://oaslananka.github.io/kicad-mcp-pro",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "icons": [
     {
       "src": "https://oaslananka.github.io/kicad-mcp-pro/assets/icon-512.png",
@@ -191,7 +191,7 @@
         "url": "https://github.com/oaslananka"
       },
       "canonicalRepository": "https://github.com/oaslananka/kicad-mcp-pro",
-      "license": "MIT",
+      "license": "AGPL-3.0-only",
       "changelog": "https://github.com/oaslananka/kicad-mcp-pro/blob/main/CHANGELOG.md",
       "releaseNotes": "https://github.com/oaslananka/kicad-mcp-pro/blob/main/CHANGELOG.md",
       "serverInfo": {

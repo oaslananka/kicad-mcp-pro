@@ -41,7 +41,7 @@
     "Model Context Protocol",
     "electronic design automation"
   ],
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "privacy_policies": [
     "https://oaslananka.github.io/kicad-mcp-pro/privacy/"
   ]

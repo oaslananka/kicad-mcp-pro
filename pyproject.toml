@@ -7,7 +7,7 @@ name = "kicad-mcp-pro"
 version = "4.16.0"
 description = "Production-grade MCP server for KiCad EDA—PCB design, DRC, simulation, BOM, DFM, and manufacturing."
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "AGPL-3.0-only" }
 license-files = ["LICENSE"]
 authors = [{ name = "Osman Aslan" }]
 keywords = [

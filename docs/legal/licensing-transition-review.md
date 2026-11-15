@@ -1,12 +1,12 @@
 # Licensing transition review
 
-Status: review only — no license change is authorized by this document.
+Status: historical pre-transition review. A later AGPL-3.0-only proposal is assessed separately; external contribution rights still require verification before merge.
 
-KiCad MCP Pro is currently distributed under the MIT License. This review records the conditions that must be satisfied before the project considers a future source-available/noncommercial or dual-licensing transition.
+At the time of this review, KiCad MCP Pro was distributed under the MIT License. This review records the conditions that must be satisfied before the project considers a future source-available/noncommercial or dual-licensing transition.
 
 ## Current boundary
 
-- `LICENSE` remains MIT.
+- At the time of this review, `LICENSE` was MIT.
 - Existing releases, tags, forks, and copies already distributed under MIT keep the rights granted by those MIT terms.
 - This review does not attempt to revoke, narrow, or rewrite rights already granted for prior releases.
 - No current README, package metadata, release metadata, or source file should claim PolyForm or another restrictive license until a separate approved transition is complete.
@@ -55,4 +55,4 @@ A future implementation PR should not be opened until the rights review is compl
 
 This document does not grant permission to relicense any contributor's work, does not alter the MIT License, does not create a CLA, and is not a substitute for legal review when contributor rights or third-party obligations are unclear.
 
-Until the evidence above is complete, the repository should continue to present its current code and releases as MIT-licensed.
+This historical review is not current license metadata; see [LICENSING.md](../../LICENSING.md). Its external contribution concerns remain relevant to final release acceptance.

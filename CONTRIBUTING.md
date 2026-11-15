@@ -9,23 +9,12 @@ By participating, contributors agree to follow [`CODE_OF_CONDUCT.md`](CODE_OF_CO
 
 Contribution mechanics are documented in [`docs/development/commit-conventions.md`](docs/development/commit-conventions.md), [`docs/development/testing-policy.md`](docs/development/testing-policy.md), and [`docs/development/release-process.md`](docs/development/release-process.md). Security-sensitive findings must be reported privately through [`SECURITY.md`](SECURITY.md), not through public issues or pull requests.
 
-## Developer Certificate of Origin
+## Contribution licensing
 
-Contributions use the Developer Certificate of Origin (DCO) 1.1. By contributing, you certify that you have the right to submit the work under this project's license and that the contribution can be included in the project.
-
-Add a `Signed-off-by` line to each commit when practical:
-
-```text
-Signed-off-by: Your Name <you@example.com>
-```
-
-You can create this automatically with:
-
-```bash
-git commit -s
-```
-
-If a contributor cannot use commit sign-off, they must state in the pull request that they have the right to submit the contribution under the project license. Maintainers may ask for the commits to be amended before merge.
+Contributions are accepted under [GNU AGPL v3.0](LICENSE) through normal GitHub
+pull requests. No contributor license agreement (CLA), DCO signature, `git commit -s`,
+or copyright transfer is required. Contributors must have the right to submit
+their work under the project license and identify third-party material.
 
 ## Coding standards
 
