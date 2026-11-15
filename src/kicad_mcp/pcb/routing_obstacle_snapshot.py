@@ -9,7 +9,7 @@ from __future__ import annotations
 from math import hypot, isfinite
 from typing import Protocol, cast
 
-from kipy.board_types import BoardRectangle
+from kipy.board_types import BoardRectangle, BoardSegment
 from kipy.proto.board.board_types_pb2 import BoardLayer, PadStackShape
 
 from ..routing.path_planner import CircleObstacle, Obstacle, RoutePlanningError, SegmentObstacle
@@ -73,6 +73,31 @@ def _via_radius_mm(via: object) -> float:
     return diameter / 2
 
 
+def _rectangle_from_edge_segments(
+    segments: list[SegmentObstacle],
+) -> tuple[float, float, float, float]:
+    """Accept exactly four straight, closed axis-aligned board edge segments."""
+    if len(segments) != 4:
+        raise RoutePlanningError("Board edge outline must contain four closed segments")
+    endpoints = [
+        ((segment.x1_mm, segment.y1_mm), (segment.x2_mm, segment.y2_mm)) for segment in segments
+    ]
+    x_values = sorted({x for pair in endpoints for x, _ in pair})
+    y_values = sorted({y for pair in endpoints for _, y in pair})
+    if len(x_values) != 2 or len(y_values) != 2:
+        raise RoutePlanningError("Board edge segments are not a rectangle")
+    x1, x2 = x_values
+    y1, y2 = y_values
+    if x1 >= x2 or y1 >= y2:
+        raise RoutePlanningError("Board edge outline has no positive area")
+    corners = ((x1, y1), (x2, y1), (x2, y2), (x1, y2))
+    expected = {frozenset((a, b)) for a, b in zip(corners, corners[1:] + corners[:1], strict=False)}
+    observed = {frozenset(pair) for pair in endpoints}
+    if observed != expected or len(observed) != 4:
+        raise RoutePlanningError("Board edge outline is open, duplicated or skewed")
+    return x1, y1, x2, y2
+
+
 def snapshot_route_obstacles(
     board: object,
     layer: str,
@@ -100,6 +125,7 @@ def snapshot_route_obstacles(
             raise RoutePlanningError("Copper zone geometry cannot be safely planned")
     obstacles: list[Obstacle] = []
     edge_rectangles: list[tuple[float, float, float, float]] = []
+    edge_segments: list[SegmentObstacle] = []
     for shape in shapes:
         shape_layer = getattr(shape, "layer", None)
         if shape_layer == BoardLayer.BL_Edge_Cuts and isinstance(shape, BoardRectangle):
@@ -120,9 +146,21 @@ def snapshot_route_obstacles(
                 )
             )
             edge_rectangles.append((a[0], a[1], b[0], b[1]))
+        elif shape_layer == BoardLayer.BL_Edge_Cuts and isinstance(shape, BoardSegment):
+            a = point_xy_mm(shape.start)
+            b = point_xy_mm(shape.end)
+            width = nm_to_mm(shape.attributes.stroke.width)
+            if a == b or not isfinite(width) or width < 0:
+                raise RoutePlanningError("Invalid board edge segment geometry")
+            edge_segments.append(SegmentObstacle(*a, *b, width / 2))
         elif shape_layer in (layer_id, BoardLayer.BL_Edge_Cuts) or shape_layer is None:
             raise RoutePlanningError("Native board edge/copper shape unsupported for planning")
 
+    if edge_segments:
+        if edge_rectangles:
+            raise RoutePlanningError("Mixed board edge outline types require geometry review")
+        edge_rectangles.append(_rectangle_from_edge_segments(edge_segments))
+        obstacles.extend(edge_segments)
     if len(edge_rectangles) > 1:
         raise RoutePlanningError("Multiple board edge rectangles require geometry review")
     if require_outline and not edge_rectangles:

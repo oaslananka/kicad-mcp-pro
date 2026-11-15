@@ -158,3 +158,98 @@ def test_rectangle_outline_satisfies_required_boundary() -> None:
         require_outline=True,
     )
     assert len(result) == 4
+
+
+def _edge_line(a: tuple[float, float], b: tuple[float, float]):
+    from kipy.board_types import BoardSegment
+
+    line = BoardSegment()
+    line.layer = BoardLayer.BL_Edge_Cuts
+    line.start = Vector2.from_xy_mm(*a)
+    line.end = Vector2.from_xy_mm(*b)
+    return line
+
+
+def test_four_separate_edge_segments_are_a_valid_closed_rectangle() -> None:
+    edges = [
+        _edge_line((30, 0), (0, 0)),
+        _edge_line((30, 20), (30, 0)),
+        _edge_line((0, 20), (30, 20)),
+        _edge_line((0, 0), (0, 20)),
+    ]
+    start = _pad("start", 10, 10)
+    end = _pad("end", 20, 10)
+    barriers = snapshot_route_obstacles(
+        _board(pads=[start, end], shapes=edges),
+        "F_Cu",
+        frozenset({"start", "end"}),
+        require_outline=True,
+    )
+    assert len(barriers) == 4
+    assert all(isinstance(item, SegmentObstacle) for item in barriers)
+
+
+def test_three_edge_segments_are_not_a_closed_board_outline() -> None:
+    edges = [
+        _edge_line((0, 0), (30, 0)),
+        _edge_line((30, 0), (30, 20)),
+        _edge_line((30, 20), (0, 20)),
+    ]
+    with pytest.raises(RoutePlanningError, match="outline|edge"):
+        snapshot_route_obstacles(
+            _board(pads=[_pad("start", 10, 10), _pad("end", 20, 10)], shapes=edges),
+            "F_Cu",
+            frozenset({"start", "end"}),
+            require_outline=True,
+        )
+
+
+def test_duplicate_edge_and_diagonal_outlines_are_refused() -> None:
+    edges = [
+        _edge_line((0, 0), (30, 0)),
+        _edge_line((0, 0), (30, 0)),
+        _edge_line((30, 0), (30, 20)),
+        _edge_line((30, 20), (0, 0)),
+    ]
+    with pytest.raises(RoutePlanningError, match="outline|edge"):
+        snapshot_route_obstacles(
+            _board(pads=[_pad("start", 10, 10), _pad("end", 20, 10)], shapes=edges),
+            "F_Cu",
+            frozenset({"start", "end"}),
+            require_outline=True,
+        )
+
+
+def test_closed_line_outline_rejects_endpoints_outside() -> None:
+    outline = [
+        _edge_line((0, 0), (30, 0)),
+        _edge_line((30, 0), (30, 20)),
+        _edge_line((30, 20), (0, 20)),
+        _edge_line((0, 20), (0, 0)),
+    ]
+    with pytest.raises(RoutePlanningError, match="endpoints"):
+        snapshot_route_obstacles(
+            _board(pads=[_pad("start", 10, 10), _pad("end", 40, 10)], shapes=outline),
+            "F_Cu",
+            frozenset({"start", "end"}),
+            require_outline=True,
+        )
+
+
+def test_mixed_rectangle_and_board_line_outlines_are_refused() -> None:
+    from kipy.board_types import BoardRectangle
+
+    box = BoardRectangle()
+    box.layer = BoardLayer.BL_Edge_Cuts
+    box.top_left = Vector2.from_xy_mm(0, 0)
+    box.bottom_right = Vector2.from_xy_mm(30, 20)
+    with pytest.raises(RoutePlanningError, match="Mixed|outline"):
+        snapshot_route_obstacles(
+            _board(
+                pads=[_pad("start", 10, 10), _pad("end", 20, 10)],
+                shapes=[box, _edge_line((0, 0), (30, 0))],
+            ),
+            "F_Cu",
+            frozenset({"start", "end"}),
+            require_outline=True,
+        )
