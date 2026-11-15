@@ -8,7 +8,6 @@ import math
 import secrets
 import shutil
 import subprocess
-from dataclasses import asdict
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import cast
@@ -20,6 +19,7 @@ from ..validation.drc_report import (
     evaluate_route_drc,
 )
 from ..validation.drc_runner import classify_drc_report
+from .offline_route_tracks import render_candidate_board
 
 
 class RoutePreflightError(ValueError):
@@ -114,7 +114,9 @@ def _run_drc(kicad_cli: Path, pcb_file: Path, report_file: Path) -> Report:
         str(pcb_file),
     ]
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=45, check=False)
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=45, check=False, shell=False
+        )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise RoutePreflightError("Native KiCad CLI DRC could not run") from exc
     if result.returncode != 0 or not report_file.is_file():
@@ -187,13 +189,6 @@ def run_route_drc_preflight(
     if not isinstance(board_snapshot, str) or not board_snapshot.startswith("(kicad_pcb"):
         raise RoutePreflightError("Native board snapshot is unavailable")
     _validate_specs(segments, pair_nets=pair_nets, through_via=through_via)
-    python_name = "python.exe" if kicad_cli.suffix.lower() == ".exe" else "python3"
-    native_python = kicad_cli.parent / python_name
-    if not native_python.is_file():
-        raise RoutePreflightError("KiCad-bundled Python with native PCB support is unavailable")
-    helper = Path(__file__).with_name("offline_route_tracks.py")
-    if not helper.is_file():
-        raise RoutePreflightError("Native PCB candidate adapter is unavailable")
     custom_rules = project_file.with_suffix(".kicad_dru")
     if custom_rules.exists() and not custom_rules.is_file():
         raise RoutePreflightError("Custom native DRC rules path is invalid")
@@ -212,41 +207,13 @@ def run_route_drc_preflight(
             for evidence_file in evidence_files:
                 shutil.copy2(evidence_file, destination / evidence_file.name)
             (destination / board_name).write_text(board_snapshot, encoding="utf-8")
-        payload = root / "candidate_segments.json"
-        candidate_specs = [
-            {
-                "x1_mm": spec.x1_mm,
-                "y1_mm": spec.y1_mm,
-                "x2_mm": spec.x2_mm,
-                "y2_mm": spec.y2_mm,
-                "width_mm": spec.width_mm,
-                "net_name": spec.net_name,
-                "layer": spec.layer,
-            }
-            for spec in segments
-        ]
-        candidate_payload: list[dict[str, object]] | dict[str, object] = candidate_specs
-        if through_via is not None:
-            candidate_payload = {"segments": candidate_specs, "through_via": asdict(through_via)}
-        payload.write_text(json.dumps(candidate_payload), encoding="utf-8")
         try:
-            result = subprocess.run(
-                [
-                    str(native_python),
-                    str(helper),
-                    str(before / board_name),
-                    str(after / board_name),
-                    str(payload),
-                ],
-                capture_output=True,
-                text=True,
-                timeout=35,
-                check=False,
+            candidate_text = render_candidate_board(
+                board_snapshot, segments, through_via=through_via
             )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise RoutePreflightError("KiCad native PCB candidate creation failed") from exc
-        if result.returncode != 0:
-            raise RoutePreflightError("KiCad native PCB candidate readback failed")
+            (after / board_name).write_text(candidate_text, encoding="utf-8")
+        except (ValueError, OSError) as exc:
+            raise RoutePreflightError("Disposable native PCB candidate creation failed") from exc
         baseline = _run_drc(kicad_cli, before / board_name, before / "report.json")
         candidate = _run_drc(kicad_cli, after / board_name, after / "report.json")
         if custom_rules.is_file():

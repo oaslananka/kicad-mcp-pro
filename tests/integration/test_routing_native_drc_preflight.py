@@ -22,7 +22,40 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_native_preflight_accepts_connected_route_but_rejects_new_shorts() -> None:
+_NATIVE_NORMALIZE = """
+import pcbnew
+import sys
+board = pcbnew.LoadBoard(sys.argv[1])
+assert board is not None
+pcbnew.SaveBoard(sys.argv[1], board)
+assert pcbnew.LoadBoard(sys.argv[1]) is not None
+"""
+
+
+def _run_native_python(native_python: Path, snippet: str, *arguments: Path) -> None:
+    """Only execute fixed test-controlled KiCad snippets on disposable files."""
+    result = subprocess.run(
+        [str(native_python), "-c", snippet, *(str(path) for path in arguments)],
+        capture_output=True,
+        text=True,
+        timeout=40,
+        check=False,
+        shell=False,
+    )
+    assert result.returncode == 0, result.stderr[-1200:]
+
+
+def _canonical_ipc_fixture(tmp_path: Path, source: Path, native_python: Path) -> str:
+    """Normalize a copied legacy fixture as the live KiCad IPC snapshot does."""
+    disposable = tmp_path / "demo.kicad_pcb"
+    shutil.copy2(source, disposable)
+    _run_native_python(native_python, _NATIVE_NORMALIZE, disposable)
+    snapshot = disposable.read_text(encoding="utf-8")
+    assert '(uuid "' in snapshot
+    return snapshot
+
+
+def test_native_preflight_accepts_connected_route_but_rejects_new_shorts(tmp_path: Path) -> None:
     root = (
         Path(__file__).resolve().parents[1]
         / "fixtures"
@@ -35,17 +68,22 @@ def test_native_preflight_accepts_connected_route_but_rejects_new_shorts() -> No
     digest = hashlib.sha256(source).hexdigest()
     config = get_config()
     cli = config.kicad_cli
-    if not cli.is_file() or not (cli.parent / "python.exe").is_file():
+    native_python = cli.parent / "python.exe"
+    if not cli.is_file() or not native_python.is_file():
         pytest.skip("KiCad-bundled native Python/CLI not installed")
 
+    shutil.copy2(project, tmp_path / "demo.kicad_pro")
+    snapshot = _canonical_ipc_fixture(tmp_path, pcb, native_python)
+    project = tmp_path / "demo.kicad_pro"
+
     good = run_route_drc_preflight(
-        source.decode("utf-8"),
+        snapshot,
         [TrackSpec(10.95, 10, 19.05, 10, "F_Cu", 0.25, "MID")],
         project_file=project,
         kicad_cli=cli,
     )
     bad = run_route_drc_preflight(
-        source.decode("utf-8"),
+        snapshot,
         [TrackSpec(9.05, 10, 19.05, 10, "F_Cu", 0.25, "MID")],
         project_file=project,
         kicad_cli=cli,
@@ -109,14 +147,7 @@ for footprint in board.GetFootprints():
 assert converted == identities
 pcbnew.SaveBoard(sys.argv[1], board)
 """
-    result = subprocess.run(
-        [str(native_python), "-c", native_conversion, str(pcb)],
-        capture_output=True,
-        text=True,
-        timeout=40,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr[-1000:]
+    _run_native_python(native_python, native_conversion, pcb)
 
     evidence = run_route_drc_preflight(
         pcb.read_text(encoding="utf-8"),
@@ -144,7 +175,6 @@ def test_native_custom_track_width_rules_cannot_be_silently_skipped(
     )
     pro = tmp_path / "demo.kicad_pro"
     shutil.copy2(source / "demo.kicad_pro", pro)
-    pcb_text = (source / "demo.kicad_pcb").read_text(encoding="utf-8")
     rules_file = tmp_path / "demo.kicad_dru"
     valid_rule = (
         "(version 1)\n"
@@ -156,8 +186,10 @@ def test_native_custom_track_width_rules_cannot_be_silently_skipped(
     )
     rules_file.write_text(valid_rule, encoding="utf-8")
     cli = get_config().kicad_cli
-    if not cli.is_file() or not (cli.parent / "python.exe").is_file():
+    native_python = cli.parent / "python.exe"
+    if not cli.is_file() or not native_python.is_file():
         pytest.skip("KiCad native Python/CLI not available")
+    pcb_text = _canonical_ipc_fixture(tmp_path, source / "demo.kicad_pcb", native_python)
 
     too_thin = run_route_drc_preflight(
         pcb_text,

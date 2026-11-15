@@ -1,94 +1,121 @@
-"""Standalone KiCad-bundled Python adapter for a disposable DRC candidate.
+"""Pure S-expression adapter for DRC-only PCB candidate snapshots.
 
-Only call this with a temporary PCB copy. This script runs inside the KiCad
-installation's own Python, so the MCP server does not import pcbnew/SWIG.
+The caller writes the result exclusively inside a disposable temporary directory.
+No KiCad GUI, SWIG runtime, or on-disk user project is mutated here. The real
+KiCad CLI parses the candidate and provides independent DRC acceptance.
 """
 
 from __future__ import annotations
 
-import json
-import sys
-from pathlib import Path
+import math
+import re
+import uuid
 
-import pcbnew  # type: ignore[import-not-found]  # Only in KiCad-bundled Python.
+from sexpdata import loads  # type: ignore[import-untyped]
+
+from ..routing.manual_tracks import TrackSpec, ViaSpec
+from ..utils.sexpr import _sexpr_string
+
+_COPPER_LAYER = re.compile(r"(?:F|B|In(?:[1-9]|[12][0-9]|30))_Cu\Z")
 
 
-def main() -> None:
-    if len(sys.argv) != 4:
-        raise RuntimeError("Expected baseline PCB, disposable candidate PCB and JSON file")
-    baseline_file, candidate_file, spec_file = (Path(value) for value in sys.argv[1:4])
-    if not all(path.is_file() for path in (baseline_file, candidate_file, spec_file)):
-        raise RuntimeError("Missing disposable candidate inputs")
-    payload = json.loads(spec_file.read_text(encoding="utf-8"))
-    through_via = None
-    if isinstance(payload, dict):
-        if set(payload) != {"segments", "through_via"}:
-            raise RuntimeError("Unsupported native via payload")
-        through_via = payload["through_via"]
-        specs = payload["segments"]
-    else:
-        specs = payload
-    if not isinstance(specs, list) or not 1 <= len(specs) <= 128:
-        raise RuntimeError("Unsupported number of candidate segments")
+def _named_board_nets(board: list[object]) -> set[str]:
+    """Only an existing named net may be used by a generated candidate."""
+    found: set[str] = set()
+    pending: list[object] = list(board)
+    while pending:
+        item = pending.pop()
+        if not isinstance(item, list) or not item:
+            continue
+        if str(item[0]) == "net":
+            # KiCad 10 uses (net "NAME"); older files also carry numeric IDs.
+            value = item[-1]
+            if isinstance(value, str) and value:
+                found.add(value)
+        pending.extend(item[1:])
+    return found
+
+
+def _number(value: float) -> str:
+    if not isinstance(value, (float, int)) or not math.isfinite(value):
+        raise ValueError("Candidate geometry must be finite")
+    return f"{value:.6f}".rstrip("0").rstrip(".") if value else "0"
+
+
+def _track_expression(spec: TrackSpec, nets: set[str]) -> str:
+    if spec.net_name not in nets:
+        raise ValueError("Candidate net is not present on the original board")
+    if not _COPPER_LAYER.fullmatch(spec.layer):
+        raise ValueError("Candidate uses an unsupported copper layer")
+    if not 0 < spec.width_mm <= 5:
+        raise ValueError("Candidate geometry contains invalid copper width")
+    layer = _sexpr_string(spec.layer.replace("_", "."))
+    net = _sexpr_string(spec.net_name)
+    return (
+        "\t(segment"
+        f" (start {_number(spec.x1_mm)} {_number(spec.y1_mm)})"
+        f" (end {_number(spec.x2_mm)} {_number(spec.y2_mm)})"
+        f" (width {_number(spec.width_mm)})"
+        f" (layer {layer}) (net {net})"
+        f" (uuid {_sexpr_string(str(uuid.uuid4()))}))"
+    )
+
+
+def _via_expression(via: ViaSpec, nets: set[str]) -> str:
+    if via.net_name not in nets:
+        raise ValueError("Through-via net is not on the original board")
+    if not all(
+        math.isfinite(value) for value in (via.x_mm, via.y_mm, via.diameter_mm, via.drill_mm)
+    ):
+        raise ValueError("Through-via geometry must be finite")
+    if not (0.4 <= via.diameter_mm <= 5 and 0.2 <= via.drill_mm <= via.diameter_mm - 0.2):
+        raise ValueError("Through-via geometry is invalid")
+    return (
+        "\t(via"
+        f" (at {_number(via.x_mm)} {_number(via.y_mm)})"
+        f" (size {_number(via.diameter_mm)}) (drill {_number(via.drill_mm)})"
+        f' (layers "F.Cu" "B.Cu") (net {_sexpr_string(via.net_name)})'
+        f" (uuid {_sexpr_string(str(uuid.uuid4()))}))"
+    )
+
+
+def render_candidate_board(
+    board_snapshot: str,
+    segments: list[TrackSpec],
+    through_via: ViaSpec | None = None,
+) -> str:
+    """Append a bounded, verified route to a *copy* of an IPC board snapshot."""
+    if not isinstance(board_snapshot, str) or not board_snapshot.startswith("(kicad_pcb"):
+        raise ValueError("Invalid native board snapshot")
+    if not board_snapshot.rstrip().endswith(")"):
+        raise ValueError("Malformed native board snapshot")
+    try:
+        board = loads(board_snapshot)
+    except Exception as exc:
+        raise ValueError("Malformed native board snapshot") from exc
+    if not isinstance(board, list) or not board or str(board[0]) != "kicad_pcb":
+        raise ValueError("Invalid native board root")
+    if not 1 <= len(segments) <= 128:
+        raise ValueError("Invalid candidate segment count")
+
+    nets = _named_board_nets(board)
+    additions = [_track_expression(spec, nets) for spec in segments]
     if through_via is not None:
-        if not isinstance(through_via, dict) or set(through_via) != {
-            "x_mm",
-            "y_mm",
-            "diameter_mm",
-            "drill_mm",
-            "net_name",
-        }:
-            raise RuntimeError("Invalid native through-via specification")
-
-    board = pcbnew.LoadBoard(str(baseline_file))
-    before = len(list(board.GetTracks()))
-    # The same native Board instance provides stable UUIDs for the baseline and
-    # candidate. Loading the two files independently can randomly assign IDs
-    # to legacy fixtures with no UUIDs and produce false DRC regressions.
-    pcbnew.SaveBoard(str(baseline_file), board)
-    for spec in specs:
-        net = board.FindNet(spec["net_name"])
-        if net is None:
-            raise RuntimeError("Candidate net not present on the board")
-        layer = getattr(pcbnew, spec["layer"], None)
-        if layer is None or not pcbnew.IsCopperLayer(layer):
-            raise RuntimeError("Candidate does not use a valid copper layer")
-        track = pcbnew.PCB_TRACK(board)
-        track.SetStart(pcbnew.VECTOR2I(pcbnew.FromMM(spec["x1_mm"]), pcbnew.FromMM(spec["y1_mm"])))
-        track.SetEnd(pcbnew.VECTOR2I(pcbnew.FromMM(spec["x2_mm"]), pcbnew.FromMM(spec["y2_mm"])))
-        track.SetLayer(layer)
-        track.SetWidth(pcbnew.FromMM(spec["width_mm"]))
-        track.SetNet(net)
-        board.Add(track)
-    if through_via is not None:
-        net = board.FindNet(through_via["net_name"])
-        if net is None:
-            raise RuntimeError("Native through-via net is absent")
-        via = pcbnew.PCB_VIA(board)
-        via.SetPosition(
-            pcbnew.VECTOR2I(
-                pcbnew.FromMM(through_via["x_mm"]),
-                pcbnew.FromMM(through_via["y_mm"]),
+        if (
+            len(segments) != 2
+            or (segments[0].layer, segments[1].layer) not in {("F_Cu", "B_Cu"), ("B_Cu", "F_Cu")}
+            or any(segment.net_name != through_via.net_name for segment in segments)
+            or math.hypot(
+                segments[0].x2_mm - through_via.x_mm,
+                segments[0].y2_mm - through_via.y_mm,
             )
-        )
-        via.SetWidth(pcbnew.FromMM(through_via["diameter_mm"]))
-        via.SetDrill(pcbnew.FromMM(through_via["drill_mm"]))
-        via.SetViaType(pcbnew.VIATYPE_THROUGH)
-        via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-        via.SetNet(net)
-        board.Add(via)
-    pcbnew.SaveBoard(str(candidate_file), board)
-
-    reopened = pcbnew.LoadBoard(str(candidate_file))
-    expected = before + len(specs) + int(through_via is not None)
-    if len(list(reopened.GetTracks())) != expected:
-        raise RuntimeError("Disposable board readback failed")
-    if through_via is not None:
-        vias = [track for track in reopened.GetTracks() if isinstance(track, pcbnew.PCB_VIA)]
-        if len(vias) != 1 or vias[0].GetNetname() != through_via["net_name"]:
-            raise RuntimeError("Native through-via readback failed")
-    print("NATIVE_PREFLIGHT_SAVED_REOPENED", len(specs))
-
-
-if __name__ == "__main__":
-    main()
+            > 1e-5
+            or math.hypot(
+                segments[1].x1_mm - through_via.x_mm,
+                segments[1].y1_mm - through_via.y_mm,
+            )
+            > 1e-5
+        ):
+            raise ValueError("Through-via geometry must join both outer-layer segments")
+        additions.append(_via_expression(through_via, nets))
+    return board_snapshot.rstrip()[:-1] + "\n" + "\n".join(additions) + "\n)\n"
