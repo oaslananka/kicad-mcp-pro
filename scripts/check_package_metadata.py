@@ -41,7 +41,9 @@ def _validate_metadata(path: Path, metadata: str, expected_license: str) -> None
             "Use legacy License metadata until the release workflow is migrated."
         )
     if f"License: {expected_license}" not in metadata:
-        raise ValueError(f"{path.name} is missing the expected License: {expected_license} metadata field.")
+        raise ValueError(
+            f"{path.name} is missing the expected License: {expected_license} metadata field."
+        )
     if "License-File: LICENSE" not in metadata:
         raise ValueError(
             f"{path.name} is missing the expected License-File: LICENSE metadata field."
