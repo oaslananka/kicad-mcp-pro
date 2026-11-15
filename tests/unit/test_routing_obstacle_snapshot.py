@@ -253,3 +253,45 @@ def test_mixed_rectangle_and_board_line_outlines_are_refused() -> None:
             frozenset({"start", "end"}),
             require_outline=True,
         )
+
+
+def test_paired_outline_requires_all_four_pad_identities() -> None:
+    from kipy.board_types import BoardRectangle
+
+    rect = BoardRectangle()
+    rect.layer = BoardLayer.BL_Edge_Cuts
+    rect.top_left = Vector2.from_xy_mm(0, 0)
+    rect.bottom_right = Vector2.from_xy_mm(30, 20)
+    pair = [
+        _pad("p1", 10, 10),
+        _pad("p2", 20, 10),
+        _pad("n1", 10, 10.75),
+        _pad("n2", 20, 10.75),
+    ]
+    third_party = _pad("unrelated", 15, 10.5)
+    obstacles = snapshot_route_obstacles(
+        _board(pads=[*pair, third_party], shapes=[rect]),
+        "F_Cu",
+        frozenset({"p1", "p2", "n1", "n2"}),
+        expected_endpoint_count=4,
+        require_outline=True,
+    )
+    assert len(obstacles) == 5
+    assert isinstance(obstacles[-1], CircleObstacle)
+
+    with pytest.raises(RoutePlanningError, match="endpoints"):
+        snapshot_route_obstacles(
+            _board(pads=[*pair, third_party], shapes=[rect]),
+            "F_Cu",
+            frozenset({"p1", "p2", "n1"}),
+            expected_endpoint_count=4,
+            require_outline=True,
+        )
+
+    with pytest.raises(RoutePlanningError, match="endpoints"):
+        snapshot_route_obstacles(
+            _board(pads=[*pair, third_party], shapes=[rect]),
+            "F_Cu",
+            frozenset({"p1", "p2", "n1", "n2"}),
+            require_outline=True,
+        )

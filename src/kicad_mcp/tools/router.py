@@ -533,6 +533,8 @@ TOOL_CATEGORIES: dict[str, ToolCategory] = {
             "route_apply_candidate",
             "route_plan_straight_differential_pair",
             "route_apply_straight_differential_pair_candidate",
+            "route_plan_coupled_differential_pair",
+            "route_apply_coupled_differential_pair_candidate",
             "route_export_dsn",
             "route_import_ses",
             "route_apply_ses",

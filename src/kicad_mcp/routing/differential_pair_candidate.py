@@ -11,7 +11,14 @@ from math import hypot, isfinite
 
 from .differential_pair_rules import infer_diff_pair_base
 from .manual_tracks import TrackSpec
-from .path_planner import RoutePlanningError
+from .path_planner import (
+    Obstacle,
+    RoutePlanningError,
+    _distance_between_segments,
+    _segment_clear,
+    _simplify,
+    plan_hv45_path,
+)
 
 
 def inspect_straight_pair(
@@ -77,3 +84,215 @@ def inspect_straight_pair(
         "lengthMinusMm": round(nlen, 6),
         "skewMm": round(abs(plen - nlen), 6),
     }
+
+
+type Point = tuple[float, float]
+
+
+def _coupled_axis(
+    plus_start: Point,
+    plus_end: Point,
+    minus_start: Point,
+    minus_end: Point,
+    separation: float,
+) -> tuple[Point, Point, Point, float]:
+    coords = (*plus_start, *plus_end, *minus_start, *minus_end)
+    if not all(isfinite(value) for value in coords):
+        raise RoutePlanningError("Non-finite pair pad locations")
+    mid_start: Point = (
+        (plus_start[0] + minus_start[0]) / 2,
+        (plus_start[1] + minus_start[1]) / 2,
+    )
+    mid_end: Point = (
+        (plus_end[0] + minus_end[0]) / 2,
+        (plus_end[1] + minus_end[1]) / 2,
+    )
+    dx = mid_end[0] - mid_start[0]
+    dy = mid_end[1] - mid_start[1]
+    distance = hypot(dx, dy)
+    if distance < 2.0 or min(abs(dx), abs(dy)) > 1e-6:
+        raise RoutePlanningError("Coupled pair requires horizontally or vertically aligned pads")
+    along = (dx / distance, dy / distance)
+    normal = (-along[1], along[0])
+    minus_shift = (minus_start[0] - plus_start[0], minus_start[1] - plus_start[1])
+    minus_end_shift = (minus_end[0] - plus_end[0], minus_end[1] - plus_end[1])
+    if (
+        abs(hypot(*minus_shift) - separation) > 1e-4
+        or hypot(minus_shift[0] - minus_end_shift[0], minus_shift[1] - minus_end_shift[1]) > 1e-4
+        or abs(minus_shift[0] * along[0] + minus_shift[1] * along[1]) > 1e-4
+    ):
+        raise RoutePlanningError("Coupled pair endpoint spacing/offset is not aligned")
+    plus_side = (
+        1.0
+        if ((plus_start[0] - mid_start[0]) * normal[0] + (plus_start[1] - mid_start[1]) * normal[1])
+        > 0
+        else -1.0
+    )
+    return mid_start, mid_end, along, plus_side
+
+
+def _miter_offset(points: tuple[Point, ...], signed_distance: float) -> tuple[Point, ...]:
+    directions: list[Point] = []
+    normals: list[Point] = []
+    for a, b in zip(points, points[1:], strict=False):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        length = hypot(dx, dy)
+        if length < 1e-6:
+            raise RoutePlanningError("Coupled pair contains zero-length segment")
+        unit = (dx / length, dy / length)
+        directions.append(unit)
+        normals.append((-unit[1], unit[0]))
+    output = []
+    for index, point in enumerate(points):
+        if index == 0:
+            v = normals[0]
+        elif index == len(points) - 1:
+            v = normals[-1]
+        else:
+            a, b = normals[index - 1], normals[index]
+            d0, d1 = directions[index - 1], directions[index]
+            denominator = 1 + d0[0] * d1[0] + d0[1] * d1[1]
+            if denominator <= 0.3:
+                raise RoutePlanningError("Coupled pair has an unsafe sharp return")
+            v = ((a[0] + b[0]) / denominator, (a[1] + b[1]) / denominator)
+        output.append(
+            (
+                round(point[0] + signed_distance * v[0], 6),
+                round(point[1] + signed_distance * v[1], 6),
+            )
+        )
+    return tuple(output)
+
+
+def _segments_from_points(
+    points: tuple[Point, ...],
+    layer: str,
+    width: float,
+    net: str,
+) -> tuple[TrackSpec, ...]:
+    tracks: list[TrackSpec] = []
+    for a, b in zip(points, points[1:], strict=False):
+        dx, dy = abs(b[0] - a[0]), abs(b[1] - a[1])
+        if dx + dy <= 1e-6 or not (dx <= 2e-6 or dy <= 2e-6 or abs(dx - dy) <= 2e-6):
+            raise RoutePlanningError("Coupled pair offset broke H/V/45 copper geometry")
+        tracks.append(TrackSpec(*a, *b, layer, width, net))
+    if not 1 <= len(tracks) <= 64:
+        raise RoutePlanningError("Coupled route exceeds bounded track count")
+    return tuple(tracks)
+
+
+def _validate_coupled_clearance(
+    plus: tuple[TrackSpec, ...],
+    minus: tuple[TrackSpec, ...],
+    obstacles: tuple[Obstacle, ...],
+    width: float,
+    gap: float,
+    clearance: float,
+) -> float:
+    def endpoints(track: TrackSpec) -> tuple[Point, Point]:
+        return (track.x1_mm, track.y1_mm), (track.x2_mm, track.y2_mm)
+
+    for lane in (plus, minus):
+        for index, track in enumerate(lane):
+            a, b = endpoints(track)
+            if not _segment_clear(a, b, obstacles, width / 2 + clearance):
+                raise RoutePlanningError("Coupled copper route collides with an obstacle")
+            for other in lane[index + 2 :]:
+                c, d = endpoints(other)
+                if _distance_between_segments(a, b, c, d) < 1e-6:
+                    raise RoutePlanningError("Coupled copper lane crosses itself")
+    closest = min(
+        _distance_between_segments(*endpoints(p), *endpoints(n)) for p in plus for n in minus
+    )
+    if closest + 2e-5 < width + gap:
+        raise RoutePlanningError("Coupled pair copper gap is smaller than the requested rule")
+    return closest - width
+
+
+def plan_coupled_hv45_pair(
+    *,
+    plus_start: Point,
+    plus_end: Point,
+    minus_start: Point,
+    minus_end: Point,
+    obstacles: tuple[Obstacle, ...],
+    layer: str,
+    net_plus: str,
+    net_minus: str,
+    width_mm: float,
+    gap_mm: float,
+    clearance_mm: float,
+    max_skew_mm: float,
+) -> tuple[tuple[TrackSpec, ...], tuple[TrackSpec, ...], dict[str, float]]:
+    """Plan one bounded shared centerline and two geometrically matched lanes.
+
+    The native KiCad DRC preflight remains mandatory before writing copper.
+    """
+    from .differential_pair_rules import infer_diff_pair_base
+
+    if not infer_diff_pair_base(net_plus, net_minus):
+        raise RoutePlanningError("Coupled pair requires matched P/N nets")
+    if not layer.endswith("_Cu"):
+        raise RoutePlanningError("Coupled pair requires a copper layer")
+    if not all(isfinite(x) for x in (width_mm, gap_mm, clearance_mm, max_skew_mm)):
+        raise RoutePlanningError("Non-finite differential pair dimensions")
+    if not 0 < width_mm <= 5 or not 0 < gap_mm <= 5 or not 0 <= clearance_mm <= 5:
+        raise RoutePlanningError("Invalid differential copper dimensions")
+    if not 0 <= max_skew_mm <= 5:
+        raise RoutePlanningError("Invalid differential pair skew budget")
+    separation = width_mm + gap_mm
+    start, end, along, side = _coupled_axis(
+        plus_start, plus_end, minus_start, minus_end, separation
+    )
+    length = hypot(end[0] - start[0], end[1] - start[1])
+    lead = min(0.8, 0.18 * length)
+    departure = (start[0] + lead * along[0], start[1] + lead * along[1])
+    arrival = (end[0] - lead * along[0], end[1] - lead * along[1])
+    mid = plan_hv45_path(
+        departure,
+        arrival,
+        obstacles,
+        track_width_mm=2 * width_mm + gap_mm,
+        clearance_mm=clearance_mm,
+    )
+    centerline = _simplify((start, *mid, end))
+    # The centerline must leave and approach the paired pad pair straight.
+    first = centerline[1][0] - start[0], centerline[1][1] - start[1]
+    last = end[0] - centerline[-2][0], end[1] - centerline[-2][1]
+    if (
+        first[0] * along[0] + first[1] * along[1] < 0.1
+        or (abs(first[0] * along[1] - first[1] * along[0]) > 1e-6)
+        or last[0] * along[0] + last[1] * along[1] < 0.1
+        or (abs(last[0] * along[1] - last[1] * along[0]) > 1e-6)
+    ):
+        raise RoutePlanningError("Coupled pair departure/arrival tangent is not aligned")
+    plus_points = _miter_offset(centerline, side * separation / 2)
+    minus_points = _miter_offset(centerline, -side * separation / 2)
+    for expected, actual in (
+        (plus_start, plus_points[0]),
+        (plus_end, plus_points[-1]),
+        (minus_start, minus_points[0]),
+        (minus_end, minus_points[-1]),
+    ):
+        if hypot(actual[0] - expected[0], actual[1] - expected[1]) > 0.0001:
+            raise RoutePlanningError("Coupled pair offset does not reach the actual pads")
+    plus = _segments_from_points(plus_points, layer, width_mm, net_plus)
+    minus = _segments_from_points(minus_points, layer, width_mm, net_minus)
+    min_gap = _validate_coupled_clearance(plus, minus, obstacles, width_mm, gap_mm, clearance_mm)
+    length_p = sum(hypot(t.x2_mm - t.x1_mm, t.y2_mm - t.y1_mm) for t in plus)
+    length_n = sum(hypot(t.x2_mm - t.x1_mm, t.y2_mm - t.y1_mm) for t in minus)
+    skew = abs(length_p - length_n)
+    if skew > max_skew_mm + 1e-5:
+        raise RoutePlanningError("Coupled pair length difference exceeds skew budget")
+    if len(plus) + len(minus) > 128:
+        raise RoutePlanningError("Too many coupled differential segments")
+    return (
+        plus,
+        minus,
+        {
+            "lengthPlusMm": round(length_p, 6),
+            "lengthMinusMm": round(length_n, 6),
+            "skewMm": round(skew, 6),
+            "minCopperGapMm": round(min_gap, 6),
+        },
+    )

@@ -104,6 +104,7 @@ def snapshot_route_obstacles(
     excluded_pad_ids: frozenset[str],
     *,
     require_outline: bool = False,
+    expected_endpoint_count: int = 2,
 ) -> tuple[Obstacle, ...]:
     """Read all supported copper obstacles on one layer, or refuse incomplete state."""
     layer_id = resolve_layer(layer)
@@ -174,8 +175,10 @@ def snapshot_route_obstacles(
             for pad in pads
             if getattr(getattr(pad, "id", None), "value", None) in excluded_pad_ids
         ]
-        if len(excluded_points) != 2 or not all(
-            x1 < x < x2 and y1 < y < y2 for x, y in excluded_points
+        if (
+            expected_endpoint_count not in (2, 4)
+            or len(excluded_points) != expected_endpoint_count
+            or not all(x1 < x < x2 and y1 < y < y2 for x, y in excluded_points)
         ):
             raise RoutePlanningError("Route endpoints are not safely inside board outline")
 

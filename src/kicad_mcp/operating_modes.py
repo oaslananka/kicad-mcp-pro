@@ -239,6 +239,8 @@ def _is_experimental_tool(tool_name: str) -> bool:
         "route_apply_candidate",
         "route_plan_straight_differential_pair",
         "route_apply_straight_differential_pair_candidate",
+        "route_plan_coupled_differential_pair",
+        "route_apply_coupled_differential_pair_candidate",
     ):
         return False
     categories = _category_names_for_tool(tool_name)
@@ -263,6 +265,7 @@ def _is_write_tool(tool_name: str) -> bool:
     if tool_name in (
         "route_apply_candidate",
         "route_apply_straight_differential_pair_candidate",
+        "route_apply_coupled_differential_pair_candidate",
     ):
         return True
     categories = _category_names_for_tool(tool_name)

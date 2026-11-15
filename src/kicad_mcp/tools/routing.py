@@ -56,6 +56,10 @@ def register(mcp: FastMCP) -> None:
 
     routing_manual_tracks.register(mcp)
 
+    from . import routing_coupled_pair
+
+    routing_coupled_pair.register(mcp)
+
     from . import routing_specctra_staging
 
     routing_specctra_staging.register(mcp)

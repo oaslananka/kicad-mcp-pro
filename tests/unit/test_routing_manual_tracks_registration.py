@@ -500,3 +500,31 @@ def test_named_straight_pair_write_is_rejected_at_runtime_in_readonly_mode() -> 
         assert "MODE_FORBIDDEN" in str(result.content)
 
     anyio.run(verify)
+
+
+def test_coupled_pair_write_is_hidden_and_denied_even_by_name_in_readonly() -> None:
+    import anyio
+
+    from kicad_mcp.capabilities import AccessTier, get
+    from kicad_mcp.operating_modes import OperatingMode, tool_required_mode
+    from kicad_mcp.server import build_server
+
+    read = "route_plan_coupled_differential_pair"
+    write = "route_apply_coupled_differential_pair_candidate"
+    assert get(read) is not None and get(read).tier is AccessTier.READ
+    assert get(write) is not None and get(write).tier is AccessTier.WRITE
+    assert tool_required_mode(read) is OperatingMode.READONLY
+    assert tool_required_mode(write) is OperatingMode.WRITE
+    server = build_server("expert")
+    server.operating_mode = OperatingMode.READONLY
+    server.filter_runtime_tools = False
+
+    async def check() -> None:
+        available = {item.name for item in await server.list_tools()}
+        assert read in available
+        assert write not in available
+        rejected = await server.call_tool(write, {"candidate_id": "invalid"})
+        assert rejected.is_error is True
+        assert "MODE_FORBIDDEN" in str(rejected.content)
+
+    anyio.run(check)
