@@ -1,138 +1,59 @@
-# KiCad MCP Pro
+---
+title: KiCad MCP Pro — Documentation
+hide:
+  - toc
+---
 
-KiCad MCP Pro is a project-aware Model Context Protocol server for KiCad PCB and schematic workflows.
+<div class="kmcp-home-hero">
+  <p class="kmcp-home-eyebrow">KiCad MCP Pro · Documentation</p>
+  <h1>Connect your KiCad project to an AI client.</h1>
+  <p class="kmcp-home-lead">Install the local MCP server, connect your preferred client, and inspect schematics or PCBs. Start read-only and enable write operations explicitly when needed. Your local projects do not require a Cloud account.</p>
+  <div class="kmcp-home-actions">
+    <a class="kmcp-home-button kmcp-home-button--primary" href="installation/">Install locally</a>
+    <a class="kmcp-home-button" href="client-configuration/">Connect an AI client</a>
+  </div>
+</div>
 
-## Project identity
+<div class="kmcp-home-grid">
+  <a class="kmcp-home-card" href="installation/">
+    <strong>1 · Install and check</strong>
+    <span>Set up the CLI, find KiCad, and check the environment with the built-in doctor.</span>
+  </a>
+  <a class="kmcp-home-card" href="client-configuration/">
+    <strong>2 · Choose an AI client</strong>
+    <span>Connect through local stdio or Streamable HTTP. Review project access before enabling writes.</span>
+  </a>
+  <a class="kmcp-home-card" href="installation/#optional-cloud-access">
+    <strong>3 · Optional Cloud access</strong>
+    <span>Use remote access only when needed. Device pairing and project permissions are separate steps.</span>
+  </a>
+</div>
 
-| Field | Value |
-| --- | --- |
-| Canonical repository | [`oaslananka/kicad-mcp-pro`](https://github.com/oaslananka/kicad-mcp-pro) |
-| PyPI package | `kicad-mcp-pro` |
-| npm wrapper | `kicad-mcp-pro` |
-| MCP Registry name | `io.github.oaslananka/kicad-mcp-pro` |
+## Local quick start
 
-## Documentation map
+Install using [uv](https://docs.astral.sh/uv/) and follow the guided setup:
 
-The docs are ordered from first setup to operations and maintenance.
+```powershell
+uv tool install kicad-mcp-pro
+kicad-mcp-pro setup
+kicad-mcp-pro doctor
+```
 
-### Start here
+KiCad 10.x is needed for live project integration. A local installation works without signing in. See [Installation](installation.md) for Windows, macOS, Linux and local HTTP options.
 
-- [Installation](installation.md)
-- [Client Configuration](client-configuration.md)
-- [Configuration](configuration.md)
-- [Troubleshooting](troubleshooting.md)
-- [FAQ](faq.md)
-- [Glossary](glossary.md)
-- [Comparison](comparison.md)
-- [AI Discovery](llms.txt)
+## Find what you need
 
-### Reference and status
+<div class="kmcp-home-shortcuts">
+  <a href="tutorials/getting-started/">Getting started tutorial</a>
+  <a href="tools-reference/">Explore MCP tools</a>
+  <a href="workflows/first-pcb/">First PCB workflow</a>
+  <a href="troubleshooting/">Troubleshooting</a>
+  <a href="agents/">AI client guides</a>
+  <a href="security/requirements/">Security and permissions</a>
+</div>
 
-- [Tools Reference](tools-reference.md)
-- [Agent-friendly Tool Workflow Index](tools-agent-workflow.md)
-- [API Stability](api-stability.md)
-- [Maintenance Policy](maintenance-policy.md)
-- [Capability Verification Levels](status/capability-levels.md)
-- [Runtime Matrix](status/runtime-policy-matrix.md)
-- [Work-Order Audit](status/work-order-audit-2026-06-17.md)
-
-### Install, packaging, and distribution
-
-- [Docker Install](install/docker.md)
-- [Client Config Generator](install/client-config-generator.md)
-- [Publishing](publishing.md)
-- [Public Listings](public-listing.md)
-- [MCP Registry Status](registry.md)
-
-### Integrations
-
-- [KiCad Studio Integration](integration/kicad-studio.md)
-- [Claude Desktop](integration/claude-desktop.md)
-- [Cursor](integration/cursor.md)
-- [Claude Code](integration/claude-code.md)
-
-### KiCad 10
-
-- [Variants](kicad10/variants.md)
-- [Time-Domain Tuning](kicad10/time-domain.md)
-- [Graphical DRC](kicad10/graphical-drc.md)
-
-### Workflows
-
-- [First PCB](workflows/first-pcb.md)
-- [Read-only Agent Review](workflows/read-only-agent-review.md)
-- [Schematic to PCB](workflows/schematic-to-pcb.md)
-- [Professional Circuit Design](workflows/professional-circuit-design.md)
-- [High-Speed Review](workflows/high-speed-review.md)
-- [Manufacturing Export](workflows/manufacturing-export.md)
-
-### Operations and release
-
-- [Repository and CI/CD Topology](deployment/repository-topology.md)
-- [Autonomy Model](autonomy.md)
-- [Repository Operations](repository-operations.md)
-- [Branch Protection](branch-protection.md)
-- [Deployment Docker](deployment/docker.md)
-- [HTTP Mode](deployment/http-mode.md)
-- [Release Process](release-process.md)
-- [OpenSSF Best Practices Evidence](openssf-best-practices.md)
-- [OpenSSF Silver Evidence](openssf-silver-evidence.md)
-- [Release Notes](release.md)
-
-### Security and privacy
-
-- [Privacy Policy](privacy.md)
-- [Deployment Security](deployment/security.md)
-- [Security Threat Model](security/threat-model.md)
-- [Release Integrity](security/release-integrity.md)
-- [Release and Supply-Chain Security](security/release-security.md)
-- [Release Signing](security/release-signing.md)
-- [Security Requirements](security/requirements.md)
-- [Input Validation](security/input-validation.md)
-- [Assurance Case](security/assurance-case.md)
-- [Scorecard Exceptions](security/scorecard-exceptions.md)
-- [Workflow Security](workflow-security.md)
-
-### Submission
-
-- [Submission Overview](submission/README.md)
-- [Anthropic Directory](submission/anthropic-directory.md)
-- [ChatGPT Apps](submission/chatgpt-apps.md)
-- [MCP Registry](submission/openai-mcp-registry.md)
-- [Reviewer Test Prompts](submission/reviewer-test-prompts.md)
-- [Safety and Permissions](submission/safety-and-permissions.md)
-
-### Development
-
-- [Local Workflow](development.md)
-- [Contributing](development/contributing.md)
-- [Testing](testing.md)
-- [Architecture](development/architecture.md)
-- [Architecture Decisions](adr/README.md)
-- [Regression Fixture Policy](development/contributing-fixtures.md)
-- [Production Principles](development/principles.md)
-- [2026 Roadmap](development/roadmap-2026.md)
-- [RFCs](rfcs/README.md)
-- [v2 Migration Notes](development/v2-migration.md)
-
-## Silver evidence additions
-
-- [Coding Standards](development/coding-standards.md)
-- [Dependency Management](development/dependency-management.md)
-- [Testing Policy](development/testing-policy.md)
-- [Installation Policy](development/installation-policy.md)
-- [Accessibility](accessibility.md)
-- [Internationalization](internationalization.md)
-
-
-## Repository maturity
-
-- [Repository Maturity Report](repo-maturity-report.md)
-- [OpenSSF Evidence](openssf-evidence.md)
-- [OpenSSF Gap Analysis](openssf-gap-analysis.md)
-- [OpenSSF Proposal Links](openssf-proposal-links.md)
-- [Package License Inventory](legal/dependency-license-awareness.md)
-- [Getting Started Tutorial](tutorials/getting-started.md)
-- [How-to Guides](how-to/index.md)
-- [Reference Index](reference/index.md)
-- [Architecture Explanation](explanation/architecture.md)
+<div class="kmcp-home-support">
+  <span>Support this open-source project:</span>
+  <a href="https://github.com/sponsors/oaslananka" target="_blank" rel="noopener noreferrer">GitHub Sponsors</a>
+  <a href="https://www.buymeacoffee.com/oaslananka" target="_blank" rel="noopener noreferrer">Buy Me a Coffee</a>
+</div>

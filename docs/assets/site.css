@@ -1,0 +1,259 @@
+/* Documentation visual system. Uses Material's built-in navigation and controls. */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #234765;
+  --md-primary-fg-color--light: #375f80;
+  --md-primary-fg-color--dark: #18344b;
+  --md-accent-fg-color: #12639a;
+  --md-typeset-a-color: #165c8b;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #1b3045;
+  --md-primary-fg-color--light: #2b4863;
+  --md-primary-fg-color--dark: #152638;
+  --md-accent-fg-color: #77cef2;
+  --md-typeset-a-color: #95d9f8;
+}
+
+.md-header {
+  border-bottom: 1px solid rgba(137, 173, 200, 0.15);
+}
+
+/* Material uses the primary token for active sidebar links in dark mode.
+ * Keep those links readable against slate navigation backgrounds. */
+[data-md-color-scheme="slate"] .md-nav__link--active,
+[data-md-color-scheme="slate"] .md-nav__link:hover {
+  color: #9edfff;
+}
+
+
+.md-typeset .kmcp-home-hero {
+  padding: clamp(1.5rem, 4vw, 2.7rem);
+  border: 1px solid #c2d9e9;
+  border-radius: 1rem;
+  background: linear-gradient(125deg, #e9f3fb 0%, #fafcff 92%);
+}
+
+.md-typeset .kmcp-home-eyebrow {
+  margin: 0 0 0.55rem;
+  color: #426783;
+  font-size: 0.69rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.md-typeset .kmcp-home-hero h1 {
+  max-width: 24ch;
+  margin: 0;
+  color: #132f47;
+  font-size: clamp(1.7rem, 3.1vw, 2.3rem);
+  font-weight: 750;
+  line-height: 1.18;
+  letter-spacing: -0.025em;
+}
+
+.md-typeset .kmcp-home-hero p.kmcp-home-lead {
+  max-width: 62ch;
+  margin: 1rem 0 1.25rem;
+  color: #34556f;
+  font-size: 0.88rem;
+  line-height: 1.65;
+}
+
+.md-typeset .kmcp-home-actions,
+.md-typeset .kmcp-home-support {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.md-typeset .kmcp-home-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.3rem;
+  padding: 0.52rem 0.92rem;
+  border: 1px solid #9bbbd2;
+  border-radius: 0.48rem;
+  color: #1a4b6e;
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.md-typeset .kmcp-home-button--primary {
+  border-color: #1a6393;
+  background: #1a6393;
+  color: #fff;
+}
+
+.md-typeset .kmcp-home-button:hover {
+  border-color: #237baa;
+  background: rgba(48, 120, 166, 0.11);
+  color: #124a71;
+  text-decoration: none;
+}
+
+.md-typeset .kmcp-home-button--primary:hover {
+  border-color: #12517b;
+  background: #12517b;
+  color: #fff;
+}
+
+.md-typeset .kmcp-home-button:focus-visible,
+.md-typeset .kmcp-home-card:focus-visible,
+.md-typeset .kmcp-home-support a:focus-visible {
+  outline: 3px solid var(--md-accent-fg-color);
+  outline-offset: 3px;
+}
+
+.md-typeset .kmcp-home-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1.2rem 0 1.5rem;
+}
+
+.md-typeset .kmcp-home-card {
+  display: block;
+  min-height: 8.1rem;
+  padding: 1.05rem;
+  border: 1px solid #d5e1ea;
+  border-radius: 0.7rem;
+  background: #fff;
+  color: #23394d;
+  text-decoration: none;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.md-typeset .kmcp-home-card:hover {
+  border-color: #367aa7;
+  background: #f4f9fd;
+  text-decoration: none;
+}
+
+.md-typeset .kmcp-home-card strong {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: #143d5b;
+  font-size: 0.84rem;
+}
+
+.md-typeset .kmcp-home-card span {
+  display: block;
+  color: #526a7c;
+  font-size: 0.72rem;
+  line-height: 1.58;
+}
+
+.md-typeset .kmcp-home-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem 1.1rem;
+  margin-bottom: 1.45rem;
+}
+
+.md-typeset .kmcp-home-shortcuts a {
+  padding: 0.34rem 0;
+  font-weight: 550;
+}
+
+.md-typeset .kmcp-home-support {
+  padding: 0.9rem 0;
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+  color: var(--md-default-fg-color--light);
+  font-size: 0.72rem;
+}
+
+.md-typeset .kmcp-home-support a {
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 0.2rem;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .kmcp-home-hero {
+  border-color: #34516b;
+  background: linear-gradient(125deg, #24384b 0%, #1d2937 95%);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .kmcp-home-eyebrow {
+  color: #a5c9e1;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .kmcp-home-hero h1 {
+  color: #f3f8fd;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .kmcp-home-hero p.kmcp-home-lead {
+  color: #c2d4e3;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .kmcp-home-card {
+  border-color: #3a4d62;
+  background: #263241;
+  color: #e2edf7;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .kmcp-home-card:hover {
+  border-color: #77bde5;
+  background: #2c3c4e;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .kmcp-home-card strong {
+  color: #f3f8ff;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .kmcp-home-card span {
+  color: #c1cfdd;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .kmcp-home-button {
+  border-color: #688da9;
+  color: #d5eafb;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .kmcp-home-button--primary {
+  border-color: #83c8ee;
+  background: #83c8ee;
+  color: #142839;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .kmcp-home-button:hover {
+  background: #354f65;
+  color: #fff;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .kmcp-home-button--primary:hover {
+  background: #b5e4fa;
+  color: #122737;
+}
+
+@media screen and (max-width: 52em) {
+  .md-typeset .kmcp-home-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .md-typeset .kmcp-home-card {
+    min-height: 0;
+  }
+}
+
+@media screen and (max-width: 28em) {
+  .md-typeset .kmcp-home-hero {
+    padding: 1.3rem;
+  }
+
+  .md-typeset .kmcp-home-shortcuts {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-typeset .kmcp-home-button,
+  .md-typeset .kmcp-home-card {
+    transition: none;
+  }
+}

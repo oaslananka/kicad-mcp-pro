@@ -18,17 +18,18 @@ def test_support_destinations_match_repository_funding_metadata() -> None:
     assert funding["buy_me_a_coffee"] == "oaslananka"
 
 
-def test_docs_header_assets_expose_support_actions() -> None:
+def test_docs_home_exposes_support_without_crowding_global_header() -> None:
     mkdocs = (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
-    script = (ROOT / "docs" / "assets" / "support-links.js").read_text(encoding="utf-8")
-    styles = (ROOT / "docs" / "assets" / "support-links.css").read_text(encoding="utf-8")
+    home = (ROOT / "docs" / "index.md").read_text(encoding="utf-8")
+    styles = (ROOT / "docs" / "assets" / "site.css").read_text(encoding="utf-8")
 
-    assert "assets/support-links.css" in mkdocs
-    assert "assets/support-links.js" in mkdocs
-    assert GITHUB_SPONSORS in script
-    assert BUY_ME_A_COFFEE in script
-    assert "noopener noreferrer" in script
-    assert ".kmcp-support-links" in styles
+    assert "assets/site.css" in mkdocs
+    assert "assets/support-links.js" not in mkdocs
+    assert GITHUB_SPONSORS in home
+    assert BUY_ME_A_COFFEE in home
+    assert 'rel="noopener noreferrer"' in home
+    assert ".kmcp-home-support" in styles
+    assert ":focus-visible" in styles
 
 
 def test_dashboard_navigation_exposes_support_actions() -> None:
