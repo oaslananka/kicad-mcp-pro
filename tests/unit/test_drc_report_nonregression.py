@@ -72,8 +72,9 @@ def test_removed_violation_is_not_a_regression() -> None:
     ],
 )
 def test_invalid_drc_report_refuses_success(report: dict[str, object]) -> None:
+    _checked_args = (_report(), report)
     with pytest.raises(ValueError):
-        newly_reported_drc_violations(_report(), report)
+        newly_reported_drc_violations(*_checked_args)
 
 
 def test_route_drc_accepts_improvement_without_any_new_native_finding() -> None:

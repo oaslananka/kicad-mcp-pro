@@ -26,6 +26,70 @@ class RoutePreflightError(ValueError):
     """The offline DRC acceptance evidence is unavailable or not trustworthy."""
 
 
+def _validate_one_via_transition(specs: list[TrackSpec], through_via: ViaSpec) -> None:
+    """Validate geometry shared by both outer copper layers."""
+    values = (
+        through_via.x_mm,
+        through_via.y_mm,
+        through_via.diameter_mm,
+        through_via.drill_mm,
+    )
+    if not all(math.isfinite(number) for number in values):
+        raise RoutePreflightError("Through via contains non-finite geometry")
+    if not (
+        0.4 <= through_via.diameter_mm <= 5
+        and 0.2 <= through_via.drill_mm <= through_via.diameter_mm - 0.2
+        and through_via.net_name == specs[0].net_name
+    ):
+        raise RoutePreflightError("Through via size or net invalid")
+    if len(specs) != 2 or (specs[0].layer, specs[1].layer) not in (
+        ("F_Cu", "B_Cu"),
+        ("B_Cu", "F_Cu"),
+    ):
+        raise RoutePreflightError("One via requires exactly two front/back copper layer segments")
+    if (
+        math.hypot(
+            specs[0].x2_mm - through_via.x_mm,
+            specs[0].y2_mm - through_via.y_mm,
+        )
+        > 1e-5
+        or math.hypot(
+            specs[1].x1_mm - through_via.x_mm,
+            specs[1].y1_mm - through_via.y_mm,
+        )
+        > 1e-5
+    ):
+        raise RoutePreflightError("Both copper layer endpoints must meet the via")
+
+
+def _validate_segment_geometry(
+    spec: TrackSpec,
+    first: TrackSpec,
+    *,
+    pair_nets: frozenset[str] | None,
+    through_via: ViaSpec | None,
+) -> None:
+    numbers = (spec.x1_mm, spec.y1_mm, spec.x2_mm, spec.y2_mm, spec.width_mm)
+    if not all(math.isfinite(value) for value in numbers):
+        raise RoutePreflightError("Candidate contains non-finite geometry")
+    if not 0 < spec.width_mm <= 5:
+        raise RoutePreflightError("Candidate track width is invalid")
+    if (
+        spec.net_name not in (pair_nets or frozenset((first.net_name,)))
+        or (through_via is None and spec.layer != first.layer)
+        or spec.width_mm != first.width_mm
+    ):
+        raise RoutePreflightError("Candidate net, copper layer or width mismatch")
+    if spec.x1_mm == spec.x2_mm and spec.y1_mm == spec.y2_mm:
+        raise RoutePreflightError("Zero-length copper segment refused")
+    if through_via is not None:
+        dx, dy = abs(spec.x2_mm - spec.x1_mm), abs(spec.y2_mm - spec.y1_mm)
+        if not (dx < 1e-6 or dy < 1e-6 or abs(dx - dy) < 1e-6):
+            raise RoutePreflightError("Through via route must use H/V/45 segments")
+        if spec.width_mm > through_via.diameter_mm:
+            raise RoutePreflightError("Through via copper diameter smaller than track width")
+
+
 def _validate_specs(
     specs: list[TrackSpec],
     *,
@@ -44,60 +108,9 @@ def _validate_specs(
     if through_via is not None and pair_nets is not None:
         raise RoutePreflightError("Cannot combine a paired route and one through via")
     if through_via is not None:
-        values = (
-            through_via.x_mm,
-            through_via.y_mm,
-            through_via.diameter_mm,
-            through_via.drill_mm,
-        )
-        if not all(math.isfinite(number) for number in values):
-            raise RoutePreflightError("Through via contains non-finite geometry")
-        if not (
-            0.4 <= through_via.diameter_mm <= 5
-            and 0.2 <= through_via.drill_mm <= through_via.diameter_mm - 0.2
-            and through_via.net_name == first.net_name
-        ):
-            raise RoutePreflightError("Through via size or net invalid")
-        if len(specs) != 2 or (specs[0].layer, specs[1].layer) not in (
-            ("F_Cu", "B_Cu"),
-            ("B_Cu", "F_Cu"),
-        ):
-            raise RoutePreflightError(
-                "One via requires exactly two front/back copper layer segments"
-            )
-        if (
-            math.hypot(
-                specs[0].x2_mm - through_via.x_mm,
-                specs[0].y2_mm - through_via.y_mm,
-            )
-            > 1e-5
-            or math.hypot(
-                specs[1].x1_mm - through_via.x_mm,
-                specs[1].y1_mm - through_via.y_mm,
-            )
-            > 1e-5
-        ):
-            raise RoutePreflightError("Both copper layer endpoints must meet the via")
+        _validate_one_via_transition(specs, through_via)
     for spec in specs:
-        numbers = (spec.x1_mm, spec.y1_mm, spec.x2_mm, spec.y2_mm, spec.width_mm)
-        if not all(math.isfinite(value) for value in numbers):
-            raise RoutePreflightError("Candidate contains non-finite geometry")
-        if not 0 < spec.width_mm <= 5:
-            raise RoutePreflightError("Candidate track width is invalid")
-        if (
-            spec.net_name not in (pair_nets or frozenset((first.net_name,)))
-            or (through_via is None and spec.layer != first.layer)
-            or spec.width_mm != first.width_mm
-        ):
-            raise RoutePreflightError("Candidate net, copper layer or width mismatch")
-        if spec.x1_mm == spec.x2_mm and spec.y1_mm == spec.y2_mm:
-            raise RoutePreflightError("Zero-length copper segment refused")
-        if through_via is not None:
-            dx, dy = abs(spec.x2_mm - spec.x1_mm), abs(spec.y2_mm - spec.y1_mm)
-            if not (dx < 1e-6 or dy < 1e-6 or abs(dx - dy) < 1e-6):
-                raise RoutePreflightError("Through via route must use H/V/45 segments")
-            if spec.width_mm > through_via.diameter_mm:
-                raise RoutePreflightError("Through via copper diameter smaller than track width")
+        _validate_segment_geometry(spec, first, pair_nets=pair_nets, through_via=through_via)
     if pair_nets is not None and {spec.net_name for spec in specs} != pair_nets:
         raise RoutePreflightError("Paired candidate net scope does not match its tracks")
 
@@ -168,6 +181,13 @@ def _validate_native_custom_rule_loading(
         )
 
 
+def _verify_sources_unchanged(source_hashes: dict[Path, str]) -> None:
+    """Never accept DRC evidence from a project whose rule files were edited."""
+    for source, initial_hash in source_hashes.items():
+        if hashlib.sha256(source.read_bytes()).hexdigest() != initial_hash:
+            raise RoutePreflightError("Project DRC rules changed during preflight")
+
+
 def run_route_drc_preflight(
     board_snapshot: str,
     segments: list[TrackSpec],
@@ -222,7 +242,5 @@ def run_route_drc_preflight(
                 after / board_name,
                 after / custom_rules.name,
             )
-        for source, initial_hash in source_hashes.items():
-            if hashlib.sha256(source.read_bytes()).hexdigest() != initial_hash:
-                raise RoutePreflightError("Project DRC rules changed during preflight")
+        _verify_sources_unchanged(source_hashes)
         return evaluate_route_drc(baseline, candidate)

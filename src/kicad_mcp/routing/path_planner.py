@@ -198,6 +198,144 @@ def _validate_input(
             raise RoutePlanningError("Invalid obstacle envelope")
 
 
+type GridKey = tuple[int, int]
+type GridBounds = tuple[int, int, int, int]
+
+_GRID_DIRECTIONS = (
+    (1, 0),
+    (1, 1),
+    (0, 1),
+    (-1, 1),
+    (-1, 0),
+    (-1, -1),
+    (0, -1),
+    (1, -1),
+)
+
+
+def _grid_point(start: Point, key: GridKey, grid_mm: float) -> Point:
+    return (round(start[0] + key[0] * grid_mm, 8), round(start[1] + key[1] * grid_mm, 8))
+
+
+def _grid_bounds(start: Point, end: Point, margin_mm: float, grid_mm: float) -> GridBounds:
+    min_x = min(start[0], end[0]) - margin_mm
+    max_x = max(start[0], end[0]) + margin_mm
+    min_y = min(start[1], end[1]) - margin_mm
+    max_y = max(start[1], end[1]) + margin_mm
+    return (
+        floor((min_x - start[0]) / grid_mm),
+        ceil((max_x - start[0]) / grid_mm),
+        floor((min_y - start[1]) / grid_mm),
+        ceil((max_y - start[1]) / grid_mm),
+    )
+
+
+def _finish_grid_route(
+    key: GridKey,
+    pos: Point,
+    parents: dict[GridKey, GridKey],
+    start: Point,
+    end: Point,
+    grid_mm: float,
+    obstacles: tuple[Obstacle, ...],
+    envelope: float,
+) -> tuple[Point, ...] | None:
+    """Only accept a simplified complete path after rechecking every stroke."""
+    terminal = _safe_terminal(pos, end, obstacles, envelope)
+    if terminal is None:
+        return None
+    backwards: list[Point] = [pos]
+    cursor = key
+    while cursor in parents:
+        cursor = parents[cursor]
+        backwards.append(_grid_point(start, cursor, grid_mm))
+    path = _simplify(tuple(reversed(backwards)) + terminal[1:])
+    if is_hv45_path(path) and all(
+        _segment_clear(a, b, obstacles, envelope) for a, b in zip(path, path[1:], strict=False)
+    ):
+        return path
+    return None
+
+
+def _enqueue_clear_neighbors(
+    key: GridKey,
+    pos: Point,
+    cost: float,
+    bounds: GridBounds,
+    start: Point,
+    end: Point,
+    grid_mm: float,
+    obstacles: tuple[Obstacle, ...],
+    envelope: float,
+    scores: dict[GridKey, float],
+    parents: dict[GridKey, GridKey],
+    heap: list[tuple[float, float, int, int]],
+) -> None:
+    imin, imax, jmin, jmax = bounds
+    for di, dj in _GRID_DIRECTIONS:
+        nxt = (key[0] + di, key[1] + dj)
+        if not (imin <= nxt[0] <= imax and jmin <= nxt[1] <= jmax):
+            continue
+        future = _grid_point(start, nxt, grid_mm)
+        if not _segment_clear(pos, future, obstacles, envelope):
+            continue
+        new_cost = cost + (sqrt(2) if di and dj else 1) * grid_mm
+        if new_cost + _EPS >= scores.get(nxt, float("inf")):
+            continue
+        scores[nxt] = new_cost
+        parents[nxt] = key
+        heuristic = hypot(end[0] - future[0], end[1] - future[1])
+        heappush(heap, (new_cost + heuristic, new_cost, nxt[0], nxt[1]))
+
+
+def _search_grid_path(
+    start: Point,
+    end: Point,
+    obstacles: tuple[Obstacle, ...],
+    envelope: float,
+    grid_mm: float,
+    margin_mm: float,
+    max_nodes: int,
+) -> tuple[Point, ...]:
+    bounds = _grid_bounds(start, end, margin_mm, grid_mm)
+    scores: dict[GridKey, float] = {(0, 0): 0.0}
+    parents: dict[GridKey, GridKey] = {}
+    heap: list[tuple[float, float, int, int]] = [
+        (hypot(end[0] - start[0], end[1] - start[1]), 0.0, 0, 0)
+    ]
+    expanded = 0
+    while heap:
+        _estimate, cost, i, j = heappop(heap)
+        key = (i, j)
+        if cost > scores.get(key, float("inf")) + _EPS:
+            continue
+        expanded += 1
+        if expanded > max_nodes:
+            raise RoutePlanningError("Routing search budget exceeded")
+        pos = _grid_point(start, key, grid_mm)
+        if key != (0, 0):
+            candidate = _finish_grid_route(
+                key, pos, parents, start, end, grid_mm, obstacles, envelope
+            )
+            if candidate is not None:
+                return candidate
+        _enqueue_clear_neighbors(
+            key,
+            pos,
+            cost,
+            bounds,
+            start,
+            end,
+            grid_mm,
+            obstacles,
+            envelope,
+            scores,
+            parents,
+            heap,
+        )
+    raise RoutePlanningError("No obstacle-free H/V/45 route within bounded search")
+
+
 def plan_hv45_path(
     start: Point,
     end: Point,
@@ -228,66 +366,6 @@ def plan_hv45_path(
     direct = _safe_terminal(start, end, obstacles, envelope)
     if direct is not None:
         return direct
-
     if max(abs(end[0] - start[0]), abs(end[1] - start[1])) > 80:
         raise RoutePlanningError("Route exceeds bounded search extent")
-
-    min_x = min(start[0], end[0]) - margin_mm
-    max_x = max(start[0], end[0]) + margin_mm
-    min_y = min(start[1], end[1]) - margin_mm
-    max_y = max(start[1], end[1]) + margin_mm
-    imin = floor((min_x - start[0]) / grid_mm)
-    imax = ceil((max_x - start[0]) / grid_mm)
-    jmin = floor((min_y - start[1]) / grid_mm)
-    jmax = ceil((max_y - start[1]) / grid_mm)
-
-    directions = ((1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1))
-
-    def point(key: tuple[int, int]) -> Point:
-        return (round(start[0] + key[0] * grid_mm, 8), round(start[1] + key[1] * grid_mm, 8))
-
-    scores: dict[tuple[int, int], float] = {(0, 0): 0.0}
-    parents: dict[tuple[int, int], tuple[int, int]] = {}
-    heap: list[tuple[float, float, int, int]] = [
-        (hypot(end[0] - start[0], end[1] - start[1]), 0.0, 0, 0)
-    ]
-    expanded = 0
-    while heap:
-        _estimate, cost, i, j = heappop(heap)
-        key = (i, j)
-        if cost > scores.get(key, float("inf")) + _EPS:
-            continue
-        expanded += 1
-        if expanded > max_nodes:
-            raise RoutePlanningError("Routing search budget exceeded")
-        pos = point(key)
-        if key != (0, 0):
-            terminal = _safe_terminal(pos, end, obstacles, envelope)
-            if terminal is not None:
-                backwards: list[Point] = [pos]
-                cursor = key
-                while cursor in parents:
-                    cursor = parents[cursor]
-                    backwards.append(point(cursor))
-                path = _simplify(tuple(reversed(backwards)) + terminal[1:])
-                if is_hv45_path(path) and all(
-                    _segment_clear(a, b, obstacles, envelope)
-                    for a, b in zip(path, path[1:], strict=False)
-                ):
-                    return path
-
-        for di, dj in directions:
-            nxt = (i + di, j + dj)
-            if not (imin <= nxt[0] <= imax and jmin <= nxt[1] <= jmax):
-                continue
-            future = point(nxt)
-            if not _segment_clear(pos, future, obstacles, envelope):
-                continue
-            new_cost = cost + (sqrt(2) if di and dj else 1) * grid_mm
-            if new_cost + _EPS >= scores.get(nxt, float("inf")):
-                continue
-            scores[nxt] = new_cost
-            parents[nxt] = key
-            heuristic = hypot(end[0] - future[0], end[1] - future[1])
-            heappush(heap, (new_cost + heuristic, new_cost, nxt[0], nxt[1]))
-    raise RoutePlanningError("No obstacle-free H/V/45 route within bounded search")
+    return _search_grid_path(start, end, obstacles, envelope, grid_mm, margin_mm, max_nodes)

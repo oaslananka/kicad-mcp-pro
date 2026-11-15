@@ -81,7 +81,8 @@ def _arrange(
         expected_endpoint_count: int,
     ) -> tuple:
         stats["snapshots"] += 1
-        assert layer == "F_Cu" and require_outline
+        assert layer == "F_Cu"
+        assert require_outline
         assert expected_endpoint_count == len(excluded) == 4
         return ()
 

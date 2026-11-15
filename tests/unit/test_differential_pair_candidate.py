@@ -42,8 +42,10 @@ def test_parallel_usb_pair_has_native_gap_and_zero_skew() -> None:
 def test_rejects_unmatched_pairs(p: tuple[float, ...], n: tuple[float, ...], reason: str) -> None:
     from kicad_mcp.routing.differential_pair_candidate import inspect_straight_pair
 
+    _checked_args = (*_pair(p, n),)
+    _checked_kwargs = {"gap_mm": 0.5, "max_skew_mm": 0.1}
     with pytest.raises(RoutePlanningError, match=reason):
-        inspect_straight_pair(*_pair(p, n), gap_mm=0.5, max_skew_mm=0.1)
+        inspect_straight_pair(*_checked_args, **_checked_kwargs)
 
 
 def test_pair_rejects_different_layer_or_net_pair_names() -> None:

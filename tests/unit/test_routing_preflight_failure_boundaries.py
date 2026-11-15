@@ -223,7 +223,8 @@ def test_offline_candidate_cannot_append_unvalidated_geometry(
     source = _FIXTURE.read_text(encoding="utf-8")
     if reason == "":
         candidate = render_candidate_board(source, tracks, via)
-        assert "(segment" in candidate and "(via" not in candidate
+        assert "(segment" in candidate
+        assert "(via" not in candidate
     else:
         with pytest.raises(ValueError, match=reason):
             render_candidate_board(source, tracks, via)

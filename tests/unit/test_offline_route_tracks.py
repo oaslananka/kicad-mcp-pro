@@ -56,26 +56,35 @@ def test_renderer_refuses_net_not_on_original_board() -> None:
     from kicad_mcp.pcb.offline_route_tracks import render_candidate_board
 
     original = _FIXTURE.read_text(encoding="utf-8")
+    _checked_args = (original, [TrackSpec(1, 1, 5, 5, "F_Cu", 0.25, "INJECTED_NET")])
     with pytest.raises(ValueError, match="net"):
-        render_candidate_board(
-            original,
-            [TrackSpec(1, 1, 5, 5, "F_Cu", 0.25, "INJECTED_NET")],
-        )
+        render_candidate_board(*_checked_args)
 
 
 def test_renderer_refuses_malformed_board_and_nonfinite_geometry() -> None:
     from kicad_mcp.pcb.offline_route_tracks import render_candidate_board
 
     original = _FIXTURE.read_text(encoding="utf-8")
+    _checked_args = ("(kicad_pcb not-closed", _tracks())
     with pytest.raises(ValueError, match="board"):
-        render_candidate_board("(kicad_pcb not-closed", _tracks())
+        render_candidate_board(*_checked_args)
+    _checked_args = (original, [TrackSpec(float("nan"), 1, 5, 5, "F_Cu", 0.25, "MID")])
     with pytest.raises(ValueError, match="geometry"):
-        render_candidate_board(original, [TrackSpec(float("nan"), 1, 5, 5, "F_Cu", 0.25, "MID")])
+        render_candidate_board(*_checked_args)
 
 
 def test_renderer_refuses_unsupported_layer_not_quoted_into_board() -> None:
     from kicad_mcp.pcb.offline_route_tracks import render_candidate_board
 
     original = _FIXTURE.read_text(encoding="utf-8")
+    _checked_args = (original, [TrackSpec(1, 1, 5, 5, 'F_Cu) (net "BAD")', 0.25, "MID")])
     with pytest.raises(ValueError, match="layer"):
-        render_candidate_board(original, [TrackSpec(1, 1, 5, 5, 'F_Cu) (net "BAD")', 0.25, "MID")])
+        render_candidate_board(*_checked_args)
+
+
+def test_candidate_rejects_unicode_digit_layer() -> None:
+    from kicad_mcp.pcb.offline_route_tracks import render_candidate_board
+
+    original = _FIXTURE.read_text(encoding="utf-8")
+    with pytest.raises(ValueError, match="copper layer"):
+        render_candidate_board(original, [TrackSpec(1, 1, 5, 5, "In2?_Cu", 0.25, "MID")])

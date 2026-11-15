@@ -16,7 +16,7 @@ from sexpdata import loads  # type: ignore[import-untyped]
 from ..routing.manual_tracks import TrackSpec, ViaSpec
 from ..utils.sexpr import _sexpr_string
 
-_COPPER_LAYER = re.compile(r"(?:F|B|In(?:[1-9]|[12][0-9]|30))_Cu\Z")
+_COPPER_LAYER = re.compile(r"(?:F|B|In(?:[1-9]|[12]\d|30))_Cu\Z", re.ASCII)
 
 
 def _named_board_nets(board: list[object]) -> set[str]:

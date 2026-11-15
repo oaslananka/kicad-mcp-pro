@@ -215,13 +215,10 @@ def test_native_custom_track_width_rules_cannot_be_silently_skipped(
         ")\n",
         encoding="utf-8",
     )
+    _checked_args = (pcb_text, [TrackSpec(10.95, 10, 19.05, 10, "F_Cu", 0.25, "MID")])
+    _checked_kwargs = {"project_file": pro, "kicad_cli": cli}
     with pytest.raises(RoutePreflightError, match="custom.*rule|rule.*load"):
-        run_route_drc_preflight(
-            pcb_text,
-            [TrackSpec(10.95, 10, 19.05, 10, "F_Cu", 0.25, "MID")],
-            project_file=pro,
-            kicad_cli=cli,
-        )
+        run_route_drc_preflight(*_checked_args, **_checked_kwargs)
 
 
 def test_native_usb_differential_pair_matched_skew_passes_and_mismatch_fails(

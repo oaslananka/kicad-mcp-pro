@@ -21,7 +21,7 @@ from ..pcb.board_access import board_footprints, board_pads
 from ..pcb.geometry import point_xy_mm
 from ..pcb.live_edit_runtime import execute_live_board_mutation, get_live_edit_service
 from ..pcb.pad_mapping import MappedPad, map_pads_to_footprints
-from ..pcb.route_drc_preflight import RoutePreflightError, run_route_drc_preflight
+from ..pcb.route_drc_preflight import run_route_drc_preflight
 from ..pcb.routing_obstacle_snapshot import snapshot_route_obstacles
 from ..routing.differential_pair_candidate import inspect_straight_pair
 from ..routing.manual_tracks import RoutingManualTrackService, TrackSpec, ViaSpec, _find_pad
@@ -176,7 +176,7 @@ def _preview_route_between_pads(
             hashlib.sha256(updated_text.encode("utf-8")).hexdigest() != revision
         ):
             raise RoutePlanningError("Native board changed while planning; retry preview")
-    except (RoutePlanningError, ValueError) as exc:
+    except ValueError as exc:
         return json.dumps({"status": "refused", "candidateOnly": True, "reason": str(exc)})
     segments = [
         {
@@ -263,7 +263,7 @@ def _apply_route_candidate(
             project_file=config.project_file,
             kicad_cli=config.kicad_cli,
         )
-    except (RoutePreflightError, RoutePlanningError, ValueError, KeyError, TypeError) as exc:
+    except (ValueError, KeyError, TypeError) as exc:
         return refused(str(exc))
     if not evidence["accepted"]:
         return refused(
@@ -453,11 +453,13 @@ def _preview_straight_differential_pair(
             },
             sort_keys=True,
         )
-    except (RoutePlanningError, TypeError, ValueError, KeyError) as exc:
+    except (TypeError, ValueError, KeyError) as exc:
         return refused(str(exc))
 
 
-def _apply_straight_differential_pair(
+# S107 exception: keep the flat paired routing contract used by the registered MCP tool.
+# The separate P/N pad names and explicit physical rule inputs remain user-visible.
+def _apply_straight_differential_pair(  # NOSONAR - S107: paired MCP input compatibility
     candidate_id: str,
     p_ref1: str,
     p_pad1: str,
@@ -519,7 +521,7 @@ def _apply_straight_differential_pair(
             kicad_cli=config.kicad_cli,
             pair_nets=frozenset((specs[0].net_name, specs[1].net_name)),
         )
-    except (RoutePreflightError, RoutePlanningError, KeyError, TypeError, ValueError) as exc:
+    except (KeyError, TypeError, ValueError) as exc:
         return refused(str(exc))
     if not evidence["accepted"]:
         return refused("Native KiCad differential pair DRC rejected the candidate", **evidence)
@@ -578,7 +580,8 @@ def _register_straight_pair_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @requires_kicad_running
-    def route_apply_straight_differential_pair_candidate(
+    # Keep the published flat FastMCP JSON schema, including typed individual pad references.
+    def route_apply_straight_differential_pair_candidate(  # NOSONAR - S107: stable MCP schema
         candidate_id: str,
         p_ref1: str,
         p_pad1: str,

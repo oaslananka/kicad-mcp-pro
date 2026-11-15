@@ -23,8 +23,9 @@ def _via() -> ViaSpec:
 
 def test_one_through_via_allows_a_bounded_f_to_b_transition() -> None:
     _validate_specs(_segments(), through_via=_via())
+    _checked_args = (_segments(),)
     with pytest.raises(RoutePreflightError, match="layer"):
-        _validate_specs(_segments())
+        _validate_specs(*_checked_args)
 
 
 @pytest.mark.parametrize(
@@ -38,19 +39,23 @@ def test_one_through_via_allows_a_bounded_f_to_b_transition() -> None:
     ],
 )
 def test_invalid_via_geometry_fails_closed(via: ViaSpec) -> None:
+    _checked_args = (_segments(),)
+    _checked_kwargs = {"through_via": via}
     with pytest.raises(RoutePreflightError, match="via|Via|net|endpoint"):
-        _validate_specs(_segments(), through_via=via)
+        _validate_specs(*_checked_args, **_checked_kwargs)
 
 
 def test_via_does_not_allow_two_net_routing_or_unrelated_copper_layer() -> None:
     plus = _segments()
+    _checked_args = ([plus[0], replace(plus[1], net_name="GND")],)
+    _checked_kwargs = {"through_via": _via()}
     with pytest.raises(RoutePreflightError, match="net"):
-        _validate_specs([plus[0], replace(plus[1], net_name="GND")], through_via=_via())
+        _validate_specs(*_checked_args, **_checked_kwargs)
+    _checked_args = ([plus[0], replace(plus[1], layer="In1_Cu")],)
+    _checked_kwargs = {"through_via": _via()}
     with pytest.raises(RoutePreflightError, match="layer"):
-        _validate_specs([plus[0], replace(plus[1], layer="In1_Cu")], through_via=_via())
+        _validate_specs(*_checked_args, **_checked_kwargs)
+    _checked_args = (plus,)
+    _checked_kwargs = {"through_via": _via(), "pair_nets": frozenset(("MID", "GND"))}
     with pytest.raises(RoutePreflightError, match="via|pair"):
-        _validate_specs(
-            plus,
-            through_via=_via(),
-            pair_nets=frozenset(("MID", "GND")),
-        )
+        _validate_specs(*_checked_args, **_checked_kwargs)

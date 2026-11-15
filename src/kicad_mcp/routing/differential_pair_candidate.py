@@ -21,14 +21,14 @@ from .path_planner import (
 )
 
 
-def inspect_straight_pair(
+def _validate_pair_scope(
     plus: TrackSpec,
     minus: TrackSpec,
     *,
     gap_mm: float,
     max_skew_mm: float,
-) -> dict[str, float]:
-    """Reject two tracks unless exactly parallel, gap-matched and length-matched."""
+) -> None:
+    """Validate net, layer and rule dimensions before geometry analysis."""
     values = (
         plus.x1_mm,
         plus.y1_mm,
@@ -53,6 +53,17 @@ def inspect_straight_pair(
         raise RoutePlanningError("Differential pair track widths must match")
     if not infer_diff_pair_base(plus.net_name, minus.net_name):
         raise RoutePlanningError("Differential pair requires matching positive/negative net names")
+
+
+def inspect_straight_pair(
+    plus: TrackSpec,
+    minus: TrackSpec,
+    *,
+    gap_mm: float,
+    max_skew_mm: float,
+) -> dict[str, float]:
+    """Reject two tracks unless exactly parallel, gap-matched and length-matched."""
+    _validate_pair_scope(plus, minus, gap_mm=gap_mm, max_skew_mm=max_skew_mm)
 
     px = plus.x2_mm - plus.x1_mm
     py = plus.y2_mm - plus.y1_mm

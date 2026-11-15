@@ -469,8 +469,10 @@ def test_straight_pair_tools_separate_read_visibility_and_write_execution() -> N
 
     read = "route_plan_straight_differential_pair"
     write = "route_apply_straight_differential_pair_candidate"
-    assert get(read) is not None and get(read).tier is AccessTier.READ
-    assert get(write) is not None and get(write).tier is AccessTier.WRITE
+    assert get(read) is not None
+    assert get(read).tier is AccessTier.READ
+    assert get(write) is not None
+    assert get(write).tier is AccessTier.WRITE
     assert tool_required_mode(read) is OperatingMode.READONLY
     assert tool_required_mode(write) is OperatingMode.WRITE
     server = build_server("expert")
@@ -511,8 +513,10 @@ def test_coupled_pair_write_is_hidden_and_denied_even_by_name_in_readonly() -> N
 
     read = "route_plan_coupled_differential_pair"
     write = "route_apply_coupled_differential_pair_candidate"
-    assert get(read) is not None and get(read).tier is AccessTier.READ
-    assert get(write) is not None and get(write).tier is AccessTier.WRITE
+    assert get(read) is not None
+    assert get(read).tier is AccessTier.READ
+    assert get(write) is not None
+    assert get(write).tier is AccessTier.WRITE
     assert tool_required_mode(read) is OperatingMode.READONLY
     assert tool_required_mode(write) is OperatingMode.WRITE
     server = build_server("expert")
@@ -539,8 +543,10 @@ def test_one_via_mcp_tools_enforce_read_only_and_named_write_denial() -> None:
 
     read = "route_plan_one_through_via"
     write = "route_apply_one_through_via_candidate"
-    assert get(read) is not None and get(read).tier is AccessTier.READ
-    assert get(write) is not None and get(write).tier is AccessTier.WRITE
+    assert get(read) is not None
+    assert get(read).tier is AccessTier.READ
+    assert get(write) is not None
+    assert get(write).tier is AccessTier.WRITE
     assert tool_required_mode(read) is OperatingMode.READONLY
     assert tool_required_mode(write) is OperatingMode.WRITE
     server = build_server("expert")
@@ -556,3 +562,53 @@ def test_one_via_mcp_tools_enforce_read_only_and_named_write_denial() -> None:
         assert "MODE_FORBIDDEN" in str(attempted.content)
 
     anyio.run(verify)
+
+
+def test_paired_write_mcp_schema_preserves_all_flat_named_arguments() -> None:
+    """Do not break existing MCP clients merely to reduce an argument-count metric."""
+    from kicad_mcp.tools import routing_coupled_pair
+
+    expected = (
+        "candidate_id",
+        "p_ref1",
+        "p_pad1",
+        "p_ref2",
+        "p_pad2",
+        "n_ref1",
+        "n_pad1",
+        "n_ref2",
+        "n_pad2",
+        "layer",
+        "width_mm",
+        "gap_mm",
+        "clearance_mm",
+        "max_skew_mm",
+    )
+    coupled_server = FastMCP("coupled-flat-schema-contract")
+    routing_coupled_pair.register(coupled_server)
+    coupled = next(
+        tool.fn
+        for tool in coupled_server._tool_manager.list_tools()
+        if tool.name == "route_apply_coupled_differential_pair_candidate"
+    )
+
+    manual_server = FastMCP("straight-flat-schema-contract")
+    manual = _adapter()
+    manual.register(
+        manual_server,
+        manual.RoutingManualTrackDependencies(service=FakeService()),
+    )
+    straight = next(
+        tool.fn
+        for tool in manual_server._tool_manager.list_tools()
+        if tool.name == "route_apply_straight_differential_pair_candidate"
+    )
+    for fn in (coupled, straight):
+        params = inspect.signature(fn).parameters
+        assert tuple(params) == expected
+        assert params["candidate_id"].default is inspect.Parameter.empty
+        assert params["layer"].default == "F_Cu"
+        assert params["width_mm"].default == 0.25
+        assert params["gap_mm"].default == 0.5
+        assert params["clearance_mm"].default == 0.2
+        assert params["max_skew_mm"].default == 0.1

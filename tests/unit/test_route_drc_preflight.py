@@ -16,13 +16,13 @@ def _candidate() -> list[TrackSpec]:
 def test_preflight_rejects_missing_project_rules(tmp_path: Path) -> None:
     from kicad_mcp.pcb.route_drc_preflight import RoutePreflightError, run_route_drc_preflight
 
+    _checked_args = ("(kicad_pcb native snapshot)", _candidate())
+    _checked_kwargs = {
+        "project_file": tmp_path / "missing.kicad_pro",
+        "kicad_cli": tmp_path / "kicad-cli",
+    }
     with pytest.raises(RoutePreflightError, match="project"):
-        run_route_drc_preflight(
-            "(kicad_pcb native snapshot)",
-            _candidate(),
-            project_file=tmp_path / "missing.kicad_pro",
-            kicad_cli=tmp_path / "kicad-cli",
-        )
+        run_route_drc_preflight(*_checked_args, **_checked_kwargs)
 
 
 def test_preflight_rejects_untrusted_candidate_geometry(tmp_path: Path) -> None:
@@ -32,13 +32,10 @@ def test_preflight_rejects_untrusted_candidate_geometry(tmp_path: Path) -> None:
     pro.write_text('{"board":{}}', encoding="utf-8")
     cli = tmp_path / "kicad-cli"
     cli.write_text("fixture", encoding="utf-8")
+    _checked_args = ("(kicad_pcb native snapshot)", [TrackSpec(0, 0, 1, 1, "F_Cu", 0, "MID")])
+    _checked_kwargs = {"project_file": pro, "kicad_cli": cli}
     with pytest.raises(RoutePreflightError, match="width"):
-        run_route_drc_preflight(
-            "(kicad_pcb native snapshot)",
-            [TrackSpec(0, 0, 1, 1, "F_Cu", 0, "MID")],
-            project_file=pro,
-            kicad_cli=cli,
-        )
+        run_route_drc_preflight(*_checked_args, **_checked_kwargs)
 
 
 def test_preflight_rejects_malformed_board_without_native_python(tmp_path: Path) -> None:
@@ -48,13 +45,10 @@ def test_preflight_rejects_malformed_board_without_native_python(tmp_path: Path)
     project.write_text('{"board":{}}', encoding="utf-8")
     cli = tmp_path / "kicad-cli"
     cli.write_text("fixture", encoding="utf-8")
+    _checked_args = ("(kicad_pcb malformed", _candidate())
+    _checked_kwargs = {"project_file": project, "kicad_cli": cli}
     with pytest.raises(RoutePreflightError, match="candidate"):
-        run_route_drc_preflight(
-            "(kicad_pcb malformed",
-            _candidate(),
-            project_file=project,
-            kicad_cli=cli,
-        )
+        run_route_drc_preflight(*_checked_args, **_checked_kwargs)
 
 
 def test_preflight_keeps_custom_drc_rules_in_both_native_copies(
@@ -123,11 +117,10 @@ def test_native_preflight_pair_nets_are_explicitly_scoped() -> None:
         [plus, minus],
         pair_nets=frozenset(("USB_D_P", "USB_D_N")),
     )
+    _checked_args = ([plus, minus],)
+    _checked_kwargs = {"pair_nets": frozenset(("USB_D_P", "MID"))}
     with pytest.raises(RoutePreflightError, match="net"):
-        _validate_specs(
-            [plus, minus],
-            pair_nets=frozenset(("USB_D_P", "MID")),
-        )
+        _validate_specs(*_checked_args, **_checked_kwargs)
 
 
 def test_native_drc_invocation_preserves_argv_and_disables_shell(

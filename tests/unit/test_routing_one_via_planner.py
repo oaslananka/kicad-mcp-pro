@@ -50,8 +50,9 @@ def test_nearby_foreign_net_copper_on_both_layers_changes_via_position() -> None
 
 
 def test_blocked_via_positions_refuse_without_inventing_tracks() -> None:
+    _checked_kwargs = {"front": (CircleObstacle(15, 10, 10),)}
     with pytest.raises(RoutePlanningError, match="via|transition|obstacle"):
-        _plan(front=(CircleObstacle(15, 10, 10),))
+        _plan(**_checked_kwargs)
 
 
 @pytest.mark.parametrize(

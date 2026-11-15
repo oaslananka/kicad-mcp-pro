@@ -19,7 +19,7 @@ from ..connection import get_board
 from ..pcb.board_access import board_footprints, board_pads
 from ..pcb.geometry import point_xy_mm
 from ..pcb.pad_mapping import map_pads_to_footprints
-from ..pcb.route_drc_preflight import RoutePreflightError, run_route_drc_preflight
+from ..pcb.route_drc_preflight import run_route_drc_preflight
 from ..pcb.routing_obstacle_snapshot import snapshot_route_obstacles
 from ..routing.differential_pair_candidate import plan_coupled_hv45_pair
 from ..routing.manual_tracks import TrackSpec, _find_pad
@@ -164,14 +164,16 @@ def _preview_coupled_pair(
             },
             sort_keys=True,
         )
-    except (RoutePlanningError, ValueError, TypeError, KeyError, AttributeError) as exc:
+    except (ValueError, TypeError, KeyError, AttributeError) as exc:
         return json.dumps(
             {"status": "refused", "candidateOnly": True, "reason": str(exc)},
             sort_keys=True,
         )
 
 
-def _apply_coupled_pair(
+# S107 exception: preserve the flat paired candidate contract consumed by the MCP adapter.
+# Keep candidate identity, four P/N pad coordinates and five route options independently typed.
+def _apply_coupled_pair(  # NOSONAR - S107: paired MCP input compatibility
     candidate_id: str,
     p_ref1: str,
     p_pad1: str,
@@ -232,7 +234,7 @@ def _apply_coupled_pair(
             kicad_cli=config.kicad_cli,
             pair_nets=frozenset((preview["netPlus"], preview["netMinus"])),
         )
-    except (RoutePreflightError, RoutePlanningError, ValueError, TypeError, KeyError) as exc:
+    except (ValueError, TypeError, KeyError) as exc:
         return refused(str(exc))
     if not evidence["accepted"]:
         return refused("Native KiCad DRC refused coupled differential pair", **evidence)
@@ -288,7 +290,8 @@ def register(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @requires_kicad_running
-    def route_apply_coupled_differential_pair_candidate(
+    # Flat parameter names are an existing FastMCP JSON schema compatibility contract.
+    def route_apply_coupled_differential_pair_candidate(  # NOSONAR - S107: stable MCP schema
         candidate_id: str,
         p_ref1: str,
         p_pad1: str,

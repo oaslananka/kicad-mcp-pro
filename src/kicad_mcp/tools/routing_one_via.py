@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Collection
 from dataclasses import asdict
 from typing import cast
 
 from kipy.board_types import Pad
+from kipy.proto.board.board_types_pb2 import BoardLayer
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
@@ -19,7 +21,7 @@ from ..connection import get_board
 from ..pcb.board_access import board_footprints, board_pads
 from ..pcb.geometry import point_xy_mm
 from ..pcb.pad_mapping import map_pads_to_footprints
-from ..pcb.route_drc_preflight import RoutePreflightError, run_route_drc_preflight
+from ..pcb.route_drc_preflight import run_route_drc_preflight
 from ..pcb.routing_obstacle_snapshot import snapshot_route_obstacles
 from ..routing.manual_tracks import TrackSpec, ViaSpec, _find_pad
 from ..routing.path_planner import RoutePlanningError
@@ -27,6 +29,33 @@ from ..routing.through_via_planner import plan_one_through_via
 from ..utils.layers import resolve_layer
 from .metadata import requires_kicad_running
 from .routing_manual_tracks import _publish_route_specs
+
+
+def _ensure_distinct_outer_pad_layers(
+    source: Pad,
+    target: Pad,
+    *,
+    start_layer: str,
+    end_layer: str,
+    enabled_layers: Collection[BoardLayer.ValueType],
+) -> None:
+    """Use only enabled, mutually exclusive F.Cu/B.Cu SMD endpoint layers."""
+    if (start_layer, end_layer) not in (("F_Cu", "B_Cu"), ("B_Cu", "F_Cu")):
+        raise RoutePlanningError("Only one full-stack outer layer transition is supported")
+    first, last = resolve_layer(start_layer), resolve_layer(end_layer)
+    if first not in enabled_layers or last not in enabled_layers:
+        raise RoutePlanningError("Both requested copper layers must be enabled")
+    source_layers = set(source.padstack.layers)
+    target_layers = set(target.padstack.layers)
+    if not (
+        first in source_layers
+        and last in target_layers
+        and last not in source_layers
+        and first not in target_layers
+    ):
+        raise RoutePlanningError(
+            "A via is only offered between distinct F/B SMD pads with no common copper layer"
+        )
 
 
 def _preview_one_via(
@@ -66,23 +95,13 @@ def _preview_one_via(
         net = source.net.name
         if not net or net != target.net.name:
             raise RoutePlanningError("Opposite layer pads must share one named net")
-        if (start_layer, end_layer) not in (("F_Cu", "B_Cu"), ("B_Cu", "F_Cu")):
-            raise RoutePlanningError("Only one full-stack outer layer transition is supported")
-        first, last = resolve_layer(start_layer), resolve_layer(end_layer)
-        enabled = board.get_enabled_layers()
-        if first not in enabled or last not in enabled:
-            raise RoutePlanningError("Both requested copper layers must be enabled")
-        source_layers = set(source.padstack.layers)
-        target_layers = set(target.padstack.layers)
-        if not (
-            first in source_layers
-            and last in target_layers
-            and last not in source_layers
-            and first not in target_layers
-        ):
-            raise RoutePlanningError(
-                "A via is only offered between distinct F/B SMD pads with no common copper layer"
-            )
+        _ensure_distinct_outer_pad_layers(
+            source,
+            target,
+            start_layer=start_layer,
+            end_layer=end_layer,
+            enabled_layers=board.get_enabled_layers(),
+        )
         front = snapshot_route_obstacles(
             board,
             "F_Cu",
@@ -145,7 +164,7 @@ def _preview_one_via(
             },
             sort_keys=True,
         )
-    except (RoutePlanningError, AttributeError, ValueError, TypeError) as exc:
+    except (AttributeError, ValueError, TypeError) as exc:
         return refused(str(exc))
 
 
@@ -205,7 +224,7 @@ def _apply_one_via(
             kicad_cli=config.kicad_cli,
             through_via=via,
         )
-    except (RoutePreflightError, RoutePlanningError, KeyError, ValueError, TypeError) as exc:
+    except (KeyError, ValueError, TypeError) as exc:
         return refused(str(exc))
     if not evidence["accepted"]:
         return refused("Native KiCad DRC rejected the layer transition", **evidence)

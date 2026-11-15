@@ -84,20 +84,16 @@ def test_bad_geometry_fails_closed(
 
 
 def test_start_inside_blocker_is_not_plannable() -> None:
+    _checked_args = ((0.0, 0.0), (5.0, 0.0), (CircleObstacle(0.0, 0.0, 1.0),))
     with pytest.raises(RoutePlanningError, match="obstacle"):
-        plan_hv45_path((0.0, 0.0), (5.0, 0.0), (CircleObstacle(0.0, 0.0, 1.0),))
+        plan_hv45_path(*_checked_args)
 
 
 def test_bounded_search_never_guesses_a_route() -> None:
+    _checked_args = ((0.0, 0.0), (5.0, 0.0), (CircleObstacle(2.5, 0.0, 0.8),))
+    _checked_kwargs = {"max_nodes": 2, "grid_mm": 0.25, "margin_mm": 2.0}
     with pytest.raises(RoutePlanningError, match="budget|route"):
-        plan_hv45_path(
-            (0.0, 0.0),
-            (5.0, 0.0),
-            (CircleObstacle(2.5, 0.0, 0.8),),
-            max_nodes=2,
-            grid_mm=0.25,
-            margin_mm=2.0,
-        )
+        plan_hv45_path(*_checked_args, **_checked_kwargs)
 
 
 def test_unsupported_width_or_clearance_refused() -> None:

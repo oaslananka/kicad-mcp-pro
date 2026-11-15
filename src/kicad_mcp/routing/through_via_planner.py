@@ -14,6 +14,37 @@ from .path_planner import Obstacle, RoutePlanningError, _segment_clear
 type Point = tuple[float, float]
 
 
+def _via_site_is_safe(
+    start: Point,
+    point: Point,
+    end: Point,
+    *,
+    front_obstacles: tuple[Obstacle, ...],
+    back_obstacles: tuple[Obstacle, ...],
+    first_obstacles: tuple[Obstacle, ...],
+    last_obstacles: tuple[Obstacle, ...],
+    width_mm: float,
+    clearance_mm: float,
+    diameter_mm: float,
+) -> bool:
+    """Reject via pad copper or either leg intersecting obstacles."""
+    pad_radius = diameter_mm / 2 + clearance_mm
+    if any(
+        not _segment_clear(point, point, obstacles, pad_radius)
+        for obstacles in (front_obstacles, back_obstacles)
+    ):
+        return False
+    if not _segment_clear(start, point, first_obstacles, width_mm / 2 + clearance_mm):
+        return False
+    if not _segment_clear(point, end, last_obstacles, width_mm / 2 + clearance_mm):
+        return False
+    if hypot(start[0] - point[0], start[1] - point[1]) < 0.1 or (
+        hypot(end[0] - point[0], end[1] - point[1]) < 0.1
+    ):
+        return False
+    return True
+
+
 def plan_one_through_via(
     start: Point,
     end: Point,
@@ -55,18 +86,17 @@ def plan_one_through_via(
     for fraction in (0.5, 0.35, 0.65, 0.25, 0.75):
         point = (round(start[0] + dx * fraction, 6), round(start[1] + dy * fraction, 6))
         via = ViaSpec(*point, diameter_mm, drill_mm, net_name)
-        pad_radius = diameter_mm / 2 + clearance_mm
-        if any(
-            not _segment_clear(point, point, obstacles, pad_radius)
-            for obstacles in (front_obstacles, back_obstacles)
-        ):
-            continue
-        if not _segment_clear(start, point, first_obstacles, width_mm / 2 + clearance_mm):
-            continue
-        if not _segment_clear(point, end, last_obstacles, width_mm / 2 + clearance_mm):
-            continue
-        if hypot(start[0] - point[0], start[1] - point[1]) < 0.1 or (
-            hypot(end[0] - point[0], end[1] - point[1]) < 0.1
+        if not _via_site_is_safe(
+            start,
+            point,
+            end,
+            front_obstacles=front_obstacles,
+            back_obstacles=back_obstacles,
+            first_obstacles=first_obstacles,
+            last_obstacles=last_obstacles,
+            width_mm=width_mm,
+            clearance_mm=clearance_mm,
+            diameter_mm=diameter_mm,
         ):
             continue
         tracks = [
