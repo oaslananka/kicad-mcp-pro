@@ -21,8 +21,8 @@ test("downloaded launcher resumes after an existing uvx shim exits",{skip:proces
     const log=join(folder,"captured.txt");
     writeFileSync(join(folder,"uvx.cmd"),`@echo off\r\necho %* > "${log}"\r\nexit /b 0\r\n`);
     // Only our fake uvx is invoked: no real download, login, project or Cloud mutation.
-    const executed=spawnSync(launcher,[],{
-      shell:true,input:"\r\n",cwd:folder,encoding:"utf8",timeout:10_000,
+    const executed=spawnSync("cmd.exe",["/d","/c",`call "${launcher}"`],{
+      windowsVerbatimArguments:true,input:"\r\n",cwd:folder,encoding:"utf8",timeout:10_000,
       env:{...process.env,PATH:`${folder};${process.env.PATH??""}`}
     });
     assert.equal(executed.error,undefined);
@@ -45,8 +45,8 @@ test("launcher can bootstrap uvx from a simulated WinGet install",{skip:process.
     writeFileSync(join(folder,"winget.cmd"),
       "@echo off\r\ncopy /Y \"%~dp0fake-uvx.cmd\" \"%LOCALAPPDATA%\\Microsoft\\WinGet\\Links\\uvx.cmd\" >nul\r\nexit /b 0\r\n");
     const win=process.env.SystemRoot??"C:\\Windows";
-    const executed=spawnSync(launcher,[],{
-      shell:true,input:"\r\n",encoding:"utf8",timeout:10_000,
+    const executed=spawnSync("cmd.exe",["/d","/c",`call "${launcher}"`],{
+      windowsVerbatimArguments:true,input:"\r\n",encoding:"utf8",timeout:10_000,
       env:{...process.env,PATH:`${folder};${win}\\System32;${win}`,
         LOCALAPPDATA:fakeLocal,USERPROFILE:join(folder,"home"),KICAD_SIM_LOG:cliLog}
     });
@@ -62,8 +62,8 @@ test("launcher reports the missing package manager without changing the system",
   const folder=mkdtempSync(join(tmpdir(),"kicad-cloud-deny-"));
   try{
     const win=process.env.SystemRoot??"C:\\Windows";
-    const executed=spawnSync(launcher,[],{
-      shell:true,input:"\r\n",encoding:"utf8",timeout:10_000,
+    const executed=spawnSync("cmd.exe",["/d","/c",`call "${launcher}"`],{
+      windowsVerbatimArguments:true,input:"\r\n",encoding:"utf8",timeout:10_000,
       env:{...process.env,PATH:`${win}\\System32;${win}`,LOCALAPPDATA:folder,USERPROFILE:folder}
     });
     assert.equal(executed.status,2,executed.stderr||executed.stdout);
