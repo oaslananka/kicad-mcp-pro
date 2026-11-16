@@ -33,6 +33,7 @@ _SESSION_TIMEOUT_SECONDS = 295
 _SESSION_REFRESH_SECONDS = 240
 _FOLDER_REQUEST_KIND = "connector.local_browser_request"
 _WRITE_REQUEST_KIND = "connector.authorized_write"
+_READ_REQUEST_KIND = "connector.authorized_read"
 
 
 def _report_activity(callback: Callable[[str], None] | None, message: str) -> None:
@@ -56,7 +57,7 @@ class AuthenticatedReadSocket(Protocol):
 def _decode_sequenced_request(raw: str | bytes, expected_sequence: int) -> bytes:
     if not isinstance(raw, str):
         raise CloudHandshakeDeniedError(_DENIED)
-    envelope = _read_strict_json(raw, "connector.authorized_read")
+    envelope = _read_strict_json(raw, _READ_REQUEST_KIND)
     if (
         set(envelope) != {"kind", "version", "sequence", "request"}
         or type(envelope["version"]) is not int
@@ -244,7 +245,7 @@ async def _serve_folder_frame(
 def _requested_display_operation(raw: str, kind: object) -> str:
     """Return an allowlisted tool label, never caller-supplied paths or arguments."""
     fallback = "write" if kind == _WRITE_REQUEST_KIND else "read"
-    if kind != "connector.authorized_read":
+    if kind != _READ_REQUEST_KIND:
         # Native write proof contains an opaque signed payload; the verified
         # operation is reported only after local execution acknowledges it.
         return fallback
@@ -285,7 +286,7 @@ async def _serve_one_signed_frame(
         await _serve_write_revisions_request(socket, raw, allow_native_write, revisions_preparer)
         _report_activity(on_activity, "Write revision preparation completed")
         return 0
-    if kind not in {_WRITE_REQUEST_KIND, "connector.authorized_read"}:
+    if kind not in {_WRITE_REQUEST_KIND, _READ_REQUEST_KIND}:
         raise CloudHandshakeDeniedError(_DENIED)
     sequence = reads_served + 1
     is_write = kind == _WRITE_REQUEST_KIND

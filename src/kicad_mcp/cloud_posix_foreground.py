@@ -112,6 +112,123 @@ def _policy_close(error: BaseException) -> bool:
     return False
 
 
+def _load_foreground_binding(
+    root: Path,
+    identity_loader: Callable[[Path], dict[str, str]],
+    project_resolver: Callable[..., LocalRegisteredRead],
+    key_loader: Callable[..., Ed25519PrivateKey],
+) -> tuple[dict[str, str], LocalRegisteredRead, Ed25519PrivateKey, bytes]:
+    """Revalidate registration and signer before opening each signed session."""
+    record = identity_loader(root)
+    try:
+        project = project_resolver(
+            owner_sub=record["ownerSub"],
+            origin=record["cloudOrigin"],
+            device_id=record["deviceId"],
+            project_id=record["projectId"],
+            registry_root=root,
+        )
+        signer = key_loader(project.key_file, record["cloudOrigin"], record["deviceId"])
+        return record, project, signer, _public_key(signer)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        raise LocalApprovalDeniedError(_DENIED) from exc
+
+
+def _foreground_settings(
+    *,
+    root: Path,
+    stop: asyncio.Event,
+    record: dict[str, str],
+    project: LocalRegisteredRead,
+    signer: Ed25519PrivateKey,
+    signer_public: bytes,
+    identity_loader: Callable[[Path], dict[str, str]],
+    project_resolver: Callable[..., LocalRegisteredRead],
+    key_loader: Callable[..., Ed25519PrivateKey],
+    status_callback: Callable[[str], None] | None,
+) -> dict[str, object]:
+    """Bind the immutable session identity to a fresh owner-checking dispatcher."""
+
+    def authorized() -> bool:
+        return _owner_authorization(
+            root=root,
+            record=record,
+            project=project,
+            expected_public_key=signer_public,
+            stop=stop,
+            identity_loader=identity_loader,
+            project_resolver=project_resolver,
+            key_loader=key_loader,
+        )
+
+    def dispatcher(receipt: HandshakeReceipt) -> LocalReadDispatch:
+        if receipt.device_id != record["deviceId"] or not authorized():
+            raise LocalApprovalDeniedError(_DENIED)
+        return LocalReadDispatch(
+            verified=VerifiedLocalBinding(
+                device_id=receipt.device_id,
+                project_id=record["projectId"],
+                operations=frozenset({"project_summary"}),
+                session_id=receipt.session_id,
+                session_expires_unix_ms=time.time_ns() // 1_000_000 + _SESSION_LIFETIME_MS,
+            ),
+            operator_project=OperatorProject(
+                device_id=record["deviceId"],
+                project_id=record["projectId"],
+                directory=project.project_directory,
+                filename_stem=project.filename_stem,
+            ),
+            current_authorization=authorized,
+            max_reads=_MAX_READS,
+            native_drc=False,
+        )
+
+    return {
+        "origin": record["cloudOrigin"],
+        "trusted_origin": record["cloudOrigin"],
+        "owner_sub": record["ownerSub"],
+        "device_id": record["deviceId"],
+        "signing_key": signer,
+        "dispatcher_factory": dispatcher,
+        "max_reads": _MAX_READS,
+        "on_ready": lambda _receipt: status_callback("Connected") if status_callback else None,
+        "on_activity": status_callback,
+    }
+
+
+def _notify(callback: Callable[[str], None] | None, message: str) -> None:
+    if callback is not None:
+        callback(message)
+
+
+async def _run_signed_foreground_session(
+    runner: Callable[..., Awaitable[HandshakeReceipt]],
+    settings: dict[str, object],
+    stop: asyncio.Event,
+    status_callback: Callable[[str], None] | None,
+) -> bool:
+    """Run once: return False only for reconnectable network failures."""
+    try:
+        await _session_or_stop(runner, settings, stop)
+        return True
+    except CloudHandshakeDeniedError:
+        _notify(status_callback, "Cloud refused this session; review owner approval in Devices")
+        raise
+    except (OSError, WebSocketException) as exc:
+        if _policy_close(exc):
+            _notify(status_callback, "Owner reapproval required; no automatic re-pairing")
+            raise CloudHandshakeDeniedError("Owner reapproval required") from exc
+        return False
+
+
+async def _wait_for_foreground_retry(stop: asyncio.Event, failures: int) -> None:
+    delay = reconnect_delay_seconds(failures, secrets.randbelow(1001) / 1000)
+    try:
+        await asyncio.wait_for(stop.wait(), timeout=delay)
+    except TimeoutError:
+        pass
+
+
 async def run_foreground(
     *,
     registry: Path | None = None,
@@ -127,98 +244,28 @@ async def run_foreground(
     stop = asyncio.Event() if stop_event is None else stop_event
     failures = 0
     while not stop.is_set():
-        record = identity_loader(root)  # Strict single project, owner-private key.
-        try:
-            project = project_resolver(
-                owner_sub=record["ownerSub"],
-                origin=record["cloudOrigin"],
-                device_id=record["deviceId"],
-                project_id=record["projectId"],
-                registry_root=root,
-            )
-            signer = key_loader(project.key_file, record["cloudOrigin"], record["deviceId"])
-            key_bytes = _public_key(signer)
-        except (OSError, ValueError, TypeError, KeyError) as exc:
-            raise LocalApprovalDeniedError(_DENIED) from exc
-
-        # Bind each session's immutable record, project and signer before retry.
-        def authorized(
-            current_record: dict[str, str] = record,
-            current_project: LocalRegisteredRead = project,
-            signer_public: bytes = key_bytes,
-        ) -> bool:
-            return _owner_authorization(
-                root=root,
-                record=current_record,
-                project=current_project,
-                expected_public_key=signer_public,
-                stop=stop,
-                identity_loader=identity_loader,
-                project_resolver=project_resolver,
-                key_loader=key_loader,
-            )
-
-        def dispatcher(
-            receipt: HandshakeReceipt,
-            current_record: dict[str, str] = record,
-            current_project: LocalRegisteredRead = project,
-            is_authorized: Callable[[], bool] = authorized,
-        ) -> LocalReadDispatch:
-            if receipt.device_id != current_record["deviceId"] or not is_authorized():
-                raise LocalApprovalDeniedError(_DENIED)
-            return LocalReadDispatch(
-                verified=VerifiedLocalBinding(
-                    device_id=receipt.device_id,
-                    project_id=current_record["projectId"],
-                    operations=frozenset({"project_summary"}),
-                    session_id=receipt.session_id,
-                    session_expires_unix_ms=time.time_ns() // 1_000_000 + _SESSION_LIFETIME_MS,
-                ),
-                operator_project=OperatorProject(
-                    device_id=current_record["deviceId"],
-                    project_id=current_record["projectId"],
-                    directory=current_project.project_directory,
-                    filename_stem=current_project.filename_stem,
-                ),
-                current_authorization=is_authorized,
-                max_reads=_MAX_READS,
-                native_drc=False,
-            )
-
-        if status_callback is not None:
-            status_callback("Connecting" if failures == 0 else "Reconnecting")
-
-        settings: dict[str, object] = {
-            "origin": record["cloudOrigin"],
-            "trusted_origin": record["cloudOrigin"],
-            "owner_sub": record["ownerSub"],
-            "device_id": record["deviceId"],
-            "signing_key": signer,
-            "dispatcher_factory": dispatcher,
-            "max_reads": _MAX_READS,
-            "on_ready": lambda _receipt: status_callback("Connected") if status_callback else None,
-            "on_activity": status_callback,
-        }
-        try:
-            await _session_or_stop(session_runner, settings, stop)
-            failures = 0
-        except CloudHandshakeDeniedError:
-            if status_callback is not None:
-                status_callback("Cloud refused this session; review owner approval in Devices")
-            raise
-        except (OSError, WebSocketException) as exc:
-            if _policy_close(exc):
-                if status_callback is not None:
-                    status_callback("Owner reapproval required; no automatic re-pairing")
-                raise CloudHandshakeDeniedError("Owner reapproval required") from exc
-            failures += 1
+        record, project, signer, signer_public = _load_foreground_binding(
+            root, identity_loader, project_resolver, key_loader
+        )
+        settings = _foreground_settings(
+            root=root,
+            stop=stop,
+            record=record,
+            project=project,
+            signer=signer,
+            signer_public=signer_public,
+            identity_loader=identity_loader,
+            project_resolver=project_resolver,
+            key_loader=key_loader,
+            status_callback=status_callback,
+        )
+        _notify(status_callback, "Connecting" if failures == 0 else "Reconnecting")
+        success = await _run_signed_foreground_session(
+            session_runner, settings, stop, status_callback
+        )
+        failures = 0 if success else failures + 1
         if stop.is_set():
             return 0
-        if status_callback is not None:
-            status_callback("Disconnected ? reconnecting")
-        delay = reconnect_delay_seconds(failures, secrets.randbelow(1001) / 1000)
-        try:
-            await asyncio.wait_for(stop.wait(), timeout=delay)
-        except TimeoutError:
-            pass
+        _notify(status_callback, "Disconnected - reconnecting")
+        await _wait_for_foreground_retry(stop, failures)
     return 0

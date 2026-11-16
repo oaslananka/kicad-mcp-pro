@@ -639,6 +639,81 @@ def _connect_windows_foreground(
     )
 
 
+def _validated_posix_registration(origin: str, project_dir: Path | None) -> bool:
+    """Inspect saved owner identity without changing any pairing or local folder."""
+    _require_local_pairing_storage()
+    from kicad_mcp.cloud_local_registry import default_registry_root
+    from kicad_mcp.cloud_registered_pilot import _single_registered_identity
+
+    root = default_registry_root()
+    folder = root / "projects"
+    try:
+        has_registration = folder.exists() and any(folder.iterdir())
+    except OSError as exc:
+        raise typer.BadParameter("Unable to inspect existing Cloud registration.") from exc
+    if not has_registration:
+        return False
+    try:
+        existing = _single_registered_identity(root)
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter("Existing Cloud registration needs local repair.") from exc
+    if existing["cloudOrigin"] != origin:
+        raise typer.BadParameter("A different Cloud origin is already registered.")
+    if project_dir is not None and Path(existing["directory"]).resolve() != project_dir.resolve():
+        raise typer.BadParameter(
+            "Existing device uses a different project folder; no binding changed."
+        )
+    return True
+
+
+def _run_posix_owner_foreground(origin: str) -> None:
+    """Hold the signed session in the visible terminal; never install a daemon."""
+    import asyncio
+
+    from kicad_mcp.cloud_outbound_handshake import CloudHandshakeDeniedError
+    from kicad_mcp.cloud_posix_foreground import run_foreground
+
+    typer.secho("KiCad MCP Pro / Cloud Connector", fg=typer.colors.CYAN, bold=True)
+    typer.echo("This terminal owns the signed read-only session. Ctrl+C disconnects.")
+    typer.echo("Your device identity stays saved; run cloud connect to reconnect.")
+    typer.echo(f"Manage projects and AI client access: {origin}/devices")
+    try:
+        asyncio.run(
+            run_foreground(status_callback=lambda state: _display_cloud_status(state, origin))
+        )
+    except CloudHandshakeDeniedError:
+        typer.echo(
+            "Cloud denied the signed session. Review device approval in Cloud Devices.", err=True
+        )
+        raise typer.Exit(3) from None
+    except (OSError, ValueError):
+        raise typer.BadParameter("Owner-private device registration needs repair.") from None
+    except KeyboardInterrupt:
+        typer.echo("Disconnected. Local pairing was preserved.")
+
+
+def _connect_posix_foreground(
+    origin: str, alias: str, project_dir: Path | None, no_browser: bool, new_device: bool
+) -> None:
+    """Reuse the saved pairing, or require owner-approved first enrollment."""
+    has_registration = _validated_posix_registration(origin, project_dir)
+    if not _owner_terminal():
+        raise typer.BadParameter(
+            "Cloud foreground requires a visible owner terminal. No device was paired."
+        )
+    if not has_registration or new_device:
+        _setup_posix(
+            origin,
+            _resolve_device_alias(None if alias == _DEFAULT_DEVICE_ALIAS else alias),
+            project_dir,
+            project_dir is None,
+            no_browser,
+            new_device,
+            foreground=True,
+        )
+    _run_posix_owner_foreground(origin)
+
+
 @cloud_app.command()
 def connect(
     alias: str = typer.Option(
@@ -670,68 +745,7 @@ def connect(
     if _is_windows():
         _connect_windows_foreground(origin, alias, project_dir, no_browser, new_device)
         return
-    _require_local_pairing_storage()
-    from kicad_mcp.cloud_local_registry import default_registry_root
-    from kicad_mcp.cloud_registered_pilot import _single_registered_identity
-
-    root = default_registry_root()
-    folder = root / "projects"
-    try:
-        has_registration = folder.exists() and any(folder.iterdir())
-    except OSError as exc:
-        raise typer.BadParameter("Unable to inspect existing Cloud registration.") from exc
-    if has_registration:
-        try:
-            existing = _single_registered_identity(root)
-        except (OSError, ValueError) as exc:
-            raise typer.BadParameter("Existing Cloud registration needs local repair.") from exc
-        if existing["cloudOrigin"] != origin:
-            raise typer.BadParameter("A different Cloud origin is already registered.")
-        if (
-            project_dir is not None
-            and Path(existing["directory"]).resolve() != project_dir.resolve()
-        ):
-            raise typer.BadParameter(
-                "Existing device uses a different project folder; no binding changed."
-            )
-    if not _owner_terminal():
-        raise typer.BadParameter(
-            "Cloud foreground requires a visible owner terminal. No device was paired."
-        )
-    if not has_registration or new_device:
-        _setup_posix(
-            origin,
-            _resolve_device_alias(None if alias == _DEFAULT_DEVICE_ALIAS else alias),
-            project_dir,
-            project_dir is None,
-            no_browser,
-            new_device,
-            foreground=True,
-        )
-
-    import asyncio
-
-    from kicad_mcp.cloud_outbound_handshake import CloudHandshakeDeniedError
-    from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
-    from kicad_mcp.cloud_posix_foreground import run_foreground
-
-    typer.secho("KiCad MCP Pro / Cloud Connector", fg=typer.colors.CYAN, bold=True)
-    typer.echo("This terminal owns the signed read-only session. Ctrl+C disconnects.")
-    typer.echo("Your device identity stays saved; run cloud connect to reconnect.")
-    typer.echo(f"Manage projects and AI client access: {origin}/devices")
-    try:
-        asyncio.run(
-            run_foreground(status_callback=lambda state: _display_cloud_status(state, origin))
-        )
-    except CloudHandshakeDeniedError:
-        typer.echo(
-            "Cloud denied the signed session. Review device approval in Cloud Devices.", err=True
-        )
-        raise typer.Exit(3) from None
-    except (LocalApprovalDeniedError, OSError, ValueError):
-        raise typer.BadParameter("Owner-private device registration needs repair.") from None
-    except KeyboardInterrupt:
-        typer.echo("Disconnected. Local pairing was preserved.")
+    _connect_posix_foreground(origin, alias, project_dir, no_browser, new_device)
 
 
 def _resolve_device_alias(alias: str | None) -> str:
@@ -908,15 +922,13 @@ def _setup_posix(
     connector_state = "Foreground session pending" if foreground else _start_connector()
 
     typer.echo("\n" + "=" * 60)
-    typer.echo(
-        "KiCad MCP Pro Cloud Setup Complete!"
-        if connector_state in ("Connected", "Connecting")
-        else (
-            "Device registered; starting foreground Cloud session"
-            if foreground
-            else "KiCad MCP Pro Cloud device registered; Connector needs attention"
-        )
-    )
+    if connector_state in ("Connected", "Connecting"):
+        setup_heading = "KiCad MCP Pro Cloud Setup Complete!"
+    elif foreground:
+        setup_heading = "Device registered; starting foreground Cloud session"
+    else:
+        setup_heading = "KiCad MCP Pro Cloud device registered; Connector needs attention"
+    typer.echo(setup_heading)
     typer.echo("=" * 60)
     typer.echo(f"Cloud Origin:    {origin}")
     typer.echo(f"Device:          {device_alias} ({device_id}) [Review access in Cloud]")
