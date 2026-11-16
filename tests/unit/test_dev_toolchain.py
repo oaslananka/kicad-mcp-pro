@@ -15,7 +15,7 @@ def test_toolchain_contract_is_exact_and_cross_file_consistent() -> None:
 
     assert contract.python_version == "3.13.17"
     assert contract.uv_version == "0.13.7"
-    assert contract.node_version == "24.22.1"
+    assert contract.node_version == "26.13.1"
     assert contract.pnpm_version == "11.28.6"
     assert contract.task_version == "3.52.0"
     assert contract.kicad_cli_version == "10.0.6"
@@ -27,7 +27,7 @@ def test_toolchain_contract_is_exact_and_cross_file_consistent() -> None:
 
     assert (ROOT / ".python-version").read_text(encoding="utf-8").strip() == contract.python_version
     assert package["packageManager"] == f"pnpm@{contract.pnpm_version}"
-    assert package["engines"]["node"].startswith(f">={contract.node_version} ")
+    assert f">={contract.node_version} <27" in package["engines"]["node"]
     assert uv_config["required-version"] == contract.uv_version
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "dev-bootstrap.yml").read_text(encoding="utf-8")
