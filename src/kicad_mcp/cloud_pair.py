@@ -42,6 +42,7 @@ from kicad_mcp.cloud_pair_keys import (
 _PAIRING_DENIED = "pairing denied"
 _CHALLENGE_SUFFIX = ".challenge.json"
 _JSON_MEDIA_TYPE = "application/json"
+_PAIRING_CLOCK_SKEW_MS = 30_000  # Cloud issues the five-minute deadline on a different clock.
 
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 _USER_CODE = re.compile(r"[A-Z0-9]{6}-[A-Z0-9]{6}")
@@ -251,6 +252,7 @@ def _challenge(result: dict[str, object], key: Ed25519PrivateKey) -> tuple[str, 
     )
     der = key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
     expected = hashlib.sha256(der).hexdigest()
+    now_ms = time.time_ns() // 1_000_000
     if (
         not isinstance(challenge, str)
         or not _UUID.fullmatch(challenge)
@@ -262,7 +264,9 @@ def _challenge(result: dict[str, object], key: Ed25519PrivateKey) -> tuple[str, 
         or not _FINGERPRINT.fullmatch(fingerprint)
         or fingerprint != expected
         or type(expiry) is not int
-        or not (time.time_ns() // 1_000_000 < expiry <= time.time_ns() // 1_000_000 + 300_000)
+        # Cloud still enforces the five-minute expiry during status/redeem.
+        # Bound local/server clock skew without accepting arbitrary expiry dates.
+        or not (now_ms < expiry <= now_ms + 300_000 + _PAIRING_CLOCK_SKEW_MS)
     ):
         raise CloudPairingError(_PAIRING_DENIED)
     return challenge, code, secret, fingerprint, expiry
