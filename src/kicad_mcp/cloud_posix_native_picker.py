@@ -5,10 +5,10 @@ Never runs on a server or unattended daemon; never sends filesystem paths to Clo
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import os
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -45,6 +45,32 @@ def _select_with_tkinter() -> Path | None:
         raise OSError("No graphical project folder chooser is available") from exc
 
 
+async def _capture_native_dialog(argv: list[str]) -> tuple[int, str, str]:
+    """Run an owner-visible platform chooser with argument separation and a deadline."""
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *argv,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except OSError as exc:
+        raise OSError("The native project folder chooser could not start") from exc
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=_TIMEOUT)
+    except TimeoutError as exc:
+        process.kill()
+        await process.communicate()
+        raise OSError("The native project folder chooser timed out") from exc
+    if process.returncode is None:
+        raise OSError("The native project folder chooser did not exit")
+    return (
+        process.returncode,
+        stdout.decode("utf-8", errors="replace"),
+        stderr.decode("utf-8", errors="replace"),
+    )
+
+
 def choose_project_folder() -> Path | None:
     """Return the owner's GUI-selected folder or None on explicit cancellation."""
     if not native_picker_available():
@@ -71,23 +97,12 @@ def choose_project_folder() -> Path | None:
         ]
     else:
         raise OSError("POSIX native project folder picker requires macOS or Linux")
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-            shell=False,
-            timeout=_TIMEOUT,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise OSError("The native project folder chooser could not finish") from exc
-    if result.returncode != 0:
-        if sys.platform == "darwin":
-            if "(-128)" in result.stderr:
-                return None
-        elif result.returncode == 1 and not result.stdout.strip():
+    status, stdout, stderr = asyncio.run(_capture_native_dialog(cmd))
+    if status != 0:
+        if sys.platform == "darwin" and "(-128)" in stderr:
+            return None
+        if sys.platform.startswith("linux") and status == 1 and not stdout.strip():
             return None
         raise OSError("The native project folder chooser failed")
-    selected = result.stdout.strip()
+    selected = stdout.strip()
     return Path(selected) if selected else None
