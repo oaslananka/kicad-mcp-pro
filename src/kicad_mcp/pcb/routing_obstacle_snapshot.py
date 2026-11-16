@@ -169,6 +169,19 @@ def _edge_shape_points(shape: object) -> tuple[tuple[float, float], ...]:
     raise RoutePlanningError("Board outline contains an unsupported native shape")
 
 
+def _matching_edge_points(
+    remaining: list[tuple[tuple[float, float], ...]],
+    endpoint: tuple[float, float],
+) -> tuple[int, list[tuple[float, float]]]:
+    """Locate the next boundary edge, reversing only when required."""
+    for index, candidate in enumerate(remaining):
+        if _points_close(candidate[0], endpoint):
+            return index, list(candidate[1:])
+        if _points_close(candidate[-1], endpoint):
+            return index, list(reversed(candidate))[1:]
+    raise RoutePlanningError("Board edge outline is open or disconnected")
+
+
 def _stitch_edge_loops(
     edge_shapes: list[object],
 ) -> tuple[tuple[tuple[float, float], ...], ...]:
@@ -178,19 +191,7 @@ def _stitch_edge_loops(
     while remaining:
         current = list(remaining.pop(0))
         while not _points_close(current[-1], current[0]):
-            match_index: int | None = None
-            next_points: list[tuple[float, float]] | None = None
-            for index, candidate in enumerate(remaining):
-                if _points_close(candidate[0], current[-1]):
-                    match_index = index
-                    next_points = list(candidate[1:])
-                    break
-                if _points_close(candidate[-1], current[-1]):
-                    match_index = index
-                    next_points = list(reversed(candidate))[1:]
-                    break
-            if match_index is None or next_points is None:
-                raise RoutePlanningError("Board edge outline is open or disconnected")
+            match_index, next_points = _matching_edge_points(remaining, current[-1])
             current.extend(next_points)
             remaining.pop(match_index)
             if len(current) > 20_000:
@@ -319,13 +320,12 @@ def _pad_radius_mm(pad: object, layer_id: int) -> float:
         raise RoutePlanningError("Copper pad has no usable dimensions")
     # Custom primitive coordinates are pad-local; pad rotation cannot increase
     # the maximum radial distance. Offset is applied conservatively afterward.
-    radius = (
-        _custom_pad_radius_mm(copper_layer, width, height)
-        if "CUSTOM" in shape
-        else max(width, height) / 2
-        if shape == "PSS_CIRCLE"
-        else hypot(width, height) / 2
-    )
+    if "CUSTOM" in shape:
+        radius = _custom_pad_radius_mm(copper_layer, width, height)
+    elif shape == "PSS_CIRCLE":
+        radius = max(width, height) / 2
+    else:
+        radius = hypot(width, height) / 2
     return radius + hypot(*offset)
 
 
@@ -349,6 +349,24 @@ def _shape_width_radius_mm(shape: BoardShape) -> float:
     return width / 2
 
 
+def _copper_shape_obstacles(shape: object) -> list[Obstacle]:
+    """Convert a native copper primitive without losing its actual stroke."""
+    if not isinstance(shape, (BoardSegment, BoardArc)):
+        raise RoutePlanningError("Native copper shape unsupported for planning")
+    radius = _shape_width_radius_mm(shape)
+    if isinstance(shape, BoardSegment):
+        start = point_xy_mm(shape.start)
+        end = point_xy_mm(shape.end)
+        if _points_close(start, end):
+            raise RoutePlanningError("Native copper segment has zero length")
+        return [SegmentObstacle(*start, *end, radius)]
+    points = _sample_arc(shape.start, shape.mid, shape.end)
+    return [
+        SegmentObstacle(*start, *end, radius)
+        for start, end in zip(points[:-1], points[1:], strict=True)
+    ]
+
+
 def _shape_obstacles(shapes: Iterable[object], layer_id: int) -> list[Obstacle]:
     obstacles: list[Obstacle] = []
     for shape in shapes:
@@ -359,25 +377,36 @@ def _shape_obstacles(shapes: Iterable[object], layer_id: int) -> list[Obstacle]:
             raise RoutePlanningError("Native board shape has unknown layer")
         if shape_layer != layer_id:
             continue
-
-        if not isinstance(shape, (BoardSegment, BoardArc)):
-            raise RoutePlanningError("Native copper shape unsupported for planning")
-        radius = _shape_width_radius_mm(shape)
-        if isinstance(shape, BoardSegment):
-            start = point_xy_mm(shape.start)
-            end = point_xy_mm(shape.end)
-            if _points_close(start, end):
-                raise RoutePlanningError("Native copper segment has zero length")
-            obstacles.append(SegmentObstacle(*start, *end, radius))
-        elif isinstance(shape, BoardArc):
-            points = _sample_arc(shape.start, shape.mid, shape.end)
-            obstacles.extend(
-                SegmentObstacle(*start, *end, radius)
-                for start, end in zip(points, points[1:], strict=True)
-            )
-        else:
-            raise RoutePlanningError("Native copper shape unsupported for planning")
+        obstacles.extend(_copper_shape_obstacles(shape))
     return obstacles
+
+
+def _zone_obstacle(
+    zone: object,
+    *,
+    for_via: bool,
+    routing_net: str | None,
+) -> Obstacle | None:
+    """Respect the two different keepout modes without ignoring unknown copper."""
+    zone_type = getattr(zone, "type", None)
+    if zone_type == ZoneType.ZT_RULE_AREA:
+        settings = getattr(getattr(zone, "proto", None), "rule_area_settings", None)
+        if settings is None:
+            raise RoutePlanningError("Rule-area keepout settings unavailable")
+        if not (settings.keepout_tracks or (for_via and settings.keepout_vias)):
+            return None
+        outline = getattr(zone, "outline", None)
+        if outline is None:
+            raise RoutePlanningError("Rule-area keepout outline unavailable")
+        return _polygon_obstacle_from_outline(outline)
+    if zone_type == ZoneType.ZT_COPPER:
+        if (
+            routing_net is not None
+            and getattr(getattr(zone, "net", None), "name", None) == routing_net
+        ):
+            return None
+        raise RoutePlanningError("Copper zone fill on the routing layer is not yet safely modelled")
+    raise RoutePlanningError("Unknown zone type intersects the routing layer")
 
 
 def _zone_obstacles(
@@ -394,32 +423,9 @@ def _zone_obstacles(
             raise RoutePlanningError("Copper zone layer membership unavailable")
         if layer_id not in layers:
             continue
-
-        zone_type = getattr(zone, "type", None)
-        if zone_type == ZoneType.ZT_RULE_AREA:
-            settings = getattr(getattr(zone, "proto", None), "rule_area_settings", None)
-            if settings is None:
-                raise RoutePlanningError("Rule-area keepout settings unavailable")
-            blocks_tracks = bool(settings.keepout_tracks)
-            blocks_vias = bool(settings.keepout_vias)
-            if blocks_tracks or (for_via and blocks_vias):
-                outline = getattr(zone, "outline", None)
-                if outline is None:
-                    raise RoutePlanningError("Rule-area keepout outline unavailable")
-                obstacles.append(_polygon_obstacle_from_outline(outline))
-            continue
-
-        if zone_type == ZoneType.ZT_COPPER:
-            if (
-                routing_net is not None
-                and getattr(getattr(zone, "net", None), "name", None) == routing_net
-            ):
-                continue
-            raise RoutePlanningError(
-                "Copper zone fill on the routing layer is not yet safely modelled"
-            )
-
-        raise RoutePlanningError("Unknown zone type intersects the routing layer")
+        obstacle = _zone_obstacle(zone, for_via=for_via, routing_net=routing_net)
+        if obstacle is not None:
+            obstacles.append(obstacle)
     return obstacles
 
 

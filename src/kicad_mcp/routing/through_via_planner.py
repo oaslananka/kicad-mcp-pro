@@ -45,12 +45,9 @@ def _via_site_is_safe(
     return True
 
 
-def plan_one_through_via(
+def _validate_via_inputs(
     start: Point,
     end: Point,
-    *,
-    front_obstacles: tuple[Obstacle, ...],
-    back_obstacles: tuple[Obstacle, ...],
     start_layer: str,
     end_layer: str,
     net_name: str,
@@ -58,10 +55,7 @@ def plan_one_through_via(
     clearance_mm: float,
     diameter_mm: float,
     drill_mm: float,
-    front_via_obstacles: tuple[Obstacle, ...] | None = None,
-    back_via_obstacles: tuple[Obstacle, ...] | None = None,
-) -> tuple[list[TrackSpec], ViaSpec, dict[str, float | int]]:
-    """Pick the cheapest of five deterministic, obstacle-screened via sites."""
+) -> tuple[float, float, float]:
     if (start_layer, end_layer) not in (("F_Cu", "B_Cu"), ("B_Cu", "F_Cu")):
         raise RoutePlanningError("One through via supports only opposite outer copper layers")
     if not net_name or not all(
@@ -82,6 +76,37 @@ def plan_one_through_via(
         raise RoutePlanningError("Via route length is outside bounded extent")
     if abs(dx) > 1e-6 and abs(dy) > 1e-6:
         raise RoutePlanningError("One-via route requires aligned horizontal/vertical pads")
+    return dx, dy, distance
+
+
+def plan_one_through_via(
+    start: Point,
+    end: Point,
+    *,
+    front_obstacles: tuple[Obstacle, ...],
+    back_obstacles: tuple[Obstacle, ...],
+    start_layer: str,
+    end_layer: str,
+    net_name: str,
+    width_mm: float,
+    clearance_mm: float,
+    diameter_mm: float,
+    drill_mm: float,
+    front_via_obstacles: tuple[Obstacle, ...] | None = None,
+    back_via_obstacles: tuple[Obstacle, ...] | None = None,
+) -> tuple[list[TrackSpec], ViaSpec, dict[str, float | int]]:
+    """Pick the cheapest of five deterministic, obstacle-screened via sites."""
+    dx, dy, distance = _validate_via_inputs(
+        start,
+        end,
+        start_layer,
+        end_layer,
+        net_name,
+        width_mm,
+        clearance_mm,
+        diameter_mm,
+        drill_mm,
+    )
     first_obstacles = front_obstacles if start_layer == "F_Cu" else back_obstacles
     last_obstacles = back_obstacles if end_layer == "B_Cu" else front_obstacles
     candidates: list[tuple[float, float, list[TrackSpec], ViaSpec]] = []

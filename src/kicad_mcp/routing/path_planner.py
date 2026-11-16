@@ -97,6 +97,18 @@ def _ring_edges(ring: tuple[Point, ...]) -> tuple[tuple[Point, Point], ...]:
     return tuple(zip(ring, (*ring[1:], ring[0]), strict=True))
 
 
+def _validate_nonadjacent_ring_edges(edges: tuple[tuple[Point, Point], ...]) -> None:
+    """Adjacent edges meet by design; all other crossings are invalid."""
+    for index, (a, b) in enumerate(edges):
+        for other_index, (c, d) in enumerate(edges):
+            if other_index <= index or other_index == index + 1:
+                continue
+            if index == 0 and other_index == len(edges) - 1:
+                continue
+            if _intersects(a, b, c, d):
+                raise RoutePlanningError("Polygon obstacle self-intersects")
+
+
 def _validate_ring(ring: tuple[Point, ...]) -> None:
     if len(ring) < 3:
         raise RoutePlanningError("Polygon obstacle requires at least three vertices")
@@ -107,15 +119,7 @@ def _validate_ring(ring: tuple[Point, ...]) -> None:
     area_twice = sum(a[0] * b[1] - b[0] * a[1] for a, b in _ring_edges(ring))
     if abs(area_twice) <= _EPS:
         raise RoutePlanningError("Polygon obstacle has zero area")
-    edges = _ring_edges(ring)
-    for index, (a, b) in enumerate(edges):
-        for other_index, (c, d) in enumerate(edges):
-            if other_index <= index or other_index in (index + 1,):
-                continue
-            if index == 0 and other_index == len(edges) - 1:
-                continue
-            if _intersects(a, b, c, d):
-                raise RoutePlanningError("Polygon obstacle self-intersects")
+    _validate_nonadjacent_ring_edges(_ring_edges(ring))
 
 
 def _validate_polygon(
@@ -208,35 +212,29 @@ def _segment_clear_boundary(
     return _polygon_clearance(a, b, (boundary.vertices, *boundary.holes)) + _EPS >= envelope_mm
 
 
+def _obstacle_allows_segment(a: Point, b: Point, obstacle: Obstacle, envelope_mm: float) -> bool:
+    if isinstance(obstacle, CircleObstacle):
+        distance = _distance_to_segment((obstacle.x_mm, obstacle.y_mm), a, b)
+        return distance + _EPS >= obstacle.radius_mm + envelope_mm
+    if isinstance(obstacle, SegmentObstacle):
+        distance = _distance_between_segments(
+            a, b, (obstacle.x1_mm, obstacle.y1_mm), (obstacle.x2_mm, obstacle.y2_mm)
+        )
+        return distance + _EPS >= obstacle.radius_mm + envelope_mm
+    if isinstance(obstacle, PolygonObstacle):
+        return _segment_clear_polygon(a, b, obstacle, envelope_mm)
+    if isinstance(obstacle, BoardBoundary):
+        return _segment_clear_boundary(a, b, obstacle, envelope_mm)
+    raise RoutePlanningError("Unsupported obstacle type")
+
+
 def _segment_clear(
     a: Point,
     b: Point,
     obstacles: tuple[Obstacle, ...],
     envelope_mm: float,
 ) -> bool:
-    for obstacle in obstacles:
-        if isinstance(obstacle, CircleObstacle):
-            distance = _distance_to_segment((obstacle.x_mm, obstacle.y_mm), a, b)
-            if distance + _EPS < obstacle.radius_mm + envelope_mm:
-                return False
-        elif isinstance(obstacle, SegmentObstacle):
-            distance = _distance_between_segments(
-                a,
-                b,
-                (obstacle.x1_mm, obstacle.y1_mm),
-                (obstacle.x2_mm, obstacle.y2_mm),
-            )
-            if distance + _EPS < obstacle.radius_mm + envelope_mm:
-                return False
-        elif isinstance(obstacle, PolygonObstacle):
-            if not _segment_clear_polygon(a, b, obstacle, envelope_mm):
-                return False
-        elif isinstance(obstacle, BoardBoundary):
-            if not _segment_clear_boundary(a, b, obstacle, envelope_mm):
-                return False
-        else:
-            raise RoutePlanningError("Unsupported obstacle type")
-    return True
+    return all(_obstacle_allows_segment(a, b, obstacle, envelope_mm) for obstacle in obstacles)
 
 
 def _hv45(a: Point, b: Point) -> bool:
@@ -303,6 +301,33 @@ def _safe_terminal(
     return min(routes, key=lambda item: (item[0], len(item[1]), item[1]))[1] if routes else None
 
 
+def _validate_obstacle(obstacle: Obstacle) -> None:
+    """Keep every unsupported or non-finite native envelope fail closed."""
+    values: tuple[float, ...]
+    if isinstance(obstacle, CircleObstacle):
+        values = (obstacle.x_mm, obstacle.y_mm, obstacle.radius_mm)
+        if not all(isfinite(value) for value in values) or obstacle.radius_mm < 0:
+            raise RoutePlanningError("Invalid obstacle envelope")
+    elif isinstance(obstacle, SegmentObstacle):
+        values = (
+            obstacle.x1_mm,
+            obstacle.y1_mm,
+            obstacle.x2_mm,
+            obstacle.y2_mm,
+            obstacle.radius_mm,
+        )
+        if not all(isfinite(value) for value in values) or obstacle.radius_mm < 0:
+            raise RoutePlanningError("Invalid obstacle envelope")
+    elif isinstance(obstacle, PolygonObstacle):
+        if not isfinite(obstacle.radius_mm) or obstacle.radius_mm < 0:
+            raise RoutePlanningError("Invalid polygon obstacle envelope")
+        _validate_polygon(obstacle.vertices, obstacle.holes)
+    elif isinstance(obstacle, BoardBoundary):
+        _validate_polygon(obstacle.vertices, obstacle.holes)
+    else:
+        raise RoutePlanningError("Unsupported obstacle type")
+
+
 def _validate_input(
     start: Point,
     end: Point,
@@ -324,30 +349,8 @@ def _validate_input(
         raise RoutePlanningError("Invalid node budget")
     if len(obstacles) > 2000:
         raise RoutePlanningError("Obstacle count exceeds supported planning budget")
-    values: tuple[float, ...]
     for obstacle in obstacles:
-        if isinstance(obstacle, CircleObstacle):
-            values = (obstacle.x_mm, obstacle.y_mm, obstacle.radius_mm)
-            if not all(isfinite(value) for value in values) or obstacle.radius_mm < 0:
-                raise RoutePlanningError("Invalid obstacle envelope")
-        elif isinstance(obstacle, SegmentObstacle):
-            values = (
-                obstacle.x1_mm,
-                obstacle.y1_mm,
-                obstacle.x2_mm,
-                obstacle.y2_mm,
-                obstacle.radius_mm,
-            )
-            if not all(isfinite(value) for value in values) or obstacle.radius_mm < 0:
-                raise RoutePlanningError("Invalid obstacle envelope")
-        elif isinstance(obstacle, PolygonObstacle):
-            if not isfinite(obstacle.radius_mm) or obstacle.radius_mm < 0:
-                raise RoutePlanningError("Invalid polygon obstacle envelope")
-            _validate_polygon(obstacle.vertices, obstacle.holes)
-        elif isinstance(obstacle, BoardBoundary):
-            _validate_polygon(obstacle.vertices, obstacle.holes)
-        else:
-            raise RoutePlanningError("Unsupported obstacle type")
+        _validate_obstacle(obstacle)
 
 
 type GridKey = tuple[int, int]

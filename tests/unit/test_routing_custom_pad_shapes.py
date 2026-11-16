@@ -54,8 +54,9 @@ def test_custom_pad_obstacle_encloses_all_real_copper_primitives() -> None:
 
 
 def test_custom_pad_without_readable_primitives_refuses_instead_of_guessing() -> None:
+    pad = _custom_pad(with_primitives=False)
     with pytest.raises(RoutePlanningError, match="custom|primitive"):
-        _pad_radius_mm(_custom_pad(with_primitives=False), BoardLayer.BL_F_Cu)
+        _pad_radius_mm(pad, BoardLayer.BL_F_Cu)
 
 
 def test_degenerate_native_arc_is_refused_before_tessellation() -> None:

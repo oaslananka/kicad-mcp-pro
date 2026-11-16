@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from kipy.board_types import BoardLayer, Pad, Track
+from kipy.board_types import BoardArc, BoardLayer, Pad, Track
 from kipy.geometry import Vector2
 
 from kicad_mcp.pcb.routing_obstacle_snapshot import snapshot_route_obstacles
@@ -59,6 +59,19 @@ def test_track_capsule_is_conservatively_collected() -> None:
     track.width = 300_000
     obstacles = snapshot_route_obstacles(_board(tracks=[track]), "F_Cu", frozenset())
     assert obstacles == (SegmentObstacle(1.0, 0.0, 3.0, 0.0, 0.15),)
+
+
+def test_native_copper_arc_becomes_connected_clearance_segments() -> None:
+    copper_arc = BoardArc()
+    copper_arc.layer = BoardLayer.BL_F_Cu
+    copper_arc.start = Vector2.from_xy_mm(1, 0)
+    copper_arc.mid = Vector2.from_xy_mm(1, 1)
+    copper_arc.end = Vector2.from_xy_mm(0, 1)
+    result = snapshot_route_obstacles(_board(shapes=[copper_arc]), "F_Cu", frozenset())
+    assert len(result) >= 3
+    assert all(isinstance(segment, SegmentObstacle) for segment in result)
+    assert (result[0].x1_mm, result[0].y1_mm) == (1.0, 0.0)
+    assert (result[-1].x2_mm, result[-1].y2_mm) == (0.0, 1.0)
 
 
 def test_existing_submillimeter_track_remains_a_copper_obstacle() -> None:

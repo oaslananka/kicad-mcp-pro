@@ -78,5 +78,6 @@ def test_same_net_filter_cannot_override_endpoint_net_identity() -> None:
         get_zones=lambda: [],
         get_shapes=lambda: [],
     )
+    excluded = frozenset({"a", "b"})
     with pytest.raises(RoutePlanningError, match="net"):
-        snapshot_route_obstacles(board, "F_Cu", frozenset({"a", "b"}), routing_net="USB_D_P")
+        snapshot_route_obstacles(board, "F_Cu", excluded, routing_net="USB_D_P")
