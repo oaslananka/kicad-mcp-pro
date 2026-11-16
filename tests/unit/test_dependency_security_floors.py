@@ -149,7 +149,7 @@ def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
 
     assert Version(package["overrides"]["@hono/node-server"]) >= Version("2.1.6")
     assert Version(package["overrides"]["hono"]) >= Version("4.13.16")
-    assert package["overrides"]["fast-uri"] == "3.1.9"  # nosec B101
+    assert Version("4.2.3") <= Version(package["overrides"]["fast-uri"]) < Version("5")
     qs_override = package["overrides"]["qs"]
     # Preserve the patched minimum while allowing reviewed 6.x updates.
     assert Version("6.16.1") <= Version(qs_override) < Version("7")
@@ -158,7 +158,7 @@ def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
     patched = {
         "node_modules/@hono/node-server": "2.1.6",
         "node_modules/hono": "4.13.16",
-        "node_modules/fast-uri": "3.1.9",
+        "node_modules/fast-uri": "4.2.3",
         "node_modules/qs": "6.16.1",
         "node_modules/ip-address": "10.7.4",
     }
@@ -166,6 +166,7 @@ def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
         lock["packages"]["node_modules/@hono/node-server"]["version"]
         == package["overrides"]["@hono/node-server"]
     )
+    assert lock["packages"]["node_modules/fast-uri"]["version"] == package["overrides"]["fast-uri"]
     for path, minimum in patched.items():
         assert Version(lock["packages"][path]["version"]) >= Version(minimum)
     assert lock["packages"]["node_modules/hono"]["version"] == package["overrides"]["hono"]
