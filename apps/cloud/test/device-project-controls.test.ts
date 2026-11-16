@@ -63,13 +63,15 @@ test("production fallback has no local project control or owner file paths",()=>
   assert.doesNotMatch(html,/class="device-projects-menu"/);
 });
 
-test("Online legacy Connector shows a clear upgrade path instead of dead Browse",()=>{
+test("Online Connector without native picker explains desktop reconnection instead of dead Browse",()=>{
   const id=randomUUID();
   const device={id,alias:"Old Windows machine",enabled:true,revoked:false,
     fingerprint:"f".repeat(64),createdAt:new Date(),csrf:"revoke",
     browseNeedsUpgrade:true,connectionState:"connected" as const};
   const html=renderDevicesPage([device],undefined,true,{projects:[],ownerSub:"owner",clients:[],savedGrants:[],sandboxMode:false,browseEnabled:true});
-  assert.match(html,/Update the KiCad MCP Pro Connector/);
+  assert.match(html,/Online but has no active local folder picker/);
+  assert.match(html,/Update or reconnect KiCad MCP Pro in an interactive desktop terminal/);
+  assert.match(html,/headless Linux server/);
   assert.doesNotMatch(html,/action="\/devices\/projects\/browse"/);
   assert.match(html,/Online/);
 });
