@@ -13,11 +13,11 @@
 
 ## Validation
 
-- [ ] `corepack pnpm run format:check`
-- [ ] `corepack pnpm run lint`
-- [ ] `corepack pnpm run typecheck`
-- [ ] `corepack pnpm run test:unit`
-- [ ] `corepack pnpm run metadata:check`
+- [ ] `pnpm run format:check`
+- [ ] `pnpm run lint`
+- [ ] `pnpm run typecheck`
+- [ ] `pnpm run test:unit`
+- [ ] `pnpm run metadata:check`
 - [ ] `task verify` or `task ci` when the change crosses tool, package, workflow, or release boundaries
 
 ## Safety and compatibility

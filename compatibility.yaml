@@ -669,8 +669,8 @@ vscode:
   nodeRuntime: 24.x
   state: primary
 node:
-  range: '>=24.22.1 <25'
-  primary: 24.x
+  range: '>=24.22.3 <25 || >=26.13.1 <27'
+  primary: 26.x
 pnpm:
   range: '>=11.0.0 <12'
   primary: 11.x

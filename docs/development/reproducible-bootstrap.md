@@ -28,7 +28,7 @@ The first command installs the exact versions committed in
 
 - Python 3.13.17
 - uv and uvx 0.13.7
-- Node.js 24.22.1
+- Node.js 26.13.1
 - pnpm 11.28.6
 - Task 3.52.0
 

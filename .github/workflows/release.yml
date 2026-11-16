@@ -50,12 +50,17 @@ jobs:
         with:
           enable-cache: false
           version-file: uv.toml
-      - run: corepack enable
-      - run: corepack pnpm install --frozen-lockfile
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pinned pnpm
+        run: npm install --global pnpm@11.28.6 --no-audit --no-fund
+      - run: pnpm install --frozen-lockfile
       - run: uv sync --all-extras --frozen
       - name: Enforce live-model release readiness
         if: github.event_name == 'release' || startsWith(github.head_ref, 'release-please--')
         run: uv run --all-extras python scripts/check_live_model_release_policy.py --require-ready release --ref HEAD
-      - run: corepack pnpm run metadata:check
-      - run: corepack pnpm run release:check
-      - run: corepack pnpm run package:check
+      - run: pnpm run metadata:check
+      - run: pnpm run release:check
+      - run: pnpm run package:check
