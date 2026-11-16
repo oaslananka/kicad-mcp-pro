@@ -6,7 +6,8 @@
 import assert from "node:assert/strict";
 import { withTasks, resultFromTaskOutcome } from "@modelcontextprotocol/ext-tasks/client";
 
-const [endpoint, mode] = process.argv.slice(2);
+const endpoint = process.env.MCP_TASKS_TEST_ENDPOINT;
+const mode = process.env.MCP_TASKS_TEST_MODE;
 const testToken = process.env.MCP_TASKS_TEST_TOKEN;
 if (!endpoint?.startsWith("http://127.0.0.1:") || !testToken) {
   throw new Error("A loopback endpoint and ephemeral test credential are required");

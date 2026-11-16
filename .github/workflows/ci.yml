@@ -800,8 +800,8 @@ jobs:
       - name: Install pinned research-only Tasks requester
         if: env.skip_ci != 'true'
         run: |
-          corepack enable
-          corepack pnpm install --frozen-lockfile --ignore-scripts
+          npm install --global pnpm@11.28.6
+          pnpm install --frozen-lockfile --ignore-scripts
       - name: Verify independent MCP Tasks 2026 loopback requester
         if: env.skip_ci != 'true'
         env:

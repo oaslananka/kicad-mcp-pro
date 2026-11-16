@@ -9,13 +9,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
 
+import anyio
 import httpx
 import pytest
 
@@ -52,19 +52,31 @@ def require_independent_client() -> str:
 
 @pytest.mark.parametrize("mode", ["complete", "toolerror", "input", "cancel", "sync", "expired"])
 def test_pinned_external_requester_exchanges_real_http_messages(mode: str) -> None:
-    node = require_independent_client()
+    require_independent_client()
     with probe_server(mode) as server:
-        child = subprocess.run(
-            [node, str(CLIENT), server.url, mode],
-            cwd=ROOT,
-            env={**os.environ, "MCP_TASKS_TEST_TOKEN": server.tokens["client-a"]},
-            capture_output=True,
-            text=True,
-            timeout=25,
-            check=False,
-        )
-        assert child.returncode == 0, f"{mode}: {child.stderr[:1200]}"
-        report = json.loads(child.stdout)
+
+        async def invoke_client() -> tuple[int, str, str]:
+            with anyio.fail_after(25):
+                finished = await anyio.run_process(
+                    ["node", "tests/research/mcp_tasks_client_2026.mjs"],
+                    cwd=ROOT,
+                    env={
+                        **os.environ,
+                        "MCP_TASKS_TEST_TOKEN": server.tokens["client-a"],
+                        "MCP_TASKS_TEST_ENDPOINT": server.url,
+                        "MCP_TASKS_TEST_MODE": mode,
+                    },
+                    check=False,
+                )
+            return (
+                finished.returncode,
+                finished.stdout.decode("utf-8"),
+                finished.stderr.decode("utf-8"),
+            )
+
+        code, stdout, stderr = anyio.run(invoke_client)
+        assert code == 0, f"{mode}: {stderr[:1200]}"
+        report = json.loads(stdout)
         assert report["mode"] == mode
         assert report["result"] == "PASS"
         assert all(record["caller"] == "client-a" for record in server.log)
