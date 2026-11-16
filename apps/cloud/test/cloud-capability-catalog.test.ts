@@ -21,8 +21,11 @@ test("Cloud capabilities are stable, category-first and never expose local mutat
     [...CLOUD_READ_TASKS].sort()
   );
   assert.ok(tools.every(tool=>tool.mode==="readonly"));
-  assert.ok(tools.every(tool=>tool.canExecuteNow===false));
-  assert.ok(tools.every(tool=>tool.state==="owner_session_required"));
+  assert.equal(tools.find(tool=>tool.task==="check_project_files")?.canExecuteNow,true,
+    "the signed legacy project_summary session is ready to accept a read request");
+  assert.equal(tools.find(tool=>tool.task==="check_project_files")?.state,"ready_to_request");
+  assert.ok(tools.filter(tool=>tool.task!=="check_project_files")
+    .every(tool=>tool.canExecuteNow===false&&tool.state==="unverified_capability"));
   assert.ok(tools.every(tool=>tool.requiresOwnerSession===true));
   assert.ok(tools.every(tool=>!/(delete|write|command|exec)/.test(tool.tool)));
   assert.equal(new Set(CLOUD_READ_CAPABILITIES.map(c=>c.tool)).size,5);
@@ -63,7 +66,11 @@ test("signed Connector claim narrows configured categories without permitting wr
   assert.deepEqual(categories.flatMap(group=>group.tools.map(t=>t.tool)),[
     "get_project_presence","get_project_board_counts"
   ]);
-  assert.equal(categories.flatMap(group=>group.tools).every(tool=>!tool.canExecuteNow),true);
+  const tools=categories.flatMap(group=>group.tools);
+  assert.equal(tools.find(tool=>tool.task==="check_project_files")?.canExecuteNow,true);
+  assert.equal(tools.find(tool=>tool.task==="inspect_board")?.canExecuteNow,false,
+    "signed operation capability does not independently grant native per-project reads");
+  assert.equal(tools.find(tool=>tool.task==="inspect_board")?.state,"owner_operation_required");
   assert.deepEqual(listConfiguredCloudCapabilities(allConfigured,true,undefined,{
     ...claim,operations:[]
   }),[]);

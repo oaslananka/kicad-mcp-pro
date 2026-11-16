@@ -22,6 +22,26 @@ def simulated_storage_support_for_mocked_cli_flows(monkeypatch) -> None:
     monkeypatch.setattr("kicad_mcp.cloud_user_cli._is_windows", lambda: False)
 
 
+def test_foreground_status_on_windows_legacy_cp1254_console_does_not_crash() -> None:
+    import io
+    from contextlib import redirect_stdout
+
+    from kicad_mcp.cloud_user_cli import _display_cloud_status
+
+    captured = io.BytesIO()
+    console = io.TextIOWrapper(captured, encoding="cp1254", errors="strict")
+    with redirect_stdout(console):
+        _display_cloud_status("Connected", "https://cloud.example")
+        _display_cloud_status("Tool call project_summary completed", "https://cloud.example")
+        _display_cloud_status("Disconnected \u2014 reconnecting", "https://cloud.example")
+        console.flush()
+    result = captured.getvalue().decode("cp1254")
+    assert "ONLINE" in result
+    assert "TOOL" in result
+    assert "NETWORK" in result
+    assert "Manage projects: https://cloud.example/devices" in result
+
+
 def test_login_web_only_preserves_first_party_browser_without_cli_grant(monkeypatch) -> None:
     seen: list[str] = []
     monkeypatch.setattr(

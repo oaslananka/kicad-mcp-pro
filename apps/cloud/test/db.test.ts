@@ -29,6 +29,16 @@ test("postgres enforces ownership, disabled projects and opaque-only records", {
     const projects = await inventory.listProjects("owner-a","client-a");
     assert.deepEqual(projects.map(p=>p.alias),["USB-C"]);
     assert.equal(projects[0].available,false);
+    // The Cloud MCP result must never claim this OAuth client can write just
+    // because the project-wide policy allows it.
+    await admin.query("UPDATE projects SET max_mode='write' WHERE id=$1",[projectA]);
+    assert.equal((await inventory.listProjects("owner-a","client-a"))[0]?.maxMode,"readonly");
+    assert.equal((await inventory.getProject("owner-a","client-a",projectA))?.maxMode,"readonly");
+    await admin.query("UPDATE project_client_grants SET max_mode='write' WHERE project_id=$1 AND client_id='client-a'",[projectA]);
+    assert.equal((await inventory.listProjects("owner-a","client-a"))[0]?.maxMode,"write");
+    assert.equal((await inventory.getProject("owner-a","client-a",projectA))?.maxMode,"write");
+    await admin.query("UPDATE project_client_grants SET max_mode='readonly' WHERE project_id=$1 AND client_id='client-a'",[projectA]);
+    await admin.query("UPDATE projects SET max_mode='readonly' WHERE id=$1",[projectA]);
     assert.equal(await inventory.getProject("owner-b","client-a",projectA),null);
     assert.equal(await inventory.getProject("owner-a","client-a",projectDisabled),null);
     assert.equal((await inventory.listDevices("owner-a","client-a")).length,1);

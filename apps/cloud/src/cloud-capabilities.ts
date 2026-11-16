@@ -50,14 +50,23 @@ export function listConfiguredCloudCapabilities(
       category,
       tools:CLOUD_READ_CAPABILITIES
         .filter(c=>c.category===category&&supported[c.task])
-        .map(c=>({
-          task:c.task,
-          tool:c.tool,
-          mode:"readonly" as const,
-          canExecuteNow:false as const,
-          state:connectorConnected?"owner_session_required" as const:"device_not_connected" as const,
-          requiresOwnerSession:true as const
-        }))
+        .map(c=>{
+          // "Can request" means the current signed session can accept this
+          // read operation; it does NOT assert local files or KiCad are usable.
+          // Legacy Connectors guarantee project_summary, not newer native reads.
+          // An operation catalog is not a per-project native diagnostic
+          // permission. Only the baseline signed project_summary read is
+          // request-ready without an independent operation-specific grant.
+          const ready=connectorConnected&&c.operation==="project_summary";
+          return {
+            task:c.task,tool:c.tool,mode:"readonly" as const,
+            canExecuteNow:ready,
+            state:!connectorConnected?"device_not_connected" as const:
+              ready?"ready_to_request" as const:
+                claim?"owner_operation_required" as const:"unverified_capability" as const,
+            requiresOwnerSession:true as const
+          };
+        })
     }))
     .filter(group=>group.tools.length>0);
 }

@@ -12,6 +12,7 @@ export interface Project {
   deviceId: string;
   alias: string;
   enabled: boolean;
+  /** Client-scoped effective ceiling, not an OAuth scope or live write grant. */
   maxMode: "readonly" | "write" | "manufacturing";
   available: false;
   reason: "cloud_read_not_enabled";
@@ -25,6 +26,11 @@ export interface Inventory {
 
 type DeviceRow = {id: string; alias: string; enabled: boolean; last_seen_at: Date | null};
 type ProjectRow = {id: string; device_id: string; alias: string; enabled: boolean; max_mode: Project["maxMode"]};
+// A project's global ceiling must never be advertised as this OAuth client's
+// permission. Both project and client grants must agree for write/manufacturing.
+const CLIENT_PROJECT_FIELDS =
+  "p.id,p.device_id,p.alias,p.enabled,"+
+  "CASE WHEN p.max_mode=g.max_mode THEN p.max_mode ELSE 'readonly' END AS max_mode ";
 
 export class PgInventory implements Inventory {
   protected readonly pool: pg.Pool;
@@ -52,14 +58,16 @@ export class PgInventory implements Inventory {
   }
   async listProjects(ownerSub: string, clientId: string): Promise<Project[]> {
     const result = await this.pool.query<ProjectRow>(
-      "SELECT p.id,p.device_id,p.alias,p.enabled,p.max_mode FROM projects p JOIN devices d ON d.id=p.device_id AND d.owner_sub=p.owner_sub JOIN project_client_grants g ON g.project_id=p.id AND g.owner_sub=p.owner_sub WHERE p.owner_sub=$1 AND g.client_id=$2 AND g.enabled=true AND p.enabled=true AND d.enabled=true ORDER BY p.alias,p.id LIMIT 100",
+      "SELECT "+CLIENT_PROJECT_FIELDS+
+      "FROM projects p JOIN devices d ON d.id=p.device_id AND d.owner_sub=p.owner_sub JOIN project_client_grants g ON g.project_id=p.id AND g.owner_sub=p.owner_sub WHERE p.owner_sub=$1 AND g.client_id=$2 AND g.enabled=true AND p.enabled=true AND d.enabled=true ORDER BY p.alias,p.id LIMIT 100",
       [ownerSub,clientId]
     );
     return result.rows.map(toProject);
   }
   async getProject(ownerSub: string, clientId: string, projectId: string): Promise<Project | null> {
     const result = await this.pool.query<ProjectRow>(
-      "SELECT p.id,p.device_id,p.alias,p.enabled,p.max_mode FROM projects p JOIN devices d ON d.id=p.device_id AND d.owner_sub=p.owner_sub JOIN project_client_grants g ON g.project_id=p.id AND g.owner_sub=p.owner_sub WHERE p.owner_sub=$1 AND g.client_id=$2 AND g.enabled=true AND p.id=$3 AND p.enabled=true AND d.enabled=true LIMIT 1",
+      "SELECT "+CLIENT_PROJECT_FIELDS+
+      "FROM projects p JOIN devices d ON d.id=p.device_id AND d.owner_sub=p.owner_sub JOIN project_client_grants g ON g.project_id=p.id AND g.owner_sub=p.owner_sub WHERE p.owner_sub=$1 AND g.client_id=$2 AND g.enabled=true AND p.id=$3 AND p.enabled=true AND d.enabled=true LIMIT 1",
       [ownerSub,clientId,projectId]
     );
     return result.rows[0] ? toProject(result.rows[0]) : null;

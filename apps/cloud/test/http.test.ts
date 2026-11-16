@@ -176,18 +176,19 @@ test("MCP inventory reflects only the real owner-scoped signed Connector session
     ready=true;
     const onlineCatalog=await callTool("test-user-a",capabilityCatalogTool);
     assert.equal(onlineCatalog.value.connectorConnected,true);
-    assert.equal(onlineCatalog.value.categories[0].tools[0].state,"owner_session_required");
-    assert.equal(onlineCatalog.value.categories[0].tools[0].canExecuteNow,false);
+    assert.equal(onlineCatalog.value.categories[0].tools[0].state,"ready_to_request");
+    assert.equal(onlineCatalog.value.categories[0].tools[0].canExecuteNow,true);
     const onlineDevice=await callTool("test-user-a","list_devices");
     assert.equal(onlineDevice.value.devices[0].connected,true);
     const grantedProjects=await callTool("test-user-a","list_projects");
     assert.equal(grantedProjects.value.projects[0].connectorConnected,true);
-    assert.equal(grantedProjects.value.projects[0].available,false,
-      "Open socket cannot grant a new KiCad operation");
-    assert.equal(grantedProjects.value.projects[0].reason,"owner_operation_required");
+    assert.equal(grantedProjects.value.projects[0].available,true,
+      "A signed, granted project_summary socket may accept a read request (not proof of success)");
+    assert.equal(grantedProjects.value.projects[0].reason,undefined);
     const direct=await callTool("test-user-a","get_project",{project_id:id});
     assert.equal(direct.value.project.connectorConnected,true);
-    assert.equal(direct.value.project.reason,"owner_operation_required");
+    assert.equal(direct.value.project.available,true);
+    assert.equal(direct.value.project.reason,undefined);
     const foreign=await callTool("test-user-b","list_devices");
     assert.deepEqual(foreign.value.devices,[]);
     const forbidden=await callTool("test-user-b","get_project",{project_id:id});
@@ -1607,9 +1608,11 @@ test("signed Connector operations narrow project-scoped Cloud task discovery",as
     assert.deepEqual(narrow.categories.flatMap(
       (c:{tools:{tool:string}[]})=>c.tools.map(t=>t.tool)
     ),["get_project_presence","get_project_board_counts"]);
-    assert.ok(narrow.categories.flatMap(
-      (c:{tools:{canExecuteNow:boolean}[]})=>c.tools
-    ).every((c:{canExecuteNow:boolean})=>!c.canExecuteNow));
+    const ready=narrow.categories.flatMap(
+      (c:{tools:{task:string;canExecuteNow:boolean}[]})=>c.tools
+    );
+    assert.equal(ready.find((t:{task:string})=>t.task==="check_project_files")?.canExecuteNow,true);
+    assert.equal(ready.find((t:{task:string})=>t.task==="inspect_board")?.canExecuteNow,false);
     const denied=await invoke("discover_project_workflow",{
       task:"check_board_drc",project_id:id
     });

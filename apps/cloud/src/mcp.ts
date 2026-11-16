@@ -113,11 +113,26 @@ export function createCloudMcpHandler(
       connected(project.deviceId)
         ? getDeviceCapabilityClaim?.(actor.sub,project.deviceId)??null
         : null;
+    // Readiness describes *eligibility to request* a read, never proof that
+    // the local project exists, a GUI is open, or the operation will succeed.
+    // Each actual read still revalidates owner session, project and OAuth grant.
+    const enabled={
+      inspect_engine:Boolean(projectInspection),
+      check_board_drc:Boolean(projectDrc),
+      check_project_files:Boolean(projectPresence),
+      inspect_board:Boolean(boardCounts),
+      inspect_schematic:Boolean(schematicCounts)
+    };
     const describeProject=(project:Project)=>{
       const connectorConnected=connected(project.deviceId);
+      const requestable=listConfiguredCloudCapabilities(
+        enabled,connectorConnected,undefined,authenticatedClaim(project)
+      ).some(group=>group.tools.some(tool=>tool.canExecuteNow));
       return {
-        ...project,available:false,
-        reason:!localReadEnabled?"cloud_read_not_enabled":
+        ...project,available:requestable,
+        // Inventory fields are untrusted for runtime readiness. Override even
+        // a stale store-supplied reason when this socket can accept a read.
+        reason:requestable?undefined:!localReadEnabled?"cloud_read_not_enabled":
           !connectorConnected?"device_not_connected":"owner_operation_required",
         connectorConnected
       };
@@ -186,13 +201,6 @@ export function createCloudMcpHandler(
     // for a feature that was not explicitly enabled on this Cloud instance.
     // The same bounded registry powers task discovery and category browsing.
     // Never mirror arbitrary local-only tools into Cloud MCP.
-    const enabled={
-      inspect_engine:Boolean(projectInspection),
-      check_board_drc:Boolean(projectDrc),
-      check_project_files:Boolean(projectPresence),
-      inspect_board:Boolean(boardCounts),
-      inspect_schematic:Boolean(schematicCounts)
-    };
     const workflows=Object.fromEntries(CLOUD_READ_CAPABILITIES.map(c=>[
       c.task,{tool:c.tool,enabled:enabled[c.task]}
     ])) as Record<(typeof CLOUD_READ_TASKS)[number],{tool:string;enabled:boolean}>;

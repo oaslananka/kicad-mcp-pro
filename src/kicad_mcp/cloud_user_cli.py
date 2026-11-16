@@ -442,25 +442,36 @@ def _display_cloud_status(value: str, origin: str) -> None:
     # print MCP argument contents, access keys, paths or file contents.
     stamp = datetime.now().astimezone().strftime("%H:%M:%S")
     if value == "Connected":
-        category, icon, color = "ONLINE", "●", typer.colors.GREEN
+        category, icon, color = "ONLINE", "+", typer.colors.GREEN
         detail = "Cloud acknowledged this device's signed session"
     elif value.startswith("Tool call "):
-        category, icon, color = "TOOL", "◆", typer.colors.CYAN
+        category, icon, color = "TOOL", "*", typer.colors.CYAN
         detail = value
         if value.endswith("failed") or " failed (" in value:
             color = typer.colors.RED
     elif "folder" in value.lower() or "dialog" in value.lower():
-        category, icon, color = "FOLDER", "▣", typer.colors.MAGENTA
+        category, icon, color = "FOLDER", "#", typer.colors.MAGENTA
         detail = value
     elif "reconnect" in value.lower() or "disconnected" in value.lower():
-        category, icon, color = "NETWORK", "↻", typer.colors.YELLOW
+        category, icon, color = "NETWORK", "~", typer.colors.YELLOW
         detail = value
     else:
-        category, icon, color = "CONNECT", "·", typer.colors.BLUE
+        category, icon, color = "CONNECT", ">", typer.colors.BLUE
         detail = value
     typer.echo(f"  {stamp}  ", nl=False)
     typer.secho(f"{icon} {category:<8}", fg=color, bold=True, nl=False)
-    typer.echo("  " + detail)
+    # Windows terminals may use cp1254/cp1252 even when the program runs on
+    # modern Python. Unsupported symbols must never terminate the Connector.
+    display_encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        readable = (
+            detail.replace("\u2014", "-")
+            .encode(display_encoding, errors="replace")
+            .decode(display_encoding, errors="replace")
+        )
+    except LookupError:
+        readable = detail.encode("ascii", errors="replace").decode("ascii")
+    typer.echo("  " + readable)
     if value == "Connected":
         typer.echo(f"             Manage projects: {origin}/devices")
 
@@ -526,7 +537,7 @@ def remote(
     typer.echo(f"  Cloud           {origin}")
     typer.echo("  Keep this terminal open; press Ctrl+C to disconnect.")
     typer.echo("  Add Project opens Windows Explorer on this computer.")
-    typer.secho("  ────────────────────────────────────────────────", fg=typer.colors.BRIGHT_BLACK)
+    typer.secho("  " + "-" * 50, fg=typer.colors.BRIGHT_BLACK)
     if allow_native_drc:
         typer.echo(
             "Read-only native DRC allowed for this foreground session only. "
@@ -783,7 +794,7 @@ def _try_reconnect_existing(root: Path, origin: str) -> bool:
 def _perform_approval(page: str, challenge: str, code: str, no_browser: bool) -> None:
     review_url = f"{page}#challenge={challenge}&code={code}"
     typer.echo("\n" + "=" * 60)
-    typer.echo("KiCad MCP Pro Cloud — Device Authorization")
+    typer.echo("KiCad MCP Pro Cloud - Device Authorization")
     typer.echo(f"Pairing verification code: {code}")
     typer.echo("=" * 60)
     if not no_browser:
