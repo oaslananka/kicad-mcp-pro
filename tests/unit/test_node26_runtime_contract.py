@@ -98,7 +98,8 @@ def test_ci_and_release_bootstrap_exact_pnpm_without_corepack(name: str) -> None
             for i, step in enumerate(steps)
             if "npm install --global pnpm@11.28.6" in str(step.get("run", ""))
         ]
-        assert installed and installed[0] < min(running_pnpm), (name, job_name)
+        assert installed, (name, job_name)
+        assert installed[0] < min(running_pnpm), (name, job_name)
         assert any("actions/setup-node@" in str(step.get("uses", "")) for step in steps), (
             name,
             job_name,
