@@ -32,6 +32,8 @@ EXPECTED_REVIEWED = {
     "pcb_add_teardrops",
     "route_single_track",
     "route_from_pad_to_pad",
+    "route_apply_candidate",
+    "route_apply_straight_differential_pair_candidate",
     "pdn_generate_power_plane",
     "pcb_set_origin",
     "pcb_set_title_block_info",
@@ -43,6 +45,8 @@ PARTICIPATING = {
     "pcb_delete_items",
     "pcb_move_footprint",
     "pcb_set_footprint_layer",
+    "route_apply_candidate",
+    "route_apply_straight_differential_pair_candidate",
 }
 
 

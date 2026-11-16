@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from typing import cast
 
 from ..models.common import _PadLike
 from ..models.pcb import AddTrackInput
 from ..pcb.geometry import point_xy_mm
+from ..pcb.pad_mapping import MappedPad
 
-PadProvider = Callable[[], Iterable[_PadLike]]
+PadProvider = Callable[[], Iterable[MappedPad]]
 
 
 @dataclass(frozen=True)
@@ -25,19 +27,31 @@ class TrackSpec:
     net_name: str = ""
 
 
+@dataclass(frozen=True)
+class ViaSpec:
+    """Single full-stack through-via candidate (never a blind/micro via)."""
+
+    x_mm: float
+    y_mm: float
+    diameter_mm: float
+    drill_mm: float
+    net_name: str
+
+
 TrackWriter = Callable[[str, list[TrackSpec]], None]
+LayerValidator = Callable[[object, object, str], bool]
 
 
 def _find_pad(
-    pads: Iterable[_PadLike],
+    pads: Iterable[MappedPad],
     reference: str,
     pad_number: str,
-) -> _PadLike | None:
-    for pad in pads:
-        if pad.parent.reference_field.text.value == reference and str(pad.number) == str(
+) -> MappedPad | None:
+    for mapped in pads:
+        if mapped.reference == reference and str(getattr(mapped.pad, "number", "")) == str(
             pad_number
         ):
-            return pad
+            return mapped
     return None
 
 
@@ -59,6 +73,7 @@ class RoutingManualTrackService:
 
     list_pads: PadProvider
     write_tracks: TrackWriter
+    validate_layer: LayerValidator
 
     def route_single(
         self,
@@ -96,41 +111,63 @@ class RoutingManualTrackService:
         layer: str = "F_Cu",
         width_mm: float = 0.25,
     ) -> str:
-        start_pad = _find_pad(self.list_pads(), ref1, pad1)
-        end_pad = _find_pad(self.list_pads(), ref2, pad2)
-        if start_pad is None or end_pad is None:
+        pads = list(self.list_pads())
+        start = _find_pad(pads, ref1, pad1)
+        end = _find_pad(pads, ref2, pad2)
+        if start is None or end is None:
             return "One or both pads were not found on the active board."
+
+        start_pad = cast(_PadLike, start.pad)
+        end_pad = cast(_PadLike, end.pad)
+        start_net = start_pad.net.name or ""
+        end_net = end_pad.net.name or ""
+        if not start_net or not end_net:
+            return "Both pads must belong to a named net; no track created."
+        if start_net != end_net:
+            return f"Pads belong to different nets ({start_net}, {end_net}); no track created."
+        if not self.validate_layer(start_pad, end_pad, layer):
+            return (
+                f"One or both pads do not support enabled copper layer {layer}; no track created."
+            )
 
         start_x, start_y = point_xy_mm(start_pad.position)
         end_x, end_y = point_xy_mm(end_pad.position)
-        net_name = start_pad.net.name or end_pad.net.name or ""
-        specs = [
-            _spec_from_payload(
-                AddTrackInput(
-                    x1_mm=start_x,
-                    y1_mm=start_y,
-                    x2_mm=end_x,
-                    y2_mm=start_y,
-                    layer=layer,
-                    width_mm=width_mm,
-                    net_name=net_name,
+        if start_x == end_x and start_y == end_y:
+            return "Pad endpoints overlap; no track created."
+
+        specs: list[TrackSpec] = []
+        if start_x != end_x:
+            specs.append(
+                _spec_from_payload(
+                    AddTrackInput(
+                        x1_mm=start_x,
+                        y1_mm=start_y,
+                        x2_mm=end_x,
+                        y2_mm=start_y,
+                        layer=layer,
+                        width_mm=width_mm,
+                        net_name=start_net,
+                    )
                 )
-            ),
-            _spec_from_payload(
-                AddTrackInput(
-                    x1_mm=end_x,
-                    y1_mm=start_y,
-                    x2_mm=end_x,
-                    y2_mm=end_y,
-                    layer=layer,
-                    width_mm=width_mm,
-                    net_name=net_name,
+            )
+        if start_y != end_y:
+            specs.append(
+                _spec_from_payload(
+                    AddTrackInput(
+                        x1_mm=end_x,
+                        y1_mm=start_y,
+                        x2_mm=end_x,
+                        y2_mm=end_y,
+                        layer=layer,
+                        width_mm=width_mm,
+                        net_name=start_net,
+                    )
                 )
-            ),
-        ]
+            )
         self.write_tracks("route_from_pad_to_pad", specs)
+        geometry = "single-segment" if len(specs) == 1 else "two-segment"
         return (
-            f"Orthogonal two-segment track write submitted for "
+            f"Orthogonal {geometry} track write submitted for "
             f"{ref1}:{pad1} -> {ref2}:{pad2}. "
             "Board persistence and electrical connectivity UNVERIFIED; "
             "verify with DRC and project_quality_gate."

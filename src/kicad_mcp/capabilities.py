@@ -549,4 +549,144 @@ def _register_router_tools() -> None:
             )
 
 
+# A nonmutating, native-IPC route preview is a READ capability even though
+# routing tools are generally board writers. Keep this contract explicit so
+# privilege and tool-effect metadata cannot infer an accidental WRITE tier.
+register(
+    CapabilityRecord(
+        name="route_plan_between_pads",
+        profiles=_PCB_PROFILES,
+        tier=AccessTier.READ,
+        category="routing",
+        runtime=RuntimeRequirement.KICAD_IPC,
+        writes_files=False,
+        writes_kicad_gui_state=False,
+        supports_dry_run=True,
+        verification_level="experimental",
+        maturity=ToolMaturity.BETA,
+        advisory_level=AdvisoryLevel.REQUIRES_EVIDENCE,
+    )
+)
+
+
+# Native DRC preflight is mandatory for this bounded, non-idempotent write.
+register(
+    CapabilityRecord(
+        name="route_apply_candidate",
+        profiles=_PCB_PROFILES,
+        tier=AccessTier.WRITE,
+        category="routing",
+        runtime=RuntimeRequirement.KICAD_IPC,
+        writes_files=False,
+        writes_kicad_gui_state=True,
+        supports_dry_run=False,
+        supports_rollback=True,
+        verification_level="experimental",
+        maturity=ToolMaturity.BETA,
+        advisory_level=AdvisoryLevel.REQUIRES_EVIDENCE,
+    )
+)
+
+
+# Straight-pair preview is READ; atomic two-track application is WRITE.
+register(
+    CapabilityRecord(
+        name="route_plan_straight_differential_pair",
+        profiles=_PCB_PROFILES,
+        tier=AccessTier.READ,
+        category="routing",
+        runtime=RuntimeRequirement.KICAD_IPC,
+        writes_files=False,
+        writes_kicad_gui_state=False,
+        supports_dry_run=True,
+        verification_level="experimental",
+        maturity=ToolMaturity.BETA,
+        advisory_level=AdvisoryLevel.REQUIRES_EVIDENCE,
+    )
+)
+register(
+    CapabilityRecord(
+        name="route_apply_straight_differential_pair_candidate",
+        profiles=_PCB_PROFILES,
+        tier=AccessTier.WRITE,
+        category="routing",
+        runtime=RuntimeRequirement.KICAD_IPC,
+        writes_files=False,
+        writes_kicad_gui_state=True,
+        supports_dry_run=False,
+        supports_rollback=True,
+        verification_level="experimental",
+        maturity=ToolMaturity.BETA,
+        advisory_level=AdvisoryLevel.REQUIRES_EVIDENCE,
+    )
+)
+
+
+# Bounded obstacle-aware matched pair: READ preview and DRC-gated atomic WRITE.
+register(
+    CapabilityRecord(
+        name="route_plan_coupled_differential_pair",
+        profiles=_PCB_PROFILES,
+        tier=AccessTier.READ,
+        category="routing",
+        runtime=RuntimeRequirement.KICAD_IPC,
+        writes_files=False,
+        writes_kicad_gui_state=False,
+        supports_dry_run=True,
+        verification_level="experimental",
+        maturity=ToolMaturity.BETA,
+        advisory_level=AdvisoryLevel.REQUIRES_EVIDENCE,
+    )
+)
+register(
+    CapabilityRecord(
+        name="route_apply_coupled_differential_pair_candidate",
+        profiles=_PCB_PROFILES,
+        tier=AccessTier.WRITE,
+        category="routing",
+        runtime=RuntimeRequirement.KICAD_IPC,
+        writes_files=False,
+        writes_kicad_gui_state=True,
+        supports_dry_run=False,
+        supports_rollback=True,
+        verification_level="experimental",
+        maturity=ToolMaturity.BETA,
+        advisory_level=AdvisoryLevel.REQUIRES_EVIDENCE,
+    )
+)
+
+
+# Native one-through-via preview is READ; DRC-accepted application is WRITE.
+register(
+    CapabilityRecord(
+        name="route_plan_one_through_via",
+        profiles=_PCB_PROFILES,
+        tier=AccessTier.READ,
+        category="routing",
+        runtime=RuntimeRequirement.KICAD_IPC,
+        writes_files=False,
+        writes_kicad_gui_state=False,
+        supports_dry_run=True,
+        verification_level="experimental",
+        maturity=ToolMaturity.BETA,
+        advisory_level=AdvisoryLevel.REQUIRES_EVIDENCE,
+    )
+)
+register(
+    CapabilityRecord(
+        name="route_apply_one_through_via_candidate",
+        profiles=_PCB_PROFILES,
+        tier=AccessTier.WRITE,
+        category="routing",
+        runtime=RuntimeRequirement.KICAD_IPC,
+        writes_files=False,
+        writes_kicad_gui_state=True,
+        supports_dry_run=False,
+        supports_rollback=True,
+        verification_level="experimental",
+        maturity=ToolMaturity.BETA,
+        advisory_level=AdvisoryLevel.REQUIRES_EVIDENCE,
+    )
+)
+
 _register_router_tools()

@@ -7,6 +7,7 @@ readonly appimage_name='kicad-10.0.7-x86_64-lite.AppImage'
 readonly archive_sha256='3c6067b03e2e6eb7b3e17f63f6d57c2937a19c39d585edd0c0a8d0bebaec8969'
 readonly appimage_sha256='05855274adb8eb7164ab886cfbbe8da7dd84f961d6d04783b66ffcb5011287cd'
 readonly base_url='https://mirrors.mit.edu/kicad/appimage/stable'
+readonly fallback_base_url='https://mirror.nju.edu.cn/kicad/appimage/stable'
 readonly symbols_commit='1b2b42d49bc41559e43f590b084e7fe8f1e7f5fc'
 readonly symbols_archive_sha256='2c6c52d300ac8f0ddaf750b301e2ad0396946b2b3417c01114a5be26e77bc3df'
 readonly symbols_archive="kicad-symbols-${symbols_commit}.tar.gz"
@@ -20,9 +21,17 @@ if [[ -n "${KICAD10_ARCHIVE_SOURCE_FILE:-}" ]]; then
   # remain mandatory and this override must not be set by production CI.
   cp -- "$KICAD10_ARCHIVE_SOURCE_FILE" "$archive"
 else
-  curl --fail --location --retry 3 --retry-delay 2 \
+  if ! curl --fail --location --retry 3 --retry-delay 2 \
     --connect-timeout 15 --max-time 240 --proto '=https' --tlsv1.2 \
-    --output "$archive" "$base_url/$archive_name"
+    --output "$archive" "$base_url/$archive_name"; then
+    # A mirror outage is not a KiCad compatibility failure. Keep the exact
+    # upstream artifact name and pinned SHA-256; never reuse partial downloads.
+    rm -f -- "$archive"
+    echo 'Primary KiCad mirror unavailable; trying independent KiCad mirror.' >&2
+    curl --fail --location --retry 2 --retry-delay 2 \
+      --connect-timeout 15 --max-time 240 --proto '=https' --tlsv1.2 \
+      --output "$archive" "$fallback_base_url/$archive_name"
+  fi
 fi
 
 printf '%s  %s\n' "$archive_sha256" "$archive" | sha256sum --check --status || {

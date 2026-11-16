@@ -50,6 +50,7 @@ _READ_ONLY_TOOL_NAMES = frozenset(
         "lib_verify_component_contract",
         "pcb_visual_qa",
         "project_design_workflow",
+        "route_plan_between_pads",
         "sch_visual_qa",
     }
 )
