@@ -35,7 +35,7 @@ def test_origin_validation_blocks_unauthorized_cross_origin_mutations(sample_pro
     _ = sample_project
     cfg = get_config()
     cfg.transport = "streamable-http"
-    cfg.auth_token = ""  # Default unauthenticated state
+    cfg.auth_token = None  # Default unauthenticated state
 
     server = build_server("minimal")
     client = TestClient(server.streamable_http_app(), raise_server_exceptions=False)
