@@ -149,10 +149,43 @@ def test_realistic_misaligned_pair_reports_pad_geometry_without_board_write(
         "offsetChangeMm": 1.5 if reversed_order else 2.4,
         "padOrderReversed": reversed_order,
     }
-    assert "native differential-pair fanout" in result["nextAction"]
+    assert result["blockerType"] == ("pad_order_reversal" if reversed_order else "fanout_required")
+    if reversed_order:
+        assert "pad order is reversed" in result["nextAction"]
+        assert "layer transition" in result["nextAction"]
+    else:
+        assert "native differential-pair fanout" in result["nextAction"]
+        assert "not a polarity swap" in result["nextAction"]
     assert "No physical signoff" in result["nextAction"]
     assert ("pad order reverses" in result["reason"]) is reversed_order
     assert stats["snapshots"] == (0 if reversed_order else 1)
+    assert board.get_as_string() == original
+
+
+def test_usb_connector_near_aligned_pads_refuse_with_specific_fanout_guidance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pads, board, stats = _arrange(monkeypatch)
+    pads[0].position = Vector2.from_xy_mm(0, 0)
+    pads[1].position = Vector2.from_xy_mm(8, 0.02)
+    pads[2].position = Vector2.from_xy_mm(0, 0.85)
+    pads[3].position = Vector2.from_xy_mm(8, 0.88)
+    original = board.get_as_string()
+
+    result = _preview(width_mm=0.3, gap_mm=0.25)
+    assert result["status"] == "refused"
+    assert result["candidateOnly"] is True
+    assert result["blockerType"] == "fanout_required"
+    assert result["padGeometry"] == {
+        "startPadSeparationMm": 0.85,
+        "endPadSeparationMm": 0.86,
+        "requestedCenterSpacingMm": 0.55,
+        "offsetChangeMm": 0.01,
+        "padOrderReversed": False,
+    }
+    assert "not a polarity swap" in result["nextAction"]
+    assert "candidateId" not in result
+    assert stats["snapshots"] == 1
     assert board.get_as_string() == original
 
 

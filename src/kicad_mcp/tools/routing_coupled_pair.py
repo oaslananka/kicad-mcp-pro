@@ -243,11 +243,37 @@ def _preview_coupled_pair(
             "pad order reverses" in reason or "aligned pads" in reason or "spacing/offset" in reason
         ):
             refusal["padGeometry"] = pad_geometry
-            refusal["nextAction"] = (
-                "Review P/N pad mapping and layer transitions before rerouting; "
-                "use KiCad's native differential-pair fanout and tuning with "
-                "verified stackup, return path and DRC. No physical signoff."
-            )
+            if pad_geometry["padOrderReversed"]:
+                refusal["blockerType"] = "pad_order_reversal"
+                refusal["nextAction"] = (
+                    "P/N pad order is reversed: do not cross the lanes on one copper "
+                    "layer. Review pad mappings and independently qualify any "
+                    "layer transition, return path and stackup before routing. "
+                    "No physical signoff."
+                )
+            elif (
+                abs(pad_geometry["startPadSeparationMm"] - pad_geometry["requestedCenterSpacingMm"])
+                > 0.001
+                or abs(
+                    pad_geometry["endPadSeparationMm"] - pad_geometry["requestedCenterSpacingMm"]
+                )
+                > 0.001
+            ):
+                refusal["blockerType"] = "fanout_required"
+                refusal["nextAction"] = (
+                    "P/N pad order is consistent; the endpoint spacing needs a "
+                    "reviewed differential-pair fanout, not a polarity swap. "
+                    "Use KiCad's native differential-pair fanout and tuning with "
+                    "verified stackup, return path and DRC. No physical signoff."
+                )
+            else:
+                refusal["blockerType"] = "unsupported_alignment"
+                refusal["nextAction"] = (
+                    "P/N spacing is consistent but this bounded planner cannot "
+                    "handle the endpoint alignment. Review the native KiCad "
+                    "differential-pair routing and verified board constraints. "
+                    "No physical signoff."
+                )
         return json.dumps(refusal, sort_keys=True)
 
 
