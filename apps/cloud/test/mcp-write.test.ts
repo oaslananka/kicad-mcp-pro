@@ -42,6 +42,9 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
   let tokenValid = true;
   let writeExecuted = false;
   let preflightAllowed = true;
+  let reportedOutcome: {
+    nativeCommitted: boolean; savedToDisk: boolean; diskBoardSha256?: string
+  } | null = null;
 
   const inventory: Inventory = {
     async listProjects(sub, client) {
@@ -114,9 +117,11 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
         requestId: parsed.requestId,
         projectId: projId,
         operation: "pcb_move_footprint" as const,
-        nativeCommitted: true,
-        savedToDisk: persistToDisk,
-        diskBoardSha256: "2".repeat(64)
+        ...(reportedOutcome ?? {
+          nativeCommitted: true,
+          savedToDisk: persistToDisk,
+          ...(persistToDisk ? {diskBoardSha256: "2".repeat(64)} : {})
+        })
       };
     }
   };
@@ -289,6 +294,42 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     assert.match(JSON.stringify(successCall.data), /"nativeCommitted":true/);
     assert.match(JSON.stringify(successCall.data), /"savedToDisk":true/);
     assert.match(JSON.stringify(successCall.data), /"diskBoardSha256":"2222/);
+
+    // A remote response must not claim success without committed native work,
+    // or claim a saved board when disk persistence was requested but unproven.
+    for (const [reported, expected] of [
+      [{nativeCommitted:false,savedToDisk:false}, "native_commit_not_confirmed"],
+      [{nativeCommitted:true,savedToDisk:false}, "disk_save_not_confirmed"],
+      [{nativeCommitted:true,savedToDisk:true}, "disk_hash_not_confirmed"]
+    ] as const) {
+      reportedOutcome = reported;
+      const failed = await invoke("enabled", "token-write", "tools/call", {
+        name:"pcb_move_footprint",
+        arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20,save_to_disk:true}
+      }, 8, "pcb_move_footprint");
+      assert.equal(failed.status, 200);
+      assert.match(JSON.stringify(failed.data), /"success":false/);
+      assert.match(JSON.stringify(failed.data), new RegExp(expected));
+    }
+    reportedOutcome = {
+      nativeCommitted:true,savedToDisk:true,diskBoardSha256:"2".repeat(64)
+    };
+    const unexpectedSave = await invoke("enabled", "token-write", "tools/call", {
+      name:"pcb_move_footprint",
+      arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20,save_to_disk:false}
+    }, 10, "pcb_move_footprint");
+    assert.equal(unexpectedSave.status, 200);
+    assert.match(JSON.stringify(unexpectedSave.data), /"success":false/);
+    assert.match(JSON.stringify(unexpectedSave.data), /unexpected_disk_save/);
+
+    reportedOutcome = null;
+    const unsaved = await invoke("enabled", "token-write", "tools/call", {
+      name:"pcb_move_footprint",
+      arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20,save_to_disk:false}
+    }, 9, "pcb_move_footprint");
+    assert.equal(unsaved.status, 200);
+    assert.match(JSON.stringify(unsaved.data), /"success":true/);
+    assert.match(JSON.stringify(unsaved.data), /"savedToDisk":false/);
 
     // 6. Preflight denial fails closed
     writeExecuted = false;

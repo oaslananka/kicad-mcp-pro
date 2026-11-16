@@ -138,6 +138,24 @@ export type CloudHttpServices={
   ownerIntentDelivery?:(scope:PreparedOwnerSummary)=>Promise<string|null>;
 };
 
+/** A native reply is not a successful edit until the requested outcome is evidenced.
+ * Keep both native and disk flags in failure responses: a failed save can still
+ * leave an unsaved edit in the live KiCad editor.
+ */
+function writeOutcomeIssue(
+  result: import("./connector-ws.js").WriteOperationResult,
+  saveRequested: boolean
+):string|undefined {
+  if(!result.nativeCommitted)return "native_commit_not_confirmed";
+  if(saveRequested){
+    if(!result.savedToDisk)return "disk_save_not_confirmed";
+    if(!result.diskBoardSha256)return "disk_hash_not_confirmed";
+  }else if(result.savedToDisk){
+    return "unexpected_disk_save";
+  }
+  return undefined;
+}
+
 /** Never advertise native writes before signed proof + DB authorization
  * path is fully configured. Discovery alone does not grant OAuth permissions.
  */
@@ -821,12 +839,14 @@ async function handleRequest(
             );
             if (!result || result.requestId !== requestId || result.projectId !== projectId) return null;
             if (!await inventory.isAccessTokenAllowed(actor.sub, actor.clientId, actor.issuedAt)) return null;
+            const issue=writeOutcomeIssue(result,command.saveToDisk??true);
             return {
-              success: true,
+              success: issue===undefined,
               operation: "pcb_move_footprint",
               nativeCommitted: result.nativeCommitted,
               savedToDisk: result.savedToDisk,
-              ...(result.diskBoardSha256 ? { diskBoardSha256: result.diskBoardSha256 } : {})
+              ...(result.diskBoardSha256 ? { diskBoardSha256: result.diskBoardSha256 } : {}),
+              ...(issue ? {message:issue} : {})
             };
           }
         : undefined;
