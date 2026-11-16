@@ -65,6 +65,21 @@ def _coupled_endpoints(
         or negative_a.net.name != negative_b.net.name
     ):
         raise RoutePlanningError("P/N pad endpoints must each share one named net")
+    if positive_a.net.name == negative_a.net.name:
+        raise RoutePlanningError("P/N lanes must use distinct named nets, not the same net")
+    positive_name, negative_name = positive_a.net.name.upper(), negative_a.net.name.upper()
+    if (
+        "USB" in positive_name
+        and "USB" in negative_name
+        and (
+            positive_name.endswith(("_N", "_DM", "D-"))
+            or negative_name.endswith(("_P", "_DP", "D+"))
+        )
+    ):
+        raise RoutePlanningError(
+            "P/N lane assignment contradicts the USB net polarity labels; "
+            "verify source and target pad mappings"
+        )
     if not (
         _validate_endpoint_layer(positive_a, positive_b, layer)
         and _validate_endpoint_layer(negative_a, negative_b, layer)

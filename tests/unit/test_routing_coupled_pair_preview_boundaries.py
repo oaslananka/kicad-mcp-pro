@@ -166,6 +166,8 @@ def test_realistic_misaligned_pair_reports_pad_geometry_without_board_write(
         ("mismatched_positive_net", "each share"),
         ("mismatched_negative_net", "each share"),
         ("missing_negative_net", "each share"),
+        ("same_net", "distinct named nets"),
+        ("swapped_usb_polarity", "USB net polarity labels"),
         ("unsupported_copper", "share the requested"),
         ("foreign_obstacle", "obstacle"),
         ("revision_change", "changed"),
@@ -192,6 +194,11 @@ def test_preview_refuses_ambiguous_or_mutated_pair(
         pads[3].net.name = "OTHER"
     if fault == "missing_negative_net":
         pads[2].net.name = ""
+    if fault == "same_net":
+        pads[2].net.name = pads[3].net.name = "USB_D_P"
+    if fault == "swapped_usb_polarity":
+        pads[0].net.name = pads[1].net.name = "USB_MCU_N"
+        pads[2].net.name = pads[3].net.name = "USB_MCU_P"
     if fault == "unsupported_copper":
         monkeypatch.setattr(adapter, "_validate_endpoint_layer", lambda *_a: False)
     if fault == "foreign_obstacle":
