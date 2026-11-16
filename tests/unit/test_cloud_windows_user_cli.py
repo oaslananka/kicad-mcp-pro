@@ -1198,3 +1198,58 @@ def test_repair_cannot_claim_success_after_new_pairing_if_local_switch_fails(
             stop_previous=lambda: events.append("stop-old") or True,
         )
     assert events == ["enroll", "browser-approval", "register", "bind", "stop-old"]
+
+
+def test_existing_windows_device_rejects_new_pair_before_opening_native_picker(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typer import BadParameter
+
+    folder, events, _old_project, _selection = windows_cli
+    initial = CliRunner().invoke(
+        app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
+    )
+    assert initial.exit_code == 0, initial.output
+    events.clear()
+
+    def forbid_picker() -> Path:
+        pytest.fail("An already-paired Windows device must not open a new folder picker")
+
+    with pytest.raises(BadParameter, match="already paired"):
+        cloud_windows_user_cli.setup_windows(
+            origin=ORIGIN,
+            alias="Lab PC",
+            project_dir=None,
+            browse=True,
+            new_device=True,
+            approval=lambda *_: pytest.fail("A second device must not be enrolled"),
+            picker=forbid_picker,
+            owner_terminal=lambda: True,
+            start_background=False,
+        )
+    assert events == []
+
+
+def test_foreground_unverified_legacy_task_returns_actionable_error(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from typer import BadParameter
+
+    from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
+
+    _folder, events, registered, _selection = windows_cli
+
+    def fail_verification() -> bool:
+        raise LocalApprovalDeniedError("Windows Connector scheduled task could not be verified.")
+
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_windows_task_scheduler.stop_and_remove_owner_task",
+        fail_verification,
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_windows_connector.activate",
+        lambda *_args, **_kwargs: pytest.fail("Never enable before task verification"),
+    )
+    with pytest.raises(BadParameter, match="Existing Windows Connector task could not be verified"):
+        cloud_user_cli._prepare_remote_connector(registered, interactive=True)
+    assert events == []

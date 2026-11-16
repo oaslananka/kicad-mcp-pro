@@ -418,7 +418,16 @@ def _prepare_remote_connector(existing: WindowsRegisteredProject, interactive: b
     # Interactive owners may remove their own verified scheduled task.
     # A headless previously-paired session cannot alter tasks or activation.
     if interactive:
-        if not stop_and_remove_owner_task():
+        try:
+            stopped = stop_and_remove_owner_task()
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise typer.BadParameter(
+                "Existing Windows Connector task could not be verified. "
+                "The previous task, pairing and project were preserved. "
+                "Use the KiCad MCP Pro version that installed the task to stop it "
+                "safely before retrying cloud connect."
+            ) from exc
+        if not stopped:
             raise typer.BadParameter(
                 "Could not stop the existing Connector task safely. "
                 "Registration and permissions were preserved."
@@ -725,7 +734,7 @@ def connect(
     new_device: bool = typer.Option(
         False,
         "--new-device",
-        help="Pair a distinct new device after browser approval, preserving existing local keys.",
+        help="Pair a new device with owner approval (Windows requires no saved pairing).",
     ),
     project_dir: Annotated[
         Path | None,

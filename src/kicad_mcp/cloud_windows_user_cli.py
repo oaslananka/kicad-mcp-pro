@@ -304,6 +304,23 @@ def setup_windows(
             "Cloud pairing requires an interactive owner terminal; "
             "use cloud status for noninteractive checks."
         )
+    if new_device:
+        # A saved owner identity must not be replaced by choosing another folder.
+        # Reject before opening the native picker or starting browser pairing.
+        try:
+            saved = selected_project()
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise typer.BadParameter(
+                "Existing Windows Cloud pairing could not be inspected; "
+                "no device or project was changed."
+            ) from exc
+        if saved is not None:
+            raise typer.BadParameter(
+                "Cloud device already registered; this computer is already paired. Run "
+                "'kicad-mcp-pro cloud connect' to reconnect, or use Cloud Devices > "
+                "Add project > Browse for another KiCad folder. "
+                "Existing keys and projects were preserved."
+            )
     directory, stem = _choose_project(project_dir, browse=browse, picker=picker)
     try:
         existing = selected_project()
