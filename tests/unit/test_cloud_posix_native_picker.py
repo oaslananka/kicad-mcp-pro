@@ -161,7 +161,9 @@ def test_timeout_terminates_dialog_and_denies_selection(
     with pytest.raises(OSError, match="timed out"):
         picker.choose_project_folder()
     assert len(processes) == 1
-    assert isinstance(processes[0], HungDialog) and processes[0].killed
+    process = processes[0]
+    assert isinstance(process, HungDialog)
+    assert process.killed
 
 
 def test_native_dialog_exec_never_invokes_shell(

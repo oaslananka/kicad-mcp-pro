@@ -91,26 +91,40 @@ async def _capture_native_dialog(platform: Literal["darwin", "linux"]) -> tuple[
     )
 
 
-def choose_project_folder() -> Path | None:
-    """Return the owner's GUI-selected folder or None on explicit cancellation."""
-    if not native_picker_available():
-        raise OSError("A graphical project folder chooser is unavailable on this device")
-    platform: Literal["darwin", "linux"] = "darwin"
+def _dialog_platform() -> Literal["darwin", "linux"] | None:
+    """Choose an allowlisted native picker, or fall back to Tk on Linux."""
     if sys.platform == "darwin":
         if shutil.which("osascript") is None:
             raise OSError("No macOS folder chooser is available")
-    elif sys.platform.startswith("linux"):
-        if shutil.which("zenity") is None:
-            return _select_with_tkinter()
-        platform = "linux"
-    else:
-        raise OSError("POSIX native project folder picker requires macOS or Linux")
-    status, stdout, stderr = asyncio.run(_capture_native_dialog(platform))
+        return "darwin"
+    if sys.platform.startswith("linux"):
+        return "linux" if shutil.which("zenity") is not None else None
+    raise OSError("POSIX native project folder picker requires macOS or Linux")
+
+
+def _selected_dialog_folder(
+    platform: Literal["darwin", "linux"],
+    status: int,
+    stdout: str,
+    stderr: str,
+) -> Path | None:
+    """Return the selected directory, preserving each platform's cancel code."""
     if status != 0:
-        if sys.platform == "darwin" and "(-128)" in stderr:
+        if platform == "darwin" and "(-128)" in stderr:
             return None
-        if sys.platform.startswith("linux") and status == 1 and not stdout.strip():
+        if platform == "linux" and status == 1 and not stdout.strip():
             return None
         raise OSError("The native project folder chooser failed")
     selected = stdout.strip()
     return Path(selected) if selected else None
+
+
+def choose_project_folder() -> Path | None:
+    """Return the owner's GUI-selected folder or None on explicit cancellation."""
+    if not native_picker_available():
+        raise OSError("A graphical project folder chooser is unavailable on this device")
+    platform = _dialog_platform()
+    if platform is None:
+        return _select_with_tkinter()
+    status, stdout, stderr = asyncio.run(_capture_native_dialog(platform))
+    return _selected_dialog_folder(platform, status, stdout, stderr)

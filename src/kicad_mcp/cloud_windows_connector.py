@@ -491,6 +491,70 @@ def _dispatcher(
     )
 
 
+def _native_write_configuration(
+    project: WindowsRegisteredProject,
+    selected: WindowsLocalProjectSelection,
+    issuer_key: Ed25519PublicKey,
+    receipt_holder: list[HandshakeReceipt],
+) -> ManagedNativeWriteConfig:
+    """Create one session-pinned write configuration; never grant access here."""
+    from kicad_mcp.cloud_native_write_dispatch import (
+        execute_verified_signed_pcb_move,
+        prepare_native_write_revisions,
+    )
+    from kicad_mcp.cloud_outbound_handshake import ManagedNativeWriteConfig
+    from kicad_mcp.cloud_windows_write_marker import (
+        consume_windows_write_marker,
+        default_windows_write_marker_directory,
+    )
+
+    operator_project = OperatorProject(
+        device_id=project.device_id,
+        project_id=project.project_id,
+        directory=selected.directory,
+        filename_stem=selected.filename_stem,
+    )
+
+    marker_dir = default_windows_write_marker_directory()
+
+    def _execute_write(proof_bytes: bytes, persist: bool) -> dict[str, object]:
+        sid = receipt_holder[0].session_id if receipt_holder else ""
+        verified = VerifiedLocalBinding(
+            device_id=project.device_id,
+            project_id=project.project_id,
+            operations=frozenset({"pcb_move_footprint"}),
+            session_id=sid,
+            session_expires_unix_ms=time.time_ns() // 1_000_000 + _SESSION_LIFETIME_MS,
+        )
+        return execute_verified_signed_pcb_move(
+            proof_bytes,
+            issuer_key=issuer_key,
+            verified=verified,
+            operator_project=operator_project,
+            consume_once=lambda sid, req_id: (
+                consume_windows_write_marker(
+                    marker_dir,
+                    sid,
+                    req_id,
+                )
+                if marker_dir is not None
+                else False
+            ),
+            authorized=lambda: _current_authorization(project),
+            cancelled=lambda: not _current_authorization(project),
+            persist_to_disk=persist,
+        )
+
+    return ManagedNativeWriteConfig(
+        revisions_preparer=lambda: prepare_native_write_revisions(
+            operator_project,
+            authorized=lambda: _current_authorization(project),
+            cancelled=lambda: not _current_authorization(project),
+        ),
+        write_executor=_execute_write,
+    )
+
+
 async def _run_owner_session(
     project: WindowsRegisteredProject,
     selected: WindowsLocalProjectSelection,
@@ -520,60 +584,11 @@ async def _run_owner_session(
     if allow_native_drc:
         settings["allow_native_drc"] = True
     if allow_native_write and issuer_key is not None:
-        from kicad_mcp.cloud_native_write_dispatch import (
-            execute_verified_signed_pcb_move,
-            prepare_native_write_revisions,
-        )
-        from kicad_mcp.cloud_outbound_handshake import ManagedNativeWriteConfig
-        from kicad_mcp.cloud_windows_write_marker import (
-            consume_windows_write_marker,
-            default_windows_write_marker_directory,
-        )
-
-        operator_project = OperatorProject(
-            device_id=project.device_id,
-            project_id=project.project_id,
-            directory=selected.directory,
-            filename_stem=selected.filename_stem,
-        )
-
-        marker_dir = default_windows_write_marker_directory()
-
-        def _execute_write(proof_bytes: bytes, persist: bool) -> dict[str, object]:
-            sid = receipt_holder[0].session_id if receipt_holder else ""
-            verified = VerifiedLocalBinding(
-                device_id=project.device_id,
-                project_id=project.project_id,
-                operations=frozenset({"pcb_move_footprint"}),
-                session_id=sid,
-                session_expires_unix_ms=time.time_ns() // 1_000_000 + _SESSION_LIFETIME_MS,
-            )
-            return execute_verified_signed_pcb_move(
-                proof_bytes,
-                issuer_key=issuer_key,
-                verified=verified,
-                operator_project=operator_project,
-                consume_once=lambda sid, req_id: (
-                    consume_windows_write_marker(
-                        marker_dir,
-                        sid,
-                        req_id,
-                    )
-                    if marker_dir is not None
-                    else False
-                ),
-                authorized=lambda: _current_authorization(project),
-                cancelled=lambda: not _current_authorization(project),
-                persist_to_disk=persist,
-            )
-
-        settings["native_write"] = ManagedNativeWriteConfig(
-            revisions_preparer=lambda: prepare_native_write_revisions(
-                operator_project,
-                authorized=lambda: _current_authorization(project),
-                cancelled=lambda: not _current_authorization(project),
-            ),
-            write_executor=_execute_write,
+        settings["native_write"] = _native_write_configuration(
+            project,
+            selected,
+            issuer_key,
+            receipt_holder,
         )
 
     # Only the foreground, owner-operated terminal session may open a GUI.
@@ -753,6 +768,34 @@ def _notify_owner_reapproval(
         )
 
 
+def _reuse_session_folder_service(
+    project: WindowsRegisteredProject,
+    selected: WindowsLocalProjectSelection,
+    runner: Callable[..., Awaitable[HandshakeReceipt]],
+    previous_service: LocalFolderBrowseService | None,
+    previous_identity: tuple[str, str, str, Path] | None,
+) -> tuple[LocalFolderBrowseService | None, tuple[str, str, str, Path] | None]:
+    """Keep the same owner-selected tokens only for the same authorized identity."""
+    if not getattr(runner, "_kicad_supports_folder_browse", False):
+        return None, None
+    identity = (
+        project.owner_sub,
+        project.device_id,
+        project.project_id,
+        selected.directory,
+    )
+    if identity == previous_identity:
+        return previous_service, previous_identity
+
+    def still_authorized(expected: WindowsRegisteredProject = project) -> bool:
+        return _current_authorization(expected)
+
+    return (
+        device_folder_service(selected.directory, authorization=still_authorized),
+        identity,
+    )
+
+
 async def run_connector(
     *,
     stop: asyncio.Event,
@@ -790,27 +833,13 @@ async def run_connector(
 
         _notify_connection_attempt(status_callback, failures)
         runner_for_session = _session_runner_with_status(session_runner, status_callback)
-        if getattr(runner_for_session, "_kicad_supports_folder_browse", False):
-            identity = (
-                project.owner_sub,
-                project.device_id,
-                project.project_id,
-                selected.directory,
-            )
-            if identity != folder_identity:
-                # Changing the authorized device or local project invalidates every token.
-                def still_authorized(expected: WindowsRegisteredProject = project) -> bool:
-                    # Freeze the selected device/project across session renewal.
-                    return _current_authorization(expected)
-
-                folder_service = device_folder_service(
-                    selected.directory,
-                    authorization=still_authorized,
-                )
-                folder_identity = identity
-        else:
-            folder_service = None
-            folder_identity = None
+        folder_service, folder_identity = _reuse_session_folder_service(
+            project,
+            selected,
+            runner_for_session,
+            folder_service,
+            folder_identity,
+        )
 
         session_started = time.monotonic()
         try:
