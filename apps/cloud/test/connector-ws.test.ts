@@ -693,6 +693,76 @@ test("manual WSS project inspection uses exact grant and discards invalid typed 
   }
 });
 
+test("an acknowledged signed WSS write releases the sequence for the next write",
+  {skip:!url,timeout:60_000},async()=>{
+  // Loopback transport-only fixture. The upstream OAuth/policy/issuer and
+  // device-side native execution remain independently enforced.
+  await inIsolatedDatabase(url!,migrations,async db=>{
+    const owner="write-sequence-owner";
+    const keys=generateKeyPairSync("ed25519");
+    const pair=new PgPairingChallenges(db,randomBytes(32));
+    const issued=await pair.issue("Write transport fixture",
+      keys.publicKey.export({format:"der",type:"spki"}) as Buffer);
+    await pair.review(issued.id,owner,issued.userCode,"approve");
+    const enrolled=await pair.enroll(issued.id,issued.deviceCode,
+      sign(null,redemptionProof(issued.id,issued.deviceCode),keys.privateKey));
+    assert.equal(enrolled.kind,"enrolled");
+    if(enrolled.kind!=="enrolled")return;
+    const device=enrolled.deviceId;
+    const project=randomUUID();
+    await db.query("UPDATE devices SET enabled=true WHERE id=$1",[device]);
+    const {server,port,attached}=await startFixtureServer(
+      db,false,false,false,false,false,true,false);
+    let ws:WebSocket|undefined;
+    try{
+      ws=await connect("ws://127.0.0.1:"+port+"/api/v1/connector/ws");
+      const ch=await send(ws,{kind:"device.hello",version:1,
+        ownerSub:owner,deviceId:device,
+        catalog:{schemaVersion:"1.0.0",catalogRevision:"c".repeat(64),
+          operations:["move_footprint"]}});
+      const first=sign(null,deviceHandshakeProof(field(ch,"challengeId"),
+        device,field(ch,"nonce")),keys.privateKey).toString("base64url");
+      const session=await send(ws,{kind:"device.proof",version:1,signature:first});
+      const signed=sign(null,connectorSessionProof(
+        field(session,"sessionId"),field(session,"challengeId"),device,
+        field(session,"nonce"),field(session,"binding")),
+      keys.privateKey).toString("base64url");
+      assert.equal((await send(ws,{kind:"connector.session_proof",
+        version:1,signature:signed})).kind,"connector.ready");
+      const oauth={ownerSub:owner,clientId:"test-client",
+        accessTokenIssuedAtSeconds:Math.floor(Date.now()/1000)};
+      const expectedDigest="d".repeat(64);
+      assert.equal(await attached.requestWrite(oauth,device,project,
+        {payload:"not-base64-json"},true),null,
+        "Malformed proposals cannot strand a signed session sequence");
+      for(const sequence of [1,2]){
+        const requestId=randomUUID();
+        const payload=Buffer.from(JSON.stringify({requestId})).toString("base64url");
+        const outbound=waitMessage(ws);
+        const pending=attached.requestWrite(oauth,device,project,{payload},true);
+        const frame=await outbound;
+        assert.equal(frame.kind,"connector.authorized_write");
+        assert.equal(frame.sequence,sequence);
+        assert.equal(frame.projectId,project);
+        const ack=waitMessage(ws);
+        const result={requestId,projectId:project,
+          operation:"pcb_move_footprint",nativeCommitted:true,
+          savedToDisk:true,diskBoardSha256:expectedDigest};
+        ws.send(JSON.stringify({kind:"connector.write_result",
+          version:1,sequence,result}));
+        assert.deepEqual(await pending,result);
+        const confirmation=await ack;
+        assert.equal(confirmation.kind,"connector.write_ack");
+        assert.equal(confirmation.requestId,requestId);
+      }
+    }finally{
+      ws?.terminate();
+      await attached.close();
+      await new Promise<void>(resolve=>server.close(()=>resolve()));
+    }
+  });
+});
+
 test("managed signed WSS native DRC is operation-scoped and revocation-safe",
   {skip:!url,timeout:process.env.KICAD_NATIVE_DRC_ACCEPTANCE==="1"?100_000:40_000},
   async()=>{

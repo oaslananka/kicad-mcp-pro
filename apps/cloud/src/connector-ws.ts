@@ -607,6 +607,12 @@ export function attachConnectorWebSocket(
             }catch{
               pending.resolve(null);fail();return;
             }
+            // Write responses share the bounded signed-session sequence with reads.
+            // Without completing it, the next authorized write in this session
+            // is rejected even after a valid reply and acknowledgement.
+            if(!entry.readSequence.complete(pending.sequence)){
+              pending.resolve(null);fail();return;
+            }
             pending.resolve(reply.data.result);
             return;
           }
@@ -1111,8 +1117,8 @@ export function attachConnectorWebSocket(
     if (active.entry.catalogClaim && !active.entry.catalogClaim.operations.includes("move_footprint")) {
       return null;
     }
-    const sequence = active.entry.readSequence.reserve();
-    if (sequence === null) return null;
+    // Validate the sealed proposal before reserving a sequence; malformed
+    // input must not strand the signed session's single in-flight slot.
     const proposal = proof as { payload?: string };
     if (!proposal || typeof proposal.payload !== "string") return null;
     let decodedPayload: { requestId?: string };
@@ -1123,6 +1129,8 @@ export function attachConnectorWebSocket(
     }
     const requestId = decodedPayload.requestId;
     if (!requestId || typeof requestId !== "string") return null;
+    const sequence = active.entry.readSequence.reserve();
+    if (sequence === null) return null;
 
     return new Promise<WriteOperationResult | null>(resolve => {
       const timer = setTimeout(() => {
