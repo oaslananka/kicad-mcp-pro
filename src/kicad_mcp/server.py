@@ -1985,10 +1985,7 @@ class _OriginValidationMiddleware(BaseHTTPMiddleware):
         call_next: RequestResponseEndpoint,
     ) -> Response:
         cfg = get_config()
-        if request.method.upper() in self._MUTATING_METHODS and request.url.path in {
-            cfg.mount_path,
-            self._ROTATE_PATH,
-        }:
+        if request.method.upper() in self._MUTATING_METHODS:
             origin = request.headers.get("origin")
             if origin and not _is_origin_allowed(origin, cfg):
                 return PlainTextResponse("Origin not allowed for this MCP server.", status_code=403)
@@ -2021,8 +2018,10 @@ class _DashboardAuthMiddleware(BaseHTTPMiddleware):
         call_next: RequestResponseEndpoint,
     ) -> Response:
         cfg = get_config()
-        if cfg.auth_token and self._is_protected_route(request.url.path):
-            if not self._is_authorized(request, cfg.auth_token, cfg.allow_query_token_auth):
+        if self._is_protected_route(request.url.path):
+            if cfg.auth_token and not self._is_authorized(
+                request, cfg.auth_token, cfg.allow_query_token_auth
+            ):
                 return JSONResponse(
                     {"error": "Unauthorized. Invalid or missing auth token."},
                     status_code=401,

@@ -214,6 +214,14 @@ def _message_too_large_error(msg_id: object | None = None) -> dict[str, object]:
 # ---------------------------------------------------------------------------
 
 
+@dataclass(eq=False)
+class BridgeClientSession:
+    """Connection-scoped pairing state for a TCP client."""
+
+    paired: bool = False
+    paired_at: float | None = None
+
+
 @dataclass
 class BridgeState:
     """Runtime state of the bridge daemon."""
@@ -233,6 +241,7 @@ class BridgeState:
     pair_limiter: TokenBucket = field(
         default_factory=lambda: TokenBucket(BRIDGE_PAIR_CAPACITY, BRIDGE_PAIR_REFILL)
     )
+    active_sessions: set[BridgeClientSession] = field(default_factory=set)
     _server: Any = None
 
     @property
@@ -261,7 +270,10 @@ class BridgeState:
 
 
 async def _process_client_line(
-    data: bytes, writer: asyncio.StreamWriter, state: BridgeState
+    data: bytes,
+    writer: asyncio.StreamWriter,
+    state: BridgeState,
+    session: BridgeClientSession | None = None,
 ) -> None:
     if len(data) > BRIDGE_MAX_MESSAGE_BYTES:
         logger.warning(
@@ -281,7 +293,7 @@ async def _process_client_line(
         state.error_count += 1
         return
 
-    response = await _route_message(state, message)
+    response = await _route_message(state, message, session)
     if response is not None:
         writer.write((json.dumps(response) + "\n").encode("utf-8"))
         await writer.drain()
@@ -293,13 +305,14 @@ async def _handle_bridge_client(
     """Handle a single bridge client connection."""
     peer = writer.get_extra_info("peername")
     logger.info("bridge_client_connected", peer=peer)
+    session = BridgeClientSession()
 
     try:
         while True:
             data = await asyncio.wait_for(reader.readline(), timeout=300.0)
             if not data:
                 break
-            await _process_client_line(data, writer, state)
+            await _process_client_line(data, writer, state, session)
     except (LimitOverrunError, ValueError) as exc:
         logger.warning(
             "bridge_message_read_error", error=str(exc), max_size=BRIDGE_MAX_MESSAGE_BYTES
@@ -318,6 +331,8 @@ async def _handle_bridge_client(
         logger.error("bridge_client_error", error=str(exc))
         state.error_count += 1
     finally:
+        state.active_sessions.discard(session)
+        state.paired = bool(state.active_sessions)
         try:
             writer.close()
             await writer.wait_closed()
@@ -352,7 +367,9 @@ async def _bridge_server(state: BridgeState) -> None:
 
 
 async def _route_message(
-    state: BridgeState, message: dict[str, object]
+    state: BridgeState,
+    message: dict[str, object],
+    session: BridgeClientSession | None = None,
 ) -> dict[str, object] | None:
     """Route an incoming JSON-RPC message to the local kicad-mcp-pro server."""
     method = message.get("method", "")
@@ -377,8 +394,13 @@ async def _route_message(
         params = message.get("params", {})
         code = params.get("code", "") if isinstance(params, dict) else ""
         if code == state.pairing_code:
+            now = time.time()
+            if session is not None:
+                session.paired = True
+                session.paired_at = now
+                state.active_sessions.add(session)
             state.paired = True
-            state.paired_at = time.time()
+            state.paired_at = now
             return {
                 "jsonrpc": "2.0",
                 "id": msg_id,
@@ -391,7 +413,11 @@ async def _route_message(
         }
 
     if method == "bridge.status":
-        return {"jsonrpc": "2.0", "id": msg_id, "result": state.to_dict()}
+        res = state.to_dict()
+        if session is not None:
+            res["paired"] = session.paired
+            res["paired_at"] = session.paired_at
+        return {"jsonrpc": "2.0", "id": msg_id, "result": res}
 
     if method == "bridge.ping":
         return {
@@ -401,7 +427,8 @@ async def _route_message(
         }
 
     # --- Require pairing for proxied methods ---
-    if not state.paired:
+    is_paired = session.paired if session is not None else state.paired
+    if not is_paired:
         return {
             "jsonrpc": "2.0",
             "id": msg_id,
