@@ -146,7 +146,28 @@ def test_cloud_ci_keeps_patched_node24_runtime_compatibility_lane() -> None:
 
 @pytest.mark.parametrize(
     "path",
-    ("Taskfile.yml", "CONTRIBUTING.md", "apps/cloud/README.md", "compatibility.yaml"),
+    (
+        "Taskfile.yml",
+        "CONTRIBUTING.md",
+        "apps/cloud/README.md",
+        "compatibility.yaml",
+        "docs/agents/mcpb.md",
+        "docs/compatibility/kicad-10-0-4-feature-parity.md",
+        "docs/compatibility/kicad-10-0-5-feature-parity.md",
+        "docs/compatibility/kicad-10-0-6-feature-parity.md",
+        "docs/compatibility/kicad-10-0-7-feature-parity.md",
+        "docs/compatibility/kicad-10-to-11-migration.md",
+        "docs/development/roadmap-2026.md",
+        "docs/mcp/transport.md",
+        "docs/openssf-best-practices.md",
+        "docs/registry.md",
+        "docs/release.md",
+        "docs/security/github-actions-policy.md",
+        "docs/submission/openai-mcp-registry.md",
+        "docs/tutorials/getting-started.md",
+        "docs/workflow-security.md",
+        "packages/protocol-schemas/README.md",
+    ),
 )
 def test_live_contributor_entrypoints_do_not_require_bundled_corepack(path: str) -> None:
     content = (ROOT / path).read_text(encoding="utf-8")

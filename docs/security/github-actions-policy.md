@@ -52,9 +52,9 @@ Prefer GitHub-owned Actions or existing allowlisted repositories. Review the Act
 Run:
 
 ```bash
-corepack pnpm run workflows:policy
-corepack pnpm run workflows:lint
-corepack pnpm run workflows:security
+pnpm run workflows:policy
+pnpm run workflows:lint
+pnpm run workflows:security
 ```
 
 The policy check fails when a workflow gains an undeclared write scope, uses an unapproved Action repository, references a mutable Action tag, omits the read-only workflow baseline, or removes a protected CODEOWNERS rule.

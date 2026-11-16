@@ -38,10 +38,10 @@ KiCad MCP Pro publishes the checked-in, generated registry payload from the repo
 Run these before registry submission or release handoff:
 
 ```bash
-corepack pnpm run mcp:manifest:check
-corepack pnpm run metadata:check
-corepack pnpm run publish:mcp:dry-run
-corepack pnpm run submission:check
+pnpm run mcp:manifest:check
+pnpm run metadata:check
+pnpm run publish:mcp:dry-run
+pnpm run submission:check
 ```
 
 The first two checks were verified locally while adding this page. The dry-run and submission checks remain the release operator's final gate because they may depend on network reachability and registry-side availability.

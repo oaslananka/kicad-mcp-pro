@@ -42,8 +42,8 @@ Verification commands:
 curl -fsS "https://registry.modelcontextprotocol.io/v0/servers?search=kicad-mcp-pro"
 
 # Local manifest validity + publish payload (target/endpoint, no publish)
-corepack pnpm --dir packages/mcp-server run mcp:manifest:check
-corepack pnpm --dir packages/mcp-server run publish:mcp:dry-run
+pnpm --dir packages/mcp-server run mcp:manifest:check
+pnpm --dir packages/mcp-server run publish:mcp:dry-run
 ```
 
 ### Endpoint and Workflow Verification

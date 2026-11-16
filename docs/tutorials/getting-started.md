@@ -5,7 +5,7 @@ This tutorial is the first guided path for a new user who wants to verify that K
 ## Prerequisites
 
 - Python 3.13.
-- Node.js and Corepack when using the npm wrapper or repository development flow.
+- Node.js 26.13.1 (or supported Node.js 24.22.3) for the npm wrapper or repository development flow; install pnpm 11.28.6 explicitly for repository tasks.
 - KiCad 10.x when you want live KiCad CLI/IPC integration.
 - A local project directory for experiments. Do not begin with customer or private manufacturing data.
 
@@ -18,8 +18,8 @@ uvx kicad-mcp-pro@latest --help
 For local development from the repository:
 
 ```bash
-corepack enable
-corepack pnpm install --frozen-lockfile
+npm install --global pnpm@11.28.6 --no-audit --no-fund
+pnpm install --frozen-lockfile
 uv sync --all-extras --frozen
 ```
 
