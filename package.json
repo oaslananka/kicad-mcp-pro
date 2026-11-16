@@ -100,6 +100,8 @@
   "devDependencies": {
     "@commitlint/cli": "21.2.4",
     "@commitlint/config-conventional": "21.2.4",
+    "@modelcontextprotocol/client": "2.2.0",
+    "@modelcontextprotocol/ext-tasks": "0.2.3",
     "lefthook": "2.2.2"
   },
   "engines": {
