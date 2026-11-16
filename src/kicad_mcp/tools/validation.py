@@ -4044,13 +4044,23 @@ def _evaluate_professional_release_gate(
     manufacturer: str | None = None,
     tier: str | None = None,
 ) -> GateOutcome:
+    corner_style = _evaluate_route_corner_style_gate(max_90_degree_corners=max_90_degree_corners)
+    if corner_style.status == "FAIL":
+        # A cosmetic bend is not a native DRC or electrical defect. Keep the
+        # standalone corner-style gate strict for explicitly requested policy.
+        corner_style = GateOutcome(
+            name=corner_style.name,
+            status="WARN",
+            summary="Cosmetic routing-style advisory; not an electrical or DRC failure.",
+            details=[corner_style.summary, *corner_style.details],
+        )
     outcomes = [
         _evaluate_schematic_gate(),
         _evaluate_pcb_gate(),
         _evaluate_pcb_transfer_gate(),
         _evaluate_pcb_placement_gate(),
         _evaluate_stackup_consistency_gate(),
-        _evaluate_route_corner_style_gate(max_90_degree_corners=max_90_degree_corners),
+        corner_style,
         _evaluate_manufacturing_gate(manufacturer=manufacturer, tier=tier),
     ]
     status = _combined_status(outcomes)
