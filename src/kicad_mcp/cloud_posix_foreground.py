@@ -252,8 +252,25 @@ async def _run_signed_foreground_session(
         return False
 
 
-async def _wait_for_foreground_retry(stop: asyncio.Event, failures: int) -> None:
-    delay = reconnect_delay_seconds(failures, secrets.randbelow(1001) / 1000)
+def _remaining_reconnect_delay(failures: int, elapsed_seconds: float) -> float:
+    """Throttle attempts from their start, not after an already healthy lease.
+
+    A four-minute signed session has already exhausted the minimum handshake
+    interval; a short close or repeated failures still honor exponential backoff.
+    """
+    budget = reconnect_delay_seconds(failures, secrets.randbelow(1001) / 1000)
+    return max(0.0, budget - max(0.0, elapsed_seconds))
+
+
+async def _wait_for_foreground_retry(
+    stop: asyncio.Event,
+    failures: int,
+    *,
+    elapsed_seconds: float,
+) -> None:
+    delay = _remaining_reconnect_delay(failures, elapsed_seconds)
+    if delay == 0:
+        return
     try:
         await asyncio.wait_for(stop.wait(), timeout=delay)
     except TimeoutError:
@@ -298,11 +315,13 @@ async def run_foreground(
             bindings_file=bindings_file,
         )
         _notify(status_callback, "Connecting" if failures == 0 else "Reconnecting")
+        attempt_started_at = time.monotonic()
         success = await _run_signed_foreground_session(
             session_runner, settings, stop, status_callback
         )
+        elapsed_seconds = max(0.0, time.monotonic() - attempt_started_at)
         failures = 0 if success else failures + 1
         if stop.is_set():
             return
         _notify(status_callback, "Disconnected - reconnecting")
-        await _wait_for_foreground_retry(stop, failures)
+        await _wait_for_foreground_retry(stop, failures, elapsed_seconds=elapsed_seconds)

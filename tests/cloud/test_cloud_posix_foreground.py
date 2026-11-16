@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 from uuid import uuid4
 
@@ -302,3 +303,65 @@ async def test_headless_posix_foreground_never_claims_cloud_browse(
         key_loader=lambda *_args: key,
         session_runner=runner,
     )
+
+
+@pytest.mark.anyio
+async def test_foreground_retry_budget_is_measured_from_session_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Long healthy sessions should renew immediately without relaxing fast-failure limits."""
+    from kicad_mcp import cloud_posix_foreground as foreground
+
+    monkeypatch.setattr(foreground.secrets, "randbelow", lambda _bound: 0)
+    assert foreground._remaining_reconnect_delay(0, 240.0) == 0.0
+    assert foreground._remaining_reconnect_delay(0, 1.0) == 14.0
+    assert foreground._remaining_reconnect_delay(1, 1.0) == 29.0
+    assert foreground._remaining_reconnect_delay(3, 1.0) == 119.0
+
+
+@pytest.mark.anyio
+async def test_foreground_renewal_budget_counts_healthy_session_uptime(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A normal four-minute lease renewal passes elapsed time to reconnect policy."""
+    from kicad_mcp import cloud_posix_foreground as foreground
+
+    project, key, record = inputs(tmp_path)
+    stop = asyncio.Event()
+    observed_waits: list[tuple[int, float]] = []
+    timestamps = iter((100.0, 340.0, 340.0, 340.1))
+    monkeypatch.setattr(
+        foreground,
+        "time",
+        SimpleNamespace(monotonic=lambda: next(timestamps)),
+    )
+
+    async def no_sleep(
+        _stop: asyncio.Event,
+        failures: int,
+        *,
+        elapsed_seconds: float,
+    ) -> None:
+        observed_waits.append((failures, elapsed_seconds))
+
+    monkeypatch.setattr(foreground, "_wait_for_foreground_retry", no_sleep)
+    calls = 0
+
+    async def runner(**_kwargs: object) -> HandshakeReceipt:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            stop.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    await run_foreground(
+        registry=tmp_path,
+        stop_event=stop,
+        identity_loader=lambda _root: record[0],
+        project_resolver=lambda **_kwargs: project,
+        key_loader=lambda *_args: key,
+        session_runner=runner,
+    )
+    assert calls == 2
+    assert observed_waits == [(0, 240.0)]
