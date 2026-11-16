@@ -369,13 +369,13 @@ function DeviceSetupWizard(){
           <h3>macOS foreground connection (pre-release)</h3>
           <p>Install <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">uv</a> once and run the command in a local terminal. The first connection uses browser-approved pairing and a native KiCad project-folder picker when available.</p>
           <CopyValue value="uvx --from kicad-mcp-pro kicad-mcp-pro cloud connect" label="macOS connect command"/>
-          <p className="field-help">Keep the terminal open for the signed, read-only foreground Cloud session; rerun the same command to reconnect. macOS has not passed physical native acceptance. Remote project browsing and Cloud write are not yet supported on this platform.</p>
+          <p className="field-help">Keep this terminal open for the signed, read-only Cloud session; rerun the same command to reconnect. macOS native folder browsing is experimental and has not passed physical-device acceptance. Cloud editing requires separate owner and AI-client approval and is not enabled by this command.</p>
         </section>
         <section className="device-os-panel device-os-linux" aria-label="Linux connection">
           <h3>Linux foreground connection (pre-release)</h3>
           <p>Install <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">uv</a> once and run the command in a local terminal. The first connection uses browser-approved pairing and a local KiCad project-folder picker when available.</p>
           <CopyValue value="uvx --from kicad-mcp-pro kicad-mcp-pro cloud connect" label="Linux connect command"/>
-          <p className="field-help">Keep the terminal open for the signed, read-only foreground Cloud session; rerun the same command to reconnect. Linux native integration acceptance is pending. Remote project browsing and Cloud write are not yet supported on this platform.</p>
+          <p className="field-help">Keep this terminal open for the signed read-only Cloud session; rerun the same command to reconnect without pairing again. On a graphical Linux desktop, Add project · Browse uses a local folder chooser when available; on headless Linux, choose an initial project with <code>--project-dir</code>. Cloud editing requires a separately approved write-enabled Connector and is not active by default.</p>
         </section>
       </div>
     </fieldset>
