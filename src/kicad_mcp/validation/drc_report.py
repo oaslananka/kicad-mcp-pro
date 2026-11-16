@@ -233,8 +233,18 @@ def evaluate_route_drc(before: Report, after: Report) -> dict[str, bool | int]:
     previous = count_unconnected(before)
     current = count_unconnected(after)
     introduced = newly_reported_drc_violations(before, after)
+    previous_nets, _ = unconnected_nets(report_entries(before, "unconnected_items"))
+    current_nets, unidentified_current = unconnected_nets(
+        report_entries(after, "unconnected_items")
+    )
+    newly_open_nets = current_nets.keys() - previous_nets.keys()
+    # A lower global count cannot excuse disconnecting a previously connected net.
+    # If KiCad cannot identify a remaining open net, refuse the candidate.
     return {
-        "accepted": not introduced and current < previous,
+        "accepted": not introduced
+        and current < previous
+        and not newly_open_nets
+        and not unidentified_current,
         "introducedViolations": len(introduced),
         "unconnectedBefore": previous,
         "unconnectedAfter": current,

@@ -77,14 +77,54 @@ def test_invalid_drc_report_refuses_success(report: dict[str, object]) -> None:
         newly_reported_drc_violations(*_checked_args)
 
 
+def _unconnected(net: str) -> dict[str, object]:
+    """Match the native KiCad DRC item-description net identity."""
+    return {
+        "description": "Unconnected items",
+        "items": [{"description": f"Pad 1 [{net}] of J1 on F.Cu"}],
+    }
+
+
+def test_route_drc_rejects_newly_unconnected_net_even_when_total_drops() -> None:
+    from kicad_mcp.validation.drc_report import evaluate_route_drc
+
+    before = {
+        "violations": [],
+        "unconnected_items": [_unconnected("USB_D_P"), _unconnected("VBUS")],
+    }
+    after = {"violations": [], "unconnected_items": [_unconnected("UNRELATED_OPEN")]}
+
+    result = evaluate_route_drc(before, after)
+
+    assert result["accepted"] is False
+    assert result["introducedViolations"] == 0
+    assert result["unconnectedBefore"] == 2
+    assert result["unconnectedAfter"] == 1
+
+
+def test_route_drc_rejects_unidentifiable_remaining_open_net() -> None:
+    from kicad_mcp.validation.drc_report import evaluate_route_drc
+
+    before = {
+        "violations": [],
+        "unconnected_items": [_unconnected("MID"), _unconnected("VBUS")],
+    }
+    after = {"violations": [], "unconnected_items": [{"description": "no net identity"}]}
+
+    assert evaluate_route_drc(before, after)["accepted"] is False
+
+
 def test_route_drc_accepts_improvement_without_any_new_native_finding() -> None:
     from kicad_mcp.validation.drc_report import evaluate_route_drc
 
     before = {
         "violations": [_finding("clearance", "existing")],
-        "unconnected_items": [{"id": "a"}, {"id": "b"}],
+        "unconnected_items": [_unconnected("MID"), _unconnected("VBUS")],
     }
-    after = {"violations": [_finding("clearance", "existing")], "unconnected_items": [{"id": "a"}]}
+    after = {
+        "violations": [_finding("clearance", "existing")],
+        "unconnected_items": [_unconnected("VBUS")],
+    }
 
     result = evaluate_route_drc(before, after)
 
