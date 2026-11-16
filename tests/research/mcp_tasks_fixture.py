@@ -109,6 +109,7 @@ class TaskFixture:
     @staticmethod
     def _summary(kind: str) -> dict[str, Any]:
         return {
+            "resultType": "complete",
             "content": [{"type": "text", "text": f"SYNTHETIC {kind}: zero real designs analyzed"}],
             "isError": False,
         }
@@ -236,6 +237,7 @@ class TaskFixture:
             task.result = self._summary(task.kind)
             if task.simulate_error:
                 task.result = {
+                    "resultType": "complete",
                     "content": [{"type": "text", "text": "SYNTHETIC read-only tool error"}],
                     "isError": True,
                 }

@@ -792,6 +792,25 @@ jobs:
           version-file: uv.toml
       - run: uv sync --all-extras --frozen
         if: env.skip_ci != 'true'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        if: env.skip_ci != 'true'
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install pinned research-only Tasks requester
+        if: env.skip_ci != 'true'
+        run: |
+          corepack enable
+          corepack pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify independent MCP Tasks 2026 loopback requester
+        if: env.skip_ci != 'true'
+        env:
+          MCP_TASKS_REAL_CLIENT_REQUIRED: '1'
+        run: >-
+          uv run pytest -q
+          tests/unit/test_mcp_tasks_2026_schema_contract.py
+          tests/unit/test_mcp_tasks_draft_fixture.py
+          tests/integration/test_mcp_tasks_2026_client.py
       - name: Run stable-independent MCP 2026 compatibility contracts
         if: env.skip_ci != 'true'
         run: >-

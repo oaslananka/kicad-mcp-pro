@@ -123,5 +123,6 @@ def test_terminal_tool_error_is_not_protocol_task_failure() -> None:
     fixture.advance(task_id=task_id, caller="a")
     state = fixture.dispatch(call("tasks/get", {"taskId": task_id}), caller="a")
     assert state["result"]["status"] == "completed"
+    assert state["result"]["result"]["resultType"] == "complete"
     assert state["result"]["result"]["isError"] is True
     assert "error" not in state["result"]
