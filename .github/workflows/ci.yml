@@ -315,8 +315,11 @@ jobs:
           enable-cache: true
           prune-cache: true
           version-file: uv.toml
-      - name: Install pinned pnpm
-        run: npm install --global pnpm@11.28.6 --no-audit --no-fund
+      - name: Setup pinned pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 11.28.6
+          run_install: false
         if: env.skip_ci != 'true'
       - run: pnpm install --frozen-lockfile
         if: env.skip_ci != 'true'
@@ -929,8 +932,11 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - name: Install pinned pnpm
-        run: npm install --global pnpm@11.28.6 --no-audit --no-fund
+      - name: Setup pinned pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 11.28.6
+          run_install: false
         if: env.skip_ci != 'true'
       - run: pnpm install --frozen-lockfile
         if: env.skip_ci != 'true'

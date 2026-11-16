@@ -25,6 +25,7 @@
     "google/osv-scanner-action",
     "googleapis/release-please-action",
     "ossf/scorecard-action",
+    "pnpm/action-setup",
     "pypa/gh-action-pypi-publish",
     "sigstore/cosign-installer",
     "SonarSource/sonarqube-scan-action"
