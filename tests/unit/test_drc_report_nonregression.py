@@ -114,6 +114,51 @@ def test_route_drc_rejects_unidentifiable_remaining_open_net() -> None:
     assert evaluate_route_drc(before, after)["accepted"] is False
 
 
+def test_route_drc_rejects_repair_of_different_net_than_requested() -> None:
+    from kicad_mcp.validation.drc_report import evaluate_route_drc
+
+    before = {"violations": [], "unconnected_items": [_unconnected("USB_MCU_P")]}
+    after = {"violations": [], "unconnected_items": []}
+
+    wrong = evaluate_route_drc(before, after, routed_nets=frozenset({"USB_MCU_N"}))
+    right = evaluate_route_drc(before, after, routed_nets=frozenset({"USB_MCU_P"}))
+
+    assert wrong["accepted"] is False
+    assert right["accepted"] is True
+
+
+def test_route_drc_rejects_growth_in_an_already_open_other_net() -> None:
+    from kicad_mcp.validation.drc_report import evaluate_route_drc
+
+    before = {
+        "violations": [],
+        "unconnected_items": [
+            _unconnected("MID"),
+            _unconnected("MID"),
+            _unconnected("MID"),
+            _unconnected("VBUS"),
+        ],
+    }
+    after = {
+        "violations": [],
+        "unconnected_items": [_unconnected("VBUS"), _unconnected("VBUS")],
+    }
+    result = evaluate_route_drc(before, after, routed_nets=frozenset({"MID"}))
+
+    assert result["unconnectedBefore"] == 4
+    assert result["unconnectedAfter"] == 2
+    assert result["accepted"] is False
+
+
+def test_route_drc_scoped_preflight_refuses_unidentified_old_connection() -> None:
+    from kicad_mcp.validation.drc_report import evaluate_route_drc
+
+    before = {"violations": [], "unconnected_items": [{"id": "unknown-open"}]}
+    after = {"violations": [], "unconnected_items": []}
+
+    assert evaluate_route_drc(before, after, routed_nets=frozenset({"MID"}))["accepted"] is False
+
+
 def test_route_drc_accepts_improvement_without_any_new_native_finding() -> None:
     from kicad_mcp.validation.drc_report import evaluate_route_drc
 
@@ -126,7 +171,7 @@ def test_route_drc_accepts_improvement_without_any_new_native_finding() -> None:
         "unconnected_items": [_unconnected("VBUS")],
     }
 
-    result = evaluate_route_drc(before, after)
+    result = evaluate_route_drc(before, after, routed_nets=frozenset({"MID"}))
 
     assert result["accepted"] is True
     assert result["introducedViolations"] == 0

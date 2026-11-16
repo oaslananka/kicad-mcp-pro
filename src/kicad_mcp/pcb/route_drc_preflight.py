@@ -243,4 +243,8 @@ def run_route_drc_preflight(
                 after / custom_rules.name,
             )
         _verify_sources_unchanged(source_hashes)
-        return evaluate_route_drc(baseline, candidate)
+        return evaluate_route_drc(
+            baseline,
+            candidate,
+            routed_nets=frozenset(spec.net_name for spec in segments),
+        )

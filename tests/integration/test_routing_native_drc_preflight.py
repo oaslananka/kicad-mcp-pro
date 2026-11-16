@@ -89,6 +89,17 @@ def test_native_preflight_accepts_connected_route_but_rejects_new_shorts(tmp_pat
         kicad_cli=cli,
     )
 
+    wrong_net = run_route_drc_preflight(
+        snapshot,
+        [TrackSpec(10.95, 10, 19.05, 10, "F_Cu", 0.25, "BROKEN")],
+        project_file=project,
+        kicad_cli=cli,
+    )
+
+    assert wrong_net["accepted"] is False
+    assert wrong_net["introducedViolations"] == 0
+    assert wrong_net["unconnectedBefore"] == 1
+    assert wrong_net["unconnectedAfter"] == 0
     assert good == {
         "accepted": True,
         "introducedViolations": 0,

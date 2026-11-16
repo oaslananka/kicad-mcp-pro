@@ -217,11 +217,19 @@ def newly_reported_drc_violations(
     return introduced
 
 
-def evaluate_route_drc(before: Report, after: Report) -> dict[str, bool | int]:
+def evaluate_route_drc(
+    before: Report,
+    after: Report,
+    *,
+    routed_nets: frozenset[str] | None = None,
+) -> dict[str, bool | int]:
     """Refuse a routing candidate that adds native DRC errors or fails to connect pads.
 
     Both reports must explicitly contain native violations and unconnected items.
     Report counts alone cannot establish non-regression: use finding identity.
+    When routed_nets is supplied, verify that only those nets become more
+    connected. KiCad can silently reconcile a mislabelled candidate copper
+    segment's net to the pad it touches without reporting a short.
     """
 
     def count_unconnected(report: Report) -> int:
@@ -233,18 +241,37 @@ def evaluate_route_drc(before: Report, after: Report) -> dict[str, bool | int]:
     previous = count_unconnected(before)
     current = count_unconnected(after)
     introduced = newly_reported_drc_violations(before, after)
-    previous_nets, _ = unconnected_nets(report_entries(before, "unconnected_items"))
+    previous_nets, unidentified_previous = unconnected_nets(
+        report_entries(before, "unconnected_items")
+    )
     current_nets, unidentified_current = unconnected_nets(
         report_entries(after, "unconnected_items")
     )
     newly_open_nets = current_nets.keys() - previous_nets.keys()
+    scoped_connectivity_ok = True
+    if routed_nets is not None:
+        improved = {
+            net
+            for net, entries in previous_nets.items()
+            if len(current_nets.get(net, [])) < len(entries)
+        }
+        regressed = any(
+            len(entries) > len(previous_nets.get(net, [])) for net, entries in current_nets.items()
+        )
+        scoped_connectivity_ok = (
+            bool(improved)
+            and improved <= routed_nets
+            and not regressed
+            and not unidentified_previous
+        )
     # A lower global count cannot excuse disconnecting a previously connected net.
     # If KiCad cannot identify a remaining open net, refuse the candidate.
     return {
         "accepted": not introduced
         and current < previous
         and not newly_open_nets
-        and not unidentified_current,
+        and not unidentified_current
+        and scoped_connectivity_ok,
         "introducedViolations": len(introduced),
         "unconnectedBefore": previous,
         "unconnectedAfter": current,

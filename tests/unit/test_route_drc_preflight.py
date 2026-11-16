@@ -67,7 +67,10 @@ def test_preflight_keeps_custom_drc_rules_in_both_native_copies(
     cli.write_text("fixture", encoding="utf-8")
     inspected: list[bool] = []
 
-    before = {"violations": [], "unconnected_items": [{"id": "one"}]}
+    before = {
+        "violations": [],
+        "unconnected_items": [{"items": [{"description": "Pad 2 [MID] of R1 on F.Cu"}]}],
+    }
     after = {"violations": [], "unconnected_items": []}
 
     def fake_drc(_cli: Path, board: Path, report: Path) -> dict[str, object]:
