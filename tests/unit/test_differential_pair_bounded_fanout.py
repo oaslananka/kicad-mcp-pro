@@ -61,8 +61,10 @@ def test_reversed_horizontal_direction_keeps_pair_and_endpoints() -> None:
         minus_end=(121.11, 105.455),
     )
     assert len(plus) == len(minus) == 5
-    assert plus[0].x1_mm == 124.75 and plus[-1].x2_mm == 121.11
-    assert minus[0].x1_mm == 124.75 and minus[-1].x2_mm == 121.11
+    assert plus[0].x1_mm == 124.75
+    assert plus[-1].x2_mm == 121.11
+    assert minus[0].x1_mm == 124.75
+    assert minus[-1].x2_mm == 121.11
     assert geometry["minCopperGapMm"] >= 0.25 - 1e-5
 
 

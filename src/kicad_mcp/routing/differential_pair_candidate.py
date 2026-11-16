@@ -276,7 +276,7 @@ def _plan_horizontal_fanout(
     def lane(start: Point, end: Point, middle_y: float, net: str) -> tuple[TrackSpec, ...]:
         departure = abs(middle_y - start[1])
         arrival = abs(end[1] - middle_y)
-        if not 0.01 <= min(departure, arrival) or max(departure, arrival) > 0.5:
+        if min(departure, arrival) < 0.01 or max(departure, arrival) > 0.5:
             raise RoutePlanningError("Fanout exceeds bounded 45-degree departure limits")
         x1 = start[0] + direction * lead
         x2 = x1 + direction * departure
