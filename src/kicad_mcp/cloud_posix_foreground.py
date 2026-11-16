@@ -84,7 +84,10 @@ async def _session_or_stop(
     settings: dict[str, object],
     stop: asyncio.Event,
 ) -> None:
-    task = asyncio.create_task(runner(**settings))
+    async def execute() -> HandshakeReceipt:
+        return await runner(**settings)
+
+    task = asyncio.create_task(execute())
     stopping = asyncio.create_task(stop.wait())
     try:
         done, _ = await asyncio.wait((task, stopping), return_when=asyncio.FIRST_COMPLETED)
