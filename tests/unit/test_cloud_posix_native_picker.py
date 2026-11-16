@@ -52,7 +52,7 @@ def test_linux_zenity_uses_argv_and_keeps_paths_local(
     assert picker.choose_project_folder() == directory
     argv, kwargs = launched[0]
     assert argv == (
-        "/usr/bin/zenity",
+        "zenity",
         "--file-selection",
         "--directory",
         "--title=Choose your local KiCad project folder",

@@ -11,6 +11,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from typing import Literal
 
 _TITLE = "Choose your local KiCad project folder"
 _TIMEOUT = 120
@@ -45,15 +46,29 @@ def _select_with_tkinter() -> Path | None:
         raise OSError("No graphical project folder chooser is available") from exc
 
 
-async def _capture_native_dialog(argv: list[str]) -> tuple[int, str, str]:
-    """Run an owner-visible platform chooser with argument separation and a deadline."""
+async def _capture_native_dialog(platform: Literal["darwin", "linux"]) -> tuple[int, str, str]:
+    """Run a fixed system chooser with separated arguments and a deadline."""
     try:
-        process = await asyncio.create_subprocess_exec(
-            *argv,
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        if platform == "darwin":
+            process = await asyncio.create_subprocess_exec(
+                "/usr/bin/osascript",
+                "-e",
+                "POSIX path of (choose folder with prompt "
+                '"Choose your local KiCad project folder")',
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        else:
+            process = await asyncio.create_subprocess_exec(
+                "zenity",
+                "--file-selection",
+                "--directory",
+                "--title=Choose your local KiCad project folder",
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
     except OSError as exc:
         raise OSError("The native project folder chooser could not start") from exc
     try:
@@ -75,29 +90,17 @@ def choose_project_folder() -> Path | None:
     """Return the owner's GUI-selected folder or None on explicit cancellation."""
     if not native_picker_available():
         raise OSError("A graphical project folder chooser is unavailable on this device")
-    cmd: list[str] = []
+    platform: Literal["darwin", "linux"] = "darwin"
     if sys.platform == "darwin":
-        executable = shutil.which("osascript")
-        if executable is None:
+        if shutil.which("osascript") is None:
             raise OSError("No macOS folder chooser is available")
-        cmd = [
-            executable,
-            "-e",
-            'POSIX path of (choose folder with prompt "' + _TITLE + '")',
-        ]
     elif sys.platform.startswith("linux"):
-        executable = shutil.which("zenity")
-        if executable is None:
+        if shutil.which("zenity") is None:
             return _select_with_tkinter()
-        cmd = [
-            executable,
-            "--file-selection",
-            "--directory",
-            "--title=" + _TITLE,
-        ]
+        platform = "linux"
     else:
         raise OSError("POSIX native project folder picker requires macOS or Linux")
-    status, stdout, stderr = asyncio.run(_capture_native_dialog(cmd))
+    status, stdout, stderr = asyncio.run(_capture_native_dialog(platform))
     if status != 0:
         if sys.platform == "darwin" and "(-128)" in stderr:
             return None
