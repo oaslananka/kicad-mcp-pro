@@ -142,3 +142,23 @@ def test_cloud_ci_keeps_patched_node24_runtime_compatibility_lane() -> None:
         if step.get("working-directory") == "integrations/chatgpt-app/apps-sdk"
     )
     assert "npm run test:smoke" in sdk["run"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    ("Taskfile.yml", "CONTRIBUTING.md", "apps/cloud/README.md", "compatibility.yaml"),
+)
+def test_live_contributor_entrypoints_do_not_require_bundled_corepack(path: str) -> None:
+    content = (ROOT / path).read_text(encoding="utf-8")
+    assert "corepack pnpm" not in content
+    assert "corepack enable" not in content
+
+
+def test_contributing_setup_pins_supported_node_and_package_manager() -> None:
+    contributor_guide = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    assert "Node.js 26.13.1" in contributor_guide
+    assert "Node.js 24.22.3" in contributor_guide
+    assert "npm install --global pnpm@11.28.6" in contributor_guide
+    cloud_guide = (ROOT / "apps/cloud/README.md").read_text(encoding="utf-8")
+    assert "Node.js 24 or newer" not in cloud_guide
+    assert "Node.js 26.13.1" in cloud_guide

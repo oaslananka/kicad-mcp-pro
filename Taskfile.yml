@@ -9,12 +9,12 @@ tasks:
   dev:doctor:
     desc: Report required, optional, and live-KiCad development capabilities
     cmds:
-      - corepack pnpm run dev:doctor -- {{.CLI_ARGS}}
+      - pnpm run dev:doctor -- {{.CLI_ARGS}}
 
   install:
     desc: Install all development dependencies
     cmds:
-      - corepack pnpm install --frozen-lockfile
+      - pnpm install --frozen-lockfile
       - uv sync --all-extras --frozen
 
   hooks:
@@ -25,89 +25,89 @@ tasks:
   format:
     desc: Auto-format the codebase
     cmds:
-      - corepack pnpm run format
+      - pnpm run format
 
   lint:
     desc: Run read-only lint and metadata checks
     cmds:
-      - corepack pnpm run metadata:check
-      - corepack pnpm run lint
-      - corepack pnpm run format:check
+      - pnpm run metadata:check
+      - pnpm run lint
+      - pnpm run format:check
 
   typecheck:
     desc: Run strict static type checking
     cmds:
-      - corepack pnpm run typecheck
+      - pnpm run typecheck
 
   compat:check:
     desc: Check KiCad API compatibility constraints
     cmds:
-      - corepack pnpm run compat:check
+      - pnpm run compat:check
 
   test:
     desc: Run unit tests
     cmds:
-      - corepack pnpm run test:unit
+      - pnpm run test:unit
 
   test:fast:
     desc: Run the full unit suite manually (not part of pre-push)
     cmds:
-      - corepack pnpm run test:unit
+      - pnpm run test:unit
 
   test:cov:
     desc: Run the full test suite with coverage
     cmds:
-      - corepack pnpm run test
+      - pnpm run test
 
   test:advanced:
     desc: Run the full advanced testing suite (property, differential, concurrency, faults, mcp)
     cmds:
-      - corepack pnpm run test:advanced
+      - pnpm run test:advanced
 
   test:property:
     desc: Run Hypothesis property-based invariants and stateful model tests
     cmds:
-      - corepack pnpm run test:advanced:property
+      - pnpm run test:advanced:property
 
   test:differential:
     desc: Run native KiCad CLI differential tests
     cmds:
-      - corepack pnpm run test:advanced:differential
+      - pnpm run test:advanced:differential
 
   test:concurrency:
     desc: Run concurrency, race condition, and serialization tests
     cmds:
-      - corepack pnpm run test:advanced:concurrency
+      - pnpm run test:advanced:concurrency
 
   test:faults:
     desc: Run fault injection, chaos, and error resilience tests
     cmds:
-      - corepack pnpm run test:advanced:faults
+      - pnpm run test:advanced:faults
 
   test:mcp:advanced:
     desc: Run FastMCP protocol compliance and schema validation tests
     cmds:
-      - corepack pnpm run test:advanced:mcp
+      - pnpm run test:advanced:mcp
 
   test:mutation:
     desc: Run targeted mutmut mutation testing on high-risk modules
     cmds:
-      - corepack pnpm run test:advanced:mutation
+      - pnpm run test:advanced:mutation
 
   test:fuzz:
     desc: Run Atheris coverage-guided fuzz testing
     cmds:
-      - corepack pnpm run test:advanced:fuzz
+      - pnpm run test:advanced:fuzz
 
   test:memory:
     desc: Run memory consumption and leak detection profiling
     cmds:
-      - corepack pnpm run test:advanced:memory
+      - pnpm run test:advanced:memory
 
   test:load:
     desc: Run load, throughput, and latency distribution benchmark
     cmds:
-      - corepack pnpm run test:advanced:load
+      - pnpm run test:advanced:load
 
   test:advanced:all:
     desc: Execute all advanced test layers and collect commit-indexed evidence
@@ -115,57 +115,57 @@ tasks:
       - task: test:advanced
       - task: test:memory
       - task: test:load
-      - corepack pnpm run test:advanced:report
+      - pnpm run test:advanced:report
 
   security:
     desc: Run enforced security checks
     cmds:
-      - corepack pnpm run security
+      - pnpm run security
 
   security:local:
     desc: Run local workstation security scanners with clear missing-tool failures
     cmds:
-      - corepack pnpm run security:local
+      - pnpm run security:local
 
   workflows:lint:
     desc: Parse and lint GitHub Actions workflows
     cmds:
-      - corepack pnpm run workflows:lint
+      - pnpm run workflows:lint
 
   workflows:policy:
     desc: Validate least-privilege workflow permissions and Action allowlists
     cmds:
-      - corepack pnpm run workflows:policy
+      - pnpm run workflows:policy
 
   workflows:security:
     desc: Run workflow security checks
     cmds:
-      - corepack pnpm run workflows:security
+      - pnpm run workflows:security
 
   mcp:manifest:check:
     desc: Validate MCP Registry metadata
     cmds:
-      - corepack pnpm run mcp:manifest:check
+      - pnpm run mcp:manifest:check
 
   docker:metadata:check:
     desc: Validate Docker and OCI metadata
     cmds:
-      - corepack pnpm run docker:metadata:check
+      - pnpm run docker:metadata:check
 
   build:
     desc: Build release artifacts
     cmds:
-      - corepack pnpm run build
+      - pnpm run build
 
   release:dry-run:
     desc: Run the release preflight without publishing
     cmds:
-      - corepack pnpm run release:dry-run
+      - pnpm run release:dry-run
 
   package:check:
     desc: Build and check package artifacts
     cmds:
-      - corepack pnpm run package:check
+      - pnpm run package:check
 
   verify:
     desc: Local quality gate — lint, format, typecheck, test, build
