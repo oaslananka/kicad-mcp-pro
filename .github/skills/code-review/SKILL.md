@@ -313,36 +313,36 @@ check only when the reviewed head commit already ran the same check successfully
 ### Baseline Python/server changes
 
 ```bash
-corepack pnpm run format:check
-corepack pnpm run lint
-corepack pnpm run typecheck
-corepack pnpm run test:unit
+pnpm run format:check
+pnpm run lint
+pnpm run typecheck
+pnpm run test:unit
 ```
 
 ### Public MCP/tool/metadata/compatibility changes
 
 ```bash
-corepack pnpm run metadata:check
-corepack pnpm run docs:tools:check
-corepack pnpm run tool-contracts:check
-corepack pnpm run architecture:check
-corepack pnpm run profiles:check
-corepack pnpm run adapter-matrix:check
-corepack pnpm run compat:check
+pnpm run metadata:check
+pnpm run docs:tools:check
+pnpm run tool-contracts:check
+pnpm run architecture:check
+pnpm run profiles:check
+pnpm run adapter-matrix:check
+pnpm run compat:check
 ```
 
 ### Workflow/security changes
 
 ```bash
-corepack pnpm run workflows:lint
-corepack pnpm run workflows:security
+pnpm run workflows:lint
+pnpm run workflows:security
 ```
 
 ### Package/release changes
 
 ```bash
-corepack pnpm run package:check
-corepack pnpm run release:dry-run
+pnpm run package:check
+pnpm run release:dry-run
 ```
 
 ### Dashboard changes

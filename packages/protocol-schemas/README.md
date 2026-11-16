@@ -51,5 +51,5 @@ against the replacement payload.
 Run the schema package checks from the repository root:
 
 ```bash
-corepack pnpm run check:protocol-schemas
+pnpm run check:protocol-schemas
 ```

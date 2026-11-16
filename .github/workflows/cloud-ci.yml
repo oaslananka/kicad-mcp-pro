@@ -50,7 +50,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: '24'
+          node-version-file: .node-version
           cache: npm
           cache-dependency-path: apps/cloud/package-lock.json
       - name: Install Cloud dependencies
@@ -63,3 +63,45 @@ jobs:
         run: docker build --file Dockerfile --tag "kicad-cloud-ci:$GITHUB_SHA" --build-arg "APP_REVISION=$GITHUB_SHA" .
       - name: Validate Cloudflare edge contracts
         run: node --test scripts/test-cloudflare-edge.mjs
+
+  # This inexpensive parallel lane protects the still-supported Node 24 LTS path.
+  # Keep the primary Cloud job on Node 26 (the pinned production default).
+  node24-compat:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: kicad_test
+          POSTGRES_PASSWORD: ${{ github.run_id }}
+          POSTGRES_DB: kicad_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kicad_test -d kicad_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: ${{ format('postgresql://kicad_test:{0}@127.0.0.1:5432/kicad_test', github.run_id) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24.22.3'
+          package-manager-cache: false
+      - name: Verify retained Node 24 Cloud compatibility
+        working-directory: apps/cloud
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+          node --test scripts/test-cloudflare-edge.mjs
+      - name: Verify retained Node 24 Apps SDK compatibility
+        working-directory: integrations/chatgpt-app/apps-sdk
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+          npm run build
+          npm run test:smoke

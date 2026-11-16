@@ -311,21 +311,22 @@ jobs:
           enable-cache: true
           prune-cache: true
           version-file: uv.toml
-      - run: corepack enable
+      - name: Install pinned pnpm
+        run: npm install --global pnpm@11.28.6 --no-audit --no-fund
         if: env.skip_ci != 'true'
-      - run: corepack pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
         if: env.skip_ci != 'true'
       - run: uv sync --all-extras --frozen
         if: env.skip_ci != 'true'
-      - run: corepack pnpm run format:check
+      - run: pnpm run format:check
         if: env.skip_ci != 'true'
-      - run: corepack pnpm run lint
+      - run: pnpm run lint
         if: env.skip_ci != 'true'
-      - run: corepack pnpm run typecheck
+      - run: pnpm run typecheck
         if: env.skip_ci != 'true'
-      - run: corepack pnpm run architecture:check
+      - run: pnpm run architecture:check
         if: env.skip_ci != 'true'
-      - run: corepack pnpm run test:unit
+      - run: pnpm run test:unit
         if: env.skip_ci != 'true'
       # Preserve native Windows execution evidence for PR patch coverage AND
       # analyzed main pushes, including non-Python follow-up merges.
@@ -400,11 +401,11 @@ jobs:
             windows-coverage-manifest.json
           if-no-files-found: error
           retention-days: 3
-      - run: corepack pnpm run metadata:check
+      - run: pnpm run metadata:check
         if: env.skip_ci != 'true'
-      - run: corepack pnpm run mcp:manifest:check
+      - run: pnpm run mcp:manifest:check
         if: env.skip_ci != 'true'
-      - run: corepack pnpm run package:check
+      - run: pnpm run package:check
         if: env.skip_ci != 'true'
 
   coverage:
@@ -895,17 +896,18 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - run: corepack enable
+      - name: Install pinned pnpm
+        run: npm install --global pnpm@11.28.6 --no-audit --no-fund
         if: env.skip_ci != 'true'
-      - run: corepack pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
         if: env.skip_ci != 'true'
-      - run: corepack pnpm --filter @oaslananka/kicad-protocol-schemas run format:check
+      - run: pnpm --filter @oaslananka/kicad-protocol-schemas run format:check
         if: env.skip_ci != 'true'
-      - run: corepack pnpm --filter @oaslananka/kicad-protocol-schemas run lint
+      - run: pnpm --filter @oaslananka/kicad-protocol-schemas run lint
         if: env.skip_ci != 'true'
-      - run: corepack pnpm --filter @oaslananka/kicad-protocol-schemas run typecheck
+      - run: pnpm --filter @oaslananka/kicad-protocol-schemas run typecheck
         if: env.skip_ci != 'true'
-      - run: corepack pnpm --filter @oaslananka/kicad-protocol-schemas run test
+      - run: pnpm --filter @oaslananka/kicad-protocol-schemas run test
         if: env.skip_ci != 'true'
 
   workflow-policy:
@@ -924,7 +926,7 @@ jobs:
           enable-cache: true
           prune-cache: true
           version-file: uv.toml
-      # Pin an official Node 24 action and a stable Go toolchain; never rely
+      # Pin an official Node 26 action and a stable Go toolchain; never rely
       # on whichever Go happens to be preinstalled on the runner image.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:

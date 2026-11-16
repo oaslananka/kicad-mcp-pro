@@ -98,7 +98,7 @@ KiCad 11 readiness is represented separately from KiCad 10.0.6 parity:
 | Feature id           | State       | Product boundary                                                                                   | Evidence or issue                                                 |
 | -------------------- | ----------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
 | `protocol_upgrade`   | `future`    | MCP protocol and KiCad 11 support planning remain separate from the stable KiCad 10 gate.          | [#411](https://github.com/oaslananka/kicad-mcp-pro/issues/411)        |
-| `nightly_canary`     | `supported` | Manual nightly canary commands track prerelease behavior without changing the stable support line. | `corepack pnpm run test:kicad-cli-contract:nightly`               |
+| `nightly_canary`     | `supported` | Manual nightly canary commands track prerelease behavior without changing the stable support line. | `pnpm run test:kicad-cli-contract:nightly`               |
 | `swig_removal_guard` | `supported` | The direct-`pcbnew` guard keeps production code away from APIs planned for removal.                | `scripts/check_no_pcbnew.py`                                      |
 
 ## Validation
@@ -106,17 +106,17 @@ KiCad 11 readiness is represented separately from KiCad 10.0.6 parity:
 Linux and macOS:
 
 ```bash
-corepack pnpm run compat:check
-corepack pnpm run test:contract
-corepack pnpm run test:fixtures
+pnpm run compat:check
+pnpm run test:contract
+pnpm run test:fixtures
 ```
 
 Windows 11 PowerShell:
 
 ```powershell
-corepack pnpm run compat:check
-corepack pnpm run test:contract
-corepack pnpm run test:fixtures
+pnpm run compat:check
+pnpm run test:contract
+pnpm run test:fixtures
 ```
 
 The compatibility gate verifies that every supported item has product evidence,

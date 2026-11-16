@@ -24,14 +24,15 @@ Follow [`docs/development/coding-standards.md`](docs/development/coding-standard
 
 Requirements:
 
-- Node.js 24 and pnpm 11 through Corepack
+- Node.js 26.13.1 (default) or Node.js 24.22.3 (supported LTS fallback); Node 25 is not supported
+- pnpm 11.28.6 (install explicitly; Node 26 does not bundle Corepack)
 - Python 3.13 and uv
 
 Install the development dependencies:
 
 ```bash
-corepack enable
-corepack pnpm install --frozen-lockfile
+npm install --global pnpm@11.28.6 --no-audit --no-fund
+pnpm install --frozen-lockfile
 uv sync --all-extras --frozen
 ```
 
@@ -52,10 +53,10 @@ The GitHub CI SonarCloud Quality Gate remains authoritative.
 Run the focused checks while developing:
 
 ```bash
-corepack pnpm run format:check
-corepack pnpm run lint
-corepack pnpm run typecheck
-corepack pnpm run test:unit
+pnpm run format:check
+pnpm run lint
+pnpm run typecheck
+pnpm run test:unit
 ```
 
 Before opening a pull request, run the full local CI equivalent:
