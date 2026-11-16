@@ -61,10 +61,12 @@ test("first pairing advertises terminal-owned foreground Cloud connection",()=>{
   assert.match(first,/kicad-mcp-pro cloud connect/);
   assert.match(first,/sign-in/);
   assert.match(first,/Keep the terminal open/);
-  for(const os of ["windows","macos","linux"]){
-    assert.match(first,new RegExp(`id="cloud-device-os-${os}"`));
-    assert.match(first,new RegExp(`class="device-os-panel device-os-${os}"`));
-  }
+  assert.match(first,/id="cloud-device-os-windows"/);
+  assert.match(first,/id="cloud-device-os-macos"/);
+  assert.match(first,/id="cloud-device-os-linux"/);
+  assert.match(first,/class="device-os-panel device-os-windows"/);
+  assert.match(first,/class="device-os-panel device-os-macos"/);
+  assert.match(first,/class="device-os-panel device-os-linux"/);
   assert.match(first,/Choose method/);
   assert.match(first,/Start on device/);
   assert.match(first,/Verify/);
