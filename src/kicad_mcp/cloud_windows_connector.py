@@ -799,9 +799,13 @@ async def run_connector(
             )
             if identity != folder_identity:
                 # Changing the authorized device or local project invalidates every token.
+                def still_authorized(expected: WindowsRegisteredProject = project) -> bool:
+                    # Freeze the selected device/project across session renewal.
+                    return _current_authorization(expected)
+
                 folder_service = device_folder_service(
                     selected.directory,
-                    authorization=lambda expected=project: _current_authorization(expected),
+                    authorization=still_authorized,
                 )
                 folder_identity = identity
         else:
