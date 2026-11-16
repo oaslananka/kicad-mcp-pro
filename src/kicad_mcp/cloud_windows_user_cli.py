@@ -402,12 +402,10 @@ def show_status() -> None:
     if state == "Configured (task unverified)":
         typer.echo("No verified background task. A foreground Cloud session may still be active.")
         typer.echo(
-            "For automatic connection, run: kicad-mcp-pro cloud reconnect "
-            "(confirm the owner-owned task restoration)."
+            "To start or resume this device: kicad-mcp-pro cloud connect (keep this terminal open)."
         )
         typer.echo(
-            "To start a signed foreground connection: kicad-mcp-pro remote"
-            " (keep this terminal open)."
+            "Check Online status in Cloud Devices; a local registration alone is not a connection."
         )
     try:
         project = selected_project()

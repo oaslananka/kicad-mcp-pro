@@ -1,0 +1,221 @@
+"""Owner-supervised POSIX Cloud Connector, without a service or stored enable marker.
+
+This uses the already-enrolled private signing key and read-only transport.
+Every tool call must still pass a fresh local identity/key check, signed WSS
+handshake, and the Cloud owner/client/project grant. It never starts systemd.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import secrets
+import time
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from websockets.exceptions import ConnectionClosed, WebSocketException
+
+from kicad_mcp.cloud_local_registry import (
+    LocalRegisteredRead,
+    default_registry_root,
+    resolve_registered_read,
+)
+from kicad_mcp.cloud_once import _load_bound_owner_key
+from kicad_mcp.cloud_outbound_handshake import (
+    CloudHandshakeDeniedError,
+    HandshakeReceipt,
+    execute_owner_managed_read_session,
+)
+from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
+from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
+from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
+from kicad_mcp.cloud_reconnect_policy import reconnect_delay_seconds
+from kicad_mcp.cloud_registered_pilot import _single_registered_identity
+
+_MAX_READS = 16
+_SESSION_LIFETIME_MS = 280_000
+_DENIED = "Foreground Cloud Connector requires a valid owner-approved local registration."
+
+
+def _public_key(key: Ed25519PrivateKey) -> bytes:
+    return key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+
+
+def _owner_authorization(
+    *,
+    root: Path,
+    record: dict[str, str],
+    project: LocalRegisteredRead,
+    expected_public_key: bytes,
+    stop: asyncio.Event,
+    identity_loader: Callable[[Path], dict[str, str]],
+    project_resolver: Callable[..., LocalRegisteredRead],
+    key_loader: Callable[..., Ed25519PrivateKey],
+) -> bool:
+    """Recheck current, private on-disk authority before every read/delivery."""
+    if stop.is_set():
+        return False
+    try:
+        current = identity_loader(root)
+        if current != record:
+            return False
+        selected = project_resolver(
+            owner_sub=record["ownerSub"],
+            origin=record["cloudOrigin"],
+            device_id=record["deviceId"],
+            project_id=record["projectId"],
+            registry_root=root,
+        )
+        return (
+            selected == project
+            and _public_key(
+                key_loader(selected.key_file, record["cloudOrigin"], record["deviceId"])
+            )
+            == expected_public_key
+        )
+    except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+        return False
+
+
+async def _session_or_stop(
+    runner: Callable[..., Awaitable[HandshakeReceipt]],
+    settings: dict[str, object],
+    stop: asyncio.Event,
+) -> None:
+    task = asyncio.create_task(runner(**settings))
+    stopping = asyncio.create_task(stop.wait())
+    try:
+        done, _ = await asyncio.wait((task, stopping), return_when=asyncio.FIRST_COMPLETED)
+        if stopping in done:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        else:
+            await task
+    finally:
+        stopping.cancel()
+        await asyncio.gather(stopping, return_exceptions=True)
+
+
+def _policy_close(error: BaseException) -> bool:
+    current: BaseException | None = error
+    for _ in range(4):
+        if current is None:
+            break
+        if isinstance(current, ConnectionClosed):
+            return current.rcvd is not None and current.rcvd.code == 1008
+        current = current.__cause__
+    return False
+
+
+async def run_foreground(
+    *,
+    registry: Path | None = None,
+    stop_event: asyncio.Event | None = None,
+    status_callback: Callable[[str], None] | None = None,
+    identity_loader: Callable[[Path], dict[str, str]] = _single_registered_identity,
+    project_resolver: Callable[..., LocalRegisteredRead] = resolve_registered_read,
+    key_loader: Callable[..., Ed25519PrivateKey] = _load_bound_owner_key,
+    session_runner: Callable[..., Awaitable[HandshakeReceipt]] = execute_owner_managed_read_session,
+) -> int:
+    """Run signed read-only WSS in this terminal; stop instantly revokes local authority."""
+    root = default_registry_root() if registry is None else registry
+    stop = asyncio.Event() if stop_event is None else stop_event
+    failures = 0
+    while not stop.is_set():
+        record = identity_loader(root)  # Strict single project, owner-private key.
+        try:
+            project = project_resolver(
+                owner_sub=record["ownerSub"],
+                origin=record["cloudOrigin"],
+                device_id=record["deviceId"],
+                project_id=record["projectId"],
+                registry_root=root,
+            )
+            signer = key_loader(project.key_file, record["cloudOrigin"], record["deviceId"])
+            key_bytes = _public_key(signer)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            raise LocalApprovalDeniedError(_DENIED) from exc
+
+        # Bind each session's immutable record, project and signer before retry.
+        def authorized(
+            current_record: dict[str, str] = record,
+            current_project: LocalRegisteredRead = project,
+            signer_public: bytes = key_bytes,
+        ) -> bool:
+            return _owner_authorization(
+                root=root,
+                record=current_record,
+                project=current_project,
+                expected_public_key=signer_public,
+                stop=stop,
+                identity_loader=identity_loader,
+                project_resolver=project_resolver,
+                key_loader=key_loader,
+            )
+
+        def dispatcher(
+            receipt: HandshakeReceipt,
+            current_record: dict[str, str] = record,
+            current_project: LocalRegisteredRead = project,
+            is_authorized: Callable[[], bool] = authorized,
+        ) -> LocalReadDispatch:
+            if receipt.device_id != current_record["deviceId"] or not is_authorized():
+                raise LocalApprovalDeniedError(_DENIED)
+            return LocalReadDispatch(
+                verified=VerifiedLocalBinding(
+                    device_id=receipt.device_id,
+                    project_id=current_record["projectId"],
+                    operations=frozenset({"project_summary"}),
+                    session_id=receipt.session_id,
+                    session_expires_unix_ms=time.time_ns() // 1_000_000 + _SESSION_LIFETIME_MS,
+                ),
+                operator_project=OperatorProject(
+                    device_id=current_record["deviceId"],
+                    project_id=current_record["projectId"],
+                    directory=current_project.project_directory,
+                    filename_stem=current_project.filename_stem,
+                ),
+                current_authorization=is_authorized,
+                max_reads=_MAX_READS,
+                native_drc=False,
+            )
+
+        if status_callback is not None:
+            status_callback("Connecting" if failures == 0 else "Reconnecting")
+
+        settings: dict[str, object] = {
+            "origin": record["cloudOrigin"],
+            "trusted_origin": record["cloudOrigin"],
+            "owner_sub": record["ownerSub"],
+            "device_id": record["deviceId"],
+            "signing_key": signer,
+            "dispatcher_factory": dispatcher,
+            "max_reads": _MAX_READS,
+            "on_ready": lambda _receipt: status_callback("Connected") if status_callback else None,
+            "on_activity": status_callback,
+        }
+        try:
+            await _session_or_stop(session_runner, settings, stop)
+            failures = 0
+        except CloudHandshakeDeniedError:
+            if status_callback is not None:
+                status_callback("Cloud refused this session; review owner approval in Devices")
+            raise
+        except (OSError, WebSocketException) as exc:
+            if _policy_close(exc):
+                if status_callback is not None:
+                    status_callback("Owner reapproval required; no automatic re-pairing")
+                raise CloudHandshakeDeniedError("Owner reapproval required") from exc
+            failures += 1
+        if stop.is_set():
+            return 0
+        if status_callback is not None:
+            status_callback("Disconnected ? reconnecting")
+        delay = reconnect_delay_seconds(failures, secrets.randbelow(1001) / 1000)
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=delay)
+        except TimeoutError:
+            pass
+    return 0

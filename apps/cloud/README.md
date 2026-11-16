@@ -24,8 +24,11 @@ restarted, previously paired device/project identity is reused instead of
 creating another device; an initial pairing still requires owner browser
 approval. Project selection and each AI client grant are separate. The
 launcher has no stored credentials, no auto-start service, and no write
-opt-in. Windows native Cloud acceptance remains in progress; macOS/Linux
-foreground Connector support is not yet available.
+opt-in. Windows native Cloud acceptance remains in progress. macOS/Linux
+now have a **pre-release signed read-only foreground session** using the
+same `cloud connect` CLI command; it neither installs systemd nor permits
+native write, and remote multi-project folder browsing is still Windows-only.
+macOS GUI/native and Linux live-session acceptance remain outstanding.
 
 ## Remote AI client setup (development)
 

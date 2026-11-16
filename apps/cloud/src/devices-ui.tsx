@@ -366,16 +366,16 @@ function DeviceSetupWizard(){
           <p className="field-help">Keep the terminal open to keep this device Online and see live tool activity. Close it to disconnect. Run the same command to reconnect with saved pairing and project access. Add projects from your Online device card.</p>
         </section>
         <section className="device-os-panel device-os-macos" aria-label="macOS connection">
-          <h3>macOS pairing preview</h3>
-          <p>Install <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">uv</a> once. This command can start device pairing, but the foreground native Cloud session is not yet available on macOS.</p>
-          <CopyValue value="uvx --from kicad-mcp-pro kicad-mcp-pro cloud connect" label="macOS pairing command"/>
-          <p className="field-help">Pairing alone does not make the device Online or enable remote KiCad tools. Keep using local MCP until the macOS Connector passes native acceptance.</p>
+          <h3>macOS foreground connection (pre-release)</h3>
+          <p>Install <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">uv</a> once and run the command in a local terminal. The first connection uses browser-approved pairing and a native KiCad project-folder picker when available.</p>
+          <CopyValue value="uvx --from kicad-mcp-pro kicad-mcp-pro cloud connect" label="macOS connect command"/>
+          <p className="field-help">Keep the terminal open for the signed, read-only foreground Cloud session; rerun the same command to reconnect. macOS has not passed physical native acceptance. Remote project browsing and Cloud write are not yet supported on this platform.</p>
         </section>
         <section className="device-os-panel device-os-linux" aria-label="Linux connection">
-          <h3>Linux pairing preview</h3>
-          <p>Install <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">uv</a> once. This command can start device pairing, but the foreground native Cloud session is not yet available on Linux.</p>
-          <CopyValue value="uvx --from kicad-mcp-pro kicad-mcp-pro cloud connect" label="Linux pairing command"/>
-          <p className="field-help">Pairing alone does not make the device Online or enable remote KiCad tools. Keep using local MCP until the Linux Connector passes native acceptance.</p>
+          <h3>Linux foreground connection (pre-release)</h3>
+          <p>Install <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">uv</a> once and run the command in a local terminal. The first connection uses browser-approved pairing and a local KiCad project-folder picker when available.</p>
+          <CopyValue value="uvx --from kicad-mcp-pro kicad-mcp-pro cloud connect" label="Linux connect command"/>
+          <p className="field-help">Keep the terminal open for the signed, read-only foreground Cloud session; rerun the same command to reconnect. Linux native integration acceptance is pending. Remote project browsing and Cloud write are not yet supported on this platform.</p>
         </section>
       </div>
     </fieldset>

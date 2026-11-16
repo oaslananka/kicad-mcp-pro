@@ -75,7 +75,10 @@ test("first pairing advertises terminal-owned foreground Cloud connection",()=>{
   assert.match(first,/Verify/);
   assert.match(first,/uvx --from kicad-mcp-pro kicad-mcp-pro cloud connect/);
   assert.match(first,/Sign in.*approve pairing/s);
-  assert.match(first,/foreground.*not yet available/s);
+  assert.match(first,/macOS foreground connection/);
+  assert.match(first,/Linux foreground connection/);
+  assert.match(first,/native acceptance/);
+  assert.match(first,/Remote project browsing and Cloud write are not yet supported/);
   assert.match(uiCss,/cloud-device-os-windows:checked/);
   assert.match(uiCss,/device-os-picker>input:focus-visible/);
 

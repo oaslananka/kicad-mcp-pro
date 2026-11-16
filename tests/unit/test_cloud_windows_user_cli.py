@@ -177,7 +177,7 @@ def test_windows_status_reconciles_saved_project_against_cloud(
     assert queries == [("GET", "/api/owner/v1/devices")]
 
 
-def test_windows_status_missing_task_shows_exact_reconnect_action(
+def test_windows_status_missing_task_prioritizes_foreground_connection(
     windows_cli: tuple[Path, list[str], WindowsRegisteredProject, WindowsLocalProjectSelection],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -189,8 +189,9 @@ def test_windows_status_missing_task_shows_exact_reconnect_action(
     )
     result = CliRunner().invoke(app, ["cloud", "status"])
     assert result.exit_code == 0, result.output
-    assert "kicad-mcp-pro cloud reconnect" in result.output
-    assert "owner-owned task restoration" in result.output
+    assert "kicad-mcp-pro cloud connect" in result.output
+    assert "keep this terminal open" in result.output
+    assert "For automatic connection" not in result.output
     assert "Connected" not in result.output
     assert not events
 
@@ -464,7 +465,7 @@ def test_windows_status_missing_legacy_task_explains_foreground_remote(
     assert status.exit_code == 0, status.output
     assert "No verified background task" in status.output
     assert "foreground Cloud session may still be active" in status.output
-    assert "kicad-mcp-pro remote (keep this terminal open)" in status.output
+    assert "kicad-mcp-pro cloud connect (keep this terminal open)" in status.output
     assert "Connected" not in status.output
     assert "Cloud owner grants/revocation" in status.output
 

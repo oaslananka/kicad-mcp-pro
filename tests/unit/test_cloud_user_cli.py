@@ -66,24 +66,33 @@ def test_cloud_login_rejects_unsafe_origins_without_opening_browser(
     assert result.exit_code != 0
 
 
-def test_cloud_connect_reuses_existing_signed_pairing_flow(monkeypatch, tmp_path) -> None:
-    called: list[list[str]] = []
+def test_cloud_connect_first_posix_pair_starts_signed_foreground_without_daemon(
+    monkeypatch, tmp_path
+) -> None:
+    from kicad_mcp import cloud_posix_foreground, cloud_user_cli
+
+    registry = tmp_path / "unregistered"
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
+    setups = []
     monkeypatch.setattr(
-        "kicad_mcp.cloud_local_registry.default_registry_root", lambda: tmp_path / "unregistered"
+        cloud_user_cli, "_setup_posix", lambda *args, **kwargs: setups.append((args, kwargs))
     )
-    monkeypatch.setattr("kicad_mcp.cloud_pair.main", lambda args: called.append(args) or 0)
+    calls = []
+
+    async def foreground(**kwargs: object) -> int:
+        calls.append("foreground")
+        return 0
+
+    monkeypatch.setattr(cloud_posix_foreground, "run_foreground", foreground)
     result = CliRunner().invoke(app, ["cloud", "connect", "--alias", "Lab board"])
     assert result.exit_code == 0, result.output
-    assert called == [
-        [
-            "--cloud-origin",
-            "https://kicad-mcp-pro.oaslananka.dev",
-            "--alias",
-            "Lab board",
-            "--begin-pairing",
-        ]
-    ]
-    assert "does not enable the persistent Connector" in result.output
+    assert len(setups) == 1
+    assert setups[0][0][1] == "Lab board"
+    assert setups[0][1]["foreground"] is True
+    assert calls == ["foreground"]
+    assert "Ctrl+C disconnects" in result.output
+    assert not (registry / "connector-enabled.json").exists()
 
 
 @pytest.mark.parametrize("command", ["status", "enable", "disable"])
@@ -99,41 +108,77 @@ def test_cloud_connector_commands_delegate_to_existing_owner_managed_boundary(
     assert calls == [[command]]
 
 
-def test_cloud_connect_does_not_pair_an_already_registered_project(monkeypatch, tmp_path) -> None:
+def test_posix_foreground_never_runs_headless_or_pairs_without_owner_terminal(
+    monkeypatch, tmp_path
+) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "_is_windows", lambda: False)
+    monkeypatch.setattr(cloud_user_cli, "_local_pairing_storage_supported", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: tmp_path)
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_setup_posix",
+        lambda *_a, **_kw: pytest.fail("Headless CLI cannot start pairing"),
+    )
+    result = CliRunner().invoke(app, ["cloud", "connect"])
+    assert result.exit_code != 0
+    assert "requires a visible owner terminal" in result.output
+    assert not (tmp_path / "projects").exists()
+
+
+def test_cloud_connect_reuses_posix_registration_without_pairing(monkeypatch, tmp_path) -> None:
+    from kicad_mcp import cloud_posix_foreground, cloud_user_cli
+
     registry = tmp_path / "cloud"
     (registry / "projects").mkdir(parents=True)
     (registry / "projects" / "fixture.json").write_text("fixture", encoding="utf-8")
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
     monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
     monkeypatch.setattr(
         "kicad_mcp.cloud_registered_pilot._single_registered_identity",
-        lambda _root: {"cloudOrigin": "https://kicad-mcp-pro.oaslananka.dev"},
+        lambda _root: {
+            "cloudOrigin": "https://kicad-mcp-pro.oaslananka.dev",
+            "directory": str(tmp_path),
+        },
     )
     monkeypatch.setattr(
-        "kicad_mcp.cloud_pair.main",
-        lambda *_args: pytest.fail("must not re-enroll an existing project"),
+        cloud_user_cli,
+        "_setup_posix",
+        lambda *_a, **_kw: pytest.fail("Already registered: never enroll again"),
     )
+    seen = []
+
+    async def foreground(**_kw: object) -> int:
+        seen.append("foreground")
+        return 0
+
+    monkeypatch.setattr(cloud_posix_foreground, "run_foreground", foreground)
     result = CliRunner().invoke(app, ["cloud", "connect"])
     assert result.exit_code == 0, result.output
-    assert "Cloud enrollment has NOT been verified" in result.output
-    assert "cloud connect --new-device" in result.output
-    assert "existing local registration and keys were not changed" in result.output
+    assert seen == ["foreground"]
+    assert "identity stays saved" in result.output
 
 
 def test_cloud_connect_rejects_ambiguous_registration_before_enrollment(
     monkeypatch, tmp_path
 ) -> None:
+    from kicad_mcp import cloud_user_cli
+
     registry = tmp_path / "cloud"
     (registry / "projects").mkdir(parents=True)
     (registry / "projects" / "fixture.json").write_text("fixture", encoding="utf-8")
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
     monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
-
-    def invalid(_root):
-        raise ValueError("ambiguous project")
-
-    monkeypatch.setattr("kicad_mcp.cloud_registered_pilot._single_registered_identity", invalid)
     monkeypatch.setattr(
-        "kicad_mcp.cloud_pair.main",
-        lambda *_args: pytest.fail("ambiguous registration cannot trigger new key"),
+        "kicad_mcp.cloud_registered_pilot._single_registered_identity",
+        lambda _root: (_ for _ in ()).throw(ValueError("ambiguous project")),
+    )
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_setup_posix",
+        lambda *_a, **_kw: pytest.fail("Cannot enroll after corrupt registration"),
     )
     result = CliRunner().invoke(app, ["cloud", "connect"])
     assert result.exit_code != 0
@@ -143,41 +188,54 @@ def test_cloud_connect_rejects_ambiguous_registration_before_enrollment(
 def test_cloud_connect_explicit_new_device_preserves_existing_local_registration(
     monkeypatch, tmp_path
 ) -> None:
+    from kicad_mcp import cloud_posix_foreground, cloud_user_cli
+
     registry = tmp_path / "cloud"
     projects = registry / "projects"
     projects.mkdir(parents=True)
-    existing = projects / "fixture.json"
-    existing.write_text("private-existing-record", encoding="utf-8")
+    old = projects / "fixture.json"
+    old.write_text("private-existing-record", encoding="utf-8")
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
     monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
     monkeypatch.setattr(
         "kicad_mcp.cloud_registered_pilot._single_registered_identity",
-        lambda _root: {"cloudOrigin": "https://kicad-mcp-pro.oaslananka.dev"},
+        lambda _root: {
+            "cloudOrigin": "https://kicad-mcp-pro.oaslananka.dev",
+            "directory": str(tmp_path),
+        },
     )
-    called: list[list[str]] = []
-    monkeypatch.setattr("kicad_mcp.cloud_pair.main", lambda args: called.append(args) or 0)
+    called = []
+    monkeypatch.setattr(cloud_user_cli, "_setup_posix", lambda *a, **kw: called.append((a, kw)))
+
+    async def foreground(**_kw: object) -> int:
+        return 0
+
+    monkeypatch.setattr(cloud_posix_foreground, "run_foreground", foreground)
     result = CliRunner().invoke(app, ["cloud", "connect", "--new-device"])
     assert result.exit_code == 0, result.output
-    assert len(called) == 1
-    assert called[0][-1] == "--begin-pairing"
-    assert existing.read_text(encoding="utf-8") == "private-existing-record"
-    assert "Existing registration and keys will be preserved" in result.output
-    assert "local project registry must also reference that new" in result.output
+    assert called[0][0][5] is True
+    assert called[0][1]["foreground"] is True
+    assert old.read_text(encoding="utf-8") == "private-existing-record"
 
 
 def test_cloud_connect_new_device_rejects_corrupt_existing_registration(
     monkeypatch, tmp_path
 ) -> None:
+    from kicad_mcp import cloud_user_cli
+
     registry = tmp_path / "cloud"
     (registry / "projects").mkdir(parents=True)
     (registry / "projects" / "fixture.json").write_text("untrusted", encoding="utf-8")
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
     monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
     monkeypatch.setattr(
         "kicad_mcp.cloud_registered_pilot._single_registered_identity",
         lambda _root: (_ for _ in ()).throw(ValueError("corrupt")),
     )
     monkeypatch.setattr(
-        "kicad_mcp.cloud_pair.main",
-        lambda _args: pytest.fail("corrupt existing registration must fail closed"),
+        cloud_user_cli,
+        "_setup_posix",
+        lambda *_a, **_kw: pytest.fail("Corrupt registration cannot trigger new key"),
     )
     result = CliRunner().invoke(app, ["cloud", "connect", "--new-device"])
     assert result.exit_code != 0
@@ -1101,7 +1159,7 @@ def test_cloud_login_connects_cli_in_one_browser_approval(monkeypatch) -> None:
     direct = CliRunner().invoke(app, ["cloud", "login"])
     assert direct.exit_code == 0, direct.output
     assert seen == [("https://kicad-mcp-pro.oaslananka.dev", False)]
-    assert "cloud setup" in direct.output
+    assert "cloud connect" in direct.output
     headless = CliRunner().invoke(app, ["cloud", "login", "--no-browser"])
     assert headless.exit_code == 0, headless.output
     assert seen[-1] == ("https://kicad-mcp-pro.oaslananka.dev", True)

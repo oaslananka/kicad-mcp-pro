@@ -1,0 +1,167 @@
+"""Cross-platform signed foreground Connector contract; no network or user data."""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Callable
+from pathlib import Path
+from typing import cast
+from uuid import uuid4
+
+import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from kicad_mcp.cloud_local_registry import LocalRegisteredRead
+from kicad_mcp.cloud_outbound_handshake import CloudHandshakeDeniedError, HandshakeReceipt
+from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
+from kicad_mcp.cloud_posix_foreground import run_foreground
+from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
+
+DEVICE = str(uuid4())
+PROJECT = str(uuid4())
+SESSION = str(uuid4())
+RECORD = {
+    "ownerSub": "test-owner",
+    "cloudOrigin": "https://cloud.example",
+    "deviceId": DEVICE,
+    "projectId": PROJECT,
+}
+
+
+def inputs(tmp_path: Path) -> tuple[LocalRegisteredRead, Ed25519PrivateKey, list[dict[str, str]]]:
+    project_dir = tmp_path / "test-board"
+    project_dir.mkdir()
+    (project_dir / "test-board.kicad_pro").write_text("{}", encoding="utf-8")
+    project = LocalRegisteredRead(tmp_path / "key.pem", project_dir, "test-board")
+    key = Ed25519PrivateKey.generate()
+    record = [RECORD.copy()]
+    return project, key, record
+
+
+@pytest.mark.anyio
+async def test_signed_foreground_reuses_local_identity_and_has_no_persistent_marker(
+    tmp_path: Path,
+) -> None:
+    project, key, record = inputs(tmp_path)
+    stop = asyncio.Event()
+    statuses = []
+    dispatchers = []
+
+    async def runner(**kwargs: object) -> HandshakeReceipt:
+        assert kwargs["device_id"] == DEVICE
+        assert kwargs["signing_key"] is key
+        receipt = HandshakeReceipt(DEVICE, SESSION)
+        dispatcher = cast(
+            Callable[[HandshakeReceipt], LocalReadDispatch], kwargs["dispatcher_factory"]
+        )(receipt)
+        dispatchers.append(dispatcher)
+        assert dispatcher._current_authorization()
+        kwargs["on_ready"](receipt)
+        stop.set()
+        return receipt
+
+    await run_foreground(
+        registry=tmp_path,
+        stop_event=stop,
+        status_callback=statuses.append,
+        identity_loader=lambda _root: record[0],
+        project_resolver=lambda **_kw: project,
+        key_loader=lambda *_args: key,
+        session_runner=runner,
+    )
+    assert statuses[:2] == ["Connecting", "Connected"]
+    assert dispatchers
+    assert not (tmp_path / "connector-enabled.json").exists()
+    assert not dispatchers[0]._current_authorization()
+
+
+@pytest.mark.anyio
+async def test_foreground_revokes_inflight_read_when_local_identity_changes(tmp_path: Path) -> None:
+    project, key, record = inputs(tmp_path)
+    stop = asyncio.Event()
+    observed = []
+
+    async def runner(**kwargs: object) -> HandshakeReceipt:
+        dispatcher = cast(
+            Callable[[HandshakeReceipt], LocalReadDispatch], kwargs["dispatcher_factory"]
+        )(HandshakeReceipt(DEVICE, SESSION))
+        assert dispatcher._current_authorization()
+        record[0] = {**RECORD, "projectId": str(uuid4())}
+        observed.append(dispatcher._current_authorization())
+        stop.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    await run_foreground(
+        registry=tmp_path,
+        stop_event=stop,
+        identity_loader=lambda _root: record[0],
+        project_resolver=lambda **_kw: project,
+        key_loader=lambda *_args: key,
+        session_runner=runner,
+    )
+    assert observed == [False]
+
+
+@pytest.mark.anyio
+async def test_foreground_network_failure_retries_with_same_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_posix_foreground as foreground
+
+    project, key, record = inputs(tmp_path)
+    monkeypatch.setattr(foreground, "reconnect_delay_seconds", lambda _failures, _jitter: 0.001)
+    stop = asyncio.Event()
+    calls = []
+    statuses = []
+
+    async def runner(**kwargs: object) -> HandshakeReceipt:
+        calls.append(kwargs["device_id"])
+        if len(calls) == 1:
+            raise OSError("simulated outage")
+        stop.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    await run_foreground(
+        registry=tmp_path,
+        stop_event=stop,
+        status_callback=statuses.append,
+        identity_loader=lambda _root: record[0],
+        project_resolver=lambda **_kw: project,
+        key_loader=lambda *_args: key,
+        session_runner=runner,
+    )
+    assert calls == [DEVICE, DEVICE]
+    assert "Reconnecting" in statuses
+
+
+@pytest.mark.anyio
+async def test_foreground_policy_denial_does_not_retry(tmp_path: Path) -> None:
+    project, key, record = inputs(tmp_path)
+    calls = 0
+
+    async def denied(**_kw: object) -> HandshakeReceipt:
+        nonlocal calls
+        calls += 1
+        raise CloudHandshakeDeniedError("not approved")
+
+    with pytest.raises(CloudHandshakeDeniedError):
+        await run_foreground(
+            registry=tmp_path,
+            identity_loader=lambda _root: record[0],
+            project_resolver=lambda **_kw: project,
+            key_loader=lambda *_args: key,
+            session_runner=denied,
+        )
+    assert calls == 1
+
+
+@pytest.mark.anyio
+async def test_foreground_missing_owner_registration_never_opens_socket(tmp_path: Path) -> None:
+    def denied(_root: Path) -> dict[str, str]:
+        raise LocalApprovalDeniedError("invalid")
+
+    async def runner(**_kw: object) -> HandshakeReceipt:
+        pytest.fail("An invalid local owner identity must not open a WebSocket")
+
+    with pytest.raises(LocalApprovalDeniedError):
+        await run_foreground(registry=tmp_path, identity_loader=denied, session_runner=runner)
