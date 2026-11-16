@@ -28,8 +28,17 @@ function safeString(value: unknown, maxLength: number): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new Error("Invalid display string");
   }
-  if (value.length > maxLength || /[\u0000-\u001f\u007f]/u.test(value)) {
+  if (value.length > maxLength) {
     throw new Error("Display string exceeds limit");
+  }
+  // Reject invisible control/bidi override characters in bounded display text.
+  for (const char of value) {
+    const point = char.codePointAt(0) ?? 0;
+    if (point <= 31 || point === 127 ||
+        (point >= 0x202a && point <= 0x202e) ||
+        (point >= 0x2066 && point <= 0x2069)) {
+      throw new Error("Invalid display string control character");
+    }
   }
   return value;
 }

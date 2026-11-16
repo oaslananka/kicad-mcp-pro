@@ -83,3 +83,18 @@ test("finding codes use a bounded ASCII allowlist, without regex backtracking", 
     );
   }
 });
+test("display fields reject invisible bidirectional override characters", () => {
+  const data = load("empty.json") as Record<string, any>;
+  assert.throws(
+    () => parseReviewFixture({ ...data, title: "Board\u202Etxt" }),
+    /Invalid|limit/,
+  );
+  assert.throws(
+    () => parseReviewFixture({
+      ...data,
+      summary: { errors: 0, warnings: 1 },
+      findings: [{ code: "label", severity: "warning", message: "A\u2066B" }],
+    }),
+    /Invalid|limit/,
+  );
+});
