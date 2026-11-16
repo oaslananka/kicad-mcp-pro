@@ -355,7 +355,7 @@ function DeviceSetupWizard(){
         <section className="device-os-panel device-os-windows" aria-label="Windows connection">
           <h3>Windows quick connect</h3>
           <p>Download and run the Windows launcher to install the missing free uv tool through WinGet and open a foreground Cloud connection. Review the script before running it. On the first run, <a href="/sign-in">Sign in</a> and approve pairing in your browser.</p>
-          <a className="button secondary device-windows-download" href="/assets/connect-windows.cmd" download="connect-windows.cmd">Download and run <Icon name="arrow" size={14}/></a>
+          <a className="button primary device-windows-download" href="/assets/connect-windows.cmd" download="connect-windows.cmd">Download and run <Icon name="arrow" size={14}/></a>
           <p className="field-help">Downloaded file: <code>connect-windows.cmd</code>. Open it from Downloads. WinGet must be available on this computer; it may show an installer prompt.</p>
           <details className="device-os-alternative"><summary>PowerShell / advanced: uv already installed?</summary>
             <CopyValue value="uvx --from kicad-mcp-pro kicad-mcp-pro cloud connect" label="setup command"/>
@@ -524,9 +524,24 @@ export function renderDevicesPage(devices:ReadonlyArray<Device>,notice?:string,e
     children:<div className="page-stack">
       {notice?<output className="output-notice">{notice}</output>:null}
       <DeviceContents context={context}/>
+      {enrollmentAvailable&&!sandboxMode?<dialog className="device-connect-modal"
+        id="device-connect-modal" aria-labelledby="device-connect-modal-title"
+        aria-describedby="device-connect-modal-description">
+        <header className="device-connect-modal-header">
+          <div>
+            <p className="card-kicker">CONNECT / DEVICES</p>
+            <h2 id="device-connect-modal-title">Connect this device</h2>
+            <p id="device-connect-modal-description">Choose your computer, run one command, and verify it is Online. Your files remain local.</p>
+          </div>
+          <form method="dialog"><button type="submit" value="close"
+            className="button secondary device-connect-modal-close" aria-label="Close device setup">Close</button></form>
+        </header>
+        <div id="device-connect-modal-content"/>
+      </dialog>:null}
       {context.clients.length===0?<ClientShortcuts/>:null}
       <AdvancedIdentity context={context}/>
       {sandboxMode||browseEnabled?<script src="/assets/device-projects.js" defer={true}/>:null}
+      {enrollmentAvailable&&!sandboxMode?<script src="/assets/device-onboarding.js" defer={true}/>:null}
       {enrollmentAvailable&&!sandboxMode?<script src="/assets/copy-value.js" defer={true}/>:null}
     </div>});
 }

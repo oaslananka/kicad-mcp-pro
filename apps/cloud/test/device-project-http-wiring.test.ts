@@ -76,6 +76,11 @@ test("production HTTP opens the signed native folder chooser without leaking pat
     assert.equal(asset.status,200);
     assert.match(asset.headers.get("content-type")??"",/text\/javascript/);
     assert.match(await asset.text(),/showModal/);
+    const onboarding=await fetch(url+"/assets/device-onboarding.js");
+    assert.equal(onboarding.status,200);
+    assert.match(onboarding.headers.get("content-type")??"",/text\/javascript/);
+    assert.match(await onboarding.text(),/showModal/);
+    assert.equal(onboarding.headers.get("x-content-type-options"),"nosniff");
     const copy=await fetch(url+"/assets/copy-value.js");
     assert.equal(copy.status,200);
     assert.match(copy.headers.get("content-type")??"",/text\/javascript/);

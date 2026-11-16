@@ -1218,6 +1218,18 @@ body{line-height:1.5;letter-spacing:-.007em}
 .cloud-usage-lifetime>strong{font-size:clamp(24px,3vw,38px);color:var(--text);font-variant-numeric:tabular-nums}
 .cloud-usage-lifetime>small{font-size:12px;color:var(--muted)}
 
+/* Native modal progressively enhances Add a device; anchored inline wizard remains no-JS fallback. */
+.device-connect-modal{box-sizing:border-box;width:min(680px,calc(100vw - 28px));max-height:calc(100dvh - 28px);margin:auto;padding:0;overflow:auto;background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:18px;box-shadow:0 30px 90px rgba(0,0,0,.48)}
+.device-connect-modal::backdrop{background:rgba(3,5,12,.72);backdrop-filter:blur(4px)}
+.device-connect-modal-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:22px 24px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--surface);z-index:1}
+.device-connect-modal-header .card-kicker{margin:0 0 8px;font-size:11px;letter-spacing:.08em}
+.device-connect-modal-header h2{font-size:clamp(21px,3vw,27px);margin:0}
+.device-connect-modal-header p:last-child{margin:8px 0 0;font-size:13px;color:var(--muted);line-height:1.5}
+.device-connect-modal-header form{flex:none}
+.device-connect-modal-close{min-height:40px}
+#device-connect-modal-content{padding:4px 24px 24px}
+#device-connect-modal-content .device-setup-wizard{margin-top:14px}
+@media(max-width:600px){.device-connect-modal-header{padding:18px 16px 12px}#device-connect-modal-content{padding:0 16px 18px}.device-connect-modal-header form .button{padding:9px 11px}}
 /* --- Device connect wizard: accessible radio tabs, no JS or extra runtime. --- */
 .device-setup-wizard{display:grid;gap:16px;margin-top:16px;min-width:0}
 .device-setup-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;list-style:none;margin:0;padding:0}
@@ -1235,7 +1247,7 @@ body{line-height:1.5;letter-spacing:-.007em}
 .device-os-panel h3{margin:0 0 10px;font-size:16px;color:var(--text)}
 .device-os-panel p{font-size:13px;line-height:1.6}
 .device-os-panel .copy-control{max-width:100%}
-.device-windows-download{display:inline-flex;align-items:center;gap:8px;max-width:100%;margin:10px 0 4px}
+.device-windows-download{display:inline-flex;align-items:center;gap:8px;max-width:100%;min-height:44px;margin:10px 0 4px}
 .device-os-alternative{margin-top:14px;font-size:13px;color:var(--text-secondary)}
 .device-os-alternative summary{cursor:pointer;padding:8px 0}
 #cloud-device-os-windows:checked~.device-os-panels .device-os-windows{display:block}

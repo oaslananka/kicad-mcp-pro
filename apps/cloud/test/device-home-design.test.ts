@@ -70,6 +70,10 @@ test("first pairing advertises terminal-owned foreground Cloud connection",()=>{
   assert.match(first,/class="device-os-panel device-os-windows"/);
   assert.match(first,/class="device-os-panel device-os-macos"/);
   assert.match(first,/class="device-os-panel device-os-linux"/);
+  assert.match(first,/id="device-connect-modal"/);
+  assert.match(first,/id="device-connect-modal-content"/);
+  assert.match(first,/aria-label="Close device setup"/);
+  assert.match(first,/src="\/assets\/device-onboarding\.js"/);
   assert.match(first,/Choose method/);
   assert.match(first,/Start on device/);
   assert.match(first,/Verify/);
@@ -81,6 +85,7 @@ test("first pairing advertises terminal-owned foreground Cloud connection",()=>{
   assert.match(first,/Remote project browsing and Cloud write are not yet supported/);
   assert.match(uiCss,/cloud-device-os-windows:checked/);
   assert.match(uiCss,/device-os-picker>input:focus-visible/);
+  assert.match(uiCss,/device-connect-modal::backdrop/);
 
   const next=renderDevicesPage([device("Paired computer","connected")],undefined,true,{projects:[],ownerSub:"owner",clients:[],savedGrants:[],sandboxMode:false});
   assert.match(next,/kicad-mcp-pro cloud connect/);

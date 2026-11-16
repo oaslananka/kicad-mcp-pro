@@ -23,6 +23,7 @@ import {pairingReviewClient} from "./pairing-review-client.js";
 import {deviceProjectsClient} from "./device-projects-client.js";
 import {pairingLoginContinuationClient} from "./pairing-login-continuation.js";
 import {copyValueClient} from "./copy-value.js";
+import {deviceOnboardingClient} from "./device-onboarding.js";
 import {ownerApiResponse,cliApproveResponse,type PgOwnerApiAccess} from "./owner-api.js";
 import {extractToolCall,callStatusFromResponse,type PgUsage} from "./usage.js";
 import type {TrustedOAuthReadIdentity} from "./connector-read-gate.js";
@@ -206,6 +207,12 @@ async function handleRequest(
       }
       // Read-only static UI script used by the production device project
       // dialogs as well as the local sandbox. It never contains owner data.
+      if (path === "/assets/device-onboarding.js" && req.method === "GET"){
+        res.writeHead(200,{...noCache,"Content-Type":"text/javascript; charset=utf-8",
+          "Referrer-Policy":"no-referrer"});
+        res.end(deviceOnboardingClient);
+        return;
+      }
       if (path === "/assets/device-projects.js" && req.method === "GET"){
         res.writeHead(200,{...noCache,"Content-Type":"text/javascript; charset=utf-8",
           "Referrer-Policy":"no-referrer"});
