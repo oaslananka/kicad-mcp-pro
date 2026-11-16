@@ -13,6 +13,7 @@ const types:Readonly<Record<string,{file:string;contentType:string}>>={
   "/assets/icon-32.png":{file:"icon-32.png",contentType:"image/png"},
   "/assets/icon-64.png":{file:"icon-64.png",contentType:"image/png"},
   "/assets/brand-logo.png":{file:"brand-logo.png",contentType:"image/png"},
+  "/assets/connect-windows.cmd":{file:"connect-windows.cmd",contentType:"text/plain; charset=utf-8"},
   "/apple-touch-icon.png":{file:"apple-touch-icon.png",contentType:"image/png"},
   "/assets/icon-192.png":{file:"icon-192.png",contentType:"image/png"},
   "/assets/icon-512.png":{file:"icon-512.png",contentType:"image/png"},

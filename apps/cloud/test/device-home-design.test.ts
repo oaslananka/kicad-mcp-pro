@@ -61,6 +61,9 @@ test("first pairing advertises terminal-owned foreground Cloud connection",()=>{
   assert.match(first,/kicad-mcp-pro cloud connect/);
   assert.match(first,/sign-in/);
   assert.match(first,/Keep the terminal open/);
+  assert.match(first,/href="\/assets\/connect-windows\.cmd"/);
+  assert.match(first,/download="connect-windows\.cmd"/);
+  assert.match(first,/Download and run/);
   assert.match(first,/id="cloud-device-os-windows"/);
   assert.match(first,/id="cloud-device-os-macos"/);
   assert.match(first,/id="cloud-device-os-linux"/);

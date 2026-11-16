@@ -1439,6 +1439,7 @@ test("only allowlisted static brand and agent-discovery assets are served",async
     ["/apple-touch-icon.png","image/png"],
     ["/assets/icon-192.png","image/png"],
     ["/assets/icon-512.png","image/png"],
+    ["/assets/connect-windows.cmd","text/plain"],
     ["/site.webmanifest","application/manifest+json"],
     ["/llms.txt","text/plain"],
     ["/llms-full.txt","text/plain"],
@@ -1455,6 +1456,13 @@ test("only allowlisted static brand and agent-discovery assets are served",async
     assert.ok((await reply.arrayBuffer()).byteLength>10,path);
     assert.equal(reply.headers.get("x-content-type-options"),"nosniff");
   }
+  const launcher=await fetch(endpoint+"/assets/connect-windows.cmd");
+  assert.match(launcher.headers.get("content-disposition")??"",/attachment; filename="connect-windows.cmd"/);
+  assert.equal(launcher.headers.get("cache-control"),"no-store");
+  const code=await launcher.text();
+  assert.match(code,/winget install --id astral-sh.uv/);
+  assert.match(code,/uvx --from kicad-mcp-pro kicad-mcp-pro cloud connect/);
+  assert.doesNotMatch(code,/\b(curl|iex|Invoke-Expression)\b/i);
   for(const path of ["/assets/../../config.json","/llms-private.txt","/AGENTS.md/../../secret"]){
     const response=await fetch(endpoint+path,{redirect:"manual"});
     assert.notEqual(response.status,200,path);

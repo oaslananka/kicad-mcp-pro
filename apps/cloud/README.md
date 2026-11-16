@@ -8,6 +8,25 @@ connection status and remote request routing. Engineering tools execute in the
 local KiCad MCP engine; the cloud service does not store native KiCad project
 files or provide an AI chat/model runtime.
 
+## Foreground Windows device setup (pre-release)
+
+The Cloud **Devices** page offers a downloadable `connect-windows.cmd`
+launcher, served as an explicit attachment from the Cloud app itself. On a
+Windows 11 computer, the owner may review and run the launcher from Downloads.
+It uses an existing `uvx`, or the official WinGet `astral-sh.uv` package if
+`uvx` is missing, then runs `uvx --from kicad-mcp-pro kicad-mcp-pro cloud connect`.
+No Python installation or manual PATH editing is required from the owner;
+WinGet must be available for first-time setup. Alternative: install uv manually
+and copy the `uvx` command from the page.
+
+The visible terminal is the Cloud device session: Ctrl+C closes it. When
+restarted, previously paired device/project identity is reused instead of
+creating another device; an initial pairing still requires owner browser
+approval. Project selection and each AI client grant are separate. The
+launcher has no stored credentials, no auto-start service, and no write
+opt-in. Windows native Cloud acceptance remains in progress; macOS/Linux
+foreground Connector support is not yet available.
+
 ## Remote AI client setup (development)
 
 When Cloud identity is configured, signed-in users can open **AI connections**

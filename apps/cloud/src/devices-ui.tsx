@@ -354,8 +354,12 @@ function DeviceSetupWizard(){
       <div className="device-os-panels">
         <section className="device-os-panel device-os-windows" aria-label="Windows connection">
           <h3>Windows quick connect</h3>
-          <p>Install <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">uv</a> once, then run this single command in PowerShell. On the first run, <a href="/sign-in">Sign in</a> and approve pairing in your browser.</p>
-          <CopyValue value="uvx --from kicad-mcp-pro kicad-mcp-pro cloud connect" label="setup command"/>
+          <p>Download and run the Windows launcher to install the missing free uv tool through WinGet and open a foreground Cloud connection. Review the script before running it. On the first run, <a href="/sign-in">Sign in</a> and approve pairing in your browser.</p>
+          <a className="button secondary device-windows-download" href="/assets/connect-windows.cmd" download="connect-windows.cmd">Download and run <Icon name="arrow" size={14}/></a>
+          <p className="field-help">Downloaded file: <code>connect-windows.cmd</code>. Open it from Downloads. WinGet must be available on this computer; it may show an installer prompt.</p>
+          <details className="device-os-alternative"><summary>PowerShell / advanced: uv already installed?</summary>
+            <CopyValue value="uvx --from kicad-mcp-pro kicad-mcp-pro cloud connect" label="setup command"/>
+          </details>
           <details className="device-os-alternative"><summary>Already installed KiCad MCP Pro?</summary>
             <CopyValue value="kicad-mcp-pro cloud connect" label="reconnect command"/>
           </details>

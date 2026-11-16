@@ -1235,6 +1235,7 @@ body{line-height:1.5;letter-spacing:-.007em}
 .device-os-panel h3{margin:0 0 10px;font-size:16px;color:var(--text)}
 .device-os-panel p{font-size:13px;line-height:1.6}
 .device-os-panel .copy-control{max-width:100%}
+.device-windows-download{display:inline-flex;align-items:center;gap:8px;max-width:100%;margin:10px 0 4px}
 .device-os-alternative{margin-top:14px;font-size:13px;color:var(--text-secondary)}
 .device-os-alternative summary{cursor:pointer;padding:8px 0}
 #cloud-device-os-windows:checked~.device-os-panels .device-os-windows{display:block}

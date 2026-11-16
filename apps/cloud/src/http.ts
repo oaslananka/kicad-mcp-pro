@@ -176,7 +176,12 @@ async function handleRequest(
       const publicFile=publicAsset(path);
       if(publicFile && req.method==="GET"){
         res.writeHead(200,{"Content-Type":publicFile.contentType,
-          "Cache-Control":"public, max-age=3600","X-Content-Type-Options":"nosniff",
+          "Cache-Control":path==="/assets/connect-windows.cmd"?"no-store":"public, max-age=3600",
+          "X-Content-Type-Options":"nosniff",
+          ...(path==="/assets/connect-windows.cmd"?{
+            "Content-Disposition":'attachment; filename="connect-windows.cmd"',
+            "Referrer-Policy":"no-referrer"
+          }:{}),
           ...(path==="/index.md"?{"Link":'</>; rel="canonical", </llms.txt>; rel="describedby"'}:{})});
         res.end(publicFile.body);
         return;
