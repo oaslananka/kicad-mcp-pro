@@ -19,7 +19,7 @@ version, tag, or release identity was changed.
 | ---------------- | ----------------------------------------------------- | ----------------------------------------- |
 | Listing status   | `active`, `isLatest: true`                            | n/a                                       |
 | Published (UTC)  | `2026-04-15T21:15:40Z`                                | n/a                                       |
-| Version          | `2.1.0`                                               | `3.6.0`                                   |
+| Version          | `2.1.0`                                               | `4.16.0`                                    |
 | Packages         | `pypi` only                                           | `pypi`, `npm`, `oci`                      |
 | `repository.url` | legacy standalone `kicad-mcp-pro` repo (pre-monorepo) | `https://github.com/oaslananka/kicad-mcp-pro` |
 
@@ -28,7 +28,7 @@ Findings:
 - The server **is** listed and active in the official registry, so the historical
   "Not submitted" entry in the public listing was inaccurate and has been corrected.
 - The listing is **stale**: the registry shows `2.1.0` while the current product line is
-  `3.6.0` (PyPI already has `3.6.0`). The record predates the monorepo migration, so its
+  `4.16.0` (PyPI already has `4.16.0`). The record predates the monorepo migration, so its
   `repository.url` still points at the legacy standalone repository and it advertises only
   the PyPI package.
 - `server.json` validates against the official
@@ -61,7 +61,7 @@ pnpm --dir packages/mcp-server run publish:mcp:dry-run
 No stored registry API token is required — the official target authenticates via GitHub
 OIDC under the `oaslananka` namespace (`id-token: write`).
 
-1. Confirm PyPI/GHCR artifacts exist for the target version (PyPI `3.6.0` already published).
+1. Confirm PyPI/GHCR artifacts exist for the target version (PyPI `4.16.0` already published).
 2. Trigger the publish job via a GitHub `release: published` event, or manually via
    `workflow_dispatch` with `dry_run=false`.
 3. Approve the `mcp-registry` GitHub Environment when prompted (manual environment gate).
