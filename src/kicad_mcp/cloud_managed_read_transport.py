@@ -241,6 +241,30 @@ async def _serve_folder_frame(
     return 0
 
 
+def _requested_display_operation(raw: str, kind: object) -> str:
+    """Return an allowlisted tool label, never caller-supplied paths or arguments."""
+    fallback = "write" if kind == _WRITE_REQUEST_KIND else "read"
+    if kind != "connector.authorized_read":
+        # Native write proof contains an opaque signed payload; the verified
+        # operation is reported only after local execution acknowledges it.
+        return fallback
+    try:
+        envelope = json.loads(raw)
+    except (ValueError, TypeError):
+        return fallback
+    if not isinstance(envelope, dict):
+        return fallback
+    request = envelope.get("request")
+    if not isinstance(request, dict):
+        return fallback
+    operation = request.get("operation")
+    return (
+        operation
+        if isinstance(operation, str) and operation in {"project_summary", "run_drc"}
+        else fallback
+    )
+
+
 async def _serve_one_signed_frame(
     socket: AuthenticatedReadSocket,
     raw: str,
@@ -266,8 +290,9 @@ async def _serve_one_signed_frame(
     sequence = reads_served + 1
     is_write = kind == _WRITE_REQUEST_KIND
     label = "write" if is_write else "read"
+    safe_requested = _requested_display_operation(raw, kind)
     start = perf_counter()
-    _report_activity(on_activity, f"Tool call {sequence}: {label} started")
+    _report_activity(on_activity, f"Tool call {sequence}: {safe_requested} started")
     try:
         if is_write:
             result = await _serve_authorized_write_request(
@@ -276,7 +301,10 @@ async def _serve_one_signed_frame(
         else:
             result = await _serve_one_authenticated_read(socket, dispatcher, receipt, sequence, raw)
     except Exception:
-        _report_activity(on_activity, f"Tool call {sequence}: {label} failed")
+        elapsed = round((perf_counter() - start) * 1000)
+        _report_activity(
+            on_activity, f"Tool call {sequence}: {safe_requested} failed ({elapsed} ms)"
+        )
         raise
     operation = result.get("operation")
     safe = operation if operation in {"project_summary", "run_drc", "pcb_move_footprint"} else label

@@ -1217,4 +1217,28 @@ body{line-height:1.5;letter-spacing:-.007em}
 .cloud-usage-lifetime>span{font-size:12px;font-weight:650;color:var(--muted)}
 .cloud-usage-lifetime>strong{font-size:clamp(24px,3vw,38px);color:var(--text);font-variant-numeric:tabular-nums}
 .cloud-usage-lifetime>small{font-size:12px;color:var(--muted)}
+
+/* --- Device connect wizard: accessible radio tabs, no JS or extra runtime. --- */
+.device-setup-wizard{display:grid;gap:16px;margin-top:16px;min-width:0}
+.device-setup-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;list-style:none;margin:0;padding:0}
+.device-setup-steps li{padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft);min-width:0}
+.device-setup-steps strong{display:block;font-size:12px;color:var(--text)}
+.device-setup-steps small{display:block;margin-top:5px;font-size:11px;color:var(--muted);line-height:1.45}
+.device-os-picker{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;min-width:0;border:0;margin:0;padding:0}
+.device-os-picker legend{margin:0 0 10px;font-size:12px;color:var(--muted)}
+.device-os-picker>input{position:absolute;opacity:0;width:1px;height:1px}
+.device-os-picker>label{min-width:0;text-align:center;padding:11px 8px;border-radius:9px;border:1px solid var(--line);background:var(--surface-soft);color:var(--text-secondary);font-size:13px;cursor:pointer}
+.device-os-picker>input:checked+label{border-color:var(--accent);background:var(--accent-soft);color:var(--text);font-weight:700}
+.device-os-picker>input:focus-visible+label{outline:2px solid var(--accent);outline-offset:3px}
+.device-os-panels{grid-column:1/-1;min-width:0}
+.device-os-panel{display:none;padding:18px;border:1px solid var(--line);border-radius:12px;background:var(--surface-soft);min-width:0}
+.device-os-panel h3{margin:0 0 10px;font-size:16px;color:var(--text)}
+.device-os-panel p{font-size:13px;line-height:1.6}
+.device-os-panel .copy-control{max-width:100%}
+.device-os-alternative{margin-top:14px;font-size:13px;color:var(--text-secondary)}
+.device-os-alternative summary{cursor:pointer;padding:8px 0}
+#cloud-device-os-windows:checked~.device-os-panels .device-os-windows{display:block}
+#cloud-device-os-macos:checked~.device-os-panels .device-os-macos{display:block}
+#cloud-device-os-linux:checked~.device-os-panels .device-os-linux{display:block}
+@media(max-width:600px){.device-setup-steps{grid-template-columns:1fr}.device-setup-steps li{padding:9px 12px}.device-os-panel{padding:14px}.device-os-picker>label{font-size:12px;padding:10px 4px}}
 `;

@@ -336,35 +336,60 @@ function DeviceList({context}:Readonly<{context:ViewContext}>){
       </section>);
 }
 
+function DeviceSetupWizard(){
+  return <div className="device-setup-wizard" aria-label="Add a Cloud device">
+    <ol className="device-setup-steps" aria-label="Device connection steps">
+      <li><strong>Choose method</strong><small>Select your operating system</small></li>
+      <li><strong>Start on device</strong><small>Run a foreground command</small></li>
+      <li><strong>Verify</strong><small>Check Online under Your devices</small></li>
+    </ol>
+    <fieldset className="device-os-picker">
+      <legend>Operating system</legend>
+      <input type="radio" id="cloud-device-os-windows" name="cloud-device-os" defaultChecked={true}/>
+      <label htmlFor="cloud-device-os-windows">Windows</label>
+      <input type="radio" id="cloud-device-os-macos" name="cloud-device-os"/>
+      <label htmlFor="cloud-device-os-macos">macOS</label>
+      <input type="radio" id="cloud-device-os-linux" name="cloud-device-os"/>
+      <label htmlFor="cloud-device-os-linux">Linux</label>
+      <div className="device-os-panels">
+        <section className="device-os-panel device-os-windows" aria-label="Windows connection">
+          <h3>Windows quick connect</h3>
+          <p>Install <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">uv</a> once, then run this single command in PowerShell. On the first run, <a href="/sign-in">Sign in</a> and approve pairing in your browser.</p>
+          <CopyValue value="uvx --from kicad-mcp-pro kicad-mcp-pro cloud connect" label="setup command"/>
+          <details className="device-os-alternative"><summary>Already installed KiCad MCP Pro?</summary>
+            <CopyValue value="kicad-mcp-pro cloud connect" label="reconnect command"/>
+          </details>
+          <p className="field-help">Keep the terminal open to keep this device Online and see live tool activity. Close it to disconnect. Run the same command to reconnect with saved pairing and project access. Add projects from your Online device card.</p>
+        </section>
+        <section className="device-os-panel device-os-macos" aria-label="macOS connection">
+          <h3>macOS pairing preview</h3>
+          <p>Install <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">uv</a> once. This command can start device pairing, but the foreground native Cloud session is not yet available on macOS.</p>
+          <CopyValue value="uvx --from kicad-mcp-pro kicad-mcp-pro cloud connect" label="macOS pairing command"/>
+          <p className="field-help">Pairing alone does not make the device Online or enable remote KiCad tools. Keep using local MCP until the macOS Connector passes native acceptance.</p>
+        </section>
+        <section className="device-os-panel device-os-linux" aria-label="Linux connection">
+          <h3>Linux pairing preview</h3>
+          <p>Install <a href="https://docs.astral.sh/uv/getting-started/installation/" target="_blank" rel="noopener noreferrer">uv</a> once. This command can start device pairing, but the foreground native Cloud session is not yet available on Linux.</p>
+          <CopyValue value="uvx --from kicad-mcp-pro kicad-mcp-pro cloud connect" label="Linux pairing command"/>
+          <p className="field-help">Pairing alone does not make the device Online or enable remote KiCad tools. Keep using local MCP until the Linux Connector passes native acceptance.</p>
+        </section>
+      </div>
+    </fieldset>
+    <p className="field-help">A Cloud account does not automatically grant AI clients project access. After the device is Online, select a folder under its Projects section, then grant access to each AI client separately.</p>
+  </div>;
+}
+
 function PairingSetup({context}:Readonly<{context:ViewContext}>){
   const {devices,sandboxMode}=context;
-  return (devices.length===0?<section className="card quickstart-card" id="connect-computer">
-        <div className="card-kicker"><Icon name="cpu" size={15}/> PAIR YOUR COMPUTER</div>
-        <h2>Connect your computer</h2>
-        {sandboxMode?<><p>Local development only. This workspace only accepts
-          connections from this computer. Its existing Connector is configured locally.</p>
-          <a className="text-link" href="/devices">Review connected devices</a></>:
-          <><p>Run on your Windows computer. Choose your KiCad folder,
-              then sign-in and approve pairing in the browser.</p>
-            <CopyValue value="kicad-mcp-pro cloud connect" label="setup command"/>
-            <p className="field-help">Keep the terminal open to see connection and activity logs.
-              Close it to disconnect. On the first connection, approve pairing in your browser.
-              AI app access is granted separately.</p></>}
-      </section>:
-      <section className="card pair-another-card" id="connect-computer">
-        <h2><Icon name="cpu" size={16}/> Connect another computer</h2>
-        <div className="pair-another-content">
-          {sandboxMode?<p>Local development only. This Cloud instance accepts connections
-            from this computer (127.0.0.1). Additional computers need a separate
-            network-enabled Cloud setup; remote pairing is unavailable here.</p>:
-          <><p>On your other Windows computer, run the command below to select its KiCad folder,
-              then sign-in and approve pairing in the browser:</p>
-            <CopyValue value="kicad-mcp-pro cloud connect" label="setup command"/>
-            <p className="field-help">Keep the terminal open. If this computer is already paired,
-              run <code>kicad-mcp-pro cloud connect</code> to reconnect without re-pairing.
-              The terminal displays connection and request logs.</p></>}
-        </div>
-      </section>);
+  const first=devices.length===0;
+  return <section className={first?"card quickstart-card":"card pair-another-card"} id="connect-computer">
+    <div className="card-kicker"><Icon name="cpu" size={15}/> DEVICE CONNECTION</div>
+    <h2>{first?"Connect your computer":"Connect another computer"}</h2>
+    {sandboxMode?<><p>Local development only. This Cloud instance accepts connections
+      from this computer. Additional machines require a network-enabled Cloud deployment.</p>
+      <a className="text-link" href="/devices">Review connected devices</a></>:
+      <DeviceSetupWizard/>}
+  </section>;
 }
 function RegisteredProjects({context}:Readonly<{context:ViewContext}>){
   const {devices,projects,enrollmentAvailable,sandboxMode,browseEnabled}=context;

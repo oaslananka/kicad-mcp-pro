@@ -61,6 +61,18 @@ test("first pairing advertises terminal-owned foreground Cloud connection",()=>{
   assert.match(first,/kicad-mcp-pro cloud connect/);
   assert.match(first,/sign-in/);
   assert.match(first,/Keep the terminal open/);
+  for(const os of ["windows","macos","linux"]){
+    assert.match(first,new RegExp(`id="cloud-device-os-${os}"`));
+    assert.match(first,new RegExp(`class="device-os-panel device-os-${os}"`));
+  }
+  assert.match(first,/Choose method/);
+  assert.match(first,/Start on device/);
+  assert.match(first,/Verify/);
+  assert.match(first,/uvx --from kicad-mcp-pro kicad-mcp-pro cloud connect/);
+  assert.match(first,/Sign in.*approve pairing/s);
+  assert.match(first,/foreground.*not yet available/s);
+  assert.match(uiCss,/cloud-device-os-windows:checked/);
+  assert.match(uiCss,/device-os-picker>input:focus-visible/);
 
   const next=renderDevicesPage([device("Paired computer","connected")],undefined,true,{projects:[],ownerSub:"owner",clients:[],savedGrants:[],sandboxMode:false});
   assert.match(next,/kicad-mcp-pro cloud connect/);

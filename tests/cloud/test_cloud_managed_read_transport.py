@@ -110,9 +110,9 @@ async def test_two_successive_reads_on_same_authenticated_socket(tmp_path: Path)
         )
         == receipt
     )
-    assert events[0] == "Tool call 1: read started"
+    assert events[0] == "Tool call 1: project_summary started"
     assert re.fullmatch(r"Tool call 1: project_summary completed \(\d+ ms\)", events[1])
-    assert events[2] == "Tool call 2: read started"
+    assert events[2] == "Tool call 2: project_summary started"
     assert re.fullmatch(r"Tool call 2: project_summary completed \(\d+ ms\)", events[3])
     assert [item["sequence"] for item in socket.sent] == [1, 2]
     for item in socket.sent:
@@ -364,7 +364,7 @@ async def test_folder_frames_are_answered_without_consuming_read_sequences(
     )
     assert served == receipt
     assert events[0] == "Folder request completed"
-    assert events[1] == "Tool call 1: read started"
+    assert events[1] == "Tool call 1: project_summary started"
     assert re.fullmatch(r"Tool call 1: project_summary completed \(\d+ ms\)", events[2])
     kinds = [item["kind"] for item in socket.sent]
     assert kinds == ["connector.local_browser_result", "connector.read_result"]
@@ -409,7 +409,7 @@ async def test_native_folder_choice_cancel_logs_outcome_without_binding_project(
         "Opening Windows project folder dialog",
         "Folder selection cancelled",
     ]
-    assert events[2] == "Tool call 1: read started"
+    assert events[2] == "Tool call 1: project_summary started"
     assert service.bound == []
     assert socket.sent[0]["kind"] == "connector.local_browser_result"
     assert socket.sent[0]["status"] == "cancelled"
@@ -1044,7 +1044,7 @@ async def test_signed_session_does_not_cut_off_started_read_at_refresh(
         == receipt
     )
     assert socket.sent[0]["kind"] == "connector.read_result"
-    assert activity[0] == "Tool call 1: read started"
+    assert activity[0] == "Tool call 1: project_summary started"
     assert activity[1].startswith("Tool call 1: project_summary completed")
     assert "Refreshing signed Cloud session" not in activity
 
@@ -1071,3 +1071,25 @@ async def test_signed_session_deadline_already_elapsed_rotates_without_read(
     )
     assert events == ["Refreshing signed Cloud session"]
     assert socket.sent == []
+
+
+@pytest.mark.anyio
+async def test_terminal_activity_masks_untrusted_operation_and_times_denial(
+    tmp_path: Path,
+) -> None:
+    """Requested tool names are trusted for display only when explicitly allowlisted."""
+    sensitive_operation = "run_drc TOKEN=/secret/pcb.kicad_pcb"
+    events: list[str] = []
+    socket = Socket([request(1, operation=sensitive_operation)])
+    with pytest.raises((LocalReadDeniedError, CloudHandshakeDeniedError)):
+        await serve_authenticated_reads(
+            socket,
+            HandshakeReceipt(DEVICE, SESSION),
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+            on_activity=events.append,
+        )
+    assert events[0] == "Tool call 1: read started"
+    assert re.fullmatch(r"Tool call 1: read failed \(\d+ ms\)", events[1])
+    assert sensitive_operation not in " ".join(events)
+    assert not socket.sent

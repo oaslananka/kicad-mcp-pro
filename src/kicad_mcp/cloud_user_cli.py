@@ -447,7 +447,7 @@ def _display_cloud_status(value: str, origin: str) -> None:
     elif value.startswith("Tool call "):
         category, icon, color = "TOOL", "◆", typer.colors.CYAN
         detail = value
-        if value.endswith("failed"):
+        if value.endswith("failed") or " failed (" in value:
             color = typer.colors.RED
     elif "folder" in value.lower() or "dialog" in value.lower():
         category, icon, color = "FOLDER", "▣", typer.colors.MAGENTA
