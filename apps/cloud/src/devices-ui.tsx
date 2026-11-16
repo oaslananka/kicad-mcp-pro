@@ -297,7 +297,7 @@ function DeviceProjects({device:d,context}:Readonly<{device:Device;context:ViewC
                   </form>:null}
                   {d.browseNeedsUpgrade?<p className="field-help">
                     This device is Online but has no active local folder picker.
-                    Update or reconnect KiCad MCP Pro in an interactive desktop terminal to add projects.
+                    Update the KiCad MCP Pro Connector or reconnect it in an interactive desktop terminal to add projects.
                     On a headless Linux server, connect an initial project with --project-dir instead.
                   </p>:null}
                 </div>
