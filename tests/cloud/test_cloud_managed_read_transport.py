@@ -406,7 +406,7 @@ async def test_native_folder_choice_cancel_logs_outcome_without_binding_project(
     )
     assert result == receipt
     assert events[:2] == [
-        "Opening Windows project folder dialog",
+        "Opening local project folder dialog",
         "Folder selection cancelled",
     ]
     assert events[2] == "Tool call 1: project_summary started"
