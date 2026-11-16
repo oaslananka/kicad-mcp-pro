@@ -119,6 +119,44 @@ def test_native_pad_mapping_creates_one_deterministic_read_only_pair(
 
 
 @pytest.mark.parametrize(
+    ("minus_start", "minus_end", "reversed_order", "start_spacing", "end_spacing"),
+    [
+        ((0.0, 0.75), (8.0, -0.75), True, 0.75, 0.75),
+        ((0.0, 2.9), (8.0, 0.5), False, 2.9, 0.5),
+    ],
+)
+def test_realistic_misaligned_pair_reports_pad_geometry_without_board_write(
+    monkeypatch: pytest.MonkeyPatch,
+    minus_start: tuple[float, float],
+    minus_end: tuple[float, float],
+    reversed_order: bool,
+    start_spacing: float,
+    end_spacing: float,
+) -> None:
+    pads, board, stats = _arrange(monkeypatch)
+    pads[2].position = Vector2.from_xy_mm(*minus_start)
+    pads[3].position = Vector2.from_xy_mm(*minus_end)
+    original = board.get_as_string()
+    result = _preview()
+
+    assert result["status"] == "refused"
+    assert result["candidateOnly"] is True
+    assert "candidateId" not in result
+    assert result["padGeometry"] == {
+        "startPadSeparationMm": start_spacing,
+        "endPadSeparationMm": end_spacing,
+        "requestedCenterSpacingMm": 0.75,
+        "offsetChangeMm": 1.5 if reversed_order else 2.4,
+        "padOrderReversed": reversed_order,
+    }
+    assert "native differential-pair fanout" in result["nextAction"]
+    assert "No physical signoff" in result["nextAction"]
+    assert ("pad order reverses" in result["reason"]) is reversed_order
+    assert stats["snapshots"] == (0 if reversed_order else 1)
+    assert board.get_as_string() == original
+
+
+@pytest.mark.parametrize(
     ("fault", "message"),
     [
         ("bad_snapshot", "serialization unavailable"),

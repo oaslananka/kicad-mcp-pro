@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict
+from math import hypot, isfinite
 from typing import cast
 
 from kipy.board_types import Pad
@@ -72,6 +73,44 @@ def _coupled_endpoints(
     return positive_a, positive_b, negative_a, negative_b
 
 
+def _pair_pad_geometry(
+    plus_start: tuple[float, float],
+    plus_end: tuple[float, float],
+    minus_start: tuple[float, float],
+    minus_end: tuple[float, float],
+    width_mm: float,
+    gap_mm: float,
+) -> dict[str, float | bool] | None:
+    """Measure P/N endpoint offsets; do not infer electrical impedance or delay."""
+    coords = (*plus_start, *plus_end, *minus_start, *minus_end, width_mm, gap_mm)
+    if not all(isfinite(value) for value in coords):
+        return None
+    start_delta = (minus_start[0] - plus_start[0], minus_start[1] - plus_start[1])
+    end_delta = (minus_end[0] - plus_end[0], minus_end[1] - plus_end[1])
+    axis = (plus_end[0] - plus_start[0], plus_end[1] - plus_start[1])
+    axis_length = hypot(*axis)
+    start_side = (
+        (axis[0] * start_delta[1] - axis[1] * start_delta[0]) / axis_length
+        if axis_length > 1e-6
+        else 0.0
+    )
+    end_side = (
+        (axis[0] * end_delta[1] - axis[1] * end_delta[0]) / axis_length
+        if axis_length > 1e-6
+        else 0.0
+    )
+    return {
+        "startPadSeparationMm": round(hypot(*start_delta), 6),
+        "endPadSeparationMm": round(hypot(*end_delta), 6),
+        "requestedCenterSpacingMm": round(width_mm + gap_mm, 6),
+        "offsetChangeMm": round(
+            hypot(start_delta[0] - end_delta[0], start_delta[1] - end_delta[1]), 6
+        ),
+        "padOrderReversed": start_side * end_side < 0
+        and min(abs(start_side), abs(end_side)) > 0.0001,
+    }
+
+
 def _preview_coupled_pair(
     p_ref1: str,
     p_pad1: str,
@@ -88,6 +127,7 @@ def _preview_coupled_pair(
     max_skew_mm: float = 0.1,
 ) -> str:
     """READ-only IPC snapshot; both routes are planned around the same obstacles."""
+    pad_geometry: dict[str, float | bool] | None = None
     try:
         board = get_board()
         raw = board.get_as_string()
@@ -106,6 +146,19 @@ def _preview_coupled_pair(
             n_pad2,
             layer,
         )
+        pad_geometry = _pair_pad_geometry(
+            point_xy_mm(p1.position),
+            point_xy_mm(p2.position),
+            point_xy_mm(n1.position),
+            point_xy_mm(n2.position),
+            width_mm,
+            gap_mm,
+        )
+        if pad_geometry is not None and pad_geometry["padOrderReversed"]:
+            raise RoutePlanningError(
+                "P/N pad order reverses between endpoints: a single-layer coupled route "
+                "would cross; review pad mapping or a separately qualified layer transition"
+            )
         obstacles = snapshot_route_obstacles(
             board,
             layer,
@@ -165,10 +218,22 @@ def _preview_coupled_pair(
             sort_keys=True,
         )
     except (ValueError, TypeError, KeyError, AttributeError) as exc:
-        return json.dumps(
-            {"status": "refused", "candidateOnly": True, "reason": str(exc)},
-            sort_keys=True,
-        )
+        reason = str(exc)
+        refusal: dict[str, object] = {
+            "status": "refused",
+            "candidateOnly": True,
+            "reason": reason,
+        }
+        if pad_geometry is not None and (
+            "pad order reverses" in reason or "aligned pads" in reason or "spacing/offset" in reason
+        ):
+            refusal["padGeometry"] = pad_geometry
+            refusal["nextAction"] = (
+                "Review P/N pad mapping and layer transitions before rerouting; "
+                "use KiCad's native differential-pair fanout and tuning with "
+                "verified stackup, return path and DRC. No physical signoff."
+            )
+        return json.dumps(refusal, sort_keys=True)
 
 
 # S107 exception: preserve the flat paired candidate contract consumed by the MCP adapter.
