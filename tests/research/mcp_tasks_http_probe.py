@@ -77,10 +77,6 @@ class TaskProbeHandler(BaseHTTPRequestHandler):
 
     server: TaskProbeServer
 
-    def log_message(self, message_format: str, *args: object) -> None:
-        """Avoid logging tokens, task handles or arbitrary request data."""
-        _ = (message_format, args)
-
     def _send(self, code: int, message: dict[str, Any]) -> None:
         encoded = json.dumps(message, separators=(",", ":"), allow_nan=False).encode("utf-8")
         self.send_response(code)

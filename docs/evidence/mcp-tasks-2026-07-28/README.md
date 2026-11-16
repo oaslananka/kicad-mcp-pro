@@ -48,11 +48,12 @@ on ephemeral `127.0.0.1` loopback:
   polling hint (1000 ms), duplicate polls, malformed JSON, restart invalidation
   and legacy `tasks/list` rejection.
 
-**Local observation:** 88 focused Python tests PASS (including eight real HTTP
-integration cases); Ruff and Node `--check` PASS. Node.js 26.13.1 on Windows
-was used for this local run; the repository's pinned Node 24 lane is checked
-independently by its hosted GitHub Actions job. Host UI/native-agent
-interoperability is **NOT VERIFIED** and must not be claimed as proven.
+**Local observation:** 124 focused Python tests PASS (including eight real HTTP
+integration cases and Node runtime contract checks); Ruff and Node `--check` PASS.
+Node.js 26.13.1 was used locally on Windows. The repository's current CI lane
+also pins Node 26.13.1; cross-platform results remain subject to exact-head
+GitHub Actions verification. Host UI/native-agent interoperability is
+**NOT VERIFIED** and must not be claimed as proven.
 
 ### Repeatable acceptance commands
 
