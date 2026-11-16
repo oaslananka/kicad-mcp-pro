@@ -46,29 +46,34 @@ def _select_with_tkinter() -> Path | None:
         raise OSError("No graphical project folder chooser is available") from exc
 
 
+async def _start_native_dialog(
+    platform: Literal["darwin", "linux"],
+) -> asyncio.subprocess.Process:
+    """Launch only the allowlisted operating-system GUI chooser."""
+    if platform == "darwin":
+        return await asyncio.create_subprocess_exec(
+            "/usr/bin/osascript",
+            "-e",
+            'POSIX path of (choose folder with prompt "Choose your local KiCad project folder")',
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    return await asyncio.create_subprocess_exec(
+        "zenity",
+        "--file-selection",
+        "--directory",
+        "--title=Choose your local KiCad project folder",
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+
 async def _capture_native_dialog(platform: Literal["darwin", "linux"]) -> tuple[int, str, str]:
-    """Run a fixed system chooser with separated arguments and a deadline."""
+    """Capture the chooser result with a deadline and fail-closed cleanup."""
     try:
-        if platform == "darwin":
-            process = await asyncio.create_subprocess_exec(
-                "/usr/bin/osascript",
-                "-e",
-                "POSIX path of (choose folder with prompt "
-                '"Choose your local KiCad project folder")',
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-        else:
-            process = await asyncio.create_subprocess_exec(
-                "zenity",
-                "--file-selection",
-                "--directory",
-                "--title=Choose your local KiCad project folder",
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
+        process = await _start_native_dialog(platform)
     except OSError as exc:
         raise OSError("The native project folder chooser could not start") from exc
     try:

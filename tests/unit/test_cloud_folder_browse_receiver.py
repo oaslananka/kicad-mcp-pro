@@ -495,5 +495,7 @@ def test_posix_project_binding_never_accepts_ambiguous_or_non_project_paths(
         def project_path(self, project_id: str) -> str | None:
             return project_path
 
+    service = Selected()
+    request = frame("path", projectId=PROJECT_ID)
     with pytest.raises(CloudHandshakeDeniedError):
-        handle_folder_frame(Selected(), frame("path", projectId=PROJECT_ID))
+        handle_folder_frame(service, request)
