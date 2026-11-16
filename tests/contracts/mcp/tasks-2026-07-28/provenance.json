@@ -1,0 +1,16 @@
+{
+  "revision": "2026-07-28",
+  "extension": "io.modelcontextprotocol/tasks",
+  "schema": {
+    "url": "https://raw.githubusercontent.com/modelcontextprotocol/ext-tasks/cc9aaac1047a9440b07486e38f37060bbebeef4c/schema/2026-07-28/schema.json",
+    "upstream_commit": "cc9aaac1047a9440b07486e38f37060bbebeef4c",
+    "sha256": "bf30afb7ac251e3e22c037b7a685f60ef6603031b5484c0d08b1fa0bbe86d460"
+  },
+  "requester": {
+    "package": "@modelcontextprotocol/ext-tasks",
+    "version": "0.2.3",
+    "integrity": "sha512-MZKxyGKXDyZuc54GlnvzYBecBAlKNlYI/WgrTuIXLKV6h3ebDZU2sTpQpe7kKgKLJz0TTDIxmnM7HAmXL0GOcA==",
+    "client_sdk": "@modelcontextprotocol/client@2.2.0",
+    "evidence": "In-memory pinned-client capability probe only; full isolated HTTP transport interop tested separately."
+  }
+}
