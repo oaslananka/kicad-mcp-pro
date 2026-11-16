@@ -26,11 +26,13 @@ export interface Inventory {
 
 type DeviceRow = {id: string; alias: string; enabled: boolean; last_seen_at: Date | null};
 type ProjectRow = {id: string; device_id: string; alias: string; enabled: boolean; max_mode: Project["maxMode"]};
-// A project's global ceiling must never be advertised as this OAuth client's
-// permission. Both project and client grants must agree for write/manufacturing.
+// This is the lower of two policy ceilings, NOT an OAuth or native-write grant.
+// Both columns are NOT NULL and constrained to the same three ordered modes.
 const CLIENT_PROJECT_FIELDS =
   "p.id,p.device_id,p.alias,p.enabled,"+
-  "CASE WHEN p.max_mode=g.max_mode THEN p.max_mode ELSE 'readonly' END AS max_mode ";
+  "CASE WHEN p.max_mode='readonly' OR g.max_mode='readonly' THEN 'readonly' "+
+  "WHEN p.max_mode='write' OR g.max_mode='write' THEN 'write' "+
+  "ELSE 'manufacturing' END AS max_mode ";
 
 export class PgInventory implements Inventory {
   protected readonly pool: pg.Pool;

@@ -37,7 +37,17 @@ test("postgres enforces ownership, disabled projects and opaque-only records", {
     await admin.query("UPDATE project_client_grants SET max_mode='write' WHERE project_id=$1 AND client_id='client-a'",[projectA]);
     assert.equal((await inventory.listProjects("owner-a","client-a"))[0]?.maxMode,"write");
     assert.equal((await inventory.getProject("owner-a","client-a",projectA))?.maxMode,"write");
+    // A manufacturing project still permits a client with a narrower WRITE
+    // ceiling to be advertised as WRITE, never as manufacturing or readonly.
+    await admin.query("UPDATE projects SET max_mode='manufacturing' WHERE id=$1",[projectA]);
+    assert.equal((await inventory.listProjects("owner-a","client-a"))[0]?.maxMode,"write");
+    assert.equal((await inventory.getProject("owner-a","client-a",projectA))?.maxMode,"write");
+    await admin.query("UPDATE project_client_grants SET max_mode='manufacturing' WHERE project_id=$1 AND client_id='client-a'",[projectA]);
+    assert.equal((await inventory.listProjects("owner-a","client-a"))[0]?.maxMode,"manufacturing");
+    await admin.query("UPDATE projects SET max_mode='write' WHERE id=$1",[projectA]);
+    assert.equal((await inventory.getProject("owner-a","client-a",projectA))?.maxMode,"write");
     await admin.query("UPDATE project_client_grants SET max_mode='readonly' WHERE project_id=$1 AND client_id='client-a'",[projectA]);
+    assert.equal((await inventory.listProjects("owner-a","client-a"))[0]?.maxMode,"readonly");
     await admin.query("UPDATE projects SET max_mode='readonly' WHERE id=$1",[projectA]);
     assert.equal(await inventory.getProject("owner-b","client-a",projectA),null);
     assert.equal(await inventory.getProject("owner-a","client-a",projectDisabled),null);
