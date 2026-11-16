@@ -652,6 +652,7 @@ jobs:
           RELEASE_METADATA_ONLY: ${{ needs.changes.outputs.release_metadata_only }}
           DOCS_ONLY: ${{ needs.changes.outputs.sonar_docs_only }}
           EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
           PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           REPOSITORY: ${{ github.repository }}
@@ -668,6 +669,9 @@ jobs:
           elif [[ "$EVENT_NAME" == 'pull_request' && "$PR_AUTHOR" == 'dependabot[bot]' ]]; then
             run_analysis=false
             no_op_reason='Dependabot pull request cannot receive SONAR_TOKEN'
+          elif [[ "$EVENT_NAME" == 'workflow_dispatch' && "$REF" != 'refs/heads/main' ]]; then
+            run_analysis=false
+            no_op_reason='manual non-main branch has no SonarCloud branch-analysis entitlement'
           elif [[ "$DOCS_ONLY" == 'true' ]]; then
             run_analysis=false
             no_op_reason='docs-only change set outside Sonar analysis scope'

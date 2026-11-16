@@ -77,3 +77,17 @@ def test_sonar_docs_only_path_gate_keeps_required_check_reporting() -> None:
         in steps["Determine Sonar execution mode"]["run"]
     )
     assert "Record intentional Sonar no-op" in steps
+
+
+def test_manual_non_main_dispatch_does_not_run_branch_quality_gate() -> None:
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["sonarcloud"]["steps"]
+    mode = next(step for step in steps if step.get("id") == "sonar-mode")
+    assert mode["env"]["REF"] == "${{ github.ref }}"
+    assert (
+        """"$EVENT_NAME" == 'workflow_dispatch' && "$REF" != 'refs/heads/main'"""
+        in mode["run"]
+    )
+    assert "manual non-main branch has no SonarCloud branch-analysis entitlement" in mode["run"]
+    assert any(step.get("name") == "Record intentional Sonar no-op" for step in steps)
+    assert any(step.get("name") == "Require successful upstream coverage gate" for step in steps)
