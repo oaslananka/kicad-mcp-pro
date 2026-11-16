@@ -148,6 +148,49 @@ def test_posix_foreground_never_runs_headless_or_pairs_without_owner_terminal(
     assert not (tmp_path / "projects").exists()
 
 
+@pytest.mark.parametrize(
+    ("failure", "expected", "exit_code"),
+    [
+        ("policy", "Cloud denied the signed session", 3),
+        ("local", "Owner-private device registration needs repair", 2),
+        ("stopped", "Disconnected. Local pairing was preserved", 0),
+    ],
+)
+def test_posix_foreground_reports_declined_and_cancelled_sessions(
+    monkeypatch, tmp_path, failure: str, expected: str, exit_code: int
+) -> None:
+    from kicad_mcp import cloud_posix_foreground, cloud_user_cli
+    from kicad_mcp.cloud_outbound_handshake import CloudHandshakeDeniedError
+    from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
+
+    registry = tmp_path / "cloud"
+    (registry / "projects").mkdir(parents=True)
+    (registry / "projects" / "fixture.json").write_text("synthetic", encoding="utf-8")
+    monkeypatch.setattr(cloud_user_cli, "_is_windows", lambda: False)
+    monkeypatch.setattr(cloud_user_cli, "_local_pairing_storage_supported", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_registered_pilot._single_registered_identity",
+        lambda _root: {
+            "cloudOrigin": "https://kicad-mcp-pro.oaslananka.dev",
+            "directory": str(tmp_path),
+        },
+    )
+
+    async def runner(**_kwargs: object) -> int:
+        if failure == "policy":
+            raise CloudHandshakeDeniedError("synthetic owner policy")
+        if failure == "local":
+            raise LocalApprovalDeniedError("synthetic vault unavailable")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cloud_posix_foreground, "run_foreground", runner)
+    result = CliRunner().invoke(app, ["cloud", "connect"])
+    assert result.exit_code == exit_code, result.output
+    assert expected in result.output
+
+
 def test_cloud_connect_reuses_posix_registration_without_pairing(monkeypatch, tmp_path) -> None:
     from kicad_mcp import cloud_posix_foreground, cloud_user_cli
 

@@ -165,3 +165,60 @@ async def test_foreground_missing_owner_registration_never_opens_socket(tmp_path
 
     with pytest.raises(LocalApprovalDeniedError):
         await run_foreground(registry=tmp_path, identity_loader=denied, session_runner=runner)
+
+
+@pytest.mark.anyio
+async def test_foreground_does_not_dispatch_after_local_signing_key_becomes_unreadable(
+    tmp_path: Path,
+) -> None:
+    project, key, record = inputs(tmp_path)
+    stop = asyncio.Event()
+    reads = 0
+
+    def recheck_key(*_args: object) -> Ed25519PrivateKey:
+        nonlocal reads
+        reads += 1
+        if reads > 1:
+            raise OSError("synthetic key vault failure")
+        return key
+
+    async def runner(**kwargs: object) -> HandshakeReceipt:
+        factory = cast(
+            Callable[[HandshakeReceipt], LocalReadDispatch], kwargs["dispatcher_factory"]
+        )
+        with pytest.raises(LocalApprovalDeniedError):
+            factory(HandshakeReceipt(DEVICE, SESSION))
+        stop.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    await run_foreground(
+        registry=tmp_path,
+        stop_event=stop,
+        identity_loader=lambda _root: record[0],
+        project_resolver=lambda **_kw: project,
+        key_loader=recheck_key,
+        session_runner=runner,
+    )
+    assert reads == 2
+
+
+@pytest.mark.anyio
+async def test_foreground_rejects_invalid_owner_signing_key_without_network(
+    tmp_path: Path,
+) -> None:
+    project, _key, record = inputs(tmp_path)
+
+    def broken_key(*_args: object) -> Ed25519PrivateKey:
+        raise ValueError("synthetic missing key")
+
+    async def no_network(**_kwargs: object) -> HandshakeReceipt:
+        pytest.fail("Invalid local key must be rejected before connecting")
+
+    with pytest.raises(LocalApprovalDeniedError):
+        await run_foreground(
+            registry=tmp_path,
+            identity_loader=lambda _root: record[0],
+            project_resolver=lambda **_kw: project,
+            key_loader=broken_key,
+            session_runner=no_network,
+        )

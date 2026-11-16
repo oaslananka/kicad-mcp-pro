@@ -1093,3 +1093,13 @@ async def test_terminal_activity_masks_untrusted_operation_and_times_denial(
     assert re.fullmatch(r"Tool call 1: read failed \(\d+ ms\)", events[1])
     assert sensitive_operation not in " ".join(events)
     assert not socket.sent
+
+
+@pytest.mark.parametrize(
+    "raw",
+    ["{bad-json", "[]", '{"kind":"connector.authorized_read","request":"bad"}'],
+)
+def test_untrusted_read_activity_never_prints_malformed_operation(raw: str) -> None:
+    from kicad_mcp.cloud_managed_read_transport import _requested_display_operation
+
+    assert _requested_display_operation(raw, "connector.authorized_read") == "read"
