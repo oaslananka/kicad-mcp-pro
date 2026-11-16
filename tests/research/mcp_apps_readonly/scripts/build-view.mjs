@@ -21,4 +21,4 @@ if (!javascript) throw new Error("Missing bundled view JavaScript");
 if (javascript.includes("</script")) throw new Error("Unsafe inline script terminator");
 const document = await readFile(path.join(root, "src", "view.html"), "utf8");
 if (!document.includes("<!-- APP_SCRIPT -->")) throw new Error("Missing view marker");
-await writeFile(path.join(out, "view.html"), document.replace("<!-- APP_SCRIPT -->", () => `<script>${javascript}</script>`));
+await writeFile(path.join(out, "view.html"), document.replace("<!-- APP_SCRIPT -->", () => "<script>" + javascript + "</script>"));

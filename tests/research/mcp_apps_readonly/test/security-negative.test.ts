@@ -74,3 +74,13 @@ test("reject oversized input before invoking any MCP tool", async () => {
   }, JSON.stringify({ method: "tools/call", arguments: "x".repeat(5 * 1024) }));
   assert.equal(oversized.status, 413);
 });
+test("CORS never reflects an alternate loopback origin", async () => {
+  const denied = await request("OPTIONS", {
+    Host: `127.0.0.1:${port}`,
+    Origin: "http://127.0.0.1:8080",
+    "Access-Control-Request-Method": "POST",
+    "Access-Control-Request-Headers": "content-type,mcp-protocol-version",
+  });
+  assert.equal(denied.status, 403);
+  assert.equal(denied.headers["access-control-allow-origin"], undefined);
+});

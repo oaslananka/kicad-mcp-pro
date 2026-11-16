@@ -85,16 +85,16 @@ export async function startFixtureServer(port: number): Promise<void> {
     allowedOrigins: ["127.0.0.1", "localhost"],
     jsonLimit: "4kb",
   });
-  const trustedHostOrigins = new Set(["http://localhost:8080", "http://127.0.0.1:8080"]);
+  const referenceHostOrigin = "http://localhost:8080";
   app.use((req: Request, res: Response, next) => {
     const origin = req.headers.origin;
-    if (origin && !trustedHostOrigins.has(origin)) {
+    if (origin && origin !== referenceHostOrigin) {
       res.status(403).json({ error: "Origin denied for synthetic fixture" });
       return;
     }
     if (origin) {
       res.setHeader("Vary", "Origin");
-      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Access-Control-Allow-Origin", "http://localhost:8080");
       res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
       res.setHeader(
         "Access-Control-Allow-Headers",

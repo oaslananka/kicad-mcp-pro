@@ -32,7 +32,7 @@ test("text and structured review are identical for UI and ordinary clients", asy
       const result = await x.client.callTool({ name: TOOL_NAME, arguments: { variant } });
       assert.equal(result.isError, false);
       const text = result.content.find((c: any) => c.type === "text") as { text: string };
-      assert.match(text.text, new RegExp(expected));
+      assert.ok(text.text.includes(expected));
       assert.match(text.text, /Synthetic example — no live KiCad design analyzed/);
       assert.equal((result.structuredContent as any).synthetic, true);
       assert.equal((result.structuredContent as any).title.length > 0, true);

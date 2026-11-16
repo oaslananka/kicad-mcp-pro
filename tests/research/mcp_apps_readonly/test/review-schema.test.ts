@@ -70,3 +70,16 @@ test("schema parsing works inside browser sandbox without Node Buffer", () => {
     globalThis.Buffer = original;
   }
 });
+test("finding codes use a bounded ASCII allowlist, without regex backtracking", () => {
+  const original = load("empty.json") as Record<string, any>;
+  const item = { code: "valid-12", severity: "warning", message: "Synthetic warning." };
+  const report = { ...original, summary: { errors: 0, warnings: 1 }, findings: [item] };
+  assert.equal(parseReviewFixture(report).findings[0]?.code, "valid-12");
+  for (const code of ["-leading", "Upper", "a_b", "a b", "<script>", "é", "??"]) {
+    assert.throws(
+      () => parseReviewFixture({ ...report, findings: [{ ...item, code }] }),
+      /Invalid finding code/,
+      code,
+    );
+  }
+});

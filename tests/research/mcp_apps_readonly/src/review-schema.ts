@@ -41,6 +41,17 @@ function nonnegativeCount(value: unknown): number {
   return value;
 }
 
+function isSafeFindingCode(code: string): boolean {
+  // Bounded (<= 64 chars) ASCII allowlist: no regex or attacker-controlled pattern.
+  for (let index = 0; index < code.length; index++) {
+    const point = code.charCodeAt(index);
+    const isDigit = point >= 48 && point <= 57;
+    const isLowercaseLetter = point >= 97 && point <= 122;
+    const isInternalHyphen = point === 45 && index > 0;
+    if (!isDigit && !isLowercaseLetter && !isInternalHyphen) return false;
+  }
+  return true;
+}
 export function parseReviewFixture(input: unknown): ReviewFixture {
   let encoded: string;
   try { encoded = JSON.stringify(input); } catch { throw new Error("Invalid report JSON"); }
@@ -61,7 +72,7 @@ export function parseReviewFixture(input: unknown): ReviewFixture {
   const findings: ReviewFinding[] = obj.findings.map((entry: unknown) => {
     const finding = record(entry, ["code", "severity", "message"]);
     const code = safeString(finding.code, 64);
-    if (!/^[a-z0-9][a-z0-9-]*$/u.test(code)) throw new Error("Invalid finding code");
+    if (!isSafeFindingCode(code)) throw new Error("Invalid finding code");
     if (finding.severity !== "error" && finding.severity !== "warning") {
       throw new Error("Invalid finding severity");
     }
