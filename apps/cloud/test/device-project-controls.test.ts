@@ -70,7 +70,8 @@ test("Online Connector without native picker explains desktop reconnection inste
     browseNeedsUpgrade:true,connectionState:"connected" as const};
   const html=renderDevicesPage([device],undefined,true,{projects:[],ownerSub:"owner",clients:[],savedGrants:[],sandboxMode:false,browseEnabled:true});
   assert.match(html,/Online but has no active local folder picker/);
-  assert.match(html,/Update or reconnect KiCad MCP Pro in an interactive desktop terminal/);
+  assert.match(html,/Update the KiCad MCP Pro Connector/);
+  assert.match(html,/reconnect it in an interactive desktop terminal/);
   assert.match(html,/headless Linux server/);
   assert.doesNotMatch(html,/action="\/devices\/projects\/browse"/);
   assert.match(html,/Online/);
