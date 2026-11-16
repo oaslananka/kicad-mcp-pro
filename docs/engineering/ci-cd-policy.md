@@ -74,6 +74,12 @@ OS matrix and full Python coverage lane to run their real unit/tooling-contract 
 This prevents a required check from reporting a no-op success when Python tests consume a
 non-Python repository contract.
 
+The disposable MCP Apps issue #1220 research fixture is an explicitly scoped
+exception: changes in `tests/research/mcp_apps_readonly/**` or its Python
+isolation regression activate frozen-install/Node tests in the existing Ubuntu
+`mcp-server` CI matrix lane. No new job, required context, token privilege,
+long-lived service or production registration is introduced.
+
 The internal `Python changed-file quality` job reuses `scripts/hook_pre_push.py`
 in `--ruff-only` mode against the exact pull-request/push diff. The shared selector
 keeps maintained Python files under `src/`, `tests/`, and `scripts/` aligned between

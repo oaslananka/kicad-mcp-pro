@@ -55,6 +55,10 @@ explicitly, with the upstream `node_modules/.bin` directory on PATH for
 test-host setup detail, not a reason to modify the KiCad MCP production
 dependencies.
 
+On GitHub, the existing Ubuntu `mcp-server` CI job also runs this isolated
+package's frozen-install and Node tests when the research files or isolation
+regression change. No dedicated runner, required check or production job was added.
+
 The environment-independent Python isolation regression can be run with
 `python -m pytest -q --noconftest tests/unit/test_mcp_apps_research_isolation.py`
 from the repository root. The normal Python integration suite requires

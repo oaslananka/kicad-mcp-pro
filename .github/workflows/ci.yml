@@ -33,6 +33,7 @@ jobs:
       schemas: ${{ steps.filter.outputs.schemas }}
       workflows: ${{ steps.filter.outputs.workflows }}
       dependencies: ${{ steps.filter.outputs.dependencies }}
+      mcp_apps_research: ${{ steps.filter.outputs.mcp_apps_research }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -91,6 +92,9 @@ jobs:
               - '.github/actions/**'
               - '.github/actions-policy.json'
               - 'codecov.yml'
+            mcp_apps_research:
+              - 'tests/research/mcp_apps_readonly/**'
+              - 'tests/unit/test_mcp_apps_research_isolation.py'
             dependencies:
               - 'package.json'
               - 'apps/cloud/package.json'
@@ -315,6 +319,16 @@ jobs:
         if: env.skip_ci != 'true'
       - run: corepack pnpm install --frozen-lockfile
         if: env.skip_ci != 'true'
+      - name: Validate isolated MCP Apps research fixture
+        if: >-
+          env.skip_ci != 'true' &&
+          matrix.os == 'ubuntu-24.04' &&
+          (needs.changes.outputs.mcp_apps_research == 'true' ||
+           github.event_name == 'workflow_dispatch')
+        working-directory: tests/research/mcp_apps_readonly
+        run: |
+          corepack pnpm install --frozen-lockfile --ignore-scripts
+          corepack pnpm test
       - run: uv sync --all-extras --frozen
         if: env.skip_ci != 'true'
       - run: corepack pnpm run format:check
