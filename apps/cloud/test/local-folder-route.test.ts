@@ -283,3 +283,83 @@ test("obsolete browser folder navigation is unavailable",async()=>{
   assert.equal(await f.route("/devices/projects/folders",request),null);
   assert.equal(f.bindings(),0);
 });
+
+test("two signed native folder picks register separate projects without sharing selection proofs",async()=>{
+  const f=fixture(false);
+  const choices=[
+    {folder:"opaque-board-A",name:"First Board"},
+    {folder:"opaque-board-B",name:"Second Board"}
+  ];
+  const registered=new Map<string,{id:string;alias:string}>();
+  const bound=new Map<string,string>();
+  let pickIndex=0;
+  f.folders.chooseFolder=async(user,device)=>{
+    if(user!==owner||device!==deviceId)return null;
+    const next=choices[pickIndex++];
+    if(!next)return {status:"cancelled"};
+    return {status:"selected" as const,name:next.name,folderId:next.folder,
+      projects:[{id:next.folder,name:next.name}]};
+  };
+  f.folders.listFolder=async(user,device,folder)=>{
+    if(user!==owner||device!==deviceId)return null;
+    const chosen=choices.find(c=>c.folder===folder);
+    return chosen?{folderId:folder,name:chosen.name,parentId:null,
+      project:true,more:false,folders:[]}:null;
+  };
+  f.devices.createProject=async(user,device,alias)=>{
+    if(user!==owner||device!==deviceId)return null;
+    const id=randomUUID();
+    registered.set(id,{id,alias});
+    return id;
+  };
+  f.devices.listProjects=async()=>[...registered.values()].map(p=>({
+    id:p.id,deviceId,alias:p.alias,enabled:true
+  }));
+  f.devices.deleteProject=async(user,id)=>user===owner&&registered.delete(id);
+  f.folders.bindFolder=async(user,device,folder,id)=>{
+    if(user!==owner||device!==deviceId||!registered.has(id)||
+       !choices.some(choice=>choice.folder===folder)||bound.has(folder))return false;
+    bound.set(folder,id);
+    return true;
+  };
+  const first=await beginSelection(f);
+  assert.equal(first?.status,200);
+  const firstHtml=await first!.text();
+  assert.match(firstHtml,/First Board/);
+  const firstCsrf=/name="csrf" value="([^"]+)"/.exec(firstHtml)?.[1];
+  assert.ok(firstCsrf);
+  const firstCookie=first!.headers.get("set-cookie")?.split(";")[0]??"";
+  const firstResult=await f.route("/devices/projects/select",ownerPost(
+    "/devices/projects/select",{device_id:deviceId,folder_id:choices[0].folder,
+      alias:choices[0].name,csrf:firstCsrf},firstCookie));
+  assert.equal(firstResult?.status,303);
+
+  const second=await beginSelection(f);
+  assert.equal(second?.status,200);
+  const secondHtml=await second!.text();
+  assert.match(secondHtml,/Second Board/);
+  const secondCsrf=/name="csrf" value="([^"]+)"/.exec(secondHtml)?.[1];
+  assert.ok(secondCsrf);
+  const secondCookie=second!.headers.get("set-cookie")?.split(";")[0]??"";
+  const swapped=await f.route("/devices/projects/select",ownerPost(
+    "/devices/projects/select",{device_id:deviceId,folder_id:choices[1].folder,
+      alias:choices[1].name,csrf:firstCsrf},secondCookie));
+  assert.equal(swapped?.status,403,"first folder proof cannot authorize a second folder");
+  assert.equal(registered.size,1,"forged second selection never creates a project");
+
+  const secondResult=await f.route("/devices/projects/select",ownerPost(
+    "/devices/projects/select",{device_id:deviceId,folder_id:choices[1].folder,
+      alias:choices[1].name,csrf:secondCsrf},secondCookie));
+  assert.equal(secondResult?.status,303);
+  assert.equal(registered.size,2);
+  assert.equal(bound.size,2);
+  assert.notEqual(bound.get(choices[0].folder),bound.get(choices[1].folder));
+  assert.deepEqual(new Set([...registered.values()].map(p=>p.alias)),
+    new Set(choices.map(c=>c.name)));
+  const page=await f.route("/devices");
+  assert.equal(page?.status,200);
+  const html=await page!.text();
+  assert.match(html,/First Board/);
+  assert.match(html,/Second Board/);
+  assert.doesNotMatch(html,/C:\\Users\\|\/private\/var\/|\/home\/owner\//);
+});
