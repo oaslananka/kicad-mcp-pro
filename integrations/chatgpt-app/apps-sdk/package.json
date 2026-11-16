@@ -25,7 +25,7 @@
     "typescript": "^7.0.2"
   },
   "overrides": {
-    "@hono/node-server": "2.1.6",
+    "@hono/node-server": "2.1.7",
     "hono": "4.13.18",
     "fast-uri": "3.1.9",
     "qs": "6.17.1",
