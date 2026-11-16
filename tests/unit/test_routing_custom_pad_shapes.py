@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 import pytest
-from kipy.board_types import BoardCircle, BoardPolygon, Pad
-from kipy.geometry import PolygonWithHoles, PolyLineNode, Vector2
+from kipy.board_types import (
+    BoardArc,
+    BoardCircle,
+    BoardPolygon,
+    BoardRectangle,
+    BoardSegment,
+    BoardShape,
+    Pad,
+)
+from kipy.geometry import PolygonWithHoles, PolyLine, PolyLineNode, Vector2
 from kipy.proto.board.board_types_pb2 import BoardLayer, PadStackShape
 
-from kicad_mcp.pcb.routing_obstacle_snapshot import _pad_radius_mm
+from kicad_mcp.pcb.routing_obstacle_snapshot import (
+    _custom_primitive_radius_mm,
+    _pad_radius_mm,
+    _polyline_points,
+    _sample_arc,
+)
 from kicad_mcp.routing.path_planner import RoutePlanningError
 
 
@@ -43,3 +56,54 @@ def test_custom_pad_obstacle_encloses_all_real_copper_primitives() -> None:
 def test_custom_pad_without_readable_primitives_refuses_instead_of_guessing() -> None:
     with pytest.raises(RoutePlanningError, match="custom|primitive"):
         _pad_radius_mm(_custom_pad(with_primitives=False), BoardLayer.BL_F_Cu)
+
+
+def test_degenerate_native_arc_is_refused_before_tessellation() -> None:
+    points = [Vector2.from_xy_mm(x, 0.0) for x in (0, 1, 2)]
+    with pytest.raises(RoutePlanningError, match="degenerate"):
+        _sample_arc(*points)
+
+
+def test_native_arc_smaller_than_the_precision_budget_is_refused() -> None:
+    points = [
+        Vector2.from_xy_mm(0.005, 0.0),
+        Vector2.from_xy_mm(0.0, 0.005),
+        Vector2.from_xy_mm(-0.005, 0.0),
+    ]
+    with pytest.raises(RoutePlanningError, match="radius"):
+        _sample_arc(*points)
+
+
+def test_custom_segment_arc_and_rectangle_keep_all_primitive_copper_in_bounds() -> None:
+    segment = BoardSegment()
+    segment.start = Vector2.from_xy_mm(0, 0)
+    segment.end = Vector2.from_xy_mm(1, 0)
+
+    arc = BoardArc()
+    arc.start = Vector2.from_xy_mm(1, 0)
+    arc.mid = Vector2.from_xy_mm(1, 1)
+    arc.end = Vector2.from_xy_mm(0, 1)
+
+    rectangle = BoardRectangle()
+    rectangle.top_left = Vector2.from_xy_mm(0, 0)
+    rectangle.bottom_right = Vector2.from_xy_mm(1, 1)
+
+    assert _custom_primitive_radius_mm(segment) == pytest.approx(1.0)
+    assert _custom_primitive_radius_mm(arc) >= 1.0
+    assert _custom_primitive_radius_mm(rectangle) == pytest.approx(2**0.5)
+
+
+def test_unclosed_and_empty_native_polygon_nodes_cannot_be_silently_skipped() -> None:
+    polyline = PolyLine()
+    with pytest.raises(RoutePlanningError, match="not closed"):
+        _polyline_points(polyline)
+    polyline.closed = True
+    with pytest.raises(RoutePlanningError, match="no vertices"):
+        _polyline_points(polyline)
+
+
+def test_unreadable_custom_pad_primitives_fail_closed() -> None:
+    with pytest.raises(RoutePlanningError, match="empty"):
+        _custom_primitive_radius_mm(BoardPolygon())
+    with pytest.raises(RoutePlanningError, match="Unsupported custom"):
+        _custom_primitive_radius_mm(BoardShape())
