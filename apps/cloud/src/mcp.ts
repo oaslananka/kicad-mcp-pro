@@ -233,6 +233,12 @@ export function createCloudMcpHandler(
       const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
       if(!project)return text({available:false,selectionRequired,tools:[]});
       const chosen=workflows[task];
+      // Discovery must agree with the category catalog when the signed
+      // Connector session is offline; configured != requestable now.
+      if(chosen.enabled&&!connected(project.deviceId)){
+        return text({available:false,selectionRequired:false,tools:[],
+          reason:"device_not_connected"});
+      }
       const claimEnabled=configuredReadersForClaim(enabled,authenticatedClaim(project));
       return text(chosen.enabled&&claimEnabled[task] ? {
         available:true,selectionRequired:false,

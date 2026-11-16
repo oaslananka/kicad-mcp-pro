@@ -310,8 +310,7 @@ test("task discovery respects enabled operation and ambiguous project selection"
       available:false,selectionRequired:true,tools:[]
     });
     assert.deepEqual(await discover({task:"inspect_engine",project_id:another.id}),{
-      available:true,selectionRequired:false,
-      tools:["get_project_engine_status"],requiresOwnerSession:true
+      available:false,selectionRequired:false,tools:[],reason:"device_not_connected"
     });
     const drc=await discover({task:"check_board_drc",project_id:another.id});
     assert.equal(drc.available,false);
@@ -1637,6 +1636,9 @@ test("signed Connector operations narrow project-scoped Cloud task discovery",as
     assert.ok(offline.categories.flatMap(
       (c:{tools:{state:string}[]})=>c.tools
     ).every((tool:{state:string})=>tool.state==="device_not_connected"));
+    assert.deepEqual(await invoke("discover_project_workflow",{
+      task:"check_board_drc",project_id:id
+    }),{available:false,selectionRequired:false,tools:[],reason:"device_not_connected"});
     claim=null;connected=true;
     const legacy=await invoke(capabilityCatalogTool,{project_id:id});
     assert.equal(legacy.categories.flatMap((c:{tools:unknown[]})=>c.tools).length,5);
