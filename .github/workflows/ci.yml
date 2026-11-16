@@ -800,11 +800,15 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
+      - name: Setup pinned pnpm for MCP 2026 requester
+        if: env.skip_ci != 'true'
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 11.28.6
+          run_install: false
       - name: Install pinned research-only Tasks requester
         if: env.skip_ci != 'true'
-        run: |
-          npm install --global pnpm@11.28.6
-          pnpm install --frozen-lockfile --ignore-scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Verify independent MCP Tasks 2026 loopback requester
         if: env.skip_ci != 'true'
         env:
