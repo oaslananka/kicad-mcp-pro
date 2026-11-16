@@ -238,7 +238,7 @@ async def run_foreground(
     project_resolver: Callable[..., LocalRegisteredRead] = resolve_registered_read,
     key_loader: Callable[..., Ed25519PrivateKey] = _load_bound_owner_key,
     session_runner: Callable[..., Awaitable[HandshakeReceipt]] = execute_owner_managed_read_session,
-) -> int:
+) -> None:
     """Run signed read-only WSS in this terminal; stop instantly revokes local authority."""
     root = default_registry_root() if registry is None else registry
     stop = asyncio.Event() if stop_event is None else stop_event
@@ -265,7 +265,6 @@ async def run_foreground(
         )
         failures = 0 if success else failures + 1
         if stop.is_set():
-            return 0
+            return
         _notify(status_callback, "Disconnected - reconnecting")
         await _wait_for_foreground_retry(stop, failures)
-    return 0

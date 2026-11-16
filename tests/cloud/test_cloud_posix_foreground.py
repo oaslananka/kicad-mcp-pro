@@ -60,7 +60,7 @@ async def test_signed_foreground_reuses_local_identity_and_has_no_persistent_mar
         stop.set()
         return receipt
 
-    await run_foreground(
+    finished = await run_foreground(
         registry=tmp_path,
         stop_event=stop,
         status_callback=statuses.append,
@@ -69,6 +69,7 @@ async def test_signed_foreground_reuses_local_identity_and_has_no_persistent_mar
         key_loader=lambda *_args: key,
         session_runner=runner,
     )
+    assert finished is None, "foreground terminal has no RPC result"
     assert statuses[:2] == ["Connecting", "Connected"]
     assert dispatchers
     assert not (tmp_path / "connector-enabled.json").exists()
