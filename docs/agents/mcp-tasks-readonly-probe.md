@@ -85,3 +85,47 @@ scope. No production Tasks support, compatibility badge, unattended execution
 or release is authorized. Any real-world Tasks implementation requires a
 separate opt-in security/design review, supported SDK/client runtime, and
 protected PR with proven cross-platform behavior.
+
+## Remaining #1221 acceptance contract (planning only)
+
+The synthetic fixture and its security hardening were merged in #1258 and
+#1535. The remaining issue is **independent runtime interoperability**, not a
+production Tasks implementation. This section defines future acceptance only;
+it introduces no executable feature or capability advertisement.
+
+- **Frozen protocol**: compare fixture JSON-RPC messages against the immutable
+  [2026-07-28 Tasks extension](https://modelcontextprotocol.github.io/ext-tasks/specification/2026-07-28/tasks.html)
+  and its published schema, not an evolving `/draft/` URL or the incompatible
+  2025-11-25 core Tasks variant. Cover `resultType`, per-request capability
+  negotiation, `tasks/get`, `tasks/update` when `input_required`, `tasks/cancel`,
+  terminal results, `-32021`, the removal of `tasks/list`, and HTTP task routing
+  headers (`Mcp-Method`, `Mcp-Name: <taskId>`).
+- **Actual client**: version-pin an independently maintained
+  extension-capable requester (for example, `@modelcontextprotocol/ext-tasks`
+  with its required 2026 raw-dispatch adapter); capture exact package/runtime
+  versions, invocation, request/response evidence, and an explicit
+  **real-client PASS / FAIL / NOT VERIFIED** verdict. The existing Python SDK
+  synchronous fallback is not a substitute for this probe.
+- **Observable lifecycle**: with only fixed synthetic ERC/DRC content, prove
+  creation is immediately retrievable; exercise polling, completion, tool-level
+  error, task failure, cancellation, expiry, restart and optional input exchange.
+  Separate actual transport observations from direct fixture unit tests.
+- **Bounded isolation**: verify the trusted caller boundary for **every**
+  task method, cross-caller/unknown/expired/replayed handles, quotas, 4 KiB
+  request budget, eight-record capacity, deadline, TTL, poll cadence,
+  duplicate requests and concurrent cancellation. Document representative
+  CPU/memory and polling measurements without claiming a deployed service.
+- **Compatibility and safety**: an extension-free client receives the current
+  ordinary synchronous result; production `server/discover`, tool registration,
+  KiCad operations, write grants, deployment and manufacturing remain unchanged.
+  Do not add queues, background workers, credentials or external spending.
+- **Evidence and closure**: reproducible frozen-schema checks, synthetic and
+  real-client test output, a threat/limit review, a versioned evidence matrix,
+  and passing applicable quality gates are required before declaring #1221
+  complete. If no genuinely extension-capable client can be executed, report
+  **NOT VERIFIED** and keep #1221 open. Production opt-in remains a separate
+  reviewed work item even after research acceptance.
+
+The full task-by-task implementation plan is kept in the planning PR description
+and outside this implementation repository; no Superpowers planning documents
+are checked in.
