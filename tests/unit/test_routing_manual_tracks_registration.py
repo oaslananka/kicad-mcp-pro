@@ -292,7 +292,11 @@ def test_preview_issues_board_bound_candidate_revision(monkeypatch: pytest.Monke
 
     first = MappedPad(pad=pad("2", 10, "pad-1"), pad_id="pad-1", reference="R1")
     second = MappedPad(pad=pad("1", 20, "pad-2"), pad_id="pad-2", reference="R2")
-    board = SimpleNamespace(get_as_string=lambda: "(kicad_pcb original)", marker="board")
+    board = SimpleNamespace(
+        get_as_string=lambda: "(kicad_pcb original)",
+        get_tracks=lambda: [],
+        marker="board",
+    )
     monkeypatch.setattr(adapter, "get_board", lambda: board)
     monkeypatch.setattr(adapter, "board_pads", lambda _board: [])
     monkeypatch.setattr(adapter, "board_footprints", lambda _board: [])
@@ -381,7 +385,7 @@ def _setup_preview_revision_test(
 
     adapter = _adapter()
     seq = iter(snapshots)
-    board = SimpleNamespace(get_as_string=lambda: next(seq))
+    board = SimpleNamespace(get_as_string=lambda: next(seq), get_tracks=lambda: [])
     net = SimpleNamespace(name="MID")
 
     def mapped(ref: str, number: str, x: float, identity: str) -> MappedPad:

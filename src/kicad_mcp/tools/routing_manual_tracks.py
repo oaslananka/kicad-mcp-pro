@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import cast
 
 from kipy.board import Board
@@ -17,7 +17,7 @@ from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
 from ..connection import get_board
-from ..pcb.board_access import board_footprints, board_pads
+from ..pcb.board_access import board_footprints, board_pads, board_tracks
 from ..pcb.geometry import point_xy_mm
 from ..pcb.live_edit_runtime import execute_live_board_mutation, get_live_edit_service
 from ..pcb.pad_mapping import MappedPad, map_pads_to_footprints
@@ -131,6 +131,33 @@ def _default_dependencies() -> RoutingManualTrackDependencies:
     )
 
 
+def _already_present_track(spec: TrackSpec, existing: list[object]) -> bool:
+    """Reuse exact, sufficiently wide copper without adding duplicate native tracks."""
+    tolerance_mm = 0.00001  # 10 nm, including native coordinate round-trip noise.
+
+    def close(a: tuple[float, float], b: tuple[float, float]) -> bool:
+        return abs(a[0] - b[0]) <= tolerance_mm and abs(a[1] - b[1]) <= tolerance_mm
+
+    start = (spec.x1_mm, spec.y1_mm)
+    end = (spec.x2_mm, spec.y2_mm)
+    required_width_nm = mm_to_nm(spec.width_mm)
+    layer_id = resolve_layer(spec.layer)
+    for item in existing:
+        track = cast(Track, item)
+        if (
+            track.layer != layer_id
+            or track.net.name != spec.net_name
+            or track.width < required_width_nm
+        ):
+            continue
+        native_start, native_end = point_xy_mm(track.start), point_xy_mm(track.end)
+        if (close(start, native_start) and close(end, native_end)) or (
+            close(start, native_end) and close(end, native_start)
+        ):
+            return True
+    return False
+
+
 def _preview_route_between_pads(
     ref1: str,
     pad1: str,
@@ -178,18 +205,22 @@ def _preview_route_between_pads(
             raise RoutePlanningError("Native board changed while planning; retry preview")
     except ValueError as exc:
         return json.dumps({"status": "refused", "candidateOnly": True, "reason": str(exc)})
-    segments = [
-        {
-            "x1_mm": a[0],
-            "y1_mm": a[1],
-            "x2_mm": b[0],
-            "y2_mm": b[1],
-            "layer": layer,
-            "width_mm": width_mm,
-            "net_name": start_net,
-        }
-        for a, b in zip(path, path[1:], strict=False)
+    planned_specs = [
+        TrackSpec(*a, *b, layer, width_mm, start_net) for a, b in zip(path, path[1:], strict=False)
     ]
+    existing = board_tracks(board)
+    new_specs = [spec for spec in planned_specs if not _already_present_track(spec, existing)]
+    if not new_specs:
+        return json.dumps(
+            {
+                "status": "refused",
+                "candidateOnly": True,
+                "reason": "Route already exists; there is no new copper to add",
+            },
+            sort_keys=True,
+        )
+    segments = [asdict(spec) for spec in new_specs]
+    reused_count = len(planned_specs) - len(new_specs)
     candidate_payload = {
         "boardRevision": revision,
         "ref1": ref1,
@@ -214,8 +245,10 @@ def _preview_route_between_pads(
             "net": start_net,
             "path_mm": path,
             "segments": segments,
+            "reusedExistingSegments": reused_count,
             "warning": (
                 "Candidate is bound to boardRevision; refuse application if the board changed. "
+                "Existing same-net segments are reused, never rewritten. "
                 "Geometry preview only. Review and verify independent native DRC before applying."
             ),
         },
