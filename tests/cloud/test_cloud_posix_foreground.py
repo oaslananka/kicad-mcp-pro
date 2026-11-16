@@ -223,3 +223,82 @@ async def test_foreground_rejects_invalid_owner_signing_key_without_network(
             key_loader=broken_key,
             session_runner=no_network,
         )
+
+
+@pytest.mark.anyio
+async def test_foreground_exposes_owner_selected_native_folder_and_revokes_it(
+    tmp_path: Path,
+) -> None:
+    from kicad_mcp.cloud_folder_browse_receiver import (
+        LocalFolderBrowseService,
+    )
+    from kicad_mcp.cloud_outbound_handshake import CloudHandshakeDeniedError
+
+    project, key, record = inputs(tmp_path)
+    second = tmp_path / "Second Board"
+    second.mkdir()
+    (second / "Second Board.kicad_pro").write_text("{}", encoding="utf-8")
+    stop = asyncio.Event()
+    binding_path = tmp_path / "local-bindings.json"
+    observed = []
+
+    async def runner(**kwargs: object) -> HandshakeReceipt:
+        factory = cast(
+            Callable[[HandshakeReceipt], LocalFolderBrowseService],
+            kwargs["folder_service_factory"],
+        )
+        receipt = HandshakeReceipt(DEVICE, SESSION)
+        service = factory(receipt)
+        chosen = service.choose()
+        assert chosen["status"] == "selected"
+        token = str(chosen["folderId"])
+        assert chosen["projects"] == [{"id": token, "name": "Second Board"}]
+        new_project_id = str(uuid4())
+        assert service.bind(token, new_project_id)
+        assert service.project_path(new_project_id) == str(second / "Second Board.kicad_pro")
+        assert not (tmp_path / "connector-enabled.json").exists()
+        observed.append(chosen["name"])
+        record[0] = {**record[0], "projectId": str(uuid4())}
+        with pytest.raises(CloudHandshakeDeniedError):
+            service.choose()
+        stop.set()
+        return receipt
+
+    await run_foreground(
+        registry=tmp_path,
+        stop_event=stop,
+        native_picker=lambda: second,
+        bindings_file=binding_path,
+        identity_loader=lambda _root: record[0],
+        project_resolver=lambda **_kw: project,
+        key_loader=lambda *_args: key,
+        session_runner=runner,
+    )
+    assert observed == ["Second Board"]
+    assert "Second Board.kicad_pro" in binding_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.anyio
+async def test_headless_posix_foreground_never_claims_cloud_browse(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_posix_foreground as foreground
+
+    project, key, record = inputs(tmp_path)
+    stop = asyncio.Event()
+    monkeypatch.setattr(foreground, "native_picker_available", lambda: False)
+
+    async def runner(**kwargs: object) -> HandshakeReceipt:
+        assert "folder_service_factory" not in kwargs
+        stop.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    await run_foreground(
+        registry=tmp_path,
+        stop_event=stop,
+        identity_loader=lambda _root: record[0],
+        project_resolver=lambda **_kw: project,
+        key_loader=lambda *_args: key,
+        session_runner=runner,
+    )

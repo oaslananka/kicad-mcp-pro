@@ -1,6 +1,6 @@
 """Device-side receiver for bounded Cloud local-folder browse frames.
 
-The signed Windows Connector answers only four owner-initiated operations:
+The signed owner-operated Connector answers only four operations:
 ``list``, ``bind``, ``choose`` and ``path``. Every frame carries opaque
 folder tokens, never a browser-supplied path; the device re-derives every
 filesystem location from its own root-confined browser state. No design file
@@ -210,11 +210,17 @@ def _validated_path(path: object, request_id: str) -> dict[str, object]:
     if not isinstance(path, str) or len(path) > 2048:
         raise CloudHandshakeDeniedError(_DENIED)
     lowered = path.lower()
-    if (
-        not lowered.endswith(KICAD_PROJECT_SUFFIX)
-        or _WINDOWS_PROJECT_FILE.fullmatch(path) is None
-        or not _no_control_characters(path)
-    ):
+    if not lowered.endswith(KICAD_PROJECT_SUFFIX) or not _no_control_characters(path):
+        raise CloudHandshakeDeniedError(_DENIED)
+    # Preserve only ordinary absolute Windows drive or POSIX filesystem paths.
+    # No relative, UNC, repeated separators, dot segments or path traversal.
+    if _WINDOWS_PROJECT_FILE.fullmatch(path) is not None:
+        segments = path[3:].split("\\")
+    elif path.startswith("/") and not path.startswith("//"):
+        segments = path[1:].split("/")
+    else:
+        raise CloudHandshakeDeniedError(_DENIED)
+    if not segments or any(segment in ("", ".", "..") for segment in segments):
         raise CloudHandshakeDeniedError(_DENIED)
     answer["path"] = path
     return answer

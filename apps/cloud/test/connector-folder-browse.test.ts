@@ -5,7 +5,7 @@ import type {AddressInfo} from "node:net";
 import {test} from "node:test";
 import {WebSocket} from "ws";
 import {BoundConnectorConnections} from "../src/connector-transport-binding.js";
-import {attachConnectorWebSocket} from "../src/connector-ws.js";
+import {attachConnectorWebSocket, validLocalProjectFilePath} from "../src/connector-ws.js";
 import type {PgDeviceHandshakes} from "../src/device-handshake.js";
 import type {PgConnectorSessions} from "../src/connector-session.js";
 import type {PgConnectorReadGate} from "../src/connector-read-gate.js";
@@ -259,4 +259,25 @@ test("local dev sandbox browse still answers only local-dev-owner",async()=>{
     other?.close();
     await otherWss.close();
   }
+});
+
+
+
+test("Cloud folder path replies accept normalized POSIX KiCad projects without trusting arbitrary paths",()=>{
+  for(const safe of [
+    "C:\\KiCad\\board.kicad_pro",
+    "/home/owner/KiCad Projects/board.kicad_pro",
+    "/Users/owner/Projects/board.kicad_pro"
+  ]){
+    assert.equal(validLocalProjectFilePath(safe),true,safe);
+  }
+  for(const unsafe of [
+    "../board.kicad_pro", "//network/share/board.kicad_pro",
+    "/home/../board.kicad_pro", "/home/./board.kicad_pro",
+    "/home//board.kicad_pro", "/home/board.kicad_pcb",
+    "/home/board.kicad_pro\n", "C:\\KiCad\\..\\board.kicad_pro"
+  ]){
+    assert.equal(validLocalProjectFilePath(unsafe),false,unsafe);
+  }
+  assert.equal(validLocalProjectFilePath(null),true);
 });

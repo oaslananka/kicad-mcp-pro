@@ -71,13 +71,24 @@ type FolderPending={
   requestId:string;operation:"list"|"bind"|"choose"|"path";timer:NodeJS.Timeout;
   resolve:(result:LocalFolderListing|NativeFolderSelection|string|boolean|null)=>void;
 };
+/** Validate an owner-device mapping response, never a browser-chosen path. */
+export function validLocalProjectFilePath(value:string|null):boolean{
+  if(value===null)return true;
+  if(value.length<6||value.length>2048||
+     /[\x00-\x1f\x7f]/.test(value)||!value.toLowerCase().endsWith(".kicad_pro"))
+    return false;
+  let segments:string[];
+  if(/^[A-Za-z]:\\/.test(value))segments=value.slice(3).split("\\");
+  else if(value.startsWith("/")&&!value.startsWith("//"))segments=value.slice(1).split("/");
+  else return false;
+  return segments.length>0&&segments.every(item=>item!==""&&item!=="."&&item!=="..");
+}
+
 const folderResponse=z.discriminatedUnion("operation",[
   z.strictObject({
     kind:z.literal("connector.local_browser_result"),version:z.literal(1),
     requestId:z.uuid(),operation:z.literal("path"),
-    path:z.string().max(2048).nullable()
-      .refine(p=>p===null||(!/[\x00-\x1f]/.test(p)&&
-        /^[A-Za-z]:\\/.test(p)&&p.toLowerCase().endsWith(".kicad_pro")))
+    path:z.string().max(2048).nullable().refine(validLocalProjectFilePath)
   }),
   z.strictObject({
     kind:z.literal("connector.local_browser_result"),version:z.literal(1),

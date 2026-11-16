@@ -464,3 +464,43 @@ def test_folder_browser_requires_absolute_selected_device_directory() -> None:
     relative_directory = Path("relative/KiCad")
     with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
         device_folder_service(relative_directory)
+
+
+@pytest.mark.parametrize(
+    "project_path",
+    [
+        "/home/owner/KiCad Projects/Robot/robot.kicad_pro",
+        "/Users/owner/KiCad/Robot/robot.kicad_pro",
+    ],
+)
+def test_posix_project_bindings_use_only_normalized_absolute_project_files(
+    project_path: str,
+) -> None:
+    class Selected(FakeService):
+        def project_path(self, project_id: str) -> str | None:
+            assert project_id == PROJECT_ID
+            return project_path
+
+    result = handle_folder_frame(Selected(), frame("path", projectId=PROJECT_ID))
+    assert result["path"] == project_path
+
+
+@pytest.mark.parametrize(
+    "project_path",
+    [
+        "//server/share/robot.kicad_pro",
+        "/home/../robot.kicad_pro",
+        "/home/./robot.kicad_pro",
+        "/home//robot.kicad_pro",
+        "/home/robot.txt",
+    ],
+)
+def test_posix_project_binding_never_accepts_ambiguous_or_non_project_paths(
+    project_path: str,
+) -> None:
+    class Selected(FakeService):
+        def project_path(self, project_id: str) -> str | None:
+            return project_path
+
+    with pytest.raises(CloudHandshakeDeniedError):
+        handle_folder_frame(Selected(), frame("path", projectId=PROJECT_ID))

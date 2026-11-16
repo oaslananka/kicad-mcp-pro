@@ -29,6 +29,10 @@ from kicad_mcp.cloud_outbound_handshake import (
     execute_owner_managed_read_session,
 )
 from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
+from kicad_mcp.cloud_posix_native_picker import (
+    choose_project_folder,
+    native_picker_available,
+)
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
 from kicad_mcp.cloud_reconnect_policy import reconnect_delay_seconds
@@ -146,6 +150,8 @@ def _foreground_settings(
     project_resolver: Callable[..., LocalRegisteredRead],
     key_loader: Callable[..., Ed25519PrivateKey],
     status_callback: Callable[[str], None] | None,
+    native_picker: Callable[[], Path | None] | None,
+    bindings_file: Path | None,
 ) -> dict[str, object]:
     """Bind the immutable session identity to a fresh owner-checking dispatcher."""
 
@@ -183,7 +189,7 @@ def _foreground_settings(
             native_drc=False,
         )
 
-    return {
+    settings: dict[str, object] = {
         "origin": record["cloudOrigin"],
         "trusted_origin": record["cloudOrigin"],
         "owner_sub": record["ownerSub"],
@@ -194,6 +200,31 @@ def _foreground_settings(
         "on_ready": lambda _receipt: status_callback("Connected") if status_callback else None,
         "on_activity": status_callback,
     }
+    if native_picker is not None:
+        from kicad_mcp.cloud_folder_browse_receiver import (
+            LocalFolderBrowseService,
+            device_folder_service,
+        )
+
+        def owner_picker() -> Path | None:
+            _notify(status_callback, "Local project folder picker opened")
+            try:
+                return native_picker()
+            finally:
+                _notify(status_callback, "Local project folder picker closed")
+
+        def folder_factory(receipt: HandshakeReceipt) -> LocalFolderBrowseService:
+            if receipt.device_id != record["deviceId"] or not authorized():
+                raise LocalApprovalDeniedError(_DENIED)
+            return device_folder_service(
+                project.project_directory,
+                bindings_file=bindings_file,
+                native_picker=owner_picker,
+                authorization=authorized,
+            )
+
+        settings["folder_service_factory"] = folder_factory
+    return settings
 
 
 def _notify(callback: Callable[[str], None] | None, message: str) -> None:
@@ -238,10 +269,15 @@ async def run_foreground(
     project_resolver: Callable[..., LocalRegisteredRead] = resolve_registered_read,
     key_loader: Callable[..., Ed25519PrivateKey] = _load_bound_owner_key,
     session_runner: Callable[..., Awaitable[HandshakeReceipt]] = execute_owner_managed_read_session,
+    native_picker: Callable[[], Path | None] | None = None,
+    bindings_file: Path | None = None,
 ) -> None:
     """Run signed read-only WSS in this terminal; stop instantly revokes local authority."""
     root = default_registry_root() if registry is None else registry
     stop = asyncio.Event() if stop_event is None else stop_event
+    picker = native_picker
+    if picker is None and native_picker_available():
+        picker = choose_project_folder
     failures = 0
     while not stop.is_set():
         record, project, signer, signer_public = _load_foreground_binding(
@@ -258,6 +294,8 @@ async def run_foreground(
             project_resolver=project_resolver,
             key_loader=key_loader,
             status_callback=status_callback,
+            native_picker=picker,
+            bindings_file=bindings_file,
         )
         _notify(status_callback, "Connecting" if failures == 0 else "Reconnecting")
         success = await _run_signed_foreground_session(
