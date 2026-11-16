@@ -28,9 +28,10 @@ Sources:
 
 ## Issue #1220 — bounded MCP Apps proof: execution contract
 
-**Status: plan only.** The task-by-task implementation plan and verification
-matrix are in the accompanying planning PR description. This research document
-records the durable acceptance boundary; it does not enable an MCP App.
+**Status: isolated research prototype on Draft PR #1741.** The task-by-task plan
+remains in the PR description. Real reference-host results and limitations are
+recorded in [issue #1220 evidence](../evidence/mcp-apps/issue-1220-reference-host.md).
+The production MCP server still does not advertise this App.
 
 | Gate | Required evidence before #1220 can close |
 | --- | --- |
@@ -50,8 +51,8 @@ The experiment remains offline/loopback-only with synthetic data. It must not
 register on the production KiCad MCP server, alter the existing ChatGPT Apps
 connector, request project folders, expose local files, enable write tools,
 ship a release, deploy a service, or initiate manufacturing. Production opt-in
-requires a separately reviewed and approved implementation PR. This plan-only
-PR does **not** close #1220.
+requires a separately reviewed and approved implementation PR. Close #1220
+only after the research PR meets all acceptance gates and required CI checks.
 
 ## MCP Tasks (long-running work proof)
 
