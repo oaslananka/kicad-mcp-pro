@@ -108,6 +108,7 @@ def _preview_one_via(
             frozenset((source.id.value if start_layer == "F_Cu" else target.id.value,)),
             expected_endpoint_count=1,
             require_outline=True,
+            routing_net=net,
         )
         back = snapshot_route_obstacles(
             board,
@@ -115,12 +116,33 @@ def _preview_one_via(
             frozenset((target.id.value if end_layer == "B_Cu" else source.id.value,)),
             expected_endpoint_count=1,
             require_outline=True,
+            routing_net=net,
+        )
+        front_via = snapshot_route_obstacles(
+            board,
+            "F_Cu",
+            frozenset((source.id.value if start_layer == "F_Cu" else target.id.value,)),
+            expected_endpoint_count=1,
+            require_outline=True,
+            routing_net=net,
+            for_via=True,
+        )
+        back_via = snapshot_route_obstacles(
+            board,
+            "B_Cu",
+            frozenset((target.id.value if end_layer == "B_Cu" else source.id.value,)),
+            expected_endpoint_count=1,
+            require_outline=True,
+            routing_net=net,
+            for_via=True,
         )
         segments, via, geometry = plan_one_through_via(
             point_xy_mm(source.position),
             point_xy_mm(target.position),
             front_obstacles=front,
             back_obstacles=back,
+            front_via_obstacles=front_via,
+            back_via_obstacles=back_via,
             start_layer=start_layer,
             end_layer=end_layer,
             net_name=net,

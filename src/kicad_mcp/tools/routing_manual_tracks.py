@@ -162,7 +162,7 @@ def _preview_route_between_pads(
         if not all(identities):
             raise RoutePlanningError("Native pad identities unavailable")
         obstacles = snapshot_route_obstacles(
-            board, layer, frozenset(identities), require_outline=True
+            board, layer, frozenset(identities), require_outline=True, routing_net=start_net
         )
         path = plan_hv45_path(
             point_xy_mm(start_pad.position),

@@ -19,8 +19,8 @@ def _via_site_is_safe(
     point: Point,
     end: Point,
     *,
-    front_obstacles: tuple[Obstacle, ...],
-    back_obstacles: tuple[Obstacle, ...],
+    front_via_obstacles: tuple[Obstacle, ...],
+    back_via_obstacles: tuple[Obstacle, ...],
     first_obstacles: tuple[Obstacle, ...],
     last_obstacles: tuple[Obstacle, ...],
     width_mm: float,
@@ -31,7 +31,7 @@ def _via_site_is_safe(
     pad_radius = diameter_mm / 2 + clearance_mm
     if any(
         not _segment_clear(point, point, obstacles, pad_radius)
-        for obstacles in (front_obstacles, back_obstacles)
+        for obstacles in (front_via_obstacles, back_via_obstacles)
     ):
         return False
     if not _segment_clear(start, point, first_obstacles, width_mm / 2 + clearance_mm):
@@ -58,6 +58,8 @@ def plan_one_through_via(
     clearance_mm: float,
     diameter_mm: float,
     drill_mm: float,
+    front_via_obstacles: tuple[Obstacle, ...] | None = None,
+    back_via_obstacles: tuple[Obstacle, ...] | None = None,
 ) -> tuple[list[TrackSpec], ViaSpec, dict[str, float | int]]:
     """Pick the cheapest of five deterministic, obstacle-screened via sites."""
     if (start_layer, end_layer) not in (("F_Cu", "B_Cu"), ("B_Cu", "F_Cu")):
@@ -90,8 +92,12 @@ def plan_one_through_via(
             start,
             point,
             end,
-            front_obstacles=front_obstacles,
-            back_obstacles=back_obstacles,
+            front_via_obstacles=(
+                front_obstacles if front_via_obstacles is None else front_via_obstacles
+            ),
+            back_via_obstacles=(
+                back_obstacles if back_via_obstacles is None else back_via_obstacles
+            ),
             first_obstacles=first_obstacles,
             last_obstacles=last_obstacles,
             width_mm=width_mm,

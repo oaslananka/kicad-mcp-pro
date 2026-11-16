@@ -58,11 +58,15 @@ def _arrange(
         *,
         expected_endpoint_count: int,
         require_outline: bool,
+        routing_net: str,
+        for_via: bool = False,
     ) -> tuple:
         calls["snapshots"] += 1
         assert layer in {"F_Cu", "B_Cu"}
         assert len(excluded) == expected_endpoint_count == 1
         assert require_outline is True
+        assert routing_net == "MID"
+        assert isinstance(for_via, bool)
         return ()
 
     monkeypatch.setattr(adapter, "snapshot_route_obstacles", snapshot)
@@ -91,7 +95,7 @@ def test_candidate_is_read_only_deterministic_and_fully_bound(
     assert before["throughVia"]["diameter_mm"] == 0.8
     assert before["geometry"]["viaCount"] == 1
     assert "NOT certified" in before["warning"]
-    assert calls["snapshots"] == 4
+    assert calls["snapshots"] == 8
 
 
 @pytest.mark.parametrize(

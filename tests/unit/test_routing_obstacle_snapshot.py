@@ -9,7 +9,12 @@ from kipy.board_types import BoardLayer, Pad, Track
 from kipy.geometry import Vector2
 
 from kicad_mcp.pcb.routing_obstacle_snapshot import snapshot_route_obstacles
-from kicad_mcp.routing.path_planner import CircleObstacle, RoutePlanningError, SegmentObstacle
+from kicad_mcp.routing.path_planner import (
+    BoardBoundary,
+    CircleObstacle,
+    RoutePlanningError,
+    SegmentObstacle,
+)
 
 
 def _board(*, pads=(), tracks=(), vias=(), zones=(), shapes=()):
@@ -56,6 +61,16 @@ def test_track_capsule_is_conservatively_collected() -> None:
     assert obstacles == (SegmentObstacle(1.0, 0.0, 3.0, 0.0, 0.15),)
 
 
+def test_existing_submillimeter_track_remains_a_copper_obstacle() -> None:
+    track = Track()
+    track.start = Vector2.from_xy_mm(1, 1)
+    track.end = Vector2.from_xy_mm(1.0001, 1)
+    track.layer = BoardLayer.BL_F_Cu
+    track.width = 300_000
+    result = snapshot_route_obstacles(_board(tracks=[track]), "F_Cu", frozenset())
+    assert result == (SegmentObstacle(1.0, 1.0, 1.0001, 1.0, 0.15),)
+
+
 def test_wrong_layer_obstacles_are_not_copied() -> None:
     pad = _pad("other", 2, 0)
     assert snapshot_route_obstacles(_board(pads=[pad]), "B_Cu", frozenset()) == ()
@@ -94,8 +109,8 @@ def test_native_rectangle_outline_is_four_obstacles() -> None:
         "F_Cu",
         frozenset({"start", "end"}),
     )
-    assert len(result) == 4
-    assert all(isinstance(item, SegmentObstacle) for item in result)
+    assert len(result) == 1
+    assert all(isinstance(item, BoardBoundary) for item in result)
 
 
 def test_native_rectangle_rejects_endpoints_outside_outline() -> None:
@@ -159,7 +174,7 @@ def test_rectangle_outline_satisfies_required_boundary() -> None:
         frozenset({"start", "end"}),
         require_outline=True,
     )
-    assert len(result) == 4
+    assert len(result) == 1
 
 
 def _edge_line(a: tuple[float, float], b: tuple[float, float]):
@@ -187,8 +202,8 @@ def test_four_separate_edge_segments_are_a_valid_closed_rectangle() -> None:
         frozenset({"start", "end"}),
         require_outline=True,
     )
-    assert len(barriers) == 4
-    assert all(isinstance(item, SegmentObstacle) for item in barriers)
+    assert len(barriers) == 1
+    assert all(isinstance(item, BoardBoundary) for item in barriers)
 
 
 def test_three_edge_segments_are_not_a_closed_board_outline() -> None:
@@ -282,7 +297,7 @@ def test_paired_outline_requires_all_four_pad_identities() -> None:
         expected_endpoint_count=4,
         require_outline=True,
     )
-    assert len(obstacles) == 5
+    assert len(obstacles) == 2
     assert isinstance(obstacles[-1], CircleObstacle)
 
     _checked_args = (
@@ -319,7 +334,7 @@ def test_one_via_uses_one_endpoint_per_layer_without_disabling_outline_checks() 
         require_outline=True,
         expected_endpoint_count=1,
     )
-    assert len(result) == 4
+    assert len(result) == 1
     _checked_args = (_board(pads=[pad], shapes=[outline]), "F_Cu", frozenset({"start-only"}))
     _checked_kwargs = {"require_outline": True}
     with pytest.raises(RoutePlanningError, match="endpoints"):
