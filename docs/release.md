@@ -55,6 +55,6 @@ Commits that touch both product directories must be split by product or use the 
 Run product dry-runs before merging release-related changes:
 
 ```bash
-corepack pnpm run release:dry-run
-corepack pnpm run check:release-please
+pnpm run release:dry-run
+pnpm run check:release-please
 ```

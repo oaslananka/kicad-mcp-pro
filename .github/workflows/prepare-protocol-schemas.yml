@@ -81,19 +81,20 @@ jobs:
           node-version-file: .node-version
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - run: corepack enable
-      - run: corepack pnpm install --frozen-lockfile
-      - run: corepack pnpm run build
+      - name: Install pinned pnpm
+        run: npm install --global pnpm@11.28.6 --no-audit --no-fund
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
       - name: Pack and generate evidence
         id: pack-evidence
         shell: bash
         run: |
           set -euo pipefail
-          corepack pnpm pack --pack-destination ../../release-assets/protocol-schemas
+          pnpm pack --pack-destination ../../release-assets/protocol-schemas
           evidence_dir="../../release-assets/protocol-schemas"
           mkdir -p "$evidence_dir"
           (cd "$evidence_dir" && sha256sum -- *.tgz > SHA256SUMS.txt)
-          corepack pnpm sbom --sbom-format cyclonedx --sbom-type application > "$evidence_dir/sbom.cdx.json"
+          pnpm sbom --sbom-format cyclonedx --sbom-type application > "$evidence_dir/sbom.cdx.json"
           (cd "$evidence_dir" && sha256sum --check SHA256SUMS.txt)
           tarball_path="$(find "$evidence_dir" -maxdepth 1 -type f -name '*.tgz' -print -quit)"
           if [ -z "$tarball_path" ]; then

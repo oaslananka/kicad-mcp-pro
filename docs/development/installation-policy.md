@@ -20,11 +20,15 @@ The project should avoid writing persistent files outside user-selected configur
 
 ## Developer installation
 
-Developer setup must be reproducible from repository files using FLOSS tooling:
+Developer setup must be reproducible from repository files using FLOSS tooling.
+The pinned one-command bootstrap below supports Linux x64/arm64; Windows and
+macOS contributors use a separately installed matching Node/pnpm toolchain
+until the bootstrap supports their platform:
 
 ```bash
-corepack enable
-corepack pnpm install --frozen-lockfile
+./scripts/bootstrap-dev.sh
+source .dev-env.sh
+pnpm install --frozen-lockfile
 uv sync --all-extras --frozen
 task ci
 ```

@@ -167,7 +167,7 @@ def test_release_validation_runs_public_metadata_gate() -> None:
     assert '      - "ROADMAP.md"' in workflow
     assert '      - "docs/faq.md"' in workflow
     assert '      - "scripts/sync_mcp_metadata.py"' in workflow
-    assert "- run: corepack pnpm run metadata:check" in workflow
+    assert "- run: pnpm run metadata:check" in workflow
 
 
 def test_current_policy_docs_do_not_advertise_dropped_kicad_lines() -> None:
@@ -294,4 +294,4 @@ def test_publish_npm_verifies_generated_publication_docs_before_pack() -> None:
     assert publish.index("scripts/sync_mcp_metadata.py --check") < publish.index("npm pack --json")
     assert '"packages/mcp-npm/README.md"' in release_validation
     assert '"packages/mcp-npm/package.json"' in release_validation
-    assert "corepack pnpm run metadata:check" in release_validation
+    assert "pnpm run metadata:check" in release_validation

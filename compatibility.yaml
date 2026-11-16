@@ -249,7 +249,7 @@ kicad10FeatureParity:
         evidence:
           - path:scripts/kicad_canary.py
           - path:tests/integration/test_export_tools.py
-          - command:corepack pnpm run test:kicad-cli-contract
+          - command:pnpm run test:kicad-cli-contract
         notes: Primary KiCad canary requires Gerber export artifacts.
       drill:
         status: supported
@@ -258,7 +258,7 @@ kicad10FeatureParity:
         evidence:
           - path:scripts/kicad_canary.py
           - path:tests/integration/test_export_tools.py
-          - command:corepack pnpm run test:kicad-cli-contract
+          - command:pnpm run test:kicad-cli-contract
         notes: Primary KiCad canary requires drill export artifacts.
       pdf:
         status: supported
@@ -383,7 +383,7 @@ kicad10FeatureParity:
         evidence:
           - path:tests/gui/test_kicad_gui_live_context.py
           - path:docs/compatibility/kicad-10-to-11-migration.md
-          - smoke:corepack pnpm run test:kicad-gui-smoke
+          - smoke:pnpm run test:kicad-gui-smoke
         notes: >-
           IPC is the supported live-editor direction for KiCad 10 and KiCad 11
           readiness.
@@ -504,7 +504,7 @@ kicad10FeatureParity:
         - path:docs/compatibility/kicad-10-to-11-migration.md
         - path:docs/adr/0007-kicad-adapter-selection-and-swig-retirement.md
         - path:docs/adr/0006-mcp-2026-stateless-compatibility-lane.md
-        - command:corepack pnpm run test:kicad-cli-contract:future
+        - command:pnpm run test:kicad-cli-contract:future
       notes: >-
         KiCad 11 is intentionally separate from the KiCad 10.0.7
         release-blocking baseline.
@@ -515,7 +515,7 @@ kicad10FeatureParity:
       evidence:
         - path:scripts/kicad_canary.py
         - path:docs/compatibility/kicad-10-to-11-migration.md
-        - command:corepack pnpm run test:kicad-cli-contract:nightly
+        - command:pnpm run test:kicad-cli-contract:nightly
       notes: >-
         Nightly runs remain non-release and do not change the stable support
         line.
@@ -544,8 +544,8 @@ kicadIpcReadiness:
   manualCanary:
     currentNightlyRange: 10.99.x
     releaseCandidateRange: 11.0.x
-    currentNightlyCommand: corepack pnpm run test:kicad-cli-contract:nightly
-    releaseCandidateCommand: corepack pnpm run test:kicad-cli-contract:future
+    currentNightlyCommand: pnpm run test:kicad-cli-contract:nightly
+    releaseCandidateCommand: pnpm run test:kicad-cli-contract:future
   ipcApi:
     requiredFor:
       projectDiscovery:
@@ -669,8 +669,8 @@ vscode:
   nodeRuntime: 24.x
   state: primary
 node:
-  range: '>=24.22.1 <25'
-  primary: 24.x
+  range: '>=24.22.3 <25 || >=26.13.1 <27'
+  primary: 26.x
 pnpm:
   range: '>=11.0.0 <12'
   primary: 11.x

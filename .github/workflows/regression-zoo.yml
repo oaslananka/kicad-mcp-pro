@@ -29,7 +29,8 @@ jobs:
           enable-cache: true
           prune-cache: true
           version-file: uv.toml
-      - run: corepack enable
-      - run: corepack pnpm install --frozen-lockfile
+      - name: Install pinned pnpm
+        run: npm install --global pnpm@11.28.6 --no-audit --no-fund
+      - run: pnpm install --frozen-lockfile
       - run: uv sync --all-extras --frozen
-      - run: corepack pnpm run test:benchmark
+      - run: pnpm run test:benchmark
