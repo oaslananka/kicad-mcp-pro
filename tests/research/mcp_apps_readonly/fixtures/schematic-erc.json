@@ -1,0 +1,22 @@
+{
+  "synthetic": true,
+  "title": "Power Supply Example",
+  "kind": "schematic",
+  "category": "ERC",
+  "summary": {
+    "errors": 1,
+    "warnings": 1
+  },
+  "findings": [
+    {
+      "code": "power-input",
+      "severity": "error",
+      "message": "A power input has no driving power output."
+    },
+    {
+      "code": "floating-pin",
+      "severity": "warning",
+      "message": "A symbol pin is intentionally left unconnected."
+    }
+  ]
+}
