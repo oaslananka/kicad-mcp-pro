@@ -220,6 +220,103 @@ def _validate_coupled_clearance(
     return closest - width
 
 
+def _eligible_horizontal_fanout(
+    plus_start: Point,
+    plus_end: Point,
+    minus_start: Point,
+    minus_end: Point,
+    separation: float,
+) -> bool:
+    """Only a short, same-direction, same-layer horizontal USB-style fanout."""
+    coords = (*plus_start, *plus_end, *minus_start, *minus_end)
+    if not all(isfinite(v) for v in coords):
+        return False
+    if (
+        abs(plus_start[0] - minus_start[0]) > 1e-4
+        or abs(plus_end[0] - minus_end[0]) > 1e-4
+        or not 2.5 <= abs(plus_end[0] - plus_start[0]) <= 15
+        or abs(plus_end[1] - plus_start[1]) > 0.1
+        or abs(minus_end[1] - minus_start[1]) > 0.1
+    ):
+        return False
+    start_offset = minus_start[1] - plus_start[1]
+    end_offset = minus_end[1] - plus_end[1]
+    return (
+        start_offset * end_offset > 0
+        and separation + 0.05 <= min(abs(start_offset), abs(end_offset))
+        and max(abs(start_offset), abs(end_offset)) <= separation + 0.6
+        and abs(abs(start_offset) - abs(end_offset)) <= 0.1
+    )
+
+
+def _plan_horizontal_fanout(
+    plus_start: Point,
+    plus_end: Point,
+    minus_start: Point,
+    minus_end: Point,
+    obstacles: tuple[Obstacle, ...],
+    layer: str,
+    net_plus: str,
+    net_minus: str,
+    width_mm: float,
+    gap_mm: float,
+    clearance_mm: float,
+    max_skew_mm: float,
+) -> tuple[tuple[TrackSpec, ...], tuple[TrackSpec, ...], dict[str, float]]:
+    """Bounded symmetric H/45/H/45/H breakout, never a free-form router.
+
+    Only independently reviewed native DRC may authorize a later write.
+    """
+    spacing = width_mm + gap_mm
+    side = 1 if minus_start[1] > plus_start[1] else -1
+    center_y = (plus_start[1] + minus_start[1] + plus_end[1] + minus_end[1]) / 4
+    lead = 0.2
+    direction = 1 if plus_end[0] > plus_start[0] else -1
+
+    def lane(start: Point, end: Point, middle_y: float, net: str) -> tuple[TrackSpec, ...]:
+        departure = abs(middle_y - start[1])
+        arrival = abs(end[1] - middle_y)
+        if not 0.01 <= min(departure, arrival) or max(departure, arrival) > 0.5:
+            raise RoutePlanningError("Fanout exceeds bounded 45-degree departure limits")
+        x1 = start[0] + direction * lead
+        x2 = x1 + direction * departure
+        x4 = end[0] - direction * lead
+        x3 = x4 - direction * arrival
+        if direction * (x3 - x2) < 0.5:
+            raise RoutePlanningError("Not enough room for a coupled fanout center section")
+        points = tuple(
+            (round(x, 6), round(y, 6))
+            for x, y in (
+                start,
+                (x1, start[1]),
+                (x2, middle_y),
+                (x3, middle_y),
+                (x4, end[1]),
+                end,
+            )
+        )
+        return _segments_from_points(points, layer, width_mm, net)
+
+    plus = lane(plus_start, plus_end, center_y - side * spacing / 2, net_plus)
+    minus = lane(minus_start, minus_end, center_y + side * spacing / 2, net_minus)
+    min_gap = _validate_coupled_clearance(plus, minus, obstacles, width_mm, gap_mm, clearance_mm)
+    length_p = sum(hypot(t.x2_mm - t.x1_mm, t.y2_mm - t.y1_mm) for t in plus)
+    length_n = sum(hypot(t.x2_mm - t.x1_mm, t.y2_mm - t.y1_mm) for t in minus)
+    skew = abs(length_p - length_n)
+    if skew > max_skew_mm + 1e-5:
+        raise RoutePlanningError("Fanout pair length difference exceeds skew budget")
+    return (
+        plus,
+        minus,
+        {
+            "lengthPlusMm": round(length_p, 6),
+            "lengthMinusMm": round(length_n, 6),
+            "skewMm": round(skew, 6),
+            "minCopperGapMm": round(min_gap, 6),
+        },
+    )
+
+
 def plan_coupled_hv45_pair(
     *,
     plus_start: Point,
@@ -252,6 +349,21 @@ def plan_coupled_hv45_pair(
     if not 0 <= max_skew_mm <= 5:
         raise RoutePlanningError("Invalid differential pair skew budget")
     separation = width_mm + gap_mm
+    if _eligible_horizontal_fanout(plus_start, plus_end, minus_start, minus_end, separation):
+        return _plan_horizontal_fanout(
+            plus_start,
+            plus_end,
+            minus_start,
+            minus_end,
+            obstacles,
+            layer,
+            net_plus,
+            net_minus,
+            width_mm,
+            gap_mm,
+            clearance_mm,
+            max_skew_mm,
+        )
     start, end, along, side = _coupled_axis(
         plus_start, plus_end, minus_start, minus_end, separation
     )

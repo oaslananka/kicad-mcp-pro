@@ -17,7 +17,7 @@ from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
 from ..connection import get_board
-from ..pcb.board_access import board_footprints, board_pads
+from ..pcb.board_access import board_footprints, board_pads, board_tracks
 from ..pcb.geometry import point_xy_mm
 from ..pcb.pad_mapping import map_pads_to_footprints
 from ..pcb.route_drc_preflight import run_route_drc_preflight
@@ -26,7 +26,11 @@ from ..routing.differential_pair_candidate import plan_coupled_hv45_pair
 from ..routing.manual_tracks import TrackSpec, _find_pad
 from ..routing.path_planner import RoutePlanningError
 from .metadata import requires_kicad_running
-from .routing_manual_tracks import _publish_route_specs, _validate_endpoint_layer
+from .routing_manual_tracks import (
+    _already_present_track,
+    _publish_route_specs,
+    _validate_endpoint_layer,
+)
 
 
 def _coupled_endpoints(
@@ -126,6 +130,50 @@ def _pair_pad_geometry(
     }
 
 
+def _pair_refusal(reason: str, pad_geometry: dict[str, float | bool] | None) -> str:
+    """Explain the physical blocker without coupling report policy to IPC."""
+    refusal: dict[str, object] = {
+        "status": "refused",
+        "candidateOnly": True,
+        "reason": reason,
+    }
+    if pad_geometry is None or not (
+        "pad order reverses" in reason or "aligned pads" in reason or "spacing/offset" in reason
+    ):
+        return json.dumps(refusal, sort_keys=True)
+
+    refusal["padGeometry"] = pad_geometry
+    if pad_geometry["padOrderReversed"]:
+        refusal["blockerType"] = "pad_order_reversal"
+        refusal["nextAction"] = (
+            "P/N pad order is reversed: do not cross the lanes on one copper "
+            "layer. Review pad mappings and independently qualify any "
+            "layer transition, return path and stackup before routing. "
+            "No physical signoff."
+        )
+    elif (
+        abs(pad_geometry["startPadSeparationMm"] - pad_geometry["requestedCenterSpacingMm"]) > 0.001
+        or abs(pad_geometry["endPadSeparationMm"] - pad_geometry["requestedCenterSpacingMm"])
+        > 0.001
+    ):
+        refusal["blockerType"] = "fanout_required"
+        refusal["nextAction"] = (
+            "P/N pad order is consistent; the endpoint spacing needs a "
+            "reviewed differential-pair fanout, not a polarity swap. "
+            "Use KiCad's native differential-pair fanout and tuning with "
+            "verified stackup, return path and DRC. No physical signoff."
+        )
+    else:
+        refusal["blockerType"] = "unsupported_alignment"
+        refusal["nextAction"] = (
+            "P/N spacing is consistent but this bounded planner cannot "
+            "handle the endpoint alignment. Review the native KiCad "
+            "differential-pair routing and verified board constraints. "
+            "No physical signoff."
+        )
+    return json.dumps(refusal, sort_keys=True)
+
+
 def _preview_coupled_pair(
     p_ref1: str,
     p_pad1: str,
@@ -174,13 +222,27 @@ def _preview_coupled_pair(
                 "P/N pad order reverses between endpoints: a single-layer coupled route "
                 "would cross; review pad mapping or a separately qualified layer transition"
             )
-        obstacles = snapshot_route_obstacles(
+        # Each native snapshot validates the exact pad/net mapping. Keep only
+        # obstacles common to both to ignore existing P and N copper while
+        # preserving foreign-net copper, zones, keepouts and board boundary.
+        plus_obstacles = snapshot_route_obstacles(
             board,
             layer,
-            frozenset(pad.id.value for pad in (p1, p2, n1, n2)),
+            frozenset((p1.id.value, p2.id.value)),
             require_outline=True,
-            expected_endpoint_count=4,
+            expected_endpoint_count=2,
+            routing_net=p1.net.name,
         )
+        minus_obstacles = snapshot_route_obstacles(
+            board,
+            layer,
+            frozenset((n1.id.value, n2.id.value)),
+            require_outline=True,
+            expected_endpoint_count=2,
+            routing_net=n1.net.name,
+        )
+        minus_set = set(minus_obstacles)
+        obstacles = tuple(obstacle for obstacle in plus_obstacles if obstacle in minus_set)
         plus, minus, geometry = plan_coupled_hv45_pair(
             plus_start=point_xy_mm(p1.position),
             plus_end=point_xy_mm(p2.position),
@@ -197,7 +259,17 @@ def _preview_coupled_pair(
         )
         if hashlib.sha256(get_board().get_as_string().encode("utf-8")).hexdigest() != revision:
             raise RoutePlanningError("Native board changed while previewing paired route")
-        segments = [asdict(spec) for spec in (*plus, *minus)]
+        planned = (*plus, *minus)
+        existing = board_tracks(board)
+        repeated = sum(_already_present_track(spec, existing) for spec in planned)
+        if repeated == len(planned):
+            raise RoutePlanningError("Paired route already exists; no new copper is required")
+        if repeated:
+            raise RoutePlanningError(
+                "Paired candidate overlaps existing same-net copper; "
+                "review the partial route instead of duplicating tracks"
+            )
+        segments = [asdict(spec) for spec in planned]
         fingerprint = {
             "boardRevision": revision,
             "positivePads": (p_ref1, p_pad1, p_ref2, p_pad2),
@@ -233,48 +305,7 @@ def _preview_coupled_pair(
             sort_keys=True,
         )
     except (ValueError, TypeError, KeyError, AttributeError) as exc:
-        reason = str(exc)
-        refusal: dict[str, object] = {
-            "status": "refused",
-            "candidateOnly": True,
-            "reason": reason,
-        }
-        if pad_geometry is not None and (
-            "pad order reverses" in reason or "aligned pads" in reason or "spacing/offset" in reason
-        ):
-            refusal["padGeometry"] = pad_geometry
-            if pad_geometry["padOrderReversed"]:
-                refusal["blockerType"] = "pad_order_reversal"
-                refusal["nextAction"] = (
-                    "P/N pad order is reversed: do not cross the lanes on one copper "
-                    "layer. Review pad mappings and independently qualify any "
-                    "layer transition, return path and stackup before routing. "
-                    "No physical signoff."
-                )
-            elif (
-                abs(pad_geometry["startPadSeparationMm"] - pad_geometry["requestedCenterSpacingMm"])
-                > 0.001
-                or abs(
-                    pad_geometry["endPadSeparationMm"] - pad_geometry["requestedCenterSpacingMm"]
-                )
-                > 0.001
-            ):
-                refusal["blockerType"] = "fanout_required"
-                refusal["nextAction"] = (
-                    "P/N pad order is consistent; the endpoint spacing needs a "
-                    "reviewed differential-pair fanout, not a polarity swap. "
-                    "Use KiCad's native differential-pair fanout and tuning with "
-                    "verified stackup, return path and DRC. No physical signoff."
-                )
-            else:
-                refusal["blockerType"] = "unsupported_alignment"
-                refusal["nextAction"] = (
-                    "P/N spacing is consistent but this bounded planner cannot "
-                    "handle the endpoint alignment. Review the native KiCad "
-                    "differential-pair routing and verified board constraints. "
-                    "No physical signoff."
-                )
-        return json.dumps(refusal, sort_keys=True)
+        return _pair_refusal(str(exc), pad_geometry)
 
 
 # S107 exception: preserve the flat paired candidate contract consumed by the MCP adapter.

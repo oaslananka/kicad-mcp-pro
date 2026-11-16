@@ -53,7 +53,9 @@ def _arrange(
         )
         for ref, net, x, y in _PADS
     ]
-    board = SimpleNamespace(get_as_string=lambda: "(kicad_pcb immutable board)")
+    board = SimpleNamespace(
+        get_as_string=lambda: "(kicad_pcb immutable board)", get_tracks=lambda: []
+    )
     stats = {"snapshots": 0}
     monkeypatch.setattr(adapter, "get_board", lambda: board)
     monkeypatch.setattr(adapter, "board_pads", lambda _board: [])
@@ -79,11 +81,13 @@ def _arrange(
         *,
         require_outline: bool,
         expected_endpoint_count: int,
+        routing_net: str,
     ) -> tuple:
         stats["snapshots"] += 1
         assert layer == "F_Cu"
         assert require_outline
-        assert expected_endpoint_count == len(excluded) == 4
+        assert expected_endpoint_count == len(excluded) == 2
+        assert routing_net in {"USB_D_P", "USB_D_N"}
         return ()
 
     monkeypatch.setattr(adapter, "snapshot_route_obstacles", snapshot)
@@ -113,7 +117,7 @@ def test_native_pad_mapping_creates_one_deterministic_read_only_pair(
     assert first["negativeSegmentCount"] >= 1
     assert first["geometry"]["skewMm"] <= 0.1
     assert "NOT verified" in first["warning"]
-    assert stats["snapshots"] == 2
+    assert stats["snapshots"] == 4
     assert board.get_as_string() == expected_text
     assert len(pads) == 4
 
@@ -158,11 +162,11 @@ def test_realistic_misaligned_pair_reports_pad_geometry_without_board_write(
         assert "not a polarity swap" in result["nextAction"]
     assert "No physical signoff" in result["nextAction"]
     assert ("pad order reverses" in result["reason"]) is reversed_order
-    assert stats["snapshots"] == (0 if reversed_order else 1)
+    assert stats["snapshots"] == (0 if reversed_order else 2)
     assert board.get_as_string() == original
 
 
-def test_usb_connector_near_aligned_pads_refuse_with_specific_fanout_guidance(
+def test_usb_connector_near_aligned_pads_generate_bounded_fanout_candidate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pads, board, stats = _arrange(monkeypatch)
@@ -173,19 +177,41 @@ def test_usb_connector_near_aligned_pads_refuse_with_specific_fanout_guidance(
     original = board.get_as_string()
 
     result = _preview(width_mm=0.3, gap_mm=0.25)
+    assert result["status"] == "candidate"
+    assert result["candidateOnly"] is True
+    assert result["drcVerified"] is False
+    assert result["noBoardMutation"] is True
+    assert len(result["candidateId"]) == 64
+    assert result["positiveSegmentCount"] == 5
+    assert result["negativeSegmentCount"] == 5
+    assert result["geometry"]["minCopperGapMm"] >= 0.25 - 1e-5
+    assert result["geometry"]["skewMm"] <= 0.1
+    assert stats["snapshots"] == 2
+    assert board.get_as_string() == original
+
+
+@pytest.mark.parametrize(
+    ("complete", "reason"),
+    [(True, "already exists"), (False, "overlaps existing")],
+)
+def test_coupled_pair_refuses_existing_copper_without_duplicate_preview(
+    monkeypatch: pytest.MonkeyPatch, complete: bool, reason: str
+) -> None:
+    _pads, board, stats = _arrange(monkeypatch)
+    board.get_tracks = lambda: [object()]
+    monkeypatch.setattr(
+        adapter,
+        "_already_present_track",
+        lambda spec, _existing: complete or spec.net_name == "USB_D_P",
+    )
+    original = board.get_as_string()
+    result = _preview()
+
     assert result["status"] == "refused"
     assert result["candidateOnly"] is True
-    assert result["blockerType"] == "fanout_required"
-    assert result["padGeometry"] == {
-        "startPadSeparationMm": 0.85,
-        "endPadSeparationMm": 0.86,
-        "requestedCenterSpacingMm": 0.55,
-        "offsetChangeMm": 0.01,
-        "padOrderReversed": False,
-    }
-    assert "not a polarity swap" in result["nextAction"]
+    assert reason in result["reason"]
     assert "candidateId" not in result
-    assert stats["snapshots"] == 1
+    assert stats["snapshots"] == 2
     assert board.get_as_string() == original
 
 
@@ -254,7 +280,7 @@ def test_preview_refuses_ambiguous_or_mutated_pair(
     assert result["candidateOnly"] is True
     assert message in result["reason"]
     assert (
-        stats["snapshots"] == (1 if fault == "revision_change" else 0)
+        stats["snapshots"] == (2 if fault == "revision_change" else 0)
         or fault == "foreign_obstacle"
     )
 
@@ -263,7 +289,7 @@ def test_preview_refuses_ambiguous_or_mutated_pair(
     ("name", "value", "reason"),
     [
         ("width_mm", float("nan"), "finite"),
-        ("gap_mm", 0.1, "spacing"),
+        ("gap_mm", 0.0, "dimensions"),
         ("max_skew_mm", -0.1, "skew"),
         ("layer", "F_SilkS", "share the requested"),
     ],
