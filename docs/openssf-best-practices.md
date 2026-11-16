@@ -59,7 +59,7 @@ Recommended evidence URLs:
 
 Before a release or OpenSSF resubmission:
 
-1. Run `corepack pnpm run check:ci` or the documented full CI equivalent.
+1. Run `pnpm run check:ci` or the documented full CI equivalent.
 2. Confirm `gh api /repos/oaslananka/kicad-mcp-pro/rulesets` shows active `main-standard` and `release-tags` rulesets.
 3. Confirm private vulnerability reporting is enabled in repository settings.
 4. Confirm issue templates and discussion links render in GitHub.

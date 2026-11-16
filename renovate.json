@@ -5,7 +5,9 @@
   "extends": [
     "config:recommended"
   ],
-  "dependencyDashboard": true,
+  "dependencyDashboard": {
+    "enabled": true
+  },
   "timezone": "Europe/Istanbul",
   "schedule": [
     "after 3am and before 7am on monday"

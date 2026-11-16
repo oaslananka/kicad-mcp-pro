@@ -1,0 +1,27 @@
+{
+  "synthetic": true,
+  "title": "Sensor Controller Example",
+  "kind": "pcb",
+  "category": "DRC",
+  "summary": {
+    "errors": 2,
+    "warnings": 1
+  },
+  "findings": [
+    {
+      "code": "clearance",
+      "severity": "error",
+      "message": "Track-to-pad clearance is below the configured minimum."
+    },
+    {
+      "code": "unconnected",
+      "severity": "error",
+      "message": "A required connector net remains unconnected."
+    },
+    {
+      "code": "silkscreen",
+      "severity": "warning",
+      "message": "Silkscreen text overlaps a component courtyard."
+    }
+  ]
+}

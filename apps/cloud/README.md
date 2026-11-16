@@ -236,7 +236,8 @@ owner-managed Connector acceptance succeed.
 
 ## Development
 
-Requires Node.js 24 or newer. From this directory:
+Use Node.js 26.13.1 by default; Node.js 24.22.3 is the verified LTS fallback.
+Node.js 25 and older unpatched 24/26 releases are unsupported. From this directory:
 
 ```sh
 npm ci
@@ -251,7 +252,7 @@ acceptance gates still apply.
 Container builds use this directory as the context:
 
 ```sh
-docker build -f apps/cloud/Dockerfile apps/cloud
+docker build -f Dockerfile .
 ```
 
 The existing production service is **not** deployed from this directory merely

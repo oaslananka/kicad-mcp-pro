@@ -322,7 +322,7 @@ For source checkouts, run the normal repository validation path before publishin
 changes:
 
 ```bash
-corepack pnpm run metadata:check
+pnpm run metadata:check
 python3 -m json.tool .claude-plugin/plugin.json >/dev/null
 ```
 

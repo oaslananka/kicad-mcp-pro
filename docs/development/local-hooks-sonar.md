@@ -8,7 +8,7 @@ developer feedback. The final authority is still the required GitHub CI
 
 From the root of the worktree in which you commit or push:
 
-    corepack pnpm install --frozen-lockfile
+    pnpm install --frozen-lockfile
     task hooks
 
 The installer verifies the shims. On repositories with
@@ -20,7 +20,7 @@ the repository's own Git hooks directory. Custom hook paths are not overwritten.
 Verify installation:
 
     git config --show-origin --get core.hooksPath
-    corepack pnpm exec lefthook check-install
+    pnpm exec lefthook check-install
 
 A lefthook.yml file alone does not activate hooks. If global core.hooksPath
 points at an empty directory, local Git checks may be silently skipped.

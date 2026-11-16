@@ -20,8 +20,8 @@
 ## Local Checks
 
 ```bash
-corepack pnpm run workflows:lint
-corepack pnpm run workflows:security
+pnpm run workflows:lint
+pnpm run workflows:security
 ```
 
 `workflows:lint` parses workflow YAML and runs actionlint with ShellCheck. `workflows:security`
