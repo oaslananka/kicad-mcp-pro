@@ -150,7 +150,10 @@ def test_chatgpt_app_transitive_security_overrides_are_patched() -> None:
     assert Version(package["overrides"]["@hono/node-server"]) >= Version("2.1.6")
     assert Version(package["overrides"]["hono"]) >= Version("4.13.16")
     assert package["overrides"]["fast-uri"] == "3.1.9"  # nosec B101
-    assert package["overrides"]["qs"] == "6.16.1"
+    qs_override = package["overrides"]["qs"]
+    # Preserve the patched minimum while allowing reviewed 6.x updates.
+    assert Version("6.16.1") <= Version(qs_override) < Version("7")
+    assert lock["packages"]["node_modules/qs"]["version"] == qs_override
 
     patched = {
         "node_modules/@hono/node-server": "2.1.6",
