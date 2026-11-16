@@ -599,18 +599,17 @@ export function attachConnectorWebSocket(
                reply.data.result.projectId!==pending.projectId){
               pending.resolve(null);fail();return;
             }
+            // Never acknowledge a response until the signed-session
+            // sequence has been validated and released for the next call.
+            if(!entry.readSequence.complete(pending.sequence)){
+              pending.resolve(null);fail();return;
+            }
             try{
               send({
                 kind:"connector.write_ack",version:1,
                 sequence:pending.sequence,requestId:pending.requestId
               });
             }catch{
-              pending.resolve(null);fail();return;
-            }
-            // Write responses share the bounded signed-session sequence with reads.
-            // Without completing it, the next authorized write in this session
-            // is rejected even after a valid reply and acknowledgement.
-            if(!entry.readSequence.complete(pending.sequence)){
               pending.resolve(null);fail();return;
             }
             pending.resolve(reply.data.result);
