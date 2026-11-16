@@ -309,7 +309,7 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
       }, 8, "pcb_move_footprint");
       assert.equal(failed.status, 200);
       assert.match(JSON.stringify(failed.data), /"success":false/);
-      assert.match(JSON.stringify(failed.data), new RegExp(expected));
+      assert.equal(failed.data.result?.structuredContent?.message, expected);
     }
     reportedOutcome = {
       nativeCommitted:true,savedToDisk:true,diskBoardSha256:"2".repeat(64)
