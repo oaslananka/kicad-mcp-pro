@@ -26,6 +26,33 @@ Sources:
 - <https://apps.extensions.modelcontextprotocol.io/>
 - <https://developers.openai.com/plugins/build/chatgpt-ui>
 
+## Issue #1220 — bounded MCP Apps proof: execution contract
+
+**Status: plan only.** The task-by-task implementation plan and verification
+matrix are in the accompanying planning PR description. This research document
+records the durable acceptance boundary; it does not enable an MCP App.
+
+| Gate | Required evidence before #1220 can close |
+| --- | --- |
+| Reproducibility | Exactly one isolated fixture tool, one `ui://` view, exact dependency/host pins, no production imports |
+| Useful review | Sanitized synthetic PCB/schematic summary and ERC/DRC findings, readable text fallback without UI |
+| UI safety | Restrictive iframe/CSP, no browser network origins, path/file/upload access, UI-to-tool execution, or rendering injection |
+| Failure handling | Negative tests for malformed, oversized, empty and hostile results, non-negotiating hosts, denied capabilities and missing resources |
+| Real-host acceptance | Sandboxed rendering observed in a pinned compatible host, with sanitized invocation/console evidence and explicit limitations |
+
+The initial host is the MCP Apps project's `examples/basic-host` reference
+implementation, pinned to a reviewed Git commit outside the application
+repository. Unit tests or a protocol-only smoke test do not count as host
+rendering. A second conversational host is optional corroboration, never a
+substitute for the first real sandbox observation.
+
+The experiment remains offline/loopback-only with synthetic data. It must not
+register on the production KiCad MCP server, alter the existing ChatGPT Apps
+connector, request project folders, expose local files, enable write tools,
+ship a release, deploy a service, or initiate manufacturing. Production opt-in
+requires a separately reviewed and approved implementation PR. This plan-only
+PR does **not** close #1220.
+
 ## MCP Tasks (long-running work proof)
 
 The hermetic, read-only draft protocol state-machine and pinned SDK 2.2.0
