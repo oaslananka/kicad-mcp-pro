@@ -328,8 +328,8 @@ jobs:
            github.event_name == 'workflow_dispatch')
         working-directory: tests/research/mcp_apps_readonly
         run: |
-          corepack pnpm install --frozen-lockfile --ignore-scripts
-          corepack pnpm test
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm test
       - run: uv sync --all-extras --frozen
         if: env.skip_ci != 'true'
       - run: pnpm run format:check
