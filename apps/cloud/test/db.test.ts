@@ -80,6 +80,15 @@ test("postgres enforces ownership, disabled projects and opaque-only records", {
     assert.equal(await inventory.isAccessTokenAllowed("owner-a","client-b",Math.floor(Date.now()/1000)+10),true);
     const revokes=await admin.query("SELECT operation FROM client_grant_audit WHERE owner_sub='owner-a' AND project_id=$1 AND operation='client.revoke'",[projectA]);
     assert.equal(revokes.rows.length,1);
+    // Two real project records on one device must remain isolated by AI client.
+    // Revoking the second project's client cannot affect the first project.
+    await admin.query("UPDATE projects SET enabled=true WHERE id=$1",[projectDisabled]);
+    await admin.query("INSERT INTO project_client_grants(project_id,owner_sub,client_id,enabled,max_mode) VALUES($1,'owner-a','client-c',true,'readonly')",[projectDisabled]);
+    assert.deepEqual((await inventory.listProjects("owner-a","client-a")).map(p=>p.id),[projectA]);
+    assert.deepEqual((await inventory.listProjects("owner-a","client-c")).map(p=>p.id),[projectDisabled]);
+    await admin.query("UPDATE project_client_grants SET enabled=false WHERE project_id=$1 AND client_id='client-c'",[projectDisabled]);
+    assert.deepEqual(await inventory.listProjects("owner-a","client-c"),[]);
+    assert.deepEqual((await inventory.listProjects("owner-a","client-a")).map(p=>p.id),[projectA]);
     await assert.rejects(admin.query("INSERT INTO projects(id,device_id,owner_sub,alias) VALUES ('1961d3a0-5e7b-44a5-b903-3c4efb2531a7',$1,'owner-a','Injected')",[deviceB]));
   } finally {
     try{await admin.query("DELETE FROM client_grant_audit WHERE project_id=$1",[projectA]);}catch{}
