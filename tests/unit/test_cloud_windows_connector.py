@@ -1155,3 +1155,72 @@ def test_successful_long_signed_session_refreshs_quickly_without_handshake_flood
     assert connector._session_retry_delay(True, 16.0, 0, 0.5) == 16.0
     assert connector._session_retry_delay(False, 241.0, 2, 0.5) == 61.0
     assert connector._session_retry_delay(True, 241.0, 3, 1.0) == 3.0
+
+
+@pytest.mark.asyncio
+async def test_foreground_reconnect_keeps_pending_folder_selection(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A selected folder must remain confirmable after signed session renewal."""
+    from kicad_mcp.cloud_folder_browse_receiver import BrowserFolderService
+    from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
+
+    project, _store, directory = local_user_connector
+    connector.activate(project, owner_confirm=lambda _: True)
+    stop = asyncio.Event()
+    created = 0
+    sessions = 0
+    pending: list[str] = []
+    project_id = "4f5cfbbe-e466-4907-9e8e-ce104ca15e9f"
+    bindings = tmp_path / "bindings.json"
+
+    def create_folder_service(selected: Path, *, authorization):
+        nonlocal created
+        assert selected == directory
+        created += 1
+        return BrowserFolderService(
+            LocalFolderBrowser([directory.parent], bindings),
+            native_picker=lambda: directory,
+            authorization=authorization,
+        )
+
+    async def signed_session(**kwargs: object) -> HandshakeReceipt:
+        nonlocal sessions
+        sessions += 1
+        receipt = HandshakeReceipt(
+            device_id=project.device_id,
+            session_id="39ee4be9-0aec-448e-9873-721ae113ec02",
+        )
+        ready = kwargs["on_ready"]
+        assert callable(ready)
+        ready(receipt)
+        factory = kwargs["folder_service_factory"]
+        assert callable(factory)
+        service = factory(receipt)
+        if sessions == 1:
+            selection = service.choose()
+            assert selection["status"] == "selected"
+            pending.append(selection["projects"][0]["id"])
+        else:
+            try:
+                assert service.list(pending[0])["project"] is True
+                assert service.bind(pending[0], project_id) is True
+            finally:
+                stop.set()
+        return receipt
+
+    monkeypatch.setattr(connector, "device_folder_service", create_folder_service)
+    monkeypatch.setattr(connector, "execute_owner_managed_read_session", signed_session)
+    monkeypatch.setattr(connector, "_session_retry_delay", lambda *_args: 0)
+    await asyncio.wait_for(
+        connector.run_connector(
+            stop=stop,
+            session_runner=signed_session,
+            status_callback=lambda _: None,
+        ),
+        timeout=3,
+    )
+    assert sessions == 2
+    assert created == 1
+    saved = json.loads(bindings.read_text(encoding="utf-8"))
+    assert saved[project_id] == str(directory / "demo.kicad_pro")

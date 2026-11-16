@@ -499,6 +499,7 @@ async def _run_owner_session(
     allow_native_drc: bool = False,
     allow_native_write: bool = False,
     issuer_key: Ed25519PublicKey | None = None,
+    folder_service: LocalFolderBrowseService | None = None,
 ) -> HandshakeReceipt:
     """Bind one immutable identity and key to this particular socket session."""
     receipt_holder: list[HandshakeReceipt] = []
@@ -583,6 +584,10 @@ async def _run_owner_session(
         def folder_factory(receipt: HandshakeReceipt) -> LocalFolderBrowseService:
             if receipt.device_id != project.device_id or not _current_authorization(project):
                 raise LocalApprovalDeniedError(_DENIED)
+            # Keep the opaque owner-selected token across signed lease renewal.
+            # Authorization is still rechecked on every operation.
+            if folder_service is not None:
+                return folder_service
             return device_folder_service(
                 selected.directory,
                 authorization=lambda: _current_authorization(project),
@@ -664,6 +669,7 @@ async def _attempt_authorized_session(
     allow_native_drc: bool = False,
     allow_native_write: bool = False,
     issuer_key: Ed25519PublicKey | None = None,
+    folder_service: LocalFolderBrowseService | None = None,
 ) -> bool | None:
     """One signed session: True completed, False network failure, None revoked."""
     task = asyncio.create_task(
@@ -675,6 +681,7 @@ async def _attempt_authorized_session(
             allow_native_drc=allow_native_drc,
             allow_native_write=allow_native_write,
             issuer_key=issuer_key,
+            folder_service=folder_service,
         )
     )
     revoked = asyncio.create_task(stop.wait())
@@ -771,6 +778,10 @@ async def run_connector(
     ):
         raise LocalApprovalDeniedError(_DENIED)
     failures = 0
+    # A single foreground Connector process owns pending folder selections.
+    # Individual signed WebSocket leases renew without replacing this state.
+    folder_service: LocalFolderBrowseService | None = None
+    folder_identity: tuple[str, str, str, Path] | None = None
     while not stop.is_set():
         active = _active()
         if active is None:
@@ -779,6 +790,23 @@ async def run_connector(
 
         _notify_connection_attempt(status_callback, failures)
         runner_for_session = _session_runner_with_status(session_runner, status_callback)
+        if getattr(runner_for_session, "_kicad_supports_folder_browse", False):
+            identity = (
+                project.owner_sub,
+                project.device_id,
+                project.project_id,
+                selected.directory,
+            )
+            if identity != folder_identity:
+                # Changing the authorized device or local project invalidates every token.
+                folder_service = device_folder_service(
+                    selected.directory,
+                    authorization=lambda expected=project: _current_authorization(expected),
+                )
+                folder_identity = identity
+        else:
+            folder_service = None
+            folder_identity = None
 
         session_started = time.monotonic()
         try:
@@ -791,6 +819,7 @@ async def run_connector(
                 allow_native_drc=allow_native_drc,
                 allow_native_write=allow_native_write,
                 issuer_key=issuer_key,
+                folder_service=folder_service,
             )
         except CloudOwnerReapprovalRequiredError:
             _notify_owner_reapproval(status_callback, project)
