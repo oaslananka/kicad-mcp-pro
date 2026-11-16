@@ -60,8 +60,8 @@ GitHub Actions verification. Host UI/native-agent interoperability is
 Use the repository-pinned `uv` and Node versions; from a clean checkout:
 
 ```sh
-corepack enable
-corepack pnpm install --frozen-lockfile --ignore-scripts
+npm install --global pnpm@11.28.6
+pnpm install --frozen-lockfile --ignore-scripts
 uv sync --all-extras --frozen
 MCP_TASKS_REAL_CLIENT_REQUIRED=1 uv run pytest -q \
   tests/unit/test_mcp_tasks_2026_schema_contract.py \
