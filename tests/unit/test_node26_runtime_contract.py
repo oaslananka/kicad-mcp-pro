@@ -85,20 +85,27 @@ def test_ci_and_release_bootstrap_exact_pnpm_without_corepack(name: str) -> None
     for job_name, job in workflow["jobs"].items():
         steps = job.get("steps", [])
         running_pnpm = [
-            i
-            for i, step in enumerate(steps)
-            if re.search(r"\bpnpm\b", str(step.get("run", "")))
-            and "npm install --global pnpm@" not in str(step.get("run", ""))
+            i for i, step in enumerate(steps) if re.search(r"\bpnpm\b", str(step.get("run", "")))
         ]
         if not running_pnpm:
             continue
         assert all("corepack" not in str(step.get("run", "")) for step in steps), (name, job_name)
+        assert all(
+            "npm install --global pnpm@" not in str(step.get("run", "")) for step in steps
+        ), (name, job_name)
         installed = [
             i
             for i, step in enumerate(steps)
-            if "npm install --global pnpm@11.28.6" in str(step.get("run", ""))
+            if str(step.get("uses", "")).startswith("pnpm/action-setup@")
         ]
-        assert installed, (name, job_name)
+        assert len(installed) == 1, (name, job_name)
+        setup = steps[installed[0]]
+        assert setup["uses"] == ("pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115"), (
+            name,
+            job_name,
+        )
+        assert str(setup["with"]["version"]) == "11.28.6", (name, job_name)
+        assert setup["with"]["run_install"] is False, (name, job_name)
         assert installed[0] < min(running_pnpm), (name, job_name)
         assert any("actions/setup-node@" in str(step.get("uses", "")) for step in steps), (
             name,
