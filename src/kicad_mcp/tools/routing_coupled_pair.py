@@ -297,9 +297,11 @@ def _preview_coupled_pair(
                 "netPlus": p1.net.name,
                 "netMinus": n1.net.name,
                 "geometry": geometry,
+                "geometryScope": "candidate-tracks-only",
                 "warning": (
-                    "Matched, obstacle-screened geometry only; native KiCad "
-                    "DRC required before writing. Physical impedance NOT verified."
+                    "Proposed-segment length, gap and skew only; existing copper, "
+                    "vias and total net delay are NOT included. Native KiCad DRC "
+                    "required before writing; impedance and return path NOT verified."
                 ),
             },
             sort_keys=True,
@@ -380,10 +382,12 @@ def _apply_coupled_pair(  # NOSONAR - S107: paired MCP input compatibility
     result = json.loads(_publish_route_specs(specs, revision, evidence, candidate_id))
     if result.get("status") == "applied":
         result["pairGeometry"] = preview["geometry"]
+        result["pairGeometryScope"] = "candidate-tracks-only"
         result["warning"] = (
             "P/N routes committed as one KiCad Undo step, NOT saved. "
+            "Candidate length/skew exclude existing copper and via delay. "
             "Call pcb_save and verify native DRC after reopening. "
-            "No physical impedance/stackup certification."
+            "No physical impedance, return-path or stackup certification."
         )
     return json.dumps(result, sort_keys=True)
 

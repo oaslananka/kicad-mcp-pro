@@ -125,6 +125,8 @@ def test_two_lane_native_drc_must_accept_before_atomic_write(
     response = json.loads(adapter._apply_coupled_pair("correct-hash", **_args()))
     assert response["status"] == "applied"
     assert response["saved"] is False
+    assert response["pairGeometryScope"] == "candidate-tracks-only"
+    assert "exclude existing copper and via delay" in response["warning"]
     assert stats == {"preflight": 1, "publish": 1}
 
 

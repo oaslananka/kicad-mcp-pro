@@ -186,6 +186,9 @@ def test_usb_connector_near_aligned_pads_generate_bounded_fanout_candidate(
     assert result["negativeSegmentCount"] == 5
     assert result["geometry"]["minCopperGapMm"] >= 0.25 - 1e-5
     assert result["geometry"]["skewMm"] <= 0.1
+    assert result["geometryScope"] == "candidate-tracks-only"
+    assert "existing copper" in result["warning"]
+    assert "total net delay" in result["warning"]
     assert stats["snapshots"] == 2
     assert board.get_as_string() == original
 
