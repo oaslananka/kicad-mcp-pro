@@ -227,9 +227,10 @@ def evaluate_route_drc(
 
     Both reports must explicitly contain native violations and unconnected items.
     Report counts alone cannot establish non-regression: use finding identity.
-    When routed_nets is supplied, verify that only those nets become more
-    connected. KiCad can silently reconcile a mislabelled candidate copper
-    segment's net to the pad it touches without reporting a short.
+    When routed_nets is supplied, verify that every requested net becomes
+    more connected and no other net improves instead. KiCad can silently
+    reconcile a mislabelled copper segment's net to the pad it touches
+    without reporting a short.
     """
 
     def count_unconnected(report: Report) -> int:
@@ -259,8 +260,8 @@ def evaluate_route_drc(
             len(entries) > len(previous_nets.get(net, [])) for net, entries in current_nets.items()
         )
         scoped_connectivity_ok = (
-            bool(improved)
-            and improved <= routed_nets
+            bool(routed_nets)
+            and improved == routed_nets
             and not regressed
             and not unidentified_previous
         )

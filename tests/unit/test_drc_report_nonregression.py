@@ -127,6 +127,44 @@ def test_route_drc_rejects_repair_of_different_net_than_requested() -> None:
     assert right["accepted"] is True
 
 
+def test_route_drc_rejects_partial_coupled_pair_improvement() -> None:
+    from kicad_mcp.validation.drc_report import evaluate_route_drc
+
+    before = {
+        "violations": [],
+        "unconnected_items": [_unconnected("USB_D_P"), _unconnected("USB_D_N")],
+    }
+    after = {"violations": [], "unconnected_items": [_unconnected("USB_D_N")]}
+
+    result = evaluate_route_drc(before, after, routed_nets=frozenset({"USB_D_P", "USB_D_N"}))
+
+    assert result["accepted"] is False
+    assert result["unconnectedBefore"] == 2
+    assert result["unconnectedAfter"] == 1
+    assert result["introducedViolations"] == 0
+
+
+def test_route_drc_accepts_complete_coupled_pair_improvement() -> None:
+    from kicad_mcp.validation.drc_report import evaluate_route_drc
+
+    before = {
+        "violations": [],
+        "unconnected_items": [
+            _unconnected("USB_D_P"),
+            _unconnected("USB_D_N"),
+            _unconnected("VBUS"),
+        ],
+    }
+    after = {"violations": [], "unconnected_items": [_unconnected("VBUS")]}
+
+    result = evaluate_route_drc(before, after, routed_nets=frozenset({"USB_D_P", "USB_D_N"}))
+
+    assert result["accepted"] is True
+    assert result["unconnectedBefore"] == 3
+    assert result["unconnectedAfter"] == 1
+    assert result["introducedViolations"] == 0
+
+
 def test_route_drc_rejects_growth_in_an_already_open_other_net() -> None:
     from kicad_mcp.validation.drc_report import evaluate_route_drc
 
