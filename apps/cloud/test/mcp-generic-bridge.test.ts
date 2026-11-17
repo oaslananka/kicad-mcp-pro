@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {generateKeyPairSync} from "node:crypto";
+import {request as httpRequest} from "node:http";
 import type {AddressInfo} from "node:net";
 import {createHttpServer} from "../src/http.js";
 import {createSignedGenericMcpProposal} from "../src/connector-generic-mcp-proof.js";
@@ -92,20 +93,32 @@ test("generic Cloud MCP proxies real local schemas and refuses unauthorized writ
   const invoke=async(server:typeof enabled,token:string,method:string,
     params:Record<string,unknown>={},id=1,name?:string)=>{
     const port=(server.address() as AddressInfo).port;
-    const response=await fetch("http://127.0.0.1:"+port+"/mcp",{
-      method:"POST",headers:{Authorization:"Bearer "+token,
-        "Content-Type":"application/json",Accept:"application/json, text/event-stream",
-        "MCP-Protocol-Version":"2026-07-28","Mcp-Method":method,
-        ...(name?{"Mcp-Name":name}:{})},
-      body:JSON.stringify({jsonrpc:"2.0",id,method,params:{...params,_meta:{
-        "io.modelcontextprotocol/clientInfo":{name:"test-client",version:"1.0.0"},
-        "io.modelcontextprotocol/protocolVersion":"2026-07-28",
-        "io.modelcontextprotocol/clientCapabilities":{}
-      }}})
+    const payload=JSON.stringify({jsonrpc:"2.0",id,method,params:{...params,_meta:{
+      "io.modelcontextprotocol/clientInfo":{name:"test-client",version:"1.0.0"},
+      "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+      "io.modelcontextprotocol/clientCapabilities":{}
+    }}});
+    // Only the loopback host and ephemeral port of this test-owned server.
+    // No external or user-provided URL is accepted by the HTTP test client.
+    const response=await new Promise<{status:number;body:string}>((resolve,reject)=>{
+      const req=httpRequest({
+        hostname:"127.0.0.1",port,path:"/mcp",method:"POST",
+        headers:{Authorization:"Bearer "+token,
+          "Content-Type":"application/json",Accept:"application/json, text/event-stream",
+          "MCP-Protocol-Version":"2026-07-28","Mcp-Method":method,
+          ...(name?{"Mcp-Name":name}:{})}
+      },res=>{
+        let body="";
+        res.setEncoding("utf8");
+        res.on("data",chunk=>{body+=chunk;});
+        res.on("end",()=>resolve({status:res.statusCode??0,body}));
+        res.on("error",reject);
+      });
+      req.on("error",reject);
+      req.end(payload);
     });
-    const body=await response.text();
-    const line=body.split("\n").find(l=>l.startsWith("data: "));
-    return {status:response.status,data:JSON.parse(line?line.slice(6):body)};
+    const line=response.body.split("\n").find(l=>l.startsWith("data: "));
+    return {status:response.status,data:JSON.parse(line?line.slice(6):response.body)};
   };
   try{
     await new Promise<void>(resolve=>disabled.listen(0,"127.0.0.1",resolve));
