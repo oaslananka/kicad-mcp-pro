@@ -15,12 +15,13 @@ for the exact `PUBLIC_ORIGIN/mcp` endpoint and current ChatGPT and Claude
 setup links. The endpoint must be publicly reachable over HTTPS for hosted
 AI clients; a localhost development URL cannot be used by a remote host.
 Availability and OAuth registration support depend on the specific client
-and its workspace configuration. MCPJam production Cloud acceptance includes
-two signed native PCB edits on a disposable project with restored disk state
-and clean DRC. ChatGPT OAuth and read calls were observed, but ChatGPT
-projects:write consent and a native ChatGPT write were **not** verified.
-Claude and Gemini also require host-specific acceptance. Automatic OAuth
-step-up support varies by host.
+and its workspace configuration. MCPJam and ChatGPT have both completed
+production Cloud signed native PCB writes on a disposable project. ChatGPT
+completed two saved footprint moves and independently verified disk restoration
+with clean DRC. The ChatGPT grant was returned to Read afterward. The NEW
+generic MCP bridge and its broader authoring tools have not yet completed
+live host-specific WRITE acceptance. Claude and Gemini require separate
+acceptance; automatic OAuth step-up support varies by host.
 
 An account login authorizes only the Cloud account. The owner must also
 grant that OAuth client access to an eligible project under **Devices**.
