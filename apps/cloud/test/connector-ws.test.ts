@@ -755,6 +755,29 @@ test("an acknowledged signed WSS write releases the sequence for the next write"
         assert.equal(confirmation.kind,"connector.write_ack");
         assert.equal(confirmation.requestId,requestId);
       }
+
+      // An owner Connector disconnect after dispatch must abandon the
+      // pending write response; it cannot be acknowledged as committed.
+      // This exercises the WSS boundary only, not a native KiCad transaction.
+      const interruptedRequestId=randomUUID();
+      const interruptedPayload=Buffer.from(JSON.stringify({
+        requestId:interruptedRequestId
+      })).toString("base64url");
+      const interruptedFrame=waitMessage(ws);
+      const interrupted=attached.requestWrite(oauth,device,project,
+        {payload:interruptedPayload},true);
+      const outbound=await interruptedFrame;
+      assert.equal(outbound.kind,"connector.authorized_write");
+      assert.equal(outbound.sequence,3);
+      const disconnected=waitClose(ws);
+      ws.close(1000,"test_disconnect");
+      assert.equal(await disconnected,1000);
+      assert.equal(await interrupted,null,
+        "Disconnected Connector cannot leave an acknowledged write");
+      assert.equal(attached.isDeviceConnected(owner,device),false);
+      assert.equal(await attached.requestWrite(oauth,device,project,
+        {payload:interruptedPayload},true),null,
+        "A disconnected signed session cannot accept a replay");
     }finally{
       ws?.terminate();
       await attached.close();
