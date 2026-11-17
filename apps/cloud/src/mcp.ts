@@ -333,6 +333,13 @@ export function createCloudMcpHandler(
         }
         const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
         if(!project)return text({success:false,selectionRequired});
+        // The OAuth write scope alone is not the owner's per-project Edit grant.
+        // A known Read-only grant must fail before signing/dispatch, not as an
+        // ambiguous native write result requiring the owner to inspect the board.
+        if(project.maxMode==="readonly")return {...text({
+          success:false,reason:"project_edit_permission_required",
+          guidance:"Choose Edit for this AI app in the project's Cloud access settings."
+        }),isError:true};
         let result:ProjectWriteResult|null=null;
         try{
           result=await projectWrite(project.deviceId,project.id,{
