@@ -356,6 +356,9 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
       arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20}
     }, 12, "pcb_move_footprint");
     assert.match(JSON.stringify(wssUnavailable.data), /write_execution_failed/);
+    assert.equal(wssUnavailable.data.result?.structuredContent?.outcomeUnknown, true);
+    assert.equal(wssUnavailable.data.result?.structuredContent?.retrySafe, false);
+    assert.match(String(wssUnavailable.data.result?.structuredContent?.guidance), /before retrying/);
     assert.equal(blockedStages.at(-1), "transport_no_result");
     transportAllowed = true;
     assert.ok(blockedStages.every(stage => /^[a-z_]+$/.test(stage)));
@@ -370,6 +373,8 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
       arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20}
     }, 13, "pcb_move_footprint");
     assert.match(JSON.stringify(lateRevocation.data), /write_execution_failed/);
+    assert.equal(lateRevocation.data.result?.structuredContent?.outcomeUnknown, true);
+    assert.equal(lateRevocation.data.result?.structuredContent?.retrySafe, false);
     assert.equal(blockedStages.at(-1), "postgrant_revoked");
     revokeGrantAfterDispatch = false;
     preflightAllowed = true;

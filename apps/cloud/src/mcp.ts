@@ -336,7 +336,16 @@ export function createCloudMcpHandler(
         }catch{
           result=null;
         }
-        return text(result?{...result}:{success:false,reason:"write_execution_failed"});
+        // A relay failure or authorization change after dispatch cannot prove
+        // whether KiCad already committed. Preserve the existing error code,
+        // but explicitly prohibit blind retries until the board is inspected.
+        return text(result?{...result}:{
+          success:false,
+          reason:"write_execution_failed",
+          outcomeUnknown:true,
+          retrySafe:false,
+          guidance:"Write outcome is unconfirmed. Check the local board before retrying."
+        });
       });
     }
     return mcp;
