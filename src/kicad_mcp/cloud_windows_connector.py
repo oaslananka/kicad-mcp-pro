@@ -648,13 +648,17 @@ async def _run_owner_session(
                 allow_native_write=allow_native_write and issuer_key is not None,
                 trusted_issuer_key=issuer_key if allow_native_write else None,
                 consume_once=(
-                    (lambda sid, req_id: bool(marker_dir) and consume_windows_write_marker(
-                        marker_dir, sid, req_id
-                    ))
+                    (
+                        lambda sid, req_id: (
+                            bool(marker_dir)
+                            and consume_windows_write_marker(marker_dir, sid, req_id)
+                        )
+                    )
                     if allow_native_write and marker_dir is not None
                     else None
                 ),
             )
+
         settings["mcp_bridge_factory"] = generic_bridge_factory
     if allow_native_write and issuer_key is not None:
         from kicad_mcp.cloud_outbound_handshake import ManagedNativeWriteConfig

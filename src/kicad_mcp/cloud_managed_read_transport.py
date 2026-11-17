@@ -267,14 +267,14 @@ async def _serve_folder_frame(
 
 
 async def _serve_one_mcp_request(
-    socket: AuthenticatedReadSocket, service: object, raw: str,
-    *, expected_sequence: int
+    socket: AuthenticatedReadSocket, service: object, raw: str, *, expected_sequence: int
 ) -> dict[str, object]:
     """Execute one bounded generic MCP operation on this signed device socket."""
     frame = _read_strict_json(raw, "connector.mcp_request")
     if (
         set(frame) != {"kind", "version", "sequence", "request"}
-        or type(frame.get("version")) is not int or frame["version"] != 1
+        or type(frame.get("version")) is not int
+        or frame["version"] != 1
         or type(frame.get("sequence")) is not int
         or frame["sequence"] != expected_sequence
         or not isinstance(frame.get("request"), dict)
@@ -282,22 +282,30 @@ async def _serve_one_mcp_request(
     ):
         raise CloudHandshakeDeniedError(_DENIED)
     response = await service.dispatch(frame["request"])
-    if (
-        not isinstance(response, dict)
-        or response.get("requestId") != frame["request"].get("requestId")
+    if not isinstance(response, dict) or response.get("requestId") != frame["request"].get(
+        "requestId"
     ):
         raise CloudHandshakeDeniedError(_DENIED)
-    await socket.send(json.dumps({
-        "kind": "connector.mcp_result", "version": 1,
-        "sequence": expected_sequence, "result": response,
-    }, separators=(",", ":"), ensure_ascii=False))
+    await socket.send(
+        json.dumps(
+            {
+                "kind": "connector.mcp_result",
+                "version": 1,
+                "sequence": expected_sequence,
+                "result": response,
+            },
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+    )
     raw_ack = await socket.recv()
     if not isinstance(raw_ack, str):
         raise CloudHandshakeDeniedError(_DENIED)
     ack = _read_strict_json(raw_ack, "connector.mcp_ack")
     if (
         set(ack) != {"kind", "version", "sequence", "requestId"}
-        or type(ack.get("version")) is not int or ack["version"] != 1
+        or type(ack.get("version")) is not int
+        or ack["version"] != 1
         or type(ack.get("sequence")) is not int
         or ack["sequence"] != expected_sequence
         or ack.get("requestId") != response["requestId"]
