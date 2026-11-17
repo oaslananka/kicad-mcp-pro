@@ -11,6 +11,7 @@ import json
 import re
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -31,6 +32,72 @@ _MAX_RESULT_BYTES = 60_000
 
 class GenericMcpTransportError(ValueError):
     """Invalid, unauthenticated, stale or unauthorized generic Cloud MCP."""
+
+
+def _owner_project_files(project: OperatorProject) -> dict[str, str]:
+    """Pin the *owner-selected* existing KiCad project, never Cloud paths.
+
+    Current local MCP activation chooses its .kicad_pro by scanning a folder.
+    A directory with multiple projects is therefore ambiguous and must fail
+    rather than silently activate a different PCB or schematic.
+    """
+    if not isinstance(project, OperatorProject):
+        raise GenericMcpTransportError(_DENIED)
+    root = project.directory
+    stem = project.filename_stem
+    if (
+        not isinstance(root, Path)
+        or not root.is_absolute()
+        or not isinstance(stem, str)
+        or not 1 <= len(stem) <= 180
+        or stem in {".", ".."}
+        or stem.endswith(".")
+        or any(c in stem for c in "/\\:\x00")
+    ):
+        raise GenericMcpTransportError(_DENIED)
+    try:
+        root_resolved = root.resolve(strict=True)
+        if not root.is_dir() or root.is_symlink():
+            raise GenericMcpTransportError(_DENIED)
+        desired = root / (stem + ".kicad_pro")
+        project_files = list(root.glob("*.kicad_pro"))
+        if len(project_files) != 1 or project_files[0] != desired or desired.is_symlink():
+            raise GenericMcpTransportError(_DENIED)
+        if desired.resolve(strict=True).parent != root_resolved:
+            raise GenericMcpTransportError(_DENIED)
+        selected: dict[str, str] = {"project_dir": str(root_resolved)}
+        has_design = False
+        for suffix, field in ((".kicad_pcb", "pcb_file"), (".kicad_sch", "sch_file")):
+            files = list(root.glob("*" + suffix))
+            chosen = root / (stem + suffix)
+            if files:
+                if len(files) != 1 or files[0] != chosen or chosen.is_symlink():
+                    raise GenericMcpTransportError(_DENIED)
+                if chosen.resolve(strict=True).parent != root_resolved:
+                    raise GenericMcpTransportError(_DENIED)
+                selected[field] = chosen.name
+                has_design = True
+        if not has_design:
+            raise GenericMcpTransportError(_DENIED)
+        return selected
+    except (OSError, TypeError, ValueError) as exc:
+        raise GenericMcpTransportError(_DENIED) from exc
+
+
+def _require_owner_live_pcb(project: OperatorProject) -> None:
+    """Re-use the canonical native KiCad GUI-to-owner-project identity guard.
+
+    A locally activated project directory does not imply that the separately
+    running PCB Editor is displaying that same board. For mutating pcb_* tools,
+    refuse if native IPC is unavailable or is bound to another board.
+    """
+    try:
+        from kicad_mcp.cloud_write_native_ipc import _require_approved_live_board
+        from kicad_mcp.connection import get_board
+
+        _require_approved_live_board(get_board(), project)
+    except Exception as exc:
+        raise GenericMcpTransportError(_DENIED) from exc
 
 
 class GenericProjectMcpService:
@@ -189,6 +256,10 @@ class GenericProjectMcpService:
                     )
                     if details["requestId"] != frame["requestId"] or details["toolName"] != name:
                         raise GenericMcpTransportError(_DENIED)
+                    # Native PCB IPC may still point at a different editor
+                    # window despite the owner-selected project directory.
+                    if name.startswith("pcb_"):
+                        _require_owner_live_pcb(project)
                     write_deadline = details["deadlineUnixMs"]
                     write_ok = True
                 else:
@@ -198,10 +269,28 @@ class GenericProjectMcpService:
                     args = json.loads(frame["argumentsJson"])
                 except (ValueError, TypeError) as exc:
                     raise GenericMcpTransportError(_DENIED) from exc
+            # Use a fresh worker and activate the *validated owner project*
+            # locally. The AI cannot change the active project or supply paths.
+            selection = _owner_project_files(project)
             mode = "write" if self.allow_write else "readonly"
             async with project_stdio_worker(
                 project.directory, profile="expert", operating_mode=mode
             ) as worker:
+                if self.authorized() is not True:
+                    raise GenericMcpTransportError(_DENIED)
+                activated = await worker.call_tool("kicad_set_project", arguments=selection)
+                if getattr(activated, "isError", False) is True:
+                    raise GenericMcpTransportError("mcp_owner_project_activation_failed")
+                if any(
+                    getattr(chunk, "type", None) == "text"
+                    and str(getattr(chunk, "text", "")).startswith(
+                        ("E_PROJECT_", "Project directory does not exist")
+                    )
+                    for chunk in getattr(activated, "content", [])
+                ):
+                    raise GenericMcpTransportError("mcp_owner_project_activation_failed")
+                if self.authorized() is not True:
+                    raise GenericMcpTransportError(_DENIED)
                 if frame["method"] == "catalog":
                     catalog = await bridge.list_tools(
                         worker, project_id=project.project_id, session_id=self.receipt.session_id

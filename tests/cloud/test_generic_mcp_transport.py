@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import pytest
+from mcp.types import Tool
 
 from kicad_mcp.cloud_generic_mcp_transport import (
     GenericMcpTransportError,
@@ -26,12 +27,12 @@ class FakeWorker:
     async def list_tools(self) -> SimpleNamespace:
         return SimpleNamespace(
             tools=[
-                SimpleNamespace(
+                Tool(
                     name="kicad_get_version",
                     description="version",
                     inputSchema={"type": "object", "properties": {}},
                 ),
-                SimpleNamespace(
+                Tool(
                     name="sch_add_symbol",
                     description="symbol",
                     inputSchema={"type": "object", "properties": {}},
@@ -42,7 +43,9 @@ class FakeWorker:
     async def call_tool(self, name, arguments) -> SimpleNamespace:
         self.calls.append((name, arguments))
         return SimpleNamespace(
-            model_dump=lambda **_: {"content": [{"type": "text", "text": "ok"}], "isError": False}
+            model_dump=lambda **_: {"content": [{"type": "text", "text": "ok"}], "isError": False},
+            isError=False,
+            content=[SimpleNamespace(type="text", text="ok")],
         )
 
 
@@ -68,6 +71,10 @@ async def test_bound_mcp_catalog_and_read_call(tmp_path, monkeypatch) -> None:
         current_authorization=lambda: True,
         allow_native_write=False,
     )
+    # Owner-selected target files are local; the AI never supplies these paths.
+    (tmp_path / "temp.kicad_pro").write_text("{}", encoding="utf8")
+    (tmp_path / "temp.kicad_pcb").write_text("(kicad_pcb)", encoding="utf8")
+    FakeWorker.calls.clear()
     catalog = await service.dispatch(
         {
             "kind": "connector.mcp_request",
@@ -93,6 +100,14 @@ async def test_bound_mcp_catalog_and_read_call(tmp_path, monkeypatch) -> None:
     )
     assert result["ok"] is True
     assert result["result"]["content"][0]["text"] == "ok"
+    activations = [
+        (name, params) for name, params in FakeWorker.calls if name == "kicad_set_project"
+    ]
+    assert len(activations) == 2
+    assert activations[0][1] == {
+        "project_dir": str(tmp_path.resolve()),
+        "pcb_file": "temp.kicad_pcb",
+    }
 
 
 @pytest.mark.asyncio
@@ -189,3 +204,48 @@ async def test_existing_signed_socket_can_carry_one_generic_request_and_ack() ->
     assert service.called is True
     assert sock.sent[0]["kind"] == "connector.mcp_result"
     assert sock.sent[0]["sequence"] == 1
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_project_folder_rejected_before_worker_dispatch(tmp_path) -> None:
+    from kicad_mcp.cloud_generic_mcp_transport import _owner_project_files
+
+    (tmp_path / "temp.kicad_pro").write_text("{}", encoding="utf8")
+    (tmp_path / "temp.kicad_pcb").write_text("(kicad_pcb)", encoding="utf8")
+    (tmp_path / "different.kicad_pro").write_text("{}", encoding="utf8")
+    project = OperatorProject(
+        device_id=DEVICE, project_id=PROJECT, directory=tmp_path, filename_stem="temp"
+    )
+    with pytest.raises(GenericMcpTransportError):
+        _owner_project_files(project)
+
+
+def test_missing_project_schematic_and_board_fails_closed(tmp_path) -> None:
+    from kicad_mcp.cloud_generic_mcp_transport import _owner_project_files
+
+    (tmp_path / "temp.kicad_pro").write_text("{}", encoding="utf8")
+    project = OperatorProject(
+        device_id=DEVICE, project_id=PROJECT, directory=tmp_path, filename_stem="temp"
+    )
+    with pytest.raises(GenericMcpTransportError):
+        _owner_project_files(project)
+
+
+def test_pcb_writer_cannot_target_another_live_gui_board(tmp_path, monkeypatch) -> None:
+    import kicad_mcp.connection as connection
+    from kicad_mcp.cloud_generic_mcp_transport import _require_owner_live_pcb
+
+    project = OperatorProject(
+        device_id=DEVICE, project_id=PROJECT, directory=tmp_path, filename_stem="temp"
+    )
+    wrong = SimpleNamespace(
+        name="customer.kicad_pcb", get_project=lambda: SimpleNamespace(path=str(tmp_path))
+    )
+    monkeypatch.setattr(connection, "get_board", lambda: wrong)
+    with pytest.raises(GenericMcpTransportError):
+        _require_owner_live_pcb(project)
+    correct = SimpleNamespace(
+        name="temp.kicad_pcb", get_project=lambda: SimpleNamespace(path=str(tmp_path))
+    )
+    monkeypatch.setattr(connection, "get_board", lambda: correct)
+    _require_owner_live_pcb(project)

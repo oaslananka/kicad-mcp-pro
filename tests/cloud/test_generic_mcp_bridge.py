@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from mcp.types import Tool
 
 from kicad_mcp.cloud_generic_mcp_bridge import GenericMcpDeniedError, GenericProjectMcpBridge
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
@@ -44,32 +45,32 @@ class FakeSession:
     async def list_tools(self) -> SimpleNamespace:
         return SimpleNamespace(
             tools=[
-                SimpleNamespace(
+                Tool(
                     name="kicad_get_version",
                     description="Read version",
                     inputSchema={"type": "object", "properties": {}},
                 ),
-                SimpleNamespace(
+                Tool(
                     name="sch_add_symbol",
                     description="Add a symbol",
                     inputSchema={"type": "object", "properties": {"reference": {"type": "string"}}},
                 ),
-                SimpleNamespace(
+                Tool(
                     name="export_manufacturing_package",
                     description="Manufacturing",
                     inputSchema={"type": "object", "properties": {}},
                 ),
-                SimpleNamespace(
+                Tool(
                     name="variant_export_manufacturing_package",
                     description="Hidden manufacturing export",
                     inputSchema={"type": "object", "properties": {}},
                 ),
-                SimpleNamespace(
+                Tool(
                     name="kicad_set_project",
                     description="Switch project",
                     inputSchema={"type": "object", "properties": {}},
                 ),
-                SimpleNamespace(
+                Tool(
                     name="unexpected_external_tool",
                     description="Unregistered",
                     inputSchema={"type": "object", "properties": {}},

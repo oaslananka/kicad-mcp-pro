@@ -48,8 +48,9 @@ Connect an updated local Connector and your AI client to the Cloud account:
 
 The Cloud tool list intentionally offers these **two generic entrypoints**
 rather than advertising hundreds of tools without a currently connected
-owner project. The authorized owner's local MCP profile and operating mode
-remain the source of permitted commands. Project switching, external absolute
+owner project. The isolated device worker runs the installed local expert tool registry;
+Cloud and the owner-controlled connector independently enforce Read/Edit
+and native write permissions. Project switching, external absolute
 filesystem paths, experimental and manufacturing / human-only operations are
 **not** forwarded. Existing human approval rules for manufacturing remain in
 place. Local filesystem locations are redacted from results; requested tool
@@ -63,6 +64,12 @@ Read-only project grants never allow a mutation merely because a client has
 cached older tool metadata. Old Connectors safely retain their existing
 limited capabilities until updated; do not claim a live generic bridge
 without a compatible signed owner session and deployed Cloud version.
+The selected local folder must contain exactly one matching `.kicad_pro`
+and its `.kicad_pcb` or `.kicad_sch`. The device worker initializes that
+project locally for each call; ambiguous multiple-project folders fail
+closed rather than switching to another project. Native `pcb_*` writes also
+require the active KiCad PCB Editor to display that exact owner-approved
+board; a different open board is never an authorized target.
 
 ### One Read/Edit choice per AI app and project
 

@@ -180,7 +180,7 @@ class GenericProjectMcpBridge:
             item = {
                 "name": tool.name,
                 "description": (tool.description or "")[:2048],
-                "inputSchema": tool.inputSchema,
+                "inputSchema": tool.input_schema,
                 "accessMode": mode,
             }
             if len(json.dumps(item, ensure_ascii=False, default=str).encode("utf-8")) <= 32_768:
