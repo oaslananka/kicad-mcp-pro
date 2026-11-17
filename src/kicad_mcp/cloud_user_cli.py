@@ -17,12 +17,15 @@ import time
 import uuid
 import webbrowser
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 
 from kicad_mcp.cloud_owner_cli import register_owner_commands
 from kicad_mcp.cloud_windows_enrollment import WindowsRegisteredProject
+
+if TYPE_CHECKING:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 DEFAULT_CLOUD_ORIGIN = "https://kicad-mcp-pro.oaslananka.dev"
 _DEFAULT_DEVICE_ALIAS = "My computer"
@@ -469,6 +472,69 @@ def _display_cloud_status(value: str, origin: str) -> None:
         typer.echo(f"             Manage projects: {origin}/devices")
 
 
+def _owner_native_write_enabled(
+    existing: WindowsRegisteredProject, *, interactive: bool, requested: bool
+) -> bool:
+    """Reuse only an exact paired owner's saved choice in an interactive session."""
+    if (
+        not interactive
+        or requested
+        or not (hasattr(existing, "record_id") and hasattr(existing, "project_id"))
+    ):
+        return requested
+
+    from kicad_mcp.cloud_windows_write_preference import owner_native_write_remembered
+
+    try:
+        return owner_native_write_remembered(existing.record_id, existing.project_id)
+    except Exception:
+        raise typer.BadParameter(
+            "Saved local editing permission could not be verified. "
+            "No native write session was started."
+        ) from None
+
+
+def _trusted_owner_write_issuer(
+    existing: WindowsRegisteredProject, *, enabled: bool, remember: bool
+) -> Ed25519PublicKey | None:
+    """Verify local trust and replay protection before saving any owner preference."""
+    if not enabled:
+        return None
+
+    from kicad_mcp.cloud_windows_write_issuer import load_pinned_windows_write_issuer_key
+    from kicad_mcp.cloud_windows_write_marker import (
+        prepare_owner_windows_write_marker_directory,
+    )
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    try:
+        issuer = load_pinned_windows_write_issuer_key(existing.record_id)
+    except LocalWriteDeniedError:
+        raise typer.BadParameter(
+            "Native edits require an owner-pinned Cloud write issuer. "
+            "First run cloud trust-write-issuer with a verified public key."
+        ) from None
+
+    try:
+        prepare_owner_windows_write_marker_directory()
+    except LocalWriteDeniedError:
+        raise typer.BadParameter(
+            "Protected replay storage is unavailable. No native edits were enabled."
+        ) from None
+
+    if remember:
+        from kicad_mcp.cloud_windows_write_preference import remember_owner_native_write
+
+        try:
+            remember_owner_native_write(existing.record_id, existing.project_id)
+        except Exception:
+            raise typer.BadParameter(
+                "Could not save the owner-only local editing preference. "
+                "No native write session was started."
+            ) from None
+    return issuer
+
+
 @cloud_app.command("remote")
 def remote(
     browse: Annotated[bool, typer.Option("--browse", help="Choose a local KiCad project.")] = False,
@@ -547,57 +613,12 @@ def remote(
     if existing.origin != origin:
         raise typer.BadParameter("This device is paired with a different Cloud site.")
 
-    from kicad_mcp.cloud_windows_write_preference import (
-        owner_native_write_remembered,
-        remember_owner_native_write,
+    enable_write = _owner_native_write_enabled(
+        existing, interactive=interactive, requested=allow_native_write or remember_native_write
     )
-
-    enable_write = allow_native_write or remember_native_write
-    if (
-        interactive
-        and not enable_write
-        and hasattr(existing, "record_id")
-        and hasattr(existing, "project_id")
-    ):
-        try:
-            enable_write = owner_native_write_remembered(existing.record_id, existing.project_id)
-        except Exception:
-            raise typer.BadParameter(
-                "Saved local editing permission could not be verified. "
-                "No native write session was started."
-            ) from None
-
-    trusted_issuer = None
-    if enable_write:
-        from kicad_mcp.cloud_windows_write_issuer import load_pinned_windows_write_issuer_key
-        from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
-
-        try:
-            trusted_issuer = load_pinned_windows_write_issuer_key(existing.record_id)
-        except LocalWriteDeniedError:
-            raise typer.BadParameter(
-                "Native edits require an owner-pinned Cloud write issuer. "
-                "First run cloud trust-write-issuer with a verified public key."
-            ) from None
-        from kicad_mcp.cloud_windows_write_marker import (
-            prepare_owner_windows_write_marker_directory,
-        )
-
-        try:
-            prepare_owner_windows_write_marker_directory()
-        except LocalWriteDeniedError:
-            raise typer.BadParameter(
-                "Protected replay storage is unavailable. No native edits were enabled."
-            ) from None
-
-    if remember_native_write:
-        try:
-            remember_owner_native_write(existing.record_id, existing.project_id)
-        except Exception:
-            raise typer.BadParameter(
-                "Could not save the owner-only local editing preference. "
-                "No native write session was started."
-            ) from None
+    trusted_issuer = _trusted_owner_write_issuer(
+        existing, enabled=enable_write, remember=remember_native_write
+    )
 
     _prepare_remote_connector(existing, interactive)
     selected = inspect_owner_selected_project(existing)
