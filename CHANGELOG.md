@@ -10,6 +10,34 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.17.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.16.0...mcp-server-v4.17.0) (2026-11-17)
+
+
+### Features
+
+* **research:** verify isolated read-only MCP Apps review ([#1220](https://github.com/oaslananka/kicad-mcp-pro/issues/1220)) ([#1741](https://github.com/oaslananka/kicad-mcp-pro/issues/1741)) ([d699044](https://github.com/oaslananka/kicad-mcp-pro/commit/d699044e1d3fcbdcfdf589f4d1c2caa248edcf85))
+* **routing:** DRC-gated pad, USB pair and one-via routing ([#1394](https://github.com/oaslananka/kicad-mcp-pro/issues/1394)) ([#1734](https://github.com/oaslananka/kicad-mcp-pro/issues/1734)) ([87b0560](https://github.com/oaslananka/kicad-mcp-pro/commit/87b0560f01db7e1d019195fec0325b97c17c0db2))
+
+
+### Bug Fixes
+
+* **cloud:** rotate signed sessions before lease expiry ([#1727](https://github.com/oaslananka/kicad-mcp-pro/issues/1727)) ([799c9cc](https://github.com/oaslananka/kicad-mcp-pro/commit/799c9cc720222a12d88712c1feff326f32d31848))
+* **deps:** update MCP client SDK to patched v2.4.0 ([#1753](https://github.com/oaslananka/kicad-mcp-pro/issues/1753)) ([68c94ac](https://github.com/oaslananka/kicad-mcp-pro/commit/68c94acb202d60d0fe118a84e02051a6babbefc1))
+* **deps:** validate fast-uri v4 in ChatGPT app ([#1754](https://github.com/oaslananka/kicad-mcp-pro/issues/1754)) ([447a5ea](https://github.com/oaslananka/kicad-mcp-pro/commit/447a5ea941759df338ea48c1ed9ce892c9b07cca))
+* **mcp:** cross-platform MCP compatibility and integration readiness ([#1759](https://github.com/oaslananka/kicad-mcp-pro/issues/1759)) ([d58b47c](https://github.com/oaslananka/kicad-mcp-pro/commit/d58b47c4ff41538708bc3aeb4d2c2be5079447ba))
+* **mcp:** mark schematic inspection tools read-only for agent hosts ([#1761](https://github.com/oaslananka/kicad-mcp-pro/issues/1761)) ([eccc61d](https://github.com/oaslananka/kicad-mcp-pro/commit/eccc61d90a0058d036f791d2d00f9d934a4ba7da))
+* **security:** resolve CSRF, bridge pairing reuse, and SPICE smuggling ([#1756](https://github.com/oaslananka/kicad-mcp-pro/issues/1756)) ([d46653a](https://github.com/oaslananka/kicad-mcp-pro/commit/d46653af00df27f0d6b5060394a08a7673b1ce9f))
+* **ui:** improve accessibility, log buffer and encoding ([#1760](https://github.com/oaslananka/kicad-mcp-pro/issues/1760)) ([b9979b6](https://github.com/oaslananka/kicad-mcp-pro/commit/b9979b61ad5c9a8f22a6033296459862e98f7243))
+* **validation:** keep cosmetic route corners advisory in release bundle ([#1755](https://github.com/oaslananka/kicad-mcp-pro/issues/1755)) ([7c4a48d](https://github.com/oaslananka/kicad-mcp-pro/commit/7c4a48d65bad5dff3a823d6a3d534ab9538ec195))
+
+
+### Documentation
+
+* **license:** announce AGPL-3.0-only for new project-authored distributions; preserve historical MIT grants ([d6179e5](https://github.com/oaslananka/kicad-mcp-pro/commit/d6179e55510c8cc8758b862905fd00ebaafbd2c6))
+* **license:** link repository-root notices from MkDocs ([#1731](https://github.com/oaslananka/kicad-mcp-pro/issues/1731)) ([fd4c8c0](https://github.com/oaslananka/kicad-mcp-pro/commit/fd4c8c0e869243b4381bd01538b2d51966eeee92))
+* plan Node.js 26 LTS migration ([#1643](https://github.com/oaslananka/kicad-mcp-pro/issues/1643)) ([6c9e9c1](https://github.com/oaslananka/kicad-mcp-pro/commit/6c9e9c178680015fd7b0ac766efaabcdaa236592))
+* publish Pages with Actions and simplify documentation home ([#1733](https://github.com/oaslananka/kicad-mcp-pro/issues/1733)) ([6b63683](https://github.com/oaslananka/kicad-mcp-pro/commit/6b636839ccb423f4bf2ab00d243cf3c305183bd8))
+
 ## [4.16.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.15.1...mcp-server-v4.16.0) (2026-11-14)
 
 
