@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { bench, describe } from "./bench-api.js";
 import type { IncomingMessage } from "node:http";
 import { inspectIngressTopology, type IngressTopology } from "../src/ingress-topology.js";
 import { trustedCloudflareSource } from "../src/trusted-ingress.js";

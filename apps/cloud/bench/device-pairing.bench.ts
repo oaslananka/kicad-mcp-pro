@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { bench, describe } from "./bench-api.js";
 import { generateKeyPairSync, sign } from "node:crypto";
 import {
   issuePairing, redeemPairing, redemptionProof, reviewPairing
