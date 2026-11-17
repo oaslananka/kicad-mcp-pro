@@ -750,6 +750,14 @@ async def _perform_outbound_session(
     def now_ms() -> int:
         return int(datetime.now(UTC).timestamp() * 1000)
 
+    # A write-enabled session needs the bounded signed-v2 frame capacity.
+    # Other handshake/read frames retain their own strict decoder limits.
+    max_frame_size = 1024
+    if session_options.folder_service_factory is not None:
+        max_frame_size = _FOLDER_SESSION_MAX_PAYLOAD
+    elif session_options.managed_native_write:
+        max_frame_size = _SIGNED_WRITE_FRAME_MAX_PAYLOAD
+
     try:
         async with (
             asyncio.timeout(_outbound_session_timeout(session_options)),
@@ -758,15 +766,7 @@ async def _perform_outbound_session(
                 ssl=context,
                 origin=None,
                 compression=None,
-                max_size=(
-                    _FOLDER_SESSION_MAX_PAYLOAD
-                    if session_options.folder_service_factory is not None
-                    else (
-                        _SIGNED_WRITE_FRAME_MAX_PAYLOAD
-                        if session_options.managed_native_write
-                        else 1024
-                    )
-                ),
+                max_size=max_frame_size,
                 max_queue=2,
                 open_timeout=3,
                 close_timeout=2,
