@@ -260,3 +260,51 @@ def test_hook_configuration_selects_focused_contract_tests(tmp_path: Path) -> No
     plan = build_plan(["lefthook.yml"], root=tmp_path)
     assert [check.name for check in plan] == ["local-hook-contract-tests"]
     assert plan[0].command[1:4] == ["-m", "pytest", "-q"]
+
+
+def test_tool_surface_change_checks_generated_capability_catalog(tmp_path: Path) -> None:
+    """A new public MCP tool must not reach GitHub before local catalog drift check."""
+    for relative in (
+        "src/kicad_mcp/tools/router.py",
+        "src/kicad_mcp/capabilities.py",
+        "src/kicad_mcp/runtime_capability_catalog.py",
+        "src/kicad_mcp/server.py",
+        "scripts/build_capability_catalog.py",
+        "integrations/common/capability-catalog.json",
+        "pyproject.toml",
+    ):
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}\n", encoding="utf-8")
+        plan = build_plan([relative], root=tmp_path)
+        commands = [check.command for check in plan if check.name == "capability-catalog"]
+        assert commands == [
+            [
+                hook_pre_push.sys.executable,
+                "scripts/build_capability_catalog.py",
+                "--check",
+            ]
+        ], relative
+
+
+def test_public_tool_change_checks_golden_surface_snapshot(tmp_path: Path) -> None:
+    """A changed router or golden snapshot must be checked before push."""
+    for relative in (
+        "src/kicad_mcp/tools/router.py",
+        "src/kicad_mcp/server.py",
+        "tests/integration/data/tool_surface_snapshot.json",
+    ):
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}\n", encoding="utf-8")
+        plan = build_plan([relative], root=tmp_path)
+        commands = [check.command for check in plan if check.name == "tool-surface-snapshot"]
+        assert commands == [
+            [
+                hook_pre_push.sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                "tests/integration/test_tool_surface_snapshot.py",
+            ]
+        ], relative

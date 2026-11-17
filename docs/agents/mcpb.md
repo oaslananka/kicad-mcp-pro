@@ -30,8 +30,8 @@ If you would rather not install a bundle, the manual config in
 ## Build it yourself
 
 ```bash
-corepack pnpm run mcpb:validate   # schema + icon check
-corepack pnpm run mcpb:pack       # writes dist/kicad-mcp-pro.mcpb
+pnpm run mcpb:validate   # schema + icon check
+pnpm run mcpb:pack       # writes dist/kicad-mcp-pro.mcpb
 ```
 
 The manifest lives at `packaging/mcpb/manifest.json`. Its `version` field is

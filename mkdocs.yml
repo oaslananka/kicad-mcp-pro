@@ -11,26 +11,25 @@ theme:
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: blue
-      accent: teal
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: blue
-      accent: teal
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
   features:
     - navigation.instant
-    - navigation.sections
+    - navigation.top
+    - toc.follow
     - content.code.copy
 extra_css:
-  - assets/support-links.css
-extra_javascript:
-  - assets/support-links.js
+  - assets/site.css
 plugins:
   - search
   - git-revision-date-localized:

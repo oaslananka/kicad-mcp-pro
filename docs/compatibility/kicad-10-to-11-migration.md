@@ -56,24 +56,24 @@ has two manual paths:
 
 ```bash
 KICAD_CANARY_KICAD_CLI=/absolute/path/to/kicad-cli \
-  corepack pnpm run test:kicad-cli-contract:nightly
+  pnpm run test:kicad-cli-contract:nightly
 ```
 
 ```powershell
 $Env:KICAD_CANARY_KICAD_CLI = "C:\Program Files\KiCad Nightly\bin\kicad-cli.exe"
-corepack pnpm run test:kicad-cli-contract:nightly
+pnpm run test:kicad-cli-contract:nightly
 ```
 
 Use the RC command once the installed prerelease reports `11.0.x`:
 
 ```bash
 KICAD_CANARY_KICAD_CLI=/absolute/path/to/kicad-cli \
-  corepack pnpm run test:kicad-cli-contract:future
+  pnpm run test:kicad-cli-contract:future
 ```
 
 ```powershell
 $Env:KICAD_CANARY_KICAD_CLI = "C:\Program Files\KiCad\11.0\bin\kicad-cli.exe"
-corepack pnpm run test:kicad-cli-contract:future
+pnpm run test:kicad-cli-contract:future
 ```
 
 The CLI canary writes logs, reports, manufacturing outputs, `summary.json`, and
@@ -104,11 +104,11 @@ The repository gate checks that every listed tool exists in the generated MCP
 tool reference and that every evidence path exists:
 
 ```bash
-corepack pnpm run compat:check
+pnpm run compat:check
 ```
 
 ```powershell
-corepack pnpm run compat:check
+pnpm run compat:check
 ```
 
 ## Promotion Checklist

@@ -211,6 +211,41 @@ def build_plan(changed_files: list[str], *, root: Path = ROOT) -> list[Check]:
             ]
         )
 
+    if _is_tool_surface_changed(changed) or any(
+        path
+        in {
+            "src/kicad_mcp/capabilities.py",
+            "src/kicad_mcp/runtime_capability_catalog.py",
+            "src/kicad_mcp/operating_modes.py",
+            "scripts/build_capability_catalog.py",
+            "integrations/common/capability-catalog.json",
+            "pyproject.toml",
+        }
+        for path in changed
+    ):
+        checks.append(
+            Check(
+                "capability-catalog",
+                [sys.executable, "scripts/build_capability_catalog.py", "--check"],
+            )
+        )
+
+    if _is_tool_surface_changed(changed) or (
+        "tests/integration/data/tool_surface_snapshot.json" in changed
+    ):
+        checks.append(
+            Check(
+                "tool-surface-snapshot",
+                [
+                    sys.executable,
+                    "-m",
+                    "pytest",
+                    "-q",
+                    "tests/integration/test_tool_surface_snapshot.py",
+                ],
+            )
+        )
+
     if any(path in _METADATA_TRIGGERS for path in changed):
         checks.append(
             Check(

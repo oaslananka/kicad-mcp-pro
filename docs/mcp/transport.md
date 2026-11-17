@@ -46,7 +46,7 @@ Transport conformance coverage lives in
 `packages/mcp-server/tests/unit/test_mcp_protocol_contract.py` and runs through:
 
 ```bash
-corepack pnpm run test:contract
+pnpm run test:contract
 ```
 
 ## stdio

@@ -233,6 +233,18 @@ def _category_names_for_tool(tool_name: str) -> set[str]:
 
 
 def _is_experimental_tool(tool_name: str) -> bool:
+    # Read-only candidate generation is not an experimental board mutation.
+    if tool_name in (
+        "route_plan_between_pads",
+        "route_apply_candidate",
+        "route_plan_straight_differential_pair",
+        "route_apply_straight_differential_pair_candidate",
+        "route_plan_coupled_differential_pair",
+        "route_apply_coupled_differential_pair_candidate",
+        "route_plan_one_through_via",
+        "route_apply_one_through_via_candidate",
+    ):
+        return False
     categories = _category_names_for_tool(tool_name)
     return (
         tool_name in EXPERIMENTAL_TOOL_NAMES
@@ -252,6 +264,13 @@ def _is_manufacturing_tool(tool_name: str) -> bool:
 
 
 def _is_write_tool(tool_name: str) -> bool:
+    if tool_name in (
+        "route_apply_candidate",
+        "route_apply_straight_differential_pair_candidate",
+        "route_apply_coupled_differential_pair_candidate",
+        "route_apply_one_through_via_candidate",
+    ):
+        return True
     categories = _category_names_for_tool(tool_name)
     return (
         tool_name in _WRITE_TOOL_NAMES

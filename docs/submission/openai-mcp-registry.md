@@ -9,31 +9,31 @@ This document covers the registry publish path driven by `server.json`.
 - Keep `server.json` synchronized with canonical `pyproject.toml` and `compatibility.yaml` inputs.
 - Version must match `src/kicad_mcp/__init__.py`.
 
-## Verified Registry Status (2026-05-31)
+## Verified MCP Registry Status (2026-11-17)
 
-Verification of the official MCP Registry (`registry.modelcontextprotocol.io`) for
-`io.github.oaslananka/kicad-mcp-pro`, per issue #272. No publish was performed and no
-version, tag, or release identity was changed.
+The official MCP Registry API reports `io.github.oaslananka/kicad-mcp-pro`
+version `4.16.0` as **active** and **latest** (`isLatest: true`).
+The registry reports publication at `2026-11-15T00:09:40Z`. This is an
+observation of an existing publication, **not** a publication performed by
+this compatibility change.
 
-| Field            | Official registry record                              | Generated repo payload (`server.json`)            |
-| ---------------- | ----------------------------------------------------- | ----------------------------------------- |
-| Listing status   | `active`, `isLatest: true`                            | n/a                                       |
-| Published (UTC)  | `2026-04-15T21:15:40Z`                                | n/a                                       |
-| Version          | `2.1.0`                                               | `3.6.0`                                   |
-| Packages         | `pypi` only                                           | `pypi`, `npm`, `oci`                      |
-| `repository.url` | legacy standalone `kicad-mcp-pro` repo (pre-monorepo) | `https://github.com/oaslananka/kicad-mcp-pro` |
+| Field | Official latest registry record | Local `server.json` |
+| --- | --- | --- |
+| Status | `active`, `isLatest: true` | n/a |
+| Version | `4.16.0` | `4.16.0` |
+| Packages | PyPI, npm, OCI (`4.16.0`) | PyPI, npm, OCI |
+| Repository | `https://github.com/oaslananka/kicad-mcp-pro` | Same canonical URL |
 
-Findings:
+The historical `2.1.0` registry entry remains accessible but is no longer
+the latest. Verify the `isLatest` field rather than treating the first result
+from a search response as the current release.
 
-- The server **is** listed and active in the official registry, so the historical
-  "Not submitted" entry in the public listing was inaccurate and has been corrected.
-- The listing is **stale**: the registry shows `2.1.0` while the current product line is
-  `3.6.0` (PyPI already has `3.6.0`). The record predates the monorepo migration, so its
-  `repository.url` still points at the legacy standalone repository and it advertises only
-  the PyPI package.
-- `server.json` validates against the official
-  `2025-12-11` `server.schema.json`, and `metadata:check` / `submission:check` pass, so the
-  current manifest is publish-ready.
+**Published license metadata caveat:** The existing PyPI `4.16.0` distribution
+reports `MIT` in PyPI JSON metadata, matching its release-time
+`pyproject.toml`. Current source `LICENSE`, `pyproject.toml`, and
+`server.json` use `AGPL-3.0-only`. This change does not retroactively
+relicense the immutable published PyPI artifacts. Verify license metadata
+on the next release before claiming package/source parity.
 
 Verification commands:
 
@@ -42,8 +42,8 @@ Verification commands:
 curl -fsS "https://registry.modelcontextprotocol.io/v0/servers?search=kicad-mcp-pro"
 
 # Local manifest validity + publish payload (target/endpoint, no publish)
-corepack pnpm --dir packages/mcp-server run mcp:manifest:check
-corepack pnpm --dir packages/mcp-server run publish:mcp:dry-run
+pnpm run mcp:manifest:check
+pnpm run publish:mcp:dry-run
 ```
 
 ### Endpoint and Workflow Verification
@@ -53,19 +53,19 @@ corepack pnpm --dir packages/mcp-server run publish:mcp:dry-run
   the official registry (`registry.modelcontextprotocol.io`) by default. Endpoint confirmed
   correct.
 - `.github/workflows/publish-mcp-registry.yml` `publish` job runs `mcp-publisher login github-oidc`
-  then `mcp-publisher publish` from `packages/mcp-server`, gated to
+  then `mcp-publisher publish` from the repository root, gated to
   `release: published` or `workflow_dispatch` with `dry_run=false`.
 
-### Update Path (to refresh the listing to the current version)
+### Update Path (for a future release)
 
 No stored registry API token is required — the official target authenticates via GitHub
 OIDC under the `oaslananka` namespace (`id-token: write`).
 
-1. Confirm PyPI/GHCR artifacts exist for the target version (PyPI `3.6.0` already published).
+1. Confirm PyPI/GHCR artifacts exist for the **new** target version; `4.16.0` is already registered.
 2. Trigger the publish job via a GitHub `release: published` event, or manually via
    `workflow_dispatch` with `dry_run=false`.
 3. Approve the `mcp-registry` GitHub Environment when prompted (manual environment gate).
-4. Re-run the `search` command above and confirm `version` and `repository.url` updated.
+4. Re-run the `search` command above and confirm the new `isLatest` record, version and repository URL.
 
 ## Dry Run Flow
 
@@ -90,8 +90,8 @@ OIDC under the `oaslananka` namespace (`id-token: write`).
 ## PyPI Trusted Publisher OIDC
 
 - [ ] Confirm PyPI project name is `kicad-mcp-pro`.
-- [ ] Confirm workflow is `release-please.yml`.
-- [ ] Confirm release environment is `release`.
+- [ ] Confirm PyPI publication workflow is `publish-python.yml`.
+- [ ] Confirm production PyPI environment is `pypi`.
 - [ ] Confirm owner is `oaslananka`.
 - [ ] Confirm repository is `kicad-mcp-pro`.
 - [ ] Confirm OIDC `id-token: write` remains configured for release publish.
@@ -122,7 +122,7 @@ cosign verify ghcr.io/oaslananka/kicad-mcp-pro:${VERSION} \
 - [ ] Check package registry entry `kicad-mcp-pro` before publish.
 - [ ] Check OCI package identifier before publish.
 - [ ] Check website URL before publish.
-- [ ] Check license value `MIT` before publish.
+- [ ] Check current source license value `AGPL-3.0-only` before publish.
 - [ ] Check capabilities include tools.
 - [ ] Check capabilities include resources.
 - [ ] Check capabilities include prompts.
@@ -155,7 +155,7 @@ cosign verify ghcr.io/oaslananka/kicad-mcp-pro:${VERSION} \
 - [ ] Confirm website URL is the GitHub Pages URL.
 - [ ] Confirm support URL is GitHub issues when the registry asks for support.
 - [ ] Confirm privacy URL is the GitHub Pages privacy page when requested.
-- [ ] Confirm license value is `MIT`.
+- [ ] Confirm current source license value is `AGPL-3.0-only`.
 - [ ] Confirm capabilities list tools.
 - [ ] Confirm capabilities list resources.
 - [ ] Confirm capabilities list prompts.
@@ -204,7 +204,7 @@ cosign verify ghcr.io/oaslananka/kicad-mcp-pro:${VERSION} \
 - [ ] Confirm the next release repeats this checklist rather than copying stale evidence.
 - [ ] Confirm registry docs are updated if the registry schema version changes.
 - [ ] Confirm `scripts/schemas/server.schema.json` is updated only from the official schema.
-- [ ] Confirm registry status remains `Not submitted` until the live command is actually run.
+- [ ] Confirm registry status from the live API; avoid marking an existing publication as not submitted.
 - [ ] Confirm the submission evidence includes the exact commit SHA reviewed.
 - [ ] Confirm the release tag used for registry publication is immutable.
 - [ ] Confirm a rollback note exists if registry metadata must be corrected later.

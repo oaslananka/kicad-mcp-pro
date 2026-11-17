@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 
 Report = dict[str, object]
 ReportEntry = dict[str, object]
@@ -143,3 +144,136 @@ def connectivity_evidence_problems(report: Report) -> list[str]:
     if isinstance(severities, list) and "error" not in severities:
         problems.append("The DRC report did not include error-level violations.")
     return problems
+
+
+def _violation_identity(entry: ReportEntry) -> str:
+    """Use finding type and exact native item identity, not only issue totals.
+
+    Descriptions, UUIDs and locations distinguish same-type violations on
+    different copper. Report timestamps and source paths are intentionally
+    excluded so identical saved-board issues remain stable across DRC runs.
+    """
+    kind = entry.get("type")
+    if not isinstance(kind, str) or not kind:
+        raise ValueError("DRC violation type is missing or malformed")
+    items = entry.get("items", [])
+    if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+        raise ValueError("DRC violation items must be a list of objects")
+    normalized_items = sorted(
+        json.dumps(
+            {
+                "uuid": item.get("uuid"),
+                "description": item.get("description"),
+                "pos": item.get("pos"),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        )
+        for item in items
+    )
+    return json.dumps(
+        {
+            "type": kind,
+            "severity": normalize_report_severity(entry.get("severity")),
+            "excluded": entry.get("excluded", False),
+            "description": entry.get("description", ""),
+            "items": normalized_items,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+
+
+def newly_reported_drc_violations(
+    before: Report,
+    after: Report,
+) -> list[ReportEntry]:
+    """Return native PCB violations newly introduced by an attempted change.
+
+    Compares a multiset of native finding identities. This detects a new
+    violation replacing an old one even when the total count stays constant.
+    Does NOT evaluate unrouted connections: check those separately with the
+    native DRC unconnected_items list. Invalid/missing evidence fails closed.
+    """
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        raise ValueError("Both DRC reports must be objects")
+
+    def entries(report: Report) -> list[ReportEntry]:
+        raw = report.get("violations")
+        if not isinstance(raw, list) or any(not isinstance(item, dict) for item in raw):
+            raise ValueError("DRC violations must be a list of objects")
+        return raw
+
+    remaining = Counter(_violation_identity(item) for item in entries(before))
+    introduced: list[ReportEntry] = []
+    for item in entries(after):
+        identity = _violation_identity(item)
+        if remaining[identity]:
+            remaining[identity] -= 1
+        else:
+            introduced.append(item)
+    return introduced
+
+
+def evaluate_route_drc(
+    before: Report,
+    after: Report,
+    *,
+    routed_nets: frozenset[str] | None = None,
+) -> dict[str, bool | int]:
+    """Refuse a routing candidate that adds native DRC errors or fails to connect pads.
+
+    Both reports must explicitly contain native violations and unconnected items.
+    Report counts alone cannot establish non-regression: use finding identity.
+    When routed_nets is supplied, verify that every requested net becomes
+    more connected and no other net improves instead. KiCad can silently
+    reconcile a mislabelled copper segment's net to the pad it touches
+    without reporting a short.
+    """
+
+    def count_unconnected(report: Report) -> int:
+        entries = report.get("unconnected_items")
+        if not isinstance(entries, list) or any(not isinstance(item, dict) for item in entries):
+            raise ValueError("Native DRC unconnected_items list is missing or malformed")
+        return len(entries)
+
+    previous = count_unconnected(before)
+    current = count_unconnected(after)
+    introduced = newly_reported_drc_violations(before, after)
+    previous_nets, unidentified_previous = unconnected_nets(
+        report_entries(before, "unconnected_items")
+    )
+    current_nets, unidentified_current = unconnected_nets(
+        report_entries(after, "unconnected_items")
+    )
+    newly_open_nets = current_nets.keys() - previous_nets.keys()
+    scoped_connectivity_ok = True
+    if routed_nets is not None:
+        improved = {
+            net
+            for net, entries in previous_nets.items()
+            if len(current_nets.get(net, [])) < len(entries)
+        }
+        regressed = any(
+            len(entries) > len(previous_nets.get(net, [])) for net, entries in current_nets.items()
+        )
+        scoped_connectivity_ok = (
+            bool(routed_nets)
+            and improved == routed_nets
+            and not regressed
+            and not unidentified_previous
+        )
+    # A lower global count cannot excuse disconnecting a previously connected net.
+    # If KiCad cannot identify a remaining open net, refuse the candidate.
+    return {
+        "accepted": not introduced
+        and current < previous
+        and not newly_open_nets
+        and not unidentified_current
+        and scoped_connectivity_ok,
+        "introducedViolations": len(introduced),
+        "unconnectedBefore": previous,
+        "unconnectedAfter": current,
+    }

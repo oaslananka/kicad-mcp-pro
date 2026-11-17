@@ -1,12 +1,12 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "kicad-pro",
-  "version": "4.16.0",
+  "version": "4.17.0",
   "description": "Local KiCad MCP server and portable engineering workflow skills.",
   "author": {
     "name": "oaslananka",
     "url": "https://github.com/oaslananka/kicad-mcp-pro"
   },
   "repository": "https://github.com/oaslananka/kicad-mcp-pro",
-  "license": "MIT"
+  "license": "AGPL-3.0-only"
 }

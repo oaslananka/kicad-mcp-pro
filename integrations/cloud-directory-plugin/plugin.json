@@ -9,7 +9,7 @@
   },
   "homepage": "https://oaslananka.github.io/kicad-mcp-pro/",
   "repository": "https://github.com/oaslananka/kicad-mcp-pro",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "keywords": ["KiCad", "MCP", "PCB", "schematic", "read-only"],
   "extensions": {
     "com.openai": {

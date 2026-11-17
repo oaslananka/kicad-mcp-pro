@@ -403,7 +403,7 @@ def test_development_diagnostics_classify_required_optional_and_live_tools(
         encoding="utf-8",
     )
     versions = {
-        "node": "v24.22.1",
+        "node": "v26.13.1",
         "pnpm": "11.28.6",
         "python": "Python 3.13.17",
         "task": "Task version: v3.52.0",

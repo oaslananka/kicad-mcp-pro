@@ -37,6 +37,7 @@ VALID_SPDX_LICENSES = frozenset(
         "ISC",
         "MPL-2.0",
         "GPL-3.0-only",
+        "AGPL-3.0-only",
         "LGPL-3.0-only",
     }
 )

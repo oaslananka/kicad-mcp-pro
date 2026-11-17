@@ -33,6 +33,7 @@ jobs:
       schemas: ${{ steps.filter.outputs.schemas }}
       workflows: ${{ steps.filter.outputs.workflows }}
       dependencies: ${{ steps.filter.outputs.dependencies }}
+      mcp_apps_research: ${{ steps.filter.outputs.mcp_apps_research }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -91,6 +92,9 @@ jobs:
               - '.github/actions/**'
               - '.github/actions-policy.json'
               - 'codecov.yml'
+            mcp_apps_research:
+              - 'tests/research/mcp_apps_readonly/**'
+              - 'tests/unit/test_mcp_apps_research_isolation.py'
             dependencies:
               - 'package.json'
               - 'apps/cloud/package.json'
@@ -311,21 +315,35 @@ jobs:
           enable-cache: true
           prune-cache: true
           version-file: uv.toml
-      - run: corepack enable
+      - name: Setup pinned pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 11.28.6
+          run_install: false
         if: env.skip_ci != 'true'
-      - run: corepack pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
         if: env.skip_ci != 'true'
+      - name: Validate isolated MCP Apps research fixture
+        if: >-
+          env.skip_ci != 'true' &&
+          matrix.os == 'ubuntu-24.04' &&
+          (needs.changes.outputs.mcp_apps_research == 'true' ||
+           github.event_name == 'workflow_dispatch')
+        working-directory: tests/research/mcp_apps_readonly
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm test
       - run: uv sync --all-extras --frozen
         if: env.skip_ci != 'true'
-      - run: corepack pnpm run format:check
+      - run: pnpm run format:check
         if: env.skip_ci != 'true'
-      - run: corepack pnpm run lint
+      - run: pnpm run lint
         if: env.skip_ci != 'true'
-      - run: corepack pnpm run typecheck
+      - run: pnpm run typecheck
         if: env.skip_ci != 'true'
-      - run: corepack pnpm run architecture:check
+      - run: pnpm run architecture:check
         if: env.skip_ci != 'true'
-      - run: corepack pnpm run test:unit
+      - run: pnpm run test:unit
         if: env.skip_ci != 'true'
       # Preserve native Windows execution evidence for PR patch coverage AND
       # analyzed main pushes, including non-Python follow-up merges.
@@ -400,11 +418,11 @@ jobs:
             windows-coverage-manifest.json
           if-no-files-found: error
           retention-days: 3
-      - run: corepack pnpm run metadata:check
+      - run: pnpm run metadata:check
         if: env.skip_ci != 'true'
-      - run: corepack pnpm run mcp:manifest:check
+      - run: pnpm run mcp:manifest:check
         if: env.skip_ci != 'true'
-      - run: corepack pnpm run package:check
+      - run: pnpm run package:check
         if: env.skip_ci != 'true'
 
   coverage:
@@ -634,6 +652,7 @@ jobs:
           RELEASE_METADATA_ONLY: ${{ needs.changes.outputs.release_metadata_only }}
           DOCS_ONLY: ${{ needs.changes.outputs.sonar_docs_only }}
           EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
           PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           REPOSITORY: ${{ github.repository }}
@@ -650,6 +669,9 @@ jobs:
           elif [[ "$EVENT_NAME" == 'pull_request' && "$PR_AUTHOR" == 'dependabot[bot]' ]]; then
             run_analysis=false
             no_op_reason='Dependabot pull request cannot receive SONAR_TOKEN'
+          elif [[ "$EVENT_NAME" == 'workflow_dispatch' && "$REF" != 'refs/heads/main' ]]; then
+            run_analysis=false
+            no_op_reason='manual non-main branch has no SonarCloud branch-analysis entitlement'
           elif [[ "$DOCS_ONLY" == 'true' ]]; then
             run_analysis=false
             no_op_reason='docs-only change set outside Sonar analysis scope'
@@ -777,6 +799,29 @@ jobs:
           version-file: uv.toml
       - run: uv sync --all-extras --frozen
         if: env.skip_ci != 'true'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        if: env.skip_ci != 'true'
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Setup pinned pnpm for MCP 2026 requester
+        if: env.skip_ci != 'true'
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 11.28.6
+          run_install: false
+      - name: Install pinned research-only Tasks requester
+        if: env.skip_ci != 'true'
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify independent MCP Tasks 2026 loopback requester
+        if: env.skip_ci != 'true'
+        env:
+          MCP_TASKS_REAL_CLIENT_REQUIRED: '1'
+        run: >-
+          uv run pytest -q
+          tests/unit/test_mcp_tasks_2026_schema_contract.py
+          tests/unit/test_mcp_tasks_draft_fixture.py
+          tests/integration/test_mcp_tasks_2026_client.py
       - name: Run stable-independent MCP 2026 compatibility contracts
         if: env.skip_ci != 'true'
         run: >-
@@ -895,17 +940,21 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - run: corepack enable
+      - name: Setup pinned pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+        with:
+          version: 11.28.6
+          run_install: false
         if: env.skip_ci != 'true'
-      - run: corepack pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
         if: env.skip_ci != 'true'
-      - run: corepack pnpm --filter @oaslananka/kicad-protocol-schemas run format:check
+      - run: pnpm --filter @oaslananka/kicad-protocol-schemas run format:check
         if: env.skip_ci != 'true'
-      - run: corepack pnpm --filter @oaslananka/kicad-protocol-schemas run lint
+      - run: pnpm --filter @oaslananka/kicad-protocol-schemas run lint
         if: env.skip_ci != 'true'
-      - run: corepack pnpm --filter @oaslananka/kicad-protocol-schemas run typecheck
+      - run: pnpm --filter @oaslananka/kicad-protocol-schemas run typecheck
         if: env.skip_ci != 'true'
-      - run: corepack pnpm --filter @oaslananka/kicad-protocol-schemas run test
+      - run: pnpm --filter @oaslananka/kicad-protocol-schemas run test
         if: env.skip_ci != 'true'
 
   workflow-policy:
@@ -924,7 +973,7 @@ jobs:
           enable-cache: true
           prune-cache: true
           version-file: uv.toml
-      # Pin an official Node 24 action and a stable Go toolchain; never rely
+      # Pin an official Node 26 action and a stable Go toolchain; never rely
       # on whichever Go happens to be preinstalled on the runner image.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:

@@ -1,0 +1,31 @@
+{
+  "name": "@kicad-mcp-pro/mcp-apps-readonly-research",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@11.28.6",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/build-view.mjs",
+    "test": "pnpm run build && node --test dist/node/test/*.test.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "start": "pnpm run build && node dist/node/src/main.js",
+    "start:built": "node dist/node/src/main.js",
+    "audit": "pnpm audit --prod --audit-level high"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/express": "2.0.2",
+    "@modelcontextprotocol/ext-apps": "2.0.4",
+    "@modelcontextprotocol/node": "2.1.2",
+    "@modelcontextprotocol/server": "2.4.0",
+    "express": "5.1.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/node": "26.6.6",
+    "esbuild": "0.28.2",
+    "linkedom": "0.18.15",
+    "typescript": "7.0.2"
+  }
+}

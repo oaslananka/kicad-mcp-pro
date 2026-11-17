@@ -23,13 +23,23 @@ def test_chatgpt_app_express5_dependency_policy() -> None:
     assert Version(hono_override) >= Version("2.1.6")
     hono_version = package["overrides"]["hono"]
     assert Version(hono_version) >= Version("4.13.16")
+    fast_uri_override = package["overrides"]["fast-uri"]
+    assert Version("4.2.3") <= Version(fast_uri_override) < Version("5")
+    ip_address_override = package["overrides"]["ip-address"]
+    qs_override = package["overrides"]["qs"]
+    # Renovate may patch these versions; keep reviewed floors and lockfile parity.
+    assert Version("10.7.4") <= Version(ip_address_override) < Version("11")
+    assert Version("6.16.1") <= Version(qs_override) < Version("7")
     assert package["overrides"] == {
         "@hono/node-server": hono_override,
         "hono": hono_version,
-        "fast-uri": "3.1.9",
-        "qs": "6.16.1",
-        "ip-address": "10.7.4",
+        "fast-uri": fast_uri_override,
+        "qs": qs_override,
+        "ip-address": ip_address_override,
     }
+    assert lock["packages"]["node_modules/fast-uri"]["version"] == fast_uri_override
+    assert lock["packages"]["node_modules/qs"]["version"] == qs_override
+    assert lock["packages"]["node_modules/ip-address"]["version"] == ip_address_override
     assert lock["packages"]["node_modules/hono"]["version"] == hono_version
     assert lock["packages"]["node_modules/@hono/node-server"]["version"] == hono_override
     assert lock["packages"][""]["dependencies"]["express"] == express

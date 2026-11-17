@@ -12,7 +12,7 @@ Canonical OpenSSF Best Practices project `12686` achieved the Passing badge at 1
 | --- | --- | --- |
 | Achieve Passing | Met | Canonical OpenSSF project `12686` achieved Passing at 100% on 2026-10-08 |
 | Contribution requirements | Met | [`CONTRIBUTING.md`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/CONTRIBUTING.md), PR template, coding standards |
-| DCO / contribution authorization | Met | [`CONTRIBUTING.md`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/CONTRIBUTING.md) Developer Certificate of Origin section |
+| Contribution rights / no DCO requirement | Met | [`CONTRIBUTING.md`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/CONTRIBUTING.md) contribution licensing section |
 | Governance | Met | [`GOVERNANCE.md`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/GOVERNANCE.md) |
 | Code of conduct | Met | [`CODE_OF_CONDUCT.md`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/CODE_OF_CONDUCT.md) |
 | Roles and responsibilities | Met | [`GOVERNANCE.md`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/GOVERNANCE.md), [`MAINTAINERS.md`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/MAINTAINERS.md) |

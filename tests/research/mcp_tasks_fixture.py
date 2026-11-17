@@ -109,6 +109,7 @@ class TaskFixture:
     @staticmethod
     def _summary(kind: str) -> dict[str, Any]:
         return {
+            "resultType": "complete",
             "content": [{"type": "text", "text": f"SYNTHETIC {kind}: zero real designs analyzed"}],
             "isError": False,
         }
@@ -196,7 +197,9 @@ class TaskFixture:
         if method not in ("tasks/get", "tasks/update", "tasks/cancel"):
             return self._error(request_id, -32601, "Method not found")
         if not enabled:
-            return self._error(request_id, -32021, "Missing required client capability")
+            denied = self._error(request_id, -32021, "Missing required client capability")
+            denied["error"]["data"] = {"requiredCapabilities": {"extensions": {EXTENSION: {}}}}
+            return denied
         existing = self._lookup(params.get("taskId"), caller)
         if existing is None:
             return self._error(request_id, -32602, "Task not found")
@@ -234,6 +237,7 @@ class TaskFixture:
             task.result = self._summary(task.kind)
             if task.simulate_error:
                 task.result = {
+                    "resultType": "complete",
                     "content": [{"type": "text", "text": "SYNTHETIC read-only tool error"}],
                     "isError": True,
                 }

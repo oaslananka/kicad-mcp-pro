@@ -84,13 +84,13 @@ source/tag, environment and integrity guards.
 Before approving a release PR:
 
 ```bash
-corepack pnpm run check:meta
-corepack pnpm run check:lint
-corepack pnpm run check:type
-corepack pnpm run check:test
-corepack pnpm run check:security
-corepack pnpm run check:workflows
-corepack pnpm run check:build
+pnpm run check:meta
+pnpm run check:lint
+pnpm run check:type
+pnpm run check:test
+pnpm run check:security
+pnpm run check:workflows
+pnpm run check:build
 ```
 
 If the full suite exceeds local time limits, run the same underlying pytest suites in documented chunks and record the evidence in the PR.

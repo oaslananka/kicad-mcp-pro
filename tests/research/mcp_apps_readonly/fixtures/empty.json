@@ -1,0 +1,11 @@
+{
+  "synthetic": true,
+  "title": "Empty Review Example",
+  "kind": "pcb",
+  "category": "DRC",
+  "summary": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "findings": []
+}

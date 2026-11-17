@@ -4,7 +4,7 @@
   "title": "KiCad MCP Pro",
   "description": "Production-grade MCP server for KiCad EDA\u2014PCB design, DRC, simulation, BOM, DFM, and manufacturing.",
   "websiteUrl": "https://oaslananka.github.io/kicad-mcp-pro",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "icons": [
     {
       "src": "https://oaslananka.github.io/kicad-mcp-pro/assets/icon-512.png",
@@ -26,13 +26,13 @@
     "source": "github",
     "id": "R_kgDOStXTag"
   },
-  "version": "4.16.0",
+  "version": "4.17.0",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "kicad-mcp-pro",
-      "version": "4.16.0",
+      "version": "4.17.0",
       "transport": {
         "type": "stdio"
       },
@@ -79,7 +79,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "kicad-mcp-pro",
-      "version": "4.16.0",
+      "version": "4.17.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
@@ -100,7 +100,7 @@
     },
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/oaslananka/kicad-mcp-pro:4.16.0",
+      "identifier": "ghcr.io/oaslananka/kicad-mcp-pro:4.17.0",
       "registry": "container",
       "image": "ghcr.io/oaslananka/kicad-mcp-pro",
       "runtimeHint": "docker",
@@ -126,7 +126,7 @@
           "type": "positional",
           "valueHint": "image",
           "description": "Docker image to run",
-          "default": "ghcr.io/oaslananka/kicad-mcp-pro:4.16.0",
+          "default": "ghcr.io/oaslananka/kicad-mcp-pro:4.17.0",
           "isRequired": true
         }
       ]
@@ -135,7 +135,7 @@
   "remotes": [],
   "_meta": {
     "io.github.oaslananka/kicad-mcp-pro": {
-      "longDescription": "KiCad MCP Pro is a production-grade MCP server for KiCad EDA. It provides 388 tools for PCB design, schematic capture, DRC/ERC validation, BOM generation, simulation, DFM analysis, and manufacturing export. Integrates with Claude Code, ChatGPT, VS Code Copilot, Cursor, and other MCP hosts. Uses KiCad CLI for file-backed operations when KiCad is available on PATH.",
+      "longDescription": "KiCad MCP Pro is a production-grade MCP server for KiCad EDA. It provides 396 tools for PCB design, schematic capture, DRC/ERC validation, BOM generation, simulation, DFM analysis, and manufacturing export. Integrates with Claude Code, ChatGPT, VS Code Copilot, Cursor, and other MCP hosts. Uses KiCad CLI for file-backed operations when KiCad is available on PATH.",
       "categories": [
         "developer-tools",
         "electronic-design-automation",
@@ -191,7 +191,7 @@
         "url": "https://github.com/oaslananka"
       },
       "canonicalRepository": "https://github.com/oaslananka/kicad-mcp-pro",
-      "license": "MIT",
+      "license": "AGPL-3.0-only",
       "changelog": "https://github.com/oaslananka/kicad-mcp-pro/blob/main/CHANGELOG.md",
       "releaseNotes": "https://github.com/oaslananka/kicad-mcp-pro/blob/main/CHANGELOG.md",
       "serverInfo": {

@@ -21,6 +21,7 @@ from ..models.simulation import (
     StabilityCheckInput,
     TransientAnalysisInput,
 )
+from ..path_safety import resolve_under
 from ..utils.ngspice import NgspiceRunner, SimulationResult, prepare_spice_netlist
 from .export_support import _ensure_output_dir, _get_sch_file, _run_cli_variants
 from .metadata import headless_compatible
@@ -40,6 +41,7 @@ _ALLOWED_DIRECTIVE_PREFIXES = (
     ".dc",
     "*",
 )
+_FORBIDDEN_DIRECTIVE_KEYWORDS = (".control", ".endc", "shell")
 
 
 def _simulation_output_dir() -> Path:
@@ -47,35 +49,49 @@ def _simulation_output_dir() -> Path:
 
 
 def _directive_file() -> Path:
-    return get_config().project_root / DIRECTIVE_FILENAME
+    return resolve_under(get_config().project_root, DIRECTIVE_FILENAME, allow_absolute=False)
 
 
 def _read_directives() -> list[str]:
     path = _directive_file()
     if not path.exists():
         return []
-    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    valid: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            valid.append(_validate_spice_directive(line))
+        except ValueError:
+            continue
+    return valid
 
 
 def _persist_directive(directive: str) -> Path:
     path = _directive_file()
     existing = _read_directives()
     if directive not in existing:
-        lines = [*existing, directive]
-        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        with path.open("a", encoding="utf-8") as f:
+            f.write(f"{directive}\n")
     return path
 
 
 def _validate_spice_directive(directive: str) -> str:
+    if "\n" in directive or "\r" in directive:
+        raise ValueError("SPICE directive must be a single line without newline characters.")
     cleaned = directive.strip()
     lowered = cleaned.lower()
-    if any(lowered.startswith(prefix) for prefix in _ALLOWED_DIRECTIVE_PREFIXES):
-        return cleaned
-    allowed = ", ".join(_ALLOWED_DIRECTIVE_PREFIXES)
-    raise ValueError(
-        "Unsupported SPICE directive prefix. "
-        f"Expected one of: {allowed}. Received: {cleaned[:80]!r}"
-    )
+    if not any(lowered.startswith(prefix) for prefix in _ALLOWED_DIRECTIVE_PREFIXES):
+        allowed = ", ".join(_ALLOWED_DIRECTIVE_PREFIXES)
+        raise ValueError(
+            "Unsupported SPICE directive prefix. "
+            f"Expected one of: {allowed}. Received: {cleaned[:80]!r}"
+        )
+    for forbidden in _FORBIDDEN_DIRECTIVE_KEYWORDS:
+        if forbidden in lowered:
+            raise ValueError(f"SPICE directive contains forbidden keyword: {forbidden}")
+    return cleaned
 
 
 def _export_spice_netlist_file() -> Path:

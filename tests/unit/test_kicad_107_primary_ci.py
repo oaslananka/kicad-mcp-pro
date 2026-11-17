@@ -76,3 +76,18 @@ def test_primary_gate_does_not_change_historical_compatibility_evidence() -> Non
     assert matrix["kicad"]["latestVerified"] == "10.0.7"
     assert matrix["kicad10FeatureParity"]["baseline"] == "10.0.7"
     assert matrix["kicad10FeatureParity"]["candidatePatchReview"]["version"] == "10.0.7"
+
+
+def test_107_installer_has_second_official_mirror_without_weakening_verification() -> None:
+    """An offline primary mirror cannot turn a transient outage into false test failure."""
+    source = INSTALLER.read_text(encoding="utf-8")
+    assert "readonly base_url='https://mirrors.mit.edu/kicad/appimage/stable'" in source
+    assert "readonly fallback_base_url='https://mirror.nju.edu.cn/kicad/appimage/stable'" in source
+    assert "if ! curl --fail --location" in source
+    assert 'rm -f -- "$archive"' in source
+    assert '"$fallback_base_url/$archive_name"' in source
+    assert source.index('"$fallback_base_url/$archive_name"') < source.index(
+        '"$archive_sha256" "$archive" | sha256sum --check --status'
+    )
+    assert source.count("sha256sum --check --status") == 3
+    assert source.count("--proto '=https' --tlsv1.2") == 3

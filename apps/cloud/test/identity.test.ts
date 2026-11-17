@@ -91,7 +91,7 @@ test("Better Auth serves MCP-aware OAuth metadata with PostgreSQL", {skip: !data
       headers:{"Origin":"http://127.0.0.1:8787","Content-Type":"application/x-www-form-urlencoded"},
       body:"oauth_query="
     }),identity,"http://127.0.0.1:8787");
-    assert.equal(form?.status,303,await form?.text());
+    assert.equal(form?.status,303,(await form?.text())??"Authorization response missing");
     assert.equal(new URL(form!.headers.get("location")!).hostname,"accounts.google.com");
     assert.match(form?.headers.get("set-cookie")??"",/HttpOnly/i);
   } finally {

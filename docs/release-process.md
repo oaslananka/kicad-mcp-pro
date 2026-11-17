@@ -24,8 +24,9 @@ Neither preparation path creates a release tag or publishes a package.
    verify their protected environments, source tags and required gates.
 5. Verify PyPI/npm publication, version and digest parity, SBOMs, checksums,
    artifact attestations and registry provenance applicable to each artifact.
-6. Confirm docs are available from the canonical `gh-pages` branch at
-   `https://oaslananka.github.io/kicad-mcp-pro/`.
+6. Confirm the `Docs` workflow deployed a GitHub Pages artifact from `main`,
+   and check `https://oaslananka.github.io/kicad-mcp-pro/`. The documentation
+   site is independent of package release publication.
 7. Post a short GitHub Discussions announcement when appropriate.
 
 ## Release Workflow

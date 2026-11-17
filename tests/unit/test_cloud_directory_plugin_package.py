@@ -23,7 +23,7 @@ def test_portable_openai_package_is_remote_and_separate_from_local_stdio() -> No
     local = json.loads((ROOT / "mcp.json").read_text())
     assert plugin["$schema"] == "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
     assert plugin["name"] == "kicad-cloud-review"
-    assert plugin["license"] == "MIT"
+    assert plugin["license"] == "AGPL-3.0-only"
     assert remote["$schema"] == "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
     assert remote["mcpServers"]["kicad-cloud"]["type"] == "streamable-http"
     assert remote["mcpServers"]["kicad-cloud"]["url"] == URL
