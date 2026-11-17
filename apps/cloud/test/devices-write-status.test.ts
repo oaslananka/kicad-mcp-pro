@@ -27,7 +27,7 @@ test("owner device card differentiates saved edit permission from active server 
   const available=renderDevicesPage([device],undefined,true,{
     ...options,nativeWriteAvailable:true
   });
-  assert.match(available,/Cloud write service is ready/);
+  assert.match(available,/Cloud editing is available when the owner connects the editing device/);
   assert.doesNotMatch(available,/Cloud editing is not enabled/);
   assert.match(available,/Edit permission saved/);
 });

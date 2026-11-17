@@ -35,8 +35,10 @@ type ViewContext=Readonly<{
   nativeWriteAvailable:boolean;
 }>;
 
-function grantModeLabel(mode:BrowserGrantSummary["maxMode"],writeAvailable:boolean):string{
+function grantModeLabel(mode:BrowserGrantSummary["maxMode"],writeAvailable:boolean,
+  writeConsent:boolean):string{
   if(mode==="readonly")return "Read only";
+  if(mode==="write"&&!writeConsent)return "Edit saved — reconnect this AI app to approve write access";
   if(mode==="write")return writeAvailable
     ? "Edit permission saved (connect your editing device)"
     : "Edit permission saved (Cloud editing is not enabled)";
@@ -51,25 +53,20 @@ function SavedProjectGrants({project,grants,writeClients,writeAvailable}:Readonl
                     <strong>Applications with access</strong>
                     <ul>{grants.map(g=><li key={g.clientId}>
                       <span className="grant-client">{clientDisplayName(g.clientId)}</span>{" "}
-                      <span className="permission-tag">{grantModeLabel(g.maxMode,writeAvailable)}</span>
-                      {project.grantCsrf&&g.maxMode==="readonly"&&writeClients.includes(g.clientId)?
-                        <form method="post" action="/devices/projects/grant">
-                          <input type="hidden" name="project_id" value={project.id}/>
-                          <input type="hidden" name="client_id" value={g.clientId}/>
-                          <input type="hidden" name="csrf" value={project.grantCsrf}/>
-                          <input type="hidden" name="mode" value="write"/>
-                          <button className="button secondary" type="submit"
-                            name="enabled" value="true">Allow editing</button>
-                        </form>:null}
-                      {project.grantCsrf&&g.maxMode==="write"?
-                        <form method="post" action="/devices/projects/grant">
-                          <input type="hidden" name="project_id" value={project.id}/>
-                          <input type="hidden" name="client_id" value={g.clientId}/>
-                          <input type="hidden" name="csrf" value={project.grantCsrf}/>
-                          <input type="hidden" name="mode" value="readonly"/>
-                          <button className="button secondary" type="submit"
-                            name="enabled" value="true">Keep read only</button>
-                        </form>:null}
+                      <span className="permission-tag">{grantModeLabel(g.maxMode,writeAvailable,
+                        writeClients.includes(g.clientId))}</span>
+                      <form method="post" action="/devices/projects/grant">
+                        <input type="hidden" name="project_id" value={project.id}/>
+                        <input type="hidden" name="client_id" value={g.clientId}/>
+                        <input type="hidden" name="csrf" value={project.grantCsrf}/>
+                        <label>Access level{" "}
+                          <select name="mode" defaultValue={g.maxMode==="write"&&writeClients.includes(g.clientId)?"write":"readonly"}>
+                            <option value="readonly">Read</option>
+                            {writeClients.includes(g.clientId)?<option value="write">Edit</option>:null}
+                          </select>
+                        </label>
+                        <button className="button secondary" type="submit" name="enabled" value="true">Save access</button>
+                      </form>
                       <form method="post" action="/devices/projects/grant">
                         <input type="hidden" name="project_id" value={project.id}/>
                         <input type="hidden" name="client_id" value={g.clientId}/>
@@ -116,65 +113,62 @@ function ProjectAccess({project,context}:Readonly<{project:Project;context:ViewC
   const projectGrants=savedGrants.filter(grant=>grant.projectId===project.id);
   const grantedClients=new Set(projectGrants.map(grant=>grant.clientId));
   const availableClients=clients.filter(client=>!grantedClients.has(client));
-  const availableWriters=writeClients.filter(client=>!grantedClients.has(client));
-  return (                <details className="project-access-details">
+   return (                <details className="project-access-details">
                   <summary>Manage access</summary>
-                  <p className="field-help">Choose exactly which AI clients may read or edit
-                    this project. New access is read-only; editing requires a separate
-                    OAuth write consent and an explicit per-app grant.{" "}
+                  <p className="field-help">Choose each AI app's Read or Edit access here.
+                    Read is the default. Edit also requires that app's OAuth write consent,
+                    an owner-connected local editing Connector and Cloud write availability.{" "}
                     {context.nativeWriteAvailable
-                      ? "Cloud write service is ready. The owner must start the signed editing Connector on the device."
+                      ? "Cloud editing is available when the owner connects the editing device."
                       : "Cloud editing is not enabled on this server yet."}</p>
-                {context.nativeWriteAvailable&&writeClients.length===0?
-                  <p className="field-help">To edit, reconnect your AI app and explicitly approve
-                    the projects:write OAuth permission.</p>:null}
+                  {context.nativeWriteAvailable?
+                    <p className="field-help">If Edit is unavailable, reconnect your AI app and
+                      approve its projects:write permission when prompted. Then return here to
+                      select Edit. No additional Cloud approval is needed per command.</p>:null}
                 <SavedProjectGrants project={project} grants={projectGrants}
                   writeClients={writeClients} writeAvailable={context.nativeWriteAvailable}/>
 
-                {project.enabled&&project.managedCsrf?<>
-                  <p>Project summary access: {project.managedEnabled?"Enabled":"Paused"}</p>
-                  <form method="post" action="/devices/projects/managed">
-                    <input type="hidden" name="project_id" value={project.id}/>
-                    <input type="hidden" name="device_id" value={project.deviceId}/>
-                    <input type="hidden" name="csrf" value={project.managedCsrf}/>
-                    <button className="button secondary" name="enabled" value={project.managedEnabled?"false":"true"} type="submit">
-                      {project.managedEnabled?"Pause project reads":"Enable project reads"}
-                    </button>
-                  </form>
-                </>:null}
-
-                <ProjectDiagnostics project={project}/>
+                {project.enabled&&(project.managedCsrf||(project.managedEnabled&&project.nativeCsrf))?
+                  <details className="project-advanced-controls">
+                    <summary>Advanced project controls</summary>
+                    {project.managedCsrf?<>
+                      <p>Project summary access: {project.managedEnabled?"Enabled":"Paused"}</p>
+                      <form method="post" action="/devices/projects/managed">
+                        <input type="hidden" name="project_id" value={project.id}/>
+                        <input type="hidden" name="device_id" value={project.deviceId}/>
+                        <input type="hidden" name="csrf" value={project.managedCsrf}/>
+                        <button className="button secondary" name="enabled"
+                          value={project.managedEnabled?"false":"true"} type="submit">
+                          {project.managedEnabled?"Pause project reads":"Enable project reads"}
+                        </button>
+                      </form>
+                    </>:null}
+                    <ProjectDiagnostics project={project}/>
+                  </details>:null}
 
                 {project.enabled&&project.grantCsrf&&availableClients.length>0?
-                  <form method="post" action="/devices/projects/grant">
-                    <input type="hidden" name="project_id" value={project.id}/>
-                    <input type="hidden" name="csrf" value={project.grantCsrf}/>
-                    <label>AI application{" "}
-                      <select name="client_id" required={true}>
-                        {availableClients.map(client=><option value={client} key={client}>{clientDisplayName(client)}</option>)}
-                      </select>
-                    </label>
-                    <div className="action-row">
-                      <button className="button primary" name="enabled" value="true"
-                        type="submit">Allow reading</button>
-                    </div>
-                  </form>:null}
-                {project.enabled&&project.grantCsrf&&availableWriters.length>0?
-                  <form method="post" action="/devices/projects/grant">
-                    <input type="hidden" name="project_id" value={project.id}/>
-                    <input type="hidden" name="csrf" value={project.grantCsrf}/>
-                    <input type="hidden" name="mode" value="write"/>
-                    <label>AI application approved for editing{" "}
-                      <select name="client_id" required={true}>
-                        {availableWriters.map(client=><option value={client} key={client}>{clientDisplayName(client)}</option>)}
-                      </select>
-                    </label>
-                    <p className="field-help">This saves an app-specific edit permission.
-                      An active owner-approved signed Connector and the Cloud write service
-                      are also required before any design can change.</p>
-                    <button className="button secondary" name="enabled" value="true"
-                      type="submit">Allow reading and editing</button>
-                  </form>:null}
+                  <div className="project-grants" aria-label="New application access">
+                    <strong>Choose access for an AI app</strong>
+                    {availableClients.map(client=>
+                      <form method="post" action="/devices/projects/grant" key={client}>
+                        <input type="hidden" name="project_id" value={project.id}/>
+                        <input type="hidden" name="client_id" value={client}/>
+                        <input type="hidden" name="csrf" value={project.grantCsrf}/>
+                        <span className="grant-client">{clientDisplayName(client)}</span>
+                        <label>Access level{" "}
+                          <select name="mode" defaultValue="readonly">
+                            <option value="readonly">Read</option>
+                            {writeClients.includes(client)?
+                              <option value="write">Edit</option>:null}
+                          </select>
+                        </label>
+                        {!writeClients.includes(client)?
+                          <small className="field-help">Reconnect this app to approve its
+                            projects:write OAuth permission before selecting Edit.</small>:null}
+                        <button className="button primary" name="enabled" value="true"
+                          type="submit">Save access</button>
+                      </form>)}
+                  </div>:null}
                 </details>);
 }
 

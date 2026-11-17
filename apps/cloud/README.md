@@ -15,14 +15,48 @@ for the exact `PUBLIC_ORIGIN/mcp` endpoint and current ChatGPT and Claude
 setup links. The endpoint must be publicly reachable over HTTPS for hosted
 AI clients; a localhost development URL cannot be used by a remote host.
 Availability and OAuth registration support depend on the specific client
-and its workspace configuration. Hosted AI-client authentication has not yet
-been accepted against the production deployment.
+and its workspace configuration. MCPJam OAuth and two consecutive signed native
+PCB edits are verified against the production Cloud endpoint. Individual
+ChatGPT, Claude, and Gemini editing/reauthorization flows require separate
+host-specific acceptance; support for automatic OAuth step-up varies.
 
 An account login authorizes only the Cloud account. The owner must also
-grant that OAuth client access to an eligible project under **Devices**,
-then start the separately enabled local one-shot Connector operation. The
-Cloud portal does not proxy arbitrary local tools or store KiCad design
+grant that OAuth client access to an eligible project under **Devices**.
+The Cloud portal does not proxy arbitrary local tools or store KiCad design
 content. Existing account-free local MCP clients remain supported.
+
+### One Read/Edit choice per AI app and project
+
+1. Connect ChatGPT, Claude, or another OAuth-capable MCP client to the
+   Cloud `/mcp` endpoint. The initial OAuth connection may grant only
+   `projects:read`; this is deliberately not full edit access.
+2. Under **Devices → Project → Manage access**, select **Read** or
+   **Edit** for that connected AI app and save once. **Edit** only
+   appears for apps that have already approved the `projects:write`
+   OAuth scope. If it is missing, reconnect that app to grant writing.
+   A write request with insufficient scope provides the standard
+   MCP `mcp/www_authenticate` challenge and per-tool OAuth scopes,
+   allowing capable hosts to offer a native reconnect/consent flow.
+   A host may still require a manual reconnection; do not claim that
+   all hosts automatically support step-up.
+3. On the local Windows computer, connect the already paired device
+   with `kicad-mcp-pro cloud remote --enable-native-write`. For a trusted
+   personal computer, explicitly opt into remembering this project's
+   local choice with
+   `kicad-mcp-pro cloud remote --enable-native-write --remember-native-write`.
+   Future **interactive foreground** `cloud remote` sessions for that
+   exact paired project use the remembered choice. Remove it with
+   `kicad-mcp-pro cloud forget-native-write`, then stop any currently
+   running editing Connector to end its current session. This setting
+   never starts a background writer or applies to other projects.
+
+The Cloud still validates each client's actual OAuth scopes and current
+per-project grant. The local Connector independently validates the
+owner-approved Ed25519 issuer, signed one-use command, project binding,
+revision and save result. Host confirmation dialogs remain the host's
+responsibility; there is no additional Cloud confirmation per edit.
+A remembered local preference does **not** permit a headless writer,
+auto-grant another project, or override a revoked Cloud grant.
 
 ## Cloud MCP capability discovery (bounded pilot)
 

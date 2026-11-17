@@ -879,7 +879,7 @@ async function handleRequest(
       const handler=createCloudMcpHandler(
         inventory,actor,presenceReader,drcReader,inspectionReader,boardReader,schematicReader,
         signedRelay?.isDeviceConnected,signedRelay?.getDeviceCapabilityClaim,
-        writer);
+        writer,config.publicOrigin+"/.well-known/oauth-protected-resource");
       let output: Response;
       try {
         output = await handler.fetch(request);
