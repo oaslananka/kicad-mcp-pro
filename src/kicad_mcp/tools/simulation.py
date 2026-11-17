@@ -21,6 +21,7 @@ from ..models.simulation import (
     StabilityCheckInput,
     TransientAnalysisInput,
 )
+from ..path_safety import resolve_under
 from ..utils.ngspice import NgspiceRunner, SimulationResult, prepare_spice_netlist
 from .export_support import _ensure_output_dir, _get_sch_file, _run_cli_variants
 from .metadata import headless_compatible
@@ -48,7 +49,7 @@ def _simulation_output_dir() -> Path:
 
 
 def _directive_file() -> Path:
-    return get_config().project_root / DIRECTIVE_FILENAME
+    return resolve_under(get_config().project_root, DIRECTIVE_FILENAME, allow_absolute=False)
 
 
 def _read_directives() -> list[str]:
@@ -71,8 +72,8 @@ def _persist_directive(directive: str) -> Path:
     path = _directive_file()
     existing = _read_directives()
     if directive not in existing:
-        lines = [*existing, directive]
-        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        with path.open("a", encoding="utf-8") as f:
+            f.write(f"{directive}\n")
     return path
 
 

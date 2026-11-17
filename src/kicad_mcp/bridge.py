@@ -366,6 +366,50 @@ async def _bridge_server(state: BridgeState) -> None:
         await server.serve_forever()
 
 
+def _handle_bridge_pair(
+    state: BridgeState,
+    message: dict[str, object],
+    msg_id: object,
+    session: BridgeClientSession | None,
+) -> dict[str, object]:
+    """Handle bridge.pair request with pairing rate limiting and session binding."""
+    if not state.pair_limiter.allow():
+        state.rate_limited_count += 1
+        return _rate_limited_error(msg_id)
+    params = message.get("params", {})
+    code = params.get("code", "") if isinstance(params, dict) else ""
+    if code == state.pairing_code:
+        now = time.time()
+        if session is not None:
+            session.paired = True
+            session.paired_at = now
+            state.active_sessions.add(session)
+        state.paired = True
+        state.paired_at = now
+        return {
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": {"status": "paired", "port": state.port},
+        }
+    return {
+        "jsonrpc": "2.0",
+        "id": msg_id,
+        "error": {"code": -32001, "message": "Invalid pairing code"},
+    }
+
+
+def _bridge_status_result(
+    state: BridgeState,
+    session: BridgeClientSession | None,
+) -> dict[str, object]:
+    """Build status payload reflecting current connection-scoped pairing state."""
+    res = state.to_dict()
+    if session is not None:
+        res["paired"] = session.paired
+        res["paired_at"] = session.paired_at
+    return res
+
+
 async def _route_message(
     state: BridgeState,
     message: dict[str, object],
@@ -387,37 +431,10 @@ async def _route_message(
 
     # --- Bridge control methods ---
     if method == "bridge.pair":
-        # Bound pairing attempts hard as defense-in-depth around the 128-bit code.
-        if not state.pair_limiter.allow():
-            state.rate_limited_count += 1
-            return _rate_limited_error(msg_id)
-        params = message.get("params", {})
-        code = params.get("code", "") if isinstance(params, dict) else ""
-        if code == state.pairing_code:
-            now = time.time()
-            if session is not None:
-                session.paired = True
-                session.paired_at = now
-                state.active_sessions.add(session)
-            state.paired = True
-            state.paired_at = now
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {"status": "paired", "port": state.port},
-            }
-        return {
-            "jsonrpc": "2.0",
-            "id": msg_id,
-            "error": {"code": -32001, "message": "Invalid pairing code"},
-        }
+        return _handle_bridge_pair(state, message, msg_id, session)
 
     if method == "bridge.status":
-        res = state.to_dict()
-        if session is not None:
-            res["paired"] = session.paired
-            res["paired_at"] = session.paired_at
-        return {"jsonrpc": "2.0", "id": msg_id, "result": res}
+        return {"jsonrpc": "2.0", "id": msg_id, "result": _bridge_status_result(state, session)}
 
     if method == "bridge.ping":
         return {
