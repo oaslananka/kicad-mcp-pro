@@ -42,7 +42,7 @@ snapshot in a dated `release-readiness-<date>.md` document.
 | Claude Directory — hosted Cloud | Not submitted | — | — | — | Remote connector/plugin candidate packaged separately from local stdio; client OAuth and reviewer acceptance pending. |
 | Anthropic Connector Directory | Not submitted | — | — | — | Run the full checklist in `docs/submission/anthropic-directory.md` first. |
 | ChatGPT Apps | Not submitted | — | — | — | Requires platform domain verification before final form submission. |
-| OpenAI/MCP Registry | Not submitted | — | — | — | Run registry dry-run and final submission checks first. |
+| Official MCP Registry | Published (verified 2026-11-17) | 2026-11-15 00:09 UTC | n/a | https://registry.modelcontextprotocol.io/ | `io.github.oaslananka/kicad-mcp-pro` version `4.16.0` is active/latest; separate from OpenAI's Plugins Directory. |
 
 ## Manual Controls
 

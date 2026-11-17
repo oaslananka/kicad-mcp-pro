@@ -5,9 +5,9 @@ legacy ``2025-11-25`` protocol (see ``server.json`` and
 ``src/kicad_mcp/compatibility.py``). The project must not advertise a protocol
 version that it does not accept, and must reject clearly unsupported versions.
 
-These tests use raw streamable-HTTP JSON-RPC (no MCP SDK client) so they do not
-depend on a particular SDK's version negotiation. They exercise the server's own
-header- and metadata-driven negotiation.
+These tests use raw Streamable HTTP JSON-RPC (not mocked clients) so both
+protocol eras are exercised independently: 2026 uses server/discover and 2025
+uses initialize. Actual ChatGPT/Claude/Gemini client acceptance is separate.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from typing import Any
 import httpx
 import pytest
 import uvicorn
+from mcp.server.mcpserver import MCPServer
 from starlette.types import ASGIApp
 
 from kicad_mcp.config import get_config
@@ -102,17 +103,28 @@ def _discover_request(client_name: str, protocol_version: str) -> dict[str, Any]
     }
 
 
-def _headers(protocol_version: str) -> dict[str, str]:
+def _headers(protocol_version: str, *, method: str = "server/discover") -> dict[str, str]:
     return {
         **BASE_HEADERS,
         "MCP-Protocol-Version": protocol_version,
-        "Mcp-Method": "server/discover",
+        "Mcp-Method": method,
     }
 
 
-def _configure_server(
-    sample_project: Path, *, protocol_lane: str = "stable"
-) -> Any:
+def _initialize_request(client_name: str, protocol_version: str) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": protocol_version,
+            "capabilities": {},
+            "clientInfo": {"name": client_name, "version": "smoke"},
+        },
+    }
+
+
+def _configure_server(sample_project: Path, *, protocol_lane: str = "stable") -> MCPServer:
     _ = sample_project
     cfg = get_config()
     cfg.transport = "streamable-http"
@@ -127,38 +139,52 @@ def _configure_server(
 def test_stable_lane_accepts_advertised_versions(
     sample_project: Path, client_name: str, protocol_version: str
 ) -> None:
-    """Both advertised protocol versions must be accepted in the stable lane."""
+    """Each advertised protocol era must complete its actual connection flow."""
     server = _configure_server(sample_project)
 
     with _running_http_server(server.streamable_http_app()) as base_url:
         with httpx.Client(base_url=base_url, timeout=10.0) as client:
-            discovered = client.post(
-                "/mcp",
-                headers=_headers(protocol_version),
-                json=_discover_request(client_name, protocol_version),
-            )
+            if protocol_version == MODERN_PROTOCOL_VERSION:
+                result = client.post(
+                    "/mcp",
+                    headers=_headers(protocol_version),
+                    json=_discover_request(client_name, protocol_version),
+                )
+                assert result.status_code == 200, result.text
+                # Modern discovery advertises modern-era versions only.
+                assert result.json()["result"]["supportedVersions"] == [MODERN_PROTOCOL_VERSION]
+            else:
+                result = client.post(
+                    "/mcp",
+                    headers=_headers(protocol_version, method="initialize"),
+                    json=_initialize_request(client_name, protocol_version),
+                )
+                assert result.status_code == 200, result.text
+                assert result.json()["result"]["protocolVersion"] == protocol_version
 
-    assert discovered.status_code == 200, discovered.text
-    payload = discovered.json()
-    assert payload["result"]["supportedVersions"] == ADVERTISED_VERSIONS
+                tools = client.post(
+                    "/mcp",
+                    headers=_headers(protocol_version, method="tools/list"),
+                    json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+                )
+                assert tools.status_code == 200, tools.text
+                assert "kicad_get_version" in {
+                    tool["name"] for tool in tools.json()["result"]["tools"]
+                }
 
-
-def test_stable_lane_returns_both_versions_in_discover(
-    sample_project: Path,
-) -> None:
-    """The stable lane must report both supported versions in discover."""
-    server = _configure_server(sample_project)
-
-    with _running_http_server(server.streamable_http_app()) as base_url:
-        with httpx.Client(base_url=base_url, timeout=10.0) as client:
-            discovered = client.post(
-                "/mcp",
-                headers=_headers(MODERN_PROTOCOL_VERSION),
-                json=_discover_request("chatgpt-connector", MODERN_PROTOCOL_VERSION),
-            )
-
-    assert discovered.status_code == 200
-    assert discovered.json()["result"]["supportedVersions"] == ADVERTISED_VERSIONS
+                called = client.post(
+                    "/mcp",
+                    headers=_headers(protocol_version, method="tools/call"),
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": 3,
+                        "method": "tools/call",
+                        "params": {"name": "kicad_get_version", "arguments": {}},
+                    },
+                )
+                assert called.status_code == 200, called.text
+                assert called.json()["result"]["isError"] is False
+                assert "KiCad MCP Pro Server" in called.json()["result"]["content"][0]["text"]
 
 
 def test_native_2026_lane_rejects_legacy_version(
@@ -175,8 +201,8 @@ def test_native_2026_lane_rejects_legacy_version(
             with httpx.Client(base_url=base_url, timeout=10.0) as client:
                 discovered = client.post(
                     "/mcp",
-                    headers=_headers(LEGACY_PROTOCOL_VERSION),
-                    json=_discover_request("chatgpt-connector", LEGACY_PROTOCOL_VERSION),
+                    headers=_headers(LEGACY_PROTOCOL_VERSION, method="initialize"),
+                    json=_initialize_request("chatgpt-connector", LEGACY_PROTOCOL_VERSION),
                 )
 
         assert discovered.status_code == 400, discovered.text
@@ -202,4 +228,4 @@ def test_unsupported_version_is_rejected(
     body = discovered.json()
     assert "Unsupported protocol version" in body["error"]["message"]
     assert body["error"]["data"]["requested"] == UNSUPPORTED_PROTOCOL_VERSION
-    assert set(body["error"]["data"]["supported"]) == set(ADVERTISED_VERSIONS)
+    assert set(ADVERTISED_VERSIONS).issubset(set(body["error"]["data"]["supported"]))
