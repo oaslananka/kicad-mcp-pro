@@ -1157,3 +1157,80 @@ def test_successful_long_signed_session_refreshs_quickly_without_handshake_flood
     assert connector._session_retry_delay(True, 16.0, 0, 0.5) == 16.0
     assert connector._session_retry_delay(False, 241.0, 2, 0.5) == 61.0
     assert connector._session_retry_delay(True, 241.0, 3, 1.0) == 3.0
+
+
+@pytest.mark.asyncio
+async def test_foreground_generic_mcp_factory_uses_owner_selection_and_revocation(
+    local_user_connector: tuple[WindowsRegisteredProject, dict[tuple[str, str], bytes], Path],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Only an owner-approved foreground session chooses project and edit rights."""
+    import kicad_mcp.cloud_windows_write_marker as markers
+    from kicad_mcp.cloud_generic_mcp_transport import GenericProjectMcpService
+
+    project, _store, folder = local_user_connector
+    connector.activate(project, owner_confirm=lambda _: True)
+    selection = WindowsLocalProjectSelection(
+        registration_id=project.registration_id,
+        record_id=project.record_id,
+        device_id=project.device_id,
+        project_id=project.project_id,
+        filename_stem=project.filename_stem,
+        directory=folder,
+    )
+    key = Ed25519PrivateKey.generate()
+    receipt = HandshakeReceipt(
+        device_id=project.device_id, session_id="39ee4be9-0aec-448e-9873-721ae113ec02"
+    )
+    marker_calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(markers, "default_windows_write_marker_directory", lambda: tmp_path)
+
+    def fake_consume(_path: Path, sid: str, req: str) -> bool:
+        assert _path == tmp_path
+        marker_calls.append((sid, req))
+        return True
+
+    monkeypatch.setattr(markers, "consume_windows_write_marker", fake_consume)
+    seen: list[GenericProjectMcpService] = []
+
+    async def signed_runner(**kwargs: object) -> HandshakeReceipt:
+        factory = kwargs["mcp_bridge_factory"]
+        assert callable(factory)
+        service = factory(receipt)
+        assert isinstance(service, GenericProjectMcpService)
+        assert service.authorized() is True
+        target = service.local_project(project.project_id)
+        assert target is not None
+        assert target.directory == folder
+        assert target.filename_stem == project.filename_stem
+        assert service.local_project("39ee4be9-0aec-448e-9873-721ae113ec02") is None
+        seen.append(service)
+        return receipt
+
+    signed_runner._kicad_supports_folder_browse = True  # type: ignore[attr-defined]
+
+    assert await connector._run_owner_session(project, selection, key, signed_runner) == receipt
+    assert len(seen) == 1
+    assert seen[0].allow_write is False
+    assert seen[0].consume_once is None
+
+    assert (
+        await connector._run_owner_session(
+            project,
+            selection,
+            key,
+            signed_runner,
+            allow_native_write=True,
+            issuer_key=key.public_key(),
+        )
+        == receipt
+    )
+    assert len(seen) == 2
+    assert seen[1].allow_write is True
+    assert seen[1].issuer is key.public_key() or seen[1].issuer is not None
+    assert seen[1].consume_once is not None
+    assert seen[1].consume_once(receipt.session_id, "44444444-4444-4444-8444-444444444444")
+    assert marker_calls == [(receipt.session_id, "44444444-4444-4444-8444-444444444444")]
+    assert connector.deactivate() is True
+    assert seen[1].authorized() is False
