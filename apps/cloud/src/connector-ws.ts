@@ -599,6 +599,11 @@ export function attachConnectorWebSocket(
                reply.data.result.projectId!==pending.projectId){
               pending.resolve(null);fail();return;
             }
+            // Never acknowledge a response until the signed-session
+            // sequence has been validated and released for the next call.
+            if(!entry.readSequence.complete(pending.sequence)){
+              pending.resolve(null);fail();return;
+            }
             try{
               send({
                 kind:"connector.write_ack",version:1,
@@ -1111,8 +1116,8 @@ export function attachConnectorWebSocket(
     if (active.entry.catalogClaim && !active.entry.catalogClaim.operations.includes("move_footprint")) {
       return null;
     }
-    const sequence = active.entry.readSequence.reserve();
-    if (sequence === null) return null;
+    // Validate the sealed proposal before reserving a sequence; malformed
+    // input must not strand the signed session's single in-flight slot.
     const proposal = proof as { payload?: string };
     if (!proposal || typeof proposal.payload !== "string") return null;
     let decodedPayload: { requestId?: string };
@@ -1123,6 +1128,8 @@ export function attachConnectorWebSocket(
     }
     const requestId = decodedPayload.requestId;
     if (!requestId || typeof requestId !== "string") return null;
+    const sequence = active.entry.readSequence.reserve();
+    if (sequence === null) return null;
 
     return new Promise<WriteOperationResult | null>(resolve => {
       const timer = setTimeout(() => {
@@ -1139,6 +1146,7 @@ export function attachConnectorWebSocket(
           kind: "connector.authorized_write",
           version: 1,
           sequence,
+          projectId,
           proof,
           persistToDisk
         }));

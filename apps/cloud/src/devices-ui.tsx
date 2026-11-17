@@ -26,28 +26,32 @@ type Project={id:string;deviceId:string;alias:string;enabled:boolean;localPath?:
 export type DevicePageOptions=Readonly<{
   projects?:ReadonlyArray<Project>;ownerSub?:string;clients?:ReadonlyArray<string>;
   savedGrants?:ReadonlyArray<BrowserGrantSummary>;sandboxMode?:boolean;browseEnabled?:boolean;
-  writeClients?:ReadonlyArray<string>;userEmail?:string;
+  writeClients?:ReadonlyArray<string>;nativeWriteAvailable?:boolean;userEmail?:string;
 }>;
 type ViewContext=Readonly<{
   devices:ReadonlyArray<Device>;projects:ReadonlyArray<Project>;enrollmentAvailable:boolean;
   ownerSub?:string;clients:ReadonlyArray<string>;savedGrants:ReadonlyArray<BrowserGrantSummary>;
   sandboxMode:boolean;browseEnabled:boolean;writeClients:ReadonlyArray<string>;
+  nativeWriteAvailable:boolean;
 }>;
 
-function grantModeLabel(mode:BrowserGrantSummary["maxMode"]):string{
+function grantModeLabel(mode:BrowserGrantSummary["maxMode"],writeAvailable:boolean):string{
   if(mode==="readonly")return "Read only";
-  if(mode==="write")return "Edit permission saved ? remote editing not active";
+  if(mode==="write")return writeAvailable
+    ? "Edit permission saved (connect your editing device)"
+    : "Edit permission saved (Cloud editing is not enabled)";
   return "Other permission (not remote editing)";
 }
-function SavedProjectGrants({project,grants,writeClients}:Readonly<{
+function SavedProjectGrants({project,grants,writeClients,writeAvailable}:Readonly<{
   project:Project;grants:ReadonlyArray<BrowserGrantSummary>;writeClients:ReadonlyArray<string>;
+  writeAvailable:boolean;
 }>){
   if(!project.grantCsrf||grants.length===0)return null;
   return (                  <div className="project-grants">
                     <strong>Applications with access</strong>
                     <ul>{grants.map(g=><li key={g.clientId}>
                       <span className="grant-client">{clientDisplayName(g.clientId)}</span>{" "}
-                      <span className="permission-tag">{grantModeLabel(g.maxMode)}</span>
+                      <span className="permission-tag">{grantModeLabel(g.maxMode,writeAvailable)}</span>
                       {project.grantCsrf&&g.maxMode==="readonly"&&writeClients.includes(g.clientId)?
                         <form method="post" action="/devices/projects/grant">
                           <input type="hidden" name="project_id" value={project.id}/>
@@ -117,9 +121,15 @@ function ProjectAccess({project,context}:Readonly<{project:Project;context:ViewC
                   <summary>Manage access</summary>
                   <p className="field-help">Choose exactly which AI clients may read or edit
                     this project. New access is read-only; editing requires a separate
-                    OAuth write consent and an explicit per-app grant. Cloud editing is
-                    not active until the Connector and Cloud write capability are available.</p>
-                <SavedProjectGrants project={project} grants={projectGrants} writeClients={writeClients}/>
+                    OAuth write consent and an explicit per-app grant.{" "}
+                    {context.nativeWriteAvailable
+                      ? "Cloud write service is ready. The owner must start the signed editing Connector on the device."
+                      : "Cloud editing is not enabled on this server yet."}</p>
+                {context.nativeWriteAvailable&&writeClients.length===0?
+                  <p className="field-help">To edit, reconnect your AI app and explicitly approve
+                    the projects:write OAuth permission.</p>:null}
+                <SavedProjectGrants project={project} grants={projectGrants}
+                  writeClients={writeClients} writeAvailable={context.nativeWriteAvailable}/>
 
                 {project.enabled&&project.managedCsrf?<>
                   <p>Project summary access: {project.managedEnabled?"Enabled":"Paused"}</p>
@@ -159,8 +169,9 @@ function ProjectAccess({project,context}:Readonly<{project:Project;context:ViewC
                         {availableWriters.map(client=><option value={client} key={client}>{clientDisplayName(client)}</option>)}
                       </select>
                     </label>
-                    <p className="field-help">This saves a separate write permission.
-                      It does not enable remote editing until the Connector supports it.</p>
+                    <p className="field-help">This saves an app-specific edit permission.
+                      An active owner-approved signed Connector and the Cloud write service
+                      are also required before any design can change.</p>
                     <button className="button secondary" name="enabled" value="true"
                       type="submit">Allow reading and editing</button>
                   </form>:null}
@@ -484,9 +495,9 @@ function AdvancedIdentity({context}:Readonly<{context:ViewContext}>){
       </details>);
 }
 export function renderDevicesPage(devices:ReadonlyArray<Device>,notice?:string,enrollmentAvailable=true,
-  {projects=[],ownerSub,clients=[],savedGrants=[],sandboxMode=false,browseEnabled=false,writeClients=[],userEmail}:DevicePageOptions={}
+  {projects=[],ownerSub,clients=[],savedGrants=[],sandboxMode=false,browseEnabled=false,writeClients=[],nativeWriteAvailable=false,userEmail}:DevicePageOptions={}
 ):string{
-  const context={devices,projects,enrollmentAvailable,ownerSub,clients,savedGrants,sandboxMode,browseEnabled,writeClients};
+  const context={devices,projects,enrollmentAvailable,ownerSub,clients,savedGrants,sandboxMode,browseEnabled,writeClients,nativeWriteAvailable};
   return renderPage({title:"Devices",kind:"devices",eyebrow:"Workspace / Devices",userEmail,
     summary:"Machines your AI clients can reach through KiCad MCP Cloud.",
     actions:enrollmentAvailable?<a className="button primary device-add-button" href="#connect-computer">

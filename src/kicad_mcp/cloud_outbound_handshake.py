@@ -38,6 +38,9 @@ if TYPE_CHECKING:
 CONNECTOR_WS_PATH = "/api/v1/connector/ws"
 _HANDSHAKE_DENIED = "handshake denied"
 _FOLDER_SESSION_MAX_PAYLOAD = 8192
+# A v2 signed write contains both disk/live SHA-256 values; the complete
+# bounded outer WebSocket envelope exceeds the legacy 1 KiB read frame.
+_SIGNED_WRITE_FRAME_MAX_PAYLOAD = 3072
 
 _DEVICE_UUID = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
@@ -61,8 +64,8 @@ class HandshakeReceipt:
 class ManagedNativeWriteConfig:
     """Bounded, owner-approved local native write execution handlers."""
 
-    revisions_preparer: Callable[[], dict[str, str]]
-    write_executor: Callable[[bytes, bool], dict[str, object]]
+    revisions_preparer: Callable[[str], dict[str, str]]
+    write_executor: Callable[[str, bytes, bool], dict[str, object]]
 
 
 @dataclass(frozen=True)
@@ -79,8 +82,8 @@ class OutboundSessionOptions:
     owner_managed_read: bool = False
     managed_native_drc: bool = False
     managed_native_write: bool = False
-    revisions_preparer: Callable[[], dict[str, str]] | None = None
-    write_executor: Callable[[bytes, bool], dict[str, object]] | None = None
+    revisions_preparer: Callable[[str], dict[str, str]] | None = None
+    write_executor: Callable[[str, bytes, bool], dict[str, object]] | None = None
     # Opt-in ONLY after the target Cloud deployment accepts extended device.hello.
     # Legacy devices and servers retain the byte-identical v1 handshake by default.
     advertise_catalog: bool = False
@@ -133,7 +136,12 @@ def _endpoint(*, origin: str, trusted_origin: str) -> str:
 
 
 def _read_strict_json(raw: str, expected_kind: str) -> dict[str, object]:
-    if not isinstance(raw, str) or len(raw.encode("utf-8")) > 1024:
+    # Extend the byte limit ONLY for the sealed owner-granted write envelope;
+    # handshake, read, acknowledgment and other frames retain 1 KiB.
+    max_bytes = (
+        _SIGNED_WRITE_FRAME_MAX_PAYLOAD if expected_kind == "connector.authorized_write" else 1024
+    )
+    if not isinstance(raw, str) or len(raw.encode("utf-8")) > max_bytes:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     try:
         message = json.loads(raw, object_pairs_hook=_unique_keys)
@@ -742,6 +750,14 @@ async def _perform_outbound_session(
     def now_ms() -> int:
         return int(datetime.now(UTC).timestamp() * 1000)
 
+    # A write-enabled session needs the bounded signed-v2 frame capacity.
+    # Other handshake/read frames retain their own strict decoder limits.
+    max_frame_size = 1024
+    if session_options.folder_service_factory is not None:
+        max_frame_size = _FOLDER_SESSION_MAX_PAYLOAD
+    elif session_options.managed_native_write:
+        max_frame_size = _SIGNED_WRITE_FRAME_MAX_PAYLOAD
+
     try:
         async with (
             asyncio.timeout(_outbound_session_timeout(session_options)),
@@ -750,11 +766,7 @@ async def _perform_outbound_session(
                 ssl=context,
                 origin=None,
                 compression=None,
-                max_size=(
-                    _FOLDER_SESSION_MAX_PAYLOAD
-                    if session_options.folder_service_factory is not None
-                    else 1024
-                ),
+                max_size=max_frame_size,
                 max_queue=2,
                 open_timeout=3,
                 close_timeout=2,

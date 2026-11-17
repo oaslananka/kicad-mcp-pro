@@ -31,8 +31,10 @@ export function extractToolCall(body: string): { id: unknown; tool: string } | n
 /**
  * Map one JSON-RPC response to an honest outcome for the matching request.
  * A protocol-level error means the call was refused ("denied"); an isError
- * tool result means the tool ran and failed ("error"); anything else that
- * matches the request id is "success". Unmatchable bodies record nothing.
+ * tool result or explicit structuredContent.success=false means the
+ * operation failed ("error"), even when the MCP envelope itself succeeded.
+ * Missing/ordinary read results are not implicitly errors. Unmatchable bodies
+ * record nothing.
  */
 export function callStatusFromResponse(
   body: string, requestId: unknown
@@ -48,7 +50,12 @@ export function callStatusFromResponse(
   if ("error" in record) return "denied";
   const result = record.result;
   if (!result || typeof result !== "object" || Array.isArray(result)) return "success";
-  return (result as Record<string, unknown>).isError === true ? "error" : "success";
+  const toolResult = result as Record<string, unknown>;
+  if (toolResult.isError === true) return "error";
+  const structured = toolResult.structuredContent;
+  if (structured && typeof structured === "object" && !Array.isArray(structured) &&
+      (structured as Record<string, unknown>).success === false) return "error";
+  return "success";
 }
 
 function sameId(a: unknown, b: unknown): boolean {

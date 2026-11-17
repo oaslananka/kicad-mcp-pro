@@ -1148,3 +1148,205 @@ def test_windows_connect_new_device_uses_foreground_pairing_and_never_schedules(
     assert paired[0]["alias"] == "Bench PC"
     assert remote[0]["alias"] == "Bench PC"
     assert remote[0]["repair_device"] is False
+
+
+def test_windows_cloud_connect_explicit_write_flag_forwards_to_foreground(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_user_cli as cli
+
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(cli, "_is_windows", lambda: True)
+    monkeypatch.setattr(cli, "remote", lambda **options: calls.append(options))
+    result = CliRunner().invoke(app, ["cloud", "connect", "--enable-native-write"])
+    assert result.exit_code == 0, result.output
+    assert calls[-1]["allow_native_write"] is True
+
+
+def test_windows_cloud_write_issuer_requires_owner_terminal_before_vault_access(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from kicad_mcp import cloud_user_cli as cli
+    from kicad_mcp import cloud_windows_write_issuer as issuer
+
+    monkeypatch.setattr(cli, "_is_windows", lambda: True)
+    monkeypatch.setattr(cli, "_owner_terminal", lambda: False)
+    monkeypatch.setattr(
+        issuer,
+        "trust_owner_windows_write_issuer",
+        lambda *_args, **_kwargs: pytest.fail("Headless trust prohibited"),
+    )
+    public_key = tmp_path / "issuer.pem"
+    public_key.write_bytes(b"test")
+    result = CliRunner().invoke(
+        app,
+        [
+            "cloud",
+            "trust-write-issuer",
+            "--public-key-file",
+            str(public_key),
+            "--sha256",
+            "a" * 64,
+        ],
+    )
+    assert result.exit_code != 0
+
+
+def test_windows_owner_can_trust_explicit_independently_verified_public_issuer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli as cli
+    from kicad_mcp import cloud_windows_connector, cloud_windows_write_issuer
+
+    monkeypatch.setattr(cli, "_is_windows", lambda: True)
+    monkeypatch.setattr(cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(
+        cloud_windows_connector,
+        "selected_project",
+        lambda: SimpleNamespace(origin=cli.DEFAULT_CLOUD_ORIGIN, record_id="a" * 32),
+    )
+    seen: list[tuple[str, bytes, str]] = []
+    monkeypatch.setattr(
+        cloud_windows_write_issuer,
+        "trust_owner_windows_write_issuer",
+        lambda record, key, *, expected_spki_sha256: seen.append(
+            (record, key, expected_spki_sha256)
+        ),
+    )
+    from kicad_mcp import cloud_windows_write_marker
+
+    monkeypatch.setattr(
+        cloud_windows_write_marker,
+        "prepare_owner_windows_write_marker_directory",
+        lambda: tmp_path,
+    )
+    pem = tmp_path / "trusted-issuer.pem"
+    pem.write_bytes(b"x" * 120)
+    sha256 = "a" * 64
+    result = CliRunner().invoke(
+        app,
+        [
+            "cloud",
+            "trust-write-issuer",
+            "--public-key-file",
+            str(pem),
+            "--sha256",
+            sha256,
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert seen == [("a" * 32, b"x" * 120, sha256)]
+    assert "Cloud also requires explicit OAuth" in result.output
+
+
+def test_windows_connect_cannot_pair_new_device_and_enable_writes_in_one_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_user_cli as cli
+    from kicad_mcp import cloud_windows_user_cli
+
+    monkeypatch.setattr(cli, "_is_windows", lambda: True)
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "setup_windows",
+        lambda **_: pytest.fail("Pairing must not begin on write opt-in"),
+    )
+    result = CliRunner().invoke(app, ["cloud", "connect", "--new-device", "--enable-native-write"])
+    assert result.exit_code != 0
+    assert "read-only access first" in result.output
+
+
+@pytest.mark.parametrize("case", ["unpaired", "wrong_origin", "missing_file", "oversize", "denied"])
+def test_write_issuer_cli_negative_paths_leave_owner_vault_and_project_untouched(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    case: str,
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli as cli
+    from kicad_mcp import cloud_windows_connector, cloud_windows_write_issuer
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    monkeypatch.setattr(cli, "_is_windows", lambda: True)
+    monkeypatch.setattr(cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(
+        cloud_windows_connector,
+        "selected_project",
+        lambda: (
+            None
+            if case == "unpaired"
+            else SimpleNamespace(
+                origin="https://wrong.example"
+                if case == "wrong_origin"
+                else cli.DEFAULT_CLOUD_ORIGIN,
+                record_id="a" * 32,
+            )
+        ),
+    )
+    writes: list[str] = []
+
+    def trust(*_args: object, **_kwargs: object) -> None:
+        writes.append("attempt")
+        if case == "denied":
+            raise LocalWriteDeniedError("request denied")
+
+    monkeypatch.setattr(cloud_windows_write_issuer, "trust_owner_windows_write_issuer", trust)
+    from kicad_mcp import cloud_windows_write_marker
+
+    monkeypatch.setattr(
+        cloud_windows_write_marker,
+        "prepare_owner_windows_write_marker_directory",
+        lambda: tmp_path,
+    )
+    pem = tmp_path / "issuer.pem"
+    if case != "missing_file":
+        pem.write_bytes(b"A" * (513 if case == "oversize" else 120))
+    result = CliRunner().invoke(
+        app, ["cloud", "trust-write-issuer", "--public-key-file", str(pem), "--sha256", "a" * 64]
+    )
+    assert result.exit_code != 0
+    assert writes == (["attempt"] if case == "denied" else [])
+
+
+def test_owner_trust_bootstraps_write_marker_without_network(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli as cli
+    from kicad_mcp import (
+        cloud_windows_connector,
+        cloud_windows_write_issuer,
+        cloud_windows_write_marker,
+    )
+
+    monkeypatch.setattr(cli, "_is_windows", lambda: True)
+    monkeypatch.setattr(cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(
+        cloud_windows_connector,
+        "selected_project",
+        lambda: SimpleNamespace(origin=cli.DEFAULT_CLOUD_ORIGIN, record_id="a" * 32),
+    )
+    events: list[str] = []
+    monkeypatch.setattr(
+        cloud_windows_write_marker,
+        "prepare_owner_windows_write_marker_directory",
+        lambda: events.append("marker") or tmp_path,
+    )
+    monkeypatch.setattr(
+        cloud_windows_write_issuer,
+        "trust_owner_windows_write_issuer",
+        lambda *args, **kwargs: events.append("pin"),
+    )
+    keyfile = tmp_path / "test.pem"
+    keyfile.write_bytes(b"x" * 120)
+    result = CliRunner().invoke(
+        app,
+        ["cloud", "trust-write-issuer", "--public-key-file", str(keyfile), "--sha256", "a" * 64],
+    )
+    assert result.exit_code == 0, result.output
+    assert events == ["marker", "pin"]

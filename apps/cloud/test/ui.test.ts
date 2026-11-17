@@ -296,7 +296,7 @@ test("explicit write OAuth consent enables a per-app edit policy toggle, never a
   assert.match(savedWrite,/Edit permission saved/);
   assert.match(savedWrite,/Keep read only/);
   assert.match(savedWrite,/Remove this app access/);
-  assert.match(savedWrite,/remote editing not active/i);
+  assert.match(savedWrite,/Cloud editing is not enabled on this server yet/i);
   // Consent for one app never promotes a different app.
   const other=base([{projectId:project.id,clientId:reader,maxMode:"readonly"}],[writer]);
   assert.doesNotMatch(other,/name="client_id" value="https:\/\/claude\.ai[^"]*"\/>[\s\S]*?Allow editing/);

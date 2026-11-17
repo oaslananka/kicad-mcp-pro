@@ -42,6 +42,13 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
   let tokenValid = true;
   let writeExecuted = false;
   let preflightAllowed = true;
+  let issuerAllowed = true;
+  let transportAllowed = true;
+  let revokeGrantAfterDispatch = false;
+  const blockedStages: string[] = [];
+  let reportedOutcome: {
+    nativeCommitted: boolean; savedToDisk: boolean; diskBoardSha256?: string
+  } | null = null;
 
   const inventory: Inventory = {
     async listProjects(sub, client) {
@@ -108,21 +115,25 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
       persistToDisk: boolean
     ) => {
       writeExecuted = true;
+      if (revokeGrantAfterDispatch) preflightAllowed = false;
+      if (!transportAllowed) return null;
       const proposal = proof as { payload: string };
       const parsed = JSON.parse(Buffer.from(proposal.payload, "base64url").toString("utf8"));
       return {
         requestId: parsed.requestId,
         projectId: projId,
         operation: "pcb_move_footprint" as const,
-        nativeCommitted: true,
-        savedToDisk: persistToDisk,
-        diskBoardSha256: "2".repeat(64)
+        ...(reportedOutcome ?? {
+          nativeCommitted: true,
+          savedToDisk: persistToDisk,
+          ...(persistToDisk ? {diskBoardSha256: "2".repeat(64)} : {})
+        })
       };
     }
   };
 
   const writeIssuer = (candidate: unknown, binding: any, nowMs: number) => {
-    return createOfflineSignedWriteProposal(candidate, binding, nowMs, edKey.privateKey);
+    return issuerAllowed ? createOfflineSignedWriteProposal(candidate, binding, nowMs, edKey.privateKey) : null;
   };
 
   const writePreflight = {
@@ -139,12 +150,25 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     summaryRelay: () => relay as never,
     mcpProjectWriteEnabled: true,
     writeIssuer,
+    writePreflight: writePreflight as never,
+    onWriteBlocked:stage=>blockedStages.push(stage)
+  });
+  const missingIssuerServer = createHttpServer(config, inventory, verify, {
+    summaryRelay: () => relay as never,
+    mcpProjectWriteEnabled: true,
     writePreflight: writePreflight as never
+  });
+  const missingPolicyServer = createHttpServer(config, inventory, verify, {
+    summaryRelay: () => relay as never,
+    mcpProjectWriteEnabled: true,
+    writeIssuer
   });
 
   try {
     await new Promise<void>(resolve => disabledServer.listen(0, "127.0.0.1", resolve));
     await new Promise<void>(resolve => enabledServer.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>(resolve => missingIssuerServer.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>(resolve => missingPolicyServer.listen(0, "127.0.0.1", resolve));
 
     const disabledPort = (disabledServer.address() as AddressInfo).port;
     const enabledPort = (enabledServer.address() as AddressInfo).port;
@@ -188,10 +212,53 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
       return { status: res.status, data };
     };
 
+    const metadata = async (url:URL)=>(
+      await (await fetch(new URL("/.well-known/oauth-protected-resource",url))).json()
+    ) as {scopes_supported:string[]};
+    const health = async (url:URL)=>(
+      await (await fetch(new URL("/health",url))).json()
+    ) as {nativeWriteReady?:boolean};
+    const incompleteSigner = new URL("http://127.0.0.1:"+
+      (missingIssuerServer.address() as AddressInfo).port+"/mcp");
+    const incompletePolicy = new URL("http://127.0.0.1:"+
+      (missingPolicyServer.address() as AddressInfo).port+"/mcp");
+    assert.deepEqual((await metadata(disabledMcpUrl)).scopes_supported,["projects:read"]);
+    assert.deepEqual((await metadata(enabledMcpUrl)).scopes_supported,
+      ["projects:read","projects:write"]);
+    assert.deepEqual((await metadata(incompleteSigner)).scopes_supported,["projects:read"]);
+    assert.deepEqual((await metadata(incompletePolicy)).scopes_supported,["projects:read"]);
+    assert.equal((await health(enabledMcpUrl)).nativeWriteReady,true);
+    for(const url of [disabledMcpUrl,incompleteSigner,incompletePolicy]){
+      assert.equal((await health(url)).nativeWriteReady,false);
+    }
+
     // 1. Tool is absent when write is disabled
     const listDisabled = await invoke("disabled", "token-write", "tools/list", {}, 1);
     const disabledTools = (listDisabled.data.result?.tools ?? []).map((t: { name: string }) => t.name);
     assert.equal(disabledTools.includes("pcb_move_footprint"), false);
+
+    // A switch without a signer or DB-backed grant policy must never offer a write tool.
+    for(const incompleteUrl of [incompleteSigner,incompletePolicy]){
+      const r=await fetch(incompleteUrl,{
+        method:"POST",
+        headers:{
+          Authorization:"Bearer token-write",
+          "Content-Type":"application/json",
+          Accept:"application/json, text/event-stream",
+          "MCP-Protocol-Version":"2026-07-28",
+          "Mcp-Method":"tools/list"
+        },
+        body:JSON.stringify({jsonrpc:"2.0",id:92,method:"tools/list",params:{
+          _meta:{
+            "io.modelcontextprotocol/clientInfo":{name:"test-client",version:"1.0.0"},
+            "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+            "io.modelcontextprotocol/clientCapabilities":{}
+          }
+        }})
+      });
+      assert.equal(r.status,200);
+      assert.doesNotMatch(await r.text(),/pcb_move_footprint/);
+    }
 
     // 2. Tool is present when write is enabled
     const listEnabled = await invoke("enabled", "token-write", "tools/list", {}, 2);
@@ -235,6 +302,83 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     assert.match(JSON.stringify(successCall.data), /"savedToDisk":true/);
     assert.match(JSON.stringify(successCall.data), /"diskBoardSha256":"2222/);
 
+    // A remote response must not claim success without committed native work,
+    // or claim a saved board when disk persistence was requested but unproven.
+    for (const [reported, expected] of [
+      [{nativeCommitted:false,savedToDisk:false}, "native_commit_not_confirmed"],
+      [{nativeCommitted:true,savedToDisk:false}, "disk_save_not_confirmed"],
+      [{nativeCommitted:true,savedToDisk:true}, "disk_hash_not_confirmed"]
+    ] as const) {
+      reportedOutcome = reported;
+      const failed = await invoke("enabled", "token-write", "tools/call", {
+        name:"pcb_move_footprint",
+        arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20,save_to_disk:true}
+      }, 8, "pcb_move_footprint");
+      assert.equal(failed.status, 200);
+      assert.match(JSON.stringify(failed.data), /"success":false/);
+      assert.equal(failed.data.result?.structuredContent?.message, expected);
+    }
+    reportedOutcome = {
+      nativeCommitted:true,savedToDisk:true,diskBoardSha256:"2".repeat(64)
+    };
+    const unexpectedSave = await invoke("enabled", "token-write", "tools/call", {
+      name:"pcb_move_footprint",
+      arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20,save_to_disk:false}
+    }, 10, "pcb_move_footprint");
+    assert.equal(unexpectedSave.status, 200);
+    assert.match(JSON.stringify(unexpectedSave.data), /"success":false/);
+    assert.match(JSON.stringify(unexpectedSave.data), /unexpected_disk_save/);
+
+    reportedOutcome = null;
+    const unsaved = await invoke("enabled", "token-write", "tools/call", {
+      name:"pcb_move_footprint",
+      arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20,save_to_disk:false}
+    }, 9, "pcb_move_footprint");
+    assert.equal(unsaved.status, 200);
+    assert.match(JSON.stringify(unsaved.data), /"success":true/);
+    assert.match(JSON.stringify(unsaved.data), /"savedToDisk":false/);
+
+    // A failure after durable DB reservation is distinguishable from the
+    // failure to deliver an authorized WSS request. Never log a token,
+    // signed proof, project ID, command or PCB design data.
+    issuerAllowed = false;
+    const signerDenied = await invoke("enabled", "token-write", "tools/call", {
+      name:"pcb_move_footprint",
+      arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20}
+    }, 11, "pcb_move_footprint");
+    assert.match(JSON.stringify(signerDenied.data), /write_execution_failed/);
+    assert.equal(blockedStages.at(-1), "signing_failed");
+    issuerAllowed = true;
+
+    transportAllowed = false;
+    const wssUnavailable = await invoke("enabled", "token-write", "tools/call", {
+      name:"pcb_move_footprint",
+      arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20}
+    }, 12, "pcb_move_footprint");
+    assert.match(JSON.stringify(wssUnavailable.data), /write_execution_failed/);
+    assert.equal(wssUnavailable.data.result?.structuredContent?.outcomeUnknown, true);
+    assert.equal(wssUnavailable.data.result?.structuredContent?.retrySafe, false);
+    assert.match(String(wssUnavailable.data.result?.structuredContent?.guidance), /before retrying/);
+    assert.equal(blockedStages.at(-1), "transport_no_result");
+    transportAllowed = true;
+    assert.ok(blockedStages.every(stage => /^[a-z_]+$/.test(stage)));
+
+    // A project/client grant can be revoked while the signed WSS request
+    // is executing. Never return a success response from a stale grant.
+    // The synthetic relay may already have committed a native transaction;
+    // this test does NOT claim a remote rollback or prevent the commit.
+    revokeGrantAfterDispatch = true;
+    const lateRevocation = await invoke("enabled", "token-write", "tools/call", {
+      name:"pcb_move_footprint",
+      arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20}
+    }, 13, "pcb_move_footprint");
+    assert.match(JSON.stringify(lateRevocation.data), /write_execution_failed/);
+    assert.equal(lateRevocation.data.result?.structuredContent?.outcomeUnknown, true);
+    assert.equal(lateRevocation.data.result?.structuredContent?.retrySafe, false);
+    assert.equal(blockedStages.at(-1), "postgrant_revoked");
+    revokeGrantAfterDispatch = false;
+    preflightAllowed = true;
+
     // 6. Preflight denial fails closed
     writeExecuted = false;
     preflightAllowed = false;
@@ -259,5 +403,7 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
   } finally {
     if (disabledServer.listening) await new Promise<void>(resolve => disabledServer.close(() => resolve()));
     if (enabledServer.listening) await new Promise<void>(resolve => enabledServer.close(() => resolve()));
+    if (missingIssuerServer.listening) await new Promise<void>(resolve => missingIssuerServer.close(() => resolve()));
+    if (missingPolicyServer.listening) await new Promise<void>(resolve => missingPolicyServer.close(() => resolve()));
   }
 });

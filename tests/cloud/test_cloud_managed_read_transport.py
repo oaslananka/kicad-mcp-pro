@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import re
 import time
@@ -668,8 +669,8 @@ async def test_managed_write_revisions_returns_prepared_shas(tmp_path: Path) -> 
         lambda _: build_dispatcher(tmp_path, [True]),
         max_reads=1,
         allow_native_write=True,
-        revisions_preparer=lambda: revisions,
-        write_executor=lambda proof, persist: {"requestId": "x"},
+        revisions_preparer=lambda project_id: revisions if project_id == PROJECT else {},
+        write_executor=lambda project_id, proof, persist: {"requestId": "x"},
     )
     assert len(socket.sent) == 2
     assert socket.sent[0] == {
@@ -683,21 +684,47 @@ async def test_managed_write_revisions_returns_prepared_shas(tmp_path: Path) -> 
 
 @pytest.mark.anyio
 async def test_managed_authorized_write_executes_and_receives_ack(tmp_path: Path) -> None:
+    # Real v2 wire proposals carry both disk and live KiCad revision digests.
+    # A tiny dummy proof previously masked the 1 KiB transport size failure.
+    payload = {
+        "kind": "connector.write_request",
+        "version": 2,
+        "requestId": "77777777-7777-4777-8777-777777777777",
+        "deviceId": DEVICE,
+        "projectId": PROJECT,
+        "sessionId": SESSION,
+        "deadlineUnixMs": int(time.time() * 1000) + 8000,
+        "command": {
+            "operation": "pcb_move_footprint",
+            "reference": "R1",
+            "xMm": 32,
+            "yMm": 29,
+            "rotationDeg": None,
+            "expectedBoardSha256": "a" * 64,
+            "expectedLiveBoardSha256": "b" * 64,
+        },
+    }
     proof_obj = {
         "kind": "connector.signed_write_proposal",
         "version": 2,
-        "payload": "dGVzdA",
-        "signature": "c2ln",
+        "payload": base64.urlsafe_b64encode(
+            json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        )
+        .decode("ascii")
+        .rstrip("="),
+        "signature": "A" * 86,
     }
     write_frame = json.dumps(
         {
             "kind": "connector.authorized_write",
             "version": 1,
             "sequence": 1,
+            "projectId": PROJECT,
             "proof": proof_obj,
             "persistToDisk": True,
         }
     )
+    assert 1024 < len(write_frame.encode("utf-8")) <= 3072
     ack_frame = json.dumps(
         {
             "kind": "connector.write_ack",
@@ -724,10 +751,11 @@ async def test_managed_authorized_write_executes_and_receives_ack(tmp_path: Path
 
     socket = CustomSocket()
     receipt = HandshakeReceipt(DEVICE, SESSION)
-    calls: list[tuple[bytes, bool]] = []
+    calls: list[tuple[str, bytes, bool]] = []
+    activity: list[str] = []
 
-    def execute(proof: bytes, persist: bool) -> dict[str, object]:
-        calls.append((proof, persist))
+    def execute(project_id: str, proof: bytes, persist: bool) -> dict[str, object]:
+        calls.append((project_id, proof, persist))
         return {
             "requestId": "77777777-7777-4777-8777-777777777777",
             "projectId": PROJECT,
@@ -743,16 +771,84 @@ async def test_managed_authorized_write_executes_and_receives_ack(tmp_path: Path
         lambda _: build_dispatcher(tmp_path, [True]),
         max_reads=1,
         allow_native_write=True,
-        revisions_preparer=lambda: {"expectedBoardSha256": "a" * 64},
+        revisions_preparer=lambda project_id: {"expectedBoardSha256": "a" * 64},
         write_executor=execute,
+        on_activity=activity.append,
     )
+    assert activity[:4] == [
+        "Tool call 1: write started",
+        "Cloud WRITE envelope validated",
+        "Cloud WRITE local executor returned",
+        "Cloud WRITE response acknowledged",
+    ]
+    assert re.fullmatch(r"Tool call 1: pcb_move_footprint completed \(\d+ ms\)", activity[4])
     assert len(calls) == 1
-    assert calls[0][1] is True
-    assert json.loads(calls[0][0]) == proof_obj
+    assert calls[0][0] == PROJECT
+    assert calls[0][2] is True
+    assert json.loads(calls[0][1]) == proof_obj
     assert len(socket.sent) == 1
     assert socket.sent[0]["kind"] == "connector.write_result"
     assert socket.sent[0]["result"]["operation"] == "pcb_move_footprint"
     assert socket.sent[0]["result"]["savedToDisk"] is True
+
+
+def test_signed_write_wire_cap_keeps_legacy_read_limits() -> None:
+    from kicad_mcp.cloud_outbound_handshake import _read_strict_json
+
+    # Only the signed owner WRITE envelope may exceed 1 KiB; ordinary reads
+    # and handshake frames retain their original strict byte bound.
+    for kind, padding in (
+        ("connector.authorized_read", 1024),
+        ("connector.authorized_write", 3072),
+    ):
+        oversized = json.dumps({"kind": kind, "padding": "x" * padding})
+        with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+            _read_strict_json(oversized, kind)
+
+
+@pytest.mark.anyio
+async def test_managed_write_stage_activity_is_redacted(tmp_path: Path) -> None:
+    """A real owner terminal needs stage evidence without proof or PCB content."""
+    write_frame = json.dumps(
+        {
+            "kind": "connector.authorized_write",
+            "version": 1,
+            "sequence": 1,
+            "projectId": PROJECT,
+            "proof": {
+                "kind": "connector.signed_write_proposal",
+                "version": 2,
+                "payload": "c2VjcmV0LWJvYXJk",
+                "signature": "c2ln",
+            },
+            "persistToDisk": True,
+        }
+    )
+    events: list[str] = []
+
+    def reject(_: str, __: bytes, ___: bool) -> dict[str, object]:
+        raise ValueError("sensitive-private-project-path")
+
+    socket = Socket([write_frame])
+    with pytest.raises(ValueError, match="sensitive-private-project-path"):
+        await serve_authenticated_reads(
+            socket,
+            HandshakeReceipt(DEVICE, SESSION),
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+            allow_native_write=True,
+            revisions_preparer=lambda _: {"expectedBoardSha256": "a" * 64},
+            write_executor=reject,
+            on_activity=events.append,
+        )
+    assert events == [
+        "Tool call 1: write started",
+        "Cloud WRITE envelope validated",
+        "Cloud WRITE local executor rejected",
+        "Tool call 1: write failed",
+    ]
+    assert "sensitive-private" not in " ".join(events)
+    assert socket.sent == []
 
 
 @pytest.mark.anyio
@@ -867,6 +963,7 @@ async def test_managed_write_denied_on_non_str_ack_or_mismatched_ack(
             "kind": "connector.authorized_write",
             "version": 1,
             "sequence": 1,
+            "projectId": PROJECT,
             "proof": proof_obj,
             "persistToDisk": True,
         }
@@ -1071,3 +1168,116 @@ async def test_signed_session_deadline_already_elapsed_rotates_without_read(
     )
     assert events == ["Refreshing signed Cloud session"]
     assert socket.sent == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("project_id", [None, "not-a-project", "A" * 36, "0" * 36])
+async def test_signed_write_rejects_unbound_project_id_before_native_callback(
+    tmp_path: Path, project_id: str | None
+) -> None:
+    """Cloud's outer project selector must never select or change an unapproved PCB."""
+    calls: list[str] = []
+    proof = {
+        "kind": "connector.signed_write_proposal",
+        "version": 2,
+        "payload": "dGVzdA",
+        "signature": "c2ln",
+    }
+    frame = {
+        "kind": "connector.authorized_write",
+        "version": 1,
+        "sequence": 1,
+        "proof": proof,
+        "persistToDisk": True,
+    }
+    if project_id is not None:
+        frame["projectId"] = project_id
+
+    def execute(_: str, _proof: bytes, _persist: bool) -> dict[str, object]:
+        calls.append("native_mutation")
+        return {"requestId": "unexpected"}
+
+    socket = Socket([json.dumps(frame)])
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        await serve_authenticated_reads(
+            socket,
+            HandshakeReceipt(DEVICE, SESSION),
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+            allow_native_write=True,
+            revisions_preparer=lambda _: {"expectedBoardSha256": "a" * 64},
+            write_executor=execute,
+        )
+    assert calls == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("project_id", [None, "not-a-project", "A" * 36])
+async def test_signed_revision_probe_rejects_unbound_project_id_before_native_access(
+    tmp_path: Path, project_id: str | None
+) -> None:
+    calls: list[str] = []
+    frame: dict[str, object] = {
+        "kind": "connector.prepare_write_revisions",
+        "version": 1,
+        "requestId": "55555555-5555-4555-8555-555555555555",
+        "deviceId": DEVICE,
+    }
+    if project_id is not None:
+        frame["projectId"] = project_id
+
+    def prepare(_: str) -> dict[str, str]:
+        calls.append("read_board")
+        return {"expectedBoardSha256": "a" * 64}
+
+    socket = Socket([json.dumps(frame)])
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        await serve_authenticated_reads(
+            socket,
+            HandshakeReceipt(DEVICE, SESSION),
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+            allow_native_write=True,
+            revisions_preparer=prepare,
+            write_executor=lambda _id, _proof, _persist: {},
+        )
+    assert calls == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("persist_flag", ["false", "true", 0, 1, None, {}])
+async def test_signed_write_rejects_non_boolean_persist_flag_before_native_callback(
+    tmp_path: Path, persist_flag: object
+) -> None:
+    """Malformed persist flags may not silently turn an unsaved edit into a disk write."""
+    calls: list[str] = []
+    frame = {
+        "kind": "connector.authorized_write",
+        "version": 1,
+        "sequence": 1,
+        "projectId": PROJECT,
+        "persistToDisk": persist_flag,
+        "proof": {
+            "kind": "connector.signed_write_proposal",
+            "version": 2,
+            "payload": "dGVzdA",
+            "signature": "c2ln",
+        },
+    }
+
+    def execute(_: str, _proof: bytes, _persist: bool) -> dict[str, object]:
+        calls.append("native_mutation")
+        raise AssertionError("native call must not start")
+
+    socket = Socket([json.dumps(frame)])
+    with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+        await serve_authenticated_reads(
+            socket,
+            HandshakeReceipt(DEVICE, SESSION),
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+            allow_native_write=True,
+            revisions_preparer=lambda _: {"expectedBoardSha256": "a" * 64},
+            write_executor=execute,
+        )
+    assert calls == []

@@ -224,3 +224,68 @@ def test_windows_marker_handle_conversion_failure_denies_replay(
 @pytest.mark.skipif(os.name == "nt", reason="POSIX-only negative import contract")
 def test_windows_marker_default_does_not_select_posix_path() -> None:
     assert default_windows_write_marker_directory() is None
+
+
+@WINDOWS
+def test_owner_can_prepare_private_replay_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from kicad_mcp.cloud_windows_write_marker import prepare_owner_windows_write_marker_directory
+    from kicad_mcp.cloud_write_marker import LocalWriteMarker
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    parent = tmp_path / "KiCadMCPPro" / "Cloud"
+    parent.mkdir(parents=True)
+    marker_dir = parent / "write-markers"
+    assert not marker_dir.exists()
+    assert prepare_owner_windows_write_marker_directory() == marker_dir
+    assert marker_dir.is_dir()
+    assert prepare_owner_windows_write_marker_directory() == marker_dir
+    assert LocalWriteMarker(marker_dir).consume_once(SESSION, REQUEST) is True
+    assert LocalWriteMarker(marker_dir).consume_once(SESSION, REQUEST) is False
+
+
+@WINDOWS
+def test_owner_marker_prepare_requires_existing_trusted_parent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from kicad_mcp.cloud_windows_write_marker import prepare_owner_windows_write_marker_directory
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    with pytest.raises(LocalWriteDeniedError):
+        prepare_owner_windows_write_marker_directory()
+    assert not (tmp_path / "KiCadMCPPro").exists()
+
+
+@WINDOWS
+def test_owner_marker_prepare_rejects_reparse_destination(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from kicad_mcp.cloud_windows_write_marker import prepare_owner_windows_write_marker_directory
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    parent = tmp_path / "KiCadMCPPro" / "Cloud"
+    parent.mkdir(parents=True)
+    outsider = tmp_path / "other"
+    outsider.mkdir()
+    try:
+        (parent / "write-markers").symlink_to(outsider, target_is_directory=True)
+    except OSError:
+        pytest.skip("Windows developer mode/symlink privilege unavailable")
+    with pytest.raises(LocalWriteDeniedError):
+        prepare_owner_windows_write_marker_directory()
+    assert list(outsider.iterdir()) == []
+
+
+@WINDOWS
+def test_owner_marker_prepare_denies_unavailable_local_appdata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp.cloud_windows_write_marker import prepare_owner_windows_write_marker_directory
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    with pytest.raises(LocalWriteDeniedError):
+        prepare_owner_windows_write_marker_directory()

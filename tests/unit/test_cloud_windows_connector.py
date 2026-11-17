@@ -1111,6 +1111,7 @@ async def test_windows_connector_native_write_runner_wires_revisions_and_executo
             "operation": "pcb_move_footprint",
             "nativeCommitted": True,
             "session_id": verified.session_id,
+            "project_id": verified.project_id,
         },
     )
     connector.activate(project, owner_confirm=lambda _: True)
@@ -1141,13 +1142,14 @@ async def test_windows_connector_native_write_runner_wires_revisions_and_executo
     )
     native_write = received_kwargs["native_write"]
     assert callable(native_write.revisions_preparer)
-    revisions = native_write.revisions_preparer()
+    revisions = native_write.revisions_preparer(project.project_id)
     assert "expectedBoardSha256" in revisions
     assert callable(native_write.write_executor)
 
-    res = native_write.write_executor(b'{"proof": true}', True)
+    res = native_write.write_executor(project.project_id, b'{"proof": true}', True)
     assert res["nativeCommitted"] is True
     assert res["session_id"] == receipt.session_id
+    assert res["project_id"] == project.project_id
 
 
 def test_successful_long_signed_session_refreshs_quickly_without_handshake_flood() -> None:

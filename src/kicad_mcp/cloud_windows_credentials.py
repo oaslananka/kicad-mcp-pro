@@ -36,6 +36,7 @@ _PARTS = frozenset(
         # A public Ed25519 issuer key independently approved by the local
         # Windows owner. Never a key furnished by a write request itself.
         "write_issuer",
+        "write_issuer_pin",
     }
 )
 _PREFIX = "KiCadMCPPro/Cloud/v1"

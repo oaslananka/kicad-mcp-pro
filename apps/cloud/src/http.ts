@@ -104,6 +104,12 @@ function validOrigin(req: IncomingMessage, config: Config): boolean {
     (origin === config.publicOrigin || config.allowedOrigins.includes(origin)));
 }
 
+// Fixed stage labels are safe for server-side diagnostics. Never include
+// client identifiers, OAuth credentials, signed proofs or PCB contents.
+export type CloudWriteBlockStage=
+  "connector_not_ready"|"policy_denied"|"revisions_unavailable"|
+  "reservation_denied"|"signing_failed"|"transport_no_result"|
+  "response_mismatch"|"postgrant_revoked";
 export type CloudHttpServices={
   grants?:GrantManagement;
   identity?:Pick<Identity,"handler">;
@@ -133,10 +139,43 @@ export type CloudHttpServices={
   mcpProjectWriteEnabled?:boolean;
   writePreflight?:import("./connector-write-preflight.js").PgConnectorWritePreflight;
   writeIssuer?:import("./connector-write-issuer.js").OfflineWriteProofIssuer;
+  /** Observation only: failures must never affect signed-write decisions. */
+  onWriteBlocked?:(stage:CloudWriteBlockStage)=>void;
   // Trusted Cloud-to-owner HTTPS delivery only. If absent, /prepare
   // cannot claim success; a bearer client must never self-register scope.
   ownerIntentDelivery?:(scope:PreparedOwnerSummary)=>Promise<string|null>;
 };
+
+/** A native reply is not a successful edit until the requested outcome is evidenced.
+ * Keep both native and disk flags in failure responses: a failed save can still
+ * leave an unsaved edit in the live KiCad editor.
+ */
+function writeOutcomeIssue(
+  result: import("./connector-ws.js").WriteOperationResult,
+  saveRequested: boolean
+):string|undefined {
+  if(!result.nativeCommitted)return "native_commit_not_confirmed";
+  if(saveRequested){
+    if(!result.savedToDisk)return "disk_save_not_confirmed";
+    if(!result.diskBoardSha256)return "disk_hash_not_confirmed";
+  }else if(result.savedToDisk){
+    return "unexpected_disk_save";
+  }
+  return undefined;
+}
+
+/** Never advertise native writes before signed proof + DB authorization
+ * path is fully configured. Discovery alone does not grant OAuth permissions.
+ */
+function nativeWriteReady(services:CloudHttpServices):boolean{
+  if(services.mcpProjectWriteEnabled!==true||
+     typeof services.writeIssuer!=="function"||!services.writePreflight)
+    return false;
+  const relay=services.summaryRelay?.();
+  return typeof relay?.prepareWriteRevisions==="function"&&
+    typeof relay.requestWrite==="function"&&
+    typeof relay.getTrustedContext==="function";
+}
 
 /** Named optional services prevent misleading positional dependency wiring. */
 export function createHttpServer(
@@ -238,7 +277,8 @@ async function handleRequest(
             enrollmentAvailable:Boolean(pairingDevice),grants,
             deviceConnection:summaryRelay?.()?.isDeviceConnected,
             managedRead:services.managedRead,localFolders:summaryRelay?.()?.localFolders,
-            nativeReadEnabled:services.managedNativeReadEnabled===true});
+            nativeReadEnabled:services.managedNativeReadEnabled===true,
+            nativeWriteAvailable:nativeWriteReady(services)});
         } else if(path==="/devices/pairing" || path==="/devices/pairing/review"){
           answer=await pairingBrowserResponse(browserRequest,identity,config.publicOrigin,pairings);
         } else if(path==="/api/owner/cli/approve"){
@@ -268,6 +308,7 @@ async function handleRequest(
           (services.mcpProjectNativeDrcEnabled||services.mcpProjectInspectionEnabled||
            services.mcpProjectBoardCountsEnabled||services.mcpProjectSchematicCountsEnabled)
           ? "operator_one_shot_read" : "not_implemented",
+          nativeWriteReady:nativeWriteReady(services),
           revision: /^[0-9a-f]{40}$/.test(process.env.APP_REVISION ?? "") ? process.env.APP_REVISION : "unknown" });
         return;
       }
@@ -275,9 +316,10 @@ async function handleRequest(
         json(res, 200, {
           resource: config.audience,
           authorization_servers: [config.issuer],
-          // Initial discovery is least-privilege. OAuth supports projects:write,
-          // but clients request it only when editing needs step-up consent.
-          scopes_supported: ["projects:read"],
+          // Initial discovery is read-only. A configured native writer may
+          // advertise a separate opt-in scope; never grant it automatically.
+          scopes_supported: nativeWriteReady(services)
+            ? ["projects:read","projects:write"] : ["projects:read"],
           bearer_methods_supported: ["header"]
         });
         return;
@@ -728,7 +770,11 @@ async function handleRequest(
             oauth,deviceId,projectId,"project_schematic_counts"))return null;
           return result.counts;
         } : undefined;
-      const writer = services.mcpProjectWriteEnabled && summaryRelay?.()
+      const writeBlocked=(stage:CloudWriteBlockStage):void=>{
+         // Diagnostics cannot alter authorization or native-write outcomes.
+         try{services.onWriteBlocked?.(stage);}catch{/* observation only */}
+       };
+       const writer = nativeWriteReady(services) && summaryRelay?.()
         ? async (
             deviceId: string,
             projectId: string,
@@ -748,19 +794,19 @@ async function handleRequest(
             const relay = summaryRelay();
             if (!relay?.prepareWriteRevisions || !relay.requestWrite || !relay.getTrustedContext) return null;
             const connection = relay.getTrustedContext(actor.sub, deviceId);
-            if (!connection) return null;
+            if (!connection) {writeBlocked("connector_not_ready");return null;}
             if (services.writePreflight) {
               const policyAllowed = await services.writePreflight.checkCurrentPolicy(actor, connection, projectId);
-              if (!policyAllowed) return null;
+              if (!policyAllowed) {writeBlocked("policy_denied");return null;}
             }
             const revisions = await relay.prepareWriteRevisions(actor.sub, deviceId, projectId);
-            if (!revisions) return null;
+            if (!revisions) {writeBlocked("revisions_unavailable");return null;}
             const requestId = randomUUID();
             const nowMs = Date.now();
             const deadlineUnixMs = nowMs + 8_000;
             if (services.writePreflight) {
               const reserved = await services.writePreflight.reserveAuthorizedWrite(actor, connection, projectId, requestId, deadlineUnixMs);
-              if (!reserved) return null;
+              if (!reserved) {writeBlocked("reservation_denied");return null;}
             }
             const candidate = {
               kind: "connector.write_request",
@@ -787,9 +833,9 @@ async function handleRequest(
               sessionExpiresUnixMs: nowMs + 60_000,
               allowedOperations: ["pcb_move_footprint"] as const
             };
-            if (!services.writeIssuer) return null;
+            if (!services.writeIssuer) {writeBlocked("signing_failed");return null;}
             const proofBuf = services.writeIssuer(candidate, binding, nowMs);
-            if (!proofBuf) return null;
+            if (!proofBuf) {writeBlocked("signing_failed");return null;}
             const proposalObj: object = JSON.parse(proofBuf.toString("utf8"));
             const oauth = {
               ownerSub: actor.sub,
@@ -803,14 +849,29 @@ async function handleRequest(
               proposalObj,
               command.saveToDisk ?? true
             );
-            if (!result || result.requestId !== requestId || result.projectId !== projectId) return null;
-            if (!await inventory.isAccessTokenAllowed(actor.sub, actor.clientId, actor.issuedAt)) return null;
+            if (!result) {writeBlocked("transport_no_result");return null;}
+            if (result.requestId !== requestId || result.projectId !== projectId) {
+              writeBlocked("response_mismatch");return null;
+            }
+            if (!await inventory.isAccessTokenAllowed(actor.sub, actor.clientId, actor.issuedAt)) {
+              writeBlocked("postgrant_revoked");return null;
+            }
+            // The owner may revoke a client/project grant while an already
+            // dispatched signed write is executing. Never issue a *success*
+            // result under a stale grant. This is a delivery fence, NOT a
+            // claim that native KiCad state was rolled back or unmodified.
+            if (!services.writePreflight || !await services.writePreflight.checkCurrentPolicy(
+              actor, connection, projectId)) {
+              writeBlocked("postgrant_revoked");return null;
+            }
+            const issue=writeOutcomeIssue(result,command.saveToDisk??true);
             return {
-              success: true,
+              success: issue===undefined,
               operation: "pcb_move_footprint",
               nativeCommitted: result.nativeCommitted,
               savedToDisk: result.savedToDisk,
-              ...(result.diskBoardSha256 ? { diskBoardSha256: result.diskBoardSha256 } : {})
+              ...(result.diskBoardSha256 ? { diskBoardSha256: result.diskBoardSha256 } : {}),
+              ...(issue ? {message:issue} : {})
             };
           }
         : undefined;

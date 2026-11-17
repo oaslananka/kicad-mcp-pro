@@ -104,13 +104,14 @@ def uncertain(action: Callable[[], None]) -> None:
         action()
 
 
-def test_untrusted_policy_and_nonposix_fail_closed(tmp_path: Path) -> None:
+def test_untrusted_policy_and_unsupported_platform_fail_closed(tmp_path: Path) -> None:
     policy, _, sha = approved(tmp_path)
     invalid = OperatorProject(DEVICE, PROJECT, Path("relative"), "../escape")
     native = StubNative()
     deny(lambda: run(invalid, sha, native))
     assert native.calls == []
-    if os.name != "posix":
+    # POSIX and Win32 have reviewed, pinned native lock implementations.
+    if os.name not in {"posix", "nt"}:
         deny(lambda: run(policy, sha, native))
         assert native.calls == []
 

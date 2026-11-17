@@ -40,6 +40,23 @@ test("usage extraction only records deterministic tool-call outcomes", () => {
   assert.equal(callStatusFromResponse(
     JSON.stringify({ jsonrpc: "2.0", id: 7, result: { content: [] } }), 7),
     "success");
+  // A successfully delivered MCP response is not a successful native edit.
+  // Real MCPJam Cloud WRITE returned this structured tool failure while the
+  // Activity page incorrectly counted the call as a successful edit.
+  assert.equal(callStatusFromResponse(JSON.stringify({
+    jsonrpc: "2.0", id: 7, result: {
+      content: [{ type: "text", text: '{"success":false}' }],
+      structuredContent: { success: false, reason: "write_execution_failed" }
+    }
+  }), 7), "error");
+  assert.equal(callStatusFromResponse(JSON.stringify({
+    jsonrpc: "2.0", id: 7, result: {
+      structuredContent: { success: true, nativeCommitted: true, savedToDisk: true }
+    }
+  }), 7), "success");
+  assert.equal(callStatusFromResponse(JSON.stringify({
+    jsonrpc: "2.0", id: 7, result: { structuredContent: { available: false } }
+  }), 7), "success", "a normal read absence is not a failed native edit");
   // A response that cannot be matched to the request records nothing.
   assert.equal(callStatusFromResponse("not json", 7), null);
   assert.equal(callStatusFromResponse(JSON.stringify({ jsonrpc: "2.0", id: 8, result: {} }), 7), null);
