@@ -127,6 +127,8 @@ const server=createHttpServer(config, inventory, createVerifier(config), {grants
   mcpProjectWriteEnabled:managedNativeWriteEnabled&&Boolean(writeIssuer)&&Boolean(connectorPool),
   ...(connectorPool&&managedNativeWriteEnabled?{writePreflight:new PgConnectorWritePreflight(connectorPool)}:{}),
   ...(writeIssuer?{writeIssuer}:{}),
+  // Stage-only diagnostic: no signed payloads, access tokens or KiCad content.
+  onWriteBlocked:stage=>process.stderr.write("Cloud WRITE blocked: "+stage+"\n"),
   ...(ownerIntentDelivery?{ownerIntentDelivery}:{}),
   ...(usage?{usage}:{}),
   ...(ownerApi?{ownerApi}:{})});

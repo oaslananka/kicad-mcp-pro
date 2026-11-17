@@ -42,6 +42,9 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
   let tokenValid = true;
   let writeExecuted = false;
   let preflightAllowed = true;
+  let issuerAllowed = true;
+  let transportAllowed = true;
+  const blockedStages: string[] = [];
   let reportedOutcome: {
     nativeCommitted: boolean; savedToDisk: boolean; diskBoardSha256?: string
   } | null = null;
@@ -111,6 +114,7 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
       persistToDisk: boolean
     ) => {
       writeExecuted = true;
+      if (!transportAllowed) return null;
       const proposal = proof as { payload: string };
       const parsed = JSON.parse(Buffer.from(proposal.payload, "base64url").toString("utf8"));
       return {
@@ -127,7 +131,7 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
   };
 
   const writeIssuer = (candidate: unknown, binding: any, nowMs: number) => {
-    return createOfflineSignedWriteProposal(candidate, binding, nowMs, edKey.privateKey);
+    return issuerAllowed ? createOfflineSignedWriteProposal(candidate, binding, nowMs, edKey.privateKey) : null;
   };
 
   const writePreflight = {
@@ -144,7 +148,8 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     summaryRelay: () => relay as never,
     mcpProjectWriteEnabled: true,
     writeIssuer,
-    writePreflight: writePreflight as never
+    writePreflight: writePreflight as never,
+    onWriteBlocked:stage=>blockedStages.push(stage)
   });
   const missingIssuerServer = createHttpServer(config, inventory, verify, {
     summaryRelay: () => relay as never,
@@ -330,6 +335,28 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     assert.equal(unsaved.status, 200);
     assert.match(JSON.stringify(unsaved.data), /"success":true/);
     assert.match(JSON.stringify(unsaved.data), /"savedToDisk":false/);
+
+    // A failure after durable DB reservation is distinguishable from the
+    // failure to deliver an authorized WSS request. Never log a token,
+    // signed proof, project ID, command or PCB design data.
+    issuerAllowed = false;
+    const signerDenied = await invoke("enabled", "token-write", "tools/call", {
+      name:"pcb_move_footprint",
+      arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20}
+    }, 11, "pcb_move_footprint");
+    assert.match(JSON.stringify(signerDenied.data), /write_execution_failed/);
+    assert.equal(blockedStages.at(-1), "signing_failed");
+    issuerAllowed = true;
+
+    transportAllowed = false;
+    const wssUnavailable = await invoke("enabled", "token-write", "tools/call", {
+      name:"pcb_move_footprint",
+      arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20}
+    }, 12, "pcb_move_footprint");
+    assert.match(JSON.stringify(wssUnavailable.data), /write_execution_failed/);
+    assert.equal(blockedStages.at(-1), "transport_no_result");
+    transportAllowed = true;
+    assert.ok(blockedStages.every(stage => /^[a-z_]+$/.test(stage)));
 
     // 6. Preflight denial fails closed
     writeExecuted = false;

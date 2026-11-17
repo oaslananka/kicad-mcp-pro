@@ -104,6 +104,12 @@ function validOrigin(req: IncomingMessage, config: Config): boolean {
     (origin === config.publicOrigin || config.allowedOrigins.includes(origin)));
 }
 
+// Fixed stage labels are safe for server-side diagnostics. Never include
+// client identifiers, OAuth credentials, signed proofs or PCB contents.
+export type CloudWriteBlockStage=
+  "connector_not_ready"|"policy_denied"|"revisions_unavailable"|
+  "reservation_denied"|"signing_failed"|"transport_no_result"|
+  "response_mismatch"|"postgrant_revoked";
 export type CloudHttpServices={
   grants?:GrantManagement;
   identity?:Pick<Identity,"handler">;
@@ -133,6 +139,8 @@ export type CloudHttpServices={
   mcpProjectWriteEnabled?:boolean;
   writePreflight?:import("./connector-write-preflight.js").PgConnectorWritePreflight;
   writeIssuer?:import("./connector-write-issuer.js").OfflineWriteProofIssuer;
+  /** Observation only: failures must never affect signed-write decisions. */
+  onWriteBlocked?:(stage:CloudWriteBlockStage)=>void;
   // Trusted Cloud-to-owner HTTPS delivery only. If absent, /prepare
   // cannot claim success; a bearer client must never self-register scope.
   ownerIntentDelivery?:(scope:PreparedOwnerSummary)=>Promise<string|null>;
@@ -762,7 +770,11 @@ async function handleRequest(
             oauth,deviceId,projectId,"project_schematic_counts"))return null;
           return result.counts;
         } : undefined;
-      const writer = nativeWriteReady(services) && summaryRelay?.()
+      const writeBlocked=(stage:CloudWriteBlockStage):void=>{
+         // Diagnostics cannot alter authorization or native-write outcomes.
+         try{services.onWriteBlocked?.(stage);}catch{/* observation only */}
+       };
+       const writer = nativeWriteReady(services) && summaryRelay?.()
         ? async (
             deviceId: string,
             projectId: string,
@@ -782,19 +794,19 @@ async function handleRequest(
             const relay = summaryRelay();
             if (!relay?.prepareWriteRevisions || !relay.requestWrite || !relay.getTrustedContext) return null;
             const connection = relay.getTrustedContext(actor.sub, deviceId);
-            if (!connection) return null;
+            if (!connection) {writeBlocked("connector_not_ready");return null;}
             if (services.writePreflight) {
               const policyAllowed = await services.writePreflight.checkCurrentPolicy(actor, connection, projectId);
-              if (!policyAllowed) return null;
+              if (!policyAllowed) {writeBlocked("policy_denied");return null;}
             }
             const revisions = await relay.prepareWriteRevisions(actor.sub, deviceId, projectId);
-            if (!revisions) return null;
+            if (!revisions) {writeBlocked("revisions_unavailable");return null;}
             const requestId = randomUUID();
             const nowMs = Date.now();
             const deadlineUnixMs = nowMs + 8_000;
             if (services.writePreflight) {
               const reserved = await services.writePreflight.reserveAuthorizedWrite(actor, connection, projectId, requestId, deadlineUnixMs);
-              if (!reserved) return null;
+              if (!reserved) {writeBlocked("reservation_denied");return null;}
             }
             const candidate = {
               kind: "connector.write_request",
@@ -821,9 +833,9 @@ async function handleRequest(
               sessionExpiresUnixMs: nowMs + 60_000,
               allowedOperations: ["pcb_move_footprint"] as const
             };
-            if (!services.writeIssuer) return null;
+            if (!services.writeIssuer) {writeBlocked("signing_failed");return null;}
             const proofBuf = services.writeIssuer(candidate, binding, nowMs);
-            if (!proofBuf) return null;
+            if (!proofBuf) {writeBlocked("signing_failed");return null;}
             const proposalObj: object = JSON.parse(proofBuf.toString("utf8"));
             const oauth = {
               ownerSub: actor.sub,
@@ -837,8 +849,13 @@ async function handleRequest(
               proposalObj,
               command.saveToDisk ?? true
             );
-            if (!result || result.requestId !== requestId || result.projectId !== projectId) return null;
-            if (!await inventory.isAccessTokenAllowed(actor.sub, actor.clientId, actor.issuedAt)) return null;
+            if (!result) {writeBlocked("transport_no_result");return null;}
+            if (result.requestId !== requestId || result.projectId !== projectId) {
+              writeBlocked("response_mismatch");return null;
+            }
+            if (!await inventory.isAccessTokenAllowed(actor.sub, actor.clientId, actor.issuedAt)) {
+              writeBlocked("postgrant_revoked");return null;
+            }
             const issue=writeOutcomeIssue(result,command.saveToDisk??true);
             return {
               success: issue===undefined,
