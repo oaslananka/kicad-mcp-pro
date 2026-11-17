@@ -245,6 +245,9 @@ class GenericProjectMcpService:
                     proof_bytes = json.dumps(
                         proof, separators=(",", ":"), ensure_ascii=False
                     ).encode("utf8")
+                    consumer = self.consume_once
+                    if consumer is None:
+                        raise GenericMcpTransportError(_DENIED)
                     details = verify_generic_mcp_write_proof(
                         proof_bytes,
                         arguments_json=frame["argumentsJson"],
@@ -252,7 +255,7 @@ class GenericProjectMcpService:
                         verified=binding,
                         operator_project=project,
                         now_unix_ms=now,
-                        consume_once=self.consume_once,
+                        consume_once=consumer,
                     )
                     if details["requestId"] != frame["requestId"] or details["toolName"] != name:
                         raise GenericMcpTransportError(_DENIED)

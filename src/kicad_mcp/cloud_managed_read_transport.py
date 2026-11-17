@@ -12,7 +12,7 @@ import asyncio
 import json
 from collections.abc import Callable
 from time import perf_counter
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 from kicad_mcp.cloud_folder_browse_receiver import (
@@ -25,6 +25,11 @@ from kicad_mcp.cloud_outbound_handshake import (
     _read_strict_json,
 )
 from kicad_mcp.cloud_read_dispatch import LocalReadDispatch
+
+
+class GenericMcpDispatch(Protocol):
+    async def dispatch(self, frame: dict[str, Any]) -> dict[str, object]: ...
+
 
 _DENIED = "handshake denied"
 _MAX_MANAGED_READS = 16
@@ -267,7 +272,11 @@ async def _serve_folder_frame(
 
 
 async def _serve_one_mcp_request(
-    socket: AuthenticatedReadSocket, service: object, raw: str, *, expected_sequence: int
+    socket: AuthenticatedReadSocket,
+    service: GenericMcpDispatch,
+    raw: str,
+    *,
+    expected_sequence: int,
 ) -> dict[str, object]:
     """Execute one bounded generic MCP operation on this signed device socket."""
     frame = _read_strict_json(raw, "connector.mcp_request")
@@ -281,10 +290,11 @@ async def _serve_one_mcp_request(
         or not callable(getattr(service, "dispatch", None))
     ):
         raise CloudHandshakeDeniedError(_DENIED)
-    response = await service.dispatch(frame["request"])
-    if not isinstance(response, dict) or response.get("requestId") != frame["request"].get(
-        "requestId"
-    ):
+    request = frame["request"]
+    if not isinstance(request, dict):
+        raise CloudHandshakeDeniedError(_DENIED)
+    response = await service.dispatch(request)
+    if not isinstance(response, dict) or response.get("requestId") != request.get("requestId"):
         raise CloudHandshakeDeniedError(_DENIED)
     await socket.send(
         json.dumps(
@@ -325,7 +335,7 @@ async def _serve_one_signed_frame(
     allow_native_write: bool = False,
     revisions_preparer: Callable[[str], dict[str, str]] | None = None,
     write_executor: Callable[[str, bytes, bool], dict[str, object]] | None = None,
-    mcp_service: object | None = None,
+    mcp_service: GenericMcpDispatch | None = None,
 ) -> int:
     """Serve a single authenticated frame; return 1 if frame counts as a read/write, else 0."""
     kind = _top_level_kind(raw)
@@ -378,7 +388,7 @@ async def _serve_signed_read_frames(
     allow_native_write: bool = False,
     revisions_preparer: Callable[[str], dict[str, str]] | None = None,
     write_executor: Callable[[str, bytes, bool], dict[str, object]] | None = None,
-    mcp_service: object | None = None,
+    mcp_service: GenericMcpDispatch | None = None,
 ) -> None:
     """Process authenticated frames without charging folder or write prep requests as reads."""
     reads_served = 0
@@ -424,7 +434,7 @@ async def serve_authenticated_reads(
     allow_native_write: bool = False,
     revisions_preparer: Callable[[str], dict[str, str]] | None = None,
     write_executor: Callable[[str, bytes, bool], dict[str, object]] | None = None,
-    mcp_service_factory: Callable[[HandshakeReceipt], object] | None = None,
+    mcp_service_factory: Callable[[HandshakeReceipt], GenericMcpDispatch] | None = None,
     on_activity: Callable[[str], None] | None = None,
 ) -> HandshakeReceipt:
     """Serve bounded serial, independently authorized READs/WRITEs on a signed socket.

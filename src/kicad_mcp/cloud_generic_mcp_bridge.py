@@ -177,7 +177,7 @@ class GenericProjectMcpBridge:
                 continue
             if mode == "write" and not self._write:
                 continue
-            item = {
+            item: dict[str, object] = {
                 "name": tool.name,
                 "description": (tool.description or "")[:2048],
                 "inputSchema": tool.input_schema,
@@ -223,8 +223,10 @@ class GenericProjectMcpBridge:
             raise GenericMcpDeniedError("signed_mcp_write_deadline_expired")
         result = await session.call_tool(name, arguments=arguments)
         self.assert_current(project_id, session_id)
-        data = result.model_dump(mode="json", by_alias=True, exclude_none=True)
-        data = _redact_private_paths(data, str(self._project.directory), str(Path.home()))
+        raw_data = result.model_dump(mode="json", by_alias=True, exclude_none=True)
+        data = _redact_private_paths(raw_data, str(self._project.directory), str(Path.home()))
+        if not isinstance(data, dict):
+            raise GenericMcpDeniedError(_DENIED)
         if (
             len(json.dumps(data, ensure_ascii=False, allow_nan=False).encode("utf8"))
             > _MAX_RESULT_BYTES

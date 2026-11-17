@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     # Imported lazily at runtime inside _complete_outbound_operation to avoid
     # a circular dependency with the managed read transport module.
     from kicad_mcp.cloud_folder_browse_receiver import LocalFolderBrowseService
+    from kicad_mcp.cloud_managed_read_transport import GenericMcpDispatch
 
 CONNECTOR_WS_PATH = "/api/v1/connector/ws"
 _HANDSHAKE_DENIED = "handshake denied"
@@ -94,6 +95,7 @@ class OutboundSessionOptions:
     folder_service_factory: Callable[[HandshakeReceipt], LocalFolderBrowseService] | None = None
     on_ready: Callable[[HandshakeReceipt], None] | None = None
     on_activity: Callable[[str], None] | None = None
+    mcp_service_factory: Callable[[HandshakeReceipt], GenericMcpDispatch] | None = None
 
 
 def _endpoint(*, origin: str, trusted_origin: str) -> str:
@@ -606,6 +608,10 @@ def _validate_outbound_options(options: OutboundSessionOptions) -> None:
         not options.owner_managed_read or not callable(options.folder_service_factory)
     ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    if options.mcp_service_factory is not None and (
+        not options.owner_managed_read or not callable(options.mcp_service_factory)
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
 
 
 def _managed_read_catalog(options: OutboundSessionOptions) -> list[str]:
@@ -614,6 +620,8 @@ def _managed_read_catalog(options: OutboundSessionOptions) -> list[str]:
         ops.append("run_drc")
     if options.managed_native_write:
         ops.append("move_footprint")
+    if options.mcp_service_factory is not None:
+        ops.append("mcp_bridge")
     return ops
 
 
@@ -656,6 +664,7 @@ def _catalog_hello_metadata(options: OutboundSessionOptions) -> dict[str, object
     operations = _catalog_operations(options)
     return {
         **browser,
+        **({"mcpBridge": 1} if options.mcp_service_factory is not None else {}),
         "catalog": {
             "schemaVersion": "1.0.0",
             "catalogRevision": installed_catalog_revision(),
@@ -698,6 +707,7 @@ async def _complete_outbound_operation(
             revisions_preparer=options.revisions_preparer,
             write_executor=options.write_executor,
             on_activity=options.on_activity,
+            mcp_service_factory=options.mcp_service_factory,
         )
     if options.inspection_factory is not None:
         return await _complete_authorized_inspection(
@@ -757,7 +767,9 @@ async def _perform_outbound_session(
     # A write-enabled session needs the bounded signed-v2 frame capacity.
     # Other handshake/read frames retain their own strict decoder limits.
     max_frame_size = 1024
-    if session_options.folder_service_factory is not None:
+    if session_options.mcp_service_factory is not None:
+        max_frame_size = 65_536
+    elif session_options.folder_service_factory is not None:
         max_frame_size = _FOLDER_SESSION_MAX_PAYLOAD
     elif session_options.managed_native_write:
         max_frame_size = _SIGNED_WRITE_FRAME_MAX_PAYLOAD
@@ -1038,6 +1050,7 @@ async def execute_owner_managed_read_session(
     allow_native_drc: bool = False,
     native_write: ManagedNativeWriteConfig | None = None,
     on_activity: Callable[[str], None] | None = None,
+    mcp_bridge_factory: Callable[[HandshakeReceipt], GenericMcpDispatch] | None = None,
 ) -> HandshakeReceipt:
     """One signed, owner-managed session; no key loading or persistence.
 
@@ -1063,6 +1076,7 @@ async def execute_owner_managed_read_session(
         )
         or (folder_service_factory is not None and not callable(folder_service_factory))
         or (on_activity is not None and not callable(on_activity))
+        or (mcp_bridge_factory is not None and not callable(mcp_bridge_factory))
     ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     return await _perform_outbound_session(
@@ -1081,7 +1095,10 @@ async def execute_owner_managed_read_session(
                 native_write.revisions_preparer if native_write is not None else None
             ),
             write_executor=native_write.write_executor if native_write is not None else None,
-            advertise_catalog=allow_native_drc or (native_write is not None),
+            advertise_catalog=allow_native_drc
+            or (native_write is not None)
+            or (mcp_bridge_factory is not None),
+            mcp_service_factory=mcp_bridge_factory,
             managed_max_reads=max_reads,
             folder_service_factory=folder_service_factory,
             on_ready=on_ready,

@@ -30,6 +30,7 @@ from cryptography.hazmat.primitives.serialization import (
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
 from kicad_mcp.cloud_folder_browse_receiver import LocalFolderBrowseService, device_folder_service
+from kicad_mcp.cloud_managed_read_transport import GenericMcpDispatch
 from kicad_mcp.cloud_outbound_handshake import (
     HandshakeReceipt,
     ManagedNativeWriteConfig,
@@ -634,6 +635,11 @@ async def _run_owner_session(
 
         marker_dir = default_windows_write_marker_directory()
 
+        def consume_generic_once(sid: str, req_id: str) -> bool:
+            if marker_dir is None:
+                return False
+            return consume_windows_write_marker(marker_dir, sid, req_id)
+
         def generic_bridge_factory(receipt: HandshakeReceipt) -> GenericProjectMcpService:
             def target(project_id: str) -> OperatorProject | None:
                 try:
@@ -648,14 +654,7 @@ async def _run_owner_session(
                 allow_native_write=allow_native_write and issuer_key is not None,
                 trusted_issuer_key=issuer_key if allow_native_write else None,
                 consume_once=(
-                    (
-                        lambda sid, req_id: (
-                            bool(marker_dir)
-                            and consume_windows_write_marker(marker_dir, sid, req_id)
-                        )
-                    )
-                    if allow_native_write and marker_dir is not None
-                    else None
+                    consume_generic_once if allow_native_write and marker_dir is not None else None
                 ),
             )
 
@@ -739,7 +738,7 @@ def _session_runner_with_status(
         | None = None,
         allow_native_drc: bool = False,
         native_write: ManagedNativeWriteConfig | None = None,
-        mcp_bridge_factory: Callable[[HandshakeReceipt], object] | None = None,
+        mcp_bridge_factory: Callable[[HandshakeReceipt], GenericMcpDispatch] | None = None,
     ) -> HandshakeReceipt:
         return await execute_owner_managed_read_session(
             origin=origin,
