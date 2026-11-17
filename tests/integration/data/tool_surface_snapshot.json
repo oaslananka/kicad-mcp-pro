@@ -7121,7 +7121,7 @@
     "destructive": false,
     "experimental": false,
     "headless": false,
-    "idempotent": false,
+    "idempotent": true,
     "name": "sch_list_sheet_pins",
     "open_world": false,
     "profiles": [
@@ -7137,14 +7137,14 @@
       "schematic_only",
       "simulation"
     ],
-    "read_only": false,
+    "read_only": true,
     "requires_kicad_running": false
   },
   {
     "destructive": false,
     "experimental": false,
     "headless": false,
-    "idempotent": false,
+    "idempotent": true,
     "name": "sch_list_sheets",
     "open_world": false,
     "profiles": [
@@ -7162,14 +7162,14 @@
       "schematic_only",
       "simulation"
     ],
-    "read_only": false,
+    "read_only": true,
     "requires_kicad_running": false
   },
   {
     "destructive": false,
     "experimental": false,
     "headless": true,
-    "idempotent": false,
+    "idempotent": true,
     "name": "sch_list_swappable_pins",
     "open_world": false,
     "profiles": [
@@ -7185,14 +7185,14 @@
       "schematic_only",
       "simulation"
     ],
-    "read_only": false,
+    "read_only": true,
     "requires_kicad_running": false
   },
   {
     "destructive": false,
     "experimental": false,
     "headless": true,
-    "idempotent": false,
+    "idempotent": true,
     "name": "sch_list_templates",
     "open_world": false,
     "profiles": [
@@ -7208,7 +7208,7 @@
       "schematic_only",
       "simulation"
     ],
-    "read_only": false,
+    "read_only": true,
     "requires_kicad_running": false
   },
   {
@@ -7770,7 +7770,7 @@
     "destructive": false,
     "experimental": false,
     "headless": false,
-    "idempotent": false,
+    "idempotent": true,
     "name": "sch_trace_net",
     "open_world": false,
     "profiles": [
@@ -7786,7 +7786,7 @@
       "schematic_only",
       "simulation"
     ],
-    "read_only": false,
+    "read_only": true,
     "requires_kicad_running": false
   },
   {
