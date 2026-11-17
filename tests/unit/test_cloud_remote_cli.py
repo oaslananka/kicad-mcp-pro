@@ -555,3 +555,105 @@ def test_write_opt_in_rejects_untrusted_marker_storage_before_owner_task(
     assert result.exit_code != 0
     assert "replay" in result.output.casefold()
     assert state["calls"] == []
+
+
+def test_saved_owner_write_preference_read_error_fails_closed(
+    remote_fixture: tuple[dict[str, Any], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_windows_write_preference
+
+    state, _folder = remote_fixture
+    state["project"].record_id = "a" * 32
+    state["project"].project_id = "22222222-2222-4222-8222-222222222222"
+    monkeypatch.setattr(
+        cloud_windows_write_preference,
+        "owner_native_write_remembered",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("vault unavailable")),
+    )
+    result = CliRunner().invoke(server.app, ["cloud", "remote"])
+    assert result.exit_code != 0
+    assert "Saved local editing permission" in result.output
+    assert state["calls"] == []
+
+
+def test_owner_write_preference_save_failure_never_starts_connector(
+    remote_fixture: tuple[dict[str, Any], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from kicad_mcp import (
+        cloud_windows_write_issuer,
+        cloud_windows_write_marker,
+        cloud_windows_write_preference,
+    )
+
+    state, folder = remote_fixture
+    state["project"].record_id = "a" * 32
+    state["project"].project_id = "22222222-2222-4222-8222-222222222222"
+    monkeypatch.setattr(
+        cloud_windows_write_issuer,
+        "load_pinned_windows_write_issuer_key",
+        lambda _record: Ed25519PrivateKey.generate().public_key(),
+    )
+    monkeypatch.setattr(
+        cloud_windows_write_marker,
+        "prepare_owner_windows_write_marker_directory",
+        lambda: folder,
+    )
+    monkeypatch.setattr(
+        cloud_windows_write_preference,
+        "remember_owner_native_write",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("vault locked")),
+    )
+    result = CliRunner().invoke(
+        server.app, ["cloud", "remote", "--enable-native-write", "--remember-native-write"]
+    )
+    assert result.exit_code != 0
+    assert "Could not save" in result.output
+    assert state["calls"] == []
+
+
+def test_forget_owner_write_preference_requires_interactive_windows_owner(
+    remote_fixture: tuple[dict[str, Any], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state, _folder = remote_fixture
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    result = CliRunner().invoke(server.app, ["cloud", "forget-native-write"])
+    assert result.exit_code != 0
+    assert "interactive Windows" in result.output
+    assert state["calls"] == []
+
+
+def test_forget_owner_write_preference_requires_existing_pairing(
+    remote_fixture: tuple[dict[str, Any], Path],
+) -> None:
+    state, _folder = remote_fixture
+    state["project"] = None
+    result = CliRunner().invoke(server.app, ["cloud", "forget-native-write"])
+    assert result.exit_code != 0
+    assert "No locally paired" in result.output
+    assert state["calls"] == []
+
+
+def test_forget_owner_write_preference_rejects_tampered_store(
+    remote_fixture: tuple[dict[str, Any], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_windows_write_preference
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    state, _folder = remote_fixture
+    state["project"].record_id = "a" * 32
+    state["project"].project_id = "22222222-2222-4222-8222-222222222222"
+    monkeypatch.setattr(
+        cloud_windows_write_preference,
+        "forget_owner_native_write",
+        lambda *_args: (_ for _ in ()).throw(LocalWriteDeniedError("request denied")),
+    )
+    result = CliRunner().invoke(server.app, ["cloud", "forget-native-write"])
+    assert result.exit_code != 0
+    assert "could not be verified" in result.output
+    assert state["calls"] == []
