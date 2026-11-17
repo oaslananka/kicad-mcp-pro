@@ -10,6 +10,18 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.19.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.18.0...mcp-server-v4.19.0) (2026-11-17)
+
+
+### Features
+
+* **cloud:** proxy existing local MCP tools over signed device bridge ([#1767](https://github.com/oaslananka/kicad-mcp-pro/issues/1767)) ([89716e6](https://github.com/oaslananka/kicad-mcp-pro/commit/89716e644049a8c6b73a12e2a97a5bfe07e15cd6))
+
+
+### Bug Fixes
+
+* **cloud:** honor per-client edit grants before native writes ([#1766](https://github.com/oaslananka/kicad-mcp-pro/issues/1766)) ([8c12823](https://github.com/oaslananka/kicad-mcp-pro/commit/8c12823a5d407baad78652ba6975eba8153f4355))
+
 ## [4.18.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.17.0...mcp-server-v4.18.0) (2026-11-17)
 
 
