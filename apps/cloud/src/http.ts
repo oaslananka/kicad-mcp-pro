@@ -856,6 +856,14 @@ async function handleRequest(
             if (!await inventory.isAccessTokenAllowed(actor.sub, actor.clientId, actor.issuedAt)) {
               writeBlocked("postgrant_revoked");return null;
             }
+            // The owner may revoke a client/project grant while an already
+            // dispatched signed write is executing. Never issue a *success*
+            // result under a stale grant. This is a delivery fence, NOT a
+            // claim that native KiCad state was rolled back or unmodified.
+            if (!services.writePreflight || !await services.writePreflight.checkCurrentPolicy(
+              actor, connection, projectId)) {
+              writeBlocked("postgrant_revoked");return null;
+            }
             const issue=writeOutcomeIssue(result,command.saveToDisk??true);
             return {
               success: issue===undefined,

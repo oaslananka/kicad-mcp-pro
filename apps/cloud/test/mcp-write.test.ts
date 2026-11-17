@@ -44,6 +44,7 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
   let preflightAllowed = true;
   let issuerAllowed = true;
   let transportAllowed = true;
+  let revokeGrantAfterDispatch = false;
   const blockedStages: string[] = [];
   let reportedOutcome: {
     nativeCommitted: boolean; savedToDisk: boolean; diskBoardSha256?: string
@@ -114,6 +115,7 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
       persistToDisk: boolean
     ) => {
       writeExecuted = true;
+      if (revokeGrantAfterDispatch) preflightAllowed = false;
       if (!transportAllowed) return null;
       const proposal = proof as { payload: string };
       const parsed = JSON.parse(Buffer.from(proposal.payload, "base64url").toString("utf8"));
@@ -357,6 +359,20 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     assert.equal(blockedStages.at(-1), "transport_no_result");
     transportAllowed = true;
     assert.ok(blockedStages.every(stage => /^[a-z_]+$/.test(stage)));
+
+    // A project/client grant can be revoked while the signed WSS request
+    // is executing. Never return a success response from a stale grant.
+    // The synthetic relay may already have committed a native transaction;
+    // this test does NOT claim a remote rollback or prevent the commit.
+    revokeGrantAfterDispatch = true;
+    const lateRevocation = await invoke("enabled", "token-write", "tools/call", {
+      name:"pcb_move_footprint",
+      arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20}
+    }, 13, "pcb_move_footprint");
+    assert.match(JSON.stringify(lateRevocation.data), /write_execution_failed/);
+    assert.equal(blockedStages.at(-1), "postgrant_revoked");
+    revokeGrantAfterDispatch = false;
+    preflightAllowed = true;
 
     // 6. Preflight denial fails closed
     writeExecuted = false;
