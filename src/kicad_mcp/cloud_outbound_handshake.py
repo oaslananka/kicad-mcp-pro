@@ -38,6 +38,9 @@ if TYPE_CHECKING:
 CONNECTOR_WS_PATH = "/api/v1/connector/ws"
 _HANDSHAKE_DENIED = "handshake denied"
 _FOLDER_SESSION_MAX_PAYLOAD = 8192
+# A v2 signed write contains both disk/live SHA-256 values; the complete
+# bounded outer WebSocket envelope exceeds the legacy 1 KiB read frame.
+_SIGNED_WRITE_FRAME_MAX_PAYLOAD = 3072
 
 _DEVICE_UUID = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
@@ -133,7 +136,12 @@ def _endpoint(*, origin: str, trusted_origin: str) -> str:
 
 
 def _read_strict_json(raw: str, expected_kind: str) -> dict[str, object]:
-    if not isinstance(raw, str) or len(raw.encode("utf-8")) > 1024:
+    # Extend the byte limit ONLY for the sealed owner-granted write envelope;
+    # handshake, read, acknowledgment and other frames retain 1 KiB.
+    max_bytes = (
+        _SIGNED_WRITE_FRAME_MAX_PAYLOAD if expected_kind == "connector.authorized_write" else 1024
+    )
+    if not isinstance(raw, str) or len(raw.encode("utf-8")) > max_bytes:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     try:
         message = json.loads(raw, object_pairs_hook=_unique_keys)
@@ -753,7 +761,11 @@ async def _perform_outbound_session(
                 max_size=(
                     _FOLDER_SESSION_MAX_PAYLOAD
                     if session_options.folder_service_factory is not None
-                    else 1024
+                    else (
+                        _SIGNED_WRITE_FRAME_MAX_PAYLOAD
+                        if session_options.managed_native_write
+                        else 1024
+                    )
                 ),
                 max_queue=2,
                 open_timeout=3,

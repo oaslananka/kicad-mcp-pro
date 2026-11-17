@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import re
 import time
@@ -683,11 +684,35 @@ async def test_managed_write_revisions_returns_prepared_shas(tmp_path: Path) -> 
 
 @pytest.mark.anyio
 async def test_managed_authorized_write_executes_and_receives_ack(tmp_path: Path) -> None:
+    # Real v2 wire proposals carry both disk and live KiCad revision digests.
+    # A tiny dummy proof previously masked the 1 KiB transport size failure.
+    payload = {
+        "kind": "connector.write_request",
+        "version": 2,
+        "requestId": "77777777-7777-4777-8777-777777777777",
+        "deviceId": DEVICE,
+        "projectId": PROJECT,
+        "sessionId": SESSION,
+        "deadlineUnixMs": int(time.time() * 1000) + 8000,
+        "command": {
+            "operation": "pcb_move_footprint",
+            "reference": "R1",
+            "xMm": 32,
+            "yMm": 29,
+            "rotationDeg": None,
+            "expectedBoardSha256": "a" * 64,
+            "expectedLiveBoardSha256": "b" * 64,
+        },
+    }
     proof_obj = {
         "kind": "connector.signed_write_proposal",
         "version": 2,
-        "payload": "dGVzdA",
-        "signature": "c2ln",
+        "payload": base64.urlsafe_b64encode(
+            json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        )
+        .decode("ascii")
+        .rstrip("="),
+        "signature": "A" * 86,
     }
     write_frame = json.dumps(
         {
@@ -699,6 +724,7 @@ async def test_managed_authorized_write_executes_and_receives_ack(tmp_path: Path
             "persistToDisk": True,
         }
     )
+    assert 1024 < len(write_frame.encode("utf-8")) <= 3072
     ack_frame = json.dumps(
         {
             "kind": "connector.write_ack",
@@ -764,6 +790,20 @@ async def test_managed_authorized_write_executes_and_receives_ack(tmp_path: Path
     assert socket.sent[0]["kind"] == "connector.write_result"
     assert socket.sent[0]["result"]["operation"] == "pcb_move_footprint"
     assert socket.sent[0]["result"]["savedToDisk"] is True
+
+
+def test_signed_write_wire_cap_keeps_legacy_read_limits() -> None:
+    from kicad_mcp.cloud_outbound_handshake import _read_strict_json
+
+    # Only the signed owner WRITE envelope may exceed 1 KiB; ordinary reads
+    # and handshake frames retain their original strict byte bound.
+    for kind, padding in (
+        ("connector.authorized_read", 1024),
+        ("connector.authorized_write", 3072),
+    ):
+        oversized = json.dumps({"kind": kind, "padding": "x" * padding})
+        with pytest.raises(CloudHandshakeDeniedError, match="handshake denied"):
+            _read_strict_json(oversized, kind)
 
 
 @pytest.mark.anyio
