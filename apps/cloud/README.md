@@ -15,15 +15,52 @@ for the exact `PUBLIC_ORIGIN/mcp` endpoint and current ChatGPT and Claude
 setup links. The endpoint must be publicly reachable over HTTPS for hosted
 AI clients; a localhost development URL cannot be used by a remote host.
 Availability and OAuth registration support depend on the specific client
-and its workspace configuration. MCPJam OAuth and two consecutive signed native
-PCB edits are verified against the production Cloud endpoint. Individual
-ChatGPT, Claude, and Gemini editing/reauthorization flows require separate
-host-specific acceptance; support for automatic OAuth step-up varies.
+and its workspace configuration. MCPJam and ChatGPT OAuth, per-app Edit and
+two successive signed native PCB saves with disk restore and DRC were verified
+against production Cloud. Claude and Gemini still require separate host-specific
+acceptance; automatic OAuth step-up support varies by host.
 
 An account login authorizes only the Cloud account. The owner must also
 grant that OAuth client access to an eligible project under **Devices**.
-The Cloud portal does not proxy arbitrary local tools or store KiCad design
-content. Existing account-free local MCP clients remain supported.
+The Cloud portal does not store native KiCad project files or run an
+arbitrary command shell. Its owner-signed generic MCP bridge can proxy
+owner-granted, project-scoped tools already registered by the **local** server
+without duplicating each tool in Cloud. Existing account-free local MCP clients
+remain supported.
+
+### Use the existing local MCP tools through Cloud
+
+This is a **generic transport**, not 396 hand-written Cloud tool wrappers.
+Connect an updated local Connector and your AI client to the Cloud account:
+
+1. Call `list_projects` to select the permitted project.
+2. Call `local_mcp_catalog(project_id, offset=0)` to receive the current
+   locally registered tool names, descriptions and original input schemas.
+   Use `next_offset` for additional pages, or `tool_name` to look up one
+   tool without scanning the whole catalog.
+3. Call `local_mcp_call(project_id, tool_name, arguments)`. The supplied
+   JSON arguments follow the original local tool's input schema. Output
+   includes the underlying MCP tool result, not a synthetic Cloud substitute.
+   An MCP tool error remains an error, and an ambiguous write outcome must
+   be independently inspected before retrying.
+
+The Cloud tool list intentionally offers these **two generic entrypoints**
+rather than advertising hundreds of tools without a currently connected
+owner project. The authorized owner's local MCP profile and operating mode
+remain the source of permitted commands. Project switching, external absolute
+filesystem paths, experimental and manufacturing / human-only operations are
+**not** forwarded. Existing human approval rules for manufacturing remain in
+place. Local filesystem locations are redacted from results; requested tool
+content may still be returned to the authorized AI client. The full project
+files and installed tool engines stay on the owner's computer.
+
+Every mutation requires the live OAuth `projects:write` scope, a current
+per-project **Edit** grant, a foreground local native-write opt-in, a current
+signed Connector session, and an issuer-signed one-use write authorization.
+Read-only project grants never allow a mutation merely because a client has
+cached older tool metadata. Old Connectors safely retain their existing
+limited capabilities until updated; do not claim a live generic bridge
+without a compatible signed owner session and deployed Cloud version.
 
 ### One Read/Edit choice per AI app and project
 

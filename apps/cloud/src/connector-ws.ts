@@ -163,6 +163,18 @@ type WritePending = {
   timer: NodeJS.Timeout;
   resolve: (value: WriteOperationResult | null) => void;
 };
+export type GenericMcpReply=Readonly<{
+  kind:"connector.mcp_result";version:1;requestId:string;projectId:string;
+  method:"catalog"|"call";ok:boolean;
+  tools?:Array<{name:string;description:string;inputSchema:Record<string,unknown>;accessMode:"readonly"|"write"}>;
+  nextOffset?:number|null;
+  result?:unknown;
+}>;
+type McpPending={
+  requestId:string;projectId:string;method:"catalog"|"call";
+  sequence:number;timer:NodeJS.Timeout;
+  resolve:(value:GenericMcpReply|null)=>void;
+};
 type Entry={
   phase:State; owner:string; device:string; challenge:string; nonce:string;
   queued:number; pending:Promise<void>; timer:NodeJS.Timeout | null;
@@ -173,11 +185,13 @@ type Entry={
   catalogClaim?:ConnectorCapabilityClaim;
   awaiting?:PendingRead; validating?:PendingRead; folderPending?:FolderPending;
   revisionsPending?:RevisionsPending; writePending?:WritePending;
+  mcpBridgeSupported?:boolean; mcpPending?:McpPending;
 };
 const hello=z.strictObject({
   kind:z.literal("device.hello"),version:z.literal(1),
   ownerSub:z.string().min(1).max(256),deviceId:z.uuid(),
   folderBrowse:z.literal(1).optional(),
+  mcpBridge:z.literal(1).optional(),
   catalog:ConnectorCapabilityClaimSchema.optional()
 });
 const proof=z.strictObject({kind:z.literal("device.proof"),version:z.literal(1),
@@ -259,6 +273,23 @@ const writeResult = z.strictObject({
     nativeCommitted: z.boolean(),
     savedToDisk: z.boolean(),
     diskBoardSha256: z.string().regex(/^[a-f0-9]{64}$/).optional()
+  })
+});
+const mcpResponse=z.strictObject({
+  kind:z.literal("connector.mcp_result"),version:z.literal(1),
+  sequence:z.number().int().min(1).max(16),
+  result:z.strictObject({
+    kind:z.literal("connector.mcp_result"),version:z.literal(1),
+    requestId:z.uuid(),projectId:z.uuid(),
+    method:z.enum(["catalog","call"]),ok:z.boolean(),
+    tools:z.array(z.strictObject({
+      name:z.string().regex(/^[a-z][a-z0-9_]{0,127}$/),
+      description:z.string().max(2048),
+      inputSchema:z.record(z.string(),z.unknown()),
+      accessMode:z.enum(["readonly","write"])
+    })).max(8).optional(),
+    nextOffset:z.number().int().min(0).max(512).nullable().optional(),
+    result:z.unknown().optional()
   })
 });
 const CLOSE_POLICY=1008;
@@ -361,6 +392,10 @@ export function attachConnectorWebSocket(
     projectId:string)=>Promise<PreparedWriteRevisions|null>;
   requestWrite:(oauth:TrustedOAuthReadIdentity,deviceId:string,
     projectId:string,proof:object,persistToDisk?:boolean)=>Promise<WriteOperationResult|null>;
+  requestMcp:(oauth:TrustedOAuthReadIdentity,deviceId:string,projectId:string,
+    request:Readonly<{requestId:string;method:"catalog"|"call";offset?:number;
+      toolName?:string;argumentsJson?:string;proof?:object}>)
+      =>Promise<GenericMcpReply|null>;
   getTrustedContext:(ownerSub:string,
     deviceId:string)=>import("./connector-read-gate.js").TrustedConnectorContext|null;
   localFolders:LocalFolderPort}{
@@ -384,7 +419,7 @@ export function attachConnectorWebSocket(
     throw Error("Conflicting folder browse modes");
   const folderBrowse=Boolean(options.localDevFolderBrowse||options.productionFolderBrowse);
   const wss=new WebSocketServer({noServer:true,perMessageDeflate:false,
-    maxPayload:folderBrowse?8192:1024,clientTracking:true});
+    maxPayload:65_536,clientTracking:true});
   const sockets=new Set<WebSocket>();
   const readyDevices=new Map<string,{socket:WebSocket,entry:Entry}>();
   const socketKey=(owner:string,device:string)=>JSON.stringify([owner,device]);
@@ -430,7 +465,8 @@ export function attachConnectorWebSocket(
         ipOpen.set(ip,(ipOpen.get(ip)??0)+1);
         const entry:Entry={phase:"new",owner:"",device:"",challenge:"",
           nonce:"",queued:0,pending:Promise.resolve(),timer:null,lastPong:Date.now(),
-          readSequence:new ConnectorReadSequence(options.managedGrant?16:1),folderBrowseSupported:false};
+          readSequence:new ConnectorReadSequence(options.managedGrant?16:1),folderBrowseSupported:false,
+          mcpBridgeSupported:false};
         function expire(ms:number):void{
           if(entry.timer)clearTimeout(entry.timer);
           entry.timer=setTimeout(()=>{entry.phase="closed";reject(ws);},ms);
@@ -465,6 +501,11 @@ export function attachConnectorWebSocket(
             entry.writePending.resolve(null);
             entry.writePending=undefined;
           }
+          if(entry.mcpPending){
+            clearTimeout(entry.mcpPending.timer);
+            entry.mcpPending.resolve(null);
+            entry.mcpPending=undefined;
+          }
           reject(ws);
         }
         function send(msg:object):void{
@@ -480,7 +521,8 @@ export function attachConnectorWebSocket(
         }
         async function frame(payload:Buffer,isBinary:boolean):Promise<void>{
           if(entry.phase==="closed"||isBinary||payload.length===0||
-             payload.length>(folderBrowse?8192:1024)){
+             payload.length>(entry.phase==="ready"&&entry.mcpBridgeSupported?
+                65_536:folderBrowse?8192:1024)){
             fail();return;
           }
           const raw=asJson(payload);
@@ -492,6 +534,7 @@ export function attachConnectorWebSocket(
             }
             entry.owner=parsed.data.ownerSub;entry.device=parsed.data.deviceId;
             entry.folderBrowseSupported=parsed.data.folderBrowse===1;
+            entry.mcpBridgeSupported=parsed.data.mcpBridge===1;
             entry.pendingCatalogClaim=parsed.data.catalog;
             const issue=await options.proofs.issue(entry.owner,entry.device);
             if(issue.kind!=="issued"){fail();return;}
@@ -587,6 +630,24 @@ export function attachConnectorWebSocket(
               expectedBoardSha256:reply.data.expectedBoardSha256,
               ...(reply.data.expectedLiveBoardSha256?{expectedLiveBoardSha256:reply.data.expectedLiveBoardSha256}:{})
             });
+            return;
+          }
+          if(entry.phase==="ready"&&entry.mcpPending){
+            const pending=entry.mcpPending;
+            entry.mcpPending=undefined;
+            clearTimeout(pending.timer);
+            const reply=mcpResponse.safeParse(raw);
+            if(!reply.success||reply.data.sequence!==pending.sequence||
+               reply.data.result.requestId!==pending.requestId||
+               reply.data.result.projectId!==pending.projectId||
+               reply.data.result.method!==pending.method||
+               !entry.readSequence.complete(pending.sequence)){
+              pending.resolve(null);fail();return;
+            }
+            try{send({kind:"connector.mcp_ack",version:1,
+              sequence:pending.sequence,requestId:pending.requestId});}
+            catch{pending.resolve(null);fail();return;}
+            pending.resolve(reply.data.result);
             return;
           }
           if(entry.phase==="ready"&&entry.writePending){
@@ -705,6 +766,11 @@ export function attachConnectorWebSocket(
             clearTimeout(entry.writePending.timer);
             entry.writePending.resolve(null);
             entry.writePending=undefined;
+          }
+          if(entry.mcpPending){
+            clearTimeout(entry.mcpPending.timer);
+            entry.mcpPending.resolve(null);
+            entry.mcpPending=undefined;
           }
           const count=(ipOpen.get(ip)??1)-1;
           if(count<=0)ipOpen.delete(ip);else ipOpen.set(ip,count);
@@ -1158,6 +1224,65 @@ export function attachConnectorWebSocket(
       }
     });
   }
+  async function requestMcp(
+    oauth:TrustedOAuthReadIdentity,deviceId:string,projectId:string,
+    request:Readonly<{requestId:string;method:"catalog"|"call";offset?:number;
+      toolName?:string;argumentsJson?:string;proof?:object}>
+  ):Promise<GenericMcpReply|null>{
+    if(stopped||!oauth||!z.uuid().safeParse(deviceId).success||
+       !z.uuid().safeParse(projectId).success||
+       !z.uuid().safeParse(request.requestId).success)return null;
+    const current=readyDevices.get(socketKey(oauth.ownerSub,deviceId));
+    if(!current||current.entry.phase!=="ready"||
+       current.socket.readyState!==WebSocket.OPEN||
+       current.entry.mcpBridgeSupported!==true||
+       current.entry.catalogClaim?.operations.includes("mcp_bridge")!==true||
+       current.entry.awaiting||current.entry.validating||
+       current.entry.folderPending||current.entry.revisionsPending||
+       current.entry.writePending||current.entry.mcpPending||
+       (current.entry.sessionDeadline??0)-performance.now()<12_000)return null;
+    if(!await options.connections.authorizeOutgoingSummary(
+      current.socket,oauth,projectId))return null;
+    if(request.method==="catalog"){
+      if(!Number.isSafeInteger(request.offset)||request.offset!<0||
+         request.offset!>512)return null;
+    }else if(request.method==="call"){
+      if(typeof request.toolName!=="string"||
+         !/^[a-z][a-z0-9_]{0,127}$/.test(request.toolName)||
+         typeof request.argumentsJson!=="string"||
+         Buffer.byteLength(request.argumentsJson,"utf8")>32_768)return null;
+    }else return null;
+    const sequence=current.entry.readSequence.reserve();
+    if(sequence===null)return null;
+    return new Promise<GenericMcpReply|null>(resolve=>{
+      const timer=setTimeout(()=>{
+        if(current.entry.mcpPending?.requestId===request.requestId){
+          current.entry.mcpPending=undefined;
+        }
+        resolve(null);
+        reject(current.socket);
+      },11_000);
+      timer.unref();
+      current.entry.mcpPending={requestId:request.requestId,
+        projectId,method:request.method,sequence,timer,resolve};
+      try{
+        current.socket.send(JSON.stringify({
+          kind:"connector.mcp_request",version:1,sequence,
+          request:{
+            kind:"connector.mcp_request",version:1,
+            requestId:request.requestId,projectId,method:request.method,
+            ...(request.method==="catalog"?{offset:request.offset}:{
+              toolName:request.toolName,argumentsJson:request.argumentsJson,
+              ...(request.proof?{proof:request.proof}:{})
+            })
+          }
+        }));
+      }catch{
+        clearTimeout(timer);current.entry.mcpPending=undefined;
+        resolve(null);reject(current.socket);
+      }
+    });
+  }
   function getTrustedContext(ownerSub: string, deviceId: string): import("./connector-read-gate.js").TrustedConnectorContext | null {
     const active = readyDevices.get(socketKey(ownerSub, deviceId));
     if (!active || active.entry.phase !== "ready" || active.socket.readyState !== WebSocket.OPEN) return null;
@@ -1166,6 +1291,7 @@ export function attachConnectorWebSocket(
   return {prepareOwnerSummary,requestSummary,prepareOwnerDrc,requestDrc,
     prepareOwnerInspection,requestInspection,prepareOwnerBoardCounts,requestBoardCounts,
     prepareOwnerSchematicCounts,requestSchematicCounts,prepareWriteRevisions,requestWrite,
+    requestMcp,
     getTrustedContext,isDeviceConnected,
     getDeviceCapabilityClaim,localFolders,
     close:async()=>{

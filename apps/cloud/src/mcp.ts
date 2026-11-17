@@ -66,6 +66,21 @@ export type ProjectWriteExecutor = (
   }
 ) => Promise<ProjectWriteResult | null>;
 
+export type GenericMcpTool=Readonly<{
+  name:string;description:string;inputSchema:Record<string,unknown>;
+  accessMode:"readonly"|"write";
+}>;
+export type GenericMcpCatalog=Readonly<{
+  tools:GenericMcpTool[];nextOffset:number|null;
+}>;
+export type GenericMcpCatalogReader=(
+  deviceId:string,projectId:string,offset:number,toolName?:string
+)=>Promise<GenericMcpCatalog|null>;
+export type GenericMcpCaller=(
+  deviceId:string,projectId:string,toolName:string,
+  args:Record<string,unknown>,writeRequired:boolean
+)=>Promise<unknown|null>;
+
 // The local device owns the actual project. This Cloud lookup only resolves
 // an already granted opaque project ID for the current OAuth client. A lone
 // project can be selected implicitly; multiple projects require an explicit ID.
@@ -95,7 +110,9 @@ export function createCloudMcpHandler(
   isDeviceConnected?:(ownerSub:string,deviceId:string)=>boolean,
   getDeviceCapabilityClaim?:(ownerSub:string,deviceId:string)=>ConnectorCapabilityClaim|null,
   projectWrite?:ProjectWriteExecutor,
-  protectedResourceMetadataUrl?:string
+  protectedResourceMetadataUrl?:string,
+  genericMcpCatalog?:GenericMcpCatalogReader,
+  genericMcpCall?:GenericMcpCaller
 ) {
   return createMcpHandler(() => {
     const mcp = new McpServer({ name: "kicad-mcp-pro-cloud", version: "0.1.0" });
@@ -308,6 +325,71 @@ export function createCloudMcpHandler(
         return text(counts?{available:true,counts}:{available:false});
       });
     }
+    if(genericMcpCatalog&&genericMcpCall){
+      mcp.registerTool("local_mcp_catalog",{
+        description:"Browse the REAL installed KiCad MCP Pro tools and original JSON input schemas on an owner-connected device. Results depend on the current local profile, live Connector and project grant. No tools are reimplemented in Cloud; paginate with next_offset.",
+        inputSchema:z.object({
+          project_id:z.string().uuid().optional(),
+          offset:z.number().int().min(0).max(512).optional(),
+          tool_name:z.string().regex(/^[a-z][a-z0-9_]{0,127}$/).optional()
+        }),annotations:readonly
+      },async ({project_id,offset,tool_name})=>{
+        const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
+        if(!project)return text({available:false,selectionRequired});
+        try{
+          const catalog=await genericMcpCatalog(project.deviceId,project.id,offset??0,tool_name);
+          if(!catalog)return text({available:false,reason:"owner_connector_mcp_unavailable"});
+          const mayWrite=actor.scopes.has("projects:write")&&project.maxMode==="write";
+          return text({available:true,project_id:project.id,
+            tools:catalog.tools.filter(t=>t.accessMode==="readonly"||mayWrite),
+            next_offset:catalog.nextOffset});
+        }catch{return text({available:false,reason:"owner_connector_mcp_unavailable"});}
+      });
+      mcp.registerTool("local_mcp_call",{
+        description:"Execute one tool from the REAL local KiCad MCP catalog for one owner-granted project. First use local_mcp_catalog to see the exact input schema. READ requests need a project Read grant; mutating tools need OAuth projects:write, project Edit and owner's native writing opt-in. Human-only manufacturing is never available. A timed-out write has unknown outcome: inspect the local project before retrying.",
+        inputSchema:z.object({
+          project_id:z.string().uuid().optional(),
+          tool_name:z.string().regex(/^[a-z][a-z0-9_]{0,127}$/),
+          arguments:z.record(z.string(),z.unknown())
+        }),annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:false,openWorldHint:false}
+      },async ({project_id,tool_name,arguments:args})=>{
+        const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
+        if(!project)return {...text({success:false,selectionRequired}),isError:true};
+        let tool:GenericMcpTool|undefined;
+        try{
+          const catalog=await genericMcpCatalog(project.deviceId,project.id,0,tool_name);
+          tool=catalog?.tools.find(t=>t.name===tool_name);
+        }catch{/* no dispatch on missing catalog */}
+        if(!tool)return {...text({success:false,reason:"local_tool_unavailable"}),isError:true};
+        const write=tool.accessMode==="write";
+        if(write&&(!actor.scopes.has("projects:write")||project.maxMode!=="write")){
+          const denied=text({success:false,reason:!actor.scopes.has("projects:write")?
+            "insufficient_scope_write_required":"project_edit_permission_required",
+            guidance:"Reconnect and approve projects:write, then choose Edit for this project."});
+          if(!actor.scopes.has("projects:write")&&protectedResourceMetadataUrl)return {
+            ...denied,isError:true,_meta:{"mcp/www_authenticate":[
+              'Bearer resource_metadata="'+protectedResourceMetadataUrl+'", '+
+              'error="insufficient_scope", scope="projects:read projects:write"'
+            ]}
+          };
+          return {...denied,isError:true};
+        }
+        try{
+          const result=await genericMcpCall(project.deviceId,project.id,tool_name,args,write);
+          if(result===null)return {...text({success:false,
+            reason:"local_mcp_operation_unconfirmed",
+            outcomeUnknown:write,retrySafe:!write,
+            guidance:write?"Check the local project before retrying.":"Reconnect the owner device."}),isError:true};
+          const actual=result as {isError?:boolean;structuredContent?:{success?:boolean}};
+          const success=actual.isError!==true&&actual.structuredContent?.success!==false;
+          return {...text({success,tool_name,local_result:result}),...(success?{}:{isError:true})};
+        }catch{
+          return {...text({success:false,reason:"local_mcp_operation_unconfirmed",
+            outcomeUnknown:write,retrySafe:!write}),isError:true};
+        }
+      });
+    }
+
     if(projectWrite){
       mcp.registerTool("pcb_move_footprint",{
         description:"Move an owner-approved PCB footprint by reference designator with atomic local locking and optional disk persistence. Requires projects:write OAuth scope and active owner-connected device session.",

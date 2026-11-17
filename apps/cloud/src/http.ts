@@ -63,6 +63,10 @@ type SummaryRelay={
     projectId:string,proof:object,persistToDisk:boolean)=>Promise<import("./connector-ws.js").WriteOperationResult|null>;
   getTrustedContext?:(ownerSub:string,
     deviceId:string)=>import("./connector-read-gate.js").TrustedConnectorContext|null;
+  requestMcp?:(oauth:TrustedOAuthReadIdentity,deviceId:string,projectId:string,
+    request:Readonly<{requestId:string;method:"catalog"|"call";offset?:number;
+      toolName?:string;argumentsJson?:string;proof?:object}>)
+      =>Promise<import("./connector-ws.js").GenericMcpReply|null>;
 };
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -137,6 +141,8 @@ export type CloudHttpServices={
   mcpProjectBoardCountsEnabled?:boolean;
   mcpProjectSchematicCountsEnabled?:boolean;
   mcpProjectWriteEnabled?:boolean;
+  /** Optional authenticated generic MCP bridge, reusing the local server. */
+  mcpGenericBridgeEnabled?:boolean;
   writePreflight?:import("./connector-write-preflight.js").PgConnectorWritePreflight;
   writeIssuer?:import("./connector-write-issuer.js").OfflineWriteProofIssuer;
   /** Observation only: failures must never affect signed-write decisions. */
@@ -875,11 +881,91 @@ async function handleRequest(
             };
           }
         : undefined;
+      // One generic transport for the installed local MCP catalog. Neither
+      // client-supplied tool names nor parameters influence local project paths,
+      // trusted device identity or the pinned Cloud signing key.
+      const genericEnabled=services.mcpGenericBridgeEnabled===true&&
+        typeof summaryRelay?.()?.requestMcp==="function";
+      const genericCatalog:import("./mcp.js").GenericMcpCatalogReader|undefined =
+        genericEnabled?async(deviceId,projectId,offset,toolName)=>{
+          if(!actor.scopes.has("projects:read"))return null;
+          const project=await inventory.getProject(actor.sub,actor.clientId,projectId);
+          if(!project||project.deviceId!==deviceId)return null;
+          if(!await inventory.isAccessTokenAllowed(actor.sub,actor.clientId,actor.issuedAt))return null;
+          try{await verify(matched[1]);}catch{return null;}
+          const relay=summaryRelay?.();
+          if(!relay?.requestMcp)return null;
+          const oauth={ownerSub:actor.sub,clientId:actor.clientId,
+            accessTokenIssuedAtSeconds:actor.issuedAt};
+          const reply=await relay.requestMcp(oauth,deviceId,projectId,{
+            requestId:randomUUID(),method:"catalog",offset,...(toolName?{toolName}:{})
+          });
+          if(!reply?.ok||reply.method!=="catalog"||!reply.tools)return null;
+          // An owner/client revoke during local discovery cannot release a
+          // stale catalog or tool schema.
+          if(!await inventory.isAccessTokenAllowed(actor.sub,actor.clientId,actor.issuedAt))return null;
+          if(!await inventory.getProject(actor.sub,actor.clientId,projectId))return null;
+          try{await verify(matched[1]);}catch{return null;}
+          return {tools:reply.tools,nextOffset:reply.nextOffset??null};
+        }:undefined;
+      const genericCall:import("./mcp.js").GenericMcpCaller|undefined =
+        genericEnabled?async(deviceId,projectId,name,args,requiresWrite)=>{
+          const project=await inventory.getProject(actor.sub,actor.clientId,projectId);
+          if(!project||project.deviceId!==deviceId||
+             !actor.scopes.has("projects:read")||
+             (requiresWrite&&(!actor.scopes.has("projects:write")||project.maxMode!=="write")))
+            return null;
+          if(!await inventory.isAccessTokenAllowed(actor.sub,actor.clientId,actor.issuedAt))return null;
+          try{await verify(matched[1]);}catch{return null;}
+          const relay=summaryRelay?.();
+          if(!relay?.requestMcp)return null;
+          const oauth={ownerSub:actor.sub,clientId:actor.clientId,
+            accessTokenIssuedAtSeconds:actor.issuedAt};
+          const requestId=randomUUID();
+          const argumentsJson=JSON.stringify(args);
+          let proof:object|undefined;
+          let connection:ReturnType<NonNullable<SummaryRelay["getTrustedContext"]>>=null;
+          if(requiresWrite){
+            if(!services.writePreflight||!services.writeIssuer||!relay.getTrustedContext)
+              return null;
+            connection=relay.getTrustedContext(actor.sub,deviceId);
+            if(!connection||!await services.writePreflight.checkCurrentPolicy(
+              actor,connection,projectId))return null;
+            const nowMs=Date.now();
+            const deadlineUnixMs=nowMs+8_000;
+            if(!await services.writePreflight.reserveAuthorizedWrite(
+              actor,connection,projectId,requestId,deadlineUnixMs))return null;
+            const candidate={kind:"connector.mcp_tool_write",version:1,
+              requestId,deviceId,projectId,sessionId:connection.sessionId,
+              deadlineUnixMs,toolName:name,argumentsJson};
+            const binding={deviceId,projectId,sessionId:connection.sessionId,
+              sessionExpiresUnixMs:nowMs+60_000,
+              allowedOperations:["mcp_bridge"]};
+            const signed=services.writeIssuer(candidate,binding,nowMs);
+            if(!signed)return null;
+            proof=JSON.parse(signed.toString("utf8")) as object;
+          }
+          const reply=await relay.requestMcp(oauth,deviceId,projectId,{
+            requestId,method:"call",toolName:name,argumentsJson,...(proof?{proof}:{})
+          });
+          if(!reply?.ok||reply.method!=="call")return null;
+          if(!await inventory.isAccessTokenAllowed(actor.sub,actor.clientId,actor.issuedAt))
+            return null;
+          const live=await inventory.getProject(actor.sub,actor.clientId,projectId);
+          if(!live||live.deviceId!==deviceId||
+             (requiresWrite&&live.maxMode!=="write"))return null;
+          try{await verify(matched[1]);}catch{return null;}
+          if(requiresWrite&&(!connection||!services.writePreflight||
+              !await services.writePreflight.checkCurrentPolicy(actor,connection,projectId)))
+            return null;
+          return reply.result??null;
+        }:undefined;
       const signedRelay=summaryRelay?.();
       const handler=createCloudMcpHandler(
         inventory,actor,presenceReader,drcReader,inspectionReader,boardReader,schematicReader,
         signedRelay?.isDeviceConnected,signedRelay?.getDeviceCapabilityClaim,
-        writer,config.publicOrigin+"/.well-known/oauth-protected-resource");
+        writer,config.publicOrigin+"/.well-known/oauth-protected-resource",
+        genericCatalog,genericCall);
       let output: Response;
       try {
         output = await handler.fetch(request);

@@ -3,6 +3,7 @@ import {constants} from "node:fs";
 import {open} from "node:fs/promises";
 import {isAbsolute} from "node:path";
 import {createOfflineSignedWriteProposal} from "./connector-write-proof.js";
+import {createSignedGenericMcpProposal} from "./connector-generic-mcp-proof.js";
 
 type WriteBinding=Parameters<typeof createOfflineSignedWriteProposal>[1];
 export type OfflineWriteProofIssuer=(
@@ -61,7 +62,10 @@ export async function openPinnedOfflineWriteIssuer(
     const pinned=Buffer.from(pinnedPublicKeySha256,"hex");
     if(!timingSafeEqual(actual,pinned))throw Error("OFFLINE_WRITE_ISSUER_UNTRUSTED");
     return (candidate,binding,nowMs)=>
-      createOfflineSignedWriteProposal(candidate,binding,nowMs,privateKey);
+      typeof candidate==="object"&&candidate!==null&&
+      (candidate as {kind?:string}).kind==="connector.mcp_tool_write"
+        ? createSignedGenericMcpProposal(candidate,binding,nowMs,privateKey)
+        : createOfflineSignedWriteProposal(candidate,binding,nowMs,privateKey);
   }catch{
     // Do not leak filesystem paths, crypto parser internals or key contents.
     throw Error("OFFLINE_WRITE_ISSUER_UNTRUSTED");

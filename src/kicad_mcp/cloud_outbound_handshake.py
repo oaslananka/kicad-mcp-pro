@@ -139,7 +139,9 @@ def _read_strict_json(raw: str, expected_kind: str) -> dict[str, object]:
     # Extend the byte limit ONLY for the sealed owner-granted write envelope;
     # handshake, read, acknowledgment and other frames retain 1 KiB.
     max_bytes = (
-        _SIGNED_WRITE_FRAME_MAX_PAYLOAD if expected_kind == "connector.authorized_write" else 1024
+        65_536 if expected_kind == "connector.mcp_request"
+        else _SIGNED_WRITE_FRAME_MAX_PAYLOAD
+        if expected_kind == "connector.authorized_write" else 1024
     )
     if not isinstance(raw, str) or len(raw.encode("utf-8")) > max_bytes:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
