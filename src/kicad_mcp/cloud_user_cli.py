@@ -499,6 +499,16 @@ def remote(
             ),
         ),
     ] = False,
+    remember_native_write: Annotated[
+        bool,
+        typer.Option(
+            "--remember-native-write",
+            help=(
+                "Remember this paired project's local editing opt-in for future "
+                "interactive foreground sessions. Revoke with cloud forget-native-write."
+            ),
+        ),
+    ] = False,
     repair_device: Annotated[
         bool,
         typer.Option(
@@ -516,7 +526,11 @@ def remote(
 ) -> None:
     """Pair once; keep a verified foreground Cloud connection open."""
     interactive = _verify_remote_foreground_options(
-        browse, project_dir, repair_device, allow_native_drc, allow_native_write
+        browse,
+        project_dir,
+        repair_device,
+        allow_native_drc,
+        allow_native_write or remember_native_write,
     )
     origin = _verified_origin(cloud_origin)
     from kicad_mcp.cloud_windows_connector import (
@@ -533,8 +547,28 @@ def remote(
     if existing.origin != origin:
         raise typer.BadParameter("This device is paired with a different Cloud site.")
 
+    from kicad_mcp.cloud_windows_write_preference import (
+        owner_native_write_remembered,
+        remember_owner_native_write,
+    )
+
+    enable_write = allow_native_write or remember_native_write
+    if (
+        interactive
+        and not enable_write
+        and hasattr(existing, "record_id")
+        and hasattr(existing, "project_id")
+    ):
+        try:
+            enable_write = owner_native_write_remembered(existing.record_id, existing.project_id)
+        except Exception:
+            raise typer.BadParameter(
+                "Saved local editing permission could not be verified. "
+                "No native write session was started."
+            ) from None
+
     trusted_issuer = None
-    if allow_native_write:
+    if enable_write:
         from kicad_mcp.cloud_windows_write_issuer import load_pinned_windows_write_issuer_key
         from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
 
@@ -556,6 +590,15 @@ def remote(
                 "Protected replay storage is unavailable. No native edits were enabled."
             ) from None
 
+    if remember_native_write:
+        try:
+            remember_owner_native_write(existing.record_id, existing.project_id)
+        except Exception:
+            raise typer.BadParameter(
+                "Could not save the owner-only local editing preference. "
+                "No native write session was started."
+            ) from None
+
     _prepare_remote_connector(existing, interactive)
     selected = inspect_owner_selected_project(existing)
     typer.secho("\n  KiCad MCP Pro  /  Cloud Connector", fg=typer.colors.MAGENTA, bold=True)
@@ -564,10 +607,15 @@ def remote(
     typer.echo("  Keep this terminal open; press Ctrl+C to disconnect.")
     typer.echo("  Add Project opens Windows Explorer on this computer.")
     typer.secho("  ────────────────────────────────────────────────", fg=typer.colors.BRIGHT_BLACK)
-    if allow_native_write:
+    if enable_write:
         typer.echo(
-            "Signed native PCB editing opted in for this terminal only. "
-            "Cloud still requires separate client and project edit permission."
+            "Signed native PCB editing enabled for this foreground session"
+            + (
+                " (remembered for this paired project)."
+                if remember_native_write
+                else " (owner-approved local preference)."
+            )
+            + " Cloud still requires separate client and project edit permission."
         )
     if allow_native_drc:
         typer.echo(
@@ -582,7 +630,7 @@ def remote(
     import asyncio
 
     try:
-        if allow_native_write:
+        if enable_write:
             asyncio.run(
                 run_connector(
                     stop=asyncio.Event(),
@@ -607,6 +655,32 @@ def remote(
         raise typer.Exit(code=3) from None
     except KeyboardInterrupt:
         typer.echo("\nDisconnected. Pairing stays saved; run cloud connect to return.")
+
+
+@cloud_app.command("forget-native-write")
+def forget_native_write() -> None:
+    """Revoke this user's remembered native-write choice for the paired project."""
+    if not _is_windows() or not _owner_terminal():
+        raise typer.BadParameter(
+            "Only the interactive Windows device owner can change local editing preferences."
+        )
+    from kicad_mcp.cloud_windows_connector import selected_project
+    from kicad_mcp.cloud_windows_write_preference import forget_owner_native_write
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    existing = selected_project()
+    if existing is None:
+        raise typer.BadParameter("No locally paired computer and project were found.")
+    try:
+        forget_owner_native_write(existing.record_id, existing.project_id)
+    except LocalWriteDeniedError:
+        raise typer.BadParameter(
+            "Saved editing preference could not be verified. No permission was changed."
+        ) from None
+    typer.echo(
+        "Saved native editing is off for the next Connector session. "
+        "Stop any currently running editing Connector to end its current write access."
+    )
 
 
 @cloud_app.command()

@@ -264,6 +264,10 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     const listEnabled = await invoke("enabled", "token-write", "tools/list", {}, 2);
     const enabledTools = (listEnabled.data.result?.tools ?? []).map((t: { name: string }) => t.name);
     assert.equal(enabledTools.includes("pcb_move_footprint"), true);
+    const writeTool = (listEnabled.data.result?.tools ?? []).find((t:{name:string})=>t.name==="pcb_move_footprint");
+    assert.deepEqual(writeTool?._meta?.securitySchemes,
+      [{type:"oauth2",scopes:["projects:read","projects:write"]}]);
+    assert.equal(writeTool?.annotations?.destructiveHint,true);
 
     // 3. Insufficient scope (read-only token)
     const readOnlyCall = await invoke("enabled", "token-read-only", "tools/call", {
@@ -272,6 +276,11 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     }, 3, "pcb_move_footprint");
     assert.equal(readOnlyCall.status, 200);
     assert.match(JSON.stringify(readOnlyCall.data), /insufficient_scope_write_required/);
+    assert.equal(readOnlyCall.data.result?.isError,true);
+    const scopeChallenge=readOnlyCall.data.result?._meta?.["mcp/www_authenticate"]?.[0];
+    assert.match(scopeChallenge,/error="insufficient_scope"/);
+    assert.match(scopeChallenge,/scope="projects:read projects:write"/);
+    assert.match(scopeChallenge,/resource_metadata="http:\/\/127.0.0.1\/\.well-known\/oauth-protected-resource"/);
     assert.equal(writeExecuted, false);
 
     // 4. Foreign client / user

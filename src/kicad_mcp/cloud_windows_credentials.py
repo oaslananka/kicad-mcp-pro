@@ -37,6 +37,8 @@ _PARTS = frozenset(
         # Windows owner. Never a key furnished by a write request itself.
         "write_issuer",
         "write_issuer_pin",
+        # Explicit owner-only remembered edit choice for one paired project.
+        "write_preference",
     }
 )
 _PREFIX = "KiCadMCPPro/Cloud/v1"

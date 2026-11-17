@@ -94,7 +94,8 @@ export function createCloudMcpHandler(
   schematicCounts?:ProjectSchematicCountsReader,
   isDeviceConnected?:(ownerSub:string,deviceId:string)=>boolean,
   getDeviceCapabilityClaim?:(ownerSub:string,deviceId:string)=>ConnectorCapabilityClaim|null,
-  projectWrite?:ProjectWriteExecutor
+  projectWrite?:ProjectWriteExecutor,
+  protectedResourceMetadataUrl?:string
 ) {
   return createMcpHandler(() => {
     const mcp = new McpServer({ name: "kicad-mcp-pro-cloud", version: "0.1.0" });
@@ -317,10 +318,18 @@ export function createCloudMcpHandler(
           y_mm:z.number().finite().min(-1000).max(1000),
           rotation_deg:z.number().finite().min(-360).max(360).nullable().optional(),
           save_to_disk:z.boolean().optional()
-        }),annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:false,openWorldHint:false}
+        }),annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:false,openWorldHint:false},
+        _meta:{securitySchemes:[{type:"oauth2",scopes:["projects:read","projects:write"]}]}
       },async ({project_id,reference,x_mm,y_mm,rotation_deg,save_to_disk})=>{
         if(!actor.scopes.has("projects:write")){
-          return text({success:false,reason:"insufficient_scope_write_required"});
+          const denied=text({success:false,reason:"insufficient_scope_write_required",
+            guidance:"Reconnect this AI app and approve project editing, then choose Edit for this project in Cloud."});
+          if(!protectedResourceMetadataUrl)return {...denied,isError:true};
+          return {...denied,isError:true,_meta:{"mcp/www_authenticate":[
+            'Bearer resource_metadata="'+protectedResourceMetadataUrl+'", '+
+            'error="insufficient_scope", scope="projects:read projects:write", '+
+            'error_description="Reconnect to allow KiCad project editing"'
+          ]}};
         }
         const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
         if(!project)return text({success:false,selectionRequired});

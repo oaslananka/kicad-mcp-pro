@@ -423,6 +423,82 @@ def test_explicit_owner_write_opt_in_forwards_only_pinned_issuer(
     assert "Cloud still requires separate client and project edit permission" in result.output
 
 
+def test_owner_remembers_editing_once_and_reuses_it_in_future_foreground_sessions(
+    remote_fixture: tuple[dict[str, Any], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from kicad_mcp import (
+        cloud_windows_write_issuer,
+        cloud_windows_write_marker,
+        cloud_windows_write_preference,
+    )
+
+    state, folder = remote_fixture
+    state["project"].record_id = "a" * 32
+    state["project"].project_id = "22222222-2222-4222-8222-222222222222"
+    key = Ed25519PrivateKey.generate().public_key()
+    remembered: set[str] = set()
+    executions: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        cloud_windows_write_issuer,
+        "load_pinned_windows_write_issuer_key",
+        lambda record: key if record == "a" * 32 else None,
+    )
+    monkeypatch.setattr(
+        cloud_windows_write_marker,
+        "prepare_owner_windows_write_marker_directory",
+        lambda: folder,
+    )
+    monkeypatch.setattr(
+        cloud_windows_write_preference,
+        "owner_native_write_remembered",
+        lambda _record, project: project in remembered,
+    )
+    monkeypatch.setattr(
+        cloud_windows_write_preference,
+        "remember_owner_native_write",
+        lambda _record, project: remembered.add(project),
+    )
+
+    async def foreground(**options: object) -> None:
+        executions.append(options)
+
+    monkeypatch.setattr(cloud_windows_connector, "run_connector", foreground)
+    first = CliRunner().invoke(
+        server.app, ["cloud", "remote", "--enable-native-write", "--remember-native-write"]
+    )
+    assert first.exit_code == 0, first.output
+    assert len(remembered) == 1
+    second = CliRunner().invoke(server.app, ["cloud", "remote"])
+    assert second.exit_code == 0, second.output
+    assert len(executions) == 2
+    assert all(run["allow_native_write"] is True for run in executions)
+    assert all(run["issuer_key"] is key for run in executions)
+
+
+def test_owner_forgets_saved_edit_preference_without_removing_issuer(
+    remote_fixture: tuple[dict[str, Any], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_windows_write_preference
+
+    state, _folder = remote_fixture
+    state["project"].record_id = "a" * 32
+    state["project"].project_id = "22222222-2222-4222-8222-222222222222"
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        cloud_windows_write_preference,
+        "forget_owner_native_write",
+        lambda record, project: calls.append((record, project)) or True,
+    )
+    result = CliRunner().invoke(server.app, ["cloud", "forget-native-write"])
+    assert result.exit_code == 0, result.output
+    assert calls == [("a" * 32, state["project"].project_id)]
+    assert "next" in result.output.lower()
+
+
 def test_remote_missing_pinned_issuer_does_not_touch_owner_task_or_project(
     remote_fixture: tuple[dict[str, Any], Path],
     monkeypatch: pytest.MonkeyPatch,

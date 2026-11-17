@@ -262,12 +262,12 @@ test("project permission UI names ChatGPT clearly and never offers a duplicate g
     deviceId:device.id,alias:"Controller",enabled:true,grantCsrf:"grant"};
   const client="https://chatgpt.com/oauth/client.json";
   const ungranted=renderDevicesPage([device],undefined,true,{projects:[project],clients:[client]});
-  assert.match(ungranted,/>ChatGPT<\/option>/);
-  assert.match(ungranted,/Allow reading/);
+  assert.match(ungranted,/class="grant-client">ChatGPT<\/span>/);
+  assert.match(ungranted,/Save access/);
   const granted=renderDevicesPage([device],undefined,true,{projects:[project],clients:[client],savedGrants:[{projectId:project.id,clientId:client,maxMode:"readonly"}]});
   assert.match(granted,/class="grant-client">ChatGPT<\/span>/);
   assert.match(granted,/Remove this app access/);
-  assert.doesNotMatch(granted,/Allow reading/);
+  assert.doesNotMatch(granted,/Choose access for an AI app/);
   assert.doesNotMatch(granted,/>Pair a device</);
 });
 
@@ -284,20 +284,21 @@ test("explicit write OAuth consent enables a per-app edit policy toggle, never a
     maxMode:"readonly"|"write"}>,writers:string[])=>
     renderDevicesPage([device],undefined,true,{projects:[project],clients:[writer,reader],savedGrants:grants,sandboxMode:false,browseEnabled:false,writeClients:writers});
   const readonly=base([],[]);
-  assert.match(readonly,/Allow reading/);
-  assert.doesNotMatch(readonly,/Allow reading and editing/);
-  assert.doesNotMatch(readonly,/name="mode" value="write"/);
+  assert.match(readonly,/Save access/);
+  assert.doesNotMatch(readonly,/<option value="write">Edit<\/option>/);
   const authorized=base([], [writer]);
-  assert.match(authorized,/Allow reading and editing/);
-  assert.match(authorized,/name="mode" value="write"/);
+  assert.match(authorized,/<option value="write">Edit<\/option>/);
   const savedRead=base([{projectId:project.id,clientId:writer,maxMode:"readonly"}],[writer]);
-  assert.match(savedRead,/Allow editing/);
+  assert.match(savedRead,/Save access/);
+  assert.match(savedRead,/<option value="write">Edit<\/option>/);
   const savedWrite=base([{projectId:project.id,clientId:writer,maxMode:"write"}],[writer]);
   assert.match(savedWrite,/Edit permission saved/);
-  assert.match(savedWrite,/Keep read only/);
+  assert.match(savedWrite,/<option value="readonly">Read<\/option>/);
   assert.match(savedWrite,/Remove this app access/);
   assert.match(savedWrite,/Cloud editing is not enabled on this server yet/i);
-  // Consent for one app never promotes a different app.
+  // A saved Read grant for Claude never gains an Edit option from ChatGPT's consent.
   const other=base([{projectId:project.id,clientId:reader,maxMode:"readonly"}],[writer]);
-  assert.doesNotMatch(other,/name="client_id" value="https:\/\/claude\.ai[^"]*"\/>[\s\S]*?Allow editing/);
+  const claudeCard=other.match(/<li[^>]*>[^<]*<span class="grant-client">Claude[\s\S]*?<\/li>/)?.[0]??"";
+  assert.match(claudeCard,/<option value="readonly"(?: selected="")?>Read<\/option>/);
+  assert.doesNotMatch(claudeCard,/<option value="write">Edit<\/option>/);
 });

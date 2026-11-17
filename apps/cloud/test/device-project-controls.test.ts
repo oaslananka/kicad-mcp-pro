@@ -5,6 +5,42 @@ import {renderDevicesPage} from "../src/devices-ui.js";
 import {deviceProjectsClient} from "../src/device-projects-client.js";
 import {uiCss} from "../src/ui-styles.js";
 
+test("project permissions use one app choice and one read/edit selection",()=>{
+  const deviceId=randomUUID(),projectId=randomUUID();
+  const writer="https://write-app.example/client.json";
+  const reader="https://read-app.example/client.json";
+  const html=renderDevicesPage([{
+    id:deviceId,alias:"Owner computer",enabled:true,revoked:false,
+    fingerprint:"a".repeat(64),createdAt:new Date(),csrf:"revoke",connectionState:"connected"
+  }],undefined,true,{projects:[{id:projectId,deviceId,alias:"PCB",enabled:true,grantCsrf:"grant"}],
+    ownerSub:"owner",clients:[reader,writer],writeClients:[writer],savedGrants:[],
+    nativeWriteAvailable:true});
+  const appForms=html.match(/<form\b[^>]*action="\/devices\/projects\/grant"[\s\S]*?<\/form>/g)||[];
+  assert.equal(appForms.length,2,"One access choice per app, not duplicate Read/Edit forms");
+  const readForm=appForms.find(form=>form.includes('value="'+reader+'"'));
+  const editForm=appForms.find(form=>form.includes('value="'+writer+'"'));
+  assert.ok(readForm&&editForm);
+  assert.match(readForm,/<option value="readonly"/);
+  assert.doesNotMatch(readForm,/<option value="write"/);
+  assert.match(editForm,/<option value="write"/);
+  assert.match(html,/Reconnect.*write.*permission|write.*consent/i);
+  assert.doesNotMatch(html,/Allow reading and editing/);
+});
+
+test("diagnostic and managed-read switches stay under advanced controls",()=>{
+  const deviceId=randomUUID(),projectId=randomUUID();
+  const html=renderDevicesPage([{
+    id:deviceId,alias:"Owner computer",enabled:true,revoked:false,
+    fingerprint:"a".repeat(64),createdAt:new Date(),csrf:"revoke",connectionState:"connected"
+  }],undefined,true,{projects:[{id:projectId,deviceId,alias:"PCB",enabled:true,
+    grantCsrf:"grant",managedCsrf:"manage",managedEnabled:true,nativeCsrf:"native"}],
+    clients:["https://chatgpt.com/oauth/client.json"],writeClients:[]});
+  assert.match(html,/<details class="project-advanced-controls">/);
+  assert.match(html,/<summary>Advanced project controls<\/summary>/);
+  assert.match(html,/Pause project reads/);
+  assert.match(html,/Read-only KiCad diagnostics/);
+});
+
 test("device project menus default open and expose compact owner-scoped actions",()=>{
   const id=randomUUID(),first=randomUUID(),second=randomUUID();
   const device={id,alias:"My workstation",enabled:true,revoked:false,
