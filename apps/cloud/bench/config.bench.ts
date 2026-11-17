@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { bench, describe } from "./bench-api.js";
 import { loadConfig } from "../src/config.js";
 
 const env = {

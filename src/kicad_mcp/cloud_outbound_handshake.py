@@ -14,7 +14,7 @@ import ssl
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict, Unpack
 from urllib.parse import urlsplit
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     # Imported lazily at runtime inside _complete_outbound_operation to avoid
     # a circular dependency with the managed read transport module.
     from kicad_mcp.cloud_folder_browse_receiver import LocalFolderBrowseService
+    from kicad_mcp.cloud_managed_read_transport import GenericMcpDispatch
 
 CONNECTOR_WS_PATH = "/api/v1/connector/ws"
 _HANDSHAKE_DENIED = "handshake denied"
@@ -94,6 +95,7 @@ class OutboundSessionOptions:
     folder_service_factory: Callable[[HandshakeReceipt], LocalFolderBrowseService] | None = None
     on_ready: Callable[[HandshakeReceipt], None] | None = None
     on_activity: Callable[[str], None] | None = None
+    mcp_service_factory: Callable[[HandshakeReceipt], GenericMcpDispatch] | None = None
 
 
 def _endpoint(*, origin: str, trusted_origin: str) -> str:
@@ -138,9 +140,12 @@ def _endpoint(*, origin: str, trusted_origin: str) -> str:
 def _read_strict_json(raw: str, expected_kind: str) -> dict[str, object]:
     # Extend the byte limit ONLY for the sealed owner-granted write envelope;
     # handshake, read, acknowledgment and other frames retain 1 KiB.
-    max_bytes = (
-        _SIGNED_WRITE_FRAME_MAX_PAYLOAD if expected_kind == "connector.authorized_write" else 1024
-    )
+    if expected_kind == "connector.mcp_request":
+        max_bytes = 65_536
+    elif expected_kind == "connector.authorized_write":
+        max_bytes = _SIGNED_WRITE_FRAME_MAX_PAYLOAD
+    else:
+        max_bytes = 1024
     if not isinstance(raw, str) or len(raw.encode("utf-8")) > max_bytes:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     try:
@@ -569,6 +574,20 @@ def _validated_outbound_connection(
     return endpoint, context
 
 
+def _invalid_owner_managed_mode(options: OutboundSessionOptions) -> bool:
+    return (
+        options.dispatcher_factory is None
+        or options.inspection_factory is not None
+        or options.operator_presence_pilot
+        or options.operator_inspection_pilot
+        or options.operator_native_drc_pilot
+        or options.board_counts_pilot
+        or options.schematic_counts_pilot
+        or type(options.managed_max_reads) is not int
+        or not 1 <= options.managed_max_reads <= 16
+    )
+
+
 def _validate_outbound_options(options: OutboundSessionOptions) -> None:
     if type(options.managed_native_drc) is not bool or (
         options.managed_native_drc and not options.owner_managed_read
@@ -583,23 +602,17 @@ def _validate_outbound_options(options: OutboundSessionOptions) -> None:
         )
     ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
-    if options.owner_managed_read and (
-        options.dispatcher_factory is None
-        or options.inspection_factory is not None
-        or options.operator_presence_pilot
-        or options.operator_inspection_pilot
-        or options.operator_native_drc_pilot
-        or options.board_counts_pilot
-        or options.schematic_counts_pilot
-        or type(options.managed_max_reads) is not int
-        or not 1 <= options.managed_max_reads <= 16
-    ):
+    if options.owner_managed_read and _invalid_owner_managed_mode(options):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     # The folder browse factory is an owner-managed read-session-only extra:
     # it never broadens proof-only, pilot or inspection modes, and the factory
     # itself must be callable before any network access happens.
     if options.folder_service_factory is not None and (
         not options.owner_managed_read or not callable(options.folder_service_factory)
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    if options.mcp_service_factory is not None and (
+        not options.owner_managed_read or not callable(options.mcp_service_factory)
     ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
 
@@ -610,6 +623,8 @@ def _managed_read_catalog(options: OutboundSessionOptions) -> list[str]:
         ops.append("run_drc")
     if options.managed_native_write:
         ops.append("move_footprint")
+    if options.mcp_service_factory is not None:
+        ops.append("mcp_bridge")
     return ops
 
 
@@ -652,6 +667,7 @@ def _catalog_hello_metadata(options: OutboundSessionOptions) -> dict[str, object
     operations = _catalog_operations(options)
     return {
         **browser,
+        **({"mcpBridge": 1} if options.mcp_service_factory is not None else {}),
         "catalog": {
             "schemaVersion": "1.0.0",
             "catalogRevision": installed_catalog_revision(),
@@ -694,6 +710,7 @@ async def _complete_outbound_operation(
             revisions_preparer=options.revisions_preparer,
             write_executor=options.write_executor,
             on_activity=options.on_activity,
+            mcp_service_factory=options.mcp_service_factory,
         )
     if options.inspection_factory is not None:
         return await _complete_authorized_inspection(
@@ -753,7 +770,9 @@ async def _perform_outbound_session(
     # A write-enabled session needs the bounded signed-v2 frame capacity.
     # Other handshake/read frames retain their own strict decoder limits.
     max_frame_size = 1024
-    if session_options.folder_service_factory is not None:
+    if session_options.mcp_service_factory is not None:
+        max_frame_size = 65_536
+    elif session_options.folder_service_factory is not None:
         max_frame_size = _FOLDER_SESSION_MAX_PAYLOAD
     elif session_options.managed_native_write:
         max_frame_size = _SIGNED_WRITE_FRAME_MAX_PAYLOAD
@@ -1019,6 +1038,13 @@ async def execute_single_approved_read(
     )
 
 
+class ManagedSessionExtras(TypedDict, total=False):
+    """Optional signed managed-session hooks with stable keyword names."""
+
+    on_activity: Callable[[str], None] | None
+    mcp_bridge_factory: Callable[[HandshakeReceipt], GenericMcpDispatch] | None
+
+
 async def execute_owner_managed_read_session(
     *,
     origin: str,
@@ -1033,7 +1059,7 @@ async def execute_owner_managed_read_session(
     on_ready: Callable[[HandshakeReceipt], None] | None = None,
     allow_native_drc: bool = False,
     native_write: ManagedNativeWriteConfig | None = None,
-    on_activity: Callable[[str], None] | None = None,
+    **extras: Unpack[ManagedSessionExtras],
 ) -> HandshakeReceipt:
     """One signed, owner-managed session; no key loading or persistence.
 
@@ -1047,6 +1073,8 @@ async def execute_owner_managed_read_session(
     folder browse frames are additionally answered on the same signed socket;
     it never grants reads, paths outside the bound root, or file contents.
     """
+    on_activity = extras.get("on_activity")
+    mcp_bridge_factory = extras.get("mcp_bridge_factory")
     if (
         not callable(dispatcher_factory)
         or type(allow_native_drc) is not bool
@@ -1059,6 +1087,7 @@ async def execute_owner_managed_read_session(
         )
         or (folder_service_factory is not None and not callable(folder_service_factory))
         or (on_activity is not None and not callable(on_activity))
+        or (mcp_bridge_factory is not None and not callable(mcp_bridge_factory))
     ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     return await _perform_outbound_session(
@@ -1077,7 +1106,10 @@ async def execute_owner_managed_read_session(
                 native_write.revisions_preparer if native_write is not None else None
             ),
             write_executor=native_write.write_executor if native_write is not None else None,
-            advertise_catalog=allow_native_drc or (native_write is not None),
+            advertise_catalog=allow_native_drc
+            or (native_write is not None)
+            or (mcp_bridge_factory is not None),
+            mcp_service_factory=mcp_bridge_factory,
             managed_max_reads=max_reads,
             folder_service_factory=folder_service_factory,
             on_ready=on_ready,

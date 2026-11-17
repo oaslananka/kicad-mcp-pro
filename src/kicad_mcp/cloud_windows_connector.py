@@ -30,6 +30,7 @@ from cryptography.hazmat.primitives.serialization import (
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
 from kicad_mcp.cloud_folder_browse_receiver import LocalFolderBrowseService, device_folder_service
+from kicad_mcp.cloud_managed_read_transport import GenericMcpDispatch
 from kicad_mcp.cloud_outbound_handshake import (
     HandshakeReceipt,
     ManagedNativeWriteConfig,
@@ -592,6 +593,45 @@ def _execute_owner_native_write(
     )
 
 
+def _owner_generic_mcp_factory(
+    project: WindowsRegisteredProject,
+    selected: WindowsLocalProjectSelection,
+    allow_native_write: bool,
+    issuer_key: Ed25519PublicKey | None,
+) -> Callable[[HandshakeReceipt], GenericMcpDispatch]:
+    """Bind exact local owner identity and one-use signer to the signed socket."""
+    from kicad_mcp.cloud_generic_mcp_transport import GenericProjectMcpService
+    from kicad_mcp.cloud_windows_write_marker import (
+        consume_windows_write_marker,
+        default_windows_write_marker_directory,
+    )
+
+    marker_dir = default_windows_write_marker_directory()
+
+    def consume_once(sid: str, request_id: str) -> bool:
+        if marker_dir is None:
+            return False
+        return consume_windows_write_marker(marker_dir, sid, request_id)
+
+    def factory(receipt: HandshakeReceipt) -> GenericMcpDispatch:
+        def owner_project(project_id: str) -> OperatorProject | None:
+            try:
+                return resolve_owner_write_project(project, selected, project_id)
+            except LocalWriteDeniedError:
+                return None
+
+        return GenericProjectMcpService(
+            receipt=receipt,
+            local_project=owner_project,
+            current_authorization=lambda: _current_authorization(project),
+            allow_native_write=allow_native_write and issuer_key is not None,
+            trusted_issuer_key=issuer_key if allow_native_write else None,
+            consume_once=consume_once if allow_native_write and marker_dir is not None else None,
+        )
+
+    return factory
+
+
 async def _run_owner_session(
     project: WindowsRegisteredProject,
     selected: WindowsLocalProjectSelection,
@@ -619,6 +659,13 @@ async def _run_owner_session(
     }
     if allow_native_drc:
         settings["allow_native_drc"] = True
+    # Advertise generic tool forwarding only over the existing signed owner socket.
+    if runner is execute_owner_managed_read_session or getattr(
+        runner, "_kicad_supports_folder_browse", False
+    ):
+        settings["mcp_bridge_factory"] = _owner_generic_mcp_factory(
+            project, selected, allow_native_write, issuer_key
+        )
     if allow_native_write and issuer_key is not None:
         from kicad_mcp.cloud_outbound_handshake import ManagedNativeWriteConfig
         from kicad_mcp.cloud_windows_write_marker import (
@@ -698,6 +745,7 @@ def _session_runner_with_status(
         | None = None,
         allow_native_drc: bool = False,
         native_write: ManagedNativeWriteConfig | None = None,
+        mcp_bridge_factory: Callable[[HandshakeReceipt], GenericMcpDispatch] | None = None,
     ) -> HandshakeReceipt:
         return await execute_owner_managed_read_session(
             origin=origin,
@@ -711,6 +759,7 @@ def _session_runner_with_status(
             folder_service_factory=folder_service_factory,
             allow_native_drc=allow_native_drc,
             native_write=native_write,
+            mcp_bridge_factory=mcp_bridge_factory,
             on_activity=status_callback,
         )
 

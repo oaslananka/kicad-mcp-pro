@@ -27,8 +27,20 @@ _WORKER_SETTINGS = {
 }
 
 
-def project_worker_parameters(project_directory: Path) -> StdioServerParameters:
-    """Construct argv-based stdio transport for one trusted, existing project."""
+def project_worker_parameters(
+    project_directory: Path, *, profile: str = "review", operating_mode: str = "readonly"
+) -> StdioServerParameters:
+    """Construct argv-based stdio for an owner-selected project and MCP profile.
+
+    The original safe review/readonly defaults remain unchanged. A broader
+    profile/mode is available ONLY to explicitly authorized caller code; user
+    or Cloud-supplied tool arguments never select these process settings.
+    """
+    if profile not in {"default", "review", "build", "expert"} or operating_mode not in {
+        "readonly",
+        "write",
+    }:
+        raise ValueError("Project worker profile or mode not permitted.")
     if not isinstance(project_directory, Path) or not project_directory.is_absolute():
         raise ValueError("Project worker requires a local absolute project directory.")
     resolved = project_directory.resolve(strict=True)
@@ -36,6 +48,8 @@ def project_worker_parameters(project_directory: Path) -> StdioServerParameters:
         raise ValueError("Project worker requires an existing project directory.")
     env = os.environ.copy()
     env.update(_WORKER_SETTINGS)
+    env["KICAD_MCP_PROFILE"] = profile
+    env["KICAD_MCP_OPERATING_MODE"] = operating_mode
     # Empty values for Path settings are interpreted as "." by Pydantic;
     # never create a repo-wide file watcher just to disable project switching.
     env.pop("KICAD_MCP_STUDIO_WATCH_DIR", None)
@@ -49,10 +63,16 @@ def project_worker_parameters(project_directory: Path) -> StdioServerParameters:
 
 @asynccontextmanager
 async def project_stdio_worker(
-    project_directory: Path, *, timeout_seconds: float = 40
+    project_directory: Path,
+    *,
+    timeout_seconds: float = 40,
+    profile: str = "review",
+    operating_mode: str = "readonly",
 ) -> AsyncIterator[ClientSession]:
     """Launch and close a project-specific MCP process without global switching."""
-    params = project_worker_parameters(project_directory)
+    params = project_worker_parameters(
+        project_directory, profile=profile, operating_mode=operating_mode
+    )
     async with (
         stdio_client(params) as streams,
         ClientSession(*streams) as session,

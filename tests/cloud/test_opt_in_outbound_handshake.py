@@ -701,3 +701,73 @@ def test_owner_folder_browse_is_advertised_independently_of_native_catalog() -> 
     )
     assert metadata == {"folderBrowse": 1}
     assert _catalog_hello_metadata(OutboundSessionOptions()) == {}
+
+
+def test_generic_mcp_bridge_is_advertised_only_by_owner_managed_session() -> None:
+    from kicad_mcp.cloud_outbound_handshake import (
+        CloudHandshakeDeniedError,
+        OutboundSessionOptions,
+        _catalog_hello_metadata,
+        _validate_outbound_options,
+    )
+
+    options = OutboundSessionOptions(
+        owner_managed_read=True,
+        dispatcher_factory=lambda _receipt: None,  # type: ignore[arg-type]
+        mcp_service_factory=lambda _receipt: None,  # type: ignore[arg-type]
+        advertise_catalog=True,
+    )
+    _validate_outbound_options(options)
+    metadata = _catalog_hello_metadata(options)
+    assert metadata["mcpBridge"] == 1
+    assert metadata["catalog"]["operations"] == ["project_summary", "mcp_bridge"]
+    legacy = OutboundSessionOptions(
+        owner_managed_read=True,
+        dispatcher_factory=lambda _receipt: None,  # type: ignore[arg-type]
+        advertise_catalog=True,
+    )
+    assert "mcpBridge" not in _catalog_hello_metadata(legacy)
+    assert "mcp_bridge" not in _catalog_hello_metadata(legacy)["catalog"]["operations"]
+    with pytest.raises(CloudHandshakeDeniedError):
+        _validate_outbound_options(
+            OutboundSessionOptions(mcp_service_factory=lambda _receipt: None)  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.asyncio
+async def test_owner_handshake_forwards_generic_factory_into_signed_read_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from kicad_mcp import cloud_outbound_handshake as transport
+
+    seen: list[transport.OutboundSessionOptions] = []
+
+    async def intercepted(**kwargs: object) -> transport.HandshakeReceipt:
+        opts = kwargs["options"]
+        assert isinstance(opts, transport.OutboundSessionOptions)
+        seen.append(opts)
+        return transport.HandshakeReceipt(
+            device_id="11111111-1111-4111-8111-111111111111",
+            session_id="22222222-2222-4222-8222-222222222222",
+        )
+
+    monkeypatch.setattr(transport, "_perform_outbound_session", intercepted)
+
+    def factory(_receipt: transport.HandshakeReceipt) -> object:
+        return object()
+
+    await transport.execute_owner_managed_read_session(
+        origin="https://example.invalid",
+        trusted_origin="https://example.invalid",
+        owner_sub="owner",
+        device_id="11111111-1111-4111-8111-111111111111",
+        signing_key=Ed25519PrivateKey.generate(),
+        dispatcher_factory=lambda _receipt: None,  # type: ignore[arg-type]
+        mcp_bridge_factory=factory,  # type: ignore[arg-type]
+    )
+    assert len(seen) == 1
+    assert seen[0].mcp_service_factory is factory
+    assert seen[0].advertise_catalog is True
+    assert transport._catalog_hello_metadata(seen[0])["mcpBridge"] == 1

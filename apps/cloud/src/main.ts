@@ -35,6 +35,9 @@ const managedReadEnabled=process.env.CONNECTOR_MANAGED_READ_ENABLED==="true";
 // A separate OFF-by-default native read gate never authorizes an operation itself.
 const managedNativeReadEnabled=process.env.CONNECTOR_MANAGED_NATIVE_READ_ENABLED==="true";
 const managedNativeWriteEnabled=process.env.CONNECTOR_MANAGED_NATIVE_WRITE_ENABLED==="true";
+// Generic bridge needs only the already authorized managed Connector. The
+// signed local process still decides which installed profile/tools are usable.
+const mcpGenericBridgeEnabled=managedReadEnabled;
 if(managedNativeReadEnabled&&!managedReadEnabled)
   throw Error("Managed native reads require signed managed Connector mode");
 if(managedNativeWriteEnabled&&!managedReadEnabled)
@@ -125,6 +128,7 @@ const server=createHttpServer(config, inventory, createVerifier(config), {grants
   mcpProjectBoardCountsEnabled:operatorBoardCounts,
   mcpProjectSchematicCountsEnabled:operatorSchematicCounts,summaryRelay:()=>connectorRelay,
   mcpProjectWriteEnabled:managedNativeWriteEnabled&&Boolean(writeIssuer)&&Boolean(connectorPool),
+  mcpGenericBridgeEnabled,
   ...(connectorPool&&managedNativeWriteEnabled?{writePreflight:new PgConnectorWritePreflight(connectorPool)}:{}),
   ...(writeIssuer?{writeIssuer}:{}),
   // Stage-only diagnostic: no signed payloads, access tokens or KiCad content.

@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { bench, describe } from "./bench-api.js";
 import { Account, Landing, renderPage } from "../src/ui-shell.js";
 import { renderDevicesPage } from "../src/devices-ui.js";
 
