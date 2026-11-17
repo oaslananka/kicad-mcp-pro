@@ -14,7 +14,7 @@ import ssl
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict, Unpack
 from urllib.parse import urlsplit
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -140,13 +140,12 @@ def _endpoint(*, origin: str, trusted_origin: str) -> str:
 def _read_strict_json(raw: str, expected_kind: str) -> dict[str, object]:
     # Extend the byte limit ONLY for the sealed owner-granted write envelope;
     # handshake, read, acknowledgment and other frames retain 1 KiB.
-    max_bytes = (
-        65_536
-        if expected_kind == "connector.mcp_request"
-        else _SIGNED_WRITE_FRAME_MAX_PAYLOAD
-        if expected_kind == "connector.authorized_write"
-        else 1024
-    )
+    if expected_kind == "connector.mcp_request":
+        max_bytes = 65_536
+    elif expected_kind == "connector.authorized_write":
+        max_bytes = _SIGNED_WRITE_FRAME_MAX_PAYLOAD
+    else:
+        max_bytes = 1024
     if not isinstance(raw, str) or len(raw.encode("utf-8")) > max_bytes:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     try:
@@ -575,6 +574,20 @@ def _validated_outbound_connection(
     return endpoint, context
 
 
+def _invalid_owner_managed_mode(options: OutboundSessionOptions) -> bool:
+    return (
+        options.dispatcher_factory is None
+        or options.inspection_factory is not None
+        or options.operator_presence_pilot
+        or options.operator_inspection_pilot
+        or options.operator_native_drc_pilot
+        or options.board_counts_pilot
+        or options.schematic_counts_pilot
+        or type(options.managed_max_reads) is not int
+        or not 1 <= options.managed_max_reads <= 16
+    )
+
+
 def _validate_outbound_options(options: OutboundSessionOptions) -> None:
     if type(options.managed_native_drc) is not bool or (
         options.managed_native_drc and not options.owner_managed_read
@@ -589,17 +602,7 @@ def _validate_outbound_options(options: OutboundSessionOptions) -> None:
         )
     ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
-    if options.owner_managed_read and (
-        options.dispatcher_factory is None
-        or options.inspection_factory is not None
-        or options.operator_presence_pilot
-        or options.operator_inspection_pilot
-        or options.operator_native_drc_pilot
-        or options.board_counts_pilot
-        or options.schematic_counts_pilot
-        or type(options.managed_max_reads) is not int
-        or not 1 <= options.managed_max_reads <= 16
-    ):
+    if options.owner_managed_read and _invalid_owner_managed_mode(options):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     # The folder browse factory is an owner-managed read-session-only extra:
     # it never broadens proof-only, pilot or inspection modes, and the factory
@@ -1035,6 +1038,13 @@ async def execute_single_approved_read(
     )
 
 
+class ManagedSessionExtras(TypedDict, total=False):
+    """Optional signed managed-session hooks with stable keyword names."""
+
+    on_activity: Callable[[str], None] | None
+    mcp_bridge_factory: Callable[[HandshakeReceipt], GenericMcpDispatch] | None
+
+
 async def execute_owner_managed_read_session(
     *,
     origin: str,
@@ -1049,8 +1059,7 @@ async def execute_owner_managed_read_session(
     on_ready: Callable[[HandshakeReceipt], None] | None = None,
     allow_native_drc: bool = False,
     native_write: ManagedNativeWriteConfig | None = None,
-    on_activity: Callable[[str], None] | None = None,
-    mcp_bridge_factory: Callable[[HandshakeReceipt], GenericMcpDispatch] | None = None,
+    **extras: Unpack[ManagedSessionExtras],
 ) -> HandshakeReceipt:
     """One signed, owner-managed session; no key loading or persistence.
 
@@ -1064,6 +1073,8 @@ async def execute_owner_managed_read_session(
     folder browse frames are additionally answered on the same signed socket;
     it never grants reads, paths outside the bound root, or file contents.
     """
+    on_activity = extras.get("on_activity")
+    mcp_bridge_factory = extras.get("mcp_bridge_factory")
     if (
         not callable(dispatcher_factory)
         or type(allow_native_drc) is not bool

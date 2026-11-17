@@ -11,10 +11,12 @@ import json
 import re
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from mcp.client.session import ClientSession
 
 from kicad_mcp.cloud_generic_mcp_bridge import GenericProjectMcpBridge
 from kicad_mcp.cloud_generic_mcp_proof import verify_generic_mcp_write_proof
@@ -34,50 +36,50 @@ class GenericMcpTransportError(ValueError):
     """Invalid, unauthenticated, stale or unauthorized generic Cloud MCP."""
 
 
-def _owner_project_files(project: OperatorProject) -> dict[str, str]:
-    """Pin the *owner-selected* existing KiCad project, never Cloud paths.
+def _validated_owner_stem(value: object) -> str:
+    if (
+        not isinstance(value, str)
+        or not 1 <= len(value) <= 180
+        or value in {".", ".."}
+        or value.endswith(".")
+        or any(char in value for char in "/\\\\:\\x00")
+    ):
+        raise GenericMcpTransportError(_DENIED)
+    return value
 
-    Current local MCP activation chooses its .kicad_pro by scanning a folder.
-    A directory with multiple projects is therefore ambiguous and must fail
-    rather than silently activate a different PCB or schematic.
-    """
+
+def _unique_owner_file(root: Path, stem: str, suffix: str, resolved: Path) -> Path | None:
+    files = list(root.glob("*" + suffix))
+    if not files:
+        return None
+    selected = root / (stem + suffix)
+    if len(files) != 1 or files[0] != selected or selected.is_symlink():
+        raise GenericMcpTransportError(_DENIED)
+    if selected.resolve(strict=True).parent != resolved:
+        raise GenericMcpTransportError(_DENIED)
+    return selected
+
+
+def _owner_project_files(project: OperatorProject) -> dict[str, str]:
+    """Pin the exactly selected local KiCad project, never Cloud-provided paths."""
     if not isinstance(project, OperatorProject):
         raise GenericMcpTransportError(_DENIED)
     root = project.directory
-    stem = project.filename_stem
-    if (
-        not isinstance(root, Path)
-        or not root.is_absolute()
-        or not isinstance(stem, str)
-        or not 1 <= len(stem) <= 180
-        or stem in {".", ".."}
-        or stem.endswith(".")
-        or any(c in stem for c in "/\\:\x00")
-    ):
+    stem = _validated_owner_stem(project.filename_stem)
+    if not isinstance(root, Path) or not root.is_absolute():
         raise GenericMcpTransportError(_DENIED)
     try:
-        root_resolved = root.resolve(strict=True)
+        resolved = root.resolve(strict=True)
         if not root.is_dir() or root.is_symlink():
             raise GenericMcpTransportError(_DENIED)
-        desired = root / (stem + ".kicad_pro")
-        project_files = list(root.glob("*.kicad_pro"))
-        if len(project_files) != 1 or project_files[0] != desired or desired.is_symlink():
+        if _unique_owner_file(root, stem, ".kicad_pro", resolved) is None:
             raise GenericMcpTransportError(_DENIED)
-        if desired.resolve(strict=True).parent != root_resolved:
-            raise GenericMcpTransportError(_DENIED)
-        selected: dict[str, str] = {"project_dir": str(root_resolved)}
-        has_design = False
+        selected = {"project_dir": str(resolved)}
         for suffix, field in ((".kicad_pcb", "pcb_file"), (".kicad_sch", "sch_file")):
-            files = list(root.glob("*" + suffix))
-            chosen = root / (stem + suffix)
-            if files:
-                if len(files) != 1 or files[0] != chosen or chosen.is_symlink():
-                    raise GenericMcpTransportError(_DENIED)
-                if chosen.resolve(strict=True).parent != root_resolved:
-                    raise GenericMcpTransportError(_DENIED)
+            chosen = _unique_owner_file(root, stem, suffix, resolved)
+            if chosen is not None:
                 selected[field] = chosen.name
-                has_design = True
-        if not has_design:
+        if len(selected) == 1:
             raise GenericMcpTransportError(_DENIED)
         return selected
     except (OSError, TypeError, ValueError) as exc:
@@ -98,6 +100,63 @@ def _require_owner_live_pcb(project: OperatorProject) -> None:
         _require_approved_live_board(get_board(), project)
     except Exception as exc:
         raise GenericMcpTransportError(_DENIED) from exc
+
+
+_BASE_FIELDS = frozenset({"kind", "version", "requestId", "projectId", "method"})
+_CATALOG_FIELDS = _BASE_FIELDS | {"offset"}
+_CALL_FIELDS = _BASE_FIELDS | {"toolName", "argumentsJson"}
+
+
+def _validate_mcp_frame(frame: dict[str, Any]) -> None:
+    if (
+        not isinstance(frame, dict)
+        or frame.get("kind") != "connector.mcp_request"
+        or type(frame.get("version")) is not int
+        or frame.get("version") != 1
+        or not isinstance(frame.get("requestId"), str)
+        or _UUID.fullmatch(frame["requestId"]) is None
+        or not isinstance(frame.get("projectId"), str)
+        or _UUID.fullmatch(frame["projectId"]) is None
+    ):
+        raise GenericMcpTransportError(_DENIED)
+    if frame.get("method") == "catalog":
+        _validate_catalog_frame(frame)
+    elif frame.get("method") == "call":
+        _validate_call_frame(frame)
+    else:
+        raise GenericMcpTransportError(_DENIED)
+
+
+def _validate_catalog_frame(frame: dict[str, Any]) -> None:
+    tool = frame.get("toolName")
+    if (
+        set(frame) not in (_CATALOG_FIELDS, _CATALOG_FIELDS | {"toolName"})
+        or type(frame.get("offset")) is not int
+        or not 0 <= frame["offset"] <= 512
+        or ("toolName" in frame and (not isinstance(tool, str) or _NAME.fullmatch(tool) is None))
+    ):
+        raise GenericMcpTransportError(_DENIED)
+
+
+def _validate_call_frame(frame: dict[str, Any]) -> None:
+    tool = frame.get("toolName")
+    args = frame.get("argumentsJson")
+    if (
+        set(frame) not in (_CALL_FIELDS, _CALL_FIELDS | {"proof"})
+        or not isinstance(tool, str)
+        or _NAME.fullmatch(tool) is None
+        or not isinstance(args, str)
+        or len(args.encode("utf8")) > 32_768
+    ):
+        raise GenericMcpTransportError(_DENIED)
+
+
+@dataclass(frozen=True, slots=True)
+class _ApprovedCall:
+    name: str
+    arguments: Any
+    write_approved: bool
+    deadline: int | None
 
 
 class GenericProjectMcpService:
@@ -132,86 +191,143 @@ class GenericProjectMcpService:
         self.issuer = trusted_issuer_key
         self.consume_once = consume_once
 
-    async def dispatch(self, frame: dict[str, Any]) -> dict[str, object]:
-        if (
-            not isinstance(frame, dict)
-            or frame.get("kind") != "connector.mcp_request"
-            or type(frame.get("version")) is not int
-            or frame["version"] != 1
-            or not isinstance(frame.get("requestId"), str)
-            or _UUID.fullmatch(frame["requestId"]) is None
-            or not isinstance(frame.get("projectId"), str)
-            or _UUID.fullmatch(frame["projectId"]) is None
-            or frame.get("method") not in ("catalog", "call")
-            or (
-                frame["method"] == "catalog"
-                and (
-                    set(frame)
-                    not in (
-                        {"kind", "version", "requestId", "projectId", "method", "offset"},
-                        {
-                            "kind",
-                            "version",
-                            "requestId",
-                            "projectId",
-                            "method",
-                            "offset",
-                            "toolName",
-                        },
-                    )
-                    or type(frame.get("offset")) is not int
-                    or not 0 <= frame["offset"] <= 512
-                    or (
-                        "toolName" in frame
-                        and (
-                            not isinstance(frame["toolName"], str)
-                            or _NAME.fullmatch(frame["toolName"]) is None
-                        )
-                    )
-                )
-            )
-            or (
-                frame["method"] == "call"
-                and (
-                    set(frame)
-                    not in (
-                        {
-                            "kind",
-                            "version",
-                            "requestId",
-                            "projectId",
-                            "method",
-                            "toolName",
-                            "argumentsJson",
-                        },
-                        {
-                            "kind",
-                            "version",
-                            "requestId",
-                            "projectId",
-                            "method",
-                            "toolName",
-                            "argumentsJson",
-                            "proof",
-                        },
-                    )
-                    or not isinstance(frame.get("toolName"), str)
-                    or _NAME.fullmatch(frame["toolName"]) is None
-                    or not isinstance(frame.get("argumentsJson"), str)
-                    or len(frame["argumentsJson"].encode("utf8")) > 32768
-                )
-            )
-        ):
+    def _current_project(self, project_id: str) -> OperatorProject:
+        if self.authorized() is not True:
+            raise GenericMcpTransportError(_DENIED)
+        project = self.local_project(project_id)
+        if not isinstance(project, OperatorProject) or project.device_id != self.receipt.device_id:
+            raise GenericMcpTransportError(_DENIED)
+        return project
+
+    def _verify_write(
+        self, frame: dict[str, Any], project: OperatorProject, binding: VerifiedLocalBinding
+    ) -> int:
+        proof = frame.get("proof")
+        if not isinstance(proof, dict) or not isinstance(self.issuer, Ed25519PublicKey):
+            raise GenericMcpTransportError(_DENIED)
+        consumer = self.consume_once
+        if consumer is None:
+            raise GenericMcpTransportError(_DENIED)
+        proof_bytes = json.dumps(proof, separators=(",", ":"), ensure_ascii=False).encode("utf8")
+        details = verify_generic_mcp_write_proof(
+            proof_bytes,
+            arguments_json=frame["argumentsJson"],
+            trusted_issuer_key=self.issuer,
+            verified=binding,
+            operator_project=project,
+            now_unix_ms=time.time_ns() // 1_000_000,
+            consume_once=consumer,
+        )
+        if details["requestId"] != frame["requestId"] or details["toolName"] != frame["toolName"]:
+            raise GenericMcpTransportError(_DENIED)
+        if frame["toolName"].startswith("pcb_"):
+            _require_owner_live_pcb(project)
+        deadline = details["deadlineUnixMs"]
+        if type(deadline) is not int:
+            raise GenericMcpTransportError(_DENIED)
+        return deadline
+
+    def _prepare_call(
+        self, frame: dict[str, Any], project: OperatorProject, binding: VerifiedLocalBinding
+    ) -> _ApprovedCall:
+        name = frame["toolName"]
+        required = tool_required_mode(name)
+        if required not in (OperatingMode.READONLY, OperatingMode.WRITE):
+            raise GenericMcpTransportError(_DENIED)
+        if required == OperatingMode.WRITE and not self.allow_write:
+            raise GenericMcpTransportError(_DENIED)
+        deadline = None
+        if required == OperatingMode.WRITE:
+            deadline = self._verify_write(frame, project, binding)
+        elif "proof" in frame:
             raise GenericMcpTransportError(_DENIED)
         try:
+            arguments = json.loads(frame["argumentsJson"])
+        except (ValueError, TypeError) as exc:
+            raise GenericMcpTransportError(_DENIED) from exc
+        return _ApprovedCall(
+            name=name,
+            arguments=arguments,
+            write_approved=required == OperatingMode.WRITE,
+            deadline=deadline,
+        )
+
+    @staticmethod
+    async def _activate_owner_worker(worker: ClientSession, selection: dict[str, str]) -> None:
+        activated = await worker.call_tool("kicad_set_project", arguments=selection)
+        if getattr(activated, "isError", False) is True:
+            raise GenericMcpTransportError("mcp_owner_project_activation_failed")
+        if any(
+            getattr(item, "type", None) == "text"
+            and str(getattr(item, "text", "")).startswith(
+                ("E_PROJECT_", "Project directory does not exist")
+            )
+            for item in getattr(activated, "content", [])
+        ):
+            raise GenericMcpTransportError("mcp_owner_project_activation_failed")
+
+    async def _worker_result(
+        self,
+        frame: dict[str, Any],
+        project: OperatorProject,
+        bridge: GenericProjectMcpBridge,
+        call: _ApprovedCall | None,
+    ) -> dict[str, object]:
+        selection = _owner_project_files(project)
+        mode = "write" if self.allow_write else "readonly"
+        async with project_stdio_worker(
+            project.directory, profile="expert", operating_mode=mode
+        ) as worker:
             if self.authorized() is not True:
                 raise GenericMcpTransportError(_DENIED)
-            project = self.local_project(frame["projectId"])
-            if (
-                not isinstance(project, OperatorProject)
-                or project.device_id != self.receipt.device_id
-            ):
+            await self._activate_owner_worker(worker, selection)
+            if self.authorized() is not True:
                 raise GenericMcpTransportError(_DENIED)
+            if frame["method"] == "catalog":
+                catalog = await bridge.list_tools(
+                    worker, project_id=project.project_id, session_id=self.receipt.session_id
+                )
+                lookup = frame.get("toolName")
+                if isinstance(lookup, str):
+                    catalog = [item for item in catalog if item["name"] == lookup]
+                offset = frame["offset"]
+                tools = catalog[offset : offset + _PAGE_SIZE]
+                next_offset = offset + len(tools)
+                return {
+                    "kind": "connector.mcp_result",
+                    "version": 1,
+                    "requestId": frame["requestId"],
+                    "projectId": project.project_id,
+                    "method": "catalog",
+                    "ok": True,
+                    "tools": tools,
+                    "nextOffset": next_offset if next_offset < len(catalog) else None,
+                }
+            if call is None:
+                raise GenericMcpTransportError(_DENIED)
+            result = await bridge.call_tool(
+                worker,
+                project_id=project.project_id,
+                session_id=self.receipt.session_id,
+                name=call.name,
+                arguments=call.arguments,
+                write_approved=call.write_approved,
+                not_after_unix_ms=call.deadline,
+            )
+            return {
+                "kind": "connector.mcp_result",
+                "version": 1,
+                "requestId": frame["requestId"],
+                "projectId": project.project_id,
+                "method": "call",
+                "ok": True,
+                "result": result,
+            }
+
+    async def dispatch(self, frame: dict[str, Any]) -> dict[str, object]:
+        _validate_mcp_frame(frame)
+        try:
+            project = self._current_project(frame["projectId"])
             now = time.time_ns() // 1_000_000
             binding = VerifiedLocalBinding(
                 device_id=self.receipt.device_id,
@@ -227,113 +343,10 @@ class GenericProjectMcpService:
                 allow_native_write=self.allow_write,
                 profile="expert",
             )
-            if frame["method"] == "call":
-                name = frame["toolName"]
-                required = tool_required_mode(name)
-                # Fail before process startup, even if the remote caller
-                # supplies an extra token or a stale signed proof.
-                if required not in (OperatingMode.READONLY, OperatingMode.WRITE):
-                    raise GenericMcpTransportError(_DENIED)
-                if required == OperatingMode.WRITE and not self.allow_write:
-                    raise GenericMcpTransportError(_DENIED)
-                write_ok = False
-                write_deadline: int | None = None
-                if required == OperatingMode.WRITE:
-                    proof = frame.get("proof")
-                    if not isinstance(proof, dict) or not isinstance(self.issuer, Ed25519PublicKey):
-                        raise GenericMcpTransportError(_DENIED)
-                    proof_bytes = json.dumps(
-                        proof, separators=(",", ":"), ensure_ascii=False
-                    ).encode("utf8")
-                    consumer = self.consume_once
-                    if consumer is None:
-                        raise GenericMcpTransportError(_DENIED)
-                    details = verify_generic_mcp_write_proof(
-                        proof_bytes,
-                        arguments_json=frame["argumentsJson"],
-                        trusted_issuer_key=self.issuer,
-                        verified=binding,
-                        operator_project=project,
-                        now_unix_ms=now,
-                        consume_once=consumer,
-                    )
-                    if details["requestId"] != frame["requestId"] or details["toolName"] != name:
-                        raise GenericMcpTransportError(_DENIED)
-                    # Native PCB IPC may still point at a different editor
-                    # window despite the owner-selected project directory.
-                    if name.startswith("pcb_"):
-                        _require_owner_live_pcb(project)
-                    write_deadline = details["deadlineUnixMs"]
-                    write_ok = True
-                else:
-                    if "proof" in frame:
-                        raise GenericMcpTransportError(_DENIED)
-                try:
-                    args = json.loads(frame["argumentsJson"])
-                except (ValueError, TypeError) as exc:
-                    raise GenericMcpTransportError(_DENIED) from exc
-            # Use a fresh worker and activate the *validated owner project*
-            # locally. The AI cannot change the active project or supply paths.
-            selection = _owner_project_files(project)
-            mode = "write" if self.allow_write else "readonly"
-            async with project_stdio_worker(
-                project.directory, profile="expert", operating_mode=mode
-            ) as worker:
-                if self.authorized() is not True:
-                    raise GenericMcpTransportError(_DENIED)
-                activated = await worker.call_tool("kicad_set_project", arguments=selection)
-                if getattr(activated, "isError", False) is True:
-                    raise GenericMcpTransportError("mcp_owner_project_activation_failed")
-                if any(
-                    getattr(chunk, "type", None) == "text"
-                    and str(getattr(chunk, "text", "")).startswith(
-                        ("E_PROJECT_", "Project directory does not exist")
-                    )
-                    for chunk in getattr(activated, "content", [])
-                ):
-                    raise GenericMcpTransportError("mcp_owner_project_activation_failed")
-                if self.authorized() is not True:
-                    raise GenericMcpTransportError(_DENIED)
-                if frame["method"] == "catalog":
-                    catalog = await bridge.list_tools(
-                        worker, project_id=project.project_id, session_id=self.receipt.session_id
-                    )
-                    offset = frame["offset"]
-                    lookup = frame.get("toolName")
-                    if isinstance(lookup, str):
-                        catalog = [item for item in catalog if item["name"] == lookup]
-                    items = catalog[offset : offset + _PAGE_SIZE]
-                    response: dict[str, object] = {
-                        "kind": "connector.mcp_result",
-                        "version": 1,
-                        "requestId": frame["requestId"],
-                        "projectId": project.project_id,
-                        "method": "catalog",
-                        "ok": True,
-                        "tools": items,
-                        "nextOffset": offset + len(items)
-                        if offset + len(items) < len(catalog)
-                        else None,
-                    }
-                else:
-                    result = await bridge.call_tool(
-                        worker,
-                        project_id=project.project_id,
-                        session_id=self.receipt.session_id,
-                        name=name,
-                        arguments=args,
-                        write_approved=write_ok,
-                        not_after_unix_ms=write_deadline,
-                    )
-                    response = {
-                        "kind": "connector.mcp_result",
-                        "version": 1,
-                        "requestId": frame["requestId"],
-                        "projectId": project.project_id,
-                        "method": "call",
-                        "ok": True,
-                        "result": result,
-                    }
+            call = (
+                self._prepare_call(frame, project, binding) if frame["method"] == "call" else None
+            )
+            response = await self._worker_result(frame, project, bridge, call)
             if self.authorized() is not True:
                 raise GenericMcpTransportError(_DENIED)
             if len(json.dumps(response, ensure_ascii=False).encode("utf8")) > _MAX_RESULT_BYTES:

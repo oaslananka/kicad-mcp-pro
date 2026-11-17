@@ -593,6 +593,45 @@ def _execute_owner_native_write(
     )
 
 
+def _owner_generic_mcp_factory(
+    project: WindowsRegisteredProject,
+    selected: WindowsLocalProjectSelection,
+    allow_native_write: bool,
+    issuer_key: Ed25519PublicKey | None,
+) -> Callable[[HandshakeReceipt], GenericMcpDispatch]:
+    """Bind exact local owner identity and one-use signer to the signed socket."""
+    from kicad_mcp.cloud_generic_mcp_transport import GenericProjectMcpService
+    from kicad_mcp.cloud_windows_write_marker import (
+        consume_windows_write_marker,
+        default_windows_write_marker_directory,
+    )
+
+    marker_dir = default_windows_write_marker_directory()
+
+    def consume_once(sid: str, request_id: str) -> bool:
+        if marker_dir is None:
+            return False
+        return consume_windows_write_marker(marker_dir, sid, request_id)
+
+    def factory(receipt: HandshakeReceipt) -> GenericMcpDispatch:
+        def owner_project(project_id: str) -> OperatorProject | None:
+            try:
+                return resolve_owner_write_project(project, selected, project_id)
+            except LocalWriteDeniedError:
+                return None
+
+        return GenericProjectMcpService(
+            receipt=receipt,
+            local_project=owner_project,
+            current_authorization=lambda: _current_authorization(project),
+            allow_native_write=allow_native_write and issuer_key is not None,
+            trusted_issuer_key=issuer_key if allow_native_write else None,
+            consume_once=consume_once if allow_native_write and marker_dir is not None else None,
+        )
+
+    return factory
+
+
 async def _run_owner_session(
     project: WindowsRegisteredProject,
     selected: WindowsLocalProjectSelection,
@@ -620,45 +659,13 @@ async def _run_owner_session(
     }
     if allow_native_drc:
         settings["allow_native_drc"] = True
-    # The generic protocol bridge is only started for the real foreground
-    # signed Connector. No local paths or tool names arrive via owner setup.
-    # A read-only session advertises only read tools; native edits additionally
-    # need the existing explicit --enable-native-write and a pinned issuer.
+    # Advertise generic tool forwarding only over the existing signed owner socket.
     if runner is execute_owner_managed_read_session or getattr(
         runner, "_kicad_supports_folder_browse", False
     ):
-        from kicad_mcp.cloud_generic_mcp_transport import GenericProjectMcpService
-        from kicad_mcp.cloud_windows_write_marker import (
-            consume_windows_write_marker,
-            default_windows_write_marker_directory,
+        settings["mcp_bridge_factory"] = _owner_generic_mcp_factory(
+            project, selected, allow_native_write, issuer_key
         )
-
-        marker_dir = default_windows_write_marker_directory()
-
-        def consume_generic_once(sid: str, req_id: str) -> bool:
-            if marker_dir is None:
-                return False
-            return consume_windows_write_marker(marker_dir, sid, req_id)
-
-        def generic_bridge_factory(receipt: HandshakeReceipt) -> GenericProjectMcpService:
-            def target(project_id: str) -> OperatorProject | None:
-                try:
-                    return resolve_owner_write_project(project, selected, project_id)
-                except LocalWriteDeniedError:
-                    return None
-
-            return GenericProjectMcpService(
-                receipt=receipt,
-                local_project=target,
-                current_authorization=lambda: _current_authorization(project),
-                allow_native_write=allow_native_write and issuer_key is not None,
-                trusted_issuer_key=issuer_key if allow_native_write else None,
-                consume_once=(
-                    consume_generic_once if allow_native_write and marker_dir is not None else None
-                ),
-            )
-
-        settings["mcp_bridge_factory"] = generic_bridge_factory
     if allow_native_write and issuer_key is not None:
         from kicad_mcp.cloud_outbound_handshake import ManagedNativeWriteConfig
         from kicad_mcp.cloud_windows_write_marker import (

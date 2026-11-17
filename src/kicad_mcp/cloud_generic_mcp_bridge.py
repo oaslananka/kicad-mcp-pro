@@ -44,12 +44,20 @@ def is_generic_cloud_tool_safe(name: str) -> bool:
     )
 
 
-def _safe_arguments(value: object, *, depth: int = 0) -> bool:
-    """Reject remote paths that could target other files or other local projects.
+def _safe_string_argument(value: str) -> bool:
+    if len(value) > 16_384 or "\x00" in value:
+        return False
+    if value.lower().startswith(("file:", "smb:", "ssh:", "ftp:")):
+        return False
+    path = value.replace("\\", "/")
+    # Never allow device/UNC roots, Windows drive paths or path traversal.
+    if re.search(r"(?i)(?:^|\s)[a-z]:/", path) or path.startswith(("//", "/")):
+        return False
+    return ".." not in PurePosixPath(path).parts and ".." not in PureWindowsPath(value).parts
 
-    Existing KiCad tools still validate paths; this is an additional Cloud
-    boundary that never guesses a filesystem folder from remote parameters.
-    """
+
+def _safe_arguments(value: object, *, depth: int = 0) -> bool:
+    """Fail closed on remote paths and unbounded recursion."""
     if depth > 12:
         return False
     if isinstance(value, dict):
@@ -60,17 +68,7 @@ def _safe_arguments(value: object, *, depth: int = 0) -> bool:
     if isinstance(value, list):
         return all(_safe_arguments(item, depth=depth + 1) for item in value)
     if isinstance(value, str):
-        if len(value) > 16_384 or "\x00" in value:
-            return False
-        if value.lower().startswith(("file:", "smb:", "ssh:", "ftp:")):
-            return False
-        path = value.replace("\\", "/")
-        # Always prevent device/UNC roots, Windows drive paths and traversal;
-        # a safe relative export inside the project may still be permitted.
-        if re.search(r"(?i)(?:^|\s)[a-z]:/", path) or path.startswith(("//", "/")):
-            return False
-        if ".." in PurePosixPath(path).parts or ".." in PureWindowsPath(value).parts:
-            return False
+        return _safe_string_argument(value)
     return True
 
 

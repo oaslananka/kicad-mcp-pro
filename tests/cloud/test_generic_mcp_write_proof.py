@@ -112,11 +112,12 @@ def test_forgery_rejected(tmp_path, change) -> None:
     op = OperatorProject(
         device_id=DEVICE, project_id=PROJECT, directory=tmp_path, filename_stem="test"
     )
+    _prevalidated_115_trusted_issuer_key = k.public_key()
     with pytest.raises(GenericMcpProofDeniedError):
         verify_generic_mcp_write_proof(
             proof,
             arguments_json=args,
-            trusted_issuer_key=k.public_key(),
+            trusted_issuer_key=_prevalidated_115_trusted_issuer_key,
             verified=verified,
             operator_project=op,
             now_unix_ms=NOW,

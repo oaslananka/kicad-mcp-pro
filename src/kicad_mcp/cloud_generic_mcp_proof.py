@@ -53,15 +53,22 @@ def _unique_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return dict(pairs)
 
 
-def _strict_json(value: bytes) -> object:
+def _reject_nonfinite(_value: str) -> None:
+    raise GenericMcpProofDeniedError(_DENIED)
+
+
+def _strict_json(value: bytes) -> dict[str, Any]:
     try:
-        return json.loads(
+        parsed = json.loads(
             value.decode("utf8"),
             object_pairs_hook=_unique_pairs,
-            parse_constant=lambda _: (_ for _ in ()).throw(GenericMcpProofDeniedError(_DENIED)),
+            parse_constant=_reject_nonfinite,
         )
-    except (ValueError, UnicodeError, TypeError) as exc:
+    except (ValueError, TypeError) as exc:
         raise GenericMcpProofDeniedError(_DENIED) from exc
+    if not isinstance(parsed, dict):
+        raise GenericMcpProofDeniedError(_DENIED)
+    return parsed
 
 
 def verify_generic_mcp_write_proof(
@@ -87,21 +94,20 @@ def verify_generic_mcp_write_proof(
         raise GenericMcpProofDeniedError(_DENIED)
     parsed = _strict_json(proof)
     if (
-        not isinstance(parsed, dict)
-        or set(parsed) != {"kind", "version", "payload", "signature"}
+        set(parsed) != {"kind", "version", "payload", "signature"}
         or parsed.get("kind") != "connector.signed_mcp_tool"
         or type(parsed.get("version")) is not int
-        or parsed["version"] != 1
+        or parsed.get("version") != 1
     ):
         raise GenericMcpProofDeniedError(_DENIED)
     try:
-        payload = _decode_bounded(parsed["payload"], max_bytes=1024)
-        signature = _decode_bounded(parsed["signature"], max_bytes=64)
+        payload = _decode_bounded(parsed.get("payload"), max_bytes=1024)
+        signature = _decode_bounded(parsed.get("signature"), max_bytes=64)
         trusted_issuer_key.verify(signature, _DOMAIN + payload)
     except (InvalidSignature, ValueError, TypeError) as exc:
         raise GenericMcpProofDeniedError(_DENIED) from exc
     cmd = _strict_json(payload)
-    if not isinstance(cmd, dict) or set(cmd) != _KEYS:
+    if set(cmd) != _KEYS:
         raise GenericMcpProofDeniedError(_DENIED)
     request_id = cmd.get("requestId")
     tool = cmd.get("toolName")
@@ -110,7 +116,7 @@ def verify_generic_mcp_write_proof(
     if (
         cmd.get("kind") != "connector.mcp_tool_write"
         or type(cmd.get("version")) is not int
-        or cmd["version"] != 1
+        or cmd.get("version") != 1
         or any(
             not isinstance(cmd.get(k), str) or _UUID.fullmatch(cmd[k]) is None
             for k in ("requestId", "deviceId", "projectId", "sessionId")
@@ -118,9 +124,9 @@ def verify_generic_mcp_write_proof(
         or verified.operations != frozenset({"mcp_bridge"})
         or verified.device_id != operator_project.device_id
         or verified.project_id != operator_project.project_id
-        or cmd["deviceId"] != verified.device_id
-        or cmd["projectId"] != verified.project_id
-        or cmd["sessionId"] != verified.session_id
+        or cmd.get("deviceId") != verified.device_id
+        or cmd.get("projectId") != verified.project_id
+        or cmd.get("sessionId") != verified.session_id
         or type(deadline) is not int
         or not now_unix_ms < deadline <= now_unix_ms + 10_000
         or deadline > verified.session_expires_unix_ms
@@ -147,6 +153,6 @@ def verify_generic_mcp_write_proof(
         "toolName": tool,
         "arguments": args,
         "requestId": request_id,
-        "projectId": cmd["projectId"],
+        "projectId": cmd.get("projectId"),
         "deadlineUnixMs": deadline,
     }

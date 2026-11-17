@@ -39,6 +39,7 @@ _SESSION_TIMEOUT_SECONDS = 295
 _SESSION_REFRESH_SECONDS = 240
 _FOLDER_REQUEST_KIND = "connector.local_browser_request"
 _WRITE_REQUEST_KIND = "connector.authorized_write"
+_MCP_REQUEST_KIND = "connector.mcp_request"
 
 
 def _canonical_project_id(value: object) -> str:
@@ -279,7 +280,7 @@ async def _serve_one_mcp_request(
     expected_sequence: int,
 ) -> dict[str, object]:
     """Execute one bounded generic MCP operation on this signed device socket."""
-    frame = _read_strict_json(raw, "connector.mcp_request")
+    frame = _read_strict_json(raw, _MCP_REQUEST_KIND)
     if (
         set(frame) != {"kind", "version", "sequence", "request"}
         or type(frame.get("version")) is not int
@@ -345,12 +346,17 @@ async def _serve_one_signed_frame(
         await _serve_write_revisions_request(socket, raw, allow_native_write, revisions_preparer)
         _report_activity(on_activity, "Write revision preparation completed")
         return 0
-    if kind not in {_WRITE_REQUEST_KIND, "connector.authorized_read", "connector.mcp_request"}:
+    if kind not in {_WRITE_REQUEST_KIND, "connector.authorized_read", _MCP_REQUEST_KIND}:
         raise CloudHandshakeDeniedError(_DENIED)
     sequence = reads_served + 1
     is_write = kind == _WRITE_REQUEST_KIND
-    is_mcp = kind == "connector.mcp_request"
-    label = "mcp" if is_mcp else "write" if is_write else "read"
+    is_mcp = kind == _MCP_REQUEST_KIND
+    if is_mcp:
+        label = "mcp"
+    elif is_write:
+        label = "write"
+    else:
+        label = "read"
     start = perf_counter()
     _report_activity(on_activity, f"Tool call {sequence}: {label} started")
     try:

@@ -183,31 +183,34 @@ async def test_signed_owner_write_round_trip_replay_revocation_and_pcb_guard(
         await service.dispatch(valid)
     assert invoked == previous
 
+    _prevalidated_186_arg0 = frame(
+        "call",
+        args='{"reference":"R8"}',
+        request_id=OTHER_REQ,
+        proof=signed_proof(key, args, request_id=OTHER_REQ),
+    )
     with pytest.raises(GenericMcpTransportError):
-        await service.dispatch(
-            frame(
-                "call",
-                args='{"reference":"R8"}',
-                request_id=OTHER_REQ,
-                proof=signed_proof(key, args, request_id=OTHER_REQ),
-            )
-        )
+        await service.dispatch(_prevalidated_186_arg0)
     assert invoked == previous
 
     states["authorized"] = False
+    _prevalidated_198_arg0 = frame("catalog")
     with pytest.raises(GenericMcpTransportError):
-        await service.dispatch(frame("catalog"))
+        await service.dispatch(_prevalidated_198_arg0)
     assert started == ["write"]
     states["authorized"] = True
 
+    _prevalidated_203_arg0 = frame("call", name="kicad_set_project", args="{}")
     with pytest.raises(GenericMcpTransportError):
-        await service.dispatch(frame("call", name="kicad_set_project", args="{}"))
+        await service.dispatch(_prevalidated_203_arg0)
+    _prevalidated_205_arg0 = frame("call", args=args, proof=None)
     with pytest.raises(GenericMcpTransportError):
-        await service.dispatch(frame("call", args=args, proof=None))
+        await service.dispatch(_prevalidated_205_arg0)
+    _prevalidated_207_arg0 = frame(
+        "call", name="kicad_get_version", args="{}", proof=signed_proof(key, "{}")
+    )
     with pytest.raises(GenericMcpTransportError):
-        await service.dispatch(
-            frame("call", name="kicad_get_version", args="{}", proof=signed_proof(key, "{}"))
-        )
+        await service.dispatch(_prevalidated_207_arg0)
 
     checked: list[str] = []
 
@@ -219,16 +222,15 @@ async def test_signed_owner_write_round_trip_replay_revocation_and_pcb_guard(
         "kicad_mcp.cloud_generic_mcp_transport._require_owner_live_pcb", reject_other_gui_board
     )
     pcb_args = '{"reference":"R1","x":32,"y":30}'
+    _prevalidated_222_arg0 = frame(
+        "call",
+        name="pcb_move_footprint",
+        args=pcb_args,
+        request_id=OTHER_REQ,
+        proof=signed_proof(key, pcb_args, name="pcb_move_footprint", request_id=OTHER_REQ),
+    )
     with pytest.raises(GenericMcpTransportError):
-        await service.dispatch(
-            frame(
-                "call",
-                name="pcb_move_footprint",
-                args=pcb_args,
-                request_id=OTHER_REQ,
-                proof=signed_proof(key, pcb_args, name="pcb_move_footprint", request_id=OTHER_REQ),
-            )
-        )
+        await service.dispatch(_prevalidated_222_arg0)
     assert checked == ["checked"]
     assert [name for name, _ in invoked if name != "kicad_set_project"] == ["sch_add_symbol"]
 
@@ -338,11 +340,12 @@ def test_signed_proof_rejects_duplicate_keys_nonfinite_and_wrong_frame(tmp_path,
         operations=frozenset({"mcp_bridge"}),
         session_expires_unix_ms=now + 90_000,
     )
+    _prevalidated_341_trusted_issuer_key = key.public_key()
     with pytest.raises(GenericMcpProofDeniedError):
         verify_generic_mcp_write_proof(
             invalid,
             arguments_json="{}",
-            trusted_issuer_key=key.public_key(),
+            trusted_issuer_key=_prevalidated_341_trusted_issuer_key,
             verified=verified,
             operator_project=project,
             now_unix_ms=now,
@@ -374,18 +377,22 @@ def test_signed_proof_expiry_and_failing_replay_storage_are_denied(tmp_path) -> 
             consume_once=consume,
         )
 
+    _prevalidated_377_arg0 = signed_proof(key, args, deadline=now - 1)
     with pytest.raises(GenericMcpProofDeniedError):
-        verify(signed_proof(key, args, deadline=now - 1), lambda *_: True)
+        verify(_prevalidated_377_arg0, lambda *_: True)
+    _prevalidated_379_arg0 = signed_proof(key, args)
     with pytest.raises(GenericMcpProofDeniedError):
-        verify(signed_proof(key, args), lambda *_: False)
+        verify(_prevalidated_379_arg0, lambda *_: False)
 
     def crashed(*_: object) -> bool:
         raise OSError("replay ledger unavailable")
 
+    _prevalidated_385_arg0 = signed_proof(key, args)
     with pytest.raises(GenericMcpProofDeniedError):
-        verify(signed_proof(key, args), crashed)
+        verify(_prevalidated_385_arg0, crashed)
+    _prevalidated_387_arg0 = signed_proof(key, args, changes={"extra": 42})
     with pytest.raises(GenericMcpProofDeniedError):
-        verify(signed_proof(key, args, changes={"extra": 42}), lambda *_: True)
+        verify(_prevalidated_387_arg0, lambda *_: True)
 
 
 @pytest.mark.asyncio
@@ -405,15 +412,16 @@ async def test_local_bridge_validates_catalog_presence_json_limits_and_result_bo
         operations=frozenset({"mcp_bridge"}),
         session_expires_unix_ms=4_000_000_000_000,
     )
+    _prevalidated_408_verified = VerifiedLocalBinding(
+        device_id=DEVICE,
+        project_id=PROJECT,
+        session_id=SESSION,
+        operations=frozenset({"project_summary"}),
+        session_expires_unix_ms=4000000000000,
+    )
     with pytest.raises(GenericMcpDeniedError):
         GenericProjectMcpBridge(
-            verified=VerifiedLocalBinding(
-                device_id=DEVICE,
-                project_id=PROJECT,
-                session_id=SESSION,
-                operations=frozenset({"project_summary"}),
-                session_expires_unix_ms=4_000_000_000_000,
-            ),
+            verified=_prevalidated_408_verified,
             operator_project=project,
             current_authorization=lambda: True,
         )
@@ -466,16 +474,20 @@ async def test_local_bridge_validates_catalog_presence_json_limits_and_result_bo
             not_after_unix_ms=4_000_000_000_000,
         )
 
+    _prevalidated_469_arguments = {"n": float("nan")}
     with pytest.raises(GenericMcpDeniedError):
-        await invoke(session, arguments={"n": float("nan")})
+        await invoke(session, arguments=_prevalidated_469_arguments)
     with pytest.raises(GenericMcpDeniedError):
         await invoke(session, arguments={"big": ["x" * 15_000] * 3})
+    _prevalidated_473_arg0 = Session(include_write=False)
     with pytest.raises(GenericMcpDeniedError):
-        await invoke(Session(include_write=False), name="sch_add_symbol", arguments={})
+        await invoke(_prevalidated_473_arg0, name="sch_add_symbol", arguments={})
+    _prevalidated_475_arg0 = Session(result=["not-an-MCP-object"])
     with pytest.raises(GenericMcpDeniedError):
-        await invoke(Session(result=["not-an-MCP-object"]))
+        await invoke(_prevalidated_475_arg0)
+    _prevalidated_477_arg0 = Session(result={"content": [{"type": "text", "text": "x" * 525000}]})
     with pytest.raises(GenericMcpDeniedError, match="result_too_large"):
-        await invoke(Session(result={"content": [{"type": "text", "text": "x" * 525_000}]}))
+        await invoke(_prevalidated_477_arg0)
     assert session.invoked == []
 
 
@@ -552,13 +564,15 @@ async def test_owner_transport_denies_invalid_native_session_transitions(
     elif scenario == "bad_json":
         request = frame("call", name="kicad_get_version", args="{")
     elif scenario == "missing_proof_consumer":
+        _prevalidated_555_receipt = HandshakeReceipt(device_id=DEVICE, session_id=SESSION)
+        _prevalidated_555_trusted_issuer_key = key.public_key()
         with pytest.raises(GenericMcpTransportError):
             GenericProjectMcpService(
-                receipt=HandshakeReceipt(device_id=DEVICE, session_id=SESSION),
+                receipt=_prevalidated_555_receipt,
                 local_project=lambda _: project,
                 current_authorization=lambda: True,
                 allow_native_write=True,
-                trusted_issuer_key=key.public_key(),
+                trusted_issuer_key=_prevalidated_555_trusted_issuer_key,
                 consume_once=None,
             )
         return
@@ -593,7 +607,8 @@ async def test_generic_catalog_exact_name_lookup_respects_registered_local_metad
 
     @asynccontextmanager
     async def worker(folder, *, profile, operating_mode):
-        assert folder == tmp_path and profile == "expert"
+        assert folder == tmp_path
+        assert profile == "expert"
         assert operating_mode == "readonly"
         yield Worker()
 
