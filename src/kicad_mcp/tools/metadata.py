@@ -40,6 +40,8 @@ _READ_ONLY_PREFIXES = (
     "lib_check_",
     "lib_find_",
     "mfg_check_",
+    "sch_list_",
+    "sch_trace_",
 )
 # Independently reviewed file-backed analysis tools whose names are not
 # covered by the read-only verb prefixes. Do not infer this from the broader

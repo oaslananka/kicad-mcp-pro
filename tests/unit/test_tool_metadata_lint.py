@@ -134,6 +134,27 @@ async def test_reviewed_file_backed_readonly_tools_have_mcp_discovery_hints() ->
     assert project.read_only_hint is not True
 
 
+@pytest.mark.anyio
+async def test_schematic_inspection_tools_advertise_readonly_to_hosts() -> None:
+    """Read-only schematic inspection should not trigger false write warnings."""
+    names = {
+        "sch_list_sheets",
+        "sch_list_sheet_pins",
+        "sch_list_templates",
+        "sch_list_swappable_pins",
+        "sch_trace_net",
+    }
+    published = {tool.name: tool for tool in await build_server("agent_full").list_tools()}
+    assert names <= published.keys()
+
+    for name in names:
+        annotations = published[name].annotations
+        assert annotations is not None, name
+        assert annotations.read_only_hint is True, name
+        assert annotations.idempotent_hint is True, name
+        assert annotations.destructive_hint is not True, name
+
+
 def test_sheet_wiring_mutations_are_destructive_and_idempotent() -> None:
     for tool_name in ("sch_spread_sheets", "sch_wire_sheet_pins"):
         annotations = infer_tool_annotations(tool_name).model_dump(exclude_none=True, by_alias=True)
