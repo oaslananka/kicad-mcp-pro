@@ -532,33 +532,33 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     <span class="status-dot ok" id="navStatusDot" aria-hidden="true"></span>
     <span id="navStatusText">Checking...</span>
   </div>
-  <div class="nav-items-container">
+  <div class="nav-items-container" role="tablist" aria-label="Dashboard views">
     <div class="nav-label nav-label-strong">GET STARTED</div>
-    <button type="button" class="nav-item" data-view="setup-wizard">
+    <button type="button" class="nav-item" data-view="setup-wizard" role="tab" aria-selected="false" aria-controls="view-setup-wizard" aria-label="Connect an AI client setup wizard">
       <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
       <span>Connect an AI</span>
     </button>
     <div class="nav-sep"></div>
     <div class="nav-label">MY WORKSPACE</div>
-    <button type="button" class="nav-item active" data-view="dashboard">
+    <button type="button" class="nav-item active" data-view="dashboard" role="tab" aria-selected="true" aria-controls="view-dashboard" aria-label="Workspace overview dashboard">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
       <span>Overview</span>
     </button>
-    <button type="button" class="nav-item" data-view="tools-catalog">
+    <button type="button" class="nav-item" data-view="tools-catalog" role="tab" aria-selected="false" aria-controls="view-tools-catalog" aria-label="MCP tools catalog and schemas">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
       <span>Tools</span>
     </button>
-    <button type="button" class="nav-item" data-view="preview">
+    <button type="button" class="nav-item" data-view="preview" role="tab" aria-selected="false" aria-controls="view-preview" aria-label="Schematic live preview gallery">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
       <span>Preview</span>
     </button>
     <div class="nav-sep"></div>
     <div class="nav-label">DIAGNOSTICS</div>
-    <button type="button" class="nav-item" data-view="log-viewer">
+    <button type="button" class="nav-item" data-view="log-viewer" role="tab" aria-selected="false" aria-controls="view-log-viewer" aria-label="Activity and diagnostic log viewer">
       <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
       <span>Activity log</span>
     </button>
-    <button type="button" class="nav-item" data-view="settings">
+    <button type="button" class="nav-item" data-view="settings" role="tab" aria-selected="false" aria-controls="view-settings" aria-label="Configuration settings and maintenance">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       <span>Settings &amp; repair</span>
     </button>
@@ -602,8 +602,8 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
         <p>Work locally without an account. Select a project, then connect an AI client or optionally link Cloud.</p>
       </div>
       <div class="local-workspace-actions">
-        <button type="button" class="btn btn-primary" id="gpFocusProject">Choose project</button>
-        <button type="button" class="btn" onclick="window.location.hash='#setup-wizard'">Connect local AI (advanced)</button>
+        <button type="button" class="btn btn-primary" id="gpFocusProject" aria-label="Focus project selection field">Choose project</button>
+        <button type="button" class="btn" aria-label="Open advanced local AI setup wizard" onclick="window.location.hash='#setup-wizard'">Connect local AI (advanced)</button>
       </div>
       <p class="local-workspace-safety">Signing in never shares local files. Cloud device pairing and project/client permission need separate approval.</p>
     </section>
@@ -614,8 +614,8 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
         <label for="gpProjectPath">Project folder</label>
         <div class="gp-field">
           <input type="text" id="gpProjectPath" autocomplete="off" placeholder="Choose a folder containing a KiCad project">
-          <button type="button" class="btn" id="gpBrowse">Browse</button>
-          <button type="button" class="btn btn-primary" id="gpSaveProject">Use project</button>
+          <button type="button" class="btn" id="gpBrowse" aria-label="Browse local filesystem for KiCad project">Browse</button>
+          <button type="button" class="btn btn-primary" id="gpSaveProject" aria-label="Set chosen folder as active KiCad project">Use project</button>
         </div>
         <p id="gpProjectState" class="gp-state" role="status" aria-live="polite">Checking your local project...</p>
       </article>
@@ -630,10 +630,10 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
             <option value="vscode">VS Code</option>
             <option value="windsurf">Windsurf</option>
           </select>
-          <button type="button" class="btn btn-primary" id="gpAiPreview">Connect</button>
+          <button type="button" class="btn btn-primary" id="gpAiPreview" aria-label="Preview configuration for selected AI application">Connect</button>
         </div>
         <div id="gpAiReview" class="gp-review" role="status" aria-live="polite">Choose an AI client to preview the settings change.</div>
-        <button type="button" class="btn gp-hidden" id="gpAiApply">Apply reviewed settings</button>
+        <button type="button" class="btn gp-hidden" id="gpAiApply" aria-label="Apply reviewed AI client configuration">Apply reviewed settings</button>
         <p class="gp-hint">Your existing AI settings are preserved and backed up. Confirm the connection inside your AI app.</p>
       </article>
 
@@ -641,14 +641,14 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
         <div class="gp-heading"><span class="gp-number">3</span><div><h3 id="gpCloudTitle">Cloud, only if you want it</h3><p>Local KiCad works without Cloud.</p></div></div>
         <div class="gp-field gp-cloud-actions">
           <a class="btn" href="https://kicad-mcp-pro.oaslananka.dev/sign-in" target="_blank" rel="noopener noreferrer">Sign in</a>
-          <button type="button" class="btn btn-primary" id="gpCloudPair">Pair device and project</button>
+          <button type="button" class="btn btn-primary" id="gpCloudPair" aria-label="Pair this computer and project with Cloud">Pair device and project</button>
         </div>
         <div id="gpCloudState" class="gp-review" role="status" aria-live="polite">Cloud access has not been verified in this session. Pair only if needed.</div>
         <a id="gpApprovalLink" class="btn gp-hidden" target="_blank" rel="noopener noreferrer">Approve device in browser</a>
         <div class="gp-field">
-          <button type="button" class="btn gp-hidden" id="gpCheckPair">Check pairing</button>
-          <button type="button" class="btn gp-hidden" id="gpCancelPair">Cancel pairing</button>
-          <button type="button" class="btn gp-hidden" id="gpEnableConnector">Enable local Connector</button>
+          <button type="button" class="btn gp-hidden" id="gpCheckPair" aria-label="Check Cloud pairing status">Check pairing</button>
+          <button type="button" class="btn gp-hidden" id="gpCancelPair" aria-label="Cancel in-progress Cloud pairing">Cancel pairing</button>
+          <button type="button" class="btn gp-hidden" id="gpEnableConnector" aria-label="Enable local background Connector">Enable local Connector</button>
         </div>
         <a class="gp-cloud-devices" href="https://kicad-mcp-pro.oaslananka.dev/devices" target="_blank" rel="noopener noreferrer">Review device and project permissions</a>
         <p class="gp-hint">Pairing does not automatically grant an AI client access. Review each permission in Cloud Devices.</p>
@@ -701,14 +701,14 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
       <p class="advanced-note">Normal setup does not need these manual controls.</p>
       <details class="advanced-controls"><summary>Show server controls &amp; diagnostics</summary>
       <div class="actions">
-        <button type="button" class="btn btn-sm btn-primary" onclick="serverAction('start')">Start</button>
-        <button type="button" class="btn btn-sm btn-danger" onclick="serverAction('stop')">Stop</button>
-        <button type="button" class="btn btn-sm" onclick="serverAction('restart')">Restart</button>
-        <button type="button" class="btn btn-sm" onclick="refreshStatus()">Refresh Status</button>
-        <button type="button" class="btn btn-sm" onclick="window.open('/api/status','_blank')">Status JSON</button>
-        <button type="button" class="btn btn-sm" onclick="window.open('/api/metrics','_blank')">Metrics JSON</button>
-        <button type="button" class="btn btn-sm" onclick="window.open('/api/health','_blank')">Health JSON</button>
-        <button type="button" class="btn btn-sm" onclick="window.location.hash='#/logs'">All Logs</button>
+        <button type="button" class="btn btn-sm btn-primary" aria-label="Start local server" onclick="serverAction('start')">Start</button>
+        <button type="button" class="btn btn-sm btn-danger" aria-label="Stop local server" onclick="serverAction('stop')">Stop</button>
+        <button type="button" class="btn btn-sm" aria-label="Restart local server" onclick="serverAction('restart')">Restart</button>
+        <button type="button" class="btn btn-sm" aria-label="Refresh server status" onclick="refreshStatus()">Refresh Status</button>
+        <button type="button" class="btn btn-sm" aria-label="View server status JSON" onclick="window.open('/api/status','_blank')">Status JSON</button>
+        <button type="button" class="btn btn-sm" aria-label="View server metrics JSON" onclick="window.open('/api/metrics','_blank')">Metrics JSON</button>
+        <button type="button" class="btn btn-sm" aria-label="View server health JSON" onclick="window.open('/api/health','_blank')">Health JSON</button>
+        <button type="button" class="btn btn-sm" aria-label="Open full log viewer" onclick="window.location.hash='#/logs'">All Logs</button>
       </div></details>
       <div id="action-msg" role="status" aria-live="polite" style="margin-top:10px;font-size:13px;"></div>
     </div>
@@ -723,16 +723,16 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
   <!-- Log Viewer -->
   <div class="view" id="view-log-viewer">
     <h2>Log Viewer</h2>
-    <div class="log-controls">
+    <div class="log-controls" role="toolbar" aria-label="Log viewer controls">
       <input type="text" id="logSearch" placeholder="Search logs or /regex/" aria-label="Search logs or regular expression" oninput="applyLogFilters()" style="max-width:240px;">
-      <button type="button" class="active" data-level="all" onclick="setLogFilter('all',this)">All</button>
-      <button type="button" data-level="debug" onclick="setLogFilter('debug',this)">Debug</button>
-      <button type="button" data-level="info" onclick="setLogFilter('info',this)">Info</button>
-      <button type="button" data-level="warning" onclick="setLogFilter('warning',this)">Warn</button>
-      <button type="button" data-level="error" onclick="setLogFilter('error',this)">Error</button>
-      <button type="button" onclick="downloadLogs()">Download</button>
-      <button type="button" onclick="clearLog()">Clear</button>
-      <button type="button" id="jumpBottom" onclick="jumpToBottom()" style="display:none;">Go Bottom</button>
+      <button type="button" class="active" data-level="all" aria-pressed="true" aria-label="Show all log levels" onclick="setLogFilter('all',this)">All</button>
+      <button type="button" data-level="debug" aria-pressed="false" aria-label="Filter debug log level" onclick="setLogFilter('debug',this)">Debug</button>
+      <button type="button" data-level="info" aria-pressed="false" aria-label="Filter info log level" onclick="setLogFilter('info',this)">Info</button>
+      <button type="button" data-level="warning" aria-pressed="false" aria-label="Filter warning log level" onclick="setLogFilter('warning',this)">Warn</button>
+      <button type="button" data-level="error" aria-pressed="false" aria-label="Filter error log level" onclick="setLogFilter('error',this)">Error</button>
+      <button type="button" aria-label="Download log export" onclick="downloadLogs()">Download</button>
+      <button type="button" aria-label="Clear log viewer" onclick="clearLog()">Clear</button>
+      <button type="button" id="jumpBottom" aria-label="Scroll to newest log entries" onclick="jumpToBottom()" style="display:none;">Go Bottom</button>
       <span class="live-badge" id="live-badge" data-testid="live-badge" role="status" aria-live="polite">Connecting</span>
     </div>
     <div id="log-container" tabindex="0" aria-label="Live log stream"><div class="line" style="color:var(--text-muted)">Connecting to log stream...</div></div>
@@ -831,18 +831,18 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
         </div>
       </div>
       <div class="actions">
-        <button type="submit" class="btn btn-primary">Save Settings</button>
-        <button type="button" class="btn" onclick="loadSettings()">Discard Changes</button>
+        <button type="submit" class="btn btn-primary" aria-label="Save server runtime and profile settings">Save Settings</button>
+        <button type="button" class="btn" aria-label="Discard changes and reload saved settings" onclick="loadSettings()">Discard Changes</button>
       </div>
     </form>
     <div class="card" style="margin-top:20px;">
       <h3>Export Client Config</h3>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
-        <button type="button" class="btn btn-sm" onclick="exportClientConfig('claude')">Claude Desktop</button>
-        <button type="button" class="btn btn-sm" onclick="exportClientConfig('cursor')">Cursor</button>
-        <button type="button" class="btn btn-sm" onclick="exportClientConfig('vscode')">VS Code</button>
-        <button type="button" class="btn btn-sm" onclick="exportClientConfig('windsurf')">Windsurf</button>
-        <button type="button" class="btn btn-sm" onclick="exportClientConfig('zed')">Zed</button>
+        <button type="button" class="btn btn-sm" aria-label="Export Claude Desktop configuration" onclick="exportClientConfig('claude')">Claude Desktop</button>
+        <button type="button" class="btn btn-sm" aria-label="Export Cursor configuration" onclick="exportClientConfig('cursor')">Cursor</button>
+        <button type="button" class="btn btn-sm" aria-label="Export VS Code configuration" onclick="exportClientConfig('vscode')">VS Code</button>
+        <button type="button" class="btn btn-sm" aria-label="Export Windsurf configuration" onclick="exportClientConfig('windsurf')">Windsurf</button>
+        <button type="button" class="btn btn-sm" aria-label="Export Zed configuration" onclick="exportClientConfig('zed')">Zed</button>
       </div>
       <pre id="export-result" style="display:none;margin-top:10px;background:var(--bg-canvas);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:12px;font-family:var(--font-mono);overflow-x:auto;"></pre>
     </div>
@@ -850,8 +850,8 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
       <h3>Application Maintenance &amp; Repair</h3>
       <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">Run non-destructive diagnostics, fix stale locks, or inspect cleanup impact without touching your KiCad projects.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
-        <button type="button" class="btn btn-sm btn-primary" onclick="runMaintenanceRepair()">Diagnostic Repair</button>
-        <button type="button" class="btn btn-sm" onclick="previewCleanup()">Preview Cleanup</button>
+        <button type="button" class="btn btn-sm btn-primary" aria-label="Run diagnostic repair on server" onclick="runMaintenanceRepair()">Diagnostic Repair</button>
+        <button type="button" class="btn btn-sm" aria-label="Preview cleanup impact on server" onclick="previewCleanup()">Preview Cleanup</button>
       </div>
       <pre id="maintenance-result" style="display:none;margin-top:10px;background:var(--bg-canvas);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;font-size:12px;font-family:var(--font-mono);overflow-x:auto;"></pre>
     </div>
@@ -958,11 +958,17 @@ function navigate(view) {
   const rawHash = view || window.location.hash.replace('#','') || 'dashboard';
   const hash = aliases[rawHash] || aliases[rawHash.replace(/^\/+/, '')] || 'dashboard';
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(v => {
+    v.classList.remove('active');
+    v.setAttribute('aria-selected', 'false');
+  });
   const targetView = document.getElementById('view-' + hash);
   const targetNav = document.querySelector('[data-view="' + hash + '"]');
   if (targetView) targetView.classList.add('active');
-  if (targetNav) targetNav.classList.add('active');
+  if (targetNav) {
+    targetNav.classList.add('active');
+    targetNav.setAttribute('aria-selected', 'true');
+  }
   if (hash === 'tools-catalog' && !document.getElementById('toolGrid').children.length) {
     loadTools();
   }
@@ -1048,8 +1054,14 @@ function refreshStatus() {
 /* ── Log Viewer ── */
 function setLogFilter(level, btn) {
   logFilter = level;
-  document.querySelectorAll('.log-controls button[data-level]').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
+  document.querySelectorAll('.log-controls button[data-level]').forEach(b => {
+    b.classList.remove('active');
+    b.setAttribute('aria-pressed', 'false');
+  });
+  if (btn) {
+    btn.classList.add('active');
+    btn.setAttribute('aria-pressed', 'true');
+  }
   applyLogFilters();
 }
 
@@ -1061,10 +1073,15 @@ function clearLog() {
 
 function addLogLine(data) {
   try {
-    const entry = JSON.parse(data);
+    let entry;
+    if (typeof data === 'string') {
+      try { entry = JSON.parse(data); } catch(_) { entry = { message: data, level: 'INFO' }; }
+    } else {
+      entry = data || {};
+    }
     const level = (entry.level || 'INFO').toLowerCase();
     logBuffer.push(entry);
-    if (logBuffer.length > 1000) logBuffer.shift();
+    if (logBuffer.length > 500) logBuffer.shift();
     trackRecentCall(entry);
     const line = doc('div', 'line ' + level);
     line.dataset.level = level;
@@ -1076,14 +1093,17 @@ function addLogLine(data) {
       '<div class="detail">' + esc(JSON.stringify(entry, null, 2)) + '</div>';
     line.addEventListener('click', () => line.classList.toggle('expanded'));
     logEl.appendChild(line);
-    while (logEl.children.length > 1000) logEl.removeChild(logEl.firstElementChild);
+    while (logEl.children.length > 500) logEl.removeChild(logEl.firstElementChild);
     applyLogFilters();
     if (autoScroll) jumpToBottom();
   } catch(e) {}
 }
 
 function connectSSE() {
-  if (eventSource) { eventSource.close(); }
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
   eventSource = new EventSource('/api/logs/stream');
   eventSource.onopen = function() {
     sseReconnectMs = 1000;
@@ -1097,6 +1117,10 @@ function connectSSE() {
     const badge = byId('live-badge');
     badge.textContent = 'Retrying in ' + Math.round(sseReconnectMs / 1000) + 's';
     badge.style.color = 'var(--warning)';
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
     setTimeout(connectSSE, sseReconnectMs);
     sseReconnectMs = Math.min(sseReconnectMs * 2, 30000);
   };
@@ -1250,8 +1274,8 @@ function selectTool(tool) {
     '<div class="row"><span class="label">Category</span><span class="value">' + esc(tool.category || toolCategory(tool)) + '</span></div>' +
     '<div class="row"><span class="label">Parameters</span><span class="value">' + Object.keys(params).length + '</span></div>' +
     '<pre style="margin-top:10px;">' + esc(JSON.stringify({required, properties: params}, null, 2)) + '</pre>' +
-    '<div class="actions" style="margin-top:12px;"><button type="button" class="btn btn-sm btn-primary" onclick="testSelectedTool()">Test</button>' +
-    '<button type="button" class="btn btn-sm" onclick="copySelectedSchema()">Copy Schema</button></div>' +
+    '<div class="actions" style="margin-top:12px;"><button type="button" class="btn btn-sm btn-primary" aria-label="Dry-run test selected tool" onclick="testSelectedTool()">Test</button>' +
+    '<button type="button" class="btn btn-sm" aria-label="Copy input schema to clipboard" onclick="copySelectedSchema()">Copy Schema</button></div>' +
     '<div id="tool-test-result" style="margin-top:12px;"></div>';
   renderTools((window._allTools || []).filter(t => {
     const q = byId('toolSearch').value.toLowerCase();
@@ -1481,7 +1505,7 @@ function renderWizardStep(step) {
       }).catch(() => {
         body.innerHTML = '<div class="msg error">Could not connect to server.</div>';
       });
-      nav.innerHTML = '<button type="button" class="btn" onclick="cancelWizard()">Cancel</button><button type="button" class="btn btn-primary" onclick="wizardNext()">Next</button>';
+      nav.innerHTML = '<button type="button" class="btn" aria-label="Cancel setup wizard" onclick="cancelWizard()">Cancel</button><button type="button" class="btn btn-primary" aria-label="Go to next setup step" onclick="wizardNext()">Next</button>';
       break;
 
     case 1:
@@ -1489,7 +1513,7 @@ function renderWizardStep(step) {
         '<div class="form-group"><label for="wizProjectDir">Default KiCad Project Directory</label>' +
         '<div style="display:flex;gap:8px;">' +
         '<input type="text" id="wizProjectDir" value="" placeholder="Full local project folder path" style="flex:1;">' +
-        '<button type="button" class="btn btn-sm" onclick="browseProjectDir()" style="white-space:nowrap;flex-shrink:0;">Browse</button>' +
+        '<button type="button" class="btn btn-sm" aria-label="Browse for project folder" onclick="browseProjectDir()" style="white-space:nowrap;flex-shrink:0;">Browse</button>' +
         '</div></div>' +
         '<div class="msg info">PCB and schematic files in this directory can be offered to tools automatically.</div>';
       // Keep the already-selected local project, without asking the user to
@@ -1498,7 +1522,7 @@ function renderWizardStep(step) {
         const field = document.getElementById('wizProjectDir');
         if (field && !field.value && d.project_dir) field.value = d.project_dir;
       }).catch(() => {});
-      nav.innerHTML = '<button type="button" class="btn" onclick="wizardPrev()">Back</button><button type="button" class="btn btn-primary" onclick="wizardNext()">Next</button>';
+      nav.innerHTML = '<button type="button" class="btn" aria-label="Go to previous setup step" onclick="wizardPrev()">Back</button><button type="button" class="btn btn-primary" aria-label="Go to next setup step" onclick="wizardNext()">Next</button>';
       break;
 
     case 2:
@@ -1510,7 +1534,7 @@ function renderWizardStep(step) {
       document.getElementById('wizTransport').addEventListener('change', function() {
         document.getElementById('wizPortGroup').style.display = this.value !== 'stdio' ? 'block' : 'none';
       });
-      nav.innerHTML = '<button type="button" class="btn" onclick="wizardPrev()">Back</button><button type="button" class="btn btn-primary" onclick="wizardNext()">Next</button>';
+      nav.innerHTML = '<button type="button" class="btn" aria-label="Go to previous setup step" onclick="wizardPrev()">Back</button><button type="button" class="btn btn-primary" aria-label="Go to next setup step" onclick="wizardNext()">Next</button>';
       break;
 
     case 3:
@@ -1519,12 +1543,12 @@ function renderWizardStep(step) {
         '<select id="wizClient"><option value="claude-desktop">Claude Desktop</option><option value="cursor">Cursor</option><option value="vscode">VS Code</option><option value="windsurf">Windsurf</option><option value="zed">Zed</option></select></div>' +
         '<div id="wizConfigPreview" class="wizard-result" style="display:none;"></div>' +
         '<div class="actions" style="margin-top:12px;">' +
-        '<button type="button" class="btn btn-sm" onclick="previewClientConfig()">Preview Config</button>' +
-        '<button type="button" class="btn btn-sm" onclick="copyClientConfig()">Copy to Clipboard</button>' +
-        '<button type="button" class="btn btn-sm btn-primary" onclick="previewClientInstall()">Configure selected AI client</button>' +
-        '<button type="button" class="btn btn-sm" onclick="downloadClientConfig()">Download config snippet</button></div>' +
+        '<button type="button" class="btn btn-sm" aria-label="Preview configuration for selected client" onclick="previewClientConfig()">Preview Config</button>' +
+        '<button type="button" class="btn btn-sm" aria-label="Copy configuration to clipboard" onclick="copyClientConfig()">Copy to Clipboard</button>' +
+        '<button type="button" class="btn btn-sm btn-primary" aria-label="Configure selected AI client on this computer" onclick="previewClientInstall()">Configure selected AI client</button>' +
+        '<button type="button" class="btn btn-sm" aria-label="Download configuration snippet file" onclick="downloadClientConfig()">Download config snippet</button></div>' +
         '<p class="advanced-note">Review the exact local changes before configuring a supported client. Your other MCP servers are preserved; connection must still be tested in the AI client. Manual config export remains available.</p>';
-      nav.innerHTML = '<button type="button" class="btn" onclick="wizardPrev()">Back</button><button type="button" class="btn btn-primary" onclick="wizardNext()">Next</button>';
+      nav.innerHTML = '<button type="button" class="btn" aria-label="Go to previous setup step" onclick="wizardPrev()">Back</button><button type="button" class="btn btn-primary" aria-label="Go to next setup step" onclick="wizardNext()">Next</button>';
       break;
 
     case 4:
@@ -1532,8 +1556,8 @@ function renderWizardStep(step) {
         '<div class="msg info">Setup prepared. Test backend health and verify a real MCP connection from your selected AI client.</div>' +
         '<div id="testResult" class="wizard-result" style="display:none;"></div>' +
         '<div class="actions" style="margin-top:14px;">' +
-        '<button type="button" class="btn btn-sm btn-primary" onclick="testConnection()">Test Connection</button></div>';
-      nav.innerHTML = '<button type="button" class="btn" onclick="wizardPrev()">Back</button><button type="button" class="btn btn-success" onclick="finishWizard()">Finish</button>';
+        '<button type="button" class="btn btn-sm btn-primary" aria-label="Test MCP backend connection and health" onclick="testConnection()">Test Connection</button></div>';
+      nav.innerHTML = '<button type="button" class="btn" aria-label="Go to previous setup step" onclick="wizardPrev()">Back</button><button type="button" class="btn btn-success" aria-label="Finish setup wizard and return to overview" onclick="finishWizard()">Finish</button>';
       break;
   }
 }
