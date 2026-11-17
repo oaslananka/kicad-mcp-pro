@@ -726,6 +726,7 @@ async def test_managed_authorized_write_executes_and_receives_ack(tmp_path: Path
     socket = CustomSocket()
     receipt = HandshakeReceipt(DEVICE, SESSION)
     calls: list[tuple[str, bytes, bool]] = []
+    activity: list[str] = []
 
     def execute(project_id: str, proof: bytes, persist: bool) -> dict[str, object]:
         calls.append((project_id, proof, persist))
@@ -746,7 +747,15 @@ async def test_managed_authorized_write_executes_and_receives_ack(tmp_path: Path
         allow_native_write=True,
         revisions_preparer=lambda project_id: {"expectedBoardSha256": "a" * 64},
         write_executor=execute,
+        on_activity=activity.append,
     )
+    assert activity[:4] == [
+        "Tool call 1: write started",
+        "Cloud WRITE envelope validated",
+        "Cloud WRITE local executor returned",
+        "Cloud WRITE response acknowledged",
+    ]
+    assert re.fullmatch(r"Tool call 1: pcb_move_footprint completed \(\d+ ms\)", activity[4])
     assert len(calls) == 1
     assert calls[0][0] == PROJECT
     assert calls[0][2] is True
@@ -755,6 +764,51 @@ async def test_managed_authorized_write_executes_and_receives_ack(tmp_path: Path
     assert socket.sent[0]["kind"] == "connector.write_result"
     assert socket.sent[0]["result"]["operation"] == "pcb_move_footprint"
     assert socket.sent[0]["result"]["savedToDisk"] is True
+
+
+@pytest.mark.anyio
+async def test_managed_write_stage_activity_is_redacted(tmp_path: Path) -> None:
+    """A real owner terminal needs stage evidence without proof or PCB content."""
+    write_frame = json.dumps(
+        {
+            "kind": "connector.authorized_write",
+            "version": 1,
+            "sequence": 1,
+            "projectId": PROJECT,
+            "proof": {
+                "kind": "connector.signed_write_proposal",
+                "version": 2,
+                "payload": "c2VjcmV0LWJvYXJk",
+                "signature": "c2ln",
+            },
+            "persistToDisk": True,
+        }
+    )
+    events: list[str] = []
+
+    def reject(_: str, __: bytes, ___: bool) -> dict[str, object]:
+        raise ValueError("sensitive-private-project-path")
+
+    socket = Socket([write_frame])
+    with pytest.raises(ValueError, match="sensitive-private-project-path"):
+        await serve_authenticated_reads(
+            socket,
+            HandshakeReceipt(DEVICE, SESSION),
+            lambda _: build_dispatcher(tmp_path, [True]),
+            max_reads=1,
+            allow_native_write=True,
+            revisions_preparer=lambda _: {"expectedBoardSha256": "a" * 64},
+            write_executor=reject,
+            on_activity=events.append,
+        )
+    assert events == [
+        "Tool call 1: write started",
+        "Cloud WRITE envelope validated",
+        "Cloud WRITE local executor rejected",
+        "Tool call 1: write failed",
+    ]
+    assert "sensitive-private" not in " ".join(events)
+    assert socket.sent == []
 
 
 @pytest.mark.anyio

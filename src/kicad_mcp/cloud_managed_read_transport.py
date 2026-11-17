@@ -188,6 +188,7 @@ async def _serve_authorized_write_request(
     allow_native_write: bool,
     write_executor: Callable[[str, bytes, bool], dict[str, object]] | None,
     fallback_seq: int,
+    on_activity: Callable[[str], None] | None,
 ) -> dict[str, object]:
     if not allow_native_write or write_executor is None:
         raise CloudHandshakeDeniedError(_DENIED)
@@ -201,7 +202,13 @@ async def _serve_authorized_write_request(
     persist = envelope.get("persistToDisk", True)
     if type(persist) is not bool:
         raise CloudHandshakeDeniedError(_DENIED)
-    result = await asyncio.to_thread(write_executor, project_id, proof_bytes, persist)
+    _report_activity(on_activity, "Cloud WRITE envelope validated")
+    try:
+        result = await asyncio.to_thread(write_executor, project_id, proof_bytes, persist)
+    except Exception:
+        _report_activity(on_activity, "Cloud WRITE local executor rejected")
+        raise
+    _report_activity(on_activity, "Cloud WRITE local executor returned")
     seq_val = envelope.get("sequence")
     seq = int(seq_val) if isinstance(seq_val, (int, str)) else fallback_seq
     await socket.send(
@@ -225,6 +232,7 @@ async def _serve_authorized_write_request(
         or ack.get("requestId") != result.get("requestId")
     ):
         raise CloudHandshakeDeniedError(_DENIED)
+    _report_activity(on_activity, "Cloud WRITE response acknowledged")
     return result
 
 
@@ -288,7 +296,7 @@ async def _serve_one_signed_frame(
     try:
         if is_write:
             result = await _serve_authorized_write_request(
-                socket, raw, allow_native_write, write_executor, sequence
+                socket, raw, allow_native_write, write_executor, sequence, on_activity
             )
         else:
             result = await _serve_one_authenticated_read(socket, dispatcher, receipt, sequence, raw)
