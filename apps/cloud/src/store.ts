@@ -25,6 +25,12 @@ export interface Inventory {
 
 type DeviceRow = {id: string; alias: string; enabled: boolean; last_seen_at: Date | null};
 type ProjectRow = {id: string; device_id: string; alias: string; enabled: boolean; max_mode: Project["maxMode"]};
+// A project's write ceiling must never be mistaken for the connected client's
+// current grant, especially after an owner downgrades Edit to Read.
+const EFFECTIVE_CLIENT_MODE_SQL =
+  "CASE WHEN p.max_mode='readonly' OR g.max_mode='readonly' THEN 'readonly' " +
+  "WHEN p.max_mode='write' OR g.max_mode='write' THEN 'write' " +
+  "ELSE 'manufacturing' END AS max_mode";
 
 export class PgInventory implements Inventory {
   protected readonly pool: pg.Pool;
@@ -52,14 +58,14 @@ export class PgInventory implements Inventory {
   }
   async listProjects(ownerSub: string, clientId: string): Promise<Project[]> {
     const result = await this.pool.query<ProjectRow>(
-      "SELECT p.id,p.device_id,p.alias,p.enabled,p.max_mode FROM projects p JOIN devices d ON d.id=p.device_id AND d.owner_sub=p.owner_sub JOIN project_client_grants g ON g.project_id=p.id AND g.owner_sub=p.owner_sub WHERE p.owner_sub=$1 AND g.client_id=$2 AND g.enabled=true AND p.enabled=true AND d.enabled=true ORDER BY p.alias,p.id LIMIT 100",
+      "SELECT p.id,p.device_id,p.alias,p.enabled,"+EFFECTIVE_CLIENT_MODE_SQL+" FROM projects p JOIN devices d ON d.id=p.device_id AND d.owner_sub=p.owner_sub JOIN project_client_grants g ON g.project_id=p.id AND g.owner_sub=p.owner_sub WHERE p.owner_sub=$1 AND g.client_id=$2 AND g.enabled=true AND p.enabled=true AND d.enabled=true ORDER BY p.alias,p.id LIMIT 100",
       [ownerSub,clientId]
     );
     return result.rows.map(toProject);
   }
   async getProject(ownerSub: string, clientId: string, projectId: string): Promise<Project | null> {
     const result = await this.pool.query<ProjectRow>(
-      "SELECT p.id,p.device_id,p.alias,p.enabled,p.max_mode FROM projects p JOIN devices d ON d.id=p.device_id AND d.owner_sub=p.owner_sub JOIN project_client_grants g ON g.project_id=p.id AND g.owner_sub=p.owner_sub WHERE p.owner_sub=$1 AND g.client_id=$2 AND g.enabled=true AND p.id=$3 AND p.enabled=true AND d.enabled=true LIMIT 1",
+      "SELECT p.id,p.device_id,p.alias,p.enabled,"+EFFECTIVE_CLIENT_MODE_SQL+" FROM projects p JOIN devices d ON d.id=p.device_id AND d.owner_sub=p.owner_sub JOIN project_client_grants g ON g.project_id=p.id AND g.owner_sub=p.owner_sub WHERE p.owner_sub=$1 AND g.client_id=$2 AND g.enabled=true AND p.id=$3 AND p.enabled=true AND d.enabled=true LIMIT 1",
       [ownerSub,clientId,projectId]
     );
     return result.rows[0] ? toProject(result.rows[0]) : null;

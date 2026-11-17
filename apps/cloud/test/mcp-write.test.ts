@@ -292,6 +292,21 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     assert.match(JSON.stringify(foreignCall.data), /"success":false/);
     assert.equal(writeExecuted, false);
 
+    // An OAuth write token is not sufficient after the owner downgrades this
+    // client's project grant. Deny before any signed relay, not as an unknown outcome.
+    mockProject.maxMode = "readonly";
+    const downgraded = await invoke("enabled", "token-write", "tools/call", {
+      name: "pcb_move_footprint",
+      arguments: { project_id: projectId, reference: "R1", x_mm: 10, y_mm: 20 }
+    }, 41, "pcb_move_footprint");
+    assert.equal(downgraded.status, 200);
+    assert.equal(downgraded.data.result?.isError, true);
+    assert.equal(downgraded.data.result?.structuredContent?.reason,
+      "project_edit_permission_required");
+    assert.equal(downgraded.data.result?.structuredContent?.outcomeUnknown, undefined);
+    assert.equal(writeExecuted, false);
+    mockProject.maxMode = "write";
+
     // 5. Successful write execution with disk save
     const successCall = await invoke("enabled", "token-write", "tools/call", {
       name: "pcb_move_footprint",

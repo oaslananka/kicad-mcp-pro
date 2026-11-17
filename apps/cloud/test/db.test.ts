@@ -37,6 +37,19 @@ test("postgres enforces ownership, disabled projects and opaque-only records", {
     await assert.rejects(admin.query("INSERT INTO project_client_grants(project_id,owner_sub,client_id,enabled) VALUES ($1,'owner-b','client-b',true)",[projectA]));
     assert.equal(await inventory.setGrant("owner-b","portal",projectA,{clientId:"client-b",enabled:true,maxMode:"readonly"}),false);
     await assert.rejects(inventory.setGrant("owner-a","portal",projectA,{clientId:"client-a",enabled:true,maxMode:"write"}),/POLICY_EXCEEDS_PROJECT/);
+    // Expose the OAuth client's effective grant, not the project's maximum.
+    await admin.query("UPDATE projects SET max_mode='write' WHERE id=$1",[projectA]);
+    assert.equal((await inventory.getProject("owner-a","client-a",projectA))?.maxMode,"readonly");
+    assert.equal((await inventory.listProjects("owner-a","client-a"))[0]?.maxMode,"readonly");
+    await admin.query(
+      "UPDATE project_client_grants SET max_mode='write' WHERE project_id=$1 AND client_id='client-a'",
+      [projectA]);
+    assert.equal((await inventory.getProject("owner-a","client-a",projectA))?.maxMode,"write");
+    assert.equal((await inventory.listProjects("owner-a","client-a"))[0]?.maxMode,"write");
+    await admin.query(
+      "UPDATE project_client_grants SET max_mode='readonly' WHERE project_id=$1 AND client_id='client-a'",
+      [projectA]);
+    await admin.query("UPDATE projects SET max_mode='readonly' WHERE id=$1",[projectA]);
     assert.equal(await inventory.setGrant("owner-a","portal",projectA,{clientId:"client-b",enabled:true,maxMode:"readonly"}),true);
     assert.equal((await inventory.listProjects("owner-a","client-b")).length,1);
     assert.equal(await inventory.setGrant("owner-a","portal",projectA,{clientId:"client-b",enabled:false,maxMode:"readonly"}),true);
