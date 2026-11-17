@@ -114,6 +114,12 @@ test("generic Cloud MCP proxies real local schemas and refuses unauthorized writ
     assert.doesNotMatch(JSON.stringify(off.data),/local_mcp_call/);
     const on=await invoke(enabled,"token-read","tools/list");
     assert.match(JSON.stringify(on.data),/local_mcp_call/);
+    const list=(on.data.result?.tools??[]) as Array<{name:string;_meta?:{securitySchemes?:unknown}}>;
+    const dynamicCall=list.find(t=>t.name==="local_mcp_call");
+    assert.deepEqual(dynamicCall?._meta?.securitySchemes,[
+      {type:"oauth2",scopes:["projects:read"]},
+      {type:"oauth2",scopes:["projects:read","projects:write"]}
+    ]);
 
     const listing=await invoke(enabled,"token-read","tools/call",{
       name:"local_mcp_catalog",arguments:{project_id:projectId,offset:0}

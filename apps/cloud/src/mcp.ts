@@ -332,7 +332,8 @@ export function createCloudMcpHandler(
           project_id:z.string().uuid().optional(),
           offset:z.number().int().min(0).max(512).optional(),
           tool_name:z.string().regex(/^[a-z][a-z0-9_]{0,127}$/).optional()
-        }),annotations:readonly
+        }),annotations:readonly,
+        _meta:{securitySchemes:[{type:"oauth2",scopes:["projects:read"]}]}
       },async ({project_id,offset,tool_name})=>{
         const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
         if(!project)return text({available:false,selectionRequired});
@@ -351,7 +352,13 @@ export function createCloudMcpHandler(
           project_id:z.string().uuid().optional(),
           tool_name:z.string().regex(/^[a-z][a-z0-9_]{0,127}$/),
           arguments:z.record(z.string(),z.unknown())
-        }),annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:false,openWorldHint:false}
+        }),annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:false,openWorldHint:false},
+        // One gateway covers both read and mutating local tools. Runtime
+        // enforces the actual scope and the per-client project grant.
+        _meta:{securitySchemes:[
+          {type:"oauth2",scopes:["projects:read"]},
+          {type:"oauth2",scopes:["projects:read","projects:write"]}
+        ]}
       },async ({project_id,tool_name,arguments:args})=>{
         const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
         if(!project)return {...text({success:false,selectionRequired}),isError:true};
