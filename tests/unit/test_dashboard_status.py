@@ -46,3 +46,24 @@ def test_local_cleanup_requires_explicit_preview_and_user_click() -> None:
     assert "/api/maintenance/cleanup/apply" in DASHBOARD_HTML
     assert "Clean reviewed local settings" in DASHBOARD_HTML
     assert "does not revoke Cloud device or AI access" in DASHBOARD_HTML
+
+
+def test_dashboard_navigation_and_controls_have_accessible_roles_and_labels() -> None:
+    """Verify accessible tablist roles, aria-label, and aria-pressed attributes in dashboard."""
+    assert 'role="tablist"' in DASHBOARD_HTML
+    assert 'role="tab"' in DASHBOARD_HTML
+    assert 'aria-controls="view-dashboard"' in DASHBOARD_HTML
+    assert 'aria-controls="view-log-viewer"' in DASHBOARD_HTML
+    assert 'role="toolbar"' in DASHBOARD_HTML
+    assert 'aria-pressed="true"' in DASHBOARD_HTML
+    assert 'aria-label="Start local server"' in DASHBOARD_HTML
+    assert 'aria-label="Clear log viewer"' in DASHBOARD_HTML
+
+
+def test_dashboard_log_viewer_buffer_management() -> None:
+    """Verify log viewer caps DOM lines to prevent memory leaks in streaming sessions."""
+    match = re.search(r"function addLogLine\(data\)\s*\{([\s\S]*?)\n\}", DASHBOARD_HTML)
+    assert match is not None, "addLogLine function not found in DASHBOARD_HTML"
+    body = match.group(1)
+    assert "logEl.removeChild" in body
+    assert "logBuffer.shift" in body

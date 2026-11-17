@@ -142,7 +142,7 @@ class FreeRoutingRunner:
 
         Returns True only if a non-empty DSN file was produced. The capability probe
         gates the call, but the exact CLI build may still reject it, so failure is not
-        fatal Ã¢â‚¬â€ the caller falls back to a manual-step path.
+        fatal — the caller falls back to a manual-step path.
         """
         cli = str(kicad_cli)
         variants = [
