@@ -1245,7 +1245,9 @@ export function attachConnectorWebSocket(
       current.socket,oauth,projectId))return null;
     if(request.method==="catalog"){
       if(!Number.isSafeInteger(request.offset)||request.offset!<0||
-         request.offset!>512)return null;
+         request.offset!>512||
+          (request.toolName!==undefined&&
+           !/^[a-z][a-z0-9_]{0,127}$/.test(request.toolName)))return null;
     }else if(request.method==="call"){
       if(typeof request.toolName!=="string"||
          !/^[a-z][a-z0-9_]{0,127}$/.test(request.toolName)||
@@ -1271,7 +1273,10 @@ export function attachConnectorWebSocket(
           request:{
             kind:"connector.mcp_request",version:1,
             requestId:request.requestId,projectId,method:request.method,
-            ...(request.method==="catalog"?{offset:request.offset}:{
+            ...(request.method==="catalog"?{
+              offset:request.offset,
+              ...(request.toolName?{toolName:request.toolName}:{})
+            }:{
               toolName:request.toolName,argumentsJson:request.argumentsJson,
               ...(request.proof?{proof:request.proof}:{})
             })

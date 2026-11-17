@@ -73,11 +73,12 @@ test("signed owner WS transports generic catalog and validates acknowledged exac
       accessTokenIssuedAtSeconds:Math.floor(Date.now()/1000)};
     const requestId=randomUUID();
     const called=attached.requestMcp(oauth,deviceId,projectId,
-      {requestId,method:"catalog",offset:0});
+      {requestId,method:"catalog",offset:0,toolName:"kicad_get_version"});
     const wire=await message(ws);
     assert.equal(wire.kind,"connector.mcp_request");
     assert.equal(wire.request.projectId,projectId);
     assert.equal(wire.request.method,"catalog");
+    assert.equal(wire.request.toolName,"kicad_get_version");
     assert.equal(wire.sequence,1);
     const ack=await send(ws,{kind:"connector.mcp_result",version:1,
       sequence:wire.sequence,
