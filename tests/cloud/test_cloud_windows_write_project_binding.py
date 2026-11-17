@@ -137,10 +137,11 @@ def test_owner_binding_revoked_during_native_stage_discards_before_commit(
         return _approved_write_target(registered, selected, TEST, target)
 
     assert current()
+    expected_board_hash = hashlib.sha256(original).hexdigest()
     with pytest.raises(LocalWriteDeniedError, match="request denied"):
         run_offline_guarded_native_write(
             target,
-            hashlib.sha256(original).hexdigest(),
+            expected_board_hash,
             authorized=current,
             cancelled=lambda: not current(),
             native=native,
