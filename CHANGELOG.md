@@ -10,6 +10,14 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.18.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.17.0...mcp-server-v4.18.0) (2026-11-17)
+
+
+### Features
+
+* **cloud:** enable owner-authorized native PCB writes ([#1728](https://github.com/oaslananka/kicad-mcp-pro/issues/1728)) ([2564d3a](https://github.com/oaslananka/kicad-mcp-pro/commit/2564d3a2314b2673e94b7a6880a4b8b23e0493f4))
+* **cloud:** simplify project edit permission and owner reconnect ([#1765](https://github.com/oaslananka/kicad-mcp-pro/issues/1765)) ([9590804](https://github.com/oaslananka/kicad-mcp-pro/commit/9590804e7cf877c2487657f08634853beb6502a4))
+
 ## [4.17.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.16.0...mcp-server-v4.17.0) (2026-11-17)
 
 
