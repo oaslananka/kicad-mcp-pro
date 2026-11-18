@@ -90,6 +90,10 @@ test("generic Cloud MCP proxies real local schemas and refuses unauthorized writ
     summaryRelay:()=>relay as never,mcpGenericBridgeEnabled:true,
     writeIssuer:issuer,writePreflight:preflight as never
   });
+  const direct=createHttpServer(config,inventory,verify,{
+    summaryRelay:()=>relay as never,mcpGenericBridgeEnabled:true,
+    mcpDirectToolPilotEnabled:true,writeIssuer:issuer,writePreflight:preflight as never
+  });
   const invoke=async(server:typeof enabled,token:string,method:string,
     params:Record<string,unknown>={},id=1,name?:string)=>{
     const port=(server.address() as AddressInfo).port;
@@ -123,6 +127,7 @@ test("generic Cloud MCP proxies real local schemas and refuses unauthorized writ
   try{
     await new Promise<void>(resolve=>disabled.listen(0,"127.0.0.1",resolve));
     await new Promise<void>(resolve=>enabled.listen(0,"127.0.0.1",resolve));
+    await new Promise<void>(resolve=>direct.listen(0,"127.0.0.1",resolve));
     const off=await invoke(disabled,"token-read","tools/list");
     assert.doesNotMatch(JSON.stringify(off.data),/local_mcp_call/);
     const on=await invoke(enabled,"token-read","tools/list");
@@ -133,6 +138,12 @@ test("generic Cloud MCP proxies real local schemas and refuses unauthorized writ
       {type:"oauth2",scopes:["projects:read"]},
       {type:"oauth2",scopes:["projects:read","projects:write"]}
     ]);
+
+    const independent=await invoke(direct,"token-read","tools/list");
+    const names=(independent.data.result?.tools??[]).map((t:{name:string})=>t.name);
+    assert.ok(names.includes("kicad_get_version"));
+    assert.ok(names.includes("sch_add_symbol"));
+    assert.ok(!names.includes("local_mcp_call"));
 
     const listing=await invoke(enabled,"token-read","tools/call",{
       name:"local_mcp_catalog",arguments:{project_id:projectId,offset:0}
@@ -183,6 +194,6 @@ test("generic Cloud MCP proxies real local schemas and refuses unauthorized writ
     },8,"local_mcp_call");
     assert.equal(other.data.result?.isError,true);
   }finally{
-    for(const server of [disabled,enabled])await new Promise<void>(resolve=>server.close(()=>resolve()));
+    for(const server of [disabled,enabled,direct])await new Promise<void>(resolve=>server.close(()=>resolve()));
   }
 });

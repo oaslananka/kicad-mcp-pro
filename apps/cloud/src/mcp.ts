@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import {registerDirectCloudMcpTools} from "./cloud-direct-tool-registry.js";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import type { Actor } from "./auth.js";
@@ -17,6 +18,17 @@ const text = (value: object) => ({
   structuredContent: value
 });
 const readonly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+// Order-independent comparison of signed local versus reviewed Cloud input schemas.
+function stableJson(value:unknown):string{
+  if(Array.isArray(value))return "["+value.map(stableJson).join(",")+"]";
+  if(value!==null&&typeof value==="object"){
+    const object=value as Record<string,unknown>;
+    return "{"+Object.keys(object).sort().map(k=>
+      JSON.stringify(k)+":"+stableJson(object[k])).join(",")+"}";
+  }
+  return JSON.stringify(value)??"null";
+}
+
 
 export type ProjectPresenceFiles = Readonly<{
   projectPresent:boolean;boardPresent:boolean;schematicPresent:boolean;
@@ -112,7 +124,8 @@ export function createCloudMcpHandler(
   projectWrite?:ProjectWriteExecutor,
   protectedResourceMetadataUrl?:string,
   genericMcpCatalog?:GenericMcpCatalogReader,
-  genericMcpCall?:GenericMcpCaller
+  genericMcpCall?:GenericMcpCaller,
+  directToolsEnabled=false
 ) {
   return createMcpHandler(() => {
     const mcp = new McpServer({ name: "kicad-mcp-pro-cloud", version: "0.1.0" });
@@ -144,14 +157,18 @@ export function createCloudMcpHandler(
       description: "Describe current Cloud read features without claiming a local KiCad action or GUI session.",
       inputSchema: z.object({}), annotations: readonly
     }, async () => text({
-      status: projectInspection ? "local_engine_inspection_pilot" :
+      status: directToolsEnabled ? "named_local_mcp_tool_pilot" :
+        projectInspection ? "local_engine_inspection_pilot" :
         boardCounts||schematicCounts ? "local_project_read_pilot" :
         projectDrc ? "local_native_drc_pilot" :
         projectPresence ? "local_presence_pilot" : "foundation_only",
-      remoteKiCadExecution: nativeReadEnabled || Boolean(projectWrite),
+      remoteKiCadExecution: nativeReadEnabled || Boolean(projectWrite) ||
+        (directToolsEnabled && Boolean(genericMcpCall)),
       devicePairing: localReadEnabled,
       projectManagementWrites: Boolean(projectWrite),
-      message: localReadEnabled
+      message: directToolsEnabled
+        ? "Published pilot tools are reviewable independently of device state. Each read needs a live project grant; edits additionally require OAuth projects:write, project Edit, signed native owner approval and compatible local tool contracts."
+        : localReadEnabled
         ? "Only enabled, project-granted owner-foreground read operations are available. Device connection is not proof of KiCad GUI, project contents or permission to execute."
         : "Cloud inventory is read-only. No owner-operated remote reads are enabled."
     }));
@@ -325,7 +342,7 @@ export function createCloudMcpHandler(
         return text(counts?{available:true,counts}:{available:false});
       });
     }
-    if(genericMcpCatalog&&genericMcpCall){
+    if(genericMcpCatalog&&genericMcpCall&&!directToolsEnabled){
       mcp.registerTool("local_mcp_catalog",{
         description:"Browse the REAL installed KiCad MCP Pro tools and original JSON input schemas on an owner-connected device. Results depend on the current local profile, live Connector and project grant. No tools are reimplemented in Cloud; paginate with next_offset.",
         inputSchema:z.object({
@@ -393,6 +410,62 @@ export function createCloudMcpHandler(
         }catch{
           return {...text({success:false,reason:"local_mcp_operation_unconfirmed",
             outcomeUnknown:write,retrySafe:!write}),isError:true};
+        }
+      });
+    }
+
+    // A reviewed public tool definition stays stable even when a device is
+    // offline or has an older local MCP installation. Per-call verification
+    // still checks the actual locally registered tool contract.
+    if(directToolsEnabled&&genericMcpCatalog&&genericMcpCall){
+      registerDirectCloudMcpTools(mcp,async(tool,raw)=>{
+        const {project_id:requestedProjectId,...args}=raw;
+        if(requestedProjectId!==undefined&&typeof requestedProjectId!=="string")
+          return {...text({success:false,reason:"invalid_project_id"}),isError:true};
+        const {project,selectionRequired}=await resolveScopedProject(
+          inventory,actor,requestedProjectId as string|undefined);
+        if(!project)return {...text({success:false,selectionRequired,
+          reason:"project_not_granted"}),isError:true};
+        const needsWrite=tool.accessMode==="write";
+        if(!actor.scopes.has("projects:read"))
+          return {...text({success:false,reason:"insufficient_scope_read_required"}),isError:true};
+        if(needsWrite&&!actor.scopes.has("projects:write")){
+          const denied={...text({success:false,reason:"insufficient_scope_write_required",
+            guidance:"Reconnect and approve projects:write for this application."}),isError:true};
+          if(protectedResourceMetadataUrl)return {...denied,_meta:{
+            "mcp/www_authenticate":[
+              'Bearer resource_metadata="'+protectedResourceMetadataUrl+'", '+
+              'error="insufficient_scope", scope="projects:read projects:write"'
+            ]
+          }};
+          return denied;
+        }
+        if(needsWrite&&project.maxMode!=="write")
+          return {...text({success:false,reason:"project_edit_permission_required",
+            guidance:"Choose Edit for this application's access to the project."}),isError:true};
+        try{
+          const catalog=await genericMcpCatalog(project.deviceId,project.id,0,tool.name);
+          const local=catalog?.tools.find(t=>t.name===tool.name);
+          if(!local)return {...text({success:false,reason:"local_tool_unavailable",
+            guidance:"Connect or update the owner's local Connector."}),isError:true};
+          if(local.accessMode!==tool.accessMode||
+              stableJson(local.inputSchema)!==stableJson(tool.inputSchema))
+            return {...text({success:false,reason:"local_tool_contract_mismatch",
+              guidance:"Update the local KiCad MCP Pro installation to a compatible tool contract."}),
+              isError:true};
+          const result=await genericMcpCall(project.deviceId,project.id,tool.name,args,needsWrite);
+          if(result===null)
+            return {...text({success:false,reason:"local_mcp_operation_unconfirmed",
+              outcomeUnknown:needsWrite,retrySafe:!needsWrite,
+              guidance:needsWrite?"Inspect the local design before retrying.":"Reconnect the device."}),
+              isError:true};
+          const actual=result as {isError?:boolean;structuredContent?:{success?:boolean}};
+          const success=actual.isError!==true&&actual.structuredContent?.success!==false;
+          return {...text({success,tool_name:tool.name,local_result:result}),
+            ...(success?{}:{isError:true})};
+        }catch{
+          return {...text({success:false,reason:"local_mcp_operation_unconfirmed",
+            outcomeUnknown:needsWrite,retrySafe:!needsWrite}),isError:true};
         }
       });
     }

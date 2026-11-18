@@ -143,6 +143,8 @@ export type CloudHttpServices={
   mcpProjectWriteEnabled?:boolean;
   /** Optional authenticated generic MCP bridge, reusing the local server. */
   mcpGenericBridgeEnabled?:boolean;
+  /** Reviewed independent MCP tool pilot, off unless Cloud operator enables it. */
+  mcpDirectToolPilotEnabled?:boolean;
   writePreflight?:import("./connector-write-preflight.js").PgConnectorWritePreflight;
   writeIssuer?:import("./connector-write-issuer.js").OfflineWriteProofIssuer;
   /** Observation only: failures must never affect signed-write decisions. */
@@ -965,7 +967,7 @@ async function handleRequest(
         inventory,actor,presenceReader,drcReader,inspectionReader,boardReader,schematicReader,
         signedRelay?.isDeviceConnected,signedRelay?.getDeviceCapabilityClaim,
         writer,config.publicOrigin+"/.well-known/oauth-protected-resource",
-        genericCatalog,genericCall);
+        genericCatalog,genericCall,services.mcpDirectToolPilotEnabled===true);
       let output: Response;
       try {
         output = await handler.fetch(request);

@@ -38,6 +38,10 @@ const managedNativeWriteEnabled=process.env.CONNECTOR_MANAGED_NATIVE_WRITE_ENABL
 // Generic bridge needs only the already authorized managed Connector. The
 // signed local process still decides which installed profile/tools are usable.
 const mcpGenericBridgeEnabled=managedReadEnabled;
+// A separately reviewed, static direct-tool pilot; default OFF for production.
+const mcpDirectToolPilotEnabled=process.env.CLOUD_MCP_DIRECT_TOOL_PILOT==="true";
+if(mcpDirectToolPilotEnabled&&!managedReadEnabled)
+  throw Error("Direct MCP pilot requires signed managed Connector mode");
 if(managedNativeReadEnabled&&!managedReadEnabled)
   throw Error("Managed native reads require signed managed Connector mode");
 if(managedNativeWriteEnabled&&!managedReadEnabled)
@@ -129,6 +133,7 @@ const server=createHttpServer(config, inventory, createVerifier(config), {grants
   mcpProjectSchematicCountsEnabled:operatorSchematicCounts,summaryRelay:()=>connectorRelay,
   mcpProjectWriteEnabled:managedNativeWriteEnabled&&Boolean(writeIssuer)&&Boolean(connectorPool),
   mcpGenericBridgeEnabled,
+  mcpDirectToolPilotEnabled,
   ...(connectorPool&&managedNativeWriteEnabled?{writePreflight:new PgConnectorWritePreflight(connectorPool)}:{}),
   ...(writeIssuer?{writeIssuer}:{}),
   // Stage-only diagnostic: no signed payloads, access tokens or KiCad content.
