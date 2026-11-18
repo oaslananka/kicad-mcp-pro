@@ -449,7 +449,7 @@ export function createCloudMcpHandler(
           if(!local)return {...text({success:false,reason:"local_tool_unavailable",
             guidance:needsWrite
               ?"Connect or update the owner's Connector and enable signed native write for this project."
-              :"Connect or update the owner's local Connector."}),isError:true};
+              :"Connect the owner device and open the selected project in KiCad; update the Connector if the tool remains unavailable."}),isError:true};
           if(local.accessMode!==tool.accessMode||
               stableJson(local.inputSchema)!==stableJson(tool.inputSchema))
             return {...text({success:false,reason:"local_tool_contract_mismatch",

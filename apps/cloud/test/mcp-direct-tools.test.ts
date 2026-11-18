@@ -145,16 +145,26 @@ test("direct write calls respect OAuth, project Edit and original schemas",async
   }finally{await editor.handler.close();}
 });
 
-test("direct writes explain when the local Connector does not expose native write",async()=>{
-  const unavailable=setup(true,true,false,true,true);
+test("direct tools explain when the local Connector does not expose an operation",async()=>{
+  const readUnavailable=setup(false,true,false,false,true);
   try{
-    const result=await unavailable.invoke("tools/call",{name:"sch_move_symbol",arguments:{
+    const result=await readUnavailable.invoke("tools/call",{name:"kicad_get_version",arguments:{
+      project_id:projectId
+    }});
+    assert.equal(result.data.result.isError,true);
+    assert.match(JSON.stringify(result.data),/open the selected project in KiCad/);
+    assert.equal(readUnavailable.calls,0);
+  }finally{await readUnavailable.handler.close();}
+
+  const writeUnavailable=setup(true,true,false,true,true);
+  try{
+    const result=await writeUnavailable.invoke("tools/call",{name:"sch_move_symbol",arguments:{
       project_id:projectId,reference:"R1",x_mm:10,y_mm:20
     }});
     assert.equal(result.data.result.isError,true);
     assert.match(JSON.stringify(result.data),/enable signed native write/);
-    assert.equal(unavailable.calls,0);
-  }finally{await unavailable.handler.close();}
+    assert.equal(writeUnavailable.calls,0);
+  }finally{await writeUnavailable.handler.close();}
 });
 
 test("direct tools never dispatch on missing project or stale local schema",async()=>{
