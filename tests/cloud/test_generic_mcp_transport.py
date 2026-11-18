@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
@@ -272,3 +273,90 @@ def test_owner_project_rejects_unsafe_stems(tmp_path, stem) -> None:
 
     with pytest.raises(GenericMcpTransportError):
         _validated_owner_stem(stem)
+
+
+def _oversized_mcp_reply(*, duplicate_text: bool = True) -> dict:
+    structured = {
+        "summary": "DRC reported 17 actionable finding(s).",
+        "text": "DRC summary:\n- Violations: 17",
+        "verdict": "FAIL",
+        "metadata": {"actionable_violations": 17},
+        "findings": [
+            {"id": f"drc-{i}", "evidence": "verified-geometry-" + "x" * 1400} for i in range(24)
+        ],
+    }
+    text = json.dumps(structured) if duplicate_text else "UNIQUE IMPORTANT DETAILS " + "x" * 80000
+    return {
+        "kind": "connector.mcp_result",
+        "version": 1,
+        "requestId": REQ,
+        "projectId": PROJECT,
+        "method": "call",
+        "ok": True,
+        "result": {
+            "content": [{"type": "text", "text": text}],
+            "structuredContent": structured,
+            "isError": False,
+            "resultType": "complete",
+        },
+    }
+
+
+def test_cloud_duplicate_structured_drc_result_preserves_complete_findings() -> None:
+    from kicad_mcp.cloud_generic_mcp_transport import _fit_cloud_mcp_response
+
+    original = _oversized_mcp_reply()
+    assert len(json.dumps(original).encode("utf8")) > 60_000
+    result = _fit_cloud_mcp_response(original)
+    assert len(json.dumps(result, ensure_ascii=False).encode("utf8")) <= 60_000
+    assert result["ok"] is True
+    assert result["result"]["isError"] is False
+    assert result["result"]["structuredContent"] == original["result"]["structuredContent"]
+    assert len(result["result"]["structuredContent"]["findings"]) == 24
+    assert "DRC summary" in result["result"]["content"][0]["text"]
+    assert result["result"]["content"] != original["result"]["content"]
+    assert original["result"]["content"][0]["text"].startswith('{"summary":')
+
+
+def test_cloud_oversized_unique_text_returns_bounded_explicit_error() -> None:
+    from kicad_mcp.cloud_generic_mcp_transport import _fit_cloud_mcp_response
+
+    original = _oversized_mcp_reply(duplicate_text=False)
+    result = _fit_cloud_mcp_response(original)
+    assert result["ok"] is True
+    assert result["result"]["isError"] is True
+    assert "mcp_bridge_result_too_large" in result["result"]["content"][0]["text"]
+    assert "UNIQUE IMPORTANT DETAILS" not in json.dumps(result)
+    assert "structuredContent" not in result["result"]
+    assert len(json.dumps(result).encode("utf8")) <= 60_000
+
+
+def test_cloud_extremely_large_structured_drc_returns_explicit_error() -> None:
+    from kicad_mcp.cloud_generic_mcp_transport import _fit_cloud_mcp_response
+
+    original = _oversized_mcp_reply()
+    original["result"]["structuredContent"]["findings"].append(
+        {"id": "oversized", "evidence": "s" * 75_000}
+    )
+    original["result"]["content"][0]["text"] = json.dumps(original["result"]["structuredContent"])
+    result = _fit_cloud_mcp_response(original)
+    assert result["result"]["isError"] is True
+    assert "mcp_bridge_result_too_large" in result["result"]["content"][0]["text"]
+    assert len(json.dumps(result).encode("utf8")) <= 60_000
+
+
+def test_cloud_small_mcp_result_remains_unchanged() -> None:
+    from kicad_mcp.cloud_generic_mcp_transport import _fit_cloud_mcp_response
+
+    original = _oversized_mcp_reply()
+    original["result"]["structuredContent"]["findings"] = []
+    original["result"]["content"][0]["text"] = json.dumps(original["result"]["structuredContent"])
+    assert _fit_cloud_mcp_response(original) == original
+
+
+def test_cloud_oversized_unrepresentable_write_remains_outcome_unknown() -> None:
+    from kicad_mcp.cloud_generic_mcp_transport import _fit_cloud_mcp_response
+
+    original = _oversized_mcp_reply(duplicate_text=False)
+    with pytest.raises(GenericMcpTransportError, match="mcp_bridge_result_too_large"):
+        _fit_cloud_mcp_response(original, write_approved=True)

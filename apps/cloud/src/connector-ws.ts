@@ -173,9 +173,12 @@ export type GenericMcpReply=Readonly<{
 // Local KiCad checks may include an external CLI run after MCP worker startup.
 // Keep signed writes and metadata discovery on their existing short deadlines.
 export function mcpRequestBudget(
-  request:Readonly<{method:"catalog"|"call";proof?:object}>
+  request:Readonly<{method:"catalog"|"call";toolName?:string;proof?:object}>
 ):Readonly<{timeoutMs:number;minSessionRemainingMs:number}>{
-  const timeoutMs=request.method==="call"&&request.proof===undefined?30_000:11_000;
+  const readCall=request.method==="call"&&request.proof===undefined;
+  const validationRead=readCall&&
+    (request.toolName==="run_drc"||request.toolName==="run_erc");
+  const timeoutMs=validationRead?75_000:readCall?30_000:11_000;
   return {timeoutMs,minSessionRemainingMs:timeoutMs+1_000};
 }
 
