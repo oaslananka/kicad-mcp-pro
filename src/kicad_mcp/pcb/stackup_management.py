@@ -34,6 +34,8 @@ type IsCopperStackupLayer = Callable[[StackupLayerSpec], bool]
 type WriteStackupState = Callable[[list[StackupLayerSpec]], Path]
 type ApplyStackupToBoard = Callable[[str, list[StackupLayerSpec]], str]
 type ReloadBoardAfterFileSync = Callable[[], str]
+type GuardFileBasedBoardEdit = Callable[[str, bool], str | None]
+type FinalizeFileBasedBoardEdit = Callable[[bool], str]
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,13 @@ class PcbStackupManagementService:
     transactional_board_write: TransactionalBoardWrite
     apply_stackup_to_board: ApplyStackupToBoard
     reload_board_after_file_sync: ReloadBoardAfterFileSync
+    #: Refuse a file-based write while the board is open in KiCad (returns the
+    #: refusal text) unless the caller allowed it. The server always wires this;
+    #: ``None`` keeps the unguarded behaviour for standalone use.
+    guard_file_based_board_edit: GuardFileBasedBoardEdit | None = None
+    #: Reload the open board after an allowed write, or explain a manual reload.
+    #: ``None`` falls back to ``reload_board_after_file_sync``.
+    finalize_file_based_board_edit: FinalizeFileBasedBoardEdit | None = None
 
     def get_stackup(self) -> str:
         """Render the current stackup or the existing unavailable diagnostics."""
@@ -80,8 +89,16 @@ class PcbStackupManagementService:
         lines.append(f"- Total thickness: {self.total_stackup_thickness_mm(layers):.4f} mm")
         return "\n".join(lines)
 
-    def set_stackup(self, layers: list[dict[str, object]]) -> str:
-        """Validate and persist a file-backed stackup profile transactionally."""
+    def set_stackup(self, layers: list[dict[str, object]], allow_open_board: bool = False) -> str:
+        """Validate and persist a file-backed stackup profile transactionally.
+
+        Refuses while the board is open in KiCad unless ``allow_open_board`` is
+        set: writing the file and reloading would discard unsaved KiCad edits.
+        """
+        if self.guard_file_based_board_edit is not None and (
+            refusal := self.guard_file_based_board_edit("stackup update", allow_open_board)
+        ):
+            return refusal
         payload = SetStackupInput.model_validate({"layers": layers})
         copper_count = sum(1 for layer in payload.layers if self.is_copper_stackup_layer(layer))
         if copper_count < 2:
@@ -93,7 +110,11 @@ class PcbStackupManagementService:
         # Persist the profile only once the board accepted it, so a rejected stackup
         # never becomes the "current" one that later tools read back.
         state_path = self.write_stackup_state(payload.layers)
-        reload_message = self.reload_board_after_file_sync()
+        reload_message = (
+            self.finalize_file_based_board_edit(allow_open_board)
+            if self.finalize_file_based_board_edit is not None
+            else self.reload_board_after_file_sync()
+        )
         return "\n".join(
             [
                 f"Configured stackup with {len(payload.layers)} layers.",

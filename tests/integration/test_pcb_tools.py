@@ -1396,7 +1396,8 @@ async def test_pcb_set_stackup_persists_file_and_supports_impedance_lookup(
     assert "dielectric_1" in stackup
     assert "Trace impedance from current stackup" in impedance
     assert "Layer: F_Cu" in impedance
-    mock_board.revert.assert_called_once()
+    # The file is changed while KiCad has no open board: no GUI revert is needed.
+    mock_board.revert.assert_not_called()
 
 
 @pytest.mark.anyio

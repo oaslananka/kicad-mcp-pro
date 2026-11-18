@@ -17,7 +17,9 @@ class StackupService(Protocol):
 
     def get_stackup(self) -> str: ...
 
-    def set_stackup(self, layers: list[dict[str, object]]) -> str: ...
+    def set_stackup(
+        self, layers: list[dict[str, object]], allow_open_board: bool = False
+    ) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,10 @@ def register(mcp: FastMCP, dependencies: PcbStackupDependencies) -> None:
 
     @mcp.tool()
     @headless_compatible
-    def pcb_set_stackup(layers: list[dict[str, object]]) -> str:
-        """Set the active board stackup using a file-backed profile."""
-        return service.set_stackup(layers)
+    def pcb_set_stackup(layers: list[dict[str, object]], allow_open_board: bool = False) -> str:
+        """Set the active board stackup using a file-backed profile.
+
+        File-based: refuses while the board is open in KiCad unless
+        ``allow_open_board=True``, which makes KiCad reload the file afterwards.
+        """
+        return service.set_stackup(layers, allow_open_board=allow_open_board)
