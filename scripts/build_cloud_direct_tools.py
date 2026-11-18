@@ -78,51 +78,53 @@ def _is_reviewable_pilot_tool(
     )
 
 
-def build(catalog: dict[str, object]) -> list[dict[str, object]]:
+def _index_catalog_tools(catalog: dict[str, object]) -> dict[str, dict[str, object]]:
     raw = catalog.get("tools")
     if not isinstance(raw, list):
         raise ValueError("Local capability catalog must contain a tools array")
     indexed = {item["name"]: item for item in raw if isinstance(item, dict) and "name" in item}
     if len(indexed) != len(raw):
         raise ValueError("Duplicate or malformed local tool records")
-    result: list[dict[str, object]] = []
-    for name in PILOT_NAMES:
-        item = indexed.get(name)
-        if not isinstance(item, dict):
-            raise ValueError(f"Selected pilot tool is missing: {name}")
-        capability = item.get("capability")
-        schema = item.get("inputSchema")
-        if not isinstance(capability, dict) or not isinstance(schema, dict):
-            raise ValueError(f"Invalid registered tool contract: {name}")
-        tier = capability.get("tier")
-        maturity = capability.get("maturity")
-        if not _is_reviewable_pilot_tool(name, item, capability, schema):
-            raise ValueError(f"Tool requires a separate security review: {name}")
-        is_read = tier == "read"
-        result.append(
+    return indexed
+
+
+def _build_pilot_tool(name: str, indexed: dict[str, dict[str, object]]) -> dict[str, object]:
+    item = indexed.get(name)
+    if item is None:
+        raise ValueError(f"Selected pilot tool is missing: {name}")
+    capability = item.get("capability")
+    schema = item.get("inputSchema")
+    if not isinstance(capability, dict) or not isinstance(schema, dict):
+        raise ValueError(f"Invalid registered tool contract: {name}")
+    if not _is_reviewable_pilot_tool(name, item, capability, schema):
+        raise ValueError(f"Tool requires a separate security review: {name}")
+
+    is_read = capability["tier"] == "read"
+    return {
+        "name": name,
+        "description": item.get("description") or "",
+        "accessMode": "readonly" if is_read else "write",
+        "maturity": capability["maturity"],
+        "inputSchema": schema,
+        "annotations": {
+            "readOnlyHint": is_read,
+            "destructiveHint": not is_read,
+            "idempotentHint": is_read,
+            "openWorldHint": False,
+        },
+        "securitySchemes": [
             {
-                "name": name,
-                "description": item.get("description") or "",
-                "accessMode": "readonly" if is_read else "write",
-                "maturity": maturity,
-                "inputSchema": schema,
-                "annotations": {
-                    "readOnlyHint": is_read,
-                    "destructiveHint": not is_read,
-                    "idempotentHint": is_read,
-                    "openWorldHint": False,
-                },
-                "securitySchemes": [
-                    {
-                        "type": "oauth2",
-                        "scopes": ["projects:read"]
-                        if is_read
-                        else ["projects:read", "projects:write"],
-                    }
-                ],
+                "type": "oauth2",
+                "scopes": ["projects:read"] if is_read else ["projects:read", "projects:write"],
             }
-        )
-    return sorted(result, key=lambda entry: entry["name"])
+        ],
+    }
+
+
+def build(catalog: dict[str, object]) -> list[dict[str, object]]:
+    indexed = _index_catalog_tools(catalog)
+    tools = (_build_pilot_tool(name, indexed) for name in PILOT_NAMES)
+    return sorted(tools, key=lambda entry: entry["name"])
 
 
 def render(
