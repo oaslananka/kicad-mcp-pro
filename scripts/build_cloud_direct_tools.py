@@ -41,6 +41,36 @@ DENIED_NAMES = {
 }
 
 
+def _is_reviewable_pilot_tool(
+    name: str, item: dict[str, object], capability: dict[str, object], schema: dict[str, object]
+) -> bool:
+    tier = capability.get("tier")
+    if (
+        tier not in {"read", "write"}
+        or item.get("remoteCallable") is not False
+        or name in DENIED_NAMES
+        or name.startswith(("vcs_restore_", "project_import_", "pcb_import_"))
+        or any(part in name for part in DENIED_PARTS)
+    ):
+        return False
+    if (
+        capability.get("human_gate_required") is not False
+        or capability.get("requires_human_confirmation") is not False
+    ):
+        return False
+    if tier == "read" and (
+        capability.get("writes_files") is not False
+        or capability.get("writes_kicad_gui_state") is not False
+    ):
+        return False
+    properties = schema.get("properties", {})
+    return (
+        schema.get("type") == "object"
+        and isinstance(properties, dict)
+        and "project_id" not in properties
+    )
+
+
 def build(catalog: dict[str, object]) -> list[dict[str, object]]:
     raw = catalog.get("tools")
     if not isinstance(raw, list):
@@ -58,25 +88,7 @@ def build(catalog: dict[str, object]) -> list[dict[str, object]]:
         if not isinstance(capability, dict) or not isinstance(schema, dict):
             raise ValueError(f"Invalid registered tool contract: {name}")
         tier = capability.get("tier")
-        if (
-            tier not in {"read", "write"}
-            or item.get("remoteCallable") is not False
-            or name in DENIED_NAMES
-            or capability.get("human_gate_required") is not False
-            or capability.get("requires_human_confirmation") is not False
-            or name.startswith(("vcs_restore_", "project_import_", "pcb_import_"))
-            or any(part in name for part in DENIED_PARTS)
-            or (
-                tier == "read"
-                and (
-                    capability.get("writes_files") is not False
-                    or capability.get("writes_kicad_gui_state") is not False
-                )
-            )
-            or schema.get("type") != "object"
-            or not isinstance(schema.get("properties", {}), dict)
-            or "project_id" in schema.get("properties", {})
-        ):
+        if not _is_reviewable_pilot_tool(name, item, capability, schema):
             raise ValueError(f"Tool requires a separate security review: {name}")
         result.append(
             {
