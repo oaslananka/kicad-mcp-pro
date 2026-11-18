@@ -51,6 +51,26 @@ def frame(
     return proof, args
 
 
+def _forge_signature(proof: bytes) -> bytes:
+    data = json.loads(proof)
+    # Flip a signed byte, not a potentially unchanged encoded character.
+    signature = bytearray(base64.urlsafe_b64decode(data["signature"] + "=="))
+    signature[0] ^= 0x01
+    data["signature"] = base64.urlsafe_b64encode(signature).decode().rstrip("=")
+    return json.dumps(data).encode()
+
+
+def test_signature_forgery_changes_signatures_starting_with_a() -> None:
+    # The previous test incorrectly left these signatures unchanged.
+    original = base64.urlsafe_b64encode(bytes([0x68]) + bytes(63)).decode().rstrip("=")
+    assert original.startswith("a")
+    altered = json.loads(_forge_signature(json.dumps({"signature": original}).encode()))
+    assert altered["signature"] != original
+    assert base64.urlsafe_b64decode(altered["signature"] + "==") != base64.urlsafe_b64decode(
+        original + "=="
+    )
+
+
 def test_valid_exact_signed_write_and_crash_durable_replay(tmp_path) -> None:
     k = Ed25519PrivateKey.generate()
     proof, args = frame(k)
@@ -99,9 +119,7 @@ def test_forgery_rejected(tmp_path, change) -> None:
     if change == "args":
         args = '{"reference":"R2"}'
     if change == "signature":
-        data = json.loads(proof)
-        data["signature"] = "a" + data["signature"][1:]
-        proof = json.dumps(data).encode()
+        proof = _forge_signature(proof)
     verified = VerifiedLocalBinding(
         device_id=DEVICE,
         project_id=PROJECT,
