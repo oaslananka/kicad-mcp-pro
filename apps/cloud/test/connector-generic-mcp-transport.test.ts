@@ -31,7 +31,15 @@ test("generic MCP read timeout policy keeps signed writes and catalogs bounded",
   assert.deepEqual(mcpRequestBudget({method:"call"}),{
     timeoutMs:30_000,minSessionRemainingMs:31_000
   });
-  assert.deepEqual(mcpRequestBudget({method:"call",proof:{kind:"signed"}}),{
+  assert.deepEqual(mcpRequestBudget({method:"call",toolName:"run_drc"}),{
+    timeoutMs:75_000,minSessionRemainingMs:76_000
+  });
+  assert.deepEqual(mcpRequestBudget({method:"call",toolName:"run_erc"}),{
+    timeoutMs:75_000,minSessionRemainingMs:76_000
+  });
+  assert.deepEqual(mcpRequestBudget({
+    method:"call",toolName:"run_drc",proof:{kind:"signed"}
+  }),{
     timeoutMs:11_000,minSessionRemainingMs:12_000
   });
 });

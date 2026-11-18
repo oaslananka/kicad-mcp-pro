@@ -578,6 +578,15 @@ async def test_owner_transport_denies_invalid_native_session_transitions(
         return
     else:
         request = frame("call", name="kicad_get_version", args="{}")
+    if scenario == "oversized_reply":
+        # Oversized tool data fails as an explicit, bounded tool error.
+        # The signed socket must remain usable for a subsequent request.
+        result = await service.dispatch(request)
+        assert result["ok"] is True
+        assert result["result"]["isError"] is True
+        assert "mcp_bridge_result_too_large" in result["result"]["content"][0]["text"]
+        assert "x" * 100 not in result["result"]["content"][0]["text"]
+        return
     with pytest.raises(GenericMcpTransportError):
         await service.dispatch(request)
 

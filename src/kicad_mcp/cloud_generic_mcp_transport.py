@@ -36,6 +36,97 @@ class GenericMcpTransportError(ValueError):
     """Invalid, unauthenticated, stale or unauthorized generic Cloud MCP."""
 
 
+def _response_size(response: dict[str, object]) -> int:
+    return len(json.dumps(response, ensure_ascii=False).encode("utf8"))
+
+
+def _matching_structured_reply(result: dict[str, object]) -> dict[str, object] | None:
+    """Return verified duplicate structured data, never guess at text contents."""
+    structured = result.get("structuredContent")
+    contents = result.get("content")
+    if not isinstance(structured, dict) or not isinstance(contents, list) or len(contents) != 1:
+        return None
+    text_item = contents[0]
+    if (
+        not isinstance(text_item, dict)
+        or set(text_item) != {"type", "text"}
+        or text_item.get("type") != "text"
+        or not isinstance(text_item.get("text"), str)
+    ):
+        return None
+    try:
+        return structured if json.loads(text_item["text"]) == structured else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _deduplicate_mcp_text(
+    response: dict[str, object], result: dict[str, object]
+) -> dict[str, object] | None:
+    """Replace only redundant JSON text; keep the original structured result intact."""
+    structured = _matching_structured_reply(result)
+    if structured is None:
+        return None
+    summary = structured.get("summary")
+    fallback = (
+        summary
+        if isinstance(summary, str) and 0 < len(summary) <= 2048
+        else "Full findings are available in structuredContent."
+    )
+    readable = structured.get("text")
+    displays = (readable, fallback) if isinstance(readable, str) and readable else (fallback,)
+    for display in displays:
+        candidate = {
+            **response,
+            "result": {**result, "content": [{"type": "text", "text": display}]},
+        }
+        if _response_size(candidate) <= _MAX_RESULT_BYTES:
+            return candidate
+    return None
+
+
+def _fit_cloud_mcp_response(
+    response: dict[str, object], *, write_approved: bool = False
+) -> dict[str, object]:
+    """Fit duplicate MCP text/structured renders inside the existing signed frame cap.
+
+    The local MCP response can contain the same full DRC findings twice, as
+    JSON text and structured data. Only a proven duplicate may be shortened.
+    """
+    if _response_size(response) <= _MAX_RESULT_BYTES:
+        return response
+    result = response.get("result")
+    if response.get("method") != "call" or not isinstance(result, dict):
+        raise GenericMcpTransportError("mcp_bridge_result_too_large")
+    reduced = _deduplicate_mcp_text(response, result)
+    if reduced is not None:
+        return reduced
+    # A mutating tool might have successfully changed the board even if its
+    # response is oversized: preserve the unknown-outcome error, never imply
+    # that retrying is safe.
+    if write_approved:
+        raise GenericMcpTransportError("mcp_bridge_result_too_large")
+    # A read-only tool can return an explicit, bounded failure while retaining
+    # its signed request/ack session and without exposing unique private data.
+    return {
+        **response,
+        "result": {
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        "mcp_bridge_result_too_large: The local tool produced more data "
+                        "than this bounded Cloud connection can return. "
+                        "Use a narrower read-only report or inspect the local result."
+                    ),
+                }
+            ],
+            "isError": True,
+            "resultType": "complete",
+        },
+    }
+
+
 def _validated_owner_stem(value: object) -> str:
     if (
         not isinstance(value, str)
@@ -349,7 +440,10 @@ class GenericProjectMcpService:
             response = await self._worker_result(frame, project, bridge, call)
             if self.authorized() is not True:
                 raise GenericMcpTransportError(_DENIED)
-            if len(json.dumps(response, ensure_ascii=False).encode("utf8")) > _MAX_RESULT_BYTES:
+            response = _fit_cloud_mcp_response(
+                response, write_approved=bool(call and call.write_approved)
+            )
+            if _response_size(response) > _MAX_RESULT_BYTES:
                 raise GenericMcpTransportError("mcp_bridge_result_too_large")
             return response
         except GenericMcpTransportError:

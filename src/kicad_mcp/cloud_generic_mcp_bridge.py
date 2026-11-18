@@ -92,6 +92,40 @@ def _redact_private_paths(value: object, project_dir: str, home: str, depth: int
     return value
 
 
+def _compact_redundant_json_before_redaction(data: dict[str, object]) -> dict[str, object]:
+    """Avoid interpreting escaped JSON formatting as local Windows paths.
+
+    Some MCP servers duplicate structured findings in a serialized text item.
+    Compare their unmodified values *before* path redaction, then preserve the
+    whole structured result and replace only proven-identical redundant text.
+    """
+    if len(json.dumps(data, ensure_ascii=False).encode("utf8")) <= 60_000:
+        return data
+    structured = data.get("structuredContent")
+    items = data.get("content")
+    if not isinstance(structured, dict) or not isinstance(items, list) or len(items) != 1:
+        return data
+    item = items[0]
+    if (
+        not isinstance(item, dict)
+        or set(item) != {"type", "text"}
+        or item.get("type") != "text"
+        or not isinstance(item.get("text"), str)
+    ):
+        return data
+    try:
+        if json.loads(item["text"]) != structured:
+            return data
+    except (TypeError, ValueError):
+        return data
+    human = structured.get("text")
+    if not isinstance(human, str) or not human:
+        human = structured.get("summary")
+    if not isinstance(human, str) or not human:
+        human = "Full findings are available in structuredContent."
+    return {**data, "content": [{"type": "text", "text": human}]}
+
+
 class GenericMcpDeniedError(ValueError):
     """An operation is not in the owner-approved, project-scoped MCP surface."""
 
@@ -222,6 +256,7 @@ class GenericProjectMcpBridge:
         result = await session.call_tool(name, arguments=arguments)
         self.assert_current(project_id, session_id)
         raw_data = result.model_dump(mode="json", by_alias=True, exclude_none=True)
+        raw_data = _compact_redundant_json_before_redaction(raw_data)
         data = _redact_private_paths(raw_data, str(self._project.directory), str(Path.home()))
         if not isinstance(data, dict):
             raise GenericMcpDeniedError(_DENIED)
