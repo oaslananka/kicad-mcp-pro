@@ -24,6 +24,9 @@ on:
       - "src/kicad_mcp/export/pcb_manufacturing_outputs.py"
       - "src/kicad_mcp/validation/drc_report.py"
       - "src/kicad_mcp/tools/validation.py"
+      - "src/kicad_mcp/tools/routing_rules.py"
+      - "src/kicad_mcp/utils/dru.py"
+      - "tests/integration/test_kicad_native_dru_cli.py"
       - "src/kicad_mcp/tools/board_file.py"
       - "src/kicad_mcp/tools/pcb.py"
       - "src/kicad_mcp/tools/schematic.py"
@@ -61,6 +64,9 @@ on:
       - "src/kicad_mcp/export/pcb_manufacturing_outputs.py"
       - "src/kicad_mcp/validation/drc_report.py"
       - "src/kicad_mcp/tools/validation.py"
+      - "src/kicad_mcp/tools/routing_rules.py"
+      - "src/kicad_mcp/utils/dru.py"
+      - "tests/integration/test_kicad_native_dru_cli.py"
       - "src/kicad_mcp/tools/board_file.py"
       - "src/kicad_mcp/tools/pcb.py"
       - "src/kicad_mcp/tools/schematic.py"
@@ -114,6 +120,11 @@ jobs:
           uv run --all-extras python scripts/kicad_canary.py run \
             --artifacts artifacts/kicad-10-0-7 \
             --kicad-range 10.0.x
+
+      - name: Prove generated custom DRC rules are enforced by native KiCad
+        env:
+          KICAD_DRC_NATIVE_ACCEPTANCE: "1"
+        run: uv run --all-extras python -m pytest -q tests/integration/test_kicad_native_dru_cli.py
 
       - name: Upload KiCad 10.0.7 canary evidence
         if: always()

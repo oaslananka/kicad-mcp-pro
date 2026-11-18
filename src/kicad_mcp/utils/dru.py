@@ -51,6 +51,9 @@ def _tokenize(content: str) -> list[str]:
         char = content[index]
         if char.isspace():
             index += 1
+        elif char == "#":
+            end = content.find("\n", index)
+            index = len(content) if end < 0 else end + 1
         elif char in {"(", ")"}:
             tokens.append(char)
             index += 1
@@ -80,11 +83,10 @@ def _parse_expression(tokens: list[str], start_index: int = 0) -> tuple[SExprVal
 
 
 def parse_dru(content: str) -> tuple[SExprNode, str | None]:
-    """Parse a KiCad ``.kicad_dru`` file into a simple S-expression tree.
+    """Parse native KiCad files into an internal rules tree.
 
-    Returns ``(rules_node, version)`` where *version* is ``None`` or a
-    version string (e.g. ``"1"``) extracted from a leading ``(version N)``
-    declaration.
+    A native file starts with a version form and then has independent rule forms.
+    The historical rules wrapper is accepted for migration on the next write.
     """
     tokens = _tokenize(content)
     if not tokens:
@@ -92,26 +94,37 @@ def parse_dru(content: str) -> tuple[SExprNode, str | None]:
 
     index = 0
     version: str | None = None
-    # Consume leading (version N) declarations
-    while (
-        index < len(tokens)
-        and tokens[index] == "("
-        and index + 3 < len(tokens)
-        and tokens[index + 1] == "version"
-        and tokens[index + 3] == ")"
-    ):
-        version = tokens[index + 2]
-        index += 4
+    if len(tokens) >= 4 and tokens[:2] == ["(", "version"]:
+        if tokens[3] != ")":
+            raise ValueError("Malformed KiCad custom rule version declaration.")
+        version = tokens[2]
+        if version != "1":
+            raise ValueError(f"Unsupported KiCad custom rule version {version!r}; expected 1.")
+        index = 4
 
+    root: SExprNode = ["rules"]
     if index >= len(tokens):
-        return ["rules"], version
+        return root, version
 
-    node, next_index = _parse_expression(tokens, index)
-    if next_index != len(tokens):
-        raise ValueError("Unexpected trailing tokens in .kicad_dru content.")
-    if not isinstance(node, list) or not node or node[0] != "rules":
-        raise ValueError("A KiCad .kicad_dru file must have a root '(rules ...)' form.")
-    return node, version
+    while index < len(tokens):
+        form, index = _parse_expression(tokens, index)
+        if not isinstance(form, list) or not form:
+            raise ValueError("A KiCad .kicad_dru root must contain rule forms.")
+        if form[0] == "rules":
+            if len(root) > 1 or index != len(tokens):
+                raise ValueError("Legacy .kicad_dru rules wrapper must be the only root form.")
+            if any(
+                not isinstance(child, list) or not child or child[0] != "rule" for child in form[1:]
+            ):
+                raise ValueError("Legacy .kicad_dru rules wrapper contains an invalid rule.")
+            return form, version
+        if form[0] != "rule":
+            raise ValueError("A KiCad .kicad_dru root must contain rule forms.")
+        root.append(form)
+
+    if version is None:
+        raise ValueError("Native KiCad .kicad_dru requires a leading (version 1).")
+    return root, version
 
 
 def _format_atom(value: str) -> str:
@@ -127,7 +140,11 @@ def _dump_expression(node: SExprValue, indent: int = 0) -> str:
     prefix_parts: list[str] = []
     child_index = 0
     while child_index < len(node) and not isinstance(node[child_index], list):
-        prefix_parts.append(_format_atom(cast(str, node[child_index])))
+        value = cast(str, node[child_index])
+        if node[0] == "rule" and child_index == 1:
+            prefix_parts.append(_sexpr_string(value))
+        else:
+            prefix_parts.append(_format_atom(value))
         child_index += 1
 
     indent_text = "  " * indent
@@ -145,12 +162,15 @@ def _dump_expression(node: SExprValue, indent: int = 0) -> str:
 
 
 def dump_dru(node: SExprNode, version: str | None = None) -> str:
-    """Serialize a parsed KiCad ``.kicad_dru`` tree.
-
-    If *version* is provided, a ``(version ...)`` declaration is prepended.
-    """
-    header = f"(version {version})\n" if version else ""
-    return header + _dump_expression(node) + "\n"
+    """Serialize native KiCad version header and top-level custom rules."""
+    if not node or node[0] != "rules":
+        raise ValueError("Expected an internal rules tree.")
+    if version not in {None, "1"}:
+        raise ValueError(f"Unsupported KiCad custom rule version {version!r}; expected 1.")
+    rules = node[1:]
+    if any(not isinstance(rule, list) or not rule or rule[0] != "rule" for rule in rules):
+        raise ValueError("Invalid rule node in KiCad custom rules tree.")
+    return "(version 1)\n" + "".join(_dump_expression(rule) + "\n" for rule in rules)
 
 
 def iter_rule_nodes(root: SExprNode) -> list[SExprNode]:

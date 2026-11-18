@@ -4176,11 +4176,19 @@ def _rule_payload(rule: SExprNode, state: dict[str, object]) -> dict[str, object
 
 
 def _coerce_constraint_value(value: float | str | None) -> str | None:
+    """Provide a physical unit for numeric bounds; KiCad expects millimetres by default."""
     if value is None:
         return None
     if isinstance(value, str):
-        return value.strip()
-    return f"{value}"
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("DRC constraint bounds must not be empty.")
+        if re.fullmatch(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)", stripped):
+            return f"{stripped}mm"
+        return stripped
+    if not math.isfinite(value):
+        raise ValueError("DRC constraint bounds must be finite.")
+    return f"{value}mm"
 
 
 def _build_constraint_node(

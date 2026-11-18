@@ -163,16 +163,22 @@ def test_routing_rules_load_upsert_and_write(sample_project: Path) -> None:
 
     rule = '(rule "min-width" (constraint track_width (min 0.2000mm)))'
     inserted = routing_rules._upsert_rule("(rules)\n", "min-width", rule)
-    assert rule in inserted
+    from kicad_mcp.utils.dru import find_rule, parse_dru
+
+    parsed, version = parse_dru(inserted)
+    assert version == "1"
+    assert find_rule(parsed, "min-width") is not None
+    assert "(rules" not in inserted
 
     replacement = '(rule "min-width" (constraint track_width (min 0.2500mm)))'
     replaced = routing_rules._upsert_rule(inserted, "min-width", replacement)
-    assert replacement in replaced
+    assert "(min 0.2500mm)" in replaced
     assert "0.2000mm" not in replaced
 
     written_path = routing_rules._write_rule("min-width", replacement)
     assert written_path == path
-    assert replacement in path.read_text(encoding="utf-8")
+    assert "(min 0.2500mm)" in path.read_text(encoding="utf-8")
+    assert path.read_text(encoding="utf-8").startswith("(version 1)\n")
 
     bad = sample_project / "bad.kicad_dru"
     bad.write_text('(rules (rule "unterminated")', encoding="utf-8")
