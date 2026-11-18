@@ -397,3 +397,50 @@ the reviewed connector/device acceptance and separate deployment cutover.
 The local stdio/HTTP MCP engine and dashboard remain usable without a cloud
 account. Keep project paths on-device and preserve the existing owner/device
 authorization checks across remote connections.
+
+### Reviewed independent MCP tool pilot (web-connected agents)
+
+The default Cloud MCP keeps its existing signed Connector and legacy generic
+bridge behavior. An **operator-only, default-off** pilot activates independent,
+reviewable public MCP tools with original local JSON input schemas:
+
+```text
+CONNECTOR_MANAGED_READ_ENABLED=true
+CONNECTOR_MANAGED_NATIVE_WRITE_ENABLED=true
+CLOUD_MCP_DIRECT_TOOL_PILOT=true
+```
+
+The Cloud source is the generated local capability catalog at
+`integrations/common/capability-catalog.json`. The small reviewed pilot
+selection lives in `scripts/build_cloud_direct_tools.py`. Regenerate via
+`pnpm cloud:direct-tools:build`; `pnpm cloud:direct-tools:check` rejects drift
+whenever a selected tool changes or disappears. Newly added local tools are
+candidates, **not** automatically made public; a reviewed selection is needed.
+Only one MCP endpoint is used and no local KiCad implementation is duplicated.
+
+The initial pilot contains seven stable read tools and two individually
+reviewed beta writes (`sch_move_symbol` and `pcb_save`). Experimental,
+advisory, human-only, manufacturing, and project-switching operations are
+excluded. Each tool exposes its maturity and the generated 64-character
+contract revision in `_meta`; the revision covers both the original local
+schemas and Cloud's project selector schema.
+
+The Cloud server lists its pilot tool contracts independently of whether the
+owner's device is online. A call revalidates the actual client's OAuth scopes,
+enabled project and Edit grant, checks the local signed catalog matches the
+published name/mode/input schema, and delegates through the existing Connector.
+The pilot requires managed native-write configuration, including the existing
+pinned offline issuer and database preflight; startup fails closed if those
+gates are absent. A missing or older local contract fails with an actionable
+error rather than trying a different local operation. Mutations continue to
+require the owner's signed native write proof; timeouts are not safe to retry
+blindly.
+
+When this pilot is on, the generic `local_mcp_catalog` and `local_mcp_call`
+tools are hidden from the public MCP list so that publicly visible operations
+are individually reviewable. The existing Cloud and native local MCP remain
+unchanged when the pilot is off. The pilot is **not** certification of remote
+authoring on any ChatGPT/Claude/Gemini web client. Do not enable it in production
+or claim platform approval before host-specific native read/write and Plugin
+metadata review acceptance. Human-only manufacturing and arbitrary filesystem
+operations remain excluded.

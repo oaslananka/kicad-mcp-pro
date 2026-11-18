@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
+import json
+import runpy
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +14,8 @@ from mcp.types import Tool
 
 from kicad_mcp.cloud_generic_mcp_bridge import GenericMcpDeniedError, GenericProjectMcpBridge
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
+from kicad_mcp.operating_modes import OperatingMode
+from kicad_mcp.server import build_server
 
 DEVICE = "11111111-1111-4111-8111-111111111111"
 PROJECT = "22222222-2222-4222-8222-222222222222"
@@ -251,3 +258,51 @@ async def test_private_windows_paths_redacted_from_generic_result(tmp_path) -> N
     assert "C:\\Users" not in str(value)
     assert str(tmp_path) not in str(value)
     assert "[local-path]" in str(value)
+
+
+@pytest.mark.asyncio
+async def test_reviewed_cloud_pilot_matches_expert_write_worker_schemas(tmp_path) -> None:
+    root = Path(__file__).resolve().parents[2]
+    generator = runpy.run_path(str(root / "scripts" / "build_cloud_direct_tools.py"))
+    source = json.loads(
+        (root / "integrations" / "common" / "capability-catalog.json").read_text(encoding="utf-8")
+    )
+    pilot = generator["build"](source)
+
+    # Match the project worker's expert/write policy, while disabling live IPC
+    # filtering so the registered schemas can be compared without a KiCad GUI.
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        server = build_server("expert")
+    server.operating_mode = OperatingMode.WRITE
+    server.allow_experimental_tools = False
+    server.filter_runtime_tools = False
+    runtime_tools = {tool.name: tool for tool in server.list_tools_sync()}
+
+    class RuntimeSession:
+        async def list_tools(self):
+            return SimpleNamespace(
+                tools=[
+                    Tool(
+                        name=tool.name,
+                        description=tool.description or "",
+                        inputSchema=tool.input_schema or {},
+                    )
+                    for tool in runtime_tools.values()
+                ]
+            )
+
+    local = bridge(tmp_path, edit=True)
+    visible = await local.list_tools(RuntimeSession(), project_id=PROJECT, session_id=SESSION)
+    visible_by_name = {item["name"]: item for item in visible}
+
+    def canonical(value: object) -> str:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+    for expected in pilot:
+        name = expected["name"]
+        assert name in runtime_tools, f"{name} is not registered in the expert/write worker"
+        assert name in visible_by_name, f"{name} is filtered by the local Cloud bridge"
+        assert canonical(runtime_tools[name].input_schema) == canonical(expected["inputSchema"])
+        exposed = visible_by_name[name]
+        assert canonical(exposed["inputSchema"]) == canonical(expected["inputSchema"])
+        assert exposed["accessMode"] == expected["accessMode"]
