@@ -10,7 +10,7 @@ import uuid
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Annotated, Any, Protocol, cast
+from typing import Annotated, Any, Literal, Protocol, cast
 
 import structlog
 from kipy.board import Board
@@ -20,6 +20,7 @@ from kipy.board_types import (
     BoardRectangle,
     BoardSegment,
     BoardText,
+    FootprintInstance,
     Net,
     Track,
     Via,
@@ -27,14 +28,14 @@ from kipy.board_types import (
 )
 from kipy.errors import ApiError
 from kipy.geometry import PolygonWithHoles, PolyLine, PolyLineNode, Vector2
-from kipy.proto.board import board_types_pb2
+from kipy.proto.board import board_commands_pb2, board_types_pb2
 from kipy.proto.board.board_types_pb2 import BoardLayer, ViaType, ZoneType
 from kipy.proto.common import types as common_types
 from mcp.server.mcpserver import MCPServer as FastMCP
 from pydantic import Field
 
 from ..config import get_config
-from ..connection import KiCadConnectionError, get_board
+from ..connection import KiCadConnectionError, get_board, get_kicad
 from ..errors import KiCadNotRunningError
 from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION, upgrade_generated_file
 from ..library_resolution import footprint_file as _footprint_file
@@ -1050,18 +1051,159 @@ def _verify_footprint_transform(
         return False
 
 
-def _verify_footprint_layer(
+def _footprint_flip_layer_map(expected_layer: int) -> dict[int, int]:
+    front_to_back = {
+        int(BoardLayer.BL_F_Cu): int(BoardLayer.BL_B_Cu),
+        int(BoardLayer.BL_F_Adhes): int(BoardLayer.BL_B_Adhes),
+        int(BoardLayer.BL_F_Paste): int(BoardLayer.BL_B_Paste),
+        int(BoardLayer.BL_F_SilkS): int(BoardLayer.BL_B_SilkS),
+        int(BoardLayer.BL_F_Mask): int(BoardLayer.BL_B_Mask),
+        int(BoardLayer.BL_F_CrtYd): int(BoardLayer.BL_B_CrtYd),
+        int(BoardLayer.BL_F_Fab): int(BoardLayer.BL_B_Fab),
+    }
+    if int(expected_layer) == int(BoardLayer.BL_B_Cu):
+        return front_to_back
+    if int(expected_layer) == int(BoardLayer.BL_F_Cu):
+        return {back: front for front, back in front_to_back.items()}
+    return {}
+
+
+def _footprint_item_key(item: object) -> str:
+    item_id = getattr(getattr(item, "id", None), "value", None)
+    if item_id is not None:
+        return str(item_id)
+    name = getattr(item, "name", None)
+    if name:
+        return str(name)
+    text_value = getattr(getattr(item, "text", None), "value", None)
+    if text_value is None:
+        text_value = getattr(item, "value", None)
+    if text_value is not None:
+        return f"{type(item).__name__}:{text_value}"
+    return type(item).__name__
+
+
+def _footprint_flip_child_side(
+    snapshot: tuple[
+        tuple[tuple[str, int], ...],
+        tuple[tuple[str, int], ...],
+        tuple[tuple[str, tuple[int, ...]], ...],
+    ],
+) -> int | None:
+    front_to_back = _footprint_flip_layer_map(int(BoardLayer.BL_B_Cu))
+    front_layers = set(front_to_back)
+    back_layers = set(front_to_back.values())
+    child_layers = [layer for _, layer in (*snapshot[0], *snapshot[1])]
+    child_layers.extend(layer for _, pad_layers in snapshot[2] for layer in pad_layers)
+    has_front = any(layer in front_layers for layer in child_layers)
+    has_back = any(layer in back_layers for layer in child_layers)
+    if has_front and not has_back:
+        return int(BoardLayer.BL_F_Cu)
+    if has_back and not has_front:
+        return int(BoardLayer.BL_B_Cu)
+    return None
+
+
+def _set_footprint_layer_tag(
     board: object,
-    _updated: object,
+    footprint: object,
+    target_layer: int,
+) -> list[object]:
+    cast(Any, footprint).layer = target_layer
+    return list(cast(Any, board).update_items([footprint]))
+
+
+def _flip_footprint_native(
+    board: object,
+    footprint: object,
+    *,
+    restore_layer: int | None = None,
+) -> list[object]:
+    board_api = cast(Any, board)
+    flipped = list(
+        board_api.flip_items(
+            cast(BoardItem, footprint),
+            direction=board_commands_pb2.BoardFlipDirection.BFD_LEFT_RIGHT,
+        )
+    )
+    if restore_layer is not None:
+        for item in flipped:
+            item.layer = restore_layer
+        return list(board_api.update_items(flipped))
+    return flipped
+
+
+def _footprint_flip_layer_snapshot(
+    footprint: FootprintInstance,
+) -> tuple[
+    tuple[tuple[str, int], ...],
+    tuple[tuple[str, int], ...],
+    tuple[tuple[str, tuple[int, ...]], ...],
+]:
+    definition = footprint.definition
+    text_layers = tuple(
+        sorted((_footprint_item_key(item), int(item.layer)) for item in footprint.texts_and_fields)
+    )
+    shape_layers = tuple(
+        sorted((_footprint_item_key(item), int(item.layer)) for item in definition.shapes)
+    )
+    pad_layers = tuple(
+        sorted(
+            (
+                _footprint_item_key(pad),
+                tuple(sorted(int(layer) for layer in pad.padstack.layers)),
+            )
+            for pad in definition.pads
+        )
+    )
+    return text_layers, shape_layers, pad_layers
+
+
+def _verify_footprint_flip(
+    board: object,
+    flipped_items: object,
     *,
     reference: str,
     expected_layer: int,
+    before_snapshot: tuple[
+        tuple[tuple[str, int], ...],
+        tuple[tuple[str, int], ...],
+        tuple[tuple[str, tuple[int, ...]], ...],
+    ],
+    flip_children: bool = True,
 ) -> bool:
+    if not isinstance(flipped_items, Sequence) or len(flipped_items) != 1:
+        return False
+    flipped = flipped_items[0]
     refreshed = _find_footprint_on_board(board, reference)
     if refreshed is None:
         return False
     try:
-        return int(refreshed.layer) == int(expected_layer)
+        layer_map = _footprint_flip_layer_map(expected_layer) if flip_children else {}
+        if flip_children and not layer_map:
+            return False
+        after_snapshot = _footprint_flip_layer_snapshot(cast(FootprintInstance, refreshed))
+        expected_text_layers = tuple(
+            sorted((key, layer_map.get(layer, layer)) for key, layer in before_snapshot[0])
+        )
+        expected_shape_layers = tuple(
+            sorted((key, layer_map.get(layer, layer)) for key, layer in before_snapshot[1])
+        )
+        expected_pad_layers = tuple(
+            sorted(
+                (
+                    key,
+                    tuple(sorted(layer_map.get(layer, layer) for layer in layers)),
+                )
+                for key, layers in before_snapshot[2]
+            )
+        )
+        return (
+            flipped.reference_field.text.value == reference
+            and int(flipped.layer) == int(expected_layer)
+            and int(refreshed.layer) == int(expected_layer)
+            and after_snapshot == (expected_text_layers, expected_shape_layers, expected_pad_layers)
+        )
     except (AttributeError, TypeError, ValueError):
         return False
 
@@ -3920,31 +4062,139 @@ def _register_footprint_placement_tools(mcp: FastMCP) -> None:
         )
 
 
+_FootprintSideAction = Literal["already", "flip", "restore_children", "restore_tag"]
+
+
+def _footprint_side_action(
+    current_layer: int, expected_layer: int, child_side: int | None
+) -> _FootprintSideAction:
+    if current_layer == expected_layer:
+        opposite = (
+            int(BoardLayer.BL_B_Cu)
+            if expected_layer == int(BoardLayer.BL_F_Cu)
+            else int(BoardLayer.BL_F_Cu)
+        )
+        return "restore_children" if child_side == opposite else "already"
+    return "restore_tag" if child_side == expected_layer else "flip"
+
+
+def _footprint_side_support_error(board: object, action: _FootprintSideAction) -> str | None:
+    if action == "restore_tag":
+        if not callable(getattr(board, "update_items", None)):
+            return (
+                "The footprint layer tag cannot be reconciled because the installed "
+                "kicad-python SDK does not expose Board.update_items; no changes were made."
+            )
+        return None
+
+    version = get_kicad().get_version()
+    try:
+        version_tuple = (int(version.major), int(version.minor), int(version.patch))
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "Could not verify the KiCad IPC version required for native "
+            "footprint flipping; no changes were made."
+        ) from exc
+    if version_tuple < (10, 0, 6):
+        detected = getattr(
+            version,
+            "full_version",
+            f"{version_tuple[0]}.{version_tuple[1]}.{version_tuple[2]}",
+        )
+        raise RuntimeError(
+            "Native footprint flipping requires KiCad 10.0.6 or newer; "
+            f"detected {detected}. No changes were made."
+        )
+    if not callable(getattr(board, "flip_items", None)):
+        return (
+            "Native footprint flipping is unavailable because the installed "
+            "kicad-python SDK does not expose Board.flip_items; no changes were made."
+        )
+    return None
+
+
+def _mutate_footprint_side(
+    board: object, footprint: object, expected_layer: int, action: _FootprintSideAction
+) -> list[object]:
+    if action == "restore_tag":
+        return _set_footprint_layer_tag(board, footprint, expected_layer)
+    return _flip_footprint_native(
+        board,
+        footprint,
+        restore_layer=expected_layer if action == "restore_children" else None,
+    )
+
+
+def _footprint_side_result(reference: str, target_name: str, action: _FootprintSideAction) -> str:
+    if action == "restore_children":
+        return (
+            f"Repaired footprint '{reference}' on {target_name}: its layer tag had changed "
+            "without moving its pads and graphics. KiCad native IPC restored the correct side."
+        )
+    if action == "restore_tag":
+        return (
+            f"Reconciled footprint '{reference}' to {target_name}: its pads and graphics "
+            "were already on the requested side, so only the stale layer tag was corrected."
+        )
+    return (
+        f"Flipped footprint '{reference}' to {target_name} using KiCad native IPC; "
+        "pads and footprint graphics were mirrored to the target side."
+    )
+
+
 def _register_footprint_layer_tools(mcp: FastMCP) -> None:
     """Register the footprint layer tools."""
 
     @mcp.tool()
     @requires_kicad_running
     def pcb_set_footprint_layer(reference: str, layer: str) -> str:
-        """Set the footprint copper side."""
-        footprint = _find_footprint_by_reference(reference)
+        """Flip a footprint to F.Cu or B.Cu using KiCad 10.0.6+ native IPC."""
+        board = get_board()
+        footprint = _find_footprint_on_board(board, reference)
         if footprint is None:
             return f"Footprint '{reference}' was not found on the active board."
-        expected_layer = resolve_layer(layer)
-        footprint.layer = expected_layer
+
+        expected_layer = int(resolve_layer(layer))
+        front_layer = int(BoardLayer.BL_F_Cu)
+        back_layer = int(BoardLayer.BL_B_Cu)
+        if expected_layer not in {front_layer, back_layer}:
+            return "Only F.Cu and B.Cu are valid footprint sides; no changes were made."
+
+        current_layer = int(footprint.layer)
+        if current_layer not in {front_layer, back_layer}:
+            return (
+                f"Footprint '{reference}' is not currently on F.Cu or B.Cu; "
+                "native side flipping was refused without changes."
+            )
+
+        before_snapshot = _footprint_flip_layer_snapshot(cast(FootprintInstance, footprint))
+        action = _footprint_side_action(
+            current_layer, expected_layer, _footprint_flip_child_side(before_snapshot)
+        )
+        target_name = "F.Cu" if expected_layer == front_layer else "B.Cu"
+        if action == "already":
+            return f"Footprint '{reference}' is already on {target_name}; no flip was needed."
+
+        error = _footprint_side_support_error(board, action)
+        if error is not None:
+            return error
+
+        transaction_active = _native_live_transaction_active()
         execute_live_board_mutation(
             "pcb_set_footprint_layer",
-            lambda board: list(board.update_items([cast(BoardItem, footprint)])),
-            verifier=lambda board, updated: _verify_footprint_layer(
+            lambda board: _mutate_footprint_side(board, footprint, expected_layer, action),
+            verifier=lambda board, updated: _verify_footprint_flip(
                 board,
                 updated,
                 reference=reference,
                 expected_layer=expected_layer,
+                before_snapshot=before_snapshot,
+                flip_children=action != "restore_tag",
             ),
         )
-        if _native_live_transaction_active():
+        if transaction_active:
             return _staged_message(f"Footprint layer update for '{reference}'")
-        return f"Updated footprint '{reference}' to layer '{layer}'."
+        return _footprint_side_result(reference, target_name, action)
 
 
 def _register_inner_layer_graphic_tools(mcp: FastMCP) -> None:

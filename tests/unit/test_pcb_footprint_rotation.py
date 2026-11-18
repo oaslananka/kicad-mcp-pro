@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import pytest
 from kipy.board_types import Footprint3DModel, FootprintInstance
 from kipy.geometry import Angle
+from kipy.proto.board.board_commands_pb2 import BoardFlipDirection
+from kipy.proto.board.board_types_pb2 import BoardLayer
 
 from kicad_mcp.pcb.footprint_transform import (
     FootprintRotationError,
@@ -15,7 +17,41 @@ from kicad_mcp.pcb.footprint_transform import (
     verify_footprint_rotation,
 )
 from kicad_mcp.server import build_server
+from kicad_mcp.tools.pcb import (
+    _footprint_flip_layer_map,
+    _footprint_item_key,
+    _verify_footprint_flip,
+)
 from tests.conftest import call_tool_text
+
+
+def test_footprint_flip_layer_map_rejects_non_copper_targets() -> None:
+    assert _footprint_flip_layer_map(BoardLayer.BL_In1_Cu) == {}
+
+
+def test_footprint_item_key_uses_stable_text_and_value_fallbacks() -> None:
+    assert (
+        _footprint_item_key(SimpleNamespace(text=SimpleNamespace(value="silk")))
+        == "SimpleNamespace:silk"
+    )
+    assert _footprint_item_key(SimpleNamespace(value="fab")) == "SimpleNamespace:fab"
+    assert _footprint_item_key(SimpleNamespace()) == "SimpleNamespace"
+
+
+def test_footprint_flip_verifier_rejects_unknown_target_layer() -> None:
+    footprint = SimpleNamespace(
+        reference_field=SimpleNamespace(text=SimpleNamespace(value="X2")),
+        layer=BoardLayer.BL_F_Cu,
+    )
+    board = SimpleNamespace(get_footprints=lambda: [footprint])
+
+    assert not _verify_footprint_flip(
+        board,
+        [footprint],
+        reference="X2",
+        expected_layer=BoardLayer.BL_In1_Cu,
+        before_snapshot=((), (), ()),
+    )
 
 
 class _StrictRotationSurface:
@@ -378,3 +414,520 @@ def test_kicad_10_0_8_symbol_units_unknown_field_survives_rotation_round_trip() 
     round_trip = FootprintInstance(proto=footprint.proto)
     assert round_trip.orientation.degrees == pytest.approx(90.0)
     assert symbol_units_field in round_trip.proto.SerializeToString()
+
+
+def _make_flippable_footprint(source_layer: int) -> _LiveFootprint:
+    footprint = _LiveFootprint()
+    footprint.layer = source_layer
+    front = int(source_layer) == int(BoardLayer.BL_F_Cu)
+    copper = BoardLayer.BL_F_Cu if front else BoardLayer.BL_B_Cu
+    mask = BoardLayer.BL_F_Mask if front else BoardLayer.BL_B_Mask
+    paste = BoardLayer.BL_F_Paste if front else BoardLayer.BL_B_Paste
+    silk = BoardLayer.BL_F_SilkS if front else BoardLayer.BL_B_SilkS
+    fab = BoardLayer.BL_F_Fab if front else BoardLayer.BL_B_Fab
+    courtyard = BoardLayer.BL_F_CrtYd if front else BoardLayer.BL_B_CrtYd
+    reference_field = SimpleNamespace(
+        name="Reference",
+        text=SimpleNamespace(value="X2"),
+        layer=silk,
+    )
+    footprint.reference_field = reference_field
+    footprint.texts_and_fields = [
+        SimpleNamespace(id=SimpleNamespace(value="silk-text"), layer=silk),
+        SimpleNamespace(id=SimpleNamespace(value="fab-text"), layer=fab),
+        reference_field,
+        SimpleNamespace(name="Value", layer=fab),
+    ]
+    footprint.definition = SimpleNamespace(
+        shapes=[
+            SimpleNamespace(id=SimpleNamespace(value="silk-shape"), layer=silk),
+            SimpleNamespace(id=SimpleNamespace(value="fab-shape"), layer=fab),
+            SimpleNamespace(id=SimpleNamespace(value="courtyard-shape"), layer=courtyard),
+        ],
+        pads=[
+            SimpleNamespace(
+                id=SimpleNamespace(value=f"pad-{number}"),
+                number=str(number),
+                padstack=SimpleNamespace(layers=[copper, mask, paste]),
+            )
+            for number in (1, 2)
+        ],
+    )
+    return footprint
+
+
+def _mock_flip_footprint(footprint: _LiveFootprint, target_layer: int) -> list[object]:
+    front_to_back = {
+        int(BoardLayer.BL_F_Cu): int(BoardLayer.BL_B_Cu),
+        int(BoardLayer.BL_F_Adhes): int(BoardLayer.BL_B_Adhes),
+        int(BoardLayer.BL_F_Paste): int(BoardLayer.BL_B_Paste),
+        int(BoardLayer.BL_F_SilkS): int(BoardLayer.BL_B_SilkS),
+        int(BoardLayer.BL_F_Mask): int(BoardLayer.BL_B_Mask),
+        int(BoardLayer.BL_F_CrtYd): int(BoardLayer.BL_B_CrtYd),
+        int(BoardLayer.BL_F_Fab): int(BoardLayer.BL_B_Fab),
+    }
+    layer_map = (
+        front_to_back
+        if int(target_layer) == int(BoardLayer.BL_B_Cu)
+        else {back: front for front, back in front_to_back.items()}
+    )
+    footprint.layer = target_layer
+    for item in footprint.texts_and_fields:
+        item.layer = layer_map.get(int(item.layer), int(item.layer))
+    for shape in footprint.definition.shapes:
+        shape.layer = layer_map.get(int(shape.layer), int(shape.layer))
+    for pad in footprint.definition.pads:
+        pad.padstack.layers = [
+            layer_map.get(int(layer), int(layer)) for layer in pad.padstack.layers
+        ]
+    return [footprint]
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+@pytest.mark.parametrize(
+    ("source_layer", "target_layer", "target_name"),
+    [
+        (BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu, "B_Cu"),
+        (BoardLayer.BL_B_Cu, BoardLayer.BL_F_Cu, "F_Cu"),
+    ],
+)
+async def test_set_footprint_layer_uses_native_flip_in_both_directions(
+    mock_board: object,
+    monkeypatch: pytest.MonkeyPatch,
+    source_layer: int,
+    target_layer: int,
+    target_name: str,
+) -> None:
+    footprint = _make_flippable_footprint(source_layer)
+    mock_board.get_footprints.return_value = [footprint]
+    mock_board.flip_items.side_effect = lambda item, direction: _mock_flip_footprint(
+        item, target_layer
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb.get_kicad",
+        lambda: SimpleNamespace(get_version=lambda: SimpleNamespace(major=10, minor=0, patch=7)),
+        raising=False,
+    )
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_set_footprint_layer",
+        {"reference": "X2", "layer": target_name},
+    )
+
+    assert "Flipped footprint 'X2'" in result
+    assert footprint.layer == target_layer
+    mock_board.flip_items.assert_called_once_with(
+        footprint, direction=BoardFlipDirection.BFD_LEFT_RIGHT
+    )
+    mock_board.update_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+@pytest.mark.parametrize(
+    ("pad_side", "corrupted_layer", "target_layer", "target_name"),
+    [
+        (BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu, BoardLayer.BL_B_Cu, "B_Cu"),
+        (BoardLayer.BL_B_Cu, BoardLayer.BL_F_Cu, BoardLayer.BL_F_Cu, "F_Cu"),
+    ],
+)
+async def test_set_footprint_layer_repairs_legacy_layer_only_mutation(
+    mock_board: object,
+    monkeypatch: pytest.MonkeyPatch,
+    pad_side: int,
+    corrupted_layer: int,
+    target_layer: int,
+    target_name: str,
+) -> None:
+    footprint = _make_flippable_footprint(pad_side)
+    footprint.layer = corrupted_layer
+    mock_board.get_footprints.return_value = [footprint]
+
+    def flip_legacy_footprint(item: _LiveFootprint, direction: object) -> list[object]:
+        flipped = _mock_flip_footprint(item, target_layer)
+        item.layer = pad_side
+        return flipped
+
+    mock_board.flip_items.side_effect = flip_legacy_footprint
+    mock_board.update_items.side_effect = lambda items: items
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb.get_kicad",
+        lambda: SimpleNamespace(get_version=lambda: SimpleNamespace(major=10, minor=0, patch=7)),
+        raising=False,
+    )
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_set_footprint_layer",
+        {"reference": "X2", "layer": target_name},
+    )
+
+    target_side = "F" if int(target_layer) == int(BoardLayer.BL_F_Cu) else "B"
+    assert f"Repaired footprint 'X2' on {target_side}.Cu" in result
+    assert footprint.layer == target_layer
+    assert footprint.reference_field.layer == (
+        BoardLayer.BL_F_SilkS if target_side == "F" else BoardLayer.BL_B_SilkS
+    )
+    assert all(
+        {
+            BoardLayer.BL_F_Cu if target_side == "F" else BoardLayer.BL_B_Cu,
+            BoardLayer.BL_F_Mask if target_side == "F" else BoardLayer.BL_B_Mask,
+            BoardLayer.BL_F_Paste if target_side == "F" else BoardLayer.BL_B_Paste,
+        }
+        <= set(pad.padstack.layers)
+        for pad in footprint.definition.pads
+    )
+    mock_board.flip_items.assert_called_once_with(
+        footprint, direction=BoardFlipDirection.BFD_LEFT_RIGHT
+    )
+    mock_board.update_items.assert_called_once_with([footprint])
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_set_footprint_layer_rejects_layer_only_flip_for_dual_sided_footprint(
+    mock_board: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    footprint = _make_flippable_footprint(BoardLayer.BL_F_Cu)
+    footprint.texts_and_fields.append(
+        SimpleNamespace(
+            id=SimpleNamespace(value="back-silk-text"),
+            layer=BoardLayer.BL_B_SilkS,
+        )
+    )
+    footprint.definition.shapes.append(
+        SimpleNamespace(
+            id=SimpleNamespace(value="back-fab-shape"),
+            layer=BoardLayer.BL_B_Fab,
+        )
+    )
+    footprint.definition.pads.append(
+        SimpleNamespace(
+            id=SimpleNamespace(value="pad-3"),
+            number="3",
+            padstack=SimpleNamespace(
+                layers=[BoardLayer.BL_B_Cu, BoardLayer.BL_B_Mask, BoardLayer.BL_B_Paste]
+            ),
+        )
+    )
+    mock_board.get_footprints.return_value = [footprint]
+    mock_board.flip_items.side_effect = lambda item, direction: (
+        setattr(item, "layer", BoardLayer.BL_B_Cu) or [item]
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb.get_kicad",
+        lambda: SimpleNamespace(get_version=lambda: SimpleNamespace(major=10, minor=0, patch=7)),
+        raising=False,
+    )
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_set_footprint_layer",
+        {"reference": "X2", "layer": "B_Cu"},
+    )
+
+    assert "TOOL_EXECUTION_FAILED" in result
+    assert "verification failed" in result
+    assert footprint.layer == BoardLayer.BL_B_Cu
+    assert footprint.reference_field.layer == BoardLayer.BL_F_SilkS
+    mock_board.flip_items.assert_called_once()
+    mock_board.update_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+@pytest.mark.parametrize(
+    ("pad_side", "stale_layer", "target_layer", "target_name"),
+    [
+        (BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu, BoardLayer.BL_F_Cu, "F_Cu"),
+        (BoardLayer.BL_B_Cu, BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu, "B_Cu"),
+    ],
+)
+async def test_set_footprint_layer_reconciles_stale_tag_when_children_are_already_correct(
+    mock_board: object,
+    monkeypatch: pytest.MonkeyPatch,
+    pad_side: int,
+    stale_layer: int,
+    target_layer: int,
+    target_name: str,
+) -> None:
+    footprint = _make_flippable_footprint(pad_side)
+    footprint.layer = stale_layer
+    mock_board.get_footprints.return_value = [footprint]
+    mock_board.update_items.side_effect = lambda items: items
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb.get_kicad",
+        lambda: pytest.fail("tag-only reconciliation does not require native flip support"),
+        raising=False,
+    )
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_set_footprint_layer",
+        {"reference": "X2", "layer": target_name},
+    )
+
+    target_side = "F" if int(target_layer) == int(BoardLayer.BL_F_Cu) else "B"
+    assert f"Reconciled footprint 'X2' to {target_side}.Cu" in result
+    assert footprint.layer == target_layer
+    assert all(
+        {
+            BoardLayer.BL_F_Cu if target_side == "F" else BoardLayer.BL_B_Cu,
+            BoardLayer.BL_F_Mask if target_side == "F" else BoardLayer.BL_B_Mask,
+            BoardLayer.BL_F_Paste if target_side == "F" else BoardLayer.BL_B_Paste,
+        }
+        <= set(pad.padstack.layers)
+        for pad in footprint.definition.pads
+    )
+    mock_board.update_items.assert_called_once_with([footprint])
+    mock_board.flip_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_set_footprint_layer_rejects_unavailable_tag_update_api(
+    mock_board: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    footprint = _make_flippable_footprint(BoardLayer.BL_F_Cu)
+    footprint.layer = BoardLayer.BL_B_Cu
+    mock_board.get_footprints.return_value = [footprint]
+    mock_board.update_items = None
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb.get_kicad",
+        lambda: pytest.fail("tag reconciliation must not require native KiCad flip"),
+        raising=False,
+    )
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_set_footprint_layer",
+        {"reference": "X2", "layer": "F_Cu"},
+    )
+
+    assert "SDK does not expose Board.update_items" in result
+    assert "no changes were made" in result
+    assert footprint.layer == BoardLayer.BL_B_Cu
+    mock_board.flip_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_set_footprint_layer_rejects_unverifiable_kicad_version(
+    mock_board: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    footprint = _make_flippable_footprint(BoardLayer.BL_F_Cu)
+    mock_board.get_footprints.return_value = [footprint]
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb.get_kicad",
+        lambda: SimpleNamespace(
+            get_version=lambda: SimpleNamespace(major="unknown", minor=0, patch=7)
+        ),
+        raising=False,
+    )
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_set_footprint_layer",
+        {"reference": "X2", "layer": "B_Cu"},
+    )
+
+    assert "Could not verify the KiCad IPC version" in result
+    assert "no changes were made" in result
+    mock_board.flip_items.assert_not_called()
+    mock_board.update_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_set_footprint_layer_reports_staged_native_live_transaction(
+    mock_board: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    footprint = _make_flippable_footprint(BoardLayer.BL_F_Cu)
+    mock_board.get_footprints.return_value = [footprint]
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb.get_kicad",
+        lambda: SimpleNamespace(get_version=lambda: SimpleNamespace(major=10, minor=0, patch=7)),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb._native_live_transaction_active",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb.execute_live_board_mutation",
+        lambda *args, **kwargs: [footprint],
+    )
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_set_footprint_layer",
+        {"reference": "X2", "layer": "B_Cu"},
+    )
+
+    assert "staged in the active native-live transaction" in result
+    mock_board.flip_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_set_footprint_layer_refuses_non_copper_source_side(
+    mock_board: object,
+) -> None:
+    footprint = _LiveFootprint()
+    footprint.layer = BoardLayer.BL_In1_Cu
+    mock_board.get_footprints.return_value = [footprint]
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_set_footprint_layer",
+        {"reference": "X2", "layer": "B_Cu"},
+    )
+
+    assert "not currently on F.Cu or B.Cu" in result
+    assert "without changes" in result
+    mock_board.flip_items.assert_not_called()
+    mock_board.update_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_set_footprint_layer_same_side_is_a_noop(
+    mock_board: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    footprint = _make_flippable_footprint(BoardLayer.BL_B_Cu)
+    mock_board.get_footprints.return_value = [footprint]
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb.get_kicad",
+        lambda: pytest.fail("same-side request must not require a native flip"),
+        raising=False,
+    )
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_set_footprint_layer",
+        {"reference": "X2", "layer": "B.Cu"},
+    )
+
+    assert "already on" in result
+    mock_board.flip_items.assert_not_called()
+    mock_board.update_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_set_footprint_layer_rejects_non_copper_side_layers(
+    mock_board: object,
+) -> None:
+    footprint = _LiveFootprint()
+    footprint.layer = BoardLayer.BL_F_Cu
+    mock_board.get_footprints.return_value = [footprint]
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_set_footprint_layer",
+        {"reference": "X2", "layer": "In1.Cu"},
+    )
+
+    assert "Only F.Cu and B.Cu" in result
+    mock_board.flip_items.assert_not_called()
+    mock_board.update_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_set_footprint_layer_refuses_unsupported_kicad_version(
+    mock_board: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    footprint = _make_flippable_footprint(BoardLayer.BL_F_Cu)
+    mock_board.get_footprints.return_value = [footprint]
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb.get_kicad",
+        lambda: SimpleNamespace(get_version=lambda: SimpleNamespace(major=10, minor=0, patch=5)),
+        raising=False,
+    )
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_set_footprint_layer",
+        {"reference": "X2", "layer": "B_Cu"},
+    )
+
+    assert "KiCad 10.0.6 or newer" in result
+    assert "no changes were made" in result.casefold()
+    mock_board.flip_items.assert_not_called()
+    mock_board.update_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_set_footprint_layer_fails_when_native_flip_is_not_confirmed(
+    mock_board: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    footprint = _make_flippable_footprint(BoardLayer.BL_F_Cu)
+    mock_board.get_footprints.return_value = [footprint]
+    mock_board.flip_items.return_value = []
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb.get_kicad",
+        lambda: SimpleNamespace(get_version=lambda: SimpleNamespace(major=10, minor=0, patch=7)),
+        raising=False,
+    )
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_set_footprint_layer",
+        {"reference": "X2", "layer": "B_Cu"},
+    )
+
+    assert "TOOL_EXECUTION_FAILED" in result
+    assert "verification failed" in result
+    assert footprint.layer == BoardLayer.BL_F_Cu
+    mock_board.flip_items.assert_called_once()
+    mock_board.update_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_set_footprint_layer_refuses_when_sdk_has_no_native_flip_api(
+    mock_board: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    footprint = _make_flippable_footprint(BoardLayer.BL_F_Cu)
+    mock_board.get_footprints.return_value = [footprint]
+    mock_board.flip_items = None
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb.get_kicad",
+        lambda: SimpleNamespace(get_version=lambda: SimpleNamespace(major=10, minor=0, patch=7)),
+        raising=False,
+    )
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_set_footprint_layer",
+        {"reference": "X2", "layer": "B_Cu"},
+    )
+
+    assert "SDK does not expose Board.flip_items" in result
+    assert "no changes were made" in result
+    mock_board.update_items.assert_not_called()
