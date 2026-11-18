@@ -1312,14 +1312,26 @@ async def test_pcb_set_design_rules_writes_board_level_constraints(
     )
     dru_text = (sample_project / "demo.kicad_dru").read_text(encoding="utf-8")
 
+    from kicad_mcp.utils.dru import iter_rule_nodes, parse_dru
+
+    root, version = parse_dru(dru_text)
+    assert version == "1"
+    assert dru_text.splitlines()[0] == "(version 1)"
+    assert "(rules" not in dru_text
     assert "Board design rules written to" in result
-    assert "Board minimum track width" in dru_text
-    assert "(constraint track_width (min 0.1500mm) (opt 0.1500mm))" in dru_text
-    assert "(constraint clearance (min 0.1500mm))" in dru_text
-    assert "(constraint hole_size (min 0.3000mm))" in dru_text
-    assert "(constraint via_diameter (min 0.6000mm))" in dru_text
-    assert "(constraint annular_width (min 0.1300mm))" in dru_text
-    assert "(constraint hole_to_hole (min 0.2500mm))" in dru_text
+
+    constraints = [
+        child
+        for rule in iter_rule_nodes(root)
+        for child in rule[2:]
+        if isinstance(child, list) and child and child[0] == "constraint"
+    ]
+    assert ["constraint", "track_width", ["min", "0.1500mm"], ["opt", "0.1500mm"]] in constraints
+    assert ["constraint", "clearance", ["min", "0.1500mm"]] in constraints
+    assert ["constraint", "hole_size", ["min", "0.3000mm"]] in constraints
+    assert ["constraint", "via_diameter", ["min", "0.6000mm"]] in constraints
+    assert ["constraint", "annular_width", ["min", "0.1300mm"]] in constraints
+    assert ["constraint", "hole_to_hole", ["min", "0.2500mm"]] in constraints
 
 
 @pytest.mark.anyio
