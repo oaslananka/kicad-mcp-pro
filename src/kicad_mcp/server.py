@@ -3568,7 +3568,7 @@ def _log_level_match(line: str, level: str) -> bool:
 
 
 def _tool_payload(tool: mcp_types.Tool) -> dict[str, object]:
-    dumped = tool.model_dump(mode="json", exclude_none=True)
+    dumped = tool.model_dump(mode="json", exclude_none=True, by_alias=True)
     return {
         "name": dumped.get("name"),
         "description": dumped.get("description", ""),

@@ -341,6 +341,23 @@ def test_cli_tools_list_json(sample_project: Path) -> None:
     assert "kicad_get_project_info" in names
     assert "kicad_list_tool_categories" in names
     assert all("inputSchema" in tool for tool in payload)
+    by_name = {tool["name"]: tool for tool in payload}
+    assert by_name["kicad_get_version"]["inputSchema"]["type"] == "object"
+    assert by_name["kicad_get_version"]["annotations"]["readOnlyHint"] is True
+    assert "category" in by_name["kicad_get_tools_in_category"]["inputSchema"]["properties"]
+
+
+def test_cli_tools_list_json_preserves_write_contract(sample_project: Path) -> None:
+    _ = sample_project
+    result = CliRunner().invoke(
+        app, ["tools", "list", "--json", "--profile", "expert", "--mode", "write"]
+    )
+    assert result.exit_code == 0, result.output
+    by_name = {tool["name"]: tool for tool in json.loads(result.output)}
+    symbol_move = by_name["sch_move_symbol"]
+    assert symbol_move["inputSchema"]["required"] == ["reference", "x_mm", "y_mm"]
+    assert symbol_move["annotations"]["destructiveHint"] is True
+    assert symbol_move["annotations"].get("readOnlyHint", False) is False
 
 
 def test_cli_capabilities_json(sample_project: Path) -> None:
