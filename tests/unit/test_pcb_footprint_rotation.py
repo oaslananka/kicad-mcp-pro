@@ -692,6 +692,64 @@ async def test_set_footprint_layer_reconciles_stale_tag_when_children_are_alread
 
 @pytest.mark.anyio
 @pytest.mark.mcp_mode("write")
+async def test_set_footprint_layer_rejects_unavailable_tag_update_api(
+    mock_board: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    footprint = _make_flippable_footprint(BoardLayer.BL_F_Cu)
+    footprint.layer = BoardLayer.BL_B_Cu
+    mock_board.get_footprints.return_value = [footprint]
+    mock_board.update_items = None
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb.get_kicad",
+        lambda: pytest.fail("tag reconciliation must not require native KiCad flip"),
+        raising=False,
+    )
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_set_footprint_layer",
+        {"reference": "X2", "layer": "F_Cu"},
+    )
+
+    assert "SDK does not expose Board.update_items" in result
+    assert "no changes were made" in result
+    assert footprint.layer == BoardLayer.BL_B_Cu
+    mock_board.flip_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_set_footprint_layer_rejects_unverifiable_kicad_version(
+    mock_board: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    footprint = _make_flippable_footprint(BoardLayer.BL_F_Cu)
+    mock_board.get_footprints.return_value = [footprint]
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb.get_kicad",
+        lambda: SimpleNamespace(
+            get_version=lambda: SimpleNamespace(major="unknown", minor=0, patch=7)
+        ),
+        raising=False,
+    )
+    server = build_server("full")
+
+    result = await call_tool_text(
+        server,
+        "pcb_set_footprint_layer",
+        {"reference": "X2", "layer": "B_Cu"},
+    )
+
+    assert "Could not verify the KiCad IPC version" in result
+    assert "no changes were made" in result
+    mock_board.flip_items.assert_not_called()
+    mock_board.update_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
 async def test_set_footprint_layer_reports_staged_native_live_transaction(
     mock_board: object,
     monkeypatch: pytest.MonkeyPatch,
