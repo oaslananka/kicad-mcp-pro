@@ -34,6 +34,8 @@ test("Postgres bound sessions serialize proof, signed events, expiry, close and 
     const first=await sessionsA.issue(owner,device);
     assert.equal(first.kind,"issued");
     if(first.kind!=="issued")return;
+    assert.ok(first.expiresAtMs>Date.now()+20_000);
+    assert.ok(first.expiresAtMs<=Date.now()+50_000);
     assert.equal((await sessionsB.issue(owner,device)).kind,"unavailable");
     const pending=(await db.query("SELECT * FROM connector_sessions WHERE id=$1",
       [first.sessionId])).rows[0];

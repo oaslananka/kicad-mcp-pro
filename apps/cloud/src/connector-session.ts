@@ -1,6 +1,7 @@
 import {createHash,createPublicKey,randomBytes,randomUUID,timingSafeEqual,verify} from "node:crypto";
 import type {Pool,PoolClient} from "pg";
 import {lockActiveDeviceKey,withDeviceTransaction} from "./device-db-transaction.js";
+import {CONNECTOR_CHALLENGE_TTL_MS} from "./connector-challenge-window.js";
 
 const ID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HASH=/^[0-9a-f]{64}$/;
@@ -115,14 +116,14 @@ export class PgConnectorSessions{
         "(id,device_id,owner_sub,nonce_sha256,created_at,expires_at) "+
         "VALUES($1,$2,$3,$4,to_timestamp($5::double precision/1000),"+
         "to_timestamp($6::double precision/1000))",
-        [challengeId,deviceId,owner,digestNonce,now,now+60_000]);
+        [challengeId,deviceId,owner,digestNonce,now,now+CONNECTOR_CHALLENGE_TTL_MS]);
       await db.query(
         "INSERT INTO connector_sessions "+
         "(id,device_id,owner_sub,handshake_id,connection_digest,created_at,expires_at) "+
         "VALUES($1,$2,$3,$4,$5,to_timestamp($6::double precision/1000),"+
         "to_timestamp($7::double precision/1000))",
         [sessionId,deviceId,owner,challengeId,digestBinding,now,now+300_000]);
-      return {kind:"issued",sessionId,challengeId,nonce,binding,expiresAtMs:now+60_000};
+      return {kind:"issued",sessionId,challengeId,nonce,binding,expiresAtMs:now+CONNECTOR_CHALLENGE_TTL_MS};
     });
   }
 

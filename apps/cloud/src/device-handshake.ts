@@ -1,9 +1,9 @@
 import {createHash,createPublicKey,randomBytes,randomUUID,timingSafeEqual,verify} from "node:crypto";
 import type {Pool,PoolClient} from "pg";
 import {lockActiveDeviceKey,withDeviceTransaction} from "./device-db-transaction.js";
+import {CONNECTOR_CHALLENGE_TTL_MS} from "./connector-challenge-window.js";
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const TTL_MS=60_000;
 const MAX_ATTEMPTS=5;
 
 type HandshakeRow={
@@ -69,8 +69,8 @@ export class PgDeviceHandshakes{
         "(id,device_id,owner_sub,nonce_sha256,created_at,expires_at) "+
         "VALUES($1,$2,$3,$4,to_timestamp($5::double precision/1000),"+
         "to_timestamp($6::double precision/1000))",
-        [challengeId,deviceId,owner,digest,now,now+TTL_MS]);
-      return {kind:"issued",challengeId,deviceId,nonce,expiresAtMs:now+TTL_MS};
+        [challengeId,deviceId,owner,digest,now,now+CONNECTOR_CHALLENGE_TTL_MS]);
+      return {kind:"issued",challengeId,deviceId,nonce,expiresAtMs:now+CONNECTOR_CHALLENGE_TTL_MS};
     });
   }
 

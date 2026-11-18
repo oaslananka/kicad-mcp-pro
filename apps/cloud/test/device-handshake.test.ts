@@ -44,6 +44,10 @@ test("PostgreSQL handshake single-use, expiry, lockout, owner scope and revocati
     const pending=await handshakeA.issue(owner,deviceId);
     assert.equal(pending.kind,"issued");
     if(pending.kind!=="issued")return;
+    // The Python offline signer allows at most 60s relative to its own clock.
+    // Server-issued challenges must leave room for small host/DB clock differences.
+    assert.ok(pending.expiresAtMs>Date.now()+20_000);
+    assert.ok(pending.expiresAtMs<=Date.now()+50_000);
     assert.equal((await handshakeB.issue(owner,deviceId)).kind,"unavailable");
     assert.equal(pending.nonce.length,43);
     const persisted=(await db.query("SELECT * FROM device_handshake_challenges WHERE id=$1",
