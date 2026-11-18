@@ -4,7 +4,7 @@ import {createServer} from "node:http";
 import type {AddressInfo} from "node:net";
 import {randomUUID} from "node:crypto";
 import {WebSocket} from "ws";
-import {attachConnectorWebSocket} from "../src/connector-ws.js";
+import {attachConnectorWebSocket,mcpRequestBudget} from "../src/connector-ws.js";
 
 const deviceId="11111111-1111-4111-8111-111111111111";
 const projectId="22222222-2222-4222-8222-222222222222";
@@ -24,8 +24,20 @@ async function send(ws:WebSocket,body:object){
   ws.send(JSON.stringify(body));
   return next;
 }
-test("signed owner WS transports generic catalog and validates acknowledged exact request",
-{timeout:20_000},async()=>{
+test("generic MCP read timeout policy keeps signed writes and catalogs bounded",()=>{
+  assert.deepEqual(mcpRequestBudget({method:"catalog"}),{
+    timeoutMs:11_000,minSessionRemainingMs:12_000
+  });
+  assert.deepEqual(mcpRequestBudget({method:"call"}),{
+    timeoutMs:30_000,minSessionRemainingMs:31_000
+  });
+  assert.deepEqual(mcpRequestBudget({method:"call",proof:{kind:"signed"}}),{
+    timeoutMs:11_000,minSessionRemainingMs:12_000
+  });
+});
+
+test("signed owner WS acknowledges both catalog and slow read calls",
+{timeout:30_000},async()=>{
   const server=createServer((_request,response)=>{response.writeHead(404);response.end();});
   await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
   const port=(server.address() as AddressInfo).port;
@@ -48,7 +60,8 @@ test("signed owner WS transports generic catalog and validates acknowledged exac
       disconnect:async()=>undefined,
       authorizeOutgoingSummary:async()=>true
     } as never,
-    ownerConsent:{consume:async()=>true} as never
+    // Managed sessions allow serial catalog and tool calls on one signed WS.
+    managedGrant:{isEnabled:async()=>true} as never
   });
   let ws:WebSocket|undefined;
   try{
@@ -92,6 +105,26 @@ test("signed owner WS transports generic catalog and validates acknowledged exac
     const result=await called;
     assert.equal(result?.tools?.[0]?.name,"kicad_get_version");
     assert.equal(result?.nextOffset,null);
+    // The local KiCad worker may start a native CLI DRC after its own startup.
+    // A valid read completion after the original 11s deadline must not drop
+    // the owner's already-authenticated Connector session.
+    const slowId=randomUUID();
+    const slowCall=attached.requestMcp(oauth,deviceId,projectId,{
+      requestId:slowId,method:"call",toolName:"run_drc",argumentsJson:"{}"
+    });
+    const slowWire=await message(ws);
+    assert.equal(slowWire.sequence,2);
+    assert.equal(slowWire.request.method,"call");
+    await new Promise<void>(resolve=>setTimeout(resolve,12_000));
+    const slowAck=await send(ws,{kind:"connector.mcp_result",version:1,
+      sequence:slowWire.sequence,
+      result:{kind:"connector.mcp_result",version:1,
+        requestId:slowId,projectId,method:"call",ok:true,
+        result:{isError:false,content:[{type:"text",text:"DRC report"}]}}});
+    assert.equal(slowAck.kind,"connector.mcp_ack");
+    assert.equal(slowAck.requestId,slowId);
+    assert.equal((await slowCall)?.ok,true);
+    assert.equal(attached.isDeviceConnected(owner,deviceId),true);
   }finally{
     ws?.terminate();
     await attached.close();

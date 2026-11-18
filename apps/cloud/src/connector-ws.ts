@@ -170,6 +170,15 @@ export type GenericMcpReply=Readonly<{
   nextOffset?:number|null;
   result?:unknown;
 }>;
+// Local KiCad checks may include an external CLI run after MCP worker startup.
+// Keep signed writes and metadata discovery on their existing short deadlines.
+export function mcpRequestBudget(
+  request:Readonly<{method:"catalog"|"call";proof?:object}>
+):Readonly<{timeoutMs:number;minSessionRemainingMs:number}>{
+  const timeoutMs=request.method==="call"&&request.proof===undefined?30_000:11_000;
+  return {timeoutMs,minSessionRemainingMs:timeoutMs+1_000};
+}
+
 type McpPending={
   requestId:string;projectId:string;method:"catalog"|"call";
   sequence:number;timer:NodeJS.Timeout;
@@ -1232,6 +1241,7 @@ export function attachConnectorWebSocket(
     if(stopped||!oauth||!z.uuid().safeParse(deviceId).success||
        !z.uuid().safeParse(projectId).success||
        !z.uuid().safeParse(request.requestId).success)return null;
+    const budget=mcpRequestBudget(request);
     const current=readyDevices.get(socketKey(oauth.ownerSub,deviceId));
     if(!current||current.entry.phase!=="ready"||
        current.socket.readyState!==WebSocket.OPEN||
@@ -1240,7 +1250,7 @@ export function attachConnectorWebSocket(
        current.entry.awaiting||current.entry.validating||
        current.entry.folderPending||current.entry.revisionsPending||
        current.entry.writePending||current.entry.mcpPending||
-       (current.entry.sessionDeadline??0)-performance.now()<12_000)return null;
+       (current.entry.sessionDeadline??0)-performance.now()<budget.minSessionRemainingMs)return null;
     if(!await options.connections.authorizeOutgoingSummary(
       current.socket,oauth,projectId))return null;
     if(request.method==="catalog"){
@@ -1263,7 +1273,7 @@ export function attachConnectorWebSocket(
         }
         resolve(null);
         reject(current.socket);
-      },11_000);
+      },budget.timeoutMs);
       timer.unref();
       current.entry.mcpPending={requestId:request.requestId,
         projectId,method:request.method,sequence,timer,resolve};
