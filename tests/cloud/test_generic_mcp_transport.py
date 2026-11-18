@@ -249,3 +249,26 @@ def test_pcb_writer_cannot_target_another_live_gui_board(tmp_path, monkeypatch) 
     )
     monkeypatch.setattr(connection, "get_board", lambda: correct)
     _require_owner_live_pcb(project)
+
+
+@pytest.mark.parametrize("stem", ["clean-led-kicad10", "x-chip", "R0", "rev2026"])
+def test_owner_project_accepts_safe_digit_and_x_stems(tmp_path, stem) -> None:
+    from kicad_mcp.cloud_generic_mcp_transport import _owner_project_files
+
+    (tmp_path / f"{stem}.kicad_pro").write_text("{}", encoding="utf8")
+    (tmp_path / f"{stem}.kicad_pcb").write_text("(kicad_pcb)", encoding="utf8")
+    project = OperatorProject(
+        device_id=DEVICE, project_id=PROJECT, directory=tmp_path, filename_stem=stem
+    )
+    result = _owner_project_files(project)
+    assert result["pcb_file"] == f"{stem}.kicad_pcb"
+
+
+@pytest.mark.parametrize(
+    "stem", [".", "..", "bad/path", r"bad\path", "bad:path", "bad" + chr(0) + "path", "trailing."]
+)
+def test_owner_project_rejects_unsafe_stems(tmp_path, stem) -> None:
+    from kicad_mcp.cloud_generic_mcp_transport import _validated_owner_stem
+
+    with pytest.raises(GenericMcpTransportError):
+        _validated_owner_stem(stem)

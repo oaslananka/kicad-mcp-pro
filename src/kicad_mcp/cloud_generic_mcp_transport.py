@@ -42,7 +42,7 @@ def _validated_owner_stem(value: object) -> str:
         or not 1 <= len(value) <= 180
         or value in {".", ".."}
         or value.endswith(".")
-        or any(char in value for char in "/\\\\:\\x00")
+        or any(char in value for char in ("/", "\\", ":", "\x00"))
     ):
         raise GenericMcpTransportError(_DENIED)
     return value
