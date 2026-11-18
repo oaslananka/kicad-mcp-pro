@@ -447,7 +447,9 @@ export function createCloudMcpHandler(
           const catalog=await genericMcpCatalog(project.deviceId,project.id,0,tool.name);
           const local=catalog?.tools.find(t=>t.name===tool.name);
           if(!local)return {...text({success:false,reason:"local_tool_unavailable",
-            guidance:"Connect or update the owner's local Connector."}),isError:true};
+            guidance:needsWrite
+              ?"Connect or update the owner's Connector and enable signed native write for this project."
+              :"Connect or update the owner's local Connector."}),isError:true};
           if(local.accessMode!==tool.accessMode||
               stableJson(local.inputSchema)!==stableJson(tool.inputSchema))
             return {...text({success:false,reason:"local_tool_contract_mismatch",

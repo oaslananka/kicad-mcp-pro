@@ -5,6 +5,7 @@ import {request as httpRequest} from "node:http";
 import type {AddressInfo} from "node:net";
 import {createHttpServer} from "../src/http.js";
 import {createSignedGenericMcpProposal} from "../src/connector-generic-mcp-proof.js";
+import {CLOUD_DIRECT_TOOLS} from "../src/cloud-direct-tool-contracts.generated.js";
 import type {Config} from "../src/config.js";
 import type {Inventory,Project} from "../src/store.js";
 import type {Actor,Verifier} from "../src/auth.js";
@@ -27,7 +28,7 @@ const tokenActors:Record<string,Actor>={
     issuedAt:Math.floor(Date.now()/1000)}
 };
 
-test("generic Cloud MCP proxies real local schemas and refuses unauthorized writes",async()=>{
+test("generic and direct Cloud MCP routes share the signed local write boundary",async()=>{
   let clientMode:"readonly"|"write"="readonly";
   let writePolicy=true;
   let remoteCalls=0;
@@ -54,23 +55,22 @@ test("generic Cloud MCP proxies real local schemas and refuses unauthorized writ
     }){
       assert.equal(devId,deviceId);assert.equal(projId,projectId);
       if(request.method==="catalog"){
-        const tools=[
-          {name:"kicad_get_version",description:"Installed version",
-            inputSchema:{type:"object",properties:{}},accessMode:"readonly" as const},
-          {name:"sch_add_symbol",description:"Create a symbol",
-            inputSchema:{type:"object",properties:{reference:{type:"string"}}},accessMode:"write" as const},
-        ];
+        const tools=CLOUD_DIRECT_TOOLS.filter(tool=>
+          tool.name==="kicad_get_version"||tool.name==="sch_move_symbol")
+          .map(tool=>({name:tool.name,description:tool.description,
+            inputSchema:tool.inputSchema as unknown as Record<string,unknown>,
+            accessMode:tool.accessMode as "readonly"|"write"}));
         return {kind:"connector.mcp_result" as const,version:1 as const,
           requestId:request.requestId,projectId,method:"catalog" as const,
           ok:true,tools:request.toolName?tools.filter(t=>t.name===request.toolName):tools,
           nextOffset:null};
       }
       remoteCalls++;
-      if(request.toolName==="sch_add_symbol"){
+      if(request.toolName==="sch_move_symbol"){
         localWrites++;
         assert.ok(request.proof);
         const payload=JSON.parse(Buffer.from((request.proof as {payload:string}).payload,"base64url").toString());
-        assert.equal(payload.toolName,"sch_add_symbol");
+        assert.equal(payload.toolName,"sch_move_symbol");
       }else{
         assert.equal(request.proof,undefined);
       }
@@ -142,7 +142,9 @@ test("generic Cloud MCP proxies real local schemas and refuses unauthorized writ
     const independent=await invoke(direct,"token-read","tools/list");
     const names=(independent.data.result?.tools??[]).map((t:{name:string})=>t.name);
     assert.ok(names.includes("kicad_get_version"));
-    assert.ok(names.includes("sch_add_symbol"));
+    assert.ok(names.includes("sch_move_symbol"));
+    assert.ok(names.includes("pcb_save"));
+    assert.ok(!names.includes("sch_add_symbol"));
     assert.ok(!names.includes("local_mcp_call"));
 
     const listing=await invoke(enabled,"token-read","tools/call",{
@@ -160,38 +162,60 @@ test("generic Cloud MCP proxies real local schemas and refuses unauthorized writ
 
     const noScope=await invoke(enabled,"token-read","tools/call",{
       name:"local_mcp_call",arguments:{project_id:projectId,
-        tool_name:"sch_add_symbol",arguments:{reference:"R1"}}
+        tool_name:"sch_move_symbol",arguments:{reference:"R1",x_mm:10,y_mm:20}}
     },4,"local_mcp_call");
     assert.match(JSON.stringify(noScope.data),/insufficient_scope_write_required/);
     assert.equal(localWrites,0);
 
     const noGrant=await invoke(enabled,"token-edit","tools/call",{
       name:"local_mcp_call",arguments:{project_id:projectId,
-        tool_name:"sch_add_symbol",arguments:{reference:"R1"}}
+        tool_name:"sch_move_symbol",arguments:{reference:"R1",x_mm:10,y_mm:20}}
     },5,"local_mcp_call");
     assert.match(JSON.stringify(noGrant.data),/project_edit_permission_required/);
     assert.equal(localWrites,0);
 
+    const directNoScope=await invoke(direct,"token-read","tools/call",{
+      name:"sch_move_symbol",arguments:{project_id:projectId,
+        reference:"R1",x_mm:10,y_mm:20}
+    },6,"sch_move_symbol");
+    assert.match(JSON.stringify(directNoScope.data),/insufficient_scope_write_required/);
+    assert.equal(localWrites,0);
+
+    const directNoGrant=await invoke(direct,"token-edit","tools/call",{
+      name:"sch_move_symbol",arguments:{project_id:projectId,
+        reference:"R1",x_mm:10,y_mm:20}
+    },7,"sch_move_symbol");
+    assert.match(JSON.stringify(directNoGrant.data),/project_edit_permission_required/);
+    assert.equal(localWrites,0);
+
     clientMode="write";
+    const directGood=await invoke(direct,"token-edit","tools/call",{
+      name:"sch_move_symbol",arguments:{project_id:projectId,
+        reference:"R1",x_mm:10,y_mm:20}
+    },8,"sch_move_symbol");
+    assert.match(JSON.stringify(directGood.data),/native-evidence/);
+    assert.equal(localWrites,1);
+    assert.equal(remoteCalls,2);
+
     const good=await invoke(enabled,"token-edit","tools/call",{
       name:"local_mcp_call",arguments:{project_id:projectId,
-        tool_name:"sch_add_symbol",arguments:{reference:"R1"}}
-    },6,"local_mcp_call");
+        tool_name:"sch_move_symbol",arguments:{reference:"R1",x_mm:10,y_mm:20}}
+    },9,"local_mcp_call");
     assert.match(JSON.stringify(good.data),/native-evidence/);
-    assert.equal(localWrites,1);
+    assert.equal(localWrites,2);
 
     writePolicy=false;
     const revoked=await invoke(enabled,"token-edit","tools/call",{
       name:"local_mcp_call",arguments:{project_id:projectId,
-        tool_name:"sch_add_symbol",arguments:{reference:"R1"}}
-    },7,"local_mcp_call");
+        tool_name:"sch_move_symbol",arguments:{reference:"R1",x_mm:10,y_mm:20}}
+    },10,"local_mcp_call");
     assert.match(JSON.stringify(revoked.data),/local_mcp_operation_unconfirmed/);
-    assert.equal(localWrites,1);
+    assert.equal(localWrites,2);
     wrongTarget=true;
     const other=await invoke(enabled,"token-edit","tools/call",{
       name:"local_mcp_call",arguments:{project_id:projectId,
         tool_name:"kicad_get_version",arguments:{}}
-    },8,"local_mcp_call");
+    },11,"local_mcp_call");
     assert.equal(other.data.result?.isError,true);
   }finally{
     for(const server of [disabled,enabled,direct])await new Promise<void>(resolve=>server.close(()=>resolve()));

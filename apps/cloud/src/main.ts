@@ -40,8 +40,8 @@ const managedNativeWriteEnabled=process.env.CONNECTOR_MANAGED_NATIVE_WRITE_ENABL
 const mcpGenericBridgeEnabled=managedReadEnabled;
 // A separately reviewed, static direct-tool pilot; default OFF for production.
 const mcpDirectToolPilotEnabled=process.env.CLOUD_MCP_DIRECT_TOOL_PILOT==="true";
-if(mcpDirectToolPilotEnabled&&!managedReadEnabled)
-  throw Error("Direct MCP pilot requires signed managed Connector mode");
+if(mcpDirectToolPilotEnabled&&(!managedReadEnabled||!managedNativeWriteEnabled))
+  throw Error("Direct MCP pilot requires signed managed Connector mode and native write approval");
 if(managedNativeReadEnabled&&!managedReadEnabled)
   throw Error("Managed native reads require signed managed Connector mode");
 if(managedNativeWriteEnabled&&!managedReadEnabled)

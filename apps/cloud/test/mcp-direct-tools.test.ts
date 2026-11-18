@@ -8,7 +8,7 @@ import type {Actor} from "../src/auth.js";
 const projectId="22222222-2222-4222-8222-222222222222";
 const deviceId="11111111-1111-4111-8111-111111111111";
 
-function setup(edit:boolean, permitted:boolean, stale=false, grantEdit=edit){
+function setup(edit:boolean, permitted:boolean, stale=false, grantEdit=edit, unavailable=false){
   let calls=0;
   let writeCalls=0;
   const actor:Actor={
@@ -29,7 +29,7 @@ function setup(edit:boolean, permitted:boolean, stale=false, grantEdit=edit){
     async isAccessTokenAllowed(){return true;}
   };
   const localCatalog=async(_dev:string,_proj:string,_offset:number,name?:string)=>{
-    const specs=CLOUD_DIRECT_TOOLS.filter(spec=>spec.name===name||name===undefined)
+    const specs=(unavailable?[]:CLOUD_DIRECT_TOOLS).filter(spec=>spec.name===name||name===undefined)
       .map(spec=>({name:spec.name,description:spec.description,
         inputSchema:stale?{type:"object",properties:{new_required:{type:"number"}}}:
           spec.inputSchema as unknown as Record<string,unknown>,
@@ -70,26 +70,32 @@ function setup(edit:boolean, permitted:boolean, stale=false, grantEdit=edit){
   return {handler,invoke,get calls(){return calls;},get writes(){return writeCalls;}};
 }
 
-test("direct tools expose approved stable independent schemas, not generic dispatch",async()=>{
+test("direct tools expose reviewed independent schemas and a versioned contract, not generic dispatch",async()=>{
   const t=setup(false,true);
   try{
     const response=await t.invoke("tools/list");
     assert.equal(response.status,200);
     const tools=response.data.result.tools as Array<{
       name:string;inputSchema:{properties:Record<string,unknown>;required?:string[]};
-      annotations:{readOnlyHint:boolean};_meta:{securitySchemes:Array<{scopes:string[]}>};
+      annotations:{readOnlyHint:boolean;destructiveHint:boolean};
+      _meta:Record<string,unknown>&{securitySchemes:Array<{scopes:string[]}>};
     }>;
     assert.ok(tools.some(tool=>tool.name==="kicad_get_version"));
-    assert.ok(tools.some(tool=>tool.name==="sch_add_symbol"));
+    assert.ok(tools.some(tool=>tool.name==="sch_move_symbol"));
     assert.ok(tools.some(tool=>tool.name==="pcb_save"));
+    assert.ok(!tools.some(tool=>tool.name==="sch_add_symbol"));
+    assert.ok(!tools.some(tool=>tool.name==="pcb_add_track"));
     assert.ok(!tools.some(tool=>tool.name==="local_mcp_call"));
-    const selected=tools.find(tool=>tool.name==="sch_add_symbol")!;
+    const selected=tools.find(tool=>tool.name==="sch_move_symbol")!;
     assert.equal(selected.annotations.readOnlyHint,false);
+    assert.equal(selected.annotations.destructiveHint,true);
     assert.ok("project_id" in selected.inputSchema.properties);
-    assert.ok(selected.inputSchema.required?.includes("library"));
+    assert.deepEqual(selected.inputSchema.required,["reference","x_mm","y_mm"]);
     assert.deepEqual(selected._meta.securitySchemes,[{
       type:"oauth2",scopes:["projects:read","projects:write"]
     }]);
+    assert.equal(selected._meta["com.kicad-mcp-pro.maturity"],"beta");
+    assert.equal(String(selected._meta["com.kicad-mcp-pro.contractRevision"]).length,64);
     const read=await t.invoke("tools/call",{name:"kicad_get_version",arguments:{
       project_id:projectId
     }},2);
@@ -126,12 +132,29 @@ test("direct write calls respect OAuth, project Edit and original schemas",async
     }},4);
     assert.equal(good.data.result.structuredContent.success,true);
     assert.equal(editor.writes,1);
-    const bad=await editor.invoke("tools/call",{name:"sch_add_symbol",arguments:{
-      project_id:projectId,reference:"R1"
+    const moved=await editor.invoke("tools/call",{name:"sch_move_symbol",arguments:{
+      project_id:projectId,reference:"R1",x_mm:10,y_mm:20
     }},5);
+    assert.equal(moved.data.result.structuredContent.success,true);
+    assert.equal(editor.writes,2);
+    const bad=await editor.invoke("tools/call",{name:"sch_move_symbol",arguments:{
+      project_id:projectId,reference:"R1"
+    }},6);
     assert.equal(bad.data.result.isError,true);
-    assert.equal(editor.writes,1);
+    assert.equal(editor.writes,2);
   }finally{await editor.handler.close();}
+});
+
+test("direct writes explain when the local Connector does not expose native write",async()=>{
+  const unavailable=setup(true,true,false,true,true);
+  try{
+    const result=await unavailable.invoke("tools/call",{name:"sch_move_symbol",arguments:{
+      project_id:projectId,reference:"R1",x_mm:10,y_mm:20
+    }});
+    assert.equal(result.data.result.isError,true);
+    assert.match(JSON.stringify(result.data),/enable signed native write/);
+    assert.equal(unavailable.calls,0);
+  }finally{await unavailable.handler.close();}
 });
 
 test("direct tools never dispatch on missing project or stale local schema",async()=>{

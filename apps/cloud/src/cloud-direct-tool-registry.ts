@@ -1,5 +1,9 @@
-﻿import {fromJsonSchema, type McpServer} from "@modelcontextprotocol/server";
-import {CLOUD_DIRECT_TOOLS} from "./cloud-direct-tool-contracts.generated.js";
+import {fromJsonSchema, type McpServer} from "@modelcontextprotocol/server";
+import {
+  CLOUD_DIRECT_TOOL_REVISION,
+  CLOUD_DIRECT_TOOLS,
+  CLOUD_PROJECT_ID_SCHEMA
+} from "./cloud-direct-tool-contracts.generated.js";
 
 export type DirectCloudTool = (typeof CLOUD_DIRECT_TOOLS)[number];
 type DirectResult = Readonly<{
@@ -19,23 +23,21 @@ export function registerDirectCloudMcpTools(
       ...tool.inputSchema,
       properties:{
         ...tool.inputSchema.properties,
-        // Cloud resolves only opaque, owner-granted project identifiers.
-        project_id:{type:"string",format:"uuid",
-          description:"Granted Cloud project UUID; optional when exactly one is accessible"}
+        project_id:CLOUD_PROJECT_ID_SCHEMA
       }
     };
-    const isRead=tool.accessMode==="readonly";
     server.registerTool(tool.name,{
       description:tool.description,
       inputSchema:fromJsonSchema<Record<string,unknown>>(
         inputSchema as Parameters<typeof fromJsonSchema>[0]),
-      annotations:{
-        readOnlyHint:isRead,destructiveHint:!isRead,
-        idempotentHint:isRead,openWorldHint:false
-      },
-      _meta:{securitySchemes:[{
-        type:"oauth2",scopes:isRead?["projects:read"]:["projects:read","projects:write"]
-      }]}
+      annotations:tool.annotations,
+      _meta:{
+        securitySchemes:tool.securitySchemes.map(scheme=>({
+          type:scheme.type,scopes:[...scheme.scopes]
+        })),
+        "com.kicad-mcp-pro.contractRevision":CLOUD_DIRECT_TOOL_REVISION,
+        "com.kicad-mcp-pro.maturity":tool.maturity
+      }
     },args=>execute(tool,args));
   }
 }
