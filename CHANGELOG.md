@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.20.3](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.20.2...mcp-server-v4.20.3) (2026-11-18)
+
+
+### Bug Fixes
+
+* **cloud:** preserve long-running read-only DRC/ERC across SDK timeout ([#1811](https://github.com/oaslananka/kicad-mcp-pro/issues/1811)) ([df1efd4](https://github.com/oaslananka/kicad-mcp-pro/commit/df1efd4ecbbb2e5a5d95f673b85b7da2ee557d2f))
+
 ## [4.20.2](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.20.1...mcp-server-v4.20.2) (2026-11-18)
 
 
