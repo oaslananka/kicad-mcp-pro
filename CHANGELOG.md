@@ -10,6 +10,15 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.20.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.20.0...mcp-server-v4.20.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **cloud:** preserve long MCP reads without relaxing write deadlines ([#1801](https://github.com/oaslananka/kicad-mcp-pro/issues/1801)) ([#1803](https://github.com/oaslananka/kicad-mcp-pro/issues/1803)) ([ae2761a](https://github.com/oaslananka/kicad-mcp-pro/commit/ae2761a12fd06e43276e0db8ad68b124ce09f2e6))
+* **drc:** generate KiCad-native custom rules with valid units ([#1770](https://github.com/oaslananka/kicad-mcp-pro/issues/1770)) ([#1799](https://github.com/oaslananka/kicad-mcp-pro/issues/1799)) ([90a62b5](https://github.com/oaslananka/kicad-mcp-pro/commit/90a62b5de96d9bb5b6a14c744fe75fc3026c5579))
+* **security:** constrain variant export artifact paths ([#1806](https://github.com/oaslananka/kicad-mcp-pro/issues/1806)) ([1ddb8ce](https://github.com/oaslananka/kicad-mcp-pro/commit/1ddb8ce1d3a8a67d4670f947a582d07c9ba29130))
+
 ## [4.20.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.19.0...mcp-server-v4.20.0) (2026-11-18)
 
 
