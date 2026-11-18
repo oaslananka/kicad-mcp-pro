@@ -6,7 +6,15 @@ from pathlib import Path
 
 from ..config import get_config
 from ..path_safety import resolve_under
-from ..utils.sexpr import _extract_block, _sexpr_string
+from ..utils.dru import (
+    dump_dru,
+    iter_rule_nodes,
+    parse_dru,
+    upsert_rule,
+)
+from ..utils.dru import (
+    rule_name as parsed_rule_name,
+)
 
 
 def _rules_file_path() -> Path:
@@ -69,24 +77,14 @@ def _load_rules_content(path: Path) -> str:
 
 
 def _upsert_rule(content: str, rule_name: str, rule_body: str) -> str:
-    search = f"(rule {_sexpr_string(rule_name)}"
-    index = content.find(search)
-    if index >= 0:
-        block, consumed = _extract_block(content, index)
-        if not block or consumed == 0:
-            raise ValueError(f"Could not replace existing rule block for {rule_name}.")
-        updated = content[:index] + rule_body + content[index + consumed :]
-    else:
-        stripped = content.rstrip()
-        insert_at = stripped.rfind(")")
-        if insert_at < 0:
-            raise ValueError("The design rules file does not contain a root '(rules ...)' form.")
-        prefix = stripped[:insert_at].rstrip()
-        suffix = stripped[insert_at:]
-        updated = f"{prefix}\n{rule_body}\n{suffix}\n"
-    if not _is_balanced(updated):
-        raise ValueError(f"Refusing to write invalid design rules after updating {rule_name}.")
-    return updated
+    """Insert or replace a rule without corrupting native top-level forms."""
+    root, version = parse_dru(content)
+    candidate, _ = parse_dru(f"(version 1)\n{rule_body}\n")
+    rules = iter_rule_nodes(candidate)
+    if len(rules) != 1 or parsed_rule_name(rules[0]) != rule_name:
+        raise ValueError("Rule body must contain exactly the named custom rule.")
+    upsert_rule(root, rules[0])
+    return dump_dru(root, version=version)
 
 
 def _write_rules_content(path: Path, content: str) -> Path:
