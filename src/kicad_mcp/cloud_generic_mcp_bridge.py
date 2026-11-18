@@ -224,6 +224,13 @@ class GenericProjectMcpBridge:
         self.assert_current(project_id, session_id)
         return tools
 
+    def _assert_write_deadline(self, mode: str, not_after_unix_ms: int | None) -> None:
+        """Recheck the single-use write deadline without changing read policy."""
+        if mode == "write" and (
+            type(not_after_unix_ms) is not int or self._now() >= not_after_unix_ms
+        ):
+            raise GenericMcpDeniedError("signed_mcp_write_deadline_expired")
+
     async def call_tool(
         self,
         session: ClientSession,
@@ -253,10 +260,7 @@ class GenericProjectMcpBridge:
         if not any(item["name"] == name for item in catalog):
             raise GenericMcpDeniedError(_DENIED)
         self.assert_current(project_id, session_id)
-        if mode == "write" and (
-            type(not_after_unix_ms) is not int or self._now() >= not_after_unix_ms
-        ):
-            raise GenericMcpDeniedError("signed_mcp_write_deadline_expired")
+        self._assert_write_deadline(mode, not_after_unix_ms)
         if mode == "readonly" and name in _LONG_READ_MCP_TOOLS:
             result = await session.call_tool(
                 name, arguments=arguments, read_timeout_seconds=_LONG_READ_MCP_TIMEOUT_SECONDS
