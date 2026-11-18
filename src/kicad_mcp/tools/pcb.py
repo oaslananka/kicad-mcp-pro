@@ -1083,6 +1083,56 @@ def _footprint_item_key(item: object) -> str:
     return type(item).__name__
 
 
+def _footprint_flip_child_side(
+    snapshot: tuple[
+        tuple[tuple[str, int], ...],
+        tuple[tuple[str, int], ...],
+        tuple[tuple[str, tuple[int, ...]], ...],
+    ],
+) -> int | None:
+    front_to_back = _footprint_flip_layer_map(int(BoardLayer.BL_B_Cu))
+    front_layers = set(front_to_back)
+    back_layers = set(front_to_back.values())
+    child_layers = [layer for _, layer in (*snapshot[0], *snapshot[1])]
+    child_layers.extend(layer for _, pad_layers in snapshot[2] for layer in pad_layers)
+    has_front = any(layer in front_layers for layer in child_layers)
+    has_back = any(layer in back_layers for layer in child_layers)
+    if has_front and not has_back:
+        return int(BoardLayer.BL_F_Cu)
+    if has_back and not has_front:
+        return int(BoardLayer.BL_B_Cu)
+    return None
+
+
+def _set_footprint_layer_tag(
+    board: object,
+    footprint: object,
+    target_layer: int,
+) -> list[object]:
+    cast(Any, footprint).layer = target_layer
+    return list(cast(Any, board).update_items([footprint]))
+
+
+def _flip_footprint_native(
+    board: object,
+    footprint: object,
+    *,
+    restore_layer: int | None = None,
+) -> list[object]:
+    board_api = cast(Any, board)
+    flipped = list(
+        board_api.flip_items(
+            cast(BoardItem, footprint),
+            direction=board_commands_pb2.BoardFlipDirection.BFD_LEFT_RIGHT,
+        )
+    )
+    if restore_layer is not None:
+        for item in flipped:
+            item.layer = restore_layer
+        return list(board_api.update_items(flipped))
+    return flipped
+
+
 def _footprint_flip_layer_snapshot(
     footprint: FootprintInstance,
 ) -> tuple[
@@ -1120,6 +1170,7 @@ def _verify_footprint_flip(
         tuple[tuple[str, int], ...],
         tuple[tuple[str, tuple[int, ...]], ...],
     ],
+    flip_children: bool = True,
 ) -> bool:
     if not isinstance(flipped_items, Sequence) or len(flipped_items) != 1:
         return False
@@ -1128,8 +1179,8 @@ def _verify_footprint_flip(
     if refreshed is None:
         return False
     try:
-        layer_map = _footprint_flip_layer_map(expected_layer)
-        if not layer_map:
+        layer_map = _footprint_flip_layer_map(expected_layer) if flip_children else {}
+        if flip_children and not layer_map:
             return False
         after_snapshot = _footprint_flip_layer_snapshot(cast(FootprintInstance, refreshed))
         expected_text_layers = tuple(
@@ -4030,61 +4081,93 @@ def _register_footprint_layer_tools(mcp: FastMCP) -> None:
             return "Only F.Cu and B.Cu are valid footprint sides; no changes were made."
 
         current_layer = int(footprint.layer)
-        if current_layer == int(expected_layer):
-            target_name = "F.Cu" if int(expected_layer) == front_layer else "B.Cu"
-            return f"Footprint '{reference}' is already on {target_name}; no flip was needed."
         if current_layer not in {front_layer, back_layer}:
             return (
                 f"Footprint '{reference}' is not currently on F.Cu or B.Cu; "
                 "native side flipping was refused without changes."
             )
 
-        version = get_kicad().get_version()
-        try:
-            version_tuple = (int(version.major), int(version.minor), int(version.patch))
-        except (AttributeError, TypeError, ValueError) as exc:
-            raise RuntimeError(
-                "Could not verify the KiCad IPC version required for native footprint flipping; "
-                "no changes were made."
-            ) from exc
-        if version_tuple < (10, 0, 6):
-            detected = getattr(
-                version,
-                "full_version",
-                f"{version_tuple[0]}.{version_tuple[1]}.{version_tuple[2]}",
-            )
-            raise RuntimeError(
-                "Native footprint flipping requires KiCad 10.0.6 or newer; "
-                f"detected {detected}. No changes were made."
-            )
-        if not callable(getattr(board, "flip_items", None)):
+        before_snapshot = _footprint_flip_layer_snapshot(cast(FootprintInstance, footprint))
+        child_side = _footprint_flip_child_side(before_snapshot)
+        repairs_legacy_layer_only_change = current_layer == int(expected_layer) and child_side == (
+            back_layer if int(expected_layer) == front_layer else front_layer
+        )
+        repairs_layer_tag_only = current_layer != int(expected_layer) and child_side == int(
+            expected_layer
+        )
+        if current_layer == int(expected_layer) and not repairs_legacy_layer_only_change:
+            target_name = "F.Cu" if int(expected_layer) == front_layer else "B.Cu"
+            return f"Footprint '{reference}' is already on {target_name}; no flip was needed."
+
+        requires_native_flip = not repairs_layer_tag_only
+        if requires_native_flip:
+            version = get_kicad().get_version()
+            try:
+                version_tuple = (int(version.major), int(version.minor), int(version.patch))
+            except (AttributeError, TypeError, ValueError) as exc:
+                raise RuntimeError(
+                    "Could not verify the KiCad IPC version required for native "
+                    "footprint flipping; "
+                    "no changes were made."
+                ) from exc
+            if version_tuple < (10, 0, 6):
+                detected = getattr(
+                    version,
+                    "full_version",
+                    f"{version_tuple[0]}.{version_tuple[1]}.{version_tuple[2]}",
+                )
+                raise RuntimeError(
+                    "Native footprint flipping requires KiCad 10.0.6 or newer; "
+                    f"detected {detected}. No changes were made."
+                )
+            if not callable(getattr(board, "flip_items", None)):
+                return (
+                    "Native footprint flipping is unavailable because the installed "
+                    "kicad-python SDK does not expose Board.flip_items; no changes were made."
+                )
+        elif not callable(getattr(board, "update_items", None)):
             return (
-                "Native footprint flipping is unavailable because the installed "
-                "kicad-python SDK does not expose Board.flip_items; no changes were made."
+                "The footprint layer tag cannot be reconciled because the installed "
+                "kicad-python SDK does not expose Board.update_items; no changes were made."
             )
 
-        before_snapshot = _footprint_flip_layer_snapshot(cast(FootprintInstance, footprint))
         transaction_active = _native_live_transaction_active()
+
+        def mutate_footprint_side(board: object) -> list[object]:
+            if repairs_layer_tag_only:
+                return _set_footprint_layer_tag(board, footprint, int(expected_layer))
+            return _flip_footprint_native(
+                board,
+                footprint,
+                restore_layer=int(expected_layer) if repairs_legacy_layer_only_change else None,
+            )
+
         execute_live_board_mutation(
             "pcb_set_footprint_layer",
-            lambda board: list(
-                board.flip_items(
-                    cast(BoardItem, footprint),
-                    direction=board_commands_pb2.BoardFlipDirection.BFD_LEFT_RIGHT,
-                )
-            ),
+            mutate_footprint_side,
             verifier=lambda board, updated: _verify_footprint_flip(
                 board,
                 updated,
                 reference=reference,
                 expected_layer=int(expected_layer),
                 before_snapshot=before_snapshot,
+                flip_children=not repairs_layer_tag_only,
             ),
         )
         if transaction_active:
-            return _staged_message(f"Footprint flip for '{reference}'")
+            return _staged_message(f"Footprint layer update for '{reference}'")
 
         target_name = "F.Cu" if int(expected_layer) == front_layer else "B.Cu"
+        if repairs_legacy_layer_only_change:
+            return (
+                f"Repaired footprint '{reference}' on {target_name}: its layer tag had changed "
+                "without moving its pads and graphics. KiCad native IPC restored the correct side."
+            )
+        if repairs_layer_tag_only:
+            return (
+                f"Reconciled footprint '{reference}' to {target_name}: its pads and graphics "
+                "were already on the requested side, so only the stale layer tag was corrected."
+            )
         return (
             f"Flipped footprint '{reference}' to {target_name} using KiCad native IPC; "
             "pads and footprint graphics were mirrored to the target side."
