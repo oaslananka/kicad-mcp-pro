@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.20.2](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.20.1...mcp-server-v4.20.2) (2026-11-18)
+
+
+### Bug Fixes
+
+* **cloud:** return complete DRC findings without disconnecting Connector ([#1805](https://github.com/oaslananka/kicad-mcp-pro/issues/1805)) ([#1807](https://github.com/oaslananka/kicad-mcp-pro/issues/1807)) ([1b8ff90](https://github.com/oaslananka/kicad-mcp-pro/commit/1b8ff90f5cc342a48904cae8b0648eb59ddc723e))
+
 ## [4.20.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.20.0...mcp-server-v4.20.1) (2026-11-18)
 
 
