@@ -97,8 +97,42 @@ def test_no_change_has_empty_delta_and_duplicate_names_fail_closed() -> None:
         raise AssertionError("Duplicate tool must fail")
 
 
+def test_rejects_malformed_catalogs_and_duplicate_tool_names() -> None:
+    invalid_catalogs = [
+        {},
+        {"tools": [None]},
+        {"tools": [{"name": "", "inputSchema": {"type": "object"}}]},
+        {"tools": [{"name": "run_drc", "inputSchema": "not-an-object"}]},
+        catalog(tool(), tool()),
+    ]
+    for invalid in invalid_catalogs:
+        try:
+            compare_tool_catalogs(invalid, catalog())
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Malformed catalog must fail closed")
+
+
+def test_schema_shape_and_missing_permissions_require_review() -> None:
+    cases = []
+    changed_type = tool()
+    changed_type["inputSchema"]["type"] = "array"
+    cases.append(changed_type)
+    invalid_properties = tool()
+    invalid_properties["inputSchema"]["properties"] = []
+    cases.append(invalid_properties)
+    unknown_permissions = tool()
+    unknown_permissions.pop("capability")
+    cases.append(unknown_permissions)
+    for changed in cases:
+        assert compare_tool_catalogs(catalog(tool()), catalog(changed))["breaking"] == [
+            "pcb_get_board_summary"
+        ]
+
+
 if __name__ == "__main__":
     for name, candidate in sorted(globals().items()):
         if name.startswith("test_") and callable(candidate):
             candidate()
-    print("8 cloud tool contract evolution tests passed")
+    print("Cloud tool contract evolution tests passed")
