@@ -165,3 +165,20 @@ def test_manufacturing_export_writes_manifest_only_within_output_dir(
     assert (out_dir / "default_bom.csv").is_file()
     assert (out_dir / "default_gerber").is_dir()
     assert (out_dir / "default_drill").is_dir()
+
+
+def test_bom_export_never_overwrites_external_symlink(
+    export_setup: tuple[Path, dict], tmp_path: Path
+) -> None:
+    out_dir, _state = export_setup
+    outside = tmp_path / "important.txt"
+    outside.write_text("unchanged", encoding="utf-8")
+    alias = out_dir / "default_bom.csv"
+    try:
+        alias.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlink creation is unavailable on this host.")
+
+    with pytest.raises(UnsafePathError):
+        variants.variant_export_bom("default")
+    assert outside.read_text(encoding="utf-8") == "unchanged"
