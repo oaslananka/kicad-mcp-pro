@@ -82,26 +82,36 @@ def _parse_expression(tokens: list[str], start_index: int = 0) -> tuple[SExprVal
     raise ValueError("Unbalanced parentheses in .kicad_dru content.")
 
 
-def parse_dru(content: str) -> tuple[SExprNode, str | None]:
-    """Parse native KiCad files into an internal rules tree.
+def _parse_dru_version(tokens: list[str]) -> tuple[int, str | None]:
+    """Extract an optional KiCad format header, rejecting unsupported versions."""
+    if len(tokens) < 4 or tokens[:2] != ["(", "version"]:
+        return 0, None
+    if tokens[3] != ")":
+        raise ValueError("Malformed KiCad custom rule version declaration.")
+    version = tokens[2]
+    if version != "1":
+        raise ValueError(f"Unsupported KiCad custom rule version {version!r}; expected 1.")
+    return 4, version
 
-    A native file starts with a version form and then has independent rule forms.
-    The historical rules wrapper is accepted for migration on the next write.
-    """
+
+def _validate_legacy_rules_wrapper(
+    form: SExprNode, *, has_prior_rules: bool, at_end: bool
+) -> SExprNode:
+    """Accept old generated wrappers for migration, but not mixed root forms."""
+    if has_prior_rules or not at_end:
+        raise ValueError("Legacy .kicad_dru rules wrapper must be the only root form.")
+    if any(not isinstance(child, list) or not child or child[0] != "rule" for child in form[1:]):
+        raise ValueError("Legacy .kicad_dru rules wrapper contains an invalid rule.")
+    return form
+
+
+def parse_dru(content: str) -> tuple[SExprNode, str | None]:
+    """Parse native top-level KiCad rules or a legacy migration wrapper."""
     tokens = _tokenize(content)
     if not tokens:
         return ["rules"], None
 
-    index = 0
-    version: str | None = None
-    if len(tokens) >= 4 and tokens[:2] == ["(", "version"]:
-        if tokens[3] != ")":
-            raise ValueError("Malformed KiCad custom rule version declaration.")
-        version = tokens[2]
-        if version != "1":
-            raise ValueError(f"Unsupported KiCad custom rule version {version!r}; expected 1.")
-        index = 4
-
+    index, version = _parse_dru_version(tokens)
     root: SExprNode = ["rules"]
     if index >= len(tokens):
         return root, version
@@ -111,13 +121,12 @@ def parse_dru(content: str) -> tuple[SExprNode, str | None]:
         if not isinstance(form, list) or not form:
             raise ValueError("A KiCad .kicad_dru root must contain rule forms.")
         if form[0] == "rules":
-            if len(root) > 1 or index != len(tokens):
-                raise ValueError("Legacy .kicad_dru rules wrapper must be the only root form.")
-            if any(
-                not isinstance(child, list) or not child or child[0] != "rule" for child in form[1:]
-            ):
-                raise ValueError("Legacy .kicad_dru rules wrapper contains an invalid rule.")
-            return form, version
+            return (
+                _validate_legacy_rules_wrapper(
+                    form, has_prior_rules=len(root) > 1, at_end=index == len(tokens)
+                ),
+                version,
+            )
         if form[0] != "rule":
             raise ValueError("A KiCad .kicad_dru root must contain rule forms.")
         root.append(form)
