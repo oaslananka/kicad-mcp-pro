@@ -491,6 +491,76 @@ async def test_local_bridge_validates_catalog_presence_json_limits_and_result_bo
     assert session.invoked == []
 
 
+@pytest.mark.asyncio
+async def test_cloud_long_read_mcp_sdk_timeout_does_not_expand_signed_writes(tmp_path) -> None:
+    """Native DRC/ERC may exceed the MCP SDK default despite the 75s Cloud budget."""
+    from kicad_mcp.cloud_generic_mcp_bridge import GenericProjectMcpBridge
+
+    project = project_fixture(tmp_path)
+    bridge = GenericProjectMcpBridge(
+        verified=VerifiedLocalBinding(
+            device_id=DEVICE,
+            project_id=PROJECT,
+            session_id=SESSION,
+            operations=frozenset({"mcp_bridge"}),
+            session_expires_unix_ms=4_000_000_000_000,
+        ),
+        operator_project=project,
+        current_authorization=lambda: True,
+        allow_native_write=True,
+        now_ms=lambda: 3_000_000_000_000,
+    )
+
+    class Session:
+        def __init__(self) -> None:
+            self.invocations: list[tuple[str, dict[str, object]]] = []
+
+        async def list_tools(self):
+            return SimpleNamespace(
+                tools=[
+                    Tool(name=name, description="local", inputSchema={"type": "object"})
+                    for name in ("run_drc", "run_erc", "kicad_get_version", "sch_add_symbol")
+                ]
+            )
+
+        async def call_tool(self, name, arguments, **kwargs: object):
+            self.invocations.append((name, kwargs))
+            return SimpleNamespace(
+                model_dump=lambda **_: {"content": [{"type": "text", "text": "ok"}]}
+            )
+
+    session = Session()
+    for name in ("run_drc", "run_erc", "kicad_get_version", "sch_add_symbol"):
+        await bridge.call_tool(
+            session,
+            project_id=PROJECT,
+            session_id=SESSION,
+            name=name,
+            arguments={},
+            write_approved=True,
+            not_after_unix_ms=4_000_000_000_000,
+        )
+
+    assert session.invocations == [
+        ("run_drc", {"read_timeout_seconds": 70.0}),
+        ("run_erc", {"read_timeout_seconds": 70.0}),
+        ("kicad_get_version", {}),
+        ("sch_add_symbol", {}),
+    ]
+
+    with pytest.raises(GenericMcpDeniedError):
+        await bridge.call_tool(
+            session,
+            project_id=PROJECT,
+            session_id=SESSION,
+            name="sch_add_symbol",
+            arguments={},
+            write_approved=False,
+            not_after_unix_ms=4_000_000_000_000,
+        )
+    assert len(session.invocations) == 4
+
+
 @pytest.mark.parametrize(
     "scenario",
     [

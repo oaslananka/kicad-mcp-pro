@@ -22,6 +22,10 @@ _MAX_TOOL_NAME = 128
 _MAX_ARGUMENT_BYTES = 32_768
 _MAX_RESULT_BYTES = 524_288
 _DENIED = "local_mcp_operation_not_authorized"
+# The MCP SDK's default local read timeout is shorter than real KiCad DRC/ ERC.
+# Keep this below the Cloud's 75-second overall deadline, including startup.
+_LONG_READ_MCP_TOOLS = frozenset({"run_drc", "run_erc"})
+_LONG_READ_MCP_TIMEOUT_SECONDS = 70.0
 _PROJECT_SWITCH_NAMES = frozenset(
     {
         "kicad_set_project",
@@ -220,6 +224,13 @@ class GenericProjectMcpBridge:
         self.assert_current(project_id, session_id)
         return tools
 
+    def _assert_write_deadline(self, mode: str, not_after_unix_ms: int | None) -> None:
+        """Recheck the single-use write deadline without changing read policy."""
+        if mode == "write" and (
+            type(not_after_unix_ms) is not int or self._now() >= not_after_unix_ms
+        ):
+            raise GenericMcpDeniedError("signed_mcp_write_deadline_expired")
+
     async def call_tool(
         self,
         session: ClientSession,
@@ -249,11 +260,14 @@ class GenericProjectMcpBridge:
         if not any(item["name"] == name for item in catalog):
             raise GenericMcpDeniedError(_DENIED)
         self.assert_current(project_id, session_id)
-        if mode == "write" and (
-            type(not_after_unix_ms) is not int or self._now() >= not_after_unix_ms
-        ):
-            raise GenericMcpDeniedError("signed_mcp_write_deadline_expired")
-        result = await session.call_tool(name, arguments=arguments)
+        self._assert_write_deadline(mode, not_after_unix_ms)
+        if mode == "readonly" and name in _LONG_READ_MCP_TOOLS:
+            result = await session.call_tool(
+                name, arguments=arguments, read_timeout_seconds=_LONG_READ_MCP_TIMEOUT_SECONDS
+            )
+        else:
+            # Normal reads and signed writes retain their existing SDK deadline.
+            result = await session.call_tool(name, arguments=arguments)
         self.assert_current(project_id, session_id)
         raw_data = result.model_dump(mode="json", by_alias=True, exclude_none=True)
         raw_data = _compact_redundant_json_before_redaction(raw_data)
