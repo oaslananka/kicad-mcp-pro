@@ -249,6 +249,8 @@ def test_pcb_writer_cannot_target_another_live_gui_board(tmp_path, monkeypatch) 
     )
     monkeypatch.setattr(connection, "get_board", lambda: correct)
     _require_owner_live_pcb(project)
+
+
 @pytest.mark.parametrize("stem", ["clean-led-kicad10", "x-chip", "R0", "rev2026"])
 def test_owner_project_accepts_safe_digit_and_x_stems(tmp_path, stem) -> None:
     from kicad_mcp.cloud_generic_mcp_transport import _owner_project_files
