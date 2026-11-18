@@ -213,6 +213,18 @@ def _bom_rows(state: dict[str, Any], name: str) -> list[dict[str, Any]]:
     return rows
 
 
+def _safe_variant_export_path(output_dir: Path, variant: str, filename: str) -> Path:
+    """Keep variant-generated artifacts within their designated output directory."""
+    for value in (variant, filename):
+        if (
+            not value
+            or value in {".", ".."}
+            or any(char in value for char in ("/", "\\", ":", "\x00"))
+        ):
+            raise ValueError("Variant export names must be single filename components.")
+    return resolve_under(output_dir, filename, allow_absolute=False)
+
+
 def _write_bom(path: Path, rows: list[dict[str, Any]], format_name: str) -> Path:
     if format_name == "json":
         path.write_text(json.dumps(rows, indent=2), encoding="utf-8")
@@ -348,7 +360,7 @@ def variant_export_bom(variant: str, format: str = "csv") -> str:
     _ensure_variant(state, variant)
     cfg = get_config()
     out_dir = cfg.ensure_output_dir("variants")
-    out_file = out_dir / f"{variant}_bom.{fmt}"
+    out_file = _safe_variant_export_path(out_dir, variant, f"{variant}_bom.{fmt}")
     rows = _bom_rows(state, variant)
     _write_bom(out_file, rows, fmt)
     return f"Variant BOM exported to {out_file} ({len(rows)} populated component(s))."
@@ -448,7 +460,9 @@ def variant_export_schematic(variant: str, output_name: str | None = None) -> st
     _ensure_variant(state, variant)
     sch_file = _get_sch_file()
     out_dir = _ensure_output_dir("variants")
-    out_file = out_dir / (output_name or f"{variant}_schematic.pdf")
+    out_file = _safe_variant_export_path(
+        out_dir, variant, output_name or f"{variant}_schematic.pdf"
+    )
 
     is_default = variant == state.get("default_variant", "default")
     variant_args = [f"--variant={variant}"] if not is_default else []
@@ -512,7 +526,9 @@ def variant_export_manufacturing_package(
     _ensure_variant(state, variant)
     get_config()
     out_dir = _ensure_output_dir("variants")
-    manifest_path = out_dir / (output_name or f"{variant}_manufacturing.json")
+    manifest_path = _safe_variant_export_path(
+        out_dir, variant, output_name or f"{variant}_manufacturing.json"
+    )
 
     is_default = variant == state.get("default_variant", "default")
     variant_args = [f"--variant={variant}"] if not is_default else []
@@ -523,7 +539,7 @@ def variant_export_manufacturing_package(
     errors: list[str] = []
 
     # Gerber
-    gerber_dir = out_dir / f"{variant}_gerber"
+    gerber_dir = _safe_variant_export_path(out_dir, variant, f"{variant}_gerber")
     gerber_dir.mkdir(exist_ok=True)
     code, _, stderr = _run_cli_variants(
         [
@@ -554,7 +570,7 @@ def variant_export_manufacturing_package(
         errors.append(f"Gerber: {stderr or 'unknown error'}")
 
     # Drill
-    drill_dir = out_dir / f"{variant}_drill"
+    drill_dir = _safe_variant_export_path(out_dir, variant, f"{variant}_drill")
     drill_dir.mkdir(exist_ok=True)
     code, _, stderr = _run_cli_variants(
         [
@@ -585,7 +601,7 @@ def variant_export_manufacturing_package(
         errors.append(f"Drill: {stderr or 'unknown error'}")
 
     # BOM
-    bom_path = out_dir / f"{variant}_bom.csv"
+    bom_path = _safe_variant_export_path(out_dir, variant, f"{variant}_bom.csv")
     rows = _bom_rows(state, variant)
     _write_bom(bom_path, rows, "csv")
     artifacts["bom"] = str(bom_path)
