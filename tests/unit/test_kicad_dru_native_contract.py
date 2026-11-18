@@ -67,6 +67,72 @@ def test_rule_numeric_minimums_are_in_millimetres(number: float | str) -> None:
     assert node == ["constraint", "clearance", ["min", f"{number}mm"]]
 
 
+@pytest.mark.parametrize(
+    ("content", "error"),
+    [
+        ('(version 1 extra) (rule "x")', "Malformed"),
+        ('(version 2) (rule "x")', "Unsupported"),
+        ("(version 1) ()", "root must contain"),
+        ('(rules (not_a_rule "x"))', "invalid rule"),
+        ('(rules) (rule "x")', "only root form"),
+        ('(version 1) (rule "x") (rules)', "only root form"),
+        ('(version 1) (not_a_rule "x")', "root must contain"),
+        ('(rule "x")', "requires a leading"),
+    ],
+)
+def test_kicad_native_parser_rejects_malformed_or_unsupported_root(
+    content: str, error: str
+) -> None:
+    with pytest.raises(ValueError, match=error):
+        parse_dru(content)
+
+
+def test_kicad_native_parser_accepts_valid_empty_rules_and_comment_parentheses() -> None:
+    assert parse_dru("(version 1)") == (["rules"], "1")
+    assert parse_dru("# KiCad comment containing unmatched ) and (\n(version 1)") == (
+        ["rules"],
+        "1",
+    )
+
+
+@pytest.mark.parametrize(
+    ("tree", "version", "error"),
+    [
+        (["not_rules"], None, "internal rules tree"),
+        (["rules"], "2", "Unsupported"),
+        (["rules", ["not_a_rule", "x"]], None, "Invalid rule node"),
+    ],
+)
+def test_dru_writer_refuses_invalid_data_without_writing(
+    tree: list[object], version: str | None, error: str
+) -> None:
+    with pytest.raises(ValueError, match=error):
+        dump_dru(tree, version=version)  # type: ignore[arg-type]
+
+
+def test_routing_rule_upsert_refuses_mismatched_name() -> None:
+    with pytest.raises(ValueError, match="exactly the named custom rule"):
+        routing_rules._upsert_rule(
+            "(version 1)\n",
+            "Expected",
+            '(rule "Different" (constraint clearance (min 0.2mm)))',
+        )
+
+
+@pytest.mark.parametrize("value", ["", "   ", float("nan"), float("inf")])
+def test_rule_constraint_bounds_reject_empty_or_nonfinite_values(value: float | str) -> None:
+    with pytest.raises(ValueError, match="must not be empty|must be finite"):
+        _build_constraint_node("clearance", value, None)
+
+
+def test_rule_constraint_preserves_explicit_units_and_optional_max() -> None:
+    assert _build_constraint_node("clearance", None, " 0.5mm ") == [
+        "constraint",
+        "clearance",
+        ["max", "0.5mm"],
+    ]
+
+
 @pytest.mark.anyio
 async def test_mcp_drc_create_writes_native_version_and_numeric_units(
     sample_project, monkeypatch
