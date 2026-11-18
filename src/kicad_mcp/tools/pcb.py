@@ -3685,6 +3685,105 @@ def _apply_board_outline_if_safe(board: Board, rectangle: BoardRectangle) -> str
     return "Board outline added successfully."
 
 
+def _register_board_barcode_tool(mcp: FastMCP) -> None:
+    """Register the PCB barcode tool."""
+
+    @mcp.tool()
+    @headless_compatible
+    def pcb_add_barcode(
+        content: str,
+        x_mm: float,
+        y_mm: float,
+        layer: str = "F.Fab",
+        barcode_type: str = "qr",
+        size_mm: float = 10.0,
+        text_height_mm: float | None = None,
+        hide_text: bool = True,
+        allow_open_board: bool = False,
+    ) -> str:
+        """Add a production barcode marker to the board file using KiCad's native barcode format.
+
+        File-based: refuses while the board is open in KiCad unless
+        ``allow_open_board=True``, which makes KiCad reload the file afterwards.
+        """
+        if refusal := _guard_file_based_board_edit("barcode insertion", allow_open_board):
+            return refusal
+        normalized_type = barcode_type.casefold()
+        if normalized_type not in {"qr", "datamatrix", "code128", "code39"}:
+            return "barcode_type must be one of 'qr', 'datamatrix', 'code128', or 'code39'."
+        text_h = text_height_mm if text_height_mm is not None else size_mm / 4
+        board_block = (
+            f"(barcode (at {x_mm:.4f} {y_mm:.4f} 0) "
+            f'(layer "{layer}") '
+            f"(size {size_mm:.4f} {size_mm:.4f}) "
+            f'(text "{content}") '
+            f"(text_height {text_h:.4f}) "
+            f'(type "{normalized_type}") '
+            f"(hide {'yes' if hide_text else 'no'})"
+            f")"
+        )
+        _transactional_board_write(lambda current: _append_board_blocks(current, [board_block]))
+        return (
+            f"Barcode added at ({x_mm:.2f}, {y_mm:.2f}) mm on {layer} "
+            f"with type '{normalized_type}'.\n"
+            f"{_finalize_file_based_board_edit(allow_open_board)}"
+        )
+
+
+def _register_board_bitmap_board_art_tool(mcp: FastMCP) -> None:
+    """Register the PCB bitmap board-art tool."""
+
+    @mcp.tool()
+    @headless_compatible
+    def pcb_add_bitmap_board_art(
+        source_image: str,
+        x_mm: float,
+        y_mm: float,
+        width_mm: float = 20.0,
+        layer: str = _FRONT_SILKSCREEN_LAYER,
+        threshold: int = 128,
+        invert: bool = False,
+        max_pixels: int = 64,
+        max_rects: int = 1500,
+        allow_open_board: bool = False,
+    ) -> str:
+        """Import a bitmap/logo as deterministic board-art rectangles on a PCB layer.
+
+        File-based: refuses while the board is open in KiCad unless
+        ``allow_open_board=True``, which makes KiCad reload the file afterwards.
+        """
+        if refusal := _guard_file_based_board_edit("bitmap board-art import", allow_open_board):
+            return refusal
+        try:
+            canonical_layer = resolve_layer_name(layer).replace("_", ".")
+            image_path = Path(source_image).expanduser().resolve()
+            blocks, width_px, height_px = _bitmap_board_art_blocks(
+                image_path,
+                x_mm=x_mm,
+                y_mm=y_mm,
+                width_mm=width_mm,
+                layer=canonical_layer,
+                threshold=threshold,
+                invert=invert,
+                max_pixels=max_pixels,
+                max_rects=max_rects,
+            )
+            if not blocks:
+                return (
+                    "No active bitmap pixels were found for board-art import. "
+                    "Adjust threshold or invert and retry."
+                )
+            _transactional_board_write(lambda current: _append_board_blocks(current, blocks))
+        except (FileNotFoundError, RuntimeError, ValueError) as exc:
+            return str(exc)
+        return (
+            f"Bitmap board art imported from '{image_path.name}' as {len(blocks)} shape(s) "
+            f"on {canonical_layer}. Source raster: {width_px}x{height_px} px; "
+            f"placed at ({x_mm:.2f}, {y_mm:.2f}) mm with width {width_mm:.2f} mm.\n"
+            f"{_finalize_file_based_board_edit(allow_open_board)}"
+        )
+
+
 def _register_board_graphics_tools(mcp: FastMCP) -> None:
     """Register board graphics and text authoring tools."""
 
@@ -3817,80 +3916,8 @@ def _register_board_graphics_tools(mcp: FastMCP) -> None:
         )
         return "Board text added successfully."
 
-    @mcp.tool()
-    @headless_compatible
-    def pcb_add_barcode(
-        content: str,
-        x_mm: float,
-        y_mm: float,
-        layer: str = "F.Fab",
-        barcode_type: str = "qr",
-        size_mm: float = 10.0,
-        text_height_mm: float | None = None,
-        hide_text: bool = True,
-    ) -> str:
-        """Add a production barcode marker to the board file using KiCad's native barcode format."""
-        normalized_type = barcode_type.casefold()
-        if normalized_type not in {"qr", "datamatrix", "code128", "code39"}:
-            return "barcode_type must be one of 'qr', 'datamatrix', 'code128', or 'code39'."
-        text_h = text_height_mm if text_height_mm is not None else size_mm / 4
-        board_block = (
-            f"(barcode (at {x_mm:.4f} {y_mm:.4f} 0) "
-            f'(layer "{layer}") '
-            f"(size {size_mm:.4f} {size_mm:.4f}) "
-            f'(text "{content}") '
-            f"(text_height {text_h:.4f}) "
-            f'(type "{normalized_type}") '
-            f"(hide {'yes' if hide_text else 'no'})"
-            f")"
-        )
-        _transactional_board_write(lambda current: _append_board_blocks(current, [board_block]))
-        return (
-            f"Barcode added at ({x_mm:.2f}, {y_mm:.2f}) mm on {layer} "
-            f"with type '{normalized_type}'."
-        )
-
-    @mcp.tool()
-    @headless_compatible
-    def pcb_add_bitmap_board_art(
-        source_image: str,
-        x_mm: float,
-        y_mm: float,
-        width_mm: float = 20.0,
-        layer: str = _FRONT_SILKSCREEN_LAYER,
-        threshold: int = 128,
-        invert: bool = False,
-        max_pixels: int = 64,
-        max_rects: int = 1500,
-    ) -> str:
-        """Import a bitmap/logo as deterministic board-art rectangles on a PCB layer."""
-        try:
-            canonical_layer = resolve_layer_name(layer).replace("_", ".")
-            image_path = Path(source_image).expanduser().resolve()
-            blocks, width_px, height_px = _bitmap_board_art_blocks(
-                image_path,
-                x_mm=x_mm,
-                y_mm=y_mm,
-                width_mm=width_mm,
-                layer=canonical_layer,
-                threshold=threshold,
-                invert=invert,
-                max_pixels=max_pixels,
-                max_rects=max_rects,
-            )
-            if not blocks:
-                return (
-                    "No active bitmap pixels were found for board-art import. "
-                    "Adjust threshold or invert and retry."
-                )
-            _transactional_board_write(lambda current: _append_board_blocks(current, blocks))
-        except (FileNotFoundError, RuntimeError, ValueError) as exc:
-            return str(exc)
-        return (
-            f"Bitmap board art imported from '{image_path.name}' as {len(blocks)} shape(s) "
-            f"on {canonical_layer}. Source raster: {width_px}x{height_px} px; "
-            f"placed at ({x_mm:.2f}, {y_mm:.2f}) mm with width {width_mm:.2f} mm."
-        )
+    _register_board_barcode_tool(mcp)
+    _register_board_bitmap_board_art_tool(mcp)
 
 
 def _register_board_deletion_tools(mcp: FastMCP) -> None:
@@ -4212,8 +4239,17 @@ def _register_inner_layer_graphic_tools(mcp: FastMCP) -> None:
         y2_mm: float = 2.0,
         text: str = "",
         stroke_width_mm: float = 0.15,
+        allow_open_board: bool = False,
     ) -> str:
-        """Inject an inner-layer graphic primitive into a footprint block."""
+        """Inject an inner-layer graphic primitive into a footprint block.
+
+        File-based: refuses while the board is open in KiCad unless
+        ``allow_open_board=True``, which makes KiCad reload the file afterwards.
+        """
+        if refusal := _guard_file_based_board_edit(
+            "footprint inner-layer graphic edit", allow_open_board
+        ):
+            return refusal
         canonical_layer = resolve_layer_name(layer)
         if not canonical_layer.startswith("In") or not canonical_layer.endswith("_Cu"):
             return "Inner-layer footprint graphics must target In1_Cu through In30_Cu."
@@ -4257,7 +4293,8 @@ def _register_inner_layer_graphic_tools(mcp: FastMCP) -> None:
         )
         return (
             f"Added {shape_type} inner-layer graphic to footprint '{reference}' "
-            f"on {canonical_layer}."
+            f"on {canonical_layer}.\n"
+            f"{_finalize_file_based_board_edit(allow_open_board)}"
         )
 
 
@@ -5329,8 +5366,15 @@ def _register_reusable_board_block_tools(mcp: FastMCP) -> None:
         x_mm: float,
         y_mm: float,
         rotation_deg: int = 0,
+        allow_open_board: bool = False,
     ) -> str:
-        """Place a stored PCB design block by cloning its saved footprint blocks."""
+        """Place a stored PCB design block by cloning its saved footprint blocks.
+
+        File-based: refuses while the board is open in KiCad unless
+        ``allow_open_board=True``, which makes KiCad reload the file afterwards.
+        """
+        if refusal := _guard_file_based_board_edit("PCB block placement", allow_open_board):
+            return refusal
         state = _load_pcb_state(_PCB_BLOCKS_STATE_FILENAME, {"blocks": {}})
         blocks = cast(dict[str, dict[str, Any]], state.get("blocks", {}))
         block = blocks.get(block_name)
@@ -5366,7 +5410,8 @@ def _register_reusable_board_block_tools(mcp: FastMCP) -> None:
         _transactional_board_write(lambda current: _replace_board_blocks(current, {}, additions))
         return (
             f"Placed PCB block '{block_name}' at ({x_mm:.2f}, {y_mm:.2f}) mm "
-            f"with {len(additions)} cloned footprint(s)."
+            f"with {len(additions)} cloned footprint(s).\n"
+            f"{_finalize_file_based_board_edit(allow_open_board)}"
         )
 
 
@@ -5869,6 +5914,8 @@ def register(mcp: FastMCP) -> None:
                 transactional_board_write=_transactional_board_write,
                 apply_stackup_to_board=_apply_stackup_to_board,
                 reload_board_after_file_sync=_reload_board_after_file_sync,
+                guard_file_based_board_edit=_guard_file_based_board_edit,
+                finalize_file_based_board_edit=_finalize_file_based_board_edit,
             )
         ),
     )

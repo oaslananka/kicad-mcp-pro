@@ -16,8 +16,8 @@ class FakeStackupService:
         self.calls.append("get")
         return "stackup"
 
-    def set_stackup(self, layers: list[dict[str, object]]) -> str:
-        self.calls.append(("set", layers))
+    def set_stackup(self, layers: list[dict[str, object]], allow_open_board: bool = False) -> str:
+        self.calls.append(("set", layers, allow_open_board))
         return "updated"
 
 
@@ -29,9 +29,10 @@ def test_registration_preserves_contract_metadata_and_forwarding() -> None:
 
     assert set(tools) == {"pcb_get_stackup", "pcb_set_stackup"}
     assert tools["pcb_get_stackup"].description == "Show the current stackup."
-    assert tools["pcb_set_stackup"].description == (
-        "Set the active board stackup using a file-backed profile."
-    )
+    description = tools["pcb_set_stackup"].description
+    assert description is not None
+    assert description.startswith("Set the active board stackup using a file-backed profile.")
+    assert "allow_open_board=True" in description
     assert tools["pcb_get_stackup"].parameters == {
         "properties": {},
         "title": "pcb_get_stackupArguments",
@@ -43,7 +44,12 @@ def test_registration_preserves_contract_metadata_and_forwarding() -> None:
                 "items": {"additionalProperties": True, "type": "object"},
                 "title": "Layers",
                 "type": "array",
-            }
+            },
+            "allow_open_board": {
+                "default": False,
+                "title": "Allow Open Board",
+                "type": "boolean",
+            },
         },
         "required": ["layers"],
         "title": "pcb_set_stackupArguments",
@@ -53,7 +59,8 @@ def test_registration_preserves_contract_metadata_and_forwarding() -> None:
     layers: list[dict[str, object]] = [{"name": "F_Cu"}, {"name": "B_Cu"}]
     assert tools["pcb_get_stackup"].fn() == "stackup"
     assert tools["pcb_set_stackup"].fn(layers) == "updated"
-    assert service.calls == ["get", ("set", layers)]
+    assert tools["pcb_set_stackup"].fn(layers, allow_open_board=True) == "updated"
+    assert service.calls == ["get", ("set", layers, False), ("set", layers, True)]
 
     for name in tools:
         metadata = get_tool_metadata(name)

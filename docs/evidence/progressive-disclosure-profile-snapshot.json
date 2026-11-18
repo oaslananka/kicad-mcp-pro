@@ -49,7 +49,7 @@
     "default": {
       "callableTools": 25,
       "catalogCharacters": 9612,
-      "catalogReductionVsExpertPct": 95.9,
+      "catalogReductionVsExpertPct": 96.0,
       "declaredTools": 25,
       "estimatedCatalogTokens": 2403,
       "forbiddenToolExposures": 0,
@@ -95,10 +95,10 @@
     },
     "expert": {
       "callableTools": 396,
-      "catalogCharacters": 236259,
+      "catalogCharacters": 237349,
       "catalogReductionVsExpertPct": 0.0,
       "declaredTools": 396,
-      "estimatedCatalogTokens": 59065,
+      "estimatedCatalogTokens": 59338,
       "forbiddenToolExposures": 8,
       "goldenCases": 65,
       "goldenCasesCovered": 55,
@@ -560,7 +560,7 @@
     "review": {
       "callableTools": 25,
       "catalogCharacters": 9612,
-      "catalogReductionVsExpertPct": 95.9,
+      "catalogReductionVsExpertPct": 96.0,
       "declaredTools": 25,
       "estimatedCatalogTokens": 2403,
       "forbiddenToolExposures": 0,
