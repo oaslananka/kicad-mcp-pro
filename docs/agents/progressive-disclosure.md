@@ -110,3 +110,29 @@ The workflow-policy CI job fails if generated copies drift. Do not publish a
 skill bundle as verified for a host based solely on Markdown/YAML validation:
 actual host installation, discovery, MCP connection and safe readonly tool
 execution need separate recorded smoke evidence.
+
+### Cloud tool metadata evolution (offline review)
+
+The registered local catalog is regenerated using `pnpm capabilities:build` and
+checked for source drift in CI using `pnpm capabilities:check`. It is not the
+published Cloud MCP `tools/list` surface: `remoteCallable=false` is deliberate,
+and local existence must never imply remote authority.
+
+For a candidate tool release, keep the previously reviewed JSON catalog and run:
+
+```text
+uv run --all-extras python scripts/compare_cloud_tool_catalogs.py previous-catalog.json integrations/common/capability-catalog.json --fail-on-breaking
+```
+
+The offline comparison reports added, removed, and changed tool definitions.
+New optional input fields and description updates are compatible candidates;
+removed names, added required inputs, changed argument contracts, or changed
+permission/remote-exposure semantics are flagged as **potentially breaking**.
+A flag is a review requirement, not permission to change publication policy.
+New tools do not become publicly callable because the inventory grew.
+
+A published Cloud MCP tool contract must remain stable while OpenAI reviews
+changed metadata. Actual Cloud exposure still requires a separate, explicitly
+reviewed public tool definition, current project grants, runtime validation,
+and signed Connector authorization. This comparison neither publishes tools
+nor performs native KiCad acceptance.
