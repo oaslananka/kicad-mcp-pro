@@ -354,6 +354,81 @@ def test_cloud_small_mcp_result_remains_unchanged() -> None:
     assert _fit_cloud_mcp_response(original) == original
 
 
+@pytest.mark.parametrize("case", ["malformed", "nonduplicate", "extra_metadata"])
+def test_cloud_pre_redaction_keeps_unique_or_unverified_text(case: str) -> None:
+    """Never shorten unproven text before local-path redaction."""
+    from kicad_mcp.cloud_generic_mcp_bridge import _compact_redundant_json_before_redaction
+
+    structured = {"summary": "Known DRC result", "evidence": "x" * 65_000}
+    if case == "malformed":
+        content = {"type": "text", "text": "{invalid json"}
+    elif case == "nonduplicate":
+        content = {"type": "text", "text": json.dumps({"extra": "unique finding"})}
+    else:
+        content = {
+            "type": "text",
+            "text": json.dumps(structured),
+            "source": "extra unique metadata",
+        }
+    original = {"content": [content], "structuredContent": structured, "isError": False}
+    assert len(json.dumps(original).encode("utf8")) > 60_000
+    assert _compact_redundant_json_before_redaction(original) is original
+
+
+@pytest.mark.parametrize(
+    ("summary", "expected"),
+    [
+        ("DRC result with findings", "DRC result with findings"),
+        (None, "Full findings are available in structuredContent."),
+    ],
+)
+def test_cloud_pre_redaction_compaction_uses_safe_human_fallback(
+    summary: str | None, expected: str
+) -> None:
+    """Absent human text must not remove the complete structured findings."""
+    from kicad_mcp.cloud_generic_mcp_bridge import _compact_redundant_json_before_redaction
+
+    structured = {"text": "", "evidence": "x" * 38_000}
+    if summary is not None:
+        structured["summary"] = summary
+    original = {
+        "content": [{"type": "text", "text": json.dumps(structured)}],
+        "structuredContent": structured,
+        "isError": False,
+    }
+    assert len(json.dumps(original).encode("utf8")) > 60_000
+    reduced = _compact_redundant_json_before_redaction(original)
+    assert reduced["content"] == [{"type": "text", "text": expected}]
+    assert reduced["structuredContent"] == structured
+    assert reduced["isError"] is False
+    assert len(json.dumps(reduced).encode("utf8")) < 60_000
+
+
+def test_cloud_oversized_invalid_text_type_fails_as_bounded_read_error() -> None:
+    """Bad MCP text shapes cannot be mistaken for a redundant report."""
+    from kicad_mcp.cloud_generic_mcp_transport import _fit_cloud_mcp_response
+
+    original = _oversized_mcp_reply()
+    original["result"]["structuredContent"]["findings"].append(
+        {"id": "too-large", "evidence": "e" * 55_000}
+    )
+    original["result"]["content"][0]["text"] = 123
+    result = _fit_cloud_mcp_response(original)
+    assert result["result"]["isError"] is True
+    assert "mcp_bridge_result_too_large" in result["result"]["content"][0]["text"]
+    assert len(json.dumps(result).encode("utf8")) < 60_000
+
+
+def test_cloud_oversized_catalog_still_fails_closed() -> None:
+    """Only bounded tool-call results may use duplicate-text compaction."""
+    from kicad_mcp.cloud_generic_mcp_transport import _fit_cloud_mcp_response
+
+    original = _oversized_mcp_reply()
+    original["method"] = "catalog"
+    with pytest.raises(GenericMcpTransportError, match="mcp_bridge_result_too_large"):
+        _fit_cloud_mcp_response(original)
+
+
 def test_cloud_oversized_unrepresentable_write_remains_outcome_unknown() -> None:
     from kicad_mcp.cloud_generic_mcp_transport import _fit_cloud_mcp_response
 
