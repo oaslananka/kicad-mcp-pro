@@ -453,11 +453,12 @@ async def test_cloud_oversized_drc_result_survives_signed_ack(tmp_path, monkeypa
         async def list_tools(self):
             return SimpleNamespace(tools=[Tool(name="run_drc", inputSchema={"type": "object"})])
 
-        async def call_tool(self, name, arguments):
+        async def call_tool(self, name, arguments, **kwargs: object):
             if name == "kicad_set_project":
                 return SimpleNamespace(isError=False, content=[])
             assert name == "run_drc"
             assert arguments == {"save_report": False}
+            assert kwargs == {"read_timeout_seconds": 70.0}
             return SimpleNamespace(model_dump=lambda **_: original["result"])
 
     @asynccontextmanager
