@@ -10,6 +10,23 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.20.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.19.0...mcp-server-v4.20.0) (2026-11-18)
+
+
+### Features
+
+* **cloud:** audit MCP tool catalog evolution before publication ([#1791](https://github.com/oaslananka/kicad-mcp-pro/issues/1791)) ([d64e834](https://github.com/oaslananka/kicad-mcp-pro/commit/d64e834cb1190d02f7e630240daf37869d7add72))
+* **cloud:** expose generated independent MCP tools in opt-in pilot ([#1792](https://github.com/oaslananka/kicad-mcp-pro/issues/1792)) ([3750c19](https://github.com/oaslananka/kicad-mcp-pro/commit/3750c193a948e199d0996db1d4c6fce418ca699b))
+
+
+### Bug Fixes
+
+* **cli:** preserve MCP JSON schema and annotation aliases ([#1797](https://github.com/oaslananka/kicad-mcp-pro/issues/1797)) ([4c6a565](https://github.com/oaslananka/kicad-mcp-pro/commit/4c6a5659dc9b99e6d620da1525ba6b12daa85a23))
+* **cloud:** accept valid project stems with digits ([#1798](https://github.com/oaslananka/kicad-mcp-pro/issues/1798)) ([79a0de7](https://github.com/oaslananka/kicad-mcp-pro/commit/79a0de7687f9d878e152c63addfab54a62d48128))
+* **cloud:** tolerate clock skew in signed Connector challenges ([#1790](https://github.com/oaslananka/kicad-mcp-pro/issues/1790)) ([09c6599](https://github.com/oaslananka/kicad-mcp-pro/commit/09c6599e103b1a9f36a35a8c9192b29eb57e2cb5))
+* **pcb:** flip footprints with native KiCad IPC ([#1795](https://github.com/oaslananka/kicad-mcp-pro/issues/1795)) ([d2bd057](https://github.com/oaslananka/kicad-mcp-pro/commit/d2bd057261f57f0519724dd2434495264792a816))
+* **pcb:** guard file-based writes against open board state ([#1793](https://github.com/oaslananka/kicad-mcp-pro/issues/1793)) ([2819f81](https://github.com/oaslananka/kicad-mcp-pro/commit/2819f81341c78b06a7eade217bf7f246297c3032))
+
 ## [4.19.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.18.0...mcp-server-v4.19.0) (2026-11-17)
 
 
