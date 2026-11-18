@@ -8,13 +8,13 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
 
 from kicad_mcp.config import reset_config
 from kicad_mcp.server import build_server
+from kicad_mcp.tools.export_support import _run_cli
 from tests.conftest import call_tool_text
 
 FIXTURE = (
@@ -28,28 +28,11 @@ FIXTURE = (
 
 def _run_native_drc(project: Path, label: str) -> list[dict[str, object]]:
     board = project / "clean-led-kicad10.kicad_pcb"
-    executable = shutil.which("kicad-cli")
-    assert executable, "Native KiCad command is not available"
     output = project / f"{label}-drc.json"
-    completed = subprocess.run(
-        [
-            executable,
-            "pcb",
-            "drc",
-            "--format",
-            "json",
-            "--output",
-            str(output),
-            str(board),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=90,
-        check=False,
+    return_code, stdout, stderr = _run_cli(
+        "pcb", "drc", "--format", "json", "--output", str(output), str(board), timeout=90
     )
-    assert completed.returncode in {0, 5}, (
-        f"Native KiCad DRC failed: {completed.returncode}\n{completed.stdout}\n{completed.stderr}"
-    )
+    assert return_code in {0, 5}, f"Native KiCad DRC failed: {return_code}\n{stdout}\n{stderr}"
     report = json.loads(output.read_text(encoding="utf-8"))
     assert isinstance(report.get("violations"), list), report
     return report["violations"]
@@ -61,7 +44,10 @@ async def test_generated_rule_changes_actual_native_kicad_drc(
 ) -> None:
     if os.environ.get("KICAD_DRC_NATIVE_ACCEPTANCE") != "1":
         pytest.skip("Explicit native KiCad 10 CI acceptance only")
-    assert shutil.which("kicad-cli"), "Native acceptance was enabled without KiCad CLI"
+    executable = shutil.which("kicad-cli")
+    assert executable, "Native acceptance was enabled without KiCad CLI"
+    monkeypatch.setenv("KICAD_MCP_KICAD_CLI", executable)
+    reset_config()
     for suffix in (".kicad_pcb", ".kicad_pro", ".kicad_sch"):
         source = FIXTURE / f"clean-led-kicad10{suffix}"
         shutil.copy2(source, tmp_path / source.name)
