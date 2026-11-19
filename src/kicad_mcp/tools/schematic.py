@@ -3446,20 +3446,101 @@ def run_auto_annotate(start_number: int = 1, order: str = "alpha") -> str:
     return f"Auto-annotated {len(updates)} symbol(s)."
 
 
-def run_auto_add_missing_junctions() -> str:
-    """Module-level missing-junction fixer for project_auto_fix_loop."""
-    sch_file = _get_schematic_file()
+def _placed_pin_points(sch_file: Path, content: str) -> list[tuple[tuple[float, float], str]]:
+    """Return ``(point, "REF pin N")`` for every pin end of the placed symbols in a sheet."""
+    data = parse_schematic_file(sch_file)
+    mirrors = _placed_symbol_mirrors(content)
+    points: list[tuple[tuple[float, float], str]] = []
+    for symbol in data["symbols"]:
+        library, symbol_name = _split_lib_id(str(symbol["lib_id"]))
+        pins = get_pin_positions(
+            library,
+            symbol_name,
+            float(symbol["x"]),
+            float(symbol["y"]),
+            int(symbol["rotation"]),
+            int(symbol["unit"]),
+            mirror=mirrors.get(_placed_symbol_key(symbol), ""),
+        )
+        for number, (x_mm, y_mm) in sorted(pins.items()):
+            points.append((_coord_pair_key(x_mm, y_mm), f"{symbol['reference']} pin {number}"))
+    for power in data["power_symbols"]:
+        point = _coord_pair_key(float(power["x"]), float(power["y"]))
+        points.append((point, f"{power.get('reference') or power.get('value', 'power')} pin 1"))
+    return points
+
+
+def _junction_points_by_end_count(
+    wires: list[tuple[float, float, float, float]],
+    pin_points: list[tuple[float, float]],
+) -> list[tuple[float, float]]:
+    """Points where three or more wire ends and pin ends meet (KiCad's junction rule).
+
+    A point that also lies on another wire's middle is left to the T detection;
+    a point on a wire's middle with only pin ends is never returned, because a
+    dot there would connect a pin KiCad leaves unconnected.
+    """
+    counts: dict[tuple[float, float], int] = {}
+    for x1, y1, x2, y2 in wires:
+        for point in (_coord_pair_key(x1, y1), _coord_pair_key(x2, y2)):
+            counts[point] = counts.get(point, 0) + 1
+    for point in pin_points:
+        counts[point] = counts.get(point, 0) + 1
+    return sorted(
+        point
+        for point, count in counts.items()
+        if count >= 3 and not any(_point_on_segment_midpoint(point, wire) for wire in wires)
+    )
+
+
+def _pins_on_wire_middles(
+    wires: list[tuple[float, float, float, float]],
+    pin_points: list[tuple[tuple[float, float], str]],
+) -> list[str]:
+    """Describe pins that sit on a wire's middle where no wire ends (left unconnected)."""
+    wire_ends = {_coord_pair_key(x, y) for x1, y1, x2, y2 in wires for x, y in ((x1, y1), (x2, y2))}
+    return [
+        f"{name} at ({point[0]:g}, {point[1]:g})"
+        for point, name in pin_points
+        if point not in wire_ends and any(_point_on_segment_midpoint(point, w) for w in wires)
+    ]
+
+
+def run_auto_add_missing_junctions(sheet: str | None = None, sheet_file: str | None = None) -> str:
+    """Module-level missing-junction fixer for project_auto_fix_loop and sch_add_missing_junctions.
+
+    Adds a junction where a wire ends on another wire's middle (a T) and where
+    three or more wire ends and pin ends meet. Pins on a wire's middle are only
+    reported. ``sheet``/``sheet_file`` select a child sheet; default is the
+    active schematic.
+    """
+    if sheet or sheet_file:
+        sch_file = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file).path
+    else:
+        sch_file = _get_schematic_file()
     before = sch_file.read_text(encoding="utf-8", errors="ignore")
     before_count = len(_existing_junction_points(before))
-    transactional_write(
-        lambda current: _insert_junctions_for_batch(
-            current,
-            _detect_t_intersections(_deduplicate_segments(_wire_segments_from_content(current))),
-        )
-    )
+    pin_points = _placed_pin_points(sch_file, before)
+    pin_ends = [point for point, _name in pin_points]
+
+    def mutator(current: str) -> str:
+        raw_wires = _wire_segments_from_content(current)
+        points = _detect_t_intersections(_deduplicate_segments(raw_wires))
+        points += _junction_points_by_end_count(raw_wires, pin_ends)
+        return _insert_junctions_for_batch(current, points)
+
+    transactional_write(mutator, sch_file)
     after = sch_file.read_text(encoding="utf-8", errors="ignore")
     inserted = max(0, len(_existing_junction_points(after)) - before_count)
-    return f"Inserted {inserted} missing junction(s)."
+    lines = [f"Inserted {inserted} missing junction(s)."]
+    unconnected = _pins_on_wire_middles(_wire_segments_from_content(after), pin_points)
+    if unconnected:
+        lines.append(
+            "Pins on a wire's middle with no junction (KiCad leaves these unconnected; "
+            "add a junction only if the connection is intended):"
+        )
+        lines.extend(f"- {entry}" for entry in unconnected)
+    return "\n".join(lines)
 
 
 def _get_symbol_library_dir() -> Path:

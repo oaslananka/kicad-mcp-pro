@@ -223,7 +223,7 @@ class SchematicConnectivityAuthoringService:
         [str, str, int, int],
         dict[str, tuple[float, float]],
     ]
-    run_auto_add_missing_junctions: Callable[[], str]
+    run_auto_add_missing_junctions: Callable[..., str]
     snap_tolerance_mm: float
     #: Drawn rectangles a route must not travel alongside -- hierarchical sheets
     #: and bare rectangles around a self-contained block.  Not solid: a wire still
@@ -800,8 +800,12 @@ class SchematicConnectivityAuthoringService:
             + (f"\n{crossing_note}" if crossing_note else "")
         )
 
-    def add_missing_junctions(self) -> str:
-        """Repair T-intersection junctions and reload the active schematic."""
-        summary = self.run_auto_add_missing_junctions()
+    def add_missing_junctions(self, sheet: str | None = None, sheet_file: str | None = None) -> str:
+        """Repair missing junctions on the active (or a selected) sheet and reload."""
+        summary = (
+            self.run_auto_add_missing_junctions(sheet=sheet, sheet_file=sheet_file)
+            if sheet or sheet_file
+            else self.run_auto_add_missing_junctions()
+        )
         result = self.reload_schematic()
         return f"{result}\n{summary}"

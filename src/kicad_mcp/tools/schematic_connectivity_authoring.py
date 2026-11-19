@@ -79,6 +79,13 @@ def register(mcp: FastMCP, dependencies: SchematicConnectivityAuthoringDependenc
 
     @mcp.tool()
     @headless_compatible
-    def sch_add_missing_junctions() -> str:
-        """Insert missing schematic junctions at T-intersection wire endpoints."""
-        return service.add_missing_junctions()
+    def sch_add_missing_junctions(sheet: str | None = None, sheet_file: str | None = None) -> str:
+        """Insert missing schematic junctions where KiCad needs a dot.
+
+        A dot is added where a wire ends on another wire's middle (a T) and where
+        three or more wire ends and pin ends meet. Crossing wires never get one.
+        A pin sitting on a wire's middle is reported but not dotted, since KiCad
+        leaves it unconnected and a dot would change the netlist. ``sheet`` or
+        ``sheet_file`` selects a child sheet; the default is the active schematic.
+        """
+        return service.add_missing_junctions(sheet=sheet, sheet_file=sheet_file)
