@@ -157,6 +157,37 @@ def test_native_write_duplicate_never_claims_editing_is_enabled(
     assert state["calls"] == ["task_removed"]
 
 
+def test_duplicate_connector_cannot_touch_owner_task_or_saved_write_choice(
+    remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from contextlib import contextmanager
+
+    from kicad_mcp.cloud_windows_single_instance import CloudConnectorAlreadyRunningError
+
+    state, _folder = remote_fixture
+    calls: list[str] = []
+
+    @contextmanager
+    def reject_duplicate():
+        calls.append("instance_lock")
+        raise CloudConnectorAlreadyRunningError(
+            "Another Cloud Connector is already running in this Windows login."
+        )
+        yield  # pragma: no cover
+
+    def prohibited_issuer(*_args: object, **_kwargs: object) -> None:
+        calls.append("write_issuer")
+        raise AssertionError("duplicate must not inspect owner write issuer")
+
+    monkeypatch.setattr(cloud_user_cli, "owner_connector_instance", reject_duplicate)
+    monkeypatch.setattr(cloud_user_cli, "_trusted_owner_write_issuer", prohibited_issuer)
+    response = CliRunner().invoke(server.app, ["cloud", "remote", "--enable-native-write"])
+    assert response.exit_code == 2
+    assert "Another Cloud Connector" in response.output
+    assert calls == ["instance_lock"]
+    assert state["calls"] == [], "duplicate must not alter a running owner's scheduled task"
+
+
 def test_first_pairing_chooses_folder_and_launches_foreground(
     remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:

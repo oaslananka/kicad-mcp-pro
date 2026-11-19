@@ -891,7 +891,7 @@ async def run_connector(
     ):
         raise LocalApprovalDeniedError(_DENIED)
     failures = 0
-    with owner_connector_instance():
+    with owner_connector_instance(reuse_if_held=True):
         while not stop.is_set():
             active = _active()
             if active is None:

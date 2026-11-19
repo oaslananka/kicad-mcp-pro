@@ -81,6 +81,25 @@ def test_windows_mutex_prevents_independent_second_process(monkeypatch) -> None:
         pass
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Requires Windows named mutex")
+def test_foreground_owner_guard_is_reused_by_async_connector_not_other_callers(monkeypatch) -> None:
+    import asyncio
+
+    from kicad_mcp import cloud_windows_single_instance as guard
+
+    monkeypatch.setattr(guard, "_MUTEX_NAME", f"Local\\KiCadMcpProTest_{uuid4().hex}")
+
+    async def inner():
+        with guard.owner_connector_instance(reuse_if_held=True):
+            return "same-foreground-owner"
+
+    with guard.owner_connector_instance():
+        assert asyncio.run(inner()) == "same-foreground-owner"
+        with pytest.raises(guard.CloudConnectorAlreadyRunningError):
+            with guard.owner_connector_instance():
+                pytest.fail("new independent caller must not reuse the lock")
+
+
 @pytest.mark.asyncio
 async def test_running_connector_requires_single_instance_before_any_signed_session(
     monkeypatch: pytest.MonkeyPatch,
@@ -100,7 +119,7 @@ async def test_running_connector_requires_single_instance_before_any_signed_sess
     calls: list[str] = []
 
     @contextmanager
-    def reject_duplicate():
+    def reject_duplicate(**_kwargs: object):
         calls.append("guard")
         raise CloudConnectorAlreadyRunningError("another Connector is active")
         yield  # pragma: no cover

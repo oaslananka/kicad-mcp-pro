@@ -10,6 +10,11 @@ from __future__ import annotations
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
+
+_SESSION_MUTEX_HELD: ContextVar[bool] = ContextVar(
+    "cloud_owner_connector_mutex_held", default=False
+)
 
 _MUTEX_NAME = "Local\\KiCadMcpProSignedCloudConnectorV1"
 _ALREADY_EXISTS = 183
@@ -24,12 +29,17 @@ class CloudConnectorLockUnavailableError(ValueError):
 
 
 @contextmanager
-def owner_connector_instance() -> Iterator[None]:
+def owner_connector_instance(*, reuse_if_held: bool = False) -> Iterator[None]:
     """Prevent parallel signed sessions for one Windows desktop login.
 
-    Task Scheduler and an interactive terminal share this session's mutex
-    when they run as the same logged-in user. It is not a cross-user ACL.
+    Foreground setup acquires this before any scheduled-task or write-pref
+    change; its own async connection loop may reuse that same owner's lock.
+    Independent invocations never inherit a live process context. This is
+    not an authentication or cross-user authorization control.
     """
+    if reuse_if_held and _SESSION_MUTEX_HELD.get():
+        yield
+        return
     if sys.platform != "win32":
         yield
         return
@@ -67,11 +77,12 @@ def owner_connector_instance() -> Iterator[None]:
             "Do not start a second Connector to change native editing permission."
         )
 
+    token = _SESSION_MUTEX_HELD.set(True)
     try:
         yield
     finally:
-        # CloseHandle also releases the mutex on process death; explicitly
-        # release on normal completion so future owner sessions can start.
+        _SESSION_MUTEX_HELD.reset(token)
+        # On process death Windows automatically releases the kernel handle.
         try:
             kernel.ReleaseMutex(handle)
         finally:
