@@ -580,8 +580,8 @@ def remote(
         typer.Option(
             "--repair-device",
             help=(
-                "Browser-approve a fresh device after policy 1008; "
-                "preserve old keys and project files."
+                "Browser-approve a replacement only for a missing or revoked "
+                "Cloud device; preserve old keys and project files."
             ),
         ),
     ] = False,
