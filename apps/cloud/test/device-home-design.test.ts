@@ -67,3 +67,17 @@ test("first pairing advertises terminal-owned foreground Cloud connection",()=>{
   assert.match(next,/sign-in/);
   assert.match(next,/Keep the terminal open/);
 });
+
+test("paired offline devices have one actionable recovery destination without re-pairing",()=>{
+ const offline=renderDevicesPage([device("Workbench","disconnected")]);
+ assert.match(offline,/href="#reconnect-computer"/);
+ assert.match(offline,/id="reconnect-computer"/);
+ assert.match(offline,/Reconnect a paired computer/);
+ assert.match(offline,/kicad-mcp-pro cloud status/);
+ assert.match(offline,/kicad-mcp-pro cloud reconnect/);
+ assert.match(offline,/read-only background Connector/);
+ const connected=renderDevicesPage([device("Workbench","connected")]);
+ assert.doesNotMatch(connected,/id="reconnect-computer"/);
+ const sandbox=renderDevicesPage([device("Workbench","disconnected")],undefined,true,{sandboxMode:true});
+ assert.doesNotMatch(sandbox,/id="reconnect-computer"/);
+});

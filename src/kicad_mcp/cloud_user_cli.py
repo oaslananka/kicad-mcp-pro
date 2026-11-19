@@ -17,6 +17,7 @@ import time
 import uuid
 import webbrowser
 from collections.abc import Callable
+from contextvars import ContextVar
 from functools import wraps
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
@@ -41,6 +42,11 @@ _KICAD_SCH = "*.kicad_sch"
 _KICAD_PCB = "*.kicad_pcb"
 _NO_PROJECT_FOLDER_SELECTED = "No project folder selected. Setup was not changed."
 cloud_app = typer.Typer(help="Sign in, pair a device and manage the optional Cloud Connector.")
+
+# Only a previously verified owner-enabled read-only task may be restored.
+_BACKGROUND_CONNECTOR_HANDOFF: ContextVar[WindowsRegisteredProject | None] = ContextVar(
+    "cloud_background_connector_handoff", default=None
+)
 
 
 def _verified_origin(value: str) -> str:
@@ -429,6 +435,9 @@ def _prepare_remote_connector(existing: WindowsRegisteredProject, interactive: b
         stop_and_remove_owner_task,
     )
 
+    # Remember only a task that was already created and verified by its owner.
+    # Temporary foreground editing does not grant unattended write authority.
+    restore_background = interactive and scheduler_state() == "Scheduled (connection unverified)"
     # Interactive owners may remove their own verified scheduled task.
     # A headless previously-paired session cannot alter tasks or activation.
     if interactive:
@@ -437,6 +446,8 @@ def _prepare_remote_connector(existing: WindowsRegisteredProject, interactive: b
                 "Could not stop the existing Connector task safely. "
                 "Registration and permissions were preserved."
             )
+        if restore_background:
+            _BACKGROUND_CONNECTOR_HANDOFF.set(existing)
     elif scheduler_state() != "Configured (task unverified)":
         raise typer.BadParameter(
             "A scheduled Connector already exists; use cloud reconnect interactively."
@@ -557,16 +568,54 @@ def _trusted_owner_write_issuer(
 def _single_owner_cloud_remote[**Args, Result](
     fn: Callable[Args, Result],
 ) -> Callable[Args, Result]:
-    """Secure the owner session before pairing, task or write-pref changes."""
+    """Secure owner changes and restore any previously approved background task."""
 
     @wraps(fn)
     def guarded(*args: Args.args, **kwargs: Args.kwargs) -> Result:
+        token = _BACKGROUND_CONNECTOR_HANDOFF.set(None)
         try:
-            with owner_connector_instance():
-                return fn(*args, **kwargs)
-        except (CloudConnectorAlreadyRunningError, CloudConnectorLockUnavailableError) as exc:
-            typer.echo(str(exc), err=True)
-            raise typer.Exit(code=2) from None
+            try:
+                with owner_connector_instance():
+                    return fn(*args, **kwargs)
+            except (CloudConnectorAlreadyRunningError, CloudConnectorLockUnavailableError) as exc:
+                typer.echo(str(exc), err=True)
+                raise typer.Exit(code=2) from None
+        finally:
+            # Must happen AFTER the foreground owner mutex has been released.
+            # Never create a background task for an unscheduled foreground session.
+            prior_project = _BACKGROUND_CONNECTOR_HANDOFF.get()
+            try:
+                if prior_project is not None:
+                    from kicad_mcp.cloud_windows_connector import local_state, selected_project
+                    from kicad_mcp.cloud_windows_task_scheduler import enable_windows_connector
+
+                    try:
+                        if (
+                            local_state() == "Configured (not connected)"
+                            and selected_project() == prior_project
+                        ):
+                            enable_windows_connector(
+                                prior_project, owner_confirm=lambda _project: True
+                            )
+                            typer.echo(
+                                "Previous read-only background Connector restored "
+                                "(Cloud connection not yet verified)."
+                            )
+                        else:
+                            typer.echo(
+                                "Previous background Connector was not restored because "
+                                "the local project or connection setting changed.",
+                                err=True,
+                            )
+                    except (OSError, ValueError, RuntimeError):
+                        typer.echo(
+                            "The previous read-only background Connector could not be restored. "
+                            "Run cloud status, then cloud reconnect from the owner terminal.",
+                            err=True,
+                        )
+                        raise typer.Exit(code=4) from None
+            finally:
+                _BACKGROUND_CONNECTOR_HANDOFF.reset(token)
 
     return guarded
 
@@ -662,7 +711,13 @@ def remote(
     typer.secho("\n  KiCad MCP Pro  /  Cloud Connector", fg=typer.colors.MAGENTA, bold=True)
     typer.echo(f"  Device project  {selected.filename_stem}")
     typer.echo(f"  Cloud           {origin}")
-    typer.echo("  Keep this terminal open; press Ctrl+C to disconnect.")
+    if _BACKGROUND_CONNECTOR_HANDOFF.get() is not None:
+        typer.echo(
+            "  Ctrl+C closes this foreground session; the previous read-only "
+            "background Connector resumes."
+        )
+    else:
+        typer.echo("  Keep this terminal open; press Ctrl+C to disconnect.")
     typer.echo("  Add Project opens Windows Explorer on this computer.")
     typer.secho("  " + _cloud_console_glyph("\u2500" * 48, "-" * 48), fg=typer.colors.BRIGHT_BLACK)
     if enable_write:
@@ -713,7 +768,10 @@ def remote(
     except CloudOwnerReapprovalRequiredError:
         raise typer.Exit(code=3) from None
     except KeyboardInterrupt:
-        typer.echo("\nDisconnected. Pairing stays saved; run cloud connect to return.")
+        if _BACKGROUND_CONNECTOR_HANDOFF.get() is not None:
+            typer.echo("\nForeground session closed; restoring previous read-only Connector.")
+        else:
+            typer.echo("\nDisconnected. Pairing stays saved; run cloud connect to return.")
 
 
 @cloud_app.command("forget-native-write")
