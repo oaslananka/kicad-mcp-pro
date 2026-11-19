@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.20.5](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.20.4...mcp-server-v4.20.5) (2026-11-19)
+
+
+### Bug Fixes
+
+* **cloud:** render Connector logs safely on legacy Windows consoles ([#1819](https://github.com/oaslananka/kicad-mcp-pro/issues/1819)) ([715c496](https://github.com/oaslananka/kicad-mcp-pro/commit/715c49649e1aadd797ed65f31376b020147b67d4))
+
 ## [4.20.4](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.20.3...mcp-server-v4.20.4) (2026-11-19)
 
 
