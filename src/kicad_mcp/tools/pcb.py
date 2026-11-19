@@ -5357,6 +5357,13 @@ def _register_mechanical_hole_tools(mcp: FastMCP) -> None:
         board_content = _normalize_board_content(
             board_file.read_text(encoding="utf-8", errors="ignore")
         )
+        # A guessed footprint bounding box is not a manufacturable board outline.
+        # Do not modify a board when mounting-hole positions have no real frame.
+        if _edge_cuts_bounds(board_content) is None:
+            return (
+                "Mounting holes not added: no supported Edge.Cuts board outline was found. "
+                "Create the board outline before placing mounting holes."
+            )
         existing = _parse_board_footprint_blocks(board_content)
         min_x_mm, min_y_mm, max_x_mm, max_y_mm = _board_frame_mm(board_content, existing)
         courtyard_radius_mm = max(

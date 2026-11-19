@@ -28,6 +28,19 @@ def _hole_blocks(pcb_text: str) -> list[str]:
     ]
 
 
+def _add_outline(project: Path) -> None:
+    """Use a real outline for placement, not an invented footprint frame."""
+    (project / "demo.kicad_pcb").write_text(
+        (
+            "(kicad_pcb\n"
+            "(version 20250316)\n"
+            '(gr_rect (start 0 0) (end 100 80) (layer "Edge.Cuts") (width 0.05))\n'
+            ")\n"
+        ),
+        encoding="utf-8",
+    )
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize("allow_pours", [True, False])
 async def test_mounting_holes_can_add_keepout_and_hole_clearance(
@@ -38,6 +51,7 @@ async def test_mounting_holes_can_add_keepout_and_hole_clearance(
 ) -> None:
     monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
 
+    _add_outline(sample_project)
     result = await call_tool_text(
         build_server("pcb"),
         "pcb_add_mounting_holes",
@@ -80,8 +94,23 @@ async def test_mounting_holes_default_output_is_unchanged(
 ) -> None:
     monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
 
+    _add_outline(sample_project)
     await call_tool_text(build_server("pcb"), "pcb_add_mounting_holes", {})
 
     blocks = _hole_blocks((sample_project / "demo.kicad_pcb").read_text(encoding="utf-8"))
     assert len(blocks) == 4
     assert all("(zone" not in block and "(clearance" not in block for block in blocks)
+
+
+@pytest.mark.anyio
+async def test_mounting_holes_refuse_a_board_without_an_outline(
+    sample_project: Path,
+    mock_kicad: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
+    board = sample_project / "demo.kicad_pcb"
+    before = board.read_text(encoding="utf-8")
+    result = await call_tool_text(build_server("pcb"), "pcb_add_mounting_holes", {})
+    assert "outline" in result.casefold() and "not added" in result.casefold(), result
+    assert board.read_text(encoding="utf-8") == before
