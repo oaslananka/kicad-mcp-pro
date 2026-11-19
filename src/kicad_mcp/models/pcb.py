@@ -270,6 +270,9 @@ class AddMountingHolesInput(BaseModel):
     pattern: MountingHolePattern = Field(default="corners")
     margin_mm: float = Field(default=3.0, ge=0.0, le=100.0)
     allow_open_board: bool = Field(default=False)
+    keepout: bool = Field(default=False)
+    keepout_allow_pours: bool = Field(default=True)
+    hole_clearance_mm: float | None = Field(default=None, ge=0.0, le=10.0)
 
 
 class AddFiducialMarksInput(BaseModel):

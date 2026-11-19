@@ -2283,14 +2283,54 @@ def _auto_place_force_directed_board_file(
     )
 
 
+_KEEPOUT_POLYGON_SIDES = 36
+
+
+def _mounting_hole_keepout_zone(radius_mm: float, allow_pours: bool) -> list[str]:
+    """Footprint rule area on F.Cu and B.Cu covering a circle of ``radius_mm``.
+
+    The polygon circumscribes the circle, so the whole courtyard is inside it.
+    Tracks, vias, pads and other footprints are not allowed; copper pours as chosen.
+    """
+    sides = _KEEPOUT_POLYGON_SIDES
+    outer = radius_mm / math.cos(math.pi / sides)
+    points = " ".join(
+        f"(xy {outer * math.cos(2 * math.pi * i / sides):.4f} "
+        f"{outer * math.sin(2 * math.pi * i / sides):.4f})"
+        for i in range(sides)
+    )
+    pours = "allowed" if allow_pours else "not_allowed"
+    return [
+        "\t(zone",
+        '\t\t(layers "F.Cu" "B.Cu")',
+        f'\t\t(uuid "{uuid.uuid4()}")',
+        "\t\t(hatch edge 0.5)",
+        "\t\t(connect_pads (clearance 0))",
+        "\t\t(min_thickness 0.25)",
+        "\t\t(keepout (tracks not_allowed) (vias not_allowed) (pads not_allowed) "
+        f"(copperpour {pours}) (footprints not_allowed))",
+        "\t\t(fill (thermal_gap 0.5) (thermal_bridge_width 0.5))",
+        f"\t\t(polygon (pts {points}))",
+        "\t)",
+    ]
+
+
 def _mounting_hole_block(
     reference: str,
     x_mm: float,
     y_mm: float,
     diameter_mm: float,
     clearance_mm: float,
+    *,
+    keepout: bool = False,
+    keepout_allow_pours: bool = True,
+    hole_clearance_mm: float | None = None,
 ) -> str:
     outer_radius_mm = max((diameter_mm / 2) + clearance_mm, diameter_mm)
+    pad_clearance = f" (clearance {hole_clearance_mm:.4f})" if hole_clearance_mm is not None else ""
+    keepout_lines = (
+        _mounting_hole_keepout_zone(outer_radius_mm, keepout_allow_pours) if keepout else []
+    )
     # An NPTH mounting hole has no copper annulus. Screw-head clearance is
     # represented by the courtyard, never by enlarging the physical pad.
     return "\n".join(
@@ -2319,8 +2359,9 @@ def _mounting_hole_block(
             (
                 f'\t(pad "" np_thru_hole circle (at 0 0) '
                 f"(size {diameter_mm:.4f} {diameter_mm:.4f}) "
-                f'(drill {diameter_mm:.4f}) (layers "*.Cu" "*.Mask"))'
+                f'(drill {diameter_mm:.4f}) (layers "*.Cu" "*.Mask"){pad_clearance})'
             ),
+            *keepout_lines,
             ")",
         ]
     )
@@ -5197,14 +5238,27 @@ def _register_mechanical_hole_tools(mcp: FastMCP) -> None:
         pattern: str = "corners",
         margin_mm: float = 3.0,
         allow_open_board: bool = False,
+        keepout: bool = False,
+        keepout_allow_pours: bool = True,
+        hole_clearance_mm: float | None = None,
     ) -> str:
-        """Append standard mounting-hole footprints around the current board frame."""
+        """Append standard mounting-hole footprints around the current board frame.
+
+        The screw-head area (hole radius + ``clearance_mm``) is drawn as the
+        courtyard. ``keepout=True`` also adds a rule area on F.Cu and B.Cu over
+        it that allows no tracks, vias, pads or footprints; copper pours may fill
+        it unless ``keepout_allow_pours=False``. ``hole_clearance_mm`` sets the
+        copper clearance around the hole itself.
+        """
         payload = AddMountingHolesInput(
             diameter_mm=diameter_mm,
             clearance_mm=clearance_mm,
             pattern=pattern,
             margin_mm=margin_mm,
             allow_open_board=allow_open_board,
+            keepout=keepout,
+            keepout_allow_pours=keepout_allow_pours,
+            hole_clearance_mm=hole_clearance_mm,
         )
         if refusal := _guard_file_based_board_edit(
             "mounting-hole insertion",
@@ -5257,6 +5311,9 @@ def _register_mechanical_hole_tools(mcp: FastMCP) -> None:
                     y_mm,
                     payload.diameter_mm,
                     payload.clearance_mm,
+                    keepout=payload.keepout,
+                    keepout_allow_pours=payload.keepout_allow_pours,
+                    hole_clearance_mm=payload.hole_clearance_mm,
                 )
             )
 
