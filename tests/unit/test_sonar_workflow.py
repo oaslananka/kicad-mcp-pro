@@ -41,7 +41,7 @@ def test_sonar_uses_exact_run_coverage_and_preserves_manual_fallback() -> None:
     assert steps["Verify exact-run and exact-SHA coverage report"]["env"] == {
         "SOURCE_SHA": "${{ github.sha }}",
         "SOURCE_RUN_ID": "${{ github.run_id }}",
-        "SOURCE_ATTEMPT": "${{ github.run_attempt }}",
+        "SOURCE_ATTEMPT": "${{ needs.coverage.outputs.sonar_coverage_attempt }}",
     }
     assert steps["Require successful upstream coverage gate"]["if"] == (
         "steps.sonar-mode.outputs.run_analysis == 'true'"
