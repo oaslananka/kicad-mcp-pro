@@ -7,6 +7,7 @@ MCP server remains the single source of real tool behavior.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 import time
@@ -30,6 +31,11 @@ _NAME = re.compile(r"[a-z][a-z0-9_]{0,127}", re.ASCII)
 _DENIED = "mcp_bridge_request_denied"
 _PAGE_SIZE = 8
 _MAX_RESULT_BYTES = 60_000
+_MCP_RESULT_KIND = "connector.mcp_result"
+# The Cloud overall request deadline is 75s. Leave room for worker shutdown,
+# signed WebSocket delivery and ACK even when a cold local read stalls.
+_READ_ONLY_MCP_CALL_BUDGET_SECONDS = 65.0
+_BUDGETED_READ_TOOLS = frozenset({"run_drc", "run_erc"})
 
 
 class GenericMcpTransportError(ValueError):
@@ -123,6 +129,36 @@ def _fit_cloud_mcp_response(
             ],
             "isError": True,
             "resultType": "complete",
+        },
+    }
+
+
+def _read_timeout_reply(frame: dict[str, Any], project: OperatorProject) -> dict[str, object]:
+    """A signed, bounded tool failure: a slow read is not a lost device pairing."""
+    return {
+        "kind": _MCP_RESULT_KIND,
+        "version": 1,
+        "requestId": frame["requestId"],
+        "projectId": project.project_id,
+        "method": "call",
+        "ok": True,
+        "result": {
+            "isError": True,
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        "Local KiCad diagnostic timed out before its full result was available. "
+                        "This does not establish that the device needs to re-pair. "
+                        "Check that the selected project and local KiCad CLI are responsive, "
+                        "then retry this read-only check."
+                    ),
+                }
+            ],
+            "structuredContent": {
+                "success": False,
+                "reason": "local_mcp_read_timeout",
+            },
         },
     }
 
@@ -385,7 +421,7 @@ class GenericProjectMcpService:
                 tools = catalog[offset : offset + _PAGE_SIZE]
                 next_offset = offset + len(tools)
                 return {
-                    "kind": "connector.mcp_result",
+                    "kind": _MCP_RESULT_KIND,
                     "version": 1,
                     "requestId": frame["requestId"],
                     "projectId": project.project_id,
@@ -406,7 +442,7 @@ class GenericProjectMcpService:
                 not_after_unix_ms=call.deadline,
             )
             return {
-                "kind": "connector.mcp_result",
+                "kind": _MCP_RESULT_KIND,
                 "version": 1,
                 "requestId": frame["requestId"],
                 "projectId": project.project_id,
@@ -414,6 +450,21 @@ class GenericProjectMcpService:
                 "ok": True,
                 "result": result,
             }
+
+    async def _bounded_worker_result(
+        self,
+        frame: dict[str, Any],
+        project: OperatorProject,
+        bridge: GenericProjectMcpBridge,
+        call: _ApprovedCall | None,
+    ) -> dict[str, object]:
+        if call is None or call.write_approved or call.name not in _BUDGETED_READ_TOOLS:
+            return await self._worker_result(frame, project, bridge, call)
+        try:
+            async with asyncio.timeout(_READ_ONLY_MCP_CALL_BUDGET_SECONDS):
+                return await self._worker_result(frame, project, bridge, call)
+        except TimeoutError:
+            return _read_timeout_reply(frame, project)
 
     async def dispatch(self, frame: dict[str, Any]) -> dict[str, object]:
         _validate_mcp_frame(frame)
@@ -437,7 +488,7 @@ class GenericProjectMcpService:
             call = (
                 self._prepare_call(frame, project, binding) if frame["method"] == "call" else None
             )
-            response = await self._worker_result(frame, project, bridge, call)
+            response = await self._bounded_worker_result(frame, project, bridge, call)
             if self.authorized() is not True:
                 raise GenericMcpTransportError(_DENIED)
             response = _fit_cloud_mcp_response(
