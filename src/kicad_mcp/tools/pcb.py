@@ -3664,6 +3664,11 @@ def _register_routing_authoring_tools(mcp: FastMCP) -> None:
     _register_track_segment_tools(mcp)
 
 
+def _rectangle_corner_radius_nm(rectangle: BoardRectangle) -> int:
+    # kipy 0.8 does not wrap the KiCad 10 API field; it lives on the protobuf.
+    return int(rectangle.proto.shape.rectangle.corner_radius.value_nm)
+
+
 def _apply_board_outline_if_safe(board: Board, rectangle: BoardRectangle) -> str:
     """Create a missing outline, but avoid duplicate or destructive retries."""
     existing_edges = [
@@ -3675,13 +3680,24 @@ def _apply_board_outline_if_safe(board: Board, rectangle: BoardRectangle) -> str
             and isinstance(existing_edges[0], BoardRectangle)
             and existing_edges[0].top_left == rectangle.top_left
             and existing_edges[0].bottom_right == rectangle.bottom_right
+            and _rectangle_corner_radius_nm(existing_edges[0])
+            == _rectangle_corner_radius_nm(rectangle)
         ):
             return "Board outline already matches requested rectangle; no change."
         return (
             "Board outline unchanged: existing Edge.Cuts geometry must be "
             "reviewed or removed explicitly before setting another outline."
         )
-    list(board.create_items([rectangle]))
+    created = list(board.create_items([rectangle]))
+    requested_radius = _rectangle_corner_radius_nm(rectangle)
+    if requested_radius and any(
+        isinstance(item, BoardRectangle) and _rectangle_corner_radius_nm(item) != requested_radius
+        for item in created
+    ):
+        return (
+            "Board outline added, but KiCad did not keep the corner radius (rounded "
+            "rectangles need KiCad 10). Check the corners in KiCad."
+        )
     return "Board outline added successfully."
 
 
@@ -3851,13 +3867,19 @@ def _register_board_graphics_tools(mcp: FastMCP) -> None:
         height_mm: float,
         origin_x_mm: float = 0.0,
         origin_y_mm: float = 0.0,
+        corner_radius_mm: float = 0.0,
     ) -> str:
-        """Draw a rectangular board outline on Edge.Cuts."""
+        """Draw a rectangular board outline on Edge.Cuts.
+
+        ``corner_radius_mm`` rounds the four corners (KiCad 10 rounded
+        rectangle); it must not exceed half the shorter side. 0 keeps sharp corners.
+        """
         payload = SetBoardOutlineInput(
             width_mm=width_mm,
             height_mm=height_mm,
             origin_x_mm=origin_x_mm,
             origin_y_mm=origin_y_mm,
+            corner_radius_mm=corner_radius_mm,
         )
         rectangle = BoardRectangle()
         rectangle.layer = BoardLayer.BL_Edge_Cuts
@@ -3867,6 +3889,10 @@ def _register_board_graphics_tools(mcp: FastMCP) -> None:
             payload.origin_y_mm + payload.height_mm,
         )
         rectangle.attributes.stroke.width = mm_to_nm(0.05)
+        if payload.corner_radius_mm:
+            rectangle.proto.shape.rectangle.corner_radius.value_nm = mm_to_nm(
+                payload.corner_radius_mm
+            )
 
         return execute_live_board_mutation(
             "pcb_set_board_outline",

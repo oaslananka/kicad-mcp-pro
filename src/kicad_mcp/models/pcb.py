@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 LayerName = Literal[
     "F_Cu",
@@ -167,6 +167,17 @@ class SetBoardOutlineInput(BaseModel):
     height_mm: float = Field(gt=0.0, le=2000.0)
     origin_x_mm: CoordMM = 0.0
     origin_y_mm: CoordMM = 0.0
+    corner_radius_mm: float = Field(default=0.0, ge=0.0, le=1000.0)
+
+    @model_validator(mode="after")
+    def _corner_radius_fits(self) -> SetBoardOutlineInput:
+        limit = min(self.width_mm, self.height_mm) / 2
+        if self.corner_radius_mm > limit:
+            raise ValueError(
+                f"corner_radius_mm ({self.corner_radius_mm:g}) must not exceed half the "
+                f"shorter side ({limit:g} mm)."
+            )
+        return self
 
 
 class SyncPcbFromSchematicInput(BaseModel):
