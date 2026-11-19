@@ -364,32 +364,42 @@ def setup_windows(
         typer.echo(f"Manage permissions: {origin}/devices")
 
 
-def _cloud_project_state(project: WindowsRegisteredProject) -> str:
-    """Check the Cloud owner's live records; local selection is not a Cloud grant."""
+def _cloud_project_state(
+    project: WindowsRegisteredProject,
+) -> tuple[str, bool | None]:
+    """Report registration and verified signed device presence independently."""
     from kicad_mcp.cloud_owner_management import CloudManagementError, CloudOwnerApi, load_token
 
     try:
         token = load_token(project.origin)
         if token is None:
-            return "unverified"
+            return "unverified", None
         reply = CloudOwnerApi(project.origin).request("GET", "/api/owner/v1/devices", token=token)
     except CloudManagementError:
-        return "unavailable"
+        return "unavailable", None
 
     devices = reply.get("devices")
     if not isinstance(devices, list) or not all(isinstance(d, dict) for d in devices):
-        return "unavailable"
+        return "unavailable", None
     matching = next((d for d in devices if d.get("id") == project.device_id), None)
     if matching is None:
-        return "missing_device"
+        return "missing_device", None
     projects = matching.get("projects")
     if not isinstance(projects, list) or not all(isinstance(p, dict) for p in projects):
-        return "unavailable"
-    return (
-        "registered"
-        if any(p.get("id") == project.project_id for p in projects)
-        else "missing_project"
-    )
+        return "unavailable", None
+    registered = next((p for p in projects if p.get("id") == project.project_id), None)
+    if registered is None:
+        return "missing_project", None
+
+    # Live socket presence is not a client grant or a signed write authorization.
+    if (
+        matching.get("enabled") is not True
+        or matching.get("revoked") is not False
+        or registered.get("enabled") is not True
+    ):
+        return "registered", None
+    connected = matching.get("connected")
+    return "registered", connected if type(connected) is bool else None
 
 
 def _show_saved_native_write_preference(project: WindowsRegisteredProject) -> None:
@@ -413,6 +423,16 @@ def _show_saved_native_write_preference(project: WindowsRegisteredProject) -> No
         )
 
 
+def _show_reconnect_guidance() -> None:
+    typer.echo(
+        "For automatic connection, run: kicad-mcp-pro cloud reconnect "
+        "(confirm the owner-owned task restoration)."
+    )
+    typer.echo(
+        "To start a signed foreground connection: kicad-mcp-pro remote (keep this terminal open)."
+    )
+
+
 def show_status() -> None:
     state = scheduler_state()
     run_state = task_run_state() if state == "Scheduled (connection unverified)" else None
@@ -422,18 +442,12 @@ def show_status() -> None:
         typer.echo(f"Local Windows Connector: {state}")
     if state == "Configured (task unverified)":
         typer.echo("No verified background task. A foreground Cloud session may still be active.")
-        typer.echo(
-            "For automatic connection, run: kicad-mcp-pro cloud reconnect "
-            "(confirm the owner-owned task restoration)."
-        )
-        typer.echo(
-            "To start a signed foreground connection: kicad-mcp-pro remote"
-            " (keep this terminal open)."
-        )
     try:
         project = selected_project()
         if project is None:
             typer.echo("No owner-selected local Windows Cloud project.")
+            if state == "Configured (task unverified)":
+                _show_reconnect_guidance()
             return
         selected = inspect_owner_selected_project(project)
         typer.echo(f"Cloud: {project.origin}")
@@ -441,9 +455,20 @@ def show_status() -> None:
         typer.echo(f"Project: {selected.filename_stem} ({project.project_id})")
         typer.echo(f"Directory: {selected.directory}")
         _show_saved_native_write_preference(project)
-        cloud_state = _cloud_project_state(project)
+        cloud_state, signed_connected = _cloud_project_state(project)
         if cloud_state == "registered":
             typer.echo("Cloud project: Registered (check client permissions in Devices).")
+            connection = (
+                "ONLINE"
+                if signed_connected is True
+                else "OFFLINE"
+                if signed_connected is False
+                else "UNVERIFIED"
+            )
+            typer.echo(
+                f"Cloud signed device session: {connection} "
+                "(not proof of KiCad operation or editing authorization)."
+            )
         elif cloud_state in {"missing_device", "missing_project"}:
             typer.echo(
                 "Cloud project: Not found in this account. Local registration is stale "
@@ -459,6 +484,12 @@ def show_status() -> None:
                 )
             )
         typer.echo("Cloud owner grants/revocation are managed in the Devices page.")
+        if (
+            state == "Configured (task unverified)"
+            and signed_connected is not True
+            and cloud_state not in {"missing_device", "missing_project"}
+        ):
+            _show_reconnect_guidance()
     except (OSError, ValueError):
         typer.echo("Existing local registration needs repair. Cloud access not verified.")
         raise typer.Exit(code=1) from None

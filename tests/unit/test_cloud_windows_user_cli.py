@@ -1250,3 +1250,92 @@ def test_windows_status_write_preference_unverified_does_not_claim_authority(
     assert "Saved native editing preference: UNVERIFIED" in result.output
     assert "secret" not in result.output
     assert "editing enabled" not in result.output.lower()
+
+
+@pytest.mark.parametrize(
+    ("connection", "expected"),
+    [
+        (True, "Cloud signed device session: ONLINE"),
+        (False, "Cloud signed device session: OFFLINE"),
+        ("true", "Cloud signed device session: UNVERIFIED"),
+        (None, "Cloud signed device session: UNVERIFIED"),
+    ],
+)
+def test_windows_status_reports_verified_signed_cloud_session(
+    windows_cli, monkeypatch: pytest.MonkeyPatch, connection: object, expected: str
+) -> None:
+    from kicad_mcp import cloud_owner_management
+
+    _folder, _events, project, _selected = windows_cli
+    monkeypatch.setattr(cloud_windows_user_cli, "selected_project", lambda: project)
+    monkeypatch.setattr(
+        cloud_windows_user_cli, "scheduler_state", lambda: "Configured (task unverified)"
+    )
+    monkeypatch.setattr(cloud_owner_management, "load_token", lambda _origin: "kmpc1_" + "a" * 43)
+    queries: list[str] = []
+
+    def list_devices(_self: object, method: str, path: str, *, token: str) -> dict:
+        queries.append(path)
+        return {
+            "devices": [
+                {
+                    "id": project.device_id,
+                    "enabled": True,
+                    "revoked": False,
+                    "connected": connection,
+                    "projects": [{"id": project.project_id, "enabled": True}],
+                }
+            ]
+        }
+
+    monkeypatch.setattr(cloud_owner_management.CloudOwnerApi, "request", list_devices)
+    response = CliRunner().invoke(app, ["cloud", "status"])
+    assert response.exit_code == 0, response.output
+    assert "Configured (task unverified)" in response.output
+    assert expected in response.output
+    assert "not proof of KiCad operation or editing authorization" in response.output
+    if connection is True:
+        assert "For automatic connection, run" not in response.output
+        assert "To start a signed foreground connection" not in response.output
+    else:
+        assert "For automatic connection, run" in response.output
+        assert "To start a signed foreground connection" in response.output
+    assert queries == ["/api/owner/v1/devices"]
+
+
+@pytest.mark.parametrize(
+    "device_state,project_enabled",
+    [
+        ({"connected": True, "enabled": False, "revoked": False}, True),
+        ({"connected": True, "enabled": True, "revoked": True}, True),
+        ({"connected": True, "enabled": True, "revoked": False}, False),
+    ],
+)
+def test_windows_status_does_not_claim_online_for_disabled_access(
+    windows_cli,
+    monkeypatch: pytest.MonkeyPatch,
+    device_state: dict[str, object],
+    project_enabled: bool,
+) -> None:
+    from kicad_mcp import cloud_owner_management
+
+    _folder, _events, project, _selected = windows_cli
+    monkeypatch.setattr(cloud_windows_user_cli, "selected_project", lambda: project)
+    monkeypatch.setattr(cloud_owner_management, "load_token", lambda _origin: "kmpc1_" + "a" * 43)
+
+    def list_devices(_self: object, method: str, path: str, *, token: str) -> dict:
+        return {
+            "devices": [
+                {
+                    "id": project.device_id,
+                    **device_state,
+                    "projects": [{"id": project.project_id, "enabled": project_enabled}],
+                }
+            ]
+        }
+
+    monkeypatch.setattr(cloud_owner_management.CloudOwnerApi, "request", list_devices)
+    response = CliRunner().invoke(app, ["cloud", "status"])
+    assert response.exit_code == 0, response.output
+    assert "Cloud signed device session: ONLINE" not in response.output
+    assert "Cloud signed device session: UNVERIFIED" in response.output
