@@ -31,6 +31,8 @@ test("portable MCP App presents an accessible, host-adaptive project review",()=
   assert.match(script,/Native editing is not advertised by this Connector session/);
   assert.match(script,/Cloud Edit and OAuth permissions are separate/);
   assert.match(script,/advertises native editing but does not prove authorization/);
+  assert.match(script,/name:"local_mcp_call"/);
+  assert.match(script,/tool_name:"kicad_get_server_info"/);
   assert.match(script,/name:"local_mcp_catalog"/);
   assert.match(script,/tool_name:"pcb_move_footprint"/);
   assert.match(script,/accessMode==="write"/);
@@ -42,7 +44,7 @@ test("portable MCP App presents an accessible, host-adaptive project review",()=
 });
 
 type Snapshot={structuredContent?:unknown};
-type ServerCall={name:string;arguments:{project_id:string;tool_name?:string}};
+type ServerCall={name:string;arguments:{project_id:string;tool_name?:string;arguments?:Record<string,unknown>}};
 type StubNode={
   disabled:boolean;hidden:boolean;textContent:string;className:string;
   click?:()=>Promise<void>;
@@ -60,13 +62,13 @@ function createReviewHarness(){
     return [id,node];
   })) as Record<string,StubNode>;
   const calls:ServerCall[]=[];
-  let request:()=>Promise<Snapshot>=async()=>({structuredContent:{available:true,tools:[]}});
+  let request:(_call:ServerCall)=>Promise<Snapshot>=async()=>({structuredContent:{available:true,tools:[]}});
   class AppStub {
     ontoolresult?: (result:Snapshot)=>void;
     connect(){return Promise.resolve();}
     async callServerTool(call:ServerCall){
       calls.push(call);
-      return await request();
+      return await request(call);
     }
   }
   let instance:AppStub|undefined;
@@ -90,32 +92,79 @@ function createReviewHarness(){
       localMcp:{readAttemptReady:true,sessionNativeWriteMode:mode}
     }}
   });
-  return {app,nodes,calls,project,setRequest(fn:()=>Promise<Snapshot>){request=fn;}};
+  return {app,nodes,calls,project,setRequest(fn:(call:ServerCall)=>Promise<Snapshot>){request=fn;}};
 }
 
-test("PCB editor check is a read-only tool discovery, not a simulated write",async()=>{
+test("PCB editor check is available without native write and checks real read-only IPC",async()=>{
   const h=createReviewHarness();
   h.app.ontoolresult?.(h.project("not_advertised"));
-  assert.equal(h.nodes["check-editor"].disabled,true);
-  h.app.ontoolresult?.(h.project("advertised"));
   assert.equal(h.nodes["check-editor"].disabled,false);
-  h.setRequest(async()=>({structuredContent:{available:true,tools:[{
-    name:"pcb_move_footprint",accessMode:"write"
-  }]}}));
+  h.setRequest(async()=>({structuredContent:{success:true,local_result:{
+    isError:false,structuredContent:{
+      kicad:{ipcAvailable:false,livePcbContext:false}
+    }
+  }}}));
   await h.nodes["check-editor"].click?.();
   assert.equal(h.calls.length,1);
-  assert.equal(h.calls[0]?.name,"local_mcp_catalog");
+  assert.equal(h.calls[0]?.name,"local_mcp_call");
+  assert.equal(h.calls[0]?.arguments.tool_name,"kicad_get_server_info");
   assert.equal(h.calls[0]?.arguments.project_id,"22222222-2222-4222-8222-222222222222");
-  assert.equal(h.calls[0]?.arguments.tool_name,"pcb_move_footprint");
-  assert.match(h.nodes["editor-status"].textContent,/does not authorize editing/);
+  assert.match(h.nodes["editor-status"].textContent,/PCB Editor IPC is unavailable/);
   assert.equal(h.nodes["check-editor"].disabled,false);
-  h.setRequest(async()=>({structuredContent:{available:true,tools:[]}}));
+  assert.equal(h.calls.some(call=>call.name==="local_mcp_catalog"),false);
+});
+
+test("PCB editor verification does not conflate live IPC or read calls with write grants",async()=>{
+  const h=createReviewHarness();
+  h.app.ontoolresult?.(h.project("advertised"));
+  h.setRequest(async(call)=>{
+    if(call.name==="local_mcp_call")return {structuredContent:{
+      success:true,local_result:{isError:false,
+        structuredContent:{kicad:{ipcAvailable:true,livePcbContext:true}}}
+    }};
+    return {structuredContent:{available:true,tools:[{
+      name:"pcb_move_footprint",accessMode:"write"
+    }]}};
+  });
   await h.nodes["check-editor"].click?.();
-  assert.match(h.nodes["editor-status"].textContent,/Open the linked board in KiCad PCB Editor/);
+  assert.equal(h.calls.length,2);
+  assert.equal(h.calls[0]?.name,"local_mcp_call");
+  assert.equal(h.calls[1]?.name,"local_mcp_catalog");
+  assert.equal(h.calls[1]?.arguments.tool_name,"pcb_move_footprint");
+  assert.match(h.nodes["editor-status"].textContent,/does not authorize editing/);
+  h.setRequest(async(call)=>call.name==="local_mcp_call"
+    ?{structuredContent:{success:true,local_result:{isError:false,
+      structuredContent:{kicad:{ipcAvailable:true,livePcbContext:true}}}}}
+    :{structuredContent:{available:true,tools:[]}}
+  );
+  await h.nodes["check-editor"].click?.();
+  assert.match(h.nodes["editor-status"].textContent,/PCB move tool is not listed/);
+  h.app.ontoolresult?.(h.project("not_advertised"));
+  await h.nodes["check-editor"].click?.();
+  assert.match(h.nodes["editor-status"].textContent,/native editing is not advertised/);
+  assert.equal(h.calls.filter(call=>call.name==="local_mcp_catalog").length,2);
   h.setRequest(async()=>{throw Error("secret/private-path");});
   await h.nodes["check-editor"].click?.();
-  assert.match(h.nodes["editor-status"].textContent,/Could not verify PCB Editor tools/);
+  assert.match(h.nodes["editor-status"].textContent,/Could not verify PCB Editor/);
   assert.doesNotMatch(h.nodes["editor-status"].textContent,/secret/);
+});
+
+test("a refused or malformed local engine reply does not claim KiCad readiness",async()=>{
+  const h=createReviewHarness();
+  h.app.ontoolresult?.(h.project("advertised"));
+  for(const result of [
+    {structuredContent:{success:false,local_result:{}}},
+    {structuredContent:{success:true,local_result:{isError:true,
+      structuredContent:{kicad:{ipcAvailable:true,livePcbContext:true}}}}},
+    {structuredContent:{success:true,local_result:{structuredContent:{kicad:{
+      ipcAvailable:"yes",livePcbContext:true
+    }}}}}
+  ]){
+    h.setRequest(async()=>result);
+    await h.nodes["check-editor"].click?.();
+    assert.match(h.nodes["editor-status"].textContent,/Could not verify PCB Editor/);
+  }
+  assert.equal(h.calls.every(call=>call.name==="local_mcp_call"),true);
 });
 
 test("a revoked project invalidates in-flight PCB editor tool discovery",async()=>{
@@ -126,9 +175,8 @@ test("a revoked project invalidates in-flight PCB editor tool discovery",async()
   const pending=h.nodes["check-editor"].click?.();
   assert.equal(h.nodes["check-editor"].disabled,true);
   h.app.ontoolresult?.({structuredContent:{}});
-  finish({structuredContent:{available:true,tools:[{
-    name:"pcb_move_footprint",accessMode:"write"
-  }]}});
+  finish({structuredContent:{success:true,local_result:{isError:false,
+    structuredContent:{kicad:{ipcAvailable:true,livePcbContext:true}}}}});
   await pending;
   assert.equal(h.nodes["editor-status"].hidden,true);
   assert.equal(h.nodes["check-editor"].disabled,true);

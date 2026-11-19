@@ -13,12 +13,14 @@ const connection=document.getElementById("project-connection") as HTMLElement;
 const identifier=document.getElementById("project-id") as HTMLElement;
 let projectId:string|undefined;
 let projectGeneration=0;
+let nativeWriteAdvertised=false;
 
 function show(result:ToolSnapshot):void {
   projectGeneration++;
   editorStatus.hidden=true;
   editorStatus.textContent="";
   checkEditor.disabled=true;
+  nativeWriteAdvertised=false;
   // Server-owned structuredContent is authoritative; never infer a grant
   // from cached iframe state or render tool-supplied HTML.
   const content=result.structuredContent;
@@ -51,7 +53,8 @@ function show(result:ToolSnapshot):void {
   const writeAdvertised=mcp&&"sessionNativeWriteMode" in mcp&&
     mcp.sessionNativeWriteMode==="advertised";
   const bridgeUnavailable=mcp&&"state" in mcp&&mcp.state==="connector_mcp_unavailable";
-  checkEditor.disabled=!(canAttemptRead&&writeAdvertised);
+  nativeWriteAdvertised=Boolean(writeAdvertised);
+  checkEditor.disabled=!canAttemptRead;
   status.textContent=canAttemptRead
     ?writeNotAdvertised
       ?"MCP read tools can be requested. Native editing is not advertised by this Connector session. In the owner's terminal use kicad-mcp-pro cloud remote --enable-native-write. Cloud Edit and OAuth permissions are separate."
@@ -71,16 +74,46 @@ checkEditor.addEventListener("click",async()=>{
   const generation=projectGeneration;
   checkEditor.disabled=true;
   editorStatus.hidden=false;
-  editorStatus.textContent="Checking current PCB Editor tool availability (read-only)...";
+  editorStatus.textContent="Checking KiCad PCB Editor (read-only)...";
   try{
+    const probe=await app.callServerTool({
+      name:"local_mcp_call",
+      arguments:{project_id:requestedProject,tool_name:"kicad_get_server_info",arguments:{}}
+    });
+    if(projectGeneration!==generation||projectId!==requestedProject)return;
+    const data=probe.structuredContent;
+    const local=data&&typeof data==="object"&&"local_result" in data
+      ?data.local_result:undefined;
+    const info=local&&typeof local==="object"&&"structuredContent" in local
+      ?local.structuredContent:undefined;
+    const kicad=info&&typeof info==="object"&&"kicad" in info
+      ?info.kicad:undefined;
+    if(!data||typeof data!=="object"||!("success" in data)||data.success!==true||
+      !local||typeof local!=="object"||("isError" in local&&local.isError===true)||
+      !kicad||typeof kicad!=="object"||
+      !("ipcAvailable" in kicad)||typeof kicad.ipcAvailable!=="boolean"||
+      !("livePcbContext" in kicad)||typeof kicad.livePcbContext!=="boolean"){
+      editorStatus.textContent="Could not verify PCB Editor. Check the Connector and project access.";
+      return;
+    }
+    if(!kicad.ipcAvailable||!kicad.livePcbContext){
+      editorStatus.textContent="PCB Editor IPC is unavailable. Open this project's board in KiCad PCB Editor, then check again.";
+      return;
+    }
+    if(!nativeWriteAdvertised){
+      editorStatus.textContent="PCB Editor IPC reports an open board, but native editing is not advertised by this Connector session. Use the owner terminal to enable native write.";
+      return;
+    }
     const response=await app.callServerTool({
       name:"local_mcp_catalog",
       arguments:{project_id:requestedProject,tool_name:"pcb_move_footprint"}
     });
     if(projectGeneration!==generation||projectId!==requestedProject)return;
-    const data=response.structuredContent;
-    const tools=data&&typeof data==="object"&&"tools" in data?data.tools:undefined;
-    const available=data&&typeof data==="object"&&"available" in data&&data.available===true;
+    const toolsData=response.structuredContent;
+    const tools=toolsData&&typeof toolsData==="object"&&"tools" in toolsData
+      ?toolsData.tools:undefined;
+    const available=toolsData&&typeof toolsData==="object"&&"available" in toolsData
+      &&toolsData.available===true;
     if(!available||!Array.isArray(tools)){
       editorStatus.textContent="Could not verify PCB Editor tools. Check the Connector and project access.";
       return;
@@ -90,10 +123,10 @@ checkEditor.addEventListener("click",async()=>{
       "accessMode" in tool&&tool.accessMode==="write");
     editorStatus.textContent=move
       ?"PCB move tool is listed. This does not authorize editing or prove save/reopen."
-      :"PCB move tool is not listed. Open the linked board in KiCad PCB Editor, confirm local IPC and Cloud Edit/OAuth access, then check again.";
+      :"PCB move tool is not listed. Confirm the linked board in KiCad PCB Editor, then check again.";
   }catch{
     if(projectGeneration===generation&&projectId===requestedProject)
-      editorStatus.textContent="Could not verify PCB Editor tools. Check the Connector and project access.";
+      editorStatus.textContent="Could not verify PCB Editor. Check the Connector and project access.";
   }finally{
     if(projectGeneration===generation&&projectId===requestedProject)
       checkEditor.disabled=false;
