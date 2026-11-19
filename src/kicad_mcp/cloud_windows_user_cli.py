@@ -43,6 +43,7 @@ from kicad_mcp.cloud_windows_task_scheduler import (
 )
 
 _PROJECT_SUFFIX_PRIORITY = {".kicad_pro": 0, ".kicad_sch": 1, ".kicad_pcb": 2}
+_TASK_UNVERIFIED = "Configured (task unverified)"
 
 
 def _default_project_folder() -> Path:
@@ -108,7 +109,7 @@ def _repair_missing_owner_task(project: WindowsRegisteredProject) -> bool:
     The established disable/enable paths revoke the old local marker before
     recreating an owner-only task, and independently revalidate task ownership.
     """
-    if scheduler_state() != "Configured (task unverified)":
+    if scheduler_state() != _TASK_UNVERIFIED:
         return False
     inspect_owner_selected_project(project)
     if not typer.confirm("Restore the missing read-only Windows Connector task?", default=False):
@@ -460,6 +461,33 @@ def _show_reconnect_guidance() -> None:
     )
 
 
+def _show_cloud_registration(cloud_state: str, signed_connected: bool | None) -> None:
+    """Keep presence and registration distinct from editing permission."""
+    if cloud_state == "registered":
+        typer.echo("Cloud project: Registered (check client permissions in Devices).")
+        if signed_connected is True:
+            connection = "ONLINE"
+        elif signed_connected is False:
+            connection = "OFFLINE"
+        else:
+            connection = "UNVERIFIED"
+        typer.echo(
+            f"Cloud signed device session: {connection} "
+            "(not proof of KiCad operation or editing authorization)."
+        )
+    elif cloud_state in {"missing_device", "missing_project"}:
+        typer.echo(
+            "Cloud project: Not found in this account. Local registration is stale "
+            "or belongs to another account; re-add from Cloud Devices."
+        )
+    else:
+        if cloud_state == "unverified":
+            reason = "Run cloud login to check Cloud registrations."
+        else:
+            reason = "Cloud account could not be checked; retry when online."
+        typer.echo("Cloud project: Not verified. " + reason)
+
+
 def show_status() -> None:
     state = scheduler_state()
     run_state = task_run_state() if state == "Scheduled (connection unverified)" else None
@@ -467,13 +495,13 @@ def show_status() -> None:
         typer.echo(f"Local Windows Connector: {state} [{run_state}]")
     else:
         typer.echo(f"Local Windows Connector: {state}")
-    if state == "Configured (task unverified)":
+    if state == _TASK_UNVERIFIED:
         typer.echo("No verified background task. A foreground Cloud session may still be active.")
     try:
         project = selected_project()
         if project is None:
             typer.echo("No owner-selected local Windows Cloud project.")
-            if state == "Configured (task unverified)":
+            if state == _TASK_UNVERIFIED:
                 _show_reconnect_guidance()
             return
         selected = inspect_owner_selected_project(project)
@@ -487,36 +515,10 @@ def show_status() -> None:
             signed_connected=signed_connected,
             scheduled_task=state == "Scheduled (connection unverified)",
         )
-        if cloud_state == "registered":
-            typer.echo("Cloud project: Registered (check client permissions in Devices).")
-            connection = (
-                "ONLINE"
-                if signed_connected is True
-                else "OFFLINE"
-                if signed_connected is False
-                else "UNVERIFIED"
-            )
-            typer.echo(
-                f"Cloud signed device session: {connection} "
-                "(not proof of KiCad operation or editing authorization)."
-            )
-        elif cloud_state in {"missing_device", "missing_project"}:
-            typer.echo(
-                "Cloud project: Not found in this account. Local registration is stale "
-                "or belongs to another account; re-add from Cloud Devices."
-            )
-        else:
-            typer.echo(
-                "Cloud project: Not verified. "
-                + (
-                    "Run cloud login to check Cloud registrations."
-                    if cloud_state == "unverified"
-                    else "Cloud account could not be checked; retry when online."
-                )
-            )
+        _show_cloud_registration(cloud_state, signed_connected)
         typer.echo("Cloud owner grants/revocation are managed in the Devices page.")
         if (
-            state == "Configured (task unverified)"
+            state == _TASK_UNVERIFIED
             and signed_connected is not True
             and cloud_state not in {"missing_device", "missing_project"}
         ):

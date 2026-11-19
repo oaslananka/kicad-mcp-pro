@@ -8,6 +8,22 @@ from uuid import uuid4
 import pytest
 
 
+def _attempt_second_connector(guard, message: str) -> None:
+    """The single call inside pytest.raises encloses the entire guard attempt."""
+    with guard.owner_connector_instance():
+        pytest.fail(message)
+
+
+def _throw_inside_connector(guard) -> None:
+    with guard.owner_connector_instance():
+        raise RuntimeError("synthetic failure")
+
+
+def _attempt_unavailable_connector(guard) -> None:
+    with guard.owner_connector_instance():
+        pytest.fail("Connector must not start without a verified lock")
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Requires Windows named mutex")
 def test_windows_connector_guard_blocks_second_instance_then_releases(monkeypatch) -> None:
     from kicad_mcp import cloud_windows_single_instance as guard
@@ -15,8 +31,7 @@ def test_windows_connector_guard_blocks_second_instance_then_releases(monkeypatc
     monkeypatch.setattr(guard, "_MUTEX_NAME", f"Local\\KiCadMcpProTest_{uuid4().hex}")
     with guard.owner_connector_instance():
         with pytest.raises(guard.CloudConnectorAlreadyRunningError):
-            with guard.owner_connector_instance():
-                pytest.fail("second Connector obtained the same mutex")
+            _attempt_second_connector(guard, "second Connector obtained the same mutex")
     with guard.owner_connector_instance():
         pass
 
@@ -27,8 +42,7 @@ def test_windows_connector_guard_releases_after_exception(monkeypatch) -> None:
 
     monkeypatch.setattr(guard, "_MUTEX_NAME", f"Local\\KiCadMcpProTest_{uuid4().hex}")
     with pytest.raises(RuntimeError, match="synthetic failure"):
-        with guard.owner_connector_instance():
-            raise RuntimeError("synthetic failure")
+        _throw_inside_connector(guard)
     with guard.owner_connector_instance():
         pass
 
@@ -44,8 +58,7 @@ def test_windows_mutex_unavailable_fails_closed(monkeypatch) -> None:
 
     monkeypatch.setattr(ctypes, "WinDLL", refuse_dll)
     with pytest.raises(guard.CloudConnectorLockUnavailableError):
-        with guard.owner_connector_instance():
-            pytest.fail("Connector must not start without a verified lock")
+        _attempt_unavailable_connector(guard)
 
 
 def _assert_mutex_owned_by_parent(mutex_name: str) -> None:
@@ -101,14 +114,14 @@ def test_foreground_owner_guard_is_reused_by_async_connector_not_other_callers(m
     with guard.owner_connector_instance():
         assert asyncio.run(inner()) == "same-foreground-owner"
         with pytest.raises(guard.CloudConnectorAlreadyRunningError):
-            with guard.owner_connector_instance():
-                pytest.fail("new independent caller must not reuse the lock")
+            _attempt_second_connector(guard, "new independent caller must not reuse the lock")
 
 
 @pytest.mark.asyncio
 async def test_running_connector_requires_single_instance_before_any_signed_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    import asyncio
     from types import SimpleNamespace
 
     from kicad_mcp import cloud_windows_connector as connector
@@ -131,6 +144,7 @@ async def test_running_connector_requires_single_instance_before_any_signed_sess
         raise AssertionError("duplicate should not reach Cloud")
 
     monkeypatch.setattr(connector, "owner_connector_instance", reject_duplicate)
+    stop = asyncio.Event()
     with pytest.raises(CloudConnectorAlreadyRunningError, match="already active|another Connector"):
-        await connector.run_connector(stop=__import__("asyncio").Event(), session_runner=no_session)
+        await connector.run_connector(stop=stop, session_runner=no_session)
     assert calls == ["guard"]

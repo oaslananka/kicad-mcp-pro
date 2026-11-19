@@ -328,11 +328,11 @@ async def _serve_one_mcp_request(
     return response
 
 
-def _mcp_activity_tool(raw: str, expected_sequence: int) -> str | None:
-    """Extract a validated MCP tool name without formatting remote input for display."""
+def _verified_mcp_activity_request(raw: str, expected_sequence: int) -> dict[str, Any] | None:
+    """Read the signed envelope's diagnostic metadata, without logging its arguments."""
     try:
         frame = _read_strict_json(raw, _MCP_REQUEST_KIND)
-    except (CloudHandshakeDeniedError, ValueError):
+    except ValueError:
         return None
     if (
         set(frame) != {"kind", "version", "sequence", "request"}
@@ -342,15 +342,22 @@ def _mcp_activity_tool(raw: str, expected_sequence: int) -> str | None:
         or frame["sequence"] != expected_sequence
     ):
         return None
-    operation = frame.get("request")
-    if not isinstance(operation, dict):
+    request = frame.get("request")
+    return request if isinstance(request, dict) else None
+
+
+def _mcp_activity_tool(raw: str, expected_sequence: int) -> str | None:
+    """Return only a bounded, validated MCP tool name; never expose parameters."""
+    operation = _verified_mcp_activity_request(raw, expected_sequence)
+    if operation is None:
         return None
     if operation.get("method") == "catalog":
         return "catalog"
-    if operation.get("method") == "call":
-        tool = operation.get("toolName")
-        if isinstance(tool, str) and _SAFE_ACTIVITY_TOOL.fullmatch(tool) is not None:
-            return tool
+    if operation.get("method") != "call":
+        return None
+    tool = operation.get("toolName")
+    if isinstance(tool, str) and _SAFE_ACTIVITY_TOOL.fullmatch(tool) is not None:
+        return tool
     return None
 
 
