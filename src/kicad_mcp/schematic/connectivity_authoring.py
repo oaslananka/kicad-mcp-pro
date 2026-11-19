@@ -412,28 +412,31 @@ class SchematicConnectivityAuthoringService:
         allocate_power_reference: Callable[[str], str] | None = None,
     ) -> tuple[str, str, str | None]:
         if self.is_power_net(net):
-            if net not in power_lib_defs:
+            lib_def = power_lib_defs.get(net)
+            if lib_def is None:
                 lib_def = self.load_lib_symbol("power", net)
-                if lib_def is None:
-                    return "", "", f"{ref}.{pin}: power symbol '{net}' was not found"
-                power_lib_defs[net] = lib_def
-            block = self.place_symbol_block(
-                lib_id=f"power:{net}",
-                x=ex,
-                y=ey,
-                reference=(
-                    allocate_power_reference(net)
-                    if allocate_power_reference is not None
-                    else power_reference_from_uuid(self.new_uuid())
-                ),
-                value=net,
-                rotation=self.power_symbol_rotation_from_vector(ux, uy),
-                project_name=project_name,
-                root_uuid=root_uuid,
-                **instance_path_kwargs(instance_path),
-            )
-            msg = f"{ref}.{pin} -> {net} (power) @ ({ex}, {ey}){suffix}"
-            return block, msg, None
+                if lib_def is not None:
+                    power_lib_defs[net] = lib_def
+            if lib_def is not None:
+                block = self.place_symbol_block(
+                    lib_id=f"power:{net}",
+                    x=ex,
+                    y=ey,
+                    reference=(
+                        allocate_power_reference(net)
+                        if allocate_power_reference is not None
+                        else power_reference_from_uuid(self.new_uuid())
+                    ),
+                    value=net,
+                    rotation=self.power_symbol_rotation_from_vector(ux, uy),
+                    project_name=project_name,
+                    root_uuid=root_uuid,
+                    **instance_path_kwargs(instance_path),
+                )
+                msg = f"{ref}.{pin} -> {net} (power) @ ({ex}, {ey}){suffix}"
+                return block, msg, None
+            # Power-like names such as VCAP1 are not necessarily library symbols.
+            # A net label still connects the pin, matching sch_build_circuit.
 
         rotation = self.terminal_rotation_from_vector(ux, uy)
         shape = conn.get("shape")
