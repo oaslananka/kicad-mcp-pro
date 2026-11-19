@@ -89,6 +89,7 @@ class LabelBlock(Protocol):
         global_label: bool,
         shape: str | None,
         kind: str | None,
+        justify: str | None = None,
     ) -> str: ...
 
 
@@ -256,8 +257,9 @@ class SchematicCircuitCompilationService:
             )
         for label in prepared.labels:
             lx, ly = self.snap_point(label.x_mm, label.y_mm, snap_to_grid and label.snap_to_grid)
-            elements.append(
-                self.label_block(
+            if label.justify is None:
+                # No request: keep the builder's default (and older injected emitters).
+                block = self.label_block(
                     label.name,
                     lx,
                     ly,
@@ -266,7 +268,18 @@ class SchematicCircuitCompilationService:
                     shape=label.shape,
                     kind=label.kind,
                 )
-            )
+            else:
+                block = self.label_block(
+                    label.name,
+                    lx,
+                    ly,
+                    label.rotation,
+                    global_label=label.global_label,
+                    shape=label.shape,
+                    kind=label.kind,
+                    justify=label.justify,
+                )
+            elements.append(block)
         return elements
 
     def _compile_build_notes(
