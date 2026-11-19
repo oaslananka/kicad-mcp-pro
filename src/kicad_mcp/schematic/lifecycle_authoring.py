@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from ..models.schematic import AnnotateInput
-from .instance_paths import InstancePathFor, instance_path_kwargs, no_instance_path
+from .instance_paths import (
+    InstancePathFor,
+    instance_path_kwargs,
+    no_instance_path,
+    rewrite_placed_symbol_references,
+)
 
 AnnotationOrder = Literal["alpha", "sheet", "existing", "left_to_right"]
 Mutator = Callable[[str], str]
@@ -30,6 +35,7 @@ class SchematicLifecycleAuthoringService:
     parse_schematic: Callable[[Path], dict[str, Any]]
     sort_symbols_for_annotation: Callable[[list[dict[str, Any]], str], None]
     instance_path_for: InstancePathFor = no_instance_path
+    project_name: Callable[[], str] = lambda: ""
 
     def add_jumper(
         self,
@@ -83,14 +89,7 @@ class SchematicLifecycleAuthoringService:
             updates.append((symbol["reference"], new_reference))
 
         def mutator(current: str) -> str:
-            updated = current
-            for old_reference, new_reference in updates:
-                updated = updated.replace(
-                    f'(property "Reference" "{old_reference}"',
-                    f'(property "Reference" "{new_reference}"',
-                    1,
-                )
-            return updated
+            return rewrite_placed_symbol_references(current, updates, self.project_name())
 
         self.transactional_write(mutator)
         return f"Annotated {len(updates)} symbol(s).\n{self.reload_schematic()}"

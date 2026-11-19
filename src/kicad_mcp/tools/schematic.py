@@ -54,7 +54,11 @@ from ..schematic.hierarchy_authoring import (
     SchematicHierarchyAuthoringService,
 )
 from ..schematic.inspection import SchematicInspectionService
-from ..schematic.instance_paths import find_instance_path
+from ..schematic.instance_paths import (
+    find_instance_path,
+    rewrite_placed_symbol_references,
+    rewrite_symbol_instance_reference,
+)
 from ..schematic.layout_automation import (
     FunctionalDesignIntentLike,
     SchematicLayoutAutomationService,
@@ -3433,14 +3437,7 @@ def run_auto_annotate(start_number: int = 1, order: str = "alpha") -> str:
         updates.append((symbol["reference"], new_reference))
 
     def mutator(current: str) -> str:
-        updated = current
-        for old_ref, new_ref in updates:
-            updated = updated.replace(
-                f'(property "Reference" "{old_ref}"',
-                f'(property "Reference" "{new_ref}"',
-                1,
-            )
-        return updated
+        return rewrite_placed_symbol_references(current, updates, _project_name())
 
     transactional_write(mutator)
     return f"Auto-annotated {len(updates)} symbol(s)."
@@ -6721,11 +6718,16 @@ def _update_symbol_property_block(
     )
     if pattern.search(block):
         escaped_value = _escape_sexpr_string(value)
-        return pattern.sub(
+        updated = pattern.sub(
             lambda match: f"{match.group(1)}{escaped_value}{match.group(3)}",
             block,
             count=1,
         )
+        if field == "Reference":
+            return rewrite_symbol_instance_reference(
+                updated, str(parsed.get("reference", "")), value, _project_name()
+            )
+        return updated
 
     insert_point = block.rfind("\t\t(instances")
     if insert_point == -1:
@@ -7879,6 +7881,7 @@ def _register_authoring(mcp: FastMCP) -> None:
         parse_schematic=parse_schematic_file,
         sort_symbols_for_annotation=_sort_symbols_for_annotation,
         instance_path_for=_symbol_instance_path,
+        project_name=_project_name,
     )
     schematic_lifecycle_authoring.register(
         mcp,

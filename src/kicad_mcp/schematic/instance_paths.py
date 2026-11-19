@@ -10,10 +10,13 @@ the hierarchy.
 
 from __future__ import annotations
 
+import re
+from collections import defaultdict, deque
 from collections.abc import Callable
 from pathlib import Path
 from typing import TypedDict
 
+from ..utils.sexpr import _extract_block
 from .sheet_pins import parse_sheet_blocks, schematic_uuid
 
 InstancePathFor = Callable[[Path], str | None]
@@ -110,3 +113,81 @@ def project_instance_paths(root_file: Path) -> set[str] | None:
 
     visit(root, root_text, f"/{root_uuid}", frozenset({root}))
     return valid
+
+
+def _replace_reference_text(text: str, old: str, new: str) -> str:
+    """Change only matching instance-reference nodes in a scoped text span."""
+    pattern = re.compile(r'(\(reference\s+)"' + re.escape(old) + r'"(\))')
+    return pattern.sub(lambda m: f'{m.group(1)}"{new}"{m.group(2)}', text)
+
+
+def rewrite_symbol_instance_reference(
+    symbol_block: str, old: str, new: str, project_name: str = ""
+) -> str:
+    """Keep KiCad's symbol instance references aligned with the display property.
+
+    For copied sheets, never touch the instance data belonging to a foreign
+    project. Legacy KiCad instance blocks without a project wrapper retain
+    their original path semantics.
+    """
+    start = symbol_block.find("(instances")
+    if start < 0 or old == new:
+        return symbol_block
+    instances, size = _extract_block(symbol_block, start)
+    if not instances or size <= 0:
+        return symbol_block
+    if "(project " not in instances or not project_name:
+        changed = _replace_reference_text(instances, old, new)
+    else:
+        changed = instances
+        edits: list[tuple[int, int, str]] = []
+        cursor = 0
+        while (at := instances.find("(project ", cursor)) >= 0:
+            project, consumed = _extract_block(instances, at)
+            cursor = at + max(consumed, 1)
+            name = re.match(r'\(project\s+"([^"]+)"', project)
+            if name is not None and name.group(1) == project_name:
+                edits.append((at, cursor, _replace_reference_text(project, old, new)))
+        for begin, end, replacement in reversed(edits):
+            changed = changed[:begin] + replacement + changed[end:]
+    return symbol_block[:start] + changed + symbol_block[start + size :]
+
+
+def rewrite_placed_symbol_references(
+    schematic_text: str, updates: list[tuple[str, str]], project_name: str = ""
+) -> str:
+    """Apply an annotation map to each placed symbol without cascading renames.
+
+    Symbol block isolation avoids confusing library definitions with placed
+    symbols and makes sequential moves such as R1->R2, R2->R3 independent.
+    """
+    queues: dict[str, deque[str]] = defaultdict(deque)
+    for old, new in updates:
+        queues[old].append(new)
+    replacements: list[tuple[int, int, str]] = []
+    cursor = 0
+    while (at := schematic_text.find("(symbol", cursor)) >= 0:
+        block, size = _extract_block(schematic_text, at)
+        cursor = at + max(size, 1)
+        if not block or not re.search(r'\(lib_id\s+"', block):
+            continue
+        match = re.search(r'\(property\s+"Reference"\s+"([^"]+)"', block)
+        if match is None or not queues[match.group(1)]:
+            continue
+        old = match.group(1)
+        new = queues[old].popleft()
+        property_changed = block[: match.start(1)] + new + block[match.end(1) :]
+        rewritten = rewrite_symbol_instance_reference(property_changed, old, new, project_name)
+        replacements.append((at, at + size, rewritten))
+    if not replacements:
+        # Compatibility for older injected test emitters without symbol blocks.
+        updated = schematic_text
+        for old, new in updates:
+            updated = updated.replace(
+                f'(property "Reference" "{old}"', f'(property "Reference" "{new}"', 1
+            )
+        return updated
+    result = schematic_text
+    for begin, end, replacement in reversed(replacements):
+        result = result[:begin] + replacement + result[end:]
+    return result
