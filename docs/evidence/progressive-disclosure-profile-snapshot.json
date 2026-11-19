@@ -3,7 +3,7 @@
     "build": {
       "callableTools": 24,
       "catalogCharacters": 9377,
-      "catalogReductionVsExpertPct": 96.0,
+      "catalogReductionVsExpertPct": 96.1,
       "declaredTools": 24,
       "estimatedCatalogTokens": 2345,
       "forbiddenToolExposures": 2,
@@ -95,10 +95,10 @@
     },
     "expert": {
       "callableTools": 396,
-      "catalogCharacters": 237349,
+      "catalogCharacters": 238832,
       "catalogReductionVsExpertPct": 0.0,
       "declaredTools": 396,
-      "estimatedCatalogTokens": 59338,
+      "estimatedCatalogTokens": 59708,
       "forbiddenToolExposures": 8,
       "goldenCases": 65,
       "goldenCasesCovered": 55,

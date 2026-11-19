@@ -395,7 +395,11 @@ class SchematicCircuitCompilationService:
             else None
         )
         elements = self._collect_schematic_elements(
-            prepared, snap_to_grid, project_name, root_uuid, instance_path,
+            prepared,
+            snap_to_grid,
+            project_name,
+            root_uuid,
+            instance_path,
             allocator.allocate if allocator is not None else None,
         )
 
