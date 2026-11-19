@@ -48,35 +48,40 @@ def test_windows_mutex_unavailable_fails_closed(monkeypatch) -> None:
             pytest.fail("Connector must not start without a verified lock")
 
 
+def _assert_mutex_owned_by_parent(mutex_name: str) -> None:
+    """Win32 spawn target: expected duplicate exits normally; lock acquisition fails the test."""
+    from kicad_mcp import cloud_windows_single_instance as guard
+
+    guard._MUTEX_NAME = mutex_name
+    try:
+        with guard.owner_connector_instance():
+            raise SystemExit(9)
+    except guard.CloudConnectorAlreadyRunningError:
+        return
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Requires Windows named mutex")
 def test_windows_mutex_prevents_independent_second_process(monkeypatch) -> None:
-    import os
-    import subprocess
+    from multiprocessing import get_context
 
     from kicad_mcp import cloud_windows_single_instance as guard
 
     key = f"Local\\KiCadMcpProTest_{uuid4().hex}"
     monkeypatch.setattr(guard, "_MUTEX_NAME", key)
-    child = (
-        "import os,sys;"
-        "from kicad_mcp import cloud_windows_single_instance as guard;"
-        "guard._MUTEX_NAME=os.environ['KICAD_TEST_SINGLE_INSTANCE_MUTEX']\\n"
-        "try:\\n"
-        "    with guard.owner_connector_instance():sys.exit(9)\\n"
-        "except guard.CloudConnectorAlreadyRunningError:sys.exit(0)\\n"
+    child = get_context("spawn").Process(
+        target=_assert_mutex_owned_by_parent,
+        args=(key,),
     )
-    # Exchanging only this test-specific name; no Cloud registration involved.
-    child = child.replace("\\n", "\n")
     with guard.owner_connector_instance():
-        result = subprocess.run(
-            [sys.executable, "-c", child],
-            env={**os.environ, "KICAD_TEST_SINGLE_INSTANCE_MUTEX": key},
-            capture_output=True,
-            text=True,
-            timeout=12,
-            check=False,
-        )
-        assert result.returncode == 0, result.stderr
+        child.start()
+        try:
+            child.join(timeout=12)
+            assert not child.is_alive(), "child did not exit while parent held the mutex"
+            assert child.exitcode == 0, "child unexpectedly obtained the owner's mutex"
+        finally:
+            if child.is_alive():
+                child.terminate()
+                child.join(timeout=5)
     with guard.owner_connector_instance():
         pass
 
@@ -104,7 +109,6 @@ def test_foreground_owner_guard_is_reused_by_async_connector_not_other_callers(m
 async def test_running_connector_requires_single_instance_before_any_signed_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from contextlib import contextmanager
     from types import SimpleNamespace
 
     from kicad_mcp import cloud_windows_connector as connector
@@ -118,11 +122,9 @@ async def test_running_connector_requires_single_instance_before_any_signed_sess
     )
     calls: list[str] = []
 
-    @contextmanager
-    def reject_duplicate(**_kwargs: object):
+    def reject_duplicate(**_kwargs: object) -> None:
         calls.append("guard")
         raise CloudConnectorAlreadyRunningError("another Connector is active")
-        yield  # pragma: no cover
 
     async def no_session(**_kwargs: object) -> None:
         calls.append("signed_session")

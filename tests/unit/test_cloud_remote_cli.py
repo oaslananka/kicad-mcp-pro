@@ -173,20 +173,16 @@ def test_native_write_duplicate_never_claims_editing_is_enabled(
 def test_duplicate_connector_cannot_touch_owner_task_or_saved_write_choice(
     remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from contextlib import contextmanager
-
     from kicad_mcp.cloud_windows_single_instance import CloudConnectorAlreadyRunningError
 
     state, _folder = remote_fixture
     calls: list[str] = []
 
-    @contextmanager
-    def reject_duplicate():
+    def reject_duplicate() -> None:
         calls.append("instance_lock")
         raise CloudConnectorAlreadyRunningError(
             "Another Cloud Connector is already running in this Windows login."
         )
-        yield  # pragma: no cover
 
     def prohibited_issuer(*_args: object, **_kwargs: object) -> None:
         calls.append("write_issuer")

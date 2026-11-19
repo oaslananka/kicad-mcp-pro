@@ -350,7 +350,7 @@ def _mcp_activity_label(raw: str, expected_sequence: int) -> str:
     if request.get("method") == "call":
         tool = request.get("toolName")
         if isinstance(tool, str) and _SAFE_ACTIVITY_TOOL.fullmatch(tool) is not None:
-            return f"mcp {tool}"
+            return "mcp " + tool
     return "mcp"
 
 
