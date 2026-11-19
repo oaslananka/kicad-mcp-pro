@@ -657,3 +657,54 @@ def test_forget_owner_write_preference_rejects_tampered_store(
     assert result.exit_code != 0
     assert "could not be verified" in result.output
     assert state["calls"] == []
+
+
+@pytest.mark.parametrize(
+    "message, category",
+    [
+        ("Connecting", "CONNECT"),
+        ("Connected", "ONLINE"),
+        ("Tool call 1: run_drc completed", "TOOL"),
+        ("Opening Windows project folder dialog", "FOLDER"),
+        ("Cloud disconnected; reconnecting", "NETWORK"),
+    ],
+)
+def test_cloud_status_cp1252_output_never_crashes_connector(
+    monkeypatch: pytest.MonkeyPatch, message: str, category: str
+) -> None:
+    # Windows redirected stdout often uses a non-UTF-8 code page.
+    import io
+
+    output = io.BytesIO()
+    stream = io.TextIOWrapper(output, encoding="cp1252", errors="strict", write_through=True)
+    monkeypatch.setattr(cloud_user_cli.sys, "stdout", stream)
+
+    cloud_user_cli._display_cloud_status(message, cloud_user_cli.DEFAULT_CLOUD_ORIGIN)
+
+    rendered = output.getvalue().decode("cp1252")
+    assert category in rendered
+    assert message == "Connected" or message in rendered
+    assert rendered.encode("cp1252") == output.getvalue()
+
+
+def test_cloud_banner_divider_uses_ascii_only_for_cp1252(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import io
+
+    output = io.BytesIO()
+    stream = io.TextIOWrapper(output, encoding="cp1252", errors="strict", write_through=True)
+    monkeypatch.setattr(cloud_user_cli.sys, "stdout", stream)
+
+    assert cloud_user_cli._cloud_console_glyph("\u2500" * 40, "-" * 40) == "-" * 40
+
+
+def test_cloud_console_keeps_unicode_when_output_supports_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import io
+
+    stream = io.TextIOWrapper(io.BytesIO(), encoding="utf-8", write_through=True)
+    monkeypatch.setattr(cloud_user_cli.sys, "stdout", stream)
+
+    assert cloud_user_cli._cloud_console_glyph("\u2500" * 40, "-" * 40) == "\u2500" * 40

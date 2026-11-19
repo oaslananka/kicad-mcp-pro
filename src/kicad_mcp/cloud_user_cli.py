@@ -441,6 +441,18 @@ def _prepare_remote_connector(existing: WindowsRegisteredProject, interactive: b
         raise typer.BadParameter("Local Connector registration requires repair.")
 
 
+def _cloud_console_glyph(text: str, ascii_fallback: str) -> str:
+    """Preserve terminal decoration without crashing on Windows legacy code pages."""
+    encoding = getattr(sys.stdout, "encoding", None)
+    if not encoding:
+        return ascii_fallback
+    try:
+        text.encode(encoding)
+    except (UnicodeEncodeError, LookupError):
+        return ascii_fallback
+    return text
+
+
 def _display_cloud_status(value: str, origin: str) -> None:
     """Show sanitized Cloud activity without logging tool arguments or private paths."""
     from datetime import datetime
@@ -466,7 +478,7 @@ def _display_cloud_status(value: str, origin: str) -> None:
         category, icon, color = "CONNECT", "·", typer.colors.BLUE
         detail = value
     typer.echo(f"  {stamp}  ", nl=False)
-    typer.secho(f"{icon} {category:<8}", fg=color, bold=True, nl=False)
+    typer.secho(f"{_cloud_console_glyph(icon, '*')} {category:<8}", fg=color, bold=True, nl=False)
     typer.echo("  " + detail)
     if value == "Connected":
         typer.echo(f"             Manage projects: {origin}/devices")
@@ -627,7 +639,7 @@ def remote(
     typer.echo(f"  Cloud           {origin}")
     typer.echo("  Keep this terminal open; press Ctrl+C to disconnect.")
     typer.echo("  Add Project opens Windows Explorer on this computer.")
-    typer.secho("  ────────────────────────────────────────────────", fg=typer.colors.BRIGHT_BLACK)
+    typer.secho("  " + _cloud_console_glyph("\u2500" * 48, "-" * 48), fg=typer.colors.BRIGHT_BLACK)
     if enable_write:
         typer.echo(
             "Signed native PCB editing enabled for this foreground session"
