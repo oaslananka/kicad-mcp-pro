@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Callable
 from time import perf_counter
 from typing import Any, Protocol
@@ -40,6 +41,8 @@ _SESSION_REFRESH_SECONDS = 240
 _FOLDER_REQUEST_KIND = "connector.local_browser_request"
 _WRITE_REQUEST_KIND = "connector.authorized_write"
 _MCP_REQUEST_KIND = "connector.mcp_request"
+# Only the bounded ASCII tool identifier may appear in human-readable activity.
+_SAFE_ACTIVITY_TOOL = re.compile(r"[a-z][a-z0-9_]{0,63}", re.ASCII)
 
 
 def _canonical_project_id(value: object) -> str:
@@ -325,6 +328,32 @@ async def _serve_one_mcp_request(
     return response
 
 
+def _mcp_activity_label(raw: str, expected_sequence: int) -> str:
+    """Show a bounded tool name, never Cloud-provided args, paths, or log controls."""
+    try:
+        frame = _read_strict_json(raw, _MCP_REQUEST_KIND)
+    except (CloudHandshakeDeniedError, ValueError):
+        return "mcp"
+    if (
+        set(frame) != {"kind", "version", "sequence", "request"}
+        or type(frame.get("version")) is not int
+        or frame["version"] != 1
+        or type(frame.get("sequence")) is not int
+        or frame["sequence"] != expected_sequence
+    ):
+        return "mcp"
+    request = frame.get("request")
+    if not isinstance(request, dict):
+        return "mcp"
+    if request.get("method") == "catalog":
+        return "mcp catalog"
+    if request.get("method") == "call":
+        tool = request.get("toolName")
+        if isinstance(tool, str) and _SAFE_ACTIVITY_TOOL.fullmatch(tool) is not None:
+            return f"mcp {tool}"
+    return "mcp"
+
+
 async def _serve_one_signed_frame(
     socket: AuthenticatedReadSocket,
     raw: str,
@@ -352,7 +381,7 @@ async def _serve_one_signed_frame(
     is_write = kind == _WRITE_REQUEST_KIND
     is_mcp = kind == _MCP_REQUEST_KIND
     if is_mcp:
-        label = "mcp"
+        label = _mcp_activity_label(raw, sequence)
     elif is_write:
         label = "write"
     else:
