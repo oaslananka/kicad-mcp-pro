@@ -340,7 +340,7 @@ def test_add_pin_labels_accepts_power_symbol_origin_pin_fallback(tmp_path: Path)
     assert len(harness.writes) == 1
 
 
-def test_add_pin_labels_skips_missing_power_library_symbol(tmp_path: Path) -> None:
+def test_add_pin_labels_uses_label_when_power_library_symbol_is_missing(tmp_path: Path) -> None:
     harness = _harness(
         tmp_path,
         parsed={"uuid": "root", "symbols": [_symbol()], "power_symbols": []},
@@ -350,8 +350,11 @@ def test_add_pin_labels_skips_missing_power_library_symbol(tmp_path: Path) -> No
 
     result = harness.service.add_pin_labels([{"reference": "U1", "pin": "1", "net": "3V3"}])
 
-    assert result == "No pin labels were added.\nU1.1: power symbol '3V3' was not found"
-    assert harness.writes == []
+    assert "Added 1 pin terminal(s)" in result
+    assert "U1.1 -> 3V3 @ (17.08, 20.0)" in result
+    assert len(harness.writes) == 1
+    assert "LABEL(3V3,17.08,20.0" in harness.writes[0][1]
+    assert all(name != "place_symbol_block" for name, _payload in harness.calls)
 
 
 def test_add_pin_labels_merges_stacked_power_pins_into_one_terminal(tmp_path: Path) -> None:
