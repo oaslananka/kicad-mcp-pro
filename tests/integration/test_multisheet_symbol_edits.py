@@ -111,7 +111,7 @@ async def test_duplicate_reference_across_sheets_is_not_mutated(
         {"reference": "R41", "field": "Value", "value": "unsafe"},
     )
     assert "ambiguous" in result.lower(), result
-    assert (power.read_bytes(), regulator.read_bytes()) == before
+    assert before == (power.read_bytes(), regulator.read_bytes())
 
 
 @pytest.mark.anyio

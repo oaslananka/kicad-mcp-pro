@@ -20,6 +20,34 @@ AnnotationOrder = Literal["alpha", "sheet", "existing", "left_to_right"]
 Mutator = Callable[[str], str]
 
 
+def _allocate_project_symbol_reference(
+    symbol: dict[str, Any],
+    counters: dict[str, int],
+    groups: dict[tuple[str, str], list[tuple[str, set[int]]]],
+    start_number: int,
+) -> str:
+    """Reuse a reference for distinct units while separating same-unit parts."""
+    old = str(symbol["reference"])
+    prefix_match = re.match(r"([A-Za-z]+)", old)
+    prefix = prefix_match.group(1) if prefix_match else "U"
+    key = (old, str(symbol.get("lib_id", "")))
+    try:
+        unit = int(symbol.get("unit", 1))
+    except (TypeError, ValueError):
+        unit = 1
+    matches = groups.setdefault(key, [])
+    group = next((item for item in matches if unit not in item[1]), None)
+    if group is not None:
+        new_reference, used_units = group
+        used_units.add(unit)
+        return new_reference
+    counters.setdefault(prefix, start_number)
+    new_reference = f"{prefix}{counters[prefix]}"
+    counters[prefix] += 1
+    matches.append((new_reference, {unit}))
+    return new_reference
+
+
 @dataclass(frozen=True)
 class SchematicLifecycleAuthoringService:
     """Coordinate jumper placement, reference annotation, and reload behavior."""
@@ -119,23 +147,9 @@ class SchematicLifecycleAuthoringService:
                 old = str(symbol["reference"])
                 if not old or old.startswith("#"):
                     continue
-                prefix_match = re.match(r"([A-Za-z]+)", old)
-                prefix = prefix_match.group(1) if prefix_match else "U"
-                key = (old, str(symbol.get("lib_id", "")))
-                try:
-                    unit = int(symbol.get("unit", 1))
-                except (TypeError, ValueError):
-                    unit = 1
-                matches = groups.setdefault(key, [])
-                group = next((item for item in matches if unit not in item[1]), None)
-                if group is None:
-                    counters.setdefault(prefix, payload.start_number)
-                    new_reference = f"{prefix}{counters[prefix]}"
-                    counters[prefix] += 1
-                    matches.append((new_reference, {unit}))
-                else:
-                    new_reference, used_units = group
-                    used_units.add(unit)
+                new_reference = _allocate_project_symbol_reference(
+                    symbol, counters, groups, payload.start_number
+                )
                 updates.append((old, new_reference))
                 count += 1
             if updates:

@@ -3400,6 +3400,18 @@ def project_schematic_files() -> list[Path]:
     return candidates or [active]
 
 
+def _sheet_contains_reference(
+    path: Path, root: Path, active: Path, project_root: Path, reference: str
+) -> bool:
+    """Read only active or reachable project sheets when locating a symbol."""
+    if not path.is_file():
+        return False
+    if path != root and path != active and find_instance_path(root, path) is None:
+        return False
+    resolve_under(project_root, path)
+    return bool(_find_placed_symbol_blocks(path.read_text(encoding="utf-8"), reference))
+
+
 def _resolve_symbol_schematic_file(reference: str) -> Path:
     """Resolve a unique placed reference within the active project hierarchy.
 
@@ -3417,15 +3429,10 @@ def _resolve_symbol_schematic_file(reference: str) -> Path:
     seen: set[Path] = set()
     for candidate in candidates:
         path = candidate.resolve()
-        if path in seen or not path.is_file():
+        if path in seen:
             continue
         seen.add(path)
-        if path != root.resolve() and path != active:
-            if find_instance_path(root, path) is None:
-                continue
-        resolve_under(project_root, path)
-        content = path.read_text(encoding="utf-8")
-        if _find_placed_symbol_blocks(content, reference):
+        if _sheet_contains_reference(path, root.resolve(), active, project_root, reference):
             found.append(path)
     if len(found) > 1:
         names = ", ".join(path.name for path in sorted(found))
