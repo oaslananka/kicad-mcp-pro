@@ -167,6 +167,16 @@ test("a refused or malformed local engine reply does not claim KiCad readiness",
     assert.match(h.nodes["editor-status"].textContent,/Could not verify PCB Editor/);
   }
   assert.equal(h.calls.every(call=>call.name==="local_mcp_call"),true);
+  h.setRequest(async()=>({structuredContent:{
+    success:true,local_result:{isError:true,structuredContent:{
+      success:false,reason:"local_mcp_read_timeout",
+      diagnostics:"PRIVATE_PATH_DO_NOT_RENDER"
+    }}
+  }}));
+  await h.nodes["check-editor"].click?.();
+  assert.match(h.nodes["editor-status"].textContent,/KiCad status check timed out/);
+  assert.match(h.nodes["editor-status"].textContent,/retry/);
+  assert.doesNotMatch(h.nodes["editor-status"].textContent,/PRIVATE_PATH|re-pair your device/);
 });
 
 test("a revoked project invalidates in-flight PCB editor tool discovery",async()=>{

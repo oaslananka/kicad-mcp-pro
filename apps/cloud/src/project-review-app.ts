@@ -88,6 +88,13 @@ checkEditor.addEventListener("click",async()=>{
       ?local.structuredContent:undefined;
     const kicad=info&&typeof info==="object"&&"kicad" in info
       ?info.kicad:undefined;
+    if(data&&typeof data==="object"&&"success" in data&&data.success===true&&
+      local&&typeof local==="object"&&"isError" in local&&local.isError===true&&
+      info&&typeof info==="object"&&"reason" in info&&
+      info.reason==="local_mcp_read_timeout"){
+      editorStatus.textContent="KiCad status check timed out. The editor may still be starting or busy; retry when it responds. This does not indicate a pairing failure.";
+      return;
+    }
     if(!data||typeof data!=="object"||!("success" in data)||data.success!==true||
       !local||typeof local!=="object"||("isError" in local&&local.isError===true)||
       !kicad||typeof kicad!=="object"||
