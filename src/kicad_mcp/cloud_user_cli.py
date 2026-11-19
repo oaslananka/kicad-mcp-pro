@@ -616,6 +616,10 @@ def remote(
         run_connector,
     )
     from kicad_mcp.cloud_windows_local_selection import inspect_owner_selected_project
+    from kicad_mcp.cloud_windows_single_instance import (
+        CloudConnectorAlreadyRunningError,
+        CloudConnectorLockUnavailableError,
+    )
 
     existing = _select_remote_project(
         origin, browse, project_dir, no_browser, repair_device=repair_device, alias=alias
@@ -642,13 +646,14 @@ def remote(
     typer.secho("  " + _cloud_console_glyph("\u2500" * 48, "-" * 48), fg=typer.colors.BRIGHT_BLACK)
     if enable_write:
         typer.echo(
-            "Signed native PCB editing enabled for this foreground session"
+            "Signed native PCB editing requested for this foreground session"
             + (
                 " (remembered for this paired project)."
                 if remember_native_write
                 else " (owner-approved local preference)."
             )
-            + " Cloud still requires separate client and project edit permission."
+            + " Not active until the signed Connector connects. "
+            + "Cloud still requires separate client and project edit permission."
         )
     if allow_native_drc:
         typer.echo(
@@ -686,6 +691,9 @@ def remote(
             asyncio.run(run_connector(stop=asyncio.Event(), status_callback=show_status))
     except CloudOwnerReapprovalRequiredError:
         raise typer.Exit(code=3) from None
+    except (CloudConnectorAlreadyRunningError, CloudConnectorLockUnavailableError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from None
     except KeyboardInterrupt:
         typer.echo("\nDisconnected. Pairing stays saved; run cloud connect to return.")
 

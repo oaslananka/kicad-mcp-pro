@@ -51,6 +51,11 @@ from kicad_mcp.cloud_windows_local_selection import (
     inspect_owner_selected_project,
 )
 from kicad_mcp.cloud_windows_project_record import inspect_project_reference
+from kicad_mcp.cloud_windows_single_instance import (
+    CloudConnectorAlreadyRunningError,
+    CloudConnectorLockUnavailableError,
+    owner_connector_instance,
+)
 from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
 
 _DENIED = "Windows Connector is unavailable; local authorization was not verified."
@@ -886,43 +891,44 @@ async def run_connector(
     ):
         raise LocalApprovalDeniedError(_DENIED)
     failures = 0
-    while not stop.is_set():
-        active = _active()
-        if active is None:
-            return
-        project, selected, key = active.project, active.selected, active.signing_key
+    with owner_connector_instance():
+        while not stop.is_set():
+            active = _active()
+            if active is None:
+                return
+            project, selected, key = active.project, active.selected, active.signing_key
 
-        _notify_connection_attempt(status_callback, failures)
-        runner_for_session = _session_runner_with_status(session_runner, status_callback)
+            _notify_connection_attempt(status_callback, failures)
+            runner_for_session = _session_runner_with_status(session_runner, status_callback)
 
-        session_started = time.monotonic()
-        try:
-            result = await _attempt_authorized_session(
-                project,
-                selected,
-                key,
-                runner_for_session,
-                stop,
-                allow_native_drc=allow_native_drc,
-                allow_native_write=allow_native_write,
-                issuer_key=issuer_key,
+            session_started = time.monotonic()
+            try:
+                result = await _attempt_authorized_session(
+                    project,
+                    selected,
+                    key,
+                    runner_for_session,
+                    stop,
+                    allow_native_drc=allow_native_drc,
+                    allow_native_write=allow_native_write,
+                    issuer_key=issuer_key,
+                )
+            except CloudOwnerReapprovalRequiredError:
+                _notify_owner_reapproval(status_callback, project)
+                raise
+            if result is None:
+                return
+            failures = _next_failure_count(result, failures, status_callback)
+            delay = _session_retry_delay(
+                result,
+                time.monotonic() - session_started,
+                failures,
+                secrets.randbelow(1001) / 1000,
             )
-        except CloudOwnerReapprovalRequiredError:
-            _notify_owner_reapproval(status_callback, project)
-            raise
-        if result is None:
-            return
-        failures = _next_failure_count(result, failures, status_callback)
-        delay = _session_retry_delay(
-            result,
-            time.monotonic() - session_started,
-            failures,
-            secrets.randbelow(1001) / 1000,
-        )
-        try:
-            await asyncio.wait_for(stop.wait(), timeout=delay)
-        except TimeoutError:
-            pass
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=delay)
+            except TimeoutError:
+                pass
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -953,6 +959,12 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 3
+    except CloudConnectorAlreadyRunningError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except CloudConnectorLockUnavailableError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     except (OSError, ValueError, TypeError):
         print("Windows Connector unavailable; check local owner registration.", file=sys.stderr)
         return 1

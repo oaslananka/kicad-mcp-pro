@@ -1156,6 +1156,27 @@ async def test_windows_connector_native_write_runner_wires_revisions_and_executo
     assert res["project_id"] == project.project_id
 
 
+def test_background_task_duplicate_connector_reports_actionable_reason(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from kicad_mcp.cloud_windows_single_instance import CloudConnectorAlreadyRunningError
+
+    project, _store, _folder = local_user_connector
+    connector.activate(project, owner_confirm=lambda _: True)
+
+    async def duplicate(**_kwargs: object) -> None:
+        raise CloudConnectorAlreadyRunningError(
+            "Another Cloud Connector is already running in this Windows login."
+        )
+
+    monkeypatch.setattr(connector, "run_connector", duplicate)
+    result = connector.main(["run"])
+    assert result == 2
+    output = capsys.readouterr()
+    assert "Another Cloud Connector is already running" in output.err
+    assert "local owner registration" not in output.err
+
+
 def test_successful_long_signed_session_refreshs_quickly_without_handshake_flood() -> None:
     assert connector._session_retry_delay(True, 241.0, 0, 0.5) == 2.0
     assert connector._session_retry_delay(True, 16.0, 0, 0.5) == 16.0

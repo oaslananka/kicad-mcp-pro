@@ -107,6 +107,56 @@ def test_foreground_terminal_stream_distinguishes_tool_folder_network_and_errors
     assert "Manage projects:" in result.output
 
 
+def test_second_owner_connector_is_explained_without_claiming_new_write_authority(
+    remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.cloud_windows_single_instance import CloudConnectorAlreadyRunningError
+
+    state, _folder = remote_fixture
+
+    async def duplicate_session(**_kwargs: object) -> None:
+        raise CloudConnectorAlreadyRunningError(
+            "Another Cloud Connector is already running in this Windows login. "
+            "Stop its foreground terminal with Ctrl+C before starting a new session."
+        )
+
+    monkeypatch.setattr(cloud_windows_connector, "run_connector", duplicate_session)
+    response = CliRunner().invoke(server.app, ["cloud", "remote"])
+    assert response.exit_code == 2
+    assert "Another Cloud Connector is already running" in response.output
+    assert "Ctrl+C" in response.output
+    assert "Signed native PCB editing enabled" not in response.output
+    assert state["calls"] == ["task_removed"]
+
+
+def test_native_write_duplicate_never_claims_editing_is_enabled(
+    remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from kicad_mcp.cloud_windows_single_instance import CloudConnectorAlreadyRunningError
+
+    state, _folder = remote_fixture
+    issuer = Ed25519PrivateKey.generate().public_key()
+    monkeypatch.setattr(
+        cloud_user_cli, "_trusted_owner_write_issuer", lambda *_args, **_kwargs: issuer
+    )
+
+    async def blocked(**_kwargs: object) -> None:
+        raise CloudConnectorAlreadyRunningError(
+            "Another Cloud Connector is already running. Stop its terminal with Ctrl+C."
+        )
+
+    monkeypatch.setattr(cloud_windows_connector, "run_connector", blocked)
+    response = CliRunner().invoke(server.app, ["cloud", "remote", "--enable-native-write"])
+    assert response.exit_code == 2
+    assert "Signed native PCB editing requested" in response.output
+    assert "Not active until the signed Connector connects" in response.output
+    assert "Signed native PCB editing enabled" not in response.output
+    assert "Another Cloud Connector is already running" in response.output
+    assert state["calls"] == ["task_removed"]
+
+
 def test_first_pairing_chooses_folder_and_launches_foreground(
     remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
