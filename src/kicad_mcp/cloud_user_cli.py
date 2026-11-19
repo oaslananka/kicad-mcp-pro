@@ -609,6 +609,46 @@ def _call_with_owner_connector[**Args, Result](
         raise typer.Exit(code=2) from None
 
 
+def _show_remote_session_banner(
+    origin: str,
+    project_name: str,
+    *,
+    enable_write: bool,
+    remember_native_write: bool,
+    allow_native_drc: bool,
+) -> None:
+    """Describe actual session mode without asserting unverified Cloud access."""
+    typer.secho("\n  KiCad MCP Pro  /  Cloud Connector", fg=typer.colors.MAGENTA, bold=True)
+    typer.echo(f"  Device project  {project_name}")
+    typer.echo(f"  Cloud           {origin}")
+    if _BACKGROUND_CONNECTOR_HANDOFF.get() is not None:
+        typer.echo(
+            "  Ctrl+C closes this foreground session; the previous read-only "
+            "background Connector resumes."
+        )
+    else:
+        typer.echo("  Keep this terminal open; press Ctrl+C to disconnect.")
+    typer.echo("  Add Project opens Windows Explorer on this computer.")
+    typer.secho("  " + _cloud_console_glyph("\u2500" * 48, "-" * 48), fg=typer.colors.BRIGHT_BLACK)
+    if enable_write:
+        typer.echo(
+            "Signed native PCB editing requested for this foreground session"
+            + (
+                " (remembered for this paired project)."
+                if remember_native_write
+                else " (owner-approved local preference)."
+            )
+            + " Not active until the signed Connector connects. "
+            + "Cloud still requires separate client and project edit permission."
+        )
+    if allow_native_drc:
+        typer.echo(
+            "Read-only native DRC allowed for this foreground session only. "
+            "Cloud still requires a separate project diagnostic grant. "
+            "The original KiCad files remain untouched."
+        )
+
+
 def _single_owner_cloud_remote[**Args, Result](
     fn: Callable[Args, Result],
 ) -> Callable[Args, Result]:
@@ -719,35 +759,13 @@ def remote(
 
     _prepare_remote_connector(existing, interactive)
     selected = inspect_owner_selected_project(existing)
-    typer.secho("\n  KiCad MCP Pro  /  Cloud Connector", fg=typer.colors.MAGENTA, bold=True)
-    typer.echo(f"  Device project  {selected.filename_stem}")
-    typer.echo(f"  Cloud           {origin}")
-    if _BACKGROUND_CONNECTOR_HANDOFF.get() is not None:
-        typer.echo(
-            "  Ctrl+C closes this foreground session; the previous read-only "
-            "background Connector resumes."
-        )
-    else:
-        typer.echo("  Keep this terminal open; press Ctrl+C to disconnect.")
-    typer.echo("  Add Project opens Windows Explorer on this computer.")
-    typer.secho("  " + _cloud_console_glyph("\u2500" * 48, "-" * 48), fg=typer.colors.BRIGHT_BLACK)
-    if enable_write:
-        typer.echo(
-            "Signed native PCB editing requested for this foreground session"
-            + (
-                " (remembered for this paired project)."
-                if remember_native_write
-                else " (owner-approved local preference)."
-            )
-            + " Not active until the signed Connector connects. "
-            + "Cloud still requires separate client and project edit permission."
-        )
-    if allow_native_drc:
-        typer.echo(
-            "Read-only native DRC allowed for this foreground session only. "
-            "Cloud still requires a separate project diagnostic grant. "
-            "The original KiCad files remain untouched."
-        )
+    _show_remote_session_banner(
+        origin,
+        selected.filename_stem,
+        enable_write=enable_write,
+        remember_native_write=remember_native_write,
+        allow_native_drc=allow_native_drc,
+    )
 
     def show_status(value: str) -> None:
         _display_cloud_status(value, origin)
