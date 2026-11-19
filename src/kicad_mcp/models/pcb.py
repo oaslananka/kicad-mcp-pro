@@ -193,6 +193,7 @@ class SyncPcbFromSchematicInput(BaseModel):
     replace_mismatched: bool = Field(default=False)
     force: bool = Field(default=False)
     auto_place: bool = Field(default=True)
+    update_pad_nets: bool = Field(default=False)
 
 
 class AutoPlaceBySchematicInput(BaseModel):

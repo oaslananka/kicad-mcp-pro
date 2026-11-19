@@ -2757,6 +2757,34 @@ def _assign_pad_nets(block: str, pad_nets: dict[str, str]) -> str:
     return "".join(rebuilt)
 
 
+_PAD_NET_RE = re.compile(rf"\(net\s+{STRING_PATTERN}\s*\)")
+
+
+def _pad_net_differences(block: str, pad_nets: dict[str, str]) -> list[tuple[str, str, str]]:
+    """Return ``(pad, board net, schematic net)`` for pads whose net differs.
+
+    Only pads the schematic names a net for are compared; a pad the schematic
+    leaves unconnected keeps whatever the board has.
+    """
+    differences: list[tuple[str, str, str]] = []
+    cursor = 0
+    while cursor < len(block):
+        if block.startswith("(pad", cursor):
+            pad_block, length = _extract_block(block, cursor)
+            if pad_block:
+                pad_match = re.match(rf"\(pad\s+{STRING_PATTERN}", pad_block.lstrip())
+                if pad_match and pad_match.group(1) in pad_nets:
+                    net_match = _PAD_NET_RE.search(pad_block)
+                    current = net_match.group(1) if net_match else ""
+                    wanted = pad_nets[pad_match.group(1)]
+                    if current != wanted:
+                        differences.append((pad_match.group(1), current, wanted))
+                cursor += length
+                continue
+        cursor += 1
+    return differences
+
+
 def _apply_schematic_footprint_fields(block: str, properties: dict[str, str]) -> str:
     for name, value in properties.items():
         if name in {"Reference", "Value", "Footprint"}:
@@ -4434,6 +4462,38 @@ def _build_sync_additions(
     return additions
 
 
+def _build_sync_pad_net_updates(
+    existing: dict[str, dict[str, Any]],
+    replaced: set[str],
+    net_map: dict[tuple[str, str], str],
+) -> tuple[dict[str, str], list[str]]:
+    """Return rewritten blocks for existing footprints with stale pad nets, and a change list.
+
+    Only the ``(net ...)`` of the changed pads is rewritten: position, rotation,
+    fields and graphics stay as they are on the board.
+    """
+    updates: dict[str, str] = {}
+    changes: list[str] = []
+    for reference, entry in sorted(existing.items()):
+        if reference in replaced:
+            continue
+        pad_nets = {pin: name for (ref, pin), name in net_map.items() if ref == reference and name}
+        if not pad_nets:
+            continue
+        block = str(entry["block"])
+        differences = _pad_net_differences(block, pad_nets)
+        if not differences:
+            continue
+        updates[reference] = _assign_pad_nets(
+            block, {pad: wanted for pad, _current, wanted in differences}
+        )
+        changes.extend(
+            f"{reference}.{pad}: {current or '<no net>'} -> {wanted}"
+            for pad, current, wanted in differences
+        )
+    return updates, changes
+
+
 def _build_sync_replacements(
     mismatched_references: list[str],
     components_by_reference: dict[str, dict[str, Any]],
@@ -4482,6 +4542,7 @@ def _format_pcb_sync_report(
     force_note: str,
     auto_place_note: str,
     reload_note: str,
+    pad_net_changes: list[str] | None = None,
 ) -> str:
     lines = [
         f"Schematic components considered: {len(components)}",
@@ -4509,6 +4570,14 @@ def _format_pcb_sync_report(
             lines.append(f"... and {len(mismatches) - 20} more")
         if not payload.replace_mismatched:
             lines.append("Rerun with replace_mismatched=True to replace those footprints in place.")
+    if pad_net_changes:
+        verb = "updated" if payload.update_pad_nets else "out of date"
+        lines.append(f"Pad nets {verb} on existing footprints: {len(pad_net_changes)}")
+        lines.extend(f"- {change}" for change in pad_net_changes[:20])
+        if len(pad_net_changes) > 20:
+            lines.append(f"... and {len(pad_net_changes) - 20} more")
+        if not payload.update_pad_nets:
+            lines.append("Rerun with update_pad_nets=True to update those pad nets in place.")
     if net_note:
         lines.append(net_note)
     if force_note:
@@ -4593,14 +4662,18 @@ def _apply_pcb_sync_changes(
     payload: SyncPcbFromSchematicInput,
     additions: list[str],
     replacements: dict[str, str],
+    pad_net_updates: dict[str, str] | None = None,
 ) -> tuple[str, str]:
-    if not (additions or replacements):
+    pad_net_updates = pad_net_updates or {}
+    if not (additions or replacements or pad_net_updates):
         return "", ""
-    _transactional_board_write(
-        lambda current: _replace_board_blocks(current, replacements, additions)
-    )
+    blocks = {**pad_net_updates, **replacements}
+    _transactional_board_write(lambda current: _replace_board_blocks(current, blocks, additions))
+    # Updating pad nets alone must not move footprints that are already placed.
     auto_place_note = (
-        _auto_place_force_directed_board_file(grid_mm=1.0) if payload.auto_place else ""
+        _auto_place_force_directed_board_file(grid_mm=1.0)
+        if payload.auto_place and (additions or replacements)
+        else ""
     )
     reload_note = (
         _reload_board_after_file_sync()
@@ -4626,6 +4699,7 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
         replace_mismatched: bool = False,
         force: bool = False,
         auto_place: bool = True,
+        update_pad_nets: bool = False,
     ) -> str:
         """Sync missing PCB footprints from schematic footprint assignments.
 
@@ -4634,6 +4708,9 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
         references, values, rotations, and assigned `Library:Footprint` names.
         When `replace_mismatched=True`, existing footprints with the same
         reference but the wrong footprint name are replaced in place.
+        Pads of existing footprints whose net differs from the schematic (for
+        example after a pin swap) are reported; with `update_pad_nets=True` only
+        those pads' nets are rewritten, leaving placement and fields untouched.
         """
         payload = SyncPcbFromSchematicInput(
             origin_x_mm=origin_x_mm,
@@ -4646,6 +4723,7 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
             replace_mismatched=replace_mismatched,
             force=force,
             auto_place=auto_place,
+            update_pad_nets=update_pad_nets,
         )
         components, abort_reason, force_note = _validate_pcb_sync_preconditions(payload)
         if abort_reason is not None or components is None:
@@ -4663,10 +4741,18 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
             components, mismatched_references, existing, net_map, payload
         )
 
-        if not additions and not mismatches:
+        pad_net_updates, pad_net_changes = _build_sync_pad_net_updates(
+            existing, set(replacements), net_map
+        )
+        if not additions and not mismatches and not pad_net_changes:
             return "The PCB already contains all schematic footprint assignments."
 
-        auto_place_note, reload_note = _apply_pcb_sync_changes(payload, additions, replacements)
+        auto_place_note, reload_note = _apply_pcb_sync_changes(
+            payload,
+            additions,
+            replacements,
+            pad_net_updates if payload.update_pad_nets else None,
+        )
 
         return _format_pcb_sync_report(
             components=components,
@@ -4680,6 +4766,7 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
             force_note=force_note,
             auto_place_note=auto_place_note,
             reload_note=reload_note,
+            pad_net_changes=pad_net_changes,
         )
 
 
