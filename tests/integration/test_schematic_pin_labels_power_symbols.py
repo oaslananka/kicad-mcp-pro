@@ -59,8 +59,11 @@ def _write_power_lib(sample_project) -> None:
 
 
 def _first_power_ref(sample_project) -> str:
+    # PWR_FLAG symbols take KiCad's #FLG prefix; other power symbols take #PWR.
     schematic = (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
-    pattern = "\\(property " + q + "Reference" + q + " " + q + H + "PWR[^" + q + "\\\\]+" + q
+    pattern = (
+        "\\(property " + q + "Reference" + q + " " + q + H + "(?:PWR|FLG)[^" + q + "\\\\]+" + q
+    )
     match = re.search(pattern, schematic)
     assert match is not None
     return match.group(0).split(q)[3]

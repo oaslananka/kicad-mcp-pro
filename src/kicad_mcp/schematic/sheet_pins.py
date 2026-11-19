@@ -114,6 +114,8 @@ class SheetBlock:
     """
     pin_at_spans: tuple[tuple[int, int], ...]
     """Character span of each pin's ``(at x y rot)`` node, parallel to ``pins``."""
+    uuid: str = ""
+    """The sheet's own ``(uuid ...)``: its segment in hierarchical instance paths."""
 
 
 def _unescape(raw: str) -> str:
@@ -260,6 +262,7 @@ class _SheetChildren:
     pin_spans: list[tuple[int, int]] = field(default_factory=list)
     pin_at_spans: list[tuple[int, int]] = field(default_factory=list)
     instances_start: int | None = None
+    uuid: str = ""
 
 
 def _scan_sheet_child_geometry(
@@ -307,7 +310,29 @@ def _scan_sheet_children(text: str, start: int, end: int) -> _SheetChildren:
             _scan_sheet_child_pin(children, text, child_start, child_end)
         elif tag == "instances" and children.instances_start is None:
             children.instances_start = child_start
+        elif tag == "uuid" and not children.uuid:
+            children.uuid = _uuid_value(text, child_start, child_end)
     return children
+
+
+def _uuid_value(text: str, start: int, end: int) -> str:
+    match = _UUID_RE.match(text, start, end)
+    return match.group(1) if match else ""
+
+
+def schematic_uuid(text: str) -> str:
+    """Return the schematic file's own top-level ``(uuid ...)``, or ``""``."""
+    start = text.find("(kicad_sch")
+    if start < 0:
+        return ""
+    try:
+        end = _block_end(text, start)
+    except ValueError:
+        return ""
+    for tag, child_start, child_end in _children(text, start, end):
+        if tag == "uuid":
+            return _uuid_value(text, child_start, child_end)
+    return ""
 
 
 def _scan_sheet_blocks(text: str) -> Iterator[SheetBlock | SkippedSheetBlock]:
@@ -335,6 +360,7 @@ def _scan_sheet_blocks(text: str) -> Iterator[SheetBlock | SkippedSheetBlock]:
         pin_spans = children.pin_spans
         pin_at_spans = children.pin_at_spans
         instances_start = children.instances_start
+        sheet_uuid = children.uuid
 
         skip_reason = _validate_sheet_completeness(name, origin, at_span, size, size_span)
         if (
@@ -364,6 +390,7 @@ def _scan_sheet_blocks(text: str) -> Iterator[SheetBlock | SkippedSheetBlock]:
             instances_start=instances_start,
             at_span=at_span,
             pin_at_spans=tuple(pin_at_spans),
+            uuid=sheet_uuid,
         )
 
 

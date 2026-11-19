@@ -119,5 +119,9 @@ def register(mcp: FastMCP, dependencies: SchematicInspectionDependencies) -> Non
 
     @mcp.tool()
     def sch_check_power_flags() -> str:
-        """Check whether common power nets appear to be flagged."""
+        """Report undriven power pins using cross-sheet KiCad ERC evidence.
+
+        Also includes simple missing-power-label advisories. An unavailable
+        native ERC is reported explicitly rather than treating the board as clean.
+        """
         return service.power_flags(dependencies.active_schematic_file())

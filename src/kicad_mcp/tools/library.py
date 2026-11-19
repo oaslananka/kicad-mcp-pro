@@ -28,6 +28,7 @@ from ..library_resolution import (
 from ..library_resolution import (
     footprint_library_dirs as _footprint_library_dirs,
 )
+from ..schematic.instance_paths import project_instance_paths
 from ..utils.component_search import (
     ComponentRecord,
     ComponentSearchClient,
@@ -371,10 +372,56 @@ def _symbol_property(block: str, name: str) -> str:
     return match.group(1).replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
 
 
-def _symbol_instance_references(block: str, fallback_reference: str) -> list[str]:
-    """Return every instantiated reference recorded in a placed symbol block."""
-    references = re.findall(r'\(reference\s+"([^"]+)"', block)
-    return references or [fallback_reference]
+_PROJECT_BLOCK_PREFIX = "(project "
+
+
+def _project_path_references(project: str, valid_paths: set[str] | None) -> list[str]:
+    """Read references only from valid instance paths within one project block."""
+    refs: list[str] = []
+    cursor = 0
+    while (path_start := project.find("(path ", cursor)) >= 0:
+        path_block, path_length = _extract_block(project, path_start)
+        cursor = path_start + max(path_length, 1)
+        path_match = re.match(r'\(path\s+"([^"]+)"', path_block)
+        ref_match = re.search(r'\(reference\s+"([^"]+)"', path_block)
+        if (
+            path_match is not None
+            and ref_match is not None
+            and (valid_paths is None or path_match.group(1) in valid_paths)
+            and ref_match.group(1) not in refs
+        ):
+            refs.append(ref_match.group(1))
+    return refs
+
+
+def _symbol_instance_references(
+    block: str,
+    fallback_reference: str,
+    *,
+    project_name: str | None = None,
+    valid_paths: set[str] | None = None,
+) -> list[str]:
+    """Only expand instance references belonging to this project and sheet hierarchy."""
+    instance_start = block.find("(instances")
+    if instance_start < 0:
+        return [fallback_reference]
+    instances, _ = _extract_block(block, instance_start)
+    if not instances or project_name is None or _PROJECT_BLOCK_PREFIX not in instances:
+        references = re.findall(r'\(reference\s+"([^"]+)"', instances or block)
+        return references or [fallback_reference]
+
+    refs: list[str] = []
+    cursor = 0
+    while (project_start := instances.find(_PROJECT_BLOCK_PREFIX, cursor)) >= 0:
+        project, length = _extract_block(instances, project_start)
+        cursor = project_start + max(length, 1)
+        match = re.match(r'\(project\s+"([^"]+)"', project)
+        if match is None or match.group(1) != project_name:
+            continue
+        for reference in _project_path_references(project, valid_paths):
+            if reference not in refs:
+                refs.append(reference)
+    return refs
 
 
 def _init_component_rows(
@@ -431,7 +478,13 @@ def _update_component_row_properties(
     row["populate"] = _resolve_populate_property(block, row.get("populate", ""))
 
 
-def _apply_symbol_block(block: str, rows_by_reference: dict[str, dict[str, str]]) -> None:
+def _apply_symbol_block(
+    block: str,
+    rows_by_reference: dict[str, dict[str, str]],
+    *,
+    project_name: str | None = None,
+    valid_paths: set[str] | None = None,
+) -> None:
     """Extract properties from a symbol S-expression block and update rows."""
     if '(lib_id "' not in block:
         return
@@ -442,7 +495,13 @@ def _apply_symbol_block(block: str, rows_by_reference: dict[str, dict[str, str]]
     if template is None:
         return
 
-    instance_references = _symbol_instance_references(block, reference)
+    instance_references = _symbol_instance_references(
+        block, reference, project_name=project_name, valid_paths=valid_paths
+    )
+    # The backend's property-reference row is only a template. If it belongs
+    # exclusively to a copied sheet's foreign project, do not count it as a part.
+    if _PROJECT_BLOCK_PREFIX in block and reference not in instance_references:
+        rows_by_reference.pop(reference, None)
     instance_rows: list[dict[str, str]] = []
     for inst_ref in instance_references:
         if inst_ref.startswith("#"):
@@ -460,7 +519,11 @@ def _apply_symbol_block(block: str, rows_by_reference: dict[str, dict[str, str]]
 
 
 def _parse_schematic_symbols_and_blocks(
-    sch_file: Path, rows_by_reference: dict[str, dict[str, str]]
+    sch_file: Path,
+    rows_by_reference: dict[str, dict[str, str]],
+    *,
+    project_name: str | None = None,
+    valid_paths: set[str] | None = None,
 ) -> None:
     """Parse symbols and S-expression blocks for a single schematic file."""
     parsed = get_schematic_backend().parse_schematic_file(sch_file)
@@ -474,14 +537,22 @@ def _parse_schematic_symbols_and_blocks(
             break
         block, consumed = _extract_block(raw_content, block_start)
         search_start = block_start + max(consumed, 1)
-        _apply_symbol_block(block, rows_by_reference)
+        _apply_symbol_block(
+            block, rows_by_reference, project_name=project_name, valid_paths=valid_paths
+        )
 
 
 def _schematic_component_rows() -> list[dict[str, str]]:
-    _ = _active_schematic_file()
+    active = _active_schematic_file()
+    cfg = get_config()
+    root = cfg.project_file.with_suffix(".kicad_sch") if cfg.project_file else active
+    project_name = root.stem
+    valid_paths = project_instance_paths(root)
     rows_by_reference: dict[str, dict[str, str]] = {}
     for sch_file in project_schematic_files():
-        _parse_schematic_symbols_and_blocks(sch_file, rows_by_reference)
+        _parse_schematic_symbols_and_blocks(
+            sch_file, rows_by_reference, project_name=project_name, valid_paths=valid_paths
+        )
     return list(rows_by_reference.values())
 
 

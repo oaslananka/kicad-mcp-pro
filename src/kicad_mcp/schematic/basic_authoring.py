@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from .references import power_reference_from_uuid
+from .instance_paths import InstancePathFor, instance_path_kwargs, no_instance_path
+from .references import (
+    PowerReferenceAllocator,
+    UsedReferences,
+    power_reference_from_uuid,
+)
 
 
 class SchematicTarget(Protocol):
@@ -46,6 +51,7 @@ class PlaceSymbolBlock(Protocol):
         unit: int = 1,
         project_name: str,
         root_uuid: str,
+        instance_path: str = "",
     ) -> str: ...
 
 
@@ -143,6 +149,9 @@ class SchematicBasicAuthoringService:
     reload_schematic: ReloadSchematic
     new_uuid: NewUuid
     format_mm: FormatMm
+    instance_path_for: InstancePathFor = no_instance_path
+    #: References already used in the project; ``None`` keeps UUID-derived numbers.
+    used_references: UsedReferences | None = None
 
     @staticmethod
     def _format_target_detail(target: SchematicTarget) -> str:
@@ -183,6 +192,7 @@ class SchematicBasicAuthoringService:
         target = self.resolve_target(sheet=sheet, sheet_file=sheet_file)
         schematic_data = self.parse_schematic(target.path)
         root_uuid = str(schematic_data["uuid"] or self.new_uuid())
+        instance_path = self.instance_path_for(target.path) or ""
         lib_id = f"{library}:{symbol_name}"
         existing = [
             *schematic_data["symbols"],
@@ -216,6 +226,7 @@ class SchematicBasicAuthoringService:
                 unit=unit,
                 project_name=self.project_name(),
                 root_uuid=root_uuid,
+                **instance_path_kwargs(instance_path),
             )
             return self.append_before_sheet_instances(updated, block)
 
@@ -429,6 +440,13 @@ class SchematicBasicAuthoringService:
             if part
         )
 
+    def _next_power_reference(self, name: str, sheet: str | None, sheet_file: str | None) -> str:
+        if self.used_references is None:
+            return power_reference_from_uuid(self.new_uuid())
+        target = self.resolve_target(sheet=sheet, sheet_file=sheet_file)
+        used = self.used_references(target.path, True)
+        return PowerReferenceAllocator(used).allocate(name)
+
     def add_power_symbol(
         self,
         name: str,
@@ -446,7 +464,7 @@ class SchematicBasicAuthoringService:
             symbol_name=name,
             x_mm=x_mm,
             y_mm=y_mm,
-            reference=power_reference_from_uuid(self.new_uuid()),
+            reference=self._next_power_reference(name, sheet, sheet_file),
             value=name,
             footprint="",
             rotation=rotation,

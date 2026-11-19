@@ -10,7 +10,12 @@ from typing import Any, Protocol
 from ..errors import SchematicRoutingUnsafeError
 from ..models.schematic import RouteWireBetweenPinsInput
 from ..utils.schematic_router import point_on_segment, segments_merge
-from .references import power_reference_from_uuid
+from .instance_paths import InstancePathFor, instance_path_kwargs, no_instance_path
+from .references import (
+    PowerReferenceAllocator,
+    UsedReferences,
+    power_reference_from_uuid,
+)
 
 
 class SchematicTargetLike(Protocol):
@@ -161,6 +166,7 @@ class _PinLabelBatch:
         default_factory=dict
     )
     results: list[str] = field(default_factory=list)
+    allocate_power_reference: Callable[[str], str] | None = None
 
 
 @dataclass(frozen=True)
@@ -217,13 +223,16 @@ class SchematicConnectivityAuthoringService:
         [str, str, int, int],
         dict[str, tuple[float, float]],
     ]
-    run_auto_add_missing_junctions: Callable[[], str]
+    run_auto_add_missing_junctions: Callable[..., str]
     snap_tolerance_mm: float
     #: Drawn rectangles a route must not travel alongside -- hierarchical sheets
     #: and bare rectangles around a self-contained block.  Not solid: a wire still
     #: has to cross one to reach a pin inside it.  Defaults to none so a caller
     #: that predates the rule keeps working; only wire routing consults it.
     get_module_boundaries: Callable[[str], list[BoundingBoxLike]] = _no_module_boundaries
+    instance_path_for: InstancePathFor = no_instance_path
+    #: References already used in the project; ``None`` keeps UUID-derived numbers.
+    used_references: UsedReferences | None = None
 
     def _init_placed_maps(
         self, data: dict[str, Any]
@@ -392,32 +401,42 @@ class SchematicConnectivityAuthoringService:
         ey: float,
         ux: float,
         uy: float,
-        ref: str,
-        pin: str,
         suffix: str,
         block_kind: str,
         project_name: str,
         root_uuid: str,
         power_lib_defs: dict[str, str],
+        instance_path: str = "",
+        allocate_power_reference: Callable[[str], str] | None = None,
     ) -> tuple[str, str, str | None]:
+        ref = str(conn.get("reference", ""))
+        pin = str(conn.get("pin", ""))
         if self.is_power_net(net):
-            if net not in power_lib_defs:
+            lib_def = power_lib_defs.get(net)
+            if lib_def is None:
                 lib_def = self.load_lib_symbol("power", net)
-                if lib_def is None:
-                    return "", "", f"{ref}.{pin}: power symbol '{net}' was not found"
-                power_lib_defs[net] = lib_def
-            block = self.place_symbol_block(
-                lib_id=f"power:{net}",
-                x=ex,
-                y=ey,
-                reference=power_reference_from_uuid(self.new_uuid()),
-                value=net,
-                rotation=self.power_symbol_rotation_from_vector(ux, uy),
-                project_name=project_name,
-                root_uuid=root_uuid,
-            )
-            msg = f"{ref}.{pin} -> {net} (power) @ ({ex}, {ey}){suffix}"
-            return block, msg, None
+                if lib_def is not None:
+                    power_lib_defs[net] = lib_def
+            if lib_def is not None:
+                block = self.place_symbol_block(
+                    lib_id=f"power:{net}",
+                    x=ex,
+                    y=ey,
+                    reference=(
+                        allocate_power_reference(net)
+                        if allocate_power_reference is not None
+                        else power_reference_from_uuid(self.new_uuid())
+                    ),
+                    value=net,
+                    rotation=self.power_symbol_rotation_from_vector(ux, uy),
+                    project_name=project_name,
+                    root_uuid=root_uuid,
+                    **instance_path_kwargs(instance_path),
+                )
+                msg = f"{ref}.{pin} -> {net} (power) @ ({ex}, {ey}){suffix}"
+                return block, msg, None
+            # Power-like names such as VCAP1 are not necessarily library symbols.
+            # A net label still connects the pin, matching sch_build_circuit.
 
         rotation = self.terminal_rotation_from_vector(ux, uy)
         shape = conn.get("shape")
@@ -447,6 +466,7 @@ class SchematicConnectivityAuthoringService:
         block_kind: str,
         project_name: str,
         root_uuid: str,
+        instance_path: str = "",
     ) -> None:
         wire_blocks = state.wire_blocks
         terminal_blocks = state.terminal_blocks
@@ -525,13 +545,13 @@ class SchematicConnectivityAuthoringService:
             ey=ey,
             ux=ux,
             uy=uy,
-            ref=ref,
-            pin=pin,
             suffix=suffix,
             block_kind=block_kind,
             project_name=project_name,
             root_uuid=root_uuid,
             power_lib_defs=power_lib_defs,
+            **instance_path_kwargs(instance_path),
+            allocate_power_reference=state.allocate_power_reference,
         )
         if block_err is not None:
             results.append(block_err)
@@ -598,7 +618,14 @@ class SchematicConnectivityAuthoringService:
 
         project_name = self.project_name()
         root_uuid = str(data.get("uuid") or self.new_uuid())
-        state = _PinLabelBatch()
+        instance_path = self.instance_path_for(target.path) or ""
+        state = _PinLabelBatch(
+            allocate_power_reference=(
+                PowerReferenceAllocator(self.used_references(target.path, True)).allocate
+                if self.used_references is not None
+                else None
+            )
+        )
         wire_blocks = state.wire_blocks
         terminal_blocks = state.terminal_blocks
         results = state.results
@@ -624,6 +651,7 @@ class SchematicConnectivityAuthoringService:
                 block_kind,
                 project_name,
                 root_uuid,
+                instance_path,
             )
 
         if not (wire_blocks or terminal_blocks):
@@ -773,8 +801,12 @@ class SchematicConnectivityAuthoringService:
             + (f"\n{crossing_note}" if crossing_note else "")
         )
 
-    def add_missing_junctions(self) -> str:
-        """Repair T-intersection junctions and reload the active schematic."""
-        summary = self.run_auto_add_missing_junctions()
+    def add_missing_junctions(self, sheet: str | None = None, sheet_file: str | None = None) -> str:
+        """Repair missing junctions on the active (or a selected) sheet and reload."""
+        summary = (
+            self.run_auto_add_missing_junctions(sheet=sheet, sheet_file=sheet_file)
+            if sheet or sheet_file
+            else self.run_auto_add_missing_junctions()
+        )
         result = self.reload_schematic()
         return f"{result}\n{summary}"

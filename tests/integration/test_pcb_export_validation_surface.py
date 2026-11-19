@@ -386,7 +386,9 @@ async def test_pcb_and_routing_surface(
     assert "One or both pads were not found" in routing_responses[1]
     assert all("routed successfully" not in response.lower() for response in routing_responses)
     assert mock_board.create_items.called
-    assert mock_board.remove_items_by_id.called
+    # An invalid/partial UUID must not trigger an IPC delete.
+    assert "Failed to delete items: full KiCad UUID required" in add_results[8]
+    assert not mock_board.remove_items_by_id.called
     assert mock_board.save.called
     assert mock_board.refill_zones.called
 

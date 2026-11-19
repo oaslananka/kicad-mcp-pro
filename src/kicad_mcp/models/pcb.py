@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 LayerName = Literal[
     "F_Cu",
@@ -167,6 +167,17 @@ class SetBoardOutlineInput(BaseModel):
     height_mm: float = Field(gt=0.0, le=2000.0)
     origin_x_mm: CoordMM = 0.0
     origin_y_mm: CoordMM = 0.0
+    corner_radius_mm: float = Field(default=0.0, ge=0.0, le=1000.0)
+
+    @model_validator(mode="after")
+    def _corner_radius_fits(self) -> SetBoardOutlineInput:
+        limit = min(self.width_mm, self.height_mm) / 2
+        if self.corner_radius_mm > limit:
+            raise ValueError(
+                f"corner_radius_mm ({self.corner_radius_mm:g}) must not exceed half the "
+                f"shorter side ({limit:g} mm)."
+            )
+        return self
 
 
 class SyncPcbFromSchematicInput(BaseModel):
@@ -182,6 +193,7 @@ class SyncPcbFromSchematicInput(BaseModel):
     replace_mismatched: bool = Field(default=False)
     force: bool = Field(default=False)
     auto_place: bool = Field(default=True)
+    update_pad_nets: bool = Field(default=False)
 
 
 class AutoPlaceBySchematicInput(BaseModel):
@@ -259,6 +271,9 @@ class AddMountingHolesInput(BaseModel):
     pattern: MountingHolePattern = Field(default="corners")
     margin_mm: float = Field(default=3.0, ge=0.0, le=100.0)
     allow_open_board: bool = Field(default=False)
+    keepout: bool = Field(default=False)
+    keepout_allow_pours: bool = Field(default=True)
+    hole_clearance_mm: float | None = Field(default=None, ge=0.0, le=10.0)
 
 
 class AddFiducialMarksInput(BaseModel):

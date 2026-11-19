@@ -346,3 +346,37 @@ async def test_generate_board_constraints_empty_intent(sample_project: Path) -> 
 
     assert payload["ok"] is False
     assert any("import_design_spec" in error.lower() for error in payload["errors"])
+
+
+@pytest.mark.anyio
+async def test_route_apply_ses_writes_named_nets_for_kicad10(
+    sample_project: Path,
+) -> None:
+    """Modern boards keep their named-net encoding through headless SES import."""
+    pcb = sample_project / "demo.kicad_pcb"
+    pcb.write_text(
+        "(kicad_pcb\n(version 20250316)\n"
+        '(footprint "Example" (pad "1" smd rect (at 0 0) (size 1 1) '
+        '(layers "F.Cu") (net "GND")))\n)\n',
+        encoding="utf-8",
+    )
+    ses = sample_project / "output" / "routing" / "board.ses"
+    ses.parent.mkdir(parents=True, exist_ok=True)
+    ses.write_text(
+        "(session t.dsn (routes (resolution um 10) (network_out "
+        '(net "GND" (wire (path F.Cu 250 2500 -5000 11000 -5000)) '
+        '(via "Via[0-1]_600:300_um" 11000 -5000)))))',
+        encoding="utf-8",
+    )
+    server = build_server("pcb")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    result = await call_tool_payload(
+        server, "route_apply_ses", {"ses_path": "output/routing/board.ses"}
+    )
+    assert result["ok"], result
+    assert result["changed"], result
+    text = pcb.read_text(encoding="utf-8")
+    assert '(layer "F.Cu") (net "GND")' in text
+    assert "(net 1)" not in text
+    assert "(via (at 11 5)" in text

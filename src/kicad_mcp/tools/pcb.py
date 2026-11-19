@@ -277,6 +277,25 @@ def _verify_created_via(board: Board, created: Iterable[object], expected: Via) 
         return False
 
 
+def _remove_existing_items_by_id(
+    board: Board, item_ids: tuple[common_types.KIID, ...]
+) -> tuple[common_types.KIID, ...]:
+    """Preflight every requested UUID before any destructive IPC operation."""
+    requested = {item_id.value.casefold() for item_id in item_ids}
+    try:
+        found = list(board.get_items_by_id(list(item_ids)))
+    except ApiError as exc:
+        if str(exc).casefold().endswith("none of the requested ids were found or valid"):
+            raise ValueError("No matching PCB items were found for the supplied IDs.") from exc
+        raise
+    existing = {_item_id_value(item).casefold() for item in found}
+    missing = requested - existing
+    if missing:
+        raise ValueError(f"Unknown PCB item IDs: {', '.join(sorted(missing))}")
+    board.remove_items_by_id(list(item_ids))
+    return item_ids
+
+
 def _verify_deleted_items(board: Board, item_ids: tuple[object, ...]) -> bool:
     get_items_by_id = getattr(board, "get_items_by_id", None)
     if not callable(get_items_by_id):
@@ -1209,8 +1228,8 @@ def _verify_footprint_flip(
 
 
 def _format_selection_id(item: object) -> str:
-    item_id = getattr(getattr(item, "id", None), "value", "")
-    return str(item_id)[:8] + ("..." if item_id else "")
+    # Callers must be able to pass the complete identifier back to mutation tools.
+    return _item_id_value(item)
 
 
 def _get_pcb_file_for_sync() -> Path:
@@ -2283,14 +2302,54 @@ def _auto_place_force_directed_board_file(
     )
 
 
+_KEEPOUT_POLYGON_SIDES = 36
+
+
+def _mounting_hole_keepout_zone(radius_mm: float, allow_pours: bool) -> list[str]:
+    """Footprint rule area on F.Cu and B.Cu covering a circle of ``radius_mm``.
+
+    The polygon circumscribes the circle, so the whole courtyard is inside it.
+    Tracks, vias, pads and other footprints are not allowed; copper pours as chosen.
+    """
+    sides = _KEEPOUT_POLYGON_SIDES
+    outer = radius_mm / math.cos(math.pi / sides)
+    points = " ".join(
+        f"(xy {outer * math.cos(2 * math.pi * i / sides):.4f} "
+        f"{outer * math.sin(2 * math.pi * i / sides):.4f})"
+        for i in range(sides)
+    )
+    pours = "allowed" if allow_pours else "not_allowed"
+    return [
+        "\t(zone",
+        '\t\t(layers "F.Cu" "B.Cu")',
+        f'\t\t(uuid "{uuid.uuid4()}")',
+        "\t\t(hatch edge 0.5)",
+        "\t\t(connect_pads (clearance 0))",
+        "\t\t(min_thickness 0.25)",
+        "\t\t(keepout (tracks not_allowed) (vias not_allowed) (pads not_allowed) "
+        f"(copperpour {pours}) (footprints not_allowed))",
+        "\t\t(fill (thermal_gap 0.5) (thermal_bridge_width 0.5))",
+        f"\t\t(polygon (pts {points}))",
+        "\t)",
+    ]
+
+
 def _mounting_hole_block(
     reference: str,
     x_mm: float,
     y_mm: float,
     diameter_mm: float,
     clearance_mm: float,
+    *,
+    keepout: bool = False,
+    keepout_allow_pours: bool = True,
+    hole_clearance_mm: float | None = None,
 ) -> str:
     outer_radius_mm = max((diameter_mm / 2) + clearance_mm, diameter_mm)
+    pad_clearance = f" (clearance {hole_clearance_mm:.4f})" if hole_clearance_mm is not None else ""
+    keepout_lines = (
+        _mounting_hole_keepout_zone(outer_radius_mm, keepout_allow_pours) if keepout else []
+    )
     # An NPTH mounting hole has no copper annulus. Screw-head clearance is
     # represented by the courtyard, never by enlarging the physical pad.
     return "\n".join(
@@ -2319,8 +2378,9 @@ def _mounting_hole_block(
             (
                 f'\t(pad "" np_thru_hole circle (at 0 0) '
                 f"(size {diameter_mm:.4f} {diameter_mm:.4f}) "
-                f'(drill {diameter_mm:.4f}) (layers "*.Cu" "*.Mask"))'
+                f'(drill {diameter_mm:.4f}) (layers "*.Cu" "*.Mask"){pad_clearance})'
             ),
+            *keepout_lines,
             ")",
         ]
     )
@@ -2714,6 +2774,42 @@ def _assign_pad_nets(block: str, pad_nets: dict[str, str]) -> str:
         rebuilt.append(block[cursor])
         cursor += 1
     return "".join(rebuilt)
+
+
+_PAD_NET_RE = re.compile(rf"\(net\s+{STRING_PATTERN}\s*\)")
+
+
+def _pad_net_difference(pad_block: str, pad_nets: dict[str, str]) -> tuple[str, str, str] | None:
+    """Identify one schematic versus board pad-net mismatch."""
+    pad_match = re.match(rf"\(pad\s+{STRING_PATTERN}", pad_block.lstrip())
+    if pad_match is None or pad_match.group(1) not in pad_nets:
+        return None
+    name = pad_match.group(1)
+    net_match = _PAD_NET_RE.search(pad_block)
+    current = net_match.group(1) if net_match else ""
+    wanted = pad_nets[name]
+    return (name, current, wanted) if current != wanted else None
+
+
+def _pad_net_differences(block: str, pad_nets: dict[str, str]) -> list[tuple[str, str, str]]:
+    """Return ``(pad, board net, schematic net)`` for pads whose net differs.
+
+    Only pads the schematic names a net for are compared; a pad the schematic
+    leaves unconnected keeps whatever the board has.
+    """
+    differences: list[tuple[str, str, str]] = []
+    cursor = 0
+    while cursor < len(block):
+        if block.startswith("(pad", cursor):
+            pad_block, length = _extract_block(block, cursor)
+            if pad_block:
+                difference = _pad_net_difference(pad_block, pad_nets)
+                if difference is not None:
+                    differences.append(difference)
+                cursor += length
+                continue
+        cursor += 1
+    return differences
 
 
 def _apply_schematic_footprint_fields(block: str, properties: dict[str, str]) -> str:
@@ -3664,6 +3760,11 @@ def _register_routing_authoring_tools(mcp: FastMCP) -> None:
     _register_track_segment_tools(mcp)
 
 
+def _rectangle_corner_radius_nm(rectangle: BoardRectangle) -> int:
+    # kipy 0.8 does not wrap the KiCad 10 API field; it lives on the protobuf.
+    return int(rectangle.proto.shape.rectangle.corner_radius.value_nm)
+
+
 def _apply_board_outline_if_safe(board: Board, rectangle: BoardRectangle) -> str:
     """Create a missing outline, but avoid duplicate or destructive retries."""
     existing_edges = [
@@ -3675,13 +3776,24 @@ def _apply_board_outline_if_safe(board: Board, rectangle: BoardRectangle) -> str
             and isinstance(existing_edges[0], BoardRectangle)
             and existing_edges[0].top_left == rectangle.top_left
             and existing_edges[0].bottom_right == rectangle.bottom_right
+            and _rectangle_corner_radius_nm(existing_edges[0])
+            == _rectangle_corner_radius_nm(rectangle)
         ):
             return "Board outline already matches requested rectangle; no change."
         return (
             "Board outline unchanged: existing Edge.Cuts geometry must be "
             "reviewed or removed explicitly before setting another outline."
         )
-    list(board.create_items([rectangle]))
+    created = list(board.create_items([rectangle]))
+    requested_radius = _rectangle_corner_radius_nm(rectangle)
+    if requested_radius and any(
+        isinstance(item, BoardRectangle) and _rectangle_corner_radius_nm(item) != requested_radius
+        for item in created
+    ):
+        return (
+            "Board outline added, but KiCad did not keep the corner radius (rounded "
+            "rectangles need KiCad 10). Check the corners in KiCad."
+        )
     return "Board outline added successfully."
 
 
@@ -3851,13 +3963,19 @@ def _register_board_graphics_tools(mcp: FastMCP) -> None:
         height_mm: float,
         origin_x_mm: float = 0.0,
         origin_y_mm: float = 0.0,
+        corner_radius_mm: float = 0.0,
     ) -> str:
-        """Draw a rectangular board outline on Edge.Cuts."""
+        """Draw a rectangular board outline on Edge.Cuts.
+
+        ``corner_radius_mm`` rounds the four corners (KiCad 10 rounded
+        rectangle); it must not exceed half the shorter side. 0 keeps sharp corners.
+        """
         payload = SetBoardOutlineInput(
             width_mm=width_mm,
             height_mm=height_mm,
             origin_x_mm=origin_x_mm,
             origin_y_mm=origin_y_mm,
+            corner_radius_mm=corner_radius_mm,
         )
         rectangle = BoardRectangle()
         rectangle.layer = BoardLayer.BL_Edge_Cuts
@@ -3867,6 +3985,10 @@ def _register_board_graphics_tools(mcp: FastMCP) -> None:
             payload.origin_y_mm + payload.height_mm,
         )
         rectangle.attributes.stroke.width = mm_to_nm(0.05)
+        if payload.corner_radius_mm:
+            rectangle.proto.shape.rectangle.corner_radius.value_nm = mm_to_nm(
+                payload.corner_radius_mm
+            )
 
         return execute_live_board_mutation(
             "pcb_set_board_outline",
@@ -3920,6 +4042,30 @@ def _register_board_graphics_tools(mcp: FastMCP) -> None:
     _register_board_bitmap_board_art_tool(mcp)
 
 
+def _validated_delete_kiids(item_ids: list[str]) -> list[Any] | str:
+    """Preflight full UUIDs before any destructive KiCad IPC operation."""
+    from kipy.proto.common.types import KIID
+
+    if not item_ids:
+        return "No item IDs were supplied."
+    kiids: list[Any] = []
+    seen: set[str] = set()
+    for item_id in item_ids:
+        try:
+            canonical = str(uuid.UUID(item_id))
+        except (AttributeError, TypeError, ValueError):
+            return f"Failed to delete items: full KiCad UUID required, got {item_id!r}."
+        if canonical != item_id.casefold():
+            return f"Failed to delete items: full KiCad UUID required, got {item_id!r}."
+        if canonical in seen:
+            return "Failed to delete items: duplicate item IDs were supplied."
+        seen.add(canonical)
+        kiid = KIID()
+        kiid.value = canonical
+        kiids.append(kiid)
+    return kiids
+
+
 def _register_board_deletion_tools(mcp: FastMCP) -> None:
     """Register the board deletion tools."""
 
@@ -3927,19 +4073,13 @@ def _register_board_deletion_tools(mcp: FastMCP) -> None:
     @requires_kicad_running
     def pcb_delete_items(item_ids: list[str]) -> str:
         """Delete items by UUID."""
-        from kipy.proto.common.types import KIID
-
-        if not item_ids:
-            return "No item IDs were supplied."
-        kiids = []
-        for item_id in item_ids:
-            kiid = KIID()
-            kiid.value = item_id
-            kiids.append(kiid)
+        kiids = _validated_delete_kiids(item_ids)
+        if isinstance(kiids, str):
+            return kiids
         try:
             execute_live_board_mutation(
                 "pcb_delete_items",
-                lambda board: (board.remove_items_by_id(kiids), tuple(kiids))[1],
+                lambda board: _remove_existing_items_by_id(board, tuple(kiids)),
                 verifier=_verify_deleted_items,
             )
         except Exception as exc:
@@ -4367,6 +4507,38 @@ def _build_sync_additions(
     return additions
 
 
+def _build_sync_pad_net_updates(
+    existing: dict[str, dict[str, Any]],
+    replaced: set[str],
+    net_map: dict[tuple[str, str], str],
+) -> tuple[dict[str, str], list[str]]:
+    """Return rewritten blocks for existing footprints with stale pad nets, and a change list.
+
+    Only the ``(net ...)`` of the changed pads is rewritten: position, rotation,
+    fields and graphics stay as they are on the board.
+    """
+    updates: dict[str, str] = {}
+    changes: list[str] = []
+    for reference, entry in sorted(existing.items()):
+        if reference in replaced:
+            continue
+        pad_nets = {pin: name for (ref, pin), name in net_map.items() if ref == reference and name}
+        if not pad_nets:
+            continue
+        block = str(entry["block"])
+        differences = _pad_net_differences(block, pad_nets)
+        if not differences:
+            continue
+        updates[reference] = _assign_pad_nets(
+            block, {pad: wanted for pad, _current, wanted in differences}
+        )
+        changes.extend(
+            f"{reference}.{pad}: {current or '<no net>'} -> {wanted}"
+            for pad, current, wanted in differences
+        )
+    return updates, changes
+
+
 def _build_sync_replacements(
     mismatched_references: list[str],
     components_by_reference: dict[str, dict[str, Any]],
@@ -4402,6 +4574,21 @@ def _build_sync_replacements(
     return replacements
 
 
+def _append_sync_pad_net_changes(
+    lines: list[str], changes: list[str] | None, update_pad_nets: bool
+) -> None:
+    """Explain stale pad nets and the explicit opt-in reconciliation path."""
+    if not changes:
+        return
+    verb = "updated" if update_pad_nets else "out of date"
+    lines.append(f"Pad nets {verb} on existing footprints: {len(changes)}")
+    lines.extend(f"- {change}" for change in changes[:20])
+    if len(changes) > 20:
+        lines.append(f"... and {len(changes) - 20} more")
+    if not update_pad_nets:
+        lines.append("Rerun with update_pad_nets=True to update those pad nets in place.")
+
+
 def _format_pcb_sync_report(
     *,
     components: list[dict[str, Any]],
@@ -4415,6 +4602,7 @@ def _format_pcb_sync_report(
     force_note: str,
     auto_place_note: str,
     reload_note: str,
+    pad_net_changes: list[str] | None = None,
 ) -> str:
     lines = [
         f"Schematic components considered: {len(components)}",
@@ -4442,6 +4630,7 @@ def _format_pcb_sync_report(
             lines.append(f"... and {len(mismatches) - 20} more")
         if not payload.replace_mismatched:
             lines.append("Rerun with replace_mismatched=True to replace those footprints in place.")
+    _append_sync_pad_net_changes(lines, pad_net_changes, payload.update_pad_nets)
     if net_note:
         lines.append(net_note)
     if force_note:
@@ -4526,14 +4715,18 @@ def _apply_pcb_sync_changes(
     payload: SyncPcbFromSchematicInput,
     additions: list[str],
     replacements: dict[str, str],
+    pad_net_updates: dict[str, str] | None = None,
 ) -> tuple[str, str]:
-    if not (additions or replacements):
+    pad_net_updates = pad_net_updates or {}
+    if not (additions or replacements or pad_net_updates):
         return "", ""
-    _transactional_board_write(
-        lambda current: _replace_board_blocks(current, replacements, additions)
-    )
+    blocks = {**pad_net_updates, **replacements}
+    _transactional_board_write(lambda current: _replace_board_blocks(current, blocks, additions))
+    # Updating pad nets alone must not move footprints that are already placed.
     auto_place_note = (
-        _auto_place_force_directed_board_file(grid_mm=1.0) if payload.auto_place else ""
+        _auto_place_force_directed_board_file(grid_mm=1.0)
+        if payload.auto_place and (additions or replacements)
+        else ""
     )
     reload_note = (
         _reload_board_after_file_sync()
@@ -4559,6 +4752,7 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
         replace_mismatched: bool = False,
         force: bool = False,
         auto_place: bool = True,
+        update_pad_nets: bool = False,
     ) -> str:
         """Sync missing PCB footprints from schematic footprint assignments.
 
@@ -4567,6 +4761,9 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
         references, values, rotations, and assigned `Library:Footprint` names.
         When `replace_mismatched=True`, existing footprints with the same
         reference but the wrong footprint name are replaced in place.
+        Pads of existing footprints whose net differs from the schematic (for
+        example after a pin swap) are reported; with `update_pad_nets=True` only
+        those pads' nets are rewritten, leaving placement and fields untouched.
         """
         payload = SyncPcbFromSchematicInput(
             origin_x_mm=origin_x_mm,
@@ -4579,6 +4776,7 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
             replace_mismatched=replace_mismatched,
             force=force,
             auto_place=auto_place,
+            update_pad_nets=update_pad_nets,
         )
         components, abort_reason, force_note = _validate_pcb_sync_preconditions(payload)
         if abort_reason is not None or components is None:
@@ -4596,10 +4794,18 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
             components, mismatched_references, existing, net_map, payload
         )
 
-        if not additions and not mismatches:
+        pad_net_updates, pad_net_changes = _build_sync_pad_net_updates(
+            existing, set(replacements), net_map
+        )
+        if not additions and not mismatches and not pad_net_changes:
             return "The PCB already contains all schematic footprint assignments."
 
-        auto_place_note, reload_note = _apply_pcb_sync_changes(payload, additions, replacements)
+        auto_place_note, reload_note = _apply_pcb_sync_changes(
+            payload,
+            additions,
+            replacements,
+            pad_net_updates if payload.update_pad_nets else None,
+        )
 
         return _format_pcb_sync_report(
             components=components,
@@ -4613,6 +4819,7 @@ def _register_schematic_sync_tools(mcp: FastMCP) -> None:
             force_note=force_note,
             auto_place_note=auto_place_note,
             reload_note=reload_note,
+            pad_net_changes=pad_net_changes,
         )
 
 
@@ -5171,14 +5378,27 @@ def _register_mechanical_hole_tools(mcp: FastMCP) -> None:
         pattern: str = "corners",
         margin_mm: float = 3.0,
         allow_open_board: bool = False,
+        keepout: bool = False,
+        keepout_allow_pours: bool = True,
+        hole_clearance_mm: float | None = None,
     ) -> str:
-        """Append standard mounting-hole footprints around the current board frame."""
+        """Append standard mounting-hole footprints around the current board frame.
+
+        The screw-head area (hole radius + ``clearance_mm``) is drawn as the
+        courtyard. ``keepout=True`` also adds a rule area on F.Cu and B.Cu over
+        it that allows no tracks, vias, pads or footprints; copper pours may fill
+        it unless ``keepout_allow_pours=False``. ``hole_clearance_mm`` sets the
+        copper clearance around the hole itself.
+        """
         payload = AddMountingHolesInput(
             diameter_mm=diameter_mm,
             clearance_mm=clearance_mm,
             pattern=pattern,
             margin_mm=margin_mm,
             allow_open_board=allow_open_board,
+            keepout=keepout,
+            keepout_allow_pours=keepout_allow_pours,
+            hole_clearance_mm=hole_clearance_mm,
         )
         if refusal := _guard_file_based_board_edit(
             "mounting-hole insertion",
@@ -5190,6 +5410,13 @@ def _register_mechanical_hole_tools(mcp: FastMCP) -> None:
         board_content = _normalize_board_content(
             board_file.read_text(encoding="utf-8", errors="ignore")
         )
+        # A guessed footprint bounding box is not a manufacturable board outline.
+        # Do not modify a board when mounting-hole positions have no real frame.
+        if _edge_cuts_bounds(board_content) is None:
+            return (
+                "Mounting holes not added: no supported Edge.Cuts board outline was found. "
+                "Create the board outline before placing mounting holes."
+            )
         existing = _parse_board_footprint_blocks(board_content)
         min_x_mm, min_y_mm, max_x_mm, max_y_mm = _board_frame_mm(board_content, existing)
         courtyard_radius_mm = max(
@@ -5231,6 +5458,9 @@ def _register_mechanical_hole_tools(mcp: FastMCP) -> None:
                     y_mm,
                     payload.diameter_mm,
                     payload.clearance_mm,
+                    keepout=payload.keepout,
+                    keepout_allow_pours=payload.keepout_allow_pours,
+                    hole_clearance_mm=payload.hole_clearance_mm,
                 )
             )
 

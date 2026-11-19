@@ -82,6 +82,20 @@ def _board_text(*footprints: str) -> str:
     )
 
 
+def _board_with_rectangular_outline(width_mm: float, height_mm: float) -> str:
+    """Use a real Edge.Cuts frame for mechanical placement regressions."""
+    board = _board_text()
+    return board.replace(
+        "\n)\n",
+        (
+            "\n\t(gr_rect (start 0 0) "
+            f'(end {width_mm:g} {height_mm:g}) (layer "Edge.Cuts") (width 0.05))'
+            "\n)\n"
+        ),
+        1,
+    )
+
+
 @pytest.mark.anyio
 async def test_pcb_auto_place_force_directed_respects_keepouts() -> None:
     server = build_server("pcb")
@@ -1048,6 +1062,9 @@ async def test_pcb_add_mounting_holes_appends_custom_footprints(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
+    (sample_project / "demo.kicad_pcb").write_text(
+        _board_with_rectangular_outline(100, 80), encoding="utf-8"
+    )
     server = build_server("pcb")
 
     result = await call_tool_text(server, "pcb_add_mounting_holes", {})
@@ -1079,11 +1096,8 @@ async def test_pcb_mounting_holes_refuse_frame_smaller_than_courtyard(
     sample_project, monkeypatch: pytest.MonkeyPatch, pattern: str
 ) -> None:
     monkeypatch.setattr("kicad_mcp.tools.pcb._board_is_open", lambda: False)
-    monkeypatch.setattr(
-        "kicad_mcp.tools.pcb._board_frame_mm",
-        lambda *_args: (0.0, 0.0, 12.0, 10.0),
-    )
     board_file = sample_project / "demo.kicad_pcb"
+    board_file.write_text(_board_with_rectangular_outline(12, 10), encoding="utf-8")
     original = board_file.read_bytes()
     result = await call_tool_text(
         build_server("pcb"), "pcb_add_mounting_holes", {"pattern": pattern}

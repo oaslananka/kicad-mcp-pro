@@ -14,6 +14,7 @@ type WithDiagnostics = Callable[[str, Path], str]
 type PopulationRecords = Callable[[str | None, str | None], list[dict[str, Any]]]
 type SymbolAvailableUnits = Callable[[str, str], set[int]]
 type PinPositions = Callable[[str, str, float, float, int, int], dict[str, tuple[float, float]]]
+type NativePowerErc = Callable[[], tuple[list[str] | None, str | None]]
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class SchematicInspectionService:
     population_records: PopulationRecords
     symbol_available_units: SymbolAvailableUnits
     pin_positions_lookup: PinPositions
+    native_power_erc: NativePowerErc | None = None
 
     def symbols(self, schematic_file: Path) -> str:
         """Return the legacy public symbol listing for ``schematic_file``."""
@@ -140,8 +142,41 @@ class SchematicInspectionService:
             lines.append(f"- Pin {pin}: ({coordinates[0]:.4f}, {coordinates[1]:.4f}) mm")
         return "\n".join(lines)
 
+    def _native_power_flag_status(
+        self, missing: list[str], schematic_file: Path
+    ) -> tuple[str | None, str]:
+        """Format authoritative ERC findings separately from heuristic advisories."""
+        if self.native_power_erc is None:
+            return None, ""
+        findings, error = self.native_power_erc()
+        if findings:
+            lines = ["Undriven power pins (KiCad ERC, all schematic sheets):"]
+            lines.extend(f"- {finding}" for finding in findings)
+            if missing:
+                lines.append("Additional label-only advisories:")
+                lines.extend(f"- {name}" for name in missing)
+            return "\n".join(lines), ""
+        if findings is not None:
+            if missing:
+                message = "Potential missing power flags (label-only advisory):\n"
+                return (
+                    message
+                    + "\n".join(f"- {name}" for name in missing)
+                    + "\nKiCad ERC found no undriven power pins.",
+                    "",
+                )
+            return (
+                self.with_diagnostics(
+                    "No obvious missing power flags were detected. "
+                    "KiCad ERC found no undriven power pins across the project.",
+                    schematic_file,
+                ),
+                "",
+            )
+        return None, f"ERC unavailable: {error or 'unknown error'}; power pins not verified."
+
     def power_flags(self, schematic_file: Path) -> str:
-        """Return the legacy missing-power-flag advisory."""
+        """Report power-pin ERC findings; keep legacy label heuristics as advisory."""
         data = self.parse_schematic(schematic_file)
         named_power = {
             label["name"]
@@ -150,9 +185,16 @@ class SchematicInspectionService:
         }
         power_symbols = {symbol["value"].upper() for symbol in data["power_symbols"]}
         missing = sorted(name for name in named_power if name.upper() not in power_symbols)
+
+        # Native KiCad ERC inspects connectivity across the full hierarchy.
+        native_status, suffix = self._native_power_flag_status(missing, schematic_file)
+        if native_status is not None:
+            return native_status
+
         if not missing:
-            return self.with_diagnostics(
-                "No obvious missing power flags were detected.",
-                schematic_file,
-            )
-        return "Potential missing power flags:\n" + "\n".join(f"- {name}" for name in missing)
+            message = "No obvious missing power flags were detected."
+            if suffix:
+                message += f" {suffix}"
+            return self.with_diagnostics(message, schematic_file)
+        message = "Potential missing power flags:\n" + "\n".join(f"- {name}" for name in missing)
+        return f"{message}\n{suffix}" if suffix else message

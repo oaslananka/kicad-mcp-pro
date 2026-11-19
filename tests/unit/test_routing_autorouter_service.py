@@ -55,7 +55,9 @@ class FakeRunner:
         return self.staged if isinstance(self.staged, Path) else ses_path
 
 
-def _result(dsn: Path, ses: Path, *, returncode: int = 0) -> FreeRoutingResult:
+def _result(
+    dsn: Path, ses: Path, *, returncode: int = 0, excluded_nets: tuple[str, ...] = ()
+) -> FreeRoutingResult:
     return FreeRoutingResult(
         mode="docker",
         command=("docker", "run", "freerouting"),
@@ -71,6 +73,7 @@ def _result(dsn: Path, ses: Path, *, returncode: int = 0) -> FreeRoutingResult:
         wall_seconds=1.25,
         stdout_tail="100% routed\nok",
         ses_path=ses,
+        excluded_nets=excluded_nets,
     )
 
 
@@ -106,7 +109,7 @@ async def test_autoroute_preserves_headless_apply_success_and_progress(tmp_path:
     dsn.parent.mkdir(parents=True)
     dsn.write_text("(pcb)", encoding="utf-8")
     ses.write_text(SES, encoding="utf-8")
-    runner = FakeRunner(dsn, _result(dsn, ses))
+    runner = FakeRunner(dsn, _result(dsn, ses, excluded_nets=("NO_ROUTE",)))
     service, writes = _service(tmp_path, runner)
     progress: list[tuple[float, float, str]] = []
 
@@ -128,7 +131,8 @@ async def test_autoroute_preserves_headless_apply_success_and_progress(tmp_path:
     assert "FreeRouting routed and applied: 1 segment(s), 1 via(s), 1 net(s)." in (
         result.state_delta.summary
     )
-    assert "Ignored net classes: GND, NO_ROUTE" in result.state_delta.summary
+    assert "Ignored net classes: GND\n" in result.state_delta.summary
+    assert "Excluded nets: NO_ROUTE" in result.state_delta.summary
     assert "Thread count: 8" in result.state_delta.summary
     assert progress == [
         (10, 100, "Exporting DSN for FreeRouting..."),

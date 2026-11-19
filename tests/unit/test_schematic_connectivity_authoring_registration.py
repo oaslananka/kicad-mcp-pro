@@ -63,8 +63,8 @@ class FakeConnectivityAuthoringService:
         )
         return "routed"
 
-    def add_missing_junctions(self) -> str:
-        self.calls.append(("add_missing_junctions", {}))
+    def add_missing_junctions(self, sheet: str | None = None, sheet_file: str | None = None) -> str:
+        self.calls.append(("add_missing_junctions", {"sheet": sheet, "sheet_file": sheet_file}))
         return "junctions"
 
 
@@ -104,8 +104,8 @@ def test_registration_preserves_names_descriptions_and_schemas() -> None:
     assert tools["sch_route_wire_between_pins"].description == (
         "Route deterministic Manhattan wire segments between two placed symbol pins."
     )
-    assert tools["sch_add_missing_junctions"].description == (
-        "Insert missing schematic junctions at T-intersection wire endpoints."
+    assert tools["sch_add_missing_junctions"].description.startswith(
+        "Insert missing schematic junctions where KiCad needs a dot."
     )
 
     assert tools["sch_add_pin_labels"].parameters == {
@@ -158,7 +158,18 @@ def test_registration_preserves_names_descriptions_and_schemas() -> None:
         "type": "object",
     }
     assert tools["sch_add_missing_junctions"].parameters == {
-        "properties": {},
+        "properties": {
+            "sheet": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "title": "Sheet",
+            },
+            "sheet_file": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+                "default": None,
+                "title": "Sheet File",
+            },
+        },
         "title": "sch_add_missing_junctionsArguments",
         "type": "object",
     }
@@ -211,6 +222,7 @@ def test_registration_delegates_exact_arguments() -> None:
         == "routed"
     )
     assert tools["sch_add_missing_junctions"].fn() == "junctions"
+    assert tools["sch_add_missing_junctions"].fn(sheet_file="child.kicad_sch") == "junctions"
 
     assert service.calls == [
         (
@@ -234,5 +246,6 @@ def test_registration_delegates_exact_arguments() -> None:
                 "snap_to_grid": False,
             },
         ),
-        ("add_missing_junctions", {}),
+        ("add_missing_junctions", {"sheet": None, "sheet_file": None}),
+        ("add_missing_junctions", {"sheet": None, "sheet_file": "child.kicad_sch"}),
     ]

@@ -160,3 +160,70 @@ async def test_project_gate_trend_and_design_report(
     assert report["gate_status"] == "WARN"
     assert "Project Design Report" in report["text"]
     assert "Manufacturing" in report["text"]
+
+
+@pytest.mark.anyio
+async def test_project_full_validation_loop_does_not_run_fixers_outside_profile(
+    sample_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pcb_only server hides schematic tools, so the loop must not call their fixers."""
+    server = build_server("pcb_only")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "kicad_mcp.tools.schematic.run_auto_add_missing_junctions",
+        lambda: calls.append("junctions") or "junctions repaired",
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.schematic.run_auto_annotate",
+        lambda: calls.append("annotate") or "annotated",
+    )
+    outcomes = _gate_sequence(
+        [GateOutcome(name="Pre-sync", status="FAIL", summary="missing junctions")],
+        [GateOutcome(name="Pre-sync", status="PASS", summary="safe")],
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._evaluate_project_gate",
+        lambda: next(outcomes),
+    )
+
+    result = await call_tool_payload(
+        server,
+        "project_full_validation_loop",
+        {"max_iterations": 3, "fix_tier": "auto_only"},
+    )
+
+    assert isinstance(result, dict)
+    assert calls == []
+    assert result["gate_status"] != "PASS"
+    assert "not enabled" in result["text"]
+
+
+@pytest.mark.anyio
+async def test_project_auto_fix_loop_does_not_run_fixers_outside_profile(
+    sample_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = build_server("pcb_only")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "kicad_mcp.tools.schematic.run_auto_annotate",
+        lambda: calls.append("annotate") or "annotated",
+    )
+    outcomes = _gate_sequence(
+        [GateOutcome(name="Schematic", status="FAIL", summary="unannotated symbols")],
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._evaluate_project_gate",
+        lambda: next(outcomes),
+    )
+
+    result = await call_tool_payload(server, "project_auto_fix_loop", {"max_iterations": 3})
+
+    assert isinstance(result, dict)
+    assert calls == []
+    assert "not enabled" in result["text"]

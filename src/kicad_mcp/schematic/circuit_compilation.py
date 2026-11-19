@@ -9,6 +9,8 @@ from typing import Any, Protocol
 
 from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION, GeneratedFormatUpgradeResult
 from ..models.schematic import AddLabelInput, AddSymbolInput, AddWireInput, PowerSymbolInput
+from .instance_paths import InstancePathFor, instance_path_kwargs, no_instance_path
+from .references import PowerReferenceAllocator, UsedReferences
 
 
 @dataclass(frozen=True)
@@ -75,6 +77,7 @@ class PlaceSymbolBlock(Protocol):
         project_name: str,
         root_uuid: str,
         properties: dict[str, str] | None = None,
+        instance_path: str = "",
     ) -> str: ...
 
 
@@ -89,6 +92,7 @@ class LabelBlock(Protocol):
         global_label: bool,
         shape: str | None,
         kind: str | None,
+        justify: str | None = None,
     ) -> str: ...
 
 
@@ -117,6 +121,9 @@ class SchematicCircuitCompilationService:
     upgrade_schematic: Callable[[Path], GeneratedFormatUpgradeResult]
     reload_schematic: Callable[[], str]
     warn_unresolved: Callable[[dict[str, Any]], None]
+    instance_path_for: InstancePathFor = no_instance_path
+    #: References already used in the project; ``None`` numbers each build from 1.
+    used_references: UsedReferences | None = None
 
     def analyze(
         self,
@@ -209,6 +216,8 @@ class SchematicCircuitCompilationService:
         snap_to_grid: bool,
         project_name: str,
         root_uuid: str,
+        instance_path: str = "",
+        allocate_power_reference: Callable[[str], str] | None = None,
     ) -> list[str]:
         elements: list[str] = []
         for symbol in prepared.symbols:
@@ -226,6 +235,7 @@ class SchematicCircuitCompilationService:
                     project_name=project_name,
                     root_uuid=root_uuid,
                     properties=symbol.properties,
+                    **instance_path_kwargs(instance_path),
                 )
             )
         for index, power in enumerate(prepared.powers, start=1):
@@ -235,11 +245,16 @@ class SchematicCircuitCompilationService:
                     lib_id=f"power:{power.name}",
                     x=px,
                     y=py,
-                    reference=f"#PWR{index:03d}",
+                    reference=(
+                        allocate_power_reference(power.name)
+                        if allocate_power_reference is not None
+                        else f"#PWR{index:03d}"
+                    ),
                     value=power.name,
                     rotation=power.rotation,
                     project_name=project_name,
                     root_uuid=root_uuid,
+                    **instance_path_kwargs(instance_path),
                 )
             )
         for wire in prepared.wires:
@@ -256,8 +271,9 @@ class SchematicCircuitCompilationService:
             )
         for label in prepared.labels:
             lx, ly = self.snap_point(label.x_mm, label.y_mm, snap_to_grid and label.snap_to_grid)
-            elements.append(
-                self.label_block(
+            if label.justify is None:
+                # No request: keep the builder's default (and older injected emitters).
+                block = self.label_block(
                     label.name,
                     lx,
                     ly,
@@ -266,7 +282,18 @@ class SchematicCircuitCompilationService:
                     shape=label.shape,
                     kind=label.kind,
                 )
-            )
+            else:
+                block = self.label_block(
+                    label.name,
+                    lx,
+                    ly,
+                    label.rotation,
+                    global_label=label.global_label,
+                    shape=label.shape,
+                    kind=label.kind,
+                    justify=label.justify,
+                )
+            elements.append(block)
         return elements
 
     def _compile_build_notes(
@@ -359,7 +386,22 @@ class SchematicCircuitCompilationService:
         root_uuid = self.new_uuid()
         project_name = self.project_name()
         library_section = self._collect_lib_symbols_section(prepared)
-        elements = self._collect_schematic_elements(prepared, snap_to_grid, project_name, root_uuid)
+        # Preserve the root-to-child instance path and project-wide power references.
+        hierarchical_path = self.instance_path_for(schematic_file) or ""
+        instance_path = hierarchical_path if hierarchical_path.count("/") > 1 else ""
+        allocator = (
+            PowerReferenceAllocator(self.used_references(schematic_file, False))
+            if self.used_references is not None
+            else None
+        )
+        elements = self._collect_schematic_elements(
+            prepared,
+            snap_to_grid,
+            project_name,
+            root_uuid,
+            instance_path,
+            allocator.allocate if allocator is not None else None,
+        )
 
         content = (
             "(kicad_sch\n"

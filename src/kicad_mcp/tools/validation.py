@@ -4738,6 +4738,25 @@ def _register_targeted_validation_tools(mcp: FastMCP) -> None:
     _register_targeted_other_tools(mcp)
 
 
+def _native_power_erc_findings() -> tuple[list[str] | None, str | None]:
+    """Read real cross-sheet KiCad ERC instead of inferring drivers from labels."""
+    try:
+        _path, report, error = _run_erc_report("power_flag_erc_report.json")
+    except (OSError, RuntimeError, ValueError) as exc:
+        return None, str(exc)
+    if report is None:
+        return None, error or "ERC report not produced"
+    findings: list[str] = []
+    for violation in _erc_violations(report):
+        rule = str(violation.get("type") or violation.get("code") or "").casefold()
+        if rule not in {"power_pin_not_driven", "erc_power_pin"}:
+            continue
+        description = str(violation.get("description") or violation.get("message") or rule)
+        sheet = str(violation.get("sheet_path") or violation.get("file") or "")
+        findings.append(f"{sheet}: {description}" if sheet else description)
+    return findings, None
+
+
 def register(mcp: FastMCP) -> None:
     """Register validation tools."""
 

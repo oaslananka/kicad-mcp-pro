@@ -54,6 +54,11 @@ from ..schematic.hierarchy_authoring import (
     SchematicHierarchyAuthoringService,
 )
 from ..schematic.inspection import SchematicInspectionService
+from ..schematic.instance_paths import (
+    find_instance_path,
+    rewrite_placed_symbol_references,
+    rewrite_symbol_instance_reference,
+)
 from ..schematic.layout_automation import (
     FunctionalDesignIntentLike,
     SchematicLayoutAutomationService,
@@ -61,6 +66,7 @@ from ..schematic.layout_automation import (
 )
 from ..schematic.layout_inspection import SchematicLayoutInspectionService
 from ..schematic.lifecycle_authoring import SchematicLifecycleAuthoringService
+from ..schematic.references import project_references
 from ..schematic.rendering import SchematicRenderingService
 from ..schematic.semantic_ir import (
     CircuitLike,
@@ -693,6 +699,9 @@ def get_schematic_backend() -> _SchematicBackendAdapter:
     return _SCHEMATIC_BACKENDS[_DEFAULT_SCHEMATIC_BACKEND]
 
 
+_SCHEMATIC_EXTENSION = ".kicad_sch"
+
+
 @dataclass(frozen=True)
 class _SchematicTarget:
     path: Path
@@ -711,7 +720,7 @@ def _available_sheet_names(root_schematic: Path) -> list[str]:
 
 def _resolve_target_by_file(sheet_file: str, project_root: Path, root: Path) -> _SchematicTarget:
     target = resolve_under(project_root, sheet_file).resolve()
-    if target.suffix != ".kicad_sch":
+    if target.suffix != _SCHEMATIC_EXTENSION:
         raise ValueError("sheet_file must point to a .kicad_sch file.")
     if not target.exists():
         raise ValueError(f"Target schematic file does not exist: {target}")
@@ -764,6 +773,24 @@ def _resolve_schematic_target(
 def new_uuid() -> str:
     """Create a KiCad UUID string."""
     return str(uuid.uuid4())
+
+
+def _hierarchy_root_file() -> Path | None:
+    """Return the project's top-level schematic, even when a child sheet is active."""
+    cfg = get_config()
+    if cfg.project_file is not None:
+        candidate = cfg.project_file.with_suffix(_SCHEMATIC_EXTENSION)
+        if candidate.exists():
+            return candidate
+    if cfg.sch_file is not None and cfg.sch_file.exists():
+        return cfg.sch_file
+    return None
+
+
+def _symbol_instance_path(target: Path) -> str | None:
+    """Return the hierarchical instance path for symbols written into ``target``."""
+    root = _hierarchy_root_file()
+    return None if root is None else find_instance_path(root, target)
 
 
 _STRING_PATTERN = r'"((?:\\.|[^"\\])*)"'
@@ -3413,33 +3440,107 @@ def run_auto_annotate(start_number: int = 1, order: str = "alpha") -> str:
         updates.append((symbol["reference"], new_reference))
 
     def mutator(current: str) -> str:
-        updated = current
-        for old_ref, new_ref in updates:
-            updated = updated.replace(
-                f'(property "Reference" "{old_ref}"',
-                f'(property "Reference" "{new_ref}"',
-                1,
-            )
-        return updated
+        return rewrite_placed_symbol_references(current, updates, _project_name())
 
     transactional_write(mutator)
     return f"Auto-annotated {len(updates)} symbol(s)."
 
 
-def run_auto_add_missing_junctions() -> str:
-    """Module-level missing-junction fixer for project_auto_fix_loop."""
-    sch_file = _get_schematic_file()
+def _placed_pin_points(sch_file: Path, content: str) -> list[tuple[tuple[float, float], str]]:
+    """Return ``(point, "REF pin N")`` for every pin end of the placed symbols in a sheet."""
+    data = parse_schematic_file(sch_file)
+    mirrors = _placed_symbol_mirrors(content)
+    points: list[tuple[tuple[float, float], str]] = []
+    for symbol in data["symbols"]:
+        library, symbol_name = _split_lib_id(str(symbol["lib_id"]))
+        pins = get_pin_positions(
+            library,
+            symbol_name,
+            float(symbol["x"]),
+            float(symbol["y"]),
+            int(symbol["rotation"]),
+            int(symbol["unit"]),
+            mirror=mirrors.get(_placed_symbol_key(symbol), ""),
+        )
+        for number, (x_mm, y_mm) in sorted(pins.items()):
+            points.append((_coord_pair_key(x_mm, y_mm), f"{symbol['reference']} pin {number}"))
+    for power in data["power_symbols"]:
+        point = _coord_pair_key(float(power["x"]), float(power["y"]))
+        points.append((point, f"{power.get('reference') or power.get('value', 'power')} pin 1"))
+    return points
+
+
+def _junction_points_by_end_count(
+    wires: list[tuple[float, float, float, float]],
+    pin_points: list[tuple[float, float]],
+) -> list[tuple[float, float]]:
+    """Points where three or more wire ends and pin ends meet (KiCad's junction rule).
+
+    A point that also lies on another wire's middle is left to the T detection;
+    a point on a wire's middle with only pin ends is never returned, because a
+    dot there would connect a pin KiCad leaves unconnected.
+    """
+    counts: dict[tuple[float, float], int] = {}
+    for x1, y1, x2, y2 in wires:
+        for point in (_coord_pair_key(x1, y1), _coord_pair_key(x2, y2)):
+            counts[point] = counts.get(point, 0) + 1
+    for point in pin_points:
+        counts[point] = counts.get(point, 0) + 1
+    return sorted(
+        point
+        for point, count in counts.items()
+        if count >= 3 and not any(_point_on_segment_midpoint(point, wire) for wire in wires)
+    )
+
+
+def _pins_on_wire_middles(
+    wires: list[tuple[float, float, float, float]],
+    pin_points: list[tuple[tuple[float, float], str]],
+) -> list[str]:
+    """Describe pins that sit on a wire's middle where no wire ends (left unconnected)."""
+    wire_ends = {_coord_pair_key(x, y) for x1, y1, x2, y2 in wires for x, y in ((x1, y1), (x2, y2))}
+    return [
+        f"{name} at ({point[0]:g}, {point[1]:g})"
+        for point, name in pin_points
+        if point not in wire_ends and any(_point_on_segment_midpoint(point, w) for w in wires)
+    ]
+
+
+def run_auto_add_missing_junctions(sheet: str | None = None, sheet_file: str | None = None) -> str:
+    """Module-level missing-junction fixer for project_auto_fix_loop and sch_add_missing_junctions.
+
+    Adds a junction where a wire ends on another wire's middle (a T) and where
+    three or more wire ends and pin ends meet. Pins on a wire's middle are only
+    reported. ``sheet``/``sheet_file`` select a child sheet; default is the
+    active schematic.
+    """
+    if sheet or sheet_file:
+        sch_file = _resolve_schematic_target(sheet=sheet, sheet_file=sheet_file).path
+    else:
+        sch_file = _get_schematic_file()
     before = sch_file.read_text(encoding="utf-8", errors="ignore")
     before_count = len(_existing_junction_points(before))
-    transactional_write(
-        lambda current: _insert_junctions_for_batch(
-            current,
-            _detect_t_intersections(_deduplicate_segments(_wire_segments_from_content(current))),
-        )
-    )
+    pin_points = _placed_pin_points(sch_file, before)
+    pin_ends = [point for point, _name in pin_points]
+
+    def mutator(current: str) -> str:
+        raw_wires = _wire_segments_from_content(current)
+        points = _detect_t_intersections(_deduplicate_segments(raw_wires))
+        points += _junction_points_by_end_count(raw_wires, pin_ends)
+        return _insert_junctions_for_batch(current, points)
+
+    transactional_write(mutator, sch_file)
     after = sch_file.read_text(encoding="utf-8", errors="ignore")
     inserted = max(0, len(_existing_junction_points(after)) - before_count)
-    return f"Inserted {inserted} missing junction(s)."
+    lines = [f"Inserted {inserted} missing junction(s)."]
+    unconnected = _pins_on_wire_middles(_wire_segments_from_content(after), pin_points)
+    if unconnected:
+        lines.append(
+            "Pins on a wire's middle with no junction (KiCad leaves these unconnected; "
+            "add a junction only if the connection is intended):"
+        )
+        lines.extend(f"- {entry}" for entry in unconnected)
+    return "\n".join(lines)
 
 
 def _get_symbol_library_dir() -> Path:
@@ -6244,6 +6345,23 @@ def bus_entry_block(x: float, y: float, direction: str) -> str:
     )
 
 
+def _project_root_schematic() -> Path | None:
+    """Return the project's top-level schematic, even when a child sheet is active."""
+    cfg = get_config()
+    if cfg.project_file is not None:
+        candidate = cfg.project_file.with_suffix(_SCHEMATIC_EXTENSION)
+        if candidate.exists():
+            return candidate
+    if cfg.sch_file is not None and cfg.sch_file.exists():
+        return cfg.sch_file
+    return None
+
+
+def _used_project_references(target: Path, include_target: bool) -> set[str]:
+    """Return references used anywhere in the project hierarchy (see ``UsedReferences``)."""
+    return project_references(_project_root_schematic(), target, include_target=include_target)
+
+
 def place_symbol_block(
     lib_id: str,
     x: float,
@@ -6256,8 +6374,12 @@ def place_symbol_block(
     project_name: str = "KiCadMCP",
     root_uuid: str = "",
     properties: dict[str, str] | None = None,
+    instance_path: str = "",
 ) -> str:
     """Build a schematic symbol instance block.
+
+    ``instance_path`` is the full hierarchical sheet path (``/<root uuid>`` or
+    ``/<root uuid>/<sheet uuid>...``). When empty, the path is ``/<root_uuid>``.
 
     ``properties`` are extra fields written verbatim as additional
     ``(property ...)`` entries. Keys colliding with the standard
@@ -6266,6 +6388,7 @@ def place_symbol_block(
     """
     symbol_uuid = new_uuid()
     root = root_uuid or new_uuid()
+    path = instance_path or f"/{root}"
     is_power_symbol = lib_id.startswith(_POWER_LIB_PREFIX) or reference.startswith("#PWR")
     if is_power_symbol and value.upper().startswith("GND"):
         value_y = y + 5.08
@@ -6321,7 +6444,7 @@ def place_symbol_block(
         f"{extra_properties}"
         "\t\t(instances\n"
         f"\t\t\t(project {_sexpr_string(project_name)}\n"
-        f'\t\t\t\t(path "/{root}"\n'
+        f'\t\t\t\t(path "{path}"\n'
         f"\t\t\t\t\t(reference {_sexpr_string(reference)}) (unit {unit})\n"
         "\t\t\t\t)\n"
         "\t\t\t)\n"
@@ -6598,11 +6721,16 @@ def _update_symbol_property_block(
     )
     if pattern.search(block):
         escaped_value = _escape_sexpr_string(value)
-        return pattern.sub(
+        updated = pattern.sub(
             lambda match: f"{match.group(1)}{escaped_value}{match.group(3)}",
             block,
             count=1,
         )
+        if field == "Reference":
+            return rewrite_symbol_instance_reference(
+                updated, str(parsed.get("reference", "")), value, _project_name()
+            )
+        return updated
 
     insert_point = block.rfind("\t\t(instances")
     if insert_point == -1:
@@ -7361,7 +7489,11 @@ def _connectivity_transactional_write(
     return transactional_write(mutator, path)
 
 
-def _register_inspection_and_analysis(mcp: FastMCP) -> None:
+def _register_inspection_and_analysis(
+    mcp: FastMCP,
+    *,
+    native_power_erc: Callable[[], tuple[list[str] | None, str | None]] | None = None,
+) -> None:
     """Register schematic inspection, compilation, rendering, and topology tools."""
     inspection_service = SchematicInspectionService(
         parse_schematic=parse_schematic_file,
@@ -7369,6 +7501,7 @@ def _register_inspection_and_analysis(mcp: FastMCP) -> None:
         population_records=_population_records,
         symbol_available_units=get_symbol_available_units,
         pin_positions_lookup=get_pin_positions,
+        native_power_erc=native_power_erc,
     )
     schematic_inspection.register(
         mcp,
@@ -7486,6 +7619,8 @@ def _register_inspection_and_analysis(mcp: FastMCP) -> None:
             "schematic_netlist_routing_incomplete",
             **payload,
         ),
+        instance_path_for=_symbol_instance_path,
+        used_references=_used_project_references,
     )
     schematic_circuit_compilation.register(
         mcp,
@@ -7644,6 +7779,8 @@ def _register_authoring(mcp: FastMCP) -> None:
         reload_schematic=_reload_schematic,
         new_uuid=new_uuid,
         format_mm=_fmt_mm,
+        instance_path_for=_symbol_instance_path,
+        used_references=_used_project_references,
     )
     schematic_basic_authoring.register(
         mcp,
@@ -7730,6 +7867,8 @@ def _register_authoring(mcp: FastMCP) -> None:
         route_avoiding_obstacles=_connectivity_route_avoiding_obstacles,
         run_auto_add_missing_junctions=run_auto_add_missing_junctions,
         snap_tolerance_mm=SNAP_TOLERANCE_MM,
+        instance_path_for=_symbol_instance_path,
+        used_references=_used_project_references,
     )
     schematic_connectivity_authoring.register(
         mcp,
@@ -7749,6 +7888,8 @@ def _register_authoring(mcp: FastMCP) -> None:
         active_schematic_file=_get_schematic_file,
         parse_schematic=parse_schematic_file,
         sort_symbols_for_annotation=_sort_symbols_for_annotation,
+        instance_path_for=_symbol_instance_path,
+        project_name=_project_name,
     )
     schematic_lifecycle_authoring.register(
         mcp,
@@ -7798,7 +7939,11 @@ def _register_authoring(mcp: FastMCP) -> None:
     )
 
 
-def register(mcp: FastMCP) -> None:
+def register(
+    mcp: FastMCP,
+    *,
+    native_power_erc: Callable[[], tuple[list[str] | None, str | None]] | None = None,
+) -> None:
     """Register schematic tools."""
-    _register_inspection_and_analysis(mcp)
+    _register_inspection_and_analysis(mcp, native_power_erc=native_power_erc)
     _register_authoring(mcp)
