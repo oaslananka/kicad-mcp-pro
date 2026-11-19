@@ -64,3 +64,24 @@ def test_coverage_waits_for_exact_run_windows_artifact_before_merge() -> None:
         in sonar_steps["Verify exact-run and exact-SHA coverage report"]["run"]
     )
     assert "-Dsonar.qualitygate.wait=true" in sonar_steps["SonarCloud Scan"]["with"]["args"]
+
+
+def test_sonar_failed_job_rerun_uses_coverage_producer_identity() -> None:
+    """Rerunning Sonar alone must reuse the successful producer's sealed artifact."""
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text("utf-8"))
+    coverage = workflow["jobs"]["coverage"]
+    sonar_steps = {step.get("name"): step for step in workflow["jobs"]["sonarcloud"]["steps"]}
+    producer_attempt = "$" + "{{ github.run_attempt }}"
+    assert coverage["outputs"]["sonar_coverage_attempt"] == producer_attempt
+
+    download = sonar_steps["Download same-run coverage report"]
+    assert "name" not in download["with"]
+    assert download["with"]["artifact-ids"] == (
+        "$" + "{{ needs.coverage.outputs.sonar_coverage_artifact_id }}"
+    )
+    verify = sonar_steps["Verify exact-run and exact-SHA coverage report"]
+    assert verify["env"]["SOURCE_ATTEMPT"] == (
+        "$" + "{{ needs.coverage.outputs.sonar_coverage_attempt }}"
+    )
+    assert verify["env"]["SOURCE_RUN_ID"] == "$" + "{{ github.run_id }}"
+    assert verify["env"]["SOURCE_SHA"] == "$" + "{{ github.sha }}"

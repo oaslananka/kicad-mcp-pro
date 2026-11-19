@@ -431,6 +431,7 @@ jobs:
     needs: [changes, release-metadata]
     outputs:
       sonar_coverage_artifact_id: ${{ steps.sonar-coverage-upload.outputs.artifact-id }}
+      sonar_coverage_attempt: ${{ github.run_attempt }}
     if: >-
       always() &&
       needs.release-metadata.result == 'success' &&
@@ -695,13 +696,15 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # A failed-job-only retry reuses coverage from the producer attempt.
+      # Keep artifact ID and the producer attempt together for strict verification.
       - name: Download same-run coverage report
         if: >-
           steps.sonar-mode.outputs.run_analysis == 'true' &&
           needs.coverage.outputs.sonar_coverage_artifact_id != ''
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          name: python-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          artifact-ids: ${{ needs.coverage.outputs.sonar_coverage_artifact_id }}
       - name: Verify exact-run and exact-SHA coverage report
         if: >-
           steps.sonar-mode.outputs.run_analysis == 'true' &&
@@ -709,7 +712,7 @@ jobs:
         env:
           SOURCE_SHA: ${{ github.sha }}
           SOURCE_RUN_ID: ${{ github.run_id }}
-          SOURCE_ATTEMPT: ${{ github.run_attempt }}
+          SOURCE_ATTEMPT: ${{ needs.coverage.outputs.sonar_coverage_attempt }}
         run: |
           python3 scripts/ci_coverage_artifact.py verify \
             --sha "$SOURCE_SHA" --run-id "$SOURCE_RUN_ID" --attempt "$SOURCE_ATTEMPT"
