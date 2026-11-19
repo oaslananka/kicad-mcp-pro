@@ -14,6 +14,8 @@ KiCad MCP Pro defaults to a bounded tool surface so general-purpose agents do no
 
 `full` and `agent_full` remain available for backward compatibility. They expose the complete catalog and should not be the default for a general agent.
 
+Beyond the workflow profiles above, the router also registers focused domain profiles such as `pcb_layout`, `pcb_only`, `schematic_authoring`, `manufacturing_release`, `high_speed`, `power`, `simulation`, and `critic`. These resolve to fixed category sets in `src/kicad_mcp/tools/router.py`; `pcb_layout` is an explicit alias of the `pcb_only` category set (project, PCB read, PCB write, and routing). The full list and the operating mode paired with each name are in [Toolset Profiles](toolsets.md). Every profile fails closed: an unrecognized `KICAD_MCP_PROFILE` value resolves to the bounded `default` surface instead of the complete catalog.
+
 ## Recommended configuration
 
 Review is the safe default:

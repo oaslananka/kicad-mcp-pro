@@ -27,6 +27,8 @@ that every listed tool is really registered.
 
 Broad-profile counts are generated from `toolsets.json` and the profile snapshot rather than duplicated here. The default/review/build/release surfaces are checked by `pnpm run profiles:check`; see [Progressive-Disclosure Profiles](progressive-disclosure.md).
 
+The profile and the operating mode are separate gates. A toolset selects *which* categories are registered; `KICAD_MCP_OPERATING_MODE` (or `--mode`) independently blocks calls above the active risk level. A broad profile such as `pcb_layout` still starts in `experimental` mode, and any profile whose toolset should expose writes needs a matching write or experimental mode. Selecting a profile while leaving the mode at the `readonly` default does not enable write, routing, or manufacturing calls. An unrecognized `KICAD_MCP_PROFILE` value fails closed to `default`/readonly.
+
 ## Using Toolsets
 
 ### Codex CLI
