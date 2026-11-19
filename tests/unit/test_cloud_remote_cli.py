@@ -798,3 +798,163 @@ def test_cloud_console_keeps_unicode_when_output_supports_it(
     monkeypatch.setattr(cloud_user_cli.sys, "stdout", stream)
 
     assert cloud_user_cli._cloud_console_glyph("\u2500" * 40, "-" * 40) == "\u2500" * 40
+
+
+def test_foreground_restores_previously_enabled_background_connector_after_lock_release(
+    remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A temporary terminal must not permanently remove the owner's existing service."""
+    from contextlib import contextmanager
+
+    from kicad_mcp import cloud_windows_task_scheduler as scheduler
+
+    state, _ = remote_fixture
+    monkeypatch.setattr(scheduler, "scheduler_state", lambda: "Scheduled (connection unverified)")
+
+    @contextmanager
+    def owner_lock():
+        state["calls"].append("lock_acquired")
+        try:
+            yield
+        finally:
+            state["calls"].append("lock_released")
+
+    monkeypatch.setattr(cloud_user_cli, "owner_connector_instance", owner_lock)
+
+    def restore_readonly(project, *, owner_confirm):
+        assert project is state["project"]
+        assert owner_confirm(project) is True
+        state["calls"].append("read_only_task_restored")
+
+    monkeypatch.setattr(scheduler, "enable_windows_connector", restore_readonly)
+    response = CliRunner().invoke(server.app, ["cloud", "remote"])
+    assert response.exit_code == 0, response.output
+    assert state["calls"] == [
+        "lock_acquired",
+        "task_removed",
+        "foreground",
+        "lock_released",
+        "read_only_task_restored",
+    ]
+    assert "read-only background Connector" in response.output
+
+
+def test_foreground_without_prior_task_never_installs_background_connector(
+    remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_task_scheduler as scheduler
+
+    state, _ = remote_fixture
+    monkeypatch.setattr(scheduler, "scheduler_state", lambda: "Configured (task unverified)")
+    monkeypatch.setattr(
+        scheduler,
+        "enable_windows_connector",
+        lambda *_args, **_kwargs: pytest.fail("must not add a background service"),
+    )
+    response = CliRunner().invoke(server.app, ["cloud", "remote"])
+    assert response.exit_code == 0, response.output
+    assert state["calls"] == ["task_removed", "foreground"]
+
+
+def test_restoration_failure_is_visible_and_never_claims_cloud_online(
+    remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_task_scheduler as scheduler
+
+    monkeypatch.setattr(scheduler, "scheduler_state", lambda: "Scheduled (connection unverified)")
+
+    def unable_to_restore(*_args: object, **_kwargs: object) -> None:
+        raise OSError("scheduler unavailable")
+
+    monkeypatch.setattr(scheduler, "enable_windows_connector", unable_to_restore)
+    response = CliRunner().invoke(server.app, ["cloud", "remote"])
+    assert response.exit_code != 0
+    assert "background Connector could not be restored" in response.output
+    assert "cloud reconnect" in response.output
+
+
+def test_scheduled_read_only_task_restored_after_foreground_native_write(
+    remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A signed edit in the terminal must never turn the background task into WRITE."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from kicad_mcp import cloud_windows_task_scheduler as scheduler
+
+    state, _ = remote_fixture
+    key = Ed25519PrivateKey.generate().public_key()
+    monkeypatch.setattr(scheduler, "scheduler_state", lambda: "Scheduled (connection unverified)")
+    monkeypatch.setattr(
+        cloud_user_cli, "_trusted_owner_write_issuer", lambda *_args, **_kwargs: key
+    )
+    observed = []
+
+    async def native(*, stop, status_callback, allow_native_write, issuer_key, allow_native_drc):
+        assert allow_native_write is True
+        assert issuer_key is key
+        assert allow_native_drc is False
+        observed.append("foreground_signed_write")
+
+    monkeypatch.setattr(cloud_windows_connector, "run_connector", native)
+
+    def restore_read_only(project, *, owner_confirm):
+        assert project is state["project"]
+        assert owner_confirm(project) is True
+        observed.append("read_only_task")
+
+    monkeypatch.setattr(scheduler, "enable_windows_connector", restore_read_only)
+    response = CliRunner().invoke(server.app, ["cloud", "remote", "--enable-native-write"])
+    assert response.exit_code == 0, response.output
+    assert observed == ["foreground_signed_write", "read_only_task"]
+
+
+def test_disabled_owner_marker_is_not_reenabled_by_foreground_handoff(
+    remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_task_scheduler as scheduler
+
+    state, _ = remote_fixture
+    marker = {"value": "Configured (not connected)"}
+    monkeypatch.setattr(cloud_windows_connector, "local_state", lambda: marker["value"])
+    monkeypatch.setattr(scheduler, "scheduler_state", lambda: "Scheduled (connection unverified)")
+    monkeypatch.setattr(
+        scheduler,
+        "enable_windows_connector",
+        lambda *_args, **_kwargs: pytest.fail("cannot restore a disabled service"),
+    )
+
+    async def owner_disables_connector(*, stop, status_callback):
+        marker["value"] = "Off"
+        state["calls"].append("owner_disabled")
+
+    monkeypatch.setattr(cloud_windows_connector, "run_connector", owner_disables_connector)
+    response = CliRunner().invoke(server.app, ["cloud", "remote"])
+    assert response.exit_code == 0, response.output
+    assert state["calls"] == ["task_removed", "owner_disabled"]
+    assert "not restored" in response.output
+
+
+def test_ctrl_c_restores_previous_read_only_task_without_repairing(
+    remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_task_scheduler as scheduler
+
+    state, _ = remote_fixture
+    monkeypatch.setattr(scheduler, "scheduler_state", lambda: "Scheduled (connection unverified)")
+
+    async def interrupted(*, stop: asyncio.Event, status_callback) -> None:
+        state["calls"].append("ctrl_c")
+        raise KeyboardInterrupt
+
+    def restore(project: object, *, owner_confirm) -> None:
+        assert project is state["project"]
+        assert owner_confirm(project)
+        state["calls"].append("read_only_task_restored")
+
+    monkeypatch.setattr(cloud_windows_connector, "run_connector", interrupted)
+    monkeypatch.setattr(scheduler, "enable_windows_connector", restore)
+    response = CliRunner().invoke(server.app, ["cloud", "remote"])
+    assert response.exit_code == 0, response.output
+    assert state["calls"] == ["task_removed", "ctrl_c", "read_only_task_restored"]
+    assert "restoring previous read-only Connector" in response.output
+    assert "Cloud connection not yet verified" in response.output

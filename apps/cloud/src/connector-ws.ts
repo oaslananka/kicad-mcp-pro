@@ -313,6 +313,14 @@ const INITIAL_TIMEOUT=15_000;
 const PROOF_TIMEOUT=60_000;
 const MAX_SESSION=300_000;
 
+/** A signed lease expiring normally is not a revoked device or bad signature.
+ * Only an authenticated ready session may close normally at its lifetime cap. */
+export function connectorExpiryDisposition(phase:string):{code:number;reason:string}{
+  return phase==="ready"
+    ? {code:1000,reason:"session_expired"}
+    : {code:CLOSE_POLICY,reason:"policy"};
+}
+
 function decodeSignature(raw:string):Buffer|null{
   const bytes=Buffer.from(raw,"base64url");
   return bytes.length===64&&bytes.toString("base64url")===raw?bytes:null;
@@ -481,7 +489,12 @@ export function attachConnectorWebSocket(
           mcpBridgeSupported:false};
         function expire(ms:number):void{
           if(entry.timer)clearTimeout(entry.timer);
-          entry.timer=setTimeout(()=>{entry.phase="closed";reject(ws);},ms);
+          entry.timer=setTimeout(()=>{
+            const close=connectorExpiryDisposition(entry.phase);
+            entry.phase="closed";
+            if(ws.readyState===WebSocket.OPEN)ws.close(close.code,close.reason);
+            else ws.terminate();
+          },ms);
           entry.timer.unref();
         }
         function closed():boolean{return entry.phase==="closed";}
@@ -801,7 +814,9 @@ export function attachConnectorWebSocket(
     for(const ws of sockets){
       // ping/pong checks transport liveness, NOT extension of DB lease.
       const e=(ws as WebSocket & {isAlive?:boolean});
-      if(e.isAlive===false){reject(ws);continue;}
+      // Missed transport heartbeat is not a failed device authorization.
+      // Termination yields an abnormal close that the owner client may retry.
+      if(e.isAlive===false){ws.terminate();continue;}
       e.isAlive=false;
       ws.once("pong",()=>{e.isAlive=true;});
       if(ws.readyState===WebSocket.OPEN)ws.ping();

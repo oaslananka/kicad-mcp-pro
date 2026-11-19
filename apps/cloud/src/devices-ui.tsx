@@ -177,13 +177,13 @@ function deviceStatus(device:Device,sandboxMode:boolean){
   if(!device.enabled)return {label:"Disabled",description:"Disabled",ariaLabel:"Disabled",tone:"neutral",online:false};
   if(device.connectionState==="connected")return {label:"Online",description:"Cloud session active",ariaLabel:"Connected",tone:"ready",online:true};
   if(device.connectionState==="disconnected"){
-    const description=sandboxMode?"Local Connector disconnected":"Run kicad-mcp-pro cloud connect in your terminal; keep it open to reconnect";
+    const description=sandboxMode?"Local Connector disconnected":"Connector offline. Reconnect from this computer; your pairing stays saved.";
     return {label:"Offline",description,ariaLabel:"Offline",tone:"neutral",online:false};
   }
   return {label:"Status unknown",description:"Cloud status unknown",ariaLabel:"Status unknown",tone:"neutral",online:false};
 }
-function DeviceActions({device:d,enrollmentAvailable,state}:Readonly<{
-  device:Device;enrollmentAvailable:boolean;state:ReturnType<typeof deviceStatus>;
+function DeviceActions({device:d,enrollmentAvailable,state,sandboxMode}:Readonly<{
+  device:Device;enrollmentAvailable:boolean;state:ReturnType<typeof deviceStatus>;sandboxMode:boolean;
 }>){
   return <div className="device-actions">
     <output aria-label={state.ariaLabel} className={"status-pill "+state.tone}>{state.label}</output>
@@ -203,7 +203,7 @@ function DeviceActions({device:d,enrollmentAvailable,state}:Readonly<{
                   </button>
                 </form>:null}
               {!d.revoked&&d.enabled&&d.connectionState==="disconnected"?
-                <a className="button device-reconnect-button" href="#connect-computer"
+                <a className="button device-reconnect-button" href={sandboxMode?"#connect-computer":"#reconnect-computer"}
                   title="View instructions to reconnect this computer">Reconnect</a>:null}
               {!d.revoked?
                 <form action="/devices/revoke" method="post">
@@ -313,7 +313,7 @@ function DeviceRow({device,context}:Readonly<{device:Device;context:ViewContext}
   return <li className="device-row">
     <span className={state.online?"device-dot connected":"device-dot"} aria-hidden="true"/>
     <div className="device-summary"><h3>{device.alias}</h3><p>{state.description}</p></div>
-    <DeviceActions device={device} enrollmentAvailable={context.enrollmentAvailable} state={state}/>
+    <DeviceActions device={device} enrollmentAvailable={context.enrollmentAvailable} state={state} sandboxMode={context.sandboxMode}/>
     <DeviceProjects device={device} context={context}/>
   </li>;
 }
@@ -341,6 +341,23 @@ function DeviceList({context}:Readonly<{context:ViewContext}>){
       </section>);
 }
 
+function OfflineRecovery({context}:Readonly<{context:ViewContext}>){
+  if(context.sandboxMode||!context.enrollmentAvailable||
+    !context.devices.some(d=>d.enabled&&!d.revoked&&d.connectionState==="disconnected"))return null;
+  return <section className="card device-recovery-card" id="reconnect-computer"
+      aria-labelledby="reconnect-computer-title">
+    <h2 id="reconnect-computer-title"><Icon name="cpu" size={16}/> Reconnect a paired computer</h2>
+    <p>On the offline Windows computer, check its local Connector.
+      You do not need to pair your device or project again.</p>
+    <CopyValue value="kicad-mcp-pro cloud status" label="check Connector status"/>
+    <p className="field-help">If the status says "Configured (task unverified)", restore
+      the previously configured read-only background Connector from an owner terminal:</p>
+    <CopyValue value="kicad-mcp-pro cloud reconnect" label="restore Connector"/>
+    <p className="field-help">If the task exists but the device stays offline, use
+      <code> kicad-mcp-pro cloud connect</code> to start a visible session and inspect
+      connection logs. Restarting a Connector does not grant any AI app editing access.</p>
+  </section>;
+}
 function PairingSetup({context}:Readonly<{context:ViewContext}>){
   const {devices,sandboxMode}=context;
   return (devices.length===0?<section className="card quickstart-card" id="connect-computer">
@@ -444,7 +461,7 @@ function UnavailableDevices(){
 }
 function DeviceContents({context}:Readonly<{context:ViewContext}>){
   if(!context.enrollmentAvailable&&context.devices.length===0)return <UnavailableDevices/>;
-  return <><DeviceList context={context}/><PairingSetup context={context}/><RegisteredProjects context={context}/></>;
+  return <><DeviceList context={context}/><OfflineRecovery context={context}/><PairingSetup context={context}/><RegisteredProjects context={context}/></>;
 }
 function ClientShortcuts(){
   return (      <section className="card client-shortcuts">
