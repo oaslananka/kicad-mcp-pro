@@ -384,28 +384,16 @@ def _signed_frame_outcome(kind: object, result: dict[str, object]) -> str:
     return "completed"
 
 
-async def _dispatch_signed_operation(
-    kind: object,
+async def _dispatch_signed_mcp(
     socket: AuthenticatedReadSocket,
     raw: str,
     sequence: int,
-    dispatcher: LocalReadDispatch,
-    receipt: HandshakeReceipt,
-    on_activity: Callable[[str], None] | None,
-    allow_native_write: bool,
-    write_executor: Callable[[str, bytes, bool], dict[str, object]] | None,
-    mcp_service: GenericMcpDispatch | None,
+    service: GenericMcpDispatch | None,
 ) -> dict[str, object]:
-    """Dispatch after the signed-frame kind check, preserving per-operation gates."""
-    if kind == _MCP_REQUEST_KIND:
-        if mcp_service is None:
-            raise CloudHandshakeDeniedError(_DENIED)
-        return await _serve_one_mcp_request(socket, mcp_service, raw, expected_sequence=sequence)
-    if kind == _WRITE_REQUEST_KIND:
-        return await _serve_authorized_write_request(
-            socket, raw, allow_native_write, write_executor, sequence, on_activity
-        )
-    return await _serve_one_authenticated_read(socket, dispatcher, receipt, sequence, raw)
+    """Require an available signed MCP service before forwarding the frame."""
+    if service is None:
+        raise CloudHandshakeDeniedError(_DENIED)
+    return await _serve_one_mcp_request(socket, service, raw, expected_sequence=sequence)
 
 
 async def _serve_one_signed_frame(
@@ -436,18 +424,14 @@ async def _serve_one_signed_frame(
     start = perf_counter()
     _report_activity(on_activity, f"Tool call {sequence}: {label} started")
     try:
-        result = await _dispatch_signed_operation(
-            kind,
-            socket,
-            raw,
-            sequence,
-            dispatcher,
-            receipt,
-            on_activity,
-            allow_native_write,
-            write_executor,
-            mcp_service,
-        )
+        if kind == _MCP_REQUEST_KIND:
+            result = await _dispatch_signed_mcp(socket, raw, sequence, mcp_service)
+        elif kind == _WRITE_REQUEST_KIND:
+            result = await _serve_authorized_write_request(
+                socket, raw, allow_native_write, write_executor, sequence, on_activity
+            )
+        else:
+            result = await _serve_one_authenticated_read(socket, dispatcher, receipt, sequence, raw)
     except Exception:
         _report_activity(on_activity, f"Tool call {sequence}: {label} failed")
         raise
