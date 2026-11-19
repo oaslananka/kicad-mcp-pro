@@ -2215,7 +2215,7 @@ def _register_conditional_tools(server: KiCadFastMCP, enabled: set[str]) -> None
         net_analysis.register(server)
         test_points.register(server)
     if "schematic" in enabled:
-        schematic.register(server)
+        schematic.register(server, native_power_erc=validation._native_power_erc_findings)
         variants.register(server)
         visual_qa.register(server)
         schematic_cosmetics.register(server)
