@@ -277,6 +277,25 @@ def _verify_created_via(board: Board, created: Iterable[object], expected: Via) 
         return False
 
 
+def _remove_existing_items_by_id(
+    board: Board, item_ids: tuple[common_types.KIID, ...]
+) -> tuple[common_types.KIID, ...]:
+    """Preflight every requested UUID before any destructive IPC operation."""
+    requested = {item_id.value.casefold() for item_id in item_ids}
+    try:
+        found = list(board.get_items_by_id(list(item_ids)))
+    except ApiError as exc:
+        if str(exc).casefold().endswith("none of the requested ids were found or valid"):
+            raise ValueError("No matching PCB items were found for the supplied IDs.") from exc
+        raise
+    existing = {_item_id_value(item).casefold() for item in found}
+    missing = requested - existing
+    if missing:
+        raise ValueError(f"Unknown PCB item IDs: {', '.join(sorted(missing))}")
+    board.remove_items_by_id(list(item_ids))
+    return item_ids
+
+
 def _verify_deleted_items(board: Board, item_ids: tuple[object, ...]) -> bool:
     get_items_by_id = getattr(board, "get_items_by_id", None)
     if not callable(get_items_by_id):
@@ -1209,8 +1228,8 @@ def _verify_footprint_flip(
 
 
 def _format_selection_id(item: object) -> str:
-    item_id = getattr(getattr(item, "id", None), "value", "")
-    return str(item_id)[:8] + ("..." if item_id else "")
+    # Callers must be able to pass the complete identifier back to mutation tools.
+    return _item_id_value(item)
 
 
 def _get_pcb_file_for_sync() -> Path:
@@ -4028,13 +4047,21 @@ def _register_board_deletion_tools(mcp: FastMCP) -> None:
             return "No item IDs were supplied."
         kiids = []
         for item_id in item_ids:
+            try:
+                canonical = str(uuid.UUID(item_id))
+            except (AttributeError, TypeError, ValueError):
+                return f"Failed to delete items: full KiCad UUID required, got {item_id!r}."
+            if canonical != item_id.casefold():
+                return f"Failed to delete items: full KiCad UUID required, got {item_id!r}."
             kiid = KIID()
-            kiid.value = item_id
+            kiid.value = canonical
             kiids.append(kiid)
+        if len(set(item_ids)) != len(item_ids):
+            return "Failed to delete items: duplicate item IDs were supplied."
         try:
             execute_live_board_mutation(
                 "pcb_delete_items",
-                lambda board: (board.remove_items_by_id(kiids), tuple(kiids))[1],
+                lambda board: _remove_existing_items_by_id(board, tuple(kiids)),
                 verifier=_verify_deleted_items,
             )
         except Exception as exc:

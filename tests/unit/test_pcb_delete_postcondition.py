@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from kipy.errors import ApiError
 
-from kicad_mcp.tools.pcb import _verify_deleted_items
+from kicad_mcp.tools.pcb import (
+    _format_selection_id,
+    _remove_existing_items_by_id,
+    _verify_deleted_items,
+)
 
 
 class _LookupBoard:
@@ -56,3 +62,48 @@ def test_partial_match_to_known_error_does_not_mask_unrelated_api_error() -> Non
 
 def test_no_lookup_method_does_not_claim_verified_deletion() -> None:
     assert _verify_deleted_items(object(), (object(),)) is False  # type: ignore[arg-type]
+
+
+class _DeletingBoard(_LookupBoard):
+    def __init__(
+        self, *, found: list[object] | None = None, error: Exception | None = None
+    ) -> None:
+        super().__init__(found=found, error=error)
+        self.deleted: list[object] | None = None
+
+    def remove_items_by_id(self, ids: list[object]) -> None:
+        self.deleted = ids
+
+
+def _item(value: str) -> object:
+    return SimpleNamespace(id=SimpleNamespace(value=value))
+
+
+def test_selection_id_is_full_and_can_be_reused() -> None:
+    full_id = "3757d6f2-1111-2222-3333-444444444444"
+    assert _format_selection_id(_item(full_id)) == full_id
+    assert _format_selection_id(object()) == ""
+
+
+def test_delete_preflight_rejects_unknown_ids_without_mutating_board() -> None:
+    board = _DeletingBoard(found=[_item("existing")])
+    ids = (SimpleNamespace(value="existing"), SimpleNamespace(value="unknown"))
+    with pytest.raises(ValueError, match="unknown"):
+        _remove_existing_items_by_id(board, ids)  # type: ignore[arg-type]
+    assert board.deleted is None
+
+
+def test_delete_preflight_rejects_nonexistent_ids_in_kicad_10() -> None:
+    board = _DeletingBoard(
+        error=ApiError("KiCad returned error: none of the requested IDs were found or valid")
+    )
+    with pytest.raises(ValueError, match="No matching"):
+        _remove_existing_items_by_id(board, (SimpleNamespace(value="missing"),))  # type: ignore[arg-type]
+    assert board.deleted is None
+
+
+def test_delete_preflight_removes_only_identified_items() -> None:
+    board = _DeletingBoard(found=[_item("existing")])
+    ids = (SimpleNamespace(value="existing"),)
+    assert _remove_existing_items_by_id(board, ids) == ids  # type: ignore[arg-type]
+    assert board.deleted == list(ids)
