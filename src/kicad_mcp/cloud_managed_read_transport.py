@@ -328,12 +328,12 @@ async def _serve_one_mcp_request(
     return response
 
 
-def _mcp_activity_label(raw: str, expected_sequence: int) -> str:
-    """Show a bounded tool name, never Cloud-provided args, paths, or log controls."""
+def _mcp_activity_tool(raw: str, expected_sequence: int) -> str | None:
+    """Extract a validated MCP tool name without formatting remote input for display."""
     try:
         frame = _read_strict_json(raw, _MCP_REQUEST_KIND)
     except (CloudHandshakeDeniedError, ValueError):
-        return "mcp"
+        return None
     if (
         set(frame) != {"kind", "version", "sequence", "request"}
         or type(frame.get("version")) is not int
@@ -341,18 +341,17 @@ def _mcp_activity_label(raw: str, expected_sequence: int) -> str:
         or type(frame.get("sequence")) is not int
         or frame["sequence"] != expected_sequence
     ):
-        return "mcp"
-    request = frame.get("request")
-    if not isinstance(request, dict):
-        return "mcp"
-    if request.get("method") == "catalog":
-        return "mcp catalog"
-    if request.get("method") == "call":
-        tool = request.get("toolName")
+        return None
+    operation = frame.get("request")
+    if not isinstance(operation, dict):
+        return None
+    if operation.get("method") == "catalog":
+        return "catalog"
+    if operation.get("method") == "call":
+        tool = operation.get("toolName")
         if isinstance(tool, str) and _SAFE_ACTIVITY_TOOL.fullmatch(tool) is not None:
-            safe_label = "mcp " + tool
-            return safe_label
-    return "mcp"
+            return tool
+    return None
 
 
 async def _serve_one_signed_frame(
@@ -382,7 +381,8 @@ async def _serve_one_signed_frame(
     is_write = kind == _WRITE_REQUEST_KIND
     is_mcp = kind == _MCP_REQUEST_KIND
     if is_mcp:
-        label = _mcp_activity_label(raw, sequence)
+        name = _mcp_activity_tool(raw, sequence)
+        label = "mcp " + name if name is not None else "mcp"
     elif is_write:
         label = "write"
     else:
