@@ -54,6 +54,7 @@ from ..schematic.hierarchy_authoring import (
     SchematicHierarchyAuthoringService,
 )
 from ..schematic.inspection import SchematicInspectionService
+from ..schematic.instance_paths import find_instance_path
 from ..schematic.layout_automation import (
     FunctionalDesignIntentLike,
     SchematicLayoutAutomationService,
@@ -764,6 +765,24 @@ def _resolve_schematic_target(
 def new_uuid() -> str:
     """Create a KiCad UUID string."""
     return str(uuid.uuid4())
+
+
+def _hierarchy_root_file() -> Path | None:
+    """Return the project's top-level schematic, even when a child sheet is active."""
+    cfg = get_config()
+    if cfg.project_file is not None:
+        candidate = cfg.project_file.with_suffix(".kicad_sch")
+        if candidate.exists():
+            return candidate
+    if cfg.sch_file is not None and cfg.sch_file.exists():
+        return cfg.sch_file
+    return None
+
+
+def _symbol_instance_path(target: Path) -> str | None:
+    """Return the hierarchical instance path for symbols written into ``target``."""
+    root = _hierarchy_root_file()
+    return None if root is None else find_instance_path(root, target)
 
 
 _STRING_PATTERN = r'"((?:\\.|[^"\\])*)"'
@@ -6256,8 +6275,12 @@ def place_symbol_block(
     project_name: str = "KiCadMCP",
     root_uuid: str = "",
     properties: dict[str, str] | None = None,
+    instance_path: str = "",
 ) -> str:
     """Build a schematic symbol instance block.
+
+    ``instance_path`` is the full hierarchical sheet path (``/<root uuid>`` or
+    ``/<root uuid>/<sheet uuid>...``). When empty, the path is ``/<root_uuid>``.
 
     ``properties`` are extra fields written verbatim as additional
     ``(property ...)`` entries. Keys colliding with the standard
@@ -6266,6 +6289,7 @@ def place_symbol_block(
     """
     symbol_uuid = new_uuid()
     root = root_uuid or new_uuid()
+    path = instance_path or f"/{root}"
     is_power_symbol = lib_id.startswith(_POWER_LIB_PREFIX) or reference.startswith("#PWR")
     if is_power_symbol and value.upper().startswith("GND"):
         value_y = y + 5.08
@@ -6321,7 +6345,7 @@ def place_symbol_block(
         f"{extra_properties}"
         "\t\t(instances\n"
         f"\t\t\t(project {_sexpr_string(project_name)}\n"
-        f'\t\t\t\t(path "/{root}"\n'
+        f'\t\t\t\t(path "{path}"\n'
         f"\t\t\t\t\t(reference {_sexpr_string(reference)}) (unit {unit})\n"
         "\t\t\t\t)\n"
         "\t\t\t)\n"
@@ -7486,6 +7510,7 @@ def _register_inspection_and_analysis(mcp: FastMCP) -> None:
             "schematic_netlist_routing_incomplete",
             **payload,
         ),
+        instance_path_for=_symbol_instance_path,
     )
     schematic_circuit_compilation.register(
         mcp,
@@ -7644,6 +7669,7 @@ def _register_authoring(mcp: FastMCP) -> None:
         reload_schematic=_reload_schematic,
         new_uuid=new_uuid,
         format_mm=_fmt_mm,
+        instance_path_for=_symbol_instance_path,
     )
     schematic_basic_authoring.register(
         mcp,
@@ -7730,6 +7756,7 @@ def _register_authoring(mcp: FastMCP) -> None:
         route_avoiding_obstacles=_connectivity_route_avoiding_obstacles,
         run_auto_add_missing_junctions=run_auto_add_missing_junctions,
         snap_tolerance_mm=SNAP_TOLERANCE_MM,
+        instance_path_for=_symbol_instance_path,
     )
     schematic_connectivity_authoring.register(
         mcp,
@@ -7749,6 +7776,7 @@ def _register_authoring(mcp: FastMCP) -> None:
         active_schematic_file=_get_schematic_file,
         parse_schematic=parse_schematic_file,
         sort_symbols_for_annotation=_sort_symbols_for_annotation,
+        instance_path_for=_symbol_instance_path,
     )
     schematic_lifecycle_authoring.register(
         mcp,

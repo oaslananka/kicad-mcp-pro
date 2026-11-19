@@ -9,6 +9,7 @@ from typing import Any, Protocol
 
 from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION, GeneratedFormatUpgradeResult
 from ..models.schematic import AddLabelInput, AddSymbolInput, AddWireInput, PowerSymbolInput
+from .instance_paths import InstancePathFor, instance_path_kwargs, no_instance_path
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,7 @@ class PlaceSymbolBlock(Protocol):
         project_name: str,
         root_uuid: str,
         properties: dict[str, str] | None = None,
+        instance_path: str = "",
     ) -> str: ...
 
 
@@ -118,6 +120,7 @@ class SchematicCircuitCompilationService:
     upgrade_schematic: Callable[[Path], GeneratedFormatUpgradeResult]
     reload_schematic: Callable[[], str]
     warn_unresolved: Callable[[dict[str, Any]], None]
+    instance_path_for: InstancePathFor = no_instance_path
 
     def analyze(
         self,
@@ -210,6 +213,7 @@ class SchematicCircuitCompilationService:
         snap_to_grid: bool,
         project_name: str,
         root_uuid: str,
+        instance_path: str = "",
     ) -> list[str]:
         elements: list[str] = []
         for symbol in prepared.symbols:
@@ -227,6 +231,7 @@ class SchematicCircuitCompilationService:
                     project_name=project_name,
                     root_uuid=root_uuid,
                     properties=symbol.properties,
+                    **instance_path_kwargs(instance_path),
                 )
             )
         for index, power in enumerate(prepared.powers, start=1):
@@ -241,6 +246,7 @@ class SchematicCircuitCompilationService:
                     rotation=power.rotation,
                     project_name=project_name,
                     root_uuid=root_uuid,
+                    **instance_path_kwargs(instance_path),
                 )
             )
         for wire in prepared.wires:
@@ -372,7 +378,13 @@ class SchematicCircuitCompilationService:
         root_uuid = self.new_uuid()
         project_name = self.project_name()
         library_section = self._collect_lib_symbols_section(prepared)
-        elements = self._collect_schematic_elements(prepared, snap_to_grid, project_name, root_uuid)
+        # A child sheet keeps its place in the hierarchy. The root file is
+        # regenerated with a fresh UUID, so its symbols take that new UUID.
+        hierarchical_path = self.instance_path_for(schematic_file) or ""
+        instance_path = hierarchical_path if hierarchical_path.count("/") > 1 else ""
+        elements = self._collect_schematic_elements(
+            prepared, snap_to_grid, project_name, root_uuid, instance_path
+        )
 
         content = (
             "(kicad_sch\n"

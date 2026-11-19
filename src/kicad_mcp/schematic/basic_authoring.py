@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from .instance_paths import InstancePathFor, instance_path_kwargs, no_instance_path
 from .references import power_reference_from_uuid
 
 
@@ -46,6 +47,7 @@ class PlaceSymbolBlock(Protocol):
         unit: int = 1,
         project_name: str,
         root_uuid: str,
+        instance_path: str = "",
     ) -> str: ...
 
 
@@ -143,6 +145,7 @@ class SchematicBasicAuthoringService:
     reload_schematic: ReloadSchematic
     new_uuid: NewUuid
     format_mm: FormatMm
+    instance_path_for: InstancePathFor = no_instance_path
 
     @staticmethod
     def _format_target_detail(target: SchematicTarget) -> str:
@@ -183,6 +186,7 @@ class SchematicBasicAuthoringService:
         target = self.resolve_target(sheet=sheet, sheet_file=sheet_file)
         schematic_data = self.parse_schematic(target.path)
         root_uuid = str(schematic_data["uuid"] or self.new_uuid())
+        instance_path = self.instance_path_for(target.path) or ""
         lib_id = f"{library}:{symbol_name}"
         existing = [
             *schematic_data["symbols"],
@@ -216,6 +220,7 @@ class SchematicBasicAuthoringService:
                 unit=unit,
                 project_name=self.project_name(),
                 root_uuid=root_uuid,
+                **instance_path_kwargs(instance_path),
             )
             return self.append_before_sheet_instances(updated, block)
 

@@ -10,6 +10,7 @@ from typing import Any, Protocol
 from ..errors import SchematicRoutingUnsafeError
 from ..models.schematic import RouteWireBetweenPinsInput
 from ..utils.schematic_router import point_on_segment, segments_merge
+from .instance_paths import InstancePathFor, instance_path_kwargs, no_instance_path
 from .references import power_reference_from_uuid
 
 
@@ -224,6 +225,7 @@ class SchematicConnectivityAuthoringService:
     #: has to cross one to reach a pin inside it.  Defaults to none so a caller
     #: that predates the rule keeps working; only wire routing consults it.
     get_module_boundaries: Callable[[str], list[BoundingBoxLike]] = _no_module_boundaries
+    instance_path_for: InstancePathFor = no_instance_path
 
     def _init_placed_maps(
         self, data: dict[str, Any]
@@ -399,6 +401,7 @@ class SchematicConnectivityAuthoringService:
         project_name: str,
         root_uuid: str,
         power_lib_defs: dict[str, str],
+        instance_path: str = "",
     ) -> tuple[str, str, str | None]:
         if self.is_power_net(net):
             if net not in power_lib_defs:
@@ -415,6 +418,7 @@ class SchematicConnectivityAuthoringService:
                 rotation=self.power_symbol_rotation_from_vector(ux, uy),
                 project_name=project_name,
                 root_uuid=root_uuid,
+                **instance_path_kwargs(instance_path),
             )
             msg = f"{ref}.{pin} -> {net} (power) @ ({ex}, {ey}){suffix}"
             return block, msg, None
@@ -447,6 +451,7 @@ class SchematicConnectivityAuthoringService:
         block_kind: str,
         project_name: str,
         root_uuid: str,
+        instance_path: str = "",
     ) -> None:
         wire_blocks = state.wire_blocks
         terminal_blocks = state.terminal_blocks
@@ -532,6 +537,7 @@ class SchematicConnectivityAuthoringService:
             project_name=project_name,
             root_uuid=root_uuid,
             power_lib_defs=power_lib_defs,
+            **instance_path_kwargs(instance_path),
         )
         if block_err is not None:
             results.append(block_err)
@@ -598,6 +604,7 @@ class SchematicConnectivityAuthoringService:
 
         project_name = self.project_name()
         root_uuid = str(data.get("uuid") or self.new_uuid())
+        instance_path = self.instance_path_for(target.path) or ""
         state = _PinLabelBatch()
         wire_blocks = state.wire_blocks
         terminal_blocks = state.terminal_blocks
@@ -624,6 +631,7 @@ class SchematicConnectivityAuthoringService:
                 block_kind,
                 project_name,
                 root_uuid,
+                instance_path,
             )
 
         if not (wire_blocks or terminal_blocks):
