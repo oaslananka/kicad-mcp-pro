@@ -294,7 +294,10 @@ class RoutingAutorouterService:
         if ses_path_obj is None or ses_err is not None:
             return ToolResult.failure("route_autoroute_freerouting", ses_err or "Unknown error")
 
-        ignore_text = ", ".join([*(net_classes_to_ignore or []), *(exclude_nets or [])]) or "none"
+        # Excluded nets are removed from the routed DSN, not ignored as classes.
+        ignore_text = ", ".join(net_classes_to_ignore or []) or "none"
+        if result.excluded_nets:
+            ignore_text += f"\nExcluded nets: {', '.join(result.excluded_nets)}"
         await progress(85, 100, "Applying SES to board headlessly...")
         applied_pcb, applied_route, apply_error = await _apply_ses_headless(
             ses_path_obj, self.transactional_board_write

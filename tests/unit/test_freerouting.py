@@ -73,7 +73,9 @@ def test_run_freerouting_docker_builds_expected_command(
     assert "-mt" in observed[0]
     assert "--router.max_passes=55" in observed[0]
     assert "-inc" in observed[0]
-    assert "GND,PWR,SHIELD" in observed[0]
+    # -inc carries net classes only; excluded nets are removed from a DSN copy.
+    assert observed[0][observed[0].index("-inc") + 1] == "GND,PWR"
+    assert "SHIELD" not in " ".join(observed[0])
     assert "-drc" in observed[0]
 
 

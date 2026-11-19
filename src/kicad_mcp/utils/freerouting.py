@@ -49,6 +49,8 @@ class FreeRoutingResult:
     wall_seconds: float
     stdout_tail: str
     ses_path: Path
+    excluded_nets: tuple[str, ...] = ()
+    """Nets removed from the routed DSN copy (requested names found in the DSN)."""
 
 
 def _sanitize_text(text: str) -> str:
@@ -79,6 +81,102 @@ def _coerce_process_output(value: str | bytes | None) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", errors="replace")
     return value
+
+
+_DSN_TOKEN_RE = re.compile(r'"[^"]*"|[^\s()"]+')
+
+
+def _dsn_block_end(text: str, start: int) -> int:
+    """Return the index just past the parenthesis closing the DSN block at ``start``."""
+    depth = 0
+    in_string = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            in_string = char != '"'
+        elif char == '"':
+            in_string = True
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+    raise ValueError("Unbalanced Specctra DSN: no closing parenthesis found.")
+
+
+def _dsn_children(text: str, start: int, end: int) -> list[tuple[str, int, int]]:
+    """Return ``(tag, start, end)`` for the direct children of the block at ``start``."""
+    children: list[tuple[str, int, int]] = []
+    index = start + 1
+    in_string = False
+    while index < end - 1:
+        char = text[index]
+        if in_string:
+            in_string = char != '"'
+        elif char == '"':
+            in_string = True
+        elif char == "(":
+            child_end = _dsn_block_end(text, index)
+            tag = _DSN_TOKEN_RE.match(text, index + 1)
+            children.append((tag.group(0) if tag else "", index, child_end))
+            index = child_end
+            continue
+        index += 1
+    return children
+
+
+def _dsn_name(token: str) -> str:
+    return token[1:-1] if len(token) >= 2 and token[0] == token[-1] == '"' else token
+
+
+def _line_start(text: str, index: int) -> int:
+    """Start of the line holding ``index`` when only whitespace precedes it there."""
+    line_start = text.rfind("\n", 0, index)
+    if text[line_start + 1 : index].strip():
+        return index
+    return line_start if line_start >= 0 else index
+
+
+def _remove_nets_from_dsn(text: str, nets: list[str]) -> tuple[str, tuple[str, ...]]:
+    """Drop ``nets`` from a DSN network: their ``(net ...)`` blocks and class memberships.
+
+    Their pads stay in the placement as obstacles without a net, so Freerouting
+    leaves them unrouted. Returns the new text and the requested names found, in
+    request order.
+    """
+    wanted = set(nets)
+    network = re.search(r"\(network\b", text)
+    if not wanted or network is None:
+        return text, ()
+    network_end = _dsn_block_end(text, network.start())
+    edits: list[tuple[int, int, str]] = []
+    found: set[str] = set()
+    for tag, start, end in _dsn_children(text, network.start(), network_end):
+        if tag == "net":
+            name = _DSN_TOKEN_RE.match(text, start + len("(net"))
+            name = name or _DSN_TOKEN_RE.search(text, start + len("(net"), end)
+            if name is not None and _dsn_name(name.group(0)) in wanted:
+                found.add(_dsn_name(name.group(0)))
+                edits.append((_line_start(text, start), end, ""))
+        elif tag == "class":
+            class_children = _dsn_children(text, start, end)
+            members_end = class_children[0][1] if class_children else end - 1
+            members_start = start + len("(class")
+            span = text[members_start:members_end]
+            tokens = _DSN_TOKEN_RE.findall(span)
+            if len(tokens) < 2:
+                continue
+            kept = [tokens[0], *(tok for tok in tokens[1:] if _dsn_name(tok) not in wanted)]
+            if len(kept) == len(tokens):
+                continue
+            found.update(_dsn_name(tok) for tok in tokens[1:] if _dsn_name(tok) in wanted)
+            leading = span[: len(span) - len(span.lstrip())]
+            trailing = span[len(span.rstrip()) :]
+            edits.append((members_start, members_end, f"{leading}{' '.join(kept)}{trailing}"))
+    for start, end, replacement in sorted(edits, reverse=True):
+        text = text[:start] + replacement + text[end:]
+    return text, tuple(name for name in dict.fromkeys(nets) if name in found)
 
 
 def _count_dsn_nets(dsn_path: Path) -> int:
@@ -389,8 +487,9 @@ class FreeRoutingRunner:
 
         output = ses_path.resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
-        ignored = [*(net_classes_to_ignore or []), *(exclude_nets or [])]
-        ignore_arg = ",".join(dict.fromkeys(ignored))
+        # -inc takes net *class* names; excluded nets leave a copy of the DSN instead.
+        ignore_arg = ",".join(dict.fromkeys(net_classes_to_ignore or []))
+        dsn_path, excluded = self._dsn_without_excluded_nets(dsn_path, exclude_nets or [])
         drc_output = drc_report_path.resolve() if drc_report_path is not None else None
         if drc_output is not None:
             drc_output.parent.mkdir(parents=True, exist_ok=True)
@@ -433,7 +532,26 @@ class FreeRoutingRunner:
             wall_seconds=round(wall_seconds, 3),
             stdout_tail=_tail(sanitized_stdout),
             ses_path=output,
+            excluded_nets=excluded,
         )
+
+    @staticmethod
+    def _dsn_without_excluded_nets(
+        dsn_path: Path, exclude_nets: list[str]
+    ) -> tuple[Path, tuple[str, ...]]:
+        """Return the DSN to route: a copy without ``exclude_nets``, or the original."""
+        if not exclude_nets:
+            return dsn_path, ()
+        text = dsn_path.read_text(encoding="utf-8", errors="ignore")
+        filtered, excluded = _remove_nets_from_dsn(text, exclude_nets)
+        missing = [name for name in exclude_nets if name not in excluded]
+        if missing:
+            logger.warning("freerouting_excluded_nets_not_found", nets=missing)
+        if not excluded:
+            return dsn_path, ()
+        routed = dsn_path.with_name(f"{dsn_path.stem}.excluded{dsn_path.suffix}")
+        routed.write_text(filtered, encoding="utf-8")
+        return routed, excluded
 
     def stage_ses(self, ses_path: Path) -> Path:
         """Copy the routed SES session into the project routing output and return it."""
