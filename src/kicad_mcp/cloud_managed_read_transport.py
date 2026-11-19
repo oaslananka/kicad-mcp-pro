@@ -378,9 +378,14 @@ async def _serve_one_signed_frame(
     operation = result.get("operation")
     safe = operation if operation in {"project_summary", "run_drc", "pcb_move_footprint"} else label
     elapsed = round((perf_counter() - start) * 1000)
-    # "completed" means the device sent its acknowledged response. It does
-    # not assert a successful PCB operation or an external Cloud MCP outcome.
-    _report_activity(on_activity, f"Tool call {sequence}: {safe} completed ({elapsed} ms)")
+    # Transport delivery may succeed while the acknowledged MCP tool reports
+    # isError=true (for example, a bounded local DRC/ERC timeout).
+    outcome = "completed"
+    if is_mcp and result.get("method") == "call":
+        tool_result = result.get("result")
+        if isinstance(tool_result, dict) and tool_result.get("isError") is True:
+            outcome = "failed"
+    _report_activity(on_activity, f"Tool call {sequence}: {safe} {outcome} ({elapsed} ms)")
     return 1
 
 

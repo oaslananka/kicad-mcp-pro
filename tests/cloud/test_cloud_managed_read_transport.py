@@ -1281,3 +1281,44 @@ async def test_signed_write_rejects_non_boolean_persist_flag_before_native_callb
             write_executor=execute,
         )
     assert calls == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("is_error", [True, False])
+async def test_mcp_tool_error_is_not_logged_as_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, is_error: bool
+) -> None:
+    # Delivery/acknowledgment success is not the same as a successful MCP tool.
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_managed_read_transport as transport
+
+    async def signed_mcp_reply(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {
+            "requestId": "example",
+            "method": "call",
+            "ok": True,
+            "result": {
+                "isError": is_error,
+                "content": [{"type": "text", "text": "secret-local-project-path"}],
+                "structuredContent": {"reason": "local_mcp_read_timeout"},
+            },
+        }
+
+    monkeypatch.setattr(transport, "_serve_one_mcp_request", signed_mcp_reply)
+    activity: list[str] = []
+    served = await transport._serve_one_signed_frame(
+        Socket([]),
+        json.dumps({"kind": "connector.mcp_request"}),
+        0,
+        build_dispatcher(tmp_path, [True]),
+        HandshakeReceipt(DEVICE, SESSION),
+        None,
+        activity.append,
+        mcp_service=SimpleNamespace(dispatch=object()),
+    )
+    assert served == 1
+    assert activity[0] == "Tool call 1: mcp started"
+    outcome = "failed" if is_error else "completed"
+    assert re.fullmatch(rf"Tool call 1: mcp {outcome} \(\d+ ms\)", activity[1])
+    assert "secret-local-project-path" not in " ".join(activity)
