@@ -381,10 +381,13 @@ async def _serve_one_signed_frame(
     # Transport delivery may succeed while the acknowledged MCP tool reports
     # isError=true (for example, a bounded local DRC/ERC timeout).
     outcome = "completed"
-    if is_mcp and result.get("method") == "call":
-        tool_result = result.get("result")
-        if isinstance(tool_result, dict) and tool_result.get("isError") is True:
+    if is_mcp:
+        if result.get("ok") is False:
             outcome = "failed"
+        elif result.get("method") == "call":
+            tool_result = result.get("result")
+            if isinstance(tool_result, dict) and tool_result.get("isError") is True:
+                outcome = "failed"
     _report_activity(on_activity, f"Tool call {sequence}: {safe} {outcome} ({elapsed} ms)")
     return 1
 

@@ -1284,9 +1284,18 @@ async def test_signed_write_rejects_non_boolean_persist_flag_before_native_callb
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("is_error", [True, False])
+@pytest.mark.parametrize(
+    ("method", "ok", "is_error"),
+    [
+        ("call", True, True),
+        ("call", True, False),
+        ("call", False, False),
+        ("catalog", False, False),
+        ("catalog", True, False),
+    ],
+)
 async def test_mcp_tool_error_is_not_logged_as_success(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, is_error: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: str, ok: bool, is_error: bool
 ) -> None:
     # Delivery/acknowledgment success is not the same as a successful MCP tool.
     from types import SimpleNamespace
@@ -1296,8 +1305,8 @@ async def test_mcp_tool_error_is_not_logged_as_success(
     async def signed_mcp_reply(*_args: object, **_kwargs: object) -> dict[str, object]:
         return {
             "requestId": "example",
-            "method": "call",
-            "ok": True,
+            "method": method,
+            "ok": ok,
             "result": {
                 "isError": is_error,
                 "content": [{"type": "text", "text": "secret-local-project-path"}],
@@ -1319,6 +1328,6 @@ async def test_mcp_tool_error_is_not_logged_as_success(
     )
     assert served == 1
     assert activity[0] == "Tool call 1: mcp started"
-    outcome = "failed" if is_error else "completed"
+    outcome = "failed" if (is_error or not ok) else "completed"
     assert re.fullmatch(rf"Tool call 1: mcp {outcome} \(\d+ ms\)", activity[1])
     assert "secret-local-project-path" not in " ".join(activity)
