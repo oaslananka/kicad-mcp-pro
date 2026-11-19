@@ -188,13 +188,22 @@ def _det_uuid(*parts: object) -> str:
     return str(uuid.uuid5(_UUID_NAMESPACE, "|".join(str(part) for part in parts)))
 
 
-def render_pcb_items(route: SesRoute, net_numbers: dict[str, int], *, indent: str = "\t") -> str:
-    """Render the routed segments and vias as deterministic KiCad ``.kicad_pcb`` S-expr."""
+def render_pcb_items(
+    route: SesRoute,
+    net_numbers: dict[str, int],
+    *,
+    net_names: set[str] | None = None,
+    indent: str = "\t",
+) -> str:
+    """Render deterministic KiCad routing in the board's actual net encoding."""
     # An SES session is a whole routed result. Silently skipping unknown
     # networks commits a partial board while reporting success to the agent.
     # Reject before rendering *any* track or via, including net-zero/no-net.
     unresolved = sorted(
-        name for name in route.net_names if not name or net_numbers.get(name, 0) <= 0
+        name
+        for name in route.net_names
+        if not name
+        or (name not in net_names if net_names is not None else net_numbers.get(name, 0) <= 0)
     )
     if unresolved:
         raise ValueError(
@@ -203,30 +212,39 @@ def render_pcb_items(route: SesRoute, net_numbers: dict[str, int], *, indent: st
             "No routing was applied."
         )
 
+    def net_expr(name: str) -> str:
+        if net_names is not None:
+            escaped = name.replace("\\", "\\\\").replace('"', '\\"')
+            return f'(net "{escaped}")'
+        return f"(net {net_numbers[name]})"
+
+    def net_sort_key(name: str) -> str | int:
+        return name if net_names is not None else net_numbers.get(name, -1)
+
     lines: list[str] = []
     segments = sorted(
         route.segments,
-        key=lambda s: (net_numbers.get(s.net_name, -1), s.layer, s.start, s.end, s.width_mm),
+        key=lambda s: (net_sort_key(s.net_name), s.layer, s.start, s.end, s.width_mm),
     )
     for seg in segments:
-        net = net_numbers[seg.net_name]
+        net = net_expr(seg.net_name)
         uid = _det_uuid("seg", seg.net_name, seg.layer, seg.start, seg.end, seg.width_mm)
         lines.append(
             f"{indent}(segment (start {_fmt(seg.start[0])} {_fmt(seg.start[1])}) "
             f"(end {_fmt(seg.end[0])} {_fmt(seg.end[1])}) (width {_fmt(seg.width_mm)}) "
-            f'(layer "{seg.layer}") (net {net}) (uuid "{uid}"))'
+            f'(layer "{seg.layer}") {net} (uuid "{uid}"))'
         )
     vias = sorted(
         route.vias,
-        key=lambda v: (net_numbers.get(v.net_name, -1), v.at, v.size_mm, v.drill_mm),
+        key=lambda v: (net_sort_key(v.net_name), v.at, v.size_mm, v.drill_mm),
     )
     for via in vias:
-        net = net_numbers[via.net_name]
+        net = net_expr(via.net_name)
         uid = _det_uuid("via", via.net_name, via.at, via.size_mm, via.drill_mm)
         lines.append(
             f"{indent}(via (at {_fmt(via.at[0])} {_fmt(via.at[1])}) (size {_fmt(via.size_mm)}) "
             f'(drill {_fmt(via.drill_mm)}) (layers "{via.layers[0]}" "{via.layers[1]}") '
-            f'(net {net}) (uuid "{uid}"))'
+            f'{net} (uuid "{uid}"))'
         )
     return "\n".join(lines)
 
@@ -240,18 +258,14 @@ def apply_ses_to_pcb(pcb_text: str, ses_text: str) -> tuple[str, SesRoute]:
     """
     route = parse_ses(ses_text)
     net_numbers = parse_net_numbers(pcb_text)
-    # KiCad 10's current PCB dialect stores (net "NAME") on actual pads and
-    # copper items, without the historical (net N "NAME") table. The legacy
-    # renderer emits numeric track nets and MUST NOT be used on such a board.
-    # A reviewed, KiCad-native and DRC-preflighted writer is required there.
-    if route.net_names and not any(number > 0 for number in net_numbers.values()):
-        if re.search(r'\(net\s+"(?:\\.|[^"\\])*"\)', pcb_text):
-            raise ValueError(
-                "SES routing refused: this KiCad PCB uses named-only net encoding "
-                '((net "NAME")), which this numeric-net SES writer does not support. '
-                "No routing was applied."
-            )
-    rendered = render_pcb_items(route, net_numbers)
+    # KiCad 10 stores (net "NAME") on pads/copper without a numeric table.
+    # Match the existing encoding instead of silently inventing numeric IDs.
+    net_names: set[str] | None = None
+    if not any(number > 0 for number in net_numbers.values()):
+        found_names = set(re.findall(r'\(net\s+"((?:\\.|[^"\\])*)"\)', pcb_text))
+        if found_names:
+            net_names = found_names
+    rendered = render_pcb_items(route, net_numbers, net_names=net_names)
     if not rendered:
         return pcb_text, route
 

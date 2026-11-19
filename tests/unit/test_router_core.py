@@ -118,13 +118,27 @@ def test_render_helper_cannot_silently_drop_unknown_net() -> None:
         render_pcb_items(route, {"GND": 1})
 
 
-def test_modern_kicad_named_only_nets_fail_closed_before_numeric_write() -> None:
+def test_modern_kicad_named_only_nets_emit_named_copper() -> None:
     modern = (
         "(kicad_pcb (version 20250216)"
         '(footprint "Example" (pad "1" smd rect (at 0 0) (size 1 1) '
-        '(layers "F.Cu") (net "GND"))))'
+        '(layers "F.Cu") (net "GND")) '
+        '(footprint "Other" (pad "1" smd rect (at 1 0) (size 1 1) '
+        '(layers "F.Cu") (net "VCC"))))'
     )
-    with pytest.raises(ValueError, match="named-only net encoding"):
+    updated, route = apply_ses_to_pcb(modern, _SES)
+    assert len(route.segments) == 3
+    assert '(layer "F.Cu") (net "GND")' in updated
+    assert '(layer "F.Cu") (net "VCC")' in updated
+    assert '(via (at 11 5) (size 0.6) (drill 0.3) (layers "F.Cu" "B.Cu") (net "GND")' in updated
+    assert "(net 1)" not in updated
+    again, _ = apply_ses_to_pcb(updated, _SES)
+    assert again == updated
+
+
+def test_named_only_import_rejects_missing_net_without_changes() -> None:
+    modern = '(kicad_pcb (version 20250216) (pad "1" smd rect (net "GND")))'
+    with pytest.raises(ValueError, match="missing from the PCB net table.*VCC"):
         apply_ses_to_pcb(modern, _SES)
 
 

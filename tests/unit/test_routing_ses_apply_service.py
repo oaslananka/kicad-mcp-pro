@@ -154,15 +154,17 @@ def test_apply_refuses_partial_ses_when_net_not_on_board(tmp_path: Path) -> None
     assert "No routing was applied" in result.errors[0]
 
 
-def test_apply_refuses_named_only_kicad_pcb_instead_of_a_fake_success(tmp_path: Path) -> None:
-    """Modern KiCad named-net boards must not receive legacy numeric copper."""
+def test_apply_supports_named_only_kicad_pcb_without_inventing_numeric_nets(
+    tmp_path: Path,
+) -> None:
+    """Modern KiCad named-net boards receive named copper, atomically."""
     _write_ses(tmp_path)
     modern = '(kicad_pcb (version 20250216) (pad "1" smd rect (net "GND")))'
     service, writes = _service(tmp_path, current=modern)
 
     result = service.apply()
 
-    assert not result.ok
-    assert not result.changed
-    assert not writes
-    assert "named-only net encoding" in result.errors[0]
+    assert result.ok and result.changed
+    assert len(writes) == 1
+    assert '(layer "F.Cu") (net "GND")' in writes[0]
+    assert "(net 1)" not in writes[0]
