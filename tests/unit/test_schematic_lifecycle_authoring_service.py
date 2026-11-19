@@ -154,3 +154,36 @@ def test_reload_delegates_directly(tmp_path: Path) -> None:
     service, _calls, _writes = _service(tmp_path)
 
     assert service.reload() == "Reloaded"
+
+
+def test_project_annotation_preserves_cross_sheet_multiunit_identity(
+    tmp_path: Path,
+) -> None:
+    """U7 unit 1 and unit 2 share a reference; two R9 unit-1 parts do not."""
+    from dataclasses import replace
+
+    base, _calls, _writes = _service(tmp_path)
+    root = tmp_path / "demo.kicad_sch"
+    child = tmp_path / "power.kicad_sch"
+    records = {
+        root: [
+            {"reference": "U7", "lib_id": "Amplifier_Operational:LM358", "unit": 1},
+            {"reference": "R9", "lib_id": "Device:R", "unit": 1},
+        ],
+        child: [
+            {"reference": "U7", "lib_id": "Amplifier_Operational:LM358", "unit": 2},
+            {"reference": "R9", "lib_id": "Device:R", "unit": 1},
+        ],
+    }
+    plans: list[dict[Path, list[tuple[str, str]]]] = []
+
+    service = replace(
+        base,
+        project_schematic_files=lambda: [root, child],
+        parse_schematic=lambda path: {"symbols": records[path]},
+        sort_symbols_for_annotation=lambda symbols, order: None,
+        write_project_annotation=lambda updates: plans.append(updates),
+    )
+    result = service.annotate(start_number=1, order="sheet")
+    assert "Annotated 4 symbol(s)." in result
+    assert plans == [{root: [("U7", "U1"), ("R9", "R1")], child: [("U7", "U1"), ("R9", "R2")]}]

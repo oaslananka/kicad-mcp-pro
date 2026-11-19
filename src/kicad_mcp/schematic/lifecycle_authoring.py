@@ -105,24 +105,38 @@ class SchematicLifecycleAuthoringService:
         if files is None or write is None:
             raise RuntimeError("Project annotation dependencies are unavailable.")
         counters: dict[str, int] = {}
+        # A multi-unit component may be split across sheets. Distinct unit
+        # numbers with the same existing ref and library ID share one new ref;
+        # duplicate unit numbers indicate separate parts and get distinct refs.
+        groups: dict[tuple[str, str], list[tuple[str, set[int]]]] = {}
         updates_by_file: dict[Path, list[tuple[str, str]]] = {}
         count = 0
         for file in files():
             symbols = list(self.parse_schematic(file)["symbols"])
             self.sort_symbols_for_annotation(symbols, payload.order)
-            assigned: dict[str, str] = {}
             updates: list[tuple[str, str]] = []
             for symbol in symbols:
                 old = str(symbol["reference"])
                 if not old or old.startswith("#"):
                     continue
-                if old not in assigned:
-                    prefix_match = re.match(r"([A-Za-z]+)", old)
-                    prefix = prefix_match.group(1) if prefix_match else "U"
+                prefix_match = re.match(r"([A-Za-z]+)", old)
+                prefix = prefix_match.group(1) if prefix_match else "U"
+                key = (old, str(symbol.get("lib_id", "")))
+                try:
+                    unit = int(symbol.get("unit", 1))
+                except (TypeError, ValueError):
+                    unit = 1
+                matches = groups.setdefault(key, [])
+                group = next((item for item in matches if unit not in item[1]), None)
+                if group is None:
                     counters.setdefault(prefix, payload.start_number)
-                    assigned[old] = f"{prefix}{counters[prefix]}"
+                    new_reference = f"{prefix}{counters[prefix]}"
                     counters[prefix] += 1
-                updates.append((old, assigned[old]))
+                    matches.append((new_reference, {unit}))
+                else:
+                    new_reference, used_units = group
+                    used_units.add(unit)
+                updates.append((old, new_reference))
                 count += 1
             if updates:
                 updates_by_file[file] = updates
