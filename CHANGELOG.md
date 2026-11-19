@@ -10,6 +10,19 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.20.4](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.20.3...mcp-server-v4.20.4) (2026-11-19)
+
+
+### Bug Fixes
+
+* **cloud:** bound long native DRC/ERC reads before signed session expiry ([#1817](https://github.com/oaslananka/kicad-mcp-pro/issues/1817)) ([00f020c](https://github.com/oaslananka/kicad-mcp-pro/commit/00f020c84dd71d5ce8afd8df84847fb6c09f5fa7))
+* **cloud:** clarify policy 1008 recovery without unnecessary re-pairing ([#1816](https://github.com/oaslananka/kicad-mcp-pro/issues/1816)) ([3b4f846](https://github.com/oaslananka/kicad-mcp-pro/commit/3b4f846d5d54aa93e4d0ef2bac67cc2c26ca9837))
+
+
+### Documentation
+
+* explain pcb_layout profile, project binding, and live PCB transactions ([#1815](https://github.com/oaslananka/kicad-mcp-pro/issues/1815)) ([24ff786](https://github.com/oaslananka/kicad-mcp-pro/commit/24ff786ff0da45155032609304586b2525f70443))
+
 ## [4.20.3](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.20.2...mcp-server-v4.20.3) (2026-11-18)
 
 
