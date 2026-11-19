@@ -597,6 +597,18 @@ def _restore_previously_enabled_background_connector(
         raise typer.Exit(code=4) from None
 
 
+def _call_with_owner_connector[**Args, Result](
+    fn: Callable[Args, Result], *args: Args.args, **kwargs: Args.kwargs
+) -> Result:
+    """Protect Cloud changes with the device owner's exclusive process mutex."""
+    try:
+        with owner_connector_instance():
+            return fn(*args, **kwargs)
+    except (CloudConnectorAlreadyRunningError, CloudConnectorLockUnavailableError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from None
+
+
 def _single_owner_cloud_remote[**Args, Result](
     fn: Callable[Args, Result],
 ) -> Callable[Args, Result]:
@@ -606,12 +618,7 @@ def _single_owner_cloud_remote[**Args, Result](
     def guarded(*args: Args.args, **kwargs: Args.kwargs) -> Result:
         token = _BACKGROUND_CONNECTOR_HANDOFF.set(None)
         try:
-            try:
-                with owner_connector_instance():
-                    return fn(*args, **kwargs)
-            except (CloudConnectorAlreadyRunningError, CloudConnectorLockUnavailableError) as exc:
-                typer.echo(str(exc), err=True)
-                raise typer.Exit(code=2) from None
+            return _call_with_owner_connector(fn, *args, **kwargs)
         finally:
             # Restore only after the foreground owner mutex is released.
             try:
