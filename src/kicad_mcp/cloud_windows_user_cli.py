@@ -392,6 +392,27 @@ def _cloud_project_state(project: WindowsRegisteredProject) -> str:
     )
 
 
+def _show_saved_native_write_preference(project: WindowsRegisteredProject) -> None:
+    """Show only saved owner consent, never infer the live session's authority."""
+    from kicad_mcp.cloud_windows_write_preference import owner_native_write_remembered
+
+    try:
+        remembered = owner_native_write_remembered(project.record_id, project.project_id)
+    except (OSError, ValueError):
+        typer.echo("Saved native editing preference: UNVERIFIED (no authority inferred).")
+        return
+    state = "ON" if remembered else "OFF"
+    typer.echo(
+        f"Saved native editing preference: {state} "
+        "(not proof of the active session's write authority)."
+    )
+    if not remembered:
+        typer.echo(
+            "For editing, explicitly start in an interactive owner terminal: "
+            "kicad-mcp-pro cloud remote --enable-native-write"
+        )
+
+
 def show_status() -> None:
     state = scheduler_state()
     run_state = task_run_state() if state == "Scheduled (connection unverified)" else None
@@ -419,6 +440,7 @@ def show_status() -> None:
         typer.echo(f"Device: {project.device_id}")
         typer.echo(f"Project: {selected.filename_stem} ({project.project_id})")
         typer.echo(f"Directory: {selected.directory}")
+        _show_saved_native_write_preference(project)
         cloud_state = _cloud_project_state(project)
         if cloud_state == "registered":
             typer.echo("Cloud project: Registered (check client permissions in Devices).")

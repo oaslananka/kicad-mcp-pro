@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from kicad_mcp import cloud_user_cli, cloud_windows_user_cli
+from kicad_mcp import cloud_user_cli, cloud_windows_user_cli, cloud_windows_write_preference
 from kicad_mcp.cloud_windows_enrollment import (
     WindowsEnrolledDevice,
     WindowsEnrollmentError,
@@ -114,6 +114,11 @@ def windows_cli(
     monkeypatch.setattr(cloud_windows_user_cli, "bind_owner_selected_project", bind)
     monkeypatch.setattr(cloud_windows_user_cli, "remember_selected_project", remember)
     monkeypatch.setattr(cloud_windows_user_cli, "selected_project", lambda: state["selected"])
+    monkeypatch.setattr(
+        cloud_windows_write_preference,
+        "owner_native_write_remembered",
+        lambda _record, _project: False,
+    )
     monkeypatch.setattr(
         cloud_windows_user_cli, "inspect_owner_selected_project", lambda _project: selected
     )
@@ -1197,3 +1202,51 @@ def test_repair_cannot_claim_success_after_new_pairing_if_local_switch_fails(
             stop_previous=lambda: events.append("stop-old") or True,
         )
     assert events == ["enroll", "browser-approval", "register", "bind", "stop-old"]
+
+
+@pytest.mark.parametrize("remembered", [True, False])
+def test_windows_status_native_write_preference_is_not_session_authorization(
+    windows_cli, monkeypatch: pytest.MonkeyPatch, remembered: bool
+) -> None:
+    _folder, _events, project, _selected = windows_cli
+    monkeypatch.setattr(cloud_windows_user_cli, "selected_project", lambda: project)
+
+    def read_preference(record: str, project_id: str) -> bool:
+        assert record == project.record_id
+        assert project_id == project.project_id
+        return remembered
+
+    monkeypatch.setattr(
+        cloud_windows_write_preference,
+        "owner_native_write_remembered",
+        read_preference,
+    )
+    result = CliRunner().invoke(app, ["cloud", "status"])
+    assert result.exit_code == 0, result.output
+    assert "Saved native editing preference: " + ("ON" if remembered else "OFF") in result.output
+    assert "not proof of the active session's write authority" in result.output
+    if not remembered:
+        assert "cloud remote --enable-native-write" in result.output
+
+
+def test_windows_status_write_preference_unverified_does_not_claim_authority(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _folder, _events, project, _selected = windows_cli
+    monkeypatch.setattr(cloud_windows_user_cli, "selected_project", lambda: project)
+
+    def fail_to_read(*_args: object) -> bool:
+        from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+        raise LocalWriteDeniedError("secret")
+
+    monkeypatch.setattr(
+        cloud_windows_write_preference,
+        "owner_native_write_remembered",
+        fail_to_read,
+    )
+    result = CliRunner().invoke(app, ["cloud", "status"])
+    assert result.exit_code == 0, result.output
+    assert "Saved native editing preference: UNVERIFIED" in result.output
+    assert "secret" not in result.output
+    assert "editing enabled" not in result.output.lower()
