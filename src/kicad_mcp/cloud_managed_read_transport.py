@@ -361,6 +361,53 @@ def _mcp_activity_tool(raw: str, expected_sequence: int) -> str | None:
     return None
 
 
+def _signed_activity_label(kind: object, raw: str, sequence: int) -> str:
+    """Only validated tool identifiers from signed MCP requests reach activity."""
+    if kind == _MCP_REQUEST_KIND:
+        name = _mcp_activity_tool(raw, sequence)
+        return "mcp " + name if name is not None else "mcp"
+    if kind == _WRITE_REQUEST_KIND:
+        return "write"
+    return "read"
+
+
+def _signed_frame_outcome(kind: object, result: dict[str, object]) -> str:
+    """A delivered MCP response can still represent a failed local tool."""
+    if kind != _MCP_REQUEST_KIND:
+        return "completed"
+    if result.get("ok") is False:
+        return "failed"
+    if result.get("method") == "call":
+        tool_result = result.get("result")
+        if isinstance(tool_result, dict) and tool_result.get("isError") is True:
+            return "failed"
+    return "completed"
+
+
+async def _dispatch_signed_operation(
+    kind: object,
+    socket: AuthenticatedReadSocket,
+    raw: str,
+    sequence: int,
+    dispatcher: LocalReadDispatch,
+    receipt: HandshakeReceipt,
+    on_activity: Callable[[str], None] | None,
+    allow_native_write: bool,
+    write_executor: Callable[[str, bytes, bool], dict[str, object]] | None,
+    mcp_service: GenericMcpDispatch | None,
+) -> dict[str, object]:
+    """Dispatch after the signed-frame kind check, preserving per-operation gates."""
+    if kind == _MCP_REQUEST_KIND:
+        if mcp_service is None:
+            raise CloudHandshakeDeniedError(_DENIED)
+        return await _serve_one_mcp_request(socket, mcp_service, raw, expected_sequence=sequence)
+    if kind == _WRITE_REQUEST_KIND:
+        return await _serve_authorized_write_request(
+            socket, raw, allow_native_write, write_executor, sequence, on_activity
+        )
+    return await _serve_one_authenticated_read(socket, dispatcher, receipt, sequence, raw)
+
+
 async def _serve_one_signed_frame(
     socket: AuthenticatedReadSocket,
     raw: str,
@@ -385,46 +432,29 @@ async def _serve_one_signed_frame(
     if kind not in {_WRITE_REQUEST_KIND, "connector.authorized_read", _MCP_REQUEST_KIND}:
         raise CloudHandshakeDeniedError(_DENIED)
     sequence = reads_served + 1
-    is_write = kind == _WRITE_REQUEST_KIND
-    is_mcp = kind == _MCP_REQUEST_KIND
-    if is_mcp:
-        name = _mcp_activity_tool(raw, sequence)
-        label = "mcp " + name if name is not None else "mcp"
-    elif is_write:
-        label = "write"
-    else:
-        label = "read"
+    label = _signed_activity_label(kind, raw, sequence)
     start = perf_counter()
     _report_activity(on_activity, f"Tool call {sequence}: {label} started")
     try:
-        if is_mcp:
-            if mcp_service is None:
-                raise CloudHandshakeDeniedError(_DENIED)
-            result = await _serve_one_mcp_request(
-                socket, mcp_service, raw, expected_sequence=sequence
-            )
-        elif is_write:
-            result = await _serve_authorized_write_request(
-                socket, raw, allow_native_write, write_executor, sequence, on_activity
-            )
-        else:
-            result = await _serve_one_authenticated_read(socket, dispatcher, receipt, sequence, raw)
+        result = await _dispatch_signed_operation(
+            kind,
+            socket,
+            raw,
+            sequence,
+            dispatcher,
+            receipt,
+            on_activity,
+            allow_native_write,
+            write_executor,
+            mcp_service,
+        )
     except Exception:
         _report_activity(on_activity, f"Tool call {sequence}: {label} failed")
         raise
     operation = result.get("operation")
     safe = operation if operation in {"project_summary", "run_drc", "pcb_move_footprint"} else label
     elapsed = round((perf_counter() - start) * 1000)
-    # Transport delivery may succeed while the acknowledged MCP tool reports
-    # isError=true (for example, a bounded local DRC/ERC timeout).
-    outcome = "completed"
-    if is_mcp:
-        if result.get("ok") is False:
-            outcome = "failed"
-        elif result.get("method") == "call":
-            tool_result = result.get("result")
-            if isinstance(tool_result, dict) and tool_result.get("isError") is True:
-                outcome = "failed"
+    outcome = _signed_frame_outcome(kind, result)
     _report_activity(on_activity, f"Tool call {sequence}: {safe} {outcome} ({elapsed} ms)")
     return 1
 
