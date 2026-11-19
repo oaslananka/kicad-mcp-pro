@@ -381,3 +381,30 @@ def test_full_validation_loop_fixer_exception_stops_with_current_action_plan() -
     assert result.iterations_used == 1
     assert "sch_add_missing_junctions raised junction repair failed" in result.text
     assert result.actions[0].agent_tool == "sch_add_missing_junctions"
+
+
+@pytest.mark.anyio
+async def test_loops_skip_auto_fixers_whose_tool_is_not_allowed() -> None:
+    """Fixers are only applied when their tool is enabled on the running server."""
+    called: list[str] = []
+    fixer = Fixer("sch_annotate", "Annotate symbols.", True, "tools.schematic:run_auto_annotate")
+    service = ProjectValidationLoopService(
+        evaluate_project_gate=lambda: [Outcome("Schematic", "FAIL", "unannotated")],
+        fixers_for_gate=lambda _name: [fixer],
+        resolve_callable=lambda _path: lambda: called.append("x") or "annotated",
+        tool_allowed=lambda name: name != "sch_annotate",
+    )
+
+    full = service.full_validation_loop(max_iterations=3, fix_tier="auto_only")
+    auto = await service.auto_fix_loop(
+        max_iterations=3, sample_guidance=_value_guidance, report_progress=_ignore_progress
+    )
+
+    assert called == []
+    assert "sch_annotate is not enabled" in full.text
+    assert "sch_annotate is not enabled" in auto.text
+    assert auto.actions[0].agent_tool == "sch_annotate"
+
+
+async def _value_guidance(_outcome: object) -> str:
+    return ""

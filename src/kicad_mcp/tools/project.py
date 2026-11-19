@@ -21,7 +21,7 @@ from ..discovery import (
 )
 from ..file_formats import upgrade_generated_file
 from ..ipc.runtime_probe import probe_project_runtime
-from ..operating_modes import OperatingMode, active_operating_mode
+from ..operating_modes import OperatingMode, active_operating_mode, is_tool_allowed_in_mode
 from ..path_safety import assert_within
 from ..pcb.live_edit_runtime import reset_live_edit_service
 from ..project.context import ProjectContextService
@@ -226,6 +226,23 @@ def _fixers_for_gate_for_reporting(gate_name: str) -> Sequence[FixerActionLike]:
     return cast(Sequence[FixerActionLike], fixers_for_gate(gate_name))
 
 
+def _tool_enabled_on_server(mcp: FastMCP, tool_name: str) -> bool:
+    """Apply the server's own tool filters to a fixer's tool name.
+
+    Validation loops call auto fixers directly instead of through MCP, so they
+    must check the same three things the transport does: the profile allowlist,
+    the execution surface, and the operating mode.
+    """
+    allowed = getattr(mcp, "allowed_tool_names", None)
+    if allowed is not None and tool_name not in allowed:
+        return False
+    execution = getattr(mcp, "execution_tool_names", None)
+    if execution is not None and tool_name not in execution:
+        return False
+    mode = getattr(mcp, "operating_mode", None) or active_operating_mode()
+    return is_tool_allowed_in_mode(tool_name, mode)
+
+
 def register(mcp: FastMCP) -> None:
     """Register project management tools."""
 
@@ -289,6 +306,7 @@ def register(mcp: FastMCP) -> None:
         evaluate_project_gate=_evaluate_project_gate_for_validation_loops,
         fixers_for_gate=lambda gate_name: fixers_for_gate(gate_name),
         resolve_callable=project_validation_loops.resolve_fixer_callable,
+        tool_allowed=lambda tool_name: _tool_enabled_on_server(mcp, tool_name),
     )
     project_validation_loops.register(
         mcp,

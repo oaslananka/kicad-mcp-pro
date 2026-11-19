@@ -54,6 +54,11 @@ class AutoFixLoopPayload(BaseModel):
 SampleGuidance = Callable[[GateOutcomeLike], Awaitable[str]]
 ProgressReporter = Callable[[float, float, str], Awaitable[None]]
 CallableResolver = Callable[[str], Callable[[], object] | None]
+ToolAllowed = Callable[[str], bool]
+
+
+def _allow_every_tool(_tool_name: str) -> bool:
+    return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,10 +68,33 @@ class ProjectValidationLoopService:
     evaluate_project_gate: Callable[[], Sequence[GateOutcomeLike]]
     fixers_for_gate: Callable[[str], Sequence[FixerActionLike]]
     resolve_callable: CallableResolver
+    #: Whether the running server exposes a tool (profile, execution surface and
+    #: operating mode). Auto fixers call their implementation directly, so the
+    #: loop must apply the same filter the MCP transport would.
+    tool_allowed: ToolAllowed = _allow_every_tool
 
-    @staticmethod
-    def _auto_fixer(fixers: Sequence[FixerActionLike]) -> FixerActionLike | None:
-        return next((fixer for fixer in fixers if fixer.auto_applicable), None)
+    def _auto_fixer(self, fixers: Sequence[FixerActionLike]) -> FixerActionLike | None:
+        return next(
+            (fixer for fixer in fixers if fixer.auto_applicable and self.tool_allowed(fixer.tool)),
+            None,
+        )
+
+    def _blocked_auto_fixers(self, fixers: Sequence[FixerActionLike]) -> list[str]:
+        """Auto-applicable fixer tools skipped because the server does not expose them."""
+        return [
+            fixer.tool
+            for fixer in fixers
+            if fixer.auto_applicable and not self.tool_allowed(fixer.tool)
+        ]
+
+    def _note_blocked(
+        self, gate: str, fixers: Sequence[FixerActionLike], log: list[str], prefix: str
+    ) -> None:
+        for tool in self._blocked_auto_fixers(fixers):
+            log.append(
+                f"{prefix}Skipped auto-fix {tool} for '{gate}': {tool} is not enabled "
+                "on this server (profile or operating mode)."
+            )
 
     @staticmethod
     def _agent_fixer(fixers: Sequence[FixerActionLike]) -> FixerActionLike | None:
@@ -83,7 +111,9 @@ class ProjectValidationLoopService:
         for outcome in outcomes:
             if outcome.status == "PASS":
                 continue
-            auto_fixer = self._auto_fixer(list(self.fixers_for_gate(outcome.name)))
+            fixers = list(self.fixers_for_gate(outcome.name))
+            self._note_blocked(outcome.name, fixers, log, f"[iter {iteration}] ")
+            auto_fixer = self._auto_fixer(fixers)
             if auto_fixer is None:
                 continue
             fn = self.resolve_callable(auto_fixer.callable_import)
@@ -113,7 +143,9 @@ class ProjectValidationLoopService:
             if outcome.status == "PASS":
                 continue
             fixers = list(self.fixers_for_gate(outcome.name))
-            auto_fixer = self._auto_fixer(fixers)
+            auto_fixer = self._auto_fixer(fixers) or next(
+                (fixer for fixer in fixers if fixer.auto_applicable), None
+            )
             agent_fixer = self._agent_fixer(fixers)
             guidance = await sample_guidance(outcome)
             actions.append(
@@ -219,10 +251,13 @@ class ProjectValidationLoopService:
         self,
         blocker: GateOutcomeLike,
         fix_tier: Literal["auto_only", "suggest"],
+        log: list[str],
     ) -> tuple[FixerActionLike, Callable[[], object]] | None:
         if fix_tier == "suggest":
             return None
-        auto_fixer = self._auto_fixer(list(self.fixers_for_gate(blocker.name)))
+        fixers = list(self.fixers_for_gate(blocker.name))
+        self._note_blocked(blocker.name, fixers, log, "")
+        auto_fixer = self._auto_fixer(fixers)
         if auto_fixer is None:
             return None
         fn = self.resolve_callable(auto_fixer.callable_import)
@@ -243,7 +278,7 @@ class ProjectValidationLoopService:
             if all(outcome.status == "PASS" for outcome in outcomes):
                 break
             blocker = next(outcome for outcome in outcomes if outcome.status != "PASS")
-            resolved = self._resolve_full_auto_fix(blocker, fix_tier)
+            resolved = self._resolve_full_auto_fix(blocker, fix_tier, fix_log)
             if resolved is None:
                 break
             auto_fixer, fn = resolved
@@ -271,7 +306,10 @@ class ProjectValidationLoopService:
                 continue
             fixers = list(self.fixers_for_gate(outcome.name))
             agent_fixer = self._agent_fixer(fixers)
-            auto_fixer = self._auto_fixer(fixers)
+            # A skipped (not enabled) auto fixer is still the action to report.
+            auto_fixer = self._auto_fixer(fixers) or next(
+                (fixer for fixer in fixers if fixer.auto_applicable), None
+            )
             chosen = agent_fixer or auto_fixer
             actions.append(
                 AutoFixAction(
