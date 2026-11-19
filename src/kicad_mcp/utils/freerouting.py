@@ -19,6 +19,18 @@ from ..errors import ManualStepRequiredError
 logger = structlog.get_logger(__name__)
 
 
+#: Settings passed on every run. Freerouting 2.x sends usage analytics and
+#: telemetry by default and can start a GUI, a REST API server and an MCP
+#: server; a headless batch route of a board file needs none of them.
+FREEROUTING_PRIVACY_ARGS: tuple[str, ...] = (
+    "--usage_and_diagnostic_data.disable_analytics=true",
+    "--profile.allow_telemetry=false",
+    "--gui.enabled=false",
+    "--api_server.enabled=false",
+    "--mcp_server.enabled=false",
+)
+
+
 @dataclass(frozen=True)
 class FreeRoutingResult:
     """Normalized outcome of a FreeRouting autoroute run."""
@@ -232,6 +244,7 @@ class FreeRoutingRunner:
             "-mt",
             str(thread_count),
             f"--router.max_passes={max_passes}",
+            *FREEROUTING_PRIVACY_ARGS,
         ]
         if ignore_arg:
             command.extend(["-inc", ignore_arg])
@@ -268,6 +281,7 @@ class FreeRoutingRunner:
             "-mt",
             str(thread_count),
             f"--router.max_passes={max_passes}",
+            *FREEROUTING_PRIVACY_ARGS,
         ]
         if ignore_arg:
             command.extend(["-inc", ignore_arg])
