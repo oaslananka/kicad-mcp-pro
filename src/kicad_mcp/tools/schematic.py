@@ -3400,6 +3400,111 @@ def project_schematic_files() -> list[Path]:
     return candidates or [active]
 
 
+def _resolve_symbol_schematic_file(reference: str) -> Path:
+    """Resolve a unique placed reference within the active project hierarchy.
+
+    Never guess which file to mutate when a reference occurs in distinct sheets.
+    Reused multi-unit symbols in the *same* file remain a single edit target.
+    """
+    active = _get_schematic_file().resolve()
+    root = _hierarchy_root_file() or active
+    project_root = (get_config().project_dir or root.parent).resolve()
+    candidates = [root, active, *(path for _name, path in _iter_child_sheet_paths(root))]
+    # Retain the existing sibling-sheet discovery as a fallback if the native
+    # hierarchy reader is not available; only accept linked project sheets.
+    candidates.extend(project_schematic_files())
+    found: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        path = candidate.resolve()
+        if path in seen or not path.is_file():
+            continue
+        seen.add(path)
+        if path != root.resolve() and path != active:
+            if find_instance_path(root, path) is None:
+                continue
+        resolve_under(project_root, path)
+        content = path.read_text(encoding="utf-8")
+        if _find_placed_symbol_blocks(content, reference):
+            found.append(path)
+    if len(found) > 1:
+        names = ", ".join(path.name for path in sorted(found))
+        raise ValueError(
+            f"Reference '{reference}' is ambiguous across schematic sheets: {names}. "
+            "Resolve duplicate references before editing."
+        )
+    return found[0] if found else active
+
+
+def _transactional_write_for_symbol(
+    reference: str, mutator: Callable[[str], str], *, allow_node_loss: bool = False
+) -> str:
+    """Route an existing-symbol mutation to its actual schematic file."""
+    target = _resolve_symbol_schematic_file(reference)
+    return transactional_write(mutator, target, allow_node_loss=allow_node_loss)
+
+
+def _hierarchy_annotation_files() -> list[Path]:
+    """Return project root and reachable child files, excluding unrelated siblings."""
+    root = _hierarchy_root_file() or _get_schematic_file()
+    cfg = get_config()
+    project_root = (cfg.project_dir or root.parent).resolve()
+    paths = [root, *(file for _name, file in _iter_child_sheet_paths(root))]
+    paths.extend(project_schematic_files())
+    ordered: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in paths:
+        resolved = candidate.resolve()
+        if resolved in seen or not resolved.is_file():
+            continue
+        if resolved != root.resolve() and find_instance_path(root, resolved) is None:
+            continue
+        resolve_under(project_root, resolved)
+        seen.add(resolved)
+        ordered.append(resolved)
+    return ordered
+
+
+def _replace_schematic_with(value: str) -> Callable[[str], str]:
+    """Capture a prevalidated schematic replacement for a transactional writer."""
+
+    def replace(_original: str) -> str:
+        return value
+
+    return replace
+
+
+def _commit_project_annotation(
+    planned: dict[Path, list[tuple[str, str]]],
+) -> None:
+    """Preflight every sheet, write via existing atomic writer, roll back on failure."""
+    with _SCHEMATIC_WRITE_LOCK:
+        originals: dict[Path, str] = {}
+        replacements: dict[Path, str] = {}
+        for path, updates in planned.items():
+            original = path.read_text(encoding="utf-8")
+            mutated = rewrite_placed_symbol_references(original, updates, _project_name())
+            _guard_schematic_structural_loss(path, original, mutated)
+            mutated = _normalize_schematic_wire_connectivity(mutated)
+            _validate_schematic_text(mutated)
+            originals[path] = original
+            replacements[path] = mutated
+
+        committed: list[Path] = []
+        try:
+            for path, replacement in replacements.items():
+                if replacement == originals[path]:
+                    continue
+                _transactional_write_to_schematic_file(path, _replace_schematic_with(replacement))
+                committed.append(path)
+        except Exception:
+            for path in reversed(committed):
+                _transactional_write_to_schematic_file(
+                    path, _replace_schematic_with(originals[path]), allow_node_loss=True
+                )
+            raise
+
+
 def _sort_symbols_for_annotation(symbols: list[dict[str, Any]], order: str) -> None:
     """Order symbols in place for sequential reference annotation.
 
@@ -7036,7 +7141,11 @@ def _update_symbol_property_text_fallback(reference: str, field: str, value: str
             updated = updated[:start] + new_block + updated[end:]
         return updated
 
-    _transactional_write_to_schematic(mutator)
+    target = _resolve_symbol_schematic_file(payload.reference)
+    if target == _get_schematic_file().resolve():
+        _transactional_write_to_schematic(mutator)
+    else:
+        _transactional_write_to_schematic_file(target, mutator)
     return f"Updated {payload.reference}.{payload.field} on {updated_count} instance(s)."
 
 
@@ -7100,7 +7209,11 @@ def _set_symbol_dnp_text_fallback(
             updated = updated[:start] + new_block + updated[end:]
         return updated
 
-    _transactional_write_to_schematic(mutator)
+    target = _resolve_symbol_schematic_file(reference)
+    if target == _get_schematic_file().resolve():
+        _transactional_write_to_schematic(mutator)
+    else:
+        _transactional_write_to_schematic_file(target, mutator)
     state = "DNP" if enabled else "Populate"
     return f"Set {reference} native population state to {state} on {updated_count} instance(s)."
 
@@ -7719,6 +7832,7 @@ def _register_authoring(mcp: FastMCP) -> None:
         transactional_write=transactional_write,
         find_placed_symbol_block=_find_placed_symbol_block,
         shift_symbol_block=_shift_symbol_block,
+        transactional_write_for_reference=_transactional_write_for_symbol,
     )
     schematic_symbol_mutation.register(
         mcp,
@@ -7748,6 +7862,7 @@ def _register_authoring(mcp: FastMCP) -> None:
         snap_notice=_snap_notice,
         normalize_label_justify=_normalize_label_justify,
         set_label_justify=_set_label_justify,
+        transactional_write_for_reference=_transactional_write_for_symbol,
     )
     schematic_destructive_edit.register(
         mcp,
@@ -7890,6 +8005,8 @@ def _register_authoring(mcp: FastMCP) -> None:
         sort_symbols_for_annotation=_sort_symbols_for_annotation,
         instance_path_for=_symbol_instance_path,
         project_name=_project_name,
+        project_schematic_files=_hierarchy_annotation_files,
+        write_project_annotation=_commit_project_annotation,
     )
     schematic_lifecycle_authoring.register(
         mcp,

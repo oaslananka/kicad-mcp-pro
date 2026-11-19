@@ -36,6 +36,8 @@ class SchematicLifecycleAuthoringService:
     sort_symbols_for_annotation: Callable[[list[dict[str, Any]], str], None]
     instance_path_for: InstancePathFor = no_instance_path
     project_name: Callable[[], str] = lambda: ""
+    project_schematic_files: Callable[[], list[Path]] | None = None
+    write_project_annotation: Callable[[dict[Path, list[tuple[str, str]]]], None] | None = None
 
     def add_jumper(
         self,
@@ -74,6 +76,8 @@ class SchematicLifecycleAuthoringService:
     def annotate(self, start_number: int = 1, order: str = "alpha") -> str:
         """Renumber schematic references sequentially."""
         payload = AnnotateInput(start_number=start_number, order=cast(AnnotationOrder, order))
+        if self.project_schematic_files is not None and self.write_project_annotation is not None:
+            return self._annotate_project(payload)
         data = self.parse_schematic(self.active_schematic_file())
         symbols = list(data["symbols"])
         self.sort_symbols_for_annotation(symbols, payload.order)
@@ -93,6 +97,40 @@ class SchematicLifecycleAuthoringService:
 
         self.transactional_write(mutator)
         return f"Annotated {len(updates)} symbol(s).\n{self.reload_schematic()}"
+
+    def _annotate_project(self, payload: AnnotateInput) -> str:
+        """Allocate references across real sheets before writing any of them."""
+        files = self.project_schematic_files
+        write = self.write_project_annotation
+        if files is None or write is None:
+            raise RuntimeError("Project annotation dependencies are unavailable.")
+        counters: dict[str, int] = {}
+        updates_by_file: dict[Path, list[tuple[str, str]]] = {}
+        count = 0
+        for file in files():
+            symbols = list(self.parse_schematic(file)["symbols"])
+            self.sort_symbols_for_annotation(symbols, payload.order)
+            assigned: dict[str, str] = {}
+            updates: list[tuple[str, str]] = []
+            for symbol in symbols:
+                old = str(symbol["reference"])
+                if not old or old.startswith("#"):
+                    continue
+                if old not in assigned:
+                    prefix_match = re.match(r"([A-Za-z]+)", old)
+                    prefix = prefix_match.group(1) if prefix_match else "U"
+                    counters.setdefault(prefix, payload.start_number)
+                    assigned[old] = f"{prefix}{counters[prefix]}"
+                    counters[prefix] += 1
+                updates.append((old, assigned[old]))
+                count += 1
+            if updates:
+                updates_by_file[file] = updates
+        write(updates_by_file)
+        summary = f"Annotated {count} symbol(s)."
+        if len(updates_by_file) > 1:
+            summary += f" Covered {len(updates_by_file)} schematic sheets."
+        return f"{summary}\n{self.reload_schematic()}"
 
     def reload(self) -> str:
         """Reload the active schematic through the injected runtime helper."""

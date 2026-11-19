@@ -50,6 +50,7 @@ class SchematicSymbolMutationService:
     transactional_write: TransactionalWrite
     find_placed_symbol_block: FindPlacedSymbolBlock
     shift_symbol_block: ShiftSymbolBlock
+    transactional_write_for_reference: Callable[..., str] | None = None
 
     def update_properties(self, reference: str, field: str, value: str) -> str:
         """Update one symbol property and reload the schematic."""
@@ -85,7 +86,10 @@ class SchematicSymbolMutationService:
             return current[:start] + shifted + current[end:]
 
         try:
-            self.transactional_write(mutator)
+            if self.transactional_write_for_reference is None:
+                self.transactional_write(mutator)
+            else:
+                self.transactional_write_for_reference(reference, mutator)
         except ValueError as exc:
             return str(exc)
 

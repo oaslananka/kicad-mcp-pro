@@ -126,6 +126,7 @@ class SchematicDestructiveEditService:
     snap_notice: SnapNotice
     normalize_label_justify: NormalizeLabelJustify
     set_label_justify: SetLabelJustify
+    transactional_write_for_reference: Callable[..., str] | None = None
 
     def _strip_junctions_without_wire_ends(self, text: str) -> tuple[str, int]:
         """Drop junction dots that no wire terminates on -- see the module function."""
@@ -280,7 +281,10 @@ class SchematicDestructiveEditService:
             return new_text
 
         try:
-            self.transactional_write(mutator, allow_node_loss=True)
+            if self.transactional_write_for_reference is None:
+                self.transactional_write(mutator, allow_node_loss=True)
+            else:
+                self.transactional_write_for_reference(reference, mutator, allow_node_loss=True)
         except ValueError as exc:
             return str(exc)
 
