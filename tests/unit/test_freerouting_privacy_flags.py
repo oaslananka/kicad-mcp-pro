@@ -9,8 +9,8 @@ arguments, the same form the runner already uses for ``--router.max_passes``.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -38,10 +38,10 @@ def test_every_freerouting_command_disables_analytics_telemetry_gui_and_servers(
     jar_path.write_text("jar", encoding="utf-8")
     observed: list[list[str]] = []
 
-    def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
         observed.append(cmd)
         ses_path.write_text("ses", encoding="utf-8")
-        return subprocess.CompletedProcess(cmd, 0, stdout="100% routed", stderr="")
+        return SimpleNamespace(args=cmd, returncode=0, stdout="100% routed", stderr="")
 
     monkeypatch.setattr("kicad_mcp.utils.freerouting.subprocess.run", fake_run)
     monkeypatch.setattr("kicad_mcp.utils.freerouting._docker_available", lambda _: use_docker)

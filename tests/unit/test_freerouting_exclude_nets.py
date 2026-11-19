@@ -9,8 +9,8 @@ the board as obstacles with no net to route.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -81,11 +81,11 @@ def test_excluded_nets_are_removed_from_the_routed_dsn_not_passed_as_classes(
     observed: list[list[str]] = []
     routed_text: list[str] = []
 
-    def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
         observed.append(cmd)
         routed_text.append(_routed_input(cmd, use_docker).read_text(encoding="utf-8"))
         ses_path.write_text("ses", encoding="utf-8")
-        return subprocess.CompletedProcess(cmd, 0, stdout="100% routed", stderr="")
+        return SimpleNamespace(args=cmd, returncode=0, stdout="100% routed", stderr="")
 
     monkeypatch.setattr("kicad_mcp.utils.freerouting.subprocess.run", fake_run)
     monkeypatch.setattr("kicad_mcp.utils.freerouting._docker_available", lambda _: use_docker)
@@ -127,10 +127,10 @@ def test_without_excluded_nets_the_exported_dsn_is_routed_directly(
     jar_path.write_text("jar", encoding="utf-8")
     observed: list[list[str]] = []
 
-    def fake_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(cmd: list[str], **_kwargs: object) -> SimpleNamespace:
         observed.append(cmd)
         ses_path.write_text("ses", encoding="utf-8")
-        return subprocess.CompletedProcess(cmd, 0, stdout="100% routed", stderr="")
+        return SimpleNamespace(args=cmd, returncode=0, stdout="100% routed", stderr="")
 
     monkeypatch.setattr("kicad_mcp.utils.freerouting.subprocess.run", fake_run)
 
