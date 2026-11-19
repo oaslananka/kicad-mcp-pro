@@ -10,6 +10,16 @@ inspect -> plan -> modify -> preview -> ERC -> DRC -> DFM -> export -> summarize
 
 Start read-only. Move to write tools only after the agent has explained the plan and the operator has approved the intended edits.
 
+## Bind the active project first
+
+Every workflow operates on one active project per server process. Bind it before other calls:
+
+1. `kicad_set_project(project_dir, pcb_file, sch_file, output_dir)` — set the active KiCad project directory and its file paths.
+2. `kicad_get_project_info()` — confirm the resolved paths (`kicad_set_project` returns the binding, but re-read it to verify).
+3. `project_get_next_action()` — read the next high-priority action derived from the current project gate and follow it before improvising.
+
+Project selection is process-wide, not per MCP session. A shared Streamable HTTP server pins the project at the first tool call and rejects `kicad_set_project` and `kicad_create_new_project` afterwards, so bind the project before connecting HTTP clients or run a dedicated `stdio` process per project. See [Configuration](configuration.md) for the HTTP binding rules.
+
 ## Workflow groups
 
 | Workflow | Start with | Write or gated tools | Evidence to collect |
@@ -46,6 +56,12 @@ Before using write tools, the agent should state:
 - what rollback or review evidence will be available.
 
 After using write tools, the agent should collect structured output, changed files, visual evidence, and ERC/DRC/DFM results before making further changes.
+
+### PCB transaction scoping
+
+`pcb_begin_commit`, `pcb_push_commit`, and `pcb_drop_commit` group live-board mutations into one native-live transaction. Only reviewed operations participate in an active transaction; the router keeps a fixed allowlist and each participating operation must supply a postcondition verifier.
+
+`pcb_add_tracks_bulk` is **not** in that allowlist. While a transaction is open, calling it is refused with: *"pcb_add_tracks_bulk does not participate in the active native-live transaction. Commit or discard the transaction before using this operation."* Bulk track additions therefore cannot be staged inside a commit group. Either add tracks one at a time with `pcb_add_track` (which does participate), or commit or drop the current transaction before running the bulk call. On an IPC failure the session state becomes ambiguous and further transactions are blocked until the active board is reconciled, so treat a transaction as a single long-running unit rather than interleaving unrelated tool calls.
 
 ## Common failure states
 

@@ -76,6 +76,18 @@ when no explicit mode is supplied. `kicad_get_server_info` reports the active mo
 the default mode, and structured per-tool mode availability so clients can disable
 features before invoking blocked tools.
 
+### Profile and mode together
+
+`KICAD_MCP_PROFILE` selects the profile (`--profile` on the CLI); `KICAD_MCP_OPERATING_MODE`
+selects the mode. They are independent gates applied in that order: the profile narrows the
+registered categories, then the mode blocks calls above the active risk level. A profile that
+includes write categories still executes nothing while the mode stays at the `readonly` default.
+Pair them deliberately — for example `KICAD_MCP_PROFILE=pcb_layout` with
+`KICAD_MCP_OPERATING_MODE=experimental` for layout and routing work, or `build` with `write` for
+bounded edits. An unrecognized profile name fails closed to `default`/readonly rather than
+exposing the complete catalog. See [Progressive-Disclosure Profiles](agents/progressive-disclosure.md)
+and [Toolset Profiles](agents/toolsets.md) for the profile names and their paired modes.
+
 ## CLI Diagnostics
 
 ```bash
@@ -140,6 +152,26 @@ KiCad IPC/API version, live PCB and schematic context flags, and a
 unavailable, live editing tools are hidden from MCP tool discovery while
 file-backed read, DRC, ERC, and export operations remain available when their
 CLI/project prerequisites are satisfied.
+
+### Live-board versus file-backed validation
+
+Two validation paths exist and they do not have the same capabilities:
+
+- **File-backed** operations parse the `.kicad_pcb`, `.kicad_sch`, and project
+  files on disk and run through `kicad-cli` where supported. DRC, ERC, BOM,
+  netlist, board statistics, and exports work without a running KiCad, so they
+  stay available in headless and CI contexts (reported as `fileBackedDrc`,
+  `fileBackedErc`, and `fileBackedExports`).
+- **Live-board** operations act on the board open in a running KiCad editor over
+  IPC. They read and mutate the in-memory board, so they can see unsaved edits
+  and can apply changes transactionally (reported as `livePcbRead`/`livePcbWrite`
+  and `liveSchematicRead`/`liveSchematicWrite`).
+
+Choose the path the task actually needs. File-backed results describe the saved
+project and are the evidence to record for review; live-board results reflect
+whatever the editor currently holds, including unsaved work. When IPC is down,
+fall back to file-backed checks and report that live validation was unavailable
+instead of assuming a live result.
 
 For external KiCad plugin launchers, `KICAD_API_SOCKET` and `KICAD_API_TOKEN`
 are accepted alongside the `KICAD_MCP_*` equivalents. Explicit IPC endpoints
