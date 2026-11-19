@@ -28,6 +28,7 @@ from kicad_mcp.cloud_generic_mcp_transport import (
     GenericProjectMcpService,
     _owner_project_files,
 )
+from kicad_mcp.cloud_managed_read_transport import _serve_one_mcp_request
 from kicad_mcp.cloud_outbound_handshake import HandshakeReceipt
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
 
@@ -703,3 +704,139 @@ async def test_generic_catalog_exact_name_lookup_respects_registered_local_metad
     assert [item["name"] for item in result["tools"]] == ["kicad_get_version"]
     requested["toolName"] = "sch_add_symbol"
     assert (await service.dispatch(requested))["tools"] == []
+
+
+@pytest.mark.parametrize("name", ["run_drc", "run_erc"])
+@pytest.mark.asyncio
+async def test_stalled_read_returns_bounded_error_and_preserves_signed_session(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    """A stalled first read must not consume the device pairing or block later reads."""
+    import asyncio
+
+    import kicad_mcp.cloud_generic_mcp_transport as transport
+
+    project = project_fixture(tmp_path)
+    status = {"calls": 0, "cancelled": 0, "closed": 0, "granted": True}
+    monkeypatch.setattr(transport, "_READ_ONLY_MCP_CALL_BUDGET_SECONDS", 0.02)
+
+    class Worker:
+        async def call_tool(self, tool, arguments, **_kwargs: object):
+            if tool == "kicad_set_project":
+                return SimpleNamespace(isError=False, content=[])
+            assert tool == name
+            status["calls"] += 1
+            if status["calls"] == 1:
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    status["cancelled"] += 1
+                    raise
+            return SimpleNamespace(
+                model_dump=lambda **_: {
+                    "isError": False,
+                    "content": [{"type": "text", "text": "completed"}],
+                }
+            )
+
+        async def list_tools(self):
+            return SimpleNamespace(tools=[Tool(name=name, inputSchema={"type": "object"})])
+
+    @asynccontextmanager
+    async def worker(folder, *, profile, operating_mode):
+        assert folder == tmp_path
+        assert profile == "expert"
+        assert operating_mode == "readonly"
+        try:
+            yield Worker()
+        finally:
+            status["closed"] += 1
+
+    monkeypatch.setattr(transport, "project_stdio_worker", worker)
+    service = GenericProjectMcpService(
+        receipt=HandshakeReceipt(device_id=DEVICE, session_id=SESSION),
+        local_project=lambda _: project,
+        current_authorization=lambda: status["granted"],
+    )
+    sent: list[dict[str, object]] = []
+
+    class Socket:
+        async def send(self, value: str) -> None:
+            sent.append(json.loads(value))
+
+        async def recv(self) -> str:
+            return json.dumps(
+                {
+                    "kind": "connector.mcp_ack",
+                    "version": 1,
+                    "sequence": 1,
+                    "requestId": REQ,
+                }
+            )
+
+    request = json.dumps(
+        {
+            "kind": "connector.mcp_request",
+            "version": 1,
+            "sequence": 1,
+            "request": frame("call", name=name, args="{}"),
+        }
+    )
+    first = await asyncio.wait_for(
+        _serve_one_mcp_request(Socket(), service, request, expected_sequence=1),
+        timeout=0.3,
+    )
+    assert sent[0]["kind"] == "connector.mcp_result"
+    assert sent[0]["result"]["requestId"] == REQ
+    assert first["ok"] is True
+    assert first["result"]["isError"] is True
+    assert first["result"]["structuredContent"]["reason"] == "local_mcp_read_timeout"
+    assert "re-pair" in first["result"]["content"][0]["text"]
+    assert status == {"calls": 1, "cancelled": 1, "closed": 1, "granted": True}
+
+    second = await service.dispatch(frame("call", name=name, args="{}", request_id=OTHER_REQ))
+    assert second["ok"] is True
+    assert second["result"]["isError"] is False
+    assert status["calls"] == 2
+    assert status["closed"] == 2
+
+
+@pytest.mark.asyncio
+async def test_stalled_read_never_reports_recovery_after_grant_revoked(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    import kicad_mcp.cloud_generic_mcp_transport as transport
+
+    project = project_fixture(tmp_path)
+    status = {"granted": True}
+    monkeypatch.setattr(transport, "_READ_ONLY_MCP_CALL_BUDGET_SECONDS", 0.02)
+
+    class Worker:
+        async def call_tool(self, name, arguments, **_kwargs: object):
+            if name == "kicad_set_project":
+                return SimpleNamespace(isError=False, content=[])
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                status["granted"] = False
+                raise
+
+        async def list_tools(self):
+            return SimpleNamespace(tools=[Tool(name="run_drc", inputSchema={"type": "object"})])
+
+    @asynccontextmanager
+    async def worker(folder, *, profile, operating_mode):
+        yield Worker()
+
+    monkeypatch.setattr(transport, "project_stdio_worker", worker)
+    service = GenericProjectMcpService(
+        receipt=HandshakeReceipt(device_id=DEVICE, session_id=SESSION),
+        local_project=lambda _: project,
+        current_authorization=lambda: status["granted"],
+    )
+    with pytest.raises(GenericMcpTransportError, match="mcp_bridge_request_denied"):
+        await asyncio.wait_for(
+            service.dispatch(frame("call", name="run_drc", args="{}")), timeout=0.3
+        )
