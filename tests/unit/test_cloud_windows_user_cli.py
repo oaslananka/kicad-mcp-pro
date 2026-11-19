@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from typer.testing import CliRunner
@@ -18,6 +19,19 @@ from kicad_mcp.cloud_windows_local_selection import WindowsLocalProjectSelection
 from kicad_mcp.server import app
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Native Windows owner session only")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_test_connector_mutex(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep unit CLI invocations separate from the real owner Cloud session."""
+    from kicad_mcp import cloud_windows_single_instance
+
+    monkeypatch.setattr(
+        cloud_windows_single_instance,
+        "_MUTEX_NAME",
+        rf"Local\KiCadMcpProUnitTest_{uuid4().hex}",
+    )
+
 
 ORIGIN = "https://kicad-mcp-pro.oaslananka.dev"
 

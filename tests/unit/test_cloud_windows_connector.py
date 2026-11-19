@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -23,6 +24,18 @@ from kicad_mcp.cloud_outbound_handshake import HandshakeReceipt
 from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
 from kicad_mcp.cloud_windows_enrollment import WindowsRegisteredProject
 from kicad_mcp.cloud_windows_local_selection import WindowsLocalProjectSelection
+
+
+@pytest.fixture(autouse=True)
+def _isolate_test_connector_mutex(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unit tests use their own mutex, never the owner's running Connector."""
+    from kicad_mcp import cloud_windows_single_instance
+
+    monkeypatch.setattr(
+        cloud_windows_single_instance,
+        "_MUTEX_NAME",
+        rf"Local\KiCadMcpProUnitTest_{uuid4().hex}",
+    )
 
 
 @pytest.fixture

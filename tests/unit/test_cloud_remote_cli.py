@@ -6,6 +6,7 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from uuid import uuid4
 
 import pytest
 import typer
@@ -14,6 +15,18 @@ from typer.testing import CliRunner
 from kicad_mcp import cloud_user_cli, cloud_windows_connector, cloud_windows_user_cli, server
 
 _REAL_SETUP_WINDOWS = cloud_windows_user_cli.setup_windows
+
+
+@pytest.fixture(autouse=True)
+def _isolate_test_connector_mutex(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unit tests use their own mutex, never the owner's running Connector."""
+    from kicad_mcp import cloud_windows_single_instance
+
+    monkeypatch.setattr(
+        cloud_windows_single_instance,
+        "_MUTEX_NAME",
+        rf"Local\KiCadMcpProUnitTest_{uuid4().hex}",
+    )
 
 
 @pytest.fixture
