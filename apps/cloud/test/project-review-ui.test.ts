@@ -132,6 +132,7 @@ test("PCB editor verification does not conflate live IPC or read calls with writ
   assert.equal(h.calls[1]?.name,"local_mcp_catalog");
   assert.equal(h.calls[1]?.arguments.tool_name,"pcb_move_footprint");
   assert.match(h.nodes["editor-status"].textContent,/does not authorize editing/);
+  assert.match(h.nodes["editor-status"].textContent,/linked project identity is unverified/);
   h.setRequest(async(call)=>call.name==="local_mcp_call"
     ?{structuredContent:{success:true,local_result:{isError:false,
       structuredContent:{kicad:{ipcAvailable:true,livePcbContext:true}}}}}
@@ -142,6 +143,7 @@ test("PCB editor verification does not conflate live IPC or read calls with writ
   h.app.ontoolresult?.(h.project("not_advertised"));
   await h.nodes["check-editor"].click?.();
   assert.match(h.nodes["editor-status"].textContent,/native editing is not advertised/);
+  assert.match(h.nodes["editor-status"].textContent,/linked project identity is unverified/);
   assert.equal(h.calls.filter(call=>call.name==="local_mcp_catalog").length,2);
   h.setRequest(async()=>{throw Error("secret/private-path");});
   await h.nodes["check-editor"].click?.();

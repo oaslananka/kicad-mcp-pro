@@ -101,7 +101,7 @@ checkEditor.addEventListener("click",async()=>{
       return;
     }
     if(!nativeWriteAdvertised){
-      editorStatus.textContent="PCB Editor IPC reports an open board, but native editing is not advertised by this Connector session. Use the owner terminal to enable native write.";
+      editorStatus.textContent="PCB Editor IPC reports an open board, but the linked project identity is unverified and native editing is not advertised by this Connector session. Open the approved board and enable native write in the owner terminal.";
       return;
     }
     const response=await app.callServerTool({
@@ -122,7 +122,7 @@ checkEditor.addEventListener("click",async()=>{
       "name" in tool&&tool.name==="pcb_move_footprint"&&
       "accessMode" in tool&&tool.accessMode==="write");
     editorStatus.textContent=move
-      ?"PCB move tool is listed. This does not authorize editing or prove save/reopen."
+      ?"PCB move tool is listed, but the linked project identity is unverified. This does not authorize editing or prove save/reopen."
       :"PCB move tool is not listed. Confirm the linked board in KiCad PCB Editor, then check again.";
   }catch{
     if(projectGeneration===generation&&projectId===requestedProject)
