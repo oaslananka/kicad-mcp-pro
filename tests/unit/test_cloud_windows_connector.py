@@ -1272,3 +1272,42 @@ async def test_foreground_generic_mcp_factory_uses_owner_selection_and_revocatio
     assert marker_calls == [(receipt.session_id, "44444444-4444-4444-8444-444444444444")]
     assert connector.deactivate() is True
     assert seen[1].authorized() is False
+
+
+@pytest.mark.asyncio
+async def test_normal_signed_session_expiration_recovers_without_new_pairing(
+    local_user_connector, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A successful session lease expiration must retry, not demand device repair."""
+    from websockets.exceptions import ConnectionClosedOK
+    from websockets.frames import Close
+
+    from kicad_mcp.cloud_outbound_handshake import CloudHandshakeDeniedError
+
+    project, _store, _folder = local_user_connector
+    connector.activate(project, owner_confirm=lambda _: True)
+    stop = asyncio.Event()
+    attempts = 0
+    statuses: list[str] = []
+
+    async def lease_ends(**_kwargs: object) -> HandshakeReceipt:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise CloudHandshakeDeniedError("lease ended") from ConnectionClosedOK(
+                Close(1000, "session_expired"), Close(1000, "session_expired"), True
+            )
+        stop.set()
+        return HandshakeReceipt(device_id=project.device_id, session_id="new-lease")
+
+    monkeypatch.setattr(connector, "reconnect_delay_seconds", lambda *_args: 0)
+    await asyncio.wait_for(
+        connector.run_connector(
+            stop=stop, session_runner=lease_ends, status_callback=statuses.append
+        ),
+        3,
+    )
+    assert attempts == 2
+    assert statuses.count("Connecting") >= 1
+    assert not any("policy 1008" in status for status in statuses)
+    assert connector.local_state() == "Configured (not connected)"
