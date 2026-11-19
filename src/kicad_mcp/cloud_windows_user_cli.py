@@ -402,8 +402,10 @@ def _cloud_project_state(
     return "registered", connected if type(connected) is bool else None
 
 
-def _show_saved_native_write_preference(project: WindowsRegisteredProject) -> None:
-    """Show only saved owner consent, never infer the live session's authority."""
+def _show_saved_native_write_preference(
+    project: WindowsRegisteredProject, *, signed_connected: bool | None, scheduled_task: bool
+) -> None:
+    """Describe saved consent and an unambiguous owner-controlled session handoff."""
     from kicad_mcp.cloud_windows_write_preference import owner_native_write_remembered
 
     try:
@@ -417,10 +419,35 @@ def _show_saved_native_write_preference(project: WindowsRegisteredProject) -> No
         "(not proof of the active session's write authority)."
     )
     if not remembered:
-        typer.echo(
-            "For editing, explicitly start in an interactive owner terminal: "
-            "kicad-mcp-pro cloud remote --enable-native-write"
-        )
+        if signed_connected is True:
+            if scheduled_task:
+                typer.echo(
+                    "First stop the existing Connector. If it is a scheduled task, "
+                    "run kicad-mcp-pro cloud disconnect. "
+                    "If it runs in an owner terminal, press Ctrl+C."
+                )
+            else:
+                typer.echo(
+                    "First stop the existing Connector in its foreground terminal with Ctrl+C."
+                )
+            typer.echo(
+                "Then start a NEW signed editing session in an interactive owner terminal: "
+                "kicad-mcp-pro cloud remote --enable-native-write"
+            )
+            typer.echo(
+                "A new signed connection and separate Cloud Edit/OAuth permissions "
+                "are still required; no successful write is implied."
+            )
+        else:
+            if signed_connected is None:
+                typer.echo(
+                    "Check whether another owner Connector is already running "
+                    "before starting a new session; Cloud presence is unverified."
+                )
+            typer.echo(
+                "For editing, explicitly start in an interactive owner terminal: "
+                "kicad-mcp-pro cloud remote --enable-native-write"
+            )
 
 
 def _show_reconnect_guidance() -> None:
@@ -454,8 +481,12 @@ def show_status() -> None:
         typer.echo(f"Device: {project.device_id}")
         typer.echo(f"Project: {selected.filename_stem} ({project.project_id})")
         typer.echo(f"Directory: {selected.directory}")
-        _show_saved_native_write_preference(project)
         cloud_state, signed_connected = _cloud_project_state(project)
+        _show_saved_native_write_preference(
+            project,
+            signed_connected=signed_connected,
+            scheduled_task=state == "Scheduled (connection unverified)",
+        )
         if cloud_state == "registered":
             typer.echo("Cloud project: Registered (check client permissions in Devices).")
             connection = (
