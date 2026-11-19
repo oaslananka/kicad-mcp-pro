@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Callable
 from time import perf_counter
 from typing import Any, Protocol
@@ -40,6 +41,8 @@ _SESSION_REFRESH_SECONDS = 240
 _FOLDER_REQUEST_KIND = "connector.local_browser_request"
 _WRITE_REQUEST_KIND = "connector.authorized_write"
 _MCP_REQUEST_KIND = "connector.mcp_request"
+# Only the bounded ASCII tool identifier may appear in human-readable activity.
+_SAFE_ACTIVITY_TOOL = re.compile(r"[a-z][a-z0-9_]{0,63}", re.ASCII)
 
 
 def _canonical_project_id(value: object) -> str:
@@ -325,6 +328,74 @@ async def _serve_one_mcp_request(
     return response
 
 
+def _verified_mcp_activity_request(raw: str, expected_sequence: int) -> dict[str, Any] | None:
+    """Read the signed envelope's diagnostic metadata, without logging its arguments."""
+    try:
+        frame = _read_strict_json(raw, _MCP_REQUEST_KIND)
+    except ValueError:
+        return None
+    if (
+        set(frame) != {"kind", "version", "sequence", "request"}
+        or type(frame.get("version")) is not int
+        or frame["version"] != 1
+        or type(frame.get("sequence")) is not int
+        or frame["sequence"] != expected_sequence
+    ):
+        return None
+    request = frame.get("request")
+    return request if isinstance(request, dict) else None
+
+
+def _mcp_activity_tool(raw: str, expected_sequence: int) -> str | None:
+    """Return only a bounded, validated MCP tool name; never expose parameters."""
+    operation = _verified_mcp_activity_request(raw, expected_sequence)
+    if operation is None:
+        return None
+    if operation.get("method") == "catalog":
+        return "catalog"
+    if operation.get("method") != "call":
+        return None
+    tool = operation.get("toolName")
+    if isinstance(tool, str) and _SAFE_ACTIVITY_TOOL.fullmatch(tool) is not None:
+        return tool
+    return None
+
+
+def _signed_activity_label(kind: object, raw: str, sequence: int) -> str:
+    """Only validated tool identifiers from signed MCP requests reach activity."""
+    if kind == _MCP_REQUEST_KIND:
+        name = _mcp_activity_tool(raw, sequence)
+        return "mcp " + name if name is not None else "mcp"
+    if kind == _WRITE_REQUEST_KIND:
+        return "write"
+    return "read"
+
+
+def _signed_frame_outcome(kind: object, result: dict[str, object]) -> str:
+    """A delivered MCP response can still represent a failed local tool."""
+    if kind != _MCP_REQUEST_KIND:
+        return "completed"
+    if result.get("ok") is False:
+        return "failed"
+    if result.get("method") == "call":
+        tool_result = result.get("result")
+        if isinstance(tool_result, dict) and tool_result.get("isError") is True:
+            return "failed"
+    return "completed"
+
+
+async def _dispatch_signed_mcp(
+    socket: AuthenticatedReadSocket,
+    raw: str,
+    sequence: int,
+    service: GenericMcpDispatch | None,
+) -> dict[str, object]:
+    """Require an available signed MCP service before forwarding the frame."""
+    if service is None:
+        raise CloudHandshakeDeniedError(_DENIED)
+    return await _serve_one_mcp_request(socket, service, raw, expected_sequence=sequence)
+
+
 async def _serve_one_signed_frame(
     socket: AuthenticatedReadSocket,
     raw: str,
@@ -349,24 +420,13 @@ async def _serve_one_signed_frame(
     if kind not in {_WRITE_REQUEST_KIND, "connector.authorized_read", _MCP_REQUEST_KIND}:
         raise CloudHandshakeDeniedError(_DENIED)
     sequence = reads_served + 1
-    is_write = kind == _WRITE_REQUEST_KIND
-    is_mcp = kind == _MCP_REQUEST_KIND
-    if is_mcp:
-        label = "mcp"
-    elif is_write:
-        label = "write"
-    else:
-        label = "read"
+    label = _signed_activity_label(kind, raw, sequence)
     start = perf_counter()
     _report_activity(on_activity, f"Tool call {sequence}: {label} started")
     try:
-        if is_mcp:
-            if mcp_service is None:
-                raise CloudHandshakeDeniedError(_DENIED)
-            result = await _serve_one_mcp_request(
-                socket, mcp_service, raw, expected_sequence=sequence
-            )
-        elif is_write:
+        if kind == _MCP_REQUEST_KIND:
+            result = await _dispatch_signed_mcp(socket, raw, sequence, mcp_service)
+        elif kind == _WRITE_REQUEST_KIND:
             result = await _serve_authorized_write_request(
                 socket, raw, allow_native_write, write_executor, sequence, on_activity
             )
@@ -378,9 +438,8 @@ async def _serve_one_signed_frame(
     operation = result.get("operation")
     safe = operation if operation in {"project_summary", "run_drc", "pcb_move_footprint"} else label
     elapsed = round((perf_counter() - start) * 1000)
-    # "completed" means the device sent its acknowledged response. It does
-    # not assert a successful PCB operation or an external Cloud MCP outcome.
-    _report_activity(on_activity, f"Tool call {sequence}: {safe} completed ({elapsed} ms)")
+    outcome = _signed_frame_outcome(kind, result)
+    _report_activity(on_activity, f"Tool call {sequence}: {safe} {outcome} ({elapsed} ms)")
     return 1
 
 

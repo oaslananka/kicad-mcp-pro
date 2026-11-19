@@ -706,7 +706,7 @@ async def test_generic_catalog_exact_name_lookup_respects_registered_local_metad
     assert (await service.dispatch(requested))["tools"] == []
 
 
-@pytest.mark.parametrize("name", ["run_drc", "run_erc"])
+@pytest.mark.parametrize("name", ["run_drc", "run_erc", "kicad_get_server_info"])
 @pytest.mark.asyncio
 async def test_stalled_read_returns_bounded_error_and_preserves_signed_session(
     tmp_path, monkeypatch: pytest.MonkeyPatch, name: str
@@ -719,6 +719,7 @@ async def test_stalled_read_returns_bounded_error_and_preserves_signed_session(
     project = project_fixture(tmp_path)
     status = {"calls": 0, "cancelled": 0, "closed": 0, "granted": True}
     monkeypatch.setattr(transport, "_READ_ONLY_MCP_CALL_BUDGET_SECONDS", 0.02)
+    monkeypatch.setattr(transport, "_IPC_READINESS_BUDGET_SECONDS", 0.02, raising=False)
 
     class Worker:
         async def call_tool(self, tool, arguments, **_kwargs: object):

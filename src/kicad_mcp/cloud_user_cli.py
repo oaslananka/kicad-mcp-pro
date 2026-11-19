@@ -16,6 +16,8 @@ import sys
 import time
 import uuid
 import webbrowser
+from collections.abc import Callable
+from functools import wraps
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -23,6 +25,11 @@ import typer
 
 from kicad_mcp.cloud_owner_cli import register_owner_commands
 from kicad_mcp.cloud_windows_enrollment import WindowsRegisteredProject
+from kicad_mcp.cloud_windows_single_instance import (
+    CloudConnectorAlreadyRunningError,
+    CloudConnectorLockUnavailableError,
+    owner_connector_instance,
+)
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -547,7 +554,25 @@ def _trusted_owner_write_issuer(
     return issuer
 
 
+def _single_owner_cloud_remote[**Args, Result](
+    fn: Callable[Args, Result],
+) -> Callable[Args, Result]:
+    """Secure the owner session before pairing, task or write-pref changes."""
+
+    @wraps(fn)
+    def guarded(*args: Args.args, **kwargs: Args.kwargs) -> Result:
+        try:
+            with owner_connector_instance():
+                return fn(*args, **kwargs)
+        except (CloudConnectorAlreadyRunningError, CloudConnectorLockUnavailableError) as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=2) from None
+
+    return guarded
+
+
 @cloud_app.command("remote")
+@_single_owner_cloud_remote
 def remote(
     browse: Annotated[bool, typer.Option("--browse", help="Choose a local KiCad project.")] = False,
     project_dir: Annotated[
@@ -642,13 +667,14 @@ def remote(
     typer.secho("  " + _cloud_console_glyph("\u2500" * 48, "-" * 48), fg=typer.colors.BRIGHT_BLACK)
     if enable_write:
         typer.echo(
-            "Signed native PCB editing enabled for this foreground session"
+            "Signed native PCB editing requested for this foreground session"
             + (
                 " (remembered for this paired project)."
                 if remember_native_write
                 else " (owner-approved local preference)."
             )
-            + " Cloud still requires separate client and project edit permission."
+            + " Not active until the signed Connector connects. "
+            + "Cloud still requires separate client and project edit permission."
         )
     if allow_native_drc:
         typer.echo(

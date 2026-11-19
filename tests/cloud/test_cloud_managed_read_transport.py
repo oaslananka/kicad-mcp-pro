@@ -1281,3 +1281,125 @@ async def test_signed_write_rejects_non_boolean_persist_flag_before_native_callb
             write_executor=execute,
         )
     assert calls == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("method", "ok", "is_error"),
+    [
+        ("call", True, True),
+        ("call", True, False),
+        ("call", False, False),
+        ("catalog", False, False),
+        ("catalog", True, False),
+    ],
+)
+async def test_mcp_tool_error_is_not_logged_as_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: str, ok: bool, is_error: bool
+) -> None:
+    # Delivery/acknowledgment success is not the same as a successful MCP tool.
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_managed_read_transport as transport
+
+    async def signed_mcp_reply(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {
+            "requestId": "example",
+            "method": method,
+            "ok": ok,
+            "result": {
+                "isError": is_error,
+                "content": [{"type": "text", "text": "secret-local-project-path"}],
+                "structuredContent": {"reason": "local_mcp_read_timeout"},
+            },
+        }
+
+    monkeypatch.setattr(transport, "_serve_one_mcp_request", signed_mcp_reply)
+    activity: list[str] = []
+    served = await transport._serve_one_signed_frame(
+        Socket([]),
+        json.dumps({"kind": "connector.mcp_request"}),
+        0,
+        build_dispatcher(tmp_path, [True]),
+        HandshakeReceipt(DEVICE, SESSION),
+        None,
+        activity.append,
+        mcp_service=SimpleNamespace(dispatch=object()),
+    )
+    assert served == 1
+    assert activity[0] == "Tool call 1: mcp started"
+    outcome = "failed" if (is_error or not ok) else "completed"
+    assert re.fullmatch(rf"Tool call 1: mcp {outcome} \(\d+ ms\)", activity[1])
+    assert "secret-local-project-path" not in " ".join(activity)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("method", "name", "is_error", "expected_label"),
+    [
+        ("call", "run_drc", False, "mcp run_drc"),
+        ("call", "run_erc", True, "mcp run_erc"),
+        ("call", "pcb_get_info", False, "mcp pcb_get_info"),
+        ("catalog", None, False, "mcp catalog"),
+        ("call", "run_drc\\nPRIVATE_DATA", True, "mcp"),
+        ("call", "C:/private/project", True, "mcp"),
+        ("call", "x" * 150, True, "mcp"),
+    ],
+)
+async def test_mcp_activity_labels_real_tool_without_logging_untrusted_data(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    method: str,
+    name: str | None,
+    is_error: bool,
+    expected_label: str,
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_managed_read_transport as transport
+
+    async def signed_reply(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {
+            "requestId": "example",
+            "method": method,
+            "ok": True,
+            "result": {"isError": is_error},
+        }
+
+    monkeypatch.setattr(transport, "_serve_one_mcp_request", signed_reply)
+    nested: dict[str, object] = {
+        "kind": "connector.mcp_request",
+        "version": 1,
+        "requestId": "00000000-0000-4000-8000-000000000001",
+        "projectId": PROJECT,
+        "method": method,
+    }
+    if name is not None:
+        nested["toolName"] = name
+    if method == "call":
+        nested["argumentsJson"] = '{"local_path":"SECRET_ARGUMENTS"}'
+    frame = {
+        "kind": "connector.mcp_request",
+        "version": 1,
+        "sequence": 1,
+        "request": nested,
+    }
+    activity: list[str] = []
+    count = await transport._serve_one_signed_frame(
+        Socket([]),
+        json.dumps(frame),
+        0,
+        build_dispatcher(tmp_path, [True]),
+        HandshakeReceipt(DEVICE, SESSION),
+        None,
+        activity.append,
+        mcp_service=SimpleNamespace(dispatch=object()),
+    )
+    assert count == 1
+    assert activity[0] == f"Tool call 1: {expected_label} started"
+    outcome = "failed" if is_error else "completed"
+    assert activity[1].startswith(f"Tool call 1: {expected_label} {outcome} (")
+    assert activity[1].endswith(" ms)")
+    assert "PRIVATE_DATA" not in " ".join(activity)
+    assert "C:/private/project" not in " ".join(activity)
+    assert "SECRET_ARGUMENTS" not in " ".join(activity)

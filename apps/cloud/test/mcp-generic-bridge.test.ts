@@ -9,6 +9,7 @@ import {CLOUD_DIRECT_TOOLS} from "../src/cloud-direct-tool-contracts.generated.j
 import type {Config} from "../src/config.js";
 import type {Inventory,Project} from "../src/store.js";
 import type {Actor,Verifier} from "../src/auth.js";
+import type {ConnectorCapabilityClaim} from "../src/connector-capability-claim.js";
 
 const config:Config={
   port:0,host:"127.0.0.1",publicOrigin:"http://127.0.0.1",
@@ -34,6 +35,8 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
   let remoteCalls=0;
   let localWrites=0;
   let wrongTarget=false;
+  let deviceOnline=true;
+  let signedClaim:ConnectorCapabilityClaim|null=null;
   const inventory:Inventory={
     async listDevices(){return [];},
     async listProjects(sub,client){return sub==="user"&&client==="client"?[await this.getProject(sub,client,projectId)].filter(
@@ -48,7 +51,8 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
   const verify:Verifier=async token=>{if(!(token in tokenActors))throw Error("invalid_token");return tokenActors[token]!;};
   const relay={
     prepareOwnerSummary:()=>null,requestSummary:async()=>null,
-    isDeviceConnected:()=>true,
+    isDeviceConnected:()=>deviceOnline,
+    getDeviceCapabilityClaim:()=>signedClaim,
     getTrustedContext:()=>({deviceId,sessionId,connectionBinding}),
     async requestMcp(_oauth:unknown,devId:string,projId:string,request:{
       requestId:string;method:string;toolName?:string;argumentsJson?:string;proof?:object;
@@ -146,6 +150,69 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
     assert.ok(names.includes("pcb_save"));
     assert.ok(!names.includes("sch_add_symbol"));
     assert.ok(!names.includes("local_mcp_call"));
+
+    // MCP relay readiness is distinct from legacy read availability. A
+    // connected device alone cannot prove that a local KiCad operation works.
+    const inventoryDisabled=await invoke(disabled,"token-read","tools/call",{
+      name:"list_projects",arguments:{}
+    },20,"list_projects");
+    const projectDisabled=inventoryDisabled.data.result?.structuredContent?.projects[0];
+    assert.equal(projectDisabled.available,false);
+    assert.deepEqual(projectDisabled.localMcp,{
+      bridgeConfigured:false,readAttemptReady:false,
+      state:"not_configured",nativeWriteAuthorization:"unverified",sessionNativeWriteMode:"unverified"
+    });
+    const inventoryEnabled=await invoke(enabled,"token-read","tools/call",{
+      name:"list_projects",arguments:{}
+    },21,"list_projects");
+    const projectEnabled=inventoryEnabled.data.result?.structuredContent?.projects[0];
+    assert.equal(projectEnabled.available,false,"Do not broaden legacy operation contract");
+    assert.equal(projectEnabled.reason,"cloud_read_not_enabled");
+    assert.deepEqual(projectEnabled.localMcp,{
+      bridgeConfigured:true,readAttemptReady:true,
+      state:"signed_session_connected",nativeWriteAuthorization:"unverified",sessionNativeWriteMode:"unverified"
+    });
+    const lookedUp=await invoke(enabled,"token-read","tools/call",{
+      name:"get_project",arguments:{project_id:projectId}
+    },22,"get_project");
+    assert.deepEqual(lookedUp.data.result?.structuredContent?.project?.localMcp,
+      projectEnabled.localMcp);
+    deviceOnline=false;
+    const disconnected=await invoke(enabled,"token-read","tools/call",{
+      name:"list_projects",arguments:{}
+    },23,"list_projects");
+    assert.deepEqual(disconnected.data.result?.structuredContent?.projects[0]?.localMcp,{
+      bridgeConfigured:true,readAttemptReady:false,
+      state:"device_not_connected",nativeWriteAuthorization:"unverified",sessionNativeWriteMode:"unverified"
+    });
+    deviceOnline=true;
+    // A signed claim can narrow (not grant) advertised local MCP support.
+    signedClaim={
+      schemaVersion:"1.0.0",catalogRevision:"a".repeat(64),
+      operations:["project_summary","mcp_bridge"]
+    };
+    const readonlyClaim=await invoke(enabled,"token-read","tools/call",{
+      name:"list_projects",arguments:{}
+    },24,"list_projects");
+    const readonlyLocal=readonlyClaim.data.result?.structuredContent?.projects[0]?.localMcp;
+    assert.equal(readonlyLocal.readAttemptReady,true);
+    assert.equal(readonlyLocal.sessionNativeWriteMode,"not_advertised");
+    assert.equal(readonlyLocal.nativeWriteAuthorization,"unverified");
+    signedClaim={...signedClaim,operations:["project_summary","mcp_bridge","move_footprint"]};
+    const writeModeClaim=await invoke(enabled,"token-read","tools/call",{
+      name:"get_project",arguments:{project_id:projectId}
+    },25,"get_project");
+    const writeLocal=writeModeClaim.data.result?.structuredContent?.project?.localMcp;
+    assert.equal(writeLocal.sessionNativeWriteMode,"advertised");
+    assert.equal(writeLocal.nativeWriteAuthorization,"unverified");
+    signedClaim={...signedClaim,operations:["project_summary"]};
+    const noMcpClaim=await invoke(enabled,"token-read","tools/call",{
+      name:"list_projects",arguments:{}
+    },26,"list_projects");
+    const unavailableLocal=noMcpClaim.data.result?.structuredContent?.projects[0]?.localMcp;
+    assert.equal(unavailableLocal.readAttemptReady,false);
+    assert.equal(unavailableLocal.state,"connector_mcp_unavailable");
+    signedClaim=null;
 
     const listing=await invoke(enabled,"token-read","tools/call",{
       name:"local_mcp_catalog",arguments:{project_id:projectId,offset:0}

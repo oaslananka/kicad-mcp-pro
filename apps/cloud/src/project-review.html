@@ -31,6 +31,7 @@ h1{font-size:17px;line-height:1.25;letter-spacing:-.02em;margin:0;font-weight:72
   padding:6px 9px;border:1px solid rgba(50,159,255,.26);
   border-radius:99px;color:var(--blue);background:rgba(50,159,255,.08)}
 #status{color:var(--muted);margin:18px 0 12px;font-size:13px}
+#editor-status{color:var(--muted);margin:12px 0 0;font-size:13px}
 #details{border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:14px 0 16px}
 .detail-row{display:flex;align-items:baseline;justify-content:space-between;gap:15px;
   padding:12px 0;line-height:1.4}
@@ -86,8 +87,10 @@ button:disabled{opacity:.48;cursor:not-allowed}
   </section>
   <div class="actions">
     <button id="refresh" type="button" disabled>Refresh access</button>
+    <button id="check-editor" type="button" disabled>Check PCB Editor</button>
     <span class="note">Only explicitly granted metadata is shown. No PCB content or editing.</span>
   </div>
+  <p id="editor-status" role="status" aria-live="polite" hidden></p>
 </main>
 <script>/*__PROJECT_REVIEW_BUNDLE__*/</script>
 </body>

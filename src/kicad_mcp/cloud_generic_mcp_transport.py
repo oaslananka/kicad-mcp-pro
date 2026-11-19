@@ -35,7 +35,10 @@ _MCP_RESULT_KIND = "connector.mcp_result"
 # The Cloud overall request deadline is 75s. Leave room for worker shutdown,
 # signed WebSocket delivery and ACK even when a cold local read stalls.
 _READ_ONLY_MCP_CALL_BUDGET_SECONDS = 65.0
-_BUDGETED_READ_TOOLS = frozenset({"run_drc", "run_erc"})
+# PCB Editor diagnostics must remain usable while GUI IPC is starting or stalled.
+# Keep this separate from the longer, full-fidelity DRC/ERC read budget.
+_IPC_READINESS_BUDGET_SECONDS = 20.0
+_BUDGETED_READ_TOOLS = frozenset({"run_drc", "run_erc", "kicad_get_server_info"})
 
 
 class GenericMcpTransportError(ValueError):
@@ -460,8 +463,13 @@ class GenericProjectMcpService:
     ) -> dict[str, object]:
         if call is None or call.write_approved or call.name not in _BUDGETED_READ_TOOLS:
             return await self._worker_result(frame, project, bridge, call)
+        budget = (
+            _IPC_READINESS_BUDGET_SECONDS
+            if call.name == "kicad_get_server_info"
+            else _READ_ONLY_MCP_CALL_BUDGET_SECONDS
+        )
         try:
-            async with asyncio.timeout(_READ_ONLY_MCP_CALL_BUDGET_SECONDS):
+            async with asyncio.timeout(budget):
                 return await self._worker_result(frame, project, bridge, call)
         except TimeoutError:
             return _read_timeout_reply(frame, project)
