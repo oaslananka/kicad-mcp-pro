@@ -10,6 +10,7 @@ from typing import Any, Protocol
 from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION, GeneratedFormatUpgradeResult
 from ..models.schematic import AddLabelInput, AddSymbolInput, AddWireInput, PowerSymbolInput
 from .instance_paths import InstancePathFor, instance_path_kwargs, no_instance_path
+from .references import PowerReferenceAllocator, UsedReferences
 
 
 @dataclass(frozen=True)
@@ -121,6 +122,8 @@ class SchematicCircuitCompilationService:
     reload_schematic: Callable[[], str]
     warn_unresolved: Callable[[dict[str, Any]], None]
     instance_path_for: InstancePathFor = no_instance_path
+    #: References already used in the project; ``None`` numbers each build from 1.
+    used_references: UsedReferences | None = None
 
     def analyze(
         self,
@@ -214,6 +217,7 @@ class SchematicCircuitCompilationService:
         project_name: str,
         root_uuid: str,
         instance_path: str = "",
+        allocate_power_reference: Callable[[str], str] | None = None,
     ) -> list[str]:
         elements: list[str] = []
         for symbol in prepared.symbols:
@@ -241,7 +245,11 @@ class SchematicCircuitCompilationService:
                     lib_id=f"power:{power.name}",
                     x=px,
                     y=py,
-                    reference=f"#PWR{index:03d}",
+                    reference=(
+                        allocate_power_reference(power.name)
+                        if allocate_power_reference is not None
+                        else f"#PWR{index:03d}"
+                    ),
                     value=power.name,
                     rotation=power.rotation,
                     project_name=project_name,
@@ -378,12 +386,17 @@ class SchematicCircuitCompilationService:
         root_uuid = self.new_uuid()
         project_name = self.project_name()
         library_section = self._collect_lib_symbols_section(prepared)
-        # A child sheet keeps its place in the hierarchy. The root file is
-        # regenerated with a fresh UUID, so its symbols take that new UUID.
+        # Preserve the root-to-child instance path and project-wide power references.
         hierarchical_path = self.instance_path_for(schematic_file) or ""
         instance_path = hierarchical_path if hierarchical_path.count("/") > 1 else ""
+        allocator = (
+            PowerReferenceAllocator(self.used_references(schematic_file, False))
+            if self.used_references is not None
+            else None
+        )
         elements = self._collect_schematic_elements(
-            prepared, snap_to_grid, project_name, root_uuid, instance_path
+            prepared, snap_to_grid, project_name, root_uuid, instance_path,
+            allocator.allocate if allocator is not None else None,
         )
 
         content = (

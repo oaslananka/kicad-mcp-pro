@@ -62,6 +62,7 @@ from ..schematic.layout_automation import (
 )
 from ..schematic.layout_inspection import SchematicLayoutInspectionService
 from ..schematic.lifecycle_authoring import SchematicLifecycleAuthoringService
+from ..schematic.references import project_references
 from ..schematic.rendering import SchematicRenderingService
 from ..schematic.semantic_ir import (
     CircuitLike,
@@ -6263,6 +6264,23 @@ def bus_entry_block(x: float, y: float, direction: str) -> str:
     )
 
 
+def _project_root_schematic() -> Path | None:
+    """Return the project's top-level schematic, even when a child sheet is active."""
+    cfg = get_config()
+    if cfg.project_file is not None:
+        candidate = cfg.project_file.with_suffix(".kicad_sch")
+        if candidate.exists():
+            return candidate
+    if cfg.sch_file is not None and cfg.sch_file.exists():
+        return cfg.sch_file
+    return None
+
+
+def _used_project_references(target: Path, include_target: bool) -> set[str]:
+    """Return references used anywhere in the project hierarchy (see ``UsedReferences``)."""
+    return project_references(_project_root_schematic(), target, include_target=include_target)
+
+
 def place_symbol_block(
     lib_id: str,
     x: float,
@@ -7511,6 +7529,7 @@ def _register_inspection_and_analysis(mcp: FastMCP) -> None:
             **payload,
         ),
         instance_path_for=_symbol_instance_path,
+        used_references=_used_project_references,
     )
     schematic_circuit_compilation.register(
         mcp,
@@ -7670,6 +7689,7 @@ def _register_authoring(mcp: FastMCP) -> None:
         new_uuid=new_uuid,
         format_mm=_fmt_mm,
         instance_path_for=_symbol_instance_path,
+        used_references=_used_project_references,
     )
     schematic_basic_authoring.register(
         mcp,
@@ -7757,6 +7777,7 @@ def _register_authoring(mcp: FastMCP) -> None:
         run_auto_add_missing_junctions=run_auto_add_missing_junctions,
         snap_tolerance_mm=SNAP_TOLERANCE_MM,
         instance_path_for=_symbol_instance_path,
+        used_references=_used_project_references,
     )
     schematic_connectivity_authoring.register(
         mcp,
