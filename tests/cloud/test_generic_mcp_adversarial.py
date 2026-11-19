@@ -836,7 +836,7 @@ async def test_stalled_read_never_reports_recovery_after_grant_revoked(
         local_project=lambda _: project,
         current_authorization=lambda: status["granted"],
     )
+    request = frame("call", name="run_drc", args="{}")
+    pending = asyncio.wait_for(service.dispatch(request), timeout=0.3)
     with pytest.raises(GenericMcpTransportError, match="mcp_bridge_request_denied"):
-        await asyncio.wait_for(
-            service.dispatch(frame("call", name="run_drc", args="{}")), timeout=0.3
-        )
+        await pending

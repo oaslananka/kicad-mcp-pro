@@ -31,6 +31,7 @@ _NAME = re.compile(r"[a-z][a-z0-9_]{0,127}", re.ASCII)
 _DENIED = "mcp_bridge_request_denied"
 _PAGE_SIZE = 8
 _MAX_RESULT_BYTES = 60_000
+_MCP_RESULT_KIND = "connector.mcp_result"
 # The Cloud overall request deadline is 75s. Leave room for worker shutdown,
 # signed WebSocket delivery and ACK even when a cold local read stalls.
 _READ_ONLY_MCP_CALL_BUDGET_SECONDS = 65.0
@@ -135,7 +136,7 @@ def _fit_cloud_mcp_response(
 def _read_timeout_reply(frame: dict[str, Any], project: OperatorProject) -> dict[str, object]:
     """A signed, bounded tool failure: a slow read is not a lost device pairing."""
     return {
-        "kind": "connector.mcp_result",
+        "kind": _MCP_RESULT_KIND,
         "version": 1,
         "requestId": frame["requestId"],
         "projectId": project.project_id,
@@ -420,7 +421,7 @@ class GenericProjectMcpService:
                 tools = catalog[offset : offset + _PAGE_SIZE]
                 next_offset = offset + len(tools)
                 return {
-                    "kind": "connector.mcp_result",
+                    "kind": _MCP_RESULT_KIND,
                     "version": 1,
                     "requestId": frame["requestId"],
                     "projectId": project.project_id,
@@ -441,7 +442,7 @@ class GenericProjectMcpService:
                 not_after_unix_ms=call.deadline,
             )
             return {
-                "kind": "connector.mcp_result",
+                "kind": _MCP_RESULT_KIND,
                 "version": 1,
                 "requestId": frame["requestId"],
                 "projectId": project.project_id,
