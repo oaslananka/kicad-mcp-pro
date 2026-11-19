@@ -654,6 +654,17 @@ def _is_generic_first_line_failure(first_line: str) -> bool:
     )
 
 
+def _promote_failed_tool_result(result: object) -> object:
+    """Preserve structured failures while exposing MCP's required isError flag."""
+    if not isinstance(result, mcp_types.CallToolResult) or result.is_error:
+        return result
+    payload = result.structured_content or {}
+    inner = payload.get("result")
+    if isinstance(inner, dict) and inner.get("ok") is False:
+        return result.model_copy(update={"is_error": True})
+    return result
+
+
 def _tool_failure_message(tool_name: str, result: object) -> str | None:
     text = _result_text(result).strip()
     lowered = text.casefold()
@@ -662,6 +673,26 @@ def _tool_failure_message(tool_name: str, result: object) -> str | None:
         _is_manufacturing_block_message(tool_name, lowered)
         or _is_cli_failure_message(tool_name, lowered)
         or _is_generic_first_line_failure(first_line)
+        or (
+            tool_name
+            in {
+                "sch_add_symbol",
+                "sch_delete_symbol",
+                "pcb_move_footprint",
+                "pcb_set_footprint_layer",
+            }
+            and first_line.startswith(("symbol '", "reference '", "footprint '"))
+            and " was not found" in first_line
+        )
+        or (
+            tool_name == "pcb_set_net_class"
+            and first_line.startswith(
+                (
+                    "net class assignment is experimental.",
+                    "direct net class assignment is not exposed",
+                )
+            )
+        )
     ):
         return text
     return None
@@ -1367,6 +1398,7 @@ class KiCadFastMCP(FastMCP):
                 else:
                     async with limiter:
                         result = await super().call_tool(name, arguments, context)
+                result = _promote_failed_tool_result(result)
                 failure_message = _tool_failure_message(name, result)
                 if failure_message is not None:
                     result = _structured_tool_error_from_message(failure_message, tool_name=name)
