@@ -92,7 +92,9 @@ def project_instance_paths(root_file: Path) -> set[str] | None:
     """
     root = root_file.resolve()
     root_text = _read(root)
-    root_uuid = schematic_uuid(root_text) if root_text is not None else ""
+    if root_text is None:
+        return None
+    root_uuid = schematic_uuid(root_text)
     if not root_uuid:
         return None
     valid = {f"/{root_uuid}"}
