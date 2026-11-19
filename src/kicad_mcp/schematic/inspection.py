@@ -14,6 +14,7 @@ type WithDiagnostics = Callable[[str, Path], str]
 type PopulationRecords = Callable[[str | None, str | None], list[dict[str, Any]]]
 type SymbolAvailableUnits = Callable[[str, str], set[int]]
 type PinPositions = Callable[[str, str, float, float, int, int], dict[str, tuple[float, float]]]
+type NativePowerErc = Callable[[], tuple[list[str] | None, str | None]]
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class SchematicInspectionService:
     population_records: PopulationRecords
     symbol_available_units: SymbolAvailableUnits
     pin_positions_lookup: PinPositions
+    native_power_erc: NativePowerErc | None = None
 
     def symbols(self, schematic_file: Path) -> str:
         """Return the legacy public symbol listing for ``schematic_file``."""
@@ -141,7 +143,7 @@ class SchematicInspectionService:
         return "\n".join(lines)
 
     def power_flags(self, schematic_file: Path) -> str:
-        """Return the legacy missing-power-flag advisory."""
+        """Report power-pin ERC findings; keep legacy label heuristics as advisory."""
         data = self.parse_schematic(schematic_file)
         named_power = {
             label["name"]
@@ -150,9 +152,38 @@ class SchematicInspectionService:
         }
         power_symbols = {symbol["value"].upper() for symbol in data["power_symbols"]}
         missing = sorted(name for name in named_power if name.upper() not in power_symbols)
+
+        # The former label-only heuristic cannot prove that power_in pins have
+        # drivers. KiCad ERC uses the actual cross-sheet electrical connectivity.
+        if self.native_power_erc is not None:
+            findings, error = self.native_power_erc()
+            if findings:
+                lines = ["Undriven power pins (KiCad ERC, all schematic sheets):"]
+                lines.extend(f"- {finding}" for finding in findings)
+                if missing:
+                    lines.append("Additional label-only advisories:")
+                    lines.extend(f"- {name}" for name in missing)
+                return "\n".join(lines)
+            if findings is not None:
+                if missing:
+                    return (
+                        "Potential missing power flags (label-only advisory):\n"
+                        + "\n".join(f"- {name}" for name in missing)
+                        + "\nKiCad ERC found no undriven power pins."
+                    )
+                return self.with_diagnostics(
+                    "No obvious missing power flags were detected. "
+                    "KiCad ERC found no undriven power pins across the project.",
+                    schematic_file,
+                )
+            suffix = f"ERC unavailable: {error or 'unknown error'}; power pins not verified."
+        else:
+            suffix = ""
+
         if not missing:
-            return self.with_diagnostics(
-                "No obvious missing power flags were detected.",
-                schematic_file,
-            )
-        return "Potential missing power flags:\n" + "\n".join(f"- {name}" for name in missing)
+            message = "No obvious missing power flags were detected."
+            if suffix:
+                message += f" {suffix}"
+            return self.with_diagnostics(message, schematic_file)
+        message = "Potential missing power flags:\n" + "\n".join(f"- {name}" for name in missing)
+        return f"{message}\n{suffix}" if suffix else message

@@ -7486,6 +7486,27 @@ def _connectivity_transactional_write(
     return transactional_write(mutator, path)
 
 
+def _native_power_erc_findings() -> tuple[list[str] | None, str | None]:
+    """Read real cross-sheet KiCad ERC instead of inferring drivers from labels."""
+    from .validation import _erc_violations, _run_erc_report
+
+    try:
+        _path, report, error = _run_erc_report("power_flag_erc_report.json")
+    except (OSError, RuntimeError, ValueError) as exc:
+        return None, str(exc)
+    if report is None:
+        return None, error or "ERC report not produced"
+    findings: list[str] = []
+    for violation in _erc_violations(report):
+        rule = str(violation.get("type") or violation.get("code") or "").casefold()
+        if rule not in {"power_pin_not_driven", "erc_power_pin"}:
+            continue
+        description = str(violation.get("description") or violation.get("message") or rule)
+        sheet = str(violation.get("sheet_path") or violation.get("file") or "")
+        findings.append(f"{sheet}: {description}" if sheet else description)
+    return findings, None
+
+
 def _register_inspection_and_analysis(mcp: FastMCP) -> None:
     """Register schematic inspection, compilation, rendering, and topology tools."""
     inspection_service = SchematicInspectionService(
@@ -7494,6 +7515,7 @@ def _register_inspection_and_analysis(mcp: FastMCP) -> None:
         population_records=_population_records,
         symbol_available_units=get_symbol_available_units,
         pin_positions_lookup=get_pin_positions,
+        native_power_erc=_native_power_erc_findings,
     )
     schematic_inspection.register(
         mcp,
