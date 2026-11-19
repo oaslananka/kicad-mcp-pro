@@ -20,5 +20,8 @@ test("portable MCP App presents an accessible, host-adaptive project review",()=
   assert.match(script,/\.ontoolresult\s*=/);
   assert.match(script,/\.callServerTool\(/);
   assert.match(script,/\.textContent\s*=/);
+  assert.match(script,/readAttemptReady===true/);
+  assert.match(script,/MCP read tools can be requested/);
+  assert.match(script,/does not confirm native editing or KiCad readiness/);
   assert.doesNotMatch(script,/innerHTML\s*=/);
 });

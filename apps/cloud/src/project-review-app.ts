@@ -36,7 +36,12 @@ function show(result:ToolSnapshot):void {
   connection.className="value "+(online?"connected":"disconnected");
   details.hidden=false;
   refresh.disabled=false;
-  status.textContent=online
+  const mcp=("localMcp" in project&&project.localMcp&&
+    typeof project.localMcp==="object")?project.localMcp:null;
+  const canAttemptRead=mcp&&"readAttemptReady" in mcp&&mcp.readAttemptReady===true;
+  status.textContent=canAttemptRead
+    ?"MCP read tools can be requested. This does not confirm native editing or KiCad readiness."
+    :online
     ?"Project metadata is available. KiCad engine status has not been verified."
     :"Project metadata is saved. Start your local Connector to read it.";
 }

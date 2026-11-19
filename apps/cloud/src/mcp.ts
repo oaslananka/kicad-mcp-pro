@@ -146,11 +146,25 @@ export function createCloudMcpHandler(
         : null;
     const describeProject=(project:Project)=>{
       const connectorConnected=connected(project.deviceId);
+      // Legacy "available" describes the separately enabled legacy read
+      // operations, not the generic MCP catalog/relay. Expose the new path
+      // independently without treating an open socket as tool success.
+      const bridgeConfigured=Boolean(genericMcpCatalog&&genericMcpCall);
+      const readAttemptReady=bridgeConfigured&&connectorConnected&&
+        actor.scopes.has("projects:read");
+      const state=!bridgeConfigured?"not_configured":
+        !connectorConnected?"device_not_connected":
+        !actor.scopes.has("projects:read")?"read_scope_required":
+        "signed_session_connected";
       return {
         ...project,available:false,
         reason:!localReadEnabled?"cloud_read_not_enabled":
           !connectorConnected?"device_not_connected":"owner_operation_required",
-        connectorConnected
+        connectorConnected,
+        localMcp:{
+          bridgeConfigured,readAttemptReady,state,
+          nativeWriteAuthorization:"unverified" as const
+        }
       };
     };
     mcp.registerTool("get_service_status", {
