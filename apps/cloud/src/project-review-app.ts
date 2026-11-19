@@ -39,8 +39,19 @@ function show(result:ToolSnapshot):void {
   const mcp=("localMcp" in project&&project.localMcp&&
     typeof project.localMcp==="object")?project.localMcp:null;
   const canAttemptRead=mcp&&"readAttemptReady" in mcp&&mcp.readAttemptReady===true;
+  const writeNotAdvertised=mcp&&"sessionNativeWriteMode" in mcp&&
+    mcp.sessionNativeWriteMode==="not_advertised";
+  const writeAdvertised=mcp&&"sessionNativeWriteMode" in mcp&&
+    mcp.sessionNativeWriteMode==="advertised";
+  const bridgeUnavailable=mcp&&"state" in mcp&&mcp.state==="connector_mcp_unavailable";
   status.textContent=canAttemptRead
-    ?"MCP read tools can be requested. This does not confirm native editing or KiCad readiness."
+    ?writeNotAdvertised
+      ?"MCP read tools can be requested. Native editing is not advertised by this Connector session. In the owner's terminal use kicad-mcp-pro cloud remote --enable-native-write. Cloud Edit and OAuth permissions are separate."
+      :writeAdvertised
+      ?"MCP read tools can be requested. Connector advertises native editing but does not prove authorization, KiCad readiness or a completed write."
+      :"MCP read tools can be requested. This does not confirm native editing or KiCad readiness."
+    :bridgeUnavailable
+    ?"Connector is online, but its reported capabilities do not include the MCP bridge. Update the local Connector."
     :online
     ?"Project metadata is available. KiCad engine status has not been verified."
     :"Project metadata is saved. Start your local Connector to read it.";

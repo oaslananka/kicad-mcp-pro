@@ -150,19 +150,30 @@ export function createCloudMcpHandler(
       // operations, not the generic MCP catalog/relay. Expose the new path
       // independently without treating an open socket as tool success.
       const bridgeConfigured=Boolean(genericMcpCatalog&&genericMcpCall);
-      const readAttemptReady=bridgeConfigured&&connectorConnected&&
+      const claim=authenticatedClaim(project);
+      // A signed capability report may narrow an already-connected device,
+      // but cannot grant project access or prove any native command succeeds.
+      const bridgeAdvertised=claim===null||claim.operations.includes("mcp_bridge");
+      const readAttemptReady=bridgeConfigured&&connectorConnected&&bridgeAdvertised&&
         actor.scopes.has("projects:read");
       const state=!bridgeConfigured?"not_configured":
         !connectorConnected?"device_not_connected":
+        !bridgeAdvertised?"connector_mcp_unavailable":
         !actor.scopes.has("projects:read")?"read_scope_required":
         "signed_session_connected";
+      // The same Connector mode controls its signed footprint-write offer
+      // and its generic MCP write worker. Legacy clients have no claim.
+      const sessionNativeWriteMode=!connectorConnected||claim===null
+        ?"unverified" as const
+        :claim.operations.includes("move_footprint")
+        ?"advertised" as const:"not_advertised" as const;
       return {
         ...project,available:false,
         reason:!localReadEnabled?"cloud_read_not_enabled":
           !connectorConnected?"device_not_connected":"owner_operation_required",
         connectorConnected,
         localMcp:{
-          bridgeConfigured,readAttemptReady,state,
+          bridgeConfigured,readAttemptReady,state,sessionNativeWriteMode,
           nativeWriteAuthorization:"unverified" as const
         }
       };

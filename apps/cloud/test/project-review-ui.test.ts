@@ -22,6 +22,12 @@ test("portable MCP App presents an accessible, host-adaptive project review",()=
   assert.match(script,/\.textContent\s*=/);
   assert.match(script,/readAttemptReady===true/);
   assert.match(script,/MCP read tools can be requested/);
+  assert.match(script,/sessionNativeWriteMode==="not_advertised"/);
+  assert.match(script,/sessionNativeWriteMode==="advertised"/);
+  assert.match(script,/Native editing is not advertised by this Connector session/);
+  assert.match(script,/Cloud Edit and OAuth permissions are separate/);
+  assert.match(script,/advertises native editing but does not prove authorization/);
+  assert.match(script,/reported capabilities do not include the MCP bridge/);
   assert.match(script,/does not confirm native editing or KiCad readiness/);
   assert.doesNotMatch(script,/innerHTML\s*=/);
 });
