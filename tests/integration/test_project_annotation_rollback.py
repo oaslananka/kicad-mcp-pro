@@ -51,5 +51,6 @@ async def test_annotation_restores_first_sheet_if_second_write_fails(
     monkeypatch.setattr(schematic_mod, "_transactional_write_to_schematic_file", fail_second_file)
     result = await call_tool_text(server, "sch_annotate", {"start_number": 1})
     assert "simulated second-sheet write failure" in result
-    assert root in attempts and power in attempts
+    assert root in attempts
+    assert power in attempts
     assert (root.read_bytes(), power.read_bytes()) == before
