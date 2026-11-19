@@ -41,6 +41,7 @@ _KICAD_PRO = "*.kicad_pro"
 _KICAD_SCH = "*.kicad_sch"
 _KICAD_PCB = "*.kicad_pcb"
 _NO_PROJECT_FOLDER_SELECTED = "No project folder selected. Setup was not changed."
+_LOCAL_CONNECTOR_READY_STATE = "Configured (not connected)"
 cloud_app = typer.Typer(help="Sign in, pair a device and manage the optional Cloud Connector.")
 
 # Only a previously verified owner-enabled read-only task may be restored.
@@ -411,7 +412,7 @@ def _verify_remote_foreground_options(
     try:
         if (
             selected_project() is None
-            or local_state() != "Configured (not connected)"
+            or local_state() != _LOCAL_CONNECTOR_READY_STATE
             or scheduler_state() != "Configured (task unverified)"
         ):
             raise typer.BadParameter(
@@ -455,7 +456,7 @@ def _prepare_remote_connector(existing: WindowsRegisteredProject, interactive: b
     state = local_state()
     if state == "Off" and interactive:
         activate(existing, owner_confirm=lambda _project: True)
-    elif state != "Configured (not connected)":
+    elif state != _LOCAL_CONNECTOR_READY_STATE:
         raise typer.BadParameter("Local Connector registration requires repair.")
 
 
@@ -565,6 +566,37 @@ def _trusted_owner_write_issuer(
     return issuer
 
 
+def _restore_previously_enabled_background_connector(
+    project: WindowsRegisteredProject | None,
+) -> None:
+    """Restore the same owner's read-only task only after a foreground handoff."""
+    if project is None:
+        return
+    from kicad_mcp.cloud_windows_connector import local_state, selected_project
+    from kicad_mcp.cloud_windows_task_scheduler import enable_windows_connector
+
+    try:
+        if local_state() == _LOCAL_CONNECTOR_READY_STATE and selected_project() == project:
+            enable_windows_connector(project, owner_confirm=lambda _project: True)
+            typer.echo(
+                "Previous read-only background Connector restored "
+                "(Cloud connection not yet verified)."
+            )
+        else:
+            typer.echo(
+                "Previous background Connector was not restored because "
+                "the local project or connection setting changed.",
+                err=True,
+            )
+    except (OSError, ValueError, RuntimeError):
+        typer.echo(
+            "The previous read-only background Connector could not be restored. "
+            "Run cloud status, then cloud reconnect from the owner terminal.",
+            err=True,
+        )
+        raise typer.Exit(code=4) from None
+
+
 def _single_owner_cloud_remote[**Args, Result](
     fn: Callable[Args, Result],
 ) -> Callable[Args, Result]:
@@ -581,39 +613,11 @@ def _single_owner_cloud_remote[**Args, Result](
                 typer.echo(str(exc), err=True)
                 raise typer.Exit(code=2) from None
         finally:
-            # Must happen AFTER the foreground owner mutex has been released.
-            # Never create a background task for an unscheduled foreground session.
-            prior_project = _BACKGROUND_CONNECTOR_HANDOFF.get()
+            # Restore only after the foreground owner mutex is released.
             try:
-                if prior_project is not None:
-                    from kicad_mcp.cloud_windows_connector import local_state, selected_project
-                    from kicad_mcp.cloud_windows_task_scheduler import enable_windows_connector
-
-                    try:
-                        if (
-                            local_state() == "Configured (not connected)"
-                            and selected_project() == prior_project
-                        ):
-                            enable_windows_connector(
-                                prior_project, owner_confirm=lambda _project: True
-                            )
-                            typer.echo(
-                                "Previous read-only background Connector restored "
-                                "(Cloud connection not yet verified)."
-                            )
-                        else:
-                            typer.echo(
-                                "Previous background Connector was not restored because "
-                                "the local project or connection setting changed.",
-                                err=True,
-                            )
-                    except (OSError, ValueError, RuntimeError):
-                        typer.echo(
-                            "The previous read-only background Connector could not be restored. "
-                            "Run cloud status, then cloud reconnect from the owner terminal.",
-                            err=True,
-                        )
-                        raise typer.Exit(code=4) from None
+                _restore_previously_enabled_background_connector(
+                    _BACKGROUND_CONNECTOR_HANDOFF.get()
+                )
             finally:
                 _BACKGROUND_CONNECTOR_HANDOFF.reset(token)
 
