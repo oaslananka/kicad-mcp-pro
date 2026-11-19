@@ -97,8 +97,9 @@ def test_delete_preflight_rejects_nonexistent_ids_in_kicad_10() -> None:
     board = _DeletingBoard(
         error=ApiError("KiCad returned error: none of the requested IDs were found or valid")
     )
+    missing_ids = (SimpleNamespace(value="missing"),)
     with pytest.raises(ValueError, match="No matching"):
-        _remove_existing_items_by_id(board, (SimpleNamespace(value="missing"),))  # type: ignore[arg-type]
+        _remove_existing_items_by_id(board, missing_ids)  # type: ignore[arg-type]
     assert board.deleted is None
 
 

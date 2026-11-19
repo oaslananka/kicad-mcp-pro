@@ -112,5 +112,6 @@ async def test_mounting_holes_refuse_a_board_without_an_outline(
     board = sample_project / "demo.kicad_pcb"
     before = board.read_text(encoding="utf-8")
     result = await call_tool_text(build_server("pcb"), "pcb_add_mounting_holes", {})
-    assert "outline" in result.casefold() and "not added" in result.casefold(), result
+    assert "outline" in result.casefold(), result
+    assert "not added" in result.casefold(), result
     assert board.read_text(encoding="utf-8") == before

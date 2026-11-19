@@ -401,8 +401,6 @@ class SchematicConnectivityAuthoringService:
         ey: float,
         ux: float,
         uy: float,
-        ref: str,
-        pin: str,
         suffix: str,
         block_kind: str,
         project_name: str,
@@ -411,6 +409,8 @@ class SchematicConnectivityAuthoringService:
         instance_path: str = "",
         allocate_power_reference: Callable[[str], str] | None = None,
     ) -> tuple[str, str, str | None]:
+        ref = str(conn.get("reference", ""))
+        pin = str(conn.get("pin", ""))
         if self.is_power_net(net):
             lib_def = power_lib_defs.get(net)
             if lib_def is None:
@@ -545,8 +545,6 @@ class SchematicConnectivityAuthoringService:
             ey=ey,
             ux=ux,
             uy=uy,
-            ref=ref,
-            pin=pin,
             suffix=suffix,
             block_kind=block_kind,
             project_name=project_name,

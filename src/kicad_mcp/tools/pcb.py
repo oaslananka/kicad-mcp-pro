@@ -2779,6 +2779,18 @@ def _assign_pad_nets(block: str, pad_nets: dict[str, str]) -> str:
 _PAD_NET_RE = re.compile(rf"\(net\s+{STRING_PATTERN}\s*\)")
 
 
+def _pad_net_difference(pad_block: str, pad_nets: dict[str, str]) -> tuple[str, str, str] | None:
+    """Identify one schematic versus board pad-net mismatch."""
+    pad_match = re.match(rf"\(pad\s+{STRING_PATTERN}", pad_block.lstrip())
+    if pad_match is None or pad_match.group(1) not in pad_nets:
+        return None
+    name = pad_match.group(1)
+    net_match = _PAD_NET_RE.search(pad_block)
+    current = net_match.group(1) if net_match else ""
+    wanted = pad_nets[name]
+    return (name, current, wanted) if current != wanted else None
+
+
 def _pad_net_differences(block: str, pad_nets: dict[str, str]) -> list[tuple[str, str, str]]:
     """Return ``(pad, board net, schematic net)`` for pads whose net differs.
 
@@ -2791,13 +2803,9 @@ def _pad_net_differences(block: str, pad_nets: dict[str, str]) -> list[tuple[str
         if block.startswith("(pad", cursor):
             pad_block, length = _extract_block(block, cursor)
             if pad_block:
-                pad_match = re.match(rf"\(pad\s+{STRING_PATTERN}", pad_block.lstrip())
-                if pad_match and pad_match.group(1) in pad_nets:
-                    net_match = _PAD_NET_RE.search(pad_block)
-                    current = net_match.group(1) if net_match else ""
-                    wanted = pad_nets[pad_match.group(1)]
-                    if current != wanted:
-                        differences.append((pad_match.group(1), current, wanted))
+                difference = _pad_net_difference(pad_block, pad_nets)
+                if difference is not None:
+                    differences.append(difference)
                 cursor += length
                 continue
         cursor += 1
@@ -4034,6 +4042,30 @@ def _register_board_graphics_tools(mcp: FastMCP) -> None:
     _register_board_bitmap_board_art_tool(mcp)
 
 
+def _validated_delete_kiids(item_ids: list[str]) -> list[Any] | str:
+    """Preflight full UUIDs before any destructive KiCad IPC operation."""
+    from kipy.proto.common.types import KIID
+
+    if not item_ids:
+        return "No item IDs were supplied."
+    kiids: list[Any] = []
+    seen: set[str] = set()
+    for item_id in item_ids:
+        try:
+            canonical = str(uuid.UUID(item_id))
+        except (AttributeError, TypeError, ValueError):
+            return f"Failed to delete items: full KiCad UUID required, got {item_id!r}."
+        if canonical != item_id.casefold():
+            return f"Failed to delete items: full KiCad UUID required, got {item_id!r}."
+        if canonical in seen:
+            return "Failed to delete items: duplicate item IDs were supplied."
+        seen.add(canonical)
+        kiid = KIID()
+        kiid.value = canonical
+        kiids.append(kiid)
+    return kiids
+
+
 def _register_board_deletion_tools(mcp: FastMCP) -> None:
     """Register the board deletion tools."""
 
@@ -4041,23 +4073,9 @@ def _register_board_deletion_tools(mcp: FastMCP) -> None:
     @requires_kicad_running
     def pcb_delete_items(item_ids: list[str]) -> str:
         """Delete items by UUID."""
-        from kipy.proto.common.types import KIID
-
-        if not item_ids:
-            return "No item IDs were supplied."
-        kiids = []
-        for item_id in item_ids:
-            try:
-                canonical = str(uuid.UUID(item_id))
-            except (AttributeError, TypeError, ValueError):
-                return f"Failed to delete items: full KiCad UUID required, got {item_id!r}."
-            if canonical != item_id.casefold():
-                return f"Failed to delete items: full KiCad UUID required, got {item_id!r}."
-            kiid = KIID()
-            kiid.value = canonical
-            kiids.append(kiid)
-        if len(set(item_ids)) != len(item_ids):
-            return "Failed to delete items: duplicate item IDs were supplied."
+        kiids = _validated_delete_kiids(item_ids)
+        if isinstance(kiids, str):
+            return kiids
         try:
             execute_live_board_mutation(
                 "pcb_delete_items",
@@ -4556,6 +4574,21 @@ def _build_sync_replacements(
     return replacements
 
 
+def _append_sync_pad_net_changes(
+    lines: list[str], changes: list[str] | None, update_pad_nets: bool
+) -> None:
+    """Explain stale pad nets and the explicit opt-in reconciliation path."""
+    if not changes:
+        return
+    verb = "updated" if update_pad_nets else "out of date"
+    lines.append(f"Pad nets {verb} on existing footprints: {len(changes)}")
+    lines.extend(f"- {change}" for change in changes[:20])
+    if len(changes) > 20:
+        lines.append(f"... and {len(changes) - 20} more")
+    if not update_pad_nets:
+        lines.append("Rerun with update_pad_nets=True to update those pad nets in place.")
+
+
 def _format_pcb_sync_report(
     *,
     components: list[dict[str, Any]],
@@ -4597,14 +4630,7 @@ def _format_pcb_sync_report(
             lines.append(f"... and {len(mismatches) - 20} more")
         if not payload.replace_mismatched:
             lines.append("Rerun with replace_mismatched=True to replace those footprints in place.")
-    if pad_net_changes:
-        verb = "updated" if payload.update_pad_nets else "out of date"
-        lines.append(f"Pad nets {verb} on existing footprints: {len(pad_net_changes)}")
-        lines.extend(f"- {change}" for change in pad_net_changes[:20])
-        if len(pad_net_changes) > 20:
-            lines.append(f"... and {len(pad_net_changes) - 20} more")
-        if not payload.update_pad_nets:
-            lines.append("Rerun with update_pad_nets=True to update those pad nets in place.")
+    _append_sync_pad_net_changes(lines, pad_net_changes, payload.update_pad_nets)
     if net_note:
         lines.append(net_note)
     if force_note:

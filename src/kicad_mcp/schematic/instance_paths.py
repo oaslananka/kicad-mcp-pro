@@ -35,6 +35,29 @@ def _read(path: Path) -> str | None:
         return None
 
 
+def _find_in_sheet_hierarchy(
+    file: Path, text: str, prefix: str, seen: frozenset[Path], wanted: Path
+) -> str | None:
+    """Traverse reachable sheets by UUID without revisiting cyclic references."""
+    if file == wanted:
+        return prefix
+    for block in parse_sheet_blocks(text):
+        if not block.uuid or not block.filename:
+            continue
+        child = (file.parent / block.filename).resolve()
+        if child in seen:
+            continue
+        child_text = _read(child)
+        if child_text is None:
+            continue
+        found = _find_in_sheet_hierarchy(
+            child, child_text, f"{prefix}/{block.uuid}", seen | {child}, wanted
+        )
+        if found is not None:
+            return found
+    return None
+
+
 def find_instance_path(root_file: Path, target: Path) -> str | None:
     """Return the instance path of ``target`` in the hierarchy rooted at ``root_file``.
 
@@ -53,24 +76,7 @@ def find_instance_path(root_file: Path, target: Path) -> str | None:
     if not root_uuid:
         return None
 
-    def visit(file: Path, text: str, prefix: str, seen: frozenset[Path]) -> str | None:
-        if file == wanted:
-            return prefix
-        for block in parse_sheet_blocks(text):
-            if not block.uuid or not block.filename:
-                continue
-            child = (file.parent / block.filename).resolve()
-            if child in seen:
-                continue
-            child_text = _read(child)
-            if child_text is None:
-                continue
-            found = visit(child, child_text, f"{prefix}/{block.uuid}", seen | {child})
-            if found is not None:
-                return found
-        return None
-
-    return visit(root, root_text, f"/{root_uuid}", frozenset({root}))
+    return _find_in_sheet_hierarchy(root, root_text, f"/{root_uuid}", frozenset({root}), wanted)
 
 
 class InstancePathKwargs(TypedDict, total=False):

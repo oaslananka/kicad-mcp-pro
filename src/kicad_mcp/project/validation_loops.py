@@ -61,6 +61,19 @@ def _allow_every_tool(_tool_name: str) -> bool:
     return True
 
 
+def _fixer_summary(
+    auto_fixer: FixerActionLike | None, agent_fixer: FixerActionLike | None
+) -> tuple[str, str, str]:
+    """Prefer agent instructions while retaining useful automated fallback labels."""
+    auto_description = auto_fixer.description if auto_fixer is not None else ""
+    agent_tool = agent_fixer.tool if agent_fixer is not None else ""
+    agent_description = agent_fixer.description if agent_fixer is not None else ""
+    if auto_fixer is not None:
+        agent_tool = agent_tool or auto_fixer.tool
+        agent_description = agent_description or auto_fixer.description
+    return auto_description, agent_tool, agent_description
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectValidationLoopService:
     """Run bounded project validation/fix loops without FastMCP dependencies."""
@@ -147,21 +160,18 @@ class ProjectValidationLoopService:
                 (fixer for fixer in fixers if fixer.auto_applicable), None
             )
             agent_fixer = self._agent_fixer(fixers)
+            auto_description, agent_tool, agent_description = _fixer_summary(
+                auto_fixer, agent_fixer
+            )
             guidance = await sample_guidance(outcome)
             actions.append(
                 AutoFixAction(
                     gate=outcome.name,
                     status=outcome.status,
                     auto_fixed=False,
-                    auto_fix_description=(auto_fixer.description if auto_fixer is not None else ""),
-                    agent_tool=(
-                        (agent_fixer.tool if agent_fixer is not None else "")
-                        or (auto_fixer.tool if auto_fixer is not None else "")
-                    ),
-                    agent_description=(
-                        (agent_fixer.description if agent_fixer is not None else "")
-                        or (auto_fixer.description if auto_fixer is not None else "")
-                    ),
+                    auto_fix_description=auto_description,
+                    agent_tool=agent_tool,
+                    agent_description=agent_description,
                     sampling_guidance=guidance,
                 )
             )

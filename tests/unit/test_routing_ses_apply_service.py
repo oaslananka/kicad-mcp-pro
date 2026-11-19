@@ -164,7 +164,8 @@ def test_apply_supports_named_only_kicad_pcb_without_inventing_numeric_nets(
 
     result = service.apply()
 
-    assert result.ok and result.changed
+    assert result.ok
+    assert result.changed
     assert len(writes) == 1
     assert '(layer "F.Cu") (net "GND")' in writes[0]
     assert "(net 1)" not in writes[0]

@@ -38,7 +38,8 @@ async def test_power_flags_reports_native_erc_undriven_pin_on_child_sheet(
     server = build_server("schematic")
     result = await call_tool_text(server, "sch_check_power_flags", {})
     assert "Undriven power pins" in result, result
-    assert "+5V" in result and "/Power" in result, result
+    assert "+5V" in result, result
+    assert "/Power" in result, result
     assert "No obvious missing power flags were detected." not in result, result
 
 

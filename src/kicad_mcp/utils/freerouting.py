@@ -138,6 +138,26 @@ def _line_start(text: str, index: int) -> int:
     return line_start if line_start >= 0 else index
 
 
+def _class_net_exclusion(
+    text: str, start: int, end: int, wanted: set[str]
+) -> tuple[tuple[int, int, str], set[str]] | None:
+    """Remove selected net names from one Freerouting class membership list."""
+    class_children = _dsn_children(text, start, end)
+    members_end = class_children[0][1] if class_children else end - 1
+    members_start = start + len("(class")
+    span = text[members_start:members_end]
+    tokens = _DSN_TOKEN_RE.findall(span)
+    if len(tokens) < 2:
+        return None
+    kept = [tokens[0], *(tok for tok in tokens[1:] if _dsn_name(tok) not in wanted)]
+    if len(kept) == len(tokens):
+        return None
+    found = {_dsn_name(tok) for tok in tokens[1:] if _dsn_name(tok) in wanted}
+    leading = span[: len(span) - len(span.lstrip())]
+    trailing = span[len(span.rstrip()) :]
+    return (members_start, members_end, f"{leading}{' '.join(kept)}{trailing}"), found
+
+
 def _remove_nets_from_dsn(text: str, nets: list[str]) -> tuple[str, tuple[str, ...]]:
     """Drop ``nets`` from a DSN network: their ``(net ...)`` blocks and class memberships.
 
@@ -160,20 +180,11 @@ def _remove_nets_from_dsn(text: str, nets: list[str]) -> tuple[str, tuple[str, .
                 found.add(_dsn_name(name.group(0)))
                 edits.append((_line_start(text, start), end, ""))
         elif tag == "class":
-            class_children = _dsn_children(text, start, end)
-            members_end = class_children[0][1] if class_children else end - 1
-            members_start = start + len("(class")
-            span = text[members_start:members_end]
-            tokens = _DSN_TOKEN_RE.findall(span)
-            if len(tokens) < 2:
-                continue
-            kept = [tokens[0], *(tok for tok in tokens[1:] if _dsn_name(tok) not in wanted)]
-            if len(kept) == len(tokens):
-                continue
-            found.update(_dsn_name(tok) for tok in tokens[1:] if _dsn_name(tok) in wanted)
-            leading = span[: len(span) - len(span.lstrip())]
-            trailing = span[len(span.rstrip()) :]
-            edits.append((members_start, members_end, f"{leading}{' '.join(kept)}{trailing}"))
+            class_edit = _class_net_exclusion(text, start, end, wanted)
+            if class_edit is not None:
+                edit, removed = class_edit
+                edits.append(edit)
+                found.update(removed)
     for start, end, replacement in sorted(edits, reverse=True):
         text = text[:start] + replacement + text[end:]
     return text, tuple(name for name in dict.fromkeys(nets) if name in found)

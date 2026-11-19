@@ -699,6 +699,9 @@ def get_schematic_backend() -> _SchematicBackendAdapter:
     return _SCHEMATIC_BACKENDS[_DEFAULT_SCHEMATIC_BACKEND]
 
 
+_SCHEMATIC_EXTENSION = ".kicad_sch"
+
+
 @dataclass(frozen=True)
 class _SchematicTarget:
     path: Path
@@ -717,7 +720,7 @@ def _available_sheet_names(root_schematic: Path) -> list[str]:
 
 def _resolve_target_by_file(sheet_file: str, project_root: Path, root: Path) -> _SchematicTarget:
     target = resolve_under(project_root, sheet_file).resolve()
-    if target.suffix != ".kicad_sch":
+    if target.suffix != _SCHEMATIC_EXTENSION:
         raise ValueError("sheet_file must point to a .kicad_sch file.")
     if not target.exists():
         raise ValueError(f"Target schematic file does not exist: {target}")
@@ -776,7 +779,7 @@ def _hierarchy_root_file() -> Path | None:
     """Return the project's top-level schematic, even when a child sheet is active."""
     cfg = get_config()
     if cfg.project_file is not None:
-        candidate = cfg.project_file.with_suffix(".kicad_sch")
+        candidate = cfg.project_file.with_suffix(_SCHEMATIC_EXTENSION)
         if candidate.exists():
             return candidate
     if cfg.sch_file is not None and cfg.sch_file.exists():
@@ -6346,7 +6349,7 @@ def _project_root_schematic() -> Path | None:
     """Return the project's top-level schematic, even when a child sheet is active."""
     cfg = get_config()
     if cfg.project_file is not None:
-        candidate = cfg.project_file.with_suffix(".kicad_sch")
+        candidate = cfg.project_file.with_suffix(_SCHEMATIC_EXTENSION)
         if candidate.exists():
             return candidate
     if cfg.sch_file is not None and cfg.sch_file.exists():

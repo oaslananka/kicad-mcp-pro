@@ -372,6 +372,28 @@ def _symbol_property(block: str, name: str) -> str:
     return match.group(1).replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
 
 
+_PROJECT_BLOCK_PREFIX = "(project "
+
+
+def _project_path_references(project: str, valid_paths: set[str] | None) -> list[str]:
+    """Read references only from valid instance paths within one project block."""
+    refs: list[str] = []
+    cursor = 0
+    while (path_start := project.find("(path ", cursor)) >= 0:
+        path_block, path_length = _extract_block(project, path_start)
+        cursor = path_start + max(path_length, 1)
+        path_match = re.match(r'\(path\s+"([^"]+)"', path_block)
+        ref_match = re.search(r'\(reference\s+"([^"]+)"', path_block)
+        if (
+            path_match is not None
+            and ref_match is not None
+            and (valid_paths is None or path_match.group(1) in valid_paths)
+            and ref_match.group(1) not in refs
+        ):
+            refs.append(ref_match.group(1))
+    return refs
+
+
 def _symbol_instance_references(
     block: str,
     fallback_reference: str,
@@ -384,31 +406,21 @@ def _symbol_instance_references(
     if instance_start < 0:
         return [fallback_reference]
     instances, _ = _extract_block(block, instance_start)
-    if not instances or project_name is None or "(project " not in instances:
+    if not instances or project_name is None or _PROJECT_BLOCK_PREFIX not in instances:
         references = re.findall(r'\(reference\s+"([^"]+)"', instances or block)
         return references or [fallback_reference]
 
     refs: list[str] = []
     cursor = 0
-    while (project_start := instances.find("(project ", cursor)) >= 0:
+    while (project_start := instances.find(_PROJECT_BLOCK_PREFIX, cursor)) >= 0:
         project, length = _extract_block(instances, project_start)
         cursor = project_start + max(length, 1)
         match = re.match(r'\(project\s+"([^"]+)"', project)
         if match is None or match.group(1) != project_name:
             continue
-        path_cursor = 0
-        while (path_start := project.find("(path ", path_cursor)) >= 0:
-            path_block, path_length = _extract_block(project, path_start)
-            path_cursor = path_start + max(path_length, 1)
-            path_match = re.match(r'\(path\s+"([^"]+)"', path_block)
-            ref_match = re.search(r'\(reference\s+"([^"]+)"', path_block)
-            if (
-                path_match is not None
-                and ref_match is not None
-                and (valid_paths is None or path_match.group(1) in valid_paths)
-                and ref_match.group(1) not in refs
-            ):
-                refs.append(ref_match.group(1))
+        for reference in _project_path_references(project, valid_paths):
+            if reference not in refs:
+                refs.append(reference)
     return refs
 
 
@@ -488,7 +500,7 @@ def _apply_symbol_block(
     )
     # The backend's property-reference row is only a template. If it belongs
     # exclusively to a copied sheet's foreign project, do not count it as a part.
-    if "(project " in block and reference not in instance_references:
+    if _PROJECT_BLOCK_PREFIX in block and reference not in instance_references:
         rows_by_reference.pop(reference, None)
     instance_rows: list[dict[str, str]] = []
     for inst_ref in instance_references:

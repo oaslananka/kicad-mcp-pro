@@ -374,7 +374,8 @@ async def test_route_apply_ses_writes_named_nets_for_kicad10(
     result = await call_tool_payload(
         server, "route_apply_ses", {"ses_path": "output/routing/board.ses"}
     )
-    assert result["ok"] and result["changed"], result
+    assert result["ok"], result
+    assert result["changed"], result
     text = pcb.read_text(encoding="utf-8")
     assert '(layer "F.Cu") (net "GND")' in text
     assert "(net 1)" not in text
