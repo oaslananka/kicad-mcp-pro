@@ -79,3 +79,34 @@ class InstancePathKwargs(TypedDict, total=False):
 def instance_path_kwargs(instance_path: str) -> InstancePathKwargs:
     """Pass ``instance_path`` only when known, so older injected builders keep working."""
     return {"instance_path": instance_path} if instance_path else {}
+
+
+def project_instance_paths(root_file: Path) -> set[str] | None:
+    """Enumerate actual root-to-sheet UUID paths, including reused-sheet instances.
+
+    Restrict traversal to the project root directory; a sheet filename must not
+    make BOM inspection read unrelated files outside the active project.
+    """
+    root = root_file.resolve()
+    root_text = _read(root)
+    root_uuid = schematic_uuid(root_text) if root_text is not None else ""
+    if not root_uuid:
+        return None
+    valid = {f"/{root_uuid}"}
+
+    def visit(file: Path, text: str, prefix: str, seen: frozenset[Path]) -> None:
+        for sheet in parse_sheet_blocks(text):
+            if not sheet.filename or not sheet.uuid:
+                continue
+            child = (file.parent / sheet.filename).resolve()
+            if not child.is_relative_to(root.parent) or child in seen:
+                continue
+            child_text = _read(child)
+            if child_text is None:
+                continue
+            child_path = f"{prefix}/{sheet.uuid}"
+            valid.add(child_path)
+            visit(child, child_text, child_path, seen | {child})
+
+    visit(root, root_text, f"/{root_uuid}", frozenset({root}))
+    return valid
