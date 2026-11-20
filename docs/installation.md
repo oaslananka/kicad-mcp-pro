@@ -46,6 +46,32 @@ or remove the wrong installation. Package removal is separate from revoking
 Cloud devices or removing KiCad MCP entries from independently owned AI-client
 configuration files; it does not delete `.kicad_pro`/`.kicad_pcb` projects.
 
+### One-command Windows Cloud setup, update and repair
+
+For Windows Cloud users, copy the command displayed on the
+[Cloud Devices page](https://kicad-mcp-pro.oaslananka.dev/devices) into
+PowerShell:
+
+~~~powershell
+irm https://raw.githubusercontent.com/oaslananka/kicad-mcp-pro/main/scripts/install-cloud.ps1 | iex
+~~~
+
+It checks or installs the isolated `uv` package manager using a verified
+release archive, installs or upgrades the `kicad-mcp-pro` CLI, checks that
+the installed executable starts, and tries one application-only reinstall if
+the package manager or health probe detects damage. Then it starts the
+foreground Cloud Connector. The same command can be reused for reconnecting;
+an already registered device is not deliberately paired again.
+
+The installer does **not** remove KiCad projects, recreate Cloud identity,
+reset owner permissions or repair arbitrary OS/KiCad, third-party Python,
+firewall or OAuth problems. Browser-based account/device authorization and
+owner-granted write access remain intentional security steps. If the package
+registry is unavailable or the Connector cannot establish a valid owner session,
+the command reports failure rather than claiming readiness. If multiple
+independent `pip`/`pipx` installations are on PATH, this launcher invokes the
+verified `uv`-managed executable directly rather than silently changing them.
+
 **Windows Cloud status:** The CLI can be used locally without any Cloud account.
 On releases lacking native Windows owner-private device registration and the
 Windows Connector service, `cloud setup` declines early rather than creating a
