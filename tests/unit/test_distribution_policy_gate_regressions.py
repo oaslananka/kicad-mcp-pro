@@ -27,14 +27,14 @@ def test_dockerfile_runtime_rejects_stale_or_unpinned_alpine_base(
 ) -> None:
     dockerfile = (docker.PACKAGE_ROOT / "Dockerfile").read_text(encoding="utf-8")
     dockerfile, replaced = re.subn(
-        r"3\.14\.9-alpine3\.23@sha256:[0-9a-f]{64}", replacement, dockerfile
+        r"3\.14\.10-alpine3\.23@sha256:[0-9a-f]{64}", replacement, dockerfile
     )
     assert replaced == 2
     errors: list[str] = []
 
     docker._check_dockerfile_runtime(dockerfile, errors)
 
-    assert "Dockerfile must use the pinned Python 3.14.9 Alpine 3.23 base" in errors
+    assert "Dockerfile must use the pinned Python 3.14.10 Alpine 3.23 base" in errors
 
 
 @pytest.mark.parametrize("stage", ["builder", "runtime"])
@@ -47,7 +47,7 @@ def test_dockerfile_runtime_rejects_single_unpinned_alpine_stage(
 ) -> None:
     dockerfile = (docker.PACKAGE_ROOT / "Dockerfile").read_text(encoding="utf-8")
     dockerfile, replaced = re.subn(
-        rf"3\.14\.9-alpine3\.23@sha256:[0-9a-f]{{64}}(?= AS {stage}$)",
+        rf"3\.14\.10-alpine3\.23@sha256:[0-9a-f]{{64}}(?= AS {stage}$)",
         replacement,
         dockerfile,
         count=1,
@@ -56,7 +56,7 @@ def test_dockerfile_runtime_rejects_single_unpinned_alpine_stage(
     assert replaced == 1
     errors: list[str] = []
     docker._check_dockerfile_runtime(dockerfile, errors)
-    assert "Dockerfile must use the pinned Python 3.14.9 Alpine 3.23 base" in errors
+    assert "Dockerfile must use the pinned Python 3.14.10 Alpine 3.23 base" in errors
 
 
 def test_dockerfile_runtime_rejects_alpine_digest_mismatch() -> None:
@@ -71,19 +71,19 @@ def test_dockerfile_runtime_rejects_alpine_digest_mismatch() -> None:
     assert replaced == 1
     errors: list[str] = []
     docker._check_dockerfile_runtime(dockerfile, errors)
-    assert "Dockerfile must use the pinned Python 3.14.9 Alpine 3.23 base" in errors
+    assert "Dockerfile must use the pinned Python 3.14.10 Alpine 3.23 base" in errors
 
 
 @pytest.mark.parametrize("replacement", ["3.14.7-slim@sha256:" + "a" * 64, "3.14.9-slim"])
 def test_dockerfile_runtime_rejects_stale_or_unpinned_python_base(replacement: str) -> None:
     dockerfile = (docker.PACKAGE_ROOT / "Dockerfile").read_text(encoding="utf-8")
-    dockerfile, replaced = re.subn(r"3\.14\.9-slim@sha256:[0-9a-f]{64}", replacement, dockerfile)
+    dockerfile, replaced = re.subn(r"3\.14\.10-slim@sha256:[0-9a-f]{64}", replacement, dockerfile)
     assert replaced == 2
     errors: list[str] = []
 
     docker._check_dockerfile_runtime(dockerfile, errors)
 
-    assert "Dockerfile must use the pinned Python 3.14.9 slim base for KiCad 10 stages" in errors
+    assert "Dockerfile must use the pinned Python 3.14.10 slim base for KiCad 10 stages" in errors
 
 
 @pytest.mark.parametrize("stage", ["builder-kicad10", "runtime-kicad10"])
@@ -96,7 +96,7 @@ def test_dockerfile_runtime_rejects_single_stale_or_unpinned_python_base(
 ) -> None:
     dockerfile = (docker.PACKAGE_ROOT / "Dockerfile").read_text(encoding="utf-8")
     dockerfile, replaced = re.subn(
-        rf"3\.14\.9-slim@sha256:[0-9a-f]{{64}}(?= AS {stage}$)",
+        rf"3\.14\.10-slim@sha256:[0-9a-f]{{64}}(?= AS {stage}$)",
         replacement,
         dockerfile,
         count=1,
@@ -105,7 +105,7 @@ def test_dockerfile_runtime_rejects_single_stale_or_unpinned_python_base(
     assert replaced == 1
     errors: list[str] = []
     docker._check_dockerfile_runtime(dockerfile, errors)
-    assert "Dockerfile must use the pinned Python 3.14.9 slim base for KiCad 10 stages" in errors
+    assert "Dockerfile must use the pinned Python 3.14.10 slim base for KiCad 10 stages" in errors
 
 
 def test_dockerfile_runtime_rejects_mismatched_kicad10_digests() -> None:
@@ -120,7 +120,7 @@ def test_dockerfile_runtime_rejects_mismatched_kicad10_digests() -> None:
     assert replaced == 1
     errors: list[str] = []
     docker._check_dockerfile_runtime(dockerfile, errors)
-    assert "Dockerfile must use the pinned Python 3.14.9 slim base for KiCad 10 stages" in errors
+    assert "Dockerfile must use the pinned Python 3.14.10 slim base for KiCad 10 stages" in errors
 
 
 def test_dockerfile_guard_accumulates_all_missing_pins(monkeypatch) -> None:
