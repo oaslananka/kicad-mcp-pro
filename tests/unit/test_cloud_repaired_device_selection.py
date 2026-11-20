@@ -203,3 +203,166 @@ def test_active_foreign_connector_blocks_migration(repaired, monkeypatch) -> Non
     with pytest.raises(LocalApprovalDeniedError):
         boot.remember_existing_project_device(repaired["replacement"], allow_repair_migration=True)
     assert boot.selected_device() == repaired["old"]
+
+
+def test_malformed_repair_archive_denies_migration(repaired) -> None:
+    replacement = repaired["replacement"]
+    archived = (replacement.registration_id, "archived_selected")
+    repaired["store"][archived] = b'{"recordId":"missing-verified-fields"}'
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.remember_existing_project_device(replacement, allow_repair_migration=True)
+    assert boot.selected_device() == repaired["old"]
+
+
+def test_different_repaired_folder_denies_migration(repaired, monkeypatch, tmp_path: Path) -> None:
+    replacement = repaired["replacement"]
+    previous = repaired["previous"]
+
+    def inspect(project):
+        directory = tmp_path if project == previous else tmp_path / "different-board"
+        return SimpleNamespace(directory=directory, filename_stem=project.filename_stem)
+
+    monkeypatch.setattr(local_selection, "inspect_owner_selected_project", inspect)
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.remember_existing_project_device(replacement, allow_repair_migration=True)
+    assert boot.selected_device() == repaired["old"]
+
+
+def test_revalidation_rejects_project_changed_while_waiting_for_mutex(
+    repaired, monkeypatch
+) -> None:
+    from contextlib import contextmanager
+
+    selected = {"project": repaired["replacement"]}
+    monkeypatch.setattr(connector, "selected_project", lambda: selected["project"])
+
+    @contextmanager
+    def switch_during_lock():
+        selected["project"] = None
+        yield
+
+    monkeypatch.setattr(boot, "owner_connector_instance", switch_during_lock)
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.remember_existing_project_device(repaired["replacement"], allow_repair_migration=True)
+    assert boot.selected_device() == repaired["old"]
+
+
+def test_archived_device_write_must_be_verified_before_marker_switch(repaired, monkeypatch) -> None:
+    create = repaired["create"]
+    replacement = repaired["replacement"]
+
+    def lost_archive_write(record: str, part: str, data: bytes) -> None:
+        if (record, part) != (replacement.registration_id, "archived_device_selected"):
+            create(record, part, data)
+
+    monkeypatch.setattr(boot, "create_credential", lost_archive_write)
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.remember_existing_project_device(replacement, allow_repair_migration=True)
+    assert boot.selected_device() == repaired["old"]
+
+
+def test_existing_foreign_device_archive_is_not_replaced(repaired) -> None:
+    replacement = repaired["replacement"]
+    archived = (replacement.registration_id, "archived_device_selected")
+    repaired["store"][archived] = b"foreign-owner-data"
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.remember_existing_project_device(replacement, allow_repair_migration=True)
+    assert repaired["store"][archived] == b"foreign-owner-data"
+    assert boot.selected_device() == repaired["old"]
+
+
+def test_refused_old_marker_deletion_preserves_selection(repaired, monkeypatch) -> None:
+    marker = (boot._DEVICE_SELECTION_SLOT, "selected")
+
+    def refuse_delete(record: str, part: str) -> bool:
+        if (record, part) == marker:
+            return False
+        return repaired["store"].pop((record, part), None) is not None
+
+    monkeypatch.setattr(credentials, "delete_credential", refuse_delete)
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.remember_existing_project_device(repaired["replacement"], allow_repair_migration=True)
+    assert boot.selected_device() == repaired["old"]
+
+
+def test_unverifiable_replacement_is_rolled_back(repaired, monkeypatch) -> None:
+    original = boot.selected_device
+
+    def fails_verified_new_device():
+        current = original()
+        return None if current == repaired["new"] else current
+
+    monkeypatch.setattr(boot, "selected_device", fails_verified_new_device)
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.remember_existing_project_device(repaired["replacement"], allow_repair_migration=True)
+    assert original() == repaired["old"]
+
+
+def test_unverifiable_new_marker_with_refused_rollback_fails_closed(repaired, monkeypatch) -> None:
+    original = boot.selected_device
+    marker = (boot._DEVICE_SELECTION_SLOT, "selected")
+    new_bytes = boot._device_marker_payload(repaired["new"])
+
+    def fails_verified_new_device():
+        current = original()
+        return None if current == repaired["new"] else current
+
+    def refuse_new_marker_rollback(record: str, part: str) -> bool:
+        if (record, part) == marker and repaired["store"].get(marker) == new_bytes:
+            return False
+        return repaired["store"].pop((record, part), None) is not None
+
+    monkeypatch.setattr(boot, "selected_device", fails_verified_new_device)
+    monkeypatch.setattr(credentials, "delete_credential", refuse_new_marker_rollback)
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.remember_existing_project_device(repaired["replacement"], allow_repair_migration=True)
+    assert repaired["store"][marker] == new_bytes
+
+
+def test_foreign_marker_created_during_vault_error_is_never_overwritten(
+    repaired, monkeypatch
+) -> None:
+    marker = (boot._DEVICE_SELECTION_SLOT, "selected")
+    new_bytes = boot._device_marker_payload(repaired["new"])
+    original_create = repaired["create"]
+
+    def competing_writer(record: str, part: str, data: bytes) -> None:
+        if (record, part) == marker and data == new_bytes:
+            repaired["store"][marker] = b"other-owner-marker"
+            raise LocalApprovalDeniedError("simulated concurrent vault update")
+        original_create(record, part, data)
+
+    monkeypatch.setattr(boot, "create_credential", competing_writer)
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.remember_existing_project_device(repaired["replacement"], allow_repair_migration=True)
+    assert repaired["store"][marker] == b"other-owner-marker"
+
+
+def test_one_command_cli_passes_real_interactive_owner_migration_flag(
+    repaired, monkeypatch
+) -> None:
+    from kicad_mcp import cloud_user_cli, cloud_windows_write_issuer
+
+    calls = []
+    replacement = repaired["replacement"]
+    monkeypatch.setattr(cloud_user_cli, "_is_windows", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(
+        boot,
+        "remember_existing_project_device",
+        lambda project, **kwargs: calls.append(("migrate", project, kwargs)),
+    )
+    monkeypatch.setattr(
+        cloud_windows_write_issuer,
+        "trust_bundled_owner_cloud_issuer",
+        lambda record_id, **kwargs: calls.append(("issuer", record_id, kwargs)),
+    )
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_connect_windows_foreground",
+        lambda *args, **kwargs: calls.append(("connect", args, kwargs)),
+    )
+    cloud_user_cli.cloud_entry(SimpleNamespace(invoked_subcommand=None))
+    assert calls[0] == ("migrate", replacement, {"allow_repair_migration": True})
+    assert calls[1][0] == "issuer"
+    assert calls[2][0] == "connect"
