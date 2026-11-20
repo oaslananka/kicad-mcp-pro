@@ -351,8 +351,8 @@ function OfflineRecovery({context}:Readonly<{context:ViewContext}>){
       aria-labelledby="reconnect-computer-title">
     <h2 id="reconnect-computer-title"><Icon name="cpu" size={16}/> Start your paired computer</h2>
     <p>Open PowerShell on the same Windows computer and run the same setup command.
-      It checks the installed version, repairs a damaged installation when possible,
-      and reuses your existing device registration.</p>
+      It checks for updates, keeps your setup working, and reconnects the
+      same registered device without pairing it again.</p>
     <CopyValue value={CLOUD_WINDOWS_INSTALL} label="restart paired device"/>
     <p className="field-help">Keep the terminal open to remain Online and see connection
       and tool activity logs. Closing it disconnects your device, not your pairing.
