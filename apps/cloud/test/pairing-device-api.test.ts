@@ -49,8 +49,8 @@ test("approved pairing is consumed once by the authentic device key, enrolled fo
     assert.equal((await a.enroll("127.0.0.1",challenge.id,
       randomBytes(32).toString("base64url"),proper)).kind,"unavailable");
     const both=await Promise.all([
-      a.enroll("127.0.0.1",challenge.id,challenge.deviceCode,proper),
-      b.enroll("127.0.0.1",challenge.id,challenge.deviceCode,proper)
+      a.enroll("127.0.0.1",challenge.id,challenge.deviceCode,proper,true),
+      b.enroll("127.0.0.1",challenge.id,challenge.deviceCode,proper,true)
     ]);
     assert.deepEqual(both.map(r=>r.kind).sort(),["ok","unavailable"]);
     const enrolled=both.find(r=>r.kind==="ok");

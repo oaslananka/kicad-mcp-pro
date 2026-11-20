@@ -43,8 +43,8 @@ test("isolated PostgreSQL pairing transitions serialize competing workers",
     assert.ok(["owner-1","owner-2"].includes(owner));
 
     const redeemed=await Promise.all([
-      store.enroll(first.id,first.deviceCode,proof),
-      store.enroll(first.id,first.deviceCode,proof)
+      store.enroll(first.id,first.deviceCode,proof,true),
+      store.enroll(first.id,first.deviceCode,proof,true)
     ]);
     assert.deepEqual(redeemed.map(r=>r.kind).sort(),["enrolled","unavailable"]);
     assert.equal(redeemed.find(r=>r.kind==="enrolled")?.ownerSub,owner);
@@ -56,6 +56,22 @@ test("isolated PostgreSQL pairing transitions serialize competing workers",
     assert.equal(linked.rows.length,1);
     assert.equal(linked.rows[0].enabled,true);
     assert.equal((await store.enroll(first.id,first.deviceCode,proof)).kind,"unavailable");
+
+    // Original published clients do not pass the opt-in flag. Their device
+    // remains disabled until the legacy owner enable/project registration.
+    const legacyKeys=generateKeyPairSync("ed25519");
+    const legacyDer=legacyKeys.publicKey.export({format:"der",type:"spki"}) as Buffer;
+    const legacy=await store.issue("Older CLI",legacyDer);
+    assert.equal(await store.review(legacy.id,owner,legacy.userCode,"approve"),"approved");
+    const legacyProof=sign(null,redemptionProof(legacy.id,legacy.deviceCode),
+      legacyKeys.privateKey);
+    const legacyResult=await store.enroll(legacy.id,legacy.deviceCode,legacyProof);
+    assert.equal(legacyResult.kind,"enrolled");
+    if(legacyResult.kind==="enrolled"){
+      const legacyRows=await pool.query<{enabled:boolean}>(
+        "SELECT enabled FROM devices WHERE id=$1",[legacyResult.deviceId]);
+      assert.equal(legacyRows.rows[0]?.enabled,false);
+    }
 
     const wrong=await store.issue("Locked PC",der);
     const results=await Promise.all(Array.from({length:MAX_USER_CODE_ATTEMPTS},()=>(

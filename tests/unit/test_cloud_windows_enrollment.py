@@ -109,6 +109,7 @@ def fake_windows_pair(
             events.append("redeem")
             assert status == 200
             assert state["approved"]
+            assert body["connectOnApproval"] is True
             check_signature(body, b"kicad-cloud-pairing-proof-v1\x00")
             return {
                 "deviceId": DEVICE,

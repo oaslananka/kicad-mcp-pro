@@ -106,7 +106,12 @@ def _approved_redeem(
     result = cloud_pair._post(
         target,
         "/api/v1/pairing/device/redeem",
-        {"challengeId": challenge, "deviceCode": secret, "signature": signature},
+        {
+            "challengeId": challenge,
+            "deviceCode": secret,
+            "signature": signature,
+            "connectOnApproval": True,
+        },
         200,
     )
     required = {"deviceId", "deviceFingerprint", "enabled", "ownerSub"}

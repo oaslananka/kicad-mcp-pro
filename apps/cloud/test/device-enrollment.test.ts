@@ -38,8 +38,8 @@ test("atomic enrollment, owner-scoped revocation and grant disablement",
     assert.equal((await store.enroll(challenge.id,"wrong",proof)).kind,"unavailable");
 
     const contenders=await Promise.all([
-      store.enroll(challenge.id,challenge.deviceCode,proof),
-      store.enroll(challenge.id,challenge.deviceCode,proof)
+      store.enroll(challenge.id,challenge.deviceCode,proof,true),
+      store.enroll(challenge.id,challenge.deviceCode,proof,true)
     ]);
     assert.deepEqual(contenders.map(r=>r.kind).sort(),["enrolled","unavailable"]);
     const success=contenders.find((r):r is Extract<typeof r,{kind:"enrolled"}>=>r.kind==="enrolled");

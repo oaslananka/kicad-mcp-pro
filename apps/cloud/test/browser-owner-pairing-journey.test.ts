@@ -137,7 +137,7 @@ test("real HTTP owner journey: DB pairing, browser consent gates, project grant 
       const proof=sign(null,redemptionProof(challenge.challengeId,challenge.deviceCode),
         keys.privateKey).toString("base64url");
       const redeemed=await devicePost("redeem",{
-        challengeId:challenge.challengeId,deviceCode:challenge.deviceCode,signature:proof
+        challengeId:challenge.challengeId,deviceCode:challenge.deviceCode,signature:proof,connectOnApproval:true
       });
       assert.equal(redeemed.status,200);
       const enrolled=await redeemed.json() as {
@@ -146,7 +146,7 @@ test("real HTTP owner journey: DB pairing, browser consent gates, project grant 
       assert.equal(enrolled.enabled,true);
       assert.equal(enrolled.deviceFingerprint,challenge.deviceFingerprint);
       assert.equal((await devicePost("redeem",{
-        challengeId:challenge.challengeId,deviceCode:challenge.deviceCode,signature:proof
+        challengeId:challenge.challengeId,deviceCode:challenge.deviceCode,signature:proof,connectOnApproval:true
       })).status,400,"one-use proof must not be replayed");
       // Browser approval permits a device connection only. No KiCad project,
       // client grant or edit permission has been created for the signed device.

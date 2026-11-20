@@ -15,7 +15,9 @@ const statusSchema=z.strictObject({
 const redeemSchema=z.strictObject({
   challengeId:z.uuid(),
   deviceCode:z.string().regex(/^[A-Za-z0-9_-]{43}$/),
-  signature:z.string().regex(/^[A-Za-z0-9_-]{86}$/)
+  signature:z.string().regex(/^[A-Za-z0-9_-]{86}$/),
+  // Opt-in in the new client only. Absent means the original disabled-device contract.
+  connectOnApproval:z.literal(true).optional()
 });
 const projectSchema=z.strictObject({
   deviceId:z.string().uuid(),
@@ -119,7 +121,9 @@ export async function handlePairingDeviceRequest(
     const secret=canonicalUrlB64(fields.data.deviceCode,32);
     const sig=canonicalUrlB64(fields.data.signature,64);
     if(!secret||!sig){reply(res,400,{error:"invalid_request"});return true;}
-    const result=await api.enroll(source,fields.data.challengeId,fields.data.deviceCode,sig);
+    const connectOnApproval=fields.data.connectOnApproval===true;
+    const result=await api.enroll(source,fields.data.challengeId,fields.data.deviceCode,sig,
+      connectOnApproval);
     if(result.kind==="throttled"){reply(res,429,{error:"rate_limited"});return true;}
     if(result.kind!=="ok"||result.data.kind!=="enrolled"){
       reply(res,400,{error:"unavailable"});return true;
@@ -128,7 +132,7 @@ export async function handlePairingDeviceRequest(
       deviceId:result.data.deviceId,
       deviceFingerprint:result.data.deviceFingerprint,
       ownerSub:result.data.ownerSub,
-      enabled:true
+      enabled:connectOnApproval
     });
     return true;
   }

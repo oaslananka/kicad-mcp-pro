@@ -163,10 +163,26 @@ test("strict device-only HTTP denies browser, spoofed identity and oversized tra
     });
     assert.equal(redeem.status,200);
     const body=await redeem.json() as Record<string,unknown>;
-    assert.equal(body.enabled,true);
+    assert.equal(body.enabled,false,"Legacy no-flag redemption remains disabled");
     assert.equal(body.ownerSub,"owner-1");
     assert.equal(calls.length,2);
     assert.equal(calls[1],"enroll:127.0.0.1:"+id);
+
+    const optIn=await fetch(l.origin+"/api/v1/pairing/device/redeem",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({challengeId:id,deviceCode:secret,
+        signature:randomBytes(64).toString("base64url"),connectOnApproval:true})
+    });
+    assert.equal(optIn.status,200);
+    assert.equal((await optIn.json() as {enabled:boolean}).enabled,true);
+    assert.equal(calls.length,3);
+    const malformedOptIn=await fetch(l.origin+"/api/v1/pairing/device/redeem",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({challengeId:id,deviceCode:secret,
+        signature:randomBytes(64).toString("base64url"),connectOnApproval:"true"})
+    });
+    assert.equal(malformedOptIn.status,400);
+    assert.equal(calls.length,3);
 
     const projectReq=await fetch(l.origin+"/api/v1/pairing/device/project",{
       method:"POST",headers:{"Content-Type":"application/json"},
@@ -177,7 +193,7 @@ test("strict device-only HTTP denies browser, spoofed identity and oversized tra
     const projectBody=await projectReq.json() as Record<string,unknown>;
     assert.equal(projectBody.alias,"MyBoard");
     assert.equal(projectBody.enabled,true);
-    assert.equal(calls.length,3);
+    assert.equal(calls.length,4);
   }finally{await l.close();}
 });
 test("redemption rejects incorrect signature and code encoding before store",async()=>{

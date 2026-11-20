@@ -8,8 +8,8 @@ export type PairingDeviceOutcome<T>={kind:"ok";data:T}|{kind:"throttled"}|{kind:
 export type RegisteredProject={projectId:string;alias:string;ownerSub:string;enabled:boolean};
 export interface PairingDevicePort {
   issue(source:string,alias:string,publicKeyDer:Buffer):Promise<PairingDeviceOutcome<IssueResult>>;
-  enroll(source:string,id:string,deviceCode:string,signature:Buffer):
-    Promise<PairingDeviceOutcome<Enrollment>>;
+  enroll(source:string,id:string,deviceCode:string,signature:Buffer,
+    connectOnApproval?:boolean):Promise<PairingDeviceOutcome<Enrollment>>;
   approved(source:string,id:string,deviceCode:string,signature:Buffer):
     Promise<PairingDeviceOutcome<{approved:boolean;denied?:true}>>;
   registerProject?(source:string,deviceId:string,alias:string,signature:Buffer):
@@ -79,15 +79,15 @@ export class PgPairingDeviceAPI implements PairingDevicePort {
     if(approved==="denied")return {kind:"ok",data:{approved:false,denied:true}};
     return {kind:"ok",data:{approved}};
   }
-  async enroll(source:string,id:string,deviceCode:string,signature:Buffer):
-    Promise<PairingDeviceOutcome<Enrollment>>{
+  async enroll(source:string,id:string,deviceCode:string,signature:Buffer,
+    connectOnApproval=false):Promise<PairingDeviceOutcome<Enrollment>>{
     if(!source||source.length>256||typeof id!=="string"||!UUID.test(id)||
        typeof deviceCode!=="string"||deviceCode.length!==43||
        !Buffer.isBuffer(signature)||signature.length!==64)
       return {kind:"unavailable"};
     if(!await this.take("enroll-source",source,40))return {kind:"throttled"};
     if(!await this.take("enroll-challenge",id,8))return {kind:"throttled"};
-    const result=await this.store.enroll(id,deviceCode,signature);
+    const result=await this.store.enroll(id,deviceCode,signature,connectOnApproval);
     return result.kind==="enrolled"?{kind:"ok",data:result}:{kind:"unavailable"};
   }
   async registerProject(source:string,deviceId:string,alias:string,signature:Buffer):
