@@ -1,5 +1,5 @@
 {
-  ".": "4.21.2",
-  "packages/mcp-npm": "4.21.2",
+  ".": "4.21.3",
+  "packages/mcp-npm": "4.21.3",
   "packages/protocol-schemas": "2.1.0"
 }

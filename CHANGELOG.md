@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.21.3](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.21.2...mcp-server-v4.21.3) (2026-11-20)
+
+
+### Bug Fixes
+
+* **security:** isolate untrusted project settings and KiCad executables ([d79e8a2](https://github.com/oaslananka/kicad-mcp-pro/commit/d79e8a2dab14e2e6c71558b759b214cac2c09674))
+
 ## [4.21.2](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.21.1...mcp-server-v4.21.2) (2026-11-20)
 
 
