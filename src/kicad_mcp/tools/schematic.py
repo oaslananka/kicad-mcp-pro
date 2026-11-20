@@ -3842,6 +3842,15 @@ def _flatten_extends_symbol(library: str, symbol_name: str, blocks: list[str]) -
     # Keep values introduced or overridden at every level of the inheritance chain.
     for derived in blocks[1:]:
         for prop_name, derived_prop in _symbol_property_blocks(derived).items():
+            # KiCad treats a blank Footprint in an inherited symbol as
+            # "use the parent's default", not an override to an empty string.
+            # Flattening it to "" creates a lib_symbol_mismatch in native ERC.
+            if (
+                prop_name == "Footprint"
+                and re.match(r'\(property\s+"Footprint"\s+""\s', derived_prop)
+                and "Footprint" in _symbol_property_blocks(flat)
+            ):
+                continue
             flat = _merge_inherited_symbol_property(flat, prop_name, derived_prop)
     return flat
 
