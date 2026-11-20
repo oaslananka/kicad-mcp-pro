@@ -265,3 +265,20 @@ async def test_folder_only_refresh_handles_expired_lease_and_transport_timeout(
         == receipt
     )
     assert events == ["Refreshing signed Cloud session"]
+
+
+@pytest.mark.asyncio
+async def test_folder_only_entrypoint_rejects_missing_local_folder_factory() -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from kicad_mcp.cloud_outbound_handshake import execute_owner_folder_only_session
+
+    with pytest.raises(CloudHandshakeDeniedError):
+        await execute_owner_folder_only_session(
+            origin="https://cloud.example",
+            trusted_origin="https://cloud.example",
+            owner_sub="owner",
+            device_id=DEVICE,
+            signing_key=Ed25519PrivateKey.generate(),
+            folder_service_factory=None,
+        )

@@ -284,3 +284,51 @@ def test_unbound_connector_rejects_changed_device_identity_before_network(
     monkeypatch.setattr(boot, "execute_owner_folder_only_session", must_not_connect)
     with pytest.raises(LocalApprovalDeniedError):
         asyncio.run(boot.run_device_only(device, status_callback=lambda _msg: None))
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        b"{" + b'"recordId":"a","recordId":"b"' + b"}",
+        b"not-json",
+        b'{"recordId":"only-one-field"}',
+        b"A" * 1025,
+    ],
+)
+def test_saved_device_marker_rejects_duplicate_malformed_or_oversized_data(
+    saved_device, monkeypatch: pytest.MonkeyPatch, malformed: bytes
+) -> None:
+    device, _store = saved_device
+    monkeypatch.setattr(boot, "read_credential", lambda _record, _part: malformed)
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.selected_device()
+
+
+def test_saved_device_marker_rejects_invalid_platform_and_fingerprint(
+    saved_device, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    device, store = saved_device
+    boot.remember_device(device)
+    monkeypatch.setattr(
+        boot,
+        "inspect_local_binding",
+        lambda **_kwargs: SimpleNamespace(fingerprint="0" * 64),
+    )
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.selected_device()
+    monkeypatch.setattr(boot, "os", SimpleNamespace(name="posix"))
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.selected_device()
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.remember_device(device)
+    assert len(store) == 2
+
+
+def test_saved_device_marker_rejects_post_save_identity_change(
+    saved_device, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    device, store = saved_device
+    monkeypatch.setattr(boot, "selected_device", lambda: None)
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.remember_device(device)
+    assert len(store) == 2, "A failed verification is never advertised as paired"
