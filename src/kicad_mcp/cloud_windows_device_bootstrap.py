@@ -127,17 +127,16 @@ def _device_marker_payload(device: WindowsEnrolledDevice) -> bytes:
     ).encode()
 
 
-def _reconcile_browser_repaired_device(
+def _verify_browser_repair_archive(
     project: WindowsRegisteredProject,
     previous: WindowsEnrolledDevice,
     replacement: WindowsEnrolledDevice,
 ) -> None:
-    """Switch a stale device-only marker only with proof of the owner's prior repair."""
+    """Prove that the browser-repaired project replaces this owner's old folder."""
     from kicad_mcp.cloud_windows_connector import (
         _load_project_from_marker,
         selected_project,
     )
-    from kicad_mcp.cloud_windows_credentials import delete_credential
     from kicad_mcp.cloud_windows_local_selection import inspect_owner_selected_project
 
     archived = read_credential(project.registration_id, "archived_selected")
@@ -174,6 +173,31 @@ def _reconcile_browser_repaired_device(
     ):
         raise LocalApprovalDeniedError(_DENIED)
 
+
+def _restore_stale_device_marker(old_bytes: bytes, new_bytes: bytes) -> None:
+    """Roll back our failed selection change without touching foreign records."""
+    from kicad_mcp.cloud_windows_credentials import delete_credential
+
+    current = read_credential(_DEVICE_SELECTION_SLOT, "selected")
+    if current == new_bytes:
+        if not delete_credential(_DEVICE_SELECTION_SLOT, "selected"):
+            raise LocalApprovalDeniedError(_DENIED)
+    elif current is not None:
+        # Another owner's selection is never ours to undo.
+        raise LocalApprovalDeniedError(_DENIED)
+    create_credential(_DEVICE_SELECTION_SLOT, "selected", old_bytes)
+
+
+def _reconcile_browser_repaired_device(
+    project: WindowsRegisteredProject,
+    previous: WindowsEnrolledDevice,
+    replacement: WindowsEnrolledDevice,
+) -> None:
+    """Switch a stale device marker only after a verified owner browser repair."""
+    from kicad_mcp.cloud_windows_connector import selected_project
+    from kicad_mcp.cloud_windows_credentials import delete_credential
+
+    _verify_browser_repair_archive(project, previous, replacement)
     old_bytes = _device_marker_payload(previous)
     new_bytes = _device_marker_payload(replacement)
     with owner_connector_instance():
@@ -197,14 +221,7 @@ def _reconcile_browser_repaired_device(
             if selected_device() != replacement:
                 raise LocalApprovalDeniedError(_DENIED)
         except Exception:
-            current = read_credential(_DEVICE_SELECTION_SLOT, "selected")
-            if current == new_bytes:
-                if not delete_credential(_DEVICE_SELECTION_SLOT, "selected"):
-                    raise LocalApprovalDeniedError(_DENIED) from None
-            elif current is not None:
-                # Another owner's selection is never ours to undo.
-                raise LocalApprovalDeniedError(_DENIED) from None
-            create_credential(_DEVICE_SELECTION_SLOT, "selected", old_bytes)
+            _restore_stale_device_marker(old_bytes, new_bytes)
             raise LocalApprovalDeniedError(_DENIED) from None
 
 
