@@ -49,9 +49,10 @@ def test_pairing_rejects_expired_excessively_future_or_noninteger_deadlines(
     expires_at: object,
 ) -> None:
     key = Ed25519PrivateKey.generate()
+    response = _valid_response(key, expires_at)
     with patch.object(cloud_pair.time, "time_ns", return_value=_NOW_MS * 1_000_000):
         with pytest.raises(cloud_pair.CloudPairingError, match="pairing denied"):
-            cloud_pair._challenge(_valid_response(key, expires_at), key)
+            cloud_pair._challenge(response, key)
 
 
 def test_pairing_rejects_forged_key_even_inside_clock_tolerance() -> None:
