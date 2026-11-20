@@ -16,7 +16,7 @@ const migrations=[
   "012_pairing_device_budget.pgsql"
 ];
 
-test("approved pairing is consumed once by the authentic device key, enrolled disabled",
+test("approved pairing is consumed once by the authentic device key, enrolled for device connection only",
   {skip:!conn},async()=>{
   await inIsolatedDatabase(conn!,migrations,async pool=>{
     const a=new PgPairingDeviceAPI(pool,secret),b=new PgPairingDeviceAPI(pool,secret);
@@ -61,7 +61,7 @@ test("approved pairing is consumed once by the authentic device key, enrolled di
     const row=(await pool.query("SELECT d.enabled,d.owner_sub,c.revoked_at,c.key_fingerprint "+
       "FROM devices d JOIN device_credentials c ON c.device_id=d.id WHERE d.id=$1",
       [deviceId])).rows[0];
-    assert.equal(row.enabled,false);
+    assert.equal(row.enabled,true);
     assert.equal(row.owner_sub,owner);
     assert.equal(row.revoked_at,null);
     assert.equal(row.key_fingerprint,createHash("sha256").update(der).digest("hex"));
@@ -69,7 +69,7 @@ test("approved pairing is consumed once by the authentic device key, enrolled di
       "WHERE pairing_challenge_id=$1",[challenge.id])).rows[0].n,1);
     assert.equal((await pool.query("SELECT state FROM pairing_challenges WHERE id=$1",
       [challenge.id])).rows[0].state,"consumed");
-    assert.equal((await new PgDeviceHandshakes(pool).issue(owner,deviceId)).kind,"unavailable");
+    assert.equal((await new PgDeviceHandshakes(pool).issue(owner,deviceId)).kind,"issued");
     assert.deepEqual(await a.approved("127.0.0.1",challenge.id,
       challenge.deviceCode,statusSignature),{kind:"ok",data:{approved:false}});
 

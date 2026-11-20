@@ -143,25 +143,20 @@ test("real HTTP owner journey: DB pairing, browser consent gates, project grant 
       const enrolled=await redeemed.json() as {
         deviceId:string;deviceFingerprint:string;enabled:boolean
       };
-      assert.equal(enrolled.enabled,false);
+      assert.equal(enrolled.enabled,true);
       assert.equal(enrolled.deviceFingerprint,challenge.deviceFingerprint);
       assert.equal((await devicePost("redeem",{
         challengeId:challenge.challengeId,deviceCode:challenge.deviceCode,signature:proof
       })).status,400,"one-use proof must not be replayed");
-      assert.equal(await devices.createProject(owner,enrolled.deviceId,"Before enable"),null);
+      // Browser approval permits a device connection only. No KiCad project,
+      // client grant or edit permission has been created for the signed device.
+      assert.deepEqual(await devices.listProjects(owner),[]);
       assert.deepEqual(await devices.list(other),[]);
       const devicePage=await fetch(base+"/devices",{headers:{Cookie:ownerCookie}});
       const deviceHtml=await devicePage.text();
-      assert.match(deviceHtml,/Disabled/);
-      const enabledCsrf=htmlCsrf(deviceHtml,"/devices/enable");
-      const enabledCookie=pageCookie(devicePage)+"; "+ownerCookie;
-      assert.equal((await postForm("enable",{
-        device_id:enrolled.deviceId,csrf:enabledCsrf
-      },enabledCookie,"https://hostile.example.invalid")).status,403);
-      assert.equal((await postForm("enable",{
-        device_id:enrolled.deviceId,csrf:enabledCsrf
-      },enabledCookie)).status,303);
-      const projectPage=await fetch(base+"/devices",{headers:{Cookie:ownerCookie}});
+      assert.doesNotMatch(deviceHtml,/Enable my device|>Disabled</);
+      assert.match(deviceHtml,/Owner approved local test/);
+      const projectPage=devicePage;
       const projectCsrf=htmlCsrf(await projectPage.text(),"/devices/projects/create");
       assert.equal((await postForm("register",{
         device_id:enrolled.deviceId,csrf:projectCsrf,alias:"Test PCB"

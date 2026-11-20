@@ -56,26 +56,26 @@ test("disabled enrollment does not present a fake Add a device action",()=>{
  assert.doesNotMatch(html,/class="device-add-button"/);
  assert.match(html,/not enabled on this deployment/);
 });
-test("first pairing advertises terminal-owned foreground Cloud connection",()=>{
+test("first pairing offers one Windows setup command and one installed app entrypoint",()=>{
   const first=renderDevicesPage([],undefined,true,{projects:[],ownerSub:"owner",clients:[],savedGrants:[],sandboxMode:false});
-  assert.match(first,/kicad-mcp-pro cloud connect/);
-  assert.match(first,/sign-in/);
+  assert.match(first,/irm https:\/\/raw\.githubusercontent\.com\/oaslananka\/kicad-mcp-pro\/main\/scripts\/install-cloud\.ps1 \| iex/);
+  assert.match(first,/kicad-mcp-pro cloud/);
+  assert.match(first,/Connect this device/);
   assert.match(first,/Keep the terminal open/);
-
-  const next=renderDevicesPage([device("Paired computer","connected")],undefined,true,{projects:[],ownerSub:"owner",clients:[],savedGrants:[],sandboxMode:false});
-  assert.match(next,/kicad-mcp-pro cloud connect/);
-  assert.match(next,/sign-in/);
-  assert.match(next,/Keep the terminal open/);
+  assert.doesNotMatch(first,/kicad-mcp-pro cloud connect|kicad-mcp-pro cloud reconnect/);
+  const next=renderDevicesPage([device("Paired computer","connected")],undefined,true,
+    {projects:[],ownerSub:"owner",clients:[],savedGrants:[],sandboxMode:false});
+  assert.match(next,/kicad-mcp-pro cloud/);
+  assert.doesNotMatch(next,/kicad-mcp-pro cloud connect|cloud reconnect/);
 });
 
-test("paired offline devices have one actionable recovery destination without re-pairing",()=>{
+test("paired offline devices offer one familiar start action, not a repair command",()=>{
  const offline=renderDevicesPage([device("Workbench","disconnected")]);
  assert.match(offline,/href="#reconnect-computer"/);
  assert.match(offline,/id="reconnect-computer"/);
- assert.match(offline,/Reconnect a paired computer/);
- assert.match(offline,/kicad-mcp-pro cloud status/);
- assert.match(offline,/kicad-mcp-pro cloud reconnect/);
- assert.match(offline,/read-only background Connector/);
+ assert.match(offline,/kicad-mcp-pro cloud/);
+ assert.match(offline,/same registered device/i);
+ assert.doesNotMatch(offline,/kicad-mcp-pro cloud status|kicad-mcp-pro cloud reconnect|read-only background Connector/);
  const connected=renderDevicesPage([device("Workbench","connected")]);
  assert.doesNotMatch(connected,/id="reconnect-computer"/);
  const sandbox=renderDevicesPage([device("Workbench","disconnected")],undefined,true,{sandboxMode:true});

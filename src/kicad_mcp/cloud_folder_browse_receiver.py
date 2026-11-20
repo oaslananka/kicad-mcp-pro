@@ -264,7 +264,9 @@ class BrowserFolderService:
         *,
         native_picker: Callable[[], Path | None] = choose_project_folder,
         authorization: Callable[[], bool] | None = None,
+        on_bound: Callable[[str, Path], bool] | None = None,
     ) -> None:
+        self._on_bound = on_bound
         self._browser = browser
         self._native_picker = native_picker
         self._authorization = authorization
@@ -279,7 +281,18 @@ class BrowserFolderService:
 
     def bind(self, folder_id: str, project_id: str) -> bool:
         self._authorized()
-        return bool(self._browser.bind(folder_id, project_id))
+        selected = (
+            self._browser.selected_project_file(folder_id) if self._on_bound is not None else None
+        )
+        if self._on_bound is not None and selected is None:
+            return False
+        if not self._browser.bind(folder_id, project_id):
+            return False
+        if self._on_bound is None:
+            return True
+        if selected is None:
+            return False
+        return self._on_bound(project_id, selected) is True
 
     def choose(self) -> dict[str, object]:
         self._authorized()

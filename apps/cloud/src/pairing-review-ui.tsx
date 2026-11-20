@@ -27,7 +27,7 @@ export function renderPairingReviewPage(csrf:string,notice?:string):string {
         </div>
       </form>
       <div className="security-note"><Icon name="lock" size={17}/> Approval alone cannot access projects.
-        The device must prove possession of its own private key, and it remains disabled until separately enabled.
+        The device must prove possession of its own private key. Approval connects this device only; it does not grant access to any KiCad project or AI app.
         Never approve a request you did not start.</div>
       <a className="mini-link" href="/devices">← Your devices</a>
       <script defer={true} src="/assets/pairing-review.js"></script>

@@ -557,3 +557,47 @@ async def serve_authenticated_reads(
         return receipt
     finally:
         dispatcher.close()
+
+
+async def serve_owner_folder_only(
+    socket: AuthenticatedReadSocket,
+    receipt: HandshakeReceipt,
+    folder_service: LocalFolderBrowseService,
+    *,
+    on_activity: Callable[[str], None] | None = None,
+) -> HandshakeReceipt:
+    """Bootstrap a signed device without any KiCad project read or write access.
+
+    Browser frames require the owner's explicit Cloud action and opaque local
+    tokens. After a successful project bind, close this limited session so the
+    owner process may start the ordinary project-bound Connector.
+    """
+    if (
+        not isinstance(receipt, HandshakeReceipt)
+        or not callable(getattr(folder_service, "choose", None))
+        or not callable(getattr(folder_service, "bind", None))
+        or (on_activity is not None and not callable(on_activity))
+    ):
+        raise CloudHandshakeDeniedError(_DENIED)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _SESSION_REFRESH_SECONDS
+    while True:
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            _report_activity(on_activity, "Refreshing signed Cloud session")
+            return receipt
+        try:
+            raw = await asyncio.wait_for(socket.recv(), timeout=remaining)
+        except TimeoutError:
+            _report_activity(on_activity, "Refreshing signed Cloud session")
+            return receipt
+        if not isinstance(raw, str) or _top_level_kind(raw) != _FOLDER_REQUEST_KIND:
+            raise CloudHandshakeDeniedError(_DENIED)
+        request = _read_strict_json(raw, _FOLDER_REQUEST_KIND)
+        if request.get("operation") not in ("choose", "list", "bind", "path"):
+            raise CloudHandshakeDeniedError(_DENIED)
+        await _serve_folder_frame(socket, raw, folder_service, on_activity)
+        if request["operation"] == "bind":
+            # Whether bind succeeded is checked in the native validated reply.
+            # A failed binding is not authorization to serve a design.
+            return receipt

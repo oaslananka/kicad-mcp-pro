@@ -163,7 +163,7 @@ test("strict device-only HTTP denies browser, spoofed identity and oversized tra
     });
     assert.equal(redeem.status,200);
     const body=await redeem.json() as Record<string,unknown>;
-    assert.equal(body.enabled,false);
+    assert.equal(body.enabled,true);
     assert.equal(body.ownerSub,"owner-1");
     assert.equal(calls.length,2);
     assert.equal(calls[1],"enroll:127.0.0.1:"+id);

@@ -1217,4 +1217,20 @@ body{line-height:1.5;letter-spacing:-.007em}
 .cloud-usage-lifetime>span{font-size:12px;font-weight:650;color:var(--muted)}
 .cloud-usage-lifetime>strong{font-size:clamp(24px,3vw,38px);color:var(--text);font-variant-numeric:tabular-nums}
 .cloud-usage-lifetime>small{font-size:12px;color:var(--muted)}
+/* One foreground Cloud setup choice, with honest unavailable platforms. */
+.device-setup-platforms{display:flex;align-items:stretch;gap:7px;flex-wrap:wrap;
+  margin:18px 0;padding:5px;border:1px solid var(--line);border-radius:12px}
+.device-setup-platforms>*{flex:1 1 130px;padding:11px 8px;text-align:center;
+  font-size:12px;border-radius:9px}
+.device-setup-platforms strong{background:var(--accent-soft);color:var(--text);
+  border:1px solid var(--accent-border)}
+.device-setup-platforms span{color:var(--muted);opacity:.78}
+.device-setup-alternative{margin:14px 0}
+.device-setup-alternative summary{cursor:pointer;min-height:44px;
+  display:flex;align-items:center;font-size:13px;font-weight:650}
+.device-setup-alternative .copy-value{margin-top:8px}
+.page-devices .quickstart-card h3{font-size:15px;margin:18px 0 5px}
+.page-devices .quickstart-card h3 small{font-size:11px;color:var(--accent);
+  margin-left:6px;font-weight:650}
+
 `;

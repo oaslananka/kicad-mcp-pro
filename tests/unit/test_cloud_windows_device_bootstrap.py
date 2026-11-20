@@ -1,0 +1,157 @@
+"""A new Cloud user should pair one device, choose no project until the UI asks."""
+
+import hashlib
+import json
+from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
+
+import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+    PublicFormat,
+)
+
+from kicad_mcp import cloud_windows_device_bootstrap as boot
+from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
+from kicad_mcp.cloud_windows_enrollment import WindowsEnrolledDevice
+
+
+@pytest.fixture
+def saved_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[WindowsEnrolledDevice, dict[tuple[str, str], bytes]]:
+    key = Ed25519PrivateKey.generate()
+    der = key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+    device = WindowsEnrolledDevice(
+        "a" * 32,
+        "https://cloud.example",
+        "owner",
+        "11111111-1111-4111-8111-111111111111",
+        hashlib.sha256(der).hexdigest(),
+    )
+    store = {
+        (device.record_id, "key"): key.private_bytes(
+            Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()
+        )
+    }
+    monkeypatch.setattr(boot, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(boot, "read_credential", lambda record, part: store.get((record, part)))
+
+    def create(record: str, part: str, data: bytes) -> None:
+        if (record, part) in store:
+            raise LocalApprovalDeniedError("existing")
+        store[(record, part)] = data
+
+    monkeypatch.setattr(boot, "create_credential", create)
+    monkeypatch.setattr(
+        boot,
+        "inspect_local_binding",
+        lambda **_kwargs: SimpleNamespace(fingerprint=device.fingerprint),
+    )
+    return device, store
+
+
+def test_existing_approved_device_is_reused_without_a_second_pairing(saved_device) -> None:
+    device, store = saved_device
+    assert boot.selected_device() is None
+    boot.remember_device(device)
+    boot.remember_device(device)
+    assert boot.selected_device() == device
+    assert len(store) == 2
+    assert isinstance(boot.verified_device_key(device), Ed25519PrivateKey)
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.remember_device(
+            WindowsEnrolledDevice(
+                "b" * 32, device.origin, device.owner_sub, str(uuid4()), device.fingerprint
+            )
+        )
+    assert boot.selected_device() == device
+
+
+def test_native_owner_project_binding_uses_original_device_identity(
+    saved_device, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    device, store = saved_device
+    boot.remember_device(device)
+    folder = tmp_path / "Board"
+    folder.mkdir()
+    file = folder / "Board.kicad_pro"
+    file.write_text("{}", encoding="utf-8")
+    project_id = str(uuid4())
+    registered = []
+    monkeypatch.setattr(
+        boot, "read_windows_project_presence", lambda _folder, _stem: {"project": True}
+    )
+    monkeypatch.setattr(boot, "inspect_project_reference", lambda **_kwargs: None)
+    import kicad_mcp.cloud_windows_connector as connector
+
+    monkeypatch.setattr(connector, "selected_project", lambda: None)
+    monkeypatch.setattr(
+        connector,
+        "remember_selected_project",
+        lambda project: registered.append(("selected", project)),
+    )
+    monkeypatch.setattr(
+        connector,
+        "activate",
+        lambda project, owner_confirm: registered.append(("activated", project)),
+    )
+    monkeypatch.setattr(
+        boot,
+        "bind_owner_selected_project",
+        lambda project, directory, owner_confirm: registered.append(("folder", directory)),
+    )
+    assert boot.adopt_browser_project(device, project_id, file)
+    refs = [json.loads(blob) for (record, part), blob in store.items() if part == "registration"]
+    assert len(refs) == 1
+    assert refs[0]["deviceId"] == device.device_id
+    assert refs[0]["projectId"] == project_id
+    assert refs[0]["filenameStem"] == "Board"
+    assert "directory" not in refs[0]
+    assert [op for op, _ in registered] == ["folder", "selected", "activated"]
+
+
+def test_unbound_device_cannot_adopt_unselected_or_nonproject_path(
+    saved_device, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    device, store = saved_device
+    boot.remember_device(device)
+    import kicad_mcp.cloud_windows_connector as connector
+
+    monkeypatch.setattr(connector, "selected_project", lambda: None)
+    bad = tmp_path / "no-project.txt"
+    bad.write_text("secret", encoding="utf-8")
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.adopt_browser_project(device, str(uuid4()), bad)
+    assert not any(part == "registration" for _record, part in store)
+
+
+def test_verified_legacy_project_can_be_reused_as_the_same_device(
+    saved_device, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_windows_connector as connector
+    from kicad_mcp.cloud_windows_enrollment import WindowsRegisteredProject
+
+    device, store = saved_device
+    project = WindowsRegisteredProject(
+        registration_id="b" * 32,
+        record_id=device.record_id,
+        origin=device.origin,
+        owner_sub=device.owner_sub,
+        device_id=device.device_id,
+        fingerprint=device.fingerprint,
+        project_id=str(uuid4()),
+        filename_stem="Test",
+    )
+    monkeypatch.setattr(connector, "selected_project", lambda: project)
+    boot.remember_existing_project_device(project)
+    boot.remember_existing_project_device(project)
+    assert boot.selected_device() == device
+    assert len(store) == 2
+    monkeypatch.setattr(connector, "selected_project", lambda: None)
+    with pytest.raises(LocalApprovalDeniedError):
+        boot.remember_existing_project_device(project)

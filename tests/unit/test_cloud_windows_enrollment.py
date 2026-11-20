@@ -114,7 +114,7 @@ def fake_windows_pair(
                 "deviceId": DEVICE,
                 "deviceFingerprint": state["fingerprint"],
                 "ownerSub": OWNER,
-                "enabled": False,
+                "enabled": True,
             }
         if path.endswith("/project"):
             events.append("project")
@@ -559,7 +559,7 @@ def test_credential_substitution_before_redeem_denies_remote_registration(
     assert "delete:key" not in events
 
 
-def test_unexpected_cloud_grant_is_not_claimed_as_valid(
+def test_unexpected_disabled_device_reply_is_not_claimed_as_connected(
     fake_windows_pair,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -569,7 +569,7 @@ def test_unexpected_cloud_grant_is_not_claimed_as_valid(
     def enabled_reply(target, path, body, status):
         result = original(target, path, body, status)
         if path.endswith("/redeem"):
-            result["enabled"] = True
+            result["enabled"] = False
         return result
 
     monkeypatch.setattr(cloud_pair, "_post", enabled_reply)

@@ -117,7 +117,7 @@ def _approved_redeem(
         or not isinstance(device_id, str)
         or cloud_pair._UUID.fullmatch(device_id) is None
         or result["deviceFingerprint"] != fingerprint
-        or result["enabled"] is not False
+        or result["enabled"] is not True
         or not isinstance(owner_sub, str)
         or not 1 <= len(owner_sub) <= 256
         or any(ord(char) < 32 or ord(char) == 127 for char in owner_sub)

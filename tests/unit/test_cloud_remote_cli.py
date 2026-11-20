@@ -68,6 +68,86 @@ def remote_fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[dic
     return state, folder
 
 
+def test_default_cloud_on_unpaired_windows_identity_uses_one_owner_browser_flow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_user_cli as owner_cli
+    from kicad_mcp import cloud_windows_connector as connector
+
+    calls: list[str] = []
+    monkeypatch.setattr(owner_cli, "_is_windows", lambda: True)
+    monkeypatch.setattr(connector, "selected_project", lambda: None)
+    monkeypatch.setattr(
+        owner_cli,
+        "_connect_unbound_windows_device",
+        lambda _origin, _alias: calls.append("browser_then_folder") or False,
+    )
+    monkeypatch.setattr(
+        owner_cli,
+        "_connect_windows_foreground",
+        lambda *_args, **_kwargs: calls.append("existing_project"),
+    )
+    result = CliRunner().invoke(server.app, ["cloud"])
+    assert result.exit_code == 0, result.output
+    assert calls == ["browser_then_folder"]
+
+
+def test_default_cloud_command_reuses_device_with_locally_pinned_signed_edit_capability(
+    remote_fixture: tuple[dict[str, Any], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_windows_write_issuer as issuer
+
+    state, _ = remote_fixture
+    state["project"] = SimpleNamespace(
+        origin=cloud_user_cli.DEFAULT_CLOUD_ORIGIN, record_id="a" * 32
+    )
+    called: list[object] = []
+
+    def approve(record: str, *, origin: str) -> None:
+        assert record == "a" * 32
+        assert origin == cloud_user_cli.DEFAULT_CLOUD_ORIGIN
+        called.append("bundled_owner_issuer")
+
+    monkeypatch.setattr(issuer, "trust_bundled_owner_cloud_issuer", approve)
+
+    def connect(*_args: object, **kwargs: object) -> None:
+        called.append(("foreground", kwargs["allow_native_write"], kwargs["new_device"]))
+
+    monkeypatch.setattr(cloud_user_cli, "_connect_windows_foreground", connect)
+    response = CliRunner().invoke(server.app, ["cloud"])
+    assert response.exit_code == 0, response.output
+    assert called == ["bundled_owner_issuer", ("foreground", True, False)]
+    assert state["calls"] == [], "No new pairing or background task requested"
+
+
+def test_broken_owner_issuer_pin_denies_default_cloud_edit_before_connection(
+    remote_fixture: tuple[dict[str, Any], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_windows_write_issuer as issuer
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    state, _ = remote_fixture
+    state["project"] = SimpleNamespace(
+        origin=cloud_user_cli.DEFAULT_CLOUD_ORIGIN, record_id="a" * 32
+    )
+    monkeypatch.setattr(
+        issuer,
+        "trust_bundled_owner_cloud_issuer",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(LocalWriteDeniedError("denied")),
+    )
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_connect_windows_foreground",
+        lambda *_args, **_kwargs: pytest.fail("Could not verify public issuer pin"),
+    )
+    result = CliRunner().invoke(server.app, ["cloud"])
+    assert result.exit_code != 0
+    assert "edit signing key could not be verified" in result.output
+    assert state["calls"] == []
+
+
 @pytest.mark.parametrize("argv", [["remote"], ["cloud", "remote"]])
 def test_remote_reuses_existing_pairing(
     argv: list[str], remote_fixture: tuple[dict[str, Any], Path]

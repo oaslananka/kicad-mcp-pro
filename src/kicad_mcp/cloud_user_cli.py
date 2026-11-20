@@ -6,6 +6,7 @@ no fabricated CLI bearer token or automatic project grant.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -42,7 +43,102 @@ _KICAD_SCH = "*.kicad_sch"
 _KICAD_PCB = "*.kicad_pcb"
 _NO_PROJECT_FOLDER_SELECTED = "No project folder selected. Setup was not changed."
 _LOCAL_CONNECTOR_READY_STATE = "Configured (not connected)"
-cloud_app = typer.Typer(help="Sign in, pair a device and manage the optional Cloud Connector.")
+cloud_app = typer.Typer(
+    help="Connect your computer to KiCad MCP Pro Cloud; keep this terminal open."
+)
+
+
+@cloud_app.callback(invoke_without_command=True)
+def cloud_entry(ctx: typer.Context) -> None:
+    """Start the foreground Cloud Connector without another command."""
+    if ctx.invoked_subcommand is not None:
+        return
+    if not _is_windows():
+        raise typer.BadParameter(
+            "Single-command Cloud connection is currently available on Windows. "
+            "Local KiCad MCP remains available on this operating system."
+        )
+    from kicad_mcp.cloud_windows_connector import selected_project
+
+    if selected_project() is None and not _connect_unbound_windows_device(
+        DEFAULT_CLOUD_ORIGIN, _DEFAULT_DEVICE_ALIAS
+    ):
+        return
+    existing = selected_project()
+    if existing is None:
+        raise typer.BadParameter("The selected Cloud project is not available.")
+    from kicad_mcp.cloud_windows_device_bootstrap import remember_existing_project_device
+    from kicad_mcp.cloud_windows_enrollment import WindowsRegisteredProject
+
+    if isinstance(existing, WindowsRegisteredProject):
+        remember_existing_project_device(existing)
+    from kicad_mcp.cloud_windows_write_issuer import trust_bundled_owner_cloud_issuer
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    try:
+        trust_bundled_owner_cloud_issuer(existing.record_id, origin=DEFAULT_CLOUD_ORIGIN)
+    except LocalWriteDeniedError:
+        raise typer.BadParameter(
+            "The Cloud edit signing key could not be verified. Your device and project "
+            "were not changed; no editing capability was started."
+        ) from None
+    _connect_windows_foreground(
+        DEFAULT_CLOUD_ORIGIN,
+        _DEFAULT_DEVICE_ALIAS,
+        project_dir=None,
+        no_browser=False,
+        new_device=False,
+        allow_native_write=True,
+    )
+
+
+def _connect_unbound_windows_device(origin: str, alias: str) -> bool:
+    """Browser-pair only the first time, then serve owner-initiated Add Project."""
+    from kicad_mcp.cloud_windows_device_bootstrap import (
+        remember_device,
+        run_device_only,
+        selected_device,
+    )
+    from kicad_mcp.cloud_windows_enrollment import (
+        WindowsEnrollmentError,
+        enroll_windows_device,
+    )
+
+    if not _owner_terminal():
+        raise typer.BadParameter("Start the Cloud Connector in an interactive owner terminal.")
+    enrolled = selected_device()
+    if enrolled is None:
+        typer.echo("Opening browser for a one-time Cloud device approval...")
+        try:
+            enrolled = enroll_windows_device(
+                origin=origin,
+                alias=_resolve_device_alias(alias),
+                owner_approval=lambda page, challenge, code: _perform_approval(
+                    page, challenge, code, False
+                ),
+            )
+            remember_device(enrolled)
+        except WindowsEnrollmentError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+    elif enrolled.origin != origin:
+        raise typer.BadParameter("A Cloud identity for a different origin is already saved.")
+    else:
+        typer.echo("Reusing the same approved Cloud device.")
+
+    typer.echo("Connected device is waiting for a project. Use Add Project in Cloud Devices.")
+    typer.echo("Keep this terminal open for live connection and tool activity logs.")
+    try:
+        asyncio.run(
+            run_device_only(
+                enrolled,
+                status_callback=lambda value: _display_cloud_status(value, origin),
+            )
+        )
+    except KeyboardInterrupt:
+        typer.echo("Disconnected. Your approved device identity remains saved.")
+        return False
+    return True
+
 
 # Only a previously verified owner-enabled read-only task may be restored.
 _BACKGROUND_CONNECTOR_HANDOFF: ContextVar[WindowsRegisteredProject | None] = ContextVar(
@@ -480,21 +576,21 @@ def _display_cloud_status(value: str, origin: str) -> None:
     # print MCP argument contents, access keys, paths or file contents.
     stamp = datetime.now().astimezone().strftime("%H:%M:%S")
     if value == "Connected":
-        category, icon, color = "ONLINE", "●", typer.colors.GREEN
+        category, icon, color = "ONLINE", "â—", typer.colors.GREEN
         detail = "Cloud acknowledged this device's signed session"
     elif value.startswith("Tool call "):
-        category, icon, color = "TOOL", "◆", typer.colors.CYAN
+        category, icon, color = "TOOL", "â—†", typer.colors.CYAN
         detail = value
         if value.endswith("failed"):
             color = typer.colors.RED
     elif "folder" in value.lower() or "dialog" in value.lower():
-        category, icon, color = "FOLDER", "▣", typer.colors.MAGENTA
+        category, icon, color = "FOLDER", "â–£", typer.colors.MAGENTA
         detail = value
     elif "reconnect" in value.lower() or "disconnected" in value.lower():
-        category, icon, color = "NETWORK", "↻", typer.colors.YELLOW
+        category, icon, color = "NETWORK", "â†»", typer.colors.YELLOW
         detail = value
     else:
-        category, icon, color = "CONNECT", "·", typer.colors.BLUE
+        category, icon, color = "CONNECT", "Â·", typer.colors.BLUE
         detail = value
     typer.echo(f"  {stamp}  ", nl=False)
     typer.secho(f"{_cloud_console_glyph(icon, '*')} {category:<8}", fg=color, bold=True, nl=False)
@@ -1107,7 +1203,7 @@ def _try_reconnect_existing(root: Path, origin: str) -> bool:
 def _perform_approval(page: str, challenge: str, code: str, no_browser: bool) -> None:
     review_url = f"{page}#challenge={challenge}&code={code}"
     typer.echo("\n" + "=" * 60)
-    typer.echo("KiCad MCP Pro Cloud — Device Authorization")
+    typer.echo("KiCad MCP Pro Cloud â€” Device Authorization")
     typer.echo(f"Pairing verification code: {code}")
     typer.echo("=" * 60)
     if not no_browser:

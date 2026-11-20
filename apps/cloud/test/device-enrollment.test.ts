@@ -52,15 +52,18 @@ test("atomic enrollment, owner-scoped revocation and grant disablement",
       [success.deviceId]);
     assert.equal(records.rows.length,1);
     assert.equal(records.rows[0].owner_sub,owner);
-    assert.equal(records.rows[0].enabled,false);
+    assert.equal(records.rows[0].enabled,true);
     assert.equal(records.rows[0].revoked_at,null);
     assert.equal(records.rows[0].pairing_challenge_id,challenge.id);
-    assert.equal(await store.activeDevicePublicKey(owner,success.deviceId),null);
-
-    // Test-only simulation of a future verified owner enable action.
-    await db.query("UPDATE devices SET enabled=true WHERE id=$1 AND owner_sub=$2",
-      [success.deviceId,owner]);
+    // Browser owner approval enables this one signed device only; no project
+    // or client authorizations are created by pairing.
     assert.deepEqual(await store.activeDevicePublicKey(owner,success.deviceId),publicDer);
+    assert.equal((await db.query(
+      "SELECT count(*)::integer AS n FROM projects WHERE owner_sub=$1",
+      [owner])).rows[0].n,0);
+    assert.equal((await db.query(
+      "SELECT count(*)::integer AS n FROM project_client_grants WHERE owner_sub=$1",
+      [owner])).rows[0].n,0);
     assert.equal(await store.activeDevicePublicKey("other-owner",success.deviceId),null);
     assert.equal(await store.activeDevicePublicKey(owner,"invalid"),null);
 

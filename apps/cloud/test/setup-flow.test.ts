@@ -54,6 +54,7 @@ test("AI setup precedes the empty app list and leads back to project access",()=
   assert.ok(connected.indexOf('id="connected-clients"')<connected.indexOf('id="mcp-setup"'),"returning users see their apps first");
   assert.doesNotMatch(renderConnectionsPage([],undefined,"http://127.0.0.1:8787"),/Copy MCP endpoint/);
   const devices=renderDevicesPage([]);
-  assert.match(devices,/Copy setup command/);
+  assert.match(devices,/Copy PowerShell setup command/);
+  assert.match(devices,/scripts\/install-cloud\.ps1/);
   assert.match(devices,/src="\/assets\/copy-value\.js"/);
 });

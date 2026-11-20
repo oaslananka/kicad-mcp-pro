@@ -93,8 +93,10 @@ export class PgPairingChallenges {
   }
   /**
    * Enroll only after browser approval and Ed25519 proof. One transaction
-   * inserts the disabled device and its revocable public-key identity AND
-   * consumes the challenge, so DB failure cannot burn the user's approval.
+   * enables only the already browser-approved device connection, with its
+   * revocable public-key identity, AND consumes the challenge atomically.
+   * This does not create a KiCad project or grant any OAuth client file access;
+   * DB failure cannot burn the owner's browser approval.
    * There is deliberately no HTTP endpoint or device execution here.
    */
   async enroll(id:string,code:string,signature:Buffer):Promise<Enrollment>{
@@ -106,7 +108,7 @@ export class PgPairingChallenges {
       if(proof.kind!=="redeemed")return {kind:"unavailable"};
       const deviceId=randomUUID();
       await db.query(
-        "INSERT INTO devices(id,owner_sub,alias,enabled) VALUES($1,$2,$3,false)",
+        "INSERT INTO devices(id,owner_sub,alias,enabled) VALUES($1,$2,$3,true)",
         [deviceId,proof.ownerSub,r.deviceAlias]);
       await db.query(
         "INSERT INTO device_credentials "+
