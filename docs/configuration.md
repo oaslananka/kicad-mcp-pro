@@ -14,8 +14,12 @@ tokens, or third-party sourcing credentials. Set credentials in your MCP client
 launcher or another **operator-controlled process environment**, not in a file
 committed beside the PCB. When setting KICAD_MCP_KICAD_CLI or KICAD_CLI_PATH,
 use an **absolute path** to the installed KiCad executable **outside the active
-project directory**, not a project-relative path; omit both to use normal installed-KiCad discovery. Trusted Python callers
-can opt into an explicitly named _env_file if needed.
+project directory**, not a project-relative path. Automatic discovery ignores
+executables from the server's working directory (including Windows' implicit
+current-directory lookup) and only accepts absolute installed paths from PATH.
+If KiCad is not installed, the CLI is reported unavailable rather than invoking
+a same-named project file. Trusted Python callers can opt into an explicitly
+named _env_file if needed.
 
 The active project can also be changed at runtime with `kicad_set_project()`
 in a dedicated local `stdio` MCP process.
