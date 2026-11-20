@@ -87,7 +87,7 @@ def _check_dockerfile_runtime(dockerfile: str, errors: list[str]) -> None:
     # The builder and runtime must be individually pinned to the same image;
     # otherwise a valid stage could hide a stale/unpinned peer.
     alpine_images = re.findall(
-        r"^FROM python:3\.14\.9-alpine3\.23@sha256:([0-9a-f]{64}) "
+        r"^FROM python:3\.14\.10-alpine3\.23@sha256:([0-9a-f]{64}) "
         r"AS (builder|runtime)$",
         dockerfile,
         flags=re.MULTILINE,
@@ -97,11 +97,11 @@ def _check_dockerfile_runtime(dockerfile: str, errors: list[str]) -> None:
         or {stage for _, stage in alpine_images} != {"builder", "runtime"}
         or len({digest for digest, _ in alpine_images}) != 1
     ):
-        errors.append("Dockerfile must use the pinned Python 3.14.9 Alpine 3.23 base")
+        errors.append("Dockerfile must use the pinned Python 3.14.10 Alpine 3.23 base")
     # Both named KiCad 10 stages must use the same digest. One valid FROM
     # must not mask an unpinned or stale peer stage.
     kicad10_images = re.findall(
-        r"^FROM python:3\.14\.9-slim@sha256:([0-9a-f]{64}) "
+        r"^FROM python:3\.14\.10-slim@sha256:([0-9a-f]{64}) "
         r"AS (builder-kicad10|runtime-kicad10)$",
         dockerfile,
         flags=re.MULTILINE,
@@ -111,7 +111,7 @@ def _check_dockerfile_runtime(dockerfile: str, errors: list[str]) -> None:
         or {stage for _, stage in kicad10_images} != {"builder-kicad10", "runtime-kicad10"}
         or len({digest for digest, _ in kicad10_images}) != 1
     ):
-        errors.append("Dockerfile must use the pinned Python 3.14.9 slim base for KiCad 10 stages")
+        errors.append("Dockerfile must use the pinned Python 3.14.10 slim base for KiCad 10 stages")
     if (
         "ENV PYTHONDONTWRITEBYTECODE=1" not in dockerfile
         or "KICAD_MCP_HOST=0.0.0.0" not in dockerfile
