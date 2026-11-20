@@ -7,7 +7,7 @@ Each step lists the tool to call and what a good result looks like.
 ## 1. Source real, sourceable parts
 
 Search a live distributor catalog. `jlcsearch` needs no credentials; `nexar`,
-`digikey`, and `mouser` use credentials loaded from `.env` at server startup
+`digikey`, and `mouser` use credentials supplied by a trusted process environment
 (`NEXAR_CLIENT_ID`/`NEXAR_CLIENT_SECRET`, `DIGIKEY_CLIENT_ID`/`DIGIKEY_CLIENT_SECRET`,
 `MOUSER_API_KEY`).
 

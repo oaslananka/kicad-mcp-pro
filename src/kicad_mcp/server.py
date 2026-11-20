@@ -3930,14 +3930,10 @@ def inspect_command(
 
 
 def main() -> None:
-    """CLI entrypoint used by the package script."""
-    # Load .env into os.environ at startup so unprefixed third-party credentials
-    # (e.g. NEXAR_CLIENT_ID, DIGIKEY_CLIENT_ID) read via os.getenv are available.
-    # Real environment variables take precedence (override=False). Done only on
-    # the CLI path, so unit tests stay hermetic.
-    from dotenv import load_dotenv
-
-    load_dotenv(override=False)
+    """CLI entrypoint; never import a cloned project's .env into os.environ."""
+    # Project files are the data-plane trust boundary, not credentials or
+    # executable configuration. The operator must set secrets in a trusted
+    # launcher/process environment instead of the working directory.
     app()
 
 

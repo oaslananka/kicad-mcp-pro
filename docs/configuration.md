@@ -3,10 +3,19 @@
 Configuration is resolved in this order:
 
 1. CLI arguments
-2. Environment variables
-3. `.env`
-4. `~/.config/kicad-mcp-pro/config.toml`
-5. Built-in defaults
+2. Explicit process environment variables
+3. Trusted user configuration at `~/.config/kicad-mcp-pro/config.toml`
+4. Built-in defaults
+
+**Security:** A KiCad project and its working directory are untrusted inputs.
+The server never auto-loads an .env file from that directory. A cloned
+repository's .env cannot configure the KiCad CLI executable, privileges,
+tokens, or third-party sourcing credentials. Set credentials in your MCP client
+launcher or another **operator-controlled process environment**, not in a file
+committed beside the PCB. When setting KICAD_MCP_KICAD_CLI or KICAD_CLI_PATH,
+use an **absolute path** to the installed KiCad executable **outside the active
+project directory**, not a project-relative path; omit both to use normal installed-KiCad discovery. Trusted Python callers
+can opt into an explicitly named _env_file if needed.
 
 The active project can also be changed at runtime with `kicad_set_project()`
 in a dedicated local `stdio` MCP process.

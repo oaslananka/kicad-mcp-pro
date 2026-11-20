@@ -48,7 +48,9 @@ class KiCadMCPConfig(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="KICAD_MCP_",
-        env_file=".env",
+        # A cloned KiCad project is untrusted input, never a settings source.
+        # Explicit _env_file=... remains available to trusted Python callers.
+        env_file=None,
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -181,16 +183,15 @@ class KiCadMCPConfig(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        import sys
-
-        # Keep the same precedence while excluding .env during pytest runs.
-        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings]
-        if "pytest" not in sys.modules:
-            sources.append(dotenv_settings)
-        sources.extend(
-            (TomlConfigSettingsSource(settings_cls, toml_file=CONFIG_FILE), file_secret_settings)
+        # No ambient project .env is loaded. Pydantic's dotenv source is inert
+        # by default, but still supports a trusted caller's explicit _env_file.
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            TomlConfigSettingsSource(settings_cls, toml_file=CONFIG_FILE),
+            file_secret_settings,
         )
-        return tuple(sources)
 
     @model_validator(mode="before")
     @classmethod
@@ -380,11 +381,27 @@ class KiCadMCPConfig(BaseSettings):
 
     @model_validator(mode="after")
     def resolve_paths(self) -> KiCadMCPConfig:
-        """Resolve project-relative defaults."""
+        """Resolve project-relative defaults without trusting an ambient CLI."""
+        # A relative operator-supplied executable would be resolved against
+        # whichever (possibly attacker-controlled) project the MCP host opens.
+        # The internal Windows "kicad-cli" discovery sentinel is not a user
+        # override, and remains available only when the field is absent.
+        if "kicad_cli" in self.model_fields_set and not self.kicad_cli.is_absolute():
+            raise ValueError(
+                "An explicitly configured kicad_cli must be an absolute executable path"
+            )
         self._project_dir_explicit = self.project_dir is not None and (
             "project_dir" in self.model_fields_set
         )
         self._refresh_paths()
+        if (
+            "kicad_cli" in self.model_fields_set
+            and self.project_dir is not None
+            and self.kicad_cli.resolve().is_relative_to(self.project_dir.resolve())
+        ):
+            raise ValueError(
+                "An explicitly configured kicad_cli must be outside the active project"
+            )
         self._validate_http_transport_security()
         self._validate_protocol_lane()
         return self

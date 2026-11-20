@@ -23,6 +23,8 @@ MCP client (agent)  --tool calls-->  KiCad MCP Pro
 - **`kicad-cli` and the KiCad IPC endpoint are trusted local components**, configured by
   the operator (`KICAD_MCP_KICAD_CLI`, socket env). Whoever sets those env vars is in the
   trust base.
+  The server never auto-loads a project directory .env file, and operator CLI
+  executable overrides require an absolute path rather than a project-relative one.
 - **HTTP/bridge transports are off by default** and local-only unless explicitly exposed.
 - **Project selection is per process, not per authenticated client or session.**
   A server process is a single-project trust boundary at any moment. Independent
