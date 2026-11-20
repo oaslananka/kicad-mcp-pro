@@ -2221,7 +2221,7 @@ def _auto_place_force_directed_board_file(
     grid_mm: float = 1.0,
     max_seconds: float = 0.0,
 ) -> str:
-    from .validation import _format_placement_score, _placement_analysis
+    from .validation import _format_placement_score, _placement_analysis_from_content
 
     board_file = _get_pcb_file_for_sync()
     board_content = _normalize_board_content(
@@ -2236,9 +2236,10 @@ def _auto_place_force_directed_board_file(
     if len(movable) < 2:
         return "Auto-placement skipped: fewer than two placed footprints."
 
-    # Capture placement score before auto-placement for before/after comparison.
-    before_analysis, _ = _placement_analysis()
-    score_before = before_analysis.score if before_analysis is not None else None
+    # Score the exact board snapshot before attempting any write.
+    before_analysis = _placement_analysis_from_content(board_content)
+    if before_analysis is None:
+        return "Auto-placement skipped: current board placement could not be evaluated."
 
     x_min, y_min, x_max, y_max = _board_frame_mm(board_content, footprints)
     components = [
@@ -2272,6 +2273,13 @@ def _auto_place_force_directed_board_file(
         ),
         stats=stats,
     )
+    if all(
+        abs(placed.x - float(footprints[placed.ref]["x_mm"])) < 1e-6
+        and abs(placed.y - float(footprints[placed.ref]["y_mm"])) < 1e-6
+        for placed in result
+    ):
+        return "Auto-placement skipped: candidate leaves footprint positions unchanged."
+
     replacements: dict[str, str] = {}
     for placed in result:
         entry = footprints[placed.ref]
@@ -2281,24 +2289,47 @@ def _auto_place_force_directed_board_file(
             y_mm=placed.y,
             rotation=int(entry["rotation"]),
         )
-    _transactional_board_write(lambda current: _replace_board_blocks(current, replacements, []))
+    candidate_content = _replace_board_blocks(board_content, replacements, [])
+    candidate_analysis = _placement_analysis_from_content(candidate_content)
+    if candidate_analysis is None:
+        return "Auto-placement candidate rejected: placement could not be evaluated."
+    new_failures = [
+        item
+        for item in candidate_analysis.hard_failures
+        if item not in before_analysis.hard_failures
+    ]
+    if candidate_analysis.score < before_analysis.score or new_failures:
+        reasons = []
+        if candidate_analysis.score < before_analysis.score:
+            reasons.append("placement score would decrease")
+        if new_failures:
+            reasons.append(f"{len(new_failures)} new hard placement failure(s)")
+        return (
+            "Auto-placement candidate rejected: "
+            + "; ".join(reasons)
+            + f". Current board preserved. Score {before_analysis.score}/100"
+            + f" -> {candidate_analysis.score}/100."
+        )
+    if candidate_content == board_content:
+        return "Auto-placement skipped: candidate leaves footprint positions unchanged."
+
+    def commit_if_unchanged(current: str) -> str:
+        if current != board_content:
+            raise RuntimeError("PCB changed during auto-placement; candidate not applied.")
+        return candidate_content
+
+    # The normal transaction validates the proposed PCB before atomic replacement.
+    _transactional_board_write(commit_if_unchanged)
     convergence = (
         f"converged after {stats.get('iterations_run')} iterations"
         if stats.get("converged")
         else f"stopped after {stats.get('iterations_run')} iterations (iteration ceiling)"
     )
-
-    # Capture placement score after auto-placement for before/after evidence.
-    after_analysis, _ = _placement_analysis()
-    score_lines = ""
-    if after_analysis is not None:
-        after_analysis.score_before = score_before
-        score_lines = "\n\n" + _format_placement_score(after_analysis)
-
+    candidate_analysis.score_before = before_analysis.score
     return (
         "Force-directed auto-placement completed after PCB sync: "
-        f"{len(replacements)} footprint(s), {len(nets)} weighted net(s); {convergence}."
-        + score_lines
+        f"{len(replacements)} footprint(s), {len(nets)} weighted net(s); {convergence}.\n\n"
+        + _format_placement_score(candidate_analysis)
     )
 
 
