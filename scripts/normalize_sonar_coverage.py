@@ -9,8 +9,9 @@ Ambiguous or missing files are errors, never silently dropped.
 from __future__ import annotations
 
 import argparse
-import xml.etree.ElementTree as ET
 from pathlib import Path, PurePosixPath
+
+from defusedxml import ElementTree
 
 _MAX_REPORT_BYTES = 32 * 1024 * 1024
 
@@ -24,7 +25,7 @@ def _safe_report(path: Path) -> bytes:
     return path.read_bytes()
 
 
-def _source_dirs(root: Path, tree: ET.Element) -> list[Path]:
+def _source_dirs(root: Path, tree: ElementTree.Element) -> list[Path]:
     source_nodes = tree.findall("./sources/source")
     if not source_nodes:
         raise ValueError("Coverage report is missing source directories")
@@ -60,7 +61,7 @@ def _validated_filename(raw: str) -> PurePosixPath:
     return path
 
 
-def _source_for_class(root: Path, directories: list[Path], klass: ET.Element) -> str:
+def _source_for_class(root: Path, directories: list[Path], klass: ElementTree.Element) -> str:
     path = _validated_filename(klass.attrib.get("filename", ""))
     line_elements = klass.findall("./lines/line")
     try:
@@ -99,9 +100,9 @@ def normalize(root: Path, report: Path, output: Path) -> int:
     if output.is_symlink():
         raise ValueError("Refusing to write coverage through a symlink")
 
-    # Inputs are exact-run SHA-verified CI artifacts or locally generated test
-    # reports, with bounded size; the stdlib parser does not fetch external DTDs.
-    tree = ET.fromstring(_safe_report(report))  # noqa: S314
+    # Inputs are exact-run SHA-verified CI artifacts or generated local reports.
+    # defusedxml rejects entity-based expansion and external entity references.
+    tree = ElementTree.fromstring(_safe_report(report))
     if tree.tag != "coverage":
         raise ValueError("Expected a Cobertura XML coverage report")
     dirs = _source_dirs(root, tree)
@@ -120,10 +121,11 @@ def normalize(root: Path, report: Path, output: Path) -> int:
     sources = tree.find("./sources")
     if sources is None:
         raise ValueError("Coverage sources vanished during normalization")
-    for node in list(sources):
+    source_nodes = list(sources)
+    source_nodes[0].text = str(root)
+    for node in source_nodes[1:]:
         sources.remove(node)
-    ET.SubElement(sources, "source").text = str(root)
-    output.write_bytes(ET.tostring(tree, encoding="utf-8", xml_declaration=True))
+    output.write_bytes(ElementTree.tostring(tree, encoding="utf-8", xml_declaration=True))
     return len(seen)
 
 

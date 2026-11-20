@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-import xml.etree.ElementTree as ET
+from html import escape
 from pathlib import Path
 
 import pytest
+from defusedxml import ElementTree
 
 from scripts.normalize_sonar_coverage import normalize
 
@@ -15,20 +16,18 @@ def _write_coverage(
     classes: list[tuple[str, list[tuple[int, int]]]],
     sources: list[Path],
 ) -> Path:
-    doc = ET.Element(
-        "coverage", attrib={"lines-covered": "4", "lines-valid": "4", "line-rate": "1"}
-    )
-    source_list = ET.SubElement(doc, "sources")
+    parts = ['<coverage lines-covered="4" lines-valid="4" line-rate="1"><sources>']
     for path in sources:
-        ET.SubElement(source_list, "source").text = str(path)
-    pack = ET.SubElement(ET.SubElement(doc, "packages"), "package", attrib={"name": "fixture"})
+        parts.append(f"<source>{escape(str(path))}</source>")
+    parts.append('</sources><packages><package name="fixture"><classes>')
     for name, hits in classes:
-        klass = ET.SubElement(ET.SubElement(pack, "classes"), "class", attrib={"filename": name})
-        lines = ET.SubElement(klass, "lines")
+        parts.append(f'<class filename="{escape(name, quote=True)}"><lines>')
         for number, hit_count in hits:
-            ET.SubElement(lines, "line", attrib={"number": str(number), "hits": str(hit_count)})
+            parts.append(f'<line number="{number}" hits="{hit_count}" />')
+        parts.append("</lines></class>")
+    parts.append("</classes></package></packages></coverage>")
     filename = root / "coverage.xml"
-    filename.write_bytes(ET.tostring(doc, encoding="utf-8"))
+    filename.write_text("".join(parts), encoding="utf-8")
     return filename
 
 
@@ -65,7 +64,7 @@ def test_ambiguous_basename_resolved_without_changing_coverage_hits(tmp_path: Pa
     assert normalize(root, input_path, output) == 2
     assert input_path.read_bytes() == original
 
-    doc = ET.parse(output).getroot()  # noqa: S314 - our own generated fixture
+    doc = ElementTree.parse(output).getroot()
     assert doc.attrib["lines-covered"] == "4"
     assert doc.attrib["line-rate"] == "1"
     assert [s.text for s in doc.findall("./sources/source")] == [str(root)]
@@ -119,11 +118,18 @@ def test_empty_coverage_class_with_unique_source_is_preserved(tmp_path: Path) ->
     output = root / "coverage-sonar.xml"
     source = _write_coverage(root, [("plugin.py", [])], [plugin, src])
     assert normalize(root, source, output) == 1
-    klass = (
-        ET.parse(output)  # noqa: S314 - generated fixture
-        .getroot()
-        .find("./packages/package/classes/class")
-    )
+    klass = ElementTree.parse(output).getroot().find("./packages/package/classes/class")
     assert klass is not None
     assert klass.attrib["filename"] == "packages/kicad-plugin/plugin.py"
     assert klass.findall("./lines/line") == []
+
+
+def test_xml_entities_are_rejected_without_producing_coverage(tmp_path: Path) -> None:
+    root, _, _ = _fixture(tmp_path)
+    source = root / "coverage.xml"
+    source.write_bytes(
+        b'<!DOCTYPE coverage [<!ENTITY injected "unsafe">]><coverage>&injected;</coverage>'
+    )
+    with pytest.raises(ElementTree.EntitiesForbidden):
+        normalize(root, source, root / "coverage-sonar.xml")
+    assert not (root / "coverage-sonar.xml").exists()

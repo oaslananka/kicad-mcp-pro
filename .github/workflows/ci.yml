@@ -730,13 +730,17 @@ jobs:
           steps.sonar-mode.outputs.run_analysis == 'true' &&
           needs.coverage.outputs.sonar_coverage_artifact_id == ''
         uses: ./.github/actions/python-full-suite
+      - name: Set up verified coverage XML parser
+        if: steps.sonar-mode.outputs.run_analysis == 'true'
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
       - name: Normalize Sonar coverage source paths
         if: steps.sonar-mode.outputs.run_analysis == 'true'
         run: |
           # The integrity-verified coverage.xml is untouched. Multiple
           # coverage.py source roots can contain an ambiguous __init__.py;
           # the scanner reads only a repo-relative, line-identical copy.
-          python3 scripts/normalize_sonar_coverage.py \
+          uv --no-config run --no-project --with 'defusedxml==0.7.1' \
+            python3 scripts/normalize_sonar_coverage.py \
             --input coverage.xml --output coverage-sonar.xml
       - name: SonarCloud Scan
         if: steps.sonar-mode.outputs.run_analysis == 'true'
