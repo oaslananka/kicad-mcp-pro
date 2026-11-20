@@ -1867,18 +1867,54 @@ def _apply_netlist_auto_layout(
     laid_out_symbols = [dict(item) for item in symbols]
     laid_out_powers = [dict(item) for item in power_symbols]
     laid_out_labels = [dict(item) for item in labels]
-    refs = [str(symbol["reference"]) for symbol in laid_out_symbols if symbol.get("reference")]
+
+    # Connectivity groups symbol *references*, but an IC can have several
+    # graphical units with the same reference. Give each symbol occurrence its
+    # own layout slot; do not change its real reference or KiCad unit identity.
+    refs = list(
+        dict.fromkeys(
+            str(symbol["reference"]) for symbol in laid_out_symbols if symbol.get("reference")
+        )
+    )
     ordered_refs = _order_refs_by_connectivity(refs, nets)
-    sym_by_ref = {str(s.get("reference", "")): s for s in laid_out_symbols if s.get("reference")}
+    slots_by_ref: dict[str, list[str]] = {ref: [] for ref in refs}
+    layout_symbols: list[dict[str, Any]] = []
+    for index, symbol in enumerate(laid_out_symbols):
+        slot = f"__netlist_layout_slot_{index}"
+        layout_symbols.append({**symbol, "reference": slot})
+        reference = str(symbol.get("reference", ""))
+        if reference:
+            slots_by_ref[reference].append(slot)
+    ordered_slots = [slot for reference in ordered_refs for slot in slots_by_ref[reference]]
+    # Anonymous symbols still receive a layout slot.
+    ordered_slot_set = set(ordered_slots)
+    ordered_slots.extend(
+        symbol["reference"]
+        for symbol in layout_symbols
+        if symbol["reference"] not in ordered_slot_set
+    )
+    by_slot = {symbol["reference"]: symbol for symbol in layout_symbols}
 
     cell_w = NETLIST_LAYOUT_COLUMN_SPACING_MM
     cell_h = NETLIST_LAYOUT_ROW_SPACING_MM
     footprints, offsets, chosen_paper = _compute_netlist_paper(
-        sym_by_ref, paper, max_paper, cell_w, cell_h
+        by_slot, paper, max_paper, cell_w, cell_h
     )
-    symbol_positions = _position_netlist_symbols(
-        laid_out_symbols, ordered_refs, footprints, offsets, chosen_paper, cell_w, cell_h
+    _position_netlist_symbols(
+        layout_symbols, ordered_slots, footprints, offsets, chosen_paper, cell_w, cell_h
     )
+    symbol_positions: dict[str, tuple[float, float]] = {}
+    for original, positioned in zip(laid_out_symbols, layout_symbols, strict=True):
+        if not _has_point(original):
+            x = _coord_value(positioned, "x")
+            y = _coord_value(positioned, "y")
+            if x is not None and y is not None:
+                _set_point(original, x, y)
+        reference = str(original.get("reference", ""))
+        x = _coord_value(original, "x")
+        y = _coord_value(original, "y")
+        if reference and x is not None and y is not None:
+            symbol_positions.setdefault(reference, (x, y))
     known_refs = set(symbol_positions)
     _position_netlist_powers(laid_out_powers, nets, known_refs, symbol_positions)
     _position_netlist_labels(laid_out_labels, nets, known_refs, symbol_positions)
