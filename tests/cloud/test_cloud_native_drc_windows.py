@@ -160,7 +160,6 @@ def test_windows_native_drc_discovers_installed_cli_without_path(
 
     trusted_cli = tmp_path / "trusted-kicad-cli.exe"
     trusted_cli.write_bytes(b"test executable placeholder")
-    monkeypatch.setattr(cloud_native_drc.shutil, "which", lambda _: None)
     monkeypatch.setattr(discovery, "discover_kicad_cli", lambda: trusted_cli)
 
     def native(argv: list[str], **_: object) -> SimpleNamespace:

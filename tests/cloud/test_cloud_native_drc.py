@@ -57,9 +57,9 @@ def _fake_success(
         invoked.append("native")
         return SimpleNamespace(returncode=exit_code)
 
-    monkeypatch.setattr(
-        "kicad_mcp.cloud_native_drc.shutil.which", lambda name: "/usr/bin/kicad-cli"
-    )
+    cli = selected.directory.parent / "installed-kicad-cli"
+    cli.touch()
+    monkeypatch.setattr("kicad_mcp.discovery.discover_kicad_cli", lambda: cli)
     monkeypatch.setattr("kicad_mcp.cloud_native_drc.subprocess.run", native)
     return invoked
 
@@ -104,7 +104,10 @@ def test_project_symlink_denied(
 
 
 def test_missing_cli_denied(monkeypatch: pytest.MonkeyPatch, selected: OperatorProject) -> None:
-    monkeypatch.setattr("kicad_mcp.cloud_native_drc.shutil.which", lambda _: None)
+    monkeypatch.setattr(
+        "kicad_mcp.discovery.discover_kicad_cli",
+        lambda: selected.directory.parent / "missing-kicad-cli",
+    )
     with pytest.raises(LocalReadDeniedError):
         summarize_native_pcb_drc(selected)
 
@@ -133,5 +136,28 @@ def test_fail_closed_on_native_or_output_failure(
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr("kicad_mcp.cloud_native_drc.subprocess.run", fail)
+    with pytest.raises(LocalReadDeniedError):
+        summarize_native_pcb_drc(selected)
+
+
+def test_cloud_drc_cannot_run_executable_discovered_from_working_directory(
+    monkeypatch: pytest.MonkeyPatch, selected: OperatorProject, tmp_path: Path
+) -> None:
+    """Even a signed Cloud READ cannot execute a cloned checkout's CLI program."""
+    from kicad_mcp import discovery
+
+    checkout = tmp_path / "untrusted-checkout"
+    checkout.mkdir()
+    local_candidate = checkout / "kicad-cli"
+    local_candidate.touch()  # inert file: never executed
+    monkeypatch.chdir(checkout)
+    monkeypatch.setattr(discovery, "_discover_via_kipy", lambda: None)
+    monkeypatch.setattr(discovery.shutil, "which", lambda _: str(local_candidate))
+    monkeypatch.setattr(discovery, "_candidate_cli_paths", lambda: [tmp_path / "absent-cli"])
+
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("Cloud DRC attempted to launch a checkout-controlled executable")
+
+    monkeypatch.setattr("kicad_mcp.cloud_native_drc.subprocess.run", forbidden)
     with pytest.raises(LocalReadDeniedError):
         summarize_native_pcb_drc(selected)
