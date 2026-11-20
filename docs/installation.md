@@ -56,12 +56,17 @@ PowerShell:
 irm https://raw.githubusercontent.com/oaslananka/kicad-mcp-pro/main/scripts/install-cloud.ps1 | iex
 ~~~
 
-It checks or installs the isolated `uv` package manager using a verified
-release archive, installs or upgrades the `kicad-mcp-pro` CLI, checks that
+It checks or installs the `uv` package manager using a verified
+release archive, then installs or upgrades the `kicad-mcp-pro` CLI inside a
+dedicated `KiCadMCPPro` tool environment, separate from other Python tools.
+It checks that
 the installed executable starts, and tries one application-only reinstall if
 the package manager or health probe detects damage. Then it starts the
 foreground Cloud Connector. The same command can be reused for reconnecting;
-an already registered device is not deliberately paired again.
+an already registered device is not deliberately paired again. If that
+dedicated Connector is already running, the command leaves the running
+environment alone and does not start a duplicate session. Windows file locks
+are never bypassed by forcibly ending the user's Connector.
 
 The installer does **not** remove KiCad projects, recreate Cloud identity,
 reset owner permissions or repair arbitrary OS/KiCad, third-party Python,
@@ -69,8 +74,10 @@ firewall or OAuth problems. Browser-based account/device authorization and
 owner-granted write access remain intentional security steps. If the package
 registry is unavailable or the Connector cannot establish a valid owner session,
 the command reports failure rather than claiming readiness. If multiple
-independent `pip`/`pipx` installations are on PATH, this launcher invokes the
-verified `uv`-managed executable directly rather than silently changing them.
+independent `pip`/`pipx`/`uv` installations are on PATH, the launcher
+invokes the verified dedicated executable directly instead of overwriting those
+installations. It does not automatically repair unrelated legacy installations
+already in use; that must wait until their owning process exits.
 
 **Windows Cloud status:** The CLI can be used locally without any Cloud account.
 On releases lacking native Windows owner-private device registration and the

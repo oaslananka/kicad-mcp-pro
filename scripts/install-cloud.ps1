@@ -21,7 +21,7 @@
         Join-Path $HOME ".local\bin"
     }
     $fallbackUv = Join-Path $installDir "uv.exe"
-    $uv = Get-Command uv -CommandType Application -ErrorAction SilentlyContinue
+    $uv = Get-Command uv -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     $uvPath = if ($null -ne $uv) { $uv.Source } else { $fallbackUv }
 
     if (-not (Test-Tool $uvPath)) {
@@ -69,42 +69,83 @@
         }
     }
 
-    # Invoke the known uv-managed executable, never an old pip/pipx PATH shadow.
-    $toolBin = & $uvPath tool dir --bin
-    if ($LASTEXITCODE -ne 0 -or -not $toolBin) {
-        throw "Could not locate the KiCad MCP Pro installation directory."
-    }
-    $cliPath = Join-Path ($toolBin | Select-Object -Last 1) "$package.exe"
-    $existingHealthy = Test-Tool $cliPath
+    # Keep this Cloud launcher separate from the user's pip, pipx and uv tools.
+    # Windows cannot safely replace an environment while its Python is running.
+    $appRoot = Join-Path $env:LOCALAPPDATA "KiCadMCPPro"
+    $dedicatedTools = Join-Path $appRoot "uv-tools"
+    $dedicatedBin = Join-Path $appRoot "bin"
+    $originalToolDir = $env:UV_TOOL_DIR
+    $originalBinDir = $env:UV_TOOL_BIN_DIR
+    $originalPath = $env:PATH
 
-    # Installs if absent; upgrades if an existing uv tool is behind.
-    Write-Host "KiCad MCP Pro: Checking the installed version..."
-    & $uvPath tool install --upgrade $package
-    if ($LASTEXITCODE -ne 0) {
-        if ($existingHealthy) {
-            # A network/registry failure must never destroy a working installation.
-            Write-Warning "Update check failed. Starting the existing working version; retry when online."
-        } else {
-            Write-Host "KiCad MCP Pro: Installation needs repair. Retrying once..."
-            & $uvPath tool install --force --reinstall $package
-            if ($LASTEXITCODE -ne 0) {
-                throw "Could not install or repair KiCad MCP Pro. Check your connection and retry. Existing project and Cloud settings were not deleted."
+    try {
+        $env:UV_TOOL_DIR = $dedicatedTools
+        $env:UV_TOOL_BIN_DIR = $dedicatedBin
+        # Keep uv's installer from asking the user to modify PATH manually.
+        $env:PATH = "$dedicatedBin;$originalPath"
+
+        $toolBin = & $uvPath tool dir --bin
+        if ($LASTEXITCODE -ne 0 -or -not $toolBin) {
+            throw "Could not locate the KiCad MCP Pro installation directory."
+        }
+        $cliPath = Join-Path ($toolBin | Select-Object -Last 1) "$package.exe"
+
+        # Avoid uv's known Windows in-use upgrade failure, which can leave
+        # site-packages deleted while the executable remains file-locked.
+        if (Test-Path -LiteralPath $dedicatedTools) {
+            try {
+                $running = @(
+                    Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'kicad-mcp-pro.exe'" -ErrorAction Stop |
+                        Where-Object {
+                            $path = [string]$_.ExecutablePath
+                            $path.StartsWith($dedicatedTools + [IO.Path]::DirectorySeparatorChar,
+                                [StringComparison]::OrdinalIgnoreCase) -or
+                            $path.Equals($cliPath, [StringComparison]::OrdinalIgnoreCase)
+                        }
+                )
+            } catch {
+                throw "Could not check whether the Connector is already running. No installation files were changed."
+            }
+            if ($running.Count -gt 0) {
+                if (Test-Tool $cliPath) {
+                    Write-Host "KiCad MCP Pro: This Connector is already running. No update or duplicate connection was started."
+                    return
+                }
+                throw "KiCad MCP Pro is still running, and Windows has locked its files. Close the older Connector terminal, then run this same command again."
             }
         }
-    }
 
-    if (-not (Test-Tool $cliPath)) {
-        Write-Host "KiCad MCP Pro: Verifying the installation failed. Repairing once..."
-        & $uvPath tool install --force --reinstall $package
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Tool $cliPath)) {
-            throw "The application is still not healthy. Your KiCad projects and Cloud permissions were left unchanged."
+        $existingHealthy = Test-Tool $cliPath
+        Write-Host "KiCad MCP Pro: Checking the installed version..."
+        & $uvPath tool install --upgrade $package
+        if ($LASTEXITCODE -ne 0) {
+            if ($existingHealthy -and (Test-Tool $cliPath)) {
+                Write-Warning "Update unavailable; starting the existing working version."
+            } else {
+                Write-Host "KiCad MCP Pro: Installation needs repair. Retrying once..."
+                & $uvPath tool install --force --reinstall $package
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Could not install or repair KiCad MCP Pro. Your projects and Cloud permissions were not modified."
+                }
+            }
         }
-    }
 
-    Write-Host "KiCad MCP Pro: Ready. Opening Cloud Connector..."
-    # Use uv's verified binary directly; PATH might still point at an older pip/pipx copy.
-    & $cliPath cloud
-    if ($LASTEXITCODE -ne 0) {
-        throw "The Cloud Connector could not start (exit code $LASTEXITCODE). The installation was verified; review the on-screen connection guidance."
+        if (-not (Test-Tool $cliPath)) {
+            Write-Host "KiCad MCP Pro: Verifying the installation failed. Repairing once..."
+            & $uvPath tool install --force --reinstall $package
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Tool $cliPath)) {
+                throw "The application is still not healthy. Your KiCad projects and Cloud permissions were left unchanged."
+            }
+        }
+
+        Write-Host "KiCad MCP Pro: Ready. Opening Cloud Connector..."
+        & $cliPath cloud
+        if ($LASTEXITCODE -ne 0) {
+            throw "The Cloud Connector could not start (exit code $LASTEXITCODE). Review the on-screen connection guidance."
+        }
+    } finally {
+        $env:UV_TOOL_DIR = $originalToolDir
+        $env:UV_TOOL_BIN_DIR = $originalBinDir
+        $env:PATH = $originalPath
     }
 }
