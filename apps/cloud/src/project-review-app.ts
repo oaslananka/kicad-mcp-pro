@@ -24,8 +24,14 @@ function show(result:ToolSnapshot):void {
   // Server-owned structuredContent is authoritative; never infer a grant
   // from cached iframe state or render tool-supplied HTML.
   const content=result.structuredContent;
-  const project=content&&typeof content==="object"&&"project" in content
-    ? content.project : undefined;
+  const projectList=content&&typeof content==="object"&&"projects" in content
+    &&Array.isArray(content.projects)?content.projects:undefined;
+  const project=projectList
+    ?projectList.length===1?projectList[0]
+      :projectList.find((candidate:unknown)=>candidate&&typeof candidate==="object"
+        &&"id" in candidate&&candidate.id===projectId)
+    :content&&typeof content==="object"&&"project" in content
+      ?content.project:undefined;
   if(!project||typeof project!=="object"||!("id" in project)||
      typeof project.id!=="string"||!project.id){
     projectId=undefined;
@@ -57,7 +63,7 @@ function show(result:ToolSnapshot):void {
   checkEditor.disabled=!canAttemptRead;
   status.textContent=canAttemptRead
     ?writeNotAdvertised
-      ?"MCP read tools can be requested. Native editing is not advertised by this Connector session. In the owner's terminal use kicad-mcp-pro cloud remote --enable-native-write. Cloud Edit and OAuth permissions are separate."
+      ?"MCP reads can be requested. Editing is not enabled in this Connector session. Review your project Edit access and owner authorization under Devices."
       :writeAdvertised
       ?"MCP read tools can be requested. Connector advertises native editing but does not prove authorization, KiCad readiness or a completed write."
       :"MCP read tools can be requested. This does not confirm native editing or KiCad readiness."
@@ -77,7 +83,7 @@ checkEditor.addEventListener("click",async()=>{
   editorStatus.textContent="Checking KiCad PCB Editor (read-only)...";
   try{
     const probe=await app.callServerTool({
-      name:"local_mcp_call",
+      name:"local_mcp_read",
       arguments:{project_id:requestedProject,tool_name:"kicad_get_server_info",arguments:{}}
     });
     if(projectGeneration!==generation||projectId!==requestedProject)return;
@@ -108,7 +114,7 @@ checkEditor.addEventListener("click",async()=>{
       return;
     }
     if(!nativeWriteAdvertised){
-      editorStatus.textContent="PCB Editor IPC reports an open board, but the linked project identity is unverified and native editing is not advertised by this Connector session. Open the approved board and enable native write in the owner terminal.";
+      editorStatus.textContent="PCB Editor IPC reports an open board, but native editing is not enabled for this session. Review the linked project and Edit permissions in Devices.";
       return;
     }
     const response=await app.callServerTool({
@@ -146,7 +152,7 @@ refresh.addEventListener("click",async()=>{
   checkEditor.disabled=true;
   editorStatus.hidden=true;
   status.textContent="Checking current project access?";
-  try{show(await app.callServerTool({name:"get_project",arguments:{project_id:projectId}}));}
+  try{show(await app.callServerTool({name:"list_projects",arguments:{}}));}
   catch{
     projectId=undefined;
     projectGeneration++;

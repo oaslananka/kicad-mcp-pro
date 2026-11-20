@@ -137,13 +137,19 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
     assert.ok(!(off.data.result?.tools??[]).some((tool:{name:string})=>
       tool.name==="local_mcp_call"),"disabled bridge must not register an executable tool");
     const on=await invoke(enabled,"token-read","tools/list");
-    assert.match(JSON.stringify(on.data),/local_mcp_call/);
+    assert.deepEqual((on.data.result?.tools??[]).map((tool:{name:string})=>tool.name).sort(),
+      ["list_projects","local_mcp_catalog","local_mcp_read","local_mcp_write"],
+      "Production Cloud should expose only project discovery and the real local tool gateway");
+    assert.match(JSON.stringify(on.data),/local_mcp_read/);
+    assert.doesNotMatch(JSON.stringify(on.data),/local_mcp_call/,
+      "Modern Cloud tool inventory must not mention the superseded command");
     const list=(on.data.result?.tools??[]) as Array<{name:string;_meta?:{securitySchemes?:unknown}}>;
-    const dynamicCall=list.find(t=>t.name==="local_mcp_call");
-    assert.deepEqual(dynamicCall?._meta?.securitySchemes,[
-      {type:"oauth2",scopes:["projects:read"]},
-      {type:"oauth2",scopes:["projects:read","projects:write"]}
-    ]);
+    const readEndpoint=list.find(t=>t.name==="local_mcp_read");
+    const writeEndpoint=list.find(t=>t.name==="local_mcp_write");
+    assert.deepEqual(readEndpoint?._meta?.securitySchemes,
+      [{type:"oauth2",scopes:["projects:read"]}]);
+    assert.deepEqual(writeEndpoint?._meta?.securitySchemes,
+      [{type:"oauth2",scopes:["projects:read","projects:write"]}]);
 
     const independent=await invoke(direct,"token-read","tools/list");
     const names=(independent.data.result?.tools??[]).map((t:{name:string})=>t.name);
@@ -151,7 +157,7 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
     assert.ok(names.includes("sch_move_symbol"));
     assert.ok(names.includes("pcb_save"));
     assert.ok(!names.includes("sch_add_symbol"));
-    assert.ok(!names.includes("local_mcp_call"));
+    assert.ok(!names.includes("local_mcp_read")&&!names.includes("local_mcp_write"));
 
     // MCP relay readiness is distinct from legacy read availability. A
     // connected device alone cannot prove that a local KiCad operation works.
@@ -174,34 +180,7 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
       bridgeConfigured:true,readAttemptReady:true,
       state:"signed_session_connected",nativeWriteAuthorization:"unverified",sessionNativeWriteMode:"unverified"
     });
-    // The legacy project-presence path can be unavailable even while the
-    // signed generic MCP route is connected and actually serves tools.
-    const legacy=await invoke(enabled,"token-read","tools/call",{
-      name:"get_project_presence",arguments:{project_id:projectId}
-    },29,"get_project_presence");
-    const legacyResult=legacy.data.result?.structuredContent;
-    assert.equal(legacyResult?.available,false);
-    assert.equal(legacyResult?.localMcp?.readAttemptReady,true);
-    assert.equal(legacyResult?.connectorConnected,true);
-    assert.match(legacyResult?.guidance??"",/local_mcp_catalog/);
-    assert.doesNotMatch(JSON.stringify(legacyResult),/local path|write approved/i);
-    const lookedUp=await invoke(enabled,"token-read","tools/call",{
-      name:"get_project",arguments:{project_id:projectId}
-    },22,"get_project");
-    assert.deepEqual(lookedUp.data.result?.structuredContent?.project?.localMcp,
-      projectEnabled.localMcp);
     assert.match(projectEnabled.guidance??"",/local_mcp_catalog/);
-    const capabilities=await invoke(enabled,"token-read","tools/call",{
-      name:"list_project_capabilities",arguments:{project_id:projectId}
-    },30,"list_project_capabilities");
-    assert.equal(capabilities.data.result?.structuredContent?.localMcp?.readAttemptReady,true);
-    assert.match(capabilities.data.result?.structuredContent?.guidance??"",/local_mcp_call/);
-    const legacyDiscovery=await invoke(enabled,"token-read","tools/call",{
-      name:"discover_project_workflow",arguments:{project_id:projectId,task:"inspect_engine"}
-    },31,"discover_project_workflow");
-    assert.equal(legacyDiscovery.data.result?.structuredContent?.available,false);
-    assert.equal(legacyDiscovery.data.result?.structuredContent?.localMcp?.readAttemptReady,true);
-    assert.match(legacyDiscovery.data.result?.structuredContent?.guidance??"",/local_mcp_catalog/);
     deviceOnline=false;
     const disconnected=await invoke(enabled,"token-read","tools/call",{
       name:"list_projects",arguments:{}
@@ -210,12 +189,6 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
       bridgeConfigured:true,readAttemptReady:false,
       state:"device_not_connected",nativeWriteAuthorization:"unverified",sessionNativeWriteMode:"unverified"
     });
-    const offlinePresence=await invoke(enabled,"token-read","tools/call",{
-      name:"get_project_presence",arguments:{project_id:projectId}
-    },32,"get_project_presence");
-    assert.equal(offlinePresence.data.result?.structuredContent?.connectorConnected,false);
-    assert.equal(offlinePresence.data.result?.structuredContent?.localMcp?.readAttemptReady,false);
-    assert.equal(offlinePresence.data.result?.structuredContent?.guidance,undefined);
     deviceOnline=true;
     // A signed claim can narrow (not grant) advertised local MCP support.
     signedClaim={
@@ -231,9 +204,9 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
     assert.equal(readonlyLocal.nativeWriteAuthorization,"unverified");
     signedClaim={...signedClaim,operations:["project_summary","mcp_bridge","move_footprint"]};
     const writeModeClaim=await invoke(enabled,"token-read","tools/call",{
-      name:"get_project",arguments:{project_id:projectId}
-    },25,"get_project");
-    const writeLocal=writeModeClaim.data.result?.structuredContent?.project?.localMcp;
+      name:"list_projects",arguments:{}
+    },25,"list_projects");
+    const writeLocal=writeModeClaim.data.result?.structuredContent?.projects[0]?.localMcp;
     assert.equal(writeLocal.sessionNativeWriteMode,"advertised");
     assert.equal(writeLocal.nativeWriteAuthorization,"unverified");
     signedClaim={...signedClaim,operations:["project_summary"]};
@@ -252,23 +225,30 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
     assert.equal(listing.data.result?.structuredContent?.tools[0].name,"kicad_get_version");
 
     const read=await invoke(enabled,"token-read","tools/call",{
-      name:"local_mcp_call",arguments:{project_id:projectId,
+      name:"local_mcp_read",arguments:{project_id:projectId,
         tool_name:"kicad_get_version",arguments:{}}
-    },3,"local_mcp_call");
+    },3,"local_mcp_read");
     assert.match(JSON.stringify(read.data),/native-evidence/);
     assert.equal(remoteCalls,1);
 
-    const noScope=await invoke(enabled,"token-read","tools/call",{
-      name:"local_mcp_call",arguments:{project_id:projectId,
+    const wrongMode=await invoke(enabled,"token-edit","tools/call",{
+      name:"local_mcp_read",arguments:{project_id:projectId,
         tool_name:"sch_move_symbol",arguments:{reference:"R1",x_mm:10,y_mm:20}}
-    },4,"local_mcp_call");
+    },34,"local_mcp_read");
+    assert.match(JSON.stringify(wrongMode.data),/write_tool_requires_local_mcp_write/);
+    assert.equal(localWrites,0);
+
+    const noScope=await invoke(enabled,"token-read","tools/call",{
+      name:"local_mcp_write",arguments:{project_id:projectId,
+        tool_name:"sch_move_symbol",arguments:{reference:"R1",x_mm:10,y_mm:20}}
+    },4,"local_mcp_write");
     assert.match(JSON.stringify(noScope.data),/insufficient_scope_write_required/);
     assert.equal(localWrites,0);
 
     const noGrant=await invoke(enabled,"token-edit","tools/call",{
-      name:"local_mcp_call",arguments:{project_id:projectId,
+      name:"local_mcp_write",arguments:{project_id:projectId,
         tool_name:"sch_move_symbol",arguments:{reference:"R1",x_mm:10,y_mm:20}}
-    },5,"local_mcp_call");
+    },5,"local_mcp_write");
     assert.match(JSON.stringify(noGrant.data),/project_edit_permission_required/);
     assert.equal(localWrites,0);
 
@@ -296,30 +276,29 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
     assert.equal(remoteCalls,2);
 
     const good=await invoke(enabled,"token-edit","tools/call",{
-      name:"local_mcp_call",arguments:{project_id:projectId,
+      name:"local_mcp_write",arguments:{project_id:projectId,
         tool_name:"sch_move_symbol",arguments:{reference:"R1",x_mm:10,y_mm:20}}
-    },9,"local_mcp_call");
+    },9,"local_mcp_write");
     assert.match(JSON.stringify(good.data),/native-evidence/);
     assert.equal(localWrites,2);
 
     writePolicy=false;
     const revoked=await invoke(enabled,"token-edit","tools/call",{
-      name:"local_mcp_call",arguments:{project_id:projectId,
+      name:"local_mcp_write",arguments:{project_id:projectId,
         tool_name:"sch_move_symbol",arguments:{reference:"R1",x_mm:10,y_mm:20}}
-    },10,"local_mcp_call");
+    },10,"local_mcp_write");
     assert.match(JSON.stringify(revoked.data),/local_mcp_operation_unconfirmed/);
     assert.equal(localWrites,2);
     wrongTarget=true;
-    const revokedPresence=await invoke(enabled,"token-read","tools/call",{
-      name:"get_project_presence",arguments:{project_id:projectId}
-    },33,"get_project_presence");
-    assert.equal(revokedPresence.data.result?.structuredContent?.available,false);
-    assert.equal(revokedPresence.data.result?.structuredContent?.localMcp,undefined,
+    const revokedProjects=await invoke(enabled,"token-read","tools/call",{
+      name:"list_projects",arguments:{}
+    },33,"list_projects");
+    assert.deepEqual(revokedProjects.data.result?.structuredContent?.projects,[],
       "Revoked project must not disclose device status");
     const other=await invoke(enabled,"token-edit","tools/call",{
-      name:"local_mcp_call",arguments:{project_id:projectId,
+      name:"local_mcp_read",arguments:{project_id:projectId,
         tool_name:"kicad_get_version",arguments:{}}
-    },11,"local_mcp_call");
+    },11,"local_mcp_read");
     assert.equal(other.data.result?.isError,true);
   }finally{
     for(const server of [disabled,enabled,direct])await new Promise<void>(resolve=>server.close(()=>resolve()));

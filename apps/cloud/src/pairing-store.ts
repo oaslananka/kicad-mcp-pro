@@ -93,11 +93,14 @@ export class PgPairingChallenges {
   }
   /**
    * Enroll only after browser approval and Ed25519 proof. One transaction
-   * inserts the disabled device and its revocable public-key identity AND
-   * consumes the challenge, so DB failure cannot burn the user's approval.
+   * inserts the browser-approved device with a revocable public-key identity
+   * and consumes the challenge atomically. The legacy request leaves the
+   * device disabled; newer clients may explicitly request connection only.
+   * Neither variant grants a project or AI app any file access.
    * There is deliberately no HTTP endpoint or device execution here.
    */
-  async enroll(id:string,code:string,signature:Buffer):Promise<Enrollment>{
+  async enroll(id:string,code:string,signature:Buffer,
+    connectOnApproval=false):Promise<Enrollment>{
     return this.locked(id,{kind:"unavailable"} as Enrollment,async(db,r,now)=>{
       const proof=redeemPairing(r,this.key,now,code,signature);
       if(proof.record.state!==r.state && proof.kind!=="redeemed"){
@@ -106,8 +109,8 @@ export class PgPairingChallenges {
       if(proof.kind!=="redeemed")return {kind:"unavailable"};
       const deviceId=randomUUID();
       await db.query(
-        "INSERT INTO devices(id,owner_sub,alias,enabled) VALUES($1,$2,$3,false)",
-        [deviceId,proof.ownerSub,r.deviceAlias]);
+        "INSERT INTO devices(id,owner_sub,alias,enabled) VALUES($1,$2,$3,$4)",
+        [deviceId,proof.ownerSub,r.deviceAlias,connectOnApproval===true]);
       await db.query(
         "INSERT INTO device_credentials "+
         "(device_id,owner_sub,public_key_der,key_fingerprint,pairing_challenge_id) "+

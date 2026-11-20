@@ -68,6 +68,86 @@ def remote_fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[dic
     return state, folder
 
 
+def test_default_cloud_on_unpaired_windows_identity_uses_one_owner_browser_flow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_user_cli as owner_cli
+    from kicad_mcp import cloud_windows_connector as connector
+
+    calls: list[str] = []
+    monkeypatch.setattr(owner_cli, "_is_windows", lambda: True)
+    monkeypatch.setattr(connector, "selected_project", lambda: None)
+    monkeypatch.setattr(
+        owner_cli,
+        "_connect_unbound_windows_device",
+        lambda _origin, _alias: calls.append("browser_then_folder") or False,
+    )
+    monkeypatch.setattr(
+        owner_cli,
+        "_connect_windows_foreground",
+        lambda *_args, **_kwargs: calls.append("existing_project"),
+    )
+    result = CliRunner().invoke(server.app, ["cloud"])
+    assert result.exit_code == 0, result.output
+    assert calls == ["browser_then_folder"]
+
+
+def test_default_cloud_command_reuses_device_with_locally_pinned_signed_edit_capability(
+    remote_fixture: tuple[dict[str, Any], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_windows_write_issuer as issuer
+
+    state, _ = remote_fixture
+    state["project"] = SimpleNamespace(
+        origin=cloud_user_cli.DEFAULT_CLOUD_ORIGIN, record_id="a" * 32
+    )
+    called: list[object] = []
+
+    def approve(record: str, *, origin: str) -> None:
+        assert record == "a" * 32
+        assert origin == cloud_user_cli.DEFAULT_CLOUD_ORIGIN
+        called.append("bundled_owner_issuer")
+
+    monkeypatch.setattr(issuer, "trust_bundled_owner_cloud_issuer", approve)
+
+    def connect(*_args: object, **kwargs: object) -> None:
+        called.append(("foreground", kwargs["allow_native_write"], kwargs["new_device"]))
+
+    monkeypatch.setattr(cloud_user_cli, "_connect_windows_foreground", connect)
+    response = CliRunner().invoke(server.app, ["cloud"])
+    assert response.exit_code == 0, response.output
+    assert called == ["bundled_owner_issuer", ("foreground", True, False)]
+    assert state["calls"] == [], "No new pairing or background task requested"
+
+
+def test_broken_owner_issuer_pin_denies_default_cloud_edit_before_connection(
+    remote_fixture: tuple[dict[str, Any], Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_windows_write_issuer as issuer
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    state, _ = remote_fixture
+    state["project"] = SimpleNamespace(
+        origin=cloud_user_cli.DEFAULT_CLOUD_ORIGIN, record_id="a" * 32
+    )
+    monkeypatch.setattr(
+        issuer,
+        "trust_bundled_owner_cloud_issuer",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(LocalWriteDeniedError("denied")),
+    )
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_connect_windows_foreground",
+        lambda *_args, **_kwargs: pytest.fail("Could not verify public issuer pin"),
+    )
+    result = CliRunner().invoke(server.app, ["cloud"])
+    assert result.exit_code != 0
+    assert "edit signing key could not be verified" in result.output
+    assert state["calls"] == []
+
+
 @pytest.mark.parametrize("argv", [["remote"], ["cloud", "remote"]])
 def test_remote_reuses_existing_pairing(
     argv: list[str], remote_fixture: tuple[dict[str, Any], Path]
@@ -958,3 +1038,101 @@ def test_ctrl_c_restores_previous_read_only_task_without_repairing(
     assert state["calls"] == ["task_removed", "ctrl_c", "read_only_task_restored"]
     assert "restoring previous read-only Connector" in response.output
     assert "Cloud connection not yet verified" in response.output
+
+
+def test_unbound_cloud_pairs_once_then_reuses_identity_without_browser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
+    from kicad_mcp import cloud_windows_enrollment as enrollment
+
+    calls: list[str] = []
+    current: dict[str, object] = {}
+    device = enrollment.WindowsEnrolledDevice(
+        record_id="a" * 32,
+        origin=cloud_user_cli.DEFAULT_CLOUD_ORIGIN,
+        owner_sub="owner",
+        device_id=str(uuid4()),
+        fingerprint="a" * 64,
+    )
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_resolve_device_alias", lambda _alias: "My PC")
+    monkeypatch.setattr(
+        cloud_user_cli, "_perform_approval", lambda *_args: calls.append("browser_approval")
+    )
+    monkeypatch.setattr(bootstrap, "selected_device", lambda: current.get("device"))
+
+    def remember(value):
+        current["device"] = value
+        calls.append("remember_device")
+
+    def enroll(*, origin, alias, owner_approval):
+        assert origin == device.origin
+        assert alias == "My PC"
+        calls.append("enroll")
+        owner_approval("https://example.invalid/pair", "challenge", "code")
+        return device
+
+    async def serve(value, *, status_callback):
+        assert value is device
+        calls.append("signed_connection")
+        status_callback("Connected")
+
+    monkeypatch.setattr(bootstrap, "remember_device", remember)
+    monkeypatch.setattr(enrollment, "enroll_windows_device", enroll)
+    monkeypatch.setattr(bootstrap, "run_device_only", serve)
+    monkeypatch.setattr(
+        cloud_user_cli, "_display_cloud_status", lambda event, _origin: calls.append(event)
+    )
+    assert cloud_user_cli._connect_unbound_windows_device(device.origin, "PC") is True
+    assert cloud_user_cli._connect_unbound_windows_device(device.origin, "PC") is True
+    assert calls == [
+        "enroll",
+        "browser_approval",
+        "remember_device",
+        "signed_connection",
+        "Connected",
+        "signed_connection",
+        "Connected",
+    ]
+
+
+def test_unbound_cloud_fails_without_owner_terminal_or_with_different_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
+
+    origin = cloud_user_cli.DEFAULT_CLOUD_ORIGIN
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    with pytest.raises(typer.BadParameter, match="interactive owner terminal"):
+        cloud_user_cli._connect_unbound_windows_device(origin, "PC")
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(
+        bootstrap, "selected_device", lambda: SimpleNamespace(origin="https://other.example")
+    )
+    with pytest.raises(typer.BadParameter, match="different origin"):
+        cloud_user_cli._connect_unbound_windows_device(origin, "PC")
+
+
+def test_unbound_cloud_denied_pairing_never_opens_signed_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
+    from kicad_mcp import cloud_windows_enrollment as enrollment
+
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(bootstrap, "selected_device", lambda: None)
+
+    def rejected(**_kwargs: object) -> None:
+        raise enrollment.WindowsEnrollmentError("Owner denied pairing")
+
+    async def must_not_connect(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("Denied enrollment must not open signed session")
+
+    monkeypatch.setattr(enrollment, "enroll_windows_device", rejected)
+    monkeypatch.setattr(bootstrap, "run_device_only", must_not_connect)
+    with pytest.raises(typer.BadParameter, match="Owner denied pairing"):
+        cloud_user_cli._connect_unbound_windows_device(
+            cloud_user_cli.DEFAULT_CLOUD_ORIGIN,
+            "PC",
+        )

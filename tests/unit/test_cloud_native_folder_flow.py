@@ -66,6 +66,47 @@ class NativeFolderSelectionTests(unittest.TestCase):
         )
         self.assertNotIn(str(self.project), json.dumps(chosen))
 
+    def test_owner_selected_folder_is_adopted_only_after_cloud_project_bind(self) -> None:
+        from kicad_mcp.cloud_folder_browse_receiver import BrowserFolderService
+
+        bound = []
+
+        def record(project_id: str, selected: Path) -> bool:
+            bound.append((project_id, selected))
+            return True
+
+        service = BrowserFolderService(
+            LocalFolderBrowser([], self.bindings),
+            native_picker=lambda: self.project,
+            authorization=lambda: True,
+            on_bound=record,
+        )
+        chosen = service.choose()
+        self.assertEqual(chosen["status"], "selected")
+        self.assertEqual(bound, [])
+        cloud_project = str(uuid4())
+        self.assertTrue(service.bind(chosen["folderId"], cloud_project))
+        self.assertEqual(bound, [(cloud_project, self.project / "Design.kicad_pro")])
+        self.assertEqual(
+            json.loads(self.bindings.read_text("utf8")),
+            {cloud_project: str(self.project / "Design.kicad_pro")},
+        )
+
+    def test_failed_or_cancelled_native_picker_does_not_create_cloud_project(self) -> None:
+        from kicad_mcp.cloud_folder_browse_receiver import BrowserFolderService
+
+        called = []
+        service = BrowserFolderService(
+            LocalFolderBrowser([], self.bindings),
+            native_picker=lambda: None,
+            authorization=lambda: True,
+            on_bound=lambda *_args: called.append(True) or True,
+        )
+        self.assertEqual(service.choose(), {"status": "cancelled"})
+        self.assertFalse(service.bind("does-not-exist", str(uuid4())))
+        self.assertEqual(called, [])
+        self.assertFalse(self.bindings.exists())
+
     def test_files_instead_of_folder_selection_are_rejected(self) -> None:
         project_file = self.project / "Design.kicad_pro"
         self.assertEqual(self.browser.choose_native(lambda: project_file), {"status": "invalid"})

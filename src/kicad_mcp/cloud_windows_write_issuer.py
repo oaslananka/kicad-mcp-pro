@@ -13,6 +13,7 @@ import hmac
 import os
 import re
 from contextlib import suppress
+from importlib.resources import files
 
 from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -117,4 +118,28 @@ def load_pinned_windows_write_issuer_key(
             raise LocalWriteDeniedError(_DENIED)
         return key
     except (OSError, ValueError, TypeError, UnsupportedAlgorithm) as exc:
+        raise LocalWriteDeniedError(_DENIED) from exc
+
+
+# Pin of the verified production Cloud issuer PUBLIC key. Rotating this key
+# requires an updated client release, never an untrusted network substitution.
+_KICAD_CLOUD_ORIGIN = "https://kicad-mcp-pro.oaslananka.dev"
+_KICAD_CLOUD_ISSUER_SHA256 = "f49abb8687a184f842e259744eedcc3ceb80254c91942b7dd485df92ee688b01"
+
+
+def trust_bundled_owner_cloud_issuer(record_id: str, *, origin: str) -> None:
+    """One foreground owner action trusts the package-pinned Cloud issuer.
+
+    Pairing itself does not grant an AI client any project access. A later
+    explicit owner-granted Edit permission and OAuth WRITE scope are required
+    on the Cloud side for every signed write request.
+    """
+    if origin != _KICAD_CLOUD_ORIGIN:
+        raise LocalWriteDeniedError(_DENIED)
+    try:
+        public_pem = (files("kicad_mcp") / "data" / "cloud_write_issuer_public.txt").read_bytes()
+        trust_owner_windows_write_issuer(
+            record_id, public_pem, expected_spki_sha256=_KICAD_CLOUD_ISSUER_SHA256
+        )
+    except (OSError, ValueError, TypeError) as exc:
         raise LocalWriteDeniedError(_DENIED) from exc

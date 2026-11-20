@@ -74,7 +74,8 @@ test("authenticated devices page reports only actual owner-bound connector sessi
   assert.deepEqual(checks,["owner-a:"+f.ownId]);
   const offline=await devicesResponse(new Request(origin+"/devices"),f.identity,origin,f.devices,{enrollmentAvailable:true,deviceConnection:()=>false});
   const offlineHtml=await offline!.text();
-  assert.match(offlineHtml,/kicad-mcp-pro cloud connect/);
+  assert.match(offlineHtml,/kicad-mcp-pro cloud/);
+  assert.doesNotMatch(offlineHtml,/kicad-mcp-pro cloud (connect|reconnect|repair)/);
   assert.doesNotMatch(offlineHtml,/Run kicad-mcp-pro remote to connect/);
   const anonymous=fixture(null);
   let called=false;
