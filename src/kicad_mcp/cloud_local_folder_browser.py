@@ -263,6 +263,11 @@ class LocalFolderBrowser:
             return None
         return project
 
+    def selected_project_file(self, token: str) -> Path | None:
+        """Return a locally user-selected file; never send the path to Cloud."""
+        folder = self._paths.get(token)
+        return self._bindable_project(token, folder) if folder is not None else None
+
     def bind(self, token: str, project_id: str) -> bool:
         try:
             UUID(project_id)

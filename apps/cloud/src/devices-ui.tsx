@@ -331,7 +331,7 @@ function DeviceList({context}:Readonly<{context:ViewContext}>){
           <div>
             <h3>No devices yet</h3>
             <p>{sandboxMode?"Connect this computer with the local development Connector.":
-              "Run kicad-mcp-pro cloud connect on your computer to connect."}</p>
+              "Run kicad-mcp-pro cloud on your computer to connect."}</p>
           </div>
         </div>:
           <ul className="connections-list device-list">{devices.map(device=><DeviceRow key={device.id} device={device} context={context}/>)}</ul>}
@@ -341,37 +341,57 @@ function DeviceList({context}:Readonly<{context:ViewContext}>){
       </section>);
 }
 
+const CLOUD_WINDOWS_INSTALL =
+  "irm https://raw.githubusercontent.com/oaslananka/kicad-mcp-pro/main/scripts/install-cloud.ps1 | iex";
+const CLOUD_START = "kicad-mcp-pro cloud";
+
 function OfflineRecovery({context}:Readonly<{context:ViewContext}>){
   if(context.sandboxMode||!context.enrollmentAvailable||
     !context.devices.some(d=>d.enabled&&!d.revoked&&d.connectionState==="disconnected"))return null;
   return <section className="card device-recovery-card" id="reconnect-computer"
       aria-labelledby="reconnect-computer-title">
-    <h2 id="reconnect-computer-title"><Icon name="cpu" size={16}/> Reconnect a paired computer</h2>
-    <p>On the offline Windows computer, check its local Connector.
-      You do not need to pair your device or project again.</p>
-    <CopyValue value="kicad-mcp-pro cloud status" label="check Connector status"/>
-    <p className="field-help">If the status says "Configured (task unverified)", restore
-      the previously configured read-only background Connector from an owner terminal:</p>
-    <CopyValue value="kicad-mcp-pro cloud reconnect" label="restore Connector"/>
-    <p className="field-help">If the task exists but the device stays offline, use
-      <code> kicad-mcp-pro cloud connect</code> to start a visible session and inspect
-      connection logs. Restarting a Connector does not grant any AI app editing access.</p>
+    <h2 id="reconnect-computer-title"><Icon name="cpu" size={16}/> Start your paired computer</h2>
+    <p>Open a terminal on this computer and run the same command.
+      It reuses the same registered device; you do not need to pair again.</p>
+    <CopyValue value={CLOUD_START} label="start paired device"/>
+    <p className="field-help">Keep the terminal open to remain Online and see connection
+      and tool activity logs. Closing it disconnects your device, not your pairing.
+      Transient network interruptions are retried automatically.</p>
   </section>;
+}
+function CloudQuickStart({existing}:Readonly<{existing:boolean}>){
+  return <>
+    <div className="device-setup-platforms" aria-label="Supported setup platforms">
+      <strong>Windows</strong>
+      <span title="Single-command device onboarding is not yet verified on macOS">macOS ? Not yet available</span>
+      <span title="Single-command device onboarding is not yet verified on Linux">Linux ? Not yet available</span>
+    </div>
+    <h3>Quick setup <small>Recommended</small></h3>
+    <p>Run this PowerShell command on the Windows computer you want to connect.
+      It installs the launcher only when needed, then starts the Connector.</p>
+    <CopyValue value={CLOUD_WINDOWS_INSTALL} label="PowerShell setup command"/>
+    <details className="device-setup-alternative">
+      <summary>Already installed KiCad MCP Pro?</summary>
+      <CopyValue value={CLOUD_START} label="start Connector"/>
+    </details>
+    <p className="field-help">The first run opens your browser for device approval.
+      {existing?" Devices already paired here keep their own identities.":""}
+      {" "}Keep the terminal open while working; it displays connection and tool logs.
+      Use Add Project on an Online device to choose a KiCad folder.</p>
+    <a className="text-link"
+       href="https://github.com/oaslananka/kicad-mcp-pro/blob/main/scripts/install-cloud.ps1"
+       target="_blank" rel="noopener noreferrer">Review the setup script</a>
+  </>;
 }
 function PairingSetup({context}:Readonly<{context:ViewContext}>){
   const {devices,sandboxMode}=context;
   return (devices.length===0?<section className="card quickstart-card" id="connect-computer">
-        <div className="card-kicker"><Icon name="cpu" size={15}/> PAIR YOUR COMPUTER</div>
-        <h2>Connect your computer</h2>
+        <div className="card-kicker"><Icon name="cpu" size={15}/> CONNECT YOUR COMPUTER</div>
+        <h2>Connect this device</h2>
         {sandboxMode?<><p>Local development only. This workspace only accepts
           connections from this computer. Its existing Connector is configured locally.</p>
           <a className="text-link" href="/devices">Review connected devices</a></>:
-          <><p>Run on your Windows computer. Choose your KiCad folder,
-              then sign-in and approve pairing in the browser.</p>
-            <CopyValue value="kicad-mcp-pro cloud connect" label="setup command"/>
-            <p className="field-help">Keep the terminal open to see connection and activity logs.
-              Close it to disconnect. On the first connection, approve pairing in your browser.
-              AI app access is granted separately.</p></>}
+          <CloudQuickStart existing={false}/>}
       </section>:
       <section className="card pair-another-card" id="connect-computer">
         <h2><Icon name="cpu" size={16}/> Connect another computer</h2>
@@ -379,12 +399,7 @@ function PairingSetup({context}:Readonly<{context:ViewContext}>){
           {sandboxMode?<p>Local development only. This Cloud instance accepts connections
             from this computer (127.0.0.1). Additional computers need a separate
             network-enabled Cloud setup; remote pairing is unavailable here.</p>:
-          <><p>On your other Windows computer, run the command below to select its KiCad folder,
-              then sign-in and approve pairing in the browser:</p>
-            <CopyValue value="kicad-mcp-pro cloud connect" label="setup command"/>
-            <p className="field-help">Keep the terminal open. If this computer is already paired,
-              run <code>kicad-mcp-pro cloud connect</code> to reconnect without re-pairing.
-              The terminal displays connection and request logs.</p></>}
+          <CloudQuickStart existing={true}/>}
         </div>
       </section>);
 }
@@ -441,8 +456,8 @@ function RegisteredProjects({context}:Readonly<{context:ViewContext}>){
             :<div className="project-empty">
               <h3>No KiCad projects yet</h3>
               <p>{sandboxMode?"Project selection comes next. No local project is shared yet.":
-                <>Use <code>kicad-mcp-pro cloud connect</code> on your
-                  computer to pair it. Then choose a project using Browse on its Online card.</>}</p>
+                <>Start <code>kicad-mcp-pro cloud</code> on this computer.
+                  Keep the terminal open, then choose a project using Add Project on its Online card.</>}</p>
             </div>}
 
           </section>);

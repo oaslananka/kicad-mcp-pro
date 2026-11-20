@@ -229,3 +229,53 @@ def test_trusted_issuer_rejects_pem_parser_failure_and_noncanonical_bytes(
     monkeypatch.setattr(issuer, "load_pem_public_key", lambda _pem: fake_key)
     with pytest.raises(LocalWriteDeniedError):
         issuer.trust_owner_windows_write_issuer(RECORD, pem + b"\n", expected_spki_sha256=sha256)
+
+
+def test_bundled_cloud_issuer_public_key_matches_independently_verified_fingerprint() -> None:
+    from importlib.resources import files
+
+    from kicad_mcp.cloud_windows_write_issuer import (
+        _KICAD_CLOUD_ISSUER_SHA256,
+        _KICAD_CLOUD_ORIGIN,
+        _fingerprint,
+        _issuer_key,
+    )
+
+    assert _KICAD_CLOUD_ORIGIN == "https://kicad-mcp-pro.oaslananka.dev"
+    public = (files("kicad_mcp") / "data" / "cloud_write_issuer_public.txt").read_bytes()
+    assert _fingerprint(_issuer_key(public)) == _KICAD_CLOUD_ISSUER_SHA256
+    assert b"PRIVATE" not in public
+
+
+@WINDOWS
+def test_bundled_cloud_issuer_is_idempotent_and_never_replaces_owner_pin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_windows_write_issuer as issuer
+
+    store: dict[str, bytes] = {}
+    calls = []
+
+    def lookup(_record: str, part: str) -> bytes | None:
+        return store.get(part)
+
+    def create(_record: str, part: str, value: bytes) -> None:
+        if part in store:
+            raise LocalWriteDeniedError("duplicate")
+        calls.append(part)
+        store[part] = value
+
+    monkeypatch.setattr(issuer, "read_credential", lookup)
+    monkeypatch.setattr(issuer, "create_credential", create)
+    origin = "https://kicad-mcp-pro.oaslananka.dev"
+    issuer.trust_bundled_owner_cloud_issuer(RECORD, origin=origin)
+    issuer.trust_bundled_owner_cloud_issuer(RECORD, origin=origin)
+    assert calls == ["write_issuer", "write_issuer_pin"]
+    assert store["write_issuer_pin"] == issuer._KICAD_CLOUD_ISSUER_SHA256.encode("ascii")
+    with pytest.raises(LocalWriteDeniedError):
+        issuer.trust_bundled_owner_cloud_issuer(RECORD, origin="https://evil.example")
+    assert calls == ["write_issuer", "write_issuer_pin"]
+    store["write_issuer_pin"] = b"f" * 64
+    with pytest.raises(LocalWriteDeniedError):
+        issuer.trust_bundled_owner_cloud_issuer(RECORD, origin=origin)
+    assert store["write_issuer_pin"] == b"f" * 64

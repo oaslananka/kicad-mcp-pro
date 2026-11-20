@@ -335,3 +335,58 @@ async def test_inherited_thvd1450_symbol_matches_native_kicad_library(tmp_path: 
     assert "[lib_symbol_issues]" not in report  # the reference library must load
     assert "[lib_symbol_mismatch]" not in report
     assert "[pin_not_connected]" in report
+
+
+@pytest.mark.anyio
+@pytest.mark.slow
+async def test_inherited_max3485_empty_footprint_matches_native_kicad(tmp_path: Path) -> None:
+    """Inherited blank Footprint keeps the ancestor default in the schematic cache."""
+    from kicad_mcp.tools.schematic import _symbol_library_file
+
+    kicad_cli = shutil.which("kicad-cli")
+    if kicad_cli is None:
+        windows_cli = Path("C:/Program Files/KiCad/10.0/bin/kicad-cli.exe")
+        if windows_cli.is_file():
+            kicad_cli = str(windows_cli)
+    if kicad_cli is None or _symbol_library_file("Interface_UART") is None:
+        pytest.skip("Native KiCad CLI and the official Interface_UART library are required")
+
+    root = tmp_path / "inherited-max3485"
+    server = build_server("schematic")
+    result = await call_tool_text(
+        server, "kicad_create_new_project", {"path": str(root), "name": "RS485Native"}
+    )
+    assert "Error" not in result
+    project_dir = root / "RS485Native"
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(project_dir)})
+    result = await call_tool_text(
+        server,
+        "sch_add_symbol",
+        {
+            "library": "Interface_UART",
+            "symbol_name": "MAX3485",
+            "reference": "U1",
+            "value": "MAX3485",
+            "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+            "x_mm": 101.6,
+            "y_mm": 101.6,
+        },
+    )
+    assert "No schematic file" not in result
+    schematic = project_dir / "RS485Native.kicad_sch"
+    from kicad_mcp.tools.schematic import _find_symbol_block, _symbol_property_blocks
+
+    embedded = _find_symbol_block(schematic.read_text(encoding="utf-8"), "Interface_UART:MAX3485")
+    assert embedded is not None
+    cached_footprint = _symbol_property_blocks(embedded)["Footprint"]
+    assert '"Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"' in cached_footprint
+
+    report_file = tmp_path / "max3485-native-erc.rpt"
+    from tests.integration.test_kicad_cli_smoke import _run_kicad_cli
+
+    completed = _run_kicad_cli(
+        Path(kicad_cli), "sch", "erc", "-o", str(report_file), str(schematic)
+    )
+    assert completed.returncode in (0, 5), completed.stderr
+    report = report_file.read_text(encoding="utf-8")
+    assert "[lib_symbol_mismatch]" not in report

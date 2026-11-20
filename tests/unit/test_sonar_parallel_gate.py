@@ -51,6 +51,17 @@ def test_coverage_waits_for_exact_run_windows_artifact_before_merge() -> None:
     assert "exit 1" in run
     assert "GITHUB_TOKEN" not in run
     assert "GH_TOKEN" in wait["env"]
+    assert wait["id"] == "native-windows-coverage"
+    assert "artifact_id=$matches" in run
+    download = steps[names.index(download_name)]
+    assert "name" not in download["with"]
+    assert download["with"] == {
+        "artifact-ids": "${{ steps.native-windows-coverage.outputs.artifact_id }}",
+        "github-token": "${{ github.token }}",
+        "repository": "${{ github.repository }}",
+        "run-id": "${{ github.run_id }}",
+        "digest-mismatch": "error",
+    }
     assert steps[names.index(merge_name)]["run"].count("merge_platform_coverage.py merge") == 1
 
     sonar = workflow["jobs"]["sonarcloud"]

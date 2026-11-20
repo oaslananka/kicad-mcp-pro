@@ -81,6 +81,8 @@ class OutboundSessionOptions:
     board_counts_pilot: bool = False
     schematic_counts_pilot: bool = False
     owner_managed_read: bool = False
+    # Signed device without any selected KiCad project: owner folder picker only.
+    owner_folder_only: bool = False
     managed_native_drc: bool = False
     managed_native_write: bool = False
     revisions_preparer: Callable[[str], dict[str, str]] | None = None
@@ -524,6 +526,47 @@ def _check_read_transport_gate(
         _require_independent_read_authority()
 
 
+def _invalid_owner_folder_transport(
+    dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch] | None,
+    inspection_factory: Callable[[HandshakeReceipt], BoundConnectorProjectWorker] | None,
+    operator_presence_pilot: bool,
+    operator_inspection_pilot: bool,
+    owner_managed_read: bool,
+) -> bool:
+    """An unbound device's folder browser has no design-reading authority."""
+    return (
+        dispatcher_factory is not None
+        or inspection_factory is not None
+        or operator_presence_pilot
+        or operator_inspection_pilot
+        or owner_managed_read
+    )
+
+
+def _invalid_owner_connection_identity(
+    *,
+    owner_sub: str,
+    device_id: str,
+    signing_key: Ed25519PrivateKey,
+) -> bool:
+    return (
+        not isinstance(owner_sub, str)
+        or not (1 <= len(owner_sub) <= 256)
+        or owner_sub != owner_sub.strip()
+        or not isinstance(device_id, str)
+        or _DEVICE_UUID.fullmatch(device_id) is None
+        or not isinstance(signing_key, Ed25519PrivateKey)
+    )
+
+
+def _invalid_outbound_tls_context(context: ssl.SSLContext) -> bool:
+    return (
+        not isinstance(context, ssl.SSLContext)
+        or context.verify_mode != ssl.CERT_REQUIRED
+        or not context.check_hostname
+    )
+
+
 def _validated_outbound_connection(
     *,
     origin: str,
@@ -537,10 +580,20 @@ def _validated_outbound_connection(
     inspection_factory: Callable[[HandshakeReceipt], BoundConnectorProjectWorker] | None,
     operator_inspection_pilot: bool,
     owner_managed_read: bool = False,
+    owner_folder_only: bool = False,
 ) -> tuple[str, ssl.SSLContext]:
     # Reject both direct public read calls and private session-helper calls
     # before TLS setup or a WebSocket. Proof-only sessions stay available.
-    if owner_managed_read:
+    if owner_folder_only:
+        if _invalid_owner_folder_transport(
+            dispatcher_factory,
+            inspection_factory,
+            operator_presence_pilot,
+            operator_inspection_pilot,
+            owner_managed_read,
+        ):
+            raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    elif owner_managed_read:
         if (
             dispatcher_factory is None
             or inspection_factory is not None
@@ -555,21 +608,12 @@ def _validated_outbound_connection(
     if inspection_factory is not None and dispatcher_factory is not None:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     endpoint = _endpoint(origin=origin, trusted_origin=trusted_origin)
-    if (
-        not isinstance(owner_sub, str)
-        or not (1 <= len(owner_sub) <= 256)
-        or owner_sub != owner_sub.strip()
-        or not isinstance(device_id, str)
-        or _DEVICE_UUID.fullmatch(device_id) is None
-        or not isinstance(signing_key, Ed25519PrivateKey)
+    if _invalid_owner_connection_identity(
+        owner_sub=owner_sub, device_id=device_id, signing_key=signing_key
     ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     context = tls_context if tls_context is not None else ssl.create_default_context()
-    if (
-        not isinstance(context, ssl.SSLContext)
-        or context.verify_mode != ssl.CERT_REQUIRED
-        or not context.check_hostname
-    ):
+    if _invalid_outbound_tls_context(context):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     return endpoint, context
 
@@ -588,19 +632,51 @@ def _invalid_owner_managed_mode(options: OutboundSessionOptions) -> bool:
     )
 
 
-def _validate_outbound_options(options: OutboundSessionOptions) -> None:
-    if type(options.managed_native_drc) is not bool or (
-        options.managed_native_drc and not options.owner_managed_read
-    ):
-        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
-    if type(options.managed_native_write) is not bool or (
-        options.managed_native_write
-        and (
-            not options.owner_managed_read
-            or not callable(options.revisions_preparer)
-            or not callable(options.write_executor)
+def _invalid_owner_folder_mode(options: OutboundSessionOptions) -> bool:
+    """Refuse project tools, pilots and writes for unbound folder sessions."""
+    return (
+        type(options.owner_folder_only) is not bool
+        or options.owner_managed_read
+        or options.dispatcher_factory is not None
+        or options.inspection_factory is not None
+        or options.operator_presence_pilot
+        or options.operator_inspection_pilot
+        or options.operator_native_drc_pilot
+        or options.board_counts_pilot
+        or options.schematic_counts_pilot
+        or options.managed_native_drc
+        or options.managed_native_write
+        or options.mcp_service_factory is not None
+        or options.revisions_preparer is not None
+        or options.write_executor is not None
+        or not callable(options.folder_service_factory)
+        or options.advertise_catalog
+    )
+
+
+def _invalid_native_option_settings(options: OutboundSessionOptions) -> bool:
+    """DRC and WRITE require explicit owner-managed read mode and executors."""
+    return (
+        type(options.managed_native_drc) is not bool
+        or (options.managed_native_drc and not options.owner_managed_read)
+        or type(options.managed_native_write) is not bool
+        or (
+            options.managed_native_write
+            and (
+                not options.owner_managed_read
+                or not callable(options.revisions_preparer)
+                or not callable(options.write_executor)
+            )
         )
-    ):
+    )
+
+
+def _validate_outbound_options(options: OutboundSessionOptions) -> None:
+    if options.owner_folder_only:
+        if _invalid_owner_folder_mode(options):
+            raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+        return
+    if _invalid_native_option_settings(options):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     if options.owner_managed_read and _invalid_owner_managed_mode(options):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
@@ -677,7 +753,7 @@ def _catalog_hello_metadata(options: OutboundSessionOptions) -> dict[str, object
 
 
 def _outbound_session_timeout(options: OutboundSessionOptions) -> int:
-    if options.owner_managed_read:
+    if options.owner_managed_read or options.owner_folder_only:
         return 299
     if options.dispatcher_factory is None and options.inspection_factory is None:
         return HANDSHAKE_TIMEOUT_SECONDS
@@ -687,6 +763,17 @@ def _outbound_session_timeout(options: OutboundSessionOptions) -> int:
 async def _complete_outbound_operation(
     socket: ClientConnection, receipt: HandshakeReceipt, options: OutboundSessionOptions
 ) -> HandshakeReceipt:
+    if options.owner_folder_only:
+        from kicad_mcp.cloud_managed_read_transport import serve_owner_folder_only
+
+        if options.folder_service_factory is None:
+            raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+        return await serve_owner_folder_only(
+            socket,
+            receipt,
+            options.folder_service_factory(receipt),
+            on_activity=options.on_activity,
+        )
     if options.owner_managed_read:
         # Avoid a circular module dependency. This code only receives an
         # already-signed socket; local authority is supplied by the dispatcher.
@@ -759,6 +846,7 @@ async def _perform_outbound_session(
         inspection_factory=session_options.inspection_factory,
         operator_inspection_pilot=session_options.operator_inspection_pilot,
         owner_managed_read=session_options.owner_managed_read,
+        owner_folder_only=session_options.owner_folder_only,
     )
     _validate_outbound_options(session_options)
     # Fail before network access if an opt-in local catalog cannot be derived.
@@ -1043,6 +1131,37 @@ class ManagedSessionExtras(TypedDict, total=False):
 
     on_activity: Callable[[str], None] | None
     mcp_bridge_factory: Callable[[HandshakeReceipt], GenericMcpDispatch] | None
+
+
+async def execute_owner_folder_only_session(
+    *,
+    origin: str,
+    trusted_origin: str,
+    owner_sub: str,
+    device_id: str,
+    signing_key: Ed25519PrivateKey,
+    folder_service_factory: Callable[[HandshakeReceipt], LocalFolderBrowseService],
+    tls_context: ssl.SSLContext | None = None,
+    on_ready: Callable[[HandshakeReceipt], None] | None = None,
+    on_activity: Callable[[str], None] | None = None,
+) -> HandshakeReceipt:
+    """Owner-connected signed device bootstrap. Never serves local MCP operations."""
+    if not callable(folder_service_factory):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
+    return await _perform_outbound_session(
+        origin=origin,
+        trusted_origin=trusted_origin,
+        owner_sub=owner_sub,
+        device_id=device_id,
+        signing_key=signing_key,
+        tls_context=tls_context,
+        options=OutboundSessionOptions(
+            owner_folder_only=True,
+            folder_service_factory=folder_service_factory,
+            on_ready=on_ready,
+            on_activity=on_activity,
+        ),
+    )
 
 
 async def execute_owner_managed_read_session(

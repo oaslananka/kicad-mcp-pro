@@ -175,7 +175,7 @@ export function createCloudMcpHandler(
         // A live signed MCP bridge is distinct from the optional legacy
         // presence reader; neither state proves an open KiCad GUI or WRITE.
         ...(readAttemptReady?{guidance:
-          "Legacy project presence can be unavailable while signed MCP reads work. Verify with local_mcp_catalog, then local_mcp_call. Native KiCad Editor and write authorization are not yet verified."
+          "Legacy presence may be unavailable while signed MCP tools work. Use local_mcp_catalog to find actual tools, then local_mcp_read or local_mcp_write. A connected device alone does not confirm KiCad Editor or editing access."
         }:{}),
         localMcp:{
           bridgeConfigured,readAttemptReady,state,sessionNativeWriteMode,
@@ -183,6 +183,10 @@ export function createCloudMcpHandler(
         }
       };
     };
+    // Compatibility path only for deployments without the signed generic MCP bridge.
+    // The normal connected Cloud exposes exactly four real-local-tool gateway calls.
+    const legacyOnly=!genericMcpCatalog||!genericMcpCall;
+    if(legacyOnly){
     mcp.registerTool("get_service_status", {
       description: "Describe current Cloud read features without claiming a local KiCad action or GUI session.",
       inputSchema: z.object({}), annotations: readonly
@@ -207,11 +211,14 @@ export function createCloudMcpHandler(
       inputSchema: z.object({}), annotations: readonly
     }, async () => text({ devices: (await inventory.listDevices(actor.sub,actor.clientId))
       .map(d=>({...d,connected:connected(d.id)})) }));
+    }
     mcp.registerTool("list_projects", {
-      description: "List granted projects and separate legacy presence availability from the signed generic MCP bridge. Only if localMcp.bridgeConfigured and localMcp.readAttemptReady are true, attempt local_mcp_catalog and local_mcp_call; available:false alone does not mean the Connector is offline. No local paths or design contents.",
-      inputSchema: z.object({}), annotations: readonly
+      description: "List your granted projects, online device status and signed MCP readiness. Discover real installed tools with local_mcp_catalog; run with local_mcp_read or local_mcp_write according to accessMode. A legacy available:false result does not prove the device is offline. No local paths or design contents.",
+      inputSchema: z.object({}), annotations: readonly,
+      _meta: { ui: { resourceUri: "ui://project-review" } }
     }, async () => text({ projects: (await inventory.listProjects(actor.sub,actor.clientId))
       .map(describeProject) }));
+    if(legacyOnly){
     mcp.registerTool("get_project", {
       description: "Find a granted project with its separate signed generic MCP readiness in localMcp. The legacy available/reason fields are NOT a test of local_mcp_catalog or KiCad Editor. Never exposes local paths or design data.",
       inputSchema: z.object({ project_id: z.string().uuid() }), annotations: readonly,
@@ -227,6 +234,7 @@ export function createCloudMcpHandler(
         structuredContent: { project: desc }
       };
     });
+    }
     mcp.registerResource(
       "kicad-project-review",
       "ui://project-review",
@@ -246,6 +254,7 @@ export function createCloudMcpHandler(
         };
       }
     );
+    if(legacyOnly){
     // Task-first discovery describes the CURRENT Cloud MCP surface, not
     // the much broader local KiCad tool registry. Never claim availability
     // for a feature that was not explicitly enabled on this Cloud instance.
@@ -308,7 +317,7 @@ export function createCloudMcpHandler(
     // file contents, local paths, or editing tools are exposed over MCP.
     if(projectPresence){
       mcp.registerTool("get_project_presence",{
-        description:"Legacy opt-in metadata-only project presence check, NOT the signed generic MCP tool path. available:false can occur even if local_mcp_catalog and local_mcp_call work. Check localMcp.readAttemptReady and verify an actual read tool before concluding the Connector is offline or suggesting device repair. Requires an owner session and project grant.",
+        description:"Legacy opt-in project presence metadata check, NOT a signed KiCad tool call. An unavailable legacy presence result alone does not prove that the signed device is offline; verify current connection and owner-scoped access independently.",
         inputSchema:z.object({project_id:z.string().uuid().optional()}),annotations:readonly
       },async ({project_id})=>{
         const {project, selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
@@ -387,6 +396,7 @@ export function createCloudMcpHandler(
         return text(counts?{available:true,counts}:{available:false});
       });
     }
+    }
     if(genericMcpCatalog&&genericMcpCall&&!directToolsEnabled){
       mcp.registerTool("local_mcp_catalog",{
         description:"Browse the REAL installed KiCad MCP Pro tools and original JSON input schemas on an owner-connected device. Results depend on the current local profile, live Connector and project grant. No tools are reimplemented in Cloud; paginate with next_offset.",
@@ -408,33 +418,29 @@ export function createCloudMcpHandler(
             next_offset:catalog.nextOffset});
         }catch{return text({available:false,reason:"owner_connector_mcp_unavailable"});}
       });
-      mcp.registerTool("local_mcp_call",{
-        description:"Execute one tool from the REAL local KiCad MCP catalog for one owner-granted project. First use local_mcp_catalog to see the exact input schema. READ requests need a project Read grant; mutating tools need OAuth projects:write, project Edit and owner's native writing opt-in. Human-only manufacturing is never available. A timed-out write has unknown outcome: inspect the local project before retrying.",
-        inputSchema:z.object({
-          project_id:z.string().uuid().optional(),
-          tool_name:z.string().regex(/^[a-z][a-z0-9_]{0,127}$/),
-          arguments:z.record(z.string(),z.unknown())
-        }),annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:false,openWorldHint:false},
-        // One gateway covers both read and mutating local tools. Runtime
-        // enforces the actual scope and the per-client project grant.
-        _meta:{securitySchemes:[
-          {type:"oauth2",scopes:["projects:read"]},
-          {type:"oauth2",scopes:["projects:read","projects:write"]}
-        ]}
-      },async ({project_id,tool_name,arguments:args})=>{
-        const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
-        if(!project)return {...text({success:false,selectionRequired}),isError:true};
+      const invokeLocalTool=async(
+        mode:"readonly"|"write",
+        request:{project_id?:string;tool_name:string;arguments:Record<string,unknown>}
+      )=>{
+        const {project,selectionRequired}=await resolveScopedProject(
+          inventory,actor,request.project_id);
+        if(!project)return {...text({success:false,selectionRequired,reason:"project_not_granted"}),
+          isError:true};
         let tool:GenericMcpTool|undefined;
         try{
-          const catalog=await genericMcpCatalog(project.deviceId,project.id,0,tool_name);
-          tool=catalog?.tools.find(t=>t.name===tool_name);
-        }catch{/* no dispatch on missing catalog */}
+          const catalog=await genericMcpCatalog(project.deviceId,project.id,0,request.tool_name);
+          tool=catalog?.tools.find(t=>t.name===request.tool_name);
+        }catch{/* No call without local contract. */}
         if(!tool)return {...text({success:false,reason:"local_tool_unavailable"}),isError:true};
-        const write=tool.accessMode==="write";
+        if(tool.accessMode!==mode)return {...text({
+          success:false,reason:tool.accessMode==="write"
+            ?"write_tool_requires_local_mcp_write":"read_tool_requires_local_mcp_read"
+        }),isError:true};
+        const write=mode==="write";
         if(write&&(!actor.scopes.has("projects:write")||project.maxMode!=="write")){
           const denied=text({success:false,reason:!actor.scopes.has("projects:write")?
             "insufficient_scope_write_required":"project_edit_permission_required",
-            guidance:"Reconnect and approve projects:write, then choose Edit for this project."});
+            guidance:"Approve projects:write for this application and choose Edit for this project."});
           if(!actor.scopes.has("projects:write")&&protectedResourceMetadataUrl)return {
             ...denied,isError:true,_meta:{"mcp/www_authenticate":[
               'Bearer resource_metadata="'+protectedResourceMetadataUrl+'", '+
@@ -444,19 +450,38 @@ export function createCloudMcpHandler(
           return {...denied,isError:true};
         }
         try{
-          const result=await genericMcpCall(project.deviceId,project.id,tool_name,args,write);
+          const result=await genericMcpCall(
+            project.deviceId,project.id,request.tool_name,request.arguments,write);
           if(result===null)return {...text({success:false,
             reason:"local_mcp_operation_unconfirmed",
             outcomeUnknown:write,retrySafe:!write,
-            guidance:write?"Check the local project before retrying.":"Reconnect the owner device."}),isError:true};
+            guidance:write?"Inspect the local design before retrying.":"Check the device connection."}),
+            isError:true};
           const actual=result as {isError?:boolean;structuredContent?:{success?:boolean}};
           const success=actual.isError!==true&&actual.structuredContent?.success!==false;
-          return {...text({success,tool_name,local_result:result}),...(success?{}:{isError:true})};
+          return {...text({success,tool_name:request.tool_name,local_result:result}),
+            ...(success?{}:{isError:true})};
         }catch{
           return {...text({success:false,reason:"local_mcp_operation_unconfirmed",
             outcomeUnknown:write,retrySafe:!write}),isError:true};
         }
+      };
+      const localToolSchema=z.object({
+        project_id:z.string().uuid().optional(),
+        tool_name:z.string().regex(/^[a-z][a-z0-9_]{0,127}$/),
+        arguments:z.record(z.string(),z.unknown())
       });
+      mcp.registerTool("local_mcp_read",{
+        description:"Run a READ tool from the real, installed KiCad MCP catalog. Discover the exact schema with local_mcp_catalog. Requires one owner-granted connected project; never runs a mutating tool.",
+        inputSchema:localToolSchema,annotations:readonly,
+        _meta:{securitySchemes:[{type:"oauth2",scopes:["projects:read"]}]}
+      },async request=>invokeLocalTool("readonly",request));
+      mcp.registerTool("local_mcp_write",{
+        description:"Run a WRITE tool from the real installed KiCad MCP catalog. Requires projects:write OAuth consent, project Edit grant, and a locally owner-approved signed edit session. Never executes manufacturing-only operations. A timed-out write has unknown outcome: inspect the project before retrying.",
+        inputSchema:localToolSchema,
+        annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:false,openWorldHint:false},
+        _meta:{securitySchemes:[{type:"oauth2",scopes:["projects:read","projects:write"]}]}
+      },async request=>invokeLocalTool("write",request));
     }
 
     // A reviewed public tool definition stays stable even when a device is
@@ -517,6 +542,7 @@ export function createCloudMcpHandler(
       });
     }
 
+    if(legacyOnly){
     if(projectWrite){
       mcp.registerTool("pcb_move_footprint",{
         description:"Move an owner-approved PCB footprint by reference designator with atomic local locking and optional disk persistence. Requires projects:write OAuth scope and active owner-connected device session.",
@@ -572,6 +598,7 @@ export function createCloudMcpHandler(
           guidance:"Write outcome is unconfirmed. Check the local board before retrying."
         });
       });
+    }
     }
     return mcp;
   });

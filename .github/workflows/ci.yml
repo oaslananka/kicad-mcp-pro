@@ -471,6 +471,7 @@ jobs:
       # On PR Python changes and analyzed main pushes, join same-run Windows
       # execution evidence with the Linux suite; verify SHA/run/attempt.
       - name: Wait for exact-run Windows coverage evidence
+        id: native-windows-coverage
         if: >-
           env.skip_ci != 'true' &&
           steps.python-tests.outcome == 'success' &&
@@ -495,6 +496,7 @@ jobs:
             fi
             matches="$(jq -r --arg name "$COVERAGE_ARTIFACT"               '[.artifacts[] | select(.name == $name and .expired == false) | .id] | unique | .[]' <<< "$response")"
             if [[ "$matches" =~ ^[0-9]+$ ]]; then
+              echo "artifact_id=$matches" >> "$GITHUB_OUTPUT"
               echo "Native Windows coverage evidence is ready."
               exit 0
             fi
@@ -519,7 +521,12 @@ jobs:
             needs.changes.outputs.sonar_docs_only != 'true'))
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          name: windows-python-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          # Immutable ID from the same-run GitHub API, not a lagging runtime name cache.
+          artifact-ids: ${{ steps.native-windows-coverage.outputs.artifact_id }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.run_id }}
+          digest-mismatch: error
       - name: Merge native Windows and Linux coverage
         if: >-
           env.skip_ci != 'true' &&
