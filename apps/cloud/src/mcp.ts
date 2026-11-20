@@ -172,6 +172,11 @@ export function createCloudMcpHandler(
         reason:!localReadEnabled?"cloud_read_not_enabled":
           !connectorConnected?"device_not_connected":"owner_operation_required",
         connectorConnected,
+        // A live signed MCP bridge is distinct from the optional legacy
+        // presence reader; neither state proves an open KiCad GUI or WRITE.
+        ...(readAttemptReady?{guidance:
+          "Legacy project presence can be unavailable while signed MCP reads work. Verify with local_mcp_catalog, then local_mcp_call. Native KiCad Editor and write authorization are not yet verified."
+        }:{}),
         localMcp:{
           bridgeConfigured,readAttemptReady,state,sessionNativeWriteMode,
           nativeWriteAuthorization:"unverified" as const
@@ -203,12 +208,12 @@ export function createCloudMcpHandler(
     }, async () => text({ devices: (await inventory.listDevices(actor.sub,actor.clientId))
       .map(d=>({...d,connected:connected(d.id)})) }));
     mcp.registerTool("list_projects", {
-      description: "List only enabled granted project aliases and current owner-session readiness. No local paths or design contents.",
+      description: "List granted projects and separate legacy presence availability from the signed generic MCP bridge. Only if localMcp.bridgeConfigured and localMcp.readAttemptReady are true, attempt local_mcp_catalog and local_mcp_call; available:false alone does not mean the Connector is offline. No local paths or design contents.",
       inputSchema: z.object({}), annotations: readonly
     }, async () => text({ projects: (await inventory.listProjects(actor.sub,actor.clientId))
       .map(describeProject) }));
     mcp.registerTool("get_project", {
-      description: "Find an enabled granted project by opaque UUID with session status, never local paths or KiCad data.",
+      description: "Find a granted project with its separate signed generic MCP readiness in localMcp. The legacy available/reason fields are NOT a test of local_mcp_catalog or KiCad Editor. Never exposes local paths or design data.",
       inputSchema: z.object({ project_id: z.string().uuid() }), annotations: readonly,
       _meta: { ui: { resourceUri: "ui://project-review" } }
     }, async ({ project_id }) => {
@@ -258,7 +263,7 @@ export function createCloudMcpHandler(
     ])) as Record<(typeof CLOUD_READ_TASKS)[number],{tool:string;enabled:boolean}>;
 
     mcp.registerTool("list_project_capabilities",{
-      description:"Browse only configured read-only Cloud MCP operations by category for one granted project. Never advertise local-only tools as remote; Connector presence is not permission to execute.",
+      description:"Browse the optional legacy read-only Cloud operations; for an owner-connected signed generic MCP bridge, use localMcp.readAttemptReady and local_mcp_catalog. A missing legacy capability does not imply the device is offline.",
       inputSchema:z.object({
         project_id:z.string().uuid().optional(),
         category:z.enum(CLOUD_READ_CATEGORIES).optional()
@@ -266,9 +271,11 @@ export function createCloudMcpHandler(
     },async ({project_id,category})=>{
       const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
       if(!project)return text({catalogAvailable:false,selectionRequired,categories:[]});
-      const connectorConnected=connected(project.deviceId);
+      const view=describeProject(project);
+      const {connectorConnected,localMcp}=view;
       return text({
-        catalogAvailable:true,selectionRequired:false,connectorConnected,
+        catalogAvailable:true,selectionRequired:false,connectorConnected,localMcp,
+        ...("guidance" in view?{guidance:view.guidance}:{}),
         categories:listConfiguredCloudCapabilities(
           enabled,connectorConnected,category,authenticatedClaim(project)
         )
@@ -276,7 +283,7 @@ export function createCloudMcpHandler(
     });
 
     mcp.registerTool("discover_project_workflow",{
-      description:"Find the currently enabled, project-authorized Cloud MCP tool for a read-only KiCad task. Reports missing capabilities without executing KiCad, switching projects or revealing local paths.",
+      description:"Discover optional legacy Cloud read operations, separate from installed KiCad tools available through the signed generic MCP bridge. If unavailable, check localMcp.readAttemptReady and verify local_mcp_catalog before suggesting re-pairing.",
       inputSchema:z.object({
         task:z.enum(CLOUD_READ_TASKS),
         project_id:z.string().uuid().optional()
@@ -286,19 +293,22 @@ export function createCloudMcpHandler(
       if(!project)return text({available:false,selectionRequired,tools:[]});
       const chosen=workflows[task];
       const claimEnabled=configuredReadersForClaim(enabled,authenticatedClaim(project));
+      const view=describeProject(project);
       return text(chosen.enabled&&claimEnabled[task] ? {
         available:true,selectionRequired:false,
         tools:[chosen.tool],requiresOwnerSession:true
       } : {
         available:false,selectionRequired:false,tools:[],
-        reason:chosen.enabled?"connector_operation_not_supported":"cloud_operation_not_enabled"
+        reason:chosen.enabled?"connector_operation_not_supported":"cloud_operation_not_enabled",
+        localMcp:view.localMcp,
+        ...("guidance" in view?{guidance:view.guidance}:{})
       });
     });
     // Pilot presence read is an opt-in Cloud capability. No native commands,
     // file contents, local paths, or editing tools are exposed over MCP.
     if(projectPresence){
       mcp.registerTool("get_project_presence",{
-        description:"Read project presence from one granted local KiCad project. When only one project is accessible its ID is optional; otherwise use list_projects and provide project_id. Requires one active owner-started session.",
+        description:"Legacy opt-in metadata-only project presence check, NOT the signed generic MCP tool path. available:false can occur even if local_mcp_catalog and local_mcp_call work. Check localMcp.readAttemptReady and verify an actual read tool before concluding the Connector is offline or suggesting device repair. Requires an owner session and project grant.",
         inputSchema:z.object({project_id:z.string().uuid().optional()}),annotations:readonly
       },async ({project_id})=>{
         const {project, selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
@@ -308,7 +318,17 @@ export function createCloudMcpHandler(
         let files:ProjectPresenceFiles|null=null;
         try{files=await projectPresence(project.deviceId,project.id);}
         catch{files=null;}
-        return text(files?{available:true,files}:{available:false});
+        if(files)return text({available:true,files});
+        // An unavailable legacy presence probe does not imply the signed
+        // generic MCP bridge is offline. Recheck the scoped grant before
+        // disclosing any live device readiness after a failed request.
+        const current=await inventory.getProject(actor.sub,actor.clientId,project.id);
+        if(!current)return text({available:false});
+        const view=describeProject(current);
+        return text({
+          available:false,connectorConnected:view.connectorConnected,localMcp:view.localMcp,
+          ...("guidance" in view?{guidance:view.guidance}:{})
+        });
       });
     }
     // Deliberately absent unless the separate native DRC pilot is enabled.
