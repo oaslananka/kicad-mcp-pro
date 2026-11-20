@@ -26,24 +26,8 @@ def _resolve_command(command: list[str]) -> list[str]:
 
 
 def _run(command: list[str]) -> None:
-    # Capture child output: certain Windows actionlint/shellcheck subprocesses
-    # can hang when inheriting the hook's redirected console handles.
-    try:
-        result = subprocess.run(
-            _resolve_command(command),
-            cwd=REPO_ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise SystemExit(f"Workflow lint timed out: {command[-1]}") from exc
+    result = subprocess.run(_resolve_command(command), cwd=REPO_ROOT, check=False)
     if result.returncode != 0:
-        if result.stdout:
-            print(result.stdout, end="")
-        if result.stderr:
-            print(result.stderr, end="", file=sys.stderr)
         raise SystemExit(result.returncode)
 
 
