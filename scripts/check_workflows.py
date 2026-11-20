@@ -6,6 +6,7 @@ import argparse
 import pathlib
 import shutil
 import subprocess
+import sys
 
 import yaml
 
@@ -25,8 +26,24 @@ def _resolve_command(command: list[str]) -> list[str]:
 
 
 def _run(command: list[str]) -> None:
-    result = subprocess.run(_resolve_command(command), cwd=REPO_ROOT, check=False)
+    # Capture child output: certain Windows actionlint/shellcheck subprocesses
+    # can hang when inheriting the hook's redirected console handles.
+    try:
+        result = subprocess.run(
+            _resolve_command(command),
+            cwd=REPO_ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SystemExit(f"Workflow lint timed out: {command[-1]}") from exc
     if result.returncode != 0:
+        if result.stdout:
+            print(result.stdout, end="")
+        if result.stderr:
+            print(result.stderr, end="", file=sys.stderr)
         raise SystemExit(result.returncode)
 
 
@@ -59,7 +76,16 @@ def main() -> None:
     print(f"Parsed {len(workflows)} workflow file(s).")
 
     if args.actionlint:
-        _run([*ACTIONLINT_COMMAND, "-ignore", _LEGACY_QUEUE_WARNING])
+        # On Windows the actionlint/ShellCheck subprocess bridge can deadlock
+        # on complex workflow scripts. Validate all YAML and expressions here;
+        # the Linux GitHub Actions workflow-policy job still runs ShellCheck.
+        command = [*ACTIONLINT_COMMAND, "-ignore", _LEGACY_QUEUE_WARNING]
+        if sys.platform == "win32":
+            command.append("-shellcheck=")
+        # Single relative files avoid Windows absolute-path/auto-discovery stalls.
+        for path in workflows:
+            relative = path.relative_to(REPO_ROOT).as_posix()
+            _run([*command, relative])
 
 
 if __name__ == "__main__":

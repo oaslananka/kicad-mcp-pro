@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
 import yaml
 
 from scripts.check_github_actions_policy import has_sha_pinned_action
@@ -480,3 +481,25 @@ def test_main_sonar_coverage_uses_windows_native_evidence() -> None:
     assert "needs.coverage.outputs.sonar_coverage_artifact_id != ''" in str(
         jobs["sonarcloud"]["steps"]
     )
+
+
+def test_actionlint_receives_all_explicit_workflows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Workflow lint must cover all files without relying on auto-discovery."""
+    import sys
+
+    from scripts import check_workflows as tooling
+
+    commands: list[list[str]] = []
+    monkeypatch.setattr(sys, "argv", ["check_workflows.py", "--actionlint"])
+    monkeypatch.setattr(tooling, "_run", lambda command: commands.append(command))
+    tooling.main()
+    expected = sorted((ROOT / ".github/workflows").glob("*.yml")) + sorted(
+        (ROOT / ".github/workflows").glob("*.yaml")
+    )
+    assert len(expected) > 40
+    command = ["actionlint", "-ignore", tooling._LEGACY_QUEUE_WARNING]
+    if tooling.sys.platform == "win32":
+        command.append("-shellcheck=")
+    assert commands == [[*command, path.relative_to(ROOT).as_posix()] for path in expected]
