@@ -71,7 +71,7 @@ def cloud_entry(ctx: typer.Context) -> None:
     from kicad_mcp.cloud_windows_enrollment import WindowsRegisteredProject
 
     if isinstance(existing, WindowsRegisteredProject):
-        remember_existing_project_device(existing)
+        remember_existing_project_device(existing, allow_repair_migration=_owner_terminal())
     from kicad_mcp.cloud_windows_write_issuer import trust_bundled_owner_cloud_issuer
     from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
 
