@@ -58,5 +58,7 @@ def test_repeated_reference_keeps_label_and_power_anchors() -> None:
     assert len(laid_out) == 4
     assert len(powers) == 1
     assert len(labels) == 1
-    assert "x_mm" in powers[0] and "y_mm" in powers[0]
-    assert "x_mm" in labels[0] and "y_mm" in labels[0]
+    assert "x_mm" in powers[0]
+    assert "y_mm" in powers[0]
+    assert "x_mm" in labels[0]
+    assert "y_mm" in labels[0]
