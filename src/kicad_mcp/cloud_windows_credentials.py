@@ -32,6 +32,8 @@ _PARTS = frozenset(
         # Owner-approved recovery keeps the old selection in this same user vault.
         "archived_selected",
         "archived_active",
+        # Preserve the device-only marker through an approved project repair.
+        "archived_device_selected",
         "owner_api",
         # A public Ed25519 issuer key independently approved by the local
         # Windows owner. Never a key furnished by a write request itself.

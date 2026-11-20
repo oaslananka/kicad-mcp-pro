@@ -251,6 +251,11 @@ def _challenge(result: dict[str, object], key: Ed25519PrivateKey) -> tuple[str, 
     )
     der = key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
     expected = hashlib.sha256(der).hexdigest()
+    now_ms = time.time_ns() // 1_000_000
+    # The Cloud issues 5-minute challenges on its own clock. A slightly ahead
+    # server clock must not reject a valid owner approval before it starts.
+    # The Cloud remains authoritative for the actual expiration and redemption.
+    max_expiry_ms = now_ms + 300_000 + 30_000  # 5-minute TTL + bounded 30-second skew
     if (
         not isinstance(challenge, str)
         or not _UUID.fullmatch(challenge)
@@ -262,7 +267,7 @@ def _challenge(result: dict[str, object], key: Ed25519PrivateKey) -> tuple[str, 
         or not _FINGERPRINT.fullmatch(fingerprint)
         or fingerprint != expected
         or type(expiry) is not int
-        or not (time.time_ns() // 1_000_000 < expiry <= time.time_ns() // 1_000_000 + 300_000)
+        or not (now_ms < expiry <= max_expiry_ms)
     ):
         raise CloudPairingError(_PAIRING_DENIED)
     return challenge, code, secret, fingerprint, expiry

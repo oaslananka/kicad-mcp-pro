@@ -113,21 +113,140 @@ def remember_device(device: WindowsEnrolledDevice) -> None:
         raise LocalApprovalDeniedError(_DENIED)
 
 
-def remember_existing_project_device(project: WindowsRegisteredProject) -> None:
-    """Keep an existing verified pairing when migrating to the one-command CLI."""
+def _device_marker_payload(device: WindowsEnrolledDevice) -> bytes:
+    return json.dumps(
+        {
+            "recordId": device.record_id,
+            "origin": device.origin,
+            "ownerSub": device.owner_sub,
+            "deviceId": device.device_id,
+            "fingerprint": device.fingerprint,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+
+
+def _verify_browser_repair_archive(
+    project: WindowsRegisteredProject,
+    previous: WindowsEnrolledDevice,
+    replacement: WindowsEnrolledDevice,
+) -> None:
+    """Prove that the browser-repaired project replaces this owner's old folder."""
+    from kicad_mcp.cloud_windows_connector import (
+        _load_project_from_marker,
+        selected_project,
+    )
+    from kicad_mcp.cloud_windows_local_selection import inspect_owner_selected_project
+
+    archived = read_credential(project.registration_id, "archived_selected")
+    if not isinstance(archived, bytes) or not 1 <= len(archived) <= 1024:
+        raise LocalApprovalDeniedError(_DENIED)
+    try:
+        marker = json.loads(archived, object_pairs_hook=_unique)
+        if not isinstance(marker, dict) or set(marker) != {
+            "registrationId",
+            "recordId",
+            "deviceId",
+            "projectId",
+        }:
+            raise LocalApprovalDeniedError(_DENIED)
+        old_project = _load_project_from_marker(marker)
+    except (ValueError, TypeError, KeyError) as exc:
+        raise LocalApprovalDeniedError(_DENIED) from exc
+    if (
+        old_project.record_id != previous.record_id
+        or old_project.device_id != previous.device_id
+        or old_project.fingerprint != previous.fingerprint
+        or old_project.origin != replacement.origin
+        or old_project.owner_sub != replacement.owner_sub
+        or old_project.project_id == project.project_id
+        or old_project.device_id == replacement.device_id
+        or selected_project() != project
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+    old_binding = inspect_owner_selected_project(old_project)
+    new_binding = inspect_owner_selected_project(project)
+    if (
+        old_binding.directory != new_binding.directory
+        or old_binding.filename_stem != new_binding.filename_stem
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+
+
+def _restore_stale_device_marker(old_bytes: bytes, new_bytes: bytes) -> None:
+    """Roll back our failed selection change without touching foreign records."""
+    from kicad_mcp.cloud_windows_credentials import delete_credential
+
+    current = read_credential(_DEVICE_SELECTION_SLOT, "selected")
+    if current == new_bytes:
+        if not delete_credential(_DEVICE_SELECTION_SLOT, "selected"):
+            raise LocalApprovalDeniedError(_DENIED)
+    elif current is not None:
+        # Another owner's selection is never ours to undo.
+        raise LocalApprovalDeniedError(_DENIED)
+    create_credential(_DEVICE_SELECTION_SLOT, "selected", old_bytes)
+
+
+def _reconcile_browser_repaired_device(
+    project: WindowsRegisteredProject,
+    previous: WindowsEnrolledDevice,
+    replacement: WindowsEnrolledDevice,
+) -> None:
+    """Switch a stale device marker only after a verified owner browser repair."""
+    from kicad_mcp.cloud_windows_connector import selected_project
+    from kicad_mcp.cloud_windows_credentials import delete_credential
+
+    _verify_browser_repair_archive(project, previous, replacement)
+    old_bytes = _device_marker_payload(previous)
+    new_bytes = _device_marker_payload(replacement)
+    with owner_connector_instance():
+        if (
+            selected_project() != project
+            or selected_device() != previous
+            or read_credential(_DEVICE_SELECTION_SLOT, "selected") != old_bytes
+        ):
+            raise LocalApprovalDeniedError(_DENIED)
+        archived_device = read_credential(project.registration_id, "archived_device_selected")
+        if archived_device is None:
+            create_credential(project.registration_id, "archived_device_selected", old_bytes)
+            if read_credential(project.registration_id, "archived_device_selected") != old_bytes:
+                raise LocalApprovalDeniedError(_DENIED)
+        elif archived_device != old_bytes:
+            raise LocalApprovalDeniedError(_DENIED)
+        if not delete_credential(_DEVICE_SELECTION_SLOT, "selected"):
+            raise LocalApprovalDeniedError(_DENIED)
+        try:
+            create_credential(_DEVICE_SELECTION_SLOT, "selected", new_bytes)
+            if selected_device() != replacement:
+                raise LocalApprovalDeniedError(_DENIED)
+        except Exception:
+            _restore_stale_device_marker(old_bytes, new_bytes)
+            raise LocalApprovalDeniedError(_DENIED) from None
+
+
+def remember_existing_project_device(
+    project: WindowsRegisteredProject, *, allow_repair_migration: bool = False
+) -> None:
+    """Reuse a verified project; reconcile only an owner-approved repaired identity."""
     from kicad_mcp.cloud_windows_connector import selected_project
 
     if not isinstance(project, WindowsRegisteredProject) or selected_project() != project:
         raise LocalApprovalDeniedError(_DENIED)
-    remember_device(
-        WindowsEnrolledDevice(
-            record_id=project.record_id,
-            origin=project.origin,
-            owner_sub=project.owner_sub,
-            device_id=project.device_id,
-            fingerprint=project.fingerprint,
-        )
+    device = WindowsEnrolledDevice(
+        record_id=project.record_id,
+        origin=project.origin,
+        owner_sub=project.owner_sub,
+        device_id=project.device_id,
+        fingerprint=project.fingerprint,
     )
+    previous = selected_device()
+    if previous is None or previous == device:
+        remember_device(device)
+    elif allow_repair_migration:
+        _reconcile_browser_repaired_device(project, previous, device)
+    else:
+        raise LocalApprovalDeniedError(_DENIED)
 
 
 def verified_device_key(device: WindowsEnrolledDevice) -> Ed25519PrivateKey:
