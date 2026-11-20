@@ -156,7 +156,7 @@ test("real HTTP owner journey: DB pairing, browser consent gates, project grant 
       const deviceHtml=await devicePage.text();
       assert.doesNotMatch(deviceHtml,/Enable my device|>Disabled</);
       assert.match(deviceHtml,/Owner approved local test/);
-      const projectPage=devicePage;
+      const projectPage=await fetch(base+"/devices",{headers:{Cookie:ownerCookie}});
       const projectCsrf=htmlCsrf(await projectPage.text(),"/devices/projects/create");
       assert.equal((await postForm("register",{
         device_id:enrolled.deviceId,csrf:projectCsrf,alias:"Test PCB"
