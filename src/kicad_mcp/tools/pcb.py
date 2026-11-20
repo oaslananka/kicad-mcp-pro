@@ -2216,6 +2216,29 @@ def _decoupling_rule_for_value(value: str, fallback_max_distance_mm: float) -> d
     return {"max_dist_mm": fallback_max_distance_mm, "prefer_side": "same"}
 
 
+def _degrading_placement_message(
+    before_score: int,
+    before_failures: list[str],
+    candidate_score: int,
+    candidate_failures: list[str],
+) -> str | None:
+    """Describe a score or hard-failure regression before touching the PCB file."""
+    new_failures = [item for item in candidate_failures if item not in before_failures]
+    if candidate_score >= before_score and not new_failures:
+        return None
+    reasons = []
+    if candidate_score < before_score:
+        reasons.append("placement score would decrease")
+    if new_failures:
+        reasons.append(f"{len(new_failures)} new hard placement failure(s)")
+    return (
+        "Auto-placement candidate rejected: "
+        + "; ".join(reasons)
+        + f". Current board preserved. Score {before_score}/100"
+        + f" -> {candidate_score}/100."
+    )
+
+
 def _auto_place_force_directed_board_file(
     *,
     grid_mm: float = 1.0,
@@ -2293,23 +2316,14 @@ def _auto_place_force_directed_board_file(
     candidate_analysis = _placement_analysis_from_content(candidate_content)
     if candidate_analysis is None:
         return "Auto-placement candidate rejected: placement could not be evaluated."
-    new_failures = [
-        item
-        for item in candidate_analysis.hard_failures
-        if item not in before_analysis.hard_failures
-    ]
-    if candidate_analysis.score < before_analysis.score or new_failures:
-        reasons = []
-        if candidate_analysis.score < before_analysis.score:
-            reasons.append("placement score would decrease")
-        if new_failures:
-            reasons.append(f"{len(new_failures)} new hard placement failure(s)")
-        return (
-            "Auto-placement candidate rejected: "
-            + "; ".join(reasons)
-            + f". Current board preserved. Score {before_analysis.score}/100"
-            + f" -> {candidate_analysis.score}/100."
-        )
+    rejection = _degrading_placement_message(
+        before_analysis.score,
+        before_analysis.hard_failures,
+        candidate_analysis.score,
+        candidate_analysis.hard_failures,
+    )
+    if rejection is not None:
+        return rejection
     if candidate_content == board_content:
         return "Auto-placement skipped: candidate leaves footprint positions unchanged."
 
