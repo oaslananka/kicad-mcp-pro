@@ -490,9 +490,11 @@ def test_workflow_lint_uses_locked_actionlint_binary(
     module.main()
 
     assert module.ACTIONLINT_COMMAND == ["actionlint"]
-    assert commands == [
-        ["actionlint", "-ignore", 'unexpected key "queue" for "concurrency" section']
-    ]
+    expected = ["actionlint", "-ignore", 'unexpected key "queue" for "concurrency" section']
+    if module.sys.platform == "win32":
+        expected.append("-shellcheck=")
+    expected.append(".github/workflows/example.yml")
+    assert commands == [expected]
 
 
 def test_workflow_lint_rejects_unapproved_queue_even_with_legacy_actionlint(
