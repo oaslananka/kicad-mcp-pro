@@ -343,7 +343,6 @@ function DeviceList({context}:Readonly<{context:ViewContext}>){
 
 const CLOUD_WINDOWS_INSTALL =
   "irm https://raw.githubusercontent.com/oaslananka/kicad-mcp-pro/main/scripts/install-cloud.ps1 | iex";
-const CLOUD_START = "kicad-mcp-pro cloud";
 
 function OfflineRecovery({context}:Readonly<{context:ViewContext}>){
   if(context.sandboxMode||!context.enrollmentAvailable||
@@ -351,9 +350,10 @@ function OfflineRecovery({context}:Readonly<{context:ViewContext}>){
   return <section className="card device-recovery-card" id="reconnect-computer"
       aria-labelledby="reconnect-computer-title">
     <h2 id="reconnect-computer-title"><Icon name="cpu" size={16}/> Start your paired computer</h2>
-    <p>Open a terminal on this computer and run the same command.
-      It reuses the same registered device; you do not need to pair again.</p>
-    <CopyValue value={CLOUD_START} label="start paired device"/>
+    <p>Open PowerShell on the same Windows computer and run the same setup command.
+      It checks for updates, keeps your setup working, and reconnects the
+      same registered device without pairing it again.</p>
+    <CopyValue value={CLOUD_WINDOWS_INSTALL} label="restart paired device"/>
     <p className="field-help">Keep the terminal open to remain Online and see connection
       and tool activity logs. Closing it disconnects your device, not your pairing.
       Transient network interruptions are retried automatically.</p>
@@ -368,12 +368,9 @@ function CloudQuickStart({existing}:Readonly<{existing:boolean}>){
     </div>
     <h3>Quick setup <small>Recommended</small></h3>
     <p>Run this PowerShell command on the Windows computer you want to connect.
-      It installs the launcher only when needed, then starts the Connector.</p>
+      It installs KiCad MCP Pro if missing, updates an older version, checks or repairs
+      the installation, and starts the Connector.</p>
     <CopyValue value={CLOUD_WINDOWS_INSTALL} label="PowerShell setup command"/>
-    <details className="device-setup-alternative">
-      <summary>Already installed KiCad MCP Pro?</summary>
-      <CopyValue value={CLOUD_START} label="start Connector"/>
-    </details>
     <p className="field-help">The first run opens your browser for device approval.
       {existing?" Devices already paired here keep their own identities.":""}
       {" "}Keep the terminal open while working; it displays connection and tool logs.

@@ -69,12 +69,13 @@ test("first pairing offers one Windows setup command and one installed app entry
   assert.doesNotMatch(next,/kicad-mcp-pro cloud connect|cloud reconnect/);
 });
 
-test("paired offline devices offer one familiar start action, not a repair command",()=>{
+test("paired offline devices reuse the same install/update command and device identity",()=>{
  const offline=renderDevicesPage([device("Workbench","disconnected")]);
  assert.match(offline,/href="#reconnect-computer"/);
  assert.match(offline,/id="reconnect-computer"/);
  assert.match(offline,/kicad-mcp-pro cloud/);
  assert.match(offline,/same registered device/i);
+ assert.match(offline,/irm https:\/\/raw\.githubusercontent\.com\/oaslananka\/kicad-mcp-pro\/main\/scripts\/install-cloud\.ps1 \| iex/);
  assert.doesNotMatch(offline,/kicad-mcp-pro cloud status|kicad-mcp-pro cloud reconnect|read-only background Connector/);
  const connected=renderDevicesPage([device("Workbench","connected")]);
  assert.doesNotMatch(connected,/id="reconnect-computer"/);
