@@ -10,6 +10,16 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.21.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.21.0...mcp-server-v4.21.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **pcb:** reject degrading force-directed placement candidates ([#1836](https://github.com/oaslananka/kicad-mcp-pro/issues/1836)) ([bf7a554](https://github.com/oaslananka/kicad-mcp-pro/commit/bf7a554643ba7419e824db27fa0475e9c00c6c85))
+* **quality:** require explicit power-tree ordering ([#1838](https://github.com/oaslananka/kicad-mcp-pro/issues/1838)) ([2f2871e](https://github.com/oaslananka/kicad-mcp-pro/commit/2f2871e9b7c2a9b25b9e66f9db38b918196ec48d))
+* **schematic:** keep multi-unit auto-layout positions distinct ([#1833](https://github.com/oaslananka/kicad-mcp-pro/issues/1833)) ([4dd7d34](https://github.com/oaslananka/kicad-mcp-pro/commit/4dd7d34555acf682a5b959907c93cf4f8ec7c8cb))
+* **schematic:** preserve inherited footprint when child field is blank ([#1840](https://github.com/oaslananka/kicad-mcp-pro/issues/1840)) ([6fb3d8e](https://github.com/oaslananka/kicad-mcp-pro/commit/6fb3d8e9d5cce8fd978261301e8b41f6f4978d4d))
+
 ## [4.21.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.20.5...mcp-server-v4.21.0) (2026-11-20)
 
 
