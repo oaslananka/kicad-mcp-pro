@@ -2692,8 +2692,7 @@ class _PlacementEvaluator:
 
 
 def _placement_analysis() -> tuple[PlacementAnalysis | None, GateOutcome | None]:
-    from .board_file import _normalize_board_content, _parse_board_footprint_blocks
-    from .design_intent_state import ProjectDesignIntent, resolve_design_intent
+    from .board_file import _normalize_board_content
 
     try:
         content = _normalize_board_content(
@@ -2706,20 +2705,29 @@ def _placement_analysis() -> tuple[PlacementAnalysis | None, GateOutcome | None]
             summary=f"PCB file could not be read ({exc}).",
         )
 
-    footprints = _parse_board_footprint_blocks(content)
-    if not footprints:
+    analysis = _placement_analysis_from_content(content)
+    if analysis is None:
         return None, GateOutcome(
             name="Placement",
             status="BLOCKED",
             summary="No PCB footprints were found to evaluate.",
         )
+    return analysis, None
 
+
+def _placement_analysis_from_content(content: str) -> PlacementAnalysis | None:
+    """Evaluate a board candidate without writing it to the active PCB file."""
+    from .board_file import _parse_board_footprint_blocks
+    from .design_intent_state import ProjectDesignIntent, resolve_design_intent
+
+    footprints = _parse_board_footprint_blocks(content)
+    if not footprints:
+        return None
     try:
         intent = resolve_design_intent().resolved
     except ValueError:
         intent = ProjectDesignIntent()
-
-    return _PlacementEvaluator(content, footprints, intent).evaluate(), None
+    return _PlacementEvaluator(content, footprints, intent).evaluate()
 
 
 def _format_placement_score(analysis: PlacementAnalysis) -> str:

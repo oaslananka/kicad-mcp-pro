@@ -86,7 +86,7 @@ separate until the qualification work in #730 is complete.
 | PyPI package | [`kicad-mcp-pro`](https://pypi.org/project/kicad-mcp-pro/) |
 | npm wrapper | [`kicad-mcp-pro`](https://www.npmjs.com/package/kicad-mcp-pro) |
 | MCP Registry name | `io.github.oaslananka/kicad-mcp-pro` |
-| Version | `4.20.5` | <!-- x-release-please-version -->
+| Version | `4.21.0` | <!-- x-release-please-version -->
 | OSS maturity report | [`docs/repo-maturity-report.md`](docs/repo-maturity-report.md) |
 | OpenSSF evidence | [`docs/openssf-evidence.md`](docs/openssf-evidence.md) |
 
