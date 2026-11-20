@@ -543,6 +543,30 @@ def _invalid_owner_folder_transport(
     )
 
 
+def _invalid_owner_connection_identity(
+    *,
+    owner_sub: str,
+    device_id: str,
+    signing_key: Ed25519PrivateKey,
+) -> bool:
+    return (
+        not isinstance(owner_sub, str)
+        or not (1 <= len(owner_sub) <= 256)
+        or owner_sub != owner_sub.strip()
+        or not isinstance(device_id, str)
+        or _DEVICE_UUID.fullmatch(device_id) is None
+        or not isinstance(signing_key, Ed25519PrivateKey)
+    )
+
+
+def _invalid_outbound_tls_context(context: ssl.SSLContext) -> bool:
+    return (
+        not isinstance(context, ssl.SSLContext)
+        or context.verify_mode != ssl.CERT_REQUIRED
+        or not context.check_hostname
+    )
+
+
 def _validated_outbound_connection(
     *,
     origin: str,
@@ -584,21 +608,12 @@ def _validated_outbound_connection(
     if inspection_factory is not None and dispatcher_factory is not None:
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     endpoint = _endpoint(origin=origin, trusted_origin=trusted_origin)
-    if (
-        not isinstance(owner_sub, str)
-        or not (1 <= len(owner_sub) <= 256)
-        or owner_sub != owner_sub.strip()
-        or not isinstance(device_id, str)
-        or _DEVICE_UUID.fullmatch(device_id) is None
-        or not isinstance(signing_key, Ed25519PrivateKey)
+    if _invalid_owner_connection_identity(
+        owner_sub=owner_sub, device_id=device_id, signing_key=signing_key
     ):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     context = tls_context if tls_context is not None else ssl.create_default_context()
-    if (
-        not isinstance(context, ssl.SSLContext)
-        or context.verify_mode != ssl.CERT_REQUIRED
-        or not context.check_hostname
-    ):
+    if _invalid_outbound_tls_context(context):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     return endpoint, context
 
@@ -639,23 +654,29 @@ def _invalid_owner_folder_mode(options: OutboundSessionOptions) -> bool:
     )
 
 
+def _invalid_native_option_settings(options: OutboundSessionOptions) -> bool:
+    """DRC and WRITE require explicit owner-managed read mode and executors."""
+    return (
+        type(options.managed_native_drc) is not bool
+        or (options.managed_native_drc and not options.owner_managed_read)
+        or type(options.managed_native_write) is not bool
+        or (
+            options.managed_native_write
+            and (
+                not options.owner_managed_read
+                or not callable(options.revisions_preparer)
+                or not callable(options.write_executor)
+            )
+        )
+    )
+
+
 def _validate_outbound_options(options: OutboundSessionOptions) -> None:
     if options.owner_folder_only:
         if _invalid_owner_folder_mode(options):
             raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
         return
-    if type(options.managed_native_drc) is not bool or (
-        options.managed_native_drc and not options.owner_managed_read
-    ):
-        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
-    if type(options.managed_native_write) is not bool or (
-        options.managed_native_write
-        and (
-            not options.owner_managed_read
-            or not callable(options.revisions_preparer)
-            or not callable(options.write_executor)
-        )
-    ):
+    if _invalid_native_option_settings(options):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     if options.owner_managed_read and _invalid_owner_managed_mode(options):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
