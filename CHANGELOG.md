@@ -10,6 +10,23 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.21.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.20.5...mcp-server-v4.21.0) (2026-11-20)
+
+
+### Features
+
+* **cloud:** one-command Windows onboarding and scoped MCP gateway ([#1830](https://github.com/oaslananka/kicad-mcp-pro/issues/1830)) ([ee83e20](https://github.com/oaslananka/kicad-mcp-pro/commit/ee83e201d7a2cca1d77f1f36d1bea832919d11bb))
+
+
+### Bug Fixes
+
+* **ci:** preserve Sonar coverage provenance on failed-job retries ([#1824](https://github.com/oaslananka/kicad-mcp-pro/issues/1824)) ([10dc0e3](https://github.com/oaslananka/kicad-mcp-pro/commit/10dc0e3f3283a26fbdb221540ae0d885460d6cff))
+* **cloud:** clarify Connector readiness and protect Windows editing sessions ([#1823](https://github.com/oaslananka/kicad-mcp-pro/issues/1823)) ([14a7a31](https://github.com/oaslananka/kicad-mcp-pro/commit/14a7a31cfe77381c522204dc978307bd39498d08))
+* **cloud:** distinguish legacy presence from connected MCP reads ([#1826](https://github.com/oaslananka/kicad-mcp-pro/issues/1826)) ([c1f89e2](https://github.com/oaslananka/kicad-mcp-pro/commit/c1f89e2b9f89d987ee8d6e9dc93e6f14664a94e8))
+* **cloud:** restore owner Connector after foreground sessions ([#1825](https://github.com/oaslananka/kicad-mcp-pro/issues/1825)) ([3b00216](https://github.com/oaslananka/kicad-mcp-pro/commit/3b0021653b00ffbe055e9af990d42f0082b7fafd))
+* resolve lewisfab schematic, PCB and routing issues ([#1821](https://github.com/oaslananka/kicad-mcp-pro/issues/1821)) ([ce26dc8](https://github.com/oaslananka/kicad-mcp-pro/commit/ce26dc8979299c6e25c03ae0ffe937e423672d28))
+* **schematic:** edit child-sheet symbols across the project hierarchy ([#1822](https://github.com/oaslananka/kicad-mcp-pro/issues/1822)) ([22615a5](https://github.com/oaslananka/kicad-mcp-pro/commit/22615a55129e983ffb31c3c0ed11749e0f7698fe)), closes [#1783](https://github.com/oaslananka/kicad-mcp-pro/issues/1783)
+
 ## [4.20.5](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.20.4...mcp-server-v4.20.5) (2026-11-19)
 
 
