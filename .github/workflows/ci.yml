@@ -730,6 +730,14 @@ jobs:
           steps.sonar-mode.outputs.run_analysis == 'true' &&
           needs.coverage.outputs.sonar_coverage_artifact_id == ''
         uses: ./.github/actions/python-full-suite
+      - name: Normalize Sonar coverage source paths
+        if: steps.sonar-mode.outputs.run_analysis == 'true'
+        run: |
+          # The integrity-verified coverage.xml is untouched. Multiple
+          # coverage.py source roots can contain an ambiguous __init__.py;
+          # the scanner reads only a repo-relative, line-identical copy.
+          python3 scripts/normalize_sonar_coverage.py \
+            --input coverage.xml --output coverage-sonar.xml
       - name: SonarCloud Scan
         if: steps.sonar-mode.outputs.run_analysis == 'true'
         # YAML joins the following escaped newline into the original 40-hex
@@ -739,7 +747,7 @@ jobs:
         uses: "SonarSource/sonarqube-scan-action@59202af334b4ba7b5db01b701b8e79f8b3bef0f4"
         with:
           # Keep the required SonarCloud Scan check red when the actual Quality Gate fails.
-          args: -Dsonar.qualitygate.wait=true
+          args: -Dsonar.qualitygate.wait=true -Dsonar.python.coverage.reportPaths=coverage-sonar.xml
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
