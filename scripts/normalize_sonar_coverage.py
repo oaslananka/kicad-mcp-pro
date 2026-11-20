@@ -8,12 +8,16 @@ Ambiguous or missing files are errors, never silently dropped.
 
 from __future__ import annotations
 
-import argparse
+import sys
 from pathlib import Path, PurePosixPath
 
 from defusedxml import ElementTree
 
 _MAX_REPORT_BYTES = 32 * 1024 * 1024
+# This is a private CI hand-off, not a general-purpose user-file converter.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_COVERAGE_IN = "coverage.xml"
+_COVERAGE_OUT = "coverage-sonar.xml"
 
 
 def _safe_report(path: Path) -> bytes:
@@ -130,11 +134,14 @@ def normalize(root: Path, report: Path, output: Path) -> int:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, default=Path("coverage.xml"))
-    parser.add_argument("--output", type=Path, default=Path("coverage-sonar.xml"))
-    args = parser.parse_args()
-    count = normalize(Path.cwd(), args.input, args.output)
+    """Normalize only the SHA-verified coverage artifact at the repository root."""
+    if len(sys.argv) != 1:
+        raise SystemExit("Coverage normalization does not accept user-selected file paths")
+    count = normalize(
+        _REPO_ROOT,
+        _REPO_ROOT / _COVERAGE_IN,
+        _REPO_ROOT / _COVERAGE_OUT,
+    )
     print(f"Sonar coverage source paths resolved: {count} (hit counts unchanged)")
 
 

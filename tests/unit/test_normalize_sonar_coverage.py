@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import sys
 from html import escape
 from pathlib import Path
 
 import pytest
 from defusedxml import ElementTree
 
+from scripts import normalize_sonar_coverage as normalizer
 from scripts.normalize_sonar_coverage import normalize
 
 
@@ -133,3 +135,36 @@ def test_xml_entities_are_rejected_without_producing_coverage(tmp_path: Path) ->
     with pytest.raises(ElementTree.EntitiesForbidden):
         normalize(root, source, root / "coverage-sonar.xml")
     assert not (root / "coverage-sonar.xml").exists()
+
+
+def test_cli_rejects_caller_selected_source_or_output_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, src, plugin = _fixture(tmp_path)
+    source = _write_coverage(root, [("__init__.py", [(3, 1), (7, 1)])], [src, plugin])
+    before = source.read_bytes()
+    monkeypatch.setattr(normalizer, "_REPO_ROOT", root)
+    monkeypatch.setattr(
+        sys, "argv", ["normalize_sonar_coverage.py", "--input", str(root / "other.xml")]
+    )
+    with pytest.raises(SystemExit, match="does not accept"):
+        normalizer.main()
+    assert source.read_bytes() == before
+    assert not (root / "coverage-sonar.xml").exists()
+
+
+def test_ci_entrypoint_uses_only_fixed_repo_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root, src, plugin = _fixture(tmp_path)
+    source = _write_coverage(root, [("__init__.py", [(3, 1), (7, 1)])], [src, plugin])
+    before = source.read_bytes()
+    monkeypatch.setattr(normalizer, "_REPO_ROOT", root)
+    monkeypatch.setattr(sys, "argv", ["normalize_sonar_coverage.py"])
+    normalizer.main()
+    assert source.read_bytes() == before
+    result = ElementTree.parse(root / "coverage-sonar.xml").getroot()
+    klass = result.find("./packages/package/classes/class")
+    assert klass is not None
+    assert klass.attrib["filename"] == "src/kicad_mcp/__init__.py"
+    assert "source paths resolved: 1" in capsys.readouterr().out

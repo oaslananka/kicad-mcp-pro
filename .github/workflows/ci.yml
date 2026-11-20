@@ -740,8 +740,7 @@ jobs:
           # coverage.py source roots can contain an ambiguous __init__.py;
           # the scanner reads only a repo-relative, line-identical copy.
           uv --no-config run --no-project --with 'defusedxml==0.7.1' \
-            python3 scripts/normalize_sonar_coverage.py \
-            --input coverage.xml --output coverage-sonar.xml
+            python3 scripts/normalize_sonar_coverage.py
       - name: SonarCloud Scan
         if: steps.sonar-mode.outputs.run_analysis == 'true'
         # YAML joins the following escaped newline into the original 40-hex
