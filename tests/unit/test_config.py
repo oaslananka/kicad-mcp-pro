@@ -466,23 +466,20 @@ def test_config_filter_runtime_tools(monkeypatch) -> None:
     assert cfg.filter_runtime_tools is False
 
 
-def test_settings_sources_include_dotenv_only_outside_pytest(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import sys
+def test_settings_sources_never_depend_on_pytest_or_ambient_dotenv() -> None:
     from unittest.mock import Mock
 
     init, env, dotenv, secrets = (Mock() for _ in range(4))
     args = (KiCadMCPConfig, init, env, dotenv, secrets)
 
-    during_pytest = KiCadMCPConfig.settings_customise_sources(*args)
-    assert len(during_pytest) == 4
-    assert during_pytest[0:2] == (init, env)
-    assert during_pytest[3] is secrets
+    sources = KiCadMCPConfig.settings_customise_sources(*args)
+    assert len(sources) == 5
+    assert sources[:3] == (init, env, dotenv)
+    assert sources[4] is secrets
+    assert KiCadMCPConfig.model_config["env_file"] is None
 
-    with monkeypatch.context() as patch:
-        patch.delitem(sys.modules, "pytest")
-        outside_pytest = KiCadMCPConfig.settings_customise_sources(*args)
-    assert len(outside_pytest) == 5
-    assert outside_pytest[:3] == (init, env, dotenv)
-    assert outside_pytest[4] is secrets
+
+def test_explicit_trusted_dotenv_remains_opt_in(tmp_path: Path) -> None:
+    trusted = tmp_path / "owner-settings.env"
+    trusted.write_text("KICAD_MCP_LOG_LEVEL=WARNING\n", encoding="utf-8")
+    assert KiCadMCPConfig(_env_file=trusted).log_level == "WARNING"

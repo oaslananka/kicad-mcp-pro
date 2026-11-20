@@ -497,8 +497,8 @@ class NexarClient:
 
     Authenticates with the OAuth2 ``client_credentials`` grant against
     ``identity.nexar.com`` and queries ``supSearchMpn`` on the Supply API. Requires
-    ``NEXAR_CLIENT_ID`` / ``NEXAR_CLIENT_SECRET`` (loaded from ``.env`` at server
-    startup) and an app subscribed to the Supply API. ``transport`` is injectable
+    ``NEXAR_CLIENT_ID`` / ``NEXAR_CLIENT_SECRET`` (supplied by the operator's trusted process
+    environment) and an app subscribed to the Supply API. ``transport`` is injectable
     so the OAuth + GraphQL flow is unit-testable without the network.
     """
 
@@ -641,7 +641,7 @@ class DigiKeyClient:
 
     Authenticates with the OAuth2 ``client_credentials`` grant and queries the v4
     keyword-search endpoint. Requires ``DIGIKEY_CLIENT_ID`` / ``DIGIKEY_CLIENT_SECRET``
-    (loaded from ``.env`` at server startup) for an app subscribed to the Product
+    (supplied by a trusted process environment) for an app subscribed to the Product
     Information API. ``transport`` is injectable so the OAuth + search flow is
     unit-tested without the network. The response schema follows DigiKey API v4; run
     a live smoke test to confirm field mapping against the production response.
@@ -848,8 +848,8 @@ def _record_from_mouser(part: dict[str, Any]) -> ComponentRecord:
 class MouserClient:
     """Live Mouser keyword-search client.
 
-    Mouser authenticates with an API key (``MOUSER_API_KEY``, loaded from ``.env``
-    at server startup) passed as a query parameter, not OAuth. ``transport`` is
+    Mouser authenticates with an API key (``MOUSER_API_KEY``, provided through the trusted
+    process environment) passed as a query parameter, not OAuth. ``transport`` is
     injectable so the search flow is unit-tested without the network.
     """
 

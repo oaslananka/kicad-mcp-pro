@@ -19,6 +19,7 @@ from typing import Any, cast
 import structlog
 
 logger = structlog.get_logger(__name__)
+_POSIX_CONFIG_DIR = ".config"
 
 
 @dataclass
@@ -141,25 +142,47 @@ def _discover_via_kipy() -> Path | None:
                 logger.debug("kipy_headless_close_failed", error=str(exc))
 
 
+def unavailable_windows_cli_path() -> Path:
+    """Non-executable, absolute placeholder when KiCad is not installed."""
+    return Path.home() / _POSIX_CONFIG_DIR / "kicad-mcp-pro" / "unavailable-kicad-cli.exe"
+
+
+def _safe_path_cli(candidate: str) -> Path | None:
+    """Reject PATH executables implicitly supplied by an untrusted checkout."""
+    path = Path(candidate).expanduser()
+    if not path.is_absolute():
+        # Windows shutil.which may implicitly prepend CWD even if PATH excludes it.
+        return None
+    try:
+        resolved = path.resolve(strict=True)
+        if resolved.is_relative_to(Path.cwd().resolve()):
+            return None
+    except (OSError, RuntimeError):
+        return None
+    return resolved
+
+
 def discover_kicad_cli() -> Path:
-    """Find the best available kicad-cli executable."""
+    """Find KiCad without selecting an executable from the working directory."""
     from_kipy = _discover_via_kipy()
     if from_kipy is not None:
         return from_kipy
 
     on_path = shutil.which("kicad-cli")
     if on_path:
-        return Path(on_path)
+        trusted = _safe_path_cli(on_path)
+        if trusted is not None:
+            return trusted
+        logger.warning("kicad_cli_unsafe_path_candidate_ignored")
 
     for candidate in _candidate_cli_paths():
         if candidate.exists():
             return candidate
 
-    # Never expose an imaginary versioned Windows installation as a
-    # discovered executable; the diagnostics UI should report an unavailable
-    # CLI rather than claiming a nonexistent KiCad 11 location.
+    # Never return a relative command sentinel: Windows program lookup can
+    # execute a matching file in the untrusted project working directory.
     if platform.system() == "Windows":
-        return Path("kicad-cli")
+        return unavailable_windows_cli_path()
     return _candidate_cli_paths()[0]
 
 
@@ -371,8 +394,8 @@ def _kicad_recent_config_dirs() -> list[Path]:
             Path.home() / "Library" / "Preferences" / "kicad" / "10.0",
         ]
     return [
-        Path.home() / ".config" / "kicad" / "11.0",
-        Path.home() / ".config" / "kicad" / "10.0",
+        Path.home() / _POSIX_CONFIG_DIR / "kicad" / "11.0",
+        Path.home() / _POSIX_CONFIG_DIR / "kicad" / "10.0",
     ]
 
 

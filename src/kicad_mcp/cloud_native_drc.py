@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import stat
 
 # Only KiCad CLI is permitted, with no shell and an immutable argument layout.
@@ -74,17 +73,13 @@ def _copy_bound_file(
 
 
 def _trusted_native_kicad_cli() -> str:
-    """Resolve only the locally installed CLI, never a Cloud-supplied command."""
-    executable = shutil.which("kicad-cli")
-    if os.name == "nt" and not executable:
-        from kicad_mcp.discovery import discover_kicad_cli
+    """Use hardened KiCad discovery; never execute a checkout's CLI candidate."""
+    from kicad_mcp.discovery import discover_kicad_cli
 
-        candidate = discover_kicad_cli()
-        if candidate.is_file():
-            executable = str(candidate)
-    if not executable:
+    candidate = discover_kicad_cli()
+    if not candidate.is_absolute() or not candidate.is_file():
         raise LocalReadDeniedError(_DENIED)
-    return executable
+    return str(candidate)
 
 
 def summarize_native_pcb_drc(policy: OperatorProject) -> dict[str, int]:

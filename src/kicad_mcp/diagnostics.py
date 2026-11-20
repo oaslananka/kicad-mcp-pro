@@ -20,7 +20,7 @@ from . import __version__
 from .capabilities import AccessTier, RuntimeRequirement, all_records
 from .config import get_config
 from .connection import KiCadConnectionError, get_board
-from .discovery import find_kicad_version
+from .discovery import find_kicad_version, unavailable_windows_cli_path
 
 CheckStatus = Literal["ok", "warn", "error", "skipped"]
 OverallStatus = Literal["ok", "degraded", "error"]
@@ -778,7 +778,7 @@ def _agent_config_checks() -> list[CheckResult]:
 
 def _missing_cli_message(cli_path: Path) -> str:
     """Distinguish absent auto-discovery from an invalid explicit CLI path."""
-    if cli_path == Path("kicad-cli"):
+    if cli_path in {Path("kicad-cli"), unavailable_windows_cli_path()}:
         return (
             "KiCad CLI not detected. Install a supported KiCad release (10.x) "
             "or select your installed kicad-cli executable in Settings."

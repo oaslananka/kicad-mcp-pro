@@ -113,7 +113,7 @@ def test_discover_kicad_cli_prefers_kipy_path_and_candidates(monkeypatch, tmp_pa
 
     # Windows must not claim an installation path for a missing CLI.
     monkeypatch.setattr(discovery.platform, "system", lambda: "Windows")
-    assert discovery.discover_kicad_cli() == Path("kicad-cli")
+    assert discovery.discover_kicad_cli() == discovery.unavailable_windows_cli_path()
 
 
 def test_get_cli_capabilities_and_recent_projects_cover_fallbacks(

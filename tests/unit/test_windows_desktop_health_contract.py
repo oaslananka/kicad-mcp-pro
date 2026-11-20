@@ -32,13 +32,13 @@ def test_windows_without_kicad_does_not_claim_future_install(monkeypatch, tmp_pa
     monkeypatch.setattr(discovery, "_discover_via_kipy", lambda: None)
     monkeypatch.setattr(discovery.shutil, "which", lambda _name: None)
     monkeypatch.setattr(discovery, "_candidate_cli_paths", lambda: [missing])
-    assert discovery.discover_kicad_cli() == Path("kicad-cli")
+    assert discovery.discover_kicad_cli() == discovery.unavailable_windows_cli_path()
 
 
 def test_missing_auto_detected_cli_reports_installation_not_fictional_version() -> None:
     from kicad_mcp.diagnostics import _missing_cli_message
 
-    message = _missing_cli_message(Path("kicad-cli"))
+    message = _missing_cli_message(discovery.unavailable_windows_cli_path())
     assert "10.x" in message
     assert "11.0" not in message
     assert "Settings" in message

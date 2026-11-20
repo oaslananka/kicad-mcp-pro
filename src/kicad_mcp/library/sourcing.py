@@ -374,7 +374,7 @@ class LibrarySourcingService:
         ``nexar`` (requires NEXAR_CLIENT_ID/NEXAR_CLIENT_SECRET), ``digikey``
         (requires DIGIKEY_CLIENT_ID/DIGIKEY_CLIENT_SECRET), or ``mouser`` (requires
         MOUSER_API_KEY). The authenticated sources are inactive until their
-        credentials are configured (loaded from ``.env`` at server startup).
+        credentials are configured in the trusted process environment.
 
         Set ``rohs_compliant`` to ``true`` to filter to RoHS-compliant parts only.
         ``lifecycle`` filters to a specific lifecycle status (e.g. ``Active``,

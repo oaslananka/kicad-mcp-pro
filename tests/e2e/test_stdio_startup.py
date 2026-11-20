@@ -7,17 +7,20 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 
 from kicad_mcp.compatibility import MCP_LEGACY_PROTOCOL_VERSION
 
 STDIO_STARTUP_TIMEOUT_SECONDS = 10.0
 
 
-def test_stdio_initialize_does_not_require_client_warmup() -> None:
+def test_stdio_initialize_does_not_require_client_warmup(tmp_path: Path) -> None:
     env = {key: value for key, value in os.environ.items() if not key.startswith("KICAD_MCP_")}
     env["KICAD_MCP_LOG_LEVEL"] = "ERROR"
     env["KICAD_MCP_LOG_FORMAT"] = "json"
-    env["KICAD_MCP_KICAD_CLI"] = "kicad-cli-missing-for-stdio-startup-test"
+    # Exercise startup with a missing but valid operator-supplied absolute path.
+    # Relative executable overrides are now rejected before stdio starts.
+    env["KICAD_MCP_KICAD_CLI"] = str(tmp_path / "kicad-cli-missing-for-stdio-startup-test")
     env["KICAD_MCP_OPERATING_MODE"] = "experimental"
     env["KICAD_MCP_TRANSPORT"] = "stdio"
 
