@@ -916,7 +916,15 @@ def test_docker_metadata_contains_mcp_oci_label_and_release_image_contract() -> 
 
     assert "pip install --no-cache-dir uv" not in dockerfile
     assert f"UV_VERSION={uv_version}" in dockerfile
-    assert "python:3.14.9-alpine3.23@sha256:" in dockerfile
+    alpine_images = re.findall(
+        r"^FROM python:(3\.14\.\d+)-alpine3\.23@sha256:([0-9a-f]{64}) "
+        r"AS (builder|runtime)$",
+        dockerfile,
+        flags=re.MULTILINE,
+    )
+    assert len(alpine_images) == 2
+    assert {stage for _, _, stage in alpine_images} == {"builder", "runtime"}
+    assert len({(version, digest) for version, digest, _ in alpine_images}) == 1
     # Both KiCad 10 stages must use the same immutable, digest-pinned Python image.
     # Deliberately avoid hard-coding the patch version: Dependabot should be able
     # to update it without breaking an otherwise valid release contract.
