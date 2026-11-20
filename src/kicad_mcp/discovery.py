@@ -19,6 +19,7 @@ from typing import Any, cast
 import structlog
 
 logger = structlog.get_logger(__name__)
+_POSIX_CONFIG_DIR = ".config"
 
 
 @dataclass
@@ -143,7 +144,7 @@ def _discover_via_kipy() -> Path | None:
 
 def unavailable_windows_cli_path() -> Path:
     """Non-executable, absolute placeholder when KiCad is not installed."""
-    return Path.home() / ".config" / "kicad-mcp-pro" / "unavailable-kicad-cli.exe"
+    return Path.home() / _POSIX_CONFIG_DIR / "kicad-mcp-pro" / "unavailable-kicad-cli.exe"
 
 
 def _safe_path_cli(candidate: str) -> Path | None:
@@ -393,8 +394,8 @@ def _kicad_recent_config_dirs() -> list[Path]:
             Path.home() / "Library" / "Preferences" / "kicad" / "10.0",
         ]
     return [
-        Path.home() / ".config" / "kicad" / "11.0",
-        Path.home() / ".config" / "kicad" / "10.0",
+        Path.home() / _POSIX_CONFIG_DIR / "kicad" / "11.0",
+        Path.home() / _POSIX_CONFIG_DIR / "kicad" / "10.0",
     ]
 
 
