@@ -171,3 +171,97 @@ async def test_owner_folder_only_handshake_has_no_project_dispatcher(
         folder_service_factory=lambda _receipt: OwnerFolder(),
     )
     assert result == HandshakeReceipt(DEVICE, SESSION)
+
+
+@pytest.mark.asyncio
+async def test_folder_only_dispatch_routes_no_mcp_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_managed_read_transport as reader
+    from kicad_mcp import cloud_outbound_handshake as transport
+
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    folder = OwnerFolder()
+    socket = Socket([])
+    events: list[str] = []
+    calls: list[object] = []
+
+    async def fake_serve(*args: object, **kwargs: object) -> HandshakeReceipt:
+        calls.extend(args)
+        assert kwargs["on_activity"] == events.append
+        return receipt
+
+    monkeypatch.setattr(reader, "serve_owner_folder_only", fake_serve)
+    options = transport.OutboundSessionOptions(
+        owner_folder_only=True,
+        folder_service_factory=lambda _receipt: folder,
+        on_activity=events.append,
+    )
+    assert await transport._complete_outbound_operation(socket, receipt, options) == receipt
+    assert calls == [socket, receipt, folder]
+    missing_service = transport.OutboundSessionOptions(owner_folder_only=True)
+    with pytest.raises(CloudHandshakeDeniedError):
+        await transport._complete_outbound_operation(socket, receipt, missing_service)
+
+
+@pytest.mark.asyncio
+async def test_folder_only_session_rejects_invalid_authority_and_operations() -> None:
+    from kicad_mcp.cloud_managed_read_transport import serve_owner_folder_only
+
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    for invalid_receipt, invalid_folder, invalid_activity in (
+        (object(), OwnerFolder(), None),
+        (receipt, object(), None),
+        (receipt, OwnerFolder(), "not callable"),
+    ):
+        with pytest.raises(CloudHandshakeDeniedError):
+            await serve_owner_folder_only(
+                Socket([]),
+                invalid_receipt,
+                invalid_folder,
+                on_activity=invalid_activity,
+            )
+    for request in (folder_request("rename"), "null"):
+        socket = Socket([request])
+        with pytest.raises(CloudHandshakeDeniedError):
+            await serve_owner_folder_only(socket, receipt, OwnerFolder())
+        assert socket.sent == []
+
+
+@pytest.mark.asyncio
+async def test_folder_only_refresh_handles_expired_lease_and_transport_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_managed_read_transport as transport
+
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    events: list[str] = []
+    monkeypatch.setattr(transport, "_SESSION_REFRESH_SECONDS", -1)
+    assert (
+        await transport.serve_owner_folder_only(
+            Socket([]),
+            receipt,
+            OwnerFolder(),
+            on_activity=events.append,
+        )
+        == receipt
+    )
+    assert events == ["Refreshing signed Cloud session"]
+
+    monkeypatch.setattr(transport, "_SESSION_REFRESH_SECONDS", 60)
+
+    class LostSocket(Socket):
+        async def recv(self) -> str:
+            raise TimeoutError("Connector lease expired")
+
+    events.clear()
+    assert (
+        await transport.serve_owner_folder_only(
+            LostSocket([]),
+            receipt,
+            OwnerFolder(),
+            on_activity=events.append,
+        )
+        == receipt
+    )
+    assert events == ["Refreshing signed Cloud session"]

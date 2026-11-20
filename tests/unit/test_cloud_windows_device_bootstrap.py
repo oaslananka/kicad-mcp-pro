@@ -155,3 +155,132 @@ def test_verified_legacy_project_can_be_reused_as_the_same_device(
     monkeypatch.setattr(connector, "selected_project", lambda: None)
     with pytest.raises(LocalApprovalDeniedError):
         boot.remember_existing_project_device(project)
+
+
+def test_unbound_connector_serves_owner_folder_until_project_binding(
+    saved_device, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One signed device-only session transitions after a real binding."""
+    import asyncio
+    from contextlib import nullcontext
+
+    from kicad_mcp import cloud_windows_connector as connector
+
+    device, _store = saved_device
+    state = {"project": None, "calls": 0}
+    activity: list[str] = []
+    folder = object()
+    key = Ed25519PrivateKey.generate()
+    monkeypatch.setattr(connector, "selected_project", lambda: state["project"])
+    monkeypatch.setattr(boot, "selected_device", lambda: device)
+    monkeypatch.setattr(boot, "verified_device_key", lambda _device: key)
+    monkeypatch.setattr(boot, "_folder_service", lambda _device: folder)
+    monkeypatch.setattr(boot, "owner_connector_instance", nullcontext)
+
+    async def connect(**kwargs: object) -> None:
+        assert kwargs["origin"] == device.origin
+        assert kwargs["trusted_origin"] == device.origin
+        assert kwargs["owner_sub"] == device.owner_sub
+        assert kwargs["device_id"] == device.device_id
+        assert kwargs["signing_key"] is key
+        assert kwargs["folder_service_factory"](object()) is folder
+        kwargs["on_ready"](object())
+        kwargs["on_activity"]("Folder picker opened")
+        state["calls"] += 1
+        state["project"] = object()
+
+    monkeypatch.setattr(boot, "execute_owner_folder_only_session", connect)
+    asyncio.run(boot.run_device_only(device, status_callback=activity.append))
+    assert state["calls"] == 1
+    assert activity == [
+        "Connecting",
+        "Cloud acknowledged this device's signed session",
+        "Folder picker opened",
+        "Project selected in Cloud; switching to local KiCad MCP tools",
+    ]
+
+
+def test_unbound_connector_retries_network_without_repairing_device(
+    saved_device, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A transient socket failure must not delete a credential or open browser approval."""
+    import asyncio
+    from contextlib import nullcontext
+
+    from kicad_mcp import cloud_windows_connector as connector
+
+    device, store = saved_device
+    state = {"project": None, "attempts": 0}
+    activity: list[str] = []
+    sleeps: list[int] = []
+    monkeypatch.setattr(connector, "selected_project", lambda: state["project"])
+    monkeypatch.setattr(connector, "_is_remote_policy_rejection", lambda _exc: False)
+    monkeypatch.setattr(boot, "selected_device", lambda: device)
+    monkeypatch.setattr(boot, "verified_device_key", lambda _device: object())
+    monkeypatch.setattr(boot, "owner_connector_instance", nullcontext)
+    monkeypatch.setattr(boot, "_folder_service", lambda _device: object())
+
+    async def connect(**_kwargs: object) -> None:
+        state["attempts"] += 1
+        if state["attempts"] == 1:
+            raise OSError("Temporary network outage")
+        state["project"] = object()
+
+    async def sleep(delay: int) -> None:
+        sleeps.append(delay)
+
+    monkeypatch.setattr(boot, "execute_owner_folder_only_session", connect)
+    monkeypatch.setattr(boot.asyncio, "sleep", sleep)
+    asyncio.run(boot.run_device_only(device, status_callback=activity.append))
+    assert state["attempts"] == 2
+    assert sleeps == [3]
+    assert "Connection interrupted; retrying" in activity
+    assert len(store) == 1, "A network reconnect must not change the owner vault"
+
+
+def test_unbound_connector_hard_denial_never_retries_or_reapproves(
+    saved_device, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+    from contextlib import nullcontext
+
+    from kicad_mcp import cloud_windows_connector as connector
+    from kicad_mcp.cloud_outbound_handshake import CloudHandshakeDeniedError
+
+    device, _store = saved_device
+    activity: list[str] = []
+    monkeypatch.setattr(connector, "selected_project", lambda: None)
+    monkeypatch.setattr(connector, "_is_remote_policy_rejection", lambda _exc: True)
+    monkeypatch.setattr(boot, "selected_device", lambda: device)
+    monkeypatch.setattr(boot, "verified_device_key", lambda _device: object())
+    monkeypatch.setattr(boot, "owner_connector_instance", nullcontext)
+    monkeypatch.setattr(boot, "_folder_service", lambda _device: object())
+
+    async def rejected(**_kwargs: object) -> None:
+        raise CloudHandshakeDeniedError("owner policy revoked")
+
+    monkeypatch.setattr(boot, "execute_owner_folder_only_session", rejected)
+    with pytest.raises(connector.CloudOwnerReapprovalRequiredError):
+        asyncio.run(boot.run_device_only(device, status_callback=activity.append))
+    assert activity == ["Connecting"]
+
+
+def test_unbound_connector_rejects_changed_device_identity_before_network(
+    saved_device, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+    from contextlib import nullcontext
+
+    from kicad_mcp import cloud_windows_connector as connector
+
+    device, _store = saved_device
+    monkeypatch.setattr(connector, "selected_project", lambda: None)
+    monkeypatch.setattr(boot, "selected_device", lambda: None)
+    monkeypatch.setattr(boot, "owner_connector_instance", nullcontext)
+
+    async def must_not_connect(**_kwargs: object) -> None:
+        pytest.fail("Unverified device must never open a signed socket")
+
+    monkeypatch.setattr(boot, "execute_owner_folder_only_session", must_not_connect)
+    with pytest.raises(LocalApprovalDeniedError):
+        asyncio.run(boot.run_device_only(device, status_callback=lambda _msg: None))

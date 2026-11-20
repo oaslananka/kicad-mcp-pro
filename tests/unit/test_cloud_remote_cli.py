@@ -1038,3 +1038,100 @@ def test_ctrl_c_restores_previous_read_only_task_without_repairing(
     assert state["calls"] == ["task_removed", "ctrl_c", "read_only_task_restored"]
     assert "restoring previous read-only Connector" in response.output
     assert "Cloud connection not yet verified" in response.output
+
+
+def test_unbound_cloud_pairs_once_then_reuses_identity_without_browser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
+    from kicad_mcp import cloud_windows_enrollment as enrollment
+
+    calls: list[str] = []
+    current: dict[str, object] = {}
+    device = enrollment.WindowsEnrolledDevice(
+        record_id="a" * 32,
+        origin=cloud_user_cli.DEFAULT_CLOUD_ORIGIN,
+        owner_sub="owner",
+        device_id=str(uuid4()),
+        fingerprint="a" * 64,
+    )
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_resolve_device_alias", lambda _alias: "My PC")
+    monkeypatch.setattr(
+        cloud_user_cli, "_perform_approval", lambda *_args: calls.append("browser_approval")
+    )
+    monkeypatch.setattr(bootstrap, "selected_device", lambda: current.get("device"))
+
+    def remember(value):
+        current["device"] = value
+        calls.append("remember_device")
+
+    def enroll(*, origin, alias, owner_approval):
+        assert origin == device.origin and alias == "My PC"
+        calls.append("enroll")
+        owner_approval("https://example.invalid/pair", "challenge", "code")
+        return device
+
+    async def serve(value, *, status_callback):
+        assert value is device
+        calls.append("signed_connection")
+        status_callback("Connected")
+
+    monkeypatch.setattr(bootstrap, "remember_device", remember)
+    monkeypatch.setattr(enrollment, "enroll_windows_device", enroll)
+    monkeypatch.setattr(bootstrap, "run_device_only", serve)
+    monkeypatch.setattr(
+        cloud_user_cli, "_display_cloud_status", lambda event, _origin: calls.append(event)
+    )
+    assert cloud_user_cli._connect_unbound_windows_device(device.origin, "PC") is True
+    assert cloud_user_cli._connect_unbound_windows_device(device.origin, "PC") is True
+    assert calls == [
+        "enroll",
+        "browser_approval",
+        "remember_device",
+        "signed_connection",
+        "Connected",
+        "signed_connection",
+        "Connected",
+    ]
+
+
+def test_unbound_cloud_fails_without_owner_terminal_or_with_different_origin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
+
+    origin = cloud_user_cli.DEFAULT_CLOUD_ORIGIN
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    with pytest.raises(typer.BadParameter, match="interactive owner terminal"):
+        cloud_user_cli._connect_unbound_windows_device(origin, "PC")
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(
+        bootstrap, "selected_device", lambda: SimpleNamespace(origin="https://other.example")
+    )
+    with pytest.raises(typer.BadParameter, match="different origin"):
+        cloud_user_cli._connect_unbound_windows_device(origin, "PC")
+
+
+def test_unbound_cloud_denied_pairing_never_opens_signed_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
+    from kicad_mcp import cloud_windows_enrollment as enrollment
+
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(bootstrap, "selected_device", lambda: None)
+
+    def rejected(**_kwargs: object) -> None:
+        raise enrollment.WindowsEnrollmentError("Owner denied pairing")
+
+    async def must_not_connect(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("Denied enrollment must not open signed session")
+
+    monkeypatch.setattr(enrollment, "enroll_windows_device", rejected)
+    monkeypatch.setattr(bootstrap, "run_device_only", must_not_connect)
+    with pytest.raises(typer.BadParameter, match="Owner denied pairing"):
+        cloud_user_cli._connect_unbound_windows_device(
+            cloud_user_cli.DEFAULT_CLOUD_ORIGIN,
+            "PC",
+        )
