@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import ast
-import json
 import os
 import shlex
-import subprocess
 import sys
+from multiprocessing import get_context
+from multiprocessing.connection import Connection
 from pathlib import Path
 
 import pytest
@@ -17,27 +17,70 @@ _SOURCE = _ROOT / "src"
 _PROCESS_ENV_KEYS = {"KICAD_CLI_PATH", "KICAD_API_TOKEN", "KICAD_API_SOCKET"}
 
 
-def _child_python(project: Path, code: str, *, overrides: dict[str, str] | None = None) -> str:
-    environment = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("KICAD_MCP_") and key not in _PROCESS_ENV_KEYS
-    }
-    environment["PYTHONPATH"] = os.pathsep.join(
-        part for part in (str(_SOURCE), os.environ.get("PYTHONPATH", "")) if part
+def _inspect_cloned_project(
+    project: Path,
+    overrides: dict[str, str],
+    *,
+    probe_version: bool,
+    send: Connection,
+) -> None:
+    """Run in a fresh, isolated interpreter without invoking a shell or test code."""
+    try:
+        os.chdir(project)
+        for key in tuple(os.environ):
+            if key.startswith("KICAD_MCP_") or key in _PROCESS_ENV_KEYS:
+                os.environ.pop(key)
+        os.environ.update(overrides)
+        sys.path.insert(0, str(_SOURCE))
+        # The real MCP entrypoint is not launched under pytest. The spawned
+        # test module imports pytest only to declare tests in its parent.
+        sys.modules.pop("pytest", None)
+
+        from kicad_mcp.config import KiCadMCPConfig
+
+        cfg = KiCadMCPConfig()
+        result = {
+            "cli": str(cfg.kicad_cli),
+            "log": cfg.log_level,
+            "mode": cfg.operating_mode,
+            "experimental": cfg.enable_experimental_tools,
+            "auth": cfg.auth_token,
+        }
+        if probe_version:
+            from kicad_mcp.discovery import find_kicad_version
+
+            result["version"] = find_kicad_version(cfg.kicad_cli)
+        send.send({"result": result})
+    except Exception as exc:
+        send.send({"error": str(exc)})
+    finally:
+        send.close()
+
+
+def _child_snapshot(
+    project: Path, *, overrides: dict[str, str] | None = None, probe_version: bool = False
+) -> dict[str, object]:
+    """Inspect the real configuration in a spawned process and return its result."""
+    context = get_context("spawn")
+    receive, send = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_inspect_cloned_project,
+        args=(project, overrides or {}),
+        kwargs={"probe_version": probe_version, "send": send},
     )
-    environment.update(overrides or {})
-    result = subprocess.run(
-        [sys.executable, "-c", code],
-        cwd=project,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=25,
-    )
-    assert result.returncode == 0, result.stderr
-    return result.stdout.strip().splitlines()[-1]
+    process.start()
+    send.close()
+    try:
+        assert receive.poll(25), "Configuration probe timed out"
+        result = receive.recv()
+        process.join(timeout=5)
+        assert process.exitcode == 0, "Configuration probe crashed"
+        return result
+    finally:
+        receive.close()
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=5)
 
 
 def test_cloned_project_dotenv_cannot_override_environment_cli(tmp_path: Path) -> None:
@@ -50,17 +93,10 @@ def test_cloned_project_dotenv_cannot_override_environment_cli(tmp_path: Path) -
     trusted = tmp_path / "trusted" / "kicad-cli"
     trusted.parent.mkdir()
     trusted.touch()
-    result = json.loads(
-        _child_python(
-            project,
-            "import json\n"
-            "from kicad_mcp.config import KiCadMCPConfig\n"
-            "c = KiCadMCPConfig()\n"
-            "print(json.dumps({'cli': str(c.kicad_cli), 'log': c.log_level}))",
-            overrides={"KICAD_CLI_PATH": str(trusted)},
-        )
-    )
-    assert result == {"cli": str(trusted), "log": "INFO"}
+    result = _child_snapshot(project, overrides={"KICAD_CLI_PATH": str(trusted)})
+    assert "error" not in result
+    assert result["result"]["cli"] == str(trusted)
+    assert result["result"]["log"] == "INFO"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Unix executable fixture")
@@ -80,17 +116,12 @@ def test_server_info_cli_probe_cannot_execute_cloned_project_script(tmp_path: Pa
     trusted.write_text("#!/bin/sh\nprintf 'KiCad 10.0.8\\n'\n", encoding="utf-8")
     trusted.chmod(0o755)
 
-    output = _child_python(
-        project,
-        "import json\n"
-        "from kicad_mcp.config import KiCadMCPConfig\n"
-        "from kicad_mcp.discovery import find_kicad_version\n"
-        "c = KiCadMCPConfig()\n"
-        "print(json.dumps({'cli': str(c.kicad_cli), "
-        "'version': find_kicad_version(c.kicad_cli)}))",
-        overrides={"KICAD_CLI_PATH": str(trusted)},
+    output = _child_snapshot(
+        project, overrides={"KICAD_CLI_PATH": str(trusted)}, probe_version=True
     )
-    assert json.loads(output) == {"cli": str(trusted), "version": "KiCad 10.0.8"}
+    assert "error" not in output
+    assert output["result"]["cli"] == str(trusted)
+    assert output["result"]["version"] == "KiCad 10.0.8"
     assert not marker.exists(), "A read-only discovery call ran the cloned project's executable"
 
 
@@ -103,17 +134,11 @@ def test_cloned_project_dotenv_never_enables_sensitive_settings(tmp_path: Path) 
         "KICAD_MCP_AUTH_TOKEN=attacker-controlled\n",
         encoding="utf-8",
     )
-    result = json.loads(
-        _child_python(
-            project,
-            "import json\n"
-            "from kicad_mcp.config import KiCadMCPConfig\n"
-            "c=KiCadMCPConfig()\n"
-            "print(json.dumps({'mode': c.operating_mode, "
-            "'experimental': c.enable_experimental_tools, 'auth': c.auth_token}))",
-        )
-    )
-    assert result == {"mode": "readonly", "experimental": False, "auth": None}
+    result = _child_snapshot(project)
+    assert "error" not in result
+    assert result["result"]["mode"] == "readonly"
+    assert result["result"]["experimental"] is False
+    assert result["result"]["auth"] is None
 
 
 @pytest.mark.parametrize("variable", ["KICAD_MCP_KICAD_CLI", "KICAD_CLI_PATH"])
@@ -122,19 +147,8 @@ def test_explicit_process_environment_cli_path_must_be_absolute(
 ) -> None:
     project = tmp_path / "cloned-project"
     project.mkdir()
-    output = _child_python(
-        project,
-        "from kicad_mcp.config import KiCadMCPConfig\n"
-        "try:\n"
-        "  KiCadMCPConfig()\n"
-        "except ValueError as exc:\n"
-        "  assert 'absolute' in str(exc)\n"
-        "  print('REJECTED')\n"
-        "else:\n"
-        "  print('ACCEPTED')",
-        overrides={variable: "bin/kicad-cli"},
-    )
-    assert output == "REJECTED"
+    output = _child_snapshot(project, overrides={variable: "bin/kicad-cli"})
+    assert "absolute" in str(output.get("error", ""))
 
 
 def test_cli_entrypoint_never_implicitly_loads_project_dotenv() -> None:
