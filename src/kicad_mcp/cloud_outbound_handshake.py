@@ -526,6 +526,23 @@ def _check_read_transport_gate(
         _require_independent_read_authority()
 
 
+def _invalid_owner_folder_transport(
+    dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch] | None,
+    inspection_factory: Callable[[HandshakeReceipt], BoundConnectorProjectWorker] | None,
+    operator_presence_pilot: bool,
+    operator_inspection_pilot: bool,
+    owner_managed_read: bool,
+) -> bool:
+    """An unbound device's folder browser has no design-reading authority."""
+    return (
+        dispatcher_factory is not None
+        or inspection_factory is not None
+        or operator_presence_pilot
+        or operator_inspection_pilot
+        or owner_managed_read
+    )
+
+
 def _validated_outbound_connection(
     *,
     origin: str,
@@ -544,12 +561,12 @@ def _validated_outbound_connection(
     # Reject both direct public read calls and private session-helper calls
     # before TLS setup or a WebSocket. Proof-only sessions stay available.
     if owner_folder_only:
-        if (
-            dispatcher_factory is not None
-            or inspection_factory is not None
-            or operator_presence_pilot
-            or operator_inspection_pilot
-            or owner_managed_read
+        if _invalid_owner_folder_transport(
+            dispatcher_factory,
+            inspection_factory,
+            operator_presence_pilot,
+            operator_inspection_pilot,
+            owner_managed_read,
         ):
             raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     elif owner_managed_read:
@@ -600,26 +617,31 @@ def _invalid_owner_managed_mode(options: OutboundSessionOptions) -> bool:
     )
 
 
+def _invalid_owner_folder_mode(options: OutboundSessionOptions) -> bool:
+    """Refuse project tools, pilots and writes for unbound folder sessions."""
+    return (
+        type(options.owner_folder_only) is not bool
+        or options.owner_managed_read
+        or options.dispatcher_factory is not None
+        or options.inspection_factory is not None
+        or options.operator_presence_pilot
+        or options.operator_inspection_pilot
+        or options.operator_native_drc_pilot
+        or options.board_counts_pilot
+        or options.schematic_counts_pilot
+        or options.managed_native_drc
+        or options.managed_native_write
+        or options.mcp_service_factory is not None
+        or options.revisions_preparer is not None
+        or options.write_executor is not None
+        or not callable(options.folder_service_factory)
+        or options.advertise_catalog
+    )
+
+
 def _validate_outbound_options(options: OutboundSessionOptions) -> None:
     if options.owner_folder_only:
-        if (
-            type(options.owner_folder_only) is not bool
-            or options.owner_managed_read
-            or options.dispatcher_factory is not None
-            or options.inspection_factory is not None
-            or options.operator_presence_pilot
-            or options.operator_inspection_pilot
-            or options.operator_native_drc_pilot
-            or options.board_counts_pilot
-            or options.schematic_counts_pilot
-            or options.managed_native_drc
-            or options.managed_native_write
-            or options.mcp_service_factory is not None
-            or options.revisions_preparer is not None
-            or options.write_executor is not None
-            or not callable(options.folder_service_factory)
-            or options.advertise_catalog
-        ):
+        if _invalid_owner_folder_mode(options):
             raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
         return
     if type(options.managed_native_drc) is not bool or (

@@ -31,6 +31,25 @@ def _run(command: list[str]) -> None:
         raise SystemExit(result.returncode)
 
 
+def _validate_workflow_concurrency(path: pathlib.Path, doc: dict) -> None:
+    """Reject unapproved workflow-level and job-level concurrency queues."""
+    concurrency = doc.get("concurrency")
+    job_concurrency = [
+        job.get("concurrency") for job in doc.get("jobs", {}).values() if isinstance(job, dict)
+    ]
+    for index, group in enumerate((concurrency, *job_concurrency)):
+        if not isinstance(group, dict) or "queue" not in group:
+            continue
+        if (
+            path.name != "publish-release.yml"
+            or index != 0
+            or group.get("group") != "publish-release-${{ github.repository }}"
+            or group.get("cancel-in-progress") is not False
+            or group.get("queue") != "max"
+        ):
+            raise ValueError(f"{path.name}: unapproved concurrency queue configuration")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--actionlint", action="store_true", help="Run actionlint as well.")
@@ -42,21 +61,7 @@ def main() -> None:
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
         if not isinstance(doc, dict):
             raise ValueError(f"{path.name}: workflow must be a mapping")
-        concurrency = doc.get("concurrency")
-        job_concurrency = [
-            job.get("concurrency") for job in doc.get("jobs", {}).values() if isinstance(job, dict)
-        ]
-        for index, group in enumerate((concurrency, *job_concurrency)):
-            if not isinstance(group, dict) or "queue" not in group:
-                continue
-            if (
-                path.name != "publish-release.yml"
-                or index != 0
-                or group.get("group") != "publish-release-${{ github.repository }}"
-                or group.get("cancel-in-progress") is not False
-                or group.get("queue") != "max"
-            ):
-                raise ValueError(f"{path.name}: unapproved concurrency queue configuration")
+        _validate_workflow_concurrency(path, doc)
     print(f"Parsed {len(workflows)} workflow file(s).")
 
     if args.actionlint:

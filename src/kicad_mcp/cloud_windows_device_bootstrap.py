@@ -29,7 +29,6 @@ from kicad_mcp.cloud_folder_browse_receiver import (
 from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
 from kicad_mcp.cloud_local_registry import _STEM, _UUID
 from kicad_mcp.cloud_outbound_handshake import (
-    CloudHandshakeDeniedError,
     execute_owner_folder_only_session,
 )
 from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
@@ -256,7 +255,7 @@ async def run_device_only(
                     on_activity=status_callback,
                 )
                 failures = 0
-            except (CloudHandshakeDeniedError, OSError, ValueError) as exc:
+            except (OSError, ValueError) as exc:
                 if _is_remote_policy_rejection(exc):
                     raise CloudOwnerReapprovalRequiredError(
                         "Cloud denied the signed device session."

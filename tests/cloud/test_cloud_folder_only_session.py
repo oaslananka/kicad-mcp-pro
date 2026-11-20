@@ -98,11 +98,11 @@ async def test_unbound_device_rejects_mcp_and_native_write_frames() -> None:
 
     for kind in ("connector.mcp_request", "connector.authorized_read", "connector.write_request"):
         socket = Socket([json.dumps({"kind": kind, "version": 1})])
+        receipt = HandshakeReceipt(DEVICE, SESSION)
+        folder = OwnerFolder()
+        operation = serve_owner_folder_only(socket, receipt, folder)
         with pytest.raises(CloudHandshakeDeniedError):
-            await asyncio.wait_for(
-                serve_owner_folder_only(socket, HandshakeReceipt(DEVICE, SESSION), OwnerFolder()),
-                timeout=2,
-            )
+            await asyncio.wait_for(operation, timeout=2)
         assert socket.sent == []
 
 
@@ -214,17 +214,19 @@ async def test_folder_only_session_rejects_invalid_authority_and_operations() ->
         (receipt, object(), None),
         (receipt, OwnerFolder(), "not callable"),
     ):
+        socket = Socket([])
         with pytest.raises(CloudHandshakeDeniedError):
             await serve_owner_folder_only(
-                Socket([]),
+                socket,
                 invalid_receipt,
                 invalid_folder,
                 on_activity=invalid_activity,
             )
     for request in (folder_request("rename"), "null"):
         socket = Socket([request])
+        folder = OwnerFolder()
         with pytest.raises(CloudHandshakeDeniedError):
-            await serve_owner_folder_only(socket, receipt, OwnerFolder())
+            await serve_owner_folder_only(socket, receipt, folder)
         assert socket.sent == []
 
 

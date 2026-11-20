@@ -1067,7 +1067,8 @@ def test_unbound_cloud_pairs_once_then_reuses_identity_without_browser(
         calls.append("remember_device")
 
     def enroll(*, origin, alias, owner_approval):
-        assert origin == device.origin and alias == "My PC"
+        assert origin == device.origin
+        assert alias == "My PC"
         calls.append("enroll")
         owner_approval("https://example.invalid/pair", "challenge", "code")
         return device

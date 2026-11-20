@@ -37,6 +37,7 @@ _MAX_MANAGED_READS = 16
 _SESSION_TIMEOUT_SECONDS = 295
 # Refresh well before the signed server-side five-minute session lease expires.
 # Only the idle recv waits for this deadline; an in-flight tool is never cut short.
+_LEASE_REFRESH_MESSAGE = "Refreshing signed Cloud session"
 _SESSION_REFRESH_SECONDS = 240
 _FOLDER_REQUEST_KIND = "connector.local_browser_request"
 _WRITE_REQUEST_KIND = "connector.authorized_write"
@@ -462,14 +463,14 @@ async def _serve_signed_read_frames(
     while reads_served < max_reads:
         remaining = refresh_deadline - loop.time()
         if remaining <= 0:
-            _report_activity(on_activity, "Refreshing signed Cloud session")
+            _report_activity(on_activity, _LEASE_REFRESH_MESSAGE)
             return
         try:
             raw = await asyncio.wait_for(socket.recv(), timeout=remaining)
         except TimeoutError:
             # This is an expected idle lease refresh, not a failed handshake.
             # Work already dispatched runs to its normal per-command deadline.
-            _report_activity(on_activity, "Refreshing signed Cloud session")
+            _report_activity(on_activity, _LEASE_REFRESH_MESSAGE)
             return
         if not isinstance(raw, str):
             raise CloudHandshakeDeniedError(_DENIED)
@@ -584,12 +585,12 @@ async def serve_owner_folder_only(
     while True:
         remaining = deadline - loop.time()
         if remaining <= 0:
-            _report_activity(on_activity, "Refreshing signed Cloud session")
+            _report_activity(on_activity, _LEASE_REFRESH_MESSAGE)
             return receipt
         try:
             raw = await asyncio.wait_for(socket.recv(), timeout=remaining)
         except TimeoutError:
-            _report_activity(on_activity, "Refreshing signed Cloud session")
+            _report_activity(on_activity, _LEASE_REFRESH_MESSAGE)
             return receipt
         if not isinstance(raw, str) or _top_level_kind(raw) != _FOLDER_REQUEST_KIND:
             raise CloudHandshakeDeniedError(_DENIED)
