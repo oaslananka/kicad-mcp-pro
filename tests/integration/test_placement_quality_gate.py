@@ -506,3 +506,52 @@ async def test_pcb_critique_placement_crystal_far_from_ic(
     plr002 = [f for f in payload["findings"] if f["rule_id"] == "PLR-002"]
     assert len(plr002) == 1
     assert "Y1" in plr002[0]["refs"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("left_rail", "right_rail"),
+    [("+3V3", "+5V"), ("+5V", "+5V")],
+)
+async def test_inferred_connectors_do_not_form_unrequested_power_tree(
+    sample_project: Path,
+    mock_kicad,
+    left_rail: str,
+    right_rail: str,
+) -> None:
+    _ = mock_kicad
+    board = sample_project / "demo.kicad_pcb"
+    board.write_text(
+        '(kicad_pcb (version 20250216) (generator "pytest")\n'
+        "  (gr_rect (start 0 0) (end 85 25) "
+        '(stroke (width 0.05) (type solid)) (fill no) (layer "Edge.Cuts"))\n'
+        + _footprint_block(
+            "J1",
+            "Input",
+            5.0,
+            12.5,
+            name="Connector_Generic:Conn_01x02",
+            net_name=left_rail,
+        )
+        + _footprint_block(
+            "J2",
+            "Output",
+            80.0,
+            12.5,
+            name="Connector_Generic:Conn_01x02",
+            net_name=right_rail,
+        )
+        + ")\n",
+        encoding="utf-8",
+    )
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    spec = await call_tool_payload(server, "project_get_design_spec", {})
+    assert isinstance(spec, dict)
+    assert spec["inferred"]["connector_refs"] == ["J1", "J2"]
+    assert spec["resolved"]["power_tree_refs"] == []
+
+    gate = await call_tool_text(server, "pcb_placement_quality_gate", {})
+    score = await call_tool_text(server, "pcb_score_placement", {})
+    assert "Power-tree step" not in gate
+    assert "Power-tree step" not in score
