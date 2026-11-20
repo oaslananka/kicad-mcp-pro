@@ -10,6 +10,15 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.21.2](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.21.1...mcp-server-v4.21.2) (2026-11-20)
+
+
+### Bug Fixes
+
+* **ci:** resolve SonarCloud coverage path ambiguity ([616e7c0](https://github.com/oaslananka/kicad-mcp-pro/commit/616e7c0ff813a6640815982fb28bdbea92b2f981))
+* **cloud:** make Windows onboarding install, upgrade and repair safely ([a3a7f10](https://github.com/oaslananka/kicad-mcp-pro/commit/a3a7f1020609bb162fccdc2dc9e71f5bd6b87adb))
+* **cloud:** recover Windows pairing and one-command device restart ([4462a46](https://github.com/oaslananka/kicad-mcp-pro/commit/4462a461a5a3af31acc733b2c862ac646220fafc))
+
 ## [4.21.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.21.0...mcp-server-v4.21.1) (2026-11-20)
 
 
