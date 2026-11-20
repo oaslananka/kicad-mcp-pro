@@ -932,17 +932,11 @@ def _infer_design_intent_from_board() -> tuple[ProjectDesignIntent, list[str]]:
     digital_refs = sorted(
         reference for reference, category in categories.items() if category in {"digital", "mcu"}
     )
-    power_tree_refs = sorted(
-        (
-            reference
-            for reference, category in categories.items()
-            if category in {"connector", "regulator", "mcu"}
-        ),
-        key=lambda reference: (
-            float(footprints[reference].get("x_mm", 0.0) or 0.0),
-            reference,
-        ),
-    )
+    # A serial power-distribution order is a design contract, not a spatial
+    # ordering. Connectors on different (or parallel) power domains must not
+    # become hard-failing "power-tree steps" just because of their X positions.
+    # Preserve explicit project intent through _merge_design_intent instead.
+    power_tree_refs: list[str] = []
 
     capacitor_refs = [
         reference for reference, category in categories.items() if category == "capacitor"
@@ -971,7 +965,7 @@ def _infer_design_intent_from_board() -> tuple[ProjectDesignIntent, list[str]]:
         f"Inferred {len(connector_refs)} connector refs from PCB footprints.",
         f"Inferred {len(decoupling_pairs)} decoupling pair candidates from PCB placement.",
         f"Inferred {len(sensor_cluster_refs)} sensor refs from PCB footprints.",
-        f"Inferred {len(power_tree_refs)} power-tree refs from PCB placement order.",
+        "Power-tree order not inferred from PCB placement; explicit intent is required.",
     ]
     return (
         _normalize_design_intent(
