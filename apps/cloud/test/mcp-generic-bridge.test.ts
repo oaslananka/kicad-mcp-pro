@@ -37,6 +37,9 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
   let wrongTarget=false;
   let deviceOnline=true;
   let catalogResponds=true;
+  let signedRelaySerialOnly=false;
+  let signedRelayBusy=false;
+  let signalCatalogInFlight:(()=>void)|null=null;
   let signedClaim:ConnectorCapabilityClaim|null=null;
   const inventory:Inventory={
     async listDevices(){return [];},
@@ -59,6 +62,15 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
       requestId:string;method:string;toolName?:string;argumentsJson?:string;proof?:object;
     }){
       assert.equal(devId,deviceId);assert.equal(projId,projectId);
+      // Model the actual Connector: concurrent native RPCs are rejected.
+      if(signedRelaySerialOnly&&signedRelayBusy)return null;
+      if(signedRelaySerialOnly)signedRelayBusy=true;
+      try{
+        if(signedRelaySerialOnly&&request.method==="catalog"){
+          signalCatalogInFlight?.();
+          signalCatalogInFlight=null;
+        }
+        if(signedRelaySerialOnly)await new Promise<void>(resolve=>setTimeout(resolve,60));
       if(request.method==="catalog"){
         if(!catalogResponds)return null;
         const tools=CLOUD_DIRECT_TOOLS.filter(tool=>
@@ -83,6 +95,9 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
       return {kind:"connector.mcp_result" as const,version:1 as const,
         requestId:request.requestId,projectId,method:"call" as const,
         ok:true,result:{content:[{type:"text",text:"native-evidence"}],isError:false}};
+      }finally{
+        if(signedRelaySerialOnly)signedRelayBusy=false;
+      }
     }
   };
   const issuer=(candidate:unknown,binding:any,nowMs:number)=>
@@ -311,6 +326,67 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
     },10,"local_mcp_write");
     assert.match(JSON.stringify(revoked.data),/local_mcp_operation_unconfirmed/);
     assert.equal(localWrites,2);
+    // Simultaneous read requests must serialize the complete signed
+    // catalog -> native call sequence, never just individual RPCs.
+    signedRelaySerialOnly=true;
+    const overlappingReads=await Promise.all([
+      invoke(enabled,"token-read","tools/call",{
+        name:"local_mcp_read",arguments:{project_id:projectId,
+          tool_name:"kicad_get_version",arguments:{}}
+      },41,"local_mcp_read"),
+      invoke(enabled,"token-read","tools/call",{
+        name:"local_mcp_read",arguments:{project_id:projectId,
+          tool_name:"kicad_get_version",arguments:{}}
+      },42,"local_mcp_read")
+    ]);
+    assert.equal(overlappingReads[0].data.result?.structuredContent?.success,true);
+    assert.equal(overlappingReads[1].data.result?.structuredContent?.success,true);
+
+    // Independently advertised Cloud READ tools use the same per-device lane.
+    const directReads=await Promise.all([
+      invoke(direct,"token-read","tools/call",{
+        name:"kicad_get_version",arguments:{project_id:projectId}
+      },43,"kicad_get_version"),
+      invoke(direct,"token-read","tools/call",{
+        name:"kicad_get_version",arguments:{project_id:projectId}
+      },44,"kicad_get_version")
+    ]);
+    assert.equal(directReads[0].data.result?.structuredContent?.success,true);
+    assert.equal(directReads[1].data.result?.structuredContent?.success,true);
+
+    // Discovery and execution share the lane, preventing a discovery race.
+    const [discovery,execution]=await Promise.all([
+      invoke(enabled,"token-read","tools/call",{
+        name:"local_mcp_catalog",arguments:{project_id:projectId}
+      },45,"local_mcp_catalog"),
+      invoke(enabled,"token-read","tools/call",{
+        name:"local_mcp_read",arguments:{project_id:projectId,
+          tool_name:"kicad_get_version",arguments:{}}
+      },46,"local_mcp_read")
+    ]);
+    assert.equal(discovery.data.result?.structuredContent?.available,true);
+    assert.equal(execution.data.result?.structuredContent?.success,true);
+
+    // An Edit grant downgraded while a queued catalog is waiting may no
+    // longer disclose write tool contracts when the response is returned.
+    clientMode="write";
+    const catalogStarted=new Promise<void>((resolve,reject)=>{
+      const timer=setTimeout(()=>reject(new Error("catalog start timed out")),2_000);
+      signalCatalogInFlight=()=>{clearTimeout(timer);resolve();};
+    });
+    const inFlightCatalog=invoke(enabled,"token-edit","tools/call",{
+      name:"local_mcp_catalog",arguments:{project_id:projectId}
+    },47,"local_mcp_catalog");
+    await catalogStarted;
+    clientMode="readonly";
+    const downgraded=await inFlightCatalog;
+    const exposed=downgraded.data.result?.structuredContent?.tools??[];
+    assert.ok(exposed.some((tool:{name:string})=>tool.name==="kicad_get_version"));
+    assert.ok(!exposed.some((tool:{accessMode:string})=>tool.accessMode==="write"),
+      "A stale Edit grant must not reveal write tool contracts");
+    clientMode="write";
+    signedRelaySerialOnly=false;
+
     wrongTarget=true;
     const revokedProjects=await invoke(enabled,"token-read","tools/call",{
       name:"list_projects",arguments:{}
