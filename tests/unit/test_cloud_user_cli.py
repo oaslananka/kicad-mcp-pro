@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 from kicad_mcp.server import app
@@ -402,7 +403,7 @@ def test_setup_existing_registration_needs_attention_without_repairing(
     )
     assert enrollments == []
     assert result.exit_code != 0, result.output
-    assert "cloud status" in " ".join(result.output.replace("│", " ").split())
+    assert "cloud status" in " ".join(unstyle(result.output).replace("│", " ").split())
     assert starts == (["start"] if failure in {"start-failed", "still-off"} else [])
     assert {p.name: p.read_bytes() for p in root.rglob("*") if p.is_file()} == baseline
 
