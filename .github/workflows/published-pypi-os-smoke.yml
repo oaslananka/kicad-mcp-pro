@@ -1,14 +1,10 @@
 name: Published PyPI OS Smoke
 
 # Manual acceptance of the already-published Python package on fresh OS runners.
+# Select a ref containing this workflow and the already-published package version.
 # Do not make this an always-on PR gate or run a KiCad GUI installer here.
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Already published stable PyPI version (e.g. 4.21.4)."
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -27,7 +23,7 @@ jobs:
       matrix:
         os: [windows-2025, macos-15]
     steps:
-      - name: Checkout public test fixture only
+      - name: Checkout version manifest and public test fixture
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
@@ -41,18 +37,19 @@ jobs:
       - name: Clean PyPI install and real MCP read-only diagnostic
         shell: bash
         env:
-          SMOKE_VERSION: ${{ inputs.version }}
           UV_NO_CACHE: '1'
           UV_NO_PROGRESS: '1'
         run: |
           set -euo pipefail
+          uv python install 3.13
+          venv="$RUNNER_TEMP/kicad-pypi-clean"
+          uv venv --python 3.13 "$venv"
+          SMOKE_VERSION="$(uv run --no-project --python "$venv" python -c 'import tomllib; from pathlib import Path; print(tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"])')"
+          export SMOKE_VERSION
           if ! [[ "$SMOKE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Expected a stable published version (MAJOR.MINOR.PATCH)." >&2
             exit 1
           fi
-          uv python install 3.13
-          venv="$RUNNER_TEMP/kicad-pypi-clean"
-          uv venv --python 3.13 "$venv"
           uv pip install --python "$venv" "kicad-mcp-pro==$SMOKE_VERSION"
           uv run --no-project --python "$venv" python - <<'PYSMOKE'
           import asyncio

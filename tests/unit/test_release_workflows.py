@@ -186,12 +186,15 @@ def test_container_publish_uses_immutable_release_tag_for_production() -> None:
     _require(stable_latest_rule in workflow, "test contract failed")
 
 
-def test_published_pypi_smoke_binds_install_and_mcp_assertions_to_requested_version() -> None:
+def test_published_pypi_smoke_binds_install_and_mcp_assertions_to_selected_source() -> None:
     workflow = _read(".github/workflows/published-pypi-os-smoke.yml")
 
-    assert "version:" in workflow
-    assert "required: true" in workflow
-    assert "SMOKE_VERSION: ${{ inputs.version }}" in workflow
+    assert "on:\n  workflow_dispatch:\n" in workflow
+    assert "inputs:" not in workflow
+    assert "tomllib.load" in workflow
+    assert "pyproject.toml" in workflow
+    assert "export SMOKE_VERSION" in workflow
+    assert "--no-project --python" in workflow
     assert '[[ "$SMOKE_VERSION" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]' in workflow
     assert '"kicad-mcp-pro==$SMOKE_VERSION"' in workflow
     assert "expected_version = os.environ['SMOKE_VERSION']" in workflow
