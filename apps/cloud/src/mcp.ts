@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import {registerDirectCloudMcpTools} from "./cloud-direct-tool-registry.js";
+import {runSerializedCloudRead} from "./cloud-read-queue.js";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import type { Actor } from "./auth.js";
@@ -409,14 +410,23 @@ export function createCloudMcpHandler(
       },async ({project_id,offset,tool_name})=>{
         const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
         if(!project)return text({available:false,selectionRequired});
-        try{
-          const catalog=await genericMcpCatalog(project.deviceId,project.id,offset??0,tool_name);
-          if(!catalog)return text({available:false,reason:"owner_connector_mcp_unavailable"});
-          const mayWrite=actor.scopes.has("projects:write")&&project.maxMode==="write";
-          return text({available:true,project_id:project.id,
-            tools:catalog.tools.filter(t=>t.accessMode==="readonly"||mayWrite),
-            next_offset:catalog.nextOffset});
-        }catch{return text({available:false,reason:"owner_connector_mcp_unavailable"});}
+        return runSerializedCloudRead(inventory,actor.sub,project.deviceId,async()=>{
+          try{
+            const catalog=await genericMcpCatalog(project.deviceId,project.id,offset??0,tool_name);
+            if(!catalog)return text({available:false,reason:"owner_connector_mcp_unavailable"});
+            // Re-check the client's current grant after waiting for the
+            // signed Connector. A former Edit grant must not leak write tools.
+            const currentGrant=await inventory.getProject(
+              actor.sub,actor.clientId,project.id);
+            if(!currentGrant||currentGrant.deviceId!==project.deviceId)
+              return text({available:false,reason:"project_not_granted"});
+            const mayWrite=actor.scopes.has("projects:write")&&currentGrant.maxMode==="write";
+            return text({available:true,project_id:project.id,
+              tools:catalog.tools.filter(t=>t.accessMode==="readonly"||mayWrite),
+              next_offset:catalog.nextOffset});
+          }catch{return text({available:false,reason:"owner_connector_mcp_unavailable"});}
+        },()=>text({available:false,reason:"owner_connector_mcp_busy",retrySafe:true,
+          guidance:"The owner Connector is processing another request. Try again shortly; only bounded READ operations are queued."}));
       });
       const invokeLocalTool=async(
         mode:"readonly"|"write",
@@ -426,50 +436,57 @@ export function createCloudMcpHandler(
           inventory,actor,request.project_id);
         if(!project)return {...text({success:false,selectionRequired,reason:"project_not_granted"}),
           isError:true};
-        let catalog:Awaited<ReturnType<GenericMcpCatalogReader>>=null;
-        try{
-          catalog=await genericMcpCatalog(project.deviceId,project.id,0,request.tool_name);
-        }catch{/* No call without local contract. */}
-        if(!catalog)return {...text({success:false,reason:"owner_connector_mcp_unavailable",
-          guidance:"The signed local catalog could not be retrieved. Check the device connection and run operations one at a time; retry discovery after the current operation or session refresh completes. No local tool call was dispatched."
-        }),isError:true};
-        const tool=catalog.tools.find(t=>t.name===request.tool_name);
-        if(!tool)return {...text({success:false,reason:"local_tool_unavailable",
-          guidance:"The tool is absent from the current authorized local catalog. Discover available tools with local_mcp_catalog."
-        }),isError:true};
-        if(tool.accessMode!==mode)return {...text({
-          success:false,reason:tool.accessMode==="write"
-            ?"write_tool_requires_local_mcp_write":"read_tool_requires_local_mcp_read"
-        }),isError:true};
-        const write=mode==="write";
-        if(write&&(!actor.scopes.has("projects:write")||project.maxMode!=="write")){
-          const denied=text({success:false,reason:!actor.scopes.has("projects:write")?
-            "insufficient_scope_write_required":"project_edit_permission_required",
-            guidance:"Approve projects:write for this application and choose Edit for this project."});
-          if(!actor.scopes.has("projects:write")&&protectedResourceMetadataUrl)return {
-            ...denied,isError:true,_meta:{"mcp/www_authenticate":[
-              'Bearer resource_metadata="'+protectedResourceMetadataUrl+'", '+
-              'error="insufficient_scope", scope="projects:read projects:write"'
-            ]}
-          };
-          return {...denied,isError:true};
-        }
-        try{
-          const result=await genericMcpCall(
-            project.deviceId,project.id,request.tool_name,request.arguments,write);
-          if(result===null)return {...text({success:false,
-            reason:"local_mcp_operation_unconfirmed",
-            outcomeUnknown:write,retrySafe:!write,
-            guidance:write?"Inspect the local design before retrying.":"Check the device connection."}),
-            isError:true};
-          const actual=result as {isError?:boolean;structuredContent?:{success?:boolean}};
-          const success=actual.isError!==true&&actual.structuredContent?.success!==false;
-          return {...text({success,tool_name:request.tool_name,local_result:result}),
-            ...(success?{}:{isError:true})};
-        }catch{
-          return {...text({success:false,reason:"local_mcp_operation_unconfirmed",
-            outcomeUnknown:write,retrySafe:!write}),isError:true};
-        }
+        const execute=async()=>{
+          let catalog:Awaited<ReturnType<GenericMcpCatalogReader>>=null;
+          try{
+            catalog=await genericMcpCatalog(project.deviceId,project.id,0,request.tool_name);
+          }catch{/* No call without local contract. */}
+          if(!catalog)return {...text({success:false,reason:"owner_connector_mcp_unavailable",
+            guidance:"The signed local catalog could not be retrieved. Check the device connection and run operations one at a time; retry discovery after the current operation or session refresh completes. No local tool call was dispatched."
+          }),isError:true};
+          const tool=catalog.tools.find(t=>t.name===request.tool_name);
+          if(!tool)return {...text({success:false,reason:"local_tool_unavailable",
+            guidance:"The tool is absent from the current authorized local catalog. Discover available tools with local_mcp_catalog."
+          }),isError:true};
+          if(tool.accessMode!==mode)return {...text({
+            success:false,reason:tool.accessMode==="write"
+              ?"write_tool_requires_local_mcp_write":"read_tool_requires_local_mcp_read"
+          }),isError:true};
+          const write=mode==="write";
+          if(write&&(!actor.scopes.has("projects:write")||project.maxMode!=="write")){
+            const denied=text({success:false,reason:!actor.scopes.has("projects:write")?
+              "insufficient_scope_write_required":"project_edit_permission_required",
+              guidance:"Approve projects:write for this application and choose Edit for this project."});
+            if(!actor.scopes.has("projects:write")&&protectedResourceMetadataUrl)return {
+              ...denied,isError:true,_meta:{"mcp/www_authenticate":[
+                'Bearer resource_metadata="'+protectedResourceMetadataUrl+'", '+
+                'error="insufficient_scope", scope="projects:read projects:write"'
+              ]}
+            };
+            return {...denied,isError:true};
+          }
+          try{
+            const result=await genericMcpCall(
+              project.deviceId,project.id,request.tool_name,request.arguments,write);
+            if(result===null)return {...text({success:false,
+              reason:"local_mcp_operation_unconfirmed",
+              outcomeUnknown:write,retrySafe:!write,
+              guidance:write?"Inspect the local design before retrying.":"Check the device connection."}),
+              isError:true};
+            const actual=result as {isError?:boolean;structuredContent?:{success?:boolean}};
+            const success=actual.isError!==true&&actual.structuredContent?.success!==false;
+            return {...text({success,tool_name:request.tool_name,local_result:result}),
+              ...(success?{}:{isError:true})};
+          }catch{
+            return {...text({success:false,reason:"local_mcp_operation_unconfirmed",
+              outcomeUnknown:write,retrySafe:!write}),isError:true};
+          }
+        };
+        // Write remains immediate and is never placed in this queue.
+        return mode==="write"?execute():
+          runSerializedCloudRead(inventory,actor.sub,project.deviceId,execute,
+            ()=>({...text({success:false,reason:"owner_connector_mcp_busy",
+              retrySafe:true,guidance:"The owner Connector is busy. Retry this READ after the current operation finishes; no local tool was dispatched."}),isError:true}));
       };
       const localToolSchema=z.object({
         project_id:z.string().uuid().optional(),
@@ -518,32 +535,38 @@ export function createCloudMcpHandler(
         if(needsWrite&&project.maxMode!=="write")
           return {...text({success:false,reason:"project_edit_permission_required",
             guidance:"Choose Edit for this application's access to the project."}),isError:true};
-        try{
-          const catalog=await genericMcpCatalog(project.deviceId,project.id,0,tool.name);
-          const local=catalog?.tools.find(t=>t.name===tool.name);
-          if(!local)return {...text({success:false,reason:"local_tool_unavailable",
-            guidance:needsWrite
-              ?"Connect or update the owner's Connector and enable signed native write for this project."
-              :"Connect the owner device and open the selected project in KiCad; update the Connector if the tool remains unavailable."}),isError:true};
-          if(local.accessMode!==tool.accessMode||
-              stableJson(local.inputSchema)!==stableJson(tool.inputSchema))
-            return {...text({success:false,reason:"local_tool_contract_mismatch",
-              guidance:"Update the local KiCad MCP Pro installation to a compatible tool contract."}),
-              isError:true};
-          const result=await genericMcpCall(project.deviceId,project.id,tool.name,args,needsWrite);
-          if(result===null)
+        const execute=async()=>{
+          try{
+            const catalog=await genericMcpCatalog(project.deviceId,project.id,0,tool.name);
+            const local=catalog?.tools.find(t=>t.name===tool.name);
+            if(!local)return {...text({success:false,reason:"local_tool_unavailable",
+              guidance:needsWrite
+                ?"Connect or update the owner's Connector and enable signed native write for this project."
+                :"Connect the owner device and open the selected project in KiCad; update the Connector if the tool remains unavailable."}),isError:true};
+            if(local.accessMode!==tool.accessMode||
+                stableJson(local.inputSchema)!==stableJson(tool.inputSchema))
+              return {...text({success:false,reason:"local_tool_contract_mismatch",
+                guidance:"Update the local KiCad MCP Pro installation to a compatible tool contract."}),
+                isError:true};
+            const result=await genericMcpCall(project.deviceId,project.id,tool.name,args,needsWrite);
+            if(result===null)
+              return {...text({success:false,reason:"local_mcp_operation_unconfirmed",
+                outcomeUnknown:needsWrite,retrySafe:!needsWrite,
+                guidance:needsWrite?"Inspect the local design before retrying.":"Reconnect the device."}),
+                isError:true};
+            const actual=result as {isError?:boolean;structuredContent?:{success?:boolean}};
+            const success=actual.isError!==true&&actual.structuredContent?.success!==false;
+            return {...text({success,tool_name:tool.name,local_result:result}),
+              ...(success?{}:{isError:true})};
+          }catch{
             return {...text({success:false,reason:"local_mcp_operation_unconfirmed",
-              outcomeUnknown:needsWrite,retrySafe:!needsWrite,
-              guidance:needsWrite?"Inspect the local design before retrying.":"Reconnect the device."}),
-              isError:true};
-          const actual=result as {isError?:boolean;structuredContent?:{success?:boolean}};
-          const success=actual.isError!==true&&actual.structuredContent?.success!==false;
-          return {...text({success,tool_name:tool.name,local_result:result}),
-            ...(success?{}:{isError:true})};
-        }catch{
-          return {...text({success:false,reason:"local_mcp_operation_unconfirmed",
-            outcomeUnknown:needsWrite,retrySafe:!needsWrite}),isError:true};
-        }
+              outcomeUnknown:needsWrite,retrySafe:!needsWrite}),isError:true};
+          }
+        };
+        return needsWrite?execute():
+          runSerializedCloudRead(inventory,actor.sub,project.deviceId,execute,
+            ()=>({...text({success:false,reason:"owner_connector_mcp_busy",
+              retrySafe:true,guidance:"The owner Connector is busy. Retry this READ after the current operation finishes; no local tool was dispatched."}),isError:true}));
       });
     }
 
