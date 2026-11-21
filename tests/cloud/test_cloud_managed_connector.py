@@ -764,3 +764,50 @@ def test_status_without_lock_does_not_create_lock_file(
     connector._write_status(root, "connected")
     assert connector._status() == "Unavailable"
     assert not (root / connector._SESSION_LOCK_FILE).exists()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("revoke", ["marker", "registration"])
+async def test_local_authority_revocation_closes_idle_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, revoke: str
+) -> None:
+    root, project = _root(tmp_path)
+    connector._write_private_json(root, connector._ENABLED_FILE, connector._identity_state(RECORD))
+    monkeypatch.setattr(connector, "_LOCAL_AUTHORITY_POLL_SECONDS", 0.01)
+    entered = asyncio.Event()
+    closed = asyncio.Event()
+    starts = 0
+
+    async def run_session(**_kwargs: object) -> HandshakeReceipt:
+        nonlocal starts
+        starts += 1
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    task = asyncio.create_task(
+        connector._run_connector(
+            root=root,
+            identity_loader=lambda _: RECORD.copy(),
+            project_resolver=lambda **_: project,
+            key_loader=lambda *_: Ed25519PrivateKey.generate(),
+            session_runner=run_session,
+        )
+    )
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        if revoke == "marker":
+            connector._remove_private_file(root, connector._ENABLED_FILE)
+        else:
+            (root / "projects" / f"{PROJECT}.json").unlink()
+        assert await asyncio.wait_for(task, timeout=0.5) == 0
+        assert closed.is_set()
+        assert starts == 1
+        assert not connector._session_lock_held(root)
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)

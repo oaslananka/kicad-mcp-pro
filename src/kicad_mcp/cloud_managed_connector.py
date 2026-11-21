@@ -56,6 +56,7 @@ _ENABLED_FIELDS = frozenset({"enabled", "ownerSub", "cloudOrigin", "deviceId", "
 _STATUS_FIELDS = frozenset({"state", "updatedAtUnixMs", "pid"})
 _STATUS_VALUES = frozenset({"connecting", "connected", "unavailable"})
 _MAX_READS = 16
+_LOCAL_AUTHORITY_POLL_SECONDS = 1.0
 _SESSION_LIFETIME_MS = 280_000
 _CONNECTED_STATUS_MAX_AGE_MS = 305_000
 _CONNECTING_STATUS_MAX_AGE_MS = 45_000
@@ -382,6 +383,18 @@ def _dispatcher_factory(
     return create
 
 
+async def _wait_for_local_stop(stop: asyncio.Event, root: Path, record: dict[str, str]) -> None:
+    """Close idle as well as active sessions when local authority is removed."""
+    while not stop.is_set():
+        if not _is_enabled(root, record):
+            stop.set()
+            return
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=_LOCAL_AUTHORITY_POLL_SECONDS)
+        except TimeoutError:
+            continue
+
+
 async def _session_until_stopped(
     *,
     stop_event: asyncio.Event,
@@ -419,7 +432,7 @@ async def _session_until_stopped(
         return await session_runner(**options)
 
     session_task = asyncio.create_task(run_session())
-    stop_task = asyncio.create_task(stop_event.wait())
+    stop_task = asyncio.create_task(_wait_for_local_stop(stop_event, root, record))
     try:
         done, _ = await asyncio.wait({session_task, stop_task}, return_when=asyncio.FIRST_COMPLETED)
         if stop_task in done:
