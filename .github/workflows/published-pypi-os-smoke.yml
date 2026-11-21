@@ -4,6 +4,11 @@ name: Published PyPI OS Smoke
 # Do not make this an always-on PR gate or run a KiCad GUI installer here.
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Already published stable PyPI version (e.g. 4.21.4)."
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -14,7 +19,7 @@ concurrency:
 
 jobs:
   clean-published-install:
-    name: PyPI 4.5.0 clean MCP (${{ matrix.os }})
+    name: Published PyPI clean MCP (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 18
     strategy:
@@ -36,14 +41,19 @@ jobs:
       - name: Clean PyPI install and real MCP read-only diagnostic
         shell: bash
         env:
+          SMOKE_VERSION: ${{ inputs.version }}
           UV_NO_CACHE: '1'
           UV_NO_PROGRESS: '1'
         run: |
           set -euo pipefail
+          if ! [[ "$SMOKE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected a stable published version (MAJOR.MINOR.PATCH)." >&2
+            exit 1
+          fi
           uv python install 3.13
           venv="$RUNNER_TEMP/kicad-pypi-clean"
           uv venv --python 3.13 "$venv"
-          uv pip install --python "$venv" 'kicad-mcp-pro==4.5.0'
+          uv pip install --python "$venv" "kicad-mcp-pro==$SMOKE_VERSION"
           uv run --no-project --python "$venv" python - <<'PYSMOKE'
           import asyncio
           import hashlib
@@ -57,7 +67,8 @@ jobs:
           from mcp import ClientSession
           from mcp.client.stdio import StdioServerParameters, stdio_client
 
-          assert importlib.metadata.version('kicad-mcp-pro') == '4.5.0'
+          expected_version = os.environ['SMOKE_VERSION']
+          assert importlib.metadata.version('kicad-mcp-pro') == expected_version
           root = Path('tests/fixtures/benchmark_projects/pass_minimal_mcu_board')
           filenames = ('demo.kicad_pro', 'demo.kicad_sch', 'demo.kicad_pcb')
           before = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
@@ -78,7 +89,7 @@ jobs:
               async with stdio_client(parameters) as streams:
                   async with ClientSession(*streams) as client:
                       info = await asyncio.wait_for(client.initialize(), timeout=45)
-                      assert info.server_info.version == '4.5.0'
+                      assert info.server_info.version == expected_version
                       tools = await asyncio.wait_for(client.list_tools(), timeout=45)
                       names = {tool.name for tool in tools.tools}
                       for tool_name in ('kicad_get_version', 'pcb_get_board_summary'):
@@ -106,6 +117,9 @@ jobs:
               for name in filenames:
                   shutil.copyfile(root / name, project / name)
               asyncio.run(check_project(project))
+              assert all(hashlib.sha256((project / name).read_bytes()).hexdigest()
+                         == before[name] for name in filenames)
+              print('COPIED_PROJECT_UNCHANGED=PASS')
               assert all(hashlib.sha256((root / name).read_bytes()).hexdigest()
                          == before[name] for name in filenames)
           print('ORIGINAL_FIXTURE_UNCHANGED=PASS')

@@ -184,3 +184,20 @@ def test_container_publish_uses_immutable_release_tag_for_production() -> None:
         "github.event.release.prerelease == false }}"
     )
     _require(stable_latest_rule in workflow, "test contract failed")
+
+
+def test_published_pypi_smoke_binds_install_and_mcp_assertions_to_requested_version() -> None:
+    workflow = _read(".github/workflows/published-pypi-os-smoke.yml")
+
+    assert "version:" in workflow
+    assert "required: true" in workflow
+    assert "SMOKE_VERSION: ${{ inputs.version }}" in workflow
+    assert '[[ "$SMOKE_VERSION" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]' in workflow
+    assert '"kicad-mcp-pro==$SMOKE_VERSION"' in workflow
+    assert "expected_version = os.environ['SMOKE_VERSION']" in workflow
+    assert "importlib.metadata.version('kicad-mcp-pro') == expected_version" in workflow
+    assert "info.server_info.version == expected_version" in workflow
+    assert "hashlib.sha256((project / name).read_bytes()).hexdigest()" in workflow
+    assert "4.5.0" not in workflow
+    assert "contents: read" in workflow
+    assert "id-token: write" not in workflow
