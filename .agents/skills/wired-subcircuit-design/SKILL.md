@@ -1,18 +1,37 @@
 ---
 name: wired-subcircuit-design
-description: Build a genuinely wired, showcase-grade KiCad schematic with KiCad MCP Pro — wired sub-circuit islands plus a tidy label bus — instead of the correct-but-plain by-name-label output of auto layout.
+description: Default workflow for authoring readable new MCU, power, interface and other functional KiCad schematics with KiCad MCP Pro; use wired subcircuits, a tidy label bus, native ERC and rendered review.
 ---
 
 # Wired Sub-circuit Design Skill
 
-Use this skill when an agent must produce a schematic that *looks* like a person
-drew it — wired functional blocks, conventional power, a clean breakout bus — not
-just an electrically valid netlist. It is the deliberate, higher-effort path that
-`sch_build_circuit(auto_layout=True, nets=...)` cannot reach.
+Use this skill for ordinary new functional schematics, not just showcase requests.
+A readable drawing has wired functional blocks, conventional power and a clean
+breakout bus, not merely an electrically valid netlist. Choose this workflow before
+using `sch_build_circuit(auto_layout=True, nets=...)`.
 
 Specific to `oaslananka/kicad-mcp-pro`. Keep in sync with
 `docs/tools-reference.generated.md`. Worked reference:
 [`examples/gallery/esp32-c3-wroom-02-breakout`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/examples/gallery/esp32-c3-wroom-02-breakout/README.md).
+
+## Default for new functional schematics
+
+For an ordinary MCU development board, agree the circuit and group components by
+function before choosing coordinates: power input/regulator and capacitors,
+MCU/decoupling, EN/RESET and BOOT networks, UART/GPIO interfaces, and indicator
+LEDs. Keep short connections within each block visibly wired; use matched labels
+for long inter-block connections and breakouts. Choose the smallest page that fits
+content, readable spacing and headings; do not enlarge the page to hide scattered
+placement. Keep component Value (for example `10k`) separate from net/function
+names (for example `EN`). Adapt the blocks to the actual design; do not impose
+ESP32 coordinates or add circuitry that was not requested.
+
+For an existing design, preserve its intent and approved layout. Do not relocate already-wired symbols independently.
+Use previewable connectivity-preserving changes only; compare the netlist or
+connectivity signature and reference identities before and after. Refuse or roll
+back a change that alters connectivity or cannot be verified. A collision-safe
+label-only build remains an explicit fallback when placement or wiring cannot be
+verified, not a claim of professional readability.
 
 ## Why auto layout is not enough
 
@@ -72,8 +91,10 @@ beside a wire raises `label_dangling`.
    UUID rule).
 4. **See.** Render with `sch_render_png` (or `kicad-cli sch export svg`) and judge
    against the rubric below. The render is ground truth.
-5. **Refine** placement for overlaps and composition; rebuild. Stop when ERC is
-   clean and nothing overlaps — do not chase the cosmetic score past that.
+5. **Refine** placement for overlaps and composition; rebuild only the approved
+   new design. Complete only when native ERC, connectivity and rendered functional
+   block readability pass independently. If native rendering is unavailable,
+   report visual acceptance as unverified; a high cosmetic score is not a substitute.
 
 ## Rubric — what "wired showcase" looks like
 

@@ -320,3 +320,15 @@ def test_symlinked_canonical_nested_directory_rejected(
         pytest.skip("Filesystem disallows directory symlink creation")
     with pytest.raises(ValueError, match="symlink"):
         skill_sync.expected_skill_files()
+
+
+def test_new_schematic_workflow_defaults_to_wired_functional_blocks() -> None:
+    workflow = (ROOT / "docs/tools-agent-workflow.md").read_text(encoding="utf-8")
+    wired = (ROOT / "skills/wired-subcircuit-design/SKILL.md").read_text(encoding="utf-8")
+    visual = (ROOT / "skills/visual-excellence/SKILL.md").read_text(encoding="utf-8")
+    assert "Default new-schematic authoring" in workflow
+    assert "wired-subcircuit-design" in workflow
+    assert "Default for new functional schematics" in wired
+    assert "EN/RESET" in wired and "BOOT" in wired
+    assert "Do not relocate already-wired symbols independently" in wired
+    assert "cosmetic score alone is not completion" in visual

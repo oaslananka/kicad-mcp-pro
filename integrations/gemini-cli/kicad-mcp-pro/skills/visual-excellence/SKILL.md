@@ -67,8 +67,9 @@ confirm with the render and the visual diff, and finish with an ERC pass.
 
 Run this loop per sheet until the score meets the target or no fixer applies:
 
-1. **Measure.** Call `sch_cosmetic_score`. If `cosmetic_score` ≥ target, stop —
-   the sheet is clean. Otherwise read `worst_category`.
+1. **Measure.** Call `sch_cosmetic_score`. If `cosmetic_score` ≥ target, skip further
+   score-driven fixes, but still perform the rendered review and ERC below: the
+   cosmetic score alone is not completion. Otherwise read `worst_category`.
 2. **Plan (dry run).** Call the fixer matching `worst_category` with the default
    `apply=false`. Read `connectivity_preserved` and the `changes` list.
    - `grid` → `sch_align_to_grid`
@@ -114,8 +115,9 @@ defect that ERC passes and cosmetic review must catch. When you evaluate a
   read cleanly against nearby text.
 - **Conventional symbols** — power up, ground down, no sideways power symbols.
 - **Consistent typography** — one dominant font size across the sheet.
-- **Balanced composition** — content spreads across the sheet rather than
-  crowding one corner.
+- **Balanced composition** — components form understandable functional blocks;
+  short intra-block wiring is visible, labels are paired, and page size follows
+  content. For new schematics use the `wired-subcircuit-design` skill before layout.
 - **Complete title block** — title, revision, date, and company are filled in.
 
 Judge the rendered image, not just the score: the score is a fast proxy, but the
