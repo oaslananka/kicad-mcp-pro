@@ -67,15 +67,18 @@ class ConnectorAlreadyRunningError(RuntimeError):
 
 
 @contextmanager
-def _connector_session_lock(root: Path) -> Iterator[None]:
+def _connector_session_lock(root: Path, *, create: bool = True) -> Iterator[None]:
     """Hold one private, nonblocking POSIX process lock for the whole session loop."""
     import fcntl
 
     folder_fd = _open_owner_private_dir(root / _SESSION_LOCK_FILE)
     try:
+        flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+        if create:
+            flags |= os.O_CREAT
         fd = os.open(
             _SESSION_LOCK_FILE,
-            os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+            flags,
             0o600,
             dir_fd=folder_fd,
         )
@@ -102,6 +105,17 @@ def _connector_session_lock(root: Path) -> Iterator[None]:
             os.close(fd)
     finally:
         os.close(folder_fd)
+
+
+def _session_lock_held(root: Path) -> bool:
+    """Do not report cached connection state without a live lock owner."""
+    try:
+        with _connector_session_lock(root, create=False):
+            return False
+    except ConnectorAlreadyRunningError:
+        return True
+    except (OSError, ValueError):
+        return False
 
 
 def _remove_private_file(root: Path, name: str) -> None:
@@ -312,7 +326,7 @@ def _status() -> str:
         marker.lstat()
     except FileNotFoundError:
         return "Off"
-    if _enabled_record(root) is None:
+    if _enabled_record(root) is None or not _session_lock_held(root):
         return "Unavailable"
     active = _systemctl("is-active", _SERVICE_NAME)
     if active.returncode != 0 or active.stdout.strip() != "active":
@@ -483,6 +497,8 @@ async def _run_connector(
         return 0
 
     with _connector_session_lock(registry):
+        # Invalidate the previous process's cached status before loading keys.
+        _write_status(registry, "unavailable")
         failures = 0
         while not stop.is_set() and _enabled_record(registry):
             try:

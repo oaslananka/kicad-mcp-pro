@@ -451,19 +451,20 @@ def test_status_reports_connection_state_and_stale_status_as_unavailable(
         "_systemctl",
         lambda *args: subprocess.CompletedProcess(args, 0, "active", ""),
     )
-    connector._write_status(root, "connected")
-    assert connector.main(["status"]) == 0
-    assert capsys.readouterr().out.strip() == "Connected"
-    connector._write_status(root, "connecting")
-    assert connector.main(["status"]) == 0
-    assert capsys.readouterr().out.strip() == "Connecting"
-    connector._write_private_json(
-        root,
-        connector._STATUS_FILE,
-        {"state": "connected", "updatedAtUnixMs": 0, "pid": os.getpid()},
-    )
-    assert connector.main(["status"]) == 0
-    assert capsys.readouterr().out.strip() == "Unavailable"
+    with connector._connector_session_lock(root):
+        connector._write_status(root, "connected")
+        assert connector.main(["status"]) == 0
+        assert capsys.readouterr().out.strip() == "Connected"
+        connector._write_status(root, "connecting")
+        assert connector.main(["status"]) == 0
+        assert capsys.readouterr().out.strip() == "Connecting"
+        connector._write_private_json(
+            root,
+            connector._STATUS_FILE,
+            {"state": "connected", "updatedAtUnixMs": 0, "pid": os.getpid()},
+        )
+        assert connector.main(["status"]) == 0
+        assert capsys.readouterr().out.strip() == "Unavailable"
 
 
 def test_status_reports_unavailable_when_enabled_marker_is_invalid(
@@ -734,3 +735,32 @@ def test_main_reports_existing_session_without_a_traceback(monkeypatch, capsys) 
     monkeypatch.setattr(connector, "_run_service", already_running)
     assert connector.main(["run"]) == 1
     assert "already running" in capsys.readouterr().err
+
+
+def test_stale_connected_status_without_session_owner_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root, _project = _root(tmp_path)
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(
+        connector, "_systemctl", lambda *args: subprocess.CompletedProcess(args, 0, "active", "")
+    )
+    connector._write_private_json(root, connector._ENABLED_FILE, connector._identity_state(RECORD))
+    connector._write_status(root, "connected")
+    with connector._connector_session_lock(root):
+        pass
+    assert connector._status() == "Unavailable"
+
+
+def test_status_without_lock_does_not_create_lock_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root, _project = _root(tmp_path)
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(
+        connector, "_systemctl", lambda *args: subprocess.CompletedProcess(args, 0, "active", "")
+    )
+    connector._write_private_json(root, connector._ENABLED_FILE, connector._identity_state(RECORD))
+    connector._write_status(root, "connected")
+    assert connector._status() == "Unavailable"
+    assert not (root / connector._SESSION_LOCK_FILE).exists()
