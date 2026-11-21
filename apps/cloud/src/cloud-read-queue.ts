@@ -10,7 +10,9 @@ type Waiter={
   timer:ReturnType<typeof setTimeout>;
 };
 type Lane={waiters:Waiter[]};
-const DEFAULT_WAIT_MS=4_000;
+// Typical signed KiCad live-GUI reads take around seven seconds, so two
+// queued reads need more than the old four-second tolerance.
+const DEFAULT_WAIT_MS=16_000;
 const DEFAULT_MAX_WAITERS=3;
 
 export function createCloudReadLane(

@@ -80,3 +80,23 @@ test("inventory and owner identity isolate read queues",async()=>{
   gate.resolve();
   assert.equal(await pending,"first");
 });
+test("default READ queue survives a normal GUI operation lasting more than four seconds",async()=>{
+  const inventory={};
+  const gate=deferred<void>();
+  let secondExecuted=false;
+  const first=runSerializedCloudRead(inventory,"owner","device",async()=>{
+    await gate.promise;
+    return "first";
+  },()=>"busy");
+  const second=runSerializedCloudRead(inventory,"owner","device",async()=>{
+    secondExecuted=true;
+    return "second";
+  },()=>"busy");
+  // Real KiCad READ calls take roughly seven seconds end-to-end; the prior
+  // four-second queue timeout rejected the second request prematurely.
+  await new Promise<void>(resolve=>setTimeout(resolve,5_200));
+  gate.resolve();
+  assert.equal(await first,"first");
+  assert.equal(await second,"second");
+  assert.equal(secondExecuted,true);
+});
