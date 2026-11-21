@@ -426,12 +426,17 @@ export function createCloudMcpHandler(
           inventory,actor,request.project_id);
         if(!project)return {...text({success:false,selectionRequired,reason:"project_not_granted"}),
           isError:true};
-        let tool:GenericMcpTool|undefined;
+        let catalog:Awaited<ReturnType<GenericMcpCatalogReader>>=null;
         try{
-          const catalog=await genericMcpCatalog(project.deviceId,project.id,0,request.tool_name);
-          tool=catalog?.tools.find(t=>t.name===request.tool_name);
+          catalog=await genericMcpCatalog(project.deviceId,project.id,0,request.tool_name);
         }catch{/* No call without local contract. */}
-        if(!tool)return {...text({success:false,reason:"local_tool_unavailable"}),isError:true};
+        if(!catalog)return {...text({success:false,reason:"owner_connector_mcp_unavailable",
+          guidance:"The signed local catalog could not be retrieved. Check the device connection and run operations one at a time; retry discovery after the current operation or session refresh completes. No local tool call was dispatched."
+        }),isError:true};
+        const tool=catalog.tools.find(t=>t.name===request.tool_name);
+        if(!tool)return {...text({success:false,reason:"local_tool_unavailable",
+          guidance:"The tool is absent from the current authorized local catalog. Discover available tools with local_mcp_catalog."
+        }),isError:true};
         if(tool.accessMode!==mode)return {...text({
           success:false,reason:tool.accessMode==="write"
             ?"write_tool_requires_local_mcp_write":"read_tool_requires_local_mcp_read"
