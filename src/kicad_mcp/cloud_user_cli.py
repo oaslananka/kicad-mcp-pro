@@ -1150,43 +1150,60 @@ def _resolve_device_alias(alias: str | None) -> str:
 
 
 def _try_reconnect_existing(root: Path, origin: str) -> bool:
+    """Resume an existing owner identity; only an empty registry may pair again."""
     projects_dir = root / "projects"
-    keys_dir = root / "keys"
-    if not (projects_dir.exists() and any(projects_dir.iterdir())):
+    try:
+        has_registration = any(projects_dir.iterdir())
+    except FileNotFoundError:
         return False
+    except OSError as exc:
+        raise typer.BadParameter(
+            "Unable to inspect existing Cloud registration. Run cloud status."
+        ) from exc
+    if not has_registration:
+        return False
+
     from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
     try:
         existing = _single_registered_identity(root)
-    except Exception:
-        return False
-    if not (existing and existing.get("cloudOrigin") == origin):
-        return False
-    key_file = keys_dir / f"{existing['keySlot']}.pem"
+    except Exception as exc:
+        raise typer.BadParameter(
+            "Existing Cloud registration needs local repair. Run cloud status."
+        ) from exc
+    if existing["cloudOrigin"] != origin:
+        raise typer.BadParameter(
+            "A different Cloud origin is already registered. Run cloud status."
+        )
+    key_file = root / "keys" / f"{existing['keySlot']}.pem"
     if not key_file.is_file():
-        return False
+        raise typer.BadParameter(
+            "Existing Cloud registration is missing its signing key. Run cloud status."
+        )
 
     typer.echo("Found valid existing Cloud device and project registration:")
     typer.echo(f"  Device ID:  {existing['deviceId']}")
     typer.echo(f"  Project ID: {existing['projectId']}")
     typer.echo(f"  Directory:  {existing['directory']} ({existing['filenameStem']})")
 
-    from kicad_mcp.cloud_managed_connector import _enable, _status
+    from kicad_mcp.cloud_managed_connector import _status
 
-    current_status = _status()
+    try:
+        current_status = _status()
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+        current_status = "Unavailable"
     if current_status == "Off":
         typer.echo("Starting Cloud Connector...")
-        try:
-            _enable()
-            for _ in range(5):
-                time.sleep(1)
-                current_status = _status()
-                if current_status in ("Connected", "Connecting"):
-                    break
-        except Exception as exc:
-            typer.echo(f"Notice: Connector could not be started automatically: {exc}")
+        current_status = _start_connector()
     typer.echo(f"Connector Status: {current_status}")
     typer.echo(f"Cloud web panel:  {origin}/devices")
+    if current_status not in ("Connected", "Connecting"):
+        typer.echo(
+            "Existing registration preserved; Connector needs attention. "
+            "Run cloud status before retrying cloud reconnect on a supported platform.",
+            err=True,
+        )
+        raise typer.Exit(1)
     return True
 
 

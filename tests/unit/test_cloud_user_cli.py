@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 from kicad_mcp.server import app
@@ -267,7 +268,8 @@ def test_setup_performs_one_command_onboarding(monkeypatch, tmp_path) -> None:
     assert data["ownerSub"] == "github|test-owner"
 
 
-def test_setup_existing_valid_registration_reconnects(monkeypatch, tmp_path) -> None:
+@pytest.mark.parametrize("status", ["Connected", "Connecting", "Off"])
+def test_setup_existing_valid_registration_reconnects(monkeypatch, tmp_path, status) -> None:
     (tmp_path / "board.kicad_pro").touch()
     monkeypatch.chdir(tmp_path)
     cloud_root = tmp_path / "cloud_registry"
@@ -300,12 +302,110 @@ def test_setup_existing_valid_registration_reconnects(monkeypatch, tmp_path) -> 
         lambda *_args: pytest.fail("Must not re-enroll existing device"),
     )
 
-    monkeypatch.setattr("kicad_mcp.cloud_managed_connector._status", lambda: "Connected")
+    from kicad_mcp import cloud_user_cli
+
+    states = iter([status, "Connecting"])
+    starts: list[str] = []
+    monkeypatch.setattr("kicad_mcp.cloud_managed_connector._status", lambda: next(states))
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_managed_connector._enable", lambda: starts.append("start") or 0
+    )
+    monkeypatch.setattr(cloud_user_cli.time, "sleep", lambda _seconds: None)
 
     result = CliRunner().invoke(app, ["cloud", "setup", "--no-browser"])
     assert result.exit_code == 0, result.output
     assert "Found valid existing Cloud device and project registration" in result.output
     assert proj_id in result.output
+    assert starts == (["start"] if status == "Off" else [])
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "invalid-record",
+        "different-origin",
+        "missing-key",
+        "start-failed",
+        "still-off",
+        "unavailable",
+        "status-error",
+    ],
+)
+def test_setup_existing_registration_needs_attention_without_repairing(
+    monkeypatch, tmp_path, failure
+) -> None:
+    """Repeating setup must preserve existing identity and report failed recovery."""
+    from kicad_mcp import cloud_user_cli
+
+    project = tmp_path / "board.kicad_pro"
+    project.touch()
+    root = tmp_path / "cloud"
+    projects = root / "projects"
+    keys = root / "keys"
+    projects.mkdir(parents=True)
+    keys.mkdir()
+    project_id = "33333333-3333-4333-8333-333333333333"
+    slot = "44444444-4444-4444-8444-444444444444"
+    record = projects / f"{project_id}.json"
+    record.write_text("preserve-existing-record", encoding="utf-8")
+    key = keys / f"{slot}.pem"
+    if failure != "missing-key":
+        key.write_text("preserve-existing-key", encoding="utf-8")
+    baseline = {p.name: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+
+    def read_identity(_root):
+        if failure == "invalid-record":
+            raise ValueError("invalid private registry")
+        return {
+            "ownerSub": "github|test-owner",
+            "cloudOrigin": (
+                "https://other-cloud.example.com"
+                if failure == "different-origin"
+                else cloud_user_cli.DEFAULT_CLOUD_ORIGIN
+            ),
+            "deviceId": "55555555-5555-4555-8555-555555555555",
+            "projectId": project_id,
+            "keySlot": slot,
+            "directory": str(tmp_path),
+            "filenameStem": "board",
+        }
+
+    starts: list[str] = []
+
+    def start():
+        starts.append("start")
+        if failure == "start-failed":
+            raise RuntimeError("user service unavailable")
+        return 0
+
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_registered_pilot._single_registered_identity", read_identity
+    )
+    monkeypatch.setattr("kicad_mcp.cloud_managed_connector._enable", start)
+
+    def read_status():
+        if failure == "status-error":
+            raise OSError("user service manager unavailable")
+        return "Unavailable" if failure == "unavailable" else "Off"
+
+    monkeypatch.setattr("kicad_mcp.cloud_managed_connector._status", read_status)
+    monkeypatch.setattr(cloud_user_cli.time, "sleep", lambda _seconds: None)
+    enrollments: list[str] = []
+
+    def unexpected_enrollment(*_args: object) -> None:
+        enrollments.append("enroll")
+        raise RuntimeError("unexpected enrollment")
+
+    monkeypatch.setattr("kicad_mcp.cloud_pair.enroll", unexpected_enrollment)
+    result = CliRunner().invoke(
+        app, ["cloud", "setup", "--no-browser", "--project-dir", str(tmp_path)]
+    )
+    assert enrollments == []
+    assert result.exit_code != 0, result.output
+    assert "cloud status" in " ".join(unstyle(result.output).replace("│", " ").split())
+    assert starts == (["start"] if failure in {"start-failed", "still-off"} else [])
+    assert {p.name: p.read_bytes() for p in root.rglob("*") if p.is_file()} == baseline
 
 
 def test_setup_handles_pairing_error(monkeypatch, tmp_path) -> None:
