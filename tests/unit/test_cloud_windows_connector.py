@@ -614,9 +614,10 @@ async def test_cloud_policy_1008_stops_reconnect_without_changing_owner_pairing(
     assert connector.local_state() == "Configured (not connected)"
 
 
+@pytest.mark.parametrize("close_code", [1011, 1013])
 @pytest.mark.asyncio
 async def test_nonpolicy_websocket_close_remains_retryable(
-    local_user_connector, monkeypatch: pytest.MonkeyPatch
+    local_user_connector, monkeypatch: pytest.MonkeyPatch, close_code: int
 ) -> None:
     from websockets.exceptions import ConnectionClosedError
     from websockets.frames import Close
@@ -634,7 +635,7 @@ async def test_nonpolicy_websocket_close_remains_retryable(
         calls += 1
         if calls == 1:
             raise CloudHandshakeDeniedError("handshake denied") from ConnectionClosedError(
-                Close(1011, "failure"), Close(1011, "failure"), True
+                Close(close_code, "failure"), Close(close_code, "failure"), True
             )
         stop.set()
         return HandshakeReceipt(device_id=project.device_id, session_id="verified-test")
