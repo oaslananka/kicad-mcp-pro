@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import webbrowser
 from pathlib import Path
 
 import pytest
@@ -188,6 +189,27 @@ def test_cloud_pair_no_browser_prints_approval_link_without_launching(
         "https://example.com/pair#challenge=fixture-challenge&code=FIXTURE-CODE"
         in capsys.readouterr().out
     )
+
+
+@pytest.mark.parametrize("error_type", [OSError, webbrowser.Error])
+def test_cloud_pair_browser_launch_error_prints_manual_approval_link(
+    monkeypatch, capsys, error_type
+) -> None:
+    from kicad_mcp import cloud_pair
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    url = "https://example.com/pair#challenge=fixture-challenge&code=FIXTURE-CODE"
+    calls = []
+
+    def fail_open(review_url: str, **kwargs: object) -> bool:
+        calls.append((review_url, kwargs))
+        raise error_type("browser unavailable")
+
+    monkeypatch.setattr(cloud_pair.webbrowser, "open", fail_open)
+    cloud_pair._approval("https://example.com/pair", "fixture-challenge", "FIXTURE-CODE")
+    assert calls == [(url, {"new": 2, "autoraise": True})]
+    assert url in capsys.readouterr().out
 
 
 def test_cloud_connect_rejects_ambiguous_registration_before_enrollment(
