@@ -514,6 +514,52 @@ export function createCloudMcpHandler(
         inputSchema:localToolSchema,annotations:readonly,
         _meta:{securitySchemes:[{type:"oauth2",scopes:["projects:read"]}]}
       },async request=>invokeLocalTool("readonly",request));
+      // The embedded Project Review iframe needs one fixed READ operation.
+      // Do not expose the generic local_mcp_read gateway or WRITE catalog to
+      // widget script. All live project grants and signed Connector checks
+      // remain enforced inside the existing readonly invocation path.
+      mcp.registerTool("get_project_editor_status",{
+        description:"Check whether the KiCad PCB Editor is available for one granted project using a fixed signed, read-only server-info request. Does not authorize editing.",
+        inputSchema:z.object({project_id:z.string().uuid()}),annotations:readonly,
+        _meta:{ui:{visibility:["app"]},"openai/widgetAccessible":true,
+          securitySchemes:[{type:"oauth2",scopes:["projects:read"]}]}
+      },async ({project_id})=>{
+        // Even an app-only tool remains subject to the server's OAuth gate.
+        if(!actor.scopes.has("projects:read"))
+          return {...text({success:false,reason:"insufficient_scope_read_required"}),isError:true};
+        const result=await invokeLocalTool("readonly",{
+          project_id,tool_name:"kicad_get_server_info",arguments:{}
+        });
+        // The native server-info payload may contain local absolute paths,
+        // profiles and environment details. Never expose them to an iframe.
+        const data=result.structuredContent as {
+          success?:boolean;reason?:string;
+          local_result?:{isError?:boolean;structuredContent?:{
+            kicad?:{ipcAvailable?:unknown;livePcbContext?:unknown}
+          }}
+        }|undefined;
+        const local=data?.local_result;
+        const kicad=local?.structuredContent?.kicad;
+        if(data?.success===true&&local?.isError!==true&&
+          typeof kicad?.ipcAvailable==="boolean"&&
+          typeof kicad?.livePcbContext==="boolean")
+          return text({success:true,local_result:{isError:false,structuredContent:{
+            kicad:{ipcAvailable:kicad.ipcAvailable,
+              livePcbContext:kicad.livePcbContext}
+          }}});
+        // Preserve only a known, user-actionable timeout status.
+        const localReason=(local?.structuredContent as {reason?:unknown}|undefined)?.reason;
+        if(local?.isError===true&&localReason==="local_mcp_read_timeout")
+          return text({success:true,local_result:{isError:true,
+            structuredContent:{reason:"local_mcp_read_timeout"}}});
+        // Refuse without reflecting arbitrary native strings or tool data.
+        const reason=data?.reason;
+        return {...text({success:false,reason:
+          reason==="project_not_granted"||
+          reason==="owner_connector_mcp_busy"||
+          reason==="owner_connector_mcp_unavailable"
+            ?reason:"editor_status_unavailable"}),isError:true};
+      });
       mcp.registerTool("local_mcp_write",{
         description:"Run a WRITE tool from the real installed KiCad MCP catalog. Requires projects:write OAuth consent, project Edit grant, and a locally owner-approved signed edit session. Never executes manufacturing-only operations. A timed-out write has unknown outcome: inspect the project before retrying.",
         inputSchema:localToolSchema,

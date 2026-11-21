@@ -31,13 +31,15 @@ test("portable MCP App presents an accessible, host-adaptive project review",()=
   assert.match(script,/Editing is not enabled in this Connector session/);
   assert.match(script,/Review your project Edit access/);
   assert.match(script,/advertises native editing but does not prove authorization/);
-  assert.match(script,/name:"local_mcp_read"/);
-  assert.match(script,/tool_name:"kicad_get_server_info"/);
-  assert.match(script,/name:"local_mcp_catalog"/);
-  assert.match(script,/tool_name:"pcb_move_footprint"/);
-  assert.match(script,/accessMode==="write"/);
+  assert.match(script,/name:"get_project_editor_status"/);
+  assert.doesNotMatch(script,/name:"local_mcp_read"/);
+  assert.doesNotMatch(script,/name:"local_mcp_catalog"/);
+  assert.doesNotMatch(script,/name:"local_mcp_write"/);
+  assert.doesNotMatch(script,/pcb_move_footprint/);
   assert.match(template,/>Check PCB Editor<\/button>/);
-  assert.match(script,/does not authorize editing or prove save\/reopen/);
+  assert.match(template,/KiCad MCP Cloud/);
+  assert.doesNotMatch(template,/KiCad MCP \? Cloud/);
+  assert.match(script,/does not authorize editing/);
   assert.match(script,/reported capabilities do not include the MCP bridge/);
   assert.match(script,/does not confirm native editing or KiCad readiness/);
   assert.doesNotMatch(script,/innerHTML\s*=/);
@@ -106,45 +108,30 @@ test("PCB editor check is available without native write and checks real read-on
   }}}));
   await h.nodes["check-editor"].click?.();
   assert.equal(h.calls.length,1);
-  assert.equal(h.calls[0]?.name,"local_mcp_read");
-  assert.equal(h.calls[0]?.arguments.tool_name,"kicad_get_server_info");
+  assert.equal(h.calls[0]?.name,"get_project_editor_status");
+  assert.equal(h.calls[0]?.arguments.tool_name,undefined);
   assert.equal(h.calls[0]?.arguments.project_id,"22222222-2222-4222-8222-222222222222");
   assert.match(h.nodes["editor-status"].textContent,/PCB Editor IPC is unavailable/);
   assert.equal(h.nodes["check-editor"].disabled,false);
   assert.equal(h.calls.some(call=>call.name==="local_mcp_catalog"),false);
 });
 
-test("PCB editor verification does not conflate live IPC or read calls with write grants",async()=>{
+test("PCB Editor status uses only a scoped widget READ without cataloguing WRITE",async()=>{
   const h=createReviewHarness();
   h.app.ontoolresult?.(h.project("advertised"));
-  h.setRequest(async(call)=>{
-    if(call.name==="local_mcp_read")return {structuredContent:{
-      success:true,local_result:{isError:false,
-        structuredContent:{kicad:{ipcAvailable:true,livePcbContext:true}}}
-    }};
-    return {structuredContent:{available:true,tools:[{
-      name:"pcb_move_footprint",accessMode:"write"
-    }]}};
-  });
+  h.setRequest(async()=>({structuredContent:{success:true,local_result:{
+    isError:false,structuredContent:{kicad:{ipcAvailable:true,livePcbContext:true}}
+  }}}));
   await h.nodes["check-editor"].click?.();
-  assert.equal(h.calls.length,2);
-  assert.equal(h.calls[0]?.name,"local_mcp_read");
-  assert.equal(h.calls[1]?.name,"local_mcp_catalog");
-  assert.equal(h.calls[1]?.arguments.tool_name,"pcb_move_footprint");
+  assert.equal(h.calls.length,1);
+  assert.equal(h.calls[0]?.name,"get_project_editor_status");
   assert.match(h.nodes["editor-status"].textContent,/does not authorize editing/);
-  assert.match(h.nodes["editor-status"].textContent,/Edit permissions in Devices|does not authorize editing/);
-  h.setRequest(async(call)=>call.name==="local_mcp_read"
-    ?{structuredContent:{success:true,local_result:{isError:false,
-      structuredContent:{kicad:{ipcAvailable:true,livePcbContext:true}}}}}
-    :{structuredContent:{available:true,tools:[]}}
-  );
-  await h.nodes["check-editor"].click?.();
-  assert.match(h.nodes["editor-status"].textContent,/PCB move tool is not listed/);
+  assert.equal(h.calls.some(call=>call.name==="local_mcp_catalog"||call.name==="local_mcp_write"),false);
+
   h.app.ontoolresult?.(h.project("not_advertised"));
   await h.nodes["check-editor"].click?.();
   assert.match(h.nodes["editor-status"].textContent,/native editing is not enabled/);
-  assert.match(h.nodes["editor-status"].textContent,/Edit permissions in Devices|does not authorize editing/);
-  assert.equal(h.calls.filter(call=>call.name==="local_mcp_catalog").length,2);
+  assert.equal(h.calls.every(call=>call.name==="get_project_editor_status"),true);
   h.setRequest(async()=>{throw Error("secret/private-path");});
   await h.nodes["check-editor"].click?.();
   assert.match(h.nodes["editor-status"].textContent,/Could not verify PCB Editor/);
@@ -166,7 +153,7 @@ test("a refused or malformed local engine reply does not claim KiCad readiness",
     await h.nodes["check-editor"].click?.();
     assert.match(h.nodes["editor-status"].textContent,/Could not verify PCB Editor/);
   }
-  assert.equal(h.calls.every(call=>call.name==="local_mcp_read"),true);
+  assert.equal(h.calls.every(call=>call.name==="get_project_editor_status"),true);
   h.setRequest(async()=>({structuredContent:{
     success:true,local_result:{isError:true,structuredContent:{
       success:false,reason:"local_mcp_read_timeout",
