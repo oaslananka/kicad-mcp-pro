@@ -54,10 +54,17 @@ def cloud_entry(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
     if not _is_windows():
-        raise typer.BadParameter(
-            "Single-command Cloud connection is currently available on Windows. "
-            "Local KiCad MCP remains available on this operating system."
+        if not _owner_terminal():
+            raise typer.BadParameter("Cloud foreground requires an interactive owner terminal.")
+        connect(
+            alias=_DEFAULT_DEVICE_ALIAS,
+            cloud_origin=DEFAULT_CLOUD_ORIGIN,
+            new_device=False,
+            enable_native_write=False,
+            project_dir=None,
+            no_browser=False,
         )
+        return
     from kicad_mcp.cloud_windows_connector import selected_project
 
     if selected_project() is None and not _connect_unbound_windows_device(
@@ -1048,14 +1055,15 @@ def connect(
     from kicad_mcp.cloud_local_registry import default_registry_root
     from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
-    folder = default_registry_root() / "projects"
+    root = default_registry_root()
+    folder = root / "projects"
     try:
         has_registration = folder.exists() and any(folder.iterdir())
     except OSError as exc:
         raise typer.BadParameter("Unable to inspect existing Cloud registration.") from exc
     if has_registration:
         try:
-            existing = _single_registered_identity(default_registry_root())
+            existing = _single_registered_identity(root)
         except (OSError, ValueError) as exc:
             raise typer.BadParameter("Existing Cloud registration needs local repair.") from exc
         if existing["cloudOrigin"] != origin:
@@ -1077,6 +1085,18 @@ def connect(
             "Starting a distinct browser-approved device pairing. "
             "Existing registration and keys will be preserved."
         )
+
+    if not has_registration and not new_device and _owner_terminal():
+        _require_empty_posix_key_registry(root)
+        setup(
+            project_dir=None,
+            browse=False,
+            alias=alias,
+            cloud_origin=origin,
+            no_browser=no_browser,
+            new_device=False,
+        )
+        return
 
     from kicad_mcp.cloud_pair import main as pair
 
@@ -1162,6 +1182,20 @@ def _resolve_device_alias(alias: str | None) -> str:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", alias):
         raise typer.BadParameter("Device alias must be 1 to 64 alphanumeric characters.")
     return alias
+
+
+def _require_empty_posix_key_registry(root: Path) -> None:
+    """Never silently enroll a duplicate when an earlier pairing left keys."""
+    try:
+        keys = root / "keys"
+        if keys.is_symlink() or (keys.exists() and any(keys.iterdir())):
+            raise typer.BadParameter(
+                "Existing device keys require registration repair. Run cloud status."
+            )
+    except OSError as exc:
+        raise typer.BadParameter(
+            "Unable to inspect existing device keys. Run cloud status."
+        ) from exc
 
 
 def _run_posix_foreground(record: dict[str, str]) -> None:
