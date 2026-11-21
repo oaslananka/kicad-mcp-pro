@@ -1034,7 +1034,7 @@ def connect(
         ),
     ] = False,
 ) -> None:
-    """On Windows connect in a visible terminal; other platforms keep explicit pairing."""
+    """Connect a registered device in a visible terminal or pair a new device."""
     if not alias or len(alias) > 80 or any(ord(char) < 32 for char in alias):
         raise typer.BadParameter("Device name must be 1 to 80 printable characters.")
     origin = _verified_origin(cloud_origin)
@@ -1062,13 +1062,7 @@ def connect(
             raise typer.BadParameter("A different Cloud origin is already registered.")
         if not new_device:
             if _owner_terminal():
-                from kicad_mcp.cloud_managed_connector import run_foreground
-
-                typer.echo("Starting read-only Cloud Connector; keep this terminal open.")
-                typer.echo("Press Ctrl+C to disconnect. Cloud owner grants still apply.")
-                result = run_foreground(existing)
-                if result:
-                    raise typer.Exit(result)
+                _run_posix_foreground(existing)
                 return
             typer.echo("A private local registration exists for this Cloud origin.")
             typer.echo("Cloud enrollment has NOT been verified for this registration.")
@@ -1170,6 +1164,16 @@ def _resolve_device_alias(alias: str | None) -> str:
     return alias
 
 
+def _run_posix_foreground(record: dict[str, str]) -> None:
+    from kicad_mcp.cloud_managed_connector import run_foreground
+
+    typer.echo("Starting read-only Cloud Connector; keep this terminal open.")
+    typer.echo("Press Ctrl+C to disconnect. Cloud owner grants still apply.")
+    result = run_foreground(record)
+    if result:
+        raise typer.Exit(result)
+
+
 def _try_reconnect_existing(root: Path, origin: str) -> bool:
     """Resume an existing owner identity; only an empty registry may pair again."""
     projects_dir = root / "projects"
@@ -1206,6 +1210,10 @@ def _try_reconnect_existing(root: Path, origin: str) -> bool:
     typer.echo(f"  Device ID:  {existing['deviceId']}")
     typer.echo(f"  Project ID: {existing['projectId']}")
     typer.echo(f"  Directory:  {existing['directory']} ({existing['filenameStem']})")
+
+    if _owner_terminal():
+        _run_posix_foreground(existing)
+        return True
 
     from kicad_mcp.cloud_managed_connector import _status
 
@@ -1318,7 +1326,7 @@ def setup(
         ),
     ] = False,
 ) -> None:
-    """One-command onboarding: pair device, register KiCad project, and enable Connector."""
+    """Pair a device, register a project, and start the local Connector."""
     origin = _verified_origin(cloud_origin)
     if browse and project_dir is not None:
         raise typer.BadParameter("Choose either --browse or --project-dir, not both.")
@@ -1340,6 +1348,9 @@ def setup(
         )
         return
     _require_local_pairing_storage()
+    if sys.platform == "darwin" and not _owner_terminal():
+        typer.echo("No device or project was registered.", err=True)
+        raise typer.BadParameter("macOS Cloud setup requires an interactive owner terminal.")
     selected = _select_setup_project_directory(browse, project_dir)
     target_dir, stem = _discover_kicad_project(selected)
 
@@ -1398,6 +1409,10 @@ def setup(
         "filenameStem": stem,
     }
     _write_project_record(root, new_record)
+    if _owner_terminal():
+        typer.echo(f"Device and project registered. Review access at {origin}/devices.")
+        _run_posix_foreground(new_record)
+        return
     connector_state = _start_connector()
 
     typer.echo("\n" + "=" * 60)

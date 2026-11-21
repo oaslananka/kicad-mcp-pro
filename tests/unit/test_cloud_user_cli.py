@@ -1599,3 +1599,68 @@ def test_posix_registered_connect_uses_interactive_foreground(
     assert calls == [record]
     assert "terminal open" in result.output
     assert "read-only" in result.output
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_posix_interactive_setup_uses_foreground_without_background_service(
+    monkeypatch, tmp_path: Path, platform: str
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli
+
+    project = tmp_path / "board"
+    project.mkdir()
+    (project / "board.kicad_pro").touch()
+    registry = tmp_path / "registry"
+    origin = "https://kicad-mcp-pro.oaslananka.dev"
+    device = "11111111-1111-4111-8111-111111111111"
+    project_id = "22222222-2222-4222-8222-222222222222"
+    calls = []
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform=platform))
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
+    monkeypatch.setattr("kicad_mcp.cloud_pair.enroll", lambda *_: (device, "0" * 64))
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair_keys._read_owner_binding", lambda _: {"ownerSub": "github|test-owner"}
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair.register_device_project", lambda *_a, **_k: {"projectId": project_id}
+    )
+    monkeypatch.setattr(
+        cloud_user_cli, "_start_connector", lambda: pytest.fail("must not start background service")
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_managed_connector.run_foreground", lambda record: calls.append(record) or 0
+    )
+    result = CliRunner().invoke(
+        app, ["cloud", "setup", "--project-dir", str(project), "--no-browser"]
+    )
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    assert calls[0]["deviceId"] == device
+    assert calls[0]["cloudOrigin"] == origin
+    assert calls[0]["directory"] == str(project.resolve())
+    assert (registry / "projects" / f"{project_id}.json").is_file()
+    assert "terminal open" in result.output
+    assert "Setup Complete!" not in result.output
+
+
+def test_darwin_headless_setup_rejects_before_registration(monkeypatch, tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    monkeypatch.setattr("kicad_mcp.cloud_pair.enroll", lambda *_: pytest.fail("no enrollment"))
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_local_registry.default_registry_root", lambda: pytest.fail("no registry")
+    )
+    (tmp_path / "board.kicad_pro").touch()
+    result = CliRunner().invoke(
+        app, ["cloud", "setup", "--project-dir", str(tmp_path), "--no-browser"]
+    )
+    assert result.exit_code != 0
+    assert "interactive" in result.output
+    assert "No device or project was registered" in result.output
