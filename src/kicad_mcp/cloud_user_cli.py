@@ -1035,6 +1035,10 @@ def connect(
             origin, alias, project_dir, no_browser, new_device, enable_native_write
         )
         return
+    if enable_native_write:
+        raise typer.BadParameter("Native Cloud editing is currently supported only on Windows.")
+    if project_dir is not None:
+        raise typer.BadParameter("Use cloud setup --project-dir to register a local KiCad project.")
     _require_local_pairing_storage()
     from kicad_mcp.cloud_local_registry import default_registry_root
     from kicad_mcp.cloud_registered_pilot import _single_registered_identity
@@ -1068,7 +1072,10 @@ def connect(
 
     from kicad_mcp.cloud_pair import main as pair
 
-    result = pair(["--cloud-origin", origin, "--alias", alias, "--begin-pairing"])
+    pairing_args = ["--cloud-origin", origin, "--alias", alias, "--begin-pairing"]
+    if no_browser:
+        pairing_args.append("--no-browser")
+    result = pair(pairing_args)
     if result:
         raise typer.Exit(result)
     typer.echo("Device pairing completed; the new device remains disabled by default.")

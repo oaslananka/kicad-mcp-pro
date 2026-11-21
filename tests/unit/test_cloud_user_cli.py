@@ -120,6 +120,76 @@ def test_cloud_connect_does_not_pair_an_already_registered_project(monkeypatch, 
     assert "existing local registration and keys were not changed" in result.output
 
 
+@pytest.mark.parametrize(
+    ("options", "guidance"),
+    [
+        (["--enable-native-write"], "Windows"),
+        (["--project-dir", "."], "cloud setup"),
+    ],
+)
+def test_posix_connect_rejects_unsupported_options_before_pairing(
+    monkeypatch, options, guidance
+) -> None:
+    seen = []
+    monkeypatch.setattr("kicad_mcp.cloud_pair.main", lambda args: seen.append(args) or 0)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_local_registry.default_registry_root",
+        lambda: pytest.fail("Unsupported option must not inspect or change registry"),
+    )
+    result = CliRunner().invoke(app, ["cloud", "connect", *options])
+    assert seen == []
+    assert result.exit_code == 2, result.output
+    assert guidance in " ".join(unstyle(result.output).replace("│", " ").split())
+
+
+def test_posix_connect_forwards_no_browser_to_pairing(monkeypatch, tmp_path) -> None:
+    seen = []
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: tmp_path)
+    monkeypatch.setattr("kicad_mcp.cloud_pair.main", lambda args: seen.append(args) or 0)
+    result = CliRunner().invoke(app, ["cloud", "connect", "--no-browser"])
+    assert result.exit_code == 0, result.output
+    assert len(seen) == 1
+    assert "--no-browser" in seen[0]
+
+
+def test_cloud_pair_no_browser_prints_approval_link_without_launching(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    from kicad_mcp import cloud_pair
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    monkeypatch.setattr(cloud_pair, "default_registry_root", lambda: tmp_path)
+    monkeypatch.setattr(cloud_pair, "_open_owner_private_dir", lambda _path: 999)
+    monkeypatch.setattr("os.close", lambda _fd: None)
+    monkeypatch.setattr(
+        cloud_pair.webbrowser, "open", lambda *_a, **_kw: pytest.fail("browser must not open")
+    )
+
+    def enroll(_origin, _alias, _key, approval):
+        approval("https://example.com/pair", "fixture-challenge", "FIXTURE-CODE")
+        return "fixture-device", "fixture-fingerprint"
+
+    monkeypatch.setattr(cloud_pair, "enroll", enroll)
+    assert (
+        cloud_pair.main(
+            [
+                "--cloud-origin",
+                "https://example.com",
+                "--alias",
+                "fixture",
+                "--begin-pairing",
+                "--no-browser",
+            ]
+        )
+        == 0
+    )
+    assert (
+        "https://example.com/pair#challenge=fixture-challenge&code=FIXTURE-CODE"
+        in capsys.readouterr().out
+    )
+
+
 def test_cloud_connect_rejects_ambiguous_registration_before_enrollment(
     monkeypatch, tmp_path
 ) -> None:

@@ -18,6 +18,7 @@ import sys
 import time
 import webbrowser
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -572,14 +573,16 @@ def register_device_project(origin: str, keyfile: Path, alias: str) -> dict[str,
     return res
 
 
-def _approval(page: str, challenge: str, code: str) -> None:
+def _approval(page: str, challenge: str, code: str, *, no_browser: bool = False) -> None:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise CloudPairingError(_PAIRING_DENIED)
     review_url = f"{page}#challenge={challenge}&code={code}"
-    try:
-        opened = webbrowser.open(review_url, new=2, autoraise=True)
-    except (OSError, webbrowser.Error):
-        opened = False
+    opened = False
+    if not no_browser:
+        try:
+            opened = webbrowser.open(review_url, new=2, autoraise=True)
+        except (OSError, webbrowser.Error):
+            pass
     if opened:
         print(f"Check that the code in the browser matches: {code}")
     else:
@@ -594,6 +597,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--cloud-origin", required=True)
     parser.add_argument("--alias", required=True)
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Print the approval link instead of opening a browser",
+    )
     # A fresh random local key slot replaces arbitrary CLI-selected paths.
     # The Cloud device UUID is bound to this slot's owner-only sidecar on
     # successful enrollment; a separate offline project record references it.
@@ -616,7 +624,12 @@ def main(argv: list[str] | None = None) -> int:
         # storage is owned by this POSIX user and has private permissions.
         owned_fd = _open_owner_private_dir(keyfile)
         os.close(owned_fd)
-        device_id, fingerprint = enroll(options.cloud_origin, options.alias, keyfile, _approval)
+        device_id, fingerprint = enroll(
+            options.cloud_origin,
+            options.alias,
+            keyfile,
+            partial(_approval, no_browser=options.no_browser),
+        )
     except (CloudPairingError, KeyboardInterrupt, EOFError):
         print(
             "Cloud pairing not completed; no access enabled. An owner-only key file may exist.",
