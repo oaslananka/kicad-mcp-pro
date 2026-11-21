@@ -92,7 +92,7 @@ def test_default_cloud_on_unpaired_windows_identity_uses_one_owner_browser_flow(
     assert calls == ["browser_then_folder"]
 
 
-def test_default_cloud_command_reuses_device_with_locally_pinned_signed_edit_capability(
+def test_default_cloud_command_reuses_device_without_implicit_native_write(
     remote_fixture: tuple[dict[str, Any], Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -117,11 +117,11 @@ def test_default_cloud_command_reuses_device_with_locally_pinned_signed_edit_cap
     monkeypatch.setattr(cloud_user_cli, "_connect_windows_foreground", connect)
     response = CliRunner().invoke(server.app, ["cloud"])
     assert response.exit_code == 0, response.output
-    assert called == ["bundled_owner_issuer", ("foreground", True, False)]
+    assert called == [("foreground", False, False)]
     assert state["calls"] == [], "No new pairing or background task requested"
 
 
-def test_broken_owner_issuer_pin_denies_default_cloud_edit_before_connection(
+def test_broken_owner_issuer_does_not_block_readonly_default_connection(
     remote_fixture: tuple[dict[str, Any], Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -137,15 +137,14 @@ def test_broken_owner_issuer_pin_denies_default_cloud_edit_before_connection(
         "trust_bundled_owner_cloud_issuer",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(LocalWriteDeniedError("denied")),
     )
-    monkeypatch.setattr(
-        cloud_user_cli,
-        "_connect_windows_foreground",
-        lambda *_args, **_kwargs: pytest.fail("Could not verify public issuer pin"),
-    )
+
+    def connect_readonly(*_args: object, **kwargs: object) -> None:
+        state["calls"].append(("foreground", kwargs["allow_native_write"]))
+
+    monkeypatch.setattr(cloud_user_cli, "_connect_windows_foreground", connect_readonly)
     result = CliRunner().invoke(server.app, ["cloud"])
-    assert result.exit_code != 0
-    assert "edit signing key could not be verified" in result.output
-    assert state["calls"] == []
+    assert result.exit_code == 0, result.output
+    assert state["calls"] == [("foreground", False)]
 
 
 @pytest.mark.parametrize("argv", [["remote"], ["cloud", "remote"]])
