@@ -18,7 +18,8 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,7 @@ from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 _SERVICE_NAME = "kicad-mcp-cloud-connector.service"
 _ENABLED_FILE = "connector-enabled.json"
 _STATUS_FILE = "connector-status.json"
+_SESSION_LOCK_FILE = "connector-session.lock"
 _ENABLED_FIELDS = frozenset({"enabled", "ownerSub", "cloudOrigin", "deviceId", "projectId"})
 _STATUS_FIELDS = frozenset({"state", "updatedAtUnixMs", "pid"})
 _STATUS_VALUES = frozenset({"connecting", "connected", "unavailable"})
@@ -58,6 +60,48 @@ _SESSION_LIFETIME_MS = 280_000
 _CONNECTED_STATUS_MAX_AGE_MS = 305_000
 _CONNECTING_STATUS_MAX_AGE_MS = 45_000
 _DENIED = "Registered Cloud Connector unavailable; check its local enable state and registration."
+
+
+class ConnectorAlreadyRunningError(RuntimeError):
+    """A different local process owns the Connector session."""
+
+
+@contextmanager
+def _connector_session_lock(root: Path) -> Iterator[None]:
+    """Hold one private, nonblocking POSIX process lock for the whole session loop."""
+    import fcntl
+
+    folder_fd = _open_owner_private_dir(root / _SESSION_LOCK_FILE)
+    try:
+        fd = os.open(
+            _SESSION_LOCK_FILE,
+            os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+            0o600,
+            dir_fd=folder_fd,
+        )
+        try:
+            info = os.fstat(fd)
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_uid != _current_uid()
+                or info.st_nlink != 1
+                or info.st_mode & 0o077
+                or info.st_size != 0
+            ):
+                raise LocalApprovalDeniedError(_DENIED)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise ConnectorAlreadyRunningError(
+                    "A local Cloud Connector is already running. Stop it before reconnecting."
+                ) from exc
+            yield
+        finally:
+            # Keep the lock inode: unlinking would let competing processes lock
+            # different files. The kernel releases ownership on close or exit.
+            os.close(fd)
+    finally:
+        os.close(folder_fd)
 
 
 def _remove_private_file(root: Path, name: str) -> None:
@@ -365,13 +409,15 @@ async def _session_until_stopped(
     try:
         done, _ = await asyncio.wait({session_task, stop_task}, return_when=asyncio.FIRST_COMPLETED)
         if stop_task in done:
-            session_task.cancel()
-            await asyncio.gather(session_task, return_exceptions=True)
             return
         await session_task
     finally:
-        stop_task.cancel()
-        await asyncio.gather(stop_task, return_exceptions=True)
+        # A cancelled caller must also close its transport before releasing
+        # session ownership. This covers stop signals and task cancellation.
+        for task in (session_task, stop_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(session_task, stop_task, return_exceptions=True)
 
 
 async def _run_registered_session(
@@ -436,26 +482,27 @@ async def _run_connector(
     if not _enabled_record(registry):
         return 0
 
-    failures = 0
-    while not stop.is_set() and _enabled_record(registry):
-        try:
-            connected = await _run_registered_session(
-                registry=registry,
-                stop=stop,
-                identity_loader=identity_loader,
-                project_resolver=project_resolver,
-                key_loader=key_loader,
-                session_runner=session_runner,
-            )
-            if not connected:
-                break
-            failures = 0
-        except asyncio.CancelledError:
-            raise
-        except (OSError, ValueError, WebSocketException):
-            _write_status(registry, "unavailable")
-            failures += 1
-        await _wait_before_reconnect(stop, registry, failures)
+    with _connector_session_lock(registry):
+        failures = 0
+        while not stop.is_set() and _enabled_record(registry):
+            try:
+                connected = await _run_registered_session(
+                    registry=registry,
+                    stop=stop,
+                    identity_loader=identity_loader,
+                    project_resolver=project_resolver,
+                    key_loader=key_loader,
+                    session_runner=session_runner,
+                )
+                if not connected:
+                    break
+                failures = 0
+            except asyncio.CancelledError:
+                raise
+            except (OSError, ValueError, WebSocketException):
+                _write_status(registry, "unavailable")
+                failures += 1
+            await _wait_before_reconnect(stop, registry, failures)
 
     return 0
 
@@ -491,6 +538,9 @@ def main(argv: list[str] | None = None) -> int:
             print(_status())
             return 0
         return asyncio.run(_run_service())
+    except ConnectorAlreadyRunningError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
         print(_DENIED, file=sys.stderr)
         return 1

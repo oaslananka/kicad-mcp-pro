@@ -617,3 +617,120 @@ def test_connector_uid_lookup_fails_closed_without_posix_getuid(
     monkeypatch.delattr(os, "getuid")
     with pytest.raises(LocalApprovalDeniedError):
         connector._current_uid()
+
+
+@pytest.mark.anyio
+async def test_second_local_connector_cannot_load_key_or_start_session(tmp_path: Path) -> None:
+    root, project = _root(tmp_path)
+    connector._write_private_json(root, connector._ENABLED_FILE, connector._identity_state(RECORD))
+    entered = asyncio.Event()
+    stop = asyncio.Event()
+    loads = 0
+    starts = 0
+
+    def load_key(*_args: object) -> Ed25519PrivateKey:
+        nonlocal loads
+        loads += 1
+        return Ed25519PrivateKey.generate()
+
+    async def run_session(**_kwargs: object) -> HandshakeReceipt:
+        nonlocal starts
+        starts += 1
+        entered.set()
+        await asyncio.Event().wait()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    async def launch() -> int:
+        return await connector._run_connector(
+            root=root,
+            stop_event=stop,
+            identity_loader=lambda _: RECORD.copy(),
+            project_resolver=lambda **_: project,
+            key_loader=load_key,
+            session_runner=run_session,
+        )
+
+    first = asyncio.create_task(launch())
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=3)
+        with pytest.raises(RuntimeError, match="already running"):
+            await asyncio.wait_for(launch(), timeout=0.5)
+        assert loads == starts == 1
+        assert not first.done()
+        assert connector._enabled_record(root) == connector._identity_state(RECORD)
+    finally:
+        stop.set()
+        await asyncio.wait_for(first, timeout=3)
+    stop.clear()
+    entered.clear()
+    restarted = asyncio.create_task(launch())
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=3)
+        assert loads == starts == 2
+    finally:
+        stop.set()
+        await asyncio.wait_for(restarted, timeout=3)
+
+
+@pytest.mark.anyio
+async def test_cancel_connector_closes_session_before_returning(tmp_path: Path) -> None:
+    root, project = _root(tmp_path)
+    connector._write_private_json(root, connector._ENABLED_FILE, connector._identity_state(RECORD))
+    entered = asyncio.Event()
+    closed = asyncio.Event()
+
+    async def run_session(**_kwargs: object) -> HandshakeReceipt:
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    task = asyncio.create_task(
+        connector._run_connector(
+            root=root,
+            identity_loader=lambda _: RECORD.copy(),
+            project_resolver=lambda **_: project,
+            key_loader=lambda *_: Ed25519PrivateKey.generate(),
+            session_runner=run_session,
+        )
+    )
+    await asyncio.wait_for(entered.wait(), timeout=3)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert closed.is_set()
+
+
+@pytest.mark.parametrize("invalid_lock", ["symlink", "hardlink", "public", "nonempty", "fifo"])
+def test_session_lock_rejects_unsafe_files(tmp_path: Path, invalid_lock: str) -> None:
+    root, _project = _root(tmp_path)
+    path = root / connector._SESSION_LOCK_FILE
+    outside = tmp_path / "outside"
+    outside.write_bytes(b"")
+    outside.chmod(0o600)
+    if invalid_lock == "symlink":
+        path.symlink_to(outside)
+    elif invalid_lock == "hardlink":
+        os.link(outside, path)
+    elif invalid_lock == "fifo":
+        os.mkfifo(path, 0o600)
+    else:
+        path.write_bytes(b"unexpected" if invalid_lock == "nonempty" else b"")
+        path.chmod(0o644 if invalid_lock == "public" else 0o600)
+    with (
+        pytest.raises((OSError, LocalApprovalDeniedError)),
+        connector._connector_session_lock(root),
+    ):
+        pytest.fail("unsafe lock was acquired")
+    assert outside.read_bytes() == b""
+
+
+def test_main_reports_existing_session_without_a_traceback(monkeypatch, capsys) -> None:
+    async def already_running() -> int:
+        raise connector.ConnectorAlreadyRunningError("A local Cloud Connector is already running.")
+
+    monkeypatch.setattr(connector, "_run_service", already_running)
+    assert connector.main(["run"]) == 1
+    assert "already running" in capsys.readouterr().err
