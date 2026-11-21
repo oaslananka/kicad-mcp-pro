@@ -116,7 +116,7 @@ def register(mcp: FastMCP, dependencies: SchematicHierarchyAuthoringDependencies
         """Add a hierarchical label, preserving the requested shape and rotation.
 
         By default the text is justified away from the directional icon based
-        on ``rotation`` (0=left, 90=bottom, 180=right, 270=top) so it doesn't
+        on ``rotation`` (0=left, 90=left, 180=right, 270=right) so it doesn't
         render on top of the icon. Pass ``justify`` to override, or "none" to
         force KiCad's centered default.
         """
@@ -162,7 +162,7 @@ def register(mcp: FastMCP, dependencies: SchematicHierarchyAuthoringDependencies
         """Add a global label, preserving the requested shape and rotation.
 
         By default the text is justified away from the directional icon based
-        on ``rotation`` (0=left, 90=bottom, 180=right, 270=top) so it doesn't
+        on ``rotation`` (0=left, 90=left, 180=right, 270=right) so it doesn't
         render on top of the icon. Pass ``justify`` to override, or "none" to
         force KiCad's centered default.
         """

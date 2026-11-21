@@ -6419,15 +6419,10 @@ def wire_block(
     )
 
 
-# Global/hierarchical labels carry a directional icon glyph at their anchor.
-# KiCad's GUI writes an explicit (justify ...) away from that icon whenever one
-# of these is placed; a file that omits it renders center-justified text on
-# top of the icon (issue #373). Mirrors this codebase's own outward-stub
-# convention (see _terminal_rotation_from_vector): rotation 0/180 are
-# horizontal, so the text needs a horizontal justify away from the icon,
-# while 90/270 are vertical and need a vertical one. Verified against a real
-# kicad-cli render for each cardinal rotation.
-_LABEL_JUSTIFY_BY_ROTATION: dict[int, str] = {0: "left", 90: "bottom", 180: "right", 270: "top"}
+# KiCad label justification is relative to the text, not the sheet. Native
+# KiCad 10 SVG confirms left/right keeps both cardinal vertical labels clear
+# of the directional icon or frame; top/bottom centers text along the wire.
+_LABEL_JUSTIFY_BY_ROTATION: dict[int, str] = {0: "left", 90: "left", 180: "right", 270: "right"}
 
 
 def _normalize_label_justify(justify: str | None) -> str | None:

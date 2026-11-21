@@ -106,9 +106,13 @@ class LabelItem:
     justify: frozenset[str] = frozenset()
 
     def box(self) -> Box:
-        return TextField(
-            self.text, self.x, self.y, self.angle, self.font_mm, justify=self.justify
-        ).box()
+        justify = self.justify
+        if self.kind in {"global", "hierarchical"} and self.angle in {90, 270}:
+            # KiCad renders vertical label text upright along the -90-degree
+            # text axis. Convert its local anchors to sheet-axis box anchors.
+            axis = {"left": "bottom", "right": "top", "bottom": "right", "top": "left"}
+            justify = frozenset(axis.get(token, token) for token in justify)
+        return TextField(self.text, self.x, self.y, self.angle, self.font_mm, justify=justify).box()
 
 
 @dataclass(frozen=True, slots=True)
@@ -406,6 +410,24 @@ def parse_symbols(sch_text: str) -> list[SymbolItem]:
             )
         )
     return symbols
+
+
+def detect_vertical_label_justification(labels: list[LabelItem]) -> list[VisualFinding]:
+    """Flag the legacy sheet-axis defaults proven to overlap native KiCad labels."""
+    legacy: dict[float, frozenset[str]] = {90: frozenset({"bottom"}), 270: frozenset({"top"})}
+    return [
+        VisualFinding(
+            "WARN",
+            "vertical_label_justification",
+            "Vertical label uses legacy justification; review native render and use "
+            "text-local left (90°) or right (270°) if text overlaps its frame or icon.",
+            label.text,
+            label.x,
+            label.y,
+        )
+        for label in labels
+        if label.kind in {"global", "hierarchical"} and legacy.get(label.angle) == label.justify
+    ]
 
 
 def detect_label_collisions(
@@ -992,6 +1014,7 @@ COSMETIC_PENALTIES: dict[str, float] = {
     "offsheet_symbol": 12.0,
     "text_overlap": 10.0,
     "label_overlap": 8.0,
+    "vertical_label_justification": 4.0,
     "offsheet_label": 8.0,
     "power_symbol_sideways": 6.0,
     "grid_misalignment": 4.0,
@@ -1011,6 +1034,7 @@ COSMETIC_CATEGORIES: dict[str, str] = {
     "symbol_overlap": "readability",
     "text_overlap": "readability",
     "label_overlap": "readability",
+    "vertical_label_justification": "readability",
     "offsheet_symbol": "readability",
     "offsheet_label": "readability",
     "dense_label_fanout": "readability",
@@ -1076,6 +1100,7 @@ def run_cosmetic_qa(sch_text: str) -> dict[str, object]:
 
     findings: list[VisualFinding] = []
     findings.extend(detect_label_collisions(labels))
+    findings.extend(detect_vertical_label_justification(labels))
     findings.extend(detect_symbol_overlap(placed))
     findings.extend(detect_text_overlap(placed, labels))
     findings.extend(detect_offsheet_boxes(placed, labels, extent))
@@ -1122,6 +1147,7 @@ def run_visual_qa(sch_text: str, *, render_path: str = "") -> dict[str, object]:
 
     findings: list[VisualFinding] = []
     findings.extend(detect_label_collisions(labels))
+    findings.extend(detect_vertical_label_justification(labels))
     findings.extend(detect_symbol_overlap(placed))
     findings.extend(detect_text_overlap(placed, labels))
     findings.extend(detect_offsheet_boxes(placed, labels, extent))
@@ -1163,6 +1189,7 @@ __all__ = [
     "detect_sheet_density_imbalance",
     "detect_symbol_overlap",
     "detect_text_overlap",
+    "detect_vertical_label_justification",
     "parse_junctions",
     "parse_labels",
     "parse_paper_extent",
