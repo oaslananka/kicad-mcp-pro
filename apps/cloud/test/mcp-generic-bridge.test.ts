@@ -36,6 +36,7 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
   let localWrites=0;
   let wrongTarget=false;
   let deviceOnline=true;
+  let catalogResponds=true;
   let signedClaim:ConnectorCapabilityClaim|null=null;
   const inventory:Inventory={
     async listDevices(){return [];},
@@ -59,6 +60,7 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
     }){
       assert.equal(devId,deviceId);assert.equal(projId,projectId);
       if(request.method==="catalog"){
+        if(!catalogResponds)return null;
         const tools=CLOUD_DIRECT_TOOLS.filter(tool=>
           tool.name==="kicad_get_version"||tool.name==="sch_move_symbol")
           .map(tool=>({name:tool.name,description:tool.description,
@@ -229,6 +231,26 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
         tool_name:"kicad_get_version",arguments:{}}
     },3,"local_mcp_read");
     assert.match(JSON.stringify(read.data),/native-evidence/);
+    assert.equal(remoteCalls,1);
+
+    // A busy, refreshing, or otherwise unavailable signed relay is not an
+    // authoritative empty local catalog. No native call must be dispatched.
+    catalogResponds=false;
+    const unavailable=await invoke(enabled,"token-read","tools/call",{
+      name:"local_mcp_read",arguments:{project_id:projectId,
+        tool_name:"kicad_get_version",arguments:{}}
+    },35,"local_mcp_read");
+    assert.equal(unavailable.data.result?.isError,true);
+    assert.equal(unavailable.data.result?.structuredContent?.reason,"owner_connector_mcp_unavailable");
+    assert.match(unavailable.data.result?.structuredContent?.guidance??"",/one at a time/);
+    assert.equal(remoteCalls,1);
+    catalogResponds=true;
+    const missing=await invoke(enabled,"token-read","tools/call",{
+      name:"local_mcp_read",arguments:{project_id:projectId,
+        tool_name:"nonexistent_local_tool",arguments:{}}
+    },36,"local_mcp_read");
+    assert.equal(missing.data.result?.isError,true);
+    assert.equal(missing.data.result?.structuredContent?.reason,"local_tool_unavailable");
     assert.equal(remoteCalls,1);
 
     const wrongMode=await invoke(enabled,"token-edit","tools/call",{
