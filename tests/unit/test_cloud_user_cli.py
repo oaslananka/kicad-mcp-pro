@@ -854,7 +854,7 @@ def test_setup_browser_approval_does_not_claim_service_ready_on_failure(
     monkeypatch.setattr("kicad_mcp.cloud_managed_connector._enable", mock_enable_fail)
 
     result = CliRunner().invoke(app, ["cloud", "setup", "--project-dir", str(tmp_path)])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
     assert "Browser opened for approval" in result.output
     assert "Cloud Connector could not start: RuntimeError" in result.output
     assert "Connector:       Unavailable" in result.output

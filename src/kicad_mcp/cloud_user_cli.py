@@ -1406,6 +1406,8 @@ def setup(
     typer.echo(f"Web Dashboard:   {origin}/devices")
     typer.echo("AI Client Access: Requires separate Cloud owner approval")
     typer.echo("=" * 60 + "\n")
+    if connector_state not in ("Connected", "Connecting"):
+        raise typer.Exit(1)
 
 
 @cloud_app.command("register-project")
