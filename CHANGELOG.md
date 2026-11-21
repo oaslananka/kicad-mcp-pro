@@ -10,6 +10,17 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.21.4](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.21.3...mcp-server-v4.21.4) (2026-11-21)
+
+
+### Bug Fixes
+
+* **ci:** use same-run artifact backend for Windows coverage ([#1852](https://github.com/oaslananka/kicad-mcp-pro/issues/1852)) ([52a7996](https://github.com/oaslananka/kicad-mcp-pro/commit/52a79966158cdfcd57162c570b8444c5df15e639))
+* **cloud:** allow bounded native IPC latency in READ queue ([#1854](https://github.com/oaslananka/kicad-mcp-pro/issues/1854)) ([bad7ae3](https://github.com/oaslananka/kicad-mcp-pro/commit/bad7ae3a67d71c93da496316137b6739fc1b9048))
+* **cloud:** distinguish unavailable catalog from missing local tool ([#1849](https://github.com/oaslananka/kicad-mcp-pro/issues/1849)) ([edc2ddc](https://github.com/oaslananka/kicad-mcp-pro/commit/edc2ddc6c8a643ce7494b35e5d9c676e8b89b8ea))
+* **cloud:** preserve bundled MCP App JavaScript during HTML insertion ([#1848](https://github.com/oaslananka/kicad-mcp-pro/issues/1848)) ([950d39c](https://github.com/oaslananka/kicad-mcp-pro/commit/950d39c0a81bdb7b4b815cc2d6880a7e15aa6878))
+* **cloud:** serialize bounded readonly MCP tool journeys ([#1850](https://github.com/oaslananka/kicad-mcp-pro/issues/1850)) ([f263d3b](https://github.com/oaslananka/kicad-mcp-pro/commit/f263d3b80cc0b2039199a5f3ac4d47f283f3ff64))
+
 ## [4.21.3](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.21.2...mcp-server-v4.21.3) (2026-11-20)
 
 
