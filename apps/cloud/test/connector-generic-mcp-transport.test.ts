@@ -25,8 +25,11 @@ async function send(ws:WebSocket,body:object){
   ws.send(JSON.stringify(body));
   return next;
 }
-test("generic MCP read timeout policy keeps signed writes and catalogs bounded",()=>{
+test("generic MCP discovery tolerates cold local startup without extending signed writes",()=>{
   assert.deepEqual(mcpRequestBudget({method:"catalog"}),{
+    timeoutMs:30_000,minSessionRemainingMs:31_000
+  });
+  assert.deepEqual(mcpRequestBudget({method:"catalog",proof:{}}),{
     timeoutMs:11_000,minSessionRemainingMs:12_000
   });
   assert.deepEqual(mcpRequestBudget({method:"call"}),{
@@ -56,8 +59,8 @@ test("only already-authorized read-only MCP timeouts may reconnect",()=>{
     {code:1008,reason:"policy"});
 });
 
-test("signed owner WS acknowledges both catalog and slow read calls",
-{timeout:30_000},async()=>{
+test("signed owner WS acknowledges cold-start catalog and slow read calls",
+{timeout:45_000},async()=>{
   const server=createServer((_request,response)=>{response.writeHead(404);response.end();});
   await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
   const port=(server.address() as AddressInfo).port;
@@ -113,6 +116,9 @@ test("signed owner WS acknowledges both catalog and slow read calls",
     assert.equal(wire.request.method,"catalog");
     assert.equal(wire.request.toolName,"kicad_get_version");
     assert.equal(wire.sequence,1);
+    // A live KiCad Windows worker took ~17s to start and activate the project.
+    // The previous 11s catalog watchdog closed an otherwise valid session.
+    await new Promise<void>(resolve=>setTimeout(resolve,18_000));
     const ack=await send(ws,{kind:"connector.mcp_result",version:1,
       sequence:wire.sequence,
       result:{kind:"connector.mcp_result",version:1,
@@ -153,7 +159,7 @@ test("signed owner WS acknowledges both catalog and slow read calls",
 });
 
 test("read-only MCP timeout keeps the signed Connector recoverable with fresh proof",
-{timeout:24_000},async()=>{
+{timeout:45_000},async()=>{
   const server=createServer((_request,response)=>{response.writeHead(404);response.end();});
   await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
   const port=(server.address() as AddressInfo).port;
