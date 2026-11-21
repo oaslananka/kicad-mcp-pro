@@ -4,7 +4,8 @@ import {createServer} from "node:http";
 import type {AddressInfo} from "node:net";
 import {randomUUID} from "node:crypto";
 import {WebSocket} from "ws";
-import {attachConnectorWebSocket,mcpRequestBudget} from "../src/connector-ws.js";
+import {attachConnectorWebSocket,mcpRequestBudget,mcpTimeoutDisposition}
+  from "../src/connector-ws.js";
 
 const deviceId="11111111-1111-4111-8111-111111111111";
 const projectId="22222222-2222-4222-8222-222222222222";
@@ -42,6 +43,17 @@ test("generic MCP read timeout policy keeps signed writes and catalogs bounded",
   }),{
     timeoutMs:11_000,minSessionRemainingMs:12_000
   });
+});
+
+test("only already-authorized read-only MCP timeouts may reconnect",()=>{
+  assert.deepEqual(mcpTimeoutDisposition({method:"catalog"}),
+    {code:1013,reason:"read_timeout"});
+  assert.deepEqual(mcpTimeoutDisposition({method:"call"}),
+    {code:1013,reason:"read_timeout"});
+  assert.deepEqual(mcpTimeoutDisposition({method:"call",proof:{kind:"signed"}}),
+    {code:1008,reason:"policy"});
+  assert.deepEqual(mcpTimeoutDisposition({method:"call",proof:{}}),
+    {code:1008,reason:"policy"});
 });
 
 test("signed owner WS acknowledges both catalog and slow read calls",
@@ -136,6 +148,87 @@ test("signed owner WS acknowledges both catalog and slow read calls",
   }finally{
     ws?.terminate();
     await attached.close();
+    await new Promise<void>(resolve=>server.close(()=>resolve()));
+  }
+});
+
+test("read-only MCP timeout keeps the signed Connector recoverable with fresh proof",
+{timeout:24_000},async()=>{
+  const server=createServer((_request,response)=>{response.writeHead(404);response.end();});
+  await new Promise<void>(resolve=>server.listen(0,"127.0.0.1",resolve));
+  const port=(server.address() as AddressInfo).port;
+  let signedBegins=0;
+  const relay=attachConnectorWebSocket(server,{
+    publicOrigin:"http://127.0.0.1:"+port,sourceOf:()=>"127.0.0.1",
+    proofs:{
+      issue:async()=>({kind:"issued" as const,challengeId:randomUUID(),
+        deviceId,nonce:randomUUID(),expiresAtMs:Date.now()+30_000}),
+      verify:async()=>({kind:"verified" as const,deviceId}),
+      cancel:async()=>undefined
+    } as never,
+    connections:{
+      begin:async()=>{signedBegins++;return {kind:"issued" as const,
+        sessionId:randomUUID(),deviceId,challengeId:randomUUID(),
+        nonce:randomUUID(),binding:"A".repeat(43),expiresAtMs:Date.now()+30_000};},
+      activate:async()=>true,disconnect:async()=>undefined,
+      authorizeOutgoingSummary:async()=>true
+    } as never,managedGrant:{isEnabled:async()=>true} as never
+  });
+  const sockets:WebSocket[]=[];
+  async function signIn():Promise<WebSocket>{
+    const ws=new WebSocket("ws://127.0.0.1:"+port+"/api/v1/connector/ws",
+      {perMessageDeflate:false});
+    sockets.push(ws);
+    await new Promise<void>((resolve,reject)=>{
+      ws.once("open",resolve);ws.once("error",reject);
+    });
+    assert.equal((await send(ws,{kind:"device.hello",version:1,
+      ownerSub:owner,deviceId,mcpBridge:1,
+      catalog:{schemaVersion:"1.0.0",catalogRevision:"a".repeat(64),
+        operations:["mcp_bridge"]}})).kind,"device.challenge");
+    assert.equal((await send(ws,{kind:"device.proof",version:1,
+      signature:"A".repeat(86)})).kind,"connector.session_challenge");
+    assert.equal((await send(ws,{kind:"connector.session_proof",version:1,
+      signature:"A".repeat(86)})).kind,"connector.ready");
+    assert.equal(relay.isDeviceConnected(owner,deviceId),true);
+    return ws;
+  }
+  const oauth={ownerSub:owner,clientId:"client",
+    accessTokenIssuedAtSeconds:Math.floor(Date.now()/1000)};
+  try{
+    const ws=await signIn();
+    const closed=new Promise<number>(resolve=>ws.once("close",code=>resolve(code)));
+    const slow=relay.requestMcp(oauth,deviceId,projectId,{
+      requestId:randomUUID(),method:"catalog",offset:0,toolName:"kicad_get_version"
+    });
+    const wire=await message(ws);
+    assert.equal(wire.request.method,"catalog");
+    // The owner-native operation stalls. No result and no speculative retry.
+    assert.equal(await slow,null);
+    assert.equal(await closed,1013,"trusted READ timeout is retryable, not an owner reapproval");
+    assert.equal(relay.isDeviceConnected(owner,deviceId),false);
+    assert.equal(signedBegins,1,"no silent replay or reauthentication by the Cloud");
+    // A new signed connection can independently reauthenticate and serve
+    // a fresh request; no response from the expired socket is reused.
+    const renewed=await signIn();
+    assert.equal(signedBegins,2);
+    const id=randomUUID();
+    const call=relay.requestMcp(oauth,deviceId,projectId,{
+      requestId:id,method:"catalog",offset:0,toolName:"kicad_get_version"
+    });
+    const next=await message(renewed);
+    const ack=await send(renewed,{kind:"connector.mcp_result",version:1,
+      sequence:next.sequence,
+      result:{kind:"connector.mcp_result",version:1,
+        requestId:id,projectId,method:"catalog",ok:true,
+        tools:[{name:"kicad_get_version",description:"version",
+          inputSchema:{type:"object",properties:{}},accessMode:"readonly"}],
+        nextOffset:null}});
+    assert.equal(ack.kind,"connector.mcp_ack");
+    assert.equal((await call)?.tools?.[0]?.name,"kicad_get_version");
+  }finally{
+    sockets.forEach(ws=>ws.terminate());
+    await relay.close();
     await new Promise<void>(resolve=>server.close(()=>resolve()));
   }
 });

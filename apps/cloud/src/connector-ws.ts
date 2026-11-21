@@ -305,6 +305,19 @@ const mcpResponse=z.strictObject({
   })
 });
 const CLOSE_POLICY=1008;
+
+/** A trusted read timeout is not a revoked grant. The old session is closed;
+ * only a *new*, freshly signed session may accept another request. A
+ * proof-bearing tool call is potentially mutating, so it stays fail-closed.
+ */
+export function mcpTimeoutDisposition(
+  request:Readonly<{method:"catalog"|"call";proof?:object}>
+):Readonly<{code:number;reason:string}>{
+  return request.method==="catalog"||
+    (request.method==="call"&&request.proof===undefined)
+    ?{code:1013,reason:"read_timeout"}
+    :{code:CLOSE_POLICY,reason:"policy"};
+}
 const MAX_SOCKETS=96;
 const MAX_PER_IP=6;
 const MAX_PER_MINUTE=12;
@@ -1290,7 +1303,10 @@ export function attachConnectorWebSocket(
           current.entry.mcpPending=undefined;
         }
         resolve(null);
-        reject(current.socket);
+        const close=mcpTimeoutDisposition(request);
+        if(current.socket.readyState===WebSocket.OPEN)
+          current.socket.close(close.code,close.reason);
+        else current.socket.terminate();
       },budget.timeoutMs);
       timer.unref();
       current.entry.mcpPending={requestId:request.requestId,
