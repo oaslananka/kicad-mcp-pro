@@ -521,11 +521,10 @@ jobs:
             needs.changes.outputs.sonar_docs_only != 'true'))
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          # Immutable ID from the same-run GitHub API, not a lagging runtime name cache.
+          # Keep the exact same-run artifact ID and digest enforcement.
+          # No GitHub API token: the action then uses the current-run artifact backend
+          # instead of the cross-run REST download path, which may briefly return 404.
           artifact-ids: ${{ steps.native-windows-coverage.outputs.artifact_id }}
-          github-token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          run-id: ${{ github.run_id }}
           digest-mismatch: error
       - name: Merge native Windows and Linux coverage
         if: >-

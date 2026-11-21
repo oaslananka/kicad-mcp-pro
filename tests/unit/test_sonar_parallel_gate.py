@@ -57,9 +57,6 @@ def test_coverage_waits_for_exact_run_windows_artifact_before_merge() -> None:
     assert "name" not in download["with"]
     assert download["with"] == {
         "artifact-ids": "${{ steps.native-windows-coverage.outputs.artifact_id }}",
-        "github-token": "${{ github.token }}",
-        "repository": "${{ github.repository }}",
-        "run-id": "${{ github.run_id }}",
         "digest-mismatch": "error",
     }
     assert steps[names.index(merge_name)]["run"].count("merge_platform_coverage.py merge") == 1
