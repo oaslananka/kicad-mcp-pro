@@ -1086,3 +1086,104 @@ def test_foreground_disable_does_not_claim_stop_if_lock_is_still_held(
         captured = capsys.readouterr()
         assert "unverified" in captured.err
         assert "is Off" not in captured.out
+
+
+@pytest.mark.anyio
+async def test_foreground_terminal_reports_signed_ready_and_disconnect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root, project = _root(tmp_path)
+    stop = asyncio.Event()
+    monkeypatch.setattr(connector, "reconnect_delay_seconds", lambda *_: 0.0)
+    attempts = 0
+
+    async def session(**kwargs: object) -> HandshakeReceipt:
+        nonlocal attempts
+        attempts += 1
+        before = capsys.readouterr().out
+        assert "Connected" not in before
+        assert "Connecting" in before
+        if attempts == 1:
+            raise OSError("secret fixture path")
+        assert "Disconnected" in before
+        kwargs["dispatcher_factory"](HandshakeReceipt(DEVICE, SESSION))
+        assert "Connected" in capsys.readouterr().out
+        stop.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    assert (
+        await connector._run_connector(
+            root=root,
+            foreground=True,
+            stop_event=stop,
+            project_resolver=lambda **_: project,
+            key_loader=lambda *_: Ed25519PrivateKey.generate(),
+            session_runner=session,
+        )
+        == 0
+    )
+    assert attempts == 2
+    output = capsys.readouterr().out
+    assert "Disconnected" in output
+    assert "secret fixture path" not in output
+
+
+def test_foreground_status_rejects_changed_binding_immediately(monkeypatch, tmp_path: Path) -> None:
+    root, _ = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    connector._write_private_json(
+        root,
+        connector._FOREGROUND_FILE,
+        connector._identity_state(record, connector._FOREGROUND_FILE),
+    )
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    with connector._connector_session_lock(root):
+        connector._write_status(root, "connected")
+        assert connector._status() == "Connected"
+        (root / "projects" / f"{PROJECT}.json").unlink()
+        assert connector._status() == "Unavailable"
+
+
+def test_foreground_disable_rejects_unverifiable_lock(monkeypatch, tmp_path: Path, capsys) -> None:
+    root, _ = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    connector._write_private_json(
+        root,
+        connector._FOREGROUND_FILE,
+        connector._identity_state(record, connector._FOREGROUND_FILE),
+    )
+    lock = root / connector._SESSION_LOCK_FILE
+    lock.write_text("invalid lock")
+    lock.chmod(0o600)
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(connector, "_systemctl", lambda *_: pytest.fail("no systemd"))
+    assert connector._disable() == 1
+    assert "unverified" in capsys.readouterr().err
+
+
+@pytest.mark.anyio
+async def test_foreground_signed_transport_receives_activity_callback(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    root, project = _root(tmp_path)
+    stop = asyncio.Event()
+
+    async def signed_transport(**kwargs: object) -> HandshakeReceipt:
+        kwargs["dispatcher_factory"](HandshakeReceipt(DEVICE, SESSION))
+        kwargs["on_activity"]("Tool call 1: project_summary completed (5 ms)")
+        stop.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    monkeypatch.setattr(connector, "execute_owner_managed_read_session", signed_transport)
+    assert (
+        await connector._run_connector(
+            root=root,
+            foreground=True,
+            stop_event=stop,
+            project_resolver=lambda **_: project,
+            key_loader=lambda *_: Ed25519PrivateKey.generate(),
+            session_runner=signed_transport,
+        )
+        == 0
+    )
+    assert "Tool call 1: project_summary completed (5 ms)" in capsys.readouterr().out

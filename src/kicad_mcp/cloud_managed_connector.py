@@ -329,11 +329,18 @@ def _revoke_local_authority(root: Path) -> bool:
 
 def _wait_for_foreground_shutdown(root: Path) -> bool:
     deadline = time.monotonic() + _FOREGROUND_SHUTDOWN_TIMEOUT
-    while _session_lock_held(root):
-        if time.monotonic() >= deadline:
+    while True:
+        try:
+            with _connector_session_lock(root, create=False):
+                return True
+        except FileNotFoundError:
+            return True
+        except ConnectorAlreadyRunningError:
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
+        except (OSError, ValueError):
             return False
-        time.sleep(0.05)
-    return True
 
 
 def _disable() -> int:
@@ -383,6 +390,12 @@ def _status() -> str:
     if not os.path.lexists(marker):
         if _enabled_record(root, _FOREGROUND_FILE) is None or not _session_lock_held(root):
             return "Off"
+        try:
+            record = _single_registered_identity(root)
+        except (OSError, ValueError):
+            return "Unavailable"
+        if not _is_enabled(root, record, _FOREGROUND_FILE):
+            return "Unavailable"
         return _cached_connection_status(root)
     if sys.platform == "darwin":
         return "Unavailable"
@@ -415,6 +428,14 @@ def _cached_connection_status(root: Path) -> str:
     return "Unavailable"
 
 
+def _report_foreground(marker: str, message: str) -> None:
+    if marker == _FOREGROUND_FILE:
+        try:
+            print(message, flush=True)
+        except OSError:
+            pass  # Terminal diagnostics must not invalidate a signed response.
+
+
 def _dispatcher_factory(
     root: Path, record: dict[str, str], project: LocalRegisteredRead, marker: str = _ENABLED_FILE
 ) -> Callable[[HandshakeReceipt], LocalReadDispatch]:
@@ -423,8 +444,7 @@ def _dispatcher_factory(
             raise LocalApprovalDeniedError(_DENIED)
         # This callback runs only after the authenticated device/session
         # handshake has reached connector.ready.
-        _write_status(root, "connected")
-        return LocalReadDispatch(
+        dispatcher = LocalReadDispatch(
             verified=VerifiedLocalBinding(
                 device_id=receipt.device_id,
                 project_id=record["projectId"],
@@ -442,6 +462,9 @@ def _dispatcher_factory(
             max_reads=_MAX_READS,
             native_drc=False,
         )
+        _write_status(root, "connected")
+        _report_foreground(marker, "Connected")
+        return dispatcher
 
     return create
 
@@ -495,6 +518,8 @@ async def _session_until_stopped(
                 )
 
             options["folder_service_factory"] = folder_factory
+            if marker == _FOREGROUND_FILE:
+                options["on_activity"] = lambda message: _report_foreground(marker, message)
         return await session_runner(**options)
 
     session_task = asyncio.create_task(run_session())
@@ -540,6 +565,7 @@ async def _run_registered_session(
     if stop.is_set() or not _is_enabled(registry, record, marker):
         return False
     _write_status(registry, "connecting")
+    _report_foreground(marker, "Connecting")
     await _session_until_stopped(
         stop_event=stop,
         root=registry,
@@ -616,6 +642,7 @@ async def _run_connector(
             except (OSError, ValueError, WebSocketException):
                 _write_status(registry, "unavailable")
                 failures += 1
+            _report_foreground(marker, "Disconnected")
             await _wait_before_reconnect(stop, registry, failures, marker)
 
     return 0
