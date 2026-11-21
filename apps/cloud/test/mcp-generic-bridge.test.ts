@@ -37,6 +37,9 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
   let wrongTarget=false;
   let deviceOnline=true;
   let catalogResponds=true;
+  let catalogAttempts=0;
+  let transientCatalogFailures=0;
+  let onTransientCatalogFailure:(()=>void)|null=null;
   let signedRelaySerialOnly=false;
   let signedRelayBusy=false;
   let signalCatalogInFlight:(()=>void)|null=null;
@@ -72,6 +75,13 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
         }
         if(signedRelaySerialOnly)await new Promise<void>(resolve=>setTimeout(resolve,60));
       if(request.method==="catalog"){
+        catalogAttempts++;
+        if(transientCatalogFailures>0){
+          transientCatalogFailures--;
+          onTransientCatalogFailure?.();
+          onTransientCatalogFailure=null;
+          return null;
+        }
         if(!catalogResponds)return null;
         const tools=CLOUD_DIRECT_TOOLS.filter(tool=>
           tool.name==="kicad_get_version"||tool.name==="sch_move_symbol")
@@ -248,6 +258,64 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
     assert.match(JSON.stringify(read.data),/native-evidence/);
     assert.equal(remoteCalls,1);
 
+    // A scheduled signed session refresh can cause one or two catalog
+    // attempts to return null BEFORE the native READ dispatch. Retry only
+    // safe discovery, never the native action or a WRITE call.
+    let catalogsBefore=catalogAttempts;
+    transientCatalogFailures=2;
+    const renewed=await invoke(enabled,"token-read","tools/call",{
+      name:"local_mcp_read",arguments:{project_id:projectId,
+        tool_name:"kicad_get_version",arguments:{}}
+    },53,"local_mcp_read");
+    assert.equal(renewed.data.result?.structuredContent?.success,true);
+    assert.equal(catalogAttempts-catalogsBefore,3);
+    assert.equal(remoteCalls,2);
+
+    catalogsBefore=catalogAttempts;
+    transientCatalogFailures=1;
+    const directRenewed=await invoke(direct,"token-read","tools/call",{
+      name:"kicad_get_version",arguments:{project_id:projectId}
+    },54,"kicad_get_version");
+    assert.equal(directRenewed.data.result?.structuredContent?.success,true);
+    assert.equal(catalogAttempts-catalogsBefore,2);
+    assert.equal(remoteCalls,3);
+
+    // Discovery by itself must also recover after a signed session rotation.
+    catalogsBefore=catalogAttempts;
+    transientCatalogFailures=1;
+    const renewedCatalog=await invoke(enabled,"token-read","tools/call",{
+      name:"local_mcp_catalog",arguments:{project_id:projectId}
+    },57,"local_mcp_catalog");
+    assert.equal(renewedCatalog.data.result?.structuredContent?.available,true);
+    assert.equal(catalogAttempts-catalogsBefore,2);
+
+    // A revoked grant while waiting for a renewed signed catalog must not
+    // dispatch local READ even if the new relay happens to answer.
+    catalogsBefore=catalogAttempts;
+    transientCatalogFailures=1;
+    onTransientCatalogFailure=()=>{wrongTarget=true;};
+    const revokedDuringRefresh=await invoke(enabled,"token-read","tools/call",{
+      name:"local_mcp_read",arguments:{project_id:projectId,
+        tool_name:"kicad_get_version",arguments:{}}
+    },55,"local_mcp_read");
+    assert.equal(revokedDuringRefresh.data.result?.structuredContent?.reason,"project_not_granted");
+    assert.equal(remoteCalls,3);
+    wrongTarget=false;
+
+    // WRITE discovery is never automatically retried, including under
+    // a signed session refresh.
+    clientMode="write";
+    catalogsBefore=catalogAttempts;
+    transientCatalogFailures=1;
+    const writeDuringRefresh=await invoke(enabled,"token-edit","tools/call",{
+      name:"local_mcp_write",arguments:{project_id:projectId,
+        tool_name:"sch_move_symbol",arguments:{reference:"R1",x_mm:10,y_mm:20}}
+    },56,"local_mcp_write");
+    assert.equal(writeDuringRefresh.data.result?.structuredContent?.reason,"owner_connector_mcp_unavailable");
+    assert.equal(catalogAttempts-catalogsBefore,1);
+    assert.equal(remoteCalls,3);
+    clientMode="readonly";
+
     // A busy, refreshing, or otherwise unavailable signed relay is not an
     // authoritative empty local catalog. No native call must be dispatched.
     catalogResponds=false;
@@ -258,7 +326,7 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
     assert.equal(unavailable.data.result?.isError,true);
     assert.equal(unavailable.data.result?.structuredContent?.reason,"owner_connector_mcp_unavailable");
     assert.match(unavailable.data.result?.structuredContent?.guidance??"",/one at a time/);
-    assert.equal(remoteCalls,1);
+    assert.equal(remoteCalls,3);
     catalogResponds=true;
     const missing=await invoke(enabled,"token-read","tools/call",{
       name:"local_mcp_read",arguments:{project_id:projectId,
@@ -266,7 +334,7 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
     },36,"local_mcp_read");
     assert.equal(missing.data.result?.isError,true);
     assert.equal(missing.data.result?.structuredContent?.reason,"local_tool_unavailable");
-    assert.equal(remoteCalls,1);
+    assert.equal(remoteCalls,3);
 
     const wrongMode=await invoke(enabled,"token-edit","tools/call",{
       name:"local_mcp_read",arguments:{project_id:projectId,
@@ -310,7 +378,7 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
     },8,"sch_move_symbol");
     assert.match(JSON.stringify(directGood.data),/native-evidence/);
     assert.equal(localWrites,1);
-    assert.equal(remoteCalls,2);
+    assert.equal(remoteCalls,4);
 
     const good=await invoke(enabled,"token-edit","tools/call",{
       name:"local_mcp_write",arguments:{project_id:projectId,

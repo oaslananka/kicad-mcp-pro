@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import {registerDirectCloudMcpTools} from "./cloud-direct-tool-registry.js";
 import {runSerializedCloudRead} from "./cloud-read-queue.js";
+import {retryReadOnlyCatalog} from "./read-catalog-refresh.js";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 import type { Actor } from "./auth.js";
@@ -412,8 +413,14 @@ export function createCloudMcpHandler(
         if(!project)return text({available:false,selectionRequired});
         return runSerializedCloudRead(inventory,actor.sub,project.deviceId,async()=>{
           try{
-            const catalog=await genericMcpCatalog(project.deviceId,project.id,offset??0,tool_name);
-            if(!catalog)return text({available:false,reason:"owner_connector_mcp_unavailable"});
+            const catalog=await retryReadOnlyCatalog(()=>
+              genericMcpCatalog(project.deviceId,project.id,offset??0,tool_name));
+            if(!catalog){
+              const fresh=await inventory.getProject(actor.sub,actor.clientId,project.id);
+              if(!fresh||fresh.deviceId!==project.deviceId)
+                return text({available:false,reason:"project_not_granted"});
+              return text({available:false,reason:"owner_connector_mcp_unavailable"});
+            }
             // Re-check the client's current grant after waiting for the
             // signed Connector. A former Edit grant must not leak write tools.
             const currentGrant=await inventory.getProject(
@@ -439,11 +446,20 @@ export function createCloudMcpHandler(
         const execute=async()=>{
           let catalog:Awaited<ReturnType<GenericMcpCatalogReader>>=null;
           try{
-            catalog=await genericMcpCatalog(project.deviceId,project.id,0,request.tool_name);
+            catalog=mode==="write"
+              ?await genericMcpCatalog(project.deviceId,project.id,0,request.tool_name)
+              :await retryReadOnlyCatalog(()=>
+                genericMcpCatalog(project.deviceId,project.id,0,request.tool_name));
           }catch{/* No call without local contract. */}
+          // Grants may have changed while waiting for a new signed session.
+          const currentGrant=await inventory.getProject(actor.sub,actor.clientId,project.id);
+          if(!currentGrant||currentGrant.deviceId!==project.deviceId)
+            return {...text({success:false,reason:"project_not_granted"}),isError:true};
           if(!catalog)return {...text({success:false,reason:"owner_connector_mcp_unavailable",
             guidance:"The signed local catalog could not be retrieved. Check the device connection and run operations one at a time; retry discovery after the current operation or session refresh completes. No local tool call was dispatched."
           }),isError:true};
+          if(mode==="write"&&actor.scopes.has("projects:write")&&currentGrant.maxMode!=="write")
+            return {...text({success:false,reason:"project_edit_permission_required"}),isError:true};
           const tool=catalog.tools.find(t=>t.name===request.tool_name);
           if(!tool)return {...text({success:false,reason:"local_tool_unavailable",
             guidance:"The tool is absent from the current authorized local catalog. Discover available tools with local_mcp_catalog."
@@ -537,7 +553,16 @@ export function createCloudMcpHandler(
             guidance:"Choose Edit for this application's access to the project."}),isError:true};
         const execute=async()=>{
           try{
-            const catalog=await genericMcpCatalog(project.deviceId,project.id,0,tool.name);
+            const catalog=needsWrite
+              ?await genericMcpCatalog(project.deviceId,project.id,0,tool.name)
+              :await retryReadOnlyCatalog(()=>
+                genericMcpCatalog(project.deviceId,project.id,0,tool.name));
+            // Reconfirm authorization, including when catalog discovery fails.
+            const currentGrant=await inventory.getProject(actor.sub,actor.clientId,project.id);
+            if(!currentGrant||currentGrant.deviceId!==project.deviceId)
+              return {...text({success:false,reason:"project_not_granted"}),isError:true};
+            if(needsWrite&&currentGrant.maxMode!=="write")
+              return {...text({success:false,reason:"project_edit_permission_required"}),isError:true};
             const local=catalog?.tools.find(t=>t.name===tool.name);
             if(!local)return {...text({success:false,reason:"local_tool_unavailable",
               guidance:needsWrite
