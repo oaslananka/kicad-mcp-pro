@@ -997,6 +997,14 @@ def _connect_windows_foreground(
     )
 
 
+def _validate_posix_connect_options(enable_native_write: bool, project_dir: Path | None) -> None:
+    """Reject unsupported options before inspecting or changing local registration."""
+    if enable_native_write:
+        raise typer.BadParameter("Native Cloud editing is currently supported only on Windows.")
+    if project_dir is not None:
+        raise typer.BadParameter("Use cloud setup --project-dir to register a local KiCad project.")
+
+
 @cloud_app.command()
 def connect(
     alias: str = typer.Option(
@@ -1035,10 +1043,7 @@ def connect(
             origin, alias, project_dir, no_browser, new_device, enable_native_write
         )
         return
-    if enable_native_write:
-        raise typer.BadParameter("Native Cloud editing is currently supported only on Windows.")
-    if project_dir is not None:
-        raise typer.BadParameter("Use cloud setup --project-dir to register a local KiCad project.")
+    _validate_posix_connect_options(enable_native_write, project_dir)
     _require_local_pairing_storage()
     from kicad_mcp.cloud_local_registry import default_registry_root
     from kicad_mcp.cloud_registered_pilot import _single_registered_identity
