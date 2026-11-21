@@ -6,12 +6,13 @@ import math
 import os
 import re
 import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
 from defusedxml.ElementTree import parse
 
+from kicad_mcp.config import reset_config
+from kicad_mcp.tools.export_support import _run_cli
 from kicad_mcp.tools.schematic import _terminal_rotation_from_vector, label_block, wire_block
 
 NS = {"svg": "http://www.w3.org/2000/svg"}
@@ -57,7 +58,9 @@ def _fixture(kind: str) -> str:
 
 
 @pytest.mark.parametrize("kind", ["global_label", "hierarchical_label"])
-def test_native_rotated_label_geometry(tmp_path: Path, kind: str) -> None:
+def test_native_rotated_label_geometry(
+    tmp_path: Path, kind: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     if os.environ.get("KICAD_SVG_NATIVE_ACCEPTANCE") != "1":
         pytest.skip("Explicit native KiCad 10 SVG acceptance only")
     executable = os.environ.get("KICAD_MCP_KICAD_CLI") or shutil.which("kicad-cli")
@@ -65,14 +68,16 @@ def test_native_rotated_label_geometry(tmp_path: Path, kind: str) -> None:
     source = tmp_path / "rotations.kicad_sch"
     source.write_text(_fixture(kind), encoding="utf-8")
     before = source.read_bytes()
-    result = subprocess.run(
-        [executable, "sch", "export", "svg", "-o", str(tmp_path) + os.sep, str(source)],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr
+    try:
+        with monkeypatch.context() as env:
+            env.setenv("KICAD_MCP_KICAD_CLI", executable)
+            reset_config()
+            code, stdout, stderr = _run_cli(
+                "sch", "export", "svg", "-o", str(tmp_path) + os.sep, str(source), timeout=60
+            )
+    finally:
+        reset_config()
+    assert code == 0, (stdout, stderr)
     root = parse(tmp_path / "rotations.svg").getroot()
     count = 0
     for group in root.findall(".//svg:g", NS):
