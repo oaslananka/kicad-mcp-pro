@@ -329,6 +329,7 @@ def test_new_schematic_workflow_defaults_to_wired_functional_blocks() -> None:
     assert "Default new-schematic authoring" in workflow
     assert "wired-subcircuit-design" in workflow
     assert "Default for new functional schematics" in wired
-    assert "EN/RESET" in wired and "BOOT" in wired
+    assert "EN/RESET" in wired
+    assert "BOOT" in wired
     assert "Do not relocate already-wired symbols independently" in wired
     assert "cosmetic score alone is not completion" in visual
