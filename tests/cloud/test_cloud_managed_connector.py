@@ -970,3 +970,119 @@ async def test_foreground_cannot_reconnect_after_project_directory_changes(
     )
     assert calls == 1
     assert not (root / connector._FOREGROUND_FILE).exists()
+
+
+@pytest.mark.anyio
+async def test_foreground_revocation_interrupts_reconnect_delay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, project = _root(tmp_path)
+    monkeypatch.setattr(connector, "_LOCAL_AUTHORITY_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(connector, "reconnect_delay_seconds", lambda *_: 120.0)
+    entered = asyncio.Event()
+    calls = 0
+
+    async def session(**_kwargs: object) -> HandshakeReceipt:
+        nonlocal calls
+        calls += 1
+        entered.set()
+        raise OSError("fixture network interruption")
+
+    task = asyncio.create_task(
+        connector._run_connector(
+            root=root,
+            foreground=True,
+            project_resolver=lambda **_: project,
+            key_loader=lambda *_: Ed25519PrivateKey.generate(),
+            session_runner=session,
+        )
+    )
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        await asyncio.sleep(0.03)
+        connector._remove_private_file(root, connector._FOREGROUND_FILE)
+        assert await asyncio.wait_for(task, timeout=0.5) == 0
+        assert calls == 1
+        assert not connector._session_lock_held(root)
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+def test_disable_foreground_on_darwin_does_not_use_systemd(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    root, _ = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    connector._write_private_json(
+        root,
+        connector._FOREGROUND_FILE,
+        connector._identity_state(record, connector._FOREGROUND_FILE),
+    )
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(connector, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(connector, "_systemctl", lambda *_: pytest.fail("no systemd on Darwin"))
+    assert connector._disable() == 0
+    assert not (root / connector._FOREGROUND_FILE).exists()
+
+
+@pytest.mark.anyio
+async def test_foreground_rejects_changed_binding_before_key_loading(tmp_path: Path) -> None:
+    root, _project = _root(tmp_path)
+    expected = connector._single_registered_identity(root)
+    expected["cloudOrigin"] = "https://other.example"
+    with pytest.raises(ValueError):
+        await connector._run_connector(
+            root=root,
+            foreground=True,
+            expected_identity=expected,
+            key_loader=lambda *_: pytest.fail("changed binding must not load key"),
+        )
+    assert not (root / connector._FOREGROUND_FILE).exists()
+
+
+@pytest.mark.parametrize("outcome", ["success", "occupied", "invalid"])
+def test_run_foreground_routes_expected_binding_and_errors(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], outcome: str
+) -> None:
+    async def run(*, foreground: bool, expected_identity: dict[str, str]) -> int:
+        assert foreground is True
+        assert expected_identity == RECORD
+        if outcome == "occupied":
+            raise connector.ConnectorAlreadyRunningError("already running")
+        if outcome == "invalid":
+            raise LocalApprovalDeniedError("fixture private details")
+        return 0
+
+    monkeypatch.setattr(connector, "_run_service", run)
+    assert connector.run_foreground(RECORD) == (0 if outcome == "success" else 1)
+    captured = capsys.readouterr()
+    assert "fixture private details" not in captured.err
+    if outcome == "occupied":
+        assert "already running" in captured.err
+
+
+def test_foreground_disable_does_not_claim_stop_if_lock_is_still_held(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root, _ = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    connector._write_private_json(
+        root,
+        connector._FOREGROUND_FILE,
+        connector._identity_state(record, connector._FOREGROUND_FILE),
+    )
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(connector, "_FOREGROUND_SHUTDOWN_TIMEOUT", 0.0)
+    monkeypatch.setattr(
+        connector, "_systemctl", lambda *_: pytest.fail("foreground needs no systemd")
+    )
+    with connector._connector_session_lock(root):
+        assert connector._disable() == 1
+        assert not (root / connector._FOREGROUND_FILE).exists()
+        captured = capsys.readouterr()
+        assert "unverified" in captured.err
+        assert "is Off" not in captured.out

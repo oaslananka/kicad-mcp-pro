@@ -1061,6 +1061,15 @@ def connect(
         if existing["cloudOrigin"] != origin:
             raise typer.BadParameter("A different Cloud origin is already registered.")
         if not new_device:
+            if _owner_terminal():
+                from kicad_mcp.cloud_managed_connector import run_foreground
+
+                typer.echo("Starting read-only Cloud Connector; keep this terminal open.")
+                typer.echo("Press Ctrl+C to disconnect. Cloud owner grants still apply.")
+                result = run_foreground(existing)
+                if result:
+                    raise typer.Exit(result)
+                return
             typer.echo("A private local registration exists for this Cloud origin.")
             typer.echo("Cloud enrollment has NOT been verified for this registration.")
             typer.echo(f"Check your enrolled devices at {origin}/devices.")

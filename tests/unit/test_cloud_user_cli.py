@@ -1572,3 +1572,30 @@ def test_windows_bare_cloud_preserves_readonly_default_without_trusting_write_is
     assert len(launches) == 1
     assert launches[0]["allow_native_write"] is False
     assert write_issuer_trust == []
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_posix_registered_connect_uses_interactive_foreground(
+    monkeypatch, tmp_path: Path, exit_code: int
+) -> None:
+    registry = tmp_path / "cloud"
+    (registry / "projects").mkdir(parents=True)
+    (registry / "projects" / "fixture.json").write_text("private fixture")
+    record = {"cloudOrigin": "https://kicad-mcp-pro.oaslananka.dev", "deviceId": "fixture"}
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_registered_pilot._single_registered_identity", lambda _: record
+    )
+    monkeypatch.setattr("kicad_mcp.cloud_user_cli._owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_pair.main", lambda *_: pytest.fail("no new pairing"))
+    calls = []
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_managed_connector.run_foreground",
+        lambda expected: calls.append(expected) or exit_code,
+        raising=False,
+    )
+    result = CliRunner().invoke(app, ["cloud", "connect"])
+    assert result.exit_code == exit_code, result.output
+    assert calls == [record]
+    assert "terminal open" in result.output
+    assert "read-only" in result.output

@@ -59,6 +59,7 @@ _STATUS_FIELDS = frozenset({"state", "updatedAtUnixMs", "pid"})
 _STATUS_VALUES = frozenset({"connecting", "connected", "unavailable"})
 _MAX_READS = 16
 _LOCAL_AUTHORITY_POLL_SECONDS = 1.0
+_FOREGROUND_SHUTDOWN_TIMEOUT = 5.0
 _SESSION_LIFETIME_MS = 280_000
 _CONNECTED_STATUS_MAX_AGE_MS = 305_000
 _CONNECTING_STATUS_MAX_AGE_MS = 45_000
@@ -184,7 +185,10 @@ def _is_enabled(root: Path, record: dict[str, str], marker: str = _ENABLED_FILE)
 
 @contextmanager
 def _local_session_authority(
-    root: Path, foreground: bool, identity_loader: Callable[[Path], dict[str, str]]
+    root: Path,
+    foreground: bool,
+    identity_loader: Callable[[Path], dict[str, str]],
+    expected_identity: dict[str, str] | None = None,
 ) -> Iterator[str]:
     """Only an explicitly started foreground runner can create temporary authority."""
     # Called with exclusive session ownership. A crashed foreground marker
@@ -198,6 +202,8 @@ def _local_session_authority(
             "A background Cloud Connector is enabled. Disable it before foreground connect."
         )
     record = identity_loader(root)
+    if expected_identity is not None and record != expected_identity:
+        raise LocalApprovalDeniedError("Cloud registration changed; review it before reconnecting.")
     _write_status(root, "unavailable")
     _write_private_json(root, _FOREGROUND_FILE, _identity_state(record, _FOREGROUND_FILE))
     try:
@@ -311,15 +317,39 @@ def _enable() -> int:
     return 0
 
 
+def _revoke_local_authority(root: Path) -> bool:
+    removed = True
+    for marker in (_ENABLED_FILE, _FOREGROUND_FILE):
+        try:
+            _remove_private_file(root, marker)
+        except (LocalApprovalDeniedError, OSError):
+            removed = False
+    return removed
+
+
+def _wait_for_foreground_shutdown(root: Path) -> bool:
+    deadline = time.monotonic() + _FOREGROUND_SHUTDOWN_TIMEOUT
+    while _session_lock_held(root):
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+    return True
+
+
 def _disable() -> int:
     root = default_registry_root()
-    marker_removed = True
+    foreground_only = os.path.lexists(root / _FOREGROUND_FILE) and not os.path.lexists(
+        root / _ENABLED_FILE
+    )
     # Remove local authority before stopping the process/socket. Even if the
-    # private registry is damaged, still stop the service to close its socket.
-    try:
-        _remove_private_file(root, _ENABLED_FILE)
-    except (LocalApprovalDeniedError, OSError):
-        marker_removed = False
+    # registry is damaged, still stop an installed service to close its socket.
+    marker_removed = _revoke_local_authority(root)
+    if sys.platform == "darwin" or foreground_only:
+        if marker_removed and _wait_for_foreground_shutdown(root):
+            print("Local Cloud Connector is Off.")
+            return 0
+        print("Connector shutdown requested; local stop is unverified.", file=sys.stderr)
+        return 1
     try:
         result = _systemctl("disable", "--now", _SERVICE_NAME)
     except (OSError, subprocess.SubprocessError):
@@ -529,10 +559,17 @@ async def _wait_before_reconnect(
         return
     delay = reconnect_delay_seconds(failures, secrets.randbelow(1001) / 1000)
     _write_status(registry, "unavailable")
-    try:
-        await asyncio.wait_for(stop.wait(), timeout=delay)
-    except TimeoutError:
-        pass
+    deadline = asyncio.get_running_loop().time() + delay
+    while not stop.is_set() and _enabled_record(registry, marker):
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            return
+        try:
+            await asyncio.wait_for(
+                stop.wait(), timeout=min(remaining, _LOCAL_AUTHORITY_POLL_SECONDS)
+            )
+        except TimeoutError:
+            continue
 
 
 async def _run_connector(
@@ -540,6 +577,7 @@ async def _run_connector(
     root: Path | None = None,
     stop_event: asyncio.Event | None = None,
     foreground: bool = False,
+    expected_identity: dict[str, str] | None = None,
     identity_loader: Callable[[Path], dict[str, str]] = _single_registered_identity,
     project_resolver: Callable[..., LocalRegisteredRead] = resolve_registered_read,
     key_loader: Callable[..., Ed25519PrivateKey] = _load_bound_owner_key,
@@ -552,7 +590,9 @@ async def _run_connector(
 
     with (
         _connector_session_lock(registry),
-        _local_session_authority(registry, foreground, identity_loader) as marker,
+        _local_session_authority(
+            registry, foreground, identity_loader, expected_identity
+        ) as marker,
     ):
         # Invalidate the previous process's cached status before loading keys.
         _write_status(registry, "unavailable")
@@ -581,16 +621,32 @@ async def _run_connector(
     return 0
 
 
-async def _run_service() -> int:
+async def _run_service(
+    *, foreground: bool = False, expected_identity: dict[str, str] | None = None
+) -> int:
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
     try:
-        return await _run_connector(stop_event=stop)
+        return await _run_connector(
+            stop_event=stop, foreground=foreground, expected_identity=expected_identity
+        )
     finally:
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.remove_signal_handler(sig)
+
+
+def run_foreground(expected_identity: dict[str, str]) -> int:
+    """Run the owner-approved terminal connection, not the managed service."""
+    try:
+        return asyncio.run(_run_service(foreground=True, expected_identity=expected_identity))
+    except ConnectorAlreadyRunningError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+        print(_DENIED, file=sys.stderr)
+        return 1
 
 
 def main(argv: list[str] | None = None) -> int:
