@@ -406,3 +406,37 @@ async def test_sch_cosmetic_score_tool(tmp_path: Path) -> None:
     assert payload["cosmetic_score"] == 100.0
     assert payload["sheets"]
     assert "penalties_by_category" in payload["sheets"][0]
+
+
+@pytest.mark.parametrize("kind", ["global_label", "hierarchical_label"])
+@pytest.mark.parametrize(("angle", "justify"), [(90, "left"), (270, "right")])
+def test_vertical_shaped_label_box_extends_away_from_anchor(kind, angle, justify) -> None:
+    sch = (
+        f'(kicad_sch ({kind} "BOOT" (shape bidirectional) (at 50 50 {angle}) '
+        f"(effects (font (size 1.524 1.524)) (justify {justify}))))"
+    )
+    box = parse_labels(sch)[0].box()
+    if angle == 90:
+        assert box.y_max == pytest.approx(50)
+        assert box.y_min < 50
+    else:
+        assert box.y_min == pytest.approx(50)
+        assert box.y_max > 50
+
+
+def test_visual_qa_reports_legacy_vertical_justification_without_rewriting() -> None:
+    sch = """(kicad_sch (paper "A4")
+      (global_label "EN" (shape bidirectional) (at 50 50 90)
+        (effects (font (size 1.524 1.524)) (justify bottom)))
+      (hierarchical_label "BOOT" (shape bidirectional) (at 100 50 270)
+        (effects (font (size 1.524 1.524)) (justify top)))
+      (global_label "GOOD_UP" (shape bidirectional) (at 150 50 90)
+        (effects (font (size 1.524 1.524)) (justify left)))
+      (hierarchical_label "GOOD_DOWN" (shape bidirectional) (at 200 50 270)
+        (effects (font (size 1.524 1.524)) (justify right)))
+      (label "LOCAL" (at 50 100 90)
+        (effects (font (size 1.524 1.524)) (justify bottom))))"""
+    for report in (run_visual_qa(sch), run_cosmetic_qa(sch)):
+        findings = [f for f in report["findings"] if f["code"] == "vertical_label_justification"]
+        assert {f["ref"] for f in findings} == {"EN", "BOOT"}
+        assert all(f["level"] == "WARN" for f in findings)

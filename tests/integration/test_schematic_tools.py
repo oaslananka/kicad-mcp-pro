@@ -1349,9 +1349,9 @@ async def test_schematic_hierarchical_label_default_justify_avoids_icon_overlap(
 
     for rotation, expected_justify in (
         (0, "left"),
-        (90, "bottom"),
+        (90, "left"),
         (180, "right"),
-        (270, "top"),
+        (270, "right"),
     ):
         await call_tool_text(
             server,
@@ -1359,13 +1359,13 @@ async def test_schematic_hierarchical_label_default_justify_avoids_icon_overlap(
             {"text": f"NET_{rotation}", "x_mm": 20.32, "y_mm": 20.32, "rotation": rotation},
         )
         schematic = (sample_project / "demo.kicad_sch").read_text(encoding="utf-8")
-        assert f"(justify {expected_justify})" in schematic
+        label = re.search(rf'\(hierarchical_label "NET_{rotation}".*?\n\t\)', schematic, re.DOTALL)
+        assert label is not None
+        assert f"(justify {expected_justify})" in label.group(0)
 
     labels = await call_tool_text(server, "sch_get_labels", {})
     assert "justify=left" in labels
-    assert "justify=bottom" in labels
     assert "justify=right" in labels
-    assert "justify=top" in labels
 
 
 @pytest.mark.anyio
