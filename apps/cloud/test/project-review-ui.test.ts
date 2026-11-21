@@ -2,7 +2,7 @@
 import {test} from "node:test";
 import {readFileSync} from "node:fs";
 import {fileURLToPath} from "node:url";
-import {runInNewContext} from "node:vm";
+import {runInNewContext, Script} from "node:vm";
 import {transformSync} from "esbuild";
 const template=readFileSync(fileURLToPath(new URL("../src/project-review.html",import.meta.url)),"utf8");
 const script=readFileSync(fileURLToPath(new URL("../src/project-review-app.ts",import.meta.url)),"utf8");
@@ -193,4 +193,16 @@ test("a revoked project invalidates in-flight PCB editor tool discovery",async()
   assert.equal(h.nodes["editor-status"].hidden,true);
   assert.equal(h.nodes["check-editor"].disabled,true);
   assert.match(h.nodes["status"].textContent,/Project unavailable/);
+});
+
+test("generated project review HTML contains valid inline JavaScript",()=>{
+  const rendered=readFileSync(fileURLToPath(new URL("../dist/project-review.html",import.meta.url)),"utf8");
+  const scriptMatch=rendered.match(/<script>([\s\S]*?)<\/script>/i);
+  assert.ok(scriptMatch,"Expected one inline MCP App script");
+  assert.equal((rendered.match(/<script\b/gi)||[]).length,1,
+    "Bundled script must not inject extra HTML script elements");
+  assert.doesNotMatch(rendered,/\/\*__PROJECT_REVIEW_BUNDLE__\*\//,
+    "Source marker must be completely replaced");
+  assert.doesNotThrow(()=>new Script(scriptMatch[1]),
+    "Bundled MCP App JavaScript must parse after HTML template injection");
 });

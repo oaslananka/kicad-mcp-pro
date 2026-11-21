@@ -25,4 +25,5 @@ if (result.outputFiles.length !== 1) {
 // Only trusted, built-in source goes into the fixed HTML template.
 // Escape script-end tags to preserve the HTML parser boundary.
 const builtScript = result.outputFiles[0].text.replace(/<\/script/gi, "<\\/script");
-writeFileSync(outputPath, html.replace(marker, builtScript));
+// Preserve dollar-sign replacement sequences in minified JavaScript as literal content.
+writeFileSync(outputPath, html.replace(marker, () => builtScript));
