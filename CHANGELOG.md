@@ -10,6 +10,14 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.21.5](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.21.4...mcp-server-v4.21.5) (2026-11-21)
+
+
+### Bug Fixes
+
+* **cloud:** preserve existing POSIX registration during recovery ([#1869](https://github.com/oaslananka/kicad-mcp-pro/issues/1869)) ([d1a8ae1](https://github.com/oaslananka/kicad-mcp-pro/commit/d1a8ae1438791625d901baab81a984f649b845cf)), closes [#1868](https://github.com/oaslananka/kicad-mcp-pro/issues/1868)
+* **cloud:** tolerate cold MCP catalog startup ([#1866](https://github.com/oaslananka/kicad-mcp-pro/issues/1866)) ([#1867](https://github.com/oaslananka/kicad-mcp-pro/issues/1867)) ([408048b](https://github.com/oaslananka/kicad-mcp-pro/commit/408048b608ee5605d79378101352b9ae41811025))
+
 ## [4.21.4](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.21.3...mcp-server-v4.21.4) (2026-11-21)
 
 
