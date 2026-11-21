@@ -92,7 +92,8 @@ def test_native_rotated_label_geometry(
         strokes = [
             point for path in glyph.findall("svg:path", NS) for point in _points(path.attrib["d"])
         ]
-        assert strokes and len(polygon) >= 4
+        assert strokes
+        assert len(polygon) >= 4
         x, y = polygon[0]
         column = round(x / 50.8) - 1
         ux, uy = DIRECTIONS[column]
