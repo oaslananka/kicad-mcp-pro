@@ -50,9 +50,11 @@ from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
 _SERVICE_NAME = "kicad-mcp-cloud-connector.service"
 _ENABLED_FILE = "connector-enabled.json"
+_FOREGROUND_FILE = "connector-foreground.json"
 _STATUS_FILE = "connector-status.json"
 _SESSION_LOCK_FILE = "connector-session.lock"
 _ENABLED_FIELDS = frozenset({"enabled", "ownerSub", "cloudOrigin", "deviceId", "projectId"})
+_FOREGROUND_FIELDS = _ENABLED_FIELDS | {"keySlot", "directory", "filenameStem"}
 _STATUS_FIELDS = frozenset({"state", "updatedAtUnixMs", "pid"})
 _STATUS_VALUES = frozenset({"connecting", "connected", "unavailable"})
 _MAX_READS = 16
@@ -137,45 +139,71 @@ def _remove_private_file(root: Path, name: str) -> None:
         os.close(folder_fd)
 
 
-def _identity_state(record: dict[str, str]) -> dict[str, Any]:
-    return {
+def _identity_state(record: dict[str, str], marker: str = _ENABLED_FILE) -> dict[str, Any]:
+    state: dict[str, Any] = {
         "enabled": True,
         "ownerSub": record["ownerSub"],
         "cloudOrigin": record["cloudOrigin"],
         "deviceId": record["deviceId"],
         "projectId": record["projectId"],
     }
+    if marker == _FOREGROUND_FILE:
+        state.update({field: record[field] for field in _FOREGROUND_FIELDS - _ENABLED_FIELDS})
+    return state
 
 
-def _enabled_record(root: Path) -> dict[str, Any] | None:
+def _enabled_record(root: Path, marker: str = _ENABLED_FILE) -> dict[str, Any] | None:
     try:
-        value = _read_private_json(root, _ENABLED_FILE)
+        value = _read_private_json(root, marker)
     except LocalApprovalDeniedError:
         return None
+    fields = _FOREGROUND_FIELDS if marker == _FOREGROUND_FILE else _ENABLED_FIELDS
     if (
-        value.keys() != _ENABLED_FIELDS
+        value.keys() != fields
         or value.get("enabled") is not True
         or any(
-            not isinstance(value.get(key), str) or not value[key]
-            for key in _ENABLED_FIELDS - {"enabled"}
+            not isinstance(value.get(key), str) or not value[key] for key in fields - {"enabled"}
         )
     ):
         return None
     return value
 
 
-def _is_enabled(root: Path, record: dict[str, str]) -> bool:
-    enabled = _enabled_record(root)
-    if enabled is None or enabled != _identity_state(record):
+def _is_enabled(root: Path, record: dict[str, str], marker: str = _ENABLED_FILE) -> bool:
+    if marker == _FOREGROUND_FILE and os.path.lexists(root / _ENABLED_FILE):
+        return False
+    enabled = _enabled_record(root, marker)
+    if enabled is None or enabled != _identity_state(record, marker):
         return False
     try:
         current = _single_registered_identity(root)
     except (OSError, ValueError):
         return False
-    return all(
-        current.get(key) == record.get(key)
-        for key in ("ownerSub", "cloudOrigin", "deviceId", "projectId")
-    )
+    return enabled == _identity_state(current, marker)
+
+
+@contextmanager
+def _local_session_authority(
+    root: Path, foreground: bool, identity_loader: Callable[[Path], dict[str, str]]
+) -> Iterator[str]:
+    """Only an explicitly started foreground runner can create temporary authority."""
+    # Called with exclusive session ownership. A crashed foreground marker
+    # never grants the managed runner authority and can safely be discarded.
+    if not foreground:
+        _remove_private_file(root, _FOREGROUND_FILE)
+        yield _ENABLED_FILE
+        return
+    if os.path.lexists(root / _ENABLED_FILE):
+        raise ConnectorAlreadyRunningError(
+            "A background Cloud Connector is enabled. Disable it before foreground connect."
+        )
+    record = identity_loader(root)
+    _write_status(root, "unavailable")
+    _write_private_json(root, _FOREGROUND_FILE, _identity_state(record, _FOREGROUND_FILE))
+    try:
+        yield _FOREGROUND_FILE
+    finally:
+        _remove_private_file(root, _FOREGROUND_FILE)
 
 
 def _write_status(root: Path, state: str) -> None:
@@ -320,18 +348,23 @@ def _disable() -> int:
 def _status() -> str:
     root = default_registry_root()
     marker = root / _ENABLED_FILE
-    if os.name != "posix" or sys.platform == "darwin":
-        # A legacy marker is not evidence of a running Connector.
+    if os.name != "posix":
         return "Unavailable" if marker.exists() else "Off"
-    try:
-        marker.lstat()
-    except FileNotFoundError:
-        return "Off"
+    if not os.path.lexists(marker):
+        if _enabled_record(root, _FOREGROUND_FILE) is None or not _session_lock_held(root):
+            return "Off"
+        return _cached_connection_status(root)
+    if sys.platform == "darwin":
+        return "Unavailable"
     if _enabled_record(root) is None or not _session_lock_held(root):
         return "Unavailable"
     active = _systemctl("is-active", _SERVICE_NAME)
     if active.returncode != 0 or active.stdout.strip() != "active":
         return "Unavailable"
+    return _cached_connection_status(root)
+
+
+def _cached_connection_status(root: Path) -> str:
     try:
         value = _read_private_json(root, _STATUS_FILE)
         state, updated = value.get("state"), value.get("updatedAtUnixMs")
@@ -353,10 +386,10 @@ def _status() -> str:
 
 
 def _dispatcher_factory(
-    root: Path, record: dict[str, str], project: LocalRegisteredRead
+    root: Path, record: dict[str, str], project: LocalRegisteredRead, marker: str = _ENABLED_FILE
 ) -> Callable[[HandshakeReceipt], LocalReadDispatch]:
     def create(receipt: HandshakeReceipt) -> LocalReadDispatch:
-        if not _is_enabled(root, record):
+        if not _is_enabled(root, record, marker):
             raise LocalApprovalDeniedError(_DENIED)
         # This callback runs only after the authenticated device/session
         # handshake has reached connector.ready.
@@ -375,7 +408,7 @@ def _dispatcher_factory(
                 directory=project.project_directory,
                 filename_stem=project.filename_stem,
             ),
-            current_authorization=lambda: _is_enabled(root, record),
+            current_authorization=lambda: _is_enabled(root, record, marker),
             max_reads=_MAX_READS,
             native_drc=False,
         )
@@ -383,10 +416,12 @@ def _dispatcher_factory(
     return create
 
 
-async def _wait_for_local_stop(stop: asyncio.Event, root: Path, record: dict[str, str]) -> None:
+async def _wait_for_local_stop(
+    stop: asyncio.Event, root: Path, record: dict[str, str], marker: str
+) -> None:
     """Close idle as well as active sessions when local authority is removed."""
     while not stop.is_set():
-        if not _is_enabled(root, record):
+        if not _is_enabled(root, record, marker):
             stop.set()
             return
         try:
@@ -403,6 +438,7 @@ async def _session_until_stopped(
     project: LocalRegisteredRead,
     signing_key: Ed25519PrivateKey,
     session_runner: Callable[..., Awaitable[HandshakeReceipt]],
+    marker: str,
 ) -> None:
     async def run_session() -> HandshakeReceipt:
         options = {
@@ -411,7 +447,7 @@ async def _session_until_stopped(
             "owner_sub": record["ownerSub"],
             "device_id": record["deviceId"],
             "signing_key": signing_key,
-            "dispatcher_factory": _dispatcher_factory(root, record, project),
+            "dispatcher_factory": _dispatcher_factory(root, record, project, marker),
             "max_reads": _MAX_READS,
         }
         if session_runner is execute_owner_managed_read_session:
@@ -421,18 +457,18 @@ async def _session_until_stopped(
             )
 
             def folder_factory(receipt: HandshakeReceipt) -> LocalFolderBrowseService:
-                if receipt.device_id != record["deviceId"] or not _is_enabled(root, record):
+                if receipt.device_id != record["deviceId"] or not _is_enabled(root, record, marker):
                     raise LocalApprovalDeniedError(_DENIED)
                 return device_folder_service(
                     project.project_directory,
-                    authorization=lambda: _is_enabled(root, record),
+                    authorization=lambda: _is_enabled(root, record, marker),
                 )
 
             options["folder_service_factory"] = folder_factory
         return await session_runner(**options)
 
     session_task = asyncio.create_task(run_session())
-    stop_task = asyncio.create_task(_wait_for_local_stop(stop_event, root, record))
+    stop_task = asyncio.create_task(_wait_for_local_stop(stop_event, root, record, marker))
     try:
         done, _ = await asyncio.wait({session_task, stop_task}, return_when=asyncio.FIRST_COMPLETED)
         if stop_task in done:
@@ -455,10 +491,11 @@ async def _run_registered_session(
     project_resolver: Callable[..., LocalRegisteredRead],
     key_loader: Callable[..., Ed25519PrivateKey],
     session_runner: Callable[..., Awaitable[HandshakeReceipt]],
+    marker: str,
 ) -> bool:
     # Revalidate the unique registration and key binding before each reconnect.
     record = identity_loader(registry)
-    if not _is_enabled(registry, record):
+    if not _is_enabled(registry, record, marker):
         return False
     project = project_resolver(
         owner_sub=record["ownerSub"],
@@ -470,7 +507,7 @@ async def _run_registered_session(
     signing_key = key_loader(project.key_file, record["cloudOrigin"], record["deviceId"])
     # A local disable racing registration/key loading must prevent a new
     # outbound handshake after the owner removes the enable marker.
-    if stop.is_set() or not _is_enabled(registry, record):
+    if stop.is_set() or not _is_enabled(registry, record, marker):
         return False
     _write_status(registry, "connecting")
     await _session_until_stopped(
@@ -480,12 +517,15 @@ async def _run_registered_session(
         project=project,
         signing_key=signing_key,
         session_runner=session_runner,
+        marker=marker,
     )
     return True
 
 
-async def _wait_before_reconnect(stop: asyncio.Event, registry: Path, failures: int) -> None:
-    if stop.is_set() or not _enabled_record(registry):
+async def _wait_before_reconnect(
+    stop: asyncio.Event, registry: Path, failures: int, marker: str
+) -> None:
+    if stop.is_set() or not _enabled_record(registry, marker):
         return
     delay = reconnect_delay_seconds(failures, secrets.randbelow(1001) / 1000)
     _write_status(registry, "unavailable")
@@ -499,6 +539,7 @@ async def _run_connector(
     *,
     root: Path | None = None,
     stop_event: asyncio.Event | None = None,
+    foreground: bool = False,
     identity_loader: Callable[[Path], dict[str, str]] = _single_registered_identity,
     project_resolver: Callable[..., LocalRegisteredRead] = resolve_registered_read,
     key_loader: Callable[..., Ed25519PrivateKey] = _load_bound_owner_key,
@@ -506,14 +547,17 @@ async def _run_connector(
 ) -> int:
     registry = default_registry_root() if root is None else root
     stop = stop_event if stop_event is not None else asyncio.Event()
-    if not _enabled_record(registry):
+    if not foreground and not _enabled_record(registry):
         return 0
 
-    with _connector_session_lock(registry):
+    with (
+        _connector_session_lock(registry),
+        _local_session_authority(registry, foreground, identity_loader) as marker,
+    ):
         # Invalidate the previous process's cached status before loading keys.
         _write_status(registry, "unavailable")
         failures = 0
-        while not stop.is_set() and _enabled_record(registry):
+        while not stop.is_set() and _enabled_record(registry, marker):
             try:
                 connected = await _run_registered_session(
                     registry=registry,
@@ -522,6 +566,7 @@ async def _run_connector(
                     project_resolver=project_resolver,
                     key_loader=key_loader,
                     session_runner=session_runner,
+                    marker=marker,
                 )
                 if not connected:
                     break
@@ -531,7 +576,7 @@ async def _run_connector(
             except (OSError, ValueError, WebSocketException):
                 _write_status(registry, "unavailable")
                 failures += 1
-            await _wait_before_reconnect(stop, registry, failures)
+            await _wait_before_reconnect(stop, registry, failures, marker)
 
     return 0
 

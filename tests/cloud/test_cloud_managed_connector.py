@@ -811,3 +811,162 @@ async def test_local_authority_revocation_closes_idle_session(
         if not task.done():
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.anyio
+async def test_foreground_authority_is_temporary_and_reconnects_same_device(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, project = _root(tmp_path)
+    stop = asyncio.Event()
+    calls = []
+    monkeypatch.setattr(connector, "reconnect_delay_seconds", lambda *_: 0.0)
+
+    async def session(**kwargs: object) -> HandshakeReceipt:
+        calls.append(kwargs["device_id"])
+        assert not (root / connector._ENABLED_FILE).exists()
+        assert (root / "connector-foreground.json").is_file()
+        if len(calls) == 1:
+            raise OSError("fixture network interruption")
+        stop.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    result = await connector._run_connector(
+        root=root,
+        stop_event=stop,
+        foreground=True,
+        project_resolver=lambda **_: project,
+        key_loader=lambda *_: Ed25519PrivateKey.generate(),
+        session_runner=session,
+    )
+    assert result == 0
+    assert calls == [DEVICE, DEVICE]
+    assert not (root / "connector-foreground.json").exists()
+    assert not (root / connector._ENABLED_FILE).exists()
+    assert not connector._session_lock_held(root)
+
+
+@pytest.mark.anyio
+async def test_foreground_refuses_persistent_authority_without_mutation(tmp_path: Path) -> None:
+    root, _project = _root(tmp_path)
+    connector._write_private_json(root, connector._ENABLED_FILE, connector._identity_state(RECORD))
+    previous = (root / connector._ENABLED_FILE).read_bytes()
+    with pytest.raises(RuntimeError, match="background"):
+        await connector._run_connector(root=root, foreground=True)
+    assert (root / connector._ENABLED_FILE).read_bytes() == previous
+    assert not (root / "connector-foreground.json").exists()
+
+
+@pytest.mark.anyio
+async def test_service_does_not_inherit_crashed_foreground_authority(tmp_path: Path) -> None:
+    root, _project = _root(tmp_path)
+    connector._write_private_json(
+        root, "connector-foreground.json", connector._identity_state(RECORD)
+    )
+    assert (
+        await connector._run_connector(
+            root=root, identity_loader=lambda _: pytest.fail("background must stay disabled")
+        )
+        == 0
+    )
+    assert not (root / connector._ENABLED_FILE).exists()
+
+
+@pytest.mark.anyio
+async def test_foreground_status_and_revocation_without_systemd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, project = _root(tmp_path)
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(connector, "_LOCAL_AUTHORITY_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(
+        connector, "_systemctl", lambda *_: pytest.fail("foreground needs no systemd")
+    )
+    ready = asyncio.Event()
+    closed = asyncio.Event()
+
+    async def session(**kwargs: object) -> HandshakeReceipt:
+        dispatcher = kwargs["dispatcher_factory"](HandshakeReceipt(DEVICE, SESSION))
+        dispatcher._authorize_now()
+        ready.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            assert not dispatcher._current_authorization()
+            closed.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    task = asyncio.create_task(
+        connector._run_connector(
+            root=root,
+            foreground=True,
+            project_resolver=lambda **_: project,
+            key_loader=lambda *_: Ed25519PrivateKey.generate(),
+            session_runner=session,
+        )
+    )
+    try:
+        await asyncio.wait_for(ready.wait(), timeout=2)
+        assert connector._status() == "Connected"
+        connector._remove_private_file(root, connector._FOREGROUND_FILE)
+        assert connector._status() == "Off"
+        assert await asyncio.wait_for(task, timeout=2) == 0
+        assert closed.is_set()
+        assert not connector._session_lock_held(root)
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+def test_crashed_foreground_status_is_off(monkeypatch, tmp_path: Path) -> None:
+    root, _ = _root(tmp_path)
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    record = connector._single_registered_identity(root)
+    connector._write_private_json(
+        root,
+        connector._FOREGROUND_FILE,
+        connector._identity_state(record, connector._FOREGROUND_FILE),
+    )
+    connector._write_status(root, "connected")
+    with connector._connector_session_lock(root):
+        pass
+    assert connector._status() == "Off"
+
+
+@pytest.mark.anyio
+async def test_foreground_cannot_reconnect_after_project_directory_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, project = _root(tmp_path)
+    monkeypatch.setattr(connector, "reconnect_delay_seconds", lambda *_: 0.0)
+    stop = asyncio.Event()
+    calls = 0
+    changed_dir = tmp_path / "other-project"
+    changed_dir.mkdir()
+
+    async def session(**_kwargs: object) -> HandshakeReceipt:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            record_path = root / "projects" / f"{PROJECT}.json"
+            record = json.loads(record_path.read_text())
+            record["directory"] = str(changed_dir)
+            record_path.write_text(json.dumps(record))
+        else:
+            stop.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    assert (
+        await connector._run_connector(
+            root=root,
+            foreground=True,
+            stop_event=stop,
+            project_resolver=lambda **_: project,
+            key_loader=lambda *_: Ed25519PrivateKey.generate(),
+            session_runner=session,
+        )
+        == 0
+    )
+    assert calls == 1
+    assert not (root / connector._FOREGROUND_FILE).exists()
