@@ -83,11 +83,15 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
           return null;
         }
         if(!catalogResponds)return null;
-        const tools=CLOUD_DIRECT_TOOLS.filter(tool=>
+        const tools:Array<{name:string;description:string;inputSchema:Record<string,unknown>;accessMode:"readonly"|"write"}>=CLOUD_DIRECT_TOOLS.filter(tool=>
           tool.name==="kicad_get_version"||tool.name==="sch_move_symbol")
           .map(tool=>({name:tool.name,description:tool.description,
             inputSchema:tool.inputSchema as unknown as Record<string,unknown>,
             accessMode:tool.accessMode as "readonly"|"write"}));
+        if(request.toolName==="kicad_get_server_info")
+          tools.push({name:"kicad_get_server_info",
+            description:"Read bounded KiCad editor status",
+            inputSchema:{type:"object",properties:{}},accessMode:"readonly"});
         return {kind:"connector.mcp_result" as const,version:1 as const,
           requestId:request.requestId,projectId,method:"catalog" as const,
           ok:true,tools:request.toolName?tools.filter(t=>t.name===request.toolName):tools,
@@ -104,7 +108,11 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
       }
       return {kind:"connector.mcp_result" as const,version:1 as const,
         requestId:request.requestId,projectId,method:"call" as const,
-        ok:true,result:{content:[{type:"text",text:"native-evidence"}],isError:false}};
+        ok:true,result:request.toolName==="kicad_get_server_info"
+          ?{content:[{type:"text",text:"private-native-evidence"}],isError:false,
+            structuredContent:{kicad:{ipcAvailable:true,livePcbContext:true,
+              cliPath:"never-export-this-path"}}}
+          :{content:[{type:"text",text:"native-evidence"}],isError:false}};
       }finally{
         if(signedRelaySerialOnly)signedRelayBusy=false;
       }
@@ -165,14 +173,21 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
       tool.name==="local_mcp_call"),"disabled bridge must not register an executable tool");
     const on=await invoke(enabled,"token-read","tools/list");
     assert.deepEqual((on.data.result?.tools??[]).map((tool:{name:string})=>tool.name).sort(),
-      ["list_projects","local_mcp_catalog","local_mcp_read","local_mcp_write"],
+      ["get_project_editor_status","list_projects","local_mcp_catalog","local_mcp_read","local_mcp_write"],
       "Production Cloud should expose only project discovery and the real local tool gateway");
     assert.match(JSON.stringify(on.data),/local_mcp_read/);
     assert.doesNotMatch(JSON.stringify(on.data),/local_mcp_call/,
       "Modern Cloud tool inventory must not mention the superseded command");
-    const list=(on.data.result?.tools??[]) as Array<{name:string;_meta?:{securitySchemes?:unknown}}>;
+    const list=(on.data.result?.tools??[]) as Array<{name:string;_meta?:{securitySchemes?:unknown;ui?:{visibility?:string[]};"openai/widgetAccessible"?:boolean}}>;
     const readEndpoint=list.find(t=>t.name==="local_mcp_read");
     const writeEndpoint=list.find(t=>t.name==="local_mcp_write");
+    const widgetEndpoint=list.find(t=>t.name==="get_project_editor_status");
+    assert.deepEqual(widgetEndpoint?._meta?.ui?.visibility,["app"]);
+    assert.equal(widgetEndpoint?._meta?.["openai/widgetAccessible"],true);
+    assert.deepEqual(widgetEndpoint?._meta?.securitySchemes,
+      [{type:"oauth2",scopes:["projects:read"]}]);
+    assert.notEqual(writeEndpoint?._meta?.["openai/widgetAccessible"],true);
+    assert.notEqual(readEndpoint?._meta?.["openai/widgetAccessible"],true);
     assert.deepEqual(readEndpoint?._meta?.securitySchemes,
       [{type:"oauth2",scopes:["projects:read"]}]);
     assert.deepEqual(writeEndpoint?._meta?.securitySchemes,
@@ -466,6 +481,29 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
         tool_name:"kicad_get_version",arguments:{}}
     },11,"local_mcp_read");
     assert.equal(other.data.result?.isError,true);
+
+    // Widget-exposed probe is a fixed safe READ, not a general native gateway.
+    wrongTarget=false;
+    clientMode="readonly";
+    const callsBeforeEditor=remoteCalls;
+    const writesBeforeEditor=localWrites;
+    const editor=await invoke(enabled,"token-read","tools/call",{
+      name:"get_project_editor_status",arguments:{project_id:projectId}
+    },62,"get_project_editor_status");
+    assert.deepEqual(editor.data.result?.structuredContent,{
+      success:true,local_result:{isError:false,structuredContent:{
+        kicad:{ipcAvailable:true,livePcbContext:true}
+      }}
+    });
+    assert.doesNotMatch(JSON.stringify(editor.data),/never-export-this-path|private-native-evidence/);
+    assert.equal(remoteCalls,callsBeforeEditor+1);
+    assert.equal(localWrites,writesBeforeEditor);
+    wrongTarget=true;
+    const deniedEditor=await invoke(enabled,"token-read","tools/call",{
+      name:"get_project_editor_status",arguments:{project_id:projectId}
+    },63,"get_project_editor_status");
+    assert.equal(deniedEditor.data.result?.structuredContent?.reason,"project_not_granted");
+    assert.equal(remoteCalls,callsBeforeEditor+1);
   }finally{
     for(const server of [disabled,enabled,direct])await new Promise<void>(resolve=>server.close(()=>resolve()));
   }

@@ -83,8 +83,8 @@ checkEditor.addEventListener("click",async()=>{
   editorStatus.textContent="Checking KiCad PCB Editor (read-only)...";
   try{
     const probe=await app.callServerTool({
-      name:"local_mcp_read",
-      arguments:{project_id:requestedProject,tool_name:"kicad_get_server_info",arguments:{}}
+      name:"get_project_editor_status",
+      arguments:{project_id:requestedProject}
     });
     if(projectGeneration!==generation||projectId!==requestedProject)return;
     const data=probe.structuredContent;
@@ -117,26 +117,7 @@ checkEditor.addEventListener("click",async()=>{
       editorStatus.textContent="PCB Editor IPC reports an open board, but native editing is not enabled for this session. Review the linked project and Edit permissions in Devices.";
       return;
     }
-    const response=await app.callServerTool({
-      name:"local_mcp_catalog",
-      arguments:{project_id:requestedProject,tool_name:"pcb_move_footprint"}
-    });
-    if(projectGeneration!==generation||projectId!==requestedProject)return;
-    const toolsData=response.structuredContent;
-    const tools=toolsData&&typeof toolsData==="object"&&"tools" in toolsData
-      ?toolsData.tools:undefined;
-    const available=toolsData&&typeof toolsData==="object"&&"available" in toolsData
-      &&toolsData.available===true;
-    if(!available||!Array.isArray(tools)){
-      editorStatus.textContent="Could not verify PCB Editor tools. Check the Connector and project access.";
-      return;
-    }
-    const move=tools.some(tool=>tool&&typeof tool==="object"&&
-      "name" in tool&&tool.name==="pcb_move_footprint"&&
-      "accessMode" in tool&&tool.accessMode==="write");
-    editorStatus.textContent=move
-      ?"PCB move tool is listed, but the linked project identity is unverified. This does not authorize editing or prove save/reopen."
-      :"PCB move tool is not listed. Confirm the linked board in KiCad PCB Editor, then check again.";
+    editorStatus.textContent="PCB Editor IPC reports an open board. This read-only check does not authorize editing, saving, or a future write.";
   }catch{
     if(projectGeneration===generation&&projectId===requestedProject)
       editorStatus.textContent="Could not verify PCB Editor. Check the Connector and project access.";
