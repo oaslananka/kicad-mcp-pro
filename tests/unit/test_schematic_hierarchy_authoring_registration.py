@@ -131,7 +131,7 @@ def test_registration_preserves_names_descriptions_and_defaults() -> None:
     label_description = (
         "Add a {kind} label, preserving the requested shape and rotation.\n\n"
         "By default the text is justified away from the directional icon based\n"
-        "on ``rotation`` (0=left, 90=bottom, 180=right, 270=top) so it doesn't\n"
+        "on ``rotation`` (0=left, 90=left, 180=right, 270=right) so it doesn't\n"
         'render on top of the icon. Pass ``justify`` to override, or "none" to\n'
         "force KiCad's centered default.\n"
     )

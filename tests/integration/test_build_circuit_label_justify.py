@@ -76,3 +76,16 @@ async def test_build_circuit_writes_requested_label_justify_and_rotation(
     assert "(justify right)" in blocks["GLOBAL_RIGHT"]
     # No justify requested: unchanged, KiCad's centred default for a local label.
     assert "(justify" not in blocks["PLAIN"]
+
+
+@pytest.mark.parametrize("kind", ["global_label", "hierarchical_label"])
+@pytest.mark.parametrize(
+    ("rotation", "expected"), [(0, "left"), (90, "left"), (180, "right"), (270, "right")]
+)
+def test_shaped_label_default_uses_text_local_horizontal_justify(kind, rotation, expected) -> None:
+    from kicad_mcp.tools.schematic import label_block
+
+    for name in ("EN", "BOOT"):
+        block = label_block(name, 50.8, 50.8, rotation, kind=kind, shape="bidirectional")
+        assert f"(justify {expected})" in block
+        assert f"(at 50.8 50.8 {rotation})" in block
