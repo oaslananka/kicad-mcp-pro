@@ -364,5 +364,6 @@ def test_one_command_cli_passes_real_interactive_owner_migration_flag(
     )
     cloud_user_cli.cloud_entry(SimpleNamespace(invoked_subcommand=None))
     assert calls[0] == ("migrate", replacement, {"allow_repair_migration": True})
-    assert calls[1][0] == "issuer"
-    assert calls[2][0] == "connect"
+    assert calls[1][0] == "connect"
+    assert calls[1][2]["allow_native_write"] is False
+    assert all(event[0] != "issuer" for event in calls)

@@ -1350,3 +1350,33 @@ def test_owner_trust_bootstraps_write_marker_without_network(
     )
     assert result.exit_code == 0, result.output
     assert events == ["marker", "pin"]
+
+
+def test_windows_bare_cloud_preserves_readonly_default_without_trusting_write_issuer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Starting the ordinary Cloud journey must not request native edit authority."""
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli as cli
+
+    project = SimpleNamespace(record_id="existing-owner-record")
+    launches: list[dict[str, object]] = []
+    write_issuer_trust: list[object] = []
+    monkeypatch.setattr(cli, "_is_windows", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_windows_connector.selected_project", lambda: project)
+    monkeypatch.setattr(
+        cli,
+        "_connect_windows_foreground",
+        lambda *_args, **kwargs: launches.append(kwargs),
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_windows_write_issuer.trust_bundled_owner_cloud_issuer",
+        lambda *args, **kwargs: write_issuer_trust.append((args, kwargs)),
+    )
+
+    result = CliRunner().invoke(app, ["cloud"])
+    assert result.exit_code == 0, result.output
+    assert len(launches) == 1
+    assert launches[0]["allow_native_write"] is False
+    assert write_issuer_trust == []

@@ -72,23 +72,13 @@ def cloud_entry(ctx: typer.Context) -> None:
 
     if isinstance(existing, WindowsRegisteredProject):
         remember_existing_project_device(existing, allow_repair_migration=_owner_terminal())
-    from kicad_mcp.cloud_windows_write_issuer import trust_bundled_owner_cloud_issuer
-    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
-
-    try:
-        trust_bundled_owner_cloud_issuer(existing.record_id, origin=DEFAULT_CLOUD_ORIGIN)
-    except LocalWriteDeniedError:
-        raise typer.BadParameter(
-            "The Cloud edit signing key could not be verified. Your device and project "
-            "were not changed; no editing capability was started."
-        ) from None
     _connect_windows_foreground(
         DEFAULT_CLOUD_ORIGIN,
         _DEFAULT_DEVICE_ALIAS,
         project_dir=None,
         no_browser=False,
         new_device=False,
-        allow_native_write=True,
+        allow_native_write=False,
     )
 
 
