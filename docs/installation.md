@@ -95,6 +95,13 @@ from an interactive owner terminal:
 kicad-mcp-pro cloud
 ~~~
 
+To choose a specific local KiCad folder when first registering, use
+`kicad-mcp-pro cloud setup --browse` (native macOS folder picker, or a supported
+Linux desktop picker). If no desktop picker is available, supply
+`kicad-mcp-pro cloud setup --project-dir /path/to/project`. Explicitly choosing a
+different folder from the existing registration refuses to connect the old project
+silently; check `cloud status` and use an owner-approved project-switching flow.
+
 On a fresh installation, select a KiCad project and approve the device in the
 signed-in Cloud browser. A registered device reuses its existing identity and
 project registration. Keep the terminal open; `Connected` indicates a verified
