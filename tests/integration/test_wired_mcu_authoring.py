@@ -20,10 +20,10 @@ from tests.conftest import call_tool_text
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures/schematic_authoring/wroom32e.json"
 LIBRARIES = ("RF_Module", "Device", "Switch", "Connector_Generic", "power")
-USED_PINS = {"2", "[1,15,38,39]", "3", "25", "34", "35", "27"}
+REGULATED_FIXTURE = FIXTURE.with_name("wroom32e_regulator_gpio.json")
 
 
-def _seed(folder: Path, libraries: Path) -> Path:
+def _seed(folder: Path, libraries: Path, library_names: tuple[str, ...]) -> Path:
     folder.mkdir()
     (folder / "demo.kicad_pro").write_text('{"meta":{"version":1}}', encoding="utf-8")
     schematic = folder / "demo.kicad_sch"
@@ -37,7 +37,7 @@ def _seed(folder: Path, libraries: Path) -> Path:
         f' (lib (name "{name}")(type "KiCad")'
         f'(uri "{(libraries / (name + ".kicad_sym")).as_posix()}")'
         '(options "")(descr ""))'
-        for name in LIBRARIES
+        for name in library_names
     )
     (folder / "sym-lib-table").write_text(f"(sym_lib_table\n{entries}\n)\n", encoding="utf-8")
     return schematic
@@ -72,21 +72,32 @@ def _arguments(plan: dict, wired: bool) -> dict:
     }
 
 
-async def _build(folder: Path, libraries: Path, wired: bool) -> Path:
-    source = _seed(folder, libraries)
-    plan = json.loads(FIXTURE.read_text(encoding="utf-8"))
+async def _build(
+    folder: Path, libraries: Path, wired: bool, fixture: Path, library_names: tuple[str, ...]
+) -> Path:
+    source = _seed(folder, libraries, library_names)
+    plan = json.loads(fixture.read_text(encoding="utf-8"))
     server = build_server("schematic")
     await call_tool_text(server, "kicad_set_project", {"project_dir": str(folder)})
     get_config().symbol_library_dir = libraries
     result = await call_tool_text(server, "sch_build_circuit", _arguments(plan, wired))
     assert "Sheet replaced" in result, result
     assert "WARNING" not in result, result
+    used_pins = {
+        endpoint.removeprefix("U1.")
+        for endpoints in plan["nets"].values()
+        for endpoint in endpoints
+        if endpoint.startswith("U1.")
+    }
     for pin, (x, y) in _mcu_pins(source).items():
-        if pin not in USED_PINS:
+        if pin not in used_pins:
             await call_tool_text(server, "sch_add_no_connect", {"x_mm": x, "y_mm": y})
-    await call_tool_text(
-        server, "sch_set_title_block_info", {"title": "ESP32-WROOM-32E fixture", "rev": "A"}
+    title = (
+        "ESP32-WROOM-32E regulated GPIO fixture"
+        if fixture == REGULATED_FIXTURE
+        else "ESP32-WROOM-32E fixture"
     )
+    await call_tool_text(server, "sch_set_title_block_info", {"title": title, "rev": "A"})
     return source
 
 
@@ -103,8 +114,8 @@ def _signature(xml: Path) -> tuple[set[frozenset[str]], set[tuple[str, str, str]
     return nets, components
 
 
-def _expected_nets() -> set[frozenset[str]]:
-    plan = json.loads(FIXTURE.read_text(encoding="utf-8"))
+def _expected_nets(fixture: Path) -> set[frozenset[str]]:
+    plan = json.loads(fixture.read_text(encoding="utf-8"))
     expected = {
         frozenset(pin for pin in pins if not pin.startswith("#")) for pins in plan["nets"].values()
     }
@@ -139,20 +150,36 @@ def _export(source: Path) -> tuple[set[frozenset[str]], set[tuple[str, str, str]
     return _signature(folder / "netlist.xml")
 
 
+@pytest.mark.parametrize(
+    ("fixture", "library_names", "component_count"),
+    [
+        (FIXTURE, LIBRARIES, 12),
+        (REGULATED_FIXTURE, (*LIBRARIES, "Regulator_Linear"), 15),
+    ],
+    ids=["mcu-direct-power", "mcu-regulator-gpio"],
+)
 @pytest.mark.anyio
 async def test_wired_mcu_matches_label_only_native_connectivity(
-    tmp_path, monkeypatch, mock_kicad
+    tmp_path,
+    monkeypatch,
+    mock_kicad,
+    fixture: Path,
+    library_names: tuple[str, ...],
+    component_count: int,
 ) -> None:
     libraries = Path(os.environ.get("KICAD_WIRED_NATIVE_SYMBOL_DIR", "/usr/share/kicad/symbols"))
-    if not all((libraries / f"{name}.kicad_sym").is_file() for name in LIBRARIES):
+    if not all((libraries / f"{name}.kicad_sym").is_file() for name in library_names):
         pytest.skip("Requires KiCad 10 symbol libraries; set KICAD_WIRED_NATIVE_SYMBOL_DIR")
     monkeypatch.setenv("KICAD_MCP_SYMBOL_LIBRARY_DIR", str(libraries))
     reset_config()
-    wired = await _build(tmp_path / "wired", libraries, True)
-    baseline = await _build(tmp_path / "label-only", libraries, False)
-    assert wired.read_text(encoding="utf-8").count("(label ") == 10
-    assert baseline.read_text(encoding="utf-8").count("(label ") == 15
-    assert len(_expected_nets()) == 37
+    wired = await _build(tmp_path / "wired", libraries, True, fixture, library_names)
+    baseline = await _build(tmp_path / "label-only", libraries, False, fixture, library_names)
+    labels_wired = wired.read_text(encoding="utf-8").count("(label ")
+    labels_baseline = baseline.read_text(encoding="utf-8").count("(label ")
+    assert labels_wired < labels_baseline
+    if fixture == FIXTURE:
+        assert (labels_wired, labels_baseline) == (10, 15)
+    assert len(_expected_nets(fixture)) == (38 if fixture == REGULATED_FIXTURE else 37)
     cli = os.environ.get("KICAD_WIRED_NATIVE_CLI") or shutil.which("kicad-cli")
     if not cli:
         pytest.skip("Both layouts generated; native export requires KiCad CLI")
@@ -160,7 +187,44 @@ async def test_wired_mcu_matches_label_only_native_connectivity(
     reset_config()
     actual, components = _export(wired)
     comparison, other_components = _export(baseline)
-    assert actual == _expected_nets()
+    assert actual == _expected_nets(fixture)
     assert comparison == actual
     assert components == other_components
-    assert len(components) == 12
+    assert len(components) == component_count
+
+
+def test_regulated_gpio_fixture_models_real_power_and_interface_blocks() -> None:
+    fixture = FIXTURE.with_name("wroom32e_regulator_gpio.json")
+    plan = json.loads(fixture.read_text(encoding="utf-8"))
+    refs = {symbol["reference"]: symbol for symbol in plan["symbols"]}
+    assert refs["U2"]["library"] == "Regulator_Linear"
+    assert refs["U2"]["symbol_name"] == "AMS1117-3.3"
+    assert refs["J3"]["symbol_name"] == "Conn_01x02"
+    assert refs["J3"]["value"] == "Conn_01x02", "Keep functional GPIO names on nets, not Value"
+    assert {"J1.1", "U2.3", "C1.1"} <= set(plan["nets"]["+5V"])
+    assert {"U2.2", "U1.2", "C2.1", "C4.1"} <= set(plan["nets"]["+3V3"])
+    assert {"U2.1", "C1.2", "C2.2", "C4.2"} <= set(plan["nets"]["GND"])
+    assert set(plan["nets"]["GPIO_A"]) == {"U1.26", "J3.1"}
+    assert set(plan["nets"]["GPIO_B"]) == {"U1.29", "J3.2"}
+    assert len(plan["symbols"]) == 17
+    assert len(plan["wires"]) > 40
+    input_flag = refs["#FLG01"]
+    source_connector = refs["J1"]
+    assert (input_flag["x_mm"] - source_connector["x_mm"]) ** 2 + (
+        input_flag["y_mm"] - source_connector["y_mm"]
+    ) ** 2 >= 15**2, "Do not overlap the input PWR_FLAG and connector reference/value"
+    endpoints = [
+        (x, y)
+        for wire in plan["wires"]
+        for x, y in (
+            (wire["x1_mm"], wire["y1_mm"]),
+            (wire["x2_mm"], wire["y2_mm"]),
+        )
+    ]
+    # KiCad's junction semantics require explicit segment endpoints at branches.
+    for point, min_segments in (
+        ((43.18, 30.48), 2),  # +5V input PWR_FLAG
+        ((50.8, 30.48), 3),  # +5V input cap
+        ((88.9, 30.48), 3),  # regulated output decoupling
+    ):
+        assert endpoints.count(point) >= min_segments, point
