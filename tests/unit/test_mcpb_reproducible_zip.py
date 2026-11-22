@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import importlib.util
+import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
@@ -13,11 +14,15 @@ _FIXED = (1980, 1, 1, 0, 0, 0)
 
 
 def _normalize(path: Path) -> None:
-    spec = importlib.util.spec_from_file_location("normalize_mcpb_timestamps", SCRIPT)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    module.normalize_mcpb_timestamps(path)
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT)],
+        input=path.read_bytes(),
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode:
+        raise ValueError("MCPB normalizer rejected the archive")
+    path.write_bytes(result.stdout)
 
 
 def _create(path: Path, stamp: tuple[int, int, int, int, int, int]) -> None:
@@ -66,7 +71,7 @@ def test_release_workflows_normalize_before_attestation_and_hashing() -> None:
     root = SCRIPT.parents[1]
     for name in ("prepare-mcpb.yml", "publish-mcpb.yml"):
         workflow = (root / ".github" / "workflows" / name).read_text(encoding="utf-8")
-        normalizer = 'python3 scripts/normalize_mcpb_timestamps.py "$output"'
+        normalizer = 'python3 scripts/normalize_mcpb_timestamps.py < "$output" > "$normalized"'
         assert workflow.count(normalizer) == 1
         assert workflow.index("npx -y @anthropic-ai/mcpb@2.1.2 pack") < workflow.index(normalizer)
         assert workflow.index(normalizer) < workflow.index('test -s "$output"')

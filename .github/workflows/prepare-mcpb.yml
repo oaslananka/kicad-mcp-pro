@@ -107,7 +107,14 @@ jobs:
           mkdir -p release-assets/mcpb
           npx -y @anthropic-ai/mcpb@2.1.2 validate packaging/mcpb/manifest.json
           npx -y @anthropic-ai/mcpb@2.1.2 pack packaging/mcpb "$output"
-          python3 scripts/normalize_mcpb_timestamps.py "$output"
+          # Normalize in a same-directory temporary file, then atomically replace.
+          normalized="$(mktemp "${output}.XXXXXX")"
+          trap 'rm -f -- "$normalized"' EXIT
+          python3 scripts/normalize_mcpb_timestamps.py < "$output" > "$normalized"
+          test -s "$normalized"
+          chmod --reference="$output" "$normalized"
+          mv -f -- "$normalized" "$output"
+          trap - EXIT
           test -s "$output"
           ARTIFACT="$output" VERSION="$version" python3 - <<'PY'
           import json
