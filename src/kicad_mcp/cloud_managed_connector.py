@@ -306,6 +306,8 @@ def _enable() -> int:
         result = _systemctl("enable", "--now", _SERVICE_NAME)
         if result.returncode != 0:
             raise RuntimeError("systemd user manager could not start the Connector")
+        if not _is_enabled(root, record):
+            raise LocalApprovalDeniedError("Connector authorization changed during startup.")
     except Exception:
         _remove_private_file(root, _ENABLED_FILE)
         try:

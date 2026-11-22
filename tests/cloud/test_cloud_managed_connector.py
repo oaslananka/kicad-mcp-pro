@@ -1209,3 +1209,24 @@ def test_background_enable_refuses_active_foreground_without_mutation(
         assert connector.main(["enable"]) == 1
     assert not (root / connector._ENABLED_FILE).exists()
     assert (root / connector._FOREGROUND_FILE).read_bytes() == before
+
+
+def test_enable_does_not_report_success_after_concurrent_revocation(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    root, _ = _root(tmp_path)
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(connector, "_install_user_service", lambda: None)
+    calls = []
+
+    def systemctl(*args: str) -> subprocess.CompletedProcess[str]:
+        calls.append(args[0])
+        if args[0] == "enable":
+            connector._remove_private_file(root, connector._ENABLED_FILE)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(connector, "_systemctl", systemctl)
+    assert connector.main(["enable"]) == 1
+    assert calls == ["enable", "disable"]
+    assert not (root / connector._ENABLED_FILE).exists()
+    assert "enabled for" not in capsys.readouterr().out
