@@ -18,7 +18,8 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -49,15 +50,78 @@ from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
 _SERVICE_NAME = "kicad-mcp-cloud-connector.service"
 _ENABLED_FILE = "connector-enabled.json"
+_FOREGROUND_FILE = "connector-foreground.json"
 _STATUS_FILE = "connector-status.json"
+_SESSION_LOCK_FILE = "connector-session.lock"
 _ENABLED_FIELDS = frozenset({"enabled", "ownerSub", "cloudOrigin", "deviceId", "projectId"})
+_FOREGROUND_FIELDS = _ENABLED_FIELDS | {"keySlot", "directory", "filenameStem"}
 _STATUS_FIELDS = frozenset({"state", "updatedAtUnixMs", "pid"})
 _STATUS_VALUES = frozenset({"connecting", "connected", "unavailable"})
 _MAX_READS = 16
+_LOCAL_AUTHORITY_POLL_SECONDS = 1.0
+_FOREGROUND_SHUTDOWN_TIMEOUT = 5.0
 _SESSION_LIFETIME_MS = 280_000
 _CONNECTED_STATUS_MAX_AGE_MS = 305_000
 _CONNECTING_STATUS_MAX_AGE_MS = 45_000
 _DENIED = "Registered Cloud Connector unavailable; check its local enable state and registration."
+
+
+class ConnectorAlreadyRunningError(RuntimeError):
+    """A different local process owns the Connector session."""
+
+
+@contextmanager
+def _connector_session_lock(root: Path, *, create: bool = True) -> Iterator[None]:
+    """Hold one private, nonblocking POSIX process lock for the whole session loop."""
+    if sys.platform == "win32":
+        raise LocalApprovalDeniedError(_DENIED)
+    import fcntl
+
+    folder_fd = _open_owner_private_dir(root / _SESSION_LOCK_FILE)
+    try:
+        flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+        if create:
+            flags |= os.O_CREAT
+        fd = os.open(
+            _SESSION_LOCK_FILE,
+            flags,
+            0o600,
+            dir_fd=folder_fd,
+        )
+        try:
+            info = os.fstat(fd)
+            if (
+                not stat.S_ISREG(info.st_mode)
+                or info.st_uid != _current_uid()
+                or info.st_nlink != 1
+                or info.st_mode & 0o077
+                or info.st_size != 0
+            ):
+                raise LocalApprovalDeniedError(_DENIED)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                raise ConnectorAlreadyRunningError(
+                    "A local Cloud Connector is already running. Stop it before reconnecting."
+                ) from exc
+            yield
+        finally:
+            # Keep the lock inode: unlinking would let competing processes lock
+            # different files. The kernel releases ownership on close or exit.
+            os.close(fd)
+    finally:
+        os.close(folder_fd)
+
+
+def _session_lock_held(root: Path) -> bool:
+    """Do not report cached connection state without a live lock owner."""
+    try:
+        with _connector_session_lock(root, create=False):
+            return False
+    except ConnectorAlreadyRunningError:
+        return True
+    except (OSError, ValueError):
+        return False
 
 
 def _remove_private_file(root: Path, name: str) -> None:
@@ -78,45 +142,76 @@ def _remove_private_file(root: Path, name: str) -> None:
         os.close(folder_fd)
 
 
-def _identity_state(record: dict[str, str]) -> dict[str, Any]:
-    return {
+def _identity_state(record: dict[str, str], marker: str = _ENABLED_FILE) -> dict[str, Any]:
+    state: dict[str, Any] = {
         "enabled": True,
         "ownerSub": record["ownerSub"],
         "cloudOrigin": record["cloudOrigin"],
         "deviceId": record["deviceId"],
         "projectId": record["projectId"],
     }
+    if marker == _FOREGROUND_FILE:
+        state.update({field: record[field] for field in _FOREGROUND_FIELDS - _ENABLED_FIELDS})
+    return state
 
 
-def _enabled_record(root: Path) -> dict[str, Any] | None:
+def _enabled_record(root: Path, marker: str = _ENABLED_FILE) -> dict[str, Any] | None:
     try:
-        value = _read_private_json(root, _ENABLED_FILE)
+        value = _read_private_json(root, marker)
     except LocalApprovalDeniedError:
         return None
+    fields = _FOREGROUND_FIELDS if marker == _FOREGROUND_FILE else _ENABLED_FIELDS
     if (
-        value.keys() != _ENABLED_FIELDS
+        value.keys() != fields
         or value.get("enabled") is not True
         or any(
-            not isinstance(value.get(key), str) or not value[key]
-            for key in _ENABLED_FIELDS - {"enabled"}
+            not isinstance(value.get(key), str) or not value[key] for key in fields - {"enabled"}
         )
     ):
         return None
     return value
 
 
-def _is_enabled(root: Path, record: dict[str, str]) -> bool:
-    enabled = _enabled_record(root)
-    if enabled is None or enabled != _identity_state(record):
+def _is_enabled(root: Path, record: dict[str, str], marker: str = _ENABLED_FILE) -> bool:
+    if marker == _FOREGROUND_FILE and os.path.lexists(root / _ENABLED_FILE):
+        return False
+    enabled = _enabled_record(root, marker)
+    if enabled is None or enabled != _identity_state(record, marker):
         return False
     try:
         current = _single_registered_identity(root)
     except (OSError, ValueError):
         return False
-    return all(
-        current.get(key) == record.get(key)
-        for key in ("ownerSub", "cloudOrigin", "deviceId", "projectId")
-    )
+    return enabled == _identity_state(current, marker)
+
+
+@contextmanager
+def _local_session_authority(
+    root: Path,
+    foreground: bool,
+    identity_loader: Callable[[Path], dict[str, str]],
+    expected_identity: dict[str, str] | None = None,
+) -> Iterator[str]:
+    """Only an explicitly started foreground runner can create temporary authority."""
+    # Called with exclusive session ownership. A crashed foreground marker
+    # never grants the managed runner authority and can safely be discarded.
+    if not foreground:
+        _remove_private_file(root, _FOREGROUND_FILE)
+        yield _ENABLED_FILE
+        return
+    if os.path.lexists(root / _ENABLED_FILE):
+        raise ConnectorAlreadyRunningError(
+            "A background Cloud Connector is enabled. Disable it before foreground connect."
+        )
+    record = identity_loader(root)
+    if expected_identity is not None and record != expected_identity:
+        raise LocalApprovalDeniedError("Cloud registration changed; review it before reconnecting.")
+    _write_status(root, "unavailable")
+    _write_private_json(root, _FOREGROUND_FILE, _identity_state(record, _FOREGROUND_FILE))
+    try:
+        yield _FOREGROUND_FILE
+    finally:
+        _remove_private_file(root, _FOREGROUND_FILE)
 
 
 def _write_status(root: Path, state: str) -> None:
@@ -203,15 +298,18 @@ def _enable() -> int:
     if os.name != "posix" or sys.platform == "darwin":
         raise RuntimeError("Cloud Connector background service is unsupported on this platform.")
     root = default_registry_root()
-    record = _single_registered_identity(root)
-    # This explicit local enable records only existing selectors. It does not
-    # read or sign with the private key; the service does that after activation.
-    _write_private_json(root, _ENABLED_FILE, _identity_state(record))
+    # Publish persistent authority only when no other runner owns the session.
+    # Release the lock before starting systemd: its child must acquire it.
+    with _connector_session_lock(root):
+        record = _single_registered_identity(root)
+        _write_private_json(root, _ENABLED_FILE, _identity_state(record))
     try:
         _install_user_service()
         result = _systemctl("enable", "--now", _SERVICE_NAME)
         if result.returncode != 0:
             raise RuntimeError("systemd user manager could not start the Connector")
+        if not _is_enabled(root, record):
+            raise LocalApprovalDeniedError("Connector authorization changed during startup.")
     except Exception:
         _remove_private_file(root, _ENABLED_FILE)
         try:
@@ -224,15 +322,34 @@ def _enable() -> int:
     return 0
 
 
-def _disable() -> int:
-    root = default_registry_root()
-    marker_removed = True
-    # Remove local authority before stopping the process/socket. Even if the
-    # private registry is damaged, still stop the service to close its socket.
-    try:
-        _remove_private_file(root, _ENABLED_FILE)
-    except (LocalApprovalDeniedError, OSError):
-        marker_removed = False
+def _revoke_local_authority(root: Path) -> bool:
+    removed = True
+    for marker in (_ENABLED_FILE, _FOREGROUND_FILE):
+        try:
+            _remove_private_file(root, marker)
+        except (LocalApprovalDeniedError, OSError):
+            removed = False
+    return removed
+
+
+def _wait_for_foreground_shutdown(root: Path) -> bool:
+    deadline = time.monotonic() + _FOREGROUND_SHUTDOWN_TIMEOUT
+    while True:
+        try:
+            with _connector_session_lock(root, create=False):
+                return True
+        except FileNotFoundError:
+            return True
+        except ConnectorAlreadyRunningError:
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
+        except (OSError, ValueError):
+            return False
+
+
+def _systemd_service_stopped() -> bool:
+    """Confirm systemd stopped even if disable itself failed."""
     try:
         result = _systemctl("disable", "--now", _SERVICE_NAME)
     except (OSError, subprocess.SubprocessError):
@@ -248,7 +365,30 @@ def _disable() -> int:
             }
         except (OSError, subprocess.SubprocessError):
             stopped = False
-    if not stopped or not marker_removed:
+    return stopped
+
+
+def _disable_foreground_session(root: Path, marker_removed: bool) -> int:
+    """Report Off only after local revocation and foreground lock release."""
+    if marker_removed and _wait_for_foreground_shutdown(root):
+        print("Local Cloud Connector is Off.")
+        return 0
+    print("Connector shutdown requested; local stop is unverified.", file=sys.stderr)
+    return 1
+
+
+def _disable() -> int:
+    root = default_registry_root()
+    foreground_only = os.path.lexists(root / _FOREGROUND_FILE) and not os.path.lexists(
+        root / _ENABLED_FILE
+    )
+    # Remove local authority before stopping the process/socket. Even if the
+    # registry is damaged, still stop an installed service to close its socket.
+    marker_removed = _revoke_local_authority(root)
+    if sys.platform == "darwin" or foreground_only:
+        return _disable_foreground_session(root, marker_removed)
+    stopped = _systemd_service_stopped()
+    if not stopped or not marker_removed or not _wait_for_foreground_shutdown(root):
         print(
             "Connector shutdown requested; local marker or service stop is unverified.",
             file=sys.stderr,
@@ -258,21 +398,37 @@ def _disable() -> int:
     return 0
 
 
+def _foreground_connection_status(root: Path) -> str:
+    """Trust a cached foreground status only with its current owner and lock."""
+    if _enabled_record(root, _FOREGROUND_FILE) is None or not _session_lock_held(root):
+        return "Off"
+    try:
+        record = _single_registered_identity(root)
+    except (OSError, ValueError):
+        return "Unavailable"
+    if not _is_enabled(root, record, _FOREGROUND_FILE):
+        return "Unavailable"
+    return _cached_connection_status(root)
+
+
 def _status() -> str:
     root = default_registry_root()
     marker = root / _ENABLED_FILE
-    if os.name != "posix" or sys.platform == "darwin":
-        # A legacy marker is not evidence of a running Connector.
+    if os.name != "posix":
         return "Unavailable" if marker.exists() else "Off"
-    try:
-        marker.lstat()
-    except FileNotFoundError:
-        return "Off"
-    if _enabled_record(root) is None:
+    if not os.path.lexists(marker):
+        return _foreground_connection_status(root)
+    if sys.platform == "darwin":
+        return "Unavailable"
+    if _enabled_record(root) is None or not _session_lock_held(root):
         return "Unavailable"
     active = _systemctl("is-active", _SERVICE_NAME)
     if active.returncode != 0 or active.stdout.strip() != "active":
         return "Unavailable"
+    return _cached_connection_status(root)
+
+
+def _cached_connection_status(root: Path) -> str:
     try:
         value = _read_private_json(root, _STATUS_FILE)
         state, updated = value.get("state"), value.get("updatedAtUnixMs")
@@ -293,16 +449,45 @@ def _status() -> str:
     return "Unavailable"
 
 
+def _report_foreground(marker: str, message: str) -> None:
+    if marker == _FOREGROUND_FILE:
+        try:
+            print(message, flush=True)
+        except OSError:
+            pass  # Terminal diagnostics must not invalidate a signed response.
+
+
 def _dispatcher_factory(
-    root: Path, record: dict[str, str], project: LocalRegisteredRead
+    root: Path, record: dict[str, str], project: LocalRegisteredRead, marker: str = _ENABLED_FILE
 ) -> Callable[[HandshakeReceipt], LocalReadDispatch]:
     def create(receipt: HandshakeReceipt) -> LocalReadDispatch:
-        if not _is_enabled(root, record):
+        if not _is_enabled(root, record, marker):
             raise LocalApprovalDeniedError(_DENIED)
+
+        def resolve_bound_project(project_id: str) -> OperatorProject | None:
+            """Read only an owner-selected, current local Cloud project mapping."""
+            if not _is_enabled(root, record, marker):
+                return None
+            from kicad_mcp.cloud_folder_browse_receiver import default_bindings_file
+            from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
+
+            browser = LocalFolderBrowser(
+                [project.project_directory.parent], default_bindings_file()
+            )
+            selected_path = browser.get_project_path(project_id)
+            if selected_path is None:
+                return None
+            file = Path(selected_path)
+            return OperatorProject(
+                device_id=record["deviceId"],
+                project_id=project_id,
+                directory=file.parent,
+                filename_stem=file.stem,
+            )
+
         # This callback runs only after the authenticated device/session
         # handshake has reached connector.ready.
-        _write_status(root, "connected")
-        return LocalReadDispatch(
+        dispatcher = LocalReadDispatch(
             verified=VerifiedLocalBinding(
                 device_id=receipt.device_id,
                 project_id=record["projectId"],
@@ -316,12 +501,30 @@ def _dispatcher_factory(
                 directory=project.project_directory,
                 filename_stem=project.filename_stem,
             ),
-            current_authorization=lambda: _is_enabled(root, record),
+            current_authorization=lambda: _is_enabled(root, record, marker),
+            project_resolver=resolve_bound_project,
             max_reads=_MAX_READS,
             native_drc=False,
         )
+        _write_status(root, "connected")
+        _report_foreground(marker, "Connected")
+        return dispatcher
 
     return create
+
+
+async def _wait_for_local_stop(
+    stop: asyncio.Event, root: Path, record: dict[str, str], marker: str
+) -> None:
+    """Close idle as well as active sessions when local authority is removed."""
+    while not stop.is_set():
+        if not _is_enabled(root, record, marker):
+            stop.set()
+            return
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=_LOCAL_AUTHORITY_POLL_SECONDS)
+        except TimeoutError:
+            continue
 
 
 async def _session_until_stopped(
@@ -332,6 +535,7 @@ async def _session_until_stopped(
     project: LocalRegisteredRead,
     signing_key: Ed25519PrivateKey,
     session_runner: Callable[..., Awaitable[HandshakeReceipt]],
+    marker: str,
 ) -> None:
     async def run_session() -> HandshakeReceipt:
         options = {
@@ -340,7 +544,7 @@ async def _session_until_stopped(
             "owner_sub": record["ownerSub"],
             "device_id": record["deviceId"],
             "signing_key": signing_key,
-            "dispatcher_factory": _dispatcher_factory(root, record, project),
+            "dispatcher_factory": _dispatcher_factory(root, record, project, marker),
             "max_reads": _MAX_READS,
         }
         if session_runner is execute_owner_managed_read_session:
@@ -350,28 +554,32 @@ async def _session_until_stopped(
             )
 
             def folder_factory(receipt: HandshakeReceipt) -> LocalFolderBrowseService:
-                if receipt.device_id != record["deviceId"] or not _is_enabled(root, record):
+                if receipt.device_id != record["deviceId"] or not _is_enabled(root, record, marker):
                     raise LocalApprovalDeniedError(_DENIED)
                 return device_folder_service(
                     project.project_directory,
-                    authorization=lambda: _is_enabled(root, record),
+                    authorization=lambda: _is_enabled(root, record, marker),
                 )
 
             options["folder_service_factory"] = folder_factory
+            if marker == _FOREGROUND_FILE:
+                options["on_activity"] = lambda message: _report_foreground(marker, message)
         return await session_runner(**options)
 
     session_task = asyncio.create_task(run_session())
-    stop_task = asyncio.create_task(stop_event.wait())
+    stop_task = asyncio.create_task(_wait_for_local_stop(stop_event, root, record, marker))
     try:
         done, _ = await asyncio.wait({session_task, stop_task}, return_when=asyncio.FIRST_COMPLETED)
         if stop_task in done:
-            session_task.cancel()
-            await asyncio.gather(session_task, return_exceptions=True)
             return
         await session_task
     finally:
-        stop_task.cancel()
-        await asyncio.gather(stop_task, return_exceptions=True)
+        # A cancelled caller must also close its transport before releasing
+        # session ownership. This covers stop signals and task cancellation.
+        for task in (session_task, stop_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(session_task, stop_task, return_exceptions=True)
 
 
 async def _run_registered_session(
@@ -382,10 +590,11 @@ async def _run_registered_session(
     project_resolver: Callable[..., LocalRegisteredRead],
     key_loader: Callable[..., Ed25519PrivateKey],
     session_runner: Callable[..., Awaitable[HandshakeReceipt]],
+    marker: str,
 ) -> bool:
     # Revalidate the unique registration and key binding before each reconnect.
     record = identity_loader(registry)
-    if not _is_enabled(registry, record):
+    if not _is_enabled(registry, record, marker):
         return False
     project = project_resolver(
         owner_sub=record["ownerSub"],
@@ -397,9 +606,10 @@ async def _run_registered_session(
     signing_key = key_loader(project.key_file, record["cloudOrigin"], record["deviceId"])
     # A local disable racing registration/key loading must prevent a new
     # outbound handshake after the owner removes the enable marker.
-    if stop.is_set() or not _is_enabled(registry, record):
+    if stop.is_set() or not _is_enabled(registry, record, marker):
         return False
     _write_status(registry, "connecting")
+    _report_foreground(marker, "Connecting")
     await _session_until_stopped(
         stop_event=stop,
         root=registry,
@@ -407,25 +617,37 @@ async def _run_registered_session(
         project=project,
         signing_key=signing_key,
         session_runner=session_runner,
+        marker=marker,
     )
     return True
 
 
-async def _wait_before_reconnect(stop: asyncio.Event, registry: Path, failures: int) -> None:
-    if stop.is_set() or not _enabled_record(registry):
+async def _wait_before_reconnect(
+    stop: asyncio.Event, registry: Path, failures: int, marker: str
+) -> None:
+    if stop.is_set() or not _enabled_record(registry, marker):
         return
     delay = reconnect_delay_seconds(failures, secrets.randbelow(1001) / 1000)
     _write_status(registry, "unavailable")
-    try:
-        await asyncio.wait_for(stop.wait(), timeout=delay)
-    except TimeoutError:
-        pass
+    deadline = asyncio.get_running_loop().time() + delay
+    while not stop.is_set() and _enabled_record(registry, marker):
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            return
+        try:
+            await asyncio.wait_for(
+                stop.wait(), timeout=min(remaining, _LOCAL_AUTHORITY_POLL_SECONDS)
+            )
+        except TimeoutError:
+            continue
 
 
 async def _run_connector(
     *,
     root: Path | None = None,
     stop_event: asyncio.Event | None = None,
+    foreground: bool = False,
+    expected_identity: dict[str, str] | None = None,
     identity_loader: Callable[[Path], dict[str, str]] = _single_registered_identity,
     project_resolver: Callable[..., LocalRegisteredRead] = resolve_registered_read,
     key_loader: Callable[..., Ed25519PrivateKey] = _load_bound_owner_key,
@@ -433,43 +655,69 @@ async def _run_connector(
 ) -> int:
     registry = default_registry_root() if root is None else root
     stop = stop_event if stop_event is not None else asyncio.Event()
-    if not _enabled_record(registry):
+    if not foreground and not _enabled_record(registry):
         return 0
 
-    failures = 0
-    while not stop.is_set() and _enabled_record(registry):
-        try:
-            connected = await _run_registered_session(
-                registry=registry,
-                stop=stop,
-                identity_loader=identity_loader,
-                project_resolver=project_resolver,
-                key_loader=key_loader,
-                session_runner=session_runner,
-            )
-            if not connected:
-                break
-            failures = 0
-        except asyncio.CancelledError:
-            raise
-        except (OSError, ValueError, WebSocketException):
-            _write_status(registry, "unavailable")
-            failures += 1
-        await _wait_before_reconnect(stop, registry, failures)
+    with (
+        _connector_session_lock(registry),
+        _local_session_authority(
+            registry, foreground, identity_loader, expected_identity
+        ) as marker,
+    ):
+        # Invalidate the previous process's cached status before loading keys.
+        _write_status(registry, "unavailable")
+        failures = 0
+        while not stop.is_set() and _enabled_record(registry, marker):
+            try:
+                connected = await _run_registered_session(
+                    registry=registry,
+                    stop=stop,
+                    identity_loader=identity_loader,
+                    project_resolver=project_resolver,
+                    key_loader=key_loader,
+                    session_runner=session_runner,
+                    marker=marker,
+                )
+                if not connected:
+                    break
+                failures = 0
+            except asyncio.CancelledError:
+                raise
+            except (OSError, ValueError, WebSocketException):
+                _write_status(registry, "unavailable")
+                failures += 1
+            _report_foreground(marker, "Disconnected")
+            await _wait_before_reconnect(stop, registry, failures, marker)
 
     return 0
 
 
-async def _run_service() -> int:
+async def _run_service(
+    *, foreground: bool = False, expected_identity: dict[str, str] | None = None
+) -> int:
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
     try:
-        return await _run_connector(stop_event=stop)
+        return await _run_connector(
+            stop_event=stop, foreground=foreground, expected_identity=expected_identity
+        )
     finally:
         for sig in (signal.SIGINT, signal.SIGTERM):
             loop.remove_signal_handler(sig)
+
+
+def run_foreground(expected_identity: dict[str, str]) -> int:
+    """Run the owner-approved terminal connection, not the managed service."""
+    try:
+        return asyncio.run(_run_service(foreground=True, expected_identity=expected_identity))
+    except ConnectorAlreadyRunningError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
+        print(_DENIED, file=sys.stderr)
+        return 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -491,6 +739,9 @@ def main(argv: list[str] | None = None) -> int:
             print(_status())
             return 0
         return asyncio.run(_run_service())
+    except ConnectorAlreadyRunningError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
         print(_DENIED, file=sys.stderr)
         return 1

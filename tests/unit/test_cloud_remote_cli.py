@@ -172,7 +172,7 @@ def test_foreground_terminal_stream_distinguishes_tool_folder_network_and_errors
             "Tool call 1: read started",
             "Tool call 1: project_summary completed (12 ms)",
             "Tool call 2: write failed",
-            "Opening Windows project folder dialog",
+            "Opening local project folder dialog",
             "Folder selection cancelled",
             "Cloud disconnected; reconnecting",
         ):
@@ -834,7 +834,7 @@ def test_forget_owner_write_preference_rejects_tampered_store(
         ("Connecting", "CONNECT"),
         ("Connected", "ONLINE"),
         ("Tool call 1: run_drc completed", "TOOL"),
-        ("Opening Windows project folder dialog", "FOLDER"),
+        ("Opening local project folder dialog", "FOLDER"),
         ("Cloud disconnected; reconnecting", "NETWORK"),
     ],
 )

@@ -262,7 +262,7 @@ async def _serve_folder_frame(
     except (ValueError, TypeError, AttributeError):
         operation = None
     if operation == "choose":
-        _report_activity(on_activity, "Opening Windows project folder dialog")
+        _report_activity(on_activity, "Opening local project folder dialog")
     result = await _serve_folder_request(socket, folder_service, raw)
     if operation == "choose":
         status = result.get("status")

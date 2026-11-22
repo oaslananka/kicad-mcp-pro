@@ -477,7 +477,7 @@ async function folderBrowse(req:Request,identity:BrowserIdentity,origin:string,
   if(!own.some(d=>d.id===device&&d.enabled&&!d.revoked))return error(404);
 
   // A native folder picker runs ONLY on the explicitly connected owner's
-  // computer. The server receives opaque tokens, never the Windows path or
+  // computer. The server receives opaque tokens, never a local file path or
   // uploaded project files. The device advertises Browse only in an
   // interactive foreground session.
   if(!folders.supportsBrowse?.(who.user,device))
