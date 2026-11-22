@@ -46,20 +46,20 @@ compatible with immutable GitHub Releases. The step-by-step map, the
 
 **Actions → Draft producer preflight (non-publishing) → Run workflow** on
 `main` remains an explicitly requested validation workflow, not a publisher or
-release-cutover switch. Its required `server_tag`, `schemas_tag` and
-`source_commit` must resolve to the **same exact existing protected `main`
-commit**, with versions matching the checked-out sources. It prepares the
-Python, MCPB, KiCad PCM and schema artifacts as GitHub Actions artifacts.
+release-cutover switch. Set `source_commit` to the exact protected `main`
+commit and supply `server_tag`, `schemas_tag`, or both. Every selected tag
+must resolve to that same commit and match its package version. Selecting the
+server prepares Python, MCPB and KiCad PCM; selecting the independently
+versioned schema family prepares Protocol Schemas. Leave the unused tag empty;
+no producer is allowed to run when both tags are absent.
 
-Four other preparers are available but **disabled by default**:
-`include_npm` requires `npm_tag` (the matching protected `mcp-npm-vX.Y.Z`
-tag), `include_gui` requires `gui_tag` (the matching
-`kicad-mcp-gui-vX.Y.Z` tag), and `include_container` plus `include_registry`
-reuse the existing `server_tag`. Each opt-in job is gated on the common
-source check, uses the same commit, and does not publish. GUI and container
-builds are substantially heavier and should only be selected for a scoped
-acceptance run; disabled GUI/npm options require their tag fields to be empty.
-GUI signing secrets are forwarded **only** to the GUI preparer when selected.
+The optional `include_npm`, `include_container` and `include_registry` inputs
+are disabled by default and require the server family. `include_npm` also
+requires the matching protected `mcp-npm-vX.Y.Z` tag at the same commit; leave
+`npm_tag` empty when disabled. Container builds are substantially heavier and
+should only be selected for a scoped acceptance run. Each selected producer
+is gated on the common exact-source check and does not publish. This does not
+permit replaying a historical tag on a different main SHA.
 
 This preflight creates **no GitHub Release or tag**, makes **no registry
 publication**, and supplies **no exclusive-writer proof, signed per-job receipt
