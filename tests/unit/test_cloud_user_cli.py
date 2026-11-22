@@ -1761,3 +1761,126 @@ def test_posix_setup_preserves_unbound_keys_without_explicit_new_device(
     assert "Existing device keys" in result.output
     assert key.read_bytes() == b"fixture key"
     assert list(keys.iterdir()) == [key]
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "confirmed",
+        "bare_confirmed",
+        "declined",
+        "wrong_fingerprint",
+        "wrong_origin",
+        "wrong_owner",
+        "wrong_alias",
+        "multiple",
+        "unsafe_mode",
+        "headless",
+        "changed_during_confirmation",
+    ],
+)
+def test_posix_setup_recovers_single_verified_device(
+    monkeypatch, tmp_path: Path, case: str
+) -> None:
+    import base64
+    import hashlib
+    import json
+    import os
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding,
+        NoEncryption,
+        PrivateFormat,
+        PublicFormat,
+    )
+
+    from kicad_mcp import cloud_user_cli
+    from kicad_mcp.cloud_pair_keys import _save_owner_binding
+
+    if os.name != "posix":
+        pytest.skip("POSIX private key recovery")
+    root = tmp_path / "cloud"
+    root.mkdir(mode=0o700)
+    keys = root / "keys"
+    keys.mkdir(mode=0o700)
+    keyfile = keys / "11111111-1111-4111-8111-111111111111.pem"
+    key = Ed25519PrivateKey.generate()
+    keyfile.write_bytes(key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()))
+    keyfile.chmod(0o600)
+    fingerprint = hashlib.sha256(
+        key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+    ).hexdigest()
+    origin = "https://kicad-mcp-pro.oaslananka.dev"
+    device = "22222222-2222-4222-8222-222222222222"
+    project = "33333333-3333-4333-8333-333333333333"
+    owner = "github|fixture"
+    _save_owner_binding(
+        keyfile,
+        origin="https://other.example" if case == "wrong_origin" else origin,
+        device_id=device,
+        fingerprint="0" * 64 if case == "wrong_fingerprint" else fingerprint,
+        owner_sub=owner,
+    )
+    if case == "multiple":
+        (keys / "other.pem").write_bytes(b"ambiguous fixture")
+    if case == "unsafe_mode":
+        keyfile.chmod(0o644)
+    before = {p.name: p.read_bytes() for p in keys.iterdir()}
+    board = tmp_path / "board"
+    board.mkdir()
+    (board / "board.kicad_pro").touch()
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: case != "headless")
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr("kicad_mcp.cloud_pair.enroll", lambda *_: pytest.fail("no new pairing"))
+    monkeypatch.setattr(
+        cloud_user_cli, "_start_connector", lambda: pytest.fail("no background service")
+    )
+    calls = []
+    sessions = []
+
+    def post(_target, path, body, status):
+        assert path == "/api/v1/pairing/device/project"
+        assert status == 200
+        assert body["deviceId"] == device
+        assert body["alias"] == "board"
+        proof = b"kicad-cloud-device-project-v1\x00" + device.encode() + b"\x00board"
+        key.public_key().verify(base64.urlsafe_b64decode(body["signature"] + "=="), proof)
+        calls.append(body["deviceId"])
+        return {
+            "projectId": project,
+            "alias": "other-board" if case == "wrong_alias" else "board",
+            "ownerSub": "github|other" if case == "wrong_owner" else owner,
+            "enabled": True,
+        }
+
+    monkeypatch.setattr("kicad_mcp.cloud_pair._post", post)
+    monkeypatch.setattr(cloud_user_cli, "_run_posix_foreground", sessions.append)
+    if case == "changed_during_confirmation":
+
+        def change_state(*_args: object, **_kwargs: object) -> bool:
+            (root / "connector-enabled.json").write_text("{}")
+            return True
+
+        monkeypatch.setattr(cloud_user_cli.typer, "confirm", change_state)
+    args = ["cloud", "setup", "--project-dir", str(board)]
+    if case == "bare_confirmed":
+        monkeypatch.chdir(board)
+        args = ["cloud"]
+    result = CliRunner().invoke(app, args, input="n\n" if case == "declined" else "y\n")
+    assert {p.name: p.read_bytes() for p in keys.iterdir()} == before
+    assert (root / "connector-enabled.json").exists() == (case == "changed_during_confirmation")
+    if case in {"confirmed", "bare_confirmed"}:
+        assert result.exit_code == 0, result.output
+        record = json.loads((root / "projects" / f"{project}.json").read_text())
+        assert record["deviceId"] == device
+        assert record["keySlot"] == keyfile.stem
+        assert record["ownerSub"] == owner
+        assert sessions == [record]
+        assert calls == [device]
+        assert "reactivate" in result.output.lower()
+    else:
+        assert result.exit_code != 0
+        assert not sessions
+        assert not list((root / "projects").glob("*.json"))
+        assert calls == ([device] if case in {"wrong_owner", "wrong_alias"} else [])

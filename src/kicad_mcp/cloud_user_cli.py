@@ -1087,7 +1087,14 @@ def connect(
         )
 
     if not has_registration and not new_device and _owner_terminal():
-        _require_empty_posix_key_registry(root)
+        from kicad_mcp.cloud_posix_recovery import inspect_unbound_device
+
+        try:
+            inspect_unbound_device(root, origin)
+        except (OSError, ValueError) as exc:
+            raise typer.BadParameter(
+                "Existing device keys require registration repair. Run cloud status."
+            ) from exc
         setup(
             project_dir=None,
             browse=False,
@@ -1190,11 +1197,36 @@ def _require_empty_posix_key_registry(root: Path) -> None:
         keys = root / "keys"
         if keys.is_symlink() or (keys.exists() and any(keys.iterdir())):
             raise typer.BadParameter(
-                "Existing device keys require registration repair. Run cloud status."
+                "Existing device keys require registration repair. "
+                "Run cloud setup in your owner terminal."
             )
     except OSError as exc:
         raise typer.BadParameter(
             "Unable to inspect existing device keys. Run cloud status."
+        ) from exc
+
+
+def _recover_posix_setup(
+    root: Path, origin: str, directory: Path, stem: str
+) -> dict[str, str] | None:
+    from kicad_mcp.cloud_pair import CloudPairingError
+    from kicad_mcp.cloud_posix_recovery import recover_unbound_project
+
+    def confirm(binding: dict[str, str]) -> bool:
+        typer.echo(f"Existing device: {binding['deviceId']} ({origin})")
+        typer.echo(f"Local project: {directory} ({stem})")
+        typer.echo(
+            "Registering this project can reactivate the device and managed read access in Cloud."
+        )
+        typer.echo("No new device key will be created; Cloud client grants remain separate.")
+        return typer.confirm("Restore this project using the existing device?", default=False)
+
+    try:
+        return recover_unbound_project(root, origin, directory, stem, confirm)
+    except (OSError, ValueError, RuntimeError, CloudPairingError) as exc:
+        raise typer.BadParameter(
+            "Existing device keys could not be recovered. Check Cloud Devices and cloud status; "
+            "local keys were not replaced."
         ) from exc
 
 
@@ -1396,6 +1428,11 @@ def setup(
     if not new_device:
         if _try_reconnect_existing(root, origin):
             return
+        if _owner_terminal():
+            recovered = _recover_posix_setup(root, origin, target_dir, stem)
+            if recovered:
+                _run_posix_foreground(recovered)
+                return
         _require_empty_posix_key_registry(root)
 
     root.mkdir(parents=True, mode=0o700, exist_ok=True)

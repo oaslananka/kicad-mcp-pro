@@ -109,8 +109,12 @@ background service or native board writes. Linux's explicit background service
 is a separate lifecycle: disable it before starting foreground. macOS requires
 an interactive terminal and does not use systemd. If pairing keys remain but
 there is no valid project registration, the CLI refuses implicit new pairing;
-inspect the registration with `cloud status` before repair. Do not delete keys
-or request `--new-device` just to reconnect an existing device.
+inspect the registration with `cloud status`, then retry `cloud` or run `cloud setup`
+in your own terminal. A single verified device key and matching owner binding can be
+reused after selecting a project and explicitly accepting that registration
+may reactivate device and managed read access. Ambiguous, invalid or foreign
+keys remain untouched. Do not delete keys or request `--new-device` just to
+reconnect an existing device.
 
 ## Local HTTP server (no desktop application)
 
