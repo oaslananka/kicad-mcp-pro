@@ -311,8 +311,9 @@ def test_posix_cloud_device_bound_second_project_is_readable_then_revocable(
     dispatcher = connector._dispatcher_factory(root, record, project, connector._FOREGROUND_FILE)(
         HandshakeReceipt(DEVICE, SESSION)
     )
+    unbound_read = frame(new_project)
     with pytest.raises(LocalReadDeniedError):
-        dispatcher.read(frame(new_project), sequence=1)
+        dispatcher.read(unbound_read, sequence=1)
     assert (
         handle_folder_frame(
             service,
@@ -331,13 +332,15 @@ def test_posix_cloud_device_bound_second_project_is_readable_then_revocable(
     bindings_file.unlink()
     with pytest.raises(LocalReadDeniedError):
         dispatcher.assert_delivery_authorized(raw, device_id=DEVICE, session_id=SESSION)
+    revoked_read = frame(new_project)
     with pytest.raises(LocalReadDeniedError):
-        dispatcher.read(frame(new_project), sequence=3)
+        dispatcher.read(revoked_read, sequence=3)
 
     # Removing owner permission is an independent fail-closed gate.
     connector._remove_private_file(root, connector._FOREGROUND_FILE)
+    disabled_owner_read = frame(PROJECT)
     with pytest.raises(LocalReadDeniedError):
-        dispatcher.read(frame(PROJECT), sequence=4)
+        dispatcher.read(disabled_owner_read, sequence=4)
 
 
 def test_explicit_enable_writes_marker_then_starts_existing_user_unit(
