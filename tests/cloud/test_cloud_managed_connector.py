@@ -248,6 +248,98 @@ def test_dispatcher_is_project_summary_only_and_tracks_local_off(
         dispatcher._authorize_now()
 
 
+def test_posix_cloud_device_bound_second_project_is_readable_then_revocable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The project the owner added on Devices must actually work, and revoke."""
+    from kicad_mcp.cloud_folder_browse_receiver import device_folder_service, handle_folder_frame
+
+    root, project = _root(tmp_path)
+    (project.project_directory / "board.kicad_pro").write_text("{}", encoding="utf-8")
+    record = json.loads((root / "projects" / f"{PROJECT}.json").read_text())
+    chosen = tmp_path / "owner-selected"
+    chosen.mkdir()
+    (chosen / "new.kicad_pro").write_text("{}", encoding="utf-8")
+    new_project = "44444444-4444-4444-8444-444444444444"
+    bindings_file = tmp_path / "folder-bindings.json"
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_folder_browse_receiver.default_bindings_file",
+        lambda: bindings_file,
+    )
+    connector._write_private_json(
+        root,
+        connector._FOREGROUND_FILE,
+        connector._identity_state(record, connector._FOREGROUND_FILE),
+    )
+    service = device_folder_service(
+        project.project_directory,
+        bindings_file=bindings_file,
+        native_picker=lambda: chosen,
+        authorization=lambda: connector._is_enabled(root, record, connector._FOREGROUND_FILE),
+    )
+
+    def browser_frame(operation: str, **fields: object) -> str:
+        return json.dumps(
+            {
+                "kind": "connector.local_browser_request",
+                "version": 1,
+                "requestId": str(uuid4()),
+                "operation": operation,
+                **fields,
+            }
+        )
+
+    selected = handle_folder_frame(service, browser_frame("choose"))
+    assert selected["status"] == "selected"
+    assert not bindings_file.exists()
+
+    def frame(pid: str) -> bytes:
+        return json.dumps(
+            {
+                "kind": "connector.read_request",
+                "version": 1,
+                "requestId": str(uuid4()),
+                "deviceId": DEVICE,
+                "projectId": pid,
+                "operation": "project_summary",
+                "deadlineUnixMs": time.time_ns() // 1_000_000 + 20_000,
+            }
+        ).encode()
+
+    # Remote 'choose' is NOT permission to read. A successful separate owner
+    # binding must be necessary for the second project to be readable.
+    dispatcher = connector._dispatcher_factory(root, record, project, connector._FOREGROUND_FILE)(
+        HandshakeReceipt(DEVICE, SESSION)
+    )
+    with pytest.raises(LocalReadDeniedError):
+        dispatcher.read(frame(new_project), sequence=1)
+    assert (
+        handle_folder_frame(
+            service,
+            browser_frame("bind", folderId=selected["projects"][0]["id"], projectId=new_project),
+        )["ok"]
+        is True
+    )
+    raw = frame(new_project)
+    response = dispatcher.read(raw, sequence=2)
+    assert response["projectId"] == new_project
+    assert response["files"]["projectPresent"] is True
+    assert str(chosen) not in json.dumps(response)
+    dispatcher.assert_delivery_authorized(raw, device_id=DEVICE, session_id=SESSION)
+
+    # Removing the local mapping must deny delivery even after read completed.
+    bindings_file.unlink()
+    with pytest.raises(LocalReadDeniedError):
+        dispatcher.assert_delivery_authorized(raw, device_id=DEVICE, session_id=SESSION)
+    with pytest.raises(LocalReadDeniedError):
+        dispatcher.read(frame(new_project), sequence=3)
+
+    # Removing owner permission is an independent fail-closed gate.
+    connector._remove_private_file(root, connector._FOREGROUND_FILE)
+    with pytest.raises(LocalReadDeniedError):
+        dispatcher.read(frame(PROJECT), sequence=4)
+
+
 def test_explicit_enable_writes_marker_then_starts_existing_user_unit(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

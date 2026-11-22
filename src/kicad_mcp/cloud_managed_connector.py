@@ -463,6 +463,28 @@ def _dispatcher_factory(
     def create(receipt: HandshakeReceipt) -> LocalReadDispatch:
         if not _is_enabled(root, record, marker):
             raise LocalApprovalDeniedError(_DENIED)
+
+        def resolve_bound_project(project_id: str) -> OperatorProject | None:
+            """Read only an owner-selected, current local Cloud project mapping."""
+            if not _is_enabled(root, record, marker):
+                return None
+            from kicad_mcp.cloud_folder_browse_receiver import default_bindings_file
+            from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
+
+            browser = LocalFolderBrowser(
+                [project.project_directory.parent], default_bindings_file()
+            )
+            selected_path = browser.get_project_path(project_id)
+            if selected_path is None:
+                return None
+            file = Path(selected_path)
+            return OperatorProject(
+                device_id=record["deviceId"],
+                project_id=project_id,
+                directory=file.parent,
+                filename_stem=file.stem,
+            )
+
         # This callback runs only after the authenticated device/session
         # handshake has reached connector.ready.
         dispatcher = LocalReadDispatch(
@@ -480,6 +502,7 @@ def _dispatcher_factory(
                 filename_stem=project.filename_stem,
             ),
             current_authorization=lambda: _is_enabled(root, record, marker),
+            project_resolver=resolve_bound_project,
             max_reads=_MAX_READS,
             native_drc=False,
         )
