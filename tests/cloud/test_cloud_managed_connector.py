@@ -1230,3 +1230,19 @@ def test_enable_does_not_report_success_after_concurrent_revocation(
     assert calls == ["enable", "disable"]
     assert not (root / connector._ENABLED_FILE).exists()
     assert "enabled for" not in capsys.readouterr().out
+
+
+def test_disable_without_marker_does_not_claim_stop_while_runner_holds_lock(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    root, _ = _root(tmp_path)
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(connector, "_FOREGROUND_SHUTDOWN_TIMEOUT", 0.0)
+    monkeypatch.setattr(
+        connector, "_systemctl", lambda *args: subprocess.CompletedProcess(args, 0, "", "")
+    )
+    with connector._connector_session_lock(root):
+        assert connector._disable() == 1
+        captured = capsys.readouterr()
+        assert "unverified" in captured.err
+        assert "is Off" not in captured.out

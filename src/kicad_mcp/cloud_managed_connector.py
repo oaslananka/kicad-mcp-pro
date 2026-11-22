@@ -375,7 +375,7 @@ def _disable() -> int:
             }
         except (OSError, subprocess.SubprocessError):
             stopped = False
-    if not stopped or not marker_removed:
+    if not stopped or not marker_removed or not _wait_for_foreground_shutdown(root):
         print(
             "Connector shutdown requested; local marker or service stop is unverified.",
             file=sys.stderr,
