@@ -743,7 +743,9 @@ def test_stale_connected_status_without_session_owner_is_unavailable(
     root, _project = _root(tmp_path)
     monkeypatch.setattr(connector, "default_registry_root", lambda: root)
     monkeypatch.setattr(
-        connector, "_systemctl", lambda *args: subprocess.CompletedProcess(args, 0, "active", "")
+        connector,
+        "_systemctl",
+        lambda *args: subprocess.CompletedProcess("systemctl fixture", 0, "active", ""),
     )
     connector._write_private_json(root, connector._ENABLED_FILE, connector._identity_state(RECORD))
     connector._write_status(root, "connected")
@@ -758,7 +760,9 @@ def test_status_without_lock_does_not_create_lock_file(
     root, _project = _root(tmp_path)
     monkeypatch.setattr(connector, "default_registry_root", lambda: root)
     monkeypatch.setattr(
-        connector, "_systemctl", lambda *args: subprocess.CompletedProcess(args, 0, "active", "")
+        connector,
+        "_systemctl",
+        lambda *args: subprocess.CompletedProcess("systemctl fixture", 0, "active", ""),
     )
     connector._write_private_json(root, connector._ENABLED_FILE, connector._identity_state(RECORD))
     connector._write_status(root, "connected")
@@ -1223,7 +1227,7 @@ def test_enable_does_not_report_success_after_concurrent_revocation(
         calls.append(args[0])
         if args[0] == "enable":
             connector._remove_private_file(root, connector._ENABLED_FILE)
-        return subprocess.CompletedProcess(args, 0, "", "")
+        return subprocess.CompletedProcess("systemctl fixture", 0, "", "")
 
     monkeypatch.setattr(connector, "_systemctl", systemctl)
     assert connector.main(["enable"]) == 1
@@ -1239,7 +1243,9 @@ def test_disable_without_marker_does_not_claim_stop_while_runner_holds_lock(
     monkeypatch.setattr(connector, "default_registry_root", lambda: root)
     monkeypatch.setattr(connector, "_FOREGROUND_SHUTDOWN_TIMEOUT", 0.0)
     monkeypatch.setattr(
-        connector, "_systemctl", lambda *args: subprocess.CompletedProcess(args, 0, "", "")
+        connector,
+        "_systemctl",
+        lambda *args: subprocess.CompletedProcess("systemctl fixture", 0, "", ""),
     )
     with connector._connector_session_lock(root):
         assert connector._disable() == 1

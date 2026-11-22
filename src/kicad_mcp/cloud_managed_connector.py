@@ -73,6 +73,8 @@ class ConnectorAlreadyRunningError(RuntimeError):
 @contextmanager
 def _connector_session_lock(root: Path, *, create: bool = True) -> Iterator[None]:
     """Hold one private, nonblocking POSIX process lock for the whole session loop."""
+    if sys.platform == "win32":
+        raise LocalApprovalDeniedError(_DENIED)
     import fcntl
 
     folder_fd = _open_owner_private_dir(root / _SESSION_LOCK_FILE)

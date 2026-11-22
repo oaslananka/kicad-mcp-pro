@@ -13,6 +13,7 @@ import json
 import os
 import ssl
 import time
+from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
 
@@ -218,11 +219,26 @@ async def test_signed_tls_wss_two_reads_and_owner_off(
             monkeypatch.setattr(connector, "default_registry_root", lambda: registry)
             stop = asyncio.Event()
 
-            async def fixture_runner(**kwargs: object) -> HandshakeReceipt:
+            async def fixture_runner(
+                *,
+                origin: str,
+                trusted_origin: str,
+                owner_sub: str,
+                device_id: str,
+                signing_key: Ed25519PrivateKey,
+                dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch],
+                **kwargs: object,
+            ) -> HandshakeReceipt:
                 # Only the trust root and read budget are supplied by the local
                 # fixture. The real client signs, reads and drains its socket.
                 try:
                     return await execute_owner_managed_read_session(
+                        origin=origin,
+                        trusted_origin=trusted_origin,
+                        owner_sub=owner_sub,
+                        device_id=device_id,
+                        signing_key=signing_key,
+                        dispatcher_factory=dispatcher_factory,
                         **{**kwargs, "max_reads": 2},
                         tls_context=client_context,
                         on_ready=lambda receipt: ready_events.append((receipt, tuple(event_order))),
