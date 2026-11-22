@@ -10,6 +10,22 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.22.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.21.6...mcp-server-v4.22.0) (2026-11-22)
+
+
+### Features
+
+* **cloud:** unify POSIX foreground and owner-approved recovery ([#1875](https://github.com/oaslananka/kicad-mcp-pro/issues/1875)) ([66faddd](https://github.com/oaslananka/kicad-mcp-pro/commit/66fadddb5d62fd7534eff71e091cec6892fbb96e))
+* **schematic:** default to readable wired functional blocks ([#1873](https://github.com/oaslananka/kicad-mcp-pro/issues/1873)) ([2a63dec](https://github.com/oaslananka/kicad-mcp-pro/commit/2a63decb5d817b821bcf7b17ee5156d2026c0d1d))
+
+
+### Bug Fixes
+
+* **cloud:** wait for final database startup during restore rehearsal ([#1880](https://github.com/oaslananka/kicad-mcp-pro/issues/1880)) ([313198a](https://github.com/oaslananka/kicad-mcp-pro/commit/313198a9912050c34af813bcb108dc95e4faab29))
+* **release:** reproduce MCPB archive digests across release runs ([#1878](https://github.com/oaslananka/kicad-mcp-pro/issues/1878)) ([12ba48f](https://github.com/oaslananka/kicad-mcp-pro/commit/12ba48fe155dc8a2406b403d9e77e79639e9706c))
+* **schematic:** guide wired MCU blocks and enforce visual QA ([#1881](https://github.com/oaslananka/kicad-mcp-pro/issues/1881)) ([36897b4](https://github.com/oaslananka/kicad-mcp-pro/commit/36897b423b6a7009f7348a0267a36da63acf7377))
+* **security:** confine Git checkpoints to authorized workspace ([#1882](https://github.com/oaslananka/kicad-mcp-pro/issues/1882)) ([efb123d](https://github.com/oaslananka/kicad-mcp-pro/commit/efb123dc96f8e496d0c5498751e3d2c4db058e4e))
+
 ## [4.21.6](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.21.5...mcp-server-v4.21.6) (2026-11-22)
 
 
