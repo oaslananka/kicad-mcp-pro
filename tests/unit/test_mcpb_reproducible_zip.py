@@ -2,27 +2,19 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 import zipfile
 from pathlib import Path
 
 import pytest
+
+from scripts.normalize_mcpb_timestamps import normalize_mcpb_timestamps
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "normalize_mcpb_timestamps.py"
 _FIXED = (1980, 1, 1, 0, 0, 0)
 
 
 def _normalize(path: Path) -> None:
-    result = subprocess.run(
-        [sys.executable, str(SCRIPT)],
-        input=path.read_bytes(),
-        capture_output=True,
-        check=False,
-    )
-    if result.returncode:
-        raise ValueError("MCPB normalizer rejected the archive")
-    path.write_bytes(result.stdout)
+    path.write_bytes(normalize_mcpb_timestamps(path.read_bytes()))
 
 
 def _create(path: Path, stamp: tuple[int, int, int, int, int, int]) -> None:
