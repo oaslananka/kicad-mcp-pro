@@ -53,8 +53,11 @@ reader round-trips, so each incremental add stamps a different instance path and
 KiCad renders a blank sheet even though the file parses. One pass writes one
 consistent root UUID, so every symbol lands on the root sheet.
 
-Compute exact pin coordinates up front with `get_pin_positions(lib, sym, x, y,
-rot)` (pure geometry — no placement needed), then wire pin-tip to pin-tip.
+Use the public MCP tool `sch_get_pin_positions(library, symbol_name, x_mm,
+y_mm, rotation=0, unit=1)` for exact pin coordinates before placement. Use the
+returned pin-tip coordinates to plan orthogonal wires. Preview the four lists
+with `sch_analyze_net_compilation` before building; inspect failures or warnings
+and correct the plan rather than guessing pin positions.
 
 ## Design pattern
 
@@ -84,7 +87,8 @@ beside a wire raises `label_dangling`.
 
 ## The loop
 
-1. **Plan** all coordinates from `get_pin_positions`; assemble the four lists.
+1. **Plan** coordinates with `sch_get_pin_positions`; assemble the four lists
+   and preview them with `sch_analyze_net_compilation`.
 2. **Build** in one `sch_build_circuit` pass.
 3. **Guard with ERC.** Run `run_erc`. Fix every violation before judging looks —
    a blank/oddly-passing ERC means KiCad isn't reading your symbols (see the root

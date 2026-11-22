@@ -54,6 +54,8 @@ async def test_new_schematic_workflows_default_to_wired_functional_blocks() -> N
         assert "pin-to-net membership" in prompt
         assert "native render" in prompt
         assert "unsafe_routed_wires" in prompt
+        assert "sch_get_pin_positions" in prompt
+        assert "sch_analyze_net_compilation" in prompt
     visual = await get_prompt_text(server, "visual_excellence_loop", {})
     assert "score alone" in visual
     assert "functional blocks" in visual
