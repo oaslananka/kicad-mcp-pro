@@ -42,6 +42,7 @@ _KICAD_PRO = "*.kicad_pro"
 _KICAD_SCH = "*.kicad_sch"
 _KICAD_PCB = "*.kicad_pcb"
 _NO_PROJECT_FOLDER_SELECTED = "No project folder selected. Setup was not changed."
+_FOLDER_PICKER_UNAVAILABLE = "Folder picker unavailable; use --project-dir /path/to/project."
 _MACOS_FOLDER_APPLESCRIPT = (
     'POSIX path of (choose folder with prompt "Choose your local KiCad project folder")'
 )
@@ -314,13 +315,11 @@ def _browse_macos_project_folder() -> Path:
             timeout=120,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise typer.BadParameter(
-            "Folder picker unavailable; use --project-dir /path/to/project."
-        ) from exc
+        raise typer.BadParameter(_FOLDER_PICKER_UNAVAILABLE) from exc
     if selected.returncode != 0:
         if "(-128)" in selected.stderr:
             raise typer.BadParameter(_NO_PROJECT_FOLDER_SELECTED)
-        raise typer.BadParameter("Folder picker unavailable; use --project-dir /path/to/project.")
+        raise typer.BadParameter(_FOLDER_PICKER_UNAVAILABLE)
     # Only trim the osascript line ending. Spaces are valid folder-name bytes.
     name = selected.stdout.rstrip("\r\n")
     if (
@@ -328,7 +327,7 @@ def _browse_macos_project_folder() -> Path:
         or len(name) > 4096
         or any(ord(character) < 32 for character in name)
     ):
-        raise typer.BadParameter("Folder picker unavailable; use --project-dir /path/to/project.")
+        raise typer.BadParameter(_FOLDER_PICKER_UNAVAILABLE)
     return Path(name)
 
 
@@ -354,9 +353,7 @@ def _browse_local_project_folder() -> Path:
                 timeout=120,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise typer.BadParameter(
-                "Folder picker unavailable; use --project-dir /path/to/project."
-            ) from exc
+            raise typer.BadParameter(_FOLDER_PICKER_UNAVAILABLE) from exc
         if selected.returncode != 0 or not selected.stdout.strip():
             raise typer.BadParameter(_NO_PROJECT_FOLDER_SELECTED)
         return Path(selected.stdout.strip())
