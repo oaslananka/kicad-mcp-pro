@@ -106,6 +106,10 @@ test("Online legacy Connector shows a clear upgrade path instead of dead Browse"
     browseNeedsUpgrade:true,connectionState:"connected" as const};
   const html=renderDevicesPage([device],undefined,true,{projects:[],ownerSub:"owner",clients:[],savedGrants:[],sandboxMode:false,browseEnabled:true});
   assert.match(html,/Update the KiCad MCP Pro Connector/);
+  assert.match(html,/interactive owner terminal/);
+  assert.match(html,/Windows, macOS, or Linux/);
+  assert.match(html,/folder path stays private/);
+  assert.doesNotMatch(html,/Windows folder picker/);
   assert.doesNotMatch(html,/action="\/devices\/projects\/browse"/);
   assert.match(html,/Online/);
 });
