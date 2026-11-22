@@ -117,12 +117,20 @@ async def test_sdk_v2_supported_host_profiles_over_real_http(
                     tools = await session.list_tools()
                     resources = await session.list_resources()
                     prompts = await session.list_prompts()
+                    workflow = await session.get_prompt("professional_circuit_design", {})
                     called = await session.call_tool("kicad_get_version", {})
                     missing_tool = await session.call_tool("__native_v2_missing_tool__", {})
                     with pytest.raises(MCPError) as missing_resource:
                         await session.read_resource("kicad://native-v2/missing-resource")
 
     assert CANDIDATE_PROTOCOL_VERSION in discovered.supported_versions
+    instructions = discovered.instructions or ""
+    assert "wired functional blocks" in instructions
+    assert "pin-to-net membership" in instructions
+    assert "unsafe routing" in instructions
+    workflow_text = " ".join(getattr(message.content, "text", "") for message in workflow.messages)
+    assert "wired functional blocks" in workflow_text
+    assert "native render" in workflow_text
     assert "kicad_get_version" in {tool.name for tool in tools.tools}
     assert "kicad://board/summary" in {str(resource.uri) for resource in resources.resources}
     assert "first_pcb" in {prompt.name for prompt in prompts.prompts}
@@ -241,3 +249,43 @@ async def test_sdk_v2_readonly_mode_rejects_pcb_mutations_over_http(
         } == original_hashes
     finally:
         cfg.operating_mode = previous_mode
+
+
+@pytest.mark.parametrize(
+    ("profile", "mode", "authoring_allowed"),
+    [
+        ("default", "readonly", False),
+        ("schematic_authoring", "write", True),
+    ],
+)
+@pytest.mark.asyncio
+async def test_new_schematic_authoring_permission_is_explicit_over_real_http(
+    sample_project: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    profile: str,
+    mode: str,
+    authoring_allowed: bool,
+) -> None:
+    cfg = get_config()
+    monkeypatch.setattr(cfg, "operating_mode", mode)
+    monkeypatch.setattr(cfg, "enable_experimental_tools", False)
+    server = _configure_native_v2_server(sample_project, profile=profile)
+
+    with _running_http_server(server.streamable_http_app()) as base_url:
+        async with streamable_http_client(f"{base_url}/mcp") as (reader, writer):
+            async with ClientSession(reader, writer) as session:
+                discovered = await session.discover()
+                tools = await session.list_tools()
+
+    names = {tool.name for tool in tools.tools}
+    assert ("sch_build_circuit" in names) is authoring_allowed
+    assert ("sch_get_pin_positions" in names) is authoring_allowed
+    assert discovered.instructions is not None
+    if authoring_allowed:
+        assert "schematic authoring tools are available" in discovered.instructions
+        assert "KICAD_MCP_PROFILE=schematic_authoring" not in discovered.instructions
+    else:
+        assert "schematic authoring is unavailable" in discovered.instructions
+        assert "KICAD_MCP_PROFILE=schematic_authoring" in discovered.instructions
+        assert "KICAD_MCP_OPERATING_MODE=write" in discovered.instructions
+        assert "never elevate permissions automatically" in discovered.instructions

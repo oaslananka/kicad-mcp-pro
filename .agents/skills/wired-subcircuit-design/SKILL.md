@@ -1,18 +1,37 @@
 ---
 name: wired-subcircuit-design
-description: Build a genuinely wired, showcase-grade KiCad schematic with KiCad MCP Pro — wired sub-circuit islands plus a tidy label bus — instead of the correct-but-plain by-name-label output of auto layout.
+description: Default workflow for authoring readable new MCU, power, interface and other functional KiCad schematics with KiCad MCP Pro; use wired subcircuits, a tidy label bus, native ERC and rendered review.
 ---
 
 # Wired Sub-circuit Design Skill
 
-Use this skill when an agent must produce a schematic that *looks* like a person
-drew it — wired functional blocks, conventional power, a clean breakout bus — not
-just an electrically valid netlist. It is the deliberate, higher-effort path that
-`sch_build_circuit(auto_layout=True, nets=...)` cannot reach.
+Use this skill for ordinary new functional schematics, not just showcase requests.
+A readable drawing has wired functional blocks, conventional power and a clean
+breakout bus, not merely an electrically valid netlist. Choose this workflow before
+using `sch_build_circuit(auto_layout=True, nets=...)`.
 
 Specific to `oaslananka/kicad-mcp-pro`. Keep in sync with
 `docs/tools-reference.generated.md`. Worked reference:
 [`examples/gallery/esp32-c3-wroom-02-breakout`](https://github.com/oaslananka/kicad-mcp-pro/blob/main/examples/gallery/esp32-c3-wroom-02-breakout/README.md).
+
+## Default for new functional schematics
+
+For an ordinary MCU development board, agree the circuit and group components by
+function before choosing coordinates: power input/regulator and capacitors,
+MCU/decoupling, EN/RESET and BOOT networks, UART/GPIO interfaces, and indicator
+LEDs. Keep short connections within each block visibly wired; use matched labels
+for long inter-block connections and breakouts. Choose the smallest page that fits
+content, readable spacing and headings; do not enlarge the page to hide scattered
+placement. Keep component Value (for example `10k`) separate from net/function
+names (for example `EN`). Adapt the blocks to the actual design; do not impose
+ESP32 coordinates or add circuitry that was not requested.
+
+For an existing design, preserve its intent and approved layout. Do not relocate already-wired symbols independently.
+Use previewable connectivity-preserving changes only; compare the netlist or
+connectivity signature and reference identities before and after. Refuse or roll
+back a change that alters connectivity or cannot be verified. A collision-safe
+label-only build remains an explicit fallback when placement or wiring cannot be
+verified, not a claim of professional readability.
 
 ## Why auto layout is not enough
 
@@ -34,8 +53,11 @@ reader round-trips, so each incremental add stamps a different instance path and
 KiCad renders a blank sheet even though the file parses. One pass writes one
 consistent root UUID, so every symbol lands on the root sheet.
 
-Compute exact pin coordinates up front with `get_pin_positions(lib, sym, x, y,
-rot)` (pure geometry — no placement needed), then wire pin-tip to pin-tip.
+Use the public MCP tool `sch_get_pin_positions(library, symbol_name, x_mm,
+y_mm, rotation=0, unit=1)` for exact pin coordinates before placement. Use the
+returned pin-tip coordinates to plan orthogonal wires. Preview the four lists
+with `sch_analyze_net_compilation` before building; inspect failures or warnings
+and correct the plan rather than guessing pin positions.
 
 ## Design pattern
 
@@ -65,15 +87,21 @@ beside a wire raises `label_dangling`.
 
 ## The loop
 
-1. **Plan** all coordinates from `get_pin_positions`; assemble the four lists.
+1. **Plan** coordinates with `sch_get_pin_positions`; assemble the four lists
+   and preview them with `sch_analyze_net_compilation`.
 2. **Build** in one `sch_build_circuit` pass.
 3. **Guard with ERC.** Run `run_erc`. Fix every violation before judging looks —
    a blank/oddly-passing ERC means KiCad isn't reading your symbols (see the root
-   UUID rule).
+   UUID rule). Export the native netlist and check expected pin-to-net membership
+   against the agreed circuit, including power, reset/boot and LED anode and cathode
+   connections. ERC cannot prove functional intent or correct polarity; two
+   electrically distinct nets must not collapse even if ERC is clean.
 4. **See.** Render with `sch_render_png` (or `kicad-cli sch export svg`) and judge
    against the rubric below. The render is ground truth.
-5. **Refine** placement for overlaps and composition; rebuild. Stop when ERC is
-   clean and nothing overlaps — do not chase the cosmetic score past that.
+5. **Refine** placement for overlaps and composition; rebuild only the approved
+   new design. Complete only when native ERC, connectivity and rendered functional
+   block readability pass independently. If native rendering is unavailable,
+   report visual acceptance as unverified; a high cosmetic score is not a substitute.
 
 ## Rubric — what "wired showcase" looks like
 

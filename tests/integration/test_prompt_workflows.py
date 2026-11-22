@@ -43,3 +43,20 @@ async def test_workflow_prompts_expose_v3_canonical_sequences() -> None:
     assert "Bring up a new board" in bringup
     assert "manufacturer profile" in dfm
     assert "regression sweep" in regression
+
+
+@pytest.mark.anyio
+async def test_new_schematic_workflows_default_to_wired_functional_blocks() -> None:
+    server = build_server("full")
+    for name in ("first_pcb", "professional_circuit_design", "schematic_to_pcb"):
+        prompt = await get_prompt_text(server, name, {})
+        assert "wired functional blocks" in prompt
+        assert "pin-to-net membership" in prompt
+        assert "native render" in prompt
+        assert "unsafe_routed_wires" in prompt
+        assert "sch_get_pin_positions" in prompt
+        assert "sch_analyze_net_compilation" in prompt
+    visual = await get_prompt_text(server, "visual_excellence_loop", {})
+    assert "score alone" in visual
+    assert "functional blocks" in visual
+    assert "If the score is at target, stop" not in visual

@@ -57,6 +57,10 @@ Before using write tools, the agent should state:
 
 After using write tools, the agent should collect structured output, changed files, visual evidence, and ERC/DRC/DFM results before making further changes.
 
+### Default new-schematic authoring
+
+For new functional schematics, follow the [wired-subcircuit-design skill](https://github.com/oaslananka/kicad-mcp-pro/blob/main/skills/wired-subcircuit-design/SKILL.md) before placement. Draw short connected power, reset/boot, decoupling and interface blocks with explicit orthogonal wires, use matched labels between distant blocks, and select the page from content extents. Keep component values distinct from net names. The existing automatic label-only layout is a collision-safe fallback, not a readability acceptance result. Review the native render, ERC, and expected pin-to-net membership separately (including component polarity); for cosmetic transformations preserve netlist/connectivity and reference identity, and refuse or roll back unsafe edits. Do not claim visual quality when native rendering is unavailable.
+
 ### PCB transaction scoping
 
 `pcb_begin_commit`, `pcb_push_commit`, and `pcb_drop_commit` group live-board mutations into one native-live transaction. Only reviewed operations participate in an active transaction; the router keeps a fixed allowlist and each participating operation must supply a postcondition verifier.

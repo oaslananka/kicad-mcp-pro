@@ -5,6 +5,19 @@ from __future__ import annotations
 from mcp.server.mcpserver import MCPServer as FastMCP
 from mcp.types import TextContent
 
+_WIRED_AUTHORING_GUIDANCE = """For ordinary new schematics, default to wired functional blocks:
+group power and
+regulator, MCU decoupling, EN/RESET, BOOT, UART/GPIO and LED circuits as applicable.
+Use sch_get_pin_positions for the planned symbol placements and rotations;
+use explicit checked coordinates and wire segments for local connections.
+Preview with sch_analyze_net_compilation before sch_build_circuit on a new sheet.
+Use matched labels for longer signal links and standard power symbols for supplies.
+The collision-safe nets-only builder is useful for logical connectivity, not the
+visual default. Do not turn on unsafe_routed_wires to imitate a wired layout.
+Do not overwrite an existing design for cosmetic changes. Review the native render,
+ERC and expected pin-to-net membership (including polarity) before acceptance;
+a numeric readability score or clean ERC alone is insufficient."""
+
 
 def render_professional_circuit_design_prompt(
     *,
@@ -28,6 +41,7 @@ Board: {board_size_mm} mm, {layer_count} copper layer(s), target fab {target_fab
    - `project_set_design_intent()` before schematic work
    - Read `kicad://project/info`
 2. Schematic capture:
+   {_WIRED_AUTHORING_GUIDANCE}
    - Use `sch_find_free_placement()` before placing symbols
    - Add power symbols before dependent circuits
    - Route wires, then call `sch_add_missing_junctions()`
@@ -79,6 +93,7 @@ Workflow:
 3. Review `kicad://project/info` and `kicad://board/summary`.
 4. Define the outline with `pcb_set_board_outline()`.
 5. Populate the schematic using the schematic and library tools.
+   {_WIRED_AUTHORING_GUIDANCE}
 6. Run `run_erc()` and `schematic_design_rule_check()`, then fix issues before layout.
 7. Route with PCB tools.
 8. Run `run_drc()` and `check_design_for_manufacture()`.
@@ -89,8 +104,10 @@ Workflow:
     @mcp.prompt()
     def schematic_to_pcb() -> list[TextContent]:
         """Guide an agent from schematic capture to PCB layout."""
-        text = """
+        text = f"""
 Move a design from schematic capture to PCB layout.
+
+{_WIRED_AUTHORING_GUIDANCE}
 
 1. Inspect the active project and schematic.
 2. Add or update symbols, labels, buses, and power flags.
@@ -202,13 +219,15 @@ Run a closed-loop design review instead of trusting a single build pass.
         text = """
 Drive the schematic to a professional, cosmetically clean state with a measured
 loop. Cosmetic fixers keep electrical connectivity as a hard invariant, so apply
-them without fear — but verify the render and finish with ERC.
+them only after checking the proposed change — verify the render and finish with ERC.
 
-Run this loop per sheet until the score meets the target (default 80/100) or no
-fixer applies:
+Run this loop per sheet. The target (default 80/100) is a diagnostic, not a
+completion gate: a score alone cannot establish readability. Review the native
+render for coherent wired functional blocks, clear labels, appropriate page
+size and separated values/functions. If the score is at target but the render
+is deficient, address the visual issue without changing connectivity.
 
-1. Measure with `sch_cosmetic_score()`. If the score is at target, stop. Else
-   read `worst_category`.
+1. Measure with `sch_cosmetic_score()` and inspect `worst_category`.
 2. Dry-run the matching fixer (default `apply=false`) and read
    `connectivity_preserved`:
    - `grid` -> `sch_align_to_grid()`

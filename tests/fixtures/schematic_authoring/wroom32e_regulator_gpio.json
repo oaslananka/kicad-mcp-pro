@@ -1,0 +1,729 @@
+{
+  "symbols": [
+    {
+      "library": "RF_Module",
+      "symbol_name": "ESP32-WROOM-32E",
+      "reference": "U1",
+      "value": "ESP32-WROOM-32E",
+      "x_mm": 152.4,
+      "y_mm": 101.6,
+      "rotation": 0
+    },
+    {
+      "library": "Connector_Generic",
+      "symbol_name": "Conn_01x02",
+      "reference": "J1",
+      "value": "Conn_01x02",
+      "x_mm": 35.56,
+      "y_mm": 30.48,
+      "rotation": 180
+    },
+    {
+      "library": "power",
+      "symbol_name": "PWR_FLAG",
+      "reference": "#FLG01",
+      "value": "PWR_FLAG",
+      "x_mm": 27.94,
+      "y_mm": 45.72,
+      "rotation": 0
+    },
+    {
+      "library": "Device",
+      "symbol_name": "C",
+      "reference": "C1",
+      "value": "10uF",
+      "x_mm": 50.8,
+      "y_mm": 45.72,
+      "rotation": 0
+    },
+    {
+      "library": "Device",
+      "symbol_name": "C",
+      "reference": "C2",
+      "value": "100nF",
+      "x_mm": 88.9,
+      "y_mm": 45.72,
+      "rotation": 0
+    },
+    {
+      "library": "power",
+      "symbol_name": "PWR_FLAG",
+      "reference": "#FLG02",
+      "value": "PWR_FLAG",
+      "x_mm": 119.38,
+      "y_mm": 54.61,
+      "rotation": 0
+    },
+    {
+      "library": "Device",
+      "symbol_name": "R",
+      "reference": "R1",
+      "value": "10k",
+      "x_mm": 40.64,
+      "y_mm": 64.77,
+      "rotation": 0
+    },
+    {
+      "library": "Device",
+      "symbol_name": "C",
+      "reference": "C3",
+      "value": "100nF",
+      "x_mm": 60.96,
+      "y_mm": 87.63,
+      "rotation": 0
+    },
+    {
+      "library": "Switch",
+      "symbol_name": "SW_Push",
+      "reference": "SW1",
+      "value": "SW_Push",
+      "x_mm": 40.64,
+      "y_mm": 97.79,
+      "rotation": 90
+    },
+    {
+      "library": "Device",
+      "symbol_name": "R",
+      "reference": "R2",
+      "value": "10k",
+      "x_mm": 40.64,
+      "y_mm": 134.62,
+      "rotation": 0
+    },
+    {
+      "library": "Switch",
+      "symbol_name": "SW_Push",
+      "reference": "SW2",
+      "value": "SW_Push",
+      "x_mm": 40.64,
+      "y_mm": 158.75,
+      "rotation": 90
+    },
+    {
+      "library": "Connector_Generic",
+      "symbol_name": "Conn_01x04",
+      "reference": "J2",
+      "value": "Conn_01x04",
+      "x_mm": 238.76,
+      "y_mm": 87.63,
+      "rotation": 0
+    },
+    {
+      "library": "Device",
+      "symbol_name": "R",
+      "reference": "R3",
+      "value": "330",
+      "x_mm": 218.44,
+      "y_mm": 129.54,
+      "rotation": 0
+    },
+    {
+      "library": "Device",
+      "symbol_name": "LED",
+      "reference": "D1",
+      "value": "LED",
+      "x_mm": 218.44,
+      "y_mm": 149.86,
+      "rotation": 90
+    },
+    {
+      "library": "Regulator_Linear",
+      "symbol_name": "AMS1117-3.3",
+      "reference": "U2",
+      "value": "AMS1117-3.3",
+      "x_mm": 64.77,
+      "y_mm": 30.48,
+      "rotation": 0
+    },
+    {
+      "library": "Device",
+      "symbol_name": "C",
+      "reference": "C4",
+      "value": "10uF",
+      "x_mm": 104.14,
+      "y_mm": 45.72,
+      "rotation": 0
+    },
+    {
+      "library": "Connector_Generic",
+      "symbol_name": "Conn_01x02",
+      "reference": "J3",
+      "value": "Conn_01x02",
+      "x_mm": 238.76,
+      "y_mm": 113.03,
+      "rotation": 0
+    }
+  ],
+  "wires": [
+    {
+      "x1_mm": 152.4,
+      "y1_mm": 66.04,
+      "x2_mm": 152.4,
+      "y2_mm": 58.42
+    },
+    {
+      "x1_mm": 152.4,
+      "y1_mm": 137.16,
+      "x2_mm": 152.4,
+      "y2_mm": 144.78
+    },
+    {
+      "x1_mm": 137.16,
+      "y1_mm": 71.12,
+      "x2_mm": 127.0,
+      "y2_mm": 71.12
+    },
+    {
+      "x1_mm": 167.64,
+      "y1_mm": 71.12,
+      "x2_mm": 177.8,
+      "y2_mm": 71.12
+    },
+    {
+      "x1_mm": 167.64,
+      "y1_mm": 78.74,
+      "x2_mm": 177.8,
+      "y2_mm": 78.74
+    },
+    {
+      "x1_mm": 167.64,
+      "y1_mm": 73.66,
+      "x2_mm": 177.8,
+      "y2_mm": 73.66
+    },
+    {
+      "x1_mm": 167.64,
+      "y1_mm": 96.52,
+      "x2_mm": 177.8,
+      "y2_mm": 96.52
+    },
+    {
+      "x1_mm": 50.8,
+      "y1_mm": 41.91,
+      "x2_mm": 50.8,
+      "y2_mm": 30.48
+    },
+    {
+      "x1_mm": 50.8,
+      "y1_mm": 49.53,
+      "x2_mm": 50.8,
+      "y2_mm": 54.61
+    },
+    {
+      "x1_mm": 64.77,
+      "y1_mm": 38.1,
+      "x2_mm": 64.77,
+      "y2_mm": 54.61
+    },
+    {
+      "x1_mm": 88.9,
+      "y1_mm": 41.91,
+      "x2_mm": 88.9,
+      "y2_mm": 30.48
+    },
+    {
+      "x1_mm": 88.9,
+      "y1_mm": 49.53,
+      "x2_mm": 88.9,
+      "y2_mm": 54.61
+    },
+    {
+      "x1_mm": 104.14,
+      "y1_mm": 41.91,
+      "x2_mm": 104.14,
+      "y2_mm": 30.48
+    },
+    {
+      "x1_mm": 104.14,
+      "y1_mm": 49.53,
+      "x2_mm": 104.14,
+      "y2_mm": 54.61
+    },
+    {
+      "x1_mm": 50.8,
+      "y1_mm": 30.48,
+      "x2_mm": 50.8,
+      "y2_mm": 25.4
+    },
+    {
+      "x1_mm": 104.14,
+      "y1_mm": 30.48,
+      "x2_mm": 104.14,
+      "y2_mm": 25.4
+    },
+    {
+      "x1_mm": 104.14,
+      "y1_mm": 54.61,
+      "x2_mm": 119.38,
+      "y2_mm": 54.61
+    },
+    {
+      "x1_mm": 40.64,
+      "y1_mm": 60.96,
+      "x2_mm": 40.64,
+      "y2_mm": 55.88
+    },
+    {
+      "x1_mm": 40.64,
+      "y1_mm": 68.58,
+      "x2_mm": 40.64,
+      "y2_mm": 76.2
+    },
+    {
+      "x1_mm": 40.64,
+      "y1_mm": 76.2,
+      "x2_mm": 30.48,
+      "y2_mm": 76.2
+    },
+    {
+      "x1_mm": 40.64,
+      "y1_mm": 76.2,
+      "x2_mm": 60.96,
+      "y2_mm": 76.2
+    },
+    {
+      "x1_mm": 60.96,
+      "y1_mm": 76.2,
+      "x2_mm": 60.96,
+      "y2_mm": 83.82
+    },
+    {
+      "x1_mm": 60.96,
+      "y1_mm": 91.44,
+      "x2_mm": 60.96,
+      "y2_mm": 96.52
+    },
+    {
+      "x1_mm": 40.64,
+      "y1_mm": 76.2,
+      "x2_mm": 40.64,
+      "y2_mm": 92.71
+    },
+    {
+      "x1_mm": 40.64,
+      "y1_mm": 102.87,
+      "x2_mm": 40.64,
+      "y2_mm": 107.95
+    },
+    {
+      "x1_mm": 40.64,
+      "y1_mm": 130.81,
+      "x2_mm": 40.64,
+      "y2_mm": 125.73
+    },
+    {
+      "x1_mm": 40.64,
+      "y1_mm": 138.43,
+      "x2_mm": 40.64,
+      "y2_mm": 146.05
+    },
+    {
+      "x1_mm": 40.64,
+      "y1_mm": 146.05,
+      "x2_mm": 30.48,
+      "y2_mm": 146.05
+    },
+    {
+      "x1_mm": 40.64,
+      "y1_mm": 146.05,
+      "x2_mm": 40.64,
+      "y2_mm": 153.67
+    },
+    {
+      "x1_mm": 40.64,
+      "y1_mm": 163.83,
+      "x2_mm": 40.64,
+      "y2_mm": 168.91
+    },
+    {
+      "x1_mm": 233.68,
+      "y1_mm": 85.09,
+      "x2_mm": 223.52,
+      "y2_mm": 85.09
+    },
+    {
+      "x1_mm": 233.68,
+      "y1_mm": 87.63,
+      "x2_mm": 223.52,
+      "y2_mm": 87.63
+    },
+    {
+      "x1_mm": 233.68,
+      "y1_mm": 90.17,
+      "x2_mm": 213.36,
+      "y2_mm": 90.17
+    },
+    {
+      "x1_mm": 233.68,
+      "y1_mm": 92.71,
+      "x2_mm": 228.6,
+      "y2_mm": 92.71
+    },
+    {
+      "x1_mm": 228.6,
+      "y1_mm": 92.71,
+      "x2_mm": 228.6,
+      "y2_mm": 97.79
+    },
+    {
+      "x1_mm": 218.44,
+      "y1_mm": 125.73,
+      "x2_mm": 218.44,
+      "y2_mm": 120.65
+    },
+    {
+      "x1_mm": 218.44,
+      "y1_mm": 133.35,
+      "x2_mm": 218.44,
+      "y2_mm": 146.05
+    },
+    {
+      "x1_mm": 218.44,
+      "y1_mm": 153.67,
+      "x2_mm": 218.44,
+      "y2_mm": 158.75
+    },
+    {
+      "x1_mm": 167.64,
+      "y1_mm": 81.28,
+      "x2_mm": 177.8,
+      "y2_mm": 81.28
+    },
+    {
+      "x1_mm": 167.64,
+      "y1_mm": 83.82,
+      "x2_mm": 177.8,
+      "y2_mm": 83.82
+    },
+    {
+      "x1_mm": 233.68,
+      "y1_mm": 113.03,
+      "x2_mm": 223.52,
+      "y2_mm": 113.03
+    },
+    {
+      "x1_mm": 233.68,
+      "y1_mm": 115.57,
+      "x2_mm": 223.52,
+      "y2_mm": 115.57
+    },
+    {
+      "x1_mm": 40.64,
+      "y1_mm": 30.48,
+      "x2_mm": 43.18,
+      "y2_mm": 30.48
+    },
+    {
+      "x1_mm": 43.18,
+      "y1_mm": 30.48,
+      "x2_mm": 50.8,
+      "y2_mm": 30.48
+    },
+    {
+      "x1_mm": 50.8,
+      "y1_mm": 30.48,
+      "x2_mm": 57.15,
+      "y2_mm": 30.48
+    },
+    {
+      "x1_mm": 72.39,
+      "y1_mm": 30.48,
+      "x2_mm": 88.9,
+      "y2_mm": 30.48
+    },
+    {
+      "x1_mm": 88.9,
+      "y1_mm": 30.48,
+      "x2_mm": 104.14,
+      "y2_mm": 30.48
+    },
+    {
+      "x1_mm": 43.18,
+      "y1_mm": 30.48,
+      "x2_mm": 43.18,
+      "y2_mm": 45.72
+    },
+    {
+      "x1_mm": 43.18,
+      "y1_mm": 45.72,
+      "x2_mm": 27.94,
+      "y2_mm": 45.72
+    }
+  ],
+  "labels": [
+    {
+      "name": "EN",
+      "x_mm": 127.0,
+      "y_mm": 71.12,
+      "rotation": 0,
+      "justify": "right"
+    },
+    {
+      "name": "BOOT",
+      "x_mm": 177.8,
+      "y_mm": 71.12,
+      "rotation": 0,
+      "justify": "left"
+    },
+    {
+      "name": "RXD",
+      "x_mm": 177.8,
+      "y_mm": 78.74,
+      "rotation": 0,
+      "justify": "left"
+    },
+    {
+      "name": "TXD",
+      "x_mm": 177.8,
+      "y_mm": 73.66,
+      "rotation": 0,
+      "justify": "left"
+    },
+    {
+      "name": "LED",
+      "x_mm": 177.8,
+      "y_mm": 96.52,
+      "rotation": 0,
+      "justify": "left"
+    },
+    {
+      "name": "EN",
+      "x_mm": 30.48,
+      "y_mm": 76.2,
+      "rotation": 0,
+      "justify": "right"
+    },
+    {
+      "name": "BOOT",
+      "x_mm": 30.48,
+      "y_mm": 146.05,
+      "rotation": 0,
+      "justify": "right"
+    },
+    {
+      "name": "TXD",
+      "x_mm": 223.52,
+      "y_mm": 85.09,
+      "rotation": 0,
+      "justify": "right"
+    },
+    {
+      "name": "RXD",
+      "x_mm": 223.52,
+      "y_mm": 87.63,
+      "rotation": 0,
+      "justify": "right"
+    },
+    {
+      "name": "LED",
+      "x_mm": 218.44,
+      "y_mm": 120.65,
+      "rotation": 0,
+      "justify": "left"
+    },
+    {
+      "name": "GPIO_A",
+      "x_mm": 177.8,
+      "y_mm": 81.28,
+      "rotation": 0,
+      "justify": "left"
+    },
+    {
+      "name": "GPIO_B",
+      "x_mm": 177.8,
+      "y_mm": 83.82,
+      "rotation": 0,
+      "justify": "left"
+    },
+    {
+      "name": "GPIO_A",
+      "x_mm": 223.52,
+      "y_mm": 113.03,
+      "rotation": 0,
+      "justify": "right"
+    },
+    {
+      "name": "GPIO_B",
+      "x_mm": 223.52,
+      "y_mm": 115.57,
+      "rotation": 0,
+      "justify": "right"
+    }
+  ],
+  "power_symbols": [
+    {
+      "name": "+3V3",
+      "x_mm": 152.4,
+      "y_mm": 58.42,
+      "rotation": 0
+    },
+    {
+      "name": "GND",
+      "x_mm": 152.4,
+      "y_mm": 144.78,
+      "rotation": 0
+    },
+    {
+      "name": "GND",
+      "x_mm": 50.8,
+      "y_mm": 54.61,
+      "rotation": 0
+    },
+    {
+      "name": "+3V3",
+      "x_mm": 40.64,
+      "y_mm": 55.88,
+      "rotation": 0
+    },
+    {
+      "name": "GND",
+      "x_mm": 60.96,
+      "y_mm": 96.52,
+      "rotation": 0
+    },
+    {
+      "name": "GND",
+      "x_mm": 40.64,
+      "y_mm": 107.95,
+      "rotation": 0
+    },
+    {
+      "name": "+3V3",
+      "x_mm": 40.64,
+      "y_mm": 125.73,
+      "rotation": 0
+    },
+    {
+      "name": "GND",
+      "x_mm": 40.64,
+      "y_mm": 168.91,
+      "rotation": 0
+    },
+    {
+      "name": "+3V3",
+      "x_mm": 213.36,
+      "y_mm": 90.17,
+      "rotation": 0
+    },
+    {
+      "name": "GND",
+      "x_mm": 228.6,
+      "y_mm": 97.79,
+      "rotation": 0
+    },
+    {
+      "name": "GND",
+      "x_mm": 218.44,
+      "y_mm": 158.75,
+      "rotation": 0
+    },
+    {
+      "name": "+5V",
+      "x_mm": 50.8,
+      "y_mm": 25.4,
+      "rotation": 0
+    },
+    {
+      "name": "+3V3",
+      "x_mm": 104.14,
+      "y_mm": 25.4,
+      "rotation": 0
+    },
+    {
+      "name": "GND",
+      "x_mm": 40.64,
+      "y_mm": 27.94,
+      "rotation": 0
+    },
+    {
+      "name": "GND",
+      "x_mm": 64.77,
+      "y_mm": 54.61,
+      "rotation": 0
+    },
+    {
+      "name": "GND",
+      "x_mm": 88.9,
+      "y_mm": 54.61,
+      "rotation": 0
+    },
+    {
+      "name": "GND",
+      "x_mm": 104.14,
+      "y_mm": 54.61,
+      "rotation": 0
+    },
+    {
+      "name": "GND",
+      "x_mm": 119.38,
+      "y_mm": 54.61,
+      "rotation": 0
+    }
+  ],
+  "nets": {
+    "+3V3": [
+      "C2.1",
+      "J2.3",
+      "R1.1",
+      "R2.1",
+      "U1.2",
+      "U2.2",
+      "C4.1"
+    ],
+    "GND": [
+      "C1.2",
+      "C2.2",
+      "C3.2",
+      "D1.1",
+      "J2.4",
+      "SW1.1",
+      "SW2.1",
+      "U1.[1,15,38,39]",
+      "#FLG02.1",
+      "J1.2",
+      "U2.1",
+      "C4.2"
+    ],
+    "EN": [
+      "C3.1",
+      "R1.2",
+      "SW1.2",
+      "U1.3"
+    ],
+    "BOOT": [
+      "R2.2",
+      "SW2.2",
+      "U1.25"
+    ],
+    "LED": [
+      "R3.1",
+      "U1.27"
+    ],
+    "LED_SERIES": [
+      "D1.2",
+      "R3.2"
+    ],
+    "TXD": [
+      "J2.1",
+      "U1.35"
+    ],
+    "RXD": [
+      "J2.2",
+      "U1.34"
+    ],
+    "+5V": [
+      "J1.1",
+      "C1.1",
+      "U2.3",
+      "#FLG01.1"
+    ],
+    "GPIO_A": [
+      "J3.1",
+      "U1.26"
+    ],
+    "GPIO_B": [
+      "J3.2",
+      "U1.29"
+    ]
+  }
+}
