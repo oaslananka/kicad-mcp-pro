@@ -296,10 +296,11 @@ def _enable() -> int:
     if os.name != "posix" or sys.platform == "darwin":
         raise RuntimeError("Cloud Connector background service is unsupported on this platform.")
     root = default_registry_root()
-    record = _single_registered_identity(root)
-    # This explicit local enable records only existing selectors. It does not
-    # read or sign with the private key; the service does that after activation.
-    _write_private_json(root, _ENABLED_FILE, _identity_state(record))
+    # Publish persistent authority only when no other runner owns the session.
+    # Release the lock before starting systemd: its child must acquire it.
+    with _connector_session_lock(root):
+        record = _single_registered_identity(root)
+        _write_private_json(root, _ENABLED_FILE, _identity_state(record))
     try:
         _install_user_service()
         result = _systemctl("enable", "--now", _SERVICE_NAME)

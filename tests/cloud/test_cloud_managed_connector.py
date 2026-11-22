@@ -1187,3 +1187,25 @@ async def test_foreground_signed_transport_receives_activity_callback(
         == 0
     )
     assert "Tool call 1: project_summary completed (5 ms)" in capsys.readouterr().out
+
+
+def test_background_enable_refuses_active_foreground_without_mutation(
+    monkeypatch, tmp_path: Path
+) -> None:
+    root, _ = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    connector._write_private_json(
+        root,
+        connector._FOREGROUND_FILE,
+        connector._identity_state(record, connector._FOREGROUND_FILE),
+    )
+    before = (root / connector._FOREGROUND_FILE).read_bytes()
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(
+        connector, "_install_user_service", lambda: pytest.fail("must not install service")
+    )
+    monkeypatch.setattr(connector, "_systemctl", lambda *_: pytest.fail("must not start service"))
+    with connector._connector_session_lock(root):
+        assert connector.main(["enable"]) == 1
+    assert not (root / connector._ENABLED_FILE).exists()
+    assert (root / connector._FOREGROUND_FILE).read_bytes() == before
