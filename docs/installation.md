@@ -86,6 +86,32 @@ partial pairing or claiming that the Cloud owner denied approval. Check the
 release notes for native Windows Cloud support before attempting pairing.
 
 
+### Foreground Cloud connection on Linux and macOS
+
+In a release supporting POSIX foreground connections, start the installed CLI
+from an interactive owner terminal:
+
+~~~bash
+kicad-mcp-pro cloud
+~~~
+
+On a fresh installation, select a KiCad project and approve the device in the
+signed-in Cloud browser. A registered device reuses its existing identity and
+project registration. Keep the terminal open; `Connected` indicates a verified
+session, not merely a paired device. Press Ctrl+C to disconnect, or run
+`kicad-mcp-pro cloud disable` from another terminal. Check local state with
+`kicad-mcp-pro cloud status`. Stopping the session does not delete a project or
+revoke its server-side grants.
+
+The foreground path grants local read-only access for the current process,
+subject to existing Cloud project permissions; it does not enable a persistent
+background service or native board writes. Linux's explicit background service
+is a separate lifecycle: disable it before starting foreground. macOS requires
+an interactive terminal and does not use systemd. If pairing keys remain but
+there is no valid project registration, the CLI refuses implicit new pairing;
+inspect the registration with `cloud status` before repair. Do not delete keys
+or request `--new-device` just to reconnect an existing device.
+
 ## Local HTTP server (no desktop application)
 
 Install or run the Python MCP server. The local browser dashboard and Streamable

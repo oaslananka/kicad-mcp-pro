@@ -1736,3 +1736,28 @@ def test_posix_bare_cloud_reuses_registered_device(monkeypatch, tmp_path: Path) 
     result = CliRunner().invoke(app, ["cloud"])
     assert result.exit_code == 0, result.output
     assert calls == [record]
+
+
+def test_posix_setup_preserves_unbound_keys_without_explicit_new_device(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    registry = tmp_path / "registry"
+    keys = registry / "keys"
+    keys.mkdir(parents=True)
+    key = keys / "existing.pem"
+    key.write_bytes(b"fixture key")
+    project = tmp_path / "board"
+    project.mkdir()
+    (project / "board.kicad_pro").touch()
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair.enroll", lambda *_: pytest.fail("no duplicate enrollment")
+    )
+    result = CliRunner().invoke(app, ["cloud", "setup", "--project-dir", str(project)])
+    assert result.exit_code != 0
+    assert "Existing device keys" in result.output
+    assert key.read_bytes() == b"fixture key"
+    assert list(keys.iterdir()) == [key]

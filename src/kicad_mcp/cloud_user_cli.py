@@ -1393,8 +1393,10 @@ def setup(
     root = default_registry_root()
     keys_dir = root / "keys"
 
-    if not new_device and _try_reconnect_existing(root, origin):
-        return
+    if not new_device:
+        if _try_reconnect_existing(root, origin):
+            return
+        _require_empty_posix_key_registry(root)
 
     root.mkdir(parents=True, mode=0o700, exist_ok=True)
     keys_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
