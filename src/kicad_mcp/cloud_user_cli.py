@@ -161,6 +161,10 @@ def _is_windows() -> bool:
     return os.name == "nt"
 
 
+def _is_macos() -> bool:
+    return sys.platform == "darwin"
+
+
 def _local_pairing_storage_supported() -> bool:
     """Fail early until a complete native owner-private enrollment is available."""
     # Windows vault inspection primitives are not an enrollment/connector
@@ -1504,7 +1508,7 @@ def setup(
         )
         return
     _require_local_pairing_storage()
-    if sys.platform == "darwin" and not _owner_terminal():
+    if _is_macos() and not _owner_terminal():
         typer.echo("No device or project was registered.", err=True)
         raise typer.BadParameter("macOS Cloud setup requires an interactive owner terminal.")
     selected = _select_setup_project_directory(browse, project_dir)

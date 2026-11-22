@@ -9,6 +9,7 @@ import pytest
 from click import unstyle
 from typer.testing import CliRunner
 
+from kicad_mcp.cloud_user_cli import _is_macos
 from kicad_mcp.server import app
 
 
@@ -22,6 +23,8 @@ def simulated_storage_support_for_mocked_cli_flows(monkeypatch) -> None:
     # Existing POSIX tests explicitly test the old registry path; native NT
     # routes have their own real-Windows fixtures in test_cloud_windows_user_cli.
     monkeypatch.setattr("kicad_mcp.cloud_user_cli._is_windows", lambda: False)
+    # Legacy managed-service setup fixtures model Linux, not macOS headless setup.
+    monkeypatch.setattr("kicad_mcp.cloud_user_cli._is_macos", lambda: False)
     # These are simulated CLI routes on Windows, not native POSIX lock tests.
     import os
     from contextlib import nullcontext
@@ -1614,8 +1617,6 @@ def test_posix_registered_connect_uses_interactive_foreground(
 def test_posix_interactive_setup_uses_foreground_without_background_service(
     monkeypatch, tmp_path: Path, platform: str
 ) -> None:
-    from types import SimpleNamespace
-
     from kicad_mcp import cloud_user_cli
 
     project = tmp_path / "board"
@@ -1626,7 +1627,7 @@ def test_posix_interactive_setup_uses_foreground_without_background_service(
     device = "11111111-1111-4111-8111-111111111111"
     project_id = "22222222-2222-4222-8222-222222222222"
     calls = []
-    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform=platform))
+    monkeypatch.setattr(cloud_user_cli, "_is_macos", lambda: platform == "darwin")
     monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
     monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
     monkeypatch.setattr("kicad_mcp.cloud_pair.enroll", lambda *_: (device, "0" * 64))
@@ -1655,12 +1656,20 @@ def test_posix_interactive_setup_uses_foreground_without_background_service(
     assert "Setup Complete!" not in result.output
 
 
-def test_darwin_headless_setup_rejects_before_registration(monkeypatch, tmp_path: Path) -> None:
+@pytest.mark.parametrize("platform", ["darwin", "linux", "win32"])
+def test_native_macos_selector(monkeypatch, platform: str) -> None:
     from types import SimpleNamespace
 
     from kicad_mcp import cloud_user_cli
 
-    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform=platform))
+    assert _is_macos() is (platform == "darwin")
+
+
+def test_darwin_headless_setup_rejects_before_registration(monkeypatch, tmp_path: Path) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "_is_macos", lambda: True)
     monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
     monkeypatch.setattr("kicad_mcp.cloud_pair.enroll", lambda *_: pytest.fail("no enrollment"))
     monkeypatch.setattr(
