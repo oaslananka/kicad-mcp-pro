@@ -104,8 +104,12 @@ silently; check `cloud status` and use an owner-approved project-switching flow.
 
 On a fresh installation, select a KiCad project and approve the device in the
 signed-in Cloud browser. A registered device reuses its existing identity and
-project registration. Keep the terminal open; `Connected` indicates a verified
-session, not merely a paired device. Press Ctrl+C to disconnect, or run
+project registration. While the owner-operated foreground Connector is running,
+**Add project** on the Cloud Devices page can request the local macOS/Linux
+folder picker. Only local display names and opaque selection tokens are returned
+by the chooser; a headless service cannot open an owner dialog, and merely
+choosing a folder does not grant AI-client access. Keep the terminal open;
+`Connected` indicates a verified session, not merely a paired device. Press Ctrl+C to disconnect, or run
 `kicad-mcp-pro cloud disable` from another terminal. Check local state with
 `kicad-mcp-pro cloud status`. Stopping the session does not delete a project or
 revoke its server-side grants.

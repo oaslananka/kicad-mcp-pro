@@ -241,6 +241,138 @@ def test_service_level_revocation_stops_every_operation(tmp_path: Path) -> None:
     assert handle_folder_frame(service, frame("choose"))["status"] == "cancelled"
 
 
+@pytest.mark.parametrize("result", ["selected", "cancelled", "denied"])
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_posix_device_browse_uses_owner_native_picker_only(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, result: str, platform: str
+) -> None:
+    """Remote choose uses owner GUI, not the Windows picker or a leaked path."""
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_folder_browse_receiver as receiver
+    from kicad_mcp import cloud_user_cli
+
+    root = tmp_path / "KiCad projects"
+    root.mkdir()
+    project = root / "owner chosen"
+    project.mkdir()
+    (project / "only.kicad_pro").write_text("{}", encoding="utf-8")
+    selected = []
+
+    def fake_owner_picker() -> Path:
+        selected.append(True)
+        if result == "cancelled":
+            raise cloud_user_cli.typer.BadParameter(cloud_user_cli._NO_PROJECT_FOLDER_SELECTED)
+        if result == "denied":
+            raise cloud_user_cli.typer.BadParameter("Folder picker unavailable")
+        return project
+
+    monkeypatch.setattr(receiver, "sys", SimpleNamespace(platform=platform), raising=False)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_browse_local_project_folder", fake_owner_picker)
+    monkeypatch.setattr(
+        receiver,
+        "choose_project_folder",
+        lambda: pytest.fail("POSIX must never launch Windows Explorer"),
+    )
+    service = device_folder_service(
+        root, bindings_file=tmp_path / "bindings.json", authorization=lambda: True
+    )
+    if result == "denied":
+        with pytest.raises(CloudHandshakeDeniedError):
+            handle_folder_frame(service, frame("choose"))
+    else:
+        response = handle_folder_frame(service, frame("choose"))
+        if result == "cancelled":
+            assert response["status"] == "cancelled"
+        else:
+            assert response["status"] == "selected"
+            assert response["projects"][0]["name"] == "only"
+            assert str(project) not in json.dumps(response)
+            assert str(root) not in json.dumps(response)
+    assert len(selected) == 1
+    assert not (tmp_path / "bindings.json").exists()
+
+
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_posix_device_browse_requires_owner_terminal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, platform: str
+) -> None:
+    """Headless managed services cannot activate a user picker by Cloud frame."""
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_folder_browse_receiver as receiver
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(receiver, "sys", SimpleNamespace(platform=platform), raising=False)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_browse_local_project_folder",
+        lambda: pytest.fail("Headless Cloud must not open any GUI picker"),
+    )
+    service = device_folder_service(tmp_path.resolve(), bindings_file=tmp_path / "bindings.json")
+    with pytest.raises(CloudHandshakeDeniedError):
+        handle_folder_frame(service, frame("choose"))
+    assert not (tmp_path / "bindings.json").exists()
+
+
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+def test_posix_owner_selected_project_is_bound_only_after_explicit_cloud_bind(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, platform: str
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_folder_browse_receiver as receiver
+    from kicad_mcp import cloud_user_cli
+
+    folder = tmp_path / "Chosen project"
+    folder.mkdir()
+    target = folder / "exact.kicad_pro"
+    target.write_text("{}", encoding="utf-8")
+    binding_file = tmp_path / "owner-binding.json"
+    monkeypatch.setattr(receiver, "sys", SimpleNamespace(platform=platform))
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_browse_local_project_folder", lambda: folder)
+    service = device_folder_service(folder, bindings_file=binding_file, authorization=lambda: True)
+    choose = handle_folder_frame(service, frame("choose"))
+    assert choose["status"] == "selected"
+    assert not binding_file.exists()  # selecting cannot authorize a project
+    token = choose["projects"][0]["id"]
+    response = handle_folder_frame(service, frame("bind", folderId=token, projectId=PROJECT_ID))
+    assert response["ok"] is True
+    assert str(folder) not in json.dumps(choose)
+    assert str(folder) not in json.dumps(response)
+    assert json.loads(binding_file.read_text(encoding="utf-8")) == {PROJECT_ID: str(target)}
+
+
+def test_windows_device_default_picker_is_not_replaced_by_posix(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_folder_browse_receiver as receiver
+
+    folder = tmp_path / "Windows project"
+    folder.mkdir()
+    (folder / "windows.kicad_pro").write_text("{}", encoding="utf-8")
+    used: list[bool] = []
+
+    def windows_dialog() -> Path:
+        used.append(True)
+        return folder
+
+    monkeypatch.setattr(receiver, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(receiver, "choose_project_folder", windows_dialog)
+    service = device_folder_service(folder, bindings_file=tmp_path / "bindings.json")
+    answer = handle_folder_frame(service, frame("choose"))
+    assert answer["status"] == "selected"
+    assert answer["projects"][0]["name"] == "windows"
+    assert used == [True]
+    assert str(folder) not in json.dumps(answer)
+    assert not (tmp_path / "bindings.json").exists()
+
+
 def _realistic_service(tmp_path: Path) -> LocalFolderBrowseService:
     projects = tmp_path / "KiCad Projects"
     board = projects / "Board1"

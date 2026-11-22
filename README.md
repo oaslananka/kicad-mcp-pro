@@ -139,6 +139,9 @@ KiCad project folder instead: `kicad-mcp-pro cloud setup --project-dir /path/to/
 On first use, approve the device in your signed-in Cloud browser; separate Cloud
 owner grants still control which AI clients may read project metadata. Keep the
 terminal open for the read-only connection and press Ctrl+C to disconnect.
+The Cloud Devices **Add project** flow can also request a local picker during an
+owner-operated foreground session; its folder-selection response contains only
+names and opaque tokens, not absolute paths.
 
 For an already registered project, run `kicad-mcp-pro cloud` to reconnect or
 `kicad-mcp-pro cloud status` to inspect its state. Selecting a *different* folder
