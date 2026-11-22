@@ -88,7 +88,10 @@ beside a wire raises `label_dangling`.
 2. **Build** in one `sch_build_circuit` pass.
 3. **Guard with ERC.** Run `run_erc`. Fix every violation before judging looks —
    a blank/oddly-passing ERC means KiCad isn't reading your symbols (see the root
-   UUID rule).
+   UUID rule). Export the native netlist and check expected pin-to-net membership
+   against the agreed circuit, including power, reset/boot and LED anode and cathode
+   connections. ERC cannot prove functional intent or correct polarity; two
+   electrically distinct nets must not collapse even if ERC is clean.
 4. **See.** Render with `sch_render_png` (or `kicad-cli sch export svg`) and judge
    against the rubric below. The render is ground truth.
 5. **Refine** placement for overlaps and composition; rebuild only the approved

@@ -5,8 +5,13 @@
 An agent-generated, **ERC-clean** schematic built entirely through KiCad MCP Pro
 placement and wiring tools. It is the reference example for the
 [`wired-subcircuit-design`](../../../skills/wired-subcircuit-design/SKILL.md)
-skill: it shows the difference between a *correct* schematic and a *professional*
-one.
+skill: it illustrates wired functional blocks rather than isolated terminals.
+
+**Scope:** This is a schematic-readability reference, not a hardware-validated
+circuit. Native netlist review found that R3 is connected to D1's cathode while
+its anode is connected to GND. Do not reuse that LED circuit as a functional
+reference without reviewing and correcting its polarity. A clean ERC alone does
+not validate functional intent.
 
 ## What makes it a showcase (not just valid)
 

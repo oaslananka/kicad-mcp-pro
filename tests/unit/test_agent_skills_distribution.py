@@ -333,3 +333,9 @@ def test_new_schematic_workflow_defaults_to_wired_functional_blocks() -> None:
     assert "BOOT" in wired
     assert "Do not relocate already-wired symbols independently" in wired
     assert "cosmetic score alone is not completion" in visual
+
+
+def test_wired_authoring_requires_functional_net_review_beyond_erc() -> None:
+    wired = (ROOT / "skills/wired-subcircuit-design/SKILL.md").read_text(encoding="utf-8")
+    assert "expected pin-to-net membership" in wired
+    assert "LED anode and cathode" in wired
