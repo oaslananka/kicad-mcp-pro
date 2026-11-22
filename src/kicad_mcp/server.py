@@ -2376,7 +2376,11 @@ def build_server(profile: str | None = None, *, defer_registration: bool = False
         instructions=(
             "KiCad MCP Pro Server for project setup, schematic capture, PCB editing, "
             "validation, and manufacturing export. Start with kicad_get_version(), "
-            "kicad_set_project(), and project_get_next_action()."
+            "kicad_set_project(), and project_get_next_action(). For new schematic "
+            "authoring, default to wired functional blocks, not isolated label-only "
+            "terminals. Use professional_circuit_design for the workflow; verify "
+            "native render, ERC and intended pin-to-net membership. Do not overwrite "
+            "existing designs or use unsafe routing just to improve appearance."
         ),
         website_url="https://oaslananka.github.io/kicad-mcp-pro",
         host=cfg.host,
