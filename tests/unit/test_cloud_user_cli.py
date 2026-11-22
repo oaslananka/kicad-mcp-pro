@@ -1048,7 +1048,7 @@ def test_cloud_native_zenity_picker_launch_failure(monkeypatch, reason: str) -> 
     ("selected", "should_succeed"),
     [("/home/example/PCB fixture", True), ("", False)],
 )
-def test_cloud_native_tkinter_folder_picker(
+def test_cloud_linux_tkinter_fallback_folder_picker(
     monkeypatch, selected: str, should_succeed: bool
 ) -> None:
     import sys as interpreter
@@ -1072,13 +1072,114 @@ def test_cloud_native_tkinter_folder_picker(
 
     fake_tk.filedialog = SimpleNamespace(askdirectory=select_directory)  # type: ignore[attr-defined]
     monkeypatch.setitem(interpreter.modules, "tkinter", fake_tk)
-    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="linux"))
+    monkeypatch.setattr(cloud_user_cli.shutil, "which", lambda _name: None)
     if should_succeed:
         assert cloud_user_cli._browse_local_project_folder() == Path(selected)
     else:
         with pytest.raises(cloud_user_cli.typer.BadParameter, match="No project folder"):
             cloud_user_cli._browse_local_project_folder()
     assert events == ["hide", "select", "destroy"]
+
+
+@pytest.mark.parametrize(
+    ("code", "stdout", "stderr", "expected"),
+    [
+        (0, "/Users/example/KiCad boards/\n", "", "/Users/example/KiCad boards"),
+        (0, "/Users/example/Trailing space /\n", "", "/Users/example/Trailing space "),
+        (1, "", "execution error: User canceled. (-128)\n", None),
+        (1, "", "execution error: Accessibility permission denied. (-1743)\n", "unavailable"),
+        (0, "relative/not-absolute\n", "", "unavailable"),
+        (0, "", "", "unavailable"),
+    ],
+)
+def test_macos_owner_native_folder_picker(
+    monkeypatch, code: int, stdout: str, stderr: str, expected: str | None
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    commands = []
+
+    def native_dialog(argv: list[str], **kwargs: object):
+        commands.append(argv)
+        assert argv[0] == "/usr/bin/osascript"  # trusted macOS system binary
+        assert argv[1] == "-e"
+        assert "choose folder" in argv[2]
+        assert "POSIX path" in argv[2]
+        assert kwargs == {
+            "capture_output": True,
+            "text": True,
+            "check": False,
+            "timeout": 120,
+        }
+        return SimpleNamespace(returncode=code, stdout=stdout, stderr=stderr)
+
+    monkeypatch.setattr(cloud_user_cli.subprocess, "run", native_dialog)
+    if isinstance(expected, str) and expected != "unavailable":
+        assert cloud_user_cli._browse_local_project_folder() == Path(expected)
+    else:
+        message = "No project folder selected" if expected is None else "Folder picker unavailable"
+        with pytest.raises(cloud_user_cli.typer.BadParameter, match=message):
+            cloud_user_cli._browse_local_project_folder()
+    assert len(commands) == 1
+
+
+@pytest.mark.parametrize("cause", ["headless", "missing_binary", "timeout"])
+def test_macos_picker_fail_closed_without_owner_or_dialog(monkeypatch, cause: str) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: cause != "headless")
+
+    def native_dialog(_argv: list[str], **_kwargs: object):
+        if cause == "headless":
+            pytest.fail("headless macOS must not launch a native dialog")
+        if cause == "missing_binary":
+            raise OSError("system executable unavailable")
+        raise cloud_user_cli.subprocess.TimeoutExpired("/usr/bin/osascript", 120)
+
+    monkeypatch.setattr(cloud_user_cli.subprocess, "run", native_dialog)
+    with pytest.raises(
+        cloud_user_cli.typer.BadParameter, match="interactive|Folder picker unavailable"
+    ):
+        cloud_user_cli._browse_local_project_folder()
+
+
+def test_macos_setup_cancel_does_not_register_device_or_read_keys(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(cloud_user_cli, "_is_macos", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_local_registry.default_registry_root",
+        lambda: pytest.fail("cancel must not touch local Cloud registry"),
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair.enroll",
+        lambda *_args: pytest.fail("cancel must not enroll a Cloud device"),
+    )
+    monkeypatch.setattr(
+        cloud_user_cli.subprocess,
+        "run",
+        lambda _argv, **_kwargs: SimpleNamespace(
+            returncode=1, stdout="", stderr="execution error: User canceled. (-128)"
+        ),
+    )
+    result = CliRunner().invoke(app, ["cloud", "setup", "--browse", "--no-browser"])
+    assert result.exit_code != 0
+    assert "No project folder selected" in result.output
+    assert not (tmp_path / "cloud").exists()
 
 
 @pytest.mark.parametrize(
@@ -1154,14 +1255,15 @@ def test_windows_native_folder_picker_uses_trusted_system_shell(
         ole.CoTaskMemFree.assert_called_once_with(123)
 
 
-@pytest.mark.parametrize("reason", ["not_installed", "display_error", "dialog_error"])
-def test_cloud_native_tkinter_picker_errors_cleanly(monkeypatch, reason: str) -> None:
+@pytest.mark.parametrize("reason", ["not_installed", "display_error", "dialog_error", "tcl_error"])
+def test_cloud_linux_tkinter_picker_errors_cleanly(monkeypatch, reason: str) -> None:
     import sys as interpreter
     from types import ModuleType, SimpleNamespace
 
     from kicad_mcp import cloud_user_cli
 
-    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="linux"))
+    monkeypatch.setattr(cloud_user_cli.shutil, "which", lambda _name: None)
     if reason == "not_installed":
         monkeypatch.setitem(interpreter.modules, "tkinter", None)
     else:
@@ -1171,7 +1273,15 @@ def test_cloud_native_tkinter_picker_errors_cleanly(monkeypatch, reason: str) ->
             destroy=lambda: events.append("destroy"),
         )
         fake_tk = ModuleType("tkinter")
-        if reason == "display_error":
+        fake_tk.TclError = type("TclError", (Exception,), {})  # type: ignore[attr-defined]
+        fake_tk.filedialog = SimpleNamespace(askdirectory=lambda **_kwargs: "")  # type: ignore[attr-defined]
+        if reason == "tcl_error":
+
+            def no_display():
+                raise fake_tk.TclError("cannot open X display")  # type: ignore[attr-defined]
+
+            fake_tk.Tk = no_display  # type: ignore[attr-defined]
+        elif reason == "display_error":
 
             def raise_display():
                 raise RuntimeError("no desktop session")

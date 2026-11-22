@@ -294,10 +294,48 @@ def _browse_windows_project_folder() -> Path:
         raise typer.BadParameter("Windows folder picker unavailable. Try again.") from exc
 
 
+def _browse_macos_project_folder() -> Path:
+    """Use macOS's built-in folder dialog from a real owner terminal only."""
+    if not _owner_terminal():
+        raise typer.BadParameter("macOS folder selection requires an interactive owner terminal.")
+    try:
+        selected = subprocess.run(
+            [
+                "/usr/bin/osascript",
+                "-e",
+                "POSIX path of (choose folder with prompt "
+                '"Choose your local KiCad project folder")',
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise typer.BadParameter(
+            "Folder picker unavailable; use --project-dir /path/to/project."
+        ) from exc
+    if selected.returncode != 0:
+        if "(-128)" in selected.stderr:
+            raise typer.BadParameter(_NO_PROJECT_FOLDER_SELECTED)
+        raise typer.BadParameter("Folder picker unavailable; use --project-dir /path/to/project.")
+    # Only trim the osascript line ending. Spaces are valid folder-name bytes.
+    name = selected.stdout.rstrip("\r\n")
+    if (
+        not name.startswith("/")
+        or len(name) > 4096
+        or any(ord(character) < 32 for character in name)
+    ):
+        raise typer.BadParameter("Folder picker unavailable; use --project-dir /path/to/project.")
+    return Path(name)
+
+
 def _browse_local_project_folder() -> Path:
     """Open a native *local* directory picker. Never send the path to Cloud."""
     if sys.platform == "win32":
         return _browse_windows_project_folder()
+    if sys.platform == "darwin":
+        return _browse_macos_project_folder()
     zenity = shutil.which("zenity") if sys.platform.startswith("linux") else None
     if zenity:
         try:
@@ -323,7 +361,11 @@ def _browse_local_project_folder() -> Path:
     try:
         import tkinter as tk
         from tkinter import filedialog
-
+    except ImportError as exc:
+        raise typer.BadParameter(
+            "No graphical folder picker available; use --project-dir /path/to/project."
+        ) from exc
+    try:
         dialog = tk.Tk()
         dialog.withdraw()
         try:
@@ -334,7 +376,7 @@ def _browse_local_project_folder() -> Path:
             )
         finally:
             dialog.destroy()
-    except (ImportError, RuntimeError, OSError) as exc:
+    except (tk.TclError, RuntimeError, OSError) as exc:
         raise typer.BadParameter(
             "No graphical folder picker available; use --project-dir /path/to/project."
         ) from exc
