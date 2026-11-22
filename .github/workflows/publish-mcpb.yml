@@ -99,6 +99,7 @@ jobs:
           mkdir -p release-assets/mcpb
           npx -y @anthropic-ai/mcpb@2.1.2 validate packaging/mcpb/manifest.json
           npx -y @anthropic-ai/mcpb@2.1.2 pack packaging/mcpb "$output"
+          python3 scripts/normalize_mcpb_timestamps.py "$output"
           test -s "$output"
           ARTIFACT="$output" VERSION="$version" python3 - <<'PY'
           import json
