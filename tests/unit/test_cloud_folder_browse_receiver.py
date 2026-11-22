@@ -278,11 +278,12 @@ def test_posix_device_browse_uses_owner_native_picker_only(
     service = device_folder_service(
         root, bindings_file=tmp_path / "bindings.json", authorization=lambda: True
     )
+    choose_request = frame("choose")
     if result == "denied":
         with pytest.raises(CloudHandshakeDeniedError):
-            handle_folder_frame(service, frame("choose"))
+            handle_folder_frame(service, choose_request)
     else:
-        response = handle_folder_frame(service, frame("choose"))
+        response = handle_folder_frame(service, choose_request)
         if result == "cancelled":
             assert response["status"] == "cancelled"
         else:
@@ -312,8 +313,9 @@ def test_posix_device_browse_requires_owner_terminal(
         lambda: pytest.fail("Headless Cloud must not open any GUI picker"),
     )
     service = device_folder_service(tmp_path.resolve(), bindings_file=tmp_path / "bindings.json")
+    choose_request = frame("choose")
     with pytest.raises(CloudHandshakeDeniedError):
-        handle_folder_frame(service, frame("choose"))
+        handle_folder_frame(service, choose_request)
     assert not (tmp_path / "bindings.json").exists()
 
 
