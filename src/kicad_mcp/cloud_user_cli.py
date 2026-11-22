@@ -1346,6 +1346,96 @@ def _start_connector() -> str:
         return "Unavailable"
 
 
+def _enroll_new_posix_project(
+    root: Path,
+    origin: str,
+    device_alias: str,
+    target_dir: Path,
+    stem: str,
+    no_browser: bool,
+    new_device: bool,
+) -> dict[str, str]:
+    from kicad_mcp.cloud_managed_connector import (
+        ConnectorAlreadyRunningError,
+        _connector_session_lock,
+    )
+
+    root.mkdir(parents=True, mode=0o700, exist_ok=True)
+    try:
+        with _connector_session_lock(root):
+            if not new_device:
+                _require_empty_posix_key_registry(root)
+                projects = root / "projects"
+                if projects.is_symlink() or (projects.exists() and any(projects.iterdir())):
+                    raise typer.BadParameter("Registration changed. Retry cloud setup.")
+            return _enroll_posix_project_locked(
+                root, origin, device_alias, target_dir, stem, no_browser
+            )
+    except ConnectorAlreadyRunningError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter(
+            "Unable to safely register the local project. Run cloud status."
+        ) from exc
+
+
+def _enroll_posix_project_locked(
+    root: Path,
+    origin: str,
+    device_alias: str,
+    target_dir: Path,
+    stem: str,
+    no_browser: bool,
+) -> dict[str, str]:
+    keys_dir = root / "keys"
+    keys_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+    os.chmod(keys_dir, 0o700)
+
+    slot = str(uuid.uuid4())
+    keyfile = keys_dir / f"{slot}.pem"
+
+    from kicad_mcp.cloud_pair import CloudPairingError, enroll, register_device_project
+    from kicad_mcp.cloud_pair_keys import _read_owner_binding
+
+    try:
+        device_id, fingerprint = enroll(
+            origin,
+            device_alias,
+            keyfile,
+            lambda page, chal, code: _perform_approval(page, chal, code, no_browser),
+        )
+    except CloudPairingError as exc:
+        raise typer.BadParameter("Device pairing failed or was denied.") from exc
+
+    bound = _read_owner_binding(keyfile)
+    owner_sub = bound.get("ownerSub")
+    if not owner_sub:
+        raise typer.BadParameter("Owner identity missing from device binding.")
+
+    typer.echo(f"\nDevice paired: {device_id} (Fingerprint: {fingerprint[:16]}...)")
+    typer.echo(f"Registering KiCad project {stem} on Cloud...")
+
+    try:
+        project_res = register_device_project(origin, keyfile, alias=stem)
+    except CloudPairingError as exc:
+        raise typer.BadParameter("Project registration failed on Cloud.") from exc
+
+    project_id = str(project_res["projectId"])
+    typer.echo(f"Project registered on Cloud: {project_id}")
+
+    new_record = {
+        "ownerSub": owner_sub,
+        "cloudOrigin": origin,
+        "deviceId": device_id,
+        "projectId": project_id,
+        "keySlot": slot,
+        "directory": str(target_dir),
+        "filenameStem": stem,
+    }
+    _write_project_record(root, new_record)
+    return new_record
+
+
 @cloud_app.command()
 def setup(
     project_dir: Annotated[
@@ -1423,7 +1513,6 @@ def setup(
     from kicad_mcp.cloud_local_registry import default_registry_root
 
     root = default_registry_root()
-    keys_dir = root / "keys"
 
     if not new_device:
         if _try_reconnect_existing(root, origin):
@@ -1435,53 +1524,10 @@ def setup(
                 return
         _require_empty_posix_key_registry(root)
 
-    root.mkdir(parents=True, mode=0o700, exist_ok=True)
-    keys_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
-    os.chmod(root, 0o700)
-    os.chmod(keys_dir, 0o700)
-
-    slot = str(uuid.uuid4())
-    keyfile = keys_dir / f"{slot}.pem"
-
-    from kicad_mcp.cloud_pair import CloudPairingError, enroll, register_device_project
-    from kicad_mcp.cloud_pair_keys import _read_owner_binding
-
-    try:
-        device_id, fingerprint = enroll(
-            origin,
-            device_alias,
-            keyfile,
-            lambda page, chal, code: _perform_approval(page, chal, code, no_browser),
-        )
-    except CloudPairingError as exc:
-        raise typer.BadParameter("Device pairing failed or was denied.") from exc
-
-    bound = _read_owner_binding(keyfile)
-    owner_sub = bound.get("ownerSub")
-    if not owner_sub:
-        raise typer.BadParameter("Owner identity missing from device binding.")
-
-    typer.echo(f"\nDevice paired: {device_id} (Fingerprint: {fingerprint[:16]}...)")
-    typer.echo(f"Registering KiCad project {stem} on Cloud...")
-
-    try:
-        project_res = register_device_project(origin, keyfile, alias=stem)
-    except CloudPairingError as exc:
-        raise typer.BadParameter("Project registration failed on Cloud.") from exc
-
-    project_id = str(project_res["projectId"])
-    typer.echo(f"Project registered on Cloud: {project_id}")
-
-    new_record = {
-        "ownerSub": owner_sub,
-        "cloudOrigin": origin,
-        "deviceId": device_id,
-        "projectId": project_id,
-        "keySlot": slot,
-        "directory": str(target_dir),
-        "filenameStem": stem,
-    }
-    _write_project_record(root, new_record)
+    new_record = _enroll_new_posix_project(
+        root, origin, device_alias, target_dir, stem, no_browser, new_device
+    )
+    device_id, project_id = new_record["deviceId"], new_record["projectId"]
     if _owner_terminal():
         typer.echo(f"Device and project registered. Review access at {origin}/devices.")
         _run_posix_foreground(new_record)

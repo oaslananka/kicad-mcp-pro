@@ -22,6 +22,15 @@ def simulated_storage_support_for_mocked_cli_flows(monkeypatch) -> None:
     # Existing POSIX tests explicitly test the old registry path; native NT
     # routes have their own real-Windows fixtures in test_cloud_windows_user_cli.
     monkeypatch.setattr("kicad_mcp.cloud_user_cli._is_windows", lambda: False)
+    # These are simulated CLI routes on Windows, not native POSIX lock tests.
+    import os
+    from contextlib import nullcontext
+
+    if os.name == "nt":
+        monkeypatch.setattr(
+            "kicad_mcp.cloud_managed_connector._connector_session_lock",
+            lambda *_args, **_kwargs: nullcontext(),
+        )
 
 
 def test_login_web_only_preserves_first_party_browser_without_cli_grant(monkeypatch) -> None:
@@ -1884,3 +1893,29 @@ def test_posix_setup_recovers_single_verified_device(
         assert not sessions
         assert not list((root / "projects").glob("*.json"))
         assert calls == ([device] if case in {"wrong_owner", "wrong_alias"} else [])
+
+
+def test_posix_first_setup_cannot_pair_during_another_session(monkeypatch, tmp_path: Path) -> None:
+    import os
+
+    from kicad_mcp import cloud_managed_connector as connector
+    from kicad_mcp import cloud_user_cli
+
+    if os.name != "posix":
+        pytest.skip("POSIX session lock")
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    board = tmp_path / "board"
+    board.mkdir()
+    (board / "board.kicad_pro").touch()
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair.enroll", lambda *_: pytest.fail("no concurrent enrollment")
+    )
+    with connector._connector_session_lock(root):
+        result = CliRunner().invoke(app, ["cloud", "setup", "--project-dir", str(board)])
+    assert result.exit_code != 0
+    assert "already running" in result.output
+    assert not (root / "keys").exists()
+    assert not (root / "projects").exists()
