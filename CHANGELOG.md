@@ -10,6 +10,15 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.21.6](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.21.5...mcp-server-v4.21.6) (2026-11-22)
+
+
+### Bug Fixes
+
+* **cloud:** honor POSIX connect options ([#1872](https://github.com/oaslananka/kicad-mcp-pro/issues/1872)) ([690b4ad](https://github.com/oaslananka/kicad-mcp-pro/commit/690b4ad193bb57b5040d625c1e11f0c0fb46f876))
+* **release:** allow independent preflight release families ([#1876](https://github.com/oaslananka/kicad-mcp-pro/issues/1876)) ([5c4489c](https://github.com/oaslananka/kicad-mcp-pro/commit/5c4489c01e747c3075ddbaee96c7789066595346))
+* **schematic:** preserve rotated label geometry and justification ([#1874](https://github.com/oaslananka/kicad-mcp-pro/issues/1874)) ([1a65ce8](https://github.com/oaslananka/kicad-mcp-pro/commit/1a65ce880024064c81e3f21e99f6c3a45cca430a))
+
 ## [4.21.5](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.21.4...mcp-server-v4.21.5) (2026-11-21)
 
 
