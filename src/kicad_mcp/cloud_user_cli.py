@@ -1291,8 +1291,17 @@ def _run_posix_foreground(record: dict[str, str]) -> None:
         raise typer.Exit(result)
 
 
-def _try_reconnect_existing(root: Path, origin: str) -> bool:
-    """Resume an existing owner identity; only an empty registry may pair again."""
+def _explicit_setup_selection(
+    browse: bool, project_dir: Path | None, selected: tuple[Path, str]
+) -> tuple[Path, str] | None:
+    """A user-chosen folder must match its existing Cloud project registration."""
+    if browse or project_dir is not None or not _has_kicad_project_files(Path.cwd()):
+        return selected
+    return None
+
+
+def _try_reconnect_existing(root: Path, origin: str, selected: tuple[Path, str] | None) -> bool:
+    """Resume old registration, but honor an explicitly selected project."""
     projects_dir = root / "projects"
     try:
         has_registration = any(projects_dir.iterdir())
@@ -1317,6 +1326,14 @@ def _try_reconnect_existing(root: Path, origin: str) -> bool:
         raise typer.BadParameter(
             "A different Cloud origin is already registered. Run cloud status."
         )
+    if selected is not None:
+        directory, stem = selected
+        if existing.get("directory") != str(directory) or existing.get("filenameStem") != stem:
+            raise typer.BadParameter(
+                "You selected a different local project from the existing Cloud registration. "
+                "No changes made. Run cloud status to review the registered project; "
+                "switching projects requires a separate owner-approved action."
+            )
     key_file = root / "keys" / f"{existing['keySlot']}.pem"
     if not key_file.is_file():
         raise typer.BadParameter(
@@ -1577,7 +1594,8 @@ def setup(
     root = default_registry_root()
 
     if not new_device:
-        if _try_reconnect_existing(root, origin):
+        chosen_project = _explicit_setup_selection(browse, project_dir, (target_dir, stem))
+        if _try_reconnect_existing(root, origin, chosen_project):
             return
         if _resume_unbound_posix_device(root, origin, target_dir, stem):
             return
