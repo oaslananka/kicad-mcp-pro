@@ -67,7 +67,11 @@ docker run --rm -d \
   postgres:17-alpine >/dev/null
 ready=false
 for _ in {1..35}; do
-  if docker exec "$target" pg_isready -q -U restore_fixture -d restore_fixture; then
+  # PostgreSQL's temporary bootstrap server can pass pg_isready before
+  # the final server starts. Confirm final init finished before restoring.
+  if docker logs "$target" 2>&1 |
+      grep -F 'PostgreSQL init process complete; ready for start up' >/dev/null &&
+      docker exec "$target" pg_isready -q -U restore_fixture -d restore_fixture; then
     ready=true
     break
   fi
