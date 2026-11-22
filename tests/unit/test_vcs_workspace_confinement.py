@@ -135,13 +135,15 @@ def test_git_ancestor_above_workspace_rejected_for_every_vcs_tool(
     before_config = config.read_bytes()
     _set_workspace(monkeypatch, workspace, project)
 
-    with pytest.raises(UnsafePathError, match="workspace"):
+    def invoke_tool() -> str:
         if tool_name == "vcs_init_git":
-            version_control.vcs_init_git(str(project))
-        elif tool_name == "vcs_commit_checkpoint":
-            version_control.vcs_commit_checkpoint("checkpoint", auto_drc=False)
-        else:
-            getattr(version_control, tool_name)(*args)
+            return version_control.vcs_init_git(str(project))
+        if tool_name == "vcs_commit_checkpoint":
+            return version_control.vcs_commit_checkpoint("checkpoint", auto_drc=False)
+        return getattr(version_control, tool_name)(*args)
+
+    with pytest.raises(UnsafePathError, match="workspace"):
+        invoke_tool()
     assert config.read_bytes() == before_config
     assert not (project / ".gitignore").exists()
 
