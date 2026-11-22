@@ -73,9 +73,18 @@ def register(
         schematic without erasing it use ``sch_add_symbol`` / ``sch_add_wire`` /
         ``sch_add_label`` instead.
 
-        Coordinates are snapped to the 1.27 mm / 50 mil grid by default.  When no coordinates
-        are provided for a symbol, set ``auto_layout=True`` so the placement engine
-        assigns non-overlapping positions automatically.
+        For an ordinary NEW MCU, power or interface schematic, default to readable
+        wired functional blocks: group the regulator and capacitors, MCU and
+        decoupling, EN/RESET and BOOT networks, interfaces, and status indicators.
+        Use short explicit orthogonal ``wires`` within each block; reserve
+        paired ``labels`` for longer inter-block connections. Keep component
+        ``value`` separate from net/function names. See the
+        ``wired-subcircuit-design`` skill, and inspect native ERC, netlist and
+        SVG rendering before claiming a readable result.
+
+        Coordinates are snapped to the 1.27 mm / 50 mil grid by default. When
+        coordinates are omitted, ``auto_layout=True`` assigns spaced positions;
+        it does not guarantee readable functional grouping or label placement.
 
         When ``nets`` are provided, the builder is connection-aware. By default it
         uses the **collision-safe** strategy: each pin endpoint gets a short stub plus
@@ -113,10 +122,16 @@ def register(
         behavior. ``max_paper`` must be one of A4/A3/A2/A1/A0; any other value
         raises ``ValueError``.
 
-        Recommended workflow:
-          1. Call ``sch_find_free_placement(count=N)`` to obtain safe coordinates.
-          2. Pass those coordinates in the ``symbols`` list.
-          3. OR set ``auto_layout=True`` and omit coordinates entirely.
+        Recommended NEW functional-schematic workflow:
+          1. Use ``sch_get_pin_positions`` to plan block positions and exact pins.
+          2. Preview explicit ``symbols``, ``wires``, ``labels`` and
+             ``power_symbols`` with ``sch_analyze_net_compilation``.
+          3. Build those blocks in one pass, without ``nets`` or ``auto_layout``;
+             validate native ERC, pin-to-net identity and SVG readability.
+          4. When verified wiring is not possible, the collision-safe ``nets``
+             with ``auto_layout=True`` mode is an explicit label-only fallback,
+             NOT evidence of professional readability. Do not use
+             ``unsafe_routed_wires=True`` to improve appearance.
         """
         return service.build(
             symbols=symbols,

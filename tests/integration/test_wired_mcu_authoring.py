@@ -98,6 +98,12 @@ async def _build(
         else "ESP32-WROOM-32E fixture"
     )
     await call_tool_text(server, "sch_set_title_block_info", {"title": title, "rev": "A"})
+    if wired and fixture == REGULATED_FIXTURE:
+        # A clean ERC/netlist does not prove readable power-input symbols.
+        # Prevent the J1/GND overlap found in a real native SVG review.
+        qa = json.loads(await call_tool_text(server, "sch_visual_qa", {}))
+        assert qa["status"] == "PASS", qa
+        assert all(sheet["status"] == "PASS" for sheet in qa["sheets"]), qa
     return source
 
 
