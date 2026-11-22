@@ -10,6 +10,8 @@ from pathlib import Path
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
+from ..errors import UnsafePathError
+from ..path_safety import assert_within, reject_foreign_windows_path
 from .gates import _combined_status
 from .metadata import headless_compatible
 from .validation import _entries, _evaluate_project_gate, _run_drc_report
@@ -39,16 +41,19 @@ def _git_executable() -> str:
 
 
 def _resolve_project_dir(project_dir: str | None = None) -> Path:
+    cfg = get_config()
     if project_dir:
+        reject_foreign_windows_path(project_dir)
         path = Path(project_dir).expanduser().resolve()
     else:
-        cfg = get_config()
         if cfg.project_dir is None:
             raise ValueError(
                 "No active project directory is configured. Call kicad_set_project() or "
                 "pass project_dir explicitly."
             )
         path = cfg.project_dir.resolve()
+    if getattr(cfg, "workspace_root", None) is not None:
+        assert_within(cfg.workspace, path)
     if not path.exists():
         raise FileNotFoundError(f"Project directory '{path}' does not exist.")
     return path
@@ -87,7 +92,21 @@ def _git_repo_root(project_dir: Path) -> Path | None:
     result = _run_git(project_dir, "rev-parse", "--show-toplevel", check=False)
     if result.returncode != 0:
         return None
-    return Path(result.stdout.strip()).resolve()
+    repo_root = Path(result.stdout.strip()).resolve()
+    cfg = get_config()
+    if getattr(cfg, "workspace_root", None) is not None:
+        assert_within(cfg.workspace, repo_root)
+        # A .git indirection can keep the worktree in-bounds while editing
+        # repository configuration and objects outside the workspace.
+        for args in (
+            ("rev-parse", "--absolute-git-dir"),
+            ("rev-parse", "--path-format=absolute", "--git-common-dir"),
+        ):
+            metadata = _run_git(project_dir, *args, check=False)
+            if metadata.returncode != 0 or not metadata.stdout.strip():
+                raise UnsafePathError("Cannot verify that Git metadata stays inside the workspace.")
+            assert_within(cfg.workspace, Path(metadata.stdout.strip()))
+    return repo_root
 
 
 def _project_pathspec(repo_root: Path, project_dir: Path) -> str:
