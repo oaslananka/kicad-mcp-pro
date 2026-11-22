@@ -31,10 +31,10 @@ def test_only_manual_nonpublishing_dispatch_and_minimal_permissions() -> None:
         "include_container",
         "include_registry",
     }
-    for name in ("server_tag", "schemas_tag", "source_commit"):
+    for name in ("source_commit",):
         assert inputs[name]["required"] is True
         assert inputs[name]["type"] == "string"
-    for name in ("npm_tag",):
+    for name in ("server_tag", "schemas_tag", "npm_tag"):
         assert inputs[name]["required"] is False
         assert inputs[name]["type"] == "string"
     for name in ("include_npm", "include_container", "include_registry"):
@@ -67,6 +67,7 @@ def test_reusable_producers_share_same_verified_source(
 ) -> None:
     job = _config()["jobs"][name]
     assert job["needs"] == "source"
+    assert job["if"] == f"inputs.{tag_input} != ''"
     assert job["uses"] == f"./.github/workflows/{workflow}"
     assert job["permissions"] == {
         "contents": "read",
@@ -211,6 +212,14 @@ def test_source_fails_closed_without_producer_or_release_mutations() -> None:
     ("overrides", "succeeds"),
     [
         ({}, True),
+        ({"SCHEMAS_TAG": ""}, True),
+        ({"SERVER_TAG": ""}, True),
+        ({"SERVER_TAG": "", "SCHEMAS_TAG": ""}, False),
+        ({"SERVER_TAG": "", "INCLUDE_CONTAINER": "true"}, False),
+        ({"SERVER_TAG": "", "INCLUDE_REGISTRY": "true"}, False),
+        ({"SERVER_TAG": "", "INCLUDE_NPM": "true", "NPM_TAG": "mcp-npm-v4.5.0"}, False),
+        ({"SCHEMAS_TAG": "", "INCLUDE_NPM": "true", "NPM_TAG": "mcp-npm-v4.5.0"}, True),
+        ({"SCHEMAS_TAG": "protocol-schemas-v2.0.1"}, False),
         ({"INCLUDE_NPM": "true", "NPM_TAG": "mcp-npm-v4.5.0"}, True),
         ({"INCLUDE_CONTAINER": "TRUE"}, False),
         ({"INCLUDE_REGISTRY": "yes"}, False),
