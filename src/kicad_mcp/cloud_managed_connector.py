@@ -398,21 +398,26 @@ def _disable() -> int:
     return 0
 
 
+def _foreground_connection_status(root: Path) -> str:
+    """Trust a cached foreground status only with its current owner and lock."""
+    if _enabled_record(root, _FOREGROUND_FILE) is None or not _session_lock_held(root):
+        return "Off"
+    try:
+        record = _single_registered_identity(root)
+    except (OSError, ValueError):
+        return "Unavailable"
+    if not _is_enabled(root, record, _FOREGROUND_FILE):
+        return "Unavailable"
+    return _cached_connection_status(root)
+
+
 def _status() -> str:
     root = default_registry_root()
     marker = root / _ENABLED_FILE
     if os.name != "posix":
         return "Unavailable" if marker.exists() else "Off"
     if not os.path.lexists(marker):
-        if _enabled_record(root, _FOREGROUND_FILE) is None or not _session_lock_held(root):
-            return "Off"
-        try:
-            record = _single_registered_identity(root)
-        except (OSError, ValueError):
-            return "Unavailable"
-        if not _is_enabled(root, record, _FOREGROUND_FILE):
-            return "Unavailable"
-        return _cached_connection_status(root)
+        return _foreground_connection_status(root)
     if sys.platform == "darwin":
         return "Unavailable"
     if _enabled_record(root) is None or not _session_lock_held(root):
