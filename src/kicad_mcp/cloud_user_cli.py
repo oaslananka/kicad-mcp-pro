@@ -42,6 +42,10 @@ _KICAD_PRO = "*.kicad_pro"
 _KICAD_SCH = "*.kicad_sch"
 _KICAD_PCB = "*.kicad_pcb"
 _NO_PROJECT_FOLDER_SELECTED = "No project folder selected. Setup was not changed."
+_FOLDER_PICKER_UNAVAILABLE = "Folder picker unavailable; use --project-dir /path/to/project."
+_MACOS_FOLDER_APPLESCRIPT = (
+    'POSIX path of (choose folder with prompt "Choose your local KiCad project folder")'
+)
 _LOCAL_CONNECTOR_READY_STATE = "Configured (not connected)"
 cloud_app = typer.Typer(
     help="Connect your computer to KiCad MCP Pro Cloud; keep this terminal open."
@@ -54,10 +58,17 @@ def cloud_entry(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
     if not _is_windows():
-        raise typer.BadParameter(
-            "Single-command Cloud connection is currently available on Windows. "
-            "Local KiCad MCP remains available on this operating system."
+        if not _owner_terminal():
+            raise typer.BadParameter("Cloud foreground requires an interactive owner terminal.")
+        connect(
+            alias=_DEFAULT_DEVICE_ALIAS,
+            cloud_origin=DEFAULT_CLOUD_ORIGIN,
+            new_device=False,
+            enable_native_write=False,
+            project_dir=None,
+            no_browser=False,
         )
+        return
     from kicad_mcp.cloud_windows_connector import selected_project
 
     if selected_project() is None and not _connect_unbound_windows_device(
@@ -152,6 +163,10 @@ def _owner_terminal() -> bool:
 def _is_windows() -> bool:
     """Explicit routing seam; Windows enrollment is not a POSIX filesystem flow."""
     return os.name == "nt"
+
+
+def _is_macos() -> bool:
+    return sys.platform == "darwin"
 
 
 def _local_pairing_storage_supported() -> bool:
@@ -283,10 +298,45 @@ def _browse_windows_project_folder() -> Path:
         raise typer.BadParameter("Windows folder picker unavailable. Try again.") from exc
 
 
+def _browse_macos_project_folder() -> Path:
+    """Use macOS's built-in folder dialog from a real owner terminal only."""
+    if not _owner_terminal():
+        raise typer.BadParameter("macOS folder selection requires an interactive owner terminal.")
+    try:
+        selected = subprocess.run(
+            [
+                "/usr/bin/osascript",
+                "-e",
+                _MACOS_FOLDER_APPLESCRIPT,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise typer.BadParameter(_FOLDER_PICKER_UNAVAILABLE) from exc
+    if selected.returncode != 0:
+        if "(-128)" in selected.stderr:
+            raise typer.BadParameter(_NO_PROJECT_FOLDER_SELECTED)
+        raise typer.BadParameter(_FOLDER_PICKER_UNAVAILABLE)
+    # Only trim the osascript line ending. Spaces are valid folder-name bytes.
+    name = selected.stdout.rstrip("\r\n")
+    if (
+        not name.startswith("/")
+        or len(name) > 4096
+        or any(ord(character) < 32 for character in name)
+    ):
+        raise typer.BadParameter(_FOLDER_PICKER_UNAVAILABLE)
+    return Path(name)
+
+
 def _browse_local_project_folder() -> Path:
     """Open a native *local* directory picker. Never send the path to Cloud."""
     if sys.platform == "win32":
         return _browse_windows_project_folder()
+    if sys.platform == "darwin":
+        return _browse_macos_project_folder()
     zenity = shutil.which("zenity") if sys.platform.startswith("linux") else None
     if zenity:
         try:
@@ -303,16 +353,18 @@ def _browse_local_project_folder() -> Path:
                 timeout=120,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise typer.BadParameter(
-                "Folder picker unavailable; use --project-dir /path/to/project."
-            ) from exc
+            raise typer.BadParameter(_FOLDER_PICKER_UNAVAILABLE) from exc
         if selected.returncode != 0 or not selected.stdout.strip():
             raise typer.BadParameter(_NO_PROJECT_FOLDER_SELECTED)
         return Path(selected.stdout.strip())
     try:
         import tkinter as tk
         from tkinter import filedialog
-
+    except ImportError as exc:
+        raise typer.BadParameter(
+            "No graphical folder picker available; use --project-dir /path/to/project."
+        ) from exc
+    try:
         dialog = tk.Tk()
         dialog.withdraw()
         try:
@@ -323,7 +375,7 @@ def _browse_local_project_folder() -> Path:
             )
         finally:
             dialog.destroy()
-    except (ImportError, RuntimeError, OSError) as exc:
+    except (tk.TclError, RuntimeError, OSError) as exc:
         raise typer.BadParameter(
             "No graphical folder picker available; use --project-dir /path/to/project."
         ) from exc
@@ -1005,6 +1057,36 @@ def _validate_posix_connect_options(enable_native_write: bool, project_dir: Path
         raise typer.BadParameter("Use cloud setup --project-dir to register a local KiCad project.")
 
 
+def _connect_registered_posix_device(root: Path, origin: str, new_device: bool) -> bool:
+    """Reuse a registered device, never silently replace its signing identity."""
+    from kicad_mcp.cloud_registered_pilot import _single_registered_identity
+
+    try:
+        existing = _single_registered_identity(root)
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter("Existing Cloud registration needs local repair.") from exc
+    if existing["cloudOrigin"] != origin:
+        raise typer.BadParameter("A different Cloud origin is already registered.")
+    if not new_device:
+        if _owner_terminal():
+            _run_posix_foreground(existing)
+            return True
+        typer.echo("A private local registration exists for this Cloud origin.")
+        typer.echo("Cloud enrollment has NOT been verified for this registration.")
+        typer.echo(f"Check your enrolled devices at {origin}/devices.")
+        typer.echo(
+            "If the device is missing, run cloud connect --new-device "
+            "from an interactive owner terminal."
+        )
+        typer.echo("The existing local registration and keys were not changed.")
+        return True
+    typer.echo(
+        "Starting a distinct browser-approved device pairing. "
+        "Existing registration and keys will be preserved."
+    )
+    return False
+
+
 @cloud_app.command()
 def connect(
     alias: str = typer.Option(
@@ -1034,7 +1116,7 @@ def connect(
         ),
     ] = False,
 ) -> None:
-    """On Windows connect in a visible terminal; other platforms keep explicit pairing."""
+    """Connect a registered device in a visible terminal or pair a new device."""
     if not alias or len(alias) > 80 or any(ord(char) < 32 for char in alias):
         raise typer.BadParameter("Device name must be 1 to 80 printable characters.")
     origin = _verified_origin(cloud_origin)
@@ -1046,34 +1128,34 @@ def connect(
     _validate_posix_connect_options(enable_native_write, project_dir)
     _require_local_pairing_storage()
     from kicad_mcp.cloud_local_registry import default_registry_root
-    from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
-    folder = default_registry_root() / "projects"
+    root = default_registry_root()
+    folder = root / "projects"
     try:
         has_registration = folder.exists() and any(folder.iterdir())
     except OSError as exc:
         raise typer.BadParameter("Unable to inspect existing Cloud registration.") from exc
-    if has_registration:
+    if has_registration and _connect_registered_posix_device(root, origin, new_device):
+        return
+
+    if not has_registration and not new_device and _owner_terminal():
+        from kicad_mcp.cloud_posix_recovery import inspect_unbound_device
+
         try:
-            existing = _single_registered_identity(default_registry_root())
+            inspect_unbound_device(root, origin)
         except (OSError, ValueError) as exc:
-            raise typer.BadParameter("Existing Cloud registration needs local repair.") from exc
-        if existing["cloudOrigin"] != origin:
-            raise typer.BadParameter("A different Cloud origin is already registered.")
-        if not new_device:
-            typer.echo("A private local registration exists for this Cloud origin.")
-            typer.echo("Cloud enrollment has NOT been verified for this registration.")
-            typer.echo(f"Check your enrolled devices at {origin}/devices.")
-            typer.echo(
-                "If the device is missing, run cloud connect --new-device "
-                "from an interactive owner terminal."
-            )
-            typer.echo("The existing local registration and keys were not changed.")
-            return
-        typer.echo(
-            "Starting a distinct browser-approved device pairing. "
-            "Existing registration and keys will be preserved."
+            raise typer.BadParameter(
+                "Existing device keys require registration repair. Run cloud status."
+            ) from exc
+        setup(
+            project_dir=None,
+            browse=False,
+            alias=alias,
+            cloud_origin=origin,
+            no_browser=no_browser,
+            new_device=False,
         )
+        return
 
     from kicad_mcp.cloud_pair import main as pair
 
@@ -1161,8 +1243,65 @@ def _resolve_device_alias(alias: str | None) -> str:
     return alias
 
 
-def _try_reconnect_existing(root: Path, origin: str) -> bool:
-    """Resume an existing owner identity; only an empty registry may pair again."""
+def _require_empty_posix_key_registry(root: Path) -> None:
+    """Never silently enroll a duplicate when an earlier pairing left keys."""
+    try:
+        keys = root / "keys"
+        if keys.is_symlink() or (keys.exists() and any(keys.iterdir())):
+            raise typer.BadParameter(
+                "Existing device keys require registration repair. "
+                "Run cloud setup in your owner terminal."
+            )
+    except OSError as exc:
+        raise typer.BadParameter(
+            "Unable to inspect existing device keys. Run cloud status."
+        ) from exc
+
+
+def _recover_posix_setup(
+    root: Path, origin: str, directory: Path, stem: str
+) -> dict[str, str] | None:
+    from kicad_mcp.cloud_posix_recovery import recover_unbound_project
+
+    def confirm(binding: dict[str, str]) -> bool:
+        typer.echo(f"Existing device: {binding['deviceId']} ({origin})")
+        typer.echo(f"Local project: {directory} ({stem})")
+        typer.echo(
+            "Registering this project can reactivate the device and managed read access in Cloud."
+        )
+        typer.echo("No new device key will be created; Cloud client grants remain separate.")
+        return typer.confirm("Restore this project using the existing device?", default=False)
+
+    try:
+        return recover_unbound_project(root, origin, directory, stem, confirm)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise typer.BadParameter(
+            "Existing device keys could not be recovered. Check Cloud Devices and cloud status; "
+            "local keys were not replaced."
+        ) from exc
+
+
+def _run_posix_foreground(record: dict[str, str]) -> None:
+    from kicad_mcp.cloud_managed_connector import run_foreground
+
+    typer.echo("Starting read-only Cloud Connector; keep this terminal open.")
+    typer.echo("Press Ctrl+C to disconnect. Cloud owner grants still apply.")
+    result = run_foreground(record)
+    if result:
+        raise typer.Exit(result)
+
+
+def _explicit_setup_selection(
+    browse: bool, project_dir: Path | None, selected: tuple[Path, str]
+) -> tuple[Path, str] | None:
+    """A user-chosen folder must match its existing Cloud project registration."""
+    if browse or project_dir is not None or not _has_kicad_project_files(Path.cwd()):
+        return selected
+    return None
+
+
+def _try_reconnect_existing(root: Path, origin: str, selected: tuple[Path, str] | None) -> bool:
+    """Resume old registration, but honor an explicitly selected project."""
     projects_dir = root / "projects"
     try:
         has_registration = any(projects_dir.iterdir())
@@ -1187,6 +1326,14 @@ def _try_reconnect_existing(root: Path, origin: str) -> bool:
         raise typer.BadParameter(
             "A different Cloud origin is already registered. Run cloud status."
         )
+    if selected is not None:
+        directory, stem = selected
+        if existing.get("directory") != str(directory) or existing.get("filenameStem") != stem:
+            raise typer.BadParameter(
+                "You selected a different local project from the existing Cloud registration. "
+                "No changes made. Run cloud status to review the registered project; "
+                "switching projects requires a separate owner-approved action."
+            )
     key_file = root / "keys" / f"{existing['keySlot']}.pem"
     if not key_file.is_file():
         raise typer.BadParameter(
@@ -1197,6 +1344,10 @@ def _try_reconnect_existing(root: Path, origin: str) -> bool:
     typer.echo(f"  Device ID:  {existing['deviceId']}")
     typer.echo(f"  Project ID: {existing['projectId']}")
     typer.echo(f"  Directory:  {existing['directory']} ({existing['filenameStem']})")
+
+    if _owner_terminal():
+        _run_posix_foreground(existing)
+        return True
 
     from kicad_mcp.cloud_managed_connector import _status
 
@@ -1263,6 +1414,107 @@ def _start_connector() -> str:
         return "Unavailable"
 
 
+def _enroll_new_posix_project(
+    root: Path,
+    origin: str,
+    device_alias: str,
+    target_dir: Path,
+    stem: str,
+    no_browser: bool,
+    new_device: bool,
+) -> dict[str, str]:
+    from kicad_mcp.cloud_managed_connector import (
+        ConnectorAlreadyRunningError,
+        _connector_session_lock,
+    )
+
+    root.mkdir(parents=True, mode=0o700, exist_ok=True)
+    try:
+        with _connector_session_lock(root):
+            if not new_device:
+                _require_empty_posix_key_registry(root)
+                projects = root / "projects"
+                if projects.is_symlink() or (projects.exists() and any(projects.iterdir())):
+                    raise typer.BadParameter("Registration changed. Retry cloud setup.")
+            return _enroll_posix_project_locked(
+                root, origin, device_alias, target_dir, stem, no_browser
+            )
+    except ConnectorAlreadyRunningError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter(
+            "Unable to safely register the local project. Run cloud status."
+        ) from exc
+
+
+def _enroll_posix_project_locked(
+    root: Path,
+    origin: str,
+    device_alias: str,
+    target_dir: Path,
+    stem: str,
+    no_browser: bool,
+) -> dict[str, str]:
+    keys_dir = root / "keys"
+    keys_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+    os.chmod(keys_dir, 0o700)
+
+    slot = str(uuid.uuid4())
+    keyfile = keys_dir / f"{slot}.pem"
+
+    from kicad_mcp.cloud_pair import CloudPairingError, enroll, register_device_project
+    from kicad_mcp.cloud_pair_keys import _read_owner_binding
+
+    try:
+        device_id, fingerprint = enroll(
+            origin,
+            device_alias,
+            keyfile,
+            lambda page, chal, code: _perform_approval(page, chal, code, no_browser),
+        )
+    except CloudPairingError as exc:
+        raise typer.BadParameter("Device pairing failed or was denied.") from exc
+
+    bound = _read_owner_binding(keyfile)
+    owner_sub = bound.get("ownerSub")
+    if not owner_sub:
+        raise typer.BadParameter("Owner identity missing from device binding.")
+
+    typer.echo(f"\nDevice paired: {device_id} (Fingerprint: {fingerprint[:16]}...)")
+    typer.echo(f"Registering KiCad project {stem} on Cloud...")
+
+    try:
+        project_res = register_device_project(origin, keyfile, alias=stem)
+    except CloudPairingError as exc:
+        raise typer.BadParameter("Project registration failed on Cloud.") from exc
+
+    project_id = str(project_res["projectId"])
+    typer.echo(f"Project registered on Cloud: {project_id}")
+
+    new_record = {
+        "ownerSub": owner_sub,
+        "cloudOrigin": origin,
+        "deviceId": device_id,
+        "projectId": project_id,
+        "keySlot": slot,
+        "directory": str(target_dir),
+        "filenameStem": stem,
+    }
+    _write_project_record(root, new_record)
+    return new_record
+
+
+def _resume_unbound_posix_device(root: Path, origin: str, directory: Path, stem: str) -> bool:
+    """Recover only from the owner terminal; caller otherwise stays default-off."""
+    if not _owner_terminal():
+        return False
+    recovered = _recover_posix_setup(root, origin, directory, stem)
+    if recovered is None:
+        return False
+    _run_posix_foreground(recovered)
+    return True
+
+
 @cloud_app.command()
 def setup(
     project_dir: Annotated[
@@ -1309,7 +1561,7 @@ def setup(
         ),
     ] = False,
 ) -> None:
-    """One-command onboarding: pair device, register KiCad project, and enable Connector."""
+    """Pair a device, register a project, and start the local Connector."""
     origin = _verified_origin(cloud_origin)
     if browse and project_dir is not None:
         raise typer.BadParameter("Choose either --browse or --project-dir, not both.")
@@ -1331,64 +1583,32 @@ def setup(
         )
         return
     _require_local_pairing_storage()
+    if _is_macos() and not _owner_terminal():
+        typer.echo("No device or project was registered.", err=True)
+        raise typer.BadParameter("macOS Cloud setup requires an interactive owner terminal.")
     selected = _select_setup_project_directory(browse, project_dir)
     target_dir, stem = _discover_kicad_project(selected)
 
     from kicad_mcp.cloud_local_registry import default_registry_root
 
     root = default_registry_root()
-    keys_dir = root / "keys"
 
-    if not new_device and _try_reconnect_existing(root, origin):
+    if not new_device:
+        chosen_project = _explicit_setup_selection(browse, project_dir, (target_dir, stem))
+        if _try_reconnect_existing(root, origin, chosen_project):
+            return
+        if _resume_unbound_posix_device(root, origin, target_dir, stem):
+            return
+        _require_empty_posix_key_registry(root)
+
+    new_record = _enroll_new_posix_project(
+        root, origin, device_alias, target_dir, stem, no_browser, new_device
+    )
+    device_id, project_id = new_record["deviceId"], new_record["projectId"]
+    if _owner_terminal():
+        typer.echo(f"Device and project registered. Review access at {origin}/devices.")
+        _run_posix_foreground(new_record)
         return
-
-    root.mkdir(parents=True, mode=0o700, exist_ok=True)
-    keys_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
-    os.chmod(root, 0o700)
-    os.chmod(keys_dir, 0o700)
-
-    slot = str(uuid.uuid4())
-    keyfile = keys_dir / f"{slot}.pem"
-
-    from kicad_mcp.cloud_pair import CloudPairingError, enroll, register_device_project
-    from kicad_mcp.cloud_pair_keys import _read_owner_binding
-
-    try:
-        device_id, fingerprint = enroll(
-            origin,
-            device_alias,
-            keyfile,
-            lambda page, chal, code: _perform_approval(page, chal, code, no_browser),
-        )
-    except CloudPairingError as exc:
-        raise typer.BadParameter("Device pairing failed or was denied.") from exc
-
-    bound = _read_owner_binding(keyfile)
-    owner_sub = bound.get("ownerSub")
-    if not owner_sub:
-        raise typer.BadParameter("Owner identity missing from device binding.")
-
-    typer.echo(f"\nDevice paired: {device_id} (Fingerprint: {fingerprint[:16]}...)")
-    typer.echo(f"Registering KiCad project {stem} on Cloud...")
-
-    try:
-        project_res = register_device_project(origin, keyfile, alias=stem)
-    except CloudPairingError as exc:
-        raise typer.BadParameter("Project registration failed on Cloud.") from exc
-
-    project_id = str(project_res["projectId"])
-    typer.echo(f"Project registered on Cloud: {project_id}")
-
-    new_record = {
-        "ownerSub": owner_sub,
-        "cloudOrigin": origin,
-        "deviceId": device_id,
-        "projectId": project_id,
-        "keySlot": slot,
-        "directory": str(target_dir),
-        "filenameStem": stem,
-    }
-    _write_project_record(root, new_record)
     connector_state = _start_connector()
 
     typer.echo("\n" + "=" * 60)
@@ -1406,6 +1626,8 @@ def setup(
     typer.echo(f"Web Dashboard:   {origin}/devices")
     typer.echo("AI Client Access: Requires separate Cloud owner approval")
     typer.echo("=" * 60 + "\n")
+    if connector_state not in ("Connected", "Connecting"):
+        raise typer.Exit(1)
 
 
 @cloud_app.command("register-project")

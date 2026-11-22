@@ -10,17 +10,21 @@ import asyncio
 import base64
 import hashlib
 import json
+import os
 import ssl
 import time
+from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from test_cloud_managed_connector import _root
 from test_isolated_tls_websocket_handshake import _synthetic_tls
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
+from kicad_mcp import cloud_managed_connector as connector
 from kicad_mcp.cloud_outbound_handshake import (
     CloudHandshakeDeniedError,
     HandshakeReceipt,
@@ -64,9 +68,16 @@ def _request(sequence: int) -> dict[str, object]:
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("revoke_after_first", [False, True])
+@pytest.mark.parametrize("foreground", [False, True])
 async def test_signed_tls_wss_two_reads_and_owner_off(
-    tmp_path: Path, revoke_after_first: bool
+    tmp_path: Path,
+    revoke_after_first: bool,
+    foreground: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
+    if foreground and os.name != "posix":
+        pytest.skip("POSIX foreground lifecycle")
     server_context, ca_pem = _synthetic_tls(tmp_path)
     client_context = ssl.create_default_context(cadata=ca_pem)
     signer = Ed25519PrivateKey.generate()
@@ -78,6 +89,7 @@ async def test_signed_tls_wss_two_reads_and_owner_off(
     original_file.write_bytes(original)
     original_sha = hashlib.sha256(original).hexdigest()
     grant = [True]
+    registry = None
     responses: list[dict[str, object]] = []
     event_order: list[str] = []
     ready_events: list[tuple[HandshakeReceipt, tuple[str, ...]]] = []
@@ -143,6 +155,8 @@ async def test_signed_tls_wss_two_reads_and_owner_off(
         for sequence in (1, 2):
             if sequence == 2 and revoke_after_first:
                 grant[0] = False
+                if registry is not None:
+                    connector._remove_private_file(registry, connector._FOREGROUND_FILE)
             await ws.send(json.dumps(_request(sequence)))
             if sequence == 2 and revoke_after_first:
                 # The server must receive no response once the local grant
@@ -197,22 +211,78 @@ async def test_signed_tls_wss_two_reads_and_owner_off(
                 max_reads=16,
             )
 
-        operation = execute_owner_managed_read_session(
-            origin=origin,
-            trusted_origin=origin,
-            owner_sub="fixture-owner",
-            device_id=DEVICE,
-            signing_key=signer,
-            dispatcher_factory=dispatcher_factory,
-            tls_context=client_context,
-            max_reads=2,
-            on_ready=lambda receipt: ready_events.append((receipt, tuple(event_order))),
-        )
-        if revoke_after_first:
-            with pytest.raises((CloudHandshakeDeniedError, LocalReadDeniedError)):
-                await operation
+        if foreground:
+            registry, _ = _root(tmp_path)
+            record = connector._single_registered_identity(registry)
+            record.update(cloudOrigin=origin, directory=str(root))
+            connector._write_private_json(registry / "projects", f"{PROJECT}.json", record)
+            monkeypatch.setattr(connector, "default_registry_root", lambda: registry)
+            stop = asyncio.Event()
+
+            async def fixture_runner(
+                *,
+                origin: str,
+                trusted_origin: str,
+                owner_sub: str,
+                device_id: str,
+                signing_key: Ed25519PrivateKey,
+                dispatcher_factory: Callable[[HandshakeReceipt], LocalReadDispatch],
+                **kwargs: object,
+            ) -> HandshakeReceipt:
+                # Only the trust root and read budget are supplied by the local
+                # fixture. The real client signs, reads and drains its socket.
+                try:
+                    return await execute_owner_managed_read_session(
+                        origin=origin,
+                        trusted_origin=trusted_origin,
+                        owner_sub=owner_sub,
+                        device_id=device_id,
+                        signing_key=signing_key,
+                        dispatcher_factory=dispatcher_factory,
+                        **{**kwargs, "max_reads": 2},
+                        tls_context=client_context,
+                        on_ready=lambda receipt: ready_events.append((receipt, tuple(event_order))),
+                    )
+                finally:
+                    stop.set()
+
+            async with asyncio.timeout(10):
+                assert (
+                    await connector._run_connector(
+                        root=registry,
+                        foreground=True,
+                        expected_identity=record,
+                        stop_event=stop,
+                        key_loader=lambda *_: signer,
+                        session_runner=fixture_runner,
+                    )
+                    == 0
+                )
+            assert not (registry / connector._FOREGROUND_FILE).exists()
+            assert not (registry / connector._ENABLED_FILE).exists()
+            assert not connector._session_lock_held(registry)
+            assert connector._status() == "Off"
+            output = capsys.readouterr().out
+            assert "Connected" in output
+            assert "PRIVATE_SCHEMATIC" not in output
+            assert str(root) not in output
         else:
-            assert await operation == HandshakeReceipt(DEVICE, SESSION)
+            operation = execute_owner_managed_read_session(
+                origin=origin,
+                trusted_origin=origin,
+                owner_sub="fixture-owner",
+                device_id=DEVICE,
+                signing_key=signer,
+                dispatcher_factory=dispatcher_factory,
+                tls_context=client_context,
+                max_reads=2,
+                on_ready=lambda receipt: ready_events.append((receipt, tuple(event_order))),
+            )
+            if revoke_after_first:
+                with pytest.raises((CloudHandshakeDeniedError, LocalReadDeniedError)):
+                    await operation
+            else:
+                assert await operation == HandshakeReceipt(DEVICE, SESSION)
 
     assert event_order == ["device-verified", "session-verified"]
     assert ready_events == [

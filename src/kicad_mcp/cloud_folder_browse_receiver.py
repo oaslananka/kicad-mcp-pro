@@ -1,6 +1,6 @@
 """Device-side receiver for bounded Cloud local-folder browse frames.
 
-The signed Windows Connector answers only four owner-initiated operations:
+The signed local owner Connector answers only four owner-initiated operations:
 ``list``, ``bind``, ``choose`` and ``path``. Every frame carries opaque
 folder tokens, never a browser-supplied path; the device re-derives every
 filesystem location from its own root-confined browser state. No design file
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, cast
@@ -251,6 +252,23 @@ def handle_folder_frame(service: LocalFolderBrowseService, raw: object) -> dict[
         raise CloudHandshakeDeniedError(_DENIED) from exc
 
 
+def _posix_owner_native_picker() -> Path | None:
+    """Only an interactive owner may open the local macOS/Linux GUI chooser."""
+    from typer import BadParameter
+
+    from kicad_mcp import cloud_user_cli
+
+    if not cloud_user_cli._owner_terminal():
+        raise OSError("A local owner terminal is required for folder selection")
+    try:
+        return cloud_user_cli._browse_local_project_folder()
+    except BadParameter as exc:
+        if exc.message == cloud_user_cli._NO_PROJECT_FOLDER_SELECTED:
+            return None
+        # An unavailable dialog must never bind a remote Cloud project.
+        raise OSError("Owner folder picker unavailable") from exc
+
+
 class BrowserFolderService:
     """Adapter from the root-confined LocalFolderBrowser to the frame port.
 
@@ -316,7 +334,7 @@ def device_folder_service(
     selected_directory: Path,
     *,
     bindings_file: Path | None = None,
-    native_picker: Callable[[], Path | None] = choose_project_folder,
+    native_picker: Callable[[], Path | None] | None = None,
     authorization: Callable[[], bool] | None = None,
 ) -> LocalFolderBrowseService:
     """Root-confined browser rooted at the owner-selected project's parent.
@@ -330,10 +348,17 @@ def device_folder_service(
         raise CloudHandshakeDeniedError(_DENIED)
     parent = selected_directory.parent
     root = parent if parent != selected_directory else selected_directory
+    selected_picker = native_picker
+    if selected_picker is None:
+        selected_picker = (
+            _posix_owner_native_picker
+            if sys.platform == "darwin" or sys.platform.startswith("linux")
+            else choose_project_folder
+        )
     return BrowserFolderService(
         LocalFolderBrowser(
             [root], bindings_file if bindings_file is not None else default_bindings_file()
         ),
-        native_picker=native_picker,
+        native_picker=selected_picker,
         authorization=authorization,
     )

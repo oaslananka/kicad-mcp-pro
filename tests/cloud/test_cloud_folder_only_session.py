@@ -89,7 +89,7 @@ async def test_unbound_device_serves_owner_browser_then_restarts_after_bound_pro
     assert socket.sent[0]["status"] == "selected"
     assert socket.sent[1]["ok"] is True
     assert service.bound == [("token", PROJECT)]
-    assert "Opening Windows project folder dialog" in events
+    assert "Opening local project folder dialog" in events
 
 
 @pytest.mark.asyncio

@@ -248,6 +248,101 @@ def test_dispatcher_is_project_summary_only_and_tracks_local_off(
         dispatcher._authorize_now()
 
 
+def test_posix_cloud_device_bound_second_project_is_readable_then_revocable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The project the owner added on Devices must actually work, and revoke."""
+    from kicad_mcp.cloud_folder_browse_receiver import device_folder_service, handle_folder_frame
+
+    root, project = _root(tmp_path)
+    (project.project_directory / "board.kicad_pro").write_text("{}", encoding="utf-8")
+    record = json.loads((root / "projects" / f"{PROJECT}.json").read_text())
+    chosen = tmp_path / "owner-selected"
+    chosen.mkdir()
+    (chosen / "new.kicad_pro").write_text("{}", encoding="utf-8")
+    new_project = "44444444-4444-4444-8444-444444444444"
+    bindings_file = tmp_path / "folder-bindings.json"
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_folder_browse_receiver.default_bindings_file",
+        lambda: bindings_file,
+    )
+    connector._write_private_json(
+        root,
+        connector._FOREGROUND_FILE,
+        connector._identity_state(record, connector._FOREGROUND_FILE),
+    )
+    service = device_folder_service(
+        project.project_directory,
+        bindings_file=bindings_file,
+        native_picker=lambda: chosen,
+        authorization=lambda: connector._is_enabled(root, record, connector._FOREGROUND_FILE),
+    )
+
+    def browser_frame(operation: str, **fields: object) -> str:
+        return json.dumps(
+            {
+                "kind": "connector.local_browser_request",
+                "version": 1,
+                "requestId": str(uuid4()),
+                "operation": operation,
+                **fields,
+            }
+        )
+
+    selected = handle_folder_frame(service, browser_frame("choose"))
+    assert selected["status"] == "selected"
+    assert not bindings_file.exists()
+
+    def frame(pid: str) -> bytes:
+        return json.dumps(
+            {
+                "kind": "connector.read_request",
+                "version": 1,
+                "requestId": str(uuid4()),
+                "deviceId": DEVICE,
+                "projectId": pid,
+                "operation": "project_summary",
+                "deadlineUnixMs": time.time_ns() // 1_000_000 + 20_000,
+            }
+        ).encode()
+
+    # Remote 'choose' is NOT permission to read. A successful separate owner
+    # binding must be necessary for the second project to be readable.
+    dispatcher = connector._dispatcher_factory(root, record, project, connector._FOREGROUND_FILE)(
+        HandshakeReceipt(DEVICE, SESSION)
+    )
+    unbound_read = frame(new_project)
+    with pytest.raises(LocalReadDeniedError):
+        dispatcher.read(unbound_read, sequence=1)
+    assert (
+        handle_folder_frame(
+            service,
+            browser_frame("bind", folderId=selected["projects"][0]["id"], projectId=new_project),
+        )["ok"]
+        is True
+    )
+    raw = frame(new_project)
+    response = dispatcher.read(raw, sequence=2)
+    assert response["projectId"] == new_project
+    assert response["files"]["projectPresent"] is True
+    assert str(chosen) not in json.dumps(response)
+    dispatcher.assert_delivery_authorized(raw, device_id=DEVICE, session_id=SESSION)
+
+    # Removing the local mapping must deny delivery even after read completed.
+    bindings_file.unlink()
+    with pytest.raises(LocalReadDeniedError):
+        dispatcher.assert_delivery_authorized(raw, device_id=DEVICE, session_id=SESSION)
+    revoked_read = frame(new_project)
+    with pytest.raises(LocalReadDeniedError):
+        dispatcher.read(revoked_read, sequence=3)
+
+    # Removing owner permission is an independent fail-closed gate.
+    connector._remove_private_file(root, connector._FOREGROUND_FILE)
+    disabled_owner_read = frame(PROJECT)
+    with pytest.raises(LocalReadDeniedError):
+        dispatcher.read(disabled_owner_read, sequence=4)
+
+
 def test_explicit_enable_writes_marker_then_starts_existing_user_unit(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -451,19 +546,20 @@ def test_status_reports_connection_state_and_stale_status_as_unavailable(
         "_systemctl",
         lambda *args: subprocess.CompletedProcess(args, 0, "active", ""),
     )
-    connector._write_status(root, "connected")
-    assert connector.main(["status"]) == 0
-    assert capsys.readouterr().out.strip() == "Connected"
-    connector._write_status(root, "connecting")
-    assert connector.main(["status"]) == 0
-    assert capsys.readouterr().out.strip() == "Connecting"
-    connector._write_private_json(
-        root,
-        connector._STATUS_FILE,
-        {"state": "connected", "updatedAtUnixMs": 0, "pid": os.getpid()},
-    )
-    assert connector.main(["status"]) == 0
-    assert capsys.readouterr().out.strip() == "Unavailable"
+    with connector._connector_session_lock(root):
+        connector._write_status(root, "connected")
+        assert connector.main(["status"]) == 0
+        assert capsys.readouterr().out.strip() == "Connected"
+        connector._write_status(root, "connecting")
+        assert connector.main(["status"]) == 0
+        assert capsys.readouterr().out.strip() == "Connecting"
+        connector._write_private_json(
+            root,
+            connector._STATUS_FILE,
+            {"state": "connected", "updatedAtUnixMs": 0, "pid": os.getpid()},
+        )
+        assert connector.main(["status"]) == 0
+        assert capsys.readouterr().out.strip() == "Unavailable"
 
 
 def test_status_reports_unavailable_when_enabled_marker_is_invalid(
@@ -617,3 +713,638 @@ def test_connector_uid_lookup_fails_closed_without_posix_getuid(
     monkeypatch.delattr(os, "getuid")
     with pytest.raises(LocalApprovalDeniedError):
         connector._current_uid()
+
+
+@pytest.mark.anyio
+async def test_second_local_connector_cannot_load_key_or_start_session(tmp_path: Path) -> None:
+    root, project = _root(tmp_path)
+    connector._write_private_json(root, connector._ENABLED_FILE, connector._identity_state(RECORD))
+    entered = asyncio.Event()
+    stop = asyncio.Event()
+    loads = 0
+    starts = 0
+
+    def load_key(*_args: object) -> Ed25519PrivateKey:
+        nonlocal loads
+        loads += 1
+        return Ed25519PrivateKey.generate()
+
+    async def run_session(**_kwargs: object) -> HandshakeReceipt:
+        nonlocal starts
+        starts += 1
+        entered.set()
+        await asyncio.Event().wait()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    async def launch() -> int:
+        return await connector._run_connector(
+            root=root,
+            stop_event=stop,
+            identity_loader=lambda _: RECORD.copy(),
+            project_resolver=lambda **_: project,
+            key_loader=load_key,
+            session_runner=run_session,
+        )
+
+    first = asyncio.create_task(launch())
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=3)
+        competing_attempt = asyncio.wait_for(launch(), timeout=0.5)
+        with pytest.raises(RuntimeError, match="already running"):
+            await competing_attempt
+        assert loads == starts == 1
+        assert not first.done()
+        assert connector._enabled_record(root) == connector._identity_state(RECORD)
+    finally:
+        stop.set()
+        await asyncio.wait_for(first, timeout=3)
+    stop.clear()
+    entered.clear()
+    restarted = asyncio.create_task(launch())
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=3)
+        assert loads == starts == 2
+    finally:
+        stop.set()
+        await asyncio.wait_for(restarted, timeout=3)
+
+
+@pytest.mark.anyio
+async def test_cancel_connector_closes_session_before_returning(tmp_path: Path) -> None:
+    root, project = _root(tmp_path)
+    connector._write_private_json(root, connector._ENABLED_FILE, connector._identity_state(RECORD))
+    entered = asyncio.Event()
+    closed = asyncio.Event()
+
+    async def run_session(**_kwargs: object) -> HandshakeReceipt:
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    task = asyncio.create_task(
+        connector._run_connector(
+            root=root,
+            identity_loader=lambda _: RECORD.copy(),
+            project_resolver=lambda **_: project,
+            key_loader=lambda *_: Ed25519PrivateKey.generate(),
+            session_runner=run_session,
+        )
+    )
+    await asyncio.wait_for(entered.wait(), timeout=3)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert closed.is_set()
+
+
+@pytest.mark.parametrize("invalid_lock", ["symlink", "hardlink", "public", "nonempty", "fifo"])
+def test_session_lock_rejects_unsafe_files(tmp_path: Path, invalid_lock: str) -> None:
+    root, _project = _root(tmp_path)
+    path = root / connector._SESSION_LOCK_FILE
+    outside = tmp_path / "outside"
+    outside.write_bytes(b"")
+    outside.chmod(0o600)
+    if invalid_lock == "symlink":
+        path.symlink_to(outside)
+    elif invalid_lock == "hardlink":
+        os.link(outside, path)
+    elif invalid_lock == "fifo":
+        os.mkfifo(path, 0o600)
+    else:
+        path.write_bytes(b"unexpected" if invalid_lock == "nonempty" else b"")
+        path.chmod(0o644 if invalid_lock == "public" else 0o600)
+    with (
+        pytest.raises((OSError, LocalApprovalDeniedError)),
+        connector._connector_session_lock(root),
+    ):
+        pytest.fail("unsafe lock was acquired")
+    assert outside.read_bytes() == b""
+
+
+def test_main_reports_existing_session_without_a_traceback(monkeypatch, capsys) -> None:
+    async def already_running() -> int:
+        raise connector.ConnectorAlreadyRunningError("A local Cloud Connector is already running.")
+
+    monkeypatch.setattr(connector, "_run_service", already_running)
+    assert connector.main(["run"]) == 1
+    assert "already running" in capsys.readouterr().err
+
+
+def test_stale_connected_status_without_session_owner_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root, _project = _root(tmp_path)
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(
+        connector,
+        "_systemctl",
+        lambda *args: subprocess.CompletedProcess("systemctl fixture", 0, "active", ""),
+    )
+    connector._write_private_json(root, connector._ENABLED_FILE, connector._identity_state(RECORD))
+    connector._write_status(root, "connected")
+    with connector._connector_session_lock(root):
+        pass
+    assert connector._status() == "Unavailable"
+
+
+def test_status_without_lock_does_not_create_lock_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root, _project = _root(tmp_path)
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(
+        connector,
+        "_systemctl",
+        lambda *args: subprocess.CompletedProcess("systemctl fixture", 0, "active", ""),
+    )
+    connector._write_private_json(root, connector._ENABLED_FILE, connector._identity_state(RECORD))
+    connector._write_status(root, "connected")
+    assert connector._status() == "Unavailable"
+    assert not (root / connector._SESSION_LOCK_FILE).exists()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("revoke", ["marker", "registration"])
+async def test_local_authority_revocation_closes_idle_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, revoke: str
+) -> None:
+    root, project = _root(tmp_path)
+    connector._write_private_json(root, connector._ENABLED_FILE, connector._identity_state(RECORD))
+    monkeypatch.setattr(connector, "_LOCAL_AUTHORITY_POLL_SECONDS", 0.01)
+    entered = asyncio.Event()
+    closed = asyncio.Event()
+    starts = 0
+
+    async def run_session(**_kwargs: object) -> HandshakeReceipt:
+        nonlocal starts
+        starts += 1
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            closed.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    task = asyncio.create_task(
+        connector._run_connector(
+            root=root,
+            identity_loader=lambda _: RECORD.copy(),
+            project_resolver=lambda **_: project,
+            key_loader=lambda *_: Ed25519PrivateKey.generate(),
+            session_runner=run_session,
+        )
+    )
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        if revoke == "marker":
+            connector._remove_private_file(root, connector._ENABLED_FILE)
+        else:
+            (root / "projects" / f"{PROJECT}.json").unlink()
+        assert await asyncio.wait_for(task, timeout=0.5) == 0
+        assert closed.is_set()
+        assert starts == 1
+        assert not connector._session_lock_held(root)
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.anyio
+async def test_foreground_authority_is_temporary_and_reconnects_same_device(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, project = _root(tmp_path)
+    stop = asyncio.Event()
+    calls = []
+    monkeypatch.setattr(connector, "reconnect_delay_seconds", lambda *_: 0.0)
+
+    async def session(**kwargs: object) -> HandshakeReceipt:
+        calls.append(kwargs["device_id"])
+        assert not (root / connector._ENABLED_FILE).exists()
+        assert (root / "connector-foreground.json").is_file()
+        if len(calls) == 1:
+            raise OSError("fixture network interruption")
+        stop.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    result = await connector._run_connector(
+        root=root,
+        stop_event=stop,
+        foreground=True,
+        project_resolver=lambda **_: project,
+        key_loader=lambda *_: Ed25519PrivateKey.generate(),
+        session_runner=session,
+    )
+    assert result == 0
+    assert calls == [DEVICE, DEVICE]
+    assert not (root / "connector-foreground.json").exists()
+    assert not (root / connector._ENABLED_FILE).exists()
+    assert not connector._session_lock_held(root)
+
+
+@pytest.mark.anyio
+async def test_foreground_refuses_persistent_authority_without_mutation(tmp_path: Path) -> None:
+    root, _project = _root(tmp_path)
+    connector._write_private_json(root, connector._ENABLED_FILE, connector._identity_state(RECORD))
+    previous = (root / connector._ENABLED_FILE).read_bytes()
+    with pytest.raises(RuntimeError, match="background"):
+        await connector._run_connector(root=root, foreground=True)
+    assert (root / connector._ENABLED_FILE).read_bytes() == previous
+    assert not (root / "connector-foreground.json").exists()
+
+
+@pytest.mark.anyio
+async def test_service_does_not_inherit_crashed_foreground_authority(tmp_path: Path) -> None:
+    root, _project = _root(tmp_path)
+    connector._write_private_json(
+        root, "connector-foreground.json", connector._identity_state(RECORD)
+    )
+    assert (
+        await connector._run_connector(
+            root=root, identity_loader=lambda _: pytest.fail("background must stay disabled")
+        )
+        == 0
+    )
+    assert not (root / connector._ENABLED_FILE).exists()
+
+
+@pytest.mark.anyio
+async def test_foreground_status_and_revocation_without_systemd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, project = _root(tmp_path)
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(connector, "_LOCAL_AUTHORITY_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(
+        connector, "_systemctl", lambda *_: pytest.fail("foreground needs no systemd")
+    )
+    ready = asyncio.Event()
+    closed = asyncio.Event()
+
+    async def session(**kwargs: object) -> HandshakeReceipt:
+        dispatcher = kwargs["dispatcher_factory"](HandshakeReceipt(DEVICE, SESSION))
+        dispatcher._authorize_now()
+        ready.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            assert not dispatcher._current_authorization()
+            closed.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    task = asyncio.create_task(
+        connector._run_connector(
+            root=root,
+            foreground=True,
+            project_resolver=lambda **_: project,
+            key_loader=lambda *_: Ed25519PrivateKey.generate(),
+            session_runner=session,
+        )
+    )
+    try:
+        await asyncio.wait_for(ready.wait(), timeout=2)
+        assert connector._status() == "Connected"
+        connector._remove_private_file(root, connector._FOREGROUND_FILE)
+        assert connector._status() == "Off"
+        assert await asyncio.wait_for(task, timeout=2) == 0
+        assert closed.is_set()
+        assert not connector._session_lock_held(root)
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+def test_crashed_foreground_status_is_off(monkeypatch, tmp_path: Path) -> None:
+    root, _ = _root(tmp_path)
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    record = connector._single_registered_identity(root)
+    connector._write_private_json(
+        root,
+        connector._FOREGROUND_FILE,
+        connector._identity_state(record, connector._FOREGROUND_FILE),
+    )
+    connector._write_status(root, "connected")
+    with connector._connector_session_lock(root):
+        pass
+    assert connector._status() == "Off"
+
+
+@pytest.mark.anyio
+async def test_foreground_cannot_reconnect_after_project_directory_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, project = _root(tmp_path)
+    monkeypatch.setattr(connector, "reconnect_delay_seconds", lambda *_: 0.0)
+    stop = asyncio.Event()
+    calls = 0
+    changed_dir = tmp_path / "other-project"
+    changed_dir.mkdir()
+
+    async def session(**_kwargs: object) -> HandshakeReceipt:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            record_path = root / "projects" / f"{PROJECT}.json"
+            record = json.loads(record_path.read_text())
+            record["directory"] = str(changed_dir)
+            record_path.write_text(json.dumps(record))
+        else:
+            stop.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    assert (
+        await connector._run_connector(
+            root=root,
+            foreground=True,
+            stop_event=stop,
+            project_resolver=lambda **_: project,
+            key_loader=lambda *_: Ed25519PrivateKey.generate(),
+            session_runner=session,
+        )
+        == 0
+    )
+    assert calls == 1
+    assert not (root / connector._FOREGROUND_FILE).exists()
+
+
+@pytest.mark.anyio
+async def test_foreground_revocation_interrupts_reconnect_delay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, project = _root(tmp_path)
+    monkeypatch.setattr(connector, "_LOCAL_AUTHORITY_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(connector, "reconnect_delay_seconds", lambda *_: 120.0)
+    entered = asyncio.Event()
+    calls = 0
+
+    async def session(**_kwargs: object) -> HandshakeReceipt:
+        nonlocal calls
+        calls += 1
+        entered.set()
+        raise OSError("fixture network interruption")
+
+    task = asyncio.create_task(
+        connector._run_connector(
+            root=root,
+            foreground=True,
+            project_resolver=lambda **_: project,
+            key_loader=lambda *_: Ed25519PrivateKey.generate(),
+            session_runner=session,
+        )
+    )
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=2)
+        await asyncio.sleep(0.03)
+        connector._remove_private_file(root, connector._FOREGROUND_FILE)
+        assert await asyncio.wait_for(task, timeout=0.5) == 0
+        assert calls == 1
+        assert not connector._session_lock_held(root)
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+def test_disable_foreground_on_darwin_does_not_use_systemd(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    root, _ = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    connector._write_private_json(
+        root,
+        connector._FOREGROUND_FILE,
+        connector._identity_state(record, connector._FOREGROUND_FILE),
+    )
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(connector, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(connector, "_systemctl", lambda *_: pytest.fail("no systemd on Darwin"))
+    assert connector._disable() == 0
+    assert not (root / connector._FOREGROUND_FILE).exists()
+
+
+@pytest.mark.anyio
+async def test_foreground_rejects_changed_binding_before_key_loading(tmp_path: Path) -> None:
+    root, _project = _root(tmp_path)
+    expected = connector._single_registered_identity(root)
+    expected["cloudOrigin"] = "https://other.example"
+    with pytest.raises(ValueError):
+        await connector._run_connector(
+            root=root,
+            foreground=True,
+            expected_identity=expected,
+            key_loader=lambda *_: pytest.fail("changed binding must not load key"),
+        )
+    assert not (root / connector._FOREGROUND_FILE).exists()
+
+
+@pytest.mark.parametrize("outcome", ["success", "occupied", "invalid"])
+def test_run_foreground_routes_expected_binding_and_errors(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], outcome: str
+) -> None:
+    async def run(*, foreground: bool, expected_identity: dict[str, str]) -> int:
+        assert foreground is True
+        assert expected_identity == RECORD
+        if outcome == "occupied":
+            raise connector.ConnectorAlreadyRunningError("already running")
+        if outcome == "invalid":
+            raise LocalApprovalDeniedError("fixture private details")
+        return 0
+
+    monkeypatch.setattr(connector, "_run_service", run)
+    assert connector.run_foreground(RECORD) == (0 if outcome == "success" else 1)
+    captured = capsys.readouterr()
+    assert "fixture private details" not in captured.err
+    if outcome == "occupied":
+        assert "already running" in captured.err
+
+
+def test_foreground_disable_does_not_claim_stop_if_lock_is_still_held(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root, _ = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    connector._write_private_json(
+        root,
+        connector._FOREGROUND_FILE,
+        connector._identity_state(record, connector._FOREGROUND_FILE),
+    )
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(connector, "_FOREGROUND_SHUTDOWN_TIMEOUT", 0.0)
+    monkeypatch.setattr(
+        connector, "_systemctl", lambda *_: pytest.fail("foreground needs no systemd")
+    )
+    with connector._connector_session_lock(root):
+        assert connector._disable() == 1
+        assert not (root / connector._FOREGROUND_FILE).exists()
+        captured = capsys.readouterr()
+        assert "unverified" in captured.err
+        assert "is Off" not in captured.out
+
+
+@pytest.mark.anyio
+async def test_foreground_terminal_reports_signed_ready_and_disconnect(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root, project = _root(tmp_path)
+    stop = asyncio.Event()
+    monkeypatch.setattr(connector, "reconnect_delay_seconds", lambda *_: 0.0)
+    attempts = 0
+
+    async def session(**kwargs: object) -> HandshakeReceipt:
+        nonlocal attempts
+        attempts += 1
+        before = capsys.readouterr().out
+        assert "Connected" not in before
+        assert "Connecting" in before
+        if attempts == 1:
+            raise OSError("secret fixture path")
+        assert "Disconnected" in before
+        kwargs["dispatcher_factory"](HandshakeReceipt(DEVICE, SESSION))
+        assert "Connected" in capsys.readouterr().out
+        stop.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    assert (
+        await connector._run_connector(
+            root=root,
+            foreground=True,
+            stop_event=stop,
+            project_resolver=lambda **_: project,
+            key_loader=lambda *_: Ed25519PrivateKey.generate(),
+            session_runner=session,
+        )
+        == 0
+    )
+    assert attempts == 2
+    output = capsys.readouterr().out
+    assert "Disconnected" in output
+    assert "secret fixture path" not in output
+
+
+def test_foreground_status_rejects_changed_binding_immediately(monkeypatch, tmp_path: Path) -> None:
+    root, _ = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    connector._write_private_json(
+        root,
+        connector._FOREGROUND_FILE,
+        connector._identity_state(record, connector._FOREGROUND_FILE),
+    )
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    with connector._connector_session_lock(root):
+        connector._write_status(root, "connected")
+        assert connector._status() == "Connected"
+        (root / "projects" / f"{PROJECT}.json").unlink()
+        assert connector._status() == "Unavailable"
+
+
+def test_foreground_disable_rejects_unverifiable_lock(monkeypatch, tmp_path: Path, capsys) -> None:
+    root, _ = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    connector._write_private_json(
+        root,
+        connector._FOREGROUND_FILE,
+        connector._identity_state(record, connector._FOREGROUND_FILE),
+    )
+    lock = root / connector._SESSION_LOCK_FILE
+    lock.write_text("invalid lock")
+    lock.chmod(0o600)
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(connector, "_systemctl", lambda *_: pytest.fail("no systemd"))
+    assert connector._disable() == 1
+    assert "unverified" in capsys.readouterr().err
+
+
+@pytest.mark.anyio
+async def test_foreground_signed_transport_receives_activity_callback(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    root, project = _root(tmp_path)
+    stop = asyncio.Event()
+
+    async def signed_transport(**kwargs: object) -> HandshakeReceipt:
+        kwargs["dispatcher_factory"](HandshakeReceipt(DEVICE, SESSION))
+        kwargs["on_activity"]("Tool call 1: project_summary completed (5 ms)")
+        stop.set()
+        return HandshakeReceipt(DEVICE, SESSION)
+
+    monkeypatch.setattr(connector, "execute_owner_managed_read_session", signed_transport)
+    assert (
+        await connector._run_connector(
+            root=root,
+            foreground=True,
+            stop_event=stop,
+            project_resolver=lambda **_: project,
+            key_loader=lambda *_: Ed25519PrivateKey.generate(),
+            session_runner=signed_transport,
+        )
+        == 0
+    )
+    assert "Tool call 1: project_summary completed (5 ms)" in capsys.readouterr().out
+
+
+def test_background_enable_refuses_active_foreground_without_mutation(
+    monkeypatch, tmp_path: Path
+) -> None:
+    root, _ = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    connector._write_private_json(
+        root,
+        connector._FOREGROUND_FILE,
+        connector._identity_state(record, connector._FOREGROUND_FILE),
+    )
+    before = (root / connector._FOREGROUND_FILE).read_bytes()
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(
+        connector, "_install_user_service", lambda: pytest.fail("must not install service")
+    )
+    monkeypatch.setattr(connector, "_systemctl", lambda *_: pytest.fail("must not start service"))
+    with connector._connector_session_lock(root):
+        assert connector.main(["enable"]) == 1
+    assert not (root / connector._ENABLED_FILE).exists()
+    assert (root / connector._FOREGROUND_FILE).read_bytes() == before
+
+
+def test_enable_does_not_report_success_after_concurrent_revocation(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    root, _ = _root(tmp_path)
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(connector, "_install_user_service", lambda: None)
+    calls = []
+
+    def systemctl(*args: str) -> subprocess.CompletedProcess[str]:
+        calls.append(args[0])
+        if args[0] == "enable":
+            connector._remove_private_file(root, connector._ENABLED_FILE)
+        return subprocess.CompletedProcess("systemctl fixture", 0, "", "")
+
+    monkeypatch.setattr(connector, "_systemctl", systemctl)
+    assert connector.main(["enable"]) == 1
+    assert calls == ["enable", "disable"]
+    assert not (root / connector._ENABLED_FILE).exists()
+    assert "enabled for" not in capsys.readouterr().out
+
+
+def test_disable_without_marker_does_not_claim_stop_while_runner_holds_lock(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    root, _ = _root(tmp_path)
+    monkeypatch.setattr(connector, "default_registry_root", lambda: root)
+    monkeypatch.setattr(connector, "_FOREGROUND_SHUTDOWN_TIMEOUT", 0.0)
+    monkeypatch.setattr(
+        connector,
+        "_systemctl",
+        lambda *args: subprocess.CompletedProcess("systemctl fixture", 0, "", ""),
+    )
+    with connector._connector_session_lock(root):
+        assert connector._disable() == 1
+        captured = capsys.readouterr()
+        assert "unverified" in captured.err
+        assert "is Off" not in captured.out

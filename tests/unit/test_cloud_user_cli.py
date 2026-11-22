@@ -9,6 +9,7 @@ import pytest
 from click import unstyle
 from typer.testing import CliRunner
 
+from kicad_mcp.cloud_user_cli import _is_macos
 from kicad_mcp.server import app
 
 
@@ -22,6 +23,17 @@ def simulated_storage_support_for_mocked_cli_flows(monkeypatch) -> None:
     # Existing POSIX tests explicitly test the old registry path; native NT
     # routes have their own real-Windows fixtures in test_cloud_windows_user_cli.
     monkeypatch.setattr("kicad_mcp.cloud_user_cli._is_windows", lambda: False)
+    # Legacy managed-service setup fixtures model Linux, not macOS headless setup.
+    monkeypatch.setattr("kicad_mcp.cloud_user_cli._is_macos", lambda: False)
+    # These are simulated CLI routes on Windows, not native POSIX lock tests.
+    import os
+    from contextlib import nullcontext
+
+    if os.name == "nt":
+        monkeypatch.setattr(
+            "kicad_mcp.cloud_managed_connector._connector_session_lock",
+            lambda *_args, **_kwargs: nullcontext(),
+        )
 
 
 def test_login_web_only_preserves_first_party_browser_without_cli_grant(monkeypatch) -> None:
@@ -854,7 +866,7 @@ def test_setup_browser_approval_does_not_claim_service_ready_on_failure(
     monkeypatch.setattr("kicad_mcp.cloud_managed_connector._enable", mock_enable_fail)
 
     result = CliRunner().invoke(app, ["cloud", "setup", "--project-dir", str(tmp_path)])
-    assert result.exit_code == 0
+    assert result.exit_code == 1
     assert "Browser opened for approval" in result.output
     assert "Cloud Connector could not start: RuntimeError" in result.output
     assert "Connector:       Unavailable" in result.output
@@ -930,7 +942,7 @@ def test_cloud_setup_browse_uses_only_local_picker_without_cloud_upload(
     monkeypatch.setattr(
         cloud_user_cli,
         "_try_reconnect_existing",
-        lambda _root, _origin: calls.append("reconnect") or True,
+        lambda _root, _origin, _selected: calls.append("reconnect") or True,
     )
     result = CliRunner().invoke(app, ["cloud", "setup", "--browse", "--no-browser"])
     assert result.exit_code == 0, result.output
@@ -1036,7 +1048,7 @@ def test_cloud_native_zenity_picker_launch_failure(monkeypatch, reason: str) -> 
     ("selected", "should_succeed"),
     [("/home/example/PCB fixture", True), ("", False)],
 )
-def test_cloud_native_tkinter_folder_picker(
+def test_cloud_linux_tkinter_fallback_folder_picker(
     monkeypatch, selected: str, should_succeed: bool
 ) -> None:
     import sys as interpreter
@@ -1060,13 +1072,128 @@ def test_cloud_native_tkinter_folder_picker(
 
     fake_tk.filedialog = SimpleNamespace(askdirectory=select_directory)  # type: ignore[attr-defined]
     monkeypatch.setitem(interpreter.modules, "tkinter", fake_tk)
-    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="linux"))
+    monkeypatch.setattr(cloud_user_cli.shutil, "which", lambda _name: None)
     if should_succeed:
         assert cloud_user_cli._browse_local_project_folder() == Path(selected)
     else:
         with pytest.raises(cloud_user_cli.typer.BadParameter, match="No project folder"):
             cloud_user_cli._browse_local_project_folder()
     assert events == ["hide", "select", "destroy"]
+
+
+@pytest.mark.parametrize(
+    ("code", "stdout", "stderr", "expected"),
+    [
+        (0, "/Users/example/KiCad boards/\n", "", "/Users/example/KiCad boards"),
+        (0, "/Users/example/Trailing space /\n", "", "/Users/example/Trailing space "),
+        (1, "", "execution error: User canceled. (-128)\n", None),
+        (1, "", "execution error: Accessibility permission denied. (-1743)\n", "unavailable"),
+        (0, "relative/not-absolute\n", "", "unavailable"),
+        (0, "", "", "unavailable"),
+    ],
+)
+def test_macos_owner_native_folder_picker(
+    monkeypatch, code: int, stdout: str, stderr: str, expected: str | None
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    commands = []
+
+    def native_dialog(argv: list[str], **kwargs: object):
+        commands.append(argv)
+        assert argv[0] == "/usr/bin/osascript"  # trusted macOS system binary
+        assert argv[1] == "-e"
+        assert "choose folder" in argv[2]
+        assert "POSIX path" in argv[2]
+        assert argv[2] == cloud_user_cli._MACOS_FOLDER_APPLESCRIPT
+        assert kwargs == {
+            "capture_output": True,
+            "text": True,
+            "check": False,
+            "timeout": 120,
+        }
+        return SimpleNamespace(returncode=code, stdout=stdout, stderr=stderr)
+
+    monkeypatch.setattr(cloud_user_cli.subprocess, "run", native_dialog)
+    if isinstance(expected, str) and expected != "unavailable":
+        assert cloud_user_cli._browse_local_project_folder() == Path(expected)
+    else:
+        message = "No project folder selected" if expected is None else "Folder picker unavailable"
+        with pytest.raises(cloud_user_cli.typer.BadParameter, match=message):
+            cloud_user_cli._browse_local_project_folder()
+    assert len(commands) == 1
+
+
+def test_macos_native_apple_script_compiler_ci_contract() -> None:
+    """The exact production script must be compiled on macOS CI, without a GUI."""
+    repo = Path(__file__).resolve().parents[2]
+    workflow = (repo / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    name = "- name: Compile macOS Cloud folder chooser AppleScript"
+    assert workflow.count(name) == 1
+    step = workflow.split(name, maxsplit=1)[1].split("      - ", maxsplit=1)[0]
+    assert "matrix.os == 'macos-15'" in step
+    assert "from kicad_mcp.cloud_user_cli import _MACOS_FOLDER_APPLESCRIPT" in step
+    assert '/usr/bin/osacompile -o "$RUNNER_TEMP/kicad-cloud-folder-picker.scpt"' in step
+    assert "set -euo pipefail" in step
+
+
+@pytest.mark.parametrize("cause", ["headless", "missing_binary", "timeout"])
+def test_macos_picker_fail_closed_without_owner_or_dialog(monkeypatch, cause: str) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: cause != "headless")
+
+    def native_dialog(_argv: list[str], **_kwargs: object):
+        if cause == "headless":
+            pytest.fail("headless macOS must not launch a native dialog")
+        if cause == "missing_binary":
+            raise OSError("system executable unavailable")
+        raise cloud_user_cli.subprocess.TimeoutExpired("/usr/bin/osascript", 120)
+
+    monkeypatch.setattr(cloud_user_cli.subprocess, "run", native_dialog)
+    with pytest.raises(
+        cloud_user_cli.typer.BadParameter, match="interactive|Folder picker unavailable"
+    ):
+        cloud_user_cli._browse_local_project_folder()
+
+
+def test_macos_setup_cancel_does_not_register_device_or_read_keys(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(cloud_user_cli, "_is_macos", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_local_registry.default_registry_root",
+        lambda: pytest.fail("cancel must not touch local Cloud registry"),
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair.enroll",
+        lambda *_args: pytest.fail("cancel must not enroll a Cloud device"),
+    )
+    monkeypatch.setattr(
+        cloud_user_cli.subprocess,
+        "run",
+        lambda _argv, **_kwargs: SimpleNamespace(
+            returncode=1, stdout="", stderr="execution error: User canceled. (-128)"
+        ),
+    )
+    result = CliRunner().invoke(app, ["cloud", "setup", "--browse", "--no-browser"])
+    assert result.exit_code != 0
+    assert "No project folder selected" in result.output
+    assert not (tmp_path / "cloud").exists()
 
 
 @pytest.mark.parametrize(
@@ -1142,14 +1269,15 @@ def test_windows_native_folder_picker_uses_trusted_system_shell(
         ole.CoTaskMemFree.assert_called_once_with(123)
 
 
-@pytest.mark.parametrize("reason", ["not_installed", "display_error", "dialog_error"])
-def test_cloud_native_tkinter_picker_errors_cleanly(monkeypatch, reason: str) -> None:
+@pytest.mark.parametrize("reason", ["not_installed", "display_error", "dialog_error", "tcl_error"])
+def test_cloud_linux_tkinter_picker_errors_cleanly(monkeypatch, reason: str) -> None:
     import sys as interpreter
     from types import ModuleType, SimpleNamespace
 
     from kicad_mcp import cloud_user_cli
 
-    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform="linux"))
+    monkeypatch.setattr(cloud_user_cli.shutil, "which", lambda _name: None)
     if reason == "not_installed":
         monkeypatch.setitem(interpreter.modules, "tkinter", None)
     else:
@@ -1159,7 +1287,15 @@ def test_cloud_native_tkinter_picker_errors_cleanly(monkeypatch, reason: str) ->
             destroy=lambda: events.append("destroy"),
         )
         fake_tk = ModuleType("tkinter")
-        if reason == "display_error":
+        fake_tk.TclError = type("TclError", (Exception,), {})  # type: ignore[attr-defined]
+        fake_tk.filedialog = SimpleNamespace(askdirectory=lambda **_kwargs: "")  # type: ignore[attr-defined]
+        if reason == "tcl_error":
+
+            def no_display():
+                raise fake_tk.TclError("cannot open X display")  # type: ignore[attr-defined]
+
+            fake_tk.Tk = no_display  # type: ignore[attr-defined]
+        elif reason == "display_error":
 
             def raise_display():
                 raise RuntimeError("no desktop session")
@@ -1275,7 +1411,7 @@ def test_cloud_setup_interactive_nonproject_cwd_uses_native_picker(
     monkeypatch.setattr(
         cloud_user_cli,
         "_try_reconnect_existing",
-        lambda _root, _origin: calls.append("reconnect") or True,
+        lambda _root, _origin, _selected: calls.append("reconnect") or True,
     )
     result = CliRunner().invoke(app, ["cloud", "setup", "--no-browser"])
     assert result.exit_code == 0, result.output
@@ -1572,3 +1708,446 @@ def test_windows_bare_cloud_preserves_readonly_default_without_trusting_write_is
     assert len(launches) == 1
     assert launches[0]["allow_native_write"] is False
     assert write_issuer_trust == []
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_posix_registered_connect_uses_interactive_foreground(
+    monkeypatch, tmp_path: Path, exit_code: int
+) -> None:
+    registry = tmp_path / "cloud"
+    (registry / "projects").mkdir(parents=True)
+    (registry / "projects" / "fixture.json").write_text("private fixture")
+    record = {"cloudOrigin": "https://kicad-mcp-pro.oaslananka.dev", "deviceId": "fixture"}
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_registered_pilot._single_registered_identity", lambda _: record
+    )
+    monkeypatch.setattr("kicad_mcp.cloud_user_cli._owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_pair.main", lambda *_: pytest.fail("no new pairing"))
+    calls = []
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_managed_connector.run_foreground",
+        lambda expected: calls.append(expected) or exit_code,
+        raising=False,
+    )
+    result = CliRunner().invoke(app, ["cloud", "connect"])
+    assert result.exit_code == exit_code, result.output
+    assert calls == [record]
+    assert "terminal open" in result.output
+    assert "read-only" in result.output
+
+
+@pytest.mark.parametrize("platform", ["linux", "darwin"])
+def test_posix_interactive_setup_uses_foreground_without_background_service(
+    monkeypatch, tmp_path: Path, platform: str
+) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    project = tmp_path / "board"
+    project.mkdir()
+    (project / "board.kicad_pro").touch()
+    registry = tmp_path / "registry"
+    origin = "https://kicad-mcp-pro.oaslananka.dev"
+    device = "11111111-1111-4111-8111-111111111111"
+    project_id = "22222222-2222-4222-8222-222222222222"
+    calls = []
+    monkeypatch.setattr(cloud_user_cli, "_is_macos", lambda: platform == "darwin")
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
+    monkeypatch.setattr("kicad_mcp.cloud_pair.enroll", lambda *_: (device, "0" * 64))
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair_keys._read_owner_binding", lambda _: {"ownerSub": "github|test-owner"}
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair.register_device_project", lambda *_a, **_k: {"projectId": project_id}
+    )
+    monkeypatch.setattr(
+        cloud_user_cli, "_start_connector", lambda: pytest.fail("must not start background service")
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_managed_connector.run_foreground", lambda record: calls.append(record) or 0
+    )
+    result = CliRunner().invoke(
+        app, ["cloud", "setup", "--project-dir", str(project), "--no-browser"]
+    )
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    assert calls[0]["deviceId"] == device
+    assert calls[0]["cloudOrigin"] == origin
+    assert calls[0]["directory"] == str(project.resolve())
+    assert (registry / "projects" / f"{project_id}.json").is_file()
+    assert "terminal open" in result.output
+    assert "Setup Complete!" not in result.output
+
+
+@pytest.mark.parametrize("picker", ["browse", "project-dir", "implicit-browse"])
+def test_posix_explicit_different_project_fails_closed_before_existing_reconnect(
+    monkeypatch, tmp_path: Path, picker: str
+) -> None:
+    """Never reconnect an old project when the owner selected a different one."""
+    from kicad_mcp import cloud_user_cli
+
+    old = tmp_path / "existing-project"
+    old.mkdir()
+    (old / "existing.kicad_pro").touch()
+    selected = tmp_path / "different-project"
+    selected.mkdir()
+    (selected / "different.kicad_pro").touch()
+    root = tmp_path / "cloud-registry"
+    (root / "projects").mkdir(parents=True)
+    (root / "projects" / "existing.json").write_text("existing record", encoding="utf-8")
+    (root / "keys").mkdir()
+    keyfile = root / "keys" / "owner.pem"
+    keyfile.write_text("existing owner key", encoding="utf-8")
+    existing = {
+        "cloudOrigin": "https://kicad-mcp-pro.oaslananka.dev",
+        "deviceId": "existing-device",
+        "projectId": "existing-project",
+        "keySlot": "owner",
+        "directory": str(old.resolve()),
+        "filenameStem": "existing",
+    }
+    before = [
+        (path.relative_to(root), path.read_bytes()) for path in root.rglob("*") if path.is_file()
+    ]
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_is_macos", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_registered_pilot._single_registered_identity", lambda _: existing
+    )
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_run_posix_foreground",
+        lambda _record: pytest.fail("wrong project resumed"),
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair.enroll", lambda *_args: pytest.fail("must not enroll another device")
+    )
+    monkeypatch.setattr(
+        cloud_user_cli, "_start_connector", lambda: pytest.fail("must not start a connector")
+    )
+    monkeypatch.setattr(cloud_user_cli, "_browse_local_project_folder", lambda: selected)
+    args = ["cloud", "setup", "--no-browser"]
+    if picker == "browse":
+        args.append("--browse")
+    elif picker == "project-dir":
+        args.extend(["--project-dir", str(selected)])
+    else:
+        working = tmp_path / "empty-working-directory"
+        working.mkdir()
+        monkeypatch.chdir(working)
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code != 0
+    assert "different local project" in result.output.lower()
+    assert "cloud status" in result.output.lower()
+    assert [(p.relative_to(root), p.read_bytes()) for p in root.rglob("*") if p.is_file()] == before
+
+
+def test_posix_explicit_same_project_reuses_existing_identity(monkeypatch, tmp_path: Path) -> None:
+    """The safety check must not break the owner's normal reconnect path."""
+    from kicad_mcp import cloud_user_cli
+
+    old = tmp_path / "board"
+    old.mkdir()
+    (old / "board.kicad_pro").touch()
+    root = tmp_path / "registry"
+    (root / "projects").mkdir(parents=True)
+    (root / "projects" / "record.json").write_text("fixture", encoding="utf-8")
+    (root / "keys").mkdir()
+    (root / "keys" / "key.pem").write_text("original", encoding="utf-8")
+    record = {
+        "cloudOrigin": "https://kicad-mcp-pro.oaslananka.dev",
+        "deviceId": "original-device",
+        "projectId": "original-project",
+        "keySlot": "key",
+        "directory": str(old.resolve()),
+        "filenameStem": "board",
+    }
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_is_macos", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_registered_pilot._single_registered_identity", lambda _: record
+    )
+    monkeypatch.setattr("kicad_mcp.cloud_pair.enroll", lambda *_: pytest.fail("no new key"))
+    launches: list[dict[str, str]] = []
+    monkeypatch.setattr(cloud_user_cli, "_run_posix_foreground", launches.append)
+    result = CliRunner().invoke(app, ["cloud", "setup", "--project-dir", str(old), "--no-browser"])
+    assert result.exit_code == 0, result.output
+    assert launches == [record]
+    assert (root / "keys" / "key.pem").read_text(encoding="utf-8") == "original"
+
+
+@pytest.mark.parametrize("platform", ["darwin", "linux", "win32"])
+def test_native_macos_selector(monkeypatch, platform: str) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "sys", SimpleNamespace(platform=platform))
+    assert _is_macos() is (platform == "darwin")
+
+
+def test_darwin_headless_setup_rejects_before_registration(monkeypatch, tmp_path: Path) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "_is_macos", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    monkeypatch.setattr("kicad_mcp.cloud_pair.enroll", lambda *_: pytest.fail("no enrollment"))
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_local_registry.default_registry_root", lambda: pytest.fail("no registry")
+    )
+    (tmp_path / "board.kicad_pro").touch()
+    result = CliRunner().invoke(
+        app, ["cloud", "setup", "--project-dir", str(tmp_path), "--no-browser"]
+    )
+    assert result.exit_code != 0
+    assert "interactive" in result.output
+    assert "No device or project was registered" in result.output
+
+
+@pytest.mark.parametrize("args", [["cloud"], ["cloud", "connect"]])
+def test_posix_first_interactive_command_routes_to_setup(monkeypatch, tmp_path: Path, args) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_local_registry.default_registry_root", lambda: tmp_path / "registry"
+    )
+    monkeypatch.setattr("kicad_mcp.cloud_pair.main", lambda *_: pytest.fail("pairing-only path"))
+    calls = []
+    monkeypatch.setattr(cloud_user_cli, "setup", lambda **kwargs: calls.append(kwargs))
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    assert calls[0]["new_device"] is False
+    assert calls[0]["project_dir"] is None
+    assert not (tmp_path / "registry").exists()
+
+
+def test_posix_bare_cloud_requires_owner_terminal(monkeypatch) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_local_registry.default_registry_root",
+        lambda: pytest.fail("no registry access"),
+    )
+    result = CliRunner().invoke(app, ["cloud"])
+    assert result.exit_code != 0
+    assert "interactive" in result.output
+
+
+def test_posix_interactive_connect_preserves_unbound_keys(monkeypatch, tmp_path: Path) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    registry = tmp_path / "registry"
+    keys = registry / "keys"
+    keys.mkdir(parents=True)
+    key = keys / "existing.pem"
+    key.write_bytes(b"fixture key")
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
+    monkeypatch.setattr(cloud_user_cli, "setup", lambda **_: pytest.fail("no duplicate enrollment"))
+    monkeypatch.setattr("kicad_mcp.cloud_pair.main", lambda *_: pytest.fail("no duplicate pairing"))
+    result = CliRunner().invoke(app, ["cloud", "connect"])
+    assert result.exit_code != 0
+    assert "existing" in result.output.lower()
+    assert key.read_bytes() == b"fixture key"
+
+
+def test_posix_bare_cloud_reuses_registered_device(monkeypatch, tmp_path: Path) -> None:
+    registry = tmp_path / "cloud"
+    (registry / "projects").mkdir(parents=True)
+    (registry / "projects" / "fixture.json").write_text("fixture")
+    record = {"cloudOrigin": "https://kicad-mcp-pro.oaslananka.dev", "deviceId": "fixture"}
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_registered_pilot._single_registered_identity", lambda _: record
+    )
+    monkeypatch.setattr("kicad_mcp.cloud_user_cli._owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_pair.main", lambda *_: pytest.fail("no duplicate pairing"))
+    monkeypatch.setattr("kicad_mcp.cloud_user_cli.setup", lambda **_: pytest.fail("no new setup"))
+    calls = []
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_managed_connector.run_foreground",
+        lambda expected: calls.append(expected) or 0,
+    )
+    result = CliRunner().invoke(app, ["cloud"])
+    assert result.exit_code == 0, result.output
+    assert calls == [record]
+
+
+def test_posix_setup_preserves_unbound_keys_without_explicit_new_device(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    registry = tmp_path / "registry"
+    keys = registry / "keys"
+    keys.mkdir(parents=True)
+    key = keys / "existing.pem"
+    key.write_bytes(b"fixture key")
+    project = tmp_path / "board"
+    project.mkdir()
+    (project / "board.kicad_pro").touch()
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: registry)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair.enroll", lambda *_: pytest.fail("no duplicate enrollment")
+    )
+    result = CliRunner().invoke(app, ["cloud", "setup", "--project-dir", str(project)])
+    assert result.exit_code != 0
+    assert "Existing device keys" in result.output
+    assert key.read_bytes() == b"fixture key"
+    assert list(keys.iterdir()) == [key]
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "confirmed",
+        "bare_confirmed",
+        "declined",
+        "wrong_fingerprint",
+        "wrong_origin",
+        "wrong_owner",
+        "wrong_alias",
+        "multiple",
+        "unsafe_mode",
+        "headless",
+        "changed_during_confirmation",
+    ],
+)
+def test_posix_setup_recovers_single_verified_device(
+    monkeypatch, tmp_path: Path, case: str
+) -> None:
+    import base64
+    import hashlib
+    import json
+    import os
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import (
+        Encoding,
+        NoEncryption,
+        PrivateFormat,
+        PublicFormat,
+    )
+
+    from kicad_mcp import cloud_user_cli
+    from kicad_mcp.cloud_pair_keys import _save_owner_binding
+
+    if os.name != "posix":
+        pytest.skip("POSIX private key recovery")
+    root = tmp_path / "cloud"
+    root.mkdir(mode=0o700)
+    keys = root / "keys"
+    keys.mkdir(mode=0o700)
+    keyfile = keys / "11111111-1111-4111-8111-111111111111.pem"
+    key = Ed25519PrivateKey.generate()
+    keyfile.write_bytes(key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption()))
+    keyfile.chmod(0o600)
+    fingerprint = hashlib.sha256(
+        key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+    ).hexdigest()
+    origin = "https://kicad-mcp-pro.oaslananka.dev"
+    device = "22222222-2222-4222-8222-222222222222"
+    project = "33333333-3333-4333-8333-333333333333"
+    owner = "github|fixture"
+    _save_owner_binding(
+        keyfile,
+        origin="https://other.example" if case == "wrong_origin" else origin,
+        device_id=device,
+        fingerprint="0" * 64 if case == "wrong_fingerprint" else fingerprint,
+        owner_sub=owner,
+    )
+    if case == "multiple":
+        (keys / "other.pem").write_bytes(b"ambiguous fixture")
+    if case == "unsafe_mode":
+        keyfile.chmod(0o644)
+    before = {p.name: p.read_bytes() for p in keys.iterdir()}
+    board = tmp_path / "board"
+    board.mkdir()
+    (board / "board.kicad_pro").touch()
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: case != "headless")
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr("kicad_mcp.cloud_pair.enroll", lambda *_: pytest.fail("no new pairing"))
+    monkeypatch.setattr(
+        cloud_user_cli, "_start_connector", lambda: pytest.fail("no background service")
+    )
+    calls = []
+    sessions = []
+
+    def post(_target, path, body, status):
+        assert path == "/api/v1/pairing/device/project"
+        assert status == 200
+        assert body["deviceId"] == device
+        assert body["alias"] == "board"
+        proof = b"kicad-cloud-device-project-v1\x00" + device.encode() + b"\x00board"
+        key.public_key().verify(base64.urlsafe_b64decode(body["signature"] + "=="), proof)
+        calls.append(body["deviceId"])
+        return {
+            "projectId": project,
+            "alias": "other-board" if case == "wrong_alias" else "board",
+            "ownerSub": "github|other" if case == "wrong_owner" else owner,
+            "enabled": True,
+        }
+
+    monkeypatch.setattr("kicad_mcp.cloud_pair._post", post)
+    monkeypatch.setattr(cloud_user_cli, "_run_posix_foreground", sessions.append)
+    if case == "changed_during_confirmation":
+
+        def change_state(*_args: object, **_kwargs: object) -> bool:
+            (root / "connector-enabled.json").write_text("{}")
+            return True
+
+        monkeypatch.setattr(cloud_user_cli.typer, "confirm", change_state)
+    args = ["cloud", "setup", "--project-dir", str(board)]
+    if case == "bare_confirmed":
+        monkeypatch.chdir(board)
+        args = ["cloud"]
+    result = CliRunner().invoke(app, args, input="n\n" if case == "declined" else "y\n")
+    assert {p.name: p.read_bytes() for p in keys.iterdir()} == before
+    assert (root / "connector-enabled.json").exists() == (case == "changed_during_confirmation")
+    if case in {"confirmed", "bare_confirmed"}:
+        assert result.exit_code == 0, result.output
+        record = json.loads((root / "projects" / f"{project}.json").read_text())
+        assert record["deviceId"] == device
+        assert record["keySlot"] == keyfile.stem
+        assert record["ownerSub"] == owner
+        assert sessions == [record]
+        assert calls == [device]
+        assert "reactivate" in result.output.lower()
+    else:
+        assert result.exit_code != 0
+        assert not sessions
+        assert not list((root / "projects").glob("*.json"))
+        assert calls == ([device] if case in {"wrong_owner", "wrong_alias"} else [])
+
+
+def test_posix_first_setup_cannot_pair_during_another_session(monkeypatch, tmp_path: Path) -> None:
+    import os
+
+    from kicad_mcp import cloud_managed_connector as connector
+    from kicad_mcp import cloud_user_cli
+
+    if os.name != "posix":
+        pytest.skip("POSIX session lock")
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    board = tmp_path / "board"
+    board.mkdir()
+    (board / "board.kicad_pro").touch()
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_pair.enroll", lambda *_: pytest.fail("no concurrent enrollment")
+    )
+    with connector._connector_session_lock(root):
+        result = CliRunner().invoke(app, ["cloud", "setup", "--project-dir", str(board)])
+    assert result.exit_code != 0
+    assert "already running" in result.output
+    assert not (root / "keys").exists()
+    assert not (root / "projects").exists()
