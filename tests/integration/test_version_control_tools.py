@@ -226,3 +226,35 @@ async def test_vcs_tag_release_defaults_to_dry_run(sample_project: Path, monkeyp
     )
 
     assert "Dry run: release tag was not created." in tag_text
+
+
+@pytest.mark.anyio
+async def test_workspace_confinement_blocks_outside_git_init_over_fastmcp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A signed-in MCP authoring profile must not override its workspace root."""
+    from kicad_mcp.config import reset_config
+
+    workspace = tmp_path / "workspace"
+    project = workspace / "board"
+    outside = tmp_path / "outside"
+    project.mkdir(parents=True)
+    outside.mkdir()
+    (project / "board.kicad_pro").write_text("{}", encoding="utf-8")
+    (project / "board.kicad_pcb").write_text("(kicad_pcb)\n", encoding="utf-8")
+    monkeypatch.setenv("KICAD_MCP_WORKSPACE_ROOT", str(workspace))
+    monkeypatch.setenv("KICAD_MCP_OPERATING_MODE", "write")
+    reset_config()
+    try:
+        server = build_server("schematic_authoring")
+        await call_tool_text(server, "kicad_set_project", {"project_dir": str(project)})
+        denied = await server.call_tool("vcs_init_git", {"project_dir": str(outside)})
+        assert denied.is_error
+        assert "workspace root" in str(denied)
+        assert not (outside / ".git").exists()
+        assert not (outside / ".gitignore").exists()
+        accepted = await call_tool_text(server, "vcs_init_git", {"project_dir": str(project)})
+        assert "Git repository ready." in accepted
+        assert (project / ".git" / "config").exists()
+    finally:
+        reset_config()
