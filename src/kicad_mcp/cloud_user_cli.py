@@ -42,6 +42,9 @@ _KICAD_PRO = "*.kicad_pro"
 _KICAD_SCH = "*.kicad_sch"
 _KICAD_PCB = "*.kicad_pcb"
 _NO_PROJECT_FOLDER_SELECTED = "No project folder selected. Setup was not changed."
+_MACOS_FOLDER_APPLESCRIPT = (
+    'POSIX path of (choose folder with prompt "Choose your local KiCad project folder")'
+)
 _LOCAL_CONNECTOR_READY_STATE = "Configured (not connected)"
 cloud_app = typer.Typer(
     help="Connect your computer to KiCad MCP Pro Cloud; keep this terminal open."
@@ -303,8 +306,7 @@ def _browse_macos_project_folder() -> Path:
             [
                 "/usr/bin/osascript",
                 "-e",
-                "POSIX path of (choose folder with prompt "
-                '"Choose your local KiCad project folder")',
+                _MACOS_FOLDER_APPLESCRIPT,
             ],
             capture_output=True,
             text=True,

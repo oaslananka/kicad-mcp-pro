@@ -345,6 +345,14 @@ jobs:
         if: env.skip_ci != 'true'
       - run: pnpm run test:unit
         if: env.skip_ci != 'true'
+      - name: Compile macOS Cloud folder chooser AppleScript
+        if: env.skip_ci != 'true' && matrix.os == 'macos-15'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Compile the exact production script without launching any GUI or pairing.
+          PYTHONPATH=src uv run python -c 'from kicad_mcp.cloud_user_cli import _MACOS_FOLDER_APPLESCRIPT; print(_MACOS_FOLDER_APPLESCRIPT)' \
+            | /usr/bin/osacompile -o "$RUNNER_TEMP/kicad-cloud-folder-picker.scpt"
       # Preserve native Windows execution evidence for PR patch coverage AND
       # analyzed main pushes, including non-Python follow-up merges.
       - name: Collect native Windows CLI coverage

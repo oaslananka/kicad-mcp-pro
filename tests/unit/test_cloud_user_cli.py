@@ -1110,6 +1110,7 @@ def test_macos_owner_native_folder_picker(
         assert argv[1] == "-e"
         assert "choose folder" in argv[2]
         assert "POSIX path" in argv[2]
+        assert argv[2] == cloud_user_cli._MACOS_FOLDER_APPLESCRIPT
         assert kwargs == {
             "capture_output": True,
             "text": True,
@@ -1126,6 +1127,19 @@ def test_macos_owner_native_folder_picker(
         with pytest.raises(cloud_user_cli.typer.BadParameter, match=message):
             cloud_user_cli._browse_local_project_folder()
     assert len(commands) == 1
+
+
+def test_macos_native_apple_script_compiler_ci_contract() -> None:
+    """The exact production script must be compiled on macOS CI, without a GUI."""
+    repo = Path(__file__).resolve().parents[2]
+    workflow = (repo / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    name = "- name: Compile macOS Cloud folder chooser AppleScript"
+    assert workflow.count(name) == 1
+    step = workflow.split(name, maxsplit=1)[1].split("      - ", maxsplit=1)[0]
+    assert "matrix.os == 'macos-15'" in step
+    assert "from kicad_mcp.cloud_user_cli import _MACOS_FOLDER_APPLESCRIPT" in step
+    assert '/usr/bin/osacompile -o "$RUNNER_TEMP/kicad-cloud-folder-picker.scpt"' in step
+    assert "set -euo pipefail" in step
 
 
 @pytest.mark.parametrize("cause", ["headless", "missing_binary", "timeout"])
