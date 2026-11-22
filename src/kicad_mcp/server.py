@@ -2352,6 +2352,32 @@ def _register_server_custom_routes(
         logger.info("web_dashboard_routes_registered", count=len(web_routes))
 
 
+def _schematic_mcp_instructions(profile: str, mode: OperatingMode) -> str:
+    """Describe only actual authoring permissions; do not enable them implicitly."""
+    guidance = (
+        "KiCad MCP Pro Server for project setup, schematic capture, PCB editing, "
+        "validation, and manufacturing export. Start with kicad_get_version(), "
+        "kicad_set_project(), and project_get_next_action(). For new schematic "
+        "authoring, default to wired functional blocks, not isolated label-only "
+        "terminals. Use professional_circuit_design for the workflow; verify "
+        "native render, ERC and intended pin-to-net membership. Do not overwrite "
+        "existing designs or use unsafe routing just to improve appearance."
+    )
+    authoring_enabled = "sch_build_circuit" in tools_for_profile(
+        profile
+    ) and is_tool_allowed_in_mode("sch_build_circuit", mode)
+    if authoring_enabled:
+        return guidance + " schematic authoring tools are available."
+    return (
+        guidance
+        + " schematic authoring is unavailable in this profile or operating mode."
+        + " Stay in review-only mode and never elevate permissions automatically."
+        + " For a new isolated project, only after explicit owner authorization,"
+        + " restart with KICAD_MCP_PROFILE=schematic_authoring and"
+        + " KICAD_MCP_OPERATING_MODE=write."
+    )
+
+
 def build_server(profile: str | None = None, *, defer_registration: bool = False) -> FastMCP:
     """Build a FastMCP server instance for the active profile."""
     cfg = get_config()
@@ -2373,15 +2399,7 @@ def build_server(profile: str | None = None, *, defer_registration: bool = False
 
     server = KiCadFastMCP(
         name="kicad-mcp-pro",
-        instructions=(
-            "KiCad MCP Pro Server for project setup, schematic capture, PCB editing, "
-            "validation, and manufacturing export. Start with kicad_get_version(), "
-            "kicad_set_project(), and project_get_next_action(). For new schematic "
-            "authoring, default to wired functional blocks, not isolated label-only "
-            "terminals. Use professional_circuit_design for the workflow; verify "
-            "native render, ERC and intended pin-to-net membership. Do not overwrite "
-            "existing designs or use unsafe routing just to improve appearance."
-        ),
+        instructions=_schematic_mcp_instructions(selected_profile, operating_mode),
         website_url="https://oaslananka.github.io/kicad-mcp-pro",
         host=cfg.host,
         port=cfg.port,
