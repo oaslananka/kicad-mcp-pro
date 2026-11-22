@@ -1016,6 +1016,36 @@ def _validate_posix_connect_options(enable_native_write: bool, project_dir: Path
         raise typer.BadParameter("Use cloud setup --project-dir to register a local KiCad project.")
 
 
+def _connect_registered_posix_device(root: Path, origin: str, new_device: bool) -> bool:
+    """Reuse a registered device, never silently replace its signing identity."""
+    from kicad_mcp.cloud_registered_pilot import _single_registered_identity
+
+    try:
+        existing = _single_registered_identity(root)
+    except (OSError, ValueError) as exc:
+        raise typer.BadParameter("Existing Cloud registration needs local repair.") from exc
+    if existing["cloudOrigin"] != origin:
+        raise typer.BadParameter("A different Cloud origin is already registered.")
+    if not new_device:
+        if _owner_terminal():
+            _run_posix_foreground(existing)
+            return True
+        typer.echo("A private local registration exists for this Cloud origin.")
+        typer.echo("Cloud enrollment has NOT been verified for this registration.")
+        typer.echo(f"Check your enrolled devices at {origin}/devices.")
+        typer.echo(
+            "If the device is missing, run cloud connect --new-device "
+            "from an interactive owner terminal."
+        )
+        typer.echo("The existing local registration and keys were not changed.")
+        return True
+    typer.echo(
+        "Starting a distinct browser-approved device pairing. "
+        "Existing registration and keys will be preserved."
+    )
+    return False
+
+
 @cloud_app.command()
 def connect(
     alias: str = typer.Option(
@@ -1057,7 +1087,6 @@ def connect(
     _validate_posix_connect_options(enable_native_write, project_dir)
     _require_local_pairing_storage()
     from kicad_mcp.cloud_local_registry import default_registry_root
-    from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
     root = default_registry_root()
     folder = root / "projects"
@@ -1065,30 +1094,8 @@ def connect(
         has_registration = folder.exists() and any(folder.iterdir())
     except OSError as exc:
         raise typer.BadParameter("Unable to inspect existing Cloud registration.") from exc
-    if has_registration:
-        try:
-            existing = _single_registered_identity(root)
-        except (OSError, ValueError) as exc:
-            raise typer.BadParameter("Existing Cloud registration needs local repair.") from exc
-        if existing["cloudOrigin"] != origin:
-            raise typer.BadParameter("A different Cloud origin is already registered.")
-        if not new_device:
-            if _owner_terminal():
-                _run_posix_foreground(existing)
-                return
-            typer.echo("A private local registration exists for this Cloud origin.")
-            typer.echo("Cloud enrollment has NOT been verified for this registration.")
-            typer.echo(f"Check your enrolled devices at {origin}/devices.")
-            typer.echo(
-                "If the device is missing, run cloud connect --new-device "
-                "from an interactive owner terminal."
-            )
-            typer.echo("The existing local registration and keys were not changed.")
-            return
-        typer.echo(
-            "Starting a distinct browser-approved device pairing. "
-            "Existing registration and keys will be preserved."
-        )
+    if has_registration and _connect_registered_posix_device(root, origin, new_device):
+        return
 
     if not has_registration and not new_device and _owner_terminal():
         from kicad_mcp.cloud_posix_recovery import inspect_unbound_device
@@ -1213,7 +1220,6 @@ def _require_empty_posix_key_registry(root: Path) -> None:
 def _recover_posix_setup(
     root: Path, origin: str, directory: Path, stem: str
 ) -> dict[str, str] | None:
-    from kicad_mcp.cloud_pair import CloudPairingError
     from kicad_mcp.cloud_posix_recovery import recover_unbound_project
 
     def confirm(binding: dict[str, str]) -> bool:
@@ -1227,7 +1233,7 @@ def _recover_posix_setup(
 
     try:
         return recover_unbound_project(root, origin, directory, stem, confirm)
-    except (OSError, ValueError, RuntimeError, CloudPairingError) as exc:
+    except (OSError, ValueError, RuntimeError) as exc:
         raise typer.BadParameter(
             "Existing device keys could not be recovered. Check Cloud Devices and cloud status; "
             "local keys were not replaced."
@@ -1440,6 +1446,17 @@ def _enroll_posix_project_locked(
     return new_record
 
 
+def _resume_unbound_posix_device(root: Path, origin: str, directory: Path, stem: str) -> bool:
+    """Recover only from the owner terminal; caller otherwise stays default-off."""
+    if not _owner_terminal():
+        return False
+    recovered = _recover_posix_setup(root, origin, directory, stem)
+    if recovered is None:
+        return False
+    _run_posix_foreground(recovered)
+    return True
+
+
 @cloud_app.command()
 def setup(
     project_dir: Annotated[
@@ -1521,11 +1538,8 @@ def setup(
     if not new_device:
         if _try_reconnect_existing(root, origin):
             return
-        if _owner_terminal():
-            recovered = _recover_posix_setup(root, origin, target_dir, stem)
-            if recovered:
-                _run_posix_foreground(recovered)
-                return
+        if _resume_unbound_posix_device(root, origin, target_dir, stem):
+            return
         _require_empty_posix_key_registry(root)
 
     new_record = _enroll_new_posix_project(

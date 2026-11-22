@@ -654,8 +654,9 @@ async def test_second_local_connector_cannot_load_key_or_start_session(tmp_path:
     first = asyncio.create_task(launch())
     try:
         await asyncio.wait_for(entered.wait(), timeout=3)
+        competing_attempt = asyncio.wait_for(launch(), timeout=0.5)
         with pytest.raises(RuntimeError, match="already running"):
-            await asyncio.wait_for(launch(), timeout=0.5)
+            await competing_attempt
         assert loads == starts == 1
         assert not first.done()
         assert connector._enabled_record(root) == connector._identity_state(RECORD)

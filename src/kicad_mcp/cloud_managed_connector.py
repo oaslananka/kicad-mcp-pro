@@ -348,20 +348,8 @@ def _wait_for_foreground_shutdown(root: Path) -> bool:
             return False
 
 
-def _disable() -> int:
-    root = default_registry_root()
-    foreground_only = os.path.lexists(root / _FOREGROUND_FILE) and not os.path.lexists(
-        root / _ENABLED_FILE
-    )
-    # Remove local authority before stopping the process/socket. Even if the
-    # registry is damaged, still stop an installed service to close its socket.
-    marker_removed = _revoke_local_authority(root)
-    if sys.platform == "darwin" or foreground_only:
-        if marker_removed and _wait_for_foreground_shutdown(root):
-            print("Local Cloud Connector is Off.")
-            return 0
-        print("Connector shutdown requested; local stop is unverified.", file=sys.stderr)
-        return 1
+def _systemd_service_stopped() -> bool:
+    """Confirm systemd stopped even if disable itself failed."""
     try:
         result = _systemctl("disable", "--now", _SERVICE_NAME)
     except (OSError, subprocess.SubprocessError):
@@ -377,6 +365,24 @@ def _disable() -> int:
             }
         except (OSError, subprocess.SubprocessError):
             stopped = False
+    return stopped
+
+
+def _disable() -> int:
+    root = default_registry_root()
+    foreground_only = os.path.lexists(root / _FOREGROUND_FILE) and not os.path.lexists(
+        root / _ENABLED_FILE
+    )
+    # Remove local authority before stopping the process/socket. Even if the
+    # registry is damaged, still stop an installed service to close its socket.
+    marker_removed = _revoke_local_authority(root)
+    if sys.platform == "darwin" or foreground_only:
+        if marker_removed and _wait_for_foreground_shutdown(root):
+            print("Local Cloud Connector is Off.")
+            return 0
+        print("Connector shutdown requested; local stop is unverified.", file=sys.stderr)
+        return 1
+    stopped = _systemd_service_stopped()
     if not stopped or not marker_removed or not _wait_for_foreground_shutdown(root):
         print(
             "Connector shutdown requested; local marker or service stop is unverified.",
