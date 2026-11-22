@@ -117,12 +117,20 @@ async def test_sdk_v2_supported_host_profiles_over_real_http(
                     tools = await session.list_tools()
                     resources = await session.list_resources()
                     prompts = await session.list_prompts()
+                    workflow = await session.get_prompt("professional_circuit_design", {})
                     called = await session.call_tool("kicad_get_version", {})
                     missing_tool = await session.call_tool("__native_v2_missing_tool__", {})
                     with pytest.raises(MCPError) as missing_resource:
                         await session.read_resource("kicad://native-v2/missing-resource")
 
     assert CANDIDATE_PROTOCOL_VERSION in discovered.supported_versions
+    instructions = discovered.instructions or ""
+    assert "wired functional blocks" in instructions
+    assert "pin-to-net membership" in instructions
+    assert "unsafe routing" in instructions
+    workflow_text = " ".join(getattr(message.content, "text", "") for message in workflow.messages)
+    assert "wired functional blocks" in workflow_text
+    assert "native render" in workflow_text
     assert "kicad_get_version" in {tool.name for tool in tools.tools}
     assert "kicad://board/summary" in {str(resource.uri) for resource in resources.resources}
     assert "first_pcb" in {prompt.name for prompt in prompts.prompts}
