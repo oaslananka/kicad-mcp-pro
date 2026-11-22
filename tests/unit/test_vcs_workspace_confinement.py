@@ -6,7 +6,6 @@ Run real Git commands only inside pytest's disposable per-test paths.
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -30,11 +29,10 @@ def _set_workspace(monkeypatch: pytest.MonkeyPatch, workspace: Path, project: Pa
 
 
 def _init_git(directory: Path, *, git_dir: Path | None = None) -> None:
-    command = ["git", "-c", "init.templateDir=", "init", "--initial-branch=main"]
+    args = ["-c", "init.templateDir=", "init", "--initial-branch=main"]
     if git_dir is not None:
-        command += ["--separate-git-dir", str(git_dir)]
-    command.append(str(directory))
-    subprocess.run(command, check=True, capture_output=True, text=True, timeout=20)
+        args.extend(("--separate-git-dir", str(git_dir)))
+    version_control._run_git(directory, *args, str(directory))
 
 
 def test_vcs_init_git_rejects_outside_workspace_without_writes(
