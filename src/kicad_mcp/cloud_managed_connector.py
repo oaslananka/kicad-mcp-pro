@@ -368,6 +368,15 @@ def _systemd_service_stopped() -> bool:
     return stopped
 
 
+def _disable_foreground_session(root: Path, marker_removed: bool) -> int:
+    """Report Off only after local revocation and foreground lock release."""
+    if marker_removed and _wait_for_foreground_shutdown(root):
+        print("Local Cloud Connector is Off.")
+        return 0
+    print("Connector shutdown requested; local stop is unverified.", file=sys.stderr)
+    return 1
+
+
 def _disable() -> int:
     root = default_registry_root()
     foreground_only = os.path.lexists(root / _FOREGROUND_FILE) and not os.path.lexists(
@@ -377,11 +386,7 @@ def _disable() -> int:
     # registry is damaged, still stop an installed service to close its socket.
     marker_removed = _revoke_local_authority(root)
     if sys.platform == "darwin" or foreground_only:
-        if marker_removed and _wait_for_foreground_shutdown(root):
-            print("Local Cloud Connector is Off.")
-            return 0
-        print("Connector shutdown requested; local stop is unverified.", file=sys.stderr)
-        return 1
+        return _disable_foreground_session(root, marker_removed)
     stopped = _systemd_service_stopped()
     if not stopped or not marker_removed or not _wait_for_foreground_shutdown(root):
         print(
