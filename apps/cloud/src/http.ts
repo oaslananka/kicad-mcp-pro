@@ -899,10 +899,16 @@ async function handleRequest(
           if(!relay?.requestMcp)return null;
           const oauth={ownerSub:actor.sub,clientId:actor.clientId,
             accessTokenIssuedAtSeconds:actor.issuedAt};
+          const requestId=randomUUID();
           const reply=await relay.requestMcp(oauth,deviceId,projectId,{
-            requestId:randomUUID(),method:"catalog",offset,...(toolName?{toolName}:{})
+            requestId,method:"catalog",offset,...(toolName?{toolName}:{})
           });
-          if(!reply?.ok||reply.method!=="catalog"||!reply.tools)return null;
+          // The authenticated WebSocket already binds these identifiers.
+          // Preserve that guarantee at this API boundary as well: a stale
+          // or different relay implementation must never cross project scope.
+          if(!reply?.ok||reply.method!=="catalog"||
+             reply.requestId!==requestId||reply.projectId!==projectId||
+             !reply.tools)return null;
           // An owner/client revoke during local discovery cannot release a
           // stale catalog or tool schema.
           if(!await inventory.isAccessTokenAllowed(actor.sub,actor.clientId,actor.issuedAt))return null;
@@ -950,7 +956,11 @@ async function handleRequest(
           const reply=await relay.requestMcp(oauth,deviceId,projectId,{
             requestId,method:"call",toolName:name,argumentsJson,...(proof?{proof}:{})
           });
-          if(!reply?.ok||reply.method!=="call")return null;
+          // The signed local result is valid only for the exact request and
+          // owner-granted project that dispatched it. Treat any mismatch as
+          // unknown write outcome, never as authorization to retry.
+          if(!reply?.ok||reply.method!=="call"||
+             reply.requestId!==requestId||reply.projectId!==projectId)return null;
           if(!await inventory.isAccessTokenAllowed(actor.sub,actor.clientId,actor.issuedAt))
             return null;
           const live=await inventory.getProject(actor.sub,actor.clientId,projectId);
