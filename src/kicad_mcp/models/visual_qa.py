@@ -550,6 +550,41 @@ def detect_text_overlap(
     return findings
 
 
+def detect_field_body_intrusion(symbols: list[PlacedSymbol]) -> list[VisualFinding]:
+    """Warn when a visible Reference/Value field straddles its own pin/body extent.
+
+    Pure text-text QA cannot see a long connector Value over its *own* pins,
+    so it can report PASS for a visibly crowded schematic. Do not flag text
+    wholly inside a roomy IC body (often intentional), nor clear text wholly
+    outside. This is a review warning, not proof of an electrical violation.
+    """
+    findings: list[VisualFinding] = []
+    for symbol in symbols:
+        # Power markers often show only one label intentionally beside their
+        # glyph; a reference-and-value pair is the relevant component case.
+        if len(symbol.fields) < 2:
+            continue
+        for field in symbol.fields:
+            extent = field.box()
+            overlap = extent.intersection_area(symbol.body)
+            if overlap < TEXT_OVERLAP_MIN_AREA_MM2 or extent.inside(symbol.body):
+                continue
+            ref = symbol.reference or symbol.lib_id or "symbol"
+            findings.append(
+                VisualFinding(
+                    "WARN",
+                    "field_body_intrusion",
+                    f"Visible field '{field.text}' of {ref} crosses its own "
+                    f"symbol/pin extent (~{overlap:.1f} mm²). Review the native "
+                    "render and move this field clear of pins and body outlines.",
+                    ref=ref,
+                    x=field.x,
+                    y=field.y,
+                )
+            )
+    return findings
+
+
 def detect_offsheet(
     symbols: list[SymbolItem],
     labels: list[LabelItem],
@@ -1013,6 +1048,7 @@ COSMETIC_PENALTIES: dict[str, float] = {
     "symbol_overlap": 15.0,
     "offsheet_symbol": 12.0,
     "text_overlap": 10.0,
+    "field_body_intrusion": 10.0,
     "label_overlap": 8.0,
     "vertical_label_justification": 4.0,
     "offsheet_label": 8.0,
@@ -1033,6 +1069,7 @@ COSMETIC_PENALTIES: dict[str, float] = {
 COSMETIC_CATEGORIES: dict[str, str] = {
     "symbol_overlap": "readability",
     "text_overlap": "readability",
+    "field_body_intrusion": "readability",
     "label_overlap": "readability",
     "vertical_label_justification": "readability",
     "offsheet_symbol": "readability",
@@ -1103,6 +1140,7 @@ def run_cosmetic_qa(sch_text: str) -> dict[str, object]:
     findings.extend(detect_vertical_label_justification(labels))
     findings.extend(detect_symbol_overlap(placed))
     findings.extend(detect_text_overlap(placed, labels))
+    findings.extend(detect_field_body_intrusion(placed))
     findings.extend(detect_offsheet_boxes(placed, labels, extent))
     findings.extend(detect_dense_fanout(labels))
     findings.extend(detect_grid_misalignment(placed, labels, wires, junctions))
@@ -1150,6 +1188,7 @@ def run_visual_qa(sch_text: str, *, render_path: str = "") -> dict[str, object]:
     findings.extend(detect_vertical_label_justification(labels))
     findings.extend(detect_symbol_overlap(placed))
     findings.extend(detect_text_overlap(placed, labels))
+    findings.extend(detect_field_body_intrusion(placed))
     findings.extend(detect_offsheet_boxes(placed, labels, extent))
     findings.extend(detect_dense_fanout(labels))
     findings.extend(check_title_block(sch_text))
@@ -1180,6 +1219,7 @@ __all__ = [
     "cosmetic_score",
     "detect_dense_fanout",
     "detect_diagonal_wires",
+    "detect_field_body_intrusion",
     "detect_font_size_inconsistency",
     "detect_grid_misalignment",
     "detect_label_collisions",
