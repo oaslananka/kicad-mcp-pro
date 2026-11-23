@@ -1219,11 +1219,25 @@ export function attachConnectorWebSocket(
     const active = readyDevices.get(socketKey(oauth.ownerSub, deviceId));
     if (!active || active.entry.phase !== "ready" || active.socket.readyState !== WebSocket.OPEN ||
         active.entry.awaiting || active.entry.validating || active.entry.folderPending ||
-        active.entry.revisionsPending || active.entry.writePending ||
+        active.entry.revisionsPending || active.entry.writePending || active.entry.mcpPending ||
         (active.entry.sessionDeadline ?? 0) - performance.now() < 10_000) return null;
     if (active.entry.catalogClaim && !active.entry.catalogClaim.operations.includes("move_footprint")) {
       return null;
     }
+    // This is a second, transport-owned authorization boundary AFTER Cloud's
+    // earlier issuer/DB reservation. A grant, token or signed device session
+    // can be revoked in between; never send to the owner socket unchecked.
+    if (!await options.connections.authorizeOutgoingWrite(active.socket,oauth,projectId)) {
+      return null;
+    }
+    // The auth lookup may await a DB transaction while the owner disconnects
+    // or a fresh signed socket replaces this one. Do not reserve a sequence on
+    // a stale transport even if the DB lookup succeeded.
+    if (stopped || readyDevices.get(socketKey(oauth.ownerSub,deviceId))!==active ||
+        active.entry.phase!=="ready" || active.socket.readyState!==WebSocket.OPEN ||
+        active.entry.awaiting || active.entry.validating || active.entry.folderPending ||
+        active.entry.revisionsPending || active.entry.writePending || active.entry.mcpPending ||
+        (active.entry.sessionDeadline??0)-performance.now()<10_000) return null;
     // Validate the sealed proposal before reserving a sequence; malformed
     // input must not strand the signed session's single in-flight slot.
     const proposal = proof as { payload?: string };
@@ -1284,8 +1298,18 @@ export function attachConnectorWebSocket(
        current.entry.folderPending||current.entry.revisionsPending||
        current.entry.writePending||current.entry.mcpPending||
        (current.entry.sessionDeadline??0)-performance.now()<budget.minSessionRemainingMs)return null;
-    if(!await options.connections.authorizeOutgoingSummary(
-      current.socket,oauth,projectId))return null;
+    // Signed generic MCP calls are potentially mutating. A live Read grant
+    // must not survive as permission to dispatch WRITE after an Edit downgrade.
+    const admitted=request.proof
+      ?await options.connections.authorizeOutgoingWrite(current.socket,oauth,projectId)
+      :await options.connections.authorizeOutgoingSummary(current.socket,oauth,projectId);
+    if(!admitted||stopped||
+       readyDevices.get(socketKey(oauth.ownerSub,deviceId))!==current||
+       current.entry.phase!=="ready"||current.socket.readyState!==WebSocket.OPEN||
+       current.entry.awaiting||current.entry.validating||
+       current.entry.folderPending||current.entry.revisionsPending||
+       current.entry.writePending||current.entry.mcpPending||
+       (current.entry.sessionDeadline??0)-performance.now()<budget.minSessionRemainingMs)return null;
     if(request.method==="catalog"){
       if(!Number.isSafeInteger(request.offset)||request.offset!<0||
          request.offset!>512||

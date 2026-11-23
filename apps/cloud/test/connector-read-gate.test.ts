@@ -64,6 +64,17 @@ test("signed readonly envelopes require current owner, client, session and proje
     await db.query("INSERT INTO project_client_grants "+
       "(project_id,owner_sub,client_id,enabled,max_mode) VALUES($1,$2,$3,true,'readonly')",
       [project,owner,client]);
+    assert.equal(await gateA.authorizeOutgoingSummary(oauth,connection,project),true);
+    assert.equal(await gateA.authorizeOutgoingWrite(oauth,connection,project),false,
+      "a currently granted READ cannot authorize the final signed WRITE send");
+    await db.query("UPDATE projects SET max_mode='write' WHERE id=$1",[project]);
+    await db.query("UPDATE project_client_grants SET max_mode='write' WHERE project_id=$1",
+      [project]);
+    assert.equal(await gateA.authorizeOutgoingWrite(oauth,connection,project),true);
+    await db.query("UPDATE project_client_grants SET max_mode='readonly' WHERE project_id=$1",
+      [project]);
+    assert.equal(await gateA.authorizeOutgoingWrite(oauth,connection,project),false);
+    await db.query("UPDATE projects SET max_mode='readonly' WHERE id=$1",[project]);
     const forged=generateKeyPairSync("ed25519");
     assert.equal((await attempt(1,packet(project),oauth,connection,forged.privateKey).run).kind,"unavailable");
     assert.equal((await attempt(1,packet(project),{...oauth,clientId:"other-client"}).run).kind,"unavailable");

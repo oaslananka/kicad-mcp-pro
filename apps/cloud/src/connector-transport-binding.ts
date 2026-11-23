@@ -4,7 +4,7 @@ import type {PgConnectorReadGate,ReadGateResult,TrustedOAuthReadIdentity}
 
 export type DeviceSessionPort=Pick<PgConnectorSessions,"issue"|"activate"|"close">;
 export type ReadAdmissionPort=Pick<PgConnectorReadGate,"verifySignedRead"> &
-  Partial<Pick<PgConnectorReadGate,"authorizeOutgoingSummary">>;
+  Partial<Pick<PgConnectorReadGate,"authorizeOutgoingSummary"|"authorizeOutgoingWrite">>;
 export type AuthenticatedDevice={readonly ownerSub:string;readonly deviceId:string};
 export type BoundBegin=
   |{kind:"issued";sessionId:string;challengeId:string;nonce:string;
@@ -108,6 +108,22 @@ export class BoundConnectorConnections{
       oauth?.ownerSub!==e.ownerSub||
       !this.admission.authorizeOutgoingSummary)return false;
     const authorized=await this.admission.authorizeOutgoingSummary(oauth,{
+      deviceId:e.deviceId,sessionId:e.sessionId,connectionBinding:e.binding
+    },projectId);
+    return authorized&&this.sockets.get(socket)===e&&e.state==="active";
+  }
+
+  /** Final device-session and owner/client Edit check before sending a WRITE.
+
+      This is a transport fence, not a substitute for the separate Cloud
+      projects:write OAuth, signed reservation or native one-use proof. */
+  async authorizeOutgoingWrite(socket:object,oauth:TrustedOAuthReadIdentity,
+    projectId:string):Promise<boolean>{
+    const e=socket&&this.sockets.get(socket);
+    if(e?.state!=="active"||!e.sessionId||!e.binding||
+      oauth?.ownerSub!==e.ownerSub||
+      !this.admission.authorizeOutgoingWrite)return false;
+    const authorized=await this.admission.authorizeOutgoingWrite(oauth,{
       deviceId:e.deviceId,sessionId:e.sessionId,connectionBinding:e.binding
     },projectId);
     return authorized&&this.sockets.get(socket)===e&&e.state==="active";
