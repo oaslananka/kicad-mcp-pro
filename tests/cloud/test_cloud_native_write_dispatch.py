@@ -545,3 +545,35 @@ def test_signed_move_revocation_after_native_commit_never_saves(
         execute(proof, persist_to_disk=True, authorized=lambda: next(grants))
     assert board.calls == ["begin", "update", "push"]
     assert (folder / "disposable.kicad_pcb").read_bytes() == START.encode()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX owner-private pinned board")
+def test_posix_signed_native_fake_uses_same_private_revision_and_replay_guard(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from kicad_mcp.cloud_native_write_dispatch import prepare_native_write_revisions
+
+    folder, board, signed, execute = _fixture(monkeypatch, tmp_path)
+    folder.chmod(0o700)
+    file = folder / "disposable.kicad_pcb"
+    file.chmod(0o600)
+    original = file.read_bytes()
+    policy = OperatorProject(DEVICE, PROJECT, folder, "disposable")
+    sha = hashlib.sha256(original).hexdigest()
+    revisions = prepare_native_write_revisions(
+        policy, authorized=lambda: True, cancelled=lambda: False, get_board=lambda: board
+    )
+    assert revisions == {
+        "expectedBoardSha256": sha,
+        "expectedLiveBoardSha256": sha,
+    }
+    proof = signed(version=2, live_digest=revisions["expectedLiveBoardSha256"])
+    result = execute(proof)
+    assert result["nativeCommitted"] is True
+    assert result["savedToDisk"] is False
+    assert board.calls == ["begin", "update", "push"]
+    assert file.read_bytes() == original
+    with pytest.raises(LocalWriteDeniedError, match="request denied"):
+        execute(proof)
+    assert board.calls == ["begin", "update", "push"]
+    assert file.read_bytes() == original

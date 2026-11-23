@@ -20,11 +20,11 @@ from typing import TYPE_CHECKING, cast
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBinding
-from kicad_mcp.cloud_windows_write_revision import (
-    read_windows_board_revision,
-    read_windows_board_snapshot,
+from kicad_mcp.cloud_write_board_revision import (
+    MAX_BOARD_BYTES,
+    read_operator_board_revision,
+    read_operator_board_snapshot,
 )
-from kicad_mcp.cloud_write_board_revision import MAX_BOARD_BYTES
 from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
 from kicad_mcp.cloud_write_native_ipc import (
     OfflineTrustedPcbIpcAdapter,
@@ -104,12 +104,12 @@ def prepare_native_write_revisions(
             raise LocalWriteDeniedError(_DENIED)
         board = get_board()
         _require_approved_live_board(board, policy)
-        disk = read_windows_board_revision(policy)
+        disk = read_operator_board_revision(policy)
         live = _live_board_sha256(board)
         current = get_board()
         _require_approved_live_board(current, policy)
         if (
-            not hmac.compare_digest(disk, read_windows_board_revision(policy))
+            not hmac.compare_digest(disk, read_operator_board_revision(policy))
             or not hmac.compare_digest(live, _live_board_sha256(current))
             or authorized() is not True
             or cancelled() is not False
@@ -237,7 +237,7 @@ def _persist_native_move(
     _require_approved_live_board(fresh_board, policy)
     if not matches_target(fresh_board):
         raise LocalWriteDeniedError(_DENIED)
-    digest, content = read_windows_board_snapshot(policy)
+    digest, content = read_operator_board_snapshot(policy)
     if hmac.compare_digest(digest, cast(str, command["expectedBoardSha256"])):
         raise LocalWriteDeniedError(_DENIED)
 
