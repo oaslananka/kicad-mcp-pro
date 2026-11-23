@@ -258,7 +258,7 @@ test("workspace prioritizes recovering an offline Connector without inventing a 
  const offline=renderAccount("Engineer",["github"],[],{devices:2,projects:2,clients:1,grants:2,onlineDevices:0});
  assert.match(offline,/data-next-action="reconnect-device"/);
  assert.match(offline,/Reconnect a computer/);
- assert.match(offline,/href="\/devices#connect-computer"/);
+ assert.match(offline,/href="\/devices#reconnect-computer"/);
  assert.match(offline,/No paired computers are online/);
  assert.match(offline,/href="\/account"[^>]*>Refresh connection status/);
  const partial=renderAccount("Engineer",["github"],[],{devices:2,projects:1,clients:1,grants:1,onlineDevices:1,projectsOnConnectedDevices:1});

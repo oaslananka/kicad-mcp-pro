@@ -1221,7 +1221,7 @@ body{line-height:1.5;letter-spacing:-.007em}
 .cloud-usage-lifetime>span{font-size:12px;font-weight:650;color:var(--muted)}
 .cloud-usage-lifetime>strong{font-size:clamp(24px,3vw,38px);color:var(--text);font-variant-numeric:tabular-nums}
 .cloud-usage-lifetime>small{font-size:12px;color:var(--muted)}
-/* One foreground Cloud setup choice, with honest unavailable platforms. */
+/* Platform-specific setup: guided Windows installer or owner-operated POSIX CLI. */
 .device-setup-platforms{display:flex;align-items:stretch;gap:7px;flex-wrap:wrap;
   margin:18px 0;padding:5px;border:1px solid var(--line);border-radius:12px}
 .device-setup-platforms>*{flex:1 1 130px;padding:11px 8px;text-align:center;

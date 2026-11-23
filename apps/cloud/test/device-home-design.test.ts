@@ -69,6 +69,31 @@ test("first pairing offers one Windows setup command and one installed app entry
   assert.doesNotMatch(next,/kicad-mcp-pro cloud connect|cloud reconnect/);
 });
 
+test("Windows recovery and POSIX foreground paths are distinguished without false unsupported badges",()=>{
+ const first=renderDevicesPage([],undefined,true,{sandboxMode:false});
+ assert.match(first,/macOS/);
+ assert.match(first,/Linux/);
+ assert.match(first,/kicad-mcp-pro cloud/);
+ assert.match(first,/interactive owner terminal/i);
+ assert.doesNotMatch(first,/macOS[^<]*Not yet available|Linux[^<]*Not yet available/);
+ assert.match(first,/No module named kicad_mcp/);
+ assert.match(first,/separate managed installation/);
+ assert.match(first,/does not remove or overwrite/);
+ assert.match(first,/<summary>Existing CLI does not start<\/summary>/);
+
+ const offline=renderDevicesPage([device("Connected later","disconnected")]);
+ assert.match(offline,/id="reconnect-computer"/);
+ assert.match(offline,/Windows/);
+ assert.match(offline,/macOS and Linux/);
+ assert.match(offline,/kicad-mcp-pro cloud/);
+ assert.match(offline,/already paired/i);
+ assert.match(offline,/keep.+terminal open/i);
+ assert.match(offline,/No module named kicad_mcp/);
+ assert.match(offline,/<summary>Reconnect on macOS or Linux<\/summary>/);
+
+ assert.doesNotMatch(offline,/macOS[^<]*Not yet available|Linux[^<]*Not yet available/);
+});
+
 test("paired offline devices reuse the same install/update command and device identity",()=>{
  const offline=renderDevicesPage([device("Workbench","disconnected")]);
  assert.match(offline,/href="#reconnect-computer"/);
