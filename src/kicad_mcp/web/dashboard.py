@@ -1553,10 +1553,10 @@ function renderWizardStep(step) {
 
     case 4:
       body.innerHTML =
-        '<div class="msg info">Setup prepared. Test backend health and verify a real MCP connection from your selected AI client.</div>' +
-        '<div id="testResult" class="wizard-result" style="display:none;"></div>' +
+        '<div class="msg info">Setup prepared. Check local server health here, then make a real MCP request in your AI client. A healthy local server alone does not verify the AI client is connected.</div>' +
+        '<div id="testResult" class="wizard-result" role="status" aria-live="polite" style="display:none;"></div>' +
         '<div class="actions" style="margin-top:14px;">' +
-        '<button type="button" class="btn btn-sm btn-primary" aria-label="Test MCP backend connection and health" onclick="testConnection()">Test Connection</button></div>';
+        '<button type="button" class="btn btn-sm btn-primary" aria-label="Check local server health only" onclick="testConnection()">Check server health</button></div>';
       nav.innerHTML = '<button type="button" class="btn" aria-label="Go to previous setup step" onclick="wizardPrev()">Back</button><button type="button" class="btn btn-success" aria-label="Finish setup wizard and return to overview" onclick="finishWizard()">Finish</button>';
       break;
   }
@@ -1694,12 +1694,12 @@ async function downloadClientConfig() {
 function testConnection() {
   const el = document.getElementById('testResult');
   el.style.display = 'block';
-  el.textContent = 'Testing...';
+  el.textContent = 'Checking local server health...';
   el.className = 'wizard-result';
   fetch('/api/health').then(async r => {
     if (!r.ok) {
       const errData = await r.json().catch(() => ({}));
-      el.textContent = 'Health check failed (HTTP ' + r.status + '): ' + (errData.status || errData.error || 'Server error');
+      el.textContent = 'Local server health check failed (HTTP ' + r.status + '): ' + (errData.status || errData.error || 'Server error');
       el.className = 'wizard-result error';
       return;
     }
@@ -1713,14 +1713,14 @@ function testConnection() {
     const version = d.version || '?';
     const uptime = d.uptime != null ? Math.round(d.uptime) : '?';
     if (!d.ok) {
-      el.textContent = 'Server: ' + serverState + ' (degraded) | Version: ' + version + ' | Uptime: ' + uptime + 's. Check diagnostics.';
+      el.textContent = 'Local server: ' + serverState + ' (degraded) | Version: ' + version + ' | Uptime: ' + uptime + 's. Check diagnostics. This verifies the local server only, not your AI client.';
       el.className = 'wizard-result warn';
       return;
     }
-    el.textContent = 'Server: ' + serverState + ' | Version: ' + version + ' | Uptime: ' + uptime + 's';
+    el.textContent = 'Local server: ' + serverState + ' | Version: ' + version + ' | Uptime: ' + uptime + 's. This verifies the local server only. Open your AI client and make a real MCP request to verify its connection.';
     el.className = 'wizard-result success';
   }).catch(() => {
-    el.textContent = 'Connection failed. Check server is running.';
+    el.textContent = 'Local server health unavailable. Check that the local server is running; this has not tested the AI client.';
     el.className = 'wizard-result error';
   });
 }

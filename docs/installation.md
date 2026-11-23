@@ -70,8 +70,18 @@ are never bypassed by forcibly ending the user's Connector.
 
 The installer does **not** remove KiCad projects, recreate Cloud identity,
 reset owner permissions or repair arbitrary OS/KiCad, third-party Python,
-firewall or OAuth problems. Browser-based account/device authorization and
-owner-granted write access remain intentional security steps. If the package
+firewall or OAuth problems.
+A stale executable on PATH that fails with
+`ModuleNotFoundError: No module named 'kicad_mcp'` may belong to a separate,
+broken Python or uv environment. The guided Windows script uses a dedicated
+managed installation instead of deleting or overwriting that old executable.
+Use the provided PowerShell command to reach the managed Connector, and inspect
+the old install later only after confirming no process is using it. Do not
+remove Cloud keys, recreate device identity or re-grant clients to repair a
+local Python launcher.
+
+Browser-based account/device authorization and owner-granted write access
+remain intentional security steps. If the package
 registry is unavailable or the Connector cannot establish a valid owner session,
 the command reports failure rather than claiming readiness. If multiple
 independent `pip`/`pipx`/`uv` installations are on PATH, the launcher
@@ -126,6 +136,26 @@ reused after selecting a project and explicitly accepting that registration
 may reactivate device and managed read access. Ambiguous, invalid or foreign
 keys remain untouched. Do not delete keys or request `--new-device` just to
 reconnect an existing device.
+
+### Reconnect an existing Cloud workspace
+
+The signed-in [Cloud Account overview](https://kicad-mcp-pro.oaslananka.dev/account)
+distinguishes **paired devices** and saved project permissions from **currently
+connected Connector sessions**. A saved read grant is not proof that its
+computer is online. If the overview says to reconnect, open
+[Devices](https://kicad-mcp-pro.oaslananka.dev/devices#reconnect-computer)
+and restart the Connector on the **computer that owns the project**, using
+the matching Windows or POSIX instructions above. Existing valid device and
+project records should be reused; do not delete the device, request a new key,
+or broaden an AI client's permission merely to recover the connection.
+
+When a computer returns online, select **Refresh connection status** on the
+Account page. If another computer is online but the registered project belongs
+to an offline device, the project is still unavailable until its own Connector
+returns. If live presence cannot be checked, the overview directs you to
+inspect Devices instead of asserting a connected state. These indicators
+describe Cloud Connector presence, not native KiCad availability, DRC/ERC
+results, or permission to edit design files.
 
 ## Local HTTP server (no desktop application)
 

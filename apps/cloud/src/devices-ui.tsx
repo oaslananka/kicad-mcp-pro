@@ -344,6 +344,16 @@ function DeviceList({context}:Readonly<{context:ViewContext}>){
 const CLOUD_WINDOWS_INSTALL =
   "irm https://raw.githubusercontent.com/oaslananka/kicad-mcp-pro/main/scripts/install-cloud.ps1 | iex";
 
+function WindowsBrokenLauncherHelp(){
+  return <details className="device-setup-alternative">
+    <summary>Existing CLI does not start</summary>
+    <p className="field-help">If an older <code>kicad-mcp-pro.exe</code> already on
+      PATH fails with <code>No module named kicad_mcp</code>, use the PowerShell
+      setup command on this page. It checks or repairs a separate managed installation;
+      it does not remove or overwrite your old launcher or a running Connector.
+      Do not delete a device or reset project permissions to fix a local executable.</p>
+  </details>;
+}
 function OfflineRecovery({context}:Readonly<{context:ViewContext}>){
   if(context.sandboxMode||!context.enrollmentAvailable||
     !context.devices.some(d=>d.enabled&&!d.revoked&&d.connectionState==="disconnected"))return null;
@@ -354,23 +364,35 @@ function OfflineRecovery({context}:Readonly<{context:ViewContext}>){
       It checks for updates, keeps your setup working, and reconnects the
       same registered device without pairing it again.</p>
     <CopyValue value={CLOUD_WINDOWS_INSTALL} label="restart paired device"/>
+    <WindowsBrokenLauncherHelp/>
     <p className="field-help">Keep the terminal open to remain Online and see connection
       and tool activity logs. Closing it disconnects your device, not your pairing.
       Transient network interruptions are retried automatically.</p>
+    <details className="device-setup-alternative">
+      <summary>Reconnect on macOS or Linux</summary>
+      <p>On the already paired computer, use a supported KiCad MCP Pro release
+        in an interactive owner terminal. Reuse the existing device registration;
+        this foreground command does not install an unattended service or authorize design edits.</p>
+      <CopyValue value="kicad-mcp-pro cloud" label="macOS and Linux foreground reconnect command"/>
+      <p className="field-help">Keep your owner terminal open during the session.
+        If the CLI requires setup, review the registered project locally rather than
+        replacing device keys or enabling access automatically.</p>
+    </details>
   </section>;
 }
 function CloudQuickStart({existing}:Readonly<{existing:boolean}>){
   return <>
-    <div className="device-setup-platforms" aria-label="Supported setup platforms">
-      <strong>Windows</strong>
-      <span title="Single-command device onboarding is not yet verified on macOS">macOS ? Not yet available</span>
-      <span title="Single-command device onboarding is not yet verified on Linux">Linux ? Not yet available</span>
+    <div className="device-setup-platforms" aria-label="Setup methods by platform">
+      <strong>Windows · guided setup</strong>
+      <span>macOS · owner terminal</span>
+      <span>Linux · owner terminal</span>
     </div>
-    <h3>Quick setup <small>Recommended</small></h3>
+    <h3>Windows quick setup <small>Recommended</small></h3>
     <p>Run this PowerShell command on the Windows computer you want to connect.
       It installs KiCad MCP Pro if missing, updates an older version, checks or repairs
       the installation, and starts the Connector.</p>
     <CopyValue value={CLOUD_WINDOWS_INSTALL} label="PowerShell setup command"/>
+    <WindowsBrokenLauncherHelp/>
     <p className="field-help">The first run opens your browser for device approval.
       {existing?" Devices already paired here keep their own identities.":""}
       {" "}Keep the terminal open while working; it displays connection and tool logs.
@@ -378,6 +400,30 @@ function CloudQuickStart({existing}:Readonly<{existing:boolean}>){
     <a className="text-link"
        href="https://github.com/oaslananka/kicad-mcp-pro/blob/main/scripts/install-cloud.ps1"
        target="_blank" rel="noopener noreferrer">Review the setup script</a>
+    <details className="device-setup-alternative">
+      <summary>macOS or Linux: connect from an interactive owner terminal</summary>
+      <p>No Windows setup script or systemd service is required. Use a supported
+        KiCad MCP Pro release and a local terminal you control. First, install the
+        CLI with <a href="https://docs.astral.sh/uv/" target="_blank"
+        rel="noopener noreferrer">uv</a> if it is not already installed.</p>
+      <CopyValue value="uv tool install kicad-mcp-pro" label="macOS or Linux CLI install command"/>
+      <p>On your first connection, choose the local KiCad folder with the native
+        picker. Compare and approve the device code in your signed-in Cloud browser.</p>
+      <CopyValue value="kicad-mcp-pro cloud setup --browse" label="macOS or Linux first project chooser"/>
+      <p className="field-help">If no desktop picker is available, run
+        <code>kicad-mcp-pro cloud setup --project-dir /path/to/project</code> with
+        the actual project folder selected by the owner. Headless sessions
+        cannot provide a native folder dialog.</p>
+      <p>For later sessions, use the existing registration without pairing again:</p>
+      <CopyValue value="kicad-mcp-pro cloud" label="macOS or Linux Cloud foreground command"/>
+      <p className="field-help">Keep your terminal open during the connection.
+        Installing, choosing a folder, and pairing never grant an AI client
+        access to a project or enable native editing.
+        macOS physical onboarding acceptance remains pending.</p>
+      <a className="text-link"
+        href="https://oaslananka.github.io/kicad-mcp-pro/installation/"
+        target="_blank" rel="noopener noreferrer">Full platform instructions</a>
+    </details>
   </>;
 }
 function PairingSetup({context}:Readonly<{context:ViewContext}>){

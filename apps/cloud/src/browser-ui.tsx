@@ -12,7 +12,7 @@ export function renderSignIn(query:string,providers:ReadonlyArray<"google"|"gith
 export function renderAccount(name:string,
   providers:ReadonlyArray<"google"|"github">=["google","github"],
   linked:ReadonlyArray<"google"|"github">=[],
-  snapshot?:{devices:number;projects:number;clients:number;grants:number},
+  snapshot?:{devices:number;projects:number;clients:number;grants:number;onlineDevices?:number;projectsOnConnectedDevices?:number},
   email?:string,localDevSandbox=false,observedTotal?:number){
   return renderPage({title:"Workspace overview",kind:"account",eyebrow:"Workspace / Overview",
     summary:"Your account, connected AI apps, and device availability in one place.",

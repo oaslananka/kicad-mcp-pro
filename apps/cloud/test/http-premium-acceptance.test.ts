@@ -26,10 +26,10 @@ test("unavailable device status has real inset and AI rows have full-size click 
 test("next action guides true state without manufacturing connectivity",()=>{
  for(const [snapshot,key] of [
   [{devices:0,projects:0,clients:0,grants:0},"pair-device"],
-  [{devices:1,projects:0,clients:0,grants:0},"add-project"],
-  [{devices:1,projects:1,clients:0,grants:0},"connect-client"],
-  [{devices:1,projects:1,clients:1,grants:0},"grant-access"],
-  [{devices:1,projects:1,clients:1,grants:1},"review-access"]
+  [{devices:1,projects:0,clients:0,grants:0,onlineDevices:1,projectsOnConnectedDevices:0},"add-project"],
+  [{devices:1,projects:1,clients:0,grants:0,onlineDevices:1,projectsOnConnectedDevices:1},"connect-client"],
+  [{devices:1,projects:1,clients:1,grants:0,onlineDevices:1,projectsOnConnectedDevices:1},"grant-access"],
+  [{devices:1,projects:1,clients:1,grants:1,onlineDevices:1,projectsOnConnectedDevices:1},"review-access"]
  ] as const){
    assert.ok(renderAccount("Engineer",["github"],[],snapshot).includes('data-next-action="'+key+'"'));
  }

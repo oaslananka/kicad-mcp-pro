@@ -281,11 +281,14 @@ export function SignIn({query,providers,pairing=false}:{
     </div>
   </section>;
 }
-type WorkspaceSnapshot={devices:number;projects:number;clients:number;grants:number};
+type WorkspaceSnapshot={devices:number;projects:number;clients:number;grants:number;onlineDevices?:number;projectsOnConnectedDevices?:number};
 function workspaceNextAction(snapshot?:WorkspaceSnapshot){
   if(!snapshot)return {id:"review-devices",title:"See what's connected",detail:"Review your computers and project access.",href:"/devices",label:"Open devices"};
   if(snapshot.devices===0)return {id:"pair-device",title:"Connect your first computer",detail:"Start with your KiCad device. Signing in shares nothing.",href:"/devices",label:"Review devices"};
+  if(snapshot.onlineDevices===undefined)return {id:"check-device-status",title:"Check your computer connection",detail:"Live Connector status is unavailable. Review your devices before relying on saved project access.",href:"/devices",label:"Check device status"};
+  if(snapshot.onlineDevices===0)return {id:"reconnect-device",title:"Reconnect a computer",detail:"Your paired computers are offline. Restart the owner Connector on a paired computer; existing project permissions do not change.",href:"/devices#reconnect-computer",label:"View reconnect steps"};
   if(snapshot.projects===0)return {id:"add-project",title:"Choose a KiCad project",detail:"Register only a project you wish to authorize.",href:"/devices#registered-projects",label:"Review projects"};
+  if(snapshot.projectsOnConnectedDevices===0)return {id:"reconnect-project-device",title:"Reconnect the computer with your project",detail:"A computer is online, but your registered projects are on offline computers. Reconnect the computer that owns your project or register one on an online computer.",href:"/devices#reconnect-computer",label:"Review project devices"};
   if(snapshot.clients===0)return {id:"connect-client",title:"Connect an AI tool",detail:"Choose an assistant and review its access request.",href:"/connections",label:"Manage AI connections"};
   if(snapshot.grants===0)return {id:"grant-access",title:"Decide what AI can see",detail:"Project access is separate from account consent.",href:"/devices#registered-projects",label:"Review permissions"};
   return {id:"review-access",title:"Review your connections",detail:"Saved permissions and current device status are separate.",href:"/devices",label:"Review access"};
@@ -313,6 +316,16 @@ export function Account({name,providers=["google","github"],linked=[],snapshot,o
         <h2>{nextAction.title}</h2><p>{nextAction.detail}</p></div>
       <a className="button primary" href={nextAction.href}>{nextAction.label} <Icon name="arrow" size={18}/></a>
     </section>
+    {snapshot&&snapshot.devices>0&&snapshot.onlineDevices!==undefined?
+      <section className="card workspace-connection-status" aria-label="Connector availability">
+        <output role="status">{snapshot.onlineDevices===0?"No paired computers are online":
+          snapshot.onlineDevices+" of "+snapshot.devices+" paired computers online"}</output>
+        {snapshot.onlineDevices===0?<a href="/devices#reconnect-computer" className="text-link">
+          See how to reconnect without re-pairing <Icon name="arrow" size={15}/></a>:null}
+        {snapshot.onlineDevices>0&&snapshot.projects>0&&snapshot.projectsOnConnectedDevices===0?
+          <p>No registered projects are on connected computers.</p>:null}
+        <a className="text-link" href="/account">Refresh connection status <Icon name="arrow" size={15}/></a>
+      </section>:null}
     {observedTotal!==undefined?<a className="card cloud-activity-summary" href="/usage"
       aria-label={observedTotal.toLocaleString()+" recorded Cloud MCP tool calls; view activity"}>
       <span><Icon name="usage" size={19}/> Cloud tool calls</span>

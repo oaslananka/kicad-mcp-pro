@@ -111,6 +111,39 @@ test("account page requires session; escaped account display has no HTML injecti
   assert.match(response?.headers.get("content-security-policy")??"",/default-src 'none'/);
 });
 
+test("account recovery action uses live owner-scoped Connector status, never saved grants as proof",async()=>{
+ const identity=mock() as BrowserIdentity & {api:any};
+ identity.api={
+   getSession:async()=>({user:{id:"owner-1",name:"Ada"}}),
+   listUserAccounts:async()=>[],
+   getOAuthConsents:async()=>[{userId:"owner-1",clientId:"client-1",scopes:["projects:read"]}]
+ };
+ const devices={
+   list:async()=>[{id:"device-1",enabled:true,revoked:false}],
+   listProjects:async()=>[{id:"project-1",deviceId:"device-1",enabled:true}]
+ };
+ const grants={listBrowserGrants:async()=>[{projectId:"project-1",clientId:"client-1",maxMode:"readonly"}]};
+ const observed:Array<[string,string]>=[];
+ const request=new Request(origin+"/account");
+ const offline=await browserResponse(request,identity,origin,devices as any,grants as any,undefined,
+   (owner,deviceId)=>{observed.push([owner,deviceId]);return false;});
+ assert.equal(offline?.status,200);
+ assert.match(await offline!.text(),/data-next-action="reconnect-device"/);
+ assert.deepEqual(observed,[["owner-1","device-1"]]);
+ const connected=await browserResponse(request,identity,origin,devices as any,grants as any,undefined,
+   ()=>true);
+ assert.match(await connected!.text(),/data-next-action="review-access"/);
+ const strandedDevices={
+   list:async()=>[{id:"connected",enabled:true,revoked:false},{id:"disconnected",enabled:true,revoked:false}],
+   listProjects:async()=>[{id:"project-1",deviceId:"disconnected",enabled:true}]
+ };
+ const stranded=await browserResponse(request,identity,origin,strandedDevices as any,grants as any,undefined,
+   (_owner,deviceId)=>deviceId==="connected");
+ assert.match(await stranded!.text(),/data-next-action="reconnect-project-device"/);
+ const unknown=await browserResponse(request,identity,origin,devices as any,grants as any);
+ assert.match(await unknown!.text(),/data-next-action="check-device-status"/);
+});
+
 test("account linking is explicit, displays only enabled and linked providers",async()=>{
   const identity=mock() as BrowserIdentity & {api:any;options:any};
   identity.options={socialProviders:{google:{},github:{}}};
