@@ -402,13 +402,23 @@ function CloudQuickStart({existing}:Readonly<{existing:boolean}>){
        target="_blank" rel="noopener noreferrer">Review the setup script</a>
     <details className="device-setup-alternative">
       <summary>macOS or Linux: connect from an interactive owner terminal</summary>
-      <p>Use a KiCad MCP Pro release that supports POSIX Cloud foreground mode.
-        No Windows setup script or systemd service is required. On first use,
-        choose your KiCad project locally and approve the matching device code
-        in your Cloud browser. Existing devices retain their registration.</p>
+      <p>No Windows setup script or systemd service is required. Use a supported
+        KiCad MCP Pro release and a local terminal you control. First, install the
+        CLI with <a href="https://docs.astral.sh/uv/" target="_blank"
+        rel="noopener noreferrer">uv</a> if it is not already installed.</p>
+      <CopyValue value="uv tool install kicad-mcp-pro" label="macOS or Linux CLI install command"/>
+      <p>On your first connection, choose the local KiCad folder with the native
+        picker. Compare and approve the device code in your signed-in Cloud browser.</p>
+      <CopyValue value="kicad-mcp-pro cloud setup --browse" label="macOS or Linux first project chooser"/>
+      <p className="field-help">If no desktop picker is available, run
+        <code>kicad-mcp-pro cloud setup --project-dir /path/to/project</code> with
+        the actual project folder selected by the owner. Headless sessions
+        cannot provide a native folder dialog.</p>
+      <p>For later sessions, use the existing registration without pairing again:</p>
       <CopyValue value="kicad-mcp-pro cloud" label="macOS or Linux Cloud foreground command"/>
       <p className="field-help">Keep your terminal open during the connection.
-        The command does not automatically grant AI access to any project or enable native editing.
+        Installing, choosing a folder, and pairing never grant an AI client
+        access to a project or enable native editing.
         macOS physical onboarding acceptance remains pending.</p>
       <a className="text-link"
         href="https://oaslananka.github.io/kicad-mcp-pro/installation/"

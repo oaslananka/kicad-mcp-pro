@@ -80,6 +80,14 @@ test("Windows recovery and POSIX foreground paths are distinguished without fals
  assert.match(first,/separate managed installation/);
  assert.match(first,/does not remove or overwrite/);
  assert.match(first,/<summary>Existing CLI does not start<\/summary>/);
+ assert.match(first,/uv tool install kicad-mcp-pro/);
+ assert.match(first,/kicad-mcp-pro cloud setup --browse/);
+ assert.match(first,/--project-dir \/path\/to\/project/);
+ const installAt=first.indexOf("uv tool install kicad-mcp-pro");
+ const pickerAt=first.indexOf("kicad-mcp-pro cloud setup --browse");
+ const runAt=first.indexOf("kicad-mcp-pro cloud</code>");
+ assert.ok(installAt>0&&pickerAt>installAt&&runAt>pickerAt,"new POSIX owners need install, project picker, then session");
+ assert.match(first,/macOS physical onboarding acceptance remains pending/);
 
  const offline=renderDevicesPage([device("Connected later","disconnected")]);
  assert.match(offline,/id="reconnect-computer"/);
