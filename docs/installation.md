@@ -127,6 +127,26 @@ may reactivate device and managed read access. Ambiguous, invalid or foreign
 keys remain untouched. Do not delete keys or request `--new-device` just to
 reconnect an existing device.
 
+### Reconnect an existing Cloud workspace
+
+The signed-in [Cloud Account overview](https://kicad-mcp-pro.oaslananka.dev/account)
+distinguishes **paired devices** and saved project permissions from **currently
+connected Connector sessions**. A saved read grant is not proof that its
+computer is online. If the overview says to reconnect, open
+[Devices](https://kicad-mcp-pro.oaslananka.dev/devices#connect-computer)
+and restart the Connector on the **computer that owns the project**, using
+the matching Windows or POSIX instructions above. Existing valid device and
+project records should be reused; do not delete the device, request a new key,
+or broaden an AI client's permission merely to recover the connection.
+
+When a computer returns online, select **Refresh connection status** on the
+Account page. If another computer is online but the registered project belongs
+to an offline device, the project is still unavailable until its own Connector
+returns. If live presence cannot be checked, the overview directs you to
+inspect Devices instead of asserting a connected state. These indicators
+describe Cloud Connector presence, not native KiCad availability, DRC/ERC
+results, or permission to edit design files.
+
 ## Local HTTP server (no desktop application)
 
 Install or run the Python MCP server. The local browser dashboard and Streamable

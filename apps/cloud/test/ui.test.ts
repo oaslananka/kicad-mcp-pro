@@ -247,11 +247,31 @@ test("account snapshots remain factual and make status metrics navigable",()=>{
  const empty=renderAccount("Engineer",["google"],[],{devices:0,projects:0,clients:0,grants:0});
  assert.match(empty,/data-next-action="pair-device"/);
  assert.match(empty,/<div class="metric">0<\/div><div class="metric-label">Paired devices/);
- const ready=renderAccount("Engineer",["google"],[],{devices:1,projects:2,clients:1,grants:1});
+ const ready=renderAccount("Engineer",["google"],[],{devices:1,projects:2,clients:1,grants:1,onlineDevices:1,projectsOnConnectedDevices:2});
  assert.match(ready,/<div class="metric">2<\/div><div class="metric-label">Enabled projects/);
  assert.match(ready,/data-next-action="review-access"/);
  assert.match(ready,/href="\/connections"/);
  assert.match(renderAccount("Engineer"),/Workspace snapshot unavailable/);
+});
+
+test("workspace prioritizes recovering an offline Connector without inventing a live connection",()=>{
+ const offline=renderAccount("Engineer",["github"],[],{devices:2,projects:2,clients:1,grants:2,onlineDevices:0});
+ assert.match(offline,/data-next-action="reconnect-device"/);
+ assert.match(offline,/Reconnect a computer/);
+ assert.match(offline,/href="\/devices#connect-computer"/);
+ assert.match(offline,/No paired computers are online/);
+ assert.match(offline,/href="\/account"[^>]*>Refresh connection status/);
+ const partial=renderAccount("Engineer",["github"],[],{devices:2,projects:1,clients:1,grants:1,onlineDevices:1,projectsOnConnectedDevices:1});
+ assert.match(partial,/data-next-action="review-access"/);
+ assert.match(partial,/1 of 2 paired computers online/);
+ const unknown=renderAccount("Engineer",["github"],[],{devices:1,projects:1,clients:1,grants:1});
+ assert.doesNotMatch(unknown,/computers online|computers are online/);
+ assert.match(unknown,/data-next-action="check-device-status"/);
+ const stranded=renderAccount("Engineer",["github"],[],{devices:2,projects:1,clients:1,grants:1,onlineDevices:1,projectsOnConnectedDevices:0});
+ assert.match(stranded,/data-next-action="reconnect-project-device"/);
+ assert.match(stranded,/No registered projects are on connected computers/);
+ const newOwner=renderAccount("Engineer",["github"],[],{devices:0,projects:0,clients:0,grants:0,onlineDevices:0});
+ assert.match(newOwner,/data-next-action="pair-device"/);
 });
 
 test("project permission UI names ChatGPT clearly and never offers a duplicate grant",()=>{

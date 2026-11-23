@@ -1,6 +1,6 @@
 import { verifyOAuthQueryParams } from "@better-auth/oauth-provider";
 import type { Identity } from "./identity.js";
-import type { DeviceManagementPort } from "./devices.js";
+import type { DeviceManagementPort,DeviceConnectionLookup } from "./devices.js";
 import type { GrantManagement } from "./grants.js";
 import type { UsagePort } from "./usage.js";
 import {renderSignIn,renderAccount,renderNotice,renderSettings} from "./browser-ui.js";
@@ -110,7 +110,7 @@ async function startSocialLogin(request:Request,identity:BrowserIdentity,
 }
 
 async function accountPage(request:Request,identity:BrowserIdentity,origin:string,
-  devices?:DeviceManagementPort,grants?:GrantManagement,usage?:UsagePort):Promise<Response> {
+  devices?:DeviceManagementPort,grants?:GrantManagement,usage?:UsagePort,deviceConnection?:DeviceConnectionLookup):Promise<Response> {
   const session=await identity.api?.getSession({headers:request.headers});
   if(!session?.user) return new Response(null,{status:303,headers:{"Location":"/sign-in","Cache-Control":"no-store"}});
   const cliRequest=readCliReturnCookie(request,origin);
@@ -120,7 +120,7 @@ async function accountPage(request:Request,identity:BrowserIdentity,origin:strin
   const linked=await identity.api?.listUserAccounts?.({headers:request.headers});
   const names=(linked??[]).map(account=>account.providerId)
     .filter((provider):provider is SocialName=>provider==="google"||provider==="github");
-  let snapshot: {devices:number;projects:number;clients:number;grants:number}|undefined;
+  let snapshot: {devices:number;projects:number;clients:number;grants:number;onlineDevices?:number;projectsOnConnectedDevices?:number}|undefined;
   if(devices?.listProjects && grants?.listBrowserGrants && identity.api?.getOAuthConsents){
     try{
       const [deviceRows,projectRows,consents,saved]=await Promise.all([
@@ -130,8 +130,15 @@ async function accountPage(request:Request,identity:BrowserIdentity,origin:strin
       if(Array.isArray(consents)){
         const clients=new Set(consents.filter(c=>c.userId===session.user.id && Array.isArray(c.scopes) && c.scopes.includes("projects:read")).map(c=>c.clientId));
         const projects=projectRows.filter(p=>p.enabled);
-        snapshot={devices:deviceRows.filter(d=>d.enabled&&!d.revoked).length,projects:projects.length,clients:clients.size,
-          grants:saved.filter(g=>clients.has(g.clientId)&&projects.some(p=>p.id===g.projectId)).length};
+        const activeDevices=deviceRows.filter(d=>d.enabled&&!d.revoked);
+        const connectedIds=deviceConnection?new Set(activeDevices
+          .filter(d=>deviceConnection(session.user.id,d.id)).map(d=>d.id)):undefined;
+        snapshot={devices:activeDevices.length,projects:projects.length,clients:clients.size,
+          grants:saved.filter(g=>clients.has(g.clientId)&&projects.some(p=>p.id===g.projectId)).length,
+          ...(connectedIds===undefined?{}:{
+            onlineDevices:connectedIds.size,
+            projectsOnConnectedDevices:projects.filter(p=>connectedIds.has(p.deviceId)).length
+          })};
       }
     }catch{ /* State is unavailable, not an empty workspace. */ }
   }
@@ -213,7 +220,7 @@ async function settingsPage(request:Request,identity:BrowserIdentity):Promise<Re
     status:200,headers:htmlHeaders
   });
 }
-export async function browserResponse(request:Request,identity:BrowserIdentity,publicOrigin:string,devices?:DeviceManagementPort,grants?:GrantManagement,usage?:UsagePort):Promise<Response|null> {
+export async function browserResponse(request:Request,identity:BrowserIdentity,publicOrigin:string,devices?:DeviceManagementPort,grants?:GrantManagement,usage?:UsagePort,deviceConnection?:DeviceConnectionLookup):Promise<Response|null> {
   const url=new URL(request.url);
   if(url.pathname==="/sign-in" && request.method==="GET") {
     if(identity.localDevSandbox && !url.search)return new Response(null,{status:303,headers:{"Location":"/account","Cache-Control":"no-store"}});
@@ -223,7 +230,7 @@ export async function browserResponse(request:Request,identity:BrowserIdentity,p
   if(provider)return socialResponse(request,identity,publicOrigin,provider,startSocialLogin,"/sign-in");
   const linkProvider=socialProvider(url.pathname,"/auth/link/");
   if(linkProvider)return socialResponse(request,identity,publicOrigin,linkProvider,startSocialLink,"/account");
-  if((url.pathname==="/account"||url.pathname==="/overview") && request.method==="GET") return accountPage(request,identity,publicOrigin,devices,grants,usage);
+  if((url.pathname==="/account"||url.pathname==="/overview") && request.method==="GET") return accountPage(request,identity,publicOrigin,devices,grants,usage,deviceConnection);
   if(url.pathname==="/usage" && request.method==="GET") return usagePage(request,identity,usage);
   if(url.pathname==="/settings" && request.method==="GET")return settingsPage(request,identity);
   return null;

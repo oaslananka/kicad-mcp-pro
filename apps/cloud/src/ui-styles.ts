@@ -802,6 +802,10 @@ body{line-height:1.5;letter-spacing:-.007em}
 .premium-focus-panel h2{font-size:clamp(22px,2.5vw,31px);letter-spacing:-.04em;margin:9px 0}
 .premium-focus-panel p{color:#b6d0e0;font-size:13px;line-height:1.55;max-width:480px;margin:0}
 .premium-focus-panel .button{min-height:49px;border-radius:11px;flex-shrink:0}
+.workspace-connection-status{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 18px;background:#172638;border:1px solid var(--line);border-radius:12px}
+.workspace-connection-status output{font-size:13px;font-weight:650;color:#c4d8e7}
+.workspace-connection-status p{font-size:12px;color:var(--muted);margin:0}
+.workspace-connection-status .text-link{font-size:12px}
 .workspace-snapshot-card{background:transparent;border:0;box-shadow:none;padding:1px 0}
 .workspace-snapshot-card:hover{border-color:transparent}
 .snapshot-grid{gap:13px}

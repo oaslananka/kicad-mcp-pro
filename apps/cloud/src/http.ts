@@ -296,7 +296,7 @@ async function handleRequest(
             identity,config.publicOrigin,services.ownerApi):null;
         } else {
           answer=await browserResponse(browserRequest,identity,config.publicOrigin,devices,grants,
-            services.usage);
+            services.usage,summaryRelay?.()?.isDeviceConnected);
         }
         if (answer) {
           const responseHeaders=Object.fromEntries(answer.headers);
