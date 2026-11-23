@@ -252,6 +252,61 @@ def test_detect_offsheet_boxes_uses_extent_not_anchor() -> None:
     assert any(f.code == "offsheet_symbol" for f in findings)
 
 
+def test_real_connector_function_value_crossing_its_own_pin_extent_warns() -> None:
+    """A native-render obstruction must not earn a cosmetic PASS just because
+    its Reference/Value text belongs to the same symbol as the pin/body area.
+    This regression mirrors the independently generated ESP32 UART header.
+    """
+    sch = """
+(kicad_sch (paper "A4")
+  (title_block (title "UART Breakout") (rev "1") (date "2026-11-23") (company "Test"))
+  (lib_symbols
+    (symbol "Connector_Generic:Conn_01x03"
+      (symbol "Conn_01x03_1_1"
+        (rectangle (start -1.27 -2.54) (end 1.27 2.54))
+        (pin passive line (at 3.81 0 180) (length 2.54)
+          (name "~") (number "1"))
+      )
+    )
+  )
+  (symbol (lib_id "Connector_Generic:Conn_01x03") (at 100 100 0)
+    (property "Reference" "J1" (at 101 99 0))
+    (property "Value" "UART0 (3.3V logic)" (at 103 100.8 0))
+  )
+)
+"""
+    report = run_visual_qa(sch)
+    assert report["status"] == "WARN", report
+    assert any(
+        f["code"] == "field_body_intrusion" and f.get("ref") == "J1" for f in report["findings"]
+    ), report
+    scored = run_cosmetic_qa(sch)
+    assert scored["status"] == "WARN", scored
+    assert scored["cosmetic_score"] < 100.0
+    assert scored["penalties_by_category"]["readability"] >= 10.0
+
+
+def test_intentional_inbody_or_clear_external_fields_are_not_intrusions() -> None:
+    """Legible in-body IC titles and truly external fields remain valid."""
+    from kicad_mcp.models.visual_qa import PlacedSymbol, detect_field_body_intrusion
+    from kicad_mcp.utils.geometry import Box, TextField
+
+    body = Box(10.0, 10.0, 50.0, 50.0)
+    symbol = PlacedSymbol(
+        "U1",
+        "Test:WideIC",
+        30.0,
+        30.0,
+        0.0,
+        body,
+        (
+            TextField("In-body readable title", 30.0, 30.0, 0.0, 1.27),
+            TextField("Clear external field", 70.0, 30.0, 0.0, 1.27),
+        ),
+    )
+    assert detect_field_body_intrusion([symbol]) == []
+
+
 def test_overlap_schematic_run_warns() -> None:
     report = run_visual_qa(OVERLAP_SCH)
     assert report["status"] == "WARN"
