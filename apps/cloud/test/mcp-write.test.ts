@@ -290,6 +290,8 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     }, 4, "pcb_move_footprint");
     assert.equal(foreignCall.status, 200);
     assert.match(JSON.stringify(foreignCall.data), /"success":false/);
+    assert.equal(foreignCall.data.result?.isError,true,
+      "an ungranted project must be an MCP tool error");
     assert.equal(writeExecuted, false);
 
     // An OAuth write token is not sufficient after the owner downgrades this
@@ -322,6 +324,8 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     assert.equal(successCall.status, 200);
     assert.equal(writeExecuted, true);
     assert.match(JSON.stringify(successCall.data), /"success":true/);
+    assert.notEqual(successCall.data.result?.isError,true,
+      "a confirmed native save remains a successful MCP tool call");
     assert.match(JSON.stringify(successCall.data), /"nativeCommitted":true/);
     assert.match(JSON.stringify(successCall.data), /"savedToDisk":true/);
     assert.match(JSON.stringify(successCall.data), /"diskBoardSha256":"2222/);
@@ -340,7 +344,13 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
       }, 8, "pcb_move_footprint");
       assert.equal(failed.status, 200);
       assert.match(JSON.stringify(failed.data), /"success":false/);
+      assert.equal(failed.data.result?.isError,true,
+        "failed signed writes must be MCP tool errors, not merely JSON success:false");
       assert.equal(failed.data.result?.structuredContent?.message, expected);
+      assert.equal(failed.data.result?.structuredContent?.outcomeUnknown,true,
+        "a failed native relay must not imply the board was unchanged");
+      assert.equal(failed.data.result?.structuredContent?.retrySafe,false,
+        "the AI must inspect the local board instead of blindly retrying");
     }
     reportedOutcome = {
       nativeCommitted:true,savedToDisk:true,diskBoardSha256:"2".repeat(64)
@@ -352,6 +362,9 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     assert.equal(unexpectedSave.status, 200);
     assert.match(JSON.stringify(unexpectedSave.data), /"success":false/);
     assert.match(JSON.stringify(unexpectedSave.data), /unexpected_disk_save/);
+    assert.equal(unexpectedSave.data.result?.isError,true);
+    assert.equal(unexpectedSave.data.result?.structuredContent?.outcomeUnknown,true);
+    assert.equal(unexpectedSave.data.result?.structuredContent?.retrySafe,false);
 
     reportedOutcome = null;
     const unsaved = await invoke("enabled", "token-write", "tools/call", {
@@ -371,6 +384,8 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
       arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20}
     }, 11, "pcb_move_footprint");
     assert.match(JSON.stringify(signerDenied.data), /write_execution_failed/);
+    assert.equal(signerDenied.data.result?.isError,true,
+      "failure before relay must still be surfaced as an MCP tool error");
     assert.equal(blockedStages.at(-1), "signing_failed");
     issuerAllowed = true;
 
@@ -380,6 +395,8 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
       arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20}
     }, 12, "pcb_move_footprint");
     assert.match(JSON.stringify(wssUnavailable.data), /write_execution_failed/);
+    assert.equal(wssUnavailable.data.result?.isError,true,
+      "unknown write outcome must not be a successful MCP tool result");
     assert.equal(wssUnavailable.data.result?.structuredContent?.outcomeUnknown, true);
     assert.equal(wssUnavailable.data.result?.structuredContent?.retrySafe, false);
     assert.match(String(wssUnavailable.data.result?.structuredContent?.guidance), /before retrying/);
@@ -397,6 +414,8 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
       arguments:{project_id:projectId,reference:"R1",x_mm:10,y_mm:20}
     }, 13, "pcb_move_footprint");
     assert.match(JSON.stringify(lateRevocation.data), /write_execution_failed/);
+    assert.equal(lateRevocation.data.result?.isError,true,
+      "post-dispatch owner revocation must be a proper MCP tool error");
     assert.equal(lateRevocation.data.result?.structuredContent?.outcomeUnknown, true);
     assert.equal(lateRevocation.data.result?.structuredContent?.retrySafe, false);
     assert.equal(blockedStages.at(-1), "postgrant_revoked");
@@ -412,6 +431,7 @@ test("pcb_move_footprint MCP write tool end-to-end verification", async () => {
     }, 6, "pcb_move_footprint");
     assert.equal(deniedCall.status, 200);
     assert.match(JSON.stringify(deniedCall.data), /"success":false/);
+    assert.equal(deniedCall.data.result?.isError,true);
     assert.equal(writeExecuted, false);
 
     // 7. Token revocation fails closed

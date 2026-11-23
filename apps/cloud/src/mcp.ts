@@ -690,7 +690,7 @@ export function createCloudMcpHandler(
           ]}};
         }
         const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
-        if(!project)return text({success:false,selectionRequired});
+        if(!project)return {...text({success:false,selectionRequired}),isError:true};
         // The OAuth write scope alone is not the owner's per-project Edit grant.
         // A known Read-only grant must fail before signing/dispatch, not as an
         // ambiguous native write result requiring the owner to inspect the board.
@@ -713,13 +713,23 @@ export function createCloudMcpHandler(
         // A relay failure or authorization change after dispatch cannot prove
         // whether KiCad already committed. Preserve the existing error code,
         // but explicitly prohibit blind retries until the board is inspected.
-        return text(result?{...result}:{
+        const outcome=result?.success===false?{
+          ...result,
+          outcomeUnknown:true,
+          retrySafe:false,
+          guidance:"The local edit or save was not fully confirmed. "+
+            "Inspect the KiCad board before retrying; it may already have changed."
+        }:result?{...result}:{
           success:false,
           reason:"write_execution_failed",
           outcomeUnknown:true,
           retrySafe:false,
           guidance:"Write outcome is unconfirmed. Check the local board before retrying."
-        });
+        };
+        // The MCP envelope must agree with the native result. A false
+        // structuredContent.success without isError can otherwise mislead an
+        // AI client into treating an unconfirmed KiCad edit as a completed tool.
+        return {...text(outcome),...(outcome.success===true?{}:{isError:true})};
       });
     }
     }
