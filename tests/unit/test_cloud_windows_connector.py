@@ -1119,7 +1119,7 @@ async def test_windows_connector_native_write_runner_wires_revisions_and_executo
     monkeypatch.setattr("kicad_mcp.connection.get_board", lambda: FakeBoard())
     if os.name != "nt":
         monkeypatch.setattr(
-            "kicad_mcp.cloud_native_write_dispatch.read_windows_board_revision",
+            "kicad_mcp.cloud_native_write_dispatch.read_operator_board_revision",
             lambda *_: "0" * 64,
         )
     monkeypatch.setattr(
