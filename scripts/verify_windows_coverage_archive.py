@@ -96,7 +96,7 @@ def _read_reports(blob: bytes) -> dict[str, bytes]:
             if len(entries) != len(_FILES) or {entry.filename for entry in entries} != _FILES:
                 raise ValueError("Unexpected or missing archive entries")
             return {entry.filename: _read_entry(archive, entry) for entry in entries}
-    except (zipfile.BadZipFile, NotImplementedError, RuntimeError) as exc:
+    except (zipfile.BadZipFile, RuntimeError) as exc:
         raise ValueError("Invalid native coverage ZIP") from exc
 
 

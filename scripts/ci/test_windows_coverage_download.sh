@@ -63,6 +63,8 @@ timeout() {
         busy:metadata:0) printf 'gh: Too Many Requests (HTTP 429)\n' >&2; return 1 ;;
         busy:zip:0) printf 'gh: Bad Gateway (HTTP 502)\n' >&2; return 1 ;;
         gone:zip:*) printf 'gh: Gone (HTTP 410)\n' >&2; return 1 ;;
+        success:*:*|delayed:*:*|timeout:*:*|busy:*:*|gone:metadata:*|digest:*:*|exhausted:metadata:*|expired:metadata:*|foreign:metadata:*) : ;;
+        *) return 99 ;;
     esac
     if [[ "$kind" == zip ]]; then
         cat "$FIXTURE_ROOT/archive.zip"
@@ -115,3 +117,4 @@ run_case expired 1 1 0 0
 run_case foreign 1 1 0 0
 run_case digest 1 1 1 0
 run_case exhausted 1 1 4 3
+run_case unknown 1 1 0 0
