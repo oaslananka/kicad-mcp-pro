@@ -1399,3 +1399,108 @@ def test_windows_status_online_scheduled_connector_shows_task_aware_handoff(
     assert "If it runs in an owner terminal" in result.output
     assert "Ctrl+C" in result.output
     assert "Then start a NEW signed editing session" in result.output
+
+
+@pytest.mark.parametrize(
+    ("task_state", "cloud_state", "connected", "approved", "expected"),
+    [
+        ("Ready", "registered", False, True, ["owner_confirm", "start"]),
+        ("Ready", "unverified", None, True, ["owner_confirm", "start"]),
+        ("Ready", "registered", False, False, ["owner_confirm"]),
+        ("Running", "registered", False, True, []),
+        ("Disabled", "registered", False, True, []),
+        (None, "registered", False, True, []),
+        ("Ready", "registered", True, True, []),
+        ("Ready", "missing_project", None, True, []),
+    ],
+)
+def test_windows_reconnect_existing_task_only_starts_verified_ready_task(
+    windows_cli,
+    monkeypatch: pytest.MonkeyPatch,
+    task_state: str | None,
+    cloud_state: str,
+    connected: bool | None,
+    approved: bool,
+    expected: list[str],
+) -> None:
+    folder, events, _project, _selected = windows_cli
+    initial = CliRunner().invoke(
+        app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
+    )
+    assert initial.exit_code == 0, initial.output
+    events.clear()
+    monkeypatch.setattr(cloud_windows_user_cli, "task_run_state", lambda: task_state)
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "_cloud_project_state",
+        lambda _project: (cloud_state, connected),
+    )
+    monkeypatch.setattr(
+        cloud_windows_user_cli.typer,
+        "confirm",
+        lambda *_a, **_k: events.append("owner_confirm") or approved,
+    )
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "start_owner_task",
+        lambda: events.append("start"),
+        raising=False,
+    )
+    result = CliRunner().invoke(app, ["cloud", "reconnect"])
+    assert result.exit_code == 0, result.output
+    assert events == expected
+    if "start" in expected:
+        assert "connection not verified" in result.output.lower()
+
+
+def test_windows_reconnect_ready_task_rechecks_state_after_confirmation(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder, events, _project, _selected = windows_cli
+    initial = CliRunner().invoke(
+        app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
+    )
+    assert initial.exit_code == 0, initial.output
+    events.clear()
+    state = {"run": "Ready"}
+
+    def confirm(*_args: object, **_kwargs: object) -> bool:
+        events.append("owner_confirm")
+        state["run"] = "Running"
+        return True
+
+    monkeypatch.setattr(cloud_windows_user_cli, "task_run_state", lambda: state["run"])
+    monkeypatch.setattr(
+        cloud_windows_user_cli, "_cloud_project_state", lambda _project: ("registered", False)
+    )
+    monkeypatch.setattr(cloud_windows_user_cli.typer, "confirm", confirm)
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "start_owner_task",
+        lambda: pytest.fail("state changed while confirming"),
+        raising=False,
+    )
+    result = CliRunner().invoke(app, ["cloud", "reconnect"])
+    assert result.exit_code == 0, result.output
+    assert events == ["owner_confirm"]
+    assert "changed" in result.output.lower()
+
+
+def test_windows_status_ready_task_explains_reconnect(
+    windows_cli, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder, events, _project, _selected = windows_cli
+    initial = CliRunner().invoke(
+        app, ["cloud", "setup", "--alias", "Lab PC", "--project-dir", str(folder)]
+    )
+    assert initial.exit_code == 0, initial.output
+    events.clear()
+    monkeypatch.setattr(cloud_windows_user_cli, "task_run_state", lambda: "Ready")
+    monkeypatch.setattr(
+        cloud_windows_user_cli, "_cloud_project_state", lambda _project: ("registered", False)
+    )
+    result = CliRunner().invoke(app, ["cloud", "status"])
+    assert result.exit_code == 0, result.output
+    assert "task is not running" in result.output.lower()
+    assert "kicad-mcp-pro cloud reconnect" in result.output
+    assert not events
