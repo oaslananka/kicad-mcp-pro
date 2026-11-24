@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import io
 import json
 import math
 import os
@@ -18,6 +20,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any, Literal, Protocol, TextIO, TypedDict, cast
 
 import structlog
+from defusedxml import ElementTree as SafeET
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
@@ -2312,6 +2315,47 @@ def _latest_svg_file(out_dir: Path, known_files: set[Path]) -> Path | None:
     return candidates[-1] if candidates else None
 
 
+def _require_self_contained_svg_resource(href: str, *, allow_fragment: bool) -> None:
+    if allow_fragment and href.startswith("#"):
+        return
+    header, separator, encoded = href.partition(",")
+    signature = {
+        "data:image/png;base64": b"\x89PNG\r\n\x1a\n",
+        "data:image/jpeg;base64": b"\xff\xd8\xff",
+    }.get(header)
+    if not separator or signature is None:
+        raise RuntimeError("External or unsupported SVG resource.")
+    try:
+        image = base64.b64decode("".join(encoded.split()), validate=True)
+    except ValueError as exc:
+        raise RuntimeError("Invalid embedded SVG resource.") from exc
+    if not image.startswith(signature):
+        raise RuntimeError("Invalid embedded SVG resource.")
+
+
+def _checked_schematic_svg(svg_file: Path) -> str:
+    """Only render self-contained KiCad SVGs; the rasterizer can read file hrefs."""
+    try:
+        content = svg_file.read_text(encoding="utf-8")
+        root = SafeET.fromstring(content, forbid_dtd=True)
+    except (OSError, ValueError, SafeET.ParseError) as exc:
+        raise RuntimeError("Invalid schematic SVG.") from exc
+
+    for node in root.iter():
+        # Ordinary datasheet hyperlinks are not resources loaded by the renderer.
+        if node.tag == "{http://www.w3.org/2000/svg}a":
+            continue
+        allow_fragment = node.tag not in {
+            "{http://www.w3.org/2000/svg}image",
+            "{http://www.w3.org/2000/svg}feImage",
+        }
+        for attribute in ("href", "{http://www.w3.org/1999/xlink}href"):
+            href = node.get(attribute)
+            if href is not None:
+                _require_self_contained_svg_resource(href, allow_fragment=allow_fragment)
+    return content
+
+
 def _render_svg_to_png(
     svg_file: Path,
     output_file: Path,
@@ -2320,40 +2364,34 @@ def _render_svg_to_png(
     crop_to_content: bool,
 ) -> dict[str, object]:
     try:
-        import cairosvg  # type: ignore[import-not-found, import-untyped, unused-ignore]
+        import resvg_py
         from PIL import Image
     except ImportError as exc:
         raise RuntimeError(
-            "PNG rendering requires CairoSVG and Pillow. Install the project dev extras "
-            "or run uv sync --all-extras --frozen."
+            "PNG rendering dependencies are missing. Reinstall kicad-mcp-pro."
         ) from exc
 
-    raw_file = (
-        output_file.with_name(f"{output_file.stem}.full.png") if crop_to_content else output_file
-    )
-    cairosvg.svg2png(url=str(svg_file), write_to=str(raw_file), dpi=dpi)
-    with Image.open(raw_file) as image:
-        rgba = image.convert("RGBA")
-        bbox = rgba.getbbox()
-        if crop_to_content and bbox is not None:
-            margin = max(4, int(dpi * 0.04))
-            left = max(0, bbox[0] - margin)
-            top = max(0, bbox[1] - margin)
-            right = min(rgba.width, bbox[2] + margin)
-            bottom = min(rgba.height, bbox[3] + margin)
-            rgba.crop((left, top, right, bottom)).save(output_file)
-            cropped = True
-        else:
+    content = _checked_schematic_svg(svg_file)
+    try:
+        png = resvg_py.svg_to_bytes(svg_string=content, dpi=dpi)
+        with Image.open(io.BytesIO(png)) as image:
+            rgba = image.convert("RGBA")
+            bbox = rgba.getbbox()
+            cropped = crop_to_content and bbox is not None
+            if crop_to_content and bbox is not None:
+                margin = max(4, int(dpi * 0.04))
+                rgba = rgba.crop(
+                    (
+                        max(0, bbox[0] - margin),
+                        max(0, bbox[1] - margin),
+                        min(rgba.width, bbox[2] + margin),
+                        min(rgba.height, bbox[3] + margin),
+                    )
+                )
             rgba.save(output_file)
-            cropped = False
-    if raw_file != output_file and raw_file.exists():
-        raw_file.unlink()
-    with Image.open(output_file) as rendered:
-        return {
-            "width_px": rendered.width,
-            "height_px": rendered.height,
-            "cropped": cropped,
-        }
+            return {"width_px": rgba.width, "height_px": rgba.height, "cropped": cropped}
+    except (OSError, ValueError) as exc:
+        raise RuntimeError("Schematic SVG rasterization failed.") from exc
 
 
 def _render_schematic_png_artifact(
@@ -2396,8 +2434,7 @@ def _render_png_visual_diff(
         from PIL import Image, ImageChops
     except ImportError as exc:
         raise RuntimeError(
-            "Visual diff rendering requires Pillow. Install the project dev extras "
-            "or run uv sync --all-extras --frozen."
+            "Visual diff rendering dependencies are missing. Reinstall kicad-mcp-pro."
         ) from exc
 
     with Image.open(before_file) as before_source, Image.open(after_file) as after_source:
