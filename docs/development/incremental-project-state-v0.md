@@ -44,6 +44,17 @@ authenticity signature against a malicious actor able to replace both the
 sidecar and project data. No background file watcher, OS sandbox, cross-process
 locking, dynamic adapter loading or distributed cache is provided.
 
+For a save, the final source verification runs after staging and flushing the
+temporary sidecar, immediately before publication. A detected source change
+or interrupted save leaves the previous sidecar in place; a later verified
+reopen rejects it if native sources changed. During reopen, source verification
+follows graph, journal and derived-stamp validation. Independent readers of an
+atomically replaced sidecar with unchanged native sources see complete old or
+new documents. Abandoned hidden temporary files are not accepted as sidecars.
+This is not a guarantee against edits after the final verification, simultaneous
+native writers, or sudden power loss; the caller must still own mutation and
+read-back.
+
 Example (caller supplies independently parsed authoritative `circuit` for a
 single-sheet design; its sheet hierarchy contains at most the root entry):
 
