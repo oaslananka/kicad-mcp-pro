@@ -2901,6 +2901,20 @@ def doctor(
     _diagnostic_command(build_doctor_report, as_json=json_output, bundle_path=bundle)
 
 
+def _echo_setup_message(message: str, *, err: bool = False) -> None:
+    """Report completed setup without crashing on legacy terminal encodings."""
+    encoding = getattr(sys.stderr if err else sys.stdout, "encoding", None)
+    if encoding:
+        try:
+            message.encode(encoding)
+        except UnicodeEncodeError:
+            message = message.translate(
+                {ord("✓"): "[OK]", ord("✗"): "[FAIL]", ord("⚠"): "[WARN]", ord("…"): "..."}
+            )
+            message = message.encode(encoding, errors="backslashreplace").decode(encoding)
+    typer.echo(message, err=err)
+
+
 @app.command()
 def setup(
     agent: str | None = typer.Argument(
@@ -2990,7 +3004,10 @@ def setup(
         )
     except Exception as exc:
         raise typer.Exit(code=1) from exc
-    typer.echo(result)
+    if write_config:
+        _echo_setup_message(result)
+    else:
+        typer.echo(result)
     if write_config and not result.startswith(_CONFIG_WRITTEN_PREFIX):
         # setup_agent historically returned human-readable failures instead of
         # raising; do not report a failed write as CLI success.
@@ -3090,12 +3107,12 @@ def quickstart(
     supported_scopes = AGENTS[selected_agent].supports_scope
     selected_scope = scope or ("project" if "project" in supported_scopes else "user")
     if selected_scope not in supported_scopes:
-        typer.echo(f"{selected_agent} supports: {', '.join(supported_scopes)}", err=True)
+        _echo_setup_message(f"{selected_agent} supports: {', '.join(supported_scopes)}", err=True)
         raise typer.Exit(code=2)
 
     launcher = shutil.which("uvx")
     if launcher is None:
-        typer.echo(
+        _echo_setup_message(
             "Install uv first (https://docs.astral.sh/uv/), then rerun quickstart.", err=True
         )
         raise typer.Exit(code=1)
@@ -3103,14 +3120,14 @@ def quickstart(
         try:
             install_agent_skills(selected_agent, selected_scope, project, write=False)
         except (OSError, ValueError) as exc:
-            typer.echo(
+            _echo_setup_message(
                 f"Skill setup blocked: {exc}. Use --no-skills to keep existing skills.", err=True
             )
             raise typer.Exit(code=1) from exc
 
-    typer.echo(f"Agent: {selected_agent}")
-    typer.echo(f"KiCad project: {project}")
-    typer.echo("Mode: readonly (local stdio; Cloud is not required)")
+    _echo_setup_message(f"Agent: {selected_agent}")
+    _echo_setup_message(f"KiCad project: {project}")
+    _echo_setup_message("Mode: readonly (local stdio; Cloud is not required)")
     result = setup_agent(
         selected_agent,
         project_dir=str(project),
@@ -3121,32 +3138,38 @@ def quickstart(
         stdio_command=launcher,
     )
     if not result.startswith(_CONFIG_WRITTEN_PREFIX):
-        typer.echo(result, err=True)
+        _echo_setup_message(result, err=True)
         raise typer.Exit(code=1)
-    typer.echo(result.splitlines()[0])
-    typer.echo("Checking the installed MCP server over stdio…")
+    _echo_setup_message(result.splitlines()[0])
+    _echo_setup_message("Checking the installed MCP server over stdio…")
     ok, message = asyncio.run(
         run_local_mcp_smoke(project, agent=selected_agent, scope=selected_scope)
     )
-    typer.echo(("✓ " if ok else "✗ ") + message)
+    _echo_setup_message(("✓ " if ok else "✗ ") + message)
     if not ok:
-        typer.echo(
+        _echo_setup_message(
             "The agent config was saved with a backup, but the MCP smoke test did not pass.",
             err=True,
         )
-        typer.echo("Run 'kicad-mcp-pro doctor' for diagnostics.", err=True)
+        _echo_setup_message("Run 'kicad-mcp-pro doctor' for diagnostics.", err=True)
         raise typer.Exit(code=1)
     if skills:
         try:
             installed = install_agent_skills(selected_agent, selected_scope, project)
         except (OSError, ValueError) as exc:
-            typer.echo(f"MCP config saved; skill installation failed: {exc}", err=True)
+            _echo_setup_message(f"MCP config saved; skill installation failed: {exc}", err=True)
             raise typer.Exit(code=1) from exc
-        typer.echo(installed.message)
-    typer.echo(_quickstart_reload_guidance(selected_agent))
-    typer.echo("In the actual agent, ask: Inspect this KiCad project without modifying files.")
-    typer.echo("Agent skill discovery and native KiCad readiness still need that first inspection.")
-    typer.echo("Cloud remains optional; connect it later only when remote access is needed.")
+        _echo_setup_message(installed.message)
+    _echo_setup_message(_quickstart_reload_guidance(selected_agent))
+    _echo_setup_message(
+        "In the actual agent, ask: Inspect this KiCad project without modifying files."
+    )
+    _echo_setup_message(
+        "Agent skill discovery and native KiCad readiness still need that first inspection."
+    )
+    _echo_setup_message(
+        "Cloud remains optional; connect it later only when remote access is needed."
+    )
 
 
 @app.command("skills")

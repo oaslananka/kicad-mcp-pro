@@ -463,7 +463,7 @@ def generate_config(
     if info.kind == "remote":
         return _generate_remote_config(agent_key, url), info.format
 
-    text = _generate_local_config(agent_key, project_dir, mode, transport)
+    text = _generate_local_config(agent_key, project_dir, mode, transport, url=url)
     if stdio_command is not None and transport == "stdio":
         text = _override_stdio_command(text, agent_key, info.format, stdio_command)
     return text, info.format
@@ -496,12 +496,14 @@ def _generate_local_config(
     project_dir: str,
     mode: str = "readonly",
     transport: str = "stdio",
+    *,
+    url: str = "",
 ) -> str:
     """Generate a local stdio/http config for a local agent."""
     env = _env_for_mode(mode, project_dir)
 
     if transport == "http":
-        url = os.environ.get("KICAD_MCP_URL", "http://127.0.0.1:8765/mcp")
+        url = url or os.environ.get("KICAD_MCP_URL", "http://127.0.0.1:8765/mcp")
         return _generate_http_config(agent_key, url, env)
 
     env["KICAD_MCP_TRANSPORT"] = "stdio"
