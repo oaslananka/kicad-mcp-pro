@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.22.3](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.2...mcp-server-v4.22.3) (2026-11-24)
+
+
+### Bug Fixes
+
+* **schematic:** repair field placement with native geometry and anchors ([#1894](https://github.com/oaslananka/kicad-mcp-pro/issues/1894)) ([26744e3](https://github.com/oaslananka/kicad-mcp-pro/commit/26744e3e6c2c22ceb239f45c3464b8a1526fe3cb))
+
 ## [4.22.2](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.1...mcp-server-v4.22.2) (2026-11-24)
 
 
