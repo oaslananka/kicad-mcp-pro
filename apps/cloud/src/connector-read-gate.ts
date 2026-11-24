@@ -78,6 +78,21 @@ export class PgConnectorReadGate{
     oauth:TrustedOAuthReadIdentity,connection:TrustedConnectorContext,
     projectId:string
   ):Promise<boolean>{
+    return this.authorizeOutgoingGrant(oauth,connection,projectId,false);
+  }
+
+  /** A signed mutation needs the current owner's exact Edit grant, not Read. */
+  async authorizeOutgoingWrite(
+    oauth:TrustedOAuthReadIdentity,connection:TrustedConnectorContext,
+    projectId:string
+  ):Promise<boolean>{
+    return this.authorizeOutgoingGrant(oauth,connection,projectId,true);
+  }
+
+  private async authorizeOutgoingGrant(
+    oauth:TrustedOAuthReadIdentity,connection:TrustedConnectorContext,
+    projectId:string,requireEdit:boolean
+  ):Promise<boolean>{
     if(!validIdentity(oauth,connection)||!UUID.test(projectId)||
       typeof connection.connectionBinding!=="string"||
       !/^[A-Za-z0-9_-]{43}$/.test(connection.connectionBinding))return false;
@@ -111,8 +126,10 @@ export class PgConnectorReadGate{
         [projectId,connection.deviceId,oauth.ownerSub,oauth.clientId]);
       const grant=grants.rows[0];
       return !!grant&&grant.project_enabled&&grant.grant_enabled&&
-        ["readonly","write","manufacturing"].includes(grant.project_mode)&&
-        ["readonly","write","manufacturing"].includes(grant.grant_mode);
+        (requireEdit
+          ? grant.project_mode==="write"&&grant.grant_mode==="write"
+          : ["readonly","write","manufacturing"].includes(grant.project_mode)&&
+            ["readonly","write","manufacturing"].includes(grant.grant_mode));
     });
   }
 

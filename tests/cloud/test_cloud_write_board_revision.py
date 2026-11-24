@@ -132,3 +132,87 @@ def test_large_board_and_fifo_denied_before_content_read(
     board.unlink()
     os.mkfifo(board)
     reject(policy, digest)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires native POSIX openat no-follow")
+def test_posix_pinned_revision_and_snapshot_share_exact_trusted_file(tmp_path: Path) -> None:
+    from kicad_mcp.cloud_write_board_revision import (
+        read_operator_board_revision,
+        read_operator_board_snapshot,
+    )
+
+    policy, board, sha = approved(tmp_path)
+    original = board.read_bytes()
+    assert read_operator_board_revision(policy) == sha
+    assert read_operator_board_snapshot(policy) == (sha, original.decode("utf-8"))
+    assert board.read_bytes() == original
+    board.write_bytes(original + b"new revision")
+    new_sha, content = read_operator_board_snapshot(policy)
+    assert new_sha == hashlib.sha256(board.read_bytes()).hexdigest()
+    assert content == board.read_text()
+    with pytest.raises(LocalWriteDeniedError):
+        verify_operator_board_revision(policy, sha)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires native POSIX openat no-follow")
+def test_posix_snapshot_rejects_symlink_hardlink_and_untrusted_permissions(tmp_path: Path) -> None:
+    from kicad_mcp.cloud_write_board_revision import (
+        read_operator_board_revision,
+        read_operator_board_snapshot,
+    )
+
+    policy, board, _ = approved(tmp_path)
+
+    def deny() -> None:
+        for reader in (read_operator_board_revision, read_operator_board_snapshot):
+            with pytest.raises(LocalWriteDeniedError, match="^request denied$"):
+                reader(policy)
+
+    board.chmod(0o666)
+    deny()
+    board.chmod(0o600)
+    alias = policy.directory / "alias.kicad_pcb"
+    os.link(board, alias)
+    deny()
+    alias.unlink()
+    original = board.read_bytes()
+    board.unlink()
+    board.symlink_to(tmp_path / "outside.kicad_pcb")
+    deny()
+    board.unlink()
+    board.write_bytes(original)
+    board.chmod(0o600)
+    policy.directory.chmod(0o777)
+    deny()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires native POSIX openat no-follow")
+def test_posix_snapshot_drops_racing_read_and_rejects_non_utf8(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp import cloud_write_board_revision as revision
+
+    policy, board, _ = approved(tmp_path)
+    read = os.read
+    mutated = False
+
+    def mutate_after_read(fd: int, size: int) -> bytes:
+        nonlocal mutated
+        result = read(fd, size)
+        if not mutated:
+            mutated = True
+            board.write_bytes(BOARD + b"changed mid-read")
+        return result
+
+    monkeypatch.setattr(revision.os, "read", mutate_after_read)
+    with pytest.raises(LocalWriteDeniedError, match="^request denied$"):
+        revision.read_operator_board_snapshot(policy)
+    assert mutated
+    monkeypatch.undo()
+    board.write_bytes(BOARD + b"\xff")
+    assert (
+        revision.read_operator_board_revision(policy)
+        == hashlib.sha256(board.read_bytes()).hexdigest()
+    )
+    with pytest.raises(LocalWriteDeniedError, match="^request denied$"):
+        revision.read_operator_board_snapshot(policy)

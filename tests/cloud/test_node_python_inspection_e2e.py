@@ -221,6 +221,13 @@ async def test_real_node_cloud_python_signed_wss_project_inspection(
                     "selectionRequired": False,
                     "tools": [],
                     "reason": "cloud_operation_not_enabled",
+                    "localMcp": {
+                        "bridgeConfigured": False,
+                        "readAttemptReady": False,
+                        "state": "not_configured",
+                        "sessionNativeWriteMode": "unverified",
+                        "nativeWriteAuthorization": "unverified",
+                    },
                 }
                 # A cloud caller cannot switch the local KiCad project, even
                 # by asking for a hidden local-only tool by exact name.

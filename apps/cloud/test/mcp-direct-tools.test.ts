@@ -8,9 +8,18 @@ import type {Actor} from "../src/auth.js";
 const projectId="22222222-2222-4222-8222-222222222222";
 const deviceId="11111111-1111-4111-8111-111111111111";
 
-function setup(edit:boolean, permitted:boolean, stale=false, grantEdit=edit, unavailable=false){
+type PostWriteChange="remove_grant"|"downgrade_grant"|"disable_project"|"change_device"|"revoke_token"|null;
+function setup(
+  edit:boolean,permitted:boolean,stale=false,grantEdit=edit,unavailable=false,
+  postWriteChange:PostWriteChange=null,directTools=true
+){
   let calls=0;
   let writeCalls=0;
+  let granted=permitted;
+  let currentDeviceId=deviceId;
+  let currentGrantEdit=grantEdit;
+  let projectEnabled=true;
+  let tokenAllowed=true;
   const actor:Actor={
     sub:"user",clientId:"client",
     scopes:new Set(edit?["projects:read","projects:write"]:["projects:read"]),
@@ -21,12 +30,12 @@ function setup(edit:boolean, permitted:boolean, stale=false, grantEdit=edit, una
     async listProjects(){return [await this.getProject("user","client",projectId)].filter(
       (p):p is Project=>Boolean(p));},
     async getProject(_sub,_client,id){
-      if(!permitted||id!==projectId)return null;
-      return {id:projectId,deviceId,alias:"Disposable board",
-        enabled:true,maxMode:grantEdit?"write":"readonly",
+      if(!granted||id!==projectId)return null;
+      return {id:projectId,deviceId:currentDeviceId,alias:"Disposable board",
+        enabled:projectEnabled,maxMode:currentGrantEdit?"write":"readonly",
         available:false,reason:"cloud_read_not_enabled"};
     },
-    async isAccessTokenAllowed(){return true;}
+    async isAccessTokenAllowed(){return tokenAllowed;}
   };
   const localCatalog=async(_dev:string,_proj:string,_offset:number,name?:string)=>{
     const specs=(unavailable?[]:CLOUD_DIRECT_TOOLS).filter(spec=>spec.name===name||name===undefined)
@@ -39,13 +48,21 @@ function setup(edit:boolean, permitted:boolean, stale=false, grantEdit=edit, una
   const localCall=async(_dev:string,_proj:string,name:string,args:Record<string,unknown>,
     write:boolean)=>{
     calls++;
-    if(write)writeCalls++;
+    if(write){
+      writeCalls++;
+      if(postWriteChange==="remove_grant")granted=false;
+      if(postWriteChange==="downgrade_grant")currentGrantEdit=false;
+      if(postWriteChange==="disable_project")projectEnabled=false;
+      if(postWriteChange==="change_device")
+        currentDeviceId="44444444-4444-4444-8444-444444444444";
+      if(postWriteChange==="revoke_token")tokenAllowed=false;
+    }
     assert.equal("project_id" in args,false);
     return {isError:false,structuredContent:{success:true,name,args}};
   };
   const handler=createCloudMcpHandler(
     inventory,actor,undefined,undefined,undefined,undefined,undefined,
-    undefined,undefined,undefined,undefined,localCatalog,localCall,true);
+    undefined,undefined,undefined,undefined,localCatalog,localCall,directTools);
   const invoke=async(method:string,params:Record<string,unknown>={},id=1)=>{
     const payload={jsonrpc:"2.0",id,method,params:{...params,_meta:{
       "io.modelcontextprotocol/clientInfo":{name:"direct-tools-test",version:"1"},
@@ -185,4 +202,30 @@ test("direct tools never dispatch on missing project or stale local schema",asyn
     assert.match(JSON.stringify(result.data),/local_tool_contract_mismatch/);
     assert.equal(stale.calls,0);
   }finally{await stale.handler.close();}
+});
+
+test("revocation during an in-flight signed write never produces client-visible success",async()=>{
+  for(const change of [
+    "remove_grant","downgrade_grant","disable_project","change_device","revoke_token"
+  ] as const){
+    for(const direct of [true,false]){
+      const label=(direct?"direct ":"generic ")+change;
+      const t=setup(true,true,false,true,false,change,direct);
+      try{
+        const tool=direct?"sch_move_symbol":"local_mcp_write";
+        const args=direct
+          ?{project_id:projectId,reference:"R1",x_mm:10,y_mm:20}
+          :{project_id:projectId,tool_name:"sch_move_symbol",
+            arguments:{reference:"R1",x_mm:10,y_mm:20}};
+        const reply=await t.invoke("tools/call",{name:tool,arguments:args},117);
+        const response=reply.data.result;
+        assert.equal(t.writes,1,label+" must exercise actual local write relay");
+        assert.equal(response?.isError,true,label+" must not report success after revocation");
+        assert.equal(response?.structuredContent?.success,false,label);
+        assert.equal(response?.structuredContent?.reason,"local_mcp_operation_unconfirmed",label);
+        assert.equal(response?.structuredContent?.outcomeUnknown,true,label);
+        assert.equal(response?.structuredContent?.retrySafe,false,label);
+      }finally{await t.handler.close();}
+    }
+  }
 });

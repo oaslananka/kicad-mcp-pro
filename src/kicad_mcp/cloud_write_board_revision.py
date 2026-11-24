@@ -38,26 +38,15 @@ def _pin_approved_directory(filename: Path, existing_fd: int | None, owner_uid: 
     return duplicate
 
 
-def verify_operator_board_revision(
-    operator_project: OperatorProject,
-    expected_sha256: str,
-    *,
-    _directory_fd: int | None = None,
-) -> None:
-    """Read a pinned approved board and fail closed on stale revisions.
+def _read_posix_pinned_board(
+    operator_project: OperatorProject, *, _directory_fd: int | None = None
+) -> bytes:
+    """Read one owner-private, no-follow PCB from a pinned POSIX descriptor.
 
-    This preflight never grants a write: the native adapter must revalidate
-    the same file/revision under its edit lock immediately before mutation.
-    Paths and expected hash must come from separately trusted local policy
-    and an independently verified signed command, respectively.
+    Never resolve the incoming path into an unchecked ordinary open: the
+    owner-scoped directory fd and file identity must stay unchanged for the
+    complete bounded read.
     """
-    if os.name == "nt":
-        from kicad_mcp.cloud_windows_write_revision import verify_windows_board_revision
-
-        if _directory_fd is not None:
-            raise LocalWriteDeniedError(_DENIED)
-        verify_windows_board_revision(operator_project, expected_sha256)
-        return
     nofollow = getattr(os, "O_NOFOLLOW", None)
     nonblock = getattr(os, "O_NONBLOCK", None)
     getuid = getattr(os, "getuid", None)
@@ -72,8 +61,6 @@ def verify_operator_board_revision(
         or not isinstance(operator_project.filename_stem, str)
         or _NAME.fullmatch(operator_project.filename_stem) is None
         or operator_project.filename_stem in {".", ".."}
-        or not isinstance(expected_sha256, str)
-        or _SHA.fullmatch(expected_sha256) is None
     ):
         raise LocalWriteDeniedError(_DENIED)
 
@@ -97,28 +84,30 @@ def verify_operator_board_revision(
             or not 1 <= before.st_size <= MAX_BOARD_BYTES
         ):
             raise LocalWriteDeniedError(_DENIED)
-        digest = hashlib.sha256()
-        read_bytes = 0
-        while read_bytes < before.st_size:
-            chunk = os.read(board_fd, min(65536, before.st_size - read_bytes))
+        chunks: list[bytes] = []
+        remaining = before.st_size
+        while remaining:
+            chunk = os.read(board_fd, min(65536, remaining))
             if not chunk:
                 raise LocalWriteDeniedError(_DENIED)
-            digest.update(chunk)
-            read_bytes += len(chunk)
+            chunks.append(chunk)
+            remaining -= len(chunk)
         after = os.fstat(board_fd)
-        if (
-            read_bytes != before.st_size
-            or (
-                before.st_dev,
-                before.st_ino,
-                before.st_size,
-                before.st_mtime_ns,
-                before.st_ctime_ns,
-            )
-            != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns)
-            or not hmac.compare_digest(digest.hexdigest(), expected_sha256)
+        if remaining or (
+            before.st_dev,
+            before.st_ino,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+        ) != (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
         ):
             raise LocalWriteDeniedError(_DENIED)
+        return b"".join(chunks)
     except (OSError, ValueError, TypeError) as exc:
         raise LocalWriteDeniedError(_DENIED) from exc
     finally:
@@ -126,3 +115,47 @@ def verify_operator_board_revision(
             os.close(board_fd)
         if directory_fd is not None:
             os.close(directory_fd)
+
+
+def read_operator_board_revision(operator_project: OperatorProject) -> str:
+    """Return the hash of the same safely pinned owner board on each platform."""
+    if os.name == "nt":
+        from kicad_mcp.cloud_windows_write_revision import read_windows_board_revision
+
+        return read_windows_board_revision(operator_project)
+    return hashlib.sha256(_read_posix_pinned_board(operator_project)).hexdigest()
+
+
+def read_operator_board_snapshot(operator_project: OperatorProject) -> tuple[str, str]:
+    """Return a bounded saved board for independent native-write verification."""
+    if os.name == "nt":
+        from kicad_mcp.cloud_windows_write_revision import read_windows_board_snapshot
+
+        return read_windows_board_snapshot(operator_project)
+    contents = _read_posix_pinned_board(operator_project)
+    try:
+        decoded = contents.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise LocalWriteDeniedError(_DENIED) from exc
+    return hashlib.sha256(contents).hexdigest(), decoded
+
+
+def verify_operator_board_revision(
+    operator_project: OperatorProject,
+    expected_sha256: str,
+    *,
+    _directory_fd: int | None = None,
+) -> None:
+    """Fail closed if the owner-pinned board differs from its signed revision."""
+    if os.name == "nt":
+        from kicad_mcp.cloud_windows_write_revision import verify_windows_board_revision
+
+        if _directory_fd is not None:
+            raise LocalWriteDeniedError(_DENIED)
+        verify_windows_board_revision(operator_project, expected_sha256)
+        return
+    if not isinstance(expected_sha256, str) or _SHA.fullmatch(expected_sha256) is None:
+        raise LocalWriteDeniedError(_DENIED)
+    contents = _read_posix_pinned_board(operator_project, _directory_fd=_directory_fd)
+    if not hmac.compare_digest(hashlib.sha256(contents).hexdigest(), expected_sha256):
+        raise LocalWriteDeniedError(_DENIED)

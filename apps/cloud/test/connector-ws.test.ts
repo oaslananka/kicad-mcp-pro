@@ -711,6 +711,14 @@ test("an acknowledged signed WSS write releases the sequence for the next write"
     const device=enrolled.deviceId;
     const project=randomUUID();
     await db.query("UPDATE devices SET enabled=true WHERE id=$1",[device]);
+    // The real final outgoing gate now requires an owner/client project grant.
+    // This transport-only fixture has a synthetic DB Edit grant, never human
+    // permission or access to a real KiCad project.
+    await db.query("INSERT INTO projects(id,owner_sub,device_id,alias,enabled,max_mode) "+
+      "VALUES($1,$2,$3,'Isolated WSS fixture',true,'write')",[project,owner,device]);
+    await db.query("INSERT INTO project_client_grants "+
+      "(project_id,owner_sub,client_id,enabled,max_mode) "+
+      "VALUES($1,$2,'test-client',true,'write')",[project,owner]);
     const {server,port,attached}=await startFixtureServer(
       db,false,false,false,false,false,true,false);
     let ws:WebSocket|undefined;
@@ -755,6 +763,19 @@ test("an acknowledged signed WSS write releases the sequence for the next write"
         assert.equal(confirmation.kind,"connector.write_ack");
         assert.equal(confirmation.requestId,requestId);
       }
+
+      // An Edit downgrade must block before a third sequence is reserved,
+      // even though the same client still holds an authorized Read grant.
+      const revokedId=randomUUID();
+      const revokedPayload=Buffer.from(JSON.stringify({requestId:revokedId}))
+        .toString("base64url");
+      await db.query("UPDATE project_client_grants SET max_mode='readonly' "+
+        "WHERE project_id=$1 AND client_id='test-client'",[project]);
+      assert.equal(await attached.requestWrite(oauth,device,project,
+        {payload:revokedPayload},true),null,
+        "a Read grant cannot authorize signed native WRITE after downgrade");
+      await db.query("UPDATE project_client_grants SET max_mode='write' "+
+        "WHERE project_id=$1 AND client_id='test-client'",[project]);
 
       // An owner Connector disconnect after dispatch must abandon the
       // pending write response; it cannot be acknowledged as committed.

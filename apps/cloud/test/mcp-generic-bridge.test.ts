@@ -35,6 +35,8 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
   let remoteCalls=0;
   let localWrites=0;
   let wrongTarget=false;
+  let mismatchedRelayReply:"request"|"project"|null=null;
+  let mismatchedCatalogReply:"request"|"project"|null=null;
   let deviceOnline=true;
   let catalogResponds=true;
   let catalogAttempts=0;
@@ -93,7 +95,11 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
             description:"Read bounded KiCad editor status",
             inputSchema:{type:"object",properties:{}},accessMode:"readonly"});
         return {kind:"connector.mcp_result" as const,version:1 as const,
-          requestId:request.requestId,projectId,method:"catalog" as const,
+          requestId:mismatchedCatalogReply==="request"
+            ?"99999999-9999-4999-8999-999999999999":request.requestId,
+          projectId:mismatchedCatalogReply==="project"
+            ?"88888888-8888-4888-8888-888888888888":projectId,
+          method:"catalog" as const,
           ok:true,tools:request.toolName?tools.filter(t=>t.name===request.toolName):tools,
           nextOffset:null};
       }
@@ -107,7 +113,11 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
         assert.equal(request.proof,undefined);
       }
       return {kind:"connector.mcp_result" as const,version:1 as const,
-        requestId:request.requestId,projectId,method:"call" as const,
+        requestId:mismatchedRelayReply==="request"
+          ?"99999999-9999-4999-8999-999999999999":request.requestId,
+        projectId:mismatchedRelayReply==="project"
+          ?"88888888-8888-4888-8888-888888888888":projectId,
+        method:"call" as const,
         ok:true,result:request.toolName==="kicad_get_server_info"
           ?{content:[{type:"text",text:"private-native-evidence"}],isError:false,
             structuredContent:{kicad:{ipcAvailable:true,livePcbContext:true,
@@ -504,6 +514,48 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
     },63,"get_project_editor_status");
     assert.equal(deniedEditor.data.result?.structuredContent?.reason,"project_not_granted");
     assert.equal(remoteCalls,callsBeforeEditor+1);
+
+    // A compromised/stale relay must not deliver a signed WRITE result
+    // for a different request or different project, even if ok:true.
+    // The WebSocket validates this too; Cloud's HTTP boundary must still
+    // enforce it rather than trusting mocked/alternate transport clients.
+    wrongTarget=false;
+    clientMode="write";
+    writePolicy=true;
+    for(const mismatch of ["request","project"] as const){
+      mismatchedCatalogReply=mismatch;
+      const priorWrites:number=localWrites;
+      const mismatchedCatalog=await invoke(enabled,"token-edit","tools/call",{
+        name:"local_mcp_catalog",arguments:{project_id:projectId}
+      },90,"local_mcp_catalog");
+      assert.equal(mismatchedCatalog.data.result?.structuredContent?.available,false,
+        mismatch+" catalog cannot publish another request or project's tools");
+      assert.equal(localWrites,priorWrites,
+        "A mismatched catalog must not dispatch native edits");
+      mismatchedCatalogReply=null;
+      for(const directTool of [false,true]){
+        // Isolate the result binding test from the separately checked
+        // catalog binding: its catalog lookup must remain properly matched.
+        mismatchedRelayReply=null;
+        const toolName=directTool?"sch_move_symbol":"local_mcp_write";
+        const args=directTool
+          ?{project_id:projectId,reference:"R1",x_mm:10,y_mm:20}
+          :{project_id:projectId,tool_name:"sch_move_symbol",
+            arguments:{reference:"R1",x_mm:10,y_mm:20}};
+        mismatchedRelayReply=mismatch;
+        const reply=await invoke(
+          directTool?direct:enabled,"token-edit","tools/call",
+          {name:toolName,arguments:args},80,toolName
+        );
+        assert.equal(reply.data.result?.isError,true,
+          mismatch+" "+toolName+" response must not claim success");
+        const status=reply.data.result?.structuredContent;
+        assert.equal(status?.reason,"local_mcp_operation_unconfirmed");
+        assert.equal(status?.outcomeUnknown,true);
+        assert.equal(status?.retrySafe,false);
+      }
+    }
+    mismatchedRelayReply=null;
   }finally{
     for(const server of [disabled,enabled,direct])await new Promise<void>(resolve=>server.close(()=>resolve()));
   }

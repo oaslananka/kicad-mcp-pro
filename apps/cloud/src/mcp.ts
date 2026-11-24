@@ -140,6 +140,26 @@ export function createCloudMcpHandler(
       boardCounts||schematicCounts);
     const connected=(deviceId:string)=>Boolean(
       isDeviceConnected?.(actor.sub,deviceId));
+    // A signed Connector can finish a mutation after the owner revokes access.
+    // Never report that result as a successful client operation: revocation
+    // cannot prove that the local board was rolled back or unchanged.
+    const stillGrantedAfterRelay=async(project:Project,write:boolean):Promise<boolean>=>{
+      if(!await inventory.isAccessTokenAllowed(actor.sub,actor.clientId,actor.issuedAt))
+        return false;
+      const current=await inventory.getProject(actor.sub,actor.clientId,project.id);
+      return current!==null&&current.enabled===true&&
+        current.deviceId===project.deviceId&&(!write||current.maxMode==="write");
+    };
+    const revokedDuringRelay=(write:boolean)=>({
+      ...text(write?{
+        success:false,reason:"local_mcp_operation_unconfirmed",
+        outcomeUnknown:true,retrySafe:false,
+        guidance:"Project access changed while the edit was running. "+
+          "Inspect the local board before retrying; the edit may already have occurred."
+      }:{
+        success:false,reason:"project_not_granted"
+      }),isError:true
+    });
     // Claims are effective only inside a currently authenticated signed socket.
     // A missing claim is the legacy v1 Connector compatibility path.
     const authenticatedClaim=(project:Project)=>
@@ -489,6 +509,8 @@ export function createCloudMcpHandler(
               outcomeUnknown:write,retrySafe:!write,
               guidance:write?"Inspect the local design before retrying.":"Check the device connection."}),
               isError:true};
+            if(!await stillGrantedAfterRelay(project,write))
+              return revokedDuringRelay(write);
             const actual=result as {isError?:boolean;structuredContent?:{success?:boolean}};
             const success=actual.isError!==true&&actual.structuredContent?.success!==false;
             return {...text({success,tool_name:request.tool_name,local_result:result}),
@@ -625,6 +647,8 @@ export function createCloudMcpHandler(
                 outcomeUnknown:needsWrite,retrySafe:!needsWrite,
                 guidance:needsWrite?"Inspect the local design before retrying.":"Reconnect the device."}),
                 isError:true};
+            if(!await stillGrantedAfterRelay(project,needsWrite))
+              return revokedDuringRelay(needsWrite);
             const actual=result as {isError?:boolean;structuredContent?:{success?:boolean}};
             const success=actual.isError!==true&&actual.structuredContent?.success!==false;
             return {...text({success,tool_name:tool.name,local_result:result}),
@@ -666,7 +690,7 @@ export function createCloudMcpHandler(
           ]}};
         }
         const {project,selectionRequired}=await resolveScopedProject(inventory,actor,project_id);
-        if(!project)return text({success:false,selectionRequired});
+        if(!project)return {...text({success:false,selectionRequired}),isError:true};
         // The OAuth write scope alone is not the owner's per-project Edit grant.
         // A known Read-only grant must fail before signing/dispatch, not as an
         // ambiguous native write result requiring the owner to inspect the board.
@@ -689,13 +713,23 @@ export function createCloudMcpHandler(
         // A relay failure or authorization change after dispatch cannot prove
         // whether KiCad already committed. Preserve the existing error code,
         // but explicitly prohibit blind retries until the board is inspected.
-        return text(result?{...result}:{
+        const outcome=result?.success===false?{
+          ...result,
+          outcomeUnknown:true,
+          retrySafe:false,
+          guidance:"The local edit or save was not fully confirmed. "+
+            "Inspect the KiCad board before retrying; it may already have changed."
+        }:result?{...result}:{
           success:false,
           reason:"write_execution_failed",
           outcomeUnknown:true,
           retrySafe:false,
           guidance:"Write outcome is unconfirmed. Check the local board before retrying."
-        });
+        };
+        // The MCP envelope must agree with the native result. A false
+        // structuredContent.success without isError can otherwise mislead an
+        // AI client into treating an unconfirmed KiCad edit as a completed tool.
+        return {...text(outcome),...(outcome.success===true?{}:{isError:true})};
       });
     }
     }
