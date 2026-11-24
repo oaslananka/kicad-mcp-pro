@@ -142,10 +142,8 @@ def _side_cost(
 ) -> tuple[float, float, int]:
     """Score a side: lower is better.
 
-    The cost is ``(pin_conflict, overlap_area, preference_rank)`` compared
-    lexicographically — never put text where a pin/wire exits if another side is
-    free, then minimise obstacle overlap, then fall back to the reading-order
-    preference.
+    The cost is ``(overlap_area, pin_conflict, preference_rank)``: avoid
+    actual obstacles first, then prefer a side without pins.
     """
     overlap = 0.0
     for box in boxes:
@@ -153,7 +151,7 @@ def _side_cost(
             overlap += box.intersection_area(obstacle)
     pin_conflict = 1.0 if side in avoid_sides else 0.0
     rank = _SIDE_ORDER.index(side) if side in _SIDE_ORDER else len(_SIDE_ORDER)
-    return (pin_conflict, overlap, rank)
+    return (overlap, pin_conflict, rank)
 
 
 def autoplace_fields(

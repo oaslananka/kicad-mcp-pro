@@ -225,13 +225,15 @@ class SchematicLayoutAutomationService:
             )
 
         if dry_run:
-            mutator(sch_file.read_text(encoding="utf-8"))
+            mutator(sch_file.read_bytes().decode("utf-8"))
             return (
                 f"Dry run: would reposition Reference/Value fields on {len(updated)} "
                 f"symbol(s): {', '.join(updated) if updated else '(none)'}."
             )
 
         self.transactional_write_to_schematic_file(sch_file, mutator)
+        if not updated:
+            return "Auto-placed Reference/Value fields on 0 symbol(s). No changes were made."
         result = self.reload_schematic()
         return (
             f"{result}\n"
@@ -270,7 +272,7 @@ class SchematicLayoutAutomationService:
             if respaced:
                 actions.append(f"re-spaced {len(respaced)} overlapping symbol(s)")
                 changed = True
-        if "text_overlap" in codes:
+        if {"text_overlap", "field_body_intrusion"} & codes:
             moved = self.autoplace_fields_apply(sch_file)
             if moved:
                 actions.append(f"auto-placed fields on {len(moved)} symbol(s)")
@@ -297,18 +299,31 @@ class SchematicLayoutAutomationService:
             pass_log.append(
                 f"pass {pass_index + 1}: {status} ({', '.join(sorted(codes)) or 'clean'})"
             )
+            remaining = codes
             if status == "PASS":
                 break
 
             changed = self._apply_readability_pass(sch_file, codes, actions)
-            remaining = codes
             if not changed:
                 break
+        else:
+            report = self.run_visual_qa(sch_file.read_text(encoding="utf-8", errors="ignore"))
+            final_status = str(report["status"])
+            remaining = self._extract_finding_codes(report)
 
         if actions:
             self.reload_schematic()
 
-        unresolved = sorted(remaining & {"symbol_overlap", "label_overlap", "dense_label_fanout"})
+        unresolved = sorted(
+            remaining
+            & {
+                "symbol_overlap",
+                "label_overlap",
+                "dense_label_fanout",
+                "field_body_intrusion",
+                "text_overlap",
+            }
+        )
         summary = [
             f"Readability fix: {initial_status or 'PASS'} -> {final_status} "
             f"over {len(pass_log)} pass(es).",
@@ -322,7 +337,7 @@ class SchematicLayoutAutomationService:
             summary.append(
                 "Manual follow-up suggested for: "
                 + ", ".join(unresolved)
-                + " (try sch_auto_place_functional / sch_auto_resize_sheet)."
+                + " (review the native render; preserve existing connectivity)."
             )
         return "\n".join(summary)
 

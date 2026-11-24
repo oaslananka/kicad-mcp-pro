@@ -495,3 +495,37 @@ def test_visual_qa_reports_legacy_vertical_justification_without_rewriting() -> 
         findings = [f for f in report["findings"] if f["code"] == "vertical_label_justification"]
         assert {f["ref"] for f in findings} == {"EN", "BOOT"}
         assert all(f["level"] == "WARN" for f in findings)
+
+
+def test_rotated_asymmetric_symbol_uses_native_body_and_field_orientation() -> None:
+    sch = """
+(kicad_sch (paper "A4")
+  (lib_symbols (symbol "Test:Asymmetric"
+    (symbol "Asymmetric_0_1" (rectangle (start 0 0) (end 5 2)))
+    (symbol "Asymmetric_1_1"
+      (pin passive line (at -3 0 0) (length 3) (name "~") (number "1")))))
+  (symbol (lib_id "Test:Asymmetric") (at 50 50 90)
+    (property "Reference" "U1" (at 55 50 0) (effects (font (size 1.27 1.27))))
+    (property "Value" "LongValue" (at 55 52 90) (effects (font (size 1.27 1.27)))))
+)
+"""
+    placed = parse_placed_symbols(sch)[0]
+    assert placed.body.y_min == pytest.approx(45)
+    assert placed.body.y_max == pytest.approx(53)
+    assert placed.fields[0].box().height > placed.fields[0].box().width
+    assert placed.fields[1].box().width > placed.fields[1].box().height
+
+
+@pytest.mark.parametrize(
+    ("angle", "expected"), [(0, "left"), (90, "right"), (180, "right"), (270, "left")]
+)
+def test_native_horizontal_field_justify_for_cardinal_rotations(angle: int, expected: str) -> None:
+    # Native KiCad 10 SVG measured using SW1 at the same anchor and four symbol rotations.
+    sch = f"""
+(kicad_sch
+  (symbol (lib_id "Test:Switch") (at 50 50 {angle})
+    (property "Reference" "SW1" (at 40 50 {angle % 180})
+      (effects (font (size 1.27 1.27)) (justify left)))))
+"""
+    field = parse_placed_symbols(sch)[0].fields[0]
+    assert field.justify == frozenset({expected})

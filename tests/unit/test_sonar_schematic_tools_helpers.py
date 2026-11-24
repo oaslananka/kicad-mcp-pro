@@ -114,32 +114,20 @@ def test_set_native_dnp_flag_preserves_insertion_order_and_errors() -> None:
 def test_autoplace_visible_fields_preserves_missing_and_unchanged_blocks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from types import SimpleNamespace
+    from kicad_mcp.utils.geometry import Box
 
     assert schematic._autoplace_visible_fields_for_ref("none", "R1", {}, {}) == ("none", False)
-    monkeypatch.setattr(
-        schematic,
-        "_find_placed_symbol_block",
-        lambda content, ref: (
-            content,
-            0,
-            len(content),
-            {"reference": ref, "value": "10K"},
-        ),
-    )
-    monkeypatch.setattr(schematic, "_symbol_body_and_pins", lambda _parsed: (object(), []))
-    placements = [
-        SimpleNamespace(x=12.0, y=15.0, angle=0),
-        SimpleNamespace(x=18.0, y=15.0, angle=90),
-    ]
-    monkeypatch.setattr(schematic, "autoplace_fields", lambda *_args: placements)
-    monkeypatch.setattr(
-        schematic,
-        "_set_property_position",
-        lambda block, name, x, y, angle: block + f"-{name}-{x}-{y}-{angle}",
-    )
-    result, changed = schematic._autoplace_visible_fields_for_ref(
-        "block", "R1", {"R1": object()}, {"R1": (object(), [])}
-    )
-    assert changed is True
-    assert result == "block-Reference-12.0-15.0-0-Value-18.0-15.0-90"
+    content = """
+(kicad_sch
+  (symbol (lib_id "Device:R") (at 50 50 0)
+    (property "Reference" "R1" (at 52.27 49.111 0)
+      (effects (font (size 1.27 1.27)) (justify left)))
+    (property "Value" "10K" (at 52.27 50.889 0)
+      (effects (font (size 1.27 1.27)) (justify left)))))
+"""
+    body = Box(49, 47.5, 51, 52.5)
+    pins = [(50.0, 46.2), (50.0, 53.8)]
+    monkeypatch.setattr(schematic, "_symbol_body_and_pins", lambda _: (body, pins))
+    assert schematic._autoplace_visible_fields_for_ref(
+        content, "R1", {"R1": body}, {"R1": (body, pins)}
+    ) == (content, False)
