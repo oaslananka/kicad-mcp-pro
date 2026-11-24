@@ -10,6 +10,15 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.22.4](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.3...mcp-server-v4.22.4) (2026-11-24)
+
+
+### Bug Fixes
+
+* **ci:** fail promptly when Windows coverage upload is impossible ([#1896](https://github.com/oaslananka/kicad-mcp-pro/issues/1896)) ([464ce75](https://github.com/oaslananka/kicad-mcp-pro/commit/464ce756ed27afdd766e987e6dc8220cb9a8dd00))
+* **ci:** retry transient exact-run coverage downloads ([#1899](https://github.com/oaslananka/kicad-mcp-pro/issues/1899)) ([5da2d78](https://github.com/oaslananka/kicad-mcp-pro/commit/5da2d780842c5ffbe65d26bbc003b8db1c2016d8))
+* **schematic:** review generic connector values before completion ([#1900](https://github.com/oaslananka/kicad-mcp-pro/issues/1900)) ([3548a30](https://github.com/oaslananka/kicad-mcp-pro/commit/3548a30c47e572b18a34ec007a393ea300c3c89d))
+
 ## [4.22.3](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.2...mcp-server-v4.22.3) (2026-11-24)
 
 
