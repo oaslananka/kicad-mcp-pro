@@ -10,7 +10,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Mapping
+import shutil
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, BinaryIO, cast
@@ -26,7 +27,9 @@ from kicad_mcp.ir.engineering_graph_from_ir import (
     graph_from_circuit,
     update_graph_from_circuit,
 )
+from kicad_mcp.ir.native_netlist import parse_native_netlist
 from kicad_mcp.project.evidence_current_state import canonical_graph_entity_sha256
+from kicad_mcp.project.native_hierarchy import inspect_sheet_instances
 
 STATE_SCHEMA_VERSION = 1
 SCHEMATIC_SOURCE_SUFFIX = ".kicad_sch"
@@ -138,6 +141,11 @@ def _require_no_native_child_sheets(stream: BinaryIO) -> None:
 
 
 def source_digests(root: Path, names: tuple[str, ...]) -> dict[str, str]:
+    """Hash the legacy single-sheet source inventory, rejecting hierarchy."""
+    return _source_digests(root, names, allow_hierarchy=False)
+
+
+def _source_digests(root: Path, names: tuple[str, ...], *, allow_hierarchy: bool) -> dict[str, str]:
     """Verify exact project-file bytes without following symlinked paths.
 
     A before/after fstat comparison detects common concurrent writes. The
@@ -157,7 +165,10 @@ def source_digests(root: Path, names: tuple[str, ...]) -> dict[str, str]:
     }
     if discovered != set(names):
         raise StateRebuildRequiredError("native project source inventory changed")
-    return {name: _digest_one_source(real_root, name) for name in sorted(names)}
+    return {
+        name: _digest_one_source(real_root, name, allow_hierarchy=allow_hierarchy)
+        for name in sorted(names)
+    }
 
 
 _CHANGED_DURING_READ = "native source changed during read"
@@ -189,7 +200,9 @@ def _verify_ambiguous_windows_identity(
         raise StateRebuildRequiredError(_CHANGED_DURING_READ)
 
 
-def _digest_one_source(real_root: Path, name: str) -> str:
+def _digest_one_source(
+    real_root: Path, name: str, *, allow_hierarchy: bool = False, copy_to: Path | None = None
+) -> str:
     rel = _source_name(name)
     parent = real_root
     for part in rel.parts[:-1]:
@@ -205,7 +218,11 @@ def _digest_one_source(real_root: Path, name: str) -> str:
             before = os.fstat(fd)
             with os.fdopen(os.dup(fd), "rb") as stream:
                 digest = hashlib.file_digest(stream, "sha256").hexdigest()
-                if rel.suffix == SCHEMATIC_SOURCE_SUFFIX:
+                if copy_to is not None:
+                    stream.seek(0)
+                    with copy_to.open("xb") as target:
+                        shutil.copyfileobj(stream, target)
+                if rel.suffix == SCHEMATIC_SOURCE_SUFFIX and not allow_hierarchy:
                     stream.seek(0)
                     _require_no_native_child_sheets(stream)
             after = os.fstat(fd)
@@ -227,6 +244,78 @@ def _digest_one_source(real_root: Path, name: str) -> str:
         # Windows. Verify original bytes and path identity independently.
         _verify_ambiguous_windows_identity(path, digest, path_identity)
     return digest
+
+
+@dataclass(frozen=True, slots=True)
+class NativeHierarchySnapshot:
+    """Source-bound native read-back; not a graph supplied by a cache file."""
+
+    root: Path
+    source_hashes: tuple[tuple[str, str], ...]
+    circuit: IRCircuit
+
+
+def capture_native_hierarchy(
+    root: Path,
+    root_name: str,
+    native_sources: tuple[str, ...],
+    *,
+    run_cli: Callable[..., tuple[int, str, str]],
+) -> NativeHierarchySnapshot:
+    """Export a read-only hierarchy through the caller's trusted KiCad CLI seam.
+
+    The caller owns a stable project snapshot and a bounded CLI runner. We
+    stage only verified native sources, reject unknown hierarchy paths before
+    invoking KiCad, and bind the result to exact original and copied hashes.
+    """
+    import tempfile
+
+    before = _source_digests(root, native_sources, allow_hierarchy=True)
+    with tempfile.TemporaryDirectory(prefix="kicad-native-graph-") as directory:
+        staging = Path(directory) / "project"
+        staging.mkdir()
+        for name, digest in before.items():
+            relative = _source_name(name)
+            target = staging / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            copied_digest = _digest_one_source(
+                root.resolve(strict=True), name, allow_hierarchy=True, copy_to=target
+            )
+            if (
+                copied_digest != digest
+                or _digest_one_source(staging, name, allow_hierarchy=True) != digest
+            ):
+                raise StateRebuildRequiredError("staged native source changed")
+        root_uuid, expected_sheets, expected_stamps = inspect_sheet_instances(
+            staging, root_name, native_sources
+        )
+        output = Path(directory) / "native.xml"
+        code, _stdout, _stderr = run_cli(
+            "sch",
+            "export",
+            "netlist",
+            "--format",
+            "kicadxml",
+            "--output",
+            str(output),
+            str(staging / root_name),
+        )
+        if code != 0 or output.is_symlink() or not output.is_file():
+            raise StateRebuildRequiredError("native netlist export failed")
+        with output.open("rb") as stream:
+            xml = stream.read(32 * 1024 * 1024 + 1)
+        circuit = parse_native_netlist(
+            xml,
+            root_uuid=root_uuid,
+            root_name=root_name,
+            expected_sheets=expected_sheets,
+            expected_stamps=expected_stamps,
+        )
+        if _source_digests(staging, native_sources, allow_hierarchy=True) != before:
+            raise StateRebuildRequiredError("native export changed staged source")
+    if _source_digests(root, native_sources, allow_hierarchy=True) != before:
+        raise StateRebuildRequiredError("source changed during native export")
+    return NativeHierarchySnapshot(root.resolve(strict=True), tuple(before.items()), circuit)
 
 
 def _entity_hashes(graph: EngineeringGraph) -> dict[str, str]:
@@ -297,7 +386,10 @@ def _validate_document_header(
 
 
 def _load_verified_graph(
-    graph_document: object, project_key: str, native_sources: tuple[str, ...]
+    graph_document: object,
+    project_key: str,
+    native_sources: tuple[str, ...],
+    native_snapshot: NativeHierarchySnapshot | None = None,
 ) -> EngineeringGraph:
     if (
         not isinstance(graph_document, dict)
@@ -312,7 +404,12 @@ def _load_verified_graph(
     )
     if project_entity is None:
         raise ValueError("missing Engineering Graph project entity")
-    _require_single_sheet_scope(native_sources, project_entity.attributes.get("sheet_hierarchy"))
+    if native_snapshot is None:
+        _require_single_sheet_scope(
+            native_sources, project_entity.attributes.get("sheet_hierarchy")
+        )
+    elif graph.to_document() != graph_from_circuit(native_snapshot.circuit).to_document():
+        raise ValueError("cached native graph differs from authoritative read-back")
     return graph
 
 
@@ -321,6 +418,7 @@ def _validate_state_metadata_and_hashes(
     root: Path,
     graph: EngineeringGraph,
     native_sources: tuple[str, ...],
+    native_snapshot: NativeHierarchySnapshot | None = None,
 ) -> None:
     stored_sources = document["source_hashes"]
     stored_entities = document["entity_hashes"]
@@ -340,7 +438,10 @@ def _validate_state_metadata_and_hashes(
         raise ValueError("invalid state metadata")
     if set(stored_sources) != set(native_sources):
         raise ValueError("tracked source list changed")
-    if source_digests(root, native_sources) != stored_sources:
+    if (
+        _source_digests(root, native_sources, allow_hierarchy=native_snapshot is not None)
+        != stored_sources
+    ):
         raise ValueError("unrecognized native change")
     if _entity_hashes(graph) != stored_entities:
         raise ValueError("cached entity digest mismatch")
@@ -356,6 +457,7 @@ class PersistentProjectState:
     generation: int = 0
     journal: tuple[ChangeJournalEntry, ...] = ()
     derived_dependencies: dict[str, dict[str, str]] = field(default_factory=dict)
+    native_root_name: str | None = None
 
     @classmethod
     def rebuild(
@@ -370,6 +472,8 @@ class PersistentProjectState:
         if not compatibility_key.strip():
             raise StateRebuildRequiredError("missing KiCad/parser compatibility identity")
         _require_single_sheet_scope(native_sources, circuit.sheet_hierarchy)
+        if circuit.native_instances:
+            raise StateRebuildRequiredError("native snapshot requires rebuild_native")
         graph = graph_from_circuit(circuit)
         return cls(
             root,
@@ -379,12 +483,34 @@ class PersistentProjectState:
             compatibility_key,
         )
 
+    @classmethod
+    def rebuild_native(
+        cls, snapshot: NativeHierarchySnapshot, *, compatibility_key: str
+    ) -> PersistentProjectState:
+        """Build the opt-in native state without accepting an injected graph."""
+        if not compatibility_key.strip() or snapshot.circuit.source_path is None:
+            raise StateRebuildRequiredError("missing native compatibility or root identity")
+        hashes = dict(snapshot.source_hashes)
+        if _source_digests(snapshot.root, tuple(hashes), allow_hierarchy=True) != hashes:
+            raise StateRebuildRequiredError("native snapshot is stale")
+        graph = graph_from_circuit(snapshot.circuit)
+        return cls(
+            snapshot.root,
+            graph,
+            hashes,
+            _entity_hashes(graph),
+            compatibility_key,
+            native_root_name=snapshot.circuit.source_path,
+        )
+
     @property
     def project_key(self) -> str:
         return self.graph.project_key
 
     def verify_sources(self) -> None:
-        actual = source_digests(self.root, tuple(self.source_hashes))
+        actual = _source_digests(
+            self.root, tuple(self.source_hashes), allow_hierarchy=self.native_root_name is not None
+        )
         if actual != self.source_hashes:
             raise StateRebuildRequiredError("unrecognized native file edit; full rebuild required")
 
@@ -407,13 +533,46 @@ class PersistentProjectState:
         The caller owns native KiCad mutation and must derive 'after' from an
         authoritative read-back. Unsupported edits force a clean rebuild.
         """
+        if self.native_root_name is not None:
+            raise StateRebuildRequiredError("use verified native hierarchy snapshots for edits")
+        return self._apply_native_edit(
+            token, before, after, expected_new_hashes=expected_new_hashes
+        )
+
+    def apply_hierarchy_edit(
+        self, token: EditToken, before: NativeHierarchySnapshot, after: NativeHierarchySnapshot
+    ) -> ChangeJournalEntry:
+        """Record an attribute-only edit from a fresh native read-back."""
+        if (
+            self.native_root_name is None
+            or before.root != self.root
+            or after.root != self.root
+            or before.circuit.source_path != self.native_root_name
+            or after.circuit.source_path != self.native_root_name
+            or dict(before.source_hashes) != self.source_hashes
+        ):
+            raise StateRebuildRequiredError("native snapshot identity mismatch")
+        return self._apply_native_edit(
+            token, before.circuit, after.circuit, expected_new_hashes=dict(after.source_hashes)
+        )
+
+    def _apply_native_edit(
+        self,
+        token: EditToken,
+        before: IRCircuit,
+        after: IRCircuit,
+        *,
+        expected_new_hashes: Mapping[str, str],
+    ) -> ChangeJournalEntry:
         if (
             token.project_key != self.project_key
             or token.generation != self.generation
             or dict(token.source_hashes) != self.source_hashes
         ):
             raise StateRebuildRequiredError("stale edit token or switched project")
-        actual = source_digests(self.root, tuple(self.source_hashes))
+        actual = _source_digests(
+            self.root, tuple(self.source_hashes), allow_hierarchy=self.native_root_name is not None
+        )
         if dict(expected_new_hashes) != actual:
             raise StateRebuildRequiredError("native read-back hash mismatch")
         changed_sources = tuple(
@@ -488,6 +647,7 @@ class PersistentProjectState:
             "journal": [entry.to_document() for entry in self.journal],
             "derived_dependencies": self.derived_dependencies,
             "graph": self.graph.to_document(),
+            **({"native_root_name": self.native_root_name} if self.native_root_name else {}),
         }
 
     def save_atomic(self, state_path: Path) -> None:
@@ -528,14 +688,29 @@ class PersistentProjectState:
         project_key: str,
         native_sources: tuple[str, ...],
         compatibility_key: str,
+        native_snapshot: NativeHierarchySnapshot | None = None,
     ) -> PersistentProjectState:
         """Return state only when schema, graph, sources and hashes all agree."""
         path = _state_path(root, state_path)
         try:
             document = json.loads(path.read_text(encoding="utf-8"))
             _validate_document_header(document, root, project_key, compatibility_key)
-            graph = _load_verified_graph(document["graph"], project_key, native_sources)
-            _validate_state_metadata_and_hashes(document, root, graph, native_sources)
+            native_root = document.get("native_root_name")
+            if native_snapshot is None:
+                if native_root is not None:
+                    raise ValueError("native state requires authoritative read-back")
+            elif (
+                native_root != native_snapshot.circuit.source_path
+                or native_snapshot.root != root.resolve(strict=True)
+                or dict(native_snapshot.source_hashes) != document["source_hashes"]
+            ):
+                raise ValueError("native snapshot identity mismatch")
+            graph = _load_verified_graph(
+                document["graph"], project_key, native_sources, native_snapshot
+            )
+            _validate_state_metadata_and_hashes(
+                document, root, graph, native_sources, native_snapshot
+            )
 
             stored_sources = document["source_hashes"]
             stored_entities = document["entity_hashes"]
@@ -554,6 +729,7 @@ class PersistentProjectState:
                 generation,
                 records,
                 derived,
+                native_root,
             )
         except (OSError, ValueError, TypeError, KeyError) as exc:
             raise StateRebuildRequiredError("snapshot cannot be safely reused") from exc

@@ -5,7 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 
-from .circuit_ir import IRCircuit, IRComponent, IRNet, IRPin
+from .circuit_ir import IRCircuit, IRComponent, IRNet, IRPin, NativeSymbolInstance
 from .engineering_graph import (
     EngineeringGraph,
     GraphEdge,
@@ -73,6 +73,7 @@ def update_graph_from_circuit(
             reference,
             before.components[reference],
             imported,
+            before.native_instances.get(reference),
         )
         existing = graph.entities.get(before_entity.entity_id)
         if existing != before_entity:
@@ -86,6 +87,7 @@ def update_graph_from_circuit(
                 reference,
                 after.components[reference],
                 imported,
+                after.native_instances.get(reference),
             )
         )
 
@@ -107,6 +109,7 @@ def _project_state(circuit: IRCircuit) -> tuple[object, ...]:
         circuit.source_uuid,
         circuit.title,
         circuit.sheet_hierarchy,
+        circuit.native_instances,
     )
 
 
@@ -214,7 +217,11 @@ def _add_components(
     for reference, component in sorted(circuit.components.items()):
         component_id = canonical_entity_id(project_key, GraphEntityKind.COMPONENT, reference)
         component_ids[reference] = component_id
-        graph.add_entity(_component_entity(project_key, reference, component, imported))
+        graph.add_entity(
+            _component_entity(
+                project_key, reference, component, imported, circuit.native_instances.get(reference)
+            )
+        )
         graph.add_edge(GraphEdge(project_id, component_id, GraphEdgeKind.CONTAINS))
         _add_component_pins(
             graph,
@@ -233,21 +240,26 @@ def _component_entity(
     reference: str,
     component: IRComponent,
     imported: GraphProvenance,
+    instance: NativeSymbolInstance | None = None,
 ) -> GraphEntity:
     component_id = canonical_entity_id(project_key, GraphEntityKind.COMPONENT, reference)
+    attributes = {
+        "lib_id": component.lib_id,
+        "value": component.value,
+        "footprint": component.footprint,
+        "dnp": component.dnp,
+        "in_bom": component.in_bom,
+    }
+    links = [NativeLink("kicad", "symbol_reference", reference)]
+    if instance is not None:
+        attributes["native_sheet_name"] = instance.sheet_name
+        links.append(NativeLink("kicad", "sheet_instance", instance.sheet_path))
+        links.extend(
+            NativeLink("kicad", "symbol_instance", f"{instance.sheet_path}/{stamp}", stamp)
+            for stamp in instance.symbol_uuids
+        )
     return GraphEntity(
-        component_id,
-        GraphEntityKind.COMPONENT,
-        reference,
-        {
-            "lib_id": component.lib_id,
-            "value": component.value,
-            "footprint": component.footprint,
-            "dnp": component.dnp,
-            "in_bom": component.in_bom,
-        },
-        imported,
-        (NativeLink("kicad", "symbol_reference", reference),),
+        component_id, GraphEntityKind.COMPONENT, reference, attributes, imported, tuple(links)
     )
 
 

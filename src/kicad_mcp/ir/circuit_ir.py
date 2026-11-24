@@ -153,6 +153,15 @@ class IRConstraint:
     params: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class NativeSymbolInstance:
+    """Native sheet identity and all placed unit UUIDs for an annotated reference."""
+
+    sheet_path: str
+    sheet_name: str
+    symbol_uuids: tuple[str, ...]
+
+
 @dataclass
 class IRCircuit:
     """Top-level semantic circuit description.
@@ -177,6 +186,7 @@ class IRCircuit:
 
     # -- Structural hierarchy ------------------------------------
     sheet_hierarchy: tuple[str, ...] = ()
+    native_instances: dict[str, NativeSymbolInstance] = field(default_factory=dict)
 
     # -- Derived / memoized --------------------------------------
     _component_pin_count: int = 0

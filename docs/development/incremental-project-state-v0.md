@@ -31,12 +31,13 @@ always authoritative; cached state is never validation evidence.
 
 This v0 object is owned by one local project process. It assumes **trusted
 project cache storage and exclusive native mutation/read-back ownership**.
-**Current scope after #1169:** the IRCircuit-derived Engineering Graph sidecar
-only supports one native schematic source and at most one root sheet-hierarchy
-entry. A multi-sheet native project is deliberately rejected during baseline
-creation or cache reopen because native symbol-instance UUID and connectivity
-parity have not been established (#1141). Enumerating or hashing all files
-does not prove a root-only semantic graph is complete.
+The legacy `rebuild()` path remains deliberately single-sheet. Merely hashing
+all native files does not establish hierarchy completeness. The opt-in #1141
+path captures a native XML netlist in isolated staging, verifies its sheet
+paths and symbol-instance UUIDs against the hashed source files, and preserves
+those identities as graph native links. Repeated instances remain distinct.
+Unsupported schema, incomplete identity and connectivity, unsafe paths, and
+source changes during capture fail closed.
 
 SHA-256 guards cache freshness and detects accidental changes, but is not an
 authenticity signature against a malicious actor able to replace both the
@@ -65,6 +66,36 @@ reopened = PersistentProjectState.load_verified(
 )
 ```
 
+## Opt-in native hierarchy (#1141)
+
+Use the existing trusted KiCad CLI runner and an explicit inventory of all
+native sources. The runner must return `(exit_code, stdout, stderr)` and enforce
+a timeout; the caller retains exclusive mutation/read-back ownership.
+
+```python
+from kicad_mcp.project.incremental_state import capture_native_hierarchy
+
+snapshot = capture_native_hierarchy(root, "top.kicad_sch", sources, run_cli=run_cli)
+state = PersistentProjectState.rebuild_native(
+    snapshot, compatibility_key=detected_kicad_and_parser_versions,
+)
+state.save_atomic(root / ".kicad-mcp-cache/graph.json")
+reopened = PersistentProjectState.load_verified(
+    root, root / ".kicad-mcp-cache/graph.json",
+    project_key=state.project_key, native_sources=sources,
+    compatibility_key=detected_kicad_and_parser_versions,
+    native_snapshot=snapshot,
+)
+```
+
+Supply a fresh authoritative capture for reuse after reopening the project.
+For an attribute edit, obtain `prepare_native_edit()` before mutation, capture
+again afterward, and call `apply_hierarchy_edit(token, before, after)`. Changes
+to instance identity or topology require `rebuild_native()` instead. The
+adapter covers exported native netlist connectivity, not geometry, all library
+pins, inferred power rails or ERC/DRC. Multi-unit symbols whose identity cannot
+be validated against the source sheet are rejected rather than guessed.
+
 ## Validated now versus still outstanding
 
 Focused tests exercise persistence, deterministic reopen, bounded semantic
@@ -73,10 +104,13 @@ source-inventory changes, external edits, symlinks, corrupt schema/graph/journal
 project switches, and a **synthetic 1,024-component IR fixture**. The synthetic
 fixture does **not** qualify as a native KiCad hierarchy/PCB benchmark.
 
-Remaining #944 acceptance work includes a real versioned 1,000+ component
-hierarchical KiCad schematic **and** realistically large PCB, native parsing
-and editor integration, dependable concurrent-edit/watch semantics, p50/p95
-inspect/update/refresh and peak-RSS measurements on that maintained fixture,
-baseline evidence with explicit KiCad version/source/fixture hashes, CI
-non-regression thresholds, and broader PCB/object-level delta support. Do not
+The #1141 native hierarchy acceptance tests additionally compare all exported
+pin-to-net connections and source instance identities against a pinned real
+1,000+ component project and verify bounded updates and structural rebuilds.
+See the [native demo benchmark](kicad-large-native-demo-benchmark.md).
+
+Remaining #944 acceptance work includes editor integration, dependable
+concurrent-edit/watch semantics, end-to-end inspect/update/refresh performance
+(including native capture), representative CI non-regression thresholds, and
+broader PCB/object-level delta support. Do not
 claim latency savings or production-ready cache behavior from IR-only tests.

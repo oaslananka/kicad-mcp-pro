@@ -63,11 +63,27 @@ initial observation, not a stable release threshold.
   per-process `resource.ru_maxrss` values. Cross-platform runs may be added
   with validated Windows/macOS peak-RSS semantics.
 
+## Native hierarchy acceptance (#1141)
+
+On Linux with the matching pinned demo files and KiCad CLI installed, run:
+
+```bash
+KICAD_MCP_NATIVE_HIERARCHY_DEMO=1 uv run pytest \
+  tests/integration/test_native_hierarchy_acceptance.py -q -s
+```
+
+The test checks native sheet/symbol identity and all exported pin-to-net
+connections, a bounded attribute edit against a clean graph rebuild, external
+change rejection, structural rebuild and deterministic sidecar reopen. It
+uses isolated copies of the pinned sources, and verifies that the originals
+remain unchanged. The output includes the manifest hash, native version,
+counts, three state-phase timing samples and separate process RSS peaks.
+Native capture timings are reported separately; state-phase speedup is not an
+end-to-end speedup or a production non-regression threshold.
+
 ## Follow-up for full #944 acceptance
 
-Integrate the merged #1137 opt-in sidecar with real KiCad schematic and PCB
-readbacks for this or another properly licensed large project; report
-bounded update work units, invalidation after external edits, clean/full graph
-equivalence, p50/p95 inspect and mutation-refresh latency, and true peak RSS.
-Only then review nonregression thresholds and promote the benchmark into a
-required performance gate.
+Native schematic hierarchy is now an opt-in verified path. Remaining work is
+editor integration, representative PCB/object deltas, concurrent-edit handling,
+end-to-end refresh measurements and reviewed non-regression thresholds. This
+benchmark does not claim general PCB performance or manufacturing readiness.

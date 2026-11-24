@@ -1,0 +1,46 @@
+{
+  "after_removal_components": 1122,
+  "after_removal_pin_net_matches": 4710,
+  "attribute_work_units": 1,
+  "child_process_peak_rss_kib": 675352,
+  "components": 1123,
+  "date": "2026-11-24",
+  "graph_edges": 11902,
+  "graph_entities": 7191,
+  "input_manifest_sha256": "28275646ace84e0de2cc466d75d94f7ccad061058e45a3455c520dfe1c8efd2b",
+  "kicad_version": "10.0.8",
+  "native_integration_tests_passed": 2,
+  "nets": 1355,
+  "original_hashes_unchanged": true,
+  "pin_net_matches": 4712,
+  "pinned_files": 21,
+  "process_peak_rss_kib": 260700,
+  "repeats": 3,
+  "scope": "Opt-in native schematic hierarchy; state-phase observations exclude native capture; no PCB/editor/IPC acceptance",
+  "sheet_instances": 15,
+  "source_capture_ms": {
+    "after": 6023.564,
+    "before": 8685.374,
+    "structural": 6174.386
+  },
+  "source_revision": "2f2a092e3b18d3d7cc9406bc9d63623ef63b5359",
+  "state_clean_rebuild_ms": {
+    "p50": 1240.086,
+    "p95_nearest_rank": 1326.695,
+    "samples": [
+      1326.695,
+      1229.585,
+      1240.086
+    ]
+  },
+  "state_incremental_update_ms": {
+    "p50": 240.296,
+    "p95_nearest_rank": 242.789,
+    "samples": [
+      242.789,
+      240.285,
+      240.296
+    ]
+  },
+  "tracked_native_files": 20
+}
