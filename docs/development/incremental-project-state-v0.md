@@ -89,6 +89,10 @@ reopened = PersistentProjectState.load_verified(
 ```
 
 Supply a fresh authoritative capture for reuse after reopening the project.
+Native reopen constructs the graph once from this capture and compares the
+complete canonical graph document with the sidecar before accepting its
+metadata and entity hashes. A noncanonical or mismatched sidecar is discarded,
+not silently repaired. The root-only path retains its existing loader.
 For an attribute edit, obtain `prepare_native_edit()` before mutation, capture
 again afterward, and call `apply_hierarchy_edit(token, before, after)`.
 Edit tokens are scoped to the live state instance and are never persisted:

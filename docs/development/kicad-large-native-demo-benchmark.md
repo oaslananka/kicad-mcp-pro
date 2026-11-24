@@ -81,6 +81,35 @@ counts, three state-phase timing samples and separate process RSS peaks.
 Native capture timings are reported separately; state-phase speedup is not an
 end-to-end speedup or a production non-regression threshold.
 
+## Native sidecar reopen comparison (#944)
+
+On KiCad 10.0.8 with the pinned Jetson AGX Thor demo, a verified sidecar
+containing the bounded R17 value change was loaded five times per variant,
+using the same freshly captured native snapshot and alternating baseline
+and candidate order. The baseline loader is from
+`603e194846b7b8249453ed150f2296401bcdea98`; the candidate builds the
+authoritative graph once and checks the complete canonical sidecar document.
+Every result matched the persisted document and all 4,712 native pin-net
+connections. All 21 original source hashes were revalidated.
+
+| Loader-only latency (ms) | Baseline | Single authoritative graph |
+| --- | ---: | ---: |
+| Samples | 2942.134, 2946.121, 2935.243, 2939.532, 2991.632 | 1449.799, 1453.914, 1451.985, 1451.346, 1454.619 |
+| p50 | 2942.134 | 1451.985 |
+| p95 (nearest rank) | 2991.632 | 1454.619 |
+
+To reproduce, use the pinned demo and capture/edit helpers in
+`tests/integration/test_native_hierarchy_acceptance.py` to create and save a
+verified native state after the R17 attribute edit. Capture a fresh snapshot
+of the edited sources, then time the complete `load_verified` call with that
+snapshot and identical sidecar, alternating the baseline and candidate loader
+implementations; check returned documents and native parity outside the timer.
+
+The shared capture took 6023.777 ms, outside the loader timer. The shared
+process peak RSS was 193836 KiB, not a per-variant memory comparison. These
+five local observations do not establish a production p95, an end-to-end
+editor speedup, or a CI threshold.
+
 ## Follow-up for full #944 acceptance
 
 Native schematic hierarchy is now an opt-in verified path. Remaining work is

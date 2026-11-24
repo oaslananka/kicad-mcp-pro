@@ -1,12 +1,13 @@
 """Native export import must preserve instance identity and connectivity."""
 
+import json
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from kicad_mcp.ir.circuit_ir import IRCircuit
-from kicad_mcp.ir.engineering_graph import GraphEdgeKind, GraphEntityKind
+from kicad_mcp.ir.engineering_graph import EngineeringGraph, GraphEdgeKind, GraphEntityKind
 from kicad_mcp.ir.engineering_graph_from_ir import graph_from_circuit, update_graph_from_circuit
 from kicad_mcp.ir.native_netlist import parse_native_netlist
 from kicad_mcp.project.evidence_current_state import canonical_graph_entity_sha256
@@ -285,3 +286,42 @@ def test_hierarchy_reopen_rejects_previous_session_edit_token(native_project: Pa
         current.apply_hierarchy_edit(stale, before, after)
     assert current.to_document() == unchanged
     assert current.apply_hierarchy_edit(token, before, after).work_units == 2
+
+
+def test_native_reopen_does_not_deserialize_cached_graph(
+    native_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot = _capture(native_project)
+    state = PersistentProjectState.rebuild_native(snapshot, compatibility_key=COMPAT)
+    state.save_atomic(native_project / ".kicad-mcp-cache" / "native.json")
+
+    def unexpected_deserialization(*_args: object) -> EngineeringGraph:
+        pytest.fail("native reopen must reuse its freshly constructed authoritative graph")
+
+    monkeypatch.setattr(EngineeringGraph, "from_document", unexpected_deserialization)
+    loaded = _reopen(native_project, snapshot)
+    assert loaded.to_document() == state.to_document()
+
+
+@pytest.mark.parametrize(
+    "tamper", ["duplicate_edge", "duplicate_entity", "numeric_bool", "extra_field"]
+)
+def test_native_reopen_rejects_noncanonical_cached_graph(native_project: Path, tamper: str) -> None:
+    snapshot = _capture(native_project)
+    state = PersistentProjectState.rebuild_native(snapshot, compatibility_key=COMPAT)
+    path = native_project / ".kicad-mcp-cache" / "native.json"
+    state.save_atomic(path)
+    document = json.loads(path.read_text(encoding="utf-8"))
+    graph = document["graph"]
+    if tamper == "duplicate_edge":
+        graph["edges"].append(graph["edges"][0])
+    elif tamper == "duplicate_entity":
+        graph["entities"].append(graph["entities"][0])
+    elif tamper == "numeric_bool":
+        component = next(item for item in graph["entities"] if item["kind"] == "component")
+        component["attributes"]["dnp"] = 0
+    else:
+        graph["unexpected"] = True
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(StateRebuildRequiredError):
+        _reopen(native_project, snapshot)
