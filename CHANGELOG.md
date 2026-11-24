@@ -10,6 +10,15 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.22.5](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.4...mcp-server-v4.22.5) (2026-11-24)
+
+
+### Bug Fixes
+
+* **cloud:** clarify saved project edit permission ([#1902](https://github.com/oaslananka/kicad-mcp-pro/issues/1902)) ([138d0d0](https://github.com/oaslananka/kicad-mcp-pro/commit/138d0d04eb15f6f00374aaa9962b058bf3a7c35c))
+* **cloud:** secure signed write responses and native POSIX revisions ([#1890](https://github.com/oaslananka/kicad-mcp-pro/issues/1890)) ([6c25c06](https://github.com/oaslananka/kicad-mcp-pro/commit/6c25c066b02551d10143c0560c7beeb985a6ae9d))
+* **dashboard:** distinguish empty folders from ready projects ([#1903](https://github.com/oaslananka/kicad-mcp-pro/issues/1903)) ([fbca3d0](https://github.com/oaslananka/kicad-mcp-pro/commit/fbca3d022086d32136df995ff13e24b28708c55d))
+
 ## [4.22.4](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.3...mcp-server-v4.22.4) (2026-11-24)
 
 
