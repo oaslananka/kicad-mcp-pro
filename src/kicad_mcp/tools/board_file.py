@@ -357,7 +357,7 @@ def _parse_board_footprint_blocks(content: str) -> dict[str, dict[str, Any]]:
 # connectivity consumers continue using the established full parser.
 _BOARD_HEADER = re.compile(r"\s*\(kicad_pcb\s+\(version\s+(\d+)\)")
 _BOARD_TOKENS = re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"|[()"]')
-_CHILD_TAG = re.compile(r"\(([a-zA-Z_][a-zA-Z_0-9]*)\b")
+_CHILD_TAG = re.compile(r"\(([a-zA-Z_](?a:\w*))\b")
 _MAX_INDEX_CHARS = 128 * 1024 * 1024
 _MAX_INDEX_OBJECTS = 8192
 
@@ -388,10 +388,11 @@ def _direct_board_children(text: str, start: int, end: int) -> Iterator[tuple[st
         if depth == 1:
             yield _board_child_tag(text, child_start), child_start, token.end()
         elif depth == 0:
-            if text[token.end() : end].strip():
-                raise ValueError("unexpected trailing native PCB content")
-            return
-    raise ValueError("unbalanced native PCB content")
+            break
+    else:
+        raise ValueError("unbalanced native PCB content")
+    if text[token.end() : end].strip():
+        raise ValueError("unexpected trailing native PCB content")
 
 
 @dataclass(frozen=True, slots=True)
