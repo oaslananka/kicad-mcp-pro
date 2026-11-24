@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
+import io
 import json
-import os
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -520,40 +519,38 @@ def test_http_setup_honors_explicit_url(monkeypatch: pytest.MonkeyPatch) -> None
     )
 
 
-def test_setup_write_works_on_legacy_windows_console(tmp_path: Path) -> None:
-    """Writing the config must not fail while printing a Unicode status glyph."""
-    env = {
-        **os.environ,
-        "PYTHONIOENCODING": "cp1254:strict",
-        "KICAD_MCP_OPENCODE_CONFIG_VERSION": "2",
-    }
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            "from kicad_mcp.server import main; main()",
-            "--no-telemetry",
-            "setup",
-            "opencode",
-            "--project-dir",
-            str(tmp_path),
-            "--scope",
-            "project",
-            "--transport",
-            "http",
-            "--url",
-            "http://127.0.0.1:3335/mcp",
-            "--write",
-        ],
-        env=env,
-        capture_output=True,
-        timeout=30,
-        check=False,
-    )
+def test_setup_write_works_on_legacy_windows_console(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exercise the CLI with a real strict legacy-encoded output stream."""
+    monkeypatch.setenv("KICAD_MCP_OPENCODE_CONFIG_VERSION", "2")
+    with (
+        io.BytesIO() as buffer,
+        io.TextIOWrapper(buffer, encoding="cp1254", errors="strict") as stream,
+    ):
+        with monkeypatch.context() as patch:
+            patch.setattr(sys, "stdout", stream)
+            app(
+                [
+                    "--no-telemetry",
+                    "setup",
+                    "opencode",
+                    "--project-dir",
+                    str(tmp_path),
+                    "--scope",
+                    "project",
+                    "--transport",
+                    "http",
+                    "--url",
+                    "http://127.0.0.1:3335/mcp",
+                    "--write",
+                ],
+                standalone_mode=False,
+            )
+        stream.flush()
+        assert b"[OK] Config written to" in buffer.getvalue()
     config = json.loads((tmp_path / "opencode.json").read_text(encoding="utf-8"))
     assert config["mcp"]["servers"]["kicad-cloud"]["url"] == "http://127.0.0.1:3335/mcp"
-    assert result.returncode == 0, result.stderr.decode("cp1254", errors="replace")
-    assert b"[OK] Config written to" in result.stdout
 
 
 class TestCliSetup:
