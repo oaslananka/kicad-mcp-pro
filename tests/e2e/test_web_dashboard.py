@@ -220,7 +220,7 @@ def mock_api(page: Page) -> Iterator[None]:
                 body=json.dumps(MOCK_STATUS),
             )
         elif "/api/owner/session" in url and method == "GET":
-            route.fulfill(json={"csrf_token": "local-test"})
+            route.fulfill(json={"csrf_token": secrets.token_urlsafe(24)})
         elif "/api/experience" in url and method == "GET":
             route.fulfill(json={"project": {"path": MOCK_STATUS["project"]["dir"], "valid": True}})
         elif "/api/metrics" in url and method == "GET":
@@ -480,7 +480,8 @@ class TestDashboardSPA:
             ),
         )
         page.route(
-            "**/api/owner/session", lambda route: route.fulfill(json={"csrf_token": "local-test"})
+            "**/api/owner/session",
+            lambda route: route.fulfill(json={"csrf_token": secrets.token_urlsafe(24)}),
         )
         page.route("**/api/experience", experience)
         page.route("**/api/owner/project/select", select_project)
