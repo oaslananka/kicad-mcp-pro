@@ -26,6 +26,13 @@ placement. Keep component Value (for example `10k`) separate from net/function
 names (for example `EN`). Adapt the blocks to the actual design; do not impose
 ESP32 coordinates or add circuitry that was not requested.
 
+For generic connectors, use the library Value (for example `Conn_01x02`) or
+an intentional part number, not a role such as `5V INPUT`, `UART0 (3.3V logic)`
+or `GPIO BREAKOUT`. Use matched signal/net labels or a separate explanatory
+field for the role. Review the Value advisory in `sch_analyze_net_compilation`
+before building and again in the build result. It is a review hint, not an
+electrical error; retain intentional part numbers and approved custom Values.
+
 For an existing design, preserve its intent and approved layout. Do not relocate already-wired symbols independently.
 Use previewable connectivity-preserving changes only; compare the netlist or
 connectivity signature and reference identities before and after. Refuse or roll
@@ -98,10 +105,16 @@ beside a wire raises `label_dangling`.
    electrically distinct nets must not collapse even if ERC is clean.
 4. **See.** Render with `sch_render_png` (or `kicad-cli sch export svg`) and judge
    against the rubric below. The render is ground truth.
-5. **Refine** placement for overlaps and composition; rebuild only the approved
-   new design. Complete only when native ERC, connectivity and rendered functional
-   block readability pass independently. If native rendering is unavailable,
-   report visual acceptance as unverified; a high cosmetic score is not a substitute.
+5. **Refine** the approved new design. Use `sch_visual_qa` and inspect visible
+   Reference/Value and pin text at native render scale. For reported field overlap
+   or own-symbol field intrusion, use `sch_fix_readability` within the approved
+   new-design scope, then re-render and compare native ERC, netlist and component
+   identities. Review any unresolved warnings; never force a fixer or move wired
+   symbols independently. Do not automatically apply this loop to an existing design
+   or overwrite intentional placement or Values. Complete only when native ERC,
+   connectivity and rendered functional block readability pass independently.
+   If native rendering is unavailable, report visual acceptance as unverified;
+   a high cosmetic score is not a substitute.
 
 ## Rubric — what "wired showcase" looks like
 

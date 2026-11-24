@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -618,3 +619,79 @@ def test_build_empty_sheet_makes_no_backup_claim(tmp_path: Path) -> None:
         "wrote 0 symbol(s) and 0 label(s)." in result
     )
     assert "Backup" not in result
+
+
+@pytest.mark.parametrize(
+    ("reference", "name", "value"),
+    [
+        ("J1", "Conn_01x02", "5V INPUT"),
+        ("J2", "Conn_01x03", "UART0 (3.3V logic)"),
+        ("J3", "Conn_01x02", "GPIO BREAKOUT"),
+        ("J4", "Conn_01x04", "B4B-XH-A"),
+    ],
+)
+def test_connector_value_review_preserves_intent(
+    tmp_path: Path, reference: str, name: str, value: str
+) -> None:
+    harness = CompilationHarness(tmp_path)
+    connector = AddSymbolInput(
+        library="Connector_Generic",
+        symbol_name=name,
+        reference=reference,
+        value=value,
+        x_mm=40.64,
+        y_mm=50.8,
+    )
+    harness.prepared = replace(harness.prepared, symbols=[connector])
+    service = harness.service()
+    before = harness.schematic.read_bytes()
+    preview = service.analyze()
+    assert "Value review (advisory)" in preview
+    assert reference in preview
+    assert name in preview
+    assert "part number" in preview
+    assert harness.schematic.read_bytes() == before
+    assert not harness.transaction_calls
+    result = service.build()
+    assert "Value review (advisory)" in result
+    assert f"value={value}" in harness.transaction_calls[0][2]
+    assert connector.value == value
+
+
+def test_value_review_does_not_flag_default_or_other_library(tmp_path: Path) -> None:
+    harness = CompilationHarness(tmp_path)
+    generic = AddSymbolInput(
+        library="Connector_Generic",
+        symbol_name="Conn_01x02",
+        reference="J1",
+        value="Conn_01x02",
+        x_mm=40.64,
+        y_mm=50.8,
+    )
+    other = generic.model_copy(update={"library": "Custom", "reference": "J2", "value": "UART"})
+    harness.prepared = replace(harness.prepared, symbols=[generic, other, _symbol()])
+    service = harness.service()
+    assert "Value review" not in service.analyze()
+    assert "Value review" not in service.build()
+
+
+def test_connector_value_review_bounds_large_design_output(tmp_path: Path) -> None:
+    harness = CompilationHarness(tmp_path)
+    connectors = [
+        AddSymbolInput(
+            library="Connector_Generic",
+            symbol_name="Conn_01x02",
+            reference=f"J{index}",
+            value=f"Interface {index}",
+            x_mm=10.0,
+            y_mm=20.0,
+        )
+        for index in range(1, 11)
+    ]
+    harness.prepared = replace(harness.prepared, symbols=connectors)
+    preview = harness.service().analyze()
+    assert "Value review (advisory)" in preview
+    assert "'J8'" in preview
+    assert "'J9'" not in preview
+    assert "and 2 more" in preview
+    assert not harness.transaction_calls
