@@ -26,10 +26,11 @@ export function verifyAcceptance(pr,checks,runs,{number,head,base}) {
   }
   // Reject pending, neutral, absent, failing, or superseded security gates.
   const required=[
-    "check","SonarCloud Code Analysis","Codacy Static Code Analysis",
-    "CodeQL","semgrep-cloud-platform/scan","GitGuardian Security Checks",
-    "Socket Security: Pull Request Alerts","Analyze (javascript-typescript)",
-    "Analyze (actions)"
+    "Required PR Gate","cloud","node24-compat","workflow-policy","security",
+    "scan","dependency-review","SonarCloud Scan","SonarCloud Code Analysis",
+    "Codacy Static Code Analysis","CodeQL","semgrep-cloud-platform/scan",
+    "GitGuardian Security Checks","Socket Security: Pull Request Alerts",
+    "analyze (javascript-typescript)","analyze (python)"
   ];
   return required.every(name=>{
     const c=latest.get(name);

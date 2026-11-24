@@ -6,10 +6,11 @@ const head="b189aeaadef23f226e6438d00655922484c46143";
 const base="1697bf37f689aac3f16eca2dc0b5827f055e9795";
 const repository={full_name:"oaslananka/kicad-mcp-pro"};
 const required=[
-  "check","SonarCloud Code Analysis","Codacy Static Code Analysis",
-  "CodeQL","semgrep-cloud-platform/scan","GitGuardian Security Checks",
-  "Socket Security: Pull Request Alerts","Analyze (javascript-typescript)",
-  "Analyze (actions)"
+  "Required PR Gate","cloud","node24-compat","workflow-policy","security",
+  "scan","dependency-review","SonarCloud Scan","SonarCloud Code Analysis",
+  "Codacy Static Code Analysis","CodeQL","semgrep-cloud-platform/scan",
+  "GitGuardian Security Checks","Socket Security: Pull Request Alerts",
+  "analyze (javascript-typescript)","analyze (python)"
 ];
 function fixture(){
   return {
@@ -43,7 +44,7 @@ test("reject missing, pending, neutral and failing security gates",()=>{
 test("newer failed check overrides an older success for same name",()=>{
   const f=fixture();
   f.checks.check_runs.push({
-    id:100,name:"check",status:"completed",conclusion:"failure"
+    id:100,name:"Required PR Gate",status:"completed",conclusion:"failure"
   });
   assert.equal(verified(f),false);
 });

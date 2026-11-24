@@ -91,7 +91,7 @@ elif [[ "$*" == *'/check-runs?per_page=100'* ]]; then
   if [[ "$MOCK_CI_PASS" == yes ]]; then
     printf '{"check_runs":['
     id=1
-    for name in 'check' 'SonarCloud Code Analysis' 'Codacy Static Code Analysis' 'CodeQL' 'semgrep-cloud-platform/scan' 'GitGuardian Security Checks' 'Socket Security: Pull Request Alerts' 'Analyze (javascript-typescript)' 'Analyze (actions)'; do
+    for name in 'Required PR Gate' 'cloud' 'node24-compat' 'workflow-policy' 'security' 'scan' 'dependency-review' 'SonarCloud Scan' 'SonarCloud Code Analysis' 'Codacy Static Code Analysis' 'CodeQL' 'semgrep-cloud-platform/scan' 'GitGuardian Security Checks' 'Socket Security: Pull Request Alerts' 'analyze (javascript-typescript)' 'analyze (python)'; do
       [[ $id == 1 ]] || printf ','
       printf '{"id":%s,"name":"%s","status":"completed","conclusion":"success"}' "$id" "$name"
       id=$((id+1))
