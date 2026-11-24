@@ -28,8 +28,9 @@ export MOCK_ARTIFACT
 MOCK_ARTIFACT="$(jq -cn --arg name "$COVERAGE_ARTIFACT" '{artifacts:[{id:14889028259,name:$name,expired:false}]}')"
 
 gh() {
-    if [[ "$1" != api ]]; then return 99; fi
-    case "$2" in
+    local command="$1" endpoint="$2"
+    if [[ "$command" != api ]]; then return 99; fi
+    case "$endpoint" in
         "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100")
             if [[ -f "$TRACE_FILE" ]]; then
                 printf '%s' "$MOCK_ARTIFACT"
@@ -57,14 +58,14 @@ run_case() (
     : > "$GITHUB_OUTPUT"
     local status=0
     bash "$scratch/wait.sh" || status=$?
-    test "$status" = "$expected"
+    [[ "$status" = "$expected" ]]
     if [[ "$waits" == yes ]]; then
-        test "$(cat "$TRACE_FILE")" = wait
-        test "$(wc -l < "$TRACE_FILE")" -eq 1
-        test "$(cat "$GITHUB_OUTPUT")" = artifact_id=14889028259
+        [[ "$(cat "$TRACE_FILE")" = wait ]]
+        [[ "$(wc -l < "$TRACE_FILE")" -eq 1 ]]
+        [[ "$(cat "$GITHUB_OUTPUT")" = artifact_id=14889028259 ]]
     else
-        test ! -e "$TRACE_FILE"
-        test ! -s "$GITHUB_OUTPUT"
+        [[ ! -e "$TRACE_FILE" ]]
+        [[ ! -s "$GITHUB_OUTPUT" ]]
     fi
     printf 'PASS: %s\n' "$scenario"
 )

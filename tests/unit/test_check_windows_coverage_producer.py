@@ -46,13 +46,15 @@ def _check(jobs: list[dict[str, Any]], *, total_count: int | None = None) -> Non
 
 @pytest.mark.parametrize("conclusion", ["failure", "cancelled", "skipped", "timed_out"])
 def test_terminal_producer_with_impossible_upload_fails_promptly(conclusion: str) -> None:
+    jobs = [_job(conclusion=conclusion)]
     with pytest.raises(ValueError, match="cannot produce"):
-        _check([_job(conclusion=conclusion)])
+        _check(jobs)
 
 
 def test_cancelled_before_upload_has_no_possible_artifact() -> None:
+    jobs = [_job(conclusion="cancelled", upload=None)]
     with pytest.raises(ValueError, match="cannot produce"):
-        _check([_job(conclusion="cancelled", upload=None)])
+        _check(jobs)
 
 
 @pytest.mark.parametrize("conclusion", ["success", "failure"])
@@ -66,8 +68,9 @@ def test_active_and_missing_producer_keep_bounded_wait() -> None:
 
 
 def test_completed_success_with_skipped_upload_fails() -> None:
+    jobs = [_job(conclusion="success", upload="skipped")]
     with pytest.raises(ValueError, match="cannot produce"):
-        _check([_job(conclusion="success", upload="skipped")])
+        _check(jobs)
 
 
 @pytest.mark.parametrize(
@@ -75,18 +78,21 @@ def test_completed_success_with_skipped_upload_fails() -> None:
     [("run_attempt", 2), ("run_id", 1), ("head_sha", "0" * 40)],
 )
 def test_foreign_attempt_or_head_is_not_accepted(field: str, value: object) -> None:
+    jobs = [_job() | {field: value}]
     with pytest.raises(ValueError, match="identity mismatch"):
-        _check([_job() | {field: value}])
+        _check(jobs)
 
 
 def test_ambiguous_job_listing_fails_closed() -> None:
+    jobs = [_job(), _job()]
     with pytest.raises(ValueError, match="Ambiguous Windows coverage producer"):
-        _check([_job(), _job()])
+        _check(jobs)
 
 
 def test_incomplete_job_listing_fails_closed() -> None:
+    jobs = [_job()]
     with pytest.raises(ValueError, match="Incomplete workflow job listing"):
-        _check([_job()], total_count=2)
+        _check(jobs, total_count=2)
 
 
 def test_ambiguous_upload_steps_fail_closed() -> None:
