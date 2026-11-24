@@ -397,6 +397,8 @@ def _load_verified_graph(
         or graph_document.get("schema_version") != ENGINEERING_GRAPH_SCHEMA_VERSION
     ):
         raise ValueError("incompatible cached Engineering Graph schema")
+    if native_snapshot is not None:
+        return _verify_native_graph(graph_document, project_key, native_snapshot)
     graph = EngineeringGraph.from_document(graph_document)
     if graph.project_key != project_key:
         raise ValueError("Engineering Graph project identity mismatch")
@@ -405,11 +407,26 @@ def _load_verified_graph(
     )
     if project_entity is None:
         raise ValueError("missing Engineering Graph project entity")
-    if native_snapshot is None:
-        _require_single_sheet_scope(
-            native_sources, project_entity.attributes.get("sheet_hierarchy")
-        )
-    elif graph.to_document() != graph_from_circuit(native_snapshot.circuit).to_document():
+    _require_single_sheet_scope(native_sources, project_entity.attributes.get("sheet_hierarchy"))
+    return graph
+
+
+def _verify_native_graph(
+    graph_document: dict[str, Any],
+    project_key: str,
+    native_snapshot: NativeHierarchySnapshot,
+) -> EngineeringGraph:
+    """Use native authority directly; the sidecar must match its canonical document."""
+    graph = graph_from_circuit(native_snapshot.circuit)
+    if graph.project_key != project_key:
+        raise ValueError("Engineering Graph project identity mismatch")
+    # JSON comparison preserves types (e.g. false versus 0) and detects
+    # duplicate or extra graph entries instead of normalizing them away.
+    expected = json.dumps(
+        graph.to_document(), sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
+    actual = json.dumps(graph_document, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    if actual != expected:
         raise ValueError("cached native graph differs from authoritative read-back")
     return graph
 
