@@ -47,7 +47,16 @@ def test_coverage_waits_for_exact_run_windows_artifact_before_merge() -> None:
     assert "gh api" in run
     assert "GITHUB_RUN_ID" in run
     assert "attempt" in run
+    assert "attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" in run
+    assert "check_windows_coverage_producer.py" in run
+    assert wait["env"]["COVERAGE_PRODUCER_HEAD"] == (
+        "${{ github.event.pull_request.head.sha || github.sha }}"
+    )
     assert "sleep 15" in run
+    assert any(
+        step.get("run") == "uv run --all-extras bash scripts/ci/test_windows_coverage_wait.sh"
+        for step in workflow["jobs"]["workflow-policy"]["steps"]
+    )
     assert "exit 1" in run
     assert "GITHUB_TOKEN" not in run
     assert "GH_TOKEN" in wait["env"]
