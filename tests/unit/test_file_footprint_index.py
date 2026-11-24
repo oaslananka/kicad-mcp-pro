@@ -133,3 +133,56 @@ def test_file_backed_listing_uses_current_native_rows(
     assert "inventory unavailable" in read()
     path.unlink()
     assert "missing" in read()
+
+
+def test_representative_board_decodes_only_changed_footprints(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Count actual decoder calls at representative synthetic scale, not wall-clock latency."""
+    count = 1125
+    footprints = [
+        f'(footprint "Test:R" (uuid "10000000-0000-0000-0000-{i:012d}") '
+        f'(layer "F.Cu") (at {i} 20) (property "Reference" "R{i}") '
+        '(property "Value" "10k"))'
+        for i in range(1, count + 1)
+    ]
+    # Represent board-level scanning separately from footprint decoding.
+    tracks = '(segment (start 0 0) (end 1 1) (width 0.25) (layer "F.Cu") (net 1))' * 25386
+    text = "(kicad_pcb (version 20241229) " + "".join(footprints) + tracks + ")"
+    path = tmp_path / "board.kicad_pcb"
+    index = board_file.FileFootprintIndex()
+    decode = board_file._native_list_record
+    calls = 0
+
+    def counted(block: str) -> board_file.FootprintListRecord | None:
+        nonlocal calls
+        calls += 1
+        return decode(block)
+
+    monkeypatch.setattr(board_file, "_native_list_record", counted)
+    first = index.refresh(path, text)
+    assert first is not None
+    assert len(first.records) == calls == first.work_units == count
+    warm = index.refresh(path, text)
+    assert warm is not None
+    assert warm.work_units == 0
+    assert calls == count
+    changed = text.replace("(at 17 20)", "(at 17.1 20)", 1)
+    updated = index.refresh(path, changed)
+    assert updated is not None
+    assert updated.work_units == 1
+    assert calls == count + 1
+    stamp = "10000000-0000-0000-0000-000000000017"
+    assert updated.records[stamp].x_mm == 17.1
+    assert all(updated.records[key] is row for key, row in first.records.items() if key != stamp)
+    nonfootprint = changed.replace("(end 1 1)", "(end 2 1)", 1)
+    track_edit = index.refresh(path, nonfootprint)
+    assert track_edit is not None
+    assert track_edit.work_units == 0
+    assert calls == count + 1
+    assert track_edit.records == updated.records
+    clean = board_file.FileFootprintIndex().refresh(path, nonfootprint)
+    assert clean is not None
+    assert clean.records == updated.records
+    assert clean.work_units == count
+    assert calls == 2 * count + 1

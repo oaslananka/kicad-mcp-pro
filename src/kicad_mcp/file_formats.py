@@ -1,4 +1,4 @@
-"""KiCad file-format contracts for generated S-expression content.
+"""KiCad file-format contracts for native readers and generated S-expression content.
 
 The writer dialect version is the newest format whose emitted syntax is explicitly
 owned by this repository. It is not a claim about the installed KiCad version.
@@ -17,6 +17,8 @@ from pathlib import Path
 from typing import Literal
 
 GENERATED_SEXPR_DIALECT_VERSION = "20250316"
+# Explicit reader compatibility, independent of the generated writer dialect.
+FOOTPRINT_LIST_READ_VERSIONS = frozenset({"20241229", "20250216", "20250316", "20260206"})
 GeneratedFileKind = Literal["pcb", "sch", "sym", "fp"]
 NonFootprintGeneratedFileKind = Literal["pcb", "sch", "sym"]
 RunCli = Callable[..., tuple[int, str, str]]

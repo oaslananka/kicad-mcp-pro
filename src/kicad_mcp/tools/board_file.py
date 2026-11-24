@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION
+from ..file_formats import FOOTPRINT_LIST_READ_VERSIONS, GENERATED_SEXPR_DIALECT_VERSION
 from ..utils import telemetry as otel
 from ..utils.sexpr import _extract_block
 
@@ -355,7 +355,6 @@ def _parse_board_footprint_blocks(content: str) -> dict[str, dict[str, Any]]:
 
 # Only the read-only footprint list projection is cached. Geometry, pad and
 # connectivity consumers continue using the established full parser.
-_NATIVE_BOARD_VERSIONS = frozenset({"20241229", "20250216", "20250316", "20260206"})
 _BOARD_HEADER = re.compile(r"\s*\(kicad_pcb\s+\(version\s+(\d+)\)")
 _BOARD_TOKENS = re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"|[()"]')
 _CHILD_TAG = re.compile(r"\(([a-zA-Z_][a-zA-Z_0-9]*)\b")
@@ -492,7 +491,7 @@ class FileFootprintIndex:
             header = _BOARD_HEADER.match(content)
             if (
                 header is None
-                or header.group(1) not in _NATIVE_BOARD_VERSIONS
+                or header.group(1) not in FOOTPRINT_LIST_READ_VERSIONS
                 or len(content) > _MAX_INDEX_CHARS
             ):
                 self.clear()
