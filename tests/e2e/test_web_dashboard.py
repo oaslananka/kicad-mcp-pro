@@ -219,6 +219,10 @@ def mock_api(page: Page) -> Iterator[None]:
                 content_type="application/json",
                 body=json.dumps(MOCK_STATUS),
             )
+        elif "/api/owner/session" in url and method == "GET":
+            route.fulfill(json={"csrf_token": "local-test"})
+        elif "/api/experience" in url and method == "GET":
+            route.fulfill(json={"project": {"path": MOCK_STATUS["project"]["dir"], "valid": True}})
         elif "/api/metrics" in url and method == "GET":
             route.fulfill(
                 status=200,
@@ -449,6 +453,54 @@ class TestDashboardSPA:
             == "auto"
         )
 
+    def test_empty_workspace_is_not_a_selected_project(
+        self, page: Page, dashboard_url: str
+    ) -> None:
+        """An existing empty folder is not a KiCad project or eligible for pairing."""
+        path = "/home/user/empty"
+        actions: list[str] = []
+
+        project = {"path": path, "valid": False}
+
+        def experience(route: Route) -> None:
+            route.fulfill(json={"project": project})
+
+        def select_project(route: Route) -> None:
+            project.update(path=route.request.post_data_json["project_dir"], valid=True)
+            route.fulfill(json={"applied": ["project_dir"]})
+
+        def pair(route: Route) -> None:
+            actions.append("pair")
+            route.fulfill(status=400, json={"error": "Invalid project"})
+
+        page.route(
+            "**/api/status",
+            lambda route: route.fulfill(
+                json={**MOCK_STATUS, "project": {"dir": path, "pcb": None, "sch": None}}
+            ),
+        )
+        page.route(
+            "**/api/owner/session", lambda route: route.fulfill(json={"csrf_token": "local-test"})
+        )
+        page.route("**/api/experience", experience)
+        page.route("**/api/owner/project/select", select_project)
+        page.route("**/api/cloud/setup/start", pair)
+        page.goto(dashboard_url)
+        page.get_by_text(
+            "No KiCad project (.kicad_pro) found in this folder", exact=False
+        ).wait_for(timeout=5000)
+        assert "gp-ok" not in (page.locator("#gpProjectState").get_attribute("class") or "")
+        page.locator("#gpCloudPair").click()
+        page.get_by_text(
+            "Choose a valid local KiCad project before pairing", exact=False
+        ).wait_for()
+        assert actions == []
+        page.locator("#gpProjectPath").fill("/home/user/valid")
+        page.locator("#gpSaveProject").click()
+        page.get_by_text("Selected locally: /home/user/valid", exact=False).wait_for()
+        assert "Pair only if needed" in page.locator("#gpCloudState").inner_text()
+        assert actions == []
+
     def test_golden_path_project_ai_cloud_never_claims_unverified_access(
         self, page: Page, dashboard_url: str
     ) -> None:
@@ -527,6 +579,12 @@ class TestDashboardSPA:
 
         page.route("**/api/owner/**", owner_api)
         page.route("**/api/status", status)
+        page.route(
+            "**/api/experience",
+            lambda route: route.fulfill(
+                json={"project": {"path": state["project"], "valid": True}}
+            ),
+        )
         page.route("**/api/cloud/**", cloud_api)
         page.goto(dashboard_url)
         page.locator("#gpProjectPath").fill("/home/user/new-project")
@@ -559,18 +617,20 @@ class TestDashboardSPA:
         """A first-time user can navigate and download an AI config without a CLI."""
         page.goto(dashboard_url)
         assert page.locator(".gp-card").count() == 3
-        assert page.get_by_role("button", name="Choose project").is_visible()
-        assert page.get_by_role("button", name="Pair device and project").is_visible()
+        assert page.get_by_role("button", name="Focus project selection field").is_visible()
+        assert page.get_by_role(
+            "button", name="Pair this computer and project with Cloud"
+        ).is_visible()
         assert "not been verified" in page.locator("#gpCloudState").inner_text()
         assert page.locator('button[data-view="setup-wizard"]').count() == 1
         assert page.locator('button[data-view="setup-wizard"]').inner_text() == "Connect an AI"
         assert not page.locator(".advanced-controls").get_attribute("open")
-        page.get_by_role("button", name="Connect local AI").click()
+        page.get_by_role("button", name="Open advanced local AI setup wizard").click()
         page.wait_for_selector("#view-setup-wizard:visible")
         page.evaluate("wizardStep = 3; renderWizardStep(3)")
         assert page.locator("#wizClient").input_value() == "claude-desktop"
         with page.expect_download() as transfer:
-            page.get_by_role("button", name="Download config snippet").click()
+            page.get_by_role("button", name="Download configuration snippet file").click()
         received = transfer.value
         assert received.suggested_filename == "kicad-mcp-pro-claude-desktop-snippet.json"
         assert "Review and merge" in (page.locator("#wizardMsg").inner_text())

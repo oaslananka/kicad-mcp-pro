@@ -1799,6 +1799,7 @@ function finishWizard() { window.location.hash = '#dashboard'; }
 /* ── Server Control ── */
 /* User-first guided setup. Local-first, explicit changes, no implied Cloud grants. */
 let gpProject = '';
+let gpPairingNeedsProject = false;
 let gpClientPreview = null;
 let gpPairing = '';
 let gpPollCount = 0;
@@ -1826,16 +1827,24 @@ async function gpPostOwner(url, body = {}) {
   });
 }
 async function gpLoadProject() {
+  gpProject = '';
   try {
-    const status = await gpFetch('/api/status');
-    const path = status.project?.dir;
-    gpProject = typeof path === 'string' ? path : '';
-    if (gpProject) {
-      if (document.activeElement !== byId('gpProjectPath')) {
-        byId('gpProjectPath').value = gpProject;
-        byId('gpProjectPath').title = gpProject;
+    await gpFetch('/api/owner/session');
+    const project = (await gpFetch('/api/experience')).project;
+    const path = typeof project?.path === 'string' ? project.path : '';
+    if (path && document.activeElement !== byId('gpProjectPath')) {
+      byId('gpProjectPath').value = path;
+      byId('gpProjectPath').title = path;
+    }
+    if (path && project.valid === true) {
+      gpProject = path;
+      if (gpPairingNeedsProject) {
+        gpPairingNeedsProject = false;
+        gpSay('gpCloudState', 'Cloud access has not been verified in this session. Pair only if needed.');
       }
       gpSay('gpProjectState', 'Selected locally: ' + gpProject + '. Your files stay here.', 'ok');
+    } else if (path) {
+      gpSay('gpProjectState', 'No KiCad project (.kicad_pro) found in this folder. Choose an existing project.');
     } else {
       gpSay('gpProjectState', 'Choose a project folder. Cloud is optional.');
     }
@@ -1927,11 +1936,19 @@ function gpStopPolling() {
   gpPollTimer = null;
 }
 async function gpStartPairing() {
-  if (!gpProject || byId('gpProjectPath').value.trim() !== gpProject) {
+  if (!gpProject) {
+    gpPairingNeedsProject = true;
+    gpSay('gpCloudState', 'Choose a valid local KiCad project before pairing.', 'error');
+    byId('gpProjectPath').focus();
+    return;
+  }
+  if (byId('gpProjectPath').value.trim() !== gpProject) {
+    gpPairingNeedsProject = true;
     gpSay('gpCloudState', 'Save the selected local project before pairing.', 'error');
     byId('gpProjectPath').focus();
     return;
   }
+  gpPairingNeedsProject = false;
   if (gpPairing) { gpSay('gpCloudState', 'A pairing is already in progress. Check or cancel it.'); return; }
   const button = byId('gpCloudPair');
   button.disabled = true;
