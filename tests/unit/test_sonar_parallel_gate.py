@@ -53,6 +53,10 @@ def test_coverage_waits_for_exact_run_windows_artifact_before_merge() -> None:
         "${{ github.event.pull_request.head.sha || github.sha }}"
     )
     assert "sleep 15" in run
+    assert any(
+        step.get("run") == "uv run --all-extras bash scripts/ci/test_windows_coverage_wait.sh"
+        for step in workflow["jobs"]["workflow-policy"]["steps"]
+    )
     assert "exit 1" in run
     assert "GITHUB_TOKEN" not in run
     assert "GH_TOKEN" in wait["env"]

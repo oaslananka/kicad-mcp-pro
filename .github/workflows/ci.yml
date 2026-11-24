@@ -1041,6 +1041,8 @@ jobs:
           "$GOBIN/actionlint" -version | grep -F '1.7.12'
           echo "$GOBIN" >> "$GITHUB_PATH"
       - run: uv run --all-extras python scripts/check_workflows.py --actionlint
+      - name: Test native Windows coverage wait behavior
+        run: uv run --all-extras bash scripts/ci/test_windows_coverage_wait.sh
       - run: uv run --all-extras python scripts/workflow_security.py --min-severity high
 
   security:
