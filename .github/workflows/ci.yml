@@ -537,13 +537,12 @@ jobs:
             github.ref == 'refs/heads/main' &&
             needs.changes.outputs.release_metadata_only != 'true' &&
             needs.changes.outputs.sonar_docs_only != 'true'))
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          # Keep the exact same-run artifact ID and digest enforcement.
-          # No GitHub API token: the action then uses the current-run artifact backend
-          # instead of the cross-run REST download path, which may briefly return 404.
-          artifact-ids: ${{ steps.native-windows-coverage.outputs.artifact_id }}
-          digest-mismatch: error
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COVERAGE_ARTIFACT_ID: ${{ steps.native-windows-coverage.outputs.artifact_id }}
+          COVERAGE_PRODUCER_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: bash scripts/ci/download_windows_coverage.sh
       - name: Merge native Windows and Linux coverage
         if: >-
           env.skip_ci != 'true' &&
@@ -1043,6 +1042,8 @@ jobs:
       - run: uv run --all-extras python scripts/check_workflows.py --actionlint
       - name: Test native Windows coverage wait behavior
         run: uv run --all-extras bash scripts/ci/test_windows_coverage_wait.sh
+      - name: Test native Windows coverage download integrity and retries
+        run: uv run --all-extras bash scripts/ci/test_windows_coverage_download.sh
       - run: uv run --all-extras python scripts/workflow_security.py --min-severity high
 
   security:

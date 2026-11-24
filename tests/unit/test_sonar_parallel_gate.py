@@ -63,11 +63,18 @@ def test_coverage_waits_for_exact_run_windows_artifact_before_merge() -> None:
     assert wait["id"] == "native-windows-coverage"
     assert "artifact_id=$matches" in run
     download = steps[names.index(download_name)]
-    assert "name" not in download["with"]
-    assert download["with"] == {
-        "artifact-ids": "${{ steps.native-windows-coverage.outputs.artifact_id }}",
-        "digest-mismatch": "error",
-    }
+    assert download["run"] == "bash scripts/ci/download_windows_coverage.sh"
+    assert download["env"]["COVERAGE_ARTIFACT_ID"] == (
+        "${{ steps.native-windows-coverage.outputs.artifact_id }}"
+    )
+    assert download["env"]["COVERAGE_PRODUCER_HEAD"] == wait["env"]["COVERAGE_PRODUCER_HEAD"]
+    assert download["env"]["GH_TOKEN"] == wait["env"]["GH_TOKEN"]
+    assert "continue-on-error" not in download
+    assert download["if"] == wait["if"]
+    assert any(
+        step.get("run") == "uv run --all-extras bash scripts/ci/test_windows_coverage_download.sh"
+        for step in workflow["jobs"]["workflow-policy"]["steps"]
+    )
     assert steps[names.index(merge_name)]["run"].count("merge_platform_coverage.py merge") == 1
 
     sonar = workflow["jobs"]["sonarcloud"]
