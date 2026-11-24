@@ -526,7 +526,7 @@ def _show_cloud_registration(cloud_state: str, signed_connected: bool | None) ->
 
 def show_status() -> None:
     state = scheduler_state()
-    run_state = task_run_state() if state == "Scheduled (connection unverified)" else None
+    run_state = task_run_state() if state == _TASK_SCHEDULED else None
     if run_state:
         typer.echo(f"Local Windows Connector: {state} [{run_state}]")
     else:
@@ -549,7 +549,7 @@ def show_status() -> None:
         _show_saved_native_write_preference(
             project,
             signed_connected=signed_connected,
-            scheduled_task=state == "Scheduled (connection unverified)",
+            scheduled_task=state == _TASK_SCHEDULED,
         )
         _show_cloud_registration(cloud_state, signed_connected)
         typer.echo("Cloud owner grants/revocation are managed in the Devices page.")
