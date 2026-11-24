@@ -90,7 +90,10 @@ reopened = PersistentProjectState.load_verified(
 
 Supply a fresh authoritative capture for reuse after reopening the project.
 For an attribute edit, obtain `prepare_native_edit()` before mutation, capture
-again afterward, and call `apply_hierarchy_edit(token, before, after)`. Changes
+again afterward, and call `apply_hierarchy_edit(token, before, after)`.
+Edit tokens are scoped to the live state instance and are never persisted:
+cloned projects, reopened sidecars, rebuilt states and compatibility upgrades
+must obtain a new token before editing, even when source hashes match. Changes
 to instance identity or topology require `rebuild_native()` instead. The
 adapter covers exported native netlist connectivity, not geometry, all library
 pins, inferred power rails or ERC/DRC. Multi-unit symbols whose identity cannot

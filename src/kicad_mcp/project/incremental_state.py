@@ -349,6 +349,7 @@ class EditToken:
     project_key: str
     generation: int
     source_hashes: tuple[tuple[str, str], ...]
+    state_scope: object = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -458,6 +459,8 @@ class PersistentProjectState:
     journal: tuple[ChangeJournalEntry, ...] = ()
     derived_dependencies: dict[str, dict[str, str]] = field(default_factory=dict)
     native_root_name: str | None = None
+    # Edit tokens authorize read-back only within this live state lifetime.
+    _edit_scope: object = field(default_factory=object, init=False, repr=False, compare=False)
 
     @classmethod
     def rebuild(
@@ -517,7 +520,10 @@ class PersistentProjectState:
     def prepare_native_edit(self) -> EditToken:
         self.verify_sources()
         return EditToken(
-            self.project_key, self.generation, tuple(sorted(self.source_hashes.items()))
+            self.project_key,
+            self.generation,
+            tuple(sorted(self.source_hashes.items())),
+            self._edit_scope,
         )
 
     def apply_native_edit(
@@ -565,7 +571,8 @@ class PersistentProjectState:
         expected_new_hashes: Mapping[str, str],
     ) -> ChangeJournalEntry:
         if (
-            token.project_key != self.project_key
+            token.state_scope is not self._edit_scope
+            or token.project_key != self.project_key
             or token.generation != self.generation
             or dict(token.source_hashes) != self.source_hashes
         ):
