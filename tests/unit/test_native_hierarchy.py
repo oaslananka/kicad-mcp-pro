@@ -84,8 +84,9 @@ def test_native_attribute_update_preserves_provenance() -> None:
     ],
 )
 def test_native_export_rejects_unknown_or_conflicting_identity(old: str, new: str) -> None:
+    xml = XML.replace(old, new, 1)
     with pytest.raises(ValueError):
-        parse(XML.replace(old, new, 1))
+        parse(xml)
 
 
 def test_native_export_rejects_xml_entities() -> None:
@@ -118,7 +119,8 @@ def native_project(tmp_path: Path) -> Path:
 def _capture(root: Path, xml: str = XML) -> NativeHierarchySnapshot:
     def cli(*args: str) -> tuple[int, str, str]:
         copied = Path(args[-1])
-        assert copied.parent != root and copied.name == SOURCES[0]
+        assert copied.parent != root
+        assert copied.name == SOURCES[0]
         assert copied.read_bytes() == (root / SOURCES[0]).read_bytes()
         Path(args[-2]).write_text(xml, encoding="utf-8")
         return 0, "", ""
@@ -200,8 +202,9 @@ def test_capture_rejects_untracked_or_escaped_sheet_before_export(
 
 
 def test_capture_rejects_unverified_symbol_stamp(native_project: Path) -> None:
+    xml = XML.replace(SYMBOL, ROOT)
     with pytest.raises(ValueError, match="not on its declared source sheet"):
-        _capture(native_project, XML.replace(SYMBOL, ROOT))
+        _capture(native_project, xml)
 
 
 def test_capture_rejects_unknown_source_version(native_project: Path) -> None:

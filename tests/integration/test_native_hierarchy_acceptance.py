@@ -248,10 +248,12 @@ def test_pinned_large_native_hierarchy(tmp_path: Path, native_version: str) -> N
         for _ in range(REPEATS)
     ]
     tokens = [state.prepare_native_edit() for state in states]
-    assert len(before.circuit.components) == 1123 and len(before.circuit.nets) == 1355
+    assert len(before.circuit.components) == 1123
+    assert len(before.circuit.nets) == 1355
     assert len(before.circuit.sheet_hierarchy) == 15
     assert _assert_native_parity(before_xml, states[0].graph) == 4712
-    assert len(states[0].graph.entities) == 7191 and len(states[0].graph.edges) == 11902
+    assert len(states[0].graph.entities) == 7191
+    assert len(states[0].graph.edges) == 11902
     _change_block(
         tmp_path / "power.kicad_sch",
         "symbol",

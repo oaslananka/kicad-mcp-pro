@@ -86,6 +86,22 @@ def _read_sheets(root: _XMLNode, root_uuid: str, root_name: str) -> dict[str, tu
     return sheets
 
 
+def _read_instance(
+    comp: _XMLNode, root_uuid: str, sheets: Mapping[str, tuple[str, str]]
+) -> NativeSymbolInstance:
+    sheet = comp.find("sheetpath")
+    if sheet is None:
+        raise ValueError("native component lacks library or sheet identity")
+    path = _sheet_path(root_uuid, sheet.get("tstamps"))
+    name = _required(sheet.get("names"), "component sheet name")
+    if path not in sheets or sheets[path][0] != name:
+        raise ValueError("native component sheet identity mismatch")
+    stamps = tuple(sorted(_uuid(stamp) for stamp in (comp.findtext("tstamps") or "").split()))
+    if not stamps or len(set(stamps)) != len(stamps):
+        raise ValueError("missing or duplicate native symbol instance")
+    return NativeSymbolInstance(path, name, stamps)
+
+
 def _read_components(
     root: _XMLNode, circuit: IRCircuit, sheets: dict[str, tuple[str, str]]
 ) -> None:
@@ -95,22 +111,17 @@ def _read_components(
         if ref in circuit.components:
             raise ValueError("duplicate native component reference")
         libsource = comp.find("libsource")
-        sheet = comp.find("sheetpath")
-        if libsource is None or sheet is None:
+        if libsource is None:
             raise ValueError("native component lacks library or sheet identity")
-        path = _sheet_path(circuit.source_uuid or "", sheet.get("tstamps"))
-        name = _required(sheet.get("names"), "component sheet name")
-        if path not in sheets or sheets[path][0] != name:
-            raise ValueError("native component sheet identity mismatch")
-        stamps = tuple(sorted(_uuid(stamp) for stamp in (comp.findtext("tstamps") or "").split()))
-        keys = {(path, stamp) for stamp in stamps}
-        if not stamps or len(keys) != len(stamps) or used_instances & keys:
+        instance = _read_instance(comp, circuit.source_uuid or "", sheets)
+        keys = {(instance.sheet_path, stamp) for stamp in instance.symbol_uuids}
+        if used_instances & keys:
             raise ValueError("missing or duplicate native symbol instance")
         used_instances.update(keys)
         library = _required(libsource.get("lib"), "library")
         part = _required(libsource.get("part"), "library part")
         properties = {prop.get("name") for prop in comp.findall("property")}
-        circuit.native_instances[ref] = NativeSymbolInstance(path, name, stamps)
+        circuit.native_instances[ref] = instance
         circuit.components[ref] = IRComponent(
             ref,
             f"{library}:{part}",
@@ -158,6 +169,14 @@ def _read_nets(root: _XMLNode, circuit: IRCircuit) -> None:
         )
 
 
+def _validate_source_stamps(
+    circuit: IRCircuit, expected_stamps: Mapping[str, frozenset[str]]
+) -> None:
+    for instance in circuit.native_instances.values():
+        if not set(instance.symbol_uuids) <= expected_stamps.get(instance.sheet_path, frozenset()):
+            raise ValueError("native symbol UUID is not on its declared source sheet")
+
+
 def parse_native_netlist(
     xml: bytes,
     *,
@@ -189,11 +208,7 @@ def parse_native_netlist(
     )
     _read_components(root, circuit, sheets)
     if expected_stamps is not None:
-        for instance in circuit.native_instances.values():
-            if not set(instance.symbol_uuids) <= expected_stamps.get(
-                instance.sheet_path, frozenset()
-            ):
-                raise ValueError("native symbol UUID is not on its declared source sheet")
+        _validate_source_stamps(circuit, expected_stamps)
     _read_nets(root, circuit)
     if not circuit.components or not circuit.nets:
         raise ValueError("native XML has no component or net coverage")
