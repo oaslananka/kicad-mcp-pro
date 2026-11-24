@@ -10,6 +10,15 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.22.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.0...mcp-server-v4.22.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **cloud:** restart verified idle Windows Connector tasks ([#1891](https://github.com/oaslananka/kicad-mcp-pro/issues/1891)) ([08e2f20](https://github.com/oaslananka/kicad-mcp-pro/commit/08e2f20217dfeb3538ab268980aa0eea678dc9a9))
+* **cloud:** truthful owner connection and cross-platform recovery UX ([705d328](https://github.com/oaslananka/kicad-mcp-pro/commit/705d328d534fb411846ebb400107ed7ebdb0daa2))
+* **schematic:** detect own-symbol field intrusions in visual QA ([#1884](https://github.com/oaslananka/kicad-mcp-pro/issues/1884)) ([9550980](https://github.com/oaslananka/kicad-mcp-pro/commit/9550980418ff824b8ac99340f929db64ffd4997c))
+
 ## [4.22.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.21.6...mcp-server-v4.22.0) (2026-11-22)
 
 
