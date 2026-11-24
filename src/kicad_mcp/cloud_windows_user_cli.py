@@ -39,11 +39,13 @@ from kicad_mcp.cloud_windows_task_scheduler import (
     disable_windows_connector,
     enable_windows_connector,
     scheduler_state,
+    start_owner_task,
     task_run_state,
 )
 
 _PROJECT_SUFFIX_PRIORITY = {".kicad_pro": 0, ".kicad_sch": 1, ".kicad_pcb": 2}
 _TASK_UNVERIFIED = "Configured (task unverified)"
+_TASK_SCHEDULED = "Scheduled (connection unverified)"
 
 
 def _default_project_folder() -> Path:
@@ -121,6 +123,40 @@ def _repair_missing_owner_task(project: WindowsRegisteredProject) -> bool:
         )
     enable_windows_connector(project, owner_confirm=lambda _project: True)
     typer.echo("Windows Connector task restored; Cloud connection and grants remain unverified.")
+    return True
+
+
+def _restart_ready_owner_task(project: WindowsRegisteredProject) -> bool:
+    """Restart a verified idle task without replacing its identity or grants."""
+    if scheduler_state() != _TASK_SCHEDULED or task_run_state() != "Ready":
+        return False
+
+    inspect_owner_selected_project(project)
+    cloud_state, signed_connected = _cloud_project_state(project)
+    if signed_connected is True:
+        typer.echo("Cloud already reports a signed session; no task was started.")
+        return True
+    if cloud_state in {"missing_device", "missing_project"}:
+        typer.echo("Cloud registration needs repair; no task was started.")
+        return True
+    if not typer.confirm("Restart the existing read-only Windows Connector task?", default=False):
+        typer.echo("Existing registration unchanged; task not started.")
+        return True
+
+    # An owner can revoke or replace the binding while the prompt is open.
+    # Recheck before issuing the scheduler command; its own guard verifies
+    # the task's current identity and executable again.
+    if (
+        selected_project() != project
+        or local_state() != "Configured (not connected)"
+        or scheduler_state() != _TASK_SCHEDULED
+        or task_run_state() != "Ready"
+    ):
+        typer.echo("Connector state changed during confirmation; no task was started.")
+        return True
+    inspect_owner_selected_project(project)
+    start_owner_task()
+    typer.echo("Connector task start requested; Cloud connection not verified.")
     return True
 
 
@@ -490,7 +526,7 @@ def _show_cloud_registration(cloud_state: str, signed_connected: bool | None) ->
 
 def show_status() -> None:
     state = scheduler_state()
-    run_state = task_run_state() if state == "Scheduled (connection unverified)" else None
+    run_state = task_run_state() if state == _TASK_SCHEDULED else None
     if run_state:
         typer.echo(f"Local Windows Connector: {state} [{run_state}]")
     else:
@@ -513,7 +549,7 @@ def show_status() -> None:
         _show_saved_native_write_preference(
             project,
             signed_connected=signed_connected,
-            scheduled_task=state == "Scheduled (connection unverified)",
+            scheduled_task=state == _TASK_SCHEDULED,
         )
         _show_cloud_registration(cloud_state, signed_connected)
         typer.echo("Cloud owner grants/revocation are managed in the Devices page.")
@@ -523,6 +559,15 @@ def show_status() -> None:
             and cloud_state not in {"missing_device", "missing_project"}
         ):
             _show_reconnect_guidance()
+        elif (
+            run_state == "Ready"
+            and signed_connected is not True
+            and cloud_state not in {"missing_device", "missing_project"}
+        ):
+            typer.echo(
+                "The background task is not running. "
+                "Run kicad-mcp-pro cloud reconnect to restart it."
+            )
     except (OSError, ValueError):
         typer.echo("Existing local registration needs repair. Cloud access not verified.")
         raise typer.Exit(code=1) from None
@@ -536,7 +581,7 @@ def enable_existing(*, owner_terminal: Callable[[], bool]) -> None:
         if project is None:
             raise typer.BadParameter("No registered Windows project; run cloud setup.")
         if local_state() != "Off":
-            if not _repair_missing_owner_task(project):
+            if not _repair_missing_owner_task(project) and not _restart_ready_owner_task(project):
                 typer.echo(f"Connector: {scheduler_state()}")
             return
         if not typer.confirm(

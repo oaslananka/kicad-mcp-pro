@@ -342,6 +342,43 @@ def test_fix_readability_applies_available_fixes_until_pass(tmp_path: Path) -> N
     assert "auto-placed fields on 1 symbol(s)" in result
 
 
+def test_fix_readability_repairs_own_field_intrusion(tmp_path: Path) -> None:
+    schematic_file = tmp_path / "board.kicad_sch"
+    schematic_file.write_text("sheet", encoding="utf-8")
+    reloads: list[bool] = []
+    service = _service(
+        schematic_file,
+        visual_reports=[
+            {"status": "WARN", "findings": [{"code": "field_body_intrusion", "ref": "U1"}]},
+            {"status": "PASS", "findings": []},
+        ],
+        field_apply_result=["U1"],
+        reload_calls=reloads,
+    )
+
+    result = service.fix_readability(max_passes=3)
+
+    assert "Readability fix: WARN -> PASS" in result
+    assert "auto-placed fields on 1 symbol(s)" in result
+    assert reloads == [True]
+
+
+def test_fix_readability_reports_remaining_own_field_intrusion(tmp_path: Path) -> None:
+    schematic_file = tmp_path / "board.kicad_sch"
+    schematic_file.write_text("sheet", encoding="utf-8")
+    service = _service(
+        schematic_file,
+        visual_reports=[
+            {"status": "WARN", "findings": [{"code": "field_body_intrusion", "ref": "J1"}]},
+        ],
+    )
+
+    result = service.fix_readability()
+
+    assert "No automatic fixes were applied." in result
+    assert "Manual follow-up suggested for: field_body_intrusion" in result
+
+
 def test_fix_readability_stops_when_no_safe_fix_exists(tmp_path: Path) -> None:
     schematic_file = tmp_path / "board.kicad_sch"
     schematic_file.write_text("sheet", encoding="utf-8")
@@ -540,3 +577,19 @@ def test_partial_functional_placement_guards_only_moved_not_missing_or_anchor(
     assert "Missing refs: R404." in result
     assert "Anchored refs preserved: J1." in result
     assert captured == [{"R1"}]
+
+
+def test_fix_readability_verifies_last_mutation(tmp_path: Path) -> None:
+    path = tmp_path / "board.kicad_sch"
+    path.write_text("sheet", encoding="utf-8")
+    service = _service(
+        path,
+        visual_reports=[
+            {"status": "WARN", "findings": [{"code": "field_body_intrusion"}]},
+            {"status": "PASS", "findings": []},
+        ],
+        field_apply_result=["U1"],
+    )
+    result = service.fix_readability(max_passes=1)
+    assert "WARN -> PASS" in result
+    assert "Manual follow-up" not in result

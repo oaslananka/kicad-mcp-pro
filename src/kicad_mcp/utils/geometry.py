@@ -179,6 +179,19 @@ class TextField:
         return Box(x_min, y_min, x_max, y_max)
 
 
+def horizontal_symbol_field_justify(justify: frozenset[str], symbol_angle: float) -> frozenset[str]:
+    """Convert between native and sheet horizontal anchors (an involution).
+
+    Native KiCad 10 SVG exports show that a horizontal field on a symbol
+    rotated 90 or 180 degrees reverses its stored left/right alignment.
+    At 0 and 270 degrees the stored horizontal anchor is already correct.
+    """
+    if symbol_angle % 360 not in {90, 180}:
+        return justify
+    flip = {"left": "right", "right": "left"}
+    return frozenset(flip.get(token, token) for token in justify)
+
+
 def parse_justify(tokens: str | Iterable[str] | None) -> frozenset[str]:
     """Normalise a KiCad ``(justify …)`` token list into a frozenset.
 

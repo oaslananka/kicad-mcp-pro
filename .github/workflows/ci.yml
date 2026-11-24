@@ -493,6 +493,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           COVERAGE_ARTIFACT: windows-python-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          COVERAGE_PRODUCER_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -512,6 +513,15 @@ jobs:
               echo "::error::Ambiguous current-run native coverage artifact."
               exit 1
             fi
+            # Inspect only this attempt. A failed producer cannot upload later,
+            # but a successful upload may still be propagating to the artifact API.
+            if ! jobs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100")"; then
+              echo "::error::Cannot inspect current workflow attempt jobs."
+              exit 1
+            fi
+            python3 scripts/check_windows_coverage_producer.py \
+              --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
+              --head "$COVERAGE_PRODUCER_HEAD" <<< "$jobs"
             if (( attempt < 80 )); then sleep 15; fi
           done
           echo "::error::Exact-run Windows coverage not available after 20 minutes."
@@ -527,13 +537,12 @@ jobs:
             github.ref == 'refs/heads/main' &&
             needs.changes.outputs.release_metadata_only != 'true' &&
             needs.changes.outputs.sonar_docs_only != 'true'))
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          # Keep the exact same-run artifact ID and digest enforcement.
-          # No GitHub API token: the action then uses the current-run artifact backend
-          # instead of the cross-run REST download path, which may briefly return 404.
-          artifact-ids: ${{ steps.native-windows-coverage.outputs.artifact_id }}
-          digest-mismatch: error
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COVERAGE_ARTIFACT_ID: ${{ steps.native-windows-coverage.outputs.artifact_id }}
+          COVERAGE_PRODUCER_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: bash scripts/ci/download_windows_coverage.sh
       - name: Merge native Windows and Linux coverage
         if: >-
           env.skip_ci != 'true' &&
@@ -1031,6 +1040,10 @@ jobs:
           "$GOBIN/actionlint" -version | grep -F '1.7.12'
           echo "$GOBIN" >> "$GITHUB_PATH"
       - run: uv run --all-extras python scripts/check_workflows.py --actionlint
+      - name: Test native Windows coverage wait behavior
+        run: uv run --all-extras bash scripts/ci/test_windows_coverage_wait.sh
+      - name: Test native Windows coverage download integrity and retries
+        run: uv run --all-extras bash scripts/ci/test_windows_coverage_download.sh
       - run: uv run --all-extras python scripts/workflow_security.py --min-severity high
 
   security:

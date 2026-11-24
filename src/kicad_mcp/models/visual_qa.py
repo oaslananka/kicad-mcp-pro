@@ -27,6 +27,7 @@ from ..utils.geometry import (
     TextField,
     body_box_from_pins,
     boxes_overlap_pairs,
+    horizontal_symbol_field_justify,
     parse_justify,
     symbol_extent,
     union,
@@ -168,9 +169,9 @@ def _rotate_local(x: float, y: float, angle_deg: float) -> tuple[float, float]:
     """Map a symbol-library local point to a placement-relative offset.
 
     Mirrors ``get_pin_positions``: schematic space inverts the library y axis, so
-    the relative offset is ``rotate(x, -y, angle)``.
+    the relative offset is ``rotate(x, -y, -angle)``.
     """
-    radians = math.radians(angle_deg)
+    radians = math.radians(-angle_deg)
     cos_a = math.cos(radians)
     sin_a = math.sin(radians)
     ly = -y
@@ -234,7 +235,7 @@ def _collect_symbol_local_points(block: str) -> list[tuple[float, float]]:
         points.append((pxf, pyf))
         # Include the body-side end so the pin stub is covered either way.
         rad = math.radians(angf)
-        points.append((pxf - lenf * math.cos(rad), pyf - lenf * math.sin(rad)))
+        points.append((pxf + lenf * math.cos(rad), pyf + lenf * math.sin(rad)))
     return points
 
 
@@ -286,7 +287,21 @@ def _parse_effects(prop_block: str) -> tuple[float, frozenset[str], bool]:
     return font_mm, justify, hidden
 
 
-def _parse_instance_fields(symbol_block: str) -> tuple[str, list[TextField]]:
+def _instance_field_justify(
+    justify: frozenset[str], angle: float, symbol_angle: float
+) -> frozenset[str]:
+    """Translate native field alignment to the sheet-coordinate text box."""
+    if angle != 90:
+        return horizontal_symbol_field_justify(justify, symbol_angle)
+    axis = {"left": "bottom", "right": "top", "bottom": "right", "top": "left"}
+    if symbol_angle % 360 in {180, 270}:
+        axis.update({"left": "top", "right": "bottom"})
+    return frozenset(axis.get(token, token) for token in justify)
+
+
+def _parse_instance_fields(
+    symbol_block: str, symbol_angle: float = 0.0
+) -> tuple[str, list[TextField]]:
     """Return ``(reference, visible_text_fields)`` for a placed symbol block."""
     reference = ""
     fields: list[TextField] = []
@@ -309,7 +324,9 @@ def _parse_instance_fields(symbol_block: str) -> tuple[str, list[TextField]]:
         font_mm, justify, hidden = _parse_effects(prop_block)
         if hidden or name in _HIDDEN_BY_DEFAULT_FIELDS or not text:
             continue
-        fields.append(TextField(text, float(fx), float(fy), float(fang), font_mm, justify=justify))
+        angle = (float(fang) + symbol_angle) % 180
+        justify = _instance_field_justify(justify, angle, symbol_angle)
+        fields.append(TextField(text, float(fx), float(fy), angle, font_mm, justify=justify))
     return reference, fields
 
 
@@ -327,7 +344,7 @@ def parse_placed_symbols(sch_text: str) -> list[PlacedSymbol]:
         y = float(at_match.group(2))
         angle = float(at_match.group(3)) if at_match.group(3) else 0.0
         lib_id = lib_match.group(1)
-        reference, fields = _parse_instance_fields(block)
+        reference, fields = _parse_instance_fields(block, angle)
         body = _instance_body_box(lib_id, x, y, angle, local_points)
         placed.append(PlacedSymbol(reference, lib_id, x, y, angle, body, tuple(fields)))
     return placed

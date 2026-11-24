@@ -10,6 +10,38 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.22.4](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.3...mcp-server-v4.22.4) (2026-11-24)
+
+
+### Bug Fixes
+
+* **ci:** fail promptly when Windows coverage upload is impossible ([#1896](https://github.com/oaslananka/kicad-mcp-pro/issues/1896)) ([464ce75](https://github.com/oaslananka/kicad-mcp-pro/commit/464ce756ed27afdd766e987e6dc8220cb9a8dd00))
+* **ci:** retry transient exact-run coverage downloads ([#1899](https://github.com/oaslananka/kicad-mcp-pro/issues/1899)) ([5da2d78](https://github.com/oaslananka/kicad-mcp-pro/commit/5da2d780842c5ffbe65d26bbc003b8db1c2016d8))
+* **schematic:** review generic connector values before completion ([#1900](https://github.com/oaslananka/kicad-mcp-pro/issues/1900)) ([3548a30](https://github.com/oaslananka/kicad-mcp-pro/commit/3548a30c47e572b18a34ec007a393ea300c3c89d))
+
+## [4.22.3](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.2...mcp-server-v4.22.3) (2026-11-24)
+
+
+### Bug Fixes
+
+* **schematic:** repair field placement with native geometry and anchors ([#1894](https://github.com/oaslananka/kicad-mcp-pro/issues/1894)) ([26744e3](https://github.com/oaslananka/kicad-mcp-pro/commit/26744e3e6c2c22ceb239f45c3464b8a1526fe3cb))
+
+## [4.22.2](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.1...mcp-server-v4.22.2) (2026-11-24)
+
+
+### Bug Fixes
+
+* **schematic:** make PNG rendering work in standard installations ([#1892](https://github.com/oaslananka/kicad-mcp-pro/issues/1892)) ([a34fc8e](https://github.com/oaslananka/kicad-mcp-pro/commit/a34fc8e0826926c78575b2c40577ea763e1139c6))
+
+## [4.22.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.0...mcp-server-v4.22.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **cloud:** restart verified idle Windows Connector tasks ([#1891](https://github.com/oaslananka/kicad-mcp-pro/issues/1891)) ([08e2f20](https://github.com/oaslananka/kicad-mcp-pro/commit/08e2f20217dfeb3538ab268980aa0eea678dc9a9))
+* **cloud:** truthful owner connection and cross-platform recovery UX ([705d328](https://github.com/oaslananka/kicad-mcp-pro/commit/705d328d534fb411846ebb400107ed7ebdb0daa2))
+* **schematic:** detect own-symbol field intrusions in visual QA ([#1884](https://github.com/oaslananka/kicad-mcp-pro/issues/1884)) ([9550980](https://github.com/oaslananka/kicad-mcp-pro/commit/9550980418ff824b8ac99340f929db64ffd4997c))
+
 ## [4.22.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.21.6...mcp-server-v4.22.0) (2026-11-22)
 
 
