@@ -15,6 +15,7 @@ test("owner device card differentiates saved edit permission from active server 
   };
   const options={
     projects:[project],
+    browseEnabled:true,
     clients:["www.mcpjam.com"],
     writeClients:["www.mcpjam.com"],
     savedGrants:[{projectId:project.id,clientId:"www.mcpjam.com",maxMode:"write" as const}]
@@ -27,9 +28,10 @@ test("owner device card differentiates saved edit permission from active server 
   const available=renderDevicesPage([device],undefined,true,{
     ...options,nativeWriteAvailable:true
   });
-  assert.match(available,/Cloud editing is available when the owner connects the editing device/);
+  assert.match(available,/Edit permission saved<\/span>/);
+  assert.match(available,/Edits require a compatible Connector in editing mode/);
+  assert.doesNotMatch(available,/connect your editing device/i);
   assert.doesNotMatch(available,/Cloud editing is not enabled/);
-  assert.match(available,/Edit permission saved/);
 });
 
 test("write-ready server without OAuth write clients shows actionable consent guidance",()=>{

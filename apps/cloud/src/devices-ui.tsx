@@ -40,7 +40,7 @@ function grantModeLabel(mode:BrowserGrantSummary["maxMode"],writeAvailable:boole
   if(mode==="readonly")return "Read only";
   if(mode==="write"&&!writeConsent)return "Edit saved — reconnect this AI app to approve write access";
   if(mode==="write")return writeAvailable
-    ? "Edit permission saved (connect your editing device)"
+    ? "Edit permission saved"
     : "Edit permission saved (Cloud editing is not enabled)";
   return "Other permission (not remote editing)";
 }
@@ -116,10 +116,9 @@ function ProjectAccess({project,context}:Readonly<{project:Project;context:ViewC
    return (                <details className="project-access-details">
                   <summary>Manage access</summary>
                   <p className="field-help">Choose each AI app's Read or Edit access here.
-                    Read is the default. Edit also requires that app's OAuth write consent,
-                    an owner-connected local editing Connector and Cloud write availability.{" "}
+                    Read is the default.{" "}
                     {context.nativeWriteAvailable
-                      ? "Cloud editing is available when the owner connects the editing device."
+                      ? "Edits require a compatible Connector in editing mode and the app's OAuth write consent."
                       : "Cloud editing is not enabled on this server yet."}</p>
                   {context.nativeWriteAvailable?
                     <p className="field-help">If Edit is unavailable, reconnect your AI app and
