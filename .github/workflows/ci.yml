@@ -493,6 +493,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           COVERAGE_ARTIFACT: windows-python-coverage-${{ github.run_id }}-${{ github.run_attempt }}
+          COVERAGE_PRODUCER_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -512,6 +513,15 @@ jobs:
               echo "::error::Ambiguous current-run native coverage artifact."
               exit 1
             fi
+            # Inspect only this attempt. A failed producer cannot upload later,
+            # but a successful upload may still be propagating to the artifact API.
+            if ! jobs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100")"; then
+              echo "::error::Cannot inspect current workflow attempt jobs."
+              exit 1
+            fi
+            python3 scripts/check_windows_coverage_producer.py \
+              --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
+              --head "$COVERAGE_PRODUCER_HEAD" <<< "$jobs"
             if (( attempt < 80 )); then sleep 15; fi
           done
           echo "::error::Exact-run Windows coverage not available after 20 minutes."
