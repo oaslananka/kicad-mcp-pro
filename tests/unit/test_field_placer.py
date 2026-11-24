@@ -183,8 +183,9 @@ def test_field_only_transaction_preserves_wires_and_noop_bytes(
     assert path.read_bytes() == original.replace(b'"old"', b'"new"')
 
 
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
 def test_autoplace_uses_cached_body_and_real_wire_obstacles(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, newline: str
 ) -> None:
     from kicad_mcp.models.visual_qa import parse_placed_symbols
     from kicad_mcp.tools import schematic
@@ -201,7 +202,8 @@ def test_autoplace_uses_cached_body_and_real_wire_obstacles(
 )
 """
     path = tmp_path / "demo.kicad_sch"
-    path.write_text(content, encoding="utf-8")
+    original = content.replace("\n", newline).encode("utf-8")
+    path.write_bytes(original)
     monkeypatch.setattr(
         schematic,
         "parse_schematic_file",
@@ -220,15 +222,18 @@ def test_autoplace_uses_cached_body_and_real_wire_obstacles(
     )
     monkeypatch.setattr(schematic, "_symbol_body_and_pins", lambda _: (Box(49, 49, 51, 51), []))
     mutate, _, updated = schematic._build_autoplace_fields_mutator(path)
-    result = mutate(content)
+    result = mutate(path.read_bytes().decode("utf-8"))
     assert updated == ["U1"]
     symbol = parse_placed_symbols(result)[0]
     assert all(not f.box().overlaps(symbol.body) for f in symbol.fields)
     assert all(not f.box().overlaps(Box(56, 48.8, 80, 51.2)) for f in symbol.fields)
-    path.write_text(result, encoding="utf-8")
+    path.write_bytes(result.encode("utf-8"))
     repeat, _, repeated = schematic._build_autoplace_fields_mutator(path)
-    assert repeat(result) == result
+    assert repeat(path.read_bytes().decode("utf-8")) == result
     assert repeated == []
+    assert result.count(newline) == original.count(newline.encode("utf-8"))
+    if newline == "\r\n":
+        assert "\n" not in result.replace("\r\n", "")
 
 
 def test_property_position_preserves_other_nodes_when_effects_precede_at() -> None:
