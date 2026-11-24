@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.22.6](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.5...mcp-server-v4.22.6) (2026-11-24)
+
+
+### Bug Fixes
+
+* **setup:** honor HTTP endpoint and legacy console encoding ([#1905](https://github.com/oaslananka/kicad-mcp-pro/issues/1905)) ([0125841](https://github.com/oaslananka/kicad-mcp-pro/commit/01258415696cf28f960a0dda43dc1b4238f6f46b))
+
 ## [4.22.5](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.4...mcp-server-v4.22.5) (2026-11-24)
 
 
