@@ -931,3 +931,57 @@ def test_incremental_state_validation_helper_branches(tmp_path: Path) -> None:
         module._validate_state_metadata_and_hashes(
             meta_doc, tmp_path, graph, ("main.kicad_sch", "other.kicad_sch")
         )
+
+
+@pytest.mark.parametrize("transition", ["clone", "reopen", "rebuild", "upgrade"])
+def test_edit_token_cannot_cross_state_lifetime(project: Path, transition: str) -> None:
+    original = _state(project)
+    token = original.prepare_native_edit()
+    target = project
+    if transition == "clone":
+        target = project.parent / f"{project.name}-clone"
+        target.mkdir()
+        for name in SOURCES:
+            (target / name).write_bytes((project / name).read_bytes())
+        current = _state(target)
+    elif transition == "reopen":
+        path = project / ".kicad-mcp-cache" / "graph.json"
+        original.save_atomic(path)
+        current = PersistentProjectState.load_verified(
+            project,
+            path,
+            project_key=PROJECT_KEY,
+            native_sources=SOURCES,
+            compatibility_key=COMPATIBILITY_KEY,
+        )
+    else:
+        compatibility = COMPATIBILITY_KEY if transition == "rebuild" else "parser-v2"
+        current = PersistentProjectState.rebuild(
+            project,
+            SOURCES,
+            _circuit(),
+            compatibility_key=compatibility,
+        )
+    assert current.project_key == original.project_key
+    assert current.source_hashes == original.source_hashes
+    assert current.generation == original.generation
+    before = _circuit()
+    after = _circuit()
+    after.components["R1"] = replace(after.components["R1"], value="12k")
+    fresh_token = current.prepare_native_edit()
+    (target / SOURCES[0]).write_text("(kicad_sch (version 20250114) (R1 12k))")
+    expected = source_digests(target, SOURCES)
+    initial = current.to_document()
+    with pytest.raises(StateRebuildRequiredError, match="stale"):
+        current.apply_native_edit(token, before, after, expected_new_hashes=expected)
+    assert current.to_document() == initial
+    assert (
+        current.apply_native_edit(
+            fresh_token,
+            before,
+            after,
+            expected_new_hashes=expected,
+        ).work_units
+        == 1
+    )
+    assert current.graph.to_document() == graph_from_circuit(after).to_document()

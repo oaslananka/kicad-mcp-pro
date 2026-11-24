@@ -268,3 +268,20 @@ def test_capture_rejects_cycle(native_project: Path) -> None:
     root.write_text(root.read_text().replace("child.kicad_sch", "main.kicad_sch"), encoding="utf-8")
     with pytest.raises(ValueError, match="cyclic"):
         _capture(native_project)
+
+
+def test_hierarchy_reopen_rejects_previous_session_edit_token(native_project: Path) -> None:
+    before = _capture(native_project)
+    original = PersistentProjectState.rebuild_native(before, compatibility_key=COMPAT)
+    stale = original.prepare_native_edit()
+    original.save_atomic(native_project / ".kicad-mcp-cache" / "native.json")
+    current = _reopen(native_project, before)
+    token = current.prepare_native_edit()
+    child = native_project / SOURCES[1]
+    child.write_text(child.read_text().replace("10k", "12k"), encoding="utf-8")
+    after = _capture(native_project, XML.replace("10k", "12k"))
+    unchanged = current.to_document()
+    with pytest.raises(StateRebuildRequiredError, match="stale"):
+        current.apply_hierarchy_edit(stale, before, after)
+    assert current.to_document() == unchanged
+    assert current.apply_hierarchy_edit(token, before, after).work_units == 2
