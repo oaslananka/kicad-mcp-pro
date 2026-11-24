@@ -86,7 +86,7 @@ from ..schematic.template_catalog import SchematicTemplateCatalogService
 from ..schematic.template_instantiation import SchematicTemplateInstantiationService
 from ..schematic.topology import SchematicTopologyService
 from ..utils.cache import clear_ttl_cache
-from ..utils.field_placer import FieldSpec, autoplace_fields
+from ..utils.field_placer import FieldPlacement, FieldSpec, autoplace_fields
 from ..utils.geometry import Box as GeoBox
 from ..utils.geometry import body_box_from_pins, horizontal_symbol_field_justify, text_extent, union
 from ..utils.schematic_roundtrip import dropped_nodes
@@ -7021,6 +7021,72 @@ def _symbol_body_and_pins(parsed: dict[str, Any]) -> tuple[GeoBox, list[tuple[fl
     return body, pin_points
 
 
+def _movable_field_specs(block: str, parsed: dict[str, Any]) -> list[FieldSpec]:
+    """Read visible, movable Reference/Value fields without changing their content."""
+    props = _symbol_property_blocks(block)
+    # Do not reposition a user-locked pair around an approximate obstacle.
+    if any(
+        _symbol_bool_flag(props.get(name, ""), "do_not_autoplace", default=False)
+        for name in ("Reference", "Value")
+    ):
+        return []
+    specs: list[FieldSpec] = []
+    for name in ("Reference", "Value"):
+        prop = props.get(name, "")
+        if not prop or _symbol_bool_flag(prop, "hide", default=False):
+            continue
+        if re.search(r"\bhide\s*\)", prop) or _symbol_bool_flag(prop, "show_name", default=False):
+            continue
+        size = re.search(r"\(size\s+([\d.]+)", prop)
+        font = float(size.group(1)) if size else 1.27
+        specs.append(
+            FieldSpec(
+                name,
+                str(parsed.get(name.lower(), "")),
+                font or 1.27,
+                bold=bool(re.search(r"\(bold\s+yes\)|\bbold\s*\)", prop)),
+            )
+        )
+    return specs
+
+
+def _field_placements_are_clear(
+    specs: Sequence[FieldSpec],
+    placements: Sequence[FieldPlacement],
+    obstacles: Sequence[GeoBox],
+    sheet: GeoBox | None,
+) -> bool:
+    # A least-bad side is not necessarily a readable one. Refuse to move
+    # fields into known collisions or outside the page.
+    for spec, placement in zip(specs, placements, strict=True):
+        if not spec.text:
+            continue
+        box = placement.text_field(spec.text, spec.font_mm, bold=spec.bold).box()
+        if any(box.overlaps(obstacle) for obstacle in obstacles):
+            return False
+        if sheet is not None and not box.inside(sheet):
+            return False
+    return True
+
+
+def _apply_field_placements(
+    block: str, rotation: float, specs: Sequence[FieldSpec], placements: Sequence[FieldPlacement]
+) -> str:
+    new_block = block
+    for spec, placement in zip(specs, placements, strict=True):
+        if not spec.text:
+            continue
+        new_block = _set_property_position(
+            new_block,
+            spec.name,
+            placement.x,
+            placement.y,
+            (placement.angle + int(rotation)) % 180,
+            justify=horizontal_symbol_field_justify(placement.justify, rotation),
+        )
+    return new_block
+
+
 def _autoplace_visible_fields_for_ref(
     content: str,
     ref: str,
@@ -7041,60 +7107,83 @@ def _autoplace_visible_fields_for_ref(
     body, pins = body_pins[ref] if ref in body_pins else _symbol_body_and_pins(parsed)
     obstacles = [box for other, box in bodies.items() if other != ref]
     obstacles.extend(extra_obstacles)
-    props = _symbol_property_blocks(block)
-    # Do not reposition a user-locked pair around an approximate obstacle.
-    if any(
-        _symbol_bool_flag(props.get(name, ""), "do_not_autoplace", default=False)
-        for name in ("Reference", "Value")
-    ):
-        return content, False
-    specs: list[FieldSpec] = []
-    for name in ("Reference", "Value"):
-        prop = props.get(name, "")
-        if not prop or _symbol_bool_flag(prop, "hide", default=False):
-            continue
-        if re.search(r"\bhide\s*\)", prop) or _symbol_bool_flag(prop, "show_name", default=False):
-            continue
-        size = re.search(r"\(size\s+([\d.]+)", prop)
-        font = float(size.group(1)) if size else 1.27
-        specs.append(
-            FieldSpec(
-                name,
-                str(parsed.get(name.lower(), "")),
-                font or 1.27,
-                bold=bool(re.search(r"\(bold\s+yes\)|\bbold\s*\)", prop)),
-            )
-        )
+    specs = _movable_field_specs(block, parsed)
     if not specs:
         return content, False
     placements = autoplace_fields(body, pins, obstacles, specs)
-    # A least-bad side is not necessarily a readable one. Refuse to move
-    # fields into known collisions or outside the page.
-    for spec, placement in zip(specs, placements, strict=True):
-        if not spec.text:
-            continue
-        box = placement.text_field(spec.text, spec.font_mm, bold=spec.bold).box()
-        if any(box.overlaps(obstacle) for obstacle in obstacles):
-            return content, False
-        if sheet is not None and not box.inside(sheet):
-            return content, False
-    new_block = block
-    for spec, placement in zip(specs, placements, strict=True):
-        if not spec.text:
-            continue
-        new_block = _set_property_position(
-            new_block,
-            spec.name,
-            placement.x,
-            placement.y,
-            (placement.angle + int(parsed.get("rotation", 0))) % 180,
-            justify=horizontal_symbol_field_justify(
-                placement.justify, float(parsed.get("rotation", 0))
-            ),
-        )
+    if not _field_placements_are_clear(specs, placements, obstacles, sheet):
+        return content, False
+    new_block = _apply_field_placements(block, float(parsed.get("rotation", 0)), specs, placements)
     if new_block == block:
         return content, False
     return content[:start] + new_block + content[end:], True
+
+
+def _merge_cached_field_geometry(
+    content: str,
+    bodies: dict[str, GeoBox],
+    body_pins: dict[str, tuple[GeoBox, list[tuple[float, float]]]],
+) -> dict[str, list[GeoBox]]:
+    """Use cached symbol extents as well as library pin geometry."""
+    placed = parse_placed_symbols(content)
+    field_boxes = {symbol.reference: [field.box() for field in symbol.fields] for symbol in placed}
+    for symbol in placed:
+        if symbol.reference in body_pins:
+            old_body, pins = body_pins[symbol.reference]
+            merged = union([old_body, symbol.body])
+            if merged is not None:
+                body_pins[symbol.reference] = (merged, pins)
+                bodies[symbol.reference] = merged
+        else:
+            bodies[symbol.reference] = symbol.body
+    return field_boxes
+
+
+def _fixed_field_obstacles(content: str) -> tuple[list[GeoBox], GeoBox]:
+    """Collect sheet boundaries and fixed connection/label obstacles."""
+    # The existing parsers distinguish root wire/bus nodes from quoted text.
+    wire_boxes = [
+        GeoBox(
+            min(w["x1"], w["x2"]),
+            min(w["y1"], w["y2"]),
+            max(w["x1"], w["x2"]),
+            max(w["y1"], w["y2"]),
+        ).expanded(0.254)
+        for w in [*_extract_wires(content), *_extract_buses(content)]
+    ]
+    fixed_obstacles = wire_boxes + [label.box().expanded(0.254) for label in parse_labels(content)]
+    width, height = parse_paper_extent(content)
+    sheet = GeoBox(0, 0, width, height)
+    return fixed_obstacles, sheet
+
+
+def _place_target_fields(
+    content: str,
+    targets: Sequence[str],
+    bodies: dict[str, GeoBox],
+    body_pins: dict[str, tuple[GeoBox, list[tuple[float, float]]]],
+    updated: list[str],
+) -> str:
+    field_boxes = _merge_cached_field_geometry(content, bodies, body_pins)
+    fixed_obstacles, sheet = _fixed_field_obstacles(content)
+    new_content = content
+    for ref in targets:
+        obstacles = fixed_obstacles + [
+            box for other, fields in field_boxes.items() if other != ref for box in fields
+        ]
+        new_content, changed = _autoplace_visible_fields_for_ref(
+            new_content, ref, bodies, body_pins, extra_obstacles=obstacles, sheet=sheet
+        )
+        if changed:
+            updated.append(ref)
+            match = _find_placed_symbol_block(new_content, ref)
+            if match is not None:
+                field_boxes[ref] = [
+                    field.box()
+                    for symbol in parse_placed_symbols(match[0])
+                    for field in symbol.fields
+                ]
+    return new_content
 
 
 def _build_autoplace_fields_mutator(
@@ -7138,52 +7227,7 @@ def _build_autoplace_fields_mutator(
                 "Retry on the current sheet."
             )
         updated.clear()
-        placed = parse_placed_symbols(content)
-        field_boxes = {
-            symbol.reference: [field.box() for field in symbol.fields] for symbol in placed
-        }
-        for symbol in placed:
-            if symbol.reference in body_pins:
-                old_body, pins = body_pins[symbol.reference]
-                merged = union([old_body, symbol.body])
-                if merged is not None:
-                    body_pins[symbol.reference] = (merged, pins)
-                    bodies[symbol.reference] = merged
-            else:
-                bodies[symbol.reference] = symbol.body
-        # The existing parsers distinguish root wire/bus nodes from quoted text.
-        wire_boxes = [
-            GeoBox(
-                min(w["x1"], w["x2"]),
-                min(w["y1"], w["y2"]),
-                max(w["x1"], w["x2"]),
-                max(w["y1"], w["y2"]),
-            ).expanded(0.254)
-            for w in [*_extract_wires(content), *_extract_buses(content)]
-        ]
-        fixed_obstacles = wire_boxes + [
-            label.box().expanded(0.254) for label in parse_labels(content)
-        ]
-        width, height = parse_paper_extent(content)
-        sheet = GeoBox(0, 0, width, height)
-        new_content = content
-        for ref in targets:
-            obstacles = fixed_obstacles + [
-                box for other, fields in field_boxes.items() if other != ref for box in fields
-            ]
-            new_content, changed = _autoplace_visible_fields_for_ref(
-                new_content, ref, bodies, body_pins, extra_obstacles=obstacles, sheet=sheet
-            )
-            if changed:
-                updated.append(ref)
-                match = _find_placed_symbol_block(new_content, ref)
-                if match is not None:
-                    field_boxes[ref] = [
-                        field.box()
-                        for symbol in parse_placed_symbols(match[0])
-                        for field in symbol.fields
-                    ]
-        return new_content
+        return _place_target_fields(content, targets, bodies, body_pins, updated)
 
     return mutator, targets, updated
 

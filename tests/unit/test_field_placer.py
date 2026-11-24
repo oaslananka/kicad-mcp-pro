@@ -153,7 +153,8 @@ def test_rotated_locked_and_hidden_native_fields(monkeypatch: pytest.MonkeyPatch
     bodies = {"R1": body, "R2": body2}
     pinmap = {"R1": (body, pins), "R2": (body2, pins2)}
     unchanged, changed = schematic._autoplace_visible_fields_for_ref(content, "R1", bodies, pinmap)
-    assert not changed and unchanged == content
+    assert not changed
+    assert unchanged == content
     updated, changed = schematic._autoplace_visible_fields_for_ref(content, "R2", bodies, pinmap)
     assert changed
     block = schematic._find_placed_symbol_block(updated, "R2")[0]

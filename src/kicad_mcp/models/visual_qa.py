@@ -287,6 +287,18 @@ def _parse_effects(prop_block: str) -> tuple[float, frozenset[str], bool]:
     return font_mm, justify, hidden
 
 
+def _instance_field_justify(
+    justify: frozenset[str], angle: float, symbol_angle: float
+) -> frozenset[str]:
+    """Translate native field alignment to the sheet-coordinate text box."""
+    if angle != 90:
+        return horizontal_symbol_field_justify(justify, symbol_angle)
+    axis = {"left": "bottom", "right": "top", "bottom": "right", "top": "left"}
+    if symbol_angle % 360 in {180, 270}:
+        axis.update({"left": "top", "right": "bottom"})
+    return frozenset(axis.get(token, token) for token in justify)
+
+
 def _parse_instance_fields(
     symbol_block: str, symbol_angle: float = 0.0
 ) -> tuple[str, list[TextField]]:
@@ -313,13 +325,7 @@ def _parse_instance_fields(
         if hidden or name in _HIDDEN_BY_DEFAULT_FIELDS or not text:
             continue
         angle = (float(fang) + symbol_angle) % 180
-        if angle == 90:
-            axis = {"left": "bottom", "right": "top", "bottom": "right", "top": "left"}
-            if symbol_angle % 360 in {180, 270}:
-                axis.update({"left": "top", "right": "bottom"})
-            justify = frozenset(axis.get(token, token) for token in justify)
-        else:
-            justify = horizontal_symbol_field_justify(justify, symbol_angle)
+        justify = _instance_field_justify(justify, angle, symbol_angle)
         fields.append(TextField(text, float(fx), float(fy), angle, font_mm, justify=justify))
     return reference, fields
 

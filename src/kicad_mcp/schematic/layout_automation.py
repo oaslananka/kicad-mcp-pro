@@ -286,8 +286,8 @@ class SchematicLayoutAutomationService:
         actions: list[str] = []
         pass_log: list[str] = []
         initial_status: str | None = None
-        final_status = "PASS"
-        remaining: set[str] = set()
+        final_status: str
+        remaining: set[str]
 
         for pass_index in range(passes):
             report = self.run_visual_qa(sch_file.read_text(encoding="utf-8", errors="ignore"))
