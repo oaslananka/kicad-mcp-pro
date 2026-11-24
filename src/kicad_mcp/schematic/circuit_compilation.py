@@ -96,6 +96,28 @@ class LabelBlock(Protocol):
     ) -> str: ...
 
 
+def _connector_value_review(symbols: list[AddSymbolInput]) -> list[str]:
+    """Flag possible function-only Values without judging or changing part identity."""
+    candidates = [
+        symbol
+        for symbol in symbols
+        if symbol.library == "Connector_Generic" and symbol.value != symbol.symbol_name
+    ]
+    if not candidates:
+        return []
+    references = ", ".join(
+        f"{symbol.reference!r} (library Value {symbol.symbol_name!r})" for symbol in candidates[:8]
+    )
+    if len(candidates) > 8:
+        references += f", and {len(candidates) - 8} more"
+    return [
+        f"Value review (advisory): {references}. "
+        "For generic connectors, keep the library Value or an intentional part number. "
+        "Put interface roles in net labels or a separate explanatory field. "
+        "Review the supplied Values; no automatic replacement is performed."
+    ]
+
+
 @dataclass(frozen=True)
 class SchematicCircuitCompilationService:
     """Analyze net compilation and generate complete schematic documents."""
@@ -147,7 +169,7 @@ class SchematicCircuitCompilationService:
             auto_layout=auto_layout,
             unsafe_routed_wires=unsafe_routed_wires,
         )
-        return self.render_report(
+        report = self.render_report(
             symbols=prepared.symbols,
             powers=prepared.powers,
             labels=prepared.labels,
@@ -159,6 +181,7 @@ class SchematicCircuitCompilationService:
             auto_layout=auto_layout,
             terminalized=not unsafe_routed_wires,
         )
+        return "\n".join([report, *_connector_value_review(prepared.symbols)])
 
     def _check_unresolved_nets(self, prepared: PreparedCircuitInputs) -> None:
         if prepared.unresolved_nets:
@@ -317,6 +340,7 @@ class SchematicCircuitCompilationService:
         if backup_path is not None:
             summary += f" Backup of the previous sheet: {backup_path}."
         notes: list[str] = [summary]
+        notes.extend(_connector_value_review(prepared.symbols))
         if not format_upgrade.upgraded:
             notes.append(
                 "Format note: kept repository writer dialect; "

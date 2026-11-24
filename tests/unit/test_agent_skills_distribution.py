@@ -346,3 +346,13 @@ def test_wired_authoring_uses_public_mcp_geometry_and_preview_tools() -> None:
     assert "`sch_get_pin_positions(" in wired
     assert "`get_pin_positions" not in wired
     assert "`sch_analyze_net_compilation`" in wired
+
+
+def test_wired_authoring_reviews_connector_value_and_repairs_before_completion() -> None:
+    wired = (ROOT / "skills/wired-subcircuit-design/SKILL.md").read_text(encoding="utf-8")
+    assert "Conn_01x02" in wired
+    assert "5V INPUT" in wired
+    assert "intentional part number" in wired
+    assert "sch_fix_readability" in wired
+    assert "re-render" in wired
+    assert "existing design" in wired
