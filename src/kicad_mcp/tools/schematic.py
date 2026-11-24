@@ -36,6 +36,7 @@ from ..models.schematic import (
     PowerSymbolInput,
     UpdatePropertiesInput,
 )
+from ..models.visual_qa import parse_labels, parse_paper_extent, parse_placed_symbols
 from ..models.visual_qa import run_visual_qa as _run_visual_qa
 from ..path_safety import resolve_under
 from ..schematic.back_annotation import SchematicBackAnnotationService
@@ -85,9 +86,9 @@ from ..schematic.template_catalog import SchematicTemplateCatalogService
 from ..schematic.template_instantiation import SchematicTemplateInstantiationService
 from ..schematic.topology import SchematicTopologyService
 from ..utils.cache import clear_ttl_cache
-from ..utils.field_placer import FieldSpec, autoplace_fields
+from ..utils.field_placer import FieldPlacement, FieldSpec, autoplace_fields
 from ..utils.geometry import Box as GeoBox
-from ..utils.geometry import body_box_from_pins, text_extent
+from ..utils.geometry import body_box_from_pins, horizontal_symbol_field_justify, text_extent, union
 from ..utils.schematic_roundtrip import dropped_nodes
 from ..utils.schematic_router import (
     PinOrientation,
@@ -6836,6 +6837,7 @@ def _transactional_write_to_schematic_file(
     mutator: Callable[[str], str],
     *,
     allow_node_loss: bool = False,
+    normalize_wires: bool = True,
 ) -> str:
     """Read, mutate, validate, and atomically rewrite a schematic file.
 
@@ -6845,14 +6847,26 @@ def _transactional_write_to_schematic_file(
     """
     with _SCHEMATIC_WRITE_LOCK:
         sch_file = sch_file.resolve()
-        current = sch_file.read_text(encoding="utf-8")
+        current = (
+            sch_file.read_text(encoding="utf-8")
+            if normalize_wires
+            else sch_file.read_bytes().decode("utf-8")
+        )
         mutated = mutator(current)
+        if not normalize_wires and mutated == current:
+            return str(sch_file)
         _guard_schematic_structural_loss(
             sch_file, current, mutated, allow_node_loss=allow_node_loss
         )
-        updated = _normalize_schematic_wire_connectivity(mutated)
+        updated = _normalize_schematic_wire_connectivity(mutated) if normalize_wires else mutated
         _validate_schematic_text(updated)
-        with NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=sch_file.parent) as handle:
+        with NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            newline=None if normalize_wires else "",
+            delete=False,
+            dir=sch_file.parent,
+        ) as handle:
             handle.write(updated)
             temp_path = Path(handle.name)
         temp_path.replace(sch_file)
@@ -6867,6 +6881,11 @@ def _transactional_write_to_schematic_file(
                 )
         clear_ttl_cache()
         return str(sch_file)
+
+
+def _transactional_write_fields(sch_file: Path, mutator: Callable[[str], str]) -> str:
+    """Field-only edits must not normalize wires or rewrite an unchanged file."""
+    return _transactional_write_to_schematic_file(sch_file, mutator, normalize_wires=False)
 
 
 def _transactional_write_to_schematic(
@@ -6942,26 +6961,40 @@ def _update_symbol_property_block(
     return block[:insert_point] + property_block + block[insert_point:]
 
 
-def _set_property_position(block: str, field: str, x: float, y: float, angle: float) -> str:
-    """Rewrite the ``(at x y angle)`` of a named property inside a symbol block.
-
-    Returns the block unchanged when the property (or its ``at``) is absent, so
-    callers can apply this defensively. Only the property's own ``at`` is touched
-    — the symbol's placement ``at`` and any nested effects are left intact.
-    """
+def _set_property_position(
+    block: str,
+    field: str,
+    x: float,
+    y: float,
+    angle: float,
+    *,
+    justify: frozenset[str],
+) -> str:
+    """Apply the field placer's position and text anchor, preserving other effects."""
     marker = f'(property "{field}"'
-    idx = block.find(marker)
-    if idx < 0:
-        return block
-    prop_block, length = _extract_block(block, idx)
-    if not prop_block:
-        return block
-    at_pattern = re.compile(r"\(at\s+[-\d.]+\s+[-\d.]+\s+[-\d.]+\)")
-    if at_pattern.search(prop_block) is None:
-        return block
-    new_at = f"(at {_fmt_mm(x)} {_fmt_mm(y)} {int(round(angle))})"
-    new_prop = at_pattern.sub(new_at, prop_block, count=1)
-    return block[:idx] + new_prop + block[idx + length :]
+    for name, start, end in _top_level_sexpr_blocks(block):
+        if name != "property" or not block.startswith(marker, start):
+            continue
+        prop_block = block[start:end]
+        children = {name: (a, b) for name, a, b in _top_level_sexpr_blocks(prop_block)}
+        if "at" not in children or "effects" not in children:
+            return block
+        a, b = children["effects"]
+        effects = prop_block[a:b]
+        existing = _label_justify_from_block(effects).split()
+        # Keep non-positional flags (e.g. mirror) and change only the text anchor.
+        other = [token for token in existing if token not in {"left", "right", "top", "bottom"}]
+        desired = sorted(justify) + other
+        edits: list[tuple[int, int, str]] = []
+        if set(existing) != set(desired):
+            edits.append((a, b, _set_label_justify(effects, " ".join(desired))))
+        a, b = children["at"]
+        new_at = f"(at {_fmt_mm(x)} {_fmt_mm(y)} {int(round(angle))})"
+        edits.append((a, b, new_at))
+        for a, b, replacement in sorted(edits, reverse=True):
+            prop_block = prop_block[:a] + replacement + prop_block[b:]
+        return block[:start] + prop_block + block[end:]
+    return block
 
 
 def _symbol_body_and_pins(parsed: dict[str, Any]) -> tuple[GeoBox, list[tuple[float, float]]]:
@@ -6988,33 +7021,169 @@ def _symbol_body_and_pins(parsed: dict[str, Any]) -> tuple[GeoBox, list[tuple[fl
     return body, pin_points
 
 
-def _autoplace_visible_fields_for_ref(
-    content: str,
-    ref: str,
-    bodies: dict[str, GeoBox],
-    body_pins: dict[str, tuple[GeoBox, list[tuple[float, float]]]],
-) -> tuple[str, bool]:
-    match = _find_placed_symbol_block(content, ref)
-    if match is None:
-        return content, False
-    block, start, end, parsed = match
-    body, pins = body_pins.get(ref, _symbol_body_and_pins(parsed))
-    obstacles = [box for other, box in bodies.items() if other != ref]
-    specs = [
-        FieldSpec("Reference", str(parsed.get("reference", ""))),
-        FieldSpec("Value", str(parsed.get("value", ""))),
-    ]
-    placements = autoplace_fields(body, pins, obstacles, specs)
+def _movable_field_specs(block: str, parsed: dict[str, Any]) -> list[FieldSpec]:
+    """Read visible, movable Reference/Value fields without changing their content."""
+    props = _symbol_property_blocks(block)
+    # Do not reposition a user-locked pair around an approximate obstacle.
+    if any(
+        _symbol_bool_flag(props.get(name, ""), "do_not_autoplace", default=False)
+        for name in ("Reference", "Value")
+    ):
+        return []
+    specs: list[FieldSpec] = []
+    for name in ("Reference", "Value"):
+        prop = props.get(name, "")
+        if not prop or _symbol_bool_flag(prop, "hide", default=False):
+            continue
+        if re.search(r"\bhide\s*\)", prop) or _symbol_bool_flag(prop, "show_name", default=False):
+            continue
+        size = re.search(r"\(size\s+([\d.]+)", prop)
+        font = float(size.group(1)) if size else 1.27
+        specs.append(
+            FieldSpec(
+                name,
+                str(parsed.get(name.lower(), "")),
+                font or 1.27,
+                bold=bool(re.search(r"\(bold\s+yes\)|\bbold\s*\)", prop)),
+            )
+        )
+    return specs
+
+
+def _field_placements_are_clear(
+    specs: Sequence[FieldSpec],
+    placements: Sequence[FieldPlacement],
+    obstacles: Sequence[GeoBox],
+    sheet: GeoBox | None,
+) -> bool:
+    # A least-bad side is not necessarily a readable one. Refuse to move
+    # fields into known collisions or outside the page.
+    for spec, placement in zip(specs, placements, strict=True):
+        if not spec.text:
+            continue
+        box = placement.text_field(spec.text, spec.font_mm, bold=spec.bold).box()
+        if any(box.overlaps(obstacle) for obstacle in obstacles):
+            return False
+        if sheet is not None and not box.inside(sheet):
+            return False
+    return True
+
+
+def _apply_field_placements(
+    block: str, rotation: float, specs: Sequence[FieldSpec], placements: Sequence[FieldPlacement]
+) -> str:
     new_block = block
     for spec, placement in zip(specs, placements, strict=True):
         if not spec.text:
             continue
         new_block = _set_property_position(
-            new_block, spec.name, placement.x, placement.y, placement.angle
+            new_block,
+            spec.name,
+            placement.x,
+            placement.y,
+            (placement.angle + int(rotation)) % 180,
+            justify=horizontal_symbol_field_justify(placement.justify, rotation),
         )
+    return new_block
+
+
+def _autoplace_visible_fields_for_ref(
+    content: str,
+    ref: str,
+    bodies: dict[str, GeoBox],
+    body_pins: dict[str, tuple[GeoBox, list[tuple[float, float]]]],
+    *,
+    extra_obstacles: Sequence[GeoBox] = (),
+    sheet: GeoBox | None = None,
+) -> tuple[str, bool]:
+    matches = _find_placed_symbol_blocks(content, ref)
+    # References with multiple units and mirrored symbols need instance-specific
+    # geometry and anchors; leave those unchanged rather than guessing.
+    if len(matches) != 1:
+        return content, False
+    block, start, end, parsed = matches[0]
+    if re.search(r"\(mirror\s+[xy]\)", block):
+        return content, False
+    body, pins = body_pins[ref] if ref in body_pins else _symbol_body_and_pins(parsed)
+    obstacles = [box for other, box in bodies.items() if other != ref]
+    obstacles.extend(extra_obstacles)
+    specs = _movable_field_specs(block, parsed)
+    if not specs:
+        return content, False
+    placements = autoplace_fields(body, pins, obstacles, specs)
+    if not _field_placements_are_clear(specs, placements, obstacles, sheet):
+        return content, False
+    new_block = _apply_field_placements(block, float(parsed.get("rotation", 0)), specs, placements)
     if new_block == block:
         return content, False
     return content[:start] + new_block + content[end:], True
+
+
+def _merge_cached_field_geometry(
+    content: str,
+    bodies: dict[str, GeoBox],
+    body_pins: dict[str, tuple[GeoBox, list[tuple[float, float]]]],
+) -> dict[str, list[GeoBox]]:
+    """Use cached symbol extents as well as library pin geometry."""
+    placed = parse_placed_symbols(content)
+    field_boxes = {symbol.reference: [field.box() for field in symbol.fields] for symbol in placed}
+    for symbol in placed:
+        if symbol.reference in body_pins:
+            old_body, pins = body_pins[symbol.reference]
+            merged = union([old_body, symbol.body])
+            if merged is not None:
+                body_pins[symbol.reference] = (merged, pins)
+                bodies[symbol.reference] = merged
+        else:
+            bodies[symbol.reference] = symbol.body
+    return field_boxes
+
+
+def _fixed_field_obstacles(content: str) -> tuple[list[GeoBox], GeoBox]:
+    """Collect sheet boundaries and fixed connection/label obstacles."""
+    # The existing parsers distinguish root wire/bus nodes from quoted text.
+    wire_boxes = [
+        GeoBox(
+            min(w["x1"], w["x2"]),
+            min(w["y1"], w["y2"]),
+            max(w["x1"], w["x2"]),
+            max(w["y1"], w["y2"]),
+        ).expanded(0.254)
+        for w in [*_extract_wires(content), *_extract_buses(content)]
+    ]
+    fixed_obstacles = wire_boxes + [label.box().expanded(0.254) for label in parse_labels(content)]
+    width, height = parse_paper_extent(content)
+    sheet = GeoBox(0, 0, width, height)
+    return fixed_obstacles, sheet
+
+
+def _place_target_fields(
+    content: str,
+    targets: Sequence[str],
+    bodies: dict[str, GeoBox],
+    body_pins: dict[str, tuple[GeoBox, list[tuple[float, float]]]],
+    updated: list[str],
+) -> str:
+    field_boxes = _merge_cached_field_geometry(content, bodies, body_pins)
+    fixed_obstacles, sheet = _fixed_field_obstacles(content)
+    new_content = content
+    for ref in targets:
+        obstacles = fixed_obstacles + [
+            box for other, fields in field_boxes.items() if other != ref for box in fields
+        ]
+        new_content, changed = _autoplace_visible_fields_for_ref(
+            new_content, ref, bodies, body_pins, extra_obstacles=obstacles, sheet=sheet
+        )
+        if changed:
+            updated.append(ref)
+            match = _find_placed_symbol_block(new_content, ref)
+            if match is not None:
+                field_boxes[ref] = [
+                    field.box()
+                    for symbol in parse_placed_symbols(match[0])
+                    for field in symbol.fields
+                ]
+    return new_content
 
 
 def _build_autoplace_fields_mutator(
@@ -7027,6 +7196,7 @@ def _build_autoplace_fields_mutator(
     is appended to as the mutator runs so callers can report what changed. Shared
     by the ``sch_autoplace_fields`` tool and the readability fix loop.
     """
+    baseline = sch_file.read_bytes().decode("utf-8")
     symbols = parse_schematic_file(sch_file)["symbols"]
     wanted = set(references) if references else None
 
@@ -7040,22 +7210,24 @@ def _build_autoplace_fields_mutator(
         bodies[ref] = body
         body_pins[ref] = (body, pins)
 
-    targets = [
-        str(s.get("reference", ""))
-        for s in symbols
-        if str(s.get("reference", "")) and (wanted is None or str(s.get("reference", "")) in wanted)
-    ]
+    targets = list(
+        dict.fromkeys(
+            str(s.get("reference", ""))
+            for s in symbols
+            if str(s.get("reference", ""))
+            and (wanted is None or str(s.get("reference", "")) in wanted)
+        )
+    )
     updated: list[str] = []
 
     def mutator(content: str) -> str:
-        new_content = content
-        for ref in targets:
-            new_content, changed = _autoplace_visible_fields_for_ref(
-                new_content, ref, bodies, body_pins
+        if content != baseline:
+            raise SchematicWriteUnsafeError(
+                "The schematic changed while field placement was being prepared. "
+                "Retry on the current sheet."
             )
-            if changed:
-                updated.append(ref)
-        return new_content
+        updated.clear()
+        return _place_target_fields(content, targets, bodies, body_pins, updated)
 
     return mutator, targets, updated
 
@@ -7065,7 +7237,7 @@ def _autoplace_fields_apply(sch_file: Path, references: list[str] | None = None)
     mutator, targets, updated = _build_autoplace_fields_mutator(sch_file, references)
     if not targets:
         return []
-    _transactional_write_to_schematic_file(sch_file, mutator)
+    _transactional_write_fields(sch_file, mutator)
     return updated
 
 
@@ -8112,7 +8284,7 @@ def _register_authoring(mcp: FastMCP) -> None:
         snap_point=_snap_point,
         reload_schematic=_reload_schematic,
         build_autoplace_fields_mutator=_build_autoplace_fields_mutator,
-        transactional_write_to_schematic_file=_transactional_write_to_schematic_file,
+        transactional_write_to_schematic_file=_transactional_write_fields,
         run_visual_qa=_run_visual_qa,
         read_sheet_paper=_read_sheet_paper,
         paper_ladder=_PAPER_LADDER,
