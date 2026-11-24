@@ -2337,7 +2337,9 @@ def _checked_schematic_svg(svg_file: Path) -> str:
     """Only render self-contained KiCad SVGs; the rasterizer can read file hrefs."""
     try:
         content = svg_file.read_text(encoding="utf-8")
-        root = SafeET.fromstring(content, forbid_dtd=True)
+        # KiCad emits the public SVG 1.1 DOCTYPE even for self-contained
+        # sheets. Never resolve its external DTD or any declared entities.
+        root = SafeET.fromstring(content, forbid_entities=True, forbid_external=True)
     except (OSError, ValueError, SafeET.ParseError) as exc:
         raise RuntimeError("Invalid schematic SVG.") from exc
 
@@ -2353,7 +2355,8 @@ def _checked_schematic_svg(svg_file: Path) -> str:
             href = node.get(attribute)
             if href is not None:
                 _require_self_contained_svg_resource(href, allow_fragment=allow_fragment)
-    return content
+    # Only pass the checked XML tree onward, not the original DOCTYPE.
+    return SafeET.tostring(root, encoding="unicode")
 
 
 def _render_svg_to_png(

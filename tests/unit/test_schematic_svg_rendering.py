@@ -123,3 +123,20 @@ def test_png_renderer_is_in_default_package_dependencies() -> None:
     }
     assert {"pillow", "resvg-py"} <= runtime
     assert "cairosvg" not in runtime
+
+
+def test_native_kicad_svg_doctype_is_safely_removed(tmp_path: Path) -> None:
+    source = tmp_path / "native.svg"
+    source.write_text(
+        '<?xml version="1.0" standalone="no"?>\n'
+        ' <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" \n'
+        ' "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd"> \n'
+        + _SVG.format('<rect x="10" y="10" width="30" height="20" fill="black"/>'),
+        encoding="utf-8",
+    )
+    before = source.read_bytes()
+    output = tmp_path / "native.png"
+    _render_svg_to_png(source, output, dpi=100, crop_to_content=False)
+    assert source.read_bytes() == before
+    with Image.open(output) as image:
+        assert image.convert("RGBA").getpixel((20, 20)) == (0, 0, 0, 255)
