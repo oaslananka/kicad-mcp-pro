@@ -1,6 +1,6 @@
 {
   "name": "kicad-mcp-pro",
-  "version": "4.22.5",
+  "version": "4.22.6",
   "description": "Node.js launcher for kicad-mcp-pro (Python MCP server for KiCad EDA).",
   "license": "AGPL-3.0-only",
   "homepage": "https://oaslananka.github.io/kicad-mcp-pro",
