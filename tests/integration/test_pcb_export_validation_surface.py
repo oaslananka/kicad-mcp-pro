@@ -770,3 +770,40 @@ async def test_export_and_validation_surface(
     assert "Courtyard violations" in joined
     assert "Silk-to-pad violations" in joined
     assert "Footprint versus schematic comparison" in joined
+
+
+@pytest.mark.anyio
+async def test_pcb_file_footprint_tool_preserves_native_identity_after_edit(
+    sample_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = "10000000-0000-0000-0000-100000000001"
+    second = "10000000-0000-0000-0000-100000000002"
+    path = sample_project / "demo.kicad_pcb"
+    source = (
+        "(kicad_pcb (version 20241229) "
+        f'(footprint "Test:R" (uuid "{first}") (layer "F.Cu") (at 10 20) '
+        '(property "Reference" "REF**") (property "Value" "10k")) '
+        f'(footprint "Test:R" (uuid "{second}") (layer "F.Cu") (at 15 20) '
+        '(property "Reference" "REF**") (property "Value" "10k")))'
+    )
+    path.write_text(source, encoding="utf-8")
+
+    def disconnected() -> object:
+        raise KiCadConnectionError("No live board.")
+
+    monkeypatch.setattr("kicad_mcp.tools.pcb.get_board", disconnected)
+    server = build_server("pcb")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    before = await call_tool_text(server, "pcb_get_footprints", {})
+    assert "2 total" in before
+    assert f"id=file:footprint:{first}" in before
+    assert f"id=file:footprint:{second}" in before
+    path.write_text(source.replace("(at 10 20)", "(at 11 20)"), encoding="utf-8")
+    after = await call_tool_text(server, "pcb_get_footprints", {})
+    assert "(11.00, 20.00)" in after
+    assert "(10.00, 20.00)" not in after
+    assert f"id=file:footprint:{second}" in after
+    path.write_text(source[:-1], encoding="utf-8")
+    invalid = await call_tool_text(server, "pcb_get_footprints", {})
+    assert "inventory unavailable" in invalid
+    assert "2 total" not in invalid

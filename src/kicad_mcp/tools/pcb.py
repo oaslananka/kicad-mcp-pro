@@ -8,6 +8,7 @@ import re
 import threading
 import uuid
 from collections.abc import Callable, Iterable, Sequence
+from functools import partial
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Annotated, Any, Literal, Protocol, cast
@@ -120,6 +121,7 @@ from . import (
     pcb_transaction_lifecycle,
 )
 from .board_file import (
+    FileFootprintIndex,
     _bbox_from_block,
     _board_frame_mm,
     _default_board_text,
@@ -1417,7 +1419,9 @@ def _with_pcb_diagnostics(message: str) -> str:
     )
 
 
-def _load_file_backed_board(ipc_error: BaseException) -> tuple[Path, str, list[str]] | str:
+def _load_file_backed_board(
+    ipc_error: BaseException, *, strict: bool = False
+) -> tuple[Path, str, list[str]] | str:
     board_file = _configured_board_file()
     if board_file is None:
         return "\n".join(
@@ -1441,7 +1445,34 @@ def _load_file_backed_board(ipc_error: BaseException) -> tuple[Path, str, list[s
                 ),
             ]
         )
-    content = _normalize_board_content(board_file.read_text(encoding="utf-8", errors="ignore"))
+    try:
+        before = board_file.stat() if strict else None
+        content = board_file.read_text(encoding="utf-8", errors="strict" if strict else "ignore")
+        if before is not None:
+            after = board_file.stat()
+            if (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ctime_ns,
+            ) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+                raise ValueError("board changed while reading")
+        content = _normalize_board_content(content)
+    except (OSError, ValueError) as exc:
+        if not strict:
+            raise
+        return "\n".join(
+            [
+                "File-backed PCB inspection unavailable: "
+                "the saved board could not be read consistently.",
+                *_format_file_backed_diagnostics(
+                    ipc_error,
+                    board_file=board_file,
+                    fallback_status=f"unavailable: {exc}",
+                ),
+            ]
+        )
     diagnostics = _format_file_backed_diagnostics(
         ipc_error,
         board_file=board_file,
@@ -1808,14 +1839,31 @@ def _file_backed_footprints(
     page: int,
     page_size: int,
     filter_layer: str,
+    index: FileFootprintIndex | None = None,
 ) -> str:
-    loaded = _load_file_backed_board(ipc_error)
+    loaded = _load_file_backed_board(ipc_error, strict=True)
     if isinstance(loaded, str):
+        if index is not None:
+            index.clear()
         return loaded
-    _, content, diagnostics = loaded
+    board_file, content, diagnostics = loaded
+    try:
+        refreshed = index.refresh(board_file, content) if index is not None else None
+    except ValueError as exc:
+        return "\n".join([f"File-backed footprint inventory unavailable: {exc}", *diagnostics])
+    entries = (
+        [
+            (row.reference, row.as_entry())
+            for row in sorted(
+                refreshed.records.values(), key=lambda item: (item.reference, item.native_uuid)
+            )
+        ]
+        if refreshed is not None
+        else sorted(_parse_board_footprint_blocks(content).items())
+    )
     all_footprints = [
         (reference, entry)
-        for reference, entry in sorted(_parse_board_footprint_blocks(content).items())
+        for reference, entry in entries
         if _matches_file_layer_filter(str(entry.get("layer_name", "F.Cu")), filter_layer)
     ]
     footprints, total, page_count = _paginate(all_footprints, page=page, page_size=page_size)
@@ -1847,9 +1895,10 @@ def _file_backed_footprints(
             if isinstance(x_mm, int | float) and isinstance(y_mm, int | float)
             else _UNKNOWN_LABEL
         )
+        identifier = entry.get("native_uuid", reference)
         lines.append(
             f"- {reference} ({entry.get('value', '')}) @ {position} mm "
-            f"layer={entry.get('layer_name', 'F.Cu')} id=file:footprint:{reference}"
+            f"layer={entry.get('layer_name', 'F.Cu')} id=file:footprint:{identifier}"
         )
     lines.extend(diagnostics)
     return "\n".join(lines)
@@ -6127,7 +6176,7 @@ def register(mcp: FastMCP) -> None:
                 board_summary_report=_board_summary_report,
                 file_backed_tracks=_file_backed_tracks,
                 file_backed_vias=_file_backed_vias,
-                file_backed_footprints=_file_backed_footprints,
+                file_backed_footprints=partial(_file_backed_footprints, index=FileFootprintIndex()),
                 paginate=_paginate,
                 limit_items=_limit,
                 matches_layer_filter=_matches_layer_filter,

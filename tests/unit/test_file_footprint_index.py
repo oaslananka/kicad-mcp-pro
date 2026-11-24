@@ -1,0 +1,135 @@
+"""The file-backed listing index is content-bound, bounded and project-scoped."""
+
+from pathlib import Path
+
+import pytest
+
+from kicad_mcp.tools import board_file
+
+
+def _footprint(stamp: str, reference: str, x: int) -> str:
+    return (
+        '(footprint "Device:R" (layer "F.Cu") '
+        f'(uuid "{stamp}") (at {x} 20 90) '
+        f'(property "Reference" "{reference}") (property "Value" "10k") '
+        '(property "Note" "quoted (footprint fake)"))'
+    )
+
+
+A = "10000000-0000-0000-0000-100000000001"
+B = "10000000-0000-0000-0000-100000000002"
+
+
+def _board(*footprints: str) -> str:
+    return "(kicad_pcb (version 20241229) " + " ".join(footprints) + ")"
+
+
+def test_native_footprint_index_updates_only_changed_objects(tmp_path: Path) -> None:
+    index = board_file.FileFootprintIndex()
+    path = tmp_path / "board.kicad_pcb"
+    initial = _board(_footprint(A, "R1", 10), _footprint(B, "R2", 15))
+    first = index.refresh(path, initial)
+    assert first is not None
+    assert first.work_units == 2
+    assert first.records[A].x_mm == 10
+    assert index.refresh(path, initial).work_units == 0
+    changed = _board(_footprint(A, "R1", 11), _footprint(B, "R2", 15))
+    second = index.refresh(path, changed)
+    assert second.work_units == 1
+    assert second.records[A].x_mm == 11
+    assert second.records[B] is first.records[B]
+    clean = board_file.FileFootprintIndex().refresh(path, changed)
+    assert second.records == clean.records
+    switched = index.refresh(tmp_path / "other.kicad_pcb", changed)
+    assert switched.work_units == 2
+
+
+def test_removal_and_unknown_identity_do_not_reuse_previous_records(tmp_path: Path) -> None:
+    index = board_file.FileFootprintIndex()
+    path = tmp_path / "board.kicad_pcb"
+    index.refresh(path, _board(_footprint(A, "R1", 10), _footprint(B, "R2", 15)))
+    removed = index.refresh(path, _board(_footprint(B, "R2", 15)))
+    assert set(removed.records) == {B}
+    assert removed.work_units == 0
+    assert index.refresh(path, "(kicad_pcb (version 20990101))") is None
+    assert index.refresh(path, _board(_footprint(B, "R2", 15))).work_units == 1
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        _board(_footprint(A, "R1", 10), _footprint(A, "R2", 15)),
+        _board(_footprint(A, "R1", 10))[:-1],
+        _board(_footprint(A, "R1", 10)) + '(footprint "outside")',
+    ],
+)
+def test_invalid_native_inventory_is_never_reused(tmp_path: Path, bad: str) -> None:
+    index = board_file.FileFootprintIndex()
+    path = tmp_path / "board.kicad_pcb"
+    valid = _board(_footprint(A, "R1", 10))
+    index.refresh(path, valid)
+    with pytest.raises(ValueError):
+        index.refresh(path, bad)
+    assert index.refresh(path, valid).work_units == 1
+
+
+def test_duplicate_references_remain_distinct_by_native_uuid(tmp_path: Path) -> None:
+    index = board_file.FileFootprintIndex()
+    result = index.refresh(
+        tmp_path / "board.kicad_pcb",
+        _board(_footprint(A, "REF**", 10), _footprint(B, "REF**", 15)),
+    )
+    assert result is not None
+    assert set(result.records) == {A, B}
+    assert [row.reference for row in result.records.values()] == ["REF**", "REF**"]
+
+
+def test_version_change_and_missing_uuid_discard_reusable_records(tmp_path: Path) -> None:
+    index = board_file.FileFootprintIndex()
+    path = tmp_path / "board.kicad_pcb"
+    initial = _board(_footprint(A, "R1", 10))
+    first = index.refresh(path, initial)
+    assert first is not None
+    upgraded = index.refresh(path, initial.replace("20241229", "20260206"))
+    assert upgraded is not None
+    assert upgraded.work_units == 1
+    legacy = initial.replace(f'(uuid "{A}")', "")
+    assert index.refresh(path, legacy) is None
+    restored = index.refresh(path, initial)
+    assert restored is not None
+    assert restored.work_units == 1
+
+
+def test_file_backed_listing_uses_current_native_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.tools import pcb
+
+    path = tmp_path / "board.kicad_pcb"
+    original = _board(_footprint(A, "REF**", 10), _footprint(B, "REF**", 15))
+    path.write_text(original, encoding="utf-8")
+    monkeypatch.setattr(pcb, "_configured_board_file", lambda: path)
+    index = board_file.FileFootprintIndex()
+
+    def read() -> str:
+        return pcb._file_backed_footprints(
+            OSError("IPC unavailable"),
+            page=1,
+            page_size=10,
+            filter_layer="",
+            index=index,
+        )
+
+    first = read()
+    assert "2 total" in first
+    assert f"id=file:footprint:{A}" in first
+    assert f"id=file:footprint:{B}" in first
+    assert "(10.00, 20.00)" in first
+    path.write_text(original.replace("(at 10 20 90)", "(at 11 20 90)"), encoding="utf-8")
+    updated = read()
+    assert "(11.00, 20.00)" in updated
+    assert "(10.00, 20.00)" not in updated
+    path.write_text(original[:-1], encoding="utf-8")
+    assert "inventory unavailable" in read()
+    path.unlink()
+    assert "missing" in read()
