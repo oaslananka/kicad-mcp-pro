@@ -929,7 +929,7 @@ def test_incremental_state_validation_helper_branches(tmp_path: Path) -> None:
     }
     with pytest.raises(ValueError, match="tracked source list changed"):
         module._validate_state_metadata_and_hashes(
-            meta_doc, tmp_path, graph, ("main.kicad_sch", "other.kicad_sch")
+            meta_doc, graph, ("main.kicad_sch", "other.kicad_sch")
         )
 
 

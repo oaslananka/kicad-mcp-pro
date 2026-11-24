@@ -1,6 +1,8 @@
 """Native export import must preserve instance identity and connectivity."""
 
 import json
+from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 
@@ -10,6 +12,7 @@ from kicad_mcp.ir.circuit_ir import IRCircuit
 from kicad_mcp.ir.engineering_graph import EngineeringGraph, GraphEdgeKind, GraphEntityKind
 from kicad_mcp.ir.engineering_graph_from_ir import graph_from_circuit, update_graph_from_circuit
 from kicad_mcp.ir.native_netlist import parse_native_netlist
+from kicad_mcp.project import incremental_state as state_module
 from kicad_mcp.project.evidence_current_state import canonical_graph_entity_sha256
 from kicad_mcp.project.incremental_state import (
     NativeHierarchySnapshot,
@@ -325,3 +328,96 @@ def test_native_reopen_rejects_noncanonical_cached_graph(native_project: Path, t
     path.write_text(json.dumps(document), encoding="utf-8")
     with pytest.raises(StateRebuildRequiredError):
         _reopen(native_project, snapshot)
+
+
+def test_reopen_rechecks_native_sources_after_metadata_validation(
+    native_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot = _capture(native_project)
+    state = PersistentProjectState.rebuild_native(snapshot, compatibility_key=COMPAT)
+    state.save_atomic(native_project / ".kicad-mcp-cache" / "native.json")
+    validate = state_module._validate_derived_dependencies
+
+    def external_edit(derived: Mapping[str, object], entities: Mapping[str, str]) -> None:
+        validate(derived, entities)
+        child = native_project / SOURCES[1]
+        child.write_text(child.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    monkeypatch.setattr(state_module, "_validate_derived_dependencies", external_edit)
+    with pytest.raises(StateRebuildRequiredError):
+        _reopen(native_project, snapshot)
+
+
+def test_save_rejects_native_change_during_serialization(
+    native_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot = _capture(native_project)
+    state = PersistentProjectState.rebuild_native(snapshot, compatibility_key=COMPAT)
+    path = native_project / ".kicad-mcp-cache" / "native.json"
+    state.save_atomic(path)
+    original = path.read_bytes()
+    serialize = state_module.PersistentProjectState.to_document
+    state.stamp_derived("analysis", (next(iter(state.entity_hashes)),))
+
+    def external_edit(current: PersistentProjectState) -> dict[str, object]:
+        document = serialize(current)
+        child = native_project / SOURCES[1]
+        child.write_text(child.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        return document
+
+    monkeypatch.setattr(PersistentProjectState, "to_document", external_edit)
+    with pytest.raises(StateRebuildRequiredError):
+        state.save_atomic(path)
+    assert path.read_bytes() == original
+    assert not list(path.parent.glob(".incremental-*"))
+
+
+@pytest.mark.parametrize("failure", ["fsync", "replace"])
+def test_interrupted_sidecar_save_preserves_previous_state(
+    native_project: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    snapshot = _capture(native_project)
+    state = PersistentProjectState.rebuild_native(snapshot, compatibility_key=COMPAT)
+    path = native_project / ".kicad-mcp-cache" / "native.json"
+    state.save_atomic(path)
+    original = path.read_bytes()
+    state.stamp_derived("analysis", (next(iter(state.entity_hashes)),))
+
+    def interrupted(*_args: object) -> None:
+        raise OSError("simulated interrupted sidecar save")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(state_module.os, failure, interrupted)
+        with pytest.raises(OSError, match="interrupted sidecar"):
+            state.save_atomic(path)
+    assert path.read_bytes() == original
+    assert not list(path.parent.glob(".incremental-*"))
+    assert not _reopen(native_project, snapshot).derived_dependencies
+    # A process terminated before rename can leave an incomplete temporary file.
+    orphan = path.parent / ".incremental-interrupted"
+    orphan.write_text('{"partial":', encoding="utf-8")
+    assert not _reopen(native_project, snapshot).derived_dependencies
+    state.save_atomic(path)
+    assert _reopen(native_project, snapshot).derived_is_current("analysis")
+    assert orphan.read_text(encoding="utf-8") == '{"partial":'
+
+
+def test_independent_reader_sees_complete_sidecar_during_publish(
+    native_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot = _capture(native_project)
+    state = PersistentProjectState.rebuild_native(snapshot, compatibility_key=COMPAT)
+    path = native_project / ".kicad-mcp-cache" / "native.json"
+    state.save_atomic(path)
+    state.stamp_derived("analysis", (next(iter(state.entity_hashes)),))
+    publish = state_module.os.replace
+    with ThreadPoolExecutor(max_workers=1) as reader:
+
+        def read_before_publish(source: str, target: Path) -> None:
+            old = reader.submit(_reopen, native_project, snapshot).result(timeout=5)
+            assert not old.derived_dependencies
+            publish(source, target)
+
+        monkeypatch.setattr(state_module.os, "replace", read_before_publish)
+        state.save_atomic(path)
+    assert _reopen(native_project, snapshot).derived_is_current("analysis")

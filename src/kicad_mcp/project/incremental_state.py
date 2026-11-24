@@ -433,10 +433,8 @@ def _verify_native_graph(
 
 def _validate_state_metadata_and_hashes(
     document: dict[str, object],
-    root: Path,
     graph: EngineeringGraph,
     native_sources: tuple[str, ...],
-    native_snapshot: NativeHierarchySnapshot | None = None,
 ) -> None:
     stored_sources = document["source_hashes"]
     stored_entities = document["entity_hashes"]
@@ -456,11 +454,6 @@ def _validate_state_metadata_and_hashes(
         raise ValueError("invalid state metadata")
     if set(stored_sources) != set(native_sources):
         raise ValueError("tracked source list changed")
-    if (
-        _source_digests(root, native_sources, allow_hierarchy=native_snapshot is not None)
-        != stored_sources
-    ):
-        raise ValueError("unrecognized native change")
     if _entity_hashes(graph) != stored_entities:
         raise ValueError("cached entity digest mismatch")
 
@@ -680,7 +673,6 @@ class PersistentProjectState:
         path.parent.mkdir(parents=True, exist_ok=True)
         # Recheck after mkdir: a symlinked directory must not redirect writes.
         path = _state_path(self.root, state_path)
-        self.verify_sources()
         encoded = (
             json.dumps(self.to_document(), sort_keys=True, separators=(",", ":")) + "\n"
         ).encode()
@@ -696,6 +688,9 @@ class PersistentProjectState:
                 stream.write(encoded)
                 stream.flush()
                 os.fsync(stream.fileno())
+            # An external change during serialization or staging must not
+            # publish a stale snapshot. Keep the existing single hash pass.
+            self.verify_sources()
             if path.is_symlink():
                 raise StateRebuildRequiredError("symlinked state target")
             os.replace(temporary, path)
@@ -732,9 +727,7 @@ class PersistentProjectState:
             graph = _load_verified_graph(
                 document["graph"], project_key, native_sources, native_snapshot
             )
-            _validate_state_metadata_and_hashes(
-                document, root, graph, native_sources, native_snapshot
-            )
+            _validate_state_metadata_and_hashes(document, graph, native_sources)
 
             stored_sources = document["source_hashes"]
             stored_entities = document["entity_hashes"]
@@ -744,6 +737,12 @@ class PersistentProjectState:
 
             records = _validate_stored_journal(journal, generation, stored_sources, stored_entities)
             _validate_derived_dependencies(derived, stored_entities)
+            # Validate native bytes after all potentially expensive cache checks.
+            if (
+                _source_digests(root, native_sources, allow_hierarchy=native_snapshot is not None)
+                != stored_sources
+            ):
+                raise ValueError("unrecognized native change")
             return cls(
                 root,
                 graph,
