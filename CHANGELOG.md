@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.22.2](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.1...mcp-server-v4.22.2) (2026-11-24)
+
+
+### Bug Fixes
+
+* **schematic:** make PNG rendering work in standard installations ([#1892](https://github.com/oaslananka/kicad-mcp-pro/issues/1892)) ([a34fc8e](https://github.com/oaslananka/kicad-mcp-pro/commit/a34fc8e0826926c78575b2c40577ea763e1139c6))
+
 ## [4.22.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.0...mcp-server-v4.22.1) (2026-11-24)
 
 
