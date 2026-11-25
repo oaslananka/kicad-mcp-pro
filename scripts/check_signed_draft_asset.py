@@ -50,21 +50,19 @@ class AttestationVerifier(Protocol):
     ) -> list[dict[str, Any]]: ...
 
 
-def _run_gh(command: list[str], timeout: int) -> subprocess.CompletedProcess[str]:
-    """Keep process failures at the read-only CLI boundary."""
-    try:
-        return subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=True)
-    except subprocess.SubprocessError as exc:
-        raise ValueError("GitHub CLI attestation command failed") from exc
-
-
 def _require_patched_gh_attestation_verifier(executable: str) -> None:
     """Fail closed against vulnerable signer-workflow prefix matching in gh CLI.
 
     GHSA-wjmr-j3rp-mh2g: gh 2.51.0 through 2.101.0 accepted a
     workflow name prefix instead of the exact signed workflow identity.
     """
-    version = _run_gh([executable, "version"], timeout=10)
+    version = subprocess.run(
+        [executable, "version"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
     line = version.stdout.splitlines()[0] if version.stdout else ""
     match = _GH_VERSION.match(line)
     if match is None or tuple(int(x) for x in match.groups()) < _MIN_SAFE_GH_VERSION:
@@ -77,11 +75,19 @@ class GitHubAttestationCLI:
     def verify(
         self, *, path: Path, repo: str, sha: str, signer: str, source_ref: str
     ) -> list[dict[str, Any]]:
+        try:
+            return self._verify(path=path, repo=repo, sha=sha, signer=signer, source_ref=source_ref)
+        except subprocess.SubprocessError as exc:
+            raise ValueError("GitHub CLI attestation command failed") from exc
+
+    def _verify(
+        self, *, path: Path, repo: str, sha: str, signer: str, source_ref: str
+    ) -> list[dict[str, Any]]:
         executable = shutil.which("gh")
         if executable is None:
             raise ValueError("GitHub CLI unavailable for signed attestation check")
         _require_patched_gh_attestation_verifier(executable)
-        result = _run_gh(
+        result = subprocess.run(
             [
                 executable,
                 "attestation",
@@ -100,7 +106,10 @@ class GitHubAttestationCLI:
                 "--format",
                 "json",
             ],
+            capture_output=True,
+            text=True,
             timeout=90,
+            check=True,
         )
         value = json.loads(result.stdout)
         if not isinstance(value, list):

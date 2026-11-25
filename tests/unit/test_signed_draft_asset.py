@@ -180,7 +180,7 @@ def test_cli_nonzero_status_must_not_be_accepted(
         if command[1] == "version" and failure != "version":
             return subprocess.CompletedProcess(command, 0, "gh version 2.103.2 (2026-10-23)", "")
         if failure == "timeout":
-            raise subprocess.TimeoutExpired(command, 90)
+            raise subprocess.TimeoutExpired("gh attestation verify", 90)
         raise subprocess.CalledProcessError(1, command, "signature rejected")
 
     monkeypatch.setattr("scripts.check_signed_draft_asset.shutil.which", lambda _: "/usr/bin/gh")
