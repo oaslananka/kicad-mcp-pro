@@ -11,12 +11,22 @@ import json
 from typing import Any, Protocol
 
 from scripts.check_draft_release_inventory import _draft_release
+from scripts.check_release_family_inventory import _TAG
 from scripts.stage_draft_release_assets import _SHA, GitHubCLI, _valid_inputs
 
 _OWNER_PATH = ".github/workflows/publish-release.yml"
 # Only the reviewed personal repository owner may initiate or re-run
 # a release-authorizing workflow_dispatch; repository write access is broader.
 _TRUSTED_DISPATCH_OWNER = {"oaslananka/kicad-mcp-pro": "oaslananka"}
+_OWNER_ID = 285490571
+_REPOSITORY_ID = 1255527274
+_TAG_RULESET_ID = 24511858
+_TAG_PATTERNS = (
+    "refs/tags/mcp-server-v*",
+    "refs/tags/mcp-npm-v*",
+    "refs/tags/protocol-schemas-v*",
+    "refs/tags/kicad-mcp-gui-v*",
+)
 
 
 class OwnerClient(Protocol):
@@ -24,12 +34,58 @@ class OwnerClient(Protocol):
 
     def tag_commit(self, repo: str, tag: str) -> str: ...
 
+    def tag_ruleset(self, repo: str) -> dict[str, Any]: ...
+
     def workflow_run(self, repo: str, run_id: int) -> dict[str, Any]: ...
 
 
 class OwnerGitHubCLI(GitHubCLI):
+    def tag_ruleset(self, repo: str) -> dict[str, Any]:
+        return self._json(f"repos/{repo}/rulesets/{_TAG_RULESET_ID}")
+
     def workflow_run(self, repo: str, run_id: int) -> dict[str, Any]:
         return self._json(f"repos/{repo}/actions/runs/{run_id}")
+
+
+def _exact_id(value: object, expected: int) -> bool:
+    return type(value) is int and value == expected
+
+
+def verify_tag_protection(client: OwnerClient, repo: str, tag: str) -> None:
+    """Check the exact reviewed tag ruleset, not just a tag name or ref SHA."""
+    if repo not in _TRUSTED_DISPATCH_OWNER or _TAG.fullmatch(tag) is None:
+        raise ValueError("unsupported release tag or repository")
+    policy = client.tag_ruleset(repo)
+    if (
+        not isinstance(policy, dict)
+        or not _exact_id(policy.get("id"), _TAG_RULESET_ID)
+        or policy.get("name") != "release-tags"
+        or policy.get("source") != repo
+        or policy.get("source_type") != "Repository"
+        or policy.get("target") != "tag"
+        or policy.get("enforcement") != "active"
+        or policy.get("bypass_actors") != []
+    ):
+        raise ValueError("tag protection identity, enforcement or bypass visibility mismatch")
+    conditions = policy.get("conditions")
+    if not isinstance(conditions, dict) or set(conditions) != {"ref_name"}:
+        raise ValueError("tag protection conditions mismatch")
+    refs = conditions["ref_name"]
+    if not isinstance(refs, dict) or set(refs) != {"include", "exclude"}:
+        raise ValueError("tag protection ref conditions mismatch")
+    includes = refs["include"]
+    if (
+        refs["exclude"] != []
+        or not isinstance(includes, list)
+        or len(includes) != len(_TAG_PATTERNS)
+        or any(pattern not in includes for pattern in _TAG_PATTERNS)
+    ):
+        raise ValueError("tag protection ref coverage mismatch")
+    rules = policy.get("rules")
+    if not isinstance(rules, list) or any(
+        rule not in rules for rule in ({"type": "deletion"}, {"type": "update"})
+    ):
+        raise ValueError("tag protection update or deletion rule missing")
 
 
 def verify_owner(
@@ -64,6 +120,9 @@ def verify_owner(
     if expected_actor is None:
         raise ValueError("no trusted owner dispatch principal for repository")
 
+    if _TAG.fullmatch(tag) is None:
+        raise ValueError("unsupported release tag")
+
     run = client.workflow_run(repo, owner_run_id)
     if not isinstance(run, dict):
         raise ValueError("GitHub owner workflow response is invalid")
@@ -76,8 +135,10 @@ def verify_owner(
         or run.get("url") != expected_run_url
         or not isinstance(run_repo, dict)
         or run_repo.get("full_name") != repo
+        or not _exact_id(run_repo.get("id"), _REPOSITORY_ID)
         or not isinstance(head_repo, dict)
         or head_repo.get("full_name") != repo
+        or not _exact_id(head_repo.get("id"), _REPOSITORY_ID)
     ):
         raise ValueError("workflow run belongs to an unexpected repository")
     actor = run.get("actor")
@@ -85,8 +146,10 @@ def verify_owner(
     if (
         not isinstance(actor, dict)
         or actor.get("login") != expected_actor
+        or not _exact_id(actor.get("id"), _OWNER_ID)
         or not isinstance(triggering_actor, dict)
         or triggering_actor.get("login") != expected_actor
+        or not _exact_id(triggering_actor.get("id"), _OWNER_ID)
     ):
         raise ValueError("workflow run actor is not the trusted owner")
 
@@ -102,6 +165,7 @@ def verify_owner(
     ):
         raise ValueError("workflow run is not the expected active main owner dispatch")
 
+    verify_tag_protection(client, repo, tag)
     release = client.release(repo, release_id)
     if (
         not isinstance(release, dict)
@@ -112,6 +176,7 @@ def verify_owner(
     _draft_release(release, repo, tag, source_commit, client.tag_commit(repo, tag))
     return {
         "identityVerified": True,
+        "tagProtectionVerified": True,
         "repository": repo,
         "releaseId": release_id,
         "tag": tag,

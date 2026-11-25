@@ -31,12 +31,12 @@ class FakeClient:
         self.run = {
             "id": RUN,
             "url": f"https://api.github.com/repos/{REPO}/actions/runs/{RUN}",
-            "repository": {"full_name": REPO},
-            "head_repository": {"full_name": REPO},
+            "repository": {"full_name": REPO, "id": 1255527274},
+            "head_repository": {"full_name": REPO, "id": 1255527274},
             "path": ".github/workflows/publish-release.yml",
             "event": "workflow_dispatch",
-            "actor": {"login": "oaslananka"},
-            "triggering_actor": {"login": "oaslananka"},
+            "actor": {"login": "oaslananka", "id": 285490571},
+            "triggering_actor": {"login": "oaslananka", "id": 285490571},
             "head_branch": "main",
             "head_sha": SHA,
             "run_attempt": 1,
@@ -50,6 +50,27 @@ class FakeClient:
             "draft": True,
             "published_at": None,
             "assets": assets,
+        }
+        self.ruleset = {
+            "id": 24511858,
+            "name": "release-tags",
+            "source_type": "Repository",
+            "source": REPO,
+            "target": "tag",
+            "enforcement": "active",
+            "bypass_actors": [],
+            "conditions": {
+                "ref_name": {
+                    "include": [
+                        "refs/tags/mcp-server-v*",
+                        "refs/tags/mcp-npm-v*",
+                        "refs/tags/protocol-schemas-v*",
+                        "refs/tags/kicad-mcp-gui-v*",
+                    ],
+                    "exclude": [],
+                }
+            },
+            "rules": [{"type": "deletion"}, {"type": "update"}],
         }
         self.tag_sha = SHA
         self.requests: list[str] = []
@@ -75,6 +96,10 @@ class FakeClient:
             result["draft"] = False
             result["published_at"] = "2026-10-25T00:00:00Z"
         return result
+
+    def tag_ruleset(self, repo: str) -> dict[str, Any]:
+        assert repo == REPO
+        return copy.deepcopy(self.ruleset)
 
     def tag_commit(self, repo: str, tag: str) -> str:
         assert repo == REPO
@@ -148,6 +173,7 @@ def test_complete_draft_verifies_all_three_layers_but_never_authorizes(
     result = check_readiness(client, **args)
     assert result["familyAssetNamesVerified"] is True
     assert result["ownerIdentityVerified"] is True
+    assert result["tagProtectionVerified"] is True
     assert result["draftAssetsVerified"] is True
     assert result["assetCount"] == 4
     assert result["exclusiveWriterVerified"] is False
@@ -392,3 +418,18 @@ def test_final_draft_read_ignores_order_and_download_counts(
     result = check_readiness(client, **args)
     assert result["draftAssetsVerified"] is True
     assert result["publicationAuthorized"] is False
+
+
+def test_tag_protection_changes_during_download_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, args = _setup(tmp_path)
+    original = client.download_asset
+
+    def download(repo: str, asset_id: int, destination: Path) -> None:
+        original(repo, asset_id, destination)
+        client.ruleset["enforcement"] = "disabled"
+
+    monkeypatch.setattr(client, "download_asset", download)
+    with pytest.raises(ValueError, match="tag protection"):
+        check_readiness(client, **args)
