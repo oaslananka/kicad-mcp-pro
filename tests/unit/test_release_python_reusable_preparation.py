@@ -97,7 +97,8 @@ def test_no_registry_or_github_release_writes_in_prepare_mode() -> None:
     assert "gh release" not in WORKFLOW.read_text(encoding="utf-8")
     assert "environment:" not in WORKFLOW.read_text(encoding="utf-8")
     assert "pypa/gh-action-pypi-publish" in LEGACY.read_text(encoding="utf-8")
-    assert "gh release upload" in LEGACY.read_text(encoding="utf-8")
+    assert "scripts.attach_published_release_assets" not in WORKFLOW.read_text(encoding="utf-8")
+    assert "scripts.attach_published_release_assets" in LEGACY.read_text(encoding="utf-8")
     build = jobs["build"]["steps"]
     attest = [s for s in build if str(s.get("uses", "")).startswith("actions/attest@")]
     uploads = [s for s in build if str(s.get("uses", "")).startswith("actions/upload-artifact@")]

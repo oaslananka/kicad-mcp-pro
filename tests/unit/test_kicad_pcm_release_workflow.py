@@ -36,7 +36,9 @@ def test_pcm_release_workflow_verifies_source_builds_attests_and_rechecks_publis
     assert (
         "subject-checksums: release-assets/kicad-pcm/kicad-mcp-pro-pcm-SHA256SUMS.txt" in workflow
     )
-    assert 'gh release upload "$release_tag" release-assets/kicad-pcm/* --clobber' in workflow
+    assert "scripts.attach_published_release_assets" in workflow
+    assert "--execute release-assets/kicad-pcm/*" in workflow
+    assert 'gh release upload "$release_tag"' not in workflow
     assert "Verify published PCM digest" in workflow
     verify_block = workflow.split("- name: Verify published PCM digest", 1)[1]
     assert 'release_tag="$RELEASE_TAG"' in verify_block
@@ -75,6 +77,7 @@ def test_pr_ci_validates_pcm_without_publishing() -> None:
     assert "--verify" in ci
     release_metadata_block = ci.split("  release-metadata:", 1)[1].split("\n  mcp-server:", 1)[0]
     assert "gh release upload" not in release_metadata_block
+    assert "scripts.attach_published_release_assets" not in release_metadata_block
     assert '"packaging/kicad-pcm/**"' in release_validation
     assert '"packages/kicad-plugin/**"' in release_validation
     assert '"scripts/build_kicad_pcm.py"' in release_validation

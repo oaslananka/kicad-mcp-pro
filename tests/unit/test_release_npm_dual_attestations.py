@@ -75,12 +75,15 @@ def test_independent_signed_provenance_precedes_sbom_and_artifact_upload(
 
 
 @pytest.mark.parametrize("case", WORKFLOWS)
-def test_existing_legacy_publisher_and_registry_writes_remain_unchanged(
+def test_existing_legacy_publisher_retains_registry_write_and_safe_attachment(
     case: tuple[str, ...],
 ) -> None:
     filename = case[0]
     data = yaml.safe_load((ROOT / ".github/workflows" / filename).read_text(encoding="utf-8"))
     steps = data["jobs"]["publish"]["steps"]
     assert any("npm publish" in str(item.get("run", "")) for item in steps)
-    assert any("gh release upload" in str(item.get("run", "")) for item in steps)
+    assert any(
+        "scripts.attach_published_release_assets" in str(item.get("run", "")) for item in steps
+    )
+    assert all("gh release upload" not in str(item.get("run", "")) for item in steps)
     assert sum(1 for item in steps if item.get("uses", "").startswith("actions/attest@")) == 2
