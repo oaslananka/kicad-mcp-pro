@@ -10,7 +10,11 @@ def test_companion_docs_cover_pcm_lifecycle_health_and_uvx_fallback() -> None:
 
     for required in (
         "Install from File",
-        "runtime: `swig`",
+        "runtime: `ipc`",
+        "Open MCP Pro Companion",
+        "Sync PCB context",
+        "wxPython",
+        "IPC API server",
         "backend_unreachable",
         "backend_incompatible",
         "setup-restore",
@@ -21,17 +25,23 @@ def test_companion_docs_cover_pcm_lifecycle_health_and_uvx_fallback() -> None:
     ):
         assert required in doc
     assert "modern KiCad plugin API" in doc
+    assert "legacy `pcbnew.ActionPlugin`" not in doc
+    assert "runtime: `swig`" not in doc
+    assert "KiCad 11 support" in doc
+    assert "does not mutate board data" in doc
 
 
 def test_distribution_readiness_records_linux_and_windows_pcm_evidence() -> None:
     doc = (ROOT / "docs" / "status" / "distribution-readiness.md").read_text(encoding="utf-8")
 
     assert "KiCad PCM" in doc
-    assert "Physical Linux + Windows verified; macOS physical host pending" in doc
+    assert "IPC package: Linux GUI smoke; current PCM lifecycle pending" in doc
+    assert "Historical SWIG-era" in doc
+    assert "4.23.0" in doc
     assert "../evidence/kicad-pcm/2026-08-29/linux-kicad-10.0.5.md" in doc
     assert "../evidence/kicad-pcm/2026-08-29/windows-kicad-10.0.5.md" in doc
     assert "two independent Linux hosts" in doc
-    assert "Windows physical PCM flow verified" in doc
+    assert "historical Windows physical PCM flow" in doc
     assert "macOS physical host unavailable" in doc
     assert "**KiCad PCM** | **Verified**" not in doc
     assert "Claude Code" in doc
@@ -67,6 +77,9 @@ def test_pcm_submission_doc_is_explicitly_pre_submission() -> None:
     assert "install_size" in doc
     assert "packages/com.github.oaslananka.kicad-mcp-pro" in doc
     assert "Do not submit" in doc
+    assert "runtime: `ipc`" in doc
+    assert "wxPython" in doc
+    assert "`swig`" not in doc
 
 
 def test_linux_evidence_records_real_supported_client_connect() -> None:

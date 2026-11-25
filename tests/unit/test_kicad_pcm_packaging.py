@@ -72,6 +72,8 @@ def test_pcm_archive_has_exact_reviewed_structure_and_metadata(tmp_path: Path) -
     assert metadata["$schema"] == "https://go.kicad.org/pcm/schemas/v2"
     assert metadata["identifier"] == "com.github.oaslananka.kicad-mcp-pro"
     assert metadata["type"] == "plugin"
+    assert "wxPython" in metadata["description_full"]
+    assert "Python/Tk" not in metadata["description_full"]
     assert metadata["license"] == "AGPL-3.0-only"
     assert metadata["author"]["name"] == "Osman Aslan"
     assert metadata["resources"]["homepage"] == "https://github.com/oaslananka/kicad-mcp-pro"

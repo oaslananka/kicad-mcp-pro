@@ -1,32 +1,33 @@
 # KiCad companion plugin
 
-A small KiCad **Action Plugin** that connects the running pcbnew GUI to a local
-kicad-mcp-pro server. It lets an agent see what you have open and selected, and gates
-any board-mutating action behind a confirmation dialog.
-
-It is intentionally minimal-permission: it talks **only** to the loopback MCP
-endpoint and never writes files itself.
+The KiCad 10 IPC companion is an independent, compact wxPython window opened
+from the PCB Editor toolbar. It connects to the existing local KiCad MCP Pro
+backend; it does not mutate board data or install/start a second server.
 
 ## What it does
 
-- Publishes the active project / file / selection context to the MCP server
-  (via the existing `studio_push_context` tool).
-- Can request server-side visual artifacts (`sch_render_png`) and net highlight
-  attempts (`pcb_highlight_net`) through the same loopback `tools/call` path.
-- Surfaces health/status of the connection in a dialog.
-- Provides a **safe-apply** confirmation gate (`confirm_safe_apply`) that mutating
-  flows must pass before touching the board.
+- Shows the active PCB, current selection and backend readiness.
+- **Sync PCB context** explicitly reads the current board and selection through
+  KiCad IPC and publishes context to the compatible loopback backend.
+- **More tools** offers a manual saved-board DRC check, a read-only findings
+  table, the local dashboard and refresh. DRC uses a private copy of the
+  saved file, excluding unsaved edits; it is not a manufacturing gate.
+- **Select exact items in KiCad**, when available, changes editor selection only
+  after verifying persisted UUIDs against the saved and live board. It never
+  saves or changes PCB data.
 
-The plugin is a thin GUI shim; all of its logic lives in the dependency-free,
-unit-tested `kicad_mcp.companion.context` module so it can evolve without a KiCad
-in the loop.
+The companion is a separate, non-always-on-top window, not a docked KiCad pane.
+See the [companion README](https://github.com/oaslananka/kicad-mcp-pro/tree/main/packages/kicad-plugin)
+for the detailed selection, DRC and optional Linux window-arrangement boundaries.
 
 ## Install
 
 The maintained packaging target is a KiCad Plugin and Content Manager (PCM) v2
-archive. The current companion is still a legacy `pcbnew.ActionPlugin`, so the
-package truthfully declares `runtime: `swig`` and a minimum KiCad version of
-10.0. It does **not** bundle or fork the MCP backend.
+archive, declaring runtime: `ipc` and minimum KiCad version 10.0. Use KiCad 10,
+enable its **IPC API server**, and use its graphical wxPython-enabled Python
+runtime. KiCad manages the plugin's isolated Python environment and installs
+the packaged kicad-python dependency. The separately installed backend is
+required for context sync and the dashboard.
 
 ### PCM candidate flow
 
@@ -39,32 +40,40 @@ uv run --all-extras python scripts/build_kicad_pcm.py \
   --verify
 ```
 
-Then in KiCad open **Plugin and Content Manager**, choose **Install from File**,
-select `kicad-mcp-pro-pcm-<version>.zip`, restart KiCad, and confirm the
-**kicad-mcp companion** action is discovered. This local-file PCM path is the
-pre-submission validation path; it must not be described as an official PCM
-listing until the KiCad metadata repository merge request is accepted.
+Verify the release checksum and provenance. In KiCad open **Plugin and Content
+Manager**, choose **Install from File**, select
+`kicad-mcp-pro-pcm-<version>.zip`, and restart KiCad. Open a PCB and choose
+**Open MCP Pro Companion** from the PCB Editor toolbar. This local-file PCM
+path is not an official PCM listing.
 
-The companion expects the canonical backend on loopback. A power-user/backend
-installation remains first-class:
+The existing `uvx kicad-mcp-pro` entry point remains supported independently
+of PCM. Start the separately installed compatible backend when you need to sync:
 
 ```bash
-uvx kicad-mcp-pro --transport streamable-http --port 3334 --mode write
+uvx "kicad-mcp-pro@<version>" --transport streamable-http --host 127.0.0.1 --port 3334 --mode write
 ```
 
-The toolbar action checks `/api/health` before pushing context. User-facing
-readiness states are closed and fail-safe:
+Replace `<version>` with the matching release version. The package's
+`compatibility.json` specifies its accepted backend version range. The write
+mode is needed for the explicit context-publishing tool; it does not grant
+automatic board-edit permission. Keep existing authentication and approval
+boundaries intact.
+
+The companion checks `/api/health` before publishing context. Backend states
+include:
 
 - `ready` — backend is healthy and inside the package compatibility window;
 - `backend_unreachable` — start the local backend and retry;
 - `backend_unhealthy` — run `kicad-mcp-pro doctor` and resolve the reported health issue;
-- `backend_incompatible` — install the backend release compatible with the PCM package;
+- `backend_incompatible` — install a compatible backend release;
 - `authentication_required` — correct the local auth/proxy configuration;
 - `runtime_unavailable` — the required KiCad/runtime capability is unavailable.
 
-No context/tool call is attempted unless the state is `ready`. The package
-compatibility file is machine-readable and malformed or missing metadata fails
-closed.
+Sync requires a current board and a ready backend, and rechecks the selection
+before sending context. Missing or malformed compatibility metadata fails
+closed. If IPC dependencies are incomplete, use **Repair KiCad IPC
+dependencies…** only after reviewing the confirmation; the repair targets the
+KiCad-managed environment, not global Python.
 
 ### Guided MCP client configuration
 
@@ -110,73 +119,59 @@ backend compatibility status before resuming work.
 
 ### Developer-only manual plugin copy
 
-Manual copying remains only a source-development fallback. Copy or symlink
-`packages/kicad-plugin` into the platform KiCad scripting plugin directory and
-refresh external plugins. Production/user onboarding should prefer PCM rather
-than manual plugin-directory manipulation.
+For development only, use the KiCad 10 IPC plugins directory as described in
+the companion README. Do not copy the legacy scripting plugin into the current
+PCM installation. Users should prefer PCM.
 
 ### Modern plugin API readiness
 
-The current PCM package is SWIG-based. It is **not** a modern KiCad IPC plugin.
-Migration to the modern KiCad plugin API must preserve current KiCad 10 behavior,
-move to the supported external-plugin/IPC contract, add the required `plugin.json`
-shape, and obtain real-KiCad compatibility evidence before changing the PCM
-`runtime` to `ipc` or claiming future-version support. See
-[ADR 0007](../adr/0007-kicad-adapter-selection-and-swig-retirement.md) for the
-existing SWIG-retirement boundary.
+The maintained package already uses the modern KiCad plugin API (IPC), with
+`plugin.json`, a separate Python process and no SWIG fallback. The package
+retains its development status. Historical Linux/Windows PCM evidence is not
+a qualification of the current IPC artifact; current platform-specific
+acceptance is required. KiCad 11 support remains preview-only until its own
+native gates pass. See [ADR 0007](../adr/0007-kicad-adapter-selection-and-swig-retirement.md).
 
 ## Smoke test plan
 
-These steps require a real KiCad install and cannot be exercised in headless CI;
-the dependency-free helpers are covered by `tests/unit/test_companion_context.py`.
+Use disposable board files and a private KiCad profile. Record the exact source,
+release artifact digest, platform and KiCad version; do not claim full physical
+acceptance from unit tests or a virtual-display smoke alone.
 
-1. Start the server in **write** mode (the `studio_push_context` tool is rejected
-   in the default read-only mode):
-   `uv run kicad-mcp-pro --transport streamable-http --port 3334 --mode write`.
-   The client sends `Accept: application/json, text/event-stream` as the MCP
-   Streamable HTTP transport requires.
-2. Open any `.kicad_pcb` in pcbnew.
-3. Click **kicad-mcp companion**. Expect an information dialog confirming the
-   context push to `http://127.0.0.1:3334`.
-4. In another MCP client, read the `kicad://studio/context` resource and confirm
-   the active file and project root match what is open in KiCad.
-5. Select a footprint, push again, and confirm `selected_reference` updates.
-6. From a test shell or KiCad console, call `StudioContextClient().request_render_artifact()`
-   and confirm the MCP server returns either a PNG artifact path or a clear
-   renderer-unavailable response.
-7. Call `StudioContextClient().request_highlight_net("GND")` and confirm the
-   server returns the current highlight capability status without mutating files.
-8. Stop the server and push again. Expect a clear error dialog (no crash).
-9. Trigger a mutating action and confirm the **safe-apply** dialog appears and
-   that declining it leaves the board unchanged.
+1. Install the verified release ZIP through PCM, restart and confirm that
+   **Open MCP Pro Companion** appears in the PCB Editor.
+2. Open a saved fixture PCB and the companion. With the backend stopped,
+   confirm actionable unavailable status and disabled sync.
+3. Start the compatible loopback backend in the reviewed write mode. Refresh
+   the companion, verify board/selection counts and choose **Sync PCB context**.
+4. In a separate MCP client, verify the reported project and selection through
+   the existing `kicad://studio/context` resource. Select another footprint and
+   explicitly sync again; verify that the fresh reference is reported.
+5. Optionally choose **More tools → Check saved PCB** and inspect the findings.
+   Verify that the board file hash remains unchanged; only use exact-item
+   selection when the verified UUID action is available.
+6. Exercise an incompatible backend and verify that context sync fails closed.
+7. Install a trusted compatible update or reinstall, verify discovery after
+   restart, uninstall through PCM and check that unrelated client configuration
+   is preserved. Reinstall the previous trusted release to verify rollback.
 
 ## Security notes
 
-- The plugin connects to `127.0.0.1` only.
-- It does not request filesystem or network permissions beyond the loopback POST.
-- Mutating operations are listed in `SAFE_APPLY_ACTIONS` and always require an
-  explicit confirmation via `confirm_safe_apply`.
+- The companion talks to a validated loopback endpoint. It does not expose a
+  network service or silently start/install the backend.
+- Board context publication requires explicit sync and healthy compatible
+  backend. Saved-board DRC uses a temporary copy; the companion does not write
+  the user's board or automatically correct a finding.
+- Client configuration writes, backend mutation permissions and manufacturing
+  acceptance retain their separate approval boundaries.
+- Optional desktop tiling is confirmed and limited to supported Linux X11
+  configurations; it does not imply native docking or automatic editor refresh.
 
-## Live-preview opt-in refresh UX
+## Live-preview opt-in refresh boundary
 
-The companion plugin must keep live-preview feedback artifact-first by default.
-A plugin button or agent command may request `sch_live_preview(render=true)` to
-produce a preview image, but it must not silently change the user's open KiCad GUI
-state to update.
-
-Recommended UX contract:
-
-1. Show a clear action label such as **Refresh preview evidence** for ordinary
-   artifact generation.
-2. Use a separate, explicit action label such as **Refresh open KiCad view** for
-   GUI-facing behavior.
-3. Before any GUI-facing refresh, show a confirmation dialog explaining that the
-   MCP server cannot prove whether the editor has unsaved human changes.
-4. Remember consent only for the current plugin session; do not persist it across
-   KiCad restarts.
-5. Surface the resulting status in the dialog or status pane, including whether
-   the operation produced a PNG artifact, skipped because no change was detected,
-   or failed with a renderer diagnostic.
-
-Agents should treat preview PNGs, visual diffs, and visual QA results as evidence
-for review, not as proof that a human user's editor tab has been updated.
+Keep live-preview feedback artifact-first. The companion does not currently
+provide a native preview-refresh action. Any future editor-facing refresh
+must use a separate explicit action, explain that unsaved human edits cannot
+be verified, obtain session-scoped consent and report the actual outcome.
+Never infer that an editor view was updated merely because a preview image
+was produced. See the [tool workflow](../tools-agent-workflow.md).
