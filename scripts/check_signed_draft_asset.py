@@ -75,6 +75,14 @@ class GitHubAttestationCLI:
     def verify(
         self, *, path: Path, repo: str, sha: str, signer: str, source_ref: str
     ) -> list[dict[str, Any]]:
+        try:
+            return self._verify(path=path, repo=repo, sha=sha, signer=signer, source_ref=source_ref)
+        except subprocess.SubprocessError as exc:
+            raise ValueError("GitHub CLI attestation command failed") from exc
+
+    def _verify(
+        self, *, path: Path, repo: str, sha: str, signer: str, source_ref: str
+    ) -> list[dict[str, Any]]:
         executable = shutil.which("gh")
         if executable is None:
             raise ValueError("GitHub CLI unavailable for signed attestation check")
@@ -326,7 +334,7 @@ def main() -> int:
             producer_run_attempt=args.producer_run_attempt,
             signer_profile=args.signer_profile,
         )
-    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+    except (OSError, ValueError) as exc:
         p.exit(2, f"signed draft package attestation: FAIL: {exc}\n")
     print(json.dumps(result, sort_keys=True, indent=2))
     return 0

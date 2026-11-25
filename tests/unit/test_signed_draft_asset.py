@@ -172,18 +172,21 @@ def test_real_cli_invocation_enforces_exact_source_and_signer(
         assert command[command.index(flag) + 1] == value
 
 
+@pytest.mark.parametrize("failure", ["version", "verify", "timeout"])
 def test_cli_nonzero_status_must_not_be_accepted(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: str
 ) -> None:
     def failing_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        if command[1] == "version":
+        if command[1] == "version" and failure != "version":
             return subprocess.CompletedProcess(command, 0, "gh version 2.103.2 (2026-10-23)", "")
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired("gh attestation verify", 90)
         raise subprocess.CalledProcessError(1, command, "signature rejected")
 
     monkeypatch.setattr("scripts.check_signed_draft_asset.shutil.which", lambda _: "/usr/bin/gh")
     monkeypatch.setattr("scripts.check_signed_draft_asset.subprocess.run", failing_run)
     verifier = GitHubAttestationCLI()
-    with pytest.raises(subprocess.CalledProcessError):
+    with pytest.raises(ValueError, match="GitHub CLI attestation command failed"):
         verifier.verify(
             path=tmp_path / "sample",
             repo="oaslananka/kicad-mcp-pro",
