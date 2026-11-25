@@ -10,6 +10,28 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.23.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.6...mcp-server-v4.23.0) (2026-11-25)
+
+
+### Features
+
+* **ir:** ingest verified native schematic hierarchies ([#1907](https://github.com/oaslananka/kicad-mcp-pro/issues/1907)) ([8cf3067](https://github.com/oaslananka/kicad-mcp-pro/commit/8cf3067c85b659bbf2bb381d68d3ea7c445680ae))
+* **pcb:** integrate verified persistent physical footprint state ([#1912](https://github.com/oaslananka/kicad-mcp-pro/issues/1912)) ([cb905fa](https://github.com/oaslananka/kicad-mcp-pro/commit/cb905fa6373f0b23eb171fb73a472bf68c4cc009))
+
+
+### Bug Fixes
+
+* **release:** preserve published assets on recovery ([#1179](https://github.com/oaslananka/kicad-mcp-pro/issues/1179)) ([#1914](https://github.com/oaslananka/kicad-mcp-pro/issues/1914)) ([c6d3d4d](https://github.com/oaslananka/kicad-mcp-pro/commit/c6d3d4d71f2d490702f75753e014f21b8168f4a8))
+* **release:** require published release for Python production ([#1179](https://github.com/oaslananka/kicad-mcp-pro/issues/1179)) ([#1916](https://github.com/oaslananka/kicad-mcp-pro/issues/1916)) ([78cda19](https://github.com/oaslananka/kicad-mcp-pro/commit/78cda19ef76e249e486c8cf60bc78fd69552db36))
+* **state:** scope native edit tokens to live state instances ([#1908](https://github.com/oaslananka/kicad-mcp-pro/issues/1908)) ([603e194](https://github.com/oaslananka/kicad-mcp-pro/commit/603e194846b7b8249453ed150f2296401bcdea98))
+* **state:** verify native sources at sidecar publication and reopen ([#1910](https://github.com/oaslananka/kicad-mcp-pro/issues/1910)) ([8a50c93](https://github.com/oaslananka/kicad-mcp-pro/commit/8a50c938a4011b45036ba249afef492c9e18a243))
+
+
+### Performance Improvements
+
+* **pcb:** reuse verified file-backed footprint listing records ([#1911](https://github.com/oaslananka/kicad-mcp-pro/issues/1911)) ([a4ec723](https://github.com/oaslananka/kicad-mcp-pro/commit/a4ec72305c11b87daf3d533ee98a5683648d439e))
+* **state:** verify native sidecars without duplicate graph construction ([#1909](https://github.com/oaslananka/kicad-mcp-pro/issues/1909)) ([8c4e1a0](https://github.com/oaslananka/kicad-mcp-pro/commit/8c4e1a0ea502e1337773242ed29a556ba8d38374))
+
 ## [4.22.6](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.5...mcp-server-v4.22.6) (2026-11-24)
 
 
