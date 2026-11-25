@@ -606,3 +606,44 @@ concurrency group across the complete lifecycle (including former family
 writers), independently check registry/attestation provenance and authorize a
 final publish transaction. This gate is deliberately not called from
 production workflows yet; no real draft E2E acceptance is claimed.
+
+
+## Signed Python worker input manifest (read-only, not wired)
+
+The Python worker must verify the two exact distribution files **before**
+registry publication. Do not use the final per-family draft inventory as
+the pre-publication request: final registry receipts are not available yet.
+
+The owner-side generator emits canonical unsigned JSON to stdout:
+
+```bash
+python -m scripts.check_signed_python_handoff generate \
+  --directory "$DIST" --tag "$TAG" --source-commit "$SOURCE_SHA" \
+  --release-id "$RELEASE_ID" --owner-run-id "$OWNER_RUN_ID" \
+  --owner-attempt "$OWNER_ATTEMPT" --producer-run-id "$PRODUCER_RUN_ID" \
+  --producer-attempt "$PRODUCER_ATTEMPT" --producer-artifact-id "$ARTIFACT_ID" \
+  > python-worker-manifest.json
+```
+
+The future owner must attest these exact bytes under the reviewed
+`publish-release.yml` workflow and separately pin the manifest SHA-256.
+The read-only verifier accepts the same identity arguments with operation
+`verify`, plus `--manifest python-worker-manifest.json` and
+`--manifest-sha256 "$OWNER_PIN"`. Expected IDs, tag, source and pin must
+come from a trusted caller, never from the downloaded request itself.
+The verifier reconstructs canonical bytes from those inputs and the exact
+wheel/sdist files, rejects other files and links, and verifies the signed
+subject with the existing patched GitHub CLI SLSA gate (repository, owner
+signer, main ref, source digest and exact invocation in both certificate
+and predicate). It rechecks manifest and package bytes after verification.
+
+This is a format and verifier contract, not a deployed signature issuer.
+The current production workflows do not generate this manifest or grant
+new permissions. A successful verification binds the requested draft,
+tag, producer artifact and target worker workflow to a signed owner
+invocation; it does not independently verify live tag protection, active
+owner, artifact metadata, dispatched child, individual package provenance,
+registry receipt or exclusive writer. The child run ID is assigned only
+after dispatch and must be bound independently by the owner and worker.
+All those checks remain mandatory before a production cutover. No new
+credential or ruleset write permission is needed by this verifier.
