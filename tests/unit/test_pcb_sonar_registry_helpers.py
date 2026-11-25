@@ -45,7 +45,9 @@ class _ToolCollector:
             ],
         ),
         (
-            pcb._register_board_mutation_tools,
+            lambda mcp: pcb._register_board_mutation_tools(
+                mcp, pcb.SavedPcbStateService(pcb.FileFootprintIndex())
+            ),
             [
                 "pcb_delete_items",
                 "pcb_delete_object",

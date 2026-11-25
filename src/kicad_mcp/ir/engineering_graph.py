@@ -1,4 +1,4 @@
-"""Versioned Engineering Graph v1 core.
+"""Versioned Engineering Graph core (v1 and opt-in physical v2).
 
 The graph adds durable semantic identity, provenance, typed dependency edges,
 impact queries, deterministic persistence, migration, and semantic diffing on
@@ -19,14 +19,16 @@ from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 ENGINEERING_GRAPH_SCHEMA_VERSION = 1
+PHYSICAL_GRAPH_SCHEMA_VERSION = 2
 DRAFT_ENGINEERING_GRAPH_SCHEMA_VERSION = "1-draft"
 
 
 class GraphEntityKind(StrEnum):
-    """Entity kinds represented by Engineering Graph v1."""
+    """Entity kinds represented by supported Engineering Graph versions."""
 
     PROJECT = "project"
     COMPONENT = "component"
+    PCB_FOOTPRINT = "pcb_footprint"
     PIN = "pin"
     NET = "net"
     POWER_RAIL = "power_rail"
@@ -258,12 +260,20 @@ class EngineeringGraph:
         if not normalized_project_key:
             raise ValueError("project_key must be a non-empty string")
         self.project_key = normalized_project_key
-        if self.schema_version != ENGINEERING_GRAPH_SCHEMA_VERSION:
+        if type(self.schema_version) is not int or self.schema_version not in (
+            ENGINEERING_GRAPH_SCHEMA_VERSION,
+            PHYSICAL_GRAPH_SCHEMA_VERSION,
+        ):
             raise ValueError(
                 f"unsupported Engineering Graph schema version: {self.schema_version!r}"
             )
 
     def add_entity(self, entity: GraphEntity) -> None:
+        if (
+            entity.kind is GraphEntityKind.PCB_FOOTPRINT
+            and self.schema_version != PHYSICAL_GRAPH_SCHEMA_VERSION
+        ):
+            raise ValueError("physical PCB entities require Engineering Graph schema v2")
         if not entity.stable_key or entity.stable_key != entity.stable_key.strip():
             raise ValueError("entity stable_key must be non-empty and normalized")
         expected_id = canonical_entity_id(self.project_key, entity.kind, entity.stable_key)
@@ -361,7 +371,7 @@ class EngineeringGraph:
 
     @classmethod
     def from_document(cls, document: Mapping[str, Any]) -> EngineeringGraph:
-        """Load schema v1 or a supported draft document."""
+        """Load schema v1/v2 or a supported v1 draft document."""
         migrated = migrate_graph_document(document)
         project_key = migrated.get("project_key")
         entities = migrated.get("entities")
@@ -370,7 +380,7 @@ class EngineeringGraph:
             raise ValueError("project_key must be a non-empty string")
         if not isinstance(entities, list) or not isinstance(edges, list):
             raise ValueError("entities and edges must be lists")
-        graph = cls(project_key=project_key)
+        graph = cls(project_key=project_key, schema_version=migrated["schema_version"])
         for item in entities:
             if not isinstance(item, Mapping):
                 raise ValueError("entity entries must be objects")
@@ -403,7 +413,7 @@ class GraphDiff:
 
 
 def canonical_entity_id(project_key: str, kind: GraphEntityKind, stable_key: str) -> str:
-    """Return a deterministic ID independent of native KiCad object UUIDs."""
+    """Return a deterministic ID from project, kind and domain stable key."""
     normalized_project = project_key.strip()
     normalized_key = stable_key.strip()
     if not normalized_project or not normalized_key:
@@ -548,10 +558,13 @@ def _migrate_draft_edge(
 
 
 def migrate_graph_document(document: Mapping[str, Any]) -> dict[str, Any]:
-    """Migrate a supported persisted graph document to schema v1."""
+    """Load v1/v2 unchanged or migrate the supported draft to v1."""
     payload = deepcopy(dict(document))
     version = payload.get("schema_version")
-    if version == ENGINEERING_GRAPH_SCHEMA_VERSION:
+    if type(version) is int and version in (
+        ENGINEERING_GRAPH_SCHEMA_VERSION,
+        PHYSICAL_GRAPH_SCHEMA_VERSION,
+    ):
         return payload
     if version != DRAFT_ENGINEERING_GRAPH_SCHEMA_VERSION:
         raise ValueError(f"unsupported Engineering Graph schema version: {version!r}")

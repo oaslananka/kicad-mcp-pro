@@ -13,6 +13,7 @@ from kicad_mcp.ir.engineering_graph import GraphEntityKind, canonical_entity_id
 from kicad_mcp.ir.engineering_graph_from_ir import graph_from_circuit
 from kicad_mcp.project.incremental_state import (
     MAX_CHANGE_JOURNAL,
+    NativeHierarchySnapshot,
     PersistentProjectState,
     StateRebuildRequiredError,
     source_digests,
@@ -985,3 +986,196 @@ def test_edit_token_cannot_cross_state_lifetime(project: Path, transition: str) 
         == 1
     )
     assert current.graph.to_document() == graph_from_circuit(after).to_document()
+
+
+PCB_A = "10000000-0000-4000-8000-000000000001"
+PCB_B = "10000000-0000-4000-8000-000000000002"
+
+
+def _physical_board(x: int = 10) -> str:
+    return (
+        "(kicad_pcb (version 20241229)"
+        f'(footprint "Test:R" (uuid "{PCB_A}") (layer "F.Cu") (at {x} 20 90) '
+        '(property "Reference" "REF**") (property "Value" "10k") '
+        '(pad "1" smd rect (at 1 2) (size 1 1) (layers "F.Cu") (net 1 "GND")))'
+        f'(footprint "Test:R" (uuid "{PCB_B}") (layer "F.Cu") (at 30 40) '
+        '(property "Reference" "REF**") (property "Value" "10k"))'
+        "(segment (start 0 0) (end 1 1)))"
+    )
+
+
+def _physical_state(project: Path) -> tuple[PersistentProjectState, NativeHierarchySnapshot]:
+    from kicad_mcp.project.incremental_state import (
+        NativeHierarchySnapshot,
+        capture_native_pcb,
+    )
+
+    (project / "main.kicad_pcb").write_bytes(_physical_board().encode())
+    hierarchy = NativeHierarchySnapshot(
+        project, tuple(source_digests(project, SOURCES).items()), _circuit()
+    )
+    physical = capture_native_pcb(project, "main.kicad_pcb", SOURCES)
+    state = PersistentProjectState.rebuild_native(
+        hierarchy, compatibility_key=COMPATIBILITY_KEY, pcb_snapshot=physical
+    )
+    return state, hierarchy
+
+
+def test_physical_state_bounded_placement_and_verified_reopen(project: Path) -> None:
+    from kicad_mcp.project.incremental_state import capture_native_pcb
+
+    state, hierarchy = _physical_state(project)
+    assert state.graph.schema_version == 2
+    footprints = state.graph.entities_of_kind(GraphEntityKind.PCB_FOOTPRINT)
+    assert len(footprints) == 2
+    by_uuid = {item.native_links[0].uuid: item for item in footprints}
+    changed, stable = by_uuid[PCB_A], by_uuid[PCB_B]
+    state.stamp_derived("physical", (changed.entity_id,))
+    state.stamp_derived(
+        "schematic", (canonical_entity_id(PROJECT_KEY, GraphEntityKind.COMPONENT, "R1"),)
+    )
+    token = state.prepare_native_edit()
+    (project / "main.kicad_pcb").write_bytes(_physical_board(11).encode())
+    after = capture_native_pcb(project, "main.kicad_pcb", SOURCES)
+    entry = state.apply_pcb_placement(token, after, native_uuid=PCB_A, x_mm=11, y_mm=20)
+    assert entry.updated_entities == (changed.entity_id,)
+    assert entry.work_units == 1
+    assert state.graph.entities[stable.entity_id] is stable
+    assert state.graph.entities[changed.entity_id].attributes["x_mm"] == 11
+    assert not state.derived_is_current("physical")
+    assert not state.derived_is_current("schematic")
+    fresh_hierarchy = NativeHierarchySnapshot(project, after.source_hashes, hierarchy.circuit)
+    clean = PersistentProjectState.rebuild_native(
+        fresh_hierarchy, compatibility_key=COMPATIBILITY_KEY, pcb_snapshot=after
+    )
+    assert clean.graph.to_document() == state.graph.to_document()
+    assert clean.entity_hashes == state.entity_hashes
+    path = project / ".kicad-mcp-cache/graph.json"
+    state.save_atomic(path)
+    loaded = PersistentProjectState.load_verified(
+        project,
+        path,
+        project_key=PROJECT_KEY,
+        native_sources=SOURCES,
+        compatibility_key=COMPATIBILITY_KEY,
+        native_snapshot=fresh_hierarchy,
+        pcb_snapshot=after,
+    )
+    assert loaded.to_document() == state.to_document()
+    with pytest.raises(StateRebuildRequiredError):
+        PersistentProjectState.load_verified(
+            project,
+            path,
+            project_key=PROJECT_KEY,
+            native_sources=SOURCES,
+            compatibility_key=COMPATIBILITY_KEY,
+            native_snapshot=fresh_hierarchy,
+        )
+
+
+@pytest.mark.parametrize("change", ["track", "pad", "rotation", "other_footprint", "wrong_target"])
+def test_physical_unsupported_changes_require_rebuild(project: Path, change: str) -> None:
+    from kicad_mcp.project.incremental_state import capture_native_pcb
+
+    state, _ = _physical_state(project)
+    token = state.prepare_native_edit()
+    old = state.to_document()
+    text = _physical_board(11)
+    changes = {
+        "track": ("(end 1 1)", "(end 2 1)"),
+        "pad": ('(pad "1" smd rect (at 1 2)', '(pad "1" smd rect (at 2 2)'),
+        "rotation": ("(at 11 20 90)", "(at 11 20 45)"),
+        "other_footprint": ("(at 30 40)", "(at 31 40)"),
+        "wrong_target": ("(at 11 20 90)", "(at 12 20 90)"),
+    }
+    text = text.replace(*changes[change], 1)
+    (project / "main.kicad_pcb").write_bytes(text.encode())
+    after = capture_native_pcb(project, "main.kicad_pcb", SOURCES)
+    with pytest.raises(StateRebuildRequiredError):
+        state.apply_pcb_placement(token, after, native_uuid=PCB_A, x_mm=11, y_mm=20)
+    assert state.to_document() == old
+
+
+def test_physical_snapshot_rejects_unrecognized_source_and_clears_index(project: Path) -> None:
+    from kicad_mcp.pcb.footprint_index import FileFootprintIndex
+    from kicad_mcp.project.incremental_state import capture_native_pcb
+
+    path = project / "main.kicad_pcb"
+    path.write_bytes(_physical_board().encode())
+    index = FileFootprintIndex()
+    before = capture_native_pcb(project, path.name, SOURCES, index=index)
+    assert len(before.records) == 2
+    assert not (project / ".kicad-mcp-cache").exists()
+    path.write_bytes(_physical_board().replace("20241229", "20990101").encode())
+    with pytest.raises(StateRebuildRequiredError):
+        capture_native_pcb(project, path.name, SOURCES, index=index)
+    path.write_bytes(_physical_board().encode())
+    assert index.refresh(path, _physical_board()).work_units == 2
+
+
+def test_physical_v2_document_rejects_v1_disguise(project: Path) -> None:
+    from kicad_mcp.ir.engineering_graph import EngineeringGraph
+
+    state, _ = _physical_state(project)
+    document = state.graph.to_document()
+    assert EngineeringGraph.from_document(document).to_document() == document
+    document["schema_version"] = 1
+    with pytest.raises(ValueError, match="schema v2"):
+        EngineeringGraph.from_document(document)
+    # Legacy graph output remains v1 and its IDs are untouched.
+    legacy = graph_from_circuit(_circuit())
+    assert legacy.schema_version == 1
+    assert all(state.graph.entities[key] == entity for key, entity in legacy.entities.items())
+
+
+def test_missing_pcb_evicts_index(project: Path) -> None:
+    from kicad_mcp.pcb.footprint_index import FileFootprintIndex
+    from kicad_mcp.project.incremental_state import capture_native_pcb
+
+    path = project / "main.kicad_pcb"
+    path.write_bytes(_physical_board().encode())
+    index = FileFootprintIndex()
+    capture_native_pcb(project, path.name, SOURCES, index=index)
+    path.unlink()
+    with pytest.raises(StateRebuildRequiredError):
+        capture_native_pcb(project, path.name, SOURCES, index=index)
+    path.write_bytes(_physical_board().encode())
+    assert index.refresh(path, _physical_board()).work_units == 2
+
+
+@pytest.mark.parametrize("field", ["pcb_board_name", "pcb_context_sha256", "graph_schema_version"])
+def test_physical_sidecar_rejects_scope_tampering(project: Path, field: str) -> None:
+    from kicad_mcp.project.incremental_state import capture_native_pcb
+
+    state, hierarchy = _physical_state(project)
+    physical = capture_native_pcb(project, "main.kicad_pcb", SOURCES)
+    path = project / ".kicad-mcp-cache/graph.json"
+    state.save_atomic(path)
+    document = json.loads(path.read_text())
+    document[field] = "wrong"
+    path.write_text(json.dumps(document))
+    with pytest.raises(StateRebuildRequiredError):
+        PersistentProjectState.load_verified(
+            project,
+            path,
+            project_key=PROJECT_KEY,
+            native_sources=SOURCES,
+            compatibility_key=COMPATIBILITY_KEY,
+            native_snapshot=hierarchy,
+            pcb_snapshot=physical,
+        )
+
+
+def test_physical_edit_rejects_stale_token_and_snapshot(project: Path) -> None:
+    from kicad_mcp.project.incremental_state import capture_native_pcb
+
+    state, _ = _physical_state(project)
+    before = capture_native_pcb(project, "main.kicad_pcb", SOURCES)
+    token = state.prepare_native_edit()
+    (project / "main.kicad_pcb").write_bytes(_physical_board(11).encode())
+    after = capture_native_pcb(project, "main.kicad_pcb", SOURCES)
+    with pytest.raises(StateRebuildRequiredError, match="snapshot identity"):
+        state.apply_pcb_placement(token, before, native_uuid=PCB_A, x_mm=11, y_mm=20)
+    state.apply_pcb_placement(token, after, native_uuid=PCB_A, x_mm=11, y_mm=20)
+    with pytest.raises(StateRebuildRequiredError, match="stale edit token"):
+        state.apply_pcb_placement(token, after, native_uuid=PCB_A, x_mm=11, y_mm=20)

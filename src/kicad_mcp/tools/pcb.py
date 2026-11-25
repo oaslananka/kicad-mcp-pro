@@ -36,7 +36,7 @@ from mcp.server.mcpserver import MCPServer as FastMCP
 from pydantic import Field
 
 from ..config import get_config
-from ..connection import KiCadConnectionError, get_board, get_kicad
+from ..connection import KiCadConnectionError, get_board, get_connection_epoch, get_kicad
 from ..errors import KiCadNotRunningError
 from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION, upgrade_generated_file
 from ..library_resolution import footprint_file as _footprint_file
@@ -79,6 +79,7 @@ from ..pcb.board_access import (
 )
 from ..pcb.board_inspection import PcbBoardInspectionService
 from ..pcb.file_inspection import PcbFileInspectionService
+from ..pcb.footprint_index import FileFootprintIndex
 from ..pcb.footprint_transform import (
     FootprintRotationError,
     RotationAttribute,
@@ -92,6 +93,7 @@ from ..pcb.live_edit_runtime import (
     get_live_edit_service,
 )
 from ..pcb.origin_management import PcbOriginService
+from ..pcb.saved_state import SavedPcbStateService
 from ..pcb.session_inspection import PcbSessionInspectionService
 from ..pcb.stackup_management import PcbStackupManagementService
 from ..pcb.title_block_management import PcbTitleBlockService
@@ -121,7 +123,6 @@ from . import (
     pcb_transaction_lifecycle,
 )
 from .board_file import (
-    FileFootprintIndex,
     _bbox_from_block,
     _board_frame_mm,
     _default_board_text,
@@ -1039,29 +1040,72 @@ def _find_footprint_on_board(board: object, reference: str) -> _FootprintLike | 
     return None
 
 
-def _find_footprint_by_reference(reference: str) -> _FootprintLike | None:
-    return _find_footprint_on_board(get_board(), reference)
+def _native_footprint_uuid(value: str) -> str | None:
+    try:
+        parsed = uuid.UUID(value)
+    except ValueError:
+        return None
+    if not parsed.int or str(parsed) != value.lower():
+        return None
+    return str(parsed)
+
+
+def _find_move_footprint(board: object, selector: str) -> tuple[_FootprintLike, str] | None:
+    """Resolve exactly one live footprint, never a file-backed inspection ID."""
+    if selector.startswith("file:"):
+        raise ValueError(
+            "File-backed inspection identifiers cannot be used for live edits. "
+            "Use a unique reference or the native UUID from a live footprint listing."
+        )
+    native_id = _native_footprint_uuid(selector)
+    footprints = cast(list[_FootprintLike], board_footprints(board))
+    matches = [
+        footprint
+        for footprint in footprints
+        if (
+            _item_id_value(footprint).lower() == native_id
+            if native_id is not None
+            else footprint.reference_field.text.value == selector
+        )
+    ]
+    if len(matches) > 1:
+        raise ValueError(
+            "Ambiguous footprint identity; use a unique native UUID from the live board."
+        )
+    if not matches:
+        return None
+    selected = matches[0]
+    selected_id = _native_footprint_uuid(_item_id_value(selected))
+    if selected_id is None:
+        raise ValueError("Footprint has no verifiable native UUID; no changes were made.")
+    if sum(_item_id_value(item).lower() == selected_id for item in footprints) != 1:
+        raise ValueError("Ambiguous native footprint UUID; no changes were made.")
+    return selected, selected_id
+
+
+def _verify_footprint_position(footprint: _FootprintLike, x_mm: float, y_mm: float) -> None:
+    if _coord_nm(footprint.position, "x") != mm_to_nm(x_mm) or _coord_nm(
+        footprint.position, "y"
+    ) != mm_to_nm(y_mm):
+        raise FootprintRotationError("Footprint position verification failed after the move.")
 
 
 def _verify_footprint_transform(
     board: object,
     _updated: object,
     *,
-    reference: str,
+    native_id: str,
     x_mm: float,
     y_mm: float,
     rotation_attribute: RotationAttribute,
     rotation_deg: float,
 ) -> bool:
-    refreshed = _find_footprint_on_board(board, reference)
-    if refreshed is None:
-        return False
     try:
-        position_ok = _coord_nm(refreshed.position, "x") == mm_to_nm(x_mm) and _coord_nm(
-            refreshed.position, "y"
-        ) == mm_to_nm(y_mm)
-        if not position_ok:
+        resolved = _find_move_footprint(board, native_id)
+        if resolved is None:
             return False
+        refreshed, _ = resolved
+        _verify_footprint_position(refreshed, x_mm, y_mm)
         verify_footprint_rotation(
             refreshed,
             rotation_attribute,
@@ -4189,19 +4233,24 @@ def _register_board_deletion_tools(mcp: FastMCP) -> None:
         return str(pcb_delete_items([object_id]))
 
 
-def _register_board_state_tools(mcp: FastMCP) -> None:
+def _register_board_state_tools(mcp: FastMCP, saved_state: SavedPcbStateService) -> None:
     """Register the board state tools."""
 
     @mcp.tool()
     def pcb_save() -> str:
         """Save the active board."""
 
-        def _save() -> None:
-            save = cast(Callable[[], None], get_board().save)
-            save()
-
-        _run_queued_ipc_mutation("pcb_save", _save)
-        return "Board saved."
+        return execute_live_board_mutation(
+            "pcb_save",
+            lambda board: saved_state.save(
+                board,
+                get_config=get_config,
+                get_board=get_board,
+                get_epoch=get_connection_epoch,
+                run_cli=_run_cli,
+            ),
+            verifier=None,
+        )
 
     @mcp.tool()
     def pcb_refill_zones() -> str:
@@ -4272,10 +4321,11 @@ def _register_footprint_placement_tools(mcp: FastMCP) -> None:
     def pcb_move_footprint(
         reference: str, x_mm: float, y_mm: float, rotation_deg: float | None = None
     ) -> str:
-        """Move a footprint, preserving its angle unless rotation_deg is explicitly provided."""
-        footprint = _find_footprint_by_reference(reference)
-        if footprint is None:
+        """Move by unique footprint reference or live UUID; preserve angle unless specified."""
+        resolved = _find_move_footprint(get_board(), reference)
+        if resolved is None:
             return f"Footprint '{reference}' was not found on the active board."
+        footprint, native_id = resolved
 
         footprint.position = Vector2.from_xy_mm(x_mm, y_mm)
         if rotation_deg is None:
@@ -4292,7 +4342,7 @@ def _register_footprint_placement_tools(mcp: FastMCP) -> None:
                     lambda board, updated: _verify_footprint_transform(
                         board,
                         updated,
-                        reference=reference,
+                        native_id=native_id,
                         x_mm=x_mm,
                         y_mm=y_mm,
                         rotation_attribute=rotation_attribute,
@@ -4307,16 +4357,18 @@ def _register_footprint_placement_tools(mcp: FastMCP) -> None:
         if transaction_active:
             return _staged_message(f"Footprint move for '{reference}'")
 
-        refreshed = _find_footprint_by_reference(reference)
-        if refreshed is None:
+        reloaded = _find_move_footprint(get_board(), native_id)
+        if reloaded is None:
             raise FootprintRotationError(
-                f"Footprint '{reference}' could not be reloaded to verify its rotation."
+                f"Footprint '{reference}' could not be reloaded by its native UUID."
             )
+        refreshed, _ = reloaded
         actual_rotation = verify_footprint_rotation(
             refreshed,
             rotation_attribute,
             expected_rotation,
         )
+        _verify_footprint_position(refreshed, x_mm, y_mm)
         return (
             f"Moved footprint '{reference}' to ({x_mm}, {y_mm}) mm "
             f"with verified rotation {actual_rotation:.3f} degrees."
@@ -4532,11 +4584,11 @@ def _register_inner_layer_graphic_tools(mcp: FastMCP) -> None:
         )
 
 
-def _register_board_mutation_tools(mcp: FastMCP) -> None:
+def _register_board_mutation_tools(mcp: FastMCP, saved_state: SavedPcbStateService) -> None:
     """Register board mutation and basic placement tools."""
 
     _register_board_deletion_tools(mcp)
-    _register_board_state_tools(mcp)
+    _register_board_state_tools(mcp, saved_state)
     _register_footprint_placement_tools(mcp)
     _register_footprint_layer_tools(mcp)
     _register_inner_layer_graphic_tools(mcp)
@@ -6167,6 +6219,8 @@ def _register_placement_critique_tools(mcp: FastMCP) -> None:
 def register(mcp: FastMCP) -> None:
     """Register PCB tools."""
 
+    footprint_index = FileFootprintIndex()
+    saved_state = SavedPcbStateService(footprint_index)
     pcb_board_inspection.register(
         mcp,
         pcb_board_inspection.PcbBoardInspectionDependencies(
@@ -6176,7 +6230,7 @@ def register(mcp: FastMCP) -> None:
                 board_summary_report=_board_summary_report,
                 file_backed_tracks=_file_backed_tracks,
                 file_backed_vias=_file_backed_vias,
-                file_backed_footprints=partial(_file_backed_footprints, index=FileFootprintIndex()),
+                file_backed_footprints=partial(_file_backed_footprints, index=footprint_index),
                 paginate=_paginate,
                 limit_items=_limit,
                 matches_layer_filter=_matches_layer_filter,
@@ -6265,7 +6319,7 @@ def register(mcp: FastMCP) -> None:
 
     _register_board_graphics_tools(mcp)
 
-    _register_board_mutation_tools(mcp)
+    _register_board_mutation_tools(mcp, saved_state)
 
     _register_schematic_sync_tools(mcp)
 

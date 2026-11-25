@@ -147,10 +147,87 @@ was 732256 KiB (including creation of the edited copy), not an isolated
 cache-memory measurement. Native save/GUI mutation and persistent physical
 PCB graph ingestion are outside this listing acceptance.
 
+## Opt-in physical footprint graph acceptance (#944)
+
+Run the maintained independent native read-back test on the pinned Linux demo:
+
+```bash
+KICAD_MCP_NATIVE_PCB_DEMO=1 uv run pytest   tests/integration/test_native_hierarchy_acceptance.py   -k pinned_large_native_pcb_placement -q -s
+```
+
+The test copies the pinned sources, captures the native hierarchy, constructs
+the physical v2 graph, and compares every UUID, reference, value, position and
+layer against a separate trusted system-Python `pcbnew.LoadBoard` read-back.
+Three controlled R17 X translations on the disposable saved file must each
+update one graph entity, match independent native reload and a clean graph
+rebuild, and reopen from an explicitly saved sidecar. All original source hashes
+must remain unchanged. This is not a live GUI/native editor save trial.
+
+The report records three samples and p50/nearest-rank p95 for warm capture,
+incremental refresh, clean capture/build and verified reopen, process peak
+RSS, native version, source SHA and pinned input hashes. The hierarchy
+capture is reported separately; independent native read-back is outside the
+state-phase timers. The executable deterministic work budgets are 1,125
+cold/clean footprint decodes, zero warm decodes and one changed decode and
+graph entity per translation.
+
+For the opt-in **pinned reference budget**, run this test alone in a fresh
+process on an otherwise idle Linux x86-64 Intel Core i3-10110U host with
+four available logical CPUs, Python 3.13 and KiCad 10.0.8:
+
+```bash
+KICAD_MCP_NATIVE_PCB_DEMO=budget uv run pytest \
+  tests/integration/test_native_hierarchy_acceptance.py \
+  -k pinned_large_native_pcb_placement -q -s
+```
+
+The exact fixture manifest is still verified. Budget mode rejects a
+different CPU class, CPU affinity count, Python minor or native version;
+it does not silently fall back to a measurement-only result. The original
+`=1` command remains measurement-only for other compatible Linux hosts.
+
+| Phase (milliseconds) | Reference p95 / cold | Maximum |
+| --- | ---: | ---: |
+| Cold capture/build | 8691 | 14000 |
+| Warm capture | 1043 | 2000 |
+| Incremental capture/update | 4847 | 7500 |
+| Clean capture/build | 8980 | 14000 |
+| Verified reopen (excluding capture) | 1775 | 3000 |
+| Fresh hierarchy capture | 6224 | 10000 |
+| Process peak RSS (KiB) | 539628 | 786432 |
+
+Additionally, warm p95 must not exceed 30% of clean p95 and incremental
+p95 must not exceed 80% of clean p95. These deliberately conservative
+limits use the prior three paired local measurements and allow headroom
+for ordinary scheduling jitter. Three samples mean nearest-rank p95 is
+the maximum sample, not a population estimate. RSS covers the test
+process, not the independent pcbnew or GUI child processes. Absolute
+ceilings prevent a slower clean path from hiding an incremental
+regression. These are local reference-runner acceptance limits, not
+latency or memory guarantees for general hardware or shared hosted CI.
+The evidence output includes whether the budget was enforced and any
+violations, and a violation fails the test.
+
+The small native GUI save-cycle regression is separate:
+
+```bash
+KICAD_MCP_NATIVE_PCB_SAVE_GUI=1 uv run pytest \
+  tests/gui/test_pcb_saved_state_native.py -q -s
+```
+
+This uses a generated two-footprint board and the maintained repeated-sheet
+fixture, never the operator's GUI. It uses bwrap mount/PID/network isolation,
+private Xvfb and private config/socket, verifies the kernel IPC peer, then
+executes actual MCP move/save/reopen calls. It asserts one graph work unit
+per move, no sidecar change before save, and independent native reload parity.
+The GUI test is not the representative 1,125-footprint latency benchmark.
+
 ## Follow-up for full #944 acceptance
 
 Native schematic hierarchy is an opt-in verified path and file-backed
-footprint listing supports bounded record reuse. Remaining work includes
-persistent physical PCB graph deltas, live editor integration, broader
-concurrent-edit acceptance and reviewed non-regression thresholds. This
-benchmark does not claim general PCB performance or manufacturing readiness.
+footprint listing supports bounded record reuse. The experimental v2 saved PCB path now supports the explicit native save
+boundary and bounded translation, with maintained repeated cycles,
+deterministic work budgets and opt-in pinned reference performance limits.
+Unsupported changes still require a verified rebuild. Arbitrary concurrent
+native writers, other physical object delta types, general PCB performance
+and manufacturing readiness are outside the supported acceptance scope.

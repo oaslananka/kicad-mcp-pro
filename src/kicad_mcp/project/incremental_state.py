@@ -1,7 +1,7 @@
 """Experimental #944 persistent Engineering Graph state with fail-closed file checks.
 
 A sidecar snapshot is an optimization hint, NEVER native KiCad authority.
-Only attribute-only IRCircuit changes supported by #940 may be applied
+Only supported IRCircuit attribute edits and saved PCB translations may update
 incrementally. Unknown filesystem state and other edits require a clean rebuild.
 """
 
@@ -19,6 +19,7 @@ from typing import Any, BinaryIO, cast
 from kicad_mcp.ir.circuit_ir import IRCircuit
 from kicad_mcp.ir.engineering_graph import (
     ENGINEERING_GRAPH_SCHEMA_VERSION,
+    PHYSICAL_GRAPH_SCHEMA_VERSION,
     EngineeringGraph,
     GraphEntityKind,
     canonical_entity_id,
@@ -28,14 +29,19 @@ from kicad_mcp.ir.engineering_graph_from_ir import (
     update_graph_from_circuit,
 )
 from kicad_mcp.ir.native_netlist import parse_native_netlist
+from kicad_mcp.pcb.footprint_index import FileFootprintIndex, FootprintListRecord
 from kicad_mcp.project.evidence_current_state import canonical_graph_entity_sha256
 from kicad_mcp.project.native_hierarchy import inspect_sheet_instances
+from kicad_mcp.project.physical_graph import add_physical_footprints, placement_delta
 
 STATE_SCHEMA_VERSION = 1
 SCHEMATIC_SOURCE_SUFFIX = ".kicad_sch"
+PCB_SOURCE_SUFFIX = ".kicad_pcb"
 MAX_CHANGE_JOURNAL = 32
 # Caller-owned compatibility identity must include KiCad/parser/IR schema versions.
-SUPPORTED_SOURCES = frozenset({SCHEMATIC_SOURCE_SUFFIX, ".kicad_pcb", ".kicad_pro", ".kicad_dru"})
+SUPPORTED_SOURCES = frozenset(
+    {SCHEMATIC_SOURCE_SUFFIX, PCB_SOURCE_SUFFIX, ".kicad_pro", ".kicad_dru"}
+)
 
 
 class StateRebuildRequiredError(ValueError):
@@ -201,7 +207,12 @@ def _verify_ambiguous_windows_identity(
 
 
 def _digest_one_source(
-    real_root: Path, name: str, *, allow_hierarchy: bool = False, copy_to: Path | None = None
+    real_root: Path,
+    name: str,
+    *,
+    allow_hierarchy: bool = False,
+    copy_to: Path | None = None,
+    read_digest: Callable[[BinaryIO], str] | None = None,
 ) -> str:
     rel = _source_name(name)
     parent = real_root
@@ -217,7 +228,11 @@ def _digest_one_source(
         try:
             before = os.fstat(fd)
             with os.fdopen(os.dup(fd), "rb") as stream:
-                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                digest = (
+                    read_digest(stream)
+                    if read_digest is not None
+                    else hashlib.file_digest(stream, "sha256").hexdigest()
+                )
                 if copy_to is not None:
                     stream.seek(0)
                     with copy_to.open("xb") as target:
@@ -318,6 +333,81 @@ def capture_native_hierarchy(
     return NativeHierarchySnapshot(root.resolve(strict=True), tuple(before.items()), circuit)
 
 
+@dataclass(frozen=True, slots=True)
+class NativePcbSnapshot:
+    """Bounded saved-board placement read-back, bound to the native source inventory."""
+
+    root: Path
+    board_name: str
+    source_hashes: tuple[tuple[str, str], ...]
+    board_context_sha256: str
+    records: tuple[FootprintListRecord, ...]
+    decoded_footprints: int
+
+
+def capture_native_pcb(
+    root: Path,
+    board_name: str,
+    native_sources: tuple[str, ...],
+    *,
+    index: FileFootprintIndex | None = None,
+) -> NativePcbSnapshot:
+    """Read a supported saved PCB without writing any project or cache file."""
+    reader = index if index is not None else FileFootprintIndex()
+    try:
+        return _capture_native_pcb(root, board_name, native_sources, reader)
+    except (OSError, ValueError) as exc:
+        reader.clear()
+        raise StateRebuildRequiredError("native PCB snapshot unavailable") from exc
+
+
+def _capture_native_pcb(
+    root: Path, board_name: str, native_sources: tuple[str, ...], reader: FileFootprintIndex
+) -> NativePcbSnapshot:
+    relative = _source_name(board_name)
+    if relative.suffix != PCB_SOURCE_SUFFIX or board_name not in native_sources:
+        raise StateRebuildRequiredError("invalid native PCB identity")
+    before = _source_digests(root, native_sources, allow_hierarchy=True)
+    root = root.resolve(strict=True)
+    raw = b""
+
+    def capture(stream: BinaryIO) -> str:
+        nonlocal raw
+        raw = stream.read(128 * 1024 * 1024 + 1)
+        if len(raw) > 128 * 1024 * 1024:
+            raise ValueError("PCB bytes exceed supported size")
+        return hashlib.sha256(raw).hexdigest()
+
+    digest = _digest_one_source(root, board_name, allow_hierarchy=True, read_digest=capture)
+    if digest != before[board_name]:
+        raise ValueError("PCB bytes changed during read")
+    result = reader.refresh(root / relative, raw.decode("utf-8"))
+    if result is None:
+        raise ValueError("unsupported native PCB inventory")
+    if _source_digests(root, native_sources, allow_hierarchy=True) != before:
+        raise ValueError("native source changed during PCB read-back")
+    return NativePcbSnapshot(
+        root,
+        board_name,
+        tuple(before.items()),
+        result.board_context_sha256,
+        tuple(result.records.values()),
+        result.work_units,
+    )
+
+
+def _validate_pcb_snapshot(
+    snapshot: NativePcbSnapshot, root: Path, hashes: Mapping[str, str]
+) -> None:
+    if (
+        snapshot.root != root.resolve(strict=True)
+        or dict(snapshot.source_hashes) != hashes
+        or snapshot.board_name not in hashes
+        or _source_name(snapshot.board_name).suffix != PCB_SOURCE_SUFFIX
+    ):
+        raise StateRebuildRequiredError("native PCB snapshot identity mismatch")
+
+
 def _entity_hashes(graph: EngineeringGraph) -> dict[str, str]:
     return {
         entity_id: canonical_graph_entity_sha256(entity)
@@ -377,7 +467,9 @@ def _validate_document_header(
         raise ValueError("not an object")
     if (
         document.get("schema_version") != STATE_SCHEMA_VERSION
-        or document.get("graph_schema_version") != ENGINEERING_GRAPH_SCHEMA_VERSION
+        or type(document.get("graph_schema_version")) is not int
+        or document.get("graph_schema_version")
+        not in (ENGINEERING_GRAPH_SCHEMA_VERSION, PHYSICAL_GRAPH_SCHEMA_VERSION)
         or document.get("project_key") != project_key
         or document.get("compatibility_key") != compatibility_key
         or document.get("root_identity") != _root_identity(root)
@@ -391,14 +483,16 @@ def _load_verified_graph(
     project_key: str,
     native_sources: tuple[str, ...],
     native_snapshot: NativeHierarchySnapshot | None = None,
+    pcb_snapshot: NativePcbSnapshot | None = None,
 ) -> EngineeringGraph:
-    if (
-        not isinstance(graph_document, dict)
-        or graph_document.get("schema_version") != ENGINEERING_GRAPH_SCHEMA_VERSION
+    if not isinstance(graph_document, dict) or graph_document.get("schema_version") != (
+        PHYSICAL_GRAPH_SCHEMA_VERSION
+        if pcb_snapshot is not None
+        else ENGINEERING_GRAPH_SCHEMA_VERSION
     ):
         raise ValueError("incompatible cached Engineering Graph schema")
     if native_snapshot is not None:
-        return _verify_native_graph(graph_document, project_key, native_snapshot)
+        return _verify_native_graph(graph_document, project_key, native_snapshot, pcb_snapshot)
     graph = EngineeringGraph.from_document(graph_document)
     if graph.project_key != project_key:
         raise ValueError("Engineering Graph project identity mismatch")
@@ -415,9 +509,12 @@ def _verify_native_graph(
     graph_document: dict[str, Any],
     project_key: str,
     native_snapshot: NativeHierarchySnapshot,
+    pcb_snapshot: NativePcbSnapshot | None = None,
 ) -> EngineeringGraph:
     """Use native authority directly; the sidecar must match its canonical document."""
     graph = graph_from_circuit(native_snapshot.circuit)
+    if pcb_snapshot is not None:
+        add_physical_footprints(graph, pcb_snapshot.board_name, pcb_snapshot.records)
     if graph.project_key != project_key:
         raise ValueError("Engineering Graph project identity mismatch")
     # JSON comparison preserves types (e.g. false versus 0) and detects
@@ -469,6 +566,8 @@ class PersistentProjectState:
     journal: tuple[ChangeJournalEntry, ...] = ()
     derived_dependencies: dict[str, dict[str, str]] = field(default_factory=dict)
     native_root_name: str | None = None
+    pcb_board_name: str | None = None
+    pcb_context_sha256: str | None = None
     # Edit tokens authorize read-back only within this live state lifetime.
     _edit_scope: object = field(default_factory=object, init=False, repr=False, compare=False)
 
@@ -498,7 +597,11 @@ class PersistentProjectState:
 
     @classmethod
     def rebuild_native(
-        cls, snapshot: NativeHierarchySnapshot, *, compatibility_key: str
+        cls,
+        snapshot: NativeHierarchySnapshot,
+        *,
+        compatibility_key: str,
+        pcb_snapshot: NativePcbSnapshot | None = None,
     ) -> PersistentProjectState:
         """Build the opt-in native state without accepting an injected graph."""
         if not compatibility_key.strip() or snapshot.circuit.source_path is None:
@@ -507,6 +610,9 @@ class PersistentProjectState:
         if _source_digests(snapshot.root, tuple(hashes), allow_hierarchy=True) != hashes:
             raise StateRebuildRequiredError("native snapshot is stale")
         graph = graph_from_circuit(snapshot.circuit)
+        if pcb_snapshot is not None:
+            _validate_pcb_snapshot(pcb_snapshot, snapshot.root, hashes)
+            add_physical_footprints(graph, pcb_snapshot.board_name, pcb_snapshot.records)
         return cls(
             snapshot.root,
             graph,
@@ -514,6 +620,8 @@ class PersistentProjectState:
             _entity_hashes(graph),
             compatibility_key,
             native_root_name=snapshot.circuit.source_path,
+            pcb_board_name=pcb_snapshot.board_name if pcb_snapshot else None,
+            pcb_context_sha256=pcb_snapshot.board_context_sha256 if pcb_snapshot else None,
         )
 
     @property
@@ -572,6 +680,57 @@ class PersistentProjectState:
             token, before.circuit, after.circuit, expected_new_hashes=dict(after.source_hashes)
         )
 
+    def _validate_edit_token(self, token: EditToken) -> None:
+        if (
+            token.state_scope is not self._edit_scope
+            or token.project_key != self.project_key
+            or token.generation != self.generation
+            or dict(token.source_hashes) != self.source_hashes
+        ):
+            raise StateRebuildRequiredError("stale edit token or switched project")
+
+    def apply_pcb_placement(
+        self,
+        token: EditToken,
+        after: NativePcbSnapshot,
+        *,
+        native_uuid: str,
+        x_mm: float,
+        y_mm: float,
+    ) -> ChangeJournalEntry:
+        """Update one saved native footprint translation; all other edits rebuild."""
+        self._validate_edit_token(token)
+        actual = _source_digests(self.root, tuple(self.source_hashes), allow_hierarchy=True)
+        _validate_pcb_snapshot(after, self.root, actual)
+        changed_sources = tuple(
+            sorted(name for name, digest in actual.items() if digest != self.source_hashes[name])
+        )
+        if (
+            self.pcb_board_name is None
+            or after.board_name != self.pcb_board_name
+            or after.board_context_sha256 != self.pcb_context_sha256
+            or changed_sources != (self.pcb_board_name,)
+        ):
+            raise StateRebuildRequiredError("unsupported PCB source change; rebuild required")
+        try:
+            entity = placement_delta(
+                self.graph,
+                after.board_name,
+                after.records,
+                native_uuid=native_uuid,
+                x_mm=x_mm,
+                y_mm=y_mm,
+            )
+        except ValueError as exc:
+            raise StateRebuildRequiredError(str(exc)) from exc
+        self.graph.entities[entity.entity_id] = entity
+        # Connectivity/physical evidence is deliberately conservative until
+        # native pad/net relationships are modeled. Never preserve unknown stamps.
+        invalidated = {entity.entity_id} | {
+            key for dependencies in self.derived_dependencies.values() for key in dependencies
+        }
+        return self._record_update(actual, changed_sources, {entity.entity_id}, invalidated)
+
     def _apply_native_edit(
         self,
         token: EditToken,
@@ -580,13 +739,7 @@ class PersistentProjectState:
         *,
         expected_new_hashes: Mapping[str, str],
     ) -> ChangeJournalEntry:
-        if (
-            token.state_scope is not self._edit_scope
-            or token.project_key != self.project_key
-            or token.generation != self.generation
-            or dict(token.source_hashes) != self.source_hashes
-        ):
-            raise StateRebuildRequiredError("stale edit token or switched project")
+        self._validate_edit_token(token)
         actual = _source_digests(
             self.root, tuple(self.source_hashes), allow_hierarchy=self.native_root_name is not None
         )
@@ -595,6 +748,12 @@ class PersistentProjectState:
         changed_sources = tuple(
             sorted(name for name, digest in actual.items() if digest != self.source_hashes[name])
         )
+        if self.pcb_board_name is not None and any(
+            not name.endswith(SCHEMATIC_SOURCE_SUFFIX) for name in changed_sources
+        ):
+            raise StateRebuildRequiredError(
+                "non-schematic source changed; use verified physical rebuild"
+            )
         if not changed_sources:
             raise StateRebuildRequiredError("native edit produced no changed project source")
         try:
@@ -604,8 +763,21 @@ class PersistentProjectState:
         if not result.updated_entity_ids:
             raise StateRebuildRequiredError("source changed without bounded graph update")
         invalidated = result.updated_entity_ids | self.graph.impacted_by(result.updated_entity_ids)
+        if self.pcb_board_name is not None:
+            invalidated |= {
+                key for dependencies in self.derived_dependencies.values() for key in dependencies
+            }
+        return self._record_update(actual, changed_sources, result.updated_entity_ids, invalidated)
+
+    def _record_update(
+        self,
+        actual: dict[str, str],
+        changed_sources: tuple[str, ...],
+        updated: set[str] | frozenset[str],
+        invalidated: set[str] | frozenset[str],
+    ) -> ChangeJournalEntry:
         # Rehash ONLY modified graph entities. Unmodified node digests persist.
-        for entity_id in result.updated_entity_ids:
+        for entity_id in updated:
             self.entity_hashes[entity_id] = canonical_graph_entity_sha256(
                 self.graph.entities[entity_id]
             )
@@ -619,9 +791,9 @@ class PersistentProjectState:
         entry = ChangeJournalEntry(
             self.generation,
             changed_sources,
-            tuple(sorted(result.updated_entity_ids)),
+            tuple(sorted(updated)),
             tuple(sorted(invalidated)),
-            result.work_units,
+            len(updated),
         )
         self.journal = (*self.journal, entry)[-MAX_CHANGE_JOURNAL:]
         return entry
@@ -654,7 +826,7 @@ class PersistentProjectState:
     def to_document(self) -> dict[str, Any]:
         return {
             "schema_version": STATE_SCHEMA_VERSION,
-            "graph_schema_version": ENGINEERING_GRAPH_SCHEMA_VERSION,
+            "graph_schema_version": self.graph.schema_version,
             "project_key": self.project_key,
             "root_identity": _root_identity(self.root),
             "compatibility_key": self.compatibility_key,
@@ -665,6 +837,14 @@ class PersistentProjectState:
             "derived_dependencies": self.derived_dependencies,
             "graph": self.graph.to_document(),
             **({"native_root_name": self.native_root_name} if self.native_root_name else {}),
+            **(
+                {
+                    "pcb_board_name": self.pcb_board_name,
+                    "pcb_context_sha256": self.pcb_context_sha256,
+                }
+                if self.pcb_board_name
+                else {}
+            ),
         }
 
     def save_atomic(self, state_path: Path) -> None:
@@ -708,6 +888,7 @@ class PersistentProjectState:
         native_sources: tuple[str, ...],
         compatibility_key: str,
         native_snapshot: NativeHierarchySnapshot | None = None,
+        pcb_snapshot: NativePcbSnapshot | None = None,
     ) -> PersistentProjectState:
         """Return state only when schema, graph, sources and hashes all agree."""
         path = _state_path(root, state_path)
@@ -724,8 +905,9 @@ class PersistentProjectState:
                 or dict(native_snapshot.source_hashes) != document["source_hashes"]
             ):
                 raise ValueError("native snapshot identity mismatch")
+            _validate_pcb_reopen(document, root, native_snapshot, pcb_snapshot)
             graph = _load_verified_graph(
-                document["graph"], project_key, native_sources, native_snapshot
+                document["graph"], project_key, native_sources, native_snapshot, pcb_snapshot
             )
             _validate_state_metadata_and_hashes(document, graph, native_sources)
 
@@ -753,9 +935,35 @@ class PersistentProjectState:
                 records,
                 derived,
                 native_root,
+                pcb_snapshot.board_name if pcb_snapshot else None,
+                pcb_snapshot.board_context_sha256 if pcb_snapshot else None,
             )
         except (OSError, ValueError, TypeError, KeyError) as exc:
             raise StateRebuildRequiredError("snapshot cannot be safely reused") from exc
+
+
+def _validate_pcb_reopen(
+    document: dict[str, Any],
+    root: Path,
+    native_snapshot: NativeHierarchySnapshot | None,
+    pcb_snapshot: NativePcbSnapshot | None,
+) -> None:
+    if pcb_snapshot is None:
+        if (
+            document["graph_schema_version"] != ENGINEERING_GRAPH_SCHEMA_VERSION
+            or "pcb_board_name" in document
+            or "pcb_context_sha256" in document
+        ):
+            raise ValueError("physical state requires native PCB read-back")
+        return
+    if (
+        native_snapshot is None
+        or document["graph_schema_version"] != PHYSICAL_GRAPH_SCHEMA_VERSION
+        or document.get("pcb_board_name") != pcb_snapshot.board_name
+        or document.get("pcb_context_sha256") != pcb_snapshot.board_context_sha256
+    ):
+        raise ValueError("physical state identity mismatch")
+    _validate_pcb_snapshot(pcb_snapshot, root, document["source_hashes"])
 
 
 def _validate_stored_journal(
