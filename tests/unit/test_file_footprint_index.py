@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from kicad_mcp.tools import board_file
+from kicad_mcp.pcb import footprint_index as board_file
 
 
 def _footprint(stamp: str, reference: str, x: int) -> str:
@@ -154,10 +154,10 @@ def test_representative_board_decodes_only_changed_footprints(
     decode = board_file._native_list_record
     calls = 0
 
-    def counted(block: str) -> board_file.FootprintListRecord | None:
+    def counted(block: str, block_sha256: str) -> board_file.FootprintListRecord | None:
         nonlocal calls
         calls += 1
-        return decode(block)
+        return decode(block, block_sha256)
 
     monkeypatch.setattr(board_file, "_native_list_record", counted)
     first = index.refresh(path, text)
@@ -186,3 +186,42 @@ def test_representative_board_decodes_only_changed_footprints(
     assert clean.records == updated.records
     assert clean.work_units == count
     assert calls == 2 * count + 1
+
+
+def test_physical_snapshot_distinguishes_placement_from_unknown_changes(tmp_path: Path) -> None:
+    index = board_file.FileFootprintIndex()
+    path = tmp_path / "board.kicad_pcb"
+    original = _board(_footprint(A, "REF**", 10), _footprint(B, "REF**", 15))
+    first = index.refresh(path, original)
+    moved = index.refresh(path, original.replace("(at 10 20 90)", "(at 11 20 90)"))
+    assert first is not None and moved is not None
+    assert first.board_context_sha256 == moved.board_context_sha256
+    assert first.records[A].nonplacement_sha256 == moved.records[A].nonplacement_sha256
+    assert first.records[A].block_sha256 != moved.records[A].block_sha256
+    assert moved.records[B] is first.records[B]
+    assert moved.work_units == 1
+    changed = index.refresh(path, original.replace("(at 10 20 90)", "(at 10 20 45)"))
+    assert changed is not None
+    assert changed.records[A].nonplacement_sha256 != first.records[A].nonplacement_sha256
+    track = index.refresh(path, original[:-1] + "(segment (start 0 0) (end 1 1)))")
+    assert track is not None
+    assert track.board_context_sha256 != first.board_context_sha256
+    assert track.records == first.records
+
+
+def test_native_footprint_properties_decode_escaped_values(tmp_path: Path) -> None:
+    text = _board(_footprint(A, "R1", 10)).replace(
+        '(property "Value" "10k")', r'(property "Value" "A\"B\\C\nD")'
+    )
+    result = board_file.FileFootprintIndex().refresh(tmp_path / "board.kicad_pcb", text)
+    assert result is not None
+    assert result.records[A].value == 'A"B\\C\nD'
+
+
+def test_nul_content_is_not_indexed(tmp_path: Path) -> None:
+    index = board_file.FileFootprintIndex()
+    path = tmp_path / "board.kicad_pcb"
+    valid = _board(_footprint(A, "R1", 10))
+    assert index.refresh(path, valid).work_units == 1
+    assert index.refresh(path, valid.replace("R1", "R1\0")) is None
+    assert index.refresh(path, valid).work_units == 1

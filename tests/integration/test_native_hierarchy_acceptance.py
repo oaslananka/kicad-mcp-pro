@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import statistics
+import subprocess  # nosec B404
 import sys
 import time
 from collections.abc import Callable
@@ -16,18 +17,22 @@ from defusedxml import ElementTree as SafeET
 
 from kicad_mcp.config import get_config
 from kicad_mcp.ir.engineering_graph import EngineeringGraph, GraphEdgeKind, GraphEntityKind
+from kicad_mcp.pcb.footprint_index import FileFootprintIndex
 from kicad_mcp.project.incremental_state import (
     EditToken,
     NativeHierarchySnapshot,
     PersistentProjectState,
     StateRebuildRequiredError,
     capture_native_hierarchy,
+    capture_native_pcb,
 )
 from kicad_mcp.schematic.sheet_pins import _block_end, _children, _uuid_value
 from kicad_mcp.tools.export_support import _run_cli
 from scripts.benchmark_kicad_large_demo import (
     DEFAULT_DEMO_ROOT,
     MANIFEST_PATH,
+    SYSTEM_PYTHON,
+    _trusted_system_python,
     nearest_rank_p95,
     sha256_file,
     validate_demo_files,
@@ -309,6 +314,158 @@ def test_pinned_large_native_hierarchy(tmp_path: Path, native_version: str) -> N
                 ).ru_maxrss,
                 "repeats": REPEATS,
                 "original_hashes_unchanged": True,
+            },
+            sort_keys=True,
+        ),
+        flush=True,
+    )
+
+
+_NATIVE_FOOTPRINT_WORKER = """
+import json, sys, pcbnew
+board = pcbnew.LoadBoard(sys.argv[1])
+assert board is not None
+rows = sorted(
+    (str(item.m_Uuid.AsString()), item.GetReference(), item.GetValue(),
+     int(item.GetPosition().x), int(item.GetPosition().y),
+     board.GetLayerName(item.GetLayer()))
+    for item in board.GetFootprints()
+)
+print("NATIVE_FOOTPRINT_ROWS:" + json.dumps(rows))
+"""
+
+
+def _native_footprint_rows(board: Path) -> list:
+    executable = _trusted_system_python(Path(SYSTEM_PYTHON))
+    result = subprocess.run(  # nosec B603
+        [str(executable), "-c", _NATIVE_FOOTPRINT_WORKER, str(board)],
+        cwd=board.parent,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=45,
+    )
+    rows = [
+        line.removeprefix("NATIVE_FOOTPRINT_ROWS:")
+        for line in result.stdout.splitlines()
+        if line.startswith("NATIVE_FOOTPRINT_ROWS:")
+    ]
+    assert len(rows) == 1
+    return json.loads(rows[0])
+
+
+def _assert_pcb_graph_parity(graph: EngineeringGraph, rows: list) -> None:
+    actual = sorted(
+        [
+            entity.native_links[0].uuid,
+            entity.attributes["reference"],
+            entity.attributes["value"],
+            round(entity.attributes["x_mm"] * 1_000_000),
+            round(entity.attributes["y_mm"] * 1_000_000),
+            entity.attributes["layer"],
+        ]
+        for entity in graph.entities_of_kind(GraphEntityKind.PCB_FOOTPRINT)
+    )
+    assert actual == rows
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    os.environ.get("KICAD_MCP_NATIVE_PCB_DEMO") != "1" or sys.platform != "linux",
+    reason="opt-in pinned Linux physical PCB state acceptance",
+)
+def test_pinned_large_native_pcb_placement(tmp_path: Path, native_version: str) -> None:
+    """Controlled saved-file translation with independent native reload, not a GUI edit."""
+    import resource
+
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    originals = validate_demo_files(DEFAULT_DEMO_ROOT, manifest)
+    sources = tuple(source.name for source in originals if source.name != "LICENSE")
+    for source in originals:
+        shutil.copyfile(source, tmp_path / source.name)
+    board_name = manifest["pcb"]
+    board = tmp_path / board_name
+    root_name = board_name.replace(".kicad_pcb", ".kicad_sch")
+    compat = f"{native_version}:native-xml-E:physical-graph-v2"
+    hierarchy, _, _ = _capture(tmp_path, root_name, sources)
+    index = FileFootprintIndex()
+    start = time.perf_counter()
+    before = capture_native_pcb(tmp_path, board_name, sources, index=index)
+    state = PersistentProjectState.rebuild_native(
+        hierarchy, compatibility_key=compat, pcb_snapshot=before
+    )
+    cold_ms = (time.perf_counter() - start) * 1000
+    rows = _native_footprint_rows(board)
+    assert len(rows) == 1125
+    _assert_pcb_graph_parity(state.graph, rows)
+    token = state.prepare_native_edit()
+    # The pinned file manifest makes this literal diagnostic replacement exact.
+    old = '(uuid "3c47f456-5689-4cef-9b95-3444d1fac1a7")\n\t\t(at 182 57.5 -90)'
+    new = old.replace("(at 182 ", "(at 182.1 ")
+    text = board.read_bytes()
+    assert text.count(old.encode()) == 1
+    board.write_bytes(text.replace(old.encode(), new.encode(), 1))
+    del text
+    start = time.perf_counter()
+    after = capture_native_pcb(tmp_path, board_name, sources, index=index)
+    entry = state.apply_pcb_placement(
+        token, after, native_uuid="3c47f456-5689-4cef-9b95-3444d1fac1a7", x_mm=182.1, y_mm=57.5
+    )
+    incremental_ms = (time.perf_counter() - start) * 1000
+    assert entry.work_units == 1
+    updated_rows = _native_footprint_rows(board)
+    _assert_pcb_graph_parity(state.graph, updated_rows)
+    assert sum(old_row != new_row for old_row, new_row in zip(rows, updated_rows, strict=True)) == 1
+    fresh_hierarchy, _, _ = _capture(tmp_path, root_name, sources)
+    start = time.perf_counter()
+    clean_pcb = capture_native_pcb(tmp_path, board_name, sources)
+    clean = PersistentProjectState.rebuild_native(
+        fresh_hierarchy, compatibility_key=compat, pcb_snapshot=clean_pcb
+    )
+    clean_ms = (time.perf_counter() - start) * 1000
+    assert clean.graph.to_document() == state.graph.to_document()
+    assert clean.entity_hashes == state.entity_hashes
+    path = tmp_path / ".kicad-mcp-cache" / "physical.json"
+    state.save_atomic(path)
+    start = time.perf_counter()
+    reopened = PersistentProjectState.load_verified(
+        tmp_path,
+        path,
+        project_key=state.project_key,
+        native_sources=sources,
+        compatibility_key=compat,
+        native_snapshot=fresh_hierarchy,
+        pcb_snapshot=clean_pcb,
+    )
+    reopen_ms = (time.perf_counter() - start) * 1000
+    assert reopened.to_document() == state.to_document()
+    assert all(sha256_file(path) == manifest["files"][path.name] for path in originals)
+    revision = subprocess.run(  # nosec B603
+        ["/usr/bin/git", "rev-parse", "HEAD"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    ).stdout.strip()
+    print(
+        "NATIVE_PCB_STATE_EVIDENCE:"
+        + json.dumps(
+            {
+                "kicad_version": native_version,
+                "input_manifest_sha256": sha256_file(MANIFEST_PATH),
+                "footprints": len(rows),
+                "repository_sha": revision,
+                "pcb_sha256": manifest["files"][board_name],
+                "original_source_count": len(originals),
+                "updated_graph_entities": entry.work_units,
+                "cold_capture_build_ms": round(cold_ms, 3),
+                "incremental_capture_update_ms": round(incremental_ms, 3),
+                "clean_capture_build_ms": round(clean_ms, 3),
+                "reopen_ms_excluding_capture": round(reopen_ms, 3),
+                "process_peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+                "original_hashes_unchanged": True,
+                "observation_count": 1,
             },
             sort_keys=True,
         ),

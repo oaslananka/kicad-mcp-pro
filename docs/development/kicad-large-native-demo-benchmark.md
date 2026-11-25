@@ -147,10 +147,32 @@ was 732256 KiB (including creation of the edited copy), not an isolated
 cache-memory measurement. Native save/GUI mutation and persistent physical
 PCB graph ingestion are outside this listing acceptance.
 
+## Opt-in physical footprint graph acceptance (#944)
+
+Run the maintained independent native read-back test on the pinned Linux demo:
+
+```bash
+KICAD_MCP_NATIVE_PCB_DEMO=1 uv run pytest   tests/integration/test_native_hierarchy_acceptance.py   -k pinned_large_native_pcb_placement -q -s
+```
+
+The test copies the pinned sources, captures the native hierarchy, constructs
+the physical v2 graph, and compares every UUID, reference, value, position and
+layer against a separate trusted system-Python `pcbnew.LoadBoard` read-back.
+A controlled R17 X translation on the disposable saved file must update one
+graph entity, match independent native reload and a clean graph rebuild,
+and reopen from an explicitly saved sidecar. All original source hashes
+must remain unchanged. This is not a live GUI/native editor save trial.
+
+The report records individual capture/build, incremental refresh and verified
+reopen durations, process peak RSS, native version and pinned input manifest
+hash. The hierarchy capture and independent native read-back are outside the
+reported state-phase timers; one observation is not a p95 threshold.
+
 ## Follow-up for full #944 acceptance
 
 Native schematic hierarchy is an opt-in verified path and file-backed
-footprint listing supports bounded record reuse. Remaining work includes
-persistent physical PCB graph deltas, live editor integration, broader
+footprint listing supports bounded record reuse. The experimental v2 saved PCB path supports a bounded translation. Remaining
+work includes broader physical deltas, live editor integration, maintained
+repeated cycle measurements, broader
 concurrent-edit acceptance and reviewed non-regression thresholds. This
 benchmark does not claim general PCB performance or manufacturing readiness.

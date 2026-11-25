@@ -24,7 +24,8 @@ always authoritative; cached state is never validation evidence.
    `apply_native_edit(token, before, after, expected_new_hashes=...)` after an
    *authoritative native read-back*. It delegates bounded attribute-only graph
    updates to the existing #940 `update_graph_from_circuit` seam. Unsupported
-   structural/net/pin/PCB edits **require a clean full rebuild**.
+   structural/net/pin/PCB edits **require a clean full rebuild**, except for the
+   explicitly opted-in saved PCB translation path described below.
 5. Invalidates modified/impacted graph facts and their derived stamps. A stamp
    records dependencies, **not** analysis output or verified measurement.
    `derived_is_current` verifies native bytes before reporting freshness.
@@ -114,6 +115,58 @@ adapter covers exported native netlist connectivity, not geometry, all library
 pins, inferred power rails or ERC/DRC. Multi-unit symbols whose identity cannot
 be validated against the source sheet are rejected rather than guessed.
 
+## Opt-in saved PCB footprint graph (schema v2)
+
+The default schematic Engineering Graph v1, its canonical IDs and existing
+sidecar documents remain unchanged. The explicit native PCB projection uses
+graph schema v2 (the enclosing state envelope remains v1). It adds
+`pcb_footprint` entities keyed by project, relative board path and native
+footprint UUID, including distinct objects with duplicate references. No
+schematic-to-PCB link is inferred from reference text. Pad/track/net geometry
+and relationships are not modeled.
+
+```python
+from kicad_mcp.pcb.footprint_index import FileFootprintIndex
+from kicad_mcp.project.incremental_state import capture_native_pcb
+
+index = FileFootprintIndex()
+pcb = capture_native_pcb(root, board_name, sources, index=index)
+state = PersistentProjectState.rebuild_native(
+    snapshot, compatibility_key=physical_graph_compatibility_key, pcb_snapshot=pcb,
+)
+token = state.prepare_native_edit()
+# Caller performs an authorized native translation and saves the board.
+updated = capture_native_pcb(root, board_name, sources, index=index)
+state.apply_pcb_placement(
+    token, updated, native_uuid=target_uuid, x_mm=target_x, y_mm=target_y,
+)
+state.save_atomic(root / ".kicad-mcp-cache/graph.json")
+```
+
+The host-supplied compatibility key must identify the physical v2 projection
+and native parser/runtime versions. Capture uses the same bounded footprint
+index as ordinary saved-board listing, with exact source inventory hashes
+and guarded reads. The edit checks the same state-instance token, exact
+source inventory, board identity, ordered footprint inventory, byte hashes
+of all unaffected footprint blocks and the rest of the board, and the
+requested X/Y. Only the selected footprint's root X/Y tokens may change;
+rotation, pad, track, net, addition/deletion, another footprint, formatting
+changes outside those tokens, or uncertain state require rebuild. A single
+updated entity is constructed/hashed; the complete inventory is still
+scanned and file bytes hashed. All stamped derived analyses are invalidated
+conservatively because physical connectivity dependency edges are not yet
+modeled. Schematic edits in a v2 state likewise invalidate all existing
+stamps and cannot hide a non-schematic file change.
+
+Reopen requires both fresh authoritative hierarchy and PCB captures, the
+same source hashes and the exact canonical graph document. V1 documents
+cannot contain physical entities; v2 sidecars cannot reopen via the v1-only
+path. Read-only capture does not create a sidecar or modify native files.
+The caller retains exclusive edit/read-back ownership and must explicitly
+opt in to persistence. The ordinary file-backed listing path still writes
+nothing. No live GUI state, native editor save coordination, arbitrary
+concurrent mutation, or DRC/geometry validity is inferred from saved bytes.
+
 ## Validated now versus still outstanding
 
 Focused tests exercise persistence, deterministic reopen, bounded semantic
@@ -130,5 +183,5 @@ See the [native demo benchmark](kicad-large-native-demo-benchmark.md).
 Remaining #944 acceptance work includes editor integration, dependable
 concurrent-edit/watch semantics, end-to-end inspect/update/refresh performance
 (including native capture), representative CI non-regression thresholds, and
-broader PCB/object-level delta support. Do not
+broader PCB/object-level delta support beyond the verified saved-footprint translation. Do not
 claim latency savings or production-ready cache behavior from IR-only tests.
