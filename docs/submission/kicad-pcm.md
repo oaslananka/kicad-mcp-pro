@@ -22,8 +22,11 @@ Do not submit until all of these are true:
 3. The release checksum and GitHub attestation have been verified.
 4. The public package identifier remains unique and exactly
    `com.github.oaslananka.kicad-mcp-pro`.
-5. The package still declares its actual runtime (`swig`) and supported KiCad
-   minimum rather than an aspirational modern-IPC state.
+5. The package declares its actual runtime: `ipc`, minimum KiCad 10.0, and
+   development status until current real-KiCad acceptance is complete. Verify
+   the IPC manifest, wxPython runtime and backend compatibility contract of
+   the exact submitted artifact. Historical SWIG-era lifecycle evidence does
+   not establish the current IPC package lifecycle.
 
 ## Repository submission procedure
 
