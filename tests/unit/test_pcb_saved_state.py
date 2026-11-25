@@ -38,12 +38,14 @@ def saved_project(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mock_board: MagicMock
 ) -> Iterator[tuple[SimpleNamespace, Path]]:
     reset_live_edit_service()
+    root = tmp_path / "first-project"
+    root.mkdir()
     cfg = get_config()
-    cfg.project_dir = tmp_path
-    cfg.project_file = tmp_path / "demo.kicad_pro"
-    cfg.pcb_file = tmp_path / "demo.kicad_pcb"
-    cfg.sch_file = tmp_path / "demo.kicad_sch"
-    cfg.workspace_root = tmp_path
+    cfg.project_dir = root
+    cfg.project_file = root / "demo.kicad_pro"
+    cfg.pcb_file = root / "demo.kicad_pcb"
+    cfg.sch_file = root / "demo.kicad_sch"
+    cfg.workspace_root = root
     cfg.transport = "stdio"
     cfg.kicad_socket_path = None
     cfg.enable_persistent_pcb_state = True
@@ -76,7 +78,7 @@ def saved_project(
     monkeypatch.setattr("kicad_mcp.tools.pcb._run_cli", lambda *args, **kw: (0, "10.0.8", ""))
     monkeypatch.setattr("kicad_mcp.project.incremental_state.capture_native_hierarchy", capture)
     try:
-        yield live, tmp_path / ".kicad-mcp-cache/physical.json"
+        yield live, root / ".kicad-mcp-cache/physical.json"
     finally:
         reset_live_edit_service()
 
@@ -209,7 +211,7 @@ async def test_cache_write_failure_rebuilds_on_next_explicit_save(
 async def test_saved_graph_switches_between_projects_without_reusing_prior_state(
     saved_project: tuple[SimpleNamespace, Path],
     mock_board: MagicMock,
-    tmp_path_factory: pytest.TempPathFactory,
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     live, first_cache = saved_project
@@ -221,7 +223,8 @@ async def test_saved_graph_switches_between_projects_without_reusing_prior_state
     first_bytes = first_cache.read_bytes()
     first_board = cfg.pcb_file
     assert first_board is not None
-    second = tmp_path_factory.mktemp("physical-project")
+    second = tmp_path / "second-project"
+    second.mkdir()
     with monkeypatch.context() as patch:
         patch.setattr(cfg, "project_dir", second)
         patch.setattr(cfg, "workspace_root", second)
