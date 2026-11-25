@@ -22,7 +22,7 @@ def _workflow() -> dict:
     return config
 
 
-def test_exact_reusable_inputs_and_unchanged_legacy_events() -> None:
+def test_exact_reusable_inputs_and_published_legacy_events() -> None:
     wf = _workflow()
     on = wf[True]
     assert set(on["workflow_call"]["inputs"]) == {"tag", "source_commit"}
@@ -32,7 +32,8 @@ def test_exact_reusable_inputs_and_unchanged_legacy_events() -> None:
     assert set(on) == {"workflow_call"}
     previous = yaml.safe_load(LEGACY.read_text(encoding="utf-8"))[True]
     assert previous["workflow_dispatch"] is None
-    assert previous["push"]["tags"] == ["mcp-server-v*"]
+    assert previous["release"]["types"] == ["published"]
+    assert "push" not in previous
     assert "workflow_call" not in previous
 
 

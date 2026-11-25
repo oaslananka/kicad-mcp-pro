@@ -2,9 +2,8 @@ name: Publish Python
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "mcp-server-v*"
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -18,7 +17,8 @@ jobs:
     if: >-
       (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') &&
       ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/mcp-server-v')))
+       (github.event_name == 'release' && github.event.release.draft == false &&
+        startsWith(github.event.release.tag_name, 'mcp-server-v')))
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -30,24 +30,42 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # Creating a protected tag alone is not permission to publish to PyPI.
+      - name: Verify published release source
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ github.event.release.id }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          EXPECTED_SHA: ${{ github.sha }}
+          EXPECTED_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == 'oaslananka/kicad-mcp-pro' || "$GITHUB_REPOSITORY" == 'oaslananka-ops/kicad-mcp-pro' ]] || exit 1
+          [[ "$RELEASE_ID" =~ ^[1-9][0-9]*$ ]] || exit 1
+          [[ "$RELEASE_TAG" =~ ^mcp-server-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$EXPECTED_REF" == "refs/tags/$RELEASE_TAG" ]] || exit 1
+          tag_sha="$(git rev-list -n1 "refs/tags/$RELEASE_TAG^{commit}")"
+          head_sha="$(git rev-parse HEAD)"
+          [[ "$tag_sha" == "$EXPECTED_SHA" && "$head_sha" == "$EXPECTED_SHA" ]] || exit 1
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          [[ "$RELEASE_TAG" == "mcp-server-v$version" ]] || exit 1
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" | jq -e \
+            --argjson id "$RELEASE_ID" --arg tag "$RELEASE_TAG" \
+            '.id == $id and .tag_name == $tag and .draft == false and
+             (.published_at | type == "string" and length > 0)' >/dev/null
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
         with:
           enable-cache: false
           version-file: uv.toml
       - run: uv sync --all-extras --frozen
       - name: Enforce live-model release readiness
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/mcp-server-v')
+        if: github.event_name == 'release'
         run: uv run --all-extras python scripts/check_live_model_release_policy.py --require-ready release --ref HEAD
       - run: uv build
       - run: uv run --all-extras python scripts/check_package_metadata.py
-      - name: Verify release tag matches package version
-        if: github.event_name == 'push'
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          version="$(uv run --frozen python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
-          test "$RELEASE_TAG" = "mcp-server-v${version}"
       - name: Generate Python release evidence
         shell: bash
         run: |
@@ -88,7 +106,7 @@ jobs:
       # Recovery may build from an older tag. Run the safety helper from the
       # exact workflow revision, not the historical package checkout.
       - name: Load reviewed release attachment helper
-        if: github.event_name == 'push'
+        if: github.event_name == 'release'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.workflow_sha }}
@@ -97,11 +115,11 @@ jobs:
           persist-credentials: false
 
       - name: Attach Python evidence to GitHub Release
-        if: github.event_name == 'push'
+        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
           PYTHONPATH: ${{ github.workspace }}/.release-tools
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           set -euo pipefail
           upload_dir="release-assets/upload/kicad-mcp-pro-python"
@@ -111,18 +129,10 @@ jobs:
           cp release-evidence/SHA256SUMS.txt "$upload_dir/kicad-mcp-pro-python-SHA256SUMS.txt"
           cp release-evidence/sbom.cdx.json "$upload_dir/kicad-mcp-pro-python-sbom.cdx.json"
           cp release-evidence/release-evidence.json "$upload_dir/kicad-mcp-pro-python-release-evidence.json"
-          for attempt in $(seq 1 18); do
-            if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-              python3 -P -m scripts.attach_published_release_assets \
-                --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
-                --source-commit "$(git rev-parse HEAD)" --source-root "$GITHUB_WORKSPACE" \
-                --execute "$upload_dir"/*
-              exit 0
-            fi
-            if [ "$attempt" -lt 18 ]; then sleep 10; fi
-          done
-          echo "GitHub Release $RELEASE_TAG was not available for evidence upload." >&2
-          exit 1
+          python3 -P -m scripts.attach_published_release_assets \
+            --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
+            --source-commit "$(git rev-parse HEAD)" --source-root "$GITHUB_WORKSPACE" \
+            --execute "$upload_dir"/*
 
   publish-testpypi:
     if: (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
@@ -192,8 +202,8 @@ jobs:
   publish-pypi:
     if: >-
       (github.repository_owner == 'oaslananka' || github.repository_owner == 'oaslananka-ops') &&
-      github.event_name == 'push' &&
-      startsWith(github.ref, 'refs/tags/mcp-server-v')
+      github.event_name == 'release' && github.event.release.draft == false &&
+      startsWith(github.event.release.tag_name, 'mcp-server-v')
     needs: build
     runs-on: ubuntu-24.04
     environment:

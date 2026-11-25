@@ -30,7 +30,7 @@ failed CI runs, cancelled/skipped aggregate gates, fork-originated CI and daily
 release preparation cannot start publication. The publish-capable GitHub App
 token is minted **only after** this verification.
 
-The existing tag/release-triggered workflows then publish the respective
+The existing published-release-triggered workflows then publish the respective
 packages and verify the usual checksums, SBOMs, provenance, and attestations.
 This keeps protected PR review and CI as the publication approval boundary;
 merging a release PR is an intentional authorization to publish once those

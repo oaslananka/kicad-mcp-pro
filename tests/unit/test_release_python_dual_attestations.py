@@ -15,7 +15,8 @@ def _job() -> dict:
     data = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     assert isinstance(data, dict)
     assert data[True]["workflow_dispatch"] is None
-    assert data[True]["push"]["tags"] == ["mcp-server-v*"]
+    assert data[True]["release"]["types"] == ["published"]
+    assert "push" not in data[True]
     return data["jobs"]["build"]
 
 
@@ -49,7 +50,7 @@ def test_slsa_and_cyclonedx_are_independent_signed_steps_before_upload() -> None
     assert job["permissions"]["artifact-metadata"] == "write"
 
 
-def test_existing_publishing_and_backfill_paths_unchanged() -> None:
+def test_published_release_attachment_retains_dual_attestations() -> None:
     job = _job()
     steps = job["steps"]
     names = [s.get("name") for s in steps]
@@ -58,7 +59,7 @@ def test_existing_publishing_and_backfill_paths_unchanged() -> None:
     )
     assert any(
         s.get("name") == "Attach Python evidence to GitHub Release"
-        and s["if"] == "github.event_name == 'push'"
+        and s["if"] == "github.event_name == 'release'"
         for s in steps
     )
     assert any(s.get("name") == "Attest Python distributions" for s in steps)
