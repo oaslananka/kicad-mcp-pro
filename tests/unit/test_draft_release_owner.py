@@ -260,23 +260,26 @@ def test_unrecognized_repository_has_no_default_owner_authorization() -> None:
 def test_unprotected_release_tag_is_rejected(field: str, value: object) -> None:
     client = FakeOwnerClient()
     client.ruleset[field] = value
+    args = _args()
     with pytest.raises(ValueError, match="tag protection"):
-        verify_owner(client, **_args())
+        verify_owner(client, **args)
 
 
 def test_missing_bypass_visibility_is_not_empty_bypass() -> None:
     client = FakeOwnerClient()
     del client.ruleset["bypass_actors"]
+    args = _args()
     with pytest.raises(ValueError, match="tag protection"):
-        verify_owner(client, **_args())
+        verify_owner(client, **args)
 
 
 @pytest.mark.parametrize("field", ["actor", "triggering_actor"])
 def test_owner_login_cannot_substitute_for_numeric_identity(field: str) -> None:
     client = FakeOwnerClient()
     client.run_data[field]["id"] = 1
+    args = _args()
     with pytest.raises(ValueError, match="workflow run"):
-        verify_owner(client, **_args())
+        verify_owner(client, **args)
 
 
 def test_unsupported_release_tag_is_rejected() -> None:
@@ -290,13 +293,15 @@ def test_unsupported_release_tag_is_rejected() -> None:
 def test_numeric_identity_rejects_non_integer(field: str) -> None:
     client = FakeOwnerClient()
     client.run_data[field]["id"] = float(client.run_data[field]["id"])
+    args = _args()
     with pytest.raises(ValueError, match="workflow run"):
-        verify_owner(client, **_args())
+        verify_owner(client, **args)
 
 
 @pytest.mark.parametrize("field", ["repository", "head_repository"])
 def test_repository_name_cannot_substitute_for_numeric_identity(field: str) -> None:
     client = FakeOwnerClient()
     client.run_data[field]["id"] = 1
+    args = _args()
     with pytest.raises(ValueError, match="workflow run"):
-        verify_owner(client, **_args())
+        verify_owner(client, **args)
