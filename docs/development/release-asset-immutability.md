@@ -476,6 +476,19 @@ non-main or completed owner runs, published Releases, and changed tags.
 Only an **active manual dispatch of `publish-release.yml` on main** can
 qualify; current production release dispatches and workflows are unchanged.
 
+The preflight also binds the numeric owner and repository identities and
+reads the reviewed repository `release-tags` ruleset by numeric ID. It
+requires active tag update/deletion protection, exact coverage of the four
+stable release families, no exclusions, and an explicitly empty bypass
+list. A missing bypass list is not evidence of no bypass. GitHub exposes
+that field only to callers with ruleset write access
+([REST ruleset reference](https://docs.github.com/en/rest/repos/rules#get-a-repository-ruleset)).
+This read-only maintainer diagnostic fails closed for restricted credentials;
+do not grant a publishing worker ruleset write access to make it pass.
+Replacing the ruleset or changing its coverage requires a reviewed update
+to the pinned policy. This observation cannot prevent subsequent ruleset
+changes and does not prove the tag's creation provenance.
+
 **Identity is not a lock.** A validated owner run could still race with
 another writer or a late publication. The result intentionally reports
 `exclusiveWriterVerified: false` and `publicationAuthorized: false`.
@@ -572,7 +585,8 @@ independently pinned manifest by verify(...). It verifies the active
 owner run and matching draft/tag identity a second time after the downloads,
 so a detected mid-verification publication or owner change fails closed.
 
-Run this from a trusted active owner job, with protected owner inputs:
+Run this with trusted active owner inputs and a maintainer credential that
+can read the complete ruleset. It is not yet a production worker gate:
 
     python -m scripts.check_draft_release_owner_readiness \
       --manifest "$MANIFEST" --manifest-sha256 "$OWNER_PIN" \
@@ -584,7 +598,7 @@ Run this from a trusted active owner job, with protected owner inputs:
 
 Only gh api GET and authenticated asset download operations are used by
 this command. A successful result reports exact asset role and read-back
-integrity plus owner identity. It explicitly reports false for
+integrity plus owner identity and observed tag protection. It explicitly reports false for
 exclusiveWriterVerified, registriesVerified, attestationsVerified, and
 publicationAuthorized. Repeated reads cannot prove lock ownership or prevent
 races after the final read. The owner must acquire/reuse a single workflow-level

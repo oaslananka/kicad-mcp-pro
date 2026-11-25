@@ -22,12 +22,12 @@ class FakeOwnerClient:
         self.run_data: dict[str, Any] = {
             "id": RUN,
             "url": f"https://api.github.com/repos/{REPO}/actions/runs/{RUN}",
-            "repository": {"full_name": REPO},
-            "head_repository": {"full_name": REPO},
+            "repository": {"full_name": REPO, "id": 1255527274},
+            "head_repository": {"full_name": REPO, "id": 1255527274},
             "path": ".github/workflows/publish-release.yml",
             "event": "workflow_dispatch",
-            "actor": {"login": "oaslananka"},
-            "triggering_actor": {"login": "oaslananka"},
+            "actor": {"login": "oaslananka", "id": 285490571},
+            "triggering_actor": {"login": "oaslananka", "id": 285490571},
             "head_branch": "main",
             "head_sha": HEAD,
             "run_attempt": 2,
@@ -41,6 +41,27 @@ class FakeOwnerClient:
             "draft": True,
             "published_at": None,
             "assets": [],
+        }
+        self.ruleset = {
+            "id": 24511858,
+            "name": "release-tags",
+            "source_type": "Repository",
+            "source": REPO,
+            "target": "tag",
+            "enforcement": "active",
+            "bypass_actors": [],
+            "conditions": {
+                "ref_name": {
+                    "include": [
+                        "refs/tags/mcp-server-v*",
+                        "refs/tags/mcp-npm-v*",
+                        "refs/tags/protocol-schemas-v*",
+                        "refs/tags/kicad-mcp-gui-v*",
+                    ],
+                    "exclude": [],
+                }
+            },
+            "rules": [{"type": "deletion"}, {"type": "update"}],
         }
         self.tag_sha = SOURCE
         self.calls: list[str] = []
@@ -56,6 +77,10 @@ class FakeOwnerClient:
         assert repo == REPO
         assert release_id == RELEASE
         return copy.deepcopy(self.release_data)
+
+    def tag_ruleset(self, repo: str) -> dict[str, Any]:
+        assert repo == REPO
+        return copy.deepcopy(self.ruleset)
 
     def tag_commit(self, repo: str, tag: str) -> str:
         self.calls.append("tag")
@@ -80,6 +105,7 @@ def test_valid_read_only_owner_preflight() -> None:
     client = FakeOwnerClient()
     result = verify_owner(client, **_args())
     assert result["identityVerified"] is True
+    assert result["tagProtectionVerified"] is True
     assert result["releaseId"] == RELEASE
     assert result["ownerRunAttempt"] == 2
     assert result["exclusiveWriterVerified"] is False
@@ -207,3 +233,70 @@ def test_unrecognized_repository_has_no_default_owner_authorization() -> None:
     with pytest.raises(ValueError, match="trusted owner"):
         verify_owner(client, **args)
     assert client.calls == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("id", 1),
+        ("source", "foreign/repo"),
+        ("target", "branch"),
+        ("enforcement", "evaluate"),
+        ("bypass_actors", [{"actor_id": 1}]),
+        ("bypass_actors", None),
+        ("conditions", {"ref_name": {"include": ["refs/tags/other-v*"], "exclude": []}}),
+        (
+            "conditions",
+            {
+                "ref_name": {
+                    "include": ["refs/tags/mcp-server-v*"],
+                    "exclude": ["refs/tags/mcp-server-v4.4.0"],
+                }
+            },
+        ),
+        ("rules", [{"type": "deletion"}]),
+    ],
+)
+def test_unprotected_release_tag_is_rejected(field: str, value: object) -> None:
+    client = FakeOwnerClient()
+    client.ruleset[field] = value
+    with pytest.raises(ValueError, match="tag protection"):
+        verify_owner(client, **_args())
+
+
+def test_missing_bypass_visibility_is_not_empty_bypass() -> None:
+    client = FakeOwnerClient()
+    del client.ruleset["bypass_actors"]
+    with pytest.raises(ValueError, match="tag protection"):
+        verify_owner(client, **_args())
+
+
+@pytest.mark.parametrize("field", ["actor", "triggering_actor"])
+def test_owner_login_cannot_substitute_for_numeric_identity(field: str) -> None:
+    client = FakeOwnerClient()
+    client.run_data[field]["id"] = 1
+    with pytest.raises(ValueError, match="workflow run"):
+        verify_owner(client, **_args())
+
+
+def test_unsupported_release_tag_is_rejected() -> None:
+    client = FakeOwnerClient()
+    args = {**_args(), "tag": "unprotected-v4.4.0"}
+    with pytest.raises(ValueError, match="tag"):
+        verify_owner(client, **args)
+
+
+@pytest.mark.parametrize("field", ["repository", "head_repository", "actor", "triggering_actor"])
+def test_numeric_identity_rejects_non_integer(field: str) -> None:
+    client = FakeOwnerClient()
+    client.run_data[field]["id"] = float(client.run_data[field]["id"])
+    with pytest.raises(ValueError, match="workflow run"):
+        verify_owner(client, **_args())
+
+
+@pytest.mark.parametrize("field", ["repository", "head_repository"])
+def test_repository_name_cannot_substitute_for_numeric_identity(field: str) -> None:
+    client = FakeOwnerClient()
+    client.run_data[field]["id"] = 1
+    with pytest.raises(ValueError, match="workflow run"):
+        verify_owner(client, **_args())
