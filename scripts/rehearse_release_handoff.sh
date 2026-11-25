@@ -18,7 +18,8 @@ positive_id() { [[ "$1" =~ ^[1-9][0-9]{0,14}$ ]]; }
 [[ "$GITHUB_REPOSITORY" == "$repo" && "$GITHUB_REF" == refs/heads/main ]] || fail 'wrong repository or ref'
 [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]] || fail 'wrong event or SHA'
 [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]] || fail 'wrong checkout'
-positive_id "$GITHUB_RUN_ID" && positive_id "$GITHUB_RUN_ATTEMPT" || fail 'invalid run identity'
+positive_id "$GITHUB_RUN_ID" || fail 'invalid run ID'
+positive_id "$GITHUB_RUN_ATTEMPT" || fail 'invalid run attempt'
 digest="$(sha256sum server.json | cut -d' ' -f1)"
 
 verify_run() {
@@ -52,9 +53,15 @@ case "$1" in
     worker)
         [[ "$GITHUB_ACTOR" == 'github-actions[bot]' && "$GITHUB_TRIGGERING_ACTOR" == 'github-actions[bot]' && "$GITHUB_ACTOR_ID" == "$worker_actor_id" ]] || fail 'not dispatched by Actions'
         [[ "$GITHUB_RUN_ATTEMPT" == 1 ]] || fail 'worker reruns are not accepted'
-        positive_id "$OWNER_RUN_ID" && positive_id "$OWNER_ATTEMPT" || fail 'invalid owner identity'
+        # No dispatch parameters. Resolve the one active serialized rehearsal
+        # owner for this exact main commit; ambiguity denies the handoff.
+        owner="$(api "$root/workflows/release-handoff-rehearsal.yml/runs?branch=main&event=workflow_dispatch&status=in_progress&head_sha=$GITHUB_SHA&per_page=100" |
+            jq -ce 'select(.total_count == 1 and (.workflow_runs|length) == 1) | .workflow_runs[0]')"
+        OWNER_RUN_ID="$(jq -er '.id|tostring' <<<"$owner")"
+        OWNER_ATTEMPT="$(jq -er '.run_attempt|tostring' <<<"$owner")"
+        positive_id "$OWNER_RUN_ID" || fail 'invalid owner run ID'
+        positive_id "$OWNER_ATTEMPT" || fail 'invalid owner attempt'
         [[ "$OWNER_RUN_ID" != "$GITHUB_RUN_ID" ]] || fail 'self handoff'
-        [[ "$SOURCE_COMMIT" == "$GITHUB_SHA" && "$MANIFEST_DIGEST" == "$digest" ]] || fail 'source or digest mismatch'
         verify_run "$OWNER_RUN_ID" "$OWNER_ATTEMPT" "$owner_path" oaslananka in_progress "$owner_actor_id"
         verify_run "$GITHUB_RUN_ID" 1 "$worker_path" 'github-actions[bot]' in_progress "$worker_actor_id"
         receipt "$GITHUB_RUN_ID" > handoff-receipt.json
@@ -66,12 +73,11 @@ case "$1" in
         verify_run "$OWNER_RUN_ID" "$OWNER_ATTEMPT" "$owner_path" oaslananka in_progress "$owner_actor_id"
         # New versioned API returns the actual child run ID. Never retry a dispatch
         # with an ambiguous response, and never guess a run using a name/time search.
-        child="$(jq -n --arg owner "$OWNER_RUN_ID" --arg attempt "$OWNER_ATTEMPT" \
-            --arg sha "$GITHUB_SHA" --arg digest "$digest" \
-            '{ref:"main", inputs:{owner_run_id:$owner,owner_attempt:$attempt,source_commit:$sha,manifest_digest:$digest}}' |
+        child="$(printf '%s\n' '{"ref":"main"}' |
             api -X POST "$root/workflows/release-handoff-worker.yml/dispatches" --input - |
             jq -er '.workflow_run_id | select(type == "number" and . > 0 and floor == .) | tostring')"
-        positive_id "$child" && [[ "$child" != "$OWNER_RUN_ID" ]] || fail 'invalid dispatched run ID'
+        positive_id "$child" || fail 'invalid dispatched run ID'
+        [[ "$child" != "$OWNER_RUN_ID" ]] || fail 'self handoff'
         printf 'Dispatched worker run %s\n' "$child"
         # A bounded wait; failure, cancellation, missing identity or timeout fails closed.
         completed=false

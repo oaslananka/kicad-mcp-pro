@@ -1040,6 +1040,8 @@ jobs:
           "$GOBIN/actionlint" -version | grep -F '1.7.12'
           echo "$GOBIN" >> "$GITHUB_PATH"
       - run: uv run --all-extras python scripts/check_workflows.py --actionlint
+      - name: Test non-publishing release handoff
+        run: uv run --all-extras bash scripts/ci/test_release_handoff.sh
       - name: Test native Windows coverage wait behavior
         run: uv run --all-extras bash scripts/ci/test_windows_coverage_wait.sh
       - name: Test native Windows coverage download integrity and retries

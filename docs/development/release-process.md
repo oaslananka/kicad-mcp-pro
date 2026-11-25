@@ -77,8 +77,10 @@ can manually run **Release handoff rehearsal (non-publishing)** on main.
 The single serialized rehearsal job dispatches exactly one separate,
 top-level worker using the versioned GitHub API, and waits at most five
 minutes for that returned run ID. It does not discover a child by name
-or time. The worker verifies the active owner run and attempt, the exact
-main commit and source manifest digest, and its own bot identity. The
+or time. The worker accepts no dispatch inputs. It resolves exactly one active
+serialized rehearsal owner for its own main commit, verifies that run and
+attempt and its own bot identity, and computes the source manifest digest.
+The
 owner validates the completed child run, numeric artifact ID, archive
 size and SHA-256, and exact receipt bytes. Missing, stale, duplicate,
 failed or conflicting evidence fails closed.
