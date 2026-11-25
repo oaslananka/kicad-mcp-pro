@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -213,7 +212,7 @@ def main() -> int:
                 manifest_sha256=args.manifest_sha256,
             )
             print(json.dumps(result, indent=2, sort_keys=True))
-    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+    except (OSError, ValueError) as exc:
         parser.exit(2, f"signed Python handoff: FAIL: {exc}\n")
     return 0
 
