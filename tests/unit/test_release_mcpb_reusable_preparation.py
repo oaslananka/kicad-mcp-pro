@@ -78,7 +78,8 @@ def test_mcpb_prepare_attests_but_does_not_attach_to_release() -> None:
     assert any(s.get("name") == "Store MCPB release evidence" for s in steps)
     assert "gh release" not in WORKFLOW.read_text(encoding="utf-8")
     assert "npm publish" not in WORKFLOW.read_text(encoding="utf-8")
-    assert "gh release upload" in LEGACY.read_text(encoding="utf-8")
+    assert "scripts.attach_published_release_assets" not in WORKFLOW.read_text(encoding="utf-8")
+    assert "scripts.attach_published_release_assets" in LEGACY.read_text(encoding="utf-8")
 
 
 def test_mcpb_tag_resolution_and_release_source_agree() -> None:

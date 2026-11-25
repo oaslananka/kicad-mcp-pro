@@ -28,18 +28,19 @@ Today the repository publishes first and attaches assets afterwards:
    released component before any asset exists.
 2. The tag push and the `release: published` event then start the per-family
    publishers.
-3. Each publisher builds, attests and verifies its artifacts and runs
-   `gh release upload ... --clobber` against the **already published**
-   release. `--clobber` replaces any existing asset with the same name.
+3. Each active publisher builds, attests and verifies its artifacts, then
+   attaches missing assets to the already published release. The reviewed
+   shared helper verifies existing target asset bytes and IDs before writing,
+   never replaces an asset, and independently verifies completed uploads.
 
-With immutability enabled, step 3 would fail for every family. A publisher
-that re-ran (recovery or backfill) would also be rejected, because it relies
-on `--clobber` to overwrite assets.
+With immutability enabled, step 3 still fails whenever an asset is missing.
+The former --clobber recovery behavior is removed from active upload steps;
+a conflicting rebuilt artifact must not replace published bytes.
 
 ## Release families
 
 Tag prefixes come from `release-please-config.json`. Release Please links the
-versions of `mcp-server`, `mcp-npm` and `kicad-mcp-gui` (`linked-versions`
+versions of `mcp-server` and `mcp-npm` (`linked-versions`
 plugin). `protocol-schemas` is versioned on its own.
 
 | Family | Tag prefix | Release created by | Publisher workflows and trigger |
@@ -47,7 +48,7 @@ plugin). `protocol-schemas` is versioned on its own.
 | MCP server (Python, MCPB, KiCad PCM, container, MCP Registry) | `mcp-server-v` | `publish-release.yml` (Release Please) | `publish-python.yml` (`push: tags mcp-server-v*`); `publish-mcpb.yml`, `publish-kicad-pcm.yml`, `publish-mcp-container.yml`, `publish-mcp-registry.yml`, `release.yml` (`release: published`); each also has `workflow_dispatch` recovery |
 | npm launcher | `mcp-npm-v` | `publish-release.yml` (Release Please) | `publish-npm.yml` (`release: published`, `workflow_dispatch` backfill) |
 | Protocol schemas | `protocol-schemas-v` | `publish-release.yml` (Release Please) | `publish-protocol-schemas.yml` (`release: published`, `workflow_dispatch` backfill) |
-| Desktop GUI | `kicad-mcp-gui-v` | `publish-release.yml` (Release Please), **or** `gui-release.yml` if the release does not exist yet | `gui-release.yml` (`push: tags kicad-mcp-gui-v*`, `workflow_dispatch`) |
+| Desktop GUI (retired; historical) | `kicad-mcp-gui-v` | Historical Release Please / `gui-release.yml` | Retired Tauri workflow; no active publisher |
 
 The `release: published` workflows are started by the Release Please run
 because it uses the release-automation GitHub App token, not `GITHUB_TOKEN`.
@@ -60,14 +61,16 @@ keys entries by workflow, job and step name, not by line number.
 | Workflow : job | Step | Required assets | Command (line) | Timing relative to publication | `--clobber` | Registry or digest verification | Mutates a published release |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `publish-release.yml` : `publish` | Publish merged Release Please versions | none (creates tags and releases) | `googleapis/release-please-action`, `skip-github-release: false` (111-118) | creates the published release | n/a | n/a | **yes** (creates non-draft releases) |
-| `publish-python.yml` : `build` | Attach Python evidence to GitHub Release | wheel, sdist, `kicad-mcp-pro-python-SHA256SUMS.txt`, `kicad-mcp-pro-python-sbom.cdx.json`, `kicad-mcp-pro-python-release-evidence.json` | `gh release upload ... --clobber` (80-105; waits up to 18 x 10 s for the release; `push` events only) | after publication; before TestPyPI/PyPI publish | yes | `verify-pypi` and `verify-pypi-provenance` (153-165, 220-235); `actions/attest` (62-64) | **yes** |
-| `publish-npm.yml` : `publish` | Attach npm evidence to GitHub Release | launcher `.tgz`, `mcp-npm-SHA256SUMS.txt`, `mcp-npm-sbom.cdx.json` | `gh release upload ... --clobber` (115-126) | after publication; before `npm publish` | yes | `isDraft == false` source check (59); `actions/attest` (102-104) | **yes** |
-| `publish-npm.yml` : `publish` | Attach npm post-publish verification to GitHub Release | `npm-published-digest.json` | `gh release upload ... --clobber` (154-158) | after publication **and** after `npm publish` (140) | yes | `scripts/verify-npm-release.mjs` (144-153) | **yes** |
-| `publish-mcpb.yml` : `publish` | Attach MCPB bundle and evidence to GitHub Release | `kicad-mcp-pro-<version>.mcpb`, `kicad-mcp-pro-mcpb-SHA256SUMS.txt`, `kicad-mcp-pro-mcpb-release-evidence.json` | `gh release upload ... --clobber` (178-186) | after publication | yes | `targetCommitish` source check (86); `actions/attest` (164-166) | **yes** |
-| `publish-protocol-schemas.yml` : `publish` | Attach evidence to GitHub Release | schemas `.tgz`, `protocol-schemas-SHA256SUMS.txt`, `protocol-schemas-sbom.cdx.json` | `gh release upload ... --clobber` (111-122) | after publication; before `npm publish` (141) | yes | `isDraft == false` source check (59); `scripts/verify-npm-release.mjs` (144-153); `actions/attest` (99-100) | **yes** |
-| `publish-kicad-pcm.yml` : `publish` | Attach KiCad PCM package and evidence to GitHub Release | `kicad-mcp-pro-pcm-<version>.zip`, `kicad-mcp-pro-pcm-SHA256SUMS.txt`, PCM evidence | `gh release upload ... --clobber` (114-122) | after publication | yes | downloads the published zip and checks SHA256SUMS (124-150); `actions/attest` (100-102) | **yes** |
-| `gui-release.yml` : `create-release` | Prepare release inventory | none (creates the release) | `gh release create --verify-tag --generate-notes` when `gh release view` fails (161-163) | races with `publish-release.yml` | n/a | tag commit equals source commit (151-159) | **yes** (creates a non-draft release) |
-| `gui-release.yml` : `create-release` | Upload installers and evidence to GitHub Release | `.deb`, `.rpm`, `.AppImage`, `.dmg`, `.msi`, `.exe` installers, GUI SHA256SUMS, SBOM and release evidence | `gh release upload ... --clobber` (229-238) | after publication | yes | `verify-local` before (216-220); `verify-published` after download (240-253); `actions/attest` (222-227) | **yes** |
+| `publish-python.yml` : `build` | Attach Python evidence to GitHub Release | wheel, sdist, `kicad-mcp-pro-python-SHA256SUMS.txt`, `kicad-mcp-pro-python-sbom.cdx.json`, `kicad-mcp-pro-python-release-evidence.json` | `scripts.attach_published_release_assets --execute` | after publication; before TestPyPI/PyPI publish | no | `verify-pypi` and `verify-pypi-provenance` (153-165, 220-235); `actions/attest` (62-64) | **yes** |
+| `publish-npm.yml` : `publish` | Attach npm evidence to GitHub Release | launcher `.tgz`, `mcp-npm-SHA256SUMS.txt`, `mcp-npm-sbom.cdx.json` | `scripts.attach_published_release_assets --execute` | after publication; before `npm publish` | no | `isDraft == false` source check (59); `actions/attest` (102-104) | **yes** |
+| `publish-npm.yml` : `publish` | Attach npm post-publish verification to GitHub Release | `npm-published-digest.json` | `scripts.attach_published_release_assets --execute` | after publication **and** after `npm publish` (140) | no | `scripts/verify-npm-release.mjs` (144-153) | **yes** |
+| `publish-mcpb.yml` : `publish` | Attach MCPB bundle and evidence to GitHub Release | `kicad-mcp-pro-<version>.mcpb`, `kicad-mcp-pro-mcpb-SHA256SUMS.txt`, `kicad-mcp-pro-mcpb-release-evidence.json` | `scripts.attach_published_release_assets --execute` | after publication | no | `targetCommitish` source check (86); `actions/attest` (164-166) | **yes** |
+| `publish-protocol-schemas.yml` : `publish` | Attach evidence to GitHub Release | schemas `.tgz`, `protocol-schemas-SHA256SUMS.txt`, `protocol-schemas-sbom.cdx.json` | `scripts.attach_published_release_assets --execute` | after publication; before `npm publish` (141) | no | `isDraft == false` source check (59); `scripts/verify-npm-release.mjs` (144-153); `actions/attest` (99-100) | **yes** |
+| `publish-kicad-pcm.yml` : `publish` | Attach KiCad PCM package and evidence to GitHub Release | `kicad-mcp-pro-pcm-<version>.zip`, `kicad-mcp-pro-pcm-SHA256SUMS.txt`, PCM evidence | `scripts.attach_published_release_assets --execute` | after publication | no | downloads the published zip and checks SHA256SUMS (124-150); `actions/attest` (100-102) | **yes** |
+
+The two retired Tauri GUI mutation rows are historical only. The active
+ratchet retains seven entries: one release creation and six missing-only
+attachment steps. All six still count as post-publication mutations.
 
 Workflows that read a release but do not change it:
 
@@ -84,11 +87,39 @@ Workflows that read a release but do not change it:
 - `release-please.yml` runs Release Please with `skip-github-release: true`.
   It prepares the release PR only and creates no release.
 
+## Published-release recovery without replacement
+
+The six active attachment steps invoke the same Python module from a separate
+read-only checkout of the exact workflow revision. That checkout is important
+for a manual recovery from an older package tag: the reviewed upload policy
+must not silently revert to the historical script. Package inputs still come
+from the exact protected tag/source checkout.
+
+The helper validates the repository, published Release ID, protected tag SHA,
+local nonempty regular files, and all existing target names and asset IDs.
+It compares GitHub metadata and independently downloads existing bytes by ID
+before the first write. Unrelated family assets are left alone. Missing files
+are uploaded by numeric Release ID without clobber; the helper rechecks live
+state before each upload and independently downloads the completed target set.
+A name collision or changed existing bytes stops the operation. A complete
+byte-identical retry makes no upload. An interrupted upload can resume from the
+same reviewed original bytes. Freshly regenerated SBOM/evidence may differ
+(for example, because of timestamps or producer-run IDs); use the original
+retained build artifacts for a recovery rather than overwriting history.
+
+The default CLI is read-only; only trusted publisher/recovery workflows use
+`--execute`. There is no delete, replacement, Release creation or publish
+operation. Concurrent legacy writers are still possible, so these checks are
+not proof of an exclusive owner lock. Registry publication, attestation
+acceptance, draft-first ordering and the immutable setting remain separate
+#1179 acceptance requirements.
+
 ## Ratchet: `scripts/check_release_asset_mutations.py`
 
 The checker loads every workflow and walks each job's steps in order. It
 records each step that:
 
+- invokes the reviewed missing-only attachment module (conservatively classified as a published upload even in read-only mode);
 - runs `gh release create`, `upload`, `edit`, `delete` or `delete-asset`;
 - runs `gh api` with a write method (`POST`, `PATCH`, `PUT`, `DELETE`, or
   implied by `-f`/`-F`/`--input`) on a `releases` path;
@@ -459,7 +490,7 @@ Registry preparers:
 | Opt-in preparer | Accepted Actions artifact roles | Required verified job |
 | --- | --- | --- |
 | npm launcher | `npm-draft-release-evidence` | `npm / prepare` |
-| Desktop GUI | `gui-draft-installers`, `gui-draft-evidence` | `gui / attest-and-store` |
+| Desktop GUI (historical preparer) | `gui-draft-installers`, `gui-draft-evidence` | `gui / attest-and-store` |
 | Container | `container-build-source-evidence` | `container / prepare` |
 | MCP Registry | `mcp-registry-draft-evidence` | `registry / prepare` |
 

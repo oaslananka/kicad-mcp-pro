@@ -324,6 +324,12 @@ def _classify_segment(segment: str) -> _Match | None:
         return _classify_gh_api(tokens[2:], segment)
     if program == "curl":
         return _classify_curl(tokens[1:], segment)
+    # Keep the missing-only helper visible as a legacy mutation.
+    if program in {"python", "python3"} and any(
+        (a, b) == ("-m", "scripts.attach_published_release_assets")
+        for a, b in zip(tokens[1:], tokens[2:], strict=False)
+    ):
+        return _Match("upload_asset", False, None, segment)
     return None
 
 

@@ -869,7 +869,9 @@ def test_mcpb_release_workflow_attaches_attested_versioned_bundle() -> None:
     assert '"sourceCommit": os.environ["GITHUB_SHA"]' not in workflow
     assert has_sha_pinned_action(workflow, "actions/attest")
     assert "subject-checksums: release-assets/mcpb/kicad-mcp-pro-mcpb-SHA256SUMS.txt" in workflow
-    assert 'gh release upload "$release_tag" release-assets/mcpb/* --clobber' in workflow
+    assert "scripts.attach_published_release_assets" in workflow
+    assert "--execute release-assets/mcpb/*" in workflow
+    assert 'gh release upload "$release_tag"' not in workflow
     assert "attestations: write" in workflow
     assert "artifact-metadata: write" in workflow
     assert "contents: write" in workflow

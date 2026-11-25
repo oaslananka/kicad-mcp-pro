@@ -64,36 +64,36 @@ EXPECTED_REPOSITORY_INVENTORY = {
         "publish",
         "Attach KiCad PCM package and evidence to GitHub Release",
         "upload_asset",
-        True,
+        False,
     ),
     (
         "publish-mcpb.yml",
         "publish",
         "Attach MCPB bundle and evidence to GitHub Release",
         "upload_asset",
-        True,
+        False,
     ),
-    ("publish-npm.yml", "publish", "Attach npm evidence to GitHub Release", "upload_asset", True),
+    ("publish-npm.yml", "publish", "Attach npm evidence to GitHub Release", "upload_asset", False),
     (
         "publish-npm.yml",
         "publish",
         "Attach npm post-publish verification to GitHub Release",
         "upload_asset",
-        True,
+        False,
     ),
     (
         "publish-protocol-schemas.yml",
         "publish",
         "Attach evidence to GitHub Release",
         "upload_asset",
-        True,
+        False,
     ),
     (
         "publish-python.yml",
         "build",
         "Attach Python evidence to GitHub Release",
         "upload_asset",
-        True,
+        False,
     ),
     (
         "publish-release.yml",
@@ -1018,3 +1018,17 @@ def test_matching_literal_tag_upload_allowed_but_wrong_tag_closes_window(
         "published",
     ]
     assert len(validate(entries, [])) == 2
+
+
+def test_missing_only_helper_is_still_a_publish_mutation(tmp_path: Path) -> None:
+    _write_workflow(
+        tmp_path,
+        _single_step_workflow(
+            'python3 -P -m scripts.attach_published_release_assets --execute "$FILE"'
+        ),
+    )
+    entries = inventory(tmp_path)
+    assert [(entry.kind, entry.clobber, entry.target_state) for entry in entries] == [
+        ("upload_asset", False, "published")
+    ]
+    assert validate(entries, [])

@@ -79,7 +79,8 @@ def test_pcm_preparation_attests_but_never_reads_or_mutates_release() -> None:
     assert "gh release" not in WORKFLOW.read_text(encoding="utf-8")
     assert "npm publish" not in WORKFLOW.read_text(encoding="utf-8")
     assert all("gh release" not in step.get("run", "") for step in steps)
-    assert "gh release upload" in LEGACY.read_text(encoding="utf-8")
+    assert "scripts.attach_published_release_assets" not in WORKFLOW.read_text(encoding="utf-8")
+    assert "scripts.attach_published_release_assets" in LEGACY.read_text(encoding="utf-8")
 
 
 def _simulate_source_step(

@@ -85,10 +85,22 @@ jobs:
           name: python-release-evidence
           path: release-evidence
           retention-days: 14
+      # Recovery may build from an older tag. Run the safety helper from the
+      # exact workflow revision, not the historical package checkout.
+      - name: Load reviewed release attachment helper
+        if: github.event_name == 'push'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+          sparse-checkout: scripts
+          persist-credentials: false
+
       - name: Attach Python evidence to GitHub Release
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
+          PYTHONPATH: ${{ github.workspace }}/.release-tools
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
@@ -101,9 +113,10 @@ jobs:
           cp release-evidence/release-evidence.json "$upload_dir/kicad-mcp-pro-python-release-evidence.json"
           for attempt in $(seq 1 18); do
             if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-              gh release upload "$RELEASE_TAG" \
-                "$upload_dir"/* \
-                --clobber
+              python3 -P -m scripts.attach_published_release_assets \
+                --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
+                --source-commit "$(git rev-parse HEAD)" --source-root "$GITHUB_WORKSPACE" \
+                --execute "$upload_dir"/*
               exit 0
             fi
             if [ "$attempt" -lt 18 ]; then sleep 10; fi
