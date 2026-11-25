@@ -70,6 +70,36 @@ owner workflow remains active until the separately reviewed and fully
 accepted draft-first cutover. Do not replay previously published v4.7.0 tags
 to exercise this migration.
 
+### Registry worker handoff rehearsal (#1179)
+
+After the reviewed rehearsal workflows reach main, an authorized maintainer
+can manually run **Release handoff rehearsal (non-publishing)** on main.
+The single serialized rehearsal job dispatches exactly one separate,
+top-level worker using the versioned GitHub API, and waits at most five
+minutes for that returned run ID. It does not discover a child by name
+or time. The worker accepts no dispatch inputs. It resolves exactly one active
+serialized rehearsal owner for its own main commit, verifies that run and
+attempt and its own bot identity, and computes the source manifest digest.
+The
+owner validates the completed child run, numeric artifact ID, archive
+size and SHA-256, and exact receipt bytes. Missing, stale, duplicate,
+failed or conflicting evidence fails closed.
+
+Only the dispatch job has Actions write permission; the worker has Actions
+and contents read permission. The Actions write scope is needed for the
+fixed dispatch endpoint, not a capability restricted by GitHub to that
+endpoint. Neither job receives a production publishing environment,
+OIDC, contents write or packages write permission. The receipt has
+three-day retention and explicitly denies publication authorization
+and exclusive-writer proof. A cancelled or failed rehearsal must not be
+treated as an accepted handoff; rerun the owner rather than the worker.
+
+This tests the dispatch/receipt transport using the main source manifest,
+not protected-tag registry authentication, package provenance, draft
+creation, exclusive production ownership or immutable publication. The
+existing release producers and publishers remain unchanged. A live run
+is required before claiming transport acceptance.
+
 For recovery only, an authorized maintainer can still use **Actions → Publish
 Release → Run workflow**, selecting `main`. The automatic and manual paths
 share a serialized concurrency group; Release Please's released-version

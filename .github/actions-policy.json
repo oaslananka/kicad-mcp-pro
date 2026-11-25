@@ -31,6 +31,11 @@
     "SonarSource/sonarqube-scan-action"
   ],
   "workflow_write_permissions": {
+    "release-handoff-rehearsal.yml": {
+      "handoff": [
+        "actions"
+      ]
+    },
     "auto-assign.yml": {
       "assign": [
         "issues"
