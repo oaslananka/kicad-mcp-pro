@@ -10,6 +10,8 @@ import argparse
 import json
 import re
 import shutil
+from collections.abc import Callable
+from functools import partial
 from os.path import basename
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -143,6 +145,29 @@ def _read_target(
     return release, _target_assets(release, approved)
 
 
+def _upload_missing(
+    *,
+    read_target: Callable[[], tuple[dict[str, Any], dict[str, dict[str, Any]]]],
+    upload_asset: Callable[[Path], None],
+    staged: Path,
+    preserved: dict[str, int],
+    missing: list[str],
+) -> list[str]:
+    """Recheck the live inventory before each missing-only upload."""
+    uploaded: list[str] = []
+    for name in missing:
+        fresh, current = read_target()
+        if (
+            fresh["immutable"]
+            or {n: row["id"] for n, row in current.items() if n not in uploaded} != preserved
+            or set(current) != set(preserved) | set(uploaded)
+        ):
+            raise ValueError("release assets changed during backfill; rerun from reviewed bytes")
+        upload_asset(staged / basename(name))
+        uploaded.append(name)
+    return uploaded
+
+
 def attach(
     client: PublishedClient,
     *,
@@ -173,21 +198,15 @@ def attach(
         if execute:
             if missing and release["immutable"]:
                 raise ValueError("immutable release cannot receive missing assets")
-            for name in missing:
-                fresh, current = _read_target(
-                    client, repo, tag, source_commit, release_id, approved
-                )
-                if (
-                    fresh["immutable"]
-                    or {n: row["id"] for n, row in current.items() if n not in uploaded}
-                    != preserved
-                    or set(current) != set(preserved) | set(uploaded)
-                ):
-                    raise ValueError(
-                        "release assets changed during backfill; rerun from reviewed bytes"
-                    )
-                client.upload_asset(repo, release_id, staged / basename(name))
-                uploaded.append(name)
+            uploaded = _upload_missing(
+                read_target=partial(
+                    _read_target, client, repo, tag, source_commit, release_id, approved
+                ),
+                upload_asset=partial(client.upload_asset, repo, release_id),
+                staged=staged,
+                preserved=preserved,
+                missing=missing,
+            )
             _, final = _read_target(client, repo, tag, source_commit, release_id, approved)
             if set(final) != set(approved) or any(
                 final[n]["id"] != i for n, i in preserved.items()
