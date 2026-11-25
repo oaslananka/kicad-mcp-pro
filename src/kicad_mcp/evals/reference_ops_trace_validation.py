@@ -13,6 +13,7 @@ import stat as stat_module
 from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import datetime
+from os.path import basename
 from pathlib import Path
 from typing import Final, Literal
 
@@ -30,6 +31,19 @@ _MAX_EVENTS = 10_000
 _TRACE_ROOT = Path(__file__).resolve().parents[3] / ".dev-tools/reference-agent-runs"
 _TRACE_FILENAME: Final = "ops-mcp-trace.jsonl"
 _ERR_RESERVED_DIRECTORY: Final = "trace must be in its reserved private directory"
+_ALLOWED_FILENAMES = frozenset(
+    {
+        _TRACE_FILENAME,
+        "ops-client-observed.jsonl",
+        "codex-turn-events.jsonl",
+        "ops-gateway-audit.json",
+        "signed-gateway-witness.json",
+    }
+)
+# Windows device aliases and alternate streams are not portable directory names.
+_RESERVED_COMPONENT = re.compile(
+    r"(?:CON|PRN|AUX|NUL|COM\d|LPT\d)(?:\..*)?", re.ASCII | re.IGNORECASE
+)
 
 
 class ReferenceOpsTraceValidationError(ValueError):
@@ -47,17 +61,22 @@ class ReferenceOpsTraceSummary:
     board_id: str | None = None
 
 
-def _trace_parts(attempt_id: str, board_id: str | None) -> tuple[str, ...]:
+def _trace_parts(attempt_id: str, board_id: str | None) -> list[str]:
     """Use the maintained corpus namespace, or the legacy flat smoke namespace."""
-    if not re.fullmatch(REFERENCE_IDENTIFIER_PATTERN, attempt_id) or attempt_id in {".", ".."}:
+    if (
+        not re.fullmatch(REFERENCE_IDENTIFIER_PATTERN, attempt_id)
+        or ":" in attempt_id
+        or attempt_id.endswith(".")
+        or _RESERVED_COMPONENT.fullmatch(attempt_id)
+    ):
         raise ReferenceOpsTraceValidationError("invalid reference attempt identifier")
     if board_id is None:
-        return (attempt_id,)
+        return [attempt_id]
     if board_id not in _REVIEWED_BOARD_ROOTS or not re.fullmatch(
-        r"attempt-(?!000)[0-9]{3}", attempt_id
+        r"attempt-(?!000)\d{3}", attempt_id, flags=re.ASCII
     ):
         raise ReferenceOpsTraceValidationError(_ERR_RESERVED_DIRECTORY)
-    return (board_id, "v1", attempt_id)
+    return [board_id, "v1", attempt_id]
 
 
 def _redirected(path: Path) -> bool:
@@ -83,6 +102,8 @@ def _open_reserved_trace(
     *, root: Path, attempt_id: str, filename: str, board_id: str | None = None
 ) -> int:
     """Open fixed path components without following a replaced directory or file."""
+    if filename not in _ALLOWED_FILENAMES or not root.is_absolute():
+        raise ReferenceOpsTraceValidationError(_ERR_RESERVED_DIRECTORY)
     parts = _trace_parts(attempt_id, board_id)
     # Windows CRT defaults os.open to text mode; preserve exact byte lengths.
     flags = (
@@ -92,7 +113,7 @@ def _open_reserved_trace(
         | getattr(os, "O_NONBLOCK", 0)
     )
     if os.name == "nt":
-        expected = root.joinpath(*parts, filename)
+        expected = root.joinpath(*parts, basename(filename))
         if _redirected(expected) or any(
             _redirected(root.joinpath(*parts[:i])) for i in range(1, len(parts) + 1)
         ):
@@ -104,11 +125,15 @@ def _open_reserved_trace(
         directory_fd = os.open(root, directory_flags)
         stack.callback(os.close, directory_fd)
         for part in parts:
-            directory_fd = os.open(part, directory_flags, dir_fd=directory_fd)
+            # Recheck a single path component at the descriptor boundary. A
+            # dir_fd does not itself constrain absolute paths or parent traversal.
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", part):
+                raise ReferenceOpsTraceValidationError(_ERR_RESERVED_DIRECTORY)
+            directory_fd = os.open(basename(part), directory_flags, dir_fd=directory_fd)
             stack.callback(os.close, directory_fd)
         if os.fstat(directory_fd).st_mode & 0o077:
             raise ReferenceOpsTraceValidationError("trace directory must be private")
-        return os.open(filename, flags, dir_fd=directory_fd)
+        return os.open(basename(filename), flags, dir_fd=directory_fd)
 
 
 def _read_open_trace(fd: int, *, require_jsonl: bool = True) -> bytes:
@@ -159,14 +184,7 @@ def _load_trace(
         or not root.is_absolute()
         or _redirected(root)
         or _redirected(root.parent)
-        or filename
-        not in {
-            _TRACE_FILENAME,
-            "ops-client-observed.jsonl",
-            "codex-turn-events.jsonl",
-            "ops-gateway-audit.json",
-            "signed-gateway-witness.json",
-        }
+        or filename not in _ALLOWED_FILENAMES
     ):
         raise ReferenceOpsTraceValidationError(_ERR_RESERVED_DIRECTORY)
     fd = _open_reserved_trace(

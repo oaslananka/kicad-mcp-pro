@@ -421,3 +421,36 @@ def test_board_scope_rejects_noncanonical_attempt_identity(tmp_path: Path, attem
         validate_reference_ops_trace(
             path, attempt_id=attempt_id, phase_name="schematic", board_id="stm32f072-usbc"
         )
+
+
+@pytest.mark.parametrize(
+    "filename", ["../outside.jsonl", "absolute", "other.jsonl", "ops-mcp-trace.jsonl:other"]
+)
+def test_descriptor_boundary_rejects_unapproved_filenames(tmp_path: Path, filename: str) -> None:
+    path = _good_trace(tmp_path)
+    # A real neighboring file demonstrates why validation belongs at the open boundary.
+    outside = path.parent.parent / "outside.jsonl"
+    outside.write_bytes(path.read_bytes())
+    outside.chmod(0o600)
+    if filename == "absolute":
+        filename = str(outside)
+    with pytest.raises(ReferenceOpsTraceValidationError, match="reserved"):
+        fd = reference_ops_trace_validation._open_reserved_trace(
+            root=reference_ops_trace_validation._TRACE_ROOT,
+            attempt_id="attempt-004",
+            filename=filename,
+        )
+        os.close(fd)
+
+
+@pytest.mark.parametrize("attempt_id", ["attempt-004:alternate", "attempt-004.", "NUL", "COM1"])
+def test_descriptor_boundary_rejects_nonportable_attempt_components(
+    tmp_path: Path, attempt_id: str
+) -> None:
+    _good_trace(tmp_path)
+    with pytest.raises(ReferenceOpsTraceValidationError):
+        reference_ops_trace_validation._open_reserved_trace(
+            root=reference_ops_trace_validation._TRACE_ROOT,
+            attempt_id=attempt_id,
+            filename="ops-mcp-trace.jsonl",
+        )
