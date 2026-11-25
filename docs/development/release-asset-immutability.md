@@ -26,7 +26,7 @@ Today the repository publishes first and attaches assets afterwards:
    `release-please-config.json` sets no `draft` option, so Release Please
    creates the tag **and a published, non-draft GitHub Release** for each
    released component before any asset exists.
-2. The tag push and the `release: published` event then start the per-family
+2. The `release: published` event then starts the per-family
    publishers.
 3. Each active publisher builds, attests and verifies its artifacts, then
    attaches missing assets to the already published release. The reviewed
@@ -45,7 +45,7 @@ plugin). `protocol-schemas` is versioned on its own.
 
 | Family | Tag prefix | Release created by | Publisher workflows and trigger |
 | --- | --- | --- | --- |
-| MCP server (Python, MCPB, KiCad PCM, container, MCP Registry) | `mcp-server-v` | `publish-release.yml` (Release Please) | `publish-python.yml` (`push: tags mcp-server-v*`); `publish-mcpb.yml`, `publish-kicad-pcm.yml`, `publish-mcp-container.yml`, `publish-mcp-registry.yml`, `release.yml` (`release: published`); each also has `workflow_dispatch` recovery |
+| MCP server (Python, MCPB, KiCad PCM, container, MCP Registry) | `mcp-server-v` | `publish-release.yml` (Release Please) | `publish-python.yml`, `publish-mcpb.yml`, `publish-kicad-pcm.yml`, `publish-mcp-container.yml`, `publish-mcp-registry.yml`, `release.yml` (`release: published`); other publishers also have `workflow_dispatch` recovery; Python manual main dispatch is TestPyPI only |
 | npm launcher | `mcp-npm-v` | `publish-release.yml` (Release Please) | `publish-npm.yml` (`release: published`, `workflow_dispatch` backfill) |
 | Protocol schemas | `protocol-schemas-v` | `publish-release.yml` (Release Please) | `publish-protocol-schemas.yml` (`release: published`, `workflow_dispatch` backfill) |
 | Desktop GUI (retired; historical) | `kicad-mcp-gui-v` | Historical Release Please / `gui-release.yml` | Retired Tauri workflow; no active publisher |
@@ -86,6 +86,18 @@ Workflows that read a release but do not change it:
 - `release.yml` runs release validation only.
 - `release-please.yml` runs Release Please with `skip-github-release: true`.
   It prepares the release PR only and creates no release.
+
+## Python production trigger boundary
+
+A protected tag alone no longer triggers the Python publisher. The legacy
+production path now starts on the published release event, verifies the
+numeric Release ID, actual published state, exact tag, event and checkout
+commit, and package version before building or attaching evidence. The
+manual main workflow remains TestPyPI-only. The existing PyPI trusted
+publisher workflow filename, environment, OIDC and provenance checks are
+unchanged. This removes the tag-creation race in the legacy Python path,
+but does not authorize draft-first registry publication or remove the
+other autonomous published-release consumers.
 
 ## Published-release recovery without replacement
 

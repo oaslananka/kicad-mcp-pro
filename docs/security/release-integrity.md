@@ -11,7 +11,8 @@ Current target: **evidence-backed professional release integrity**. The project 
 Each release artifact class should provide the strongest evidence supported by its ecosystem: checksums, SBOMs, GitHub artifact attestations, package-registry provenance, container digests, and post-publish verification. A future formal level can be defined per artifact class after the evidence map is stable.
 
 Release assets are currently attached after the GitHub Release is published,
-so they can still be replaced. The per-family asset and upload map, and the
+so they are not yet immutable. Active publishers verify existing bytes and
+upload missing assets only. The per-family asset and upload map, and the
 ratchet that blocks new post-publication mutations, are documented in
 [Release asset immutability](../development/release-asset-immutability.md)
 (#1179).

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -22,7 +24,7 @@ def _workflow() -> dict:
     return config
 
 
-def test_exact_reusable_inputs_and_unchanged_legacy_events() -> None:
+def test_exact_reusable_inputs_and_published_legacy_events() -> None:
     wf = _workflow()
     on = wf[True]
     assert set(on["workflow_call"]["inputs"]) == {"tag", "source_commit"}
@@ -32,7 +34,8 @@ def test_exact_reusable_inputs_and_unchanged_legacy_events() -> None:
     assert set(on) == {"workflow_call"}
     previous = yaml.safe_load(LEGACY.read_text(encoding="utf-8"))[True]
     assert previous["workflow_dispatch"] is None
-    assert previous["push"]["tags"] == ["mcp-server-v*"]
+    assert previous["release"]["types"] == ["published"]
+    assert "push" not in previous
     assert "workflow_call" not in previous
 
 
@@ -108,6 +111,69 @@ def test_no_registry_or_github_release_writes_in_prepare_mode() -> None:
     assert next(s for s in build if s.get("name") == "Attest Python distributions")
 
 
+def _run_python_source_guard(
+    tmp_path: Path,
+    workflow: Path,
+    step_name: str,
+    variables: dict[str, str],
+    *,
+    version: str = "4.4.0",
+) -> tuple[int, str]:
+    """Exercise either reviewed workflow guard with no ambient credentials."""
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text(
+        f'[project]\nname = "kicad-mcp-pro"\nversion = "{version}"\n',
+        encoding="utf-8",
+    )
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    git = fake_bin / "git"
+    git.write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        '  "rev-parse HEAD") printf "%s\\n" "$MOCK_HEAD";;\n'
+        '  "rev-list -n 1 refs/tags/"*|"rev-list -n1 refs/tags/"*) '
+        'printf "%s\\n" "$MOCK_TAG_SOURCE";;\n'
+        "  *) exit 91;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    git.chmod(0o755)
+    gh = fake_bin / "gh"
+    gh.write_text(
+        '#!/bin/sh\n[ "$1" = api ] || exit 2\n'
+        '[ "$2" = "repos/oaslananka/kicad-mcp-pro/releases/42" ] || exit 2\n'
+        '[ "$API_FAILURE" != true ] || exit 1\n'
+        'printf \'{"id":%s,"tag_name":"%s","draft":%s,"published_at":%s}\\n\' '
+        '"$API_ID" "$API_TAG" "$API_DRAFT" "$API_PUBLISHED"\n',
+        encoding="utf-8",
+    )
+    gh.chmod(0o755)
+    (fake_bin / "python3").symlink_to(Path(sys.executable).resolve())
+    jq = shutil.which("jq")
+    if jq:
+        (fake_bin / "jq").symlink_to(Path(jq).resolve())
+    config = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+    guard = next(s["run"] for s in config["jobs"]["build"]["steps"] if s.get("name") == step_name)
+    env = {
+        "PATH": str(fake_bin) + os.pathsep + os.defpath,
+        "HOME": str(tmp_path),
+        "LANG": "C",
+        **variables,
+    }
+    proc = subprocess.run(
+        ["/bin/bash", "-euo", "pipefail", "-c", guard],
+        cwd=checkout,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    return proc.returncode, proc.stderr
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX Bash-only Actions workflow")
 @pytest.mark.parametrize(
     ("tag", "source_sha", "caller_sha", "checkout_sha", "tag_sha", "ref", "pass_expected"),
@@ -132,46 +198,77 @@ def test_bash_source_identity_accepts_only_matching_protected_identity(
     ref: str,
     pass_expected: bool,
 ) -> None:
-    checkout = tmp_path / "checkout"
-    checkout.mkdir()
-    (checkout / "pyproject.toml").write_text(
-        '[project]\nname = "kicad-mcp-pro"\nversion = "4.4.0"\n',
-        encoding="utf-8",
+    exit_code, stderr = _run_python_source_guard(
+        tmp_path,
+        WORKFLOW,
+        "Verify reusable preparation source identity",
+        {
+            "EXPECTED_TAG": tag,
+            "EXPECTED_SOURCE": source_sha,
+            "CALLER_SHA": caller_sha,
+            "CALLER_REF": ref,
+            "MOCK_HEAD": checkout_sha,
+            "MOCK_TAG_SOURCE": tag_sha,
+        },
     )
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    git = fake_bin / "git"
-    git.write_text(
-        "#!/bin/sh\n"
-        'case "$*" in\n'
-        '  "rev-parse HEAD") printf "%s\\n" "$MOCK_HEAD";;\n'
-        '  "rev-list -n 1 refs/tags/"*) printf "%s\\n" "$MOCK_TAG_SOURCE";;\n'
-        "  *) exit 91;;\n"
-        "esac\n",
-        encoding="utf-8",
-    )
-    git.chmod(0o755)
-    guard = next(
-        s["run"]
-        for s in _workflow()["jobs"]["build"]["steps"]
-        if s.get("name") == "Verify reusable preparation source identity"
-    )
-    env = {
-        **os.environ,
-        "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"],
-        "EXPECTED_TAG": tag,
-        "EXPECTED_SOURCE": source_sha,
-        "CALLER_SHA": caller_sha,
-        "CALLER_REF": ref,
-        "MOCK_HEAD": checkout_sha,
-        "MOCK_TAG_SOURCE": tag_sha,
+    assert (exit_code == 0) is pass_expected, stderr
+
+
+@pytest.mark.skipif(
+    os.name == "nt" or not shutil.which("bash") or not shutil.which("jq"),
+    reason="Bash and jq required",
+)
+@pytest.mark.parametrize(
+    ("case", "expected"),
+    [
+        ("published", True),
+        ("draft", False),
+        ("unpublished", False),
+        ("wrong-id", False),
+        ("wrong-tag", False),
+        ("wrong-ref", False),
+        ("wrong-source", False),
+        ("wrong-checkout", False),
+        ("wrong-version", False),
+        ("api-failure", False),
+        ("invalid-id", False),
+    ],
+)
+def test_published_release_guard_fails_closed(tmp_path: Path, case: str, expected: bool) -> None:
+    tag = "mcp-server-v4.22.6"
+    variables = {
+        "GITHUB_REPOSITORY": "oaslananka/kicad-mcp-pro",
+        "RELEASE_ID": "42",
+        "RELEASE_TAG": tag,
+        "EXPECTED_SHA": SHA,
+        "EXPECTED_REF": "refs/tags/" + tag,
+        "MOCK_TAG_SOURCE": SHA,
+        "MOCK_HEAD": SHA,
+        "API_ID": "42",
+        "API_TAG": tag,
+        "API_DRAFT": "false",
+        "API_PUBLISHED": '"2026-11-25T12:00:00Z"',
+        "API_FAILURE": "false",
     }
-    proc = subprocess.run(
-        ["/bin/bash", "-euo", "pipefail", "-c", guard],
-        cwd=checkout,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
+    variants = {
+        "draft": ("API_DRAFT", "true"),
+        "unpublished": ("API_PUBLISHED", "null"),
+        "wrong-id": ("API_ID", "43"),
+        "wrong-tag": ("API_TAG", "mcp-server-v4.22.5"),
+        "wrong-ref": ("EXPECTED_REF", "refs/heads/main"),
+        "wrong-source": ("MOCK_TAG_SOURCE", "b" * 40),
+        "wrong-checkout": ("MOCK_HEAD", "b" * 40),
+        "api-failure": ("API_FAILURE", "true"),
+        "invalid-id": ("RELEASE_ID", "../42"),
+    }
+    if case in variants:
+        key, value = variants[case]
+        variables[key] = value
+    exit_code, stderr = _run_python_source_guard(
+        tmp_path,
+        LEGACY,
+        "Verify published release source",
+        variables,
+        version="4.22.5" if case == "wrong-version" else "4.22.6",
     )
-    assert (proc.returncode == 0) is pass_expected, proc.stderr
+    assert (exit_code == 0) is expected, stderr

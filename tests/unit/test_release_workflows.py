@@ -33,14 +33,14 @@ def test_protocol_schema_release_contract_matches_existing_release_history() -> 
     assert "startsWith(github.event.release.tag_name, 'protocol-schemas-v')" in workflow
 
 
-def test_python_trusted_publish_is_tag_gated_and_provenance_verified() -> None:
+def test_python_trusted_publish_is_published_release_gated_and_provenance_verified() -> None:
     workflow = _read(".github/workflows/publish-python.yml")
 
-    assert 'tags:\n      - "mcp-server-v*"' in workflow
-    assert "\n  release:" not in workflow
+    assert "\n  release:\n    types: [published]" in workflow
+    assert "\n  push:" not in workflow
     assert "inputs.target == 'pypi'" not in workflow
     assert "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'" in workflow
-    assert "startsWith(github.ref, 'refs/tags/mcp-server-v')" in workflow
+    assert "startsWith(github.event.release.tag_name, 'mcp-server-v')" in workflow
     assert workflow.count("verify-pypi-provenance") == 2
     assert "pypi-attestations verify pypi" not in workflow
     assert "--staging" not in workflow
