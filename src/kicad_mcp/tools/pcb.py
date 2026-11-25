@@ -79,6 +79,7 @@ from ..pcb.board_access import (
 )
 from ..pcb.board_inspection import PcbBoardInspectionService
 from ..pcb.file_inspection import PcbFileInspectionService
+from ..pcb.footprint_index import FileFootprintIndex
 from ..pcb.footprint_transform import (
     FootprintRotationError,
     RotationAttribute,
@@ -122,7 +123,6 @@ from . import (
     pcb_transaction_lifecycle,
 )
 from .board_file import (
-    FileFootprintIndex,
     _bbox_from_block,
     _board_frame_mm,
     _default_board_text,

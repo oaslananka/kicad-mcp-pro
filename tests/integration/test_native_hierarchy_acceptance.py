@@ -336,9 +336,9 @@ print("NATIVE_FOOTPRINT_ROWS:" + json.dumps(rows))
 
 
 def _native_footprint_rows(board: Path) -> list:
-    executable = _trusted_system_python(Path(SYSTEM_PYTHON))
+    _trusted_system_python(Path(SYSTEM_PYTHON))
     result = subprocess.run(  # nosec B603
-        [str(executable), "-c", _NATIVE_FOOTPRINT_WORKER, str(board)],
+        ["/usr/bin/python3", "-I", "-c", _NATIVE_FOOTPRINT_WORKER, str(board)],
         cwd=board.parent,
         capture_output=True,
         text=True,

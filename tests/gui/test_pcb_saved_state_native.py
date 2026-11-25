@@ -11,6 +11,7 @@ import statistics
 import struct
 import subprocess  # nosec B404
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -66,9 +67,11 @@ def _prepare_project(scratch: Path) -> None:
         ),
         encoding="utf-8",
     )
+    _trusted_system_python(Path(SYSTEM_PYTHON))
     subprocess.run(  # nosec B603
         [
-            str(_trusted_system_python(Path(SYSTEM_PYTHON))),
+            "/usr/bin/python3",
+            "-I",
             "-c",
             _NATIVE_BOARD,
             str(project / "main.kicad_pcb"),
@@ -76,6 +79,30 @@ def _prepare_project(scratch: Path) -> None:
         check=True,
         timeout=20,
     )
+
+
+def _system_temp_root() -> Path:
+    """Use the standard Linux temp root required by KiCad's native IPC endpoint."""
+    root = Path(tempfile.gettempdir()).resolve(strict=True)
+    if root.parent != Path("/") or root.name != "tmp":
+        raise RuntimeError("native GUI acceptance requires the standard Linux temporary root")
+    return root
+
+
+def _private_ipc_endpoint() -> Path:
+    return _system_temp_root() / "kicad" / "api.sock"
+
+
+def _require_private_tmpfs() -> None:
+    """Require a fresh private tmpfs mount before launching the native editor."""
+    root = _system_temp_root()
+    mounts = Path("/proc/self/mountinfo").read_text(encoding="utf-8").splitlines()
+    for entry in mounts:
+        before, separator, after = entry.partition(" - ")
+        if separator and before.split()[4] == str(root) and after.split()[0] == "tmpfs":
+            if os.path.ismount(root):
+                return
+    raise RuntimeError("native GUI acceptance requires an isolated temporary filesystem")
 
 
 def _private_environment() -> dict[str, str]:
@@ -88,7 +115,8 @@ def _private_environment() -> dict[str, str]:
         "XDG_CACHE_HOME": str(PRIVATE / "home/.cache"),
         "XDG_RUNTIME_DIR": str(PRIVATE / "runtime"),
         "KICAD_CONFIG_HOME": str(PRIVATE / "home/.config/kicad"),
-        "KICAD_API_SOCKET": "ipc:///tmp/kicad/api.sock",
+        "KICAD_API_SOCKET": f"ipc://{_private_ipc_endpoint()}",
+        "TMPDIR": str(_system_temp_root()),
         "KICAD_MCP_PROJECT_DIR": str(root),
         "KICAD_MCP_PROJECT_FILE": str(root / "main.kicad_pro"),
         "KICAD_MCP_PCB_FILE": str(root / "main.kicad_pcb"),
@@ -114,39 +142,36 @@ def _private_environment() -> dict[str, str]:
 )
 def test_native_gui_saved_pcb_graph(tmp_path: Path) -> None:
     # Refuse to use any host GUI/socket, even if the caller has a live editor.
-    assert not ROOT.is_relative_to("/tmp") and not Path(sys.executable).is_relative_to("/tmp")  # noqa: S108
+    temp_root = _system_temp_root()
+    assert not ROOT.is_relative_to(temp_root)
+    assert not Path(sys.executable).is_relative_to(temp_root)
     for executable in ("/usr/bin/bwrap", "/usr/bin/xvfb-run", "/usr/bin/pcbnew"):
         assert Path(executable).is_file()
     originals = {
         name: sha256_file(FIXTURE / name) for name in ("main.kicad_sch", "child.kicad_sch")
     }
     _prepare_project(tmp_path)
-    command = [
-        "/usr/bin/bwrap",
-        "--die-with-parent",
-        "--unshare-pid",
-        "--unshare-net",
-        "--ro-bind",
-        "/",
-        "/",
-        "--dev-bind",
-        "/dev",
-        "/dev",
-        "--proc",
-        "/proc",
-        "--bind",
-        str(tmp_path),
-        str(PRIVATE),
-        "--tmpfs",
-        "/tmp",  # noqa: S108 - private tmpfs, not the host directory
-        "--chdir",
-        str(ROOT),
-        "--clearenv",
-    ]
-    for key, value in _private_environment().items():
-        command.extend(("--setenv", key, value))
-    command.extend(
-        (
+    result = subprocess.run(  # nosec B603
+        [
+            "/usr/bin/bwrap",
+            "--die-with-parent",
+            "--unshare-pid",
+            "--unshare-net",
+            "--ro-bind",
+            "/",
+            "/",
+            "--dev-bind",
+            "/dev",
+            "/dev",
+            "--proc",
+            "/proc",
+            "--bind",
+            str(tmp_path),
+            str(PRIVATE),
+            "--tmpfs",
+            str(temp_root),
+            "--chdir",
+            str(ROOT),
             "--",
             "/usr/bin/xvfb-run",
             "-a",
@@ -154,10 +179,8 @@ def test_native_gui_saved_pcb_graph(tmp_path: Path) -> None:
             "-screen 0 1440x900x24",
             sys.executable,
             str(Path(__file__).resolve()),
-        )
-    )
-    result = subprocess.run(  # nosec B603
-        command,
+        ],
+        env=_private_environment(),
         capture_output=True,
         text=True,
         timeout=90,
@@ -178,7 +201,7 @@ def test_native_gui_saved_pcb_graph(tmp_path: Path) -> None:
 def _wait_private_board(process: subprocess.Popen) -> None:
     from kipy.kicad import KiCad
 
-    endpoint = Path("/tmp/kicad/api.sock")  # noqa: S108 - isolated tmpfs
+    endpoint = _private_ipc_endpoint()
     deadline = time.monotonic() + 25
     while time.monotonic() < deadline:
         if process.poll() is not None:
@@ -197,7 +220,7 @@ def _wait_private_board(process: subprocess.Popen) -> None:
                 time.sleep(0.5)
                 continue
             try:
-                board = KiCad(socket_path="ipc:///tmp/kicad/api.sock", timeout_ms=1500).get_board()
+                board = KiCad(socket_path=f"ipc://{endpoint}", timeout_ms=1500).get_board()
                 if (
                     board.name == "main.kicad_pcb"
                     and Path(board.get_project().path) == PRIVATE / "project"
@@ -257,7 +280,8 @@ async def _run_cycles() -> None:
     # Independent native file read-back, not the graph projection.
     native = subprocess.run(  # nosec B603
         [
-            SYSTEM_PYTHON,  # Verified by the parent; host filesystem is read-only in bwrap.
+            "/usr/bin/python3",  # Verified by the parent; host filesystem is read-only in bwrap.
+            "-I",
             "-c",
             "import pcbnew,sys,json; b=pcbnew.LoadBoard(sys.argv[1]); "
             "print(json.dumps(sorted((str(f.m_Uuid.AsString()),f.GetReference(),"
@@ -313,7 +337,8 @@ def _private_worker() -> None:
     if os.environ.get("KICAD_MCP_PRIVATE_SAVE_WORKER") != "1" or not PRIVATE.is_dir():
         raise RuntimeError("private worker must use the isolated test launcher")
     # A host invocation must not be able to select a running editor.
-    if Path("/tmp/kicad/api.sock").exists():  # noqa: S108 - isolated tmpfs
+    _require_private_tmpfs()
+    if _private_ipc_endpoint().exists():
         raise RuntimeError("private socket is not initially empty")
     with (PRIVATE / "editor.log").open("w") as log:
         process = subprocess.Popen(  # nosec B603

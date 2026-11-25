@@ -9,7 +9,6 @@ from collections.abc import Iterable
 from typing import Any
 
 from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION
-from ..pcb.footprint_index import FileFootprintIndex as FileFootprintIndex
 from ..utils import telemetry as otel
 from ..utils.sexpr import _extract_block
 

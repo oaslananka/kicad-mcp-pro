@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -11,6 +12,7 @@ import pytest
 
 from kicad_mcp.config import get_config
 from kicad_mcp.ir import IRCircuit
+from kicad_mcp.pcb.live_edit_runtime import reset_live_edit_service
 from kicad_mcp.project.incremental_state import (
     NativeHierarchySnapshot,
     source_digests,
@@ -34,7 +36,8 @@ def _board(x: int) -> str:
 @pytest.fixture
 def saved_project(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mock_board: MagicMock
-) -> tuple[SimpleNamespace, Path]:
+) -> Iterator[tuple[SimpleNamespace, Path]]:
+    reset_live_edit_service()
     cfg = get_config()
     cfg.project_dir = tmp_path
     cfg.project_file = tmp_path / "demo.kicad_pro"
@@ -72,7 +75,10 @@ def saved_project(
     # The CLI seam stands in for native hierarchy export, not the PCB file reader.
     monkeypatch.setattr("kicad_mcp.tools.pcb._run_cli", lambda *args, **kw: (0, "10.0.8", ""))
     monkeypatch.setattr("kicad_mcp.project.incremental_state.capture_native_hierarchy", capture)
-    return live, tmp_path / ".kicad-mcp-cache/physical.json"
+    try:
+        yield live, tmp_path / ".kicad-mcp-cache/physical.json"
+    finally:
+        reset_live_edit_service()
 
 
 @pytest.mark.anyio

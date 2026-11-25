@@ -95,7 +95,7 @@
     },
     "expert": {
       "callableTools": 396,
-      "catalogCharacters": 239872,
+      "catalogCharacters": 239871,
       "catalogReductionVsExpertPct": 0.0,
       "declaredTools": 396,
       "estimatedCatalogTokens": 59968,
