@@ -145,3 +145,16 @@ def test_invalid_registry_json_is_not_absent(monkeypatch, urls) -> None:
     monkeypatch.setattr(evidence.urllib.request, "urlopen", Mock(return_value=response))
     with pytest.raises(ValueError):
         evidence._published_pypi_digests("pypi", "kicad-mcp-pro", "4.23.0")
+
+
+@pytest.mark.parametrize(
+    "version", ["４.23.0", "4.٢٣.0", "4.23.０", "4.23", "4.23.0rc1", "4.23.0\n"]
+)
+def test_non_ascii_or_unstable_version_blocks_registry_read(release, monkeypatch, version) -> None:
+    dist, checksums, output, _ = release
+    lookup = Mock()
+    monkeypatch.setattr(evidence, "_published_pypi_digests", lookup)
+    with pytest.raises(ValueError, match="expected a stable release version"):
+        evidence.stage_pypi_upload("pypi", version, checksums, dist, output)
+    lookup.assert_not_called()
+    assert not output.exists()

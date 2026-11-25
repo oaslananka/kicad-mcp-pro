@@ -571,7 +571,7 @@ def stage_pypi_upload(
     Refuse ambiguous metadata or different existing bytes before staging anything.
     The caller must still verify the complete release after publishing.
     """
-    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version, flags=re.ASCII):
         raise ValueError("expected a stable release version")
     if repository not in PYPI_ENDPOINTS:
         raise ValueError("unsupported Python registry")
