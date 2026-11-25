@@ -94,7 +94,7 @@ def start_reviewed_attempt(
     # the same ID must never both start a paid/mutating agent session.
     try:
         workspace.scratch_dir.parent.mkdir(parents=True, exist_ok=True)
-        workspace.scratch_dir.mkdir(exist_ok=False)
+        workspace.scratch_dir.mkdir(mode=0o700, exist_ok=False)
     except FileExistsError:
         return _result(
             "blocked",

@@ -131,6 +131,23 @@ A passing result is server_trace_valid with SHA-256 digest, call counts
 and counts_as_task_success=false. Invalid or truncated evidence is
 blocked (exit code 2).
 
+For a real reserved v1 corpus attempt, use the explicit reviewed board ID
+with the matching private trace path:
+
+    uv run python scripts/validate_reference_ops_trace.py \\
+      --trace "$PWD/.dev-tools/reference-agent-runs/stm32f072-usbc/v1/attempt-004/ops-mcp-trace.jsonl" \\
+      --board-id stm32f072-usbc --attempt-id attempt-004 --phase schematic
+
+The validator checks that exact board/version/attempt directory and reports
+the board ID with the digest. Flat diagnostic traces remain supported without
+the board option. On POSIX the initial attempt reservation uses mode 0700;
+the validator opens each nested directory without following symlinks.
+Windows rejects symlink and junction redirects at the path check; this is
+not a guarantee against a concurrent filesystem replacement. Board scope
+identifies the reserved storage location, not cryptographic board provenance.
+Client and Gateway reconciliation still require their existing reviewed
+evidence contracts; a passing server trace alone is not an attested attempt.
+
 This does NOT authenticate ChatGPT or prove an electrical design succeeds.
 Do not publish an official benchmark attempt from server trace alone;
 complete client transcript reconciliation and native ERC/DRC still apply.

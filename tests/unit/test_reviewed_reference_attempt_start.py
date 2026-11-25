@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -209,3 +210,22 @@ def test_cli_without_real_agent_stays_safely_blocked(
     assert output["counts_as_task_success"] is False
     assert output["published_attempt_record"] is False
     assert output["status"] in {"blocked", "ready_for_explicit_execution"}
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX reservation permissions")
+def test_attempt_reservation_is_private_with_normal_umask(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _fixture(tmp_path, monkeypatch)
+    modes: list[int] = []
+
+    def inspect_reservation(_: list[str]) -> int:
+        modes.append(_receipt(tmp_path).parent.stat().st_mode & 0o777)
+        return 1
+
+    previous_umask = os.umask(0o022)
+    try:
+        _invoke(tmp_path, execute=True, acknowledged=True, runner=inspect_reservation)
+    finally:
+        os.umask(previous_umask)
+    assert modes == [0o700]

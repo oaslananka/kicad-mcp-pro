@@ -26,8 +26,9 @@ def _isolate_private_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
     )
 
 
-def _good_trace(tmp_path: Path) -> Path:
-    parent = tmp_path / ".dev-tools" / "reference-agent-runs" / "attempt-004"
+def _good_trace(tmp_path: Path, *, board_id: str | None = None) -> Path:
+    root = tmp_path / ".dev-tools" / "reference-agent-runs"
+    parent = root / "attempt-004" if board_id is None else root / board_id / "v1" / "attempt-004"
     parent.mkdir(mode=0o700, parents=True)
     parent.chmod(0o700)
     path = parent / "ops-mcp-trace.jsonl"
@@ -326,4 +327,97 @@ def test_windows_descriptor_path_requires_private_non_symlinked_location(
     with pytest.raises(ReferenceOpsTraceValidationError, match="reserved"):
         reference_ops_trace_validation._open_reserved_trace(
             root=root, attempt_id="attempt-004", filename="ops-client-observed.jsonl"
+        )
+
+
+def test_reviewed_board_attempt_trace_is_validated_in_its_own_namespace(tmp_path: Path) -> None:
+    path = _good_trace(tmp_path, board_id="stm32f072-usbc")
+    summary = validate_reference_ops_trace(
+        path, attempt_id="attempt-004", phase_name="schematic", board_id="stm32f072-usbc"
+    )
+    assert summary.board_id == "stm32f072-usbc"
+    assert summary.tool_calls == 2
+    assert summary.failed_calls == 1
+    assert summary.counts_as_task_success is False
+    with pytest.raises(ReferenceOpsTraceValidationError):
+        validate_reference_ops_trace(path, attempt_id="attempt-004", phase_name="schematic")
+
+
+@pytest.mark.parametrize("board_id", ["esp32-c6-usbc", "../outside", "unreviewed"])
+def test_board_scope_cannot_read_another_attempt_namespace(tmp_path: Path, board_id: str) -> None:
+    path = _good_trace(tmp_path, board_id="stm32f072-usbc")
+    with pytest.raises(ReferenceOpsTraceValidationError):
+        validate_reference_ops_trace(
+            path, attempt_id="attempt-004", phase_name="schematic", board_id=board_id
+        )
+
+
+def test_board_attempt_rejects_redirected_board_directory(tmp_path: Path) -> None:
+    path = _good_trace(tmp_path, board_id="stm32f072-usbc")
+    board = path.parents[2]
+    outside = tmp_path / "outside"
+    board.rename(outside)
+    try:
+        board.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlink creation unavailable on this platform")
+    with pytest.raises(ReferenceOpsTraceValidationError):
+        validate_reference_ops_trace(
+            path, attempt_id="attempt-004", phase_name="schematic", board_id="stm32f072-usbc"
+        )
+
+
+def test_board_attempt_rejects_redirected_version_after_path_approval(tmp_path: Path) -> None:
+    if os.name == "nt":
+        pytest.skip("POSIX directory descriptor traversal")
+    path = _good_trace(tmp_path, board_id="stm32f072-usbc")
+    reference_ops_trace_validation._approved_trace_path(
+        path, "attempt-004", board_id="stm32f072-usbc"
+    )
+    version = path.parents[1]
+    outside = tmp_path / "outside-version"
+    version.rename(outside)
+    version.symlink_to(outside, target_is_directory=True)
+    with pytest.raises((OSError, ReferenceOpsTraceValidationError)):
+        reference_ops_trace_validation._load_trace(
+            root=reference_ops_trace_validation._TRACE_ROOT,
+            attempt_id="attempt-004",
+            filename="ops-mcp-trace.jsonl",
+            board_id="stm32f072-usbc",
+        )
+
+
+def test_cli_includes_reviewed_board_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from scripts import validate_reference_ops_trace as cli
+
+    path = _good_trace(tmp_path, board_id="stm32f072-usbc")
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "validate_reference_ops_trace",
+            "--trace",
+            str(path),
+            "--attempt-id",
+            "attempt-004",
+            "--phase",
+            "schematic",
+            "--board-id",
+            "stm32f072-usbc",
+        ],
+    )
+    assert cli.main() == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["board_id"] == "stm32f072-usbc"
+    assert result["status"] == "server_trace_valid"
+    assert result["counts_as_task_success"] is False
+
+
+@pytest.mark.parametrize("attempt_id", ["attempt-000", "attempt-1000", "smoke-001"])
+def test_board_scope_rejects_noncanonical_attempt_identity(tmp_path: Path, attempt_id: str) -> None:
+    path = _good_trace(tmp_path, board_id="stm32f072-usbc")
+    with pytest.raises(ReferenceOpsTraceValidationError):
+        validate_reference_ops_trace(
+            path, attempt_id=attempt_id, phase_name="schematic", board_id="stm32f072-usbc"
         )
