@@ -79,6 +79,26 @@ Sigstore signature file for the GitHub Release wheel. The repository does not
 publish a standalone wheel signature bundle for `4.0.2`, so a plain
 `python -m sigstore verify identity <wheel>` command is not a working substitute.
 
+### Interrupted Python uploads
+
+PyPI and TestPyPI publish the wheel and source archive independently. A
+version appearing in the registry does not prove both files were uploaded.
+The existing trusted-publisher jobs now verify the complete local distribution
+inventory, then stage only missing files in a fresh upload directory.
+An existing file must match its approved SHA-256 digest and pass cryptographic
+PEP 740 publisher verification before any missing file is staged. Only a
+version lookup returning HTTP 404 is treated as absent; other HTTP errors,
+malformed inventories, unexpected files and digest or provenance conflicts
+stop the job without authorizing a publish. A fully matching release stages
+zero files and skips the upload action. The original distributions and both
+final full-release digest and provenance checks remain intact.
+
+This recovers partial registry publication in the existing reviewed release
+workflow, not an immutable GitHub Release cutover. Do not replace a registry
+file, relax its trusted-publisher identity, or enable immutable Releases
+based on this change. If a concurrent upload races the preflight, allow the
+registry to reject it and revalidate the exact approved bytes on recovery.
+
 ## GitHub Artifact Attestations
 
 The Python workflow publishes a **CycloneDX SBOM attestation**, signed for the

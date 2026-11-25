@@ -164,21 +164,21 @@ jobs:
         run: |
           uv run --frozen python scripts/generate_release_evidence.py verify-local --checksums release-evidence/SHA256SUMS.txt --artifacts dist
           (cd dist && sha256sum --check ../release-evidence/SHA256SUMS.txt)
-      - name: Check if version already published
-        id: check-published
+      - name: Stage missing verified Python distributions
+        id: stage-upload
         shell: bash
         run: |
           set -euo pipefail
           version="$(uv run --frozen python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
-          if curl -fsS "https://test.pypi.org/pypi/kicad-mcp-pro/${version}/json" >/dev/null; then
-            echo "already_published=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "already_published=false" >> "$GITHUB_OUTPUT"
-          fi
+          missing_count="$(uv run --frozen --group release python scripts/generate_release_evidence.py stage-pypi-upload \
+            --repository testpypi --version "$version" \
+            --checksums release-evidence/SHA256SUMS.txt --artifacts dist --output pending-dist)"
+          [[ "$missing_count" =~ ^[012]$ ]] || exit 1
+          echo "missing_count=$missing_count" >> "$GITHUB_OUTPUT"
       - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086
-        if: steps.check-published.outputs.already_published != 'true'
+        if: steps.stage-upload.outputs.missing_count == '1' || steps.stage-upload.outputs.missing_count == '2'
         with:
-          packages-dir: dist
+          packages-dir: pending-dist
           repository-url: https://test.pypi.org/legacy/
           attestations: true
       - name: Verify TestPyPI published digests
@@ -232,21 +232,21 @@ jobs:
         run: |
           uv run --frozen python scripts/generate_release_evidence.py verify-local --checksums release-evidence/SHA256SUMS.txt --artifacts dist
           (cd dist && sha256sum --check ../release-evidence/SHA256SUMS.txt)
-      - name: Check if version already published
-        id: check-published
+      - name: Stage missing verified Python distributions
+        id: stage-upload
         shell: bash
         run: |
           set -euo pipefail
           version="$(uv run --frozen python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")"
-          if curl -fsS "https://pypi.org/pypi/kicad-mcp-pro/${version}/json" >/dev/null; then
-            echo "already_published=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "already_published=false" >> "$GITHUB_OUTPUT"
-          fi
+          missing_count="$(uv run --frozen --group release python scripts/generate_release_evidence.py stage-pypi-upload \
+            --repository pypi --version "$version" \
+            --checksums release-evidence/SHA256SUMS.txt --artifacts dist --output pending-dist)"
+          [[ "$missing_count" =~ ^[012]$ ]] || exit 1
+          echo "missing_count=$missing_count" >> "$GITHUB_OUTPUT"
       - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086
-        if: steps.check-published.outputs.already_published != 'true'
+        if: steps.stage-upload.outputs.missing_count == '1' || steps.stage-upload.outputs.missing_count == '2'
         with:
-          packages-dir: dist
+          packages-dir: pending-dist
           attestations: true
       - name: Verify PyPI published digests
         run: |

@@ -142,7 +142,12 @@ def _read_checksums(checksum_file: Path) -> dict[str, str]:
         if not line.strip():
             continue
         digest, filename = line.split(maxsplit=1)
-        checksums[_release_artifact_filename(filename)] = digest.strip()
+        name = _release_artifact_filename(filename)
+        if name in checksums or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise ValueError("invalid or duplicate release checksum")
+        checksums[name] = digest
+    if not checksums:
+        raise ValueError("empty release checksum manifest")
     return checksums
 
 
@@ -201,11 +206,26 @@ def _published_pypi_digests(repository: str, package: str, version: str) -> dict
     url = PYPI_ENDPOINTS[repository].format(name=package, version=version)
     with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310
         payload = json.loads(response.read().decode("utf-8"))
-    return {
-        str(item["filename"]): str(item["digests"]["sha256"])
-        for item in payload.get("urls", [])
-        if "digests" in item and "sha256" in item["digests"]
-    }
+    urls = payload.get("urls") if isinstance(payload, dict) else None
+    if not isinstance(urls, list) or not urls:
+        raise ValueError("invalid PyPI distribution inventory")
+    published: dict[str, str] = {}
+    for item in urls:
+        if not isinstance(item, dict):
+            raise ValueError("invalid PyPI distribution entry")
+        name = item.get("filename")
+        digests = item.get("digests")
+        digest = digests.get("sha256") if isinstance(digests, dict) else None
+        if (
+            not isinstance(name, str)
+            or _release_artifact_filename(name) != name
+            or name in published
+            or not isinstance(digest, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)
+        ):
+            raise ValueError("invalid or duplicate PyPI distribution digest")
+        published[name] = digest
+    return published
 
 
 def _pypi_digest_failures(expected: dict[str, str], published: dict[str, str]) -> list[str]:
@@ -236,7 +256,7 @@ def verify_pypi(
             if not failures:
                 return
             last_error = "\n- ".join(failures)
-        except (OSError, json.JSONDecodeError) as exc:
+        except (OSError, ValueError) as exc:
             last_error = str(exc)
         if attempt < retries:
             time.sleep(retry_delay)
@@ -496,6 +516,83 @@ def _pypi_provenance_attempt_errors(
     return errors
 
 
+def _approved_python_distributions(
+    version: str, checksum_file: Path, artifact_dir: Path
+) -> dict[str, str]:
+    expected = _read_checksums(checksum_file)
+    names = {
+        f"kicad_mcp_pro-{version}-py3-none-any.whl",
+        f"kicad_mcp_pro-{version}.tar.gz",
+    }
+    if expected.keys() != names or {p.name for p in artifact_dir.iterdir()} != names:
+        raise ValueError("expected exactly the approved wheel and sdist")
+    if any((artifact_dir / n).is_symlink() or not (artifact_dir / n).is_file() for n in names):
+        raise ValueError("unsafe distribution file")
+    verify_local(checksum_file, artifact_dir)
+    return expected
+
+
+def _verified_existing_pypi_distributions(
+    repository: str, version: str, expected: dict[str, str], artifact_dir: Path
+) -> dict[str, str]:
+    try:
+        published = _published_pypi_digests(repository, "kicad-mcp-pro", version)
+    except urllib.error.HTTPError as exc:
+        if exc.code != 404:
+            raise
+        return {}
+    if not published or any(expected.get(name) != digest for name, digest in published.items()):
+        raise ValueError("unexpected or mismatching published Python distribution")
+    errors = _pypi_provenance_attempt_errors(
+        published,
+        repository=repository,
+        package="kicad-mcp-pro",
+        version=version,
+        publisher_repository="oaslananka/kicad-mcp-pro",
+        publisher_workflow="publish-python.yml",
+        publisher_environment=repository,
+        artifact_dir=artifact_dir,
+    )
+    if errors:
+        raise ValueError("Existing PyPI provenance verification failed:\n- " + "\n- ".join(errors))
+    return published
+
+
+def stage_pypi_upload(
+    repository: str,
+    version: str,
+    checksum_file: Path,
+    artifact_dir: Path,
+    output_dir: Path,
+) -> int:
+    """Stage only missing, verified distributions for the existing OIDC publisher.
+
+    A successful version lookup is not proof that both distributions exist.
+    Refuse ambiguous metadata or different existing bytes before staging anything.
+    The caller must still verify the complete release after publishing.
+    """
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version, flags=re.ASCII):
+        raise ValueError("expected a stable release version")
+    if repository not in PYPI_ENDPOINTS:
+        raise ValueError("unsupported Python registry")
+    if artifact_dir.is_symlink() or output_dir.is_symlink() or output_dir.exists():
+        raise ValueError("unsafe source or already-existing upload directory")
+    artifact_dir = approved_runtime_path(artifact_dir)
+    output_dir = approved_runtime_path(output_dir)
+    if output_dir.is_relative_to(artifact_dir):
+        raise ValueError("upload directory must be outside the source inventory")
+    expected = _approved_python_distributions(version, checksum_file, artifact_dir)
+    published = _verified_existing_pypi_distributions(repository, version, expected, artifact_dir)
+    missing = sorted(expected.keys() - published.keys())
+    output_dir.mkdir()
+    for name in missing:
+        data = (artifact_dir / name).read_bytes()
+        if hashlib.sha256(data).hexdigest() != expected[name]:
+            raise ValueError(f"distribution changed before staging: {name}")
+        (output_dir / name).write_bytes(data)
+    return len(missing)
+
+
 def main() -> int:
     """Run the release evidence CLI."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -517,6 +614,13 @@ def main() -> int:
     pypi_parser.add_argument("--checksums", type=Path, required=True)
     pypi_parser.add_argument("--retries", type=int, default=DEFAULT_PYPI_RETRIES)
     pypi_parser.add_argument("--retry-delay", type=float, default=DEFAULT_PYPI_RETRY_DELAY)
+
+    stage_parser = subparsers.add_parser("stage-pypi-upload")
+    stage_parser.add_argument("--repository", choices=sorted(PYPI_ENDPOINTS), required=True)
+    stage_parser.add_argument("--version", required=True)
+    stage_parser.add_argument("--checksums", type=Path, required=True)
+    stage_parser.add_argument("--artifacts", type=Path, required=True)
+    stage_parser.add_argument("--output", type=Path, required=True)
 
     provenance_parser = subparsers.add_parser("verify-pypi-provenance")
     provenance_parser.add_argument("--repository", choices=sorted(PYPI_ENDPOINTS), required=True)
@@ -543,6 +647,12 @@ def main() -> int:
             args.checksums,
             retries=args.retries,
             retry_delay=args.retry_delay,
+        )
+    elif args.command == "stage-pypi-upload":
+        print(
+            stage_pypi_upload(
+                args.repository, args.version, args.checksums, args.artifacts, args.output
+            )
         )
     elif args.command == "verify-pypi-provenance":
         verify_pypi_provenance(
