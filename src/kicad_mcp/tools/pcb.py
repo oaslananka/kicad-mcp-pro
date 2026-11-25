@@ -1039,29 +1039,72 @@ def _find_footprint_on_board(board: object, reference: str) -> _FootprintLike | 
     return None
 
 
-def _find_footprint_by_reference(reference: str) -> _FootprintLike | None:
-    return _find_footprint_on_board(get_board(), reference)
+def _native_footprint_uuid(value: str) -> str | None:
+    try:
+        parsed = uuid.UUID(value)
+    except ValueError:
+        return None
+    if not parsed.int or str(parsed) != value.lower():
+        return None
+    return str(parsed)
+
+
+def _find_move_footprint(board: object, selector: str) -> tuple[_FootprintLike, str] | None:
+    """Resolve exactly one live footprint, never a file-backed inspection ID."""
+    if selector.startswith("file:"):
+        raise ValueError(
+            "File-backed inspection identifiers cannot be used for live edits. "
+            "Use a unique reference or the native UUID from a live footprint listing."
+        )
+    native_id = _native_footprint_uuid(selector)
+    footprints = cast(list[_FootprintLike], board_footprints(board))
+    matches = [
+        footprint
+        for footprint in footprints
+        if (
+            _item_id_value(footprint).lower() == native_id
+            if native_id is not None
+            else footprint.reference_field.text.value == selector
+        )
+    ]
+    if len(matches) > 1:
+        raise ValueError(
+            "Ambiguous footprint identity; use a unique native UUID from the live board."
+        )
+    if not matches:
+        return None
+    selected = matches[0]
+    selected_id = _native_footprint_uuid(_item_id_value(selected))
+    if selected_id is None:
+        raise ValueError("Footprint has no verifiable native UUID; no changes were made.")
+    if sum(_item_id_value(item).lower() == selected_id for item in footprints) != 1:
+        raise ValueError("Ambiguous native footprint UUID; no changes were made.")
+    return selected, selected_id
+
+
+def _verify_footprint_position(footprint: _FootprintLike, x_mm: float, y_mm: float) -> None:
+    if _coord_nm(footprint.position, "x") != mm_to_nm(x_mm) or _coord_nm(
+        footprint.position, "y"
+    ) != mm_to_nm(y_mm):
+        raise FootprintRotationError("Footprint position verification failed after the move.")
 
 
 def _verify_footprint_transform(
     board: object,
     _updated: object,
     *,
-    reference: str,
+    native_id: str,
     x_mm: float,
     y_mm: float,
     rotation_attribute: RotationAttribute,
     rotation_deg: float,
 ) -> bool:
-    refreshed = _find_footprint_on_board(board, reference)
-    if refreshed is None:
-        return False
     try:
-        position_ok = _coord_nm(refreshed.position, "x") == mm_to_nm(x_mm) and _coord_nm(
-            refreshed.position, "y"
-        ) == mm_to_nm(y_mm)
-        if not position_ok:
+        resolved = _find_move_footprint(board, native_id)
+        if resolved is None:
             return False
+        refreshed, _ = resolved
+        _verify_footprint_position(refreshed, x_mm, y_mm)
         verify_footprint_rotation(
             refreshed,
             rotation_attribute,
@@ -4272,10 +4315,11 @@ def _register_footprint_placement_tools(mcp: FastMCP) -> None:
     def pcb_move_footprint(
         reference: str, x_mm: float, y_mm: float, rotation_deg: float | None = None
     ) -> str:
-        """Move a footprint, preserving its angle unless rotation_deg is explicitly provided."""
-        footprint = _find_footprint_by_reference(reference)
-        if footprint is None:
+        """Move by unique footprint reference or live UUID; preserve angle unless specified."""
+        resolved = _find_move_footprint(get_board(), reference)
+        if resolved is None:
             return f"Footprint '{reference}' was not found on the active board."
+        footprint, native_id = resolved
 
         footprint.position = Vector2.from_xy_mm(x_mm, y_mm)
         if rotation_deg is None:
@@ -4292,7 +4336,7 @@ def _register_footprint_placement_tools(mcp: FastMCP) -> None:
                     lambda board, updated: _verify_footprint_transform(
                         board,
                         updated,
-                        reference=reference,
+                        native_id=native_id,
                         x_mm=x_mm,
                         y_mm=y_mm,
                         rotation_attribute=rotation_attribute,
@@ -4307,16 +4351,18 @@ def _register_footprint_placement_tools(mcp: FastMCP) -> None:
         if transaction_active:
             return _staged_message(f"Footprint move for '{reference}'")
 
-        refreshed = _find_footprint_by_reference(reference)
-        if refreshed is None:
+        reloaded = _find_move_footprint(get_board(), native_id)
+        if reloaded is None:
             raise FootprintRotationError(
-                f"Footprint '{reference}' could not be reloaded to verify its rotation."
+                f"Footprint '{reference}' could not be reloaded by its native UUID."
             )
+        refreshed, _ = reloaded
         actual_rotation = verify_footprint_rotation(
             refreshed,
             rotation_attribute,
             expected_rotation,
         )
+        _verify_footprint_position(refreshed, x_mm, y_mm)
         return (
             f"Moved footprint '{reference}' to ({x_mm}, {y_mm}) mm "
             f"with verified rotation {actual_rotation:.3f} degrees."

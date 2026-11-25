@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 from kipy.board_types import Footprint3DModel, FootprintInstance
-from kipy.geometry import Angle
+from kipy.geometry import Angle, Vector2
 from kipy.proto.board.board_commands_pb2 import BoardFlipDirection
 from kipy.proto.board.board_types_pb2 import BoardLayer
 
@@ -94,8 +94,10 @@ class _LiveFootprint(_StrictRotationSurface):
         *,
         reject: bool = False,
         initial_degrees: float = 0.0,
+        native_id: str = "11111111-1111-4111-8111-111111111111",
     ) -> None:
         super().__init__(attribute, reject=reject, initial_degrees=initial_degrees)
+        self.id = SimpleNamespace(value=native_id)
         self.reference_field = SimpleNamespace(text=SimpleNamespace(value="X2"))
         self.position = None
 
@@ -931,3 +933,152 @@ async def test_set_footprint_layer_refuses_when_sdk_has_no_native_flip_api(
     assert "SDK does not expose Board.flip_items" in result
     assert "no changes were made" in result
     mock_board.update_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_move_rejects_ambiguous_reference_without_mutation(mock_board: object) -> None:
+    first = _LiveFootprint()
+    second = _LiveFootprint(native_id="22222222-2222-4222-8222-222222222222")
+    mock_board.get_footprints.return_value = [first, second]
+    result = await call_tool_text(
+        build_server("full"),
+        "pcb_move_footprint",
+        {"reference": "X2", "x_mm": 10.0, "y_mm": 20.0},
+    )
+    assert "ambiguous" in result.lower()
+    assert "UUID" in result
+    assert first.position is None and second.position is None
+    mock_board.update_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_move_selects_exact_live_uuid_with_duplicate_references(mock_board: object) -> None:
+    first = _LiveFootprint()
+    second = _LiveFootprint(native_id="22222222-2222-4222-8222-222222222222")
+    mock_board.get_footprints.return_value = [first, second]
+    result = await call_tool_text(
+        build_server("full"),
+        "pcb_move_footprint",
+        {"reference": second.id.value, "x_mm": 10.0, "y_mm": 20.0},
+    )
+    assert "verified rotation" in result
+    assert first.position is None
+    assert second.position.x == 10_000_000
+    mock_board.update_items.assert_called_once_with([second])
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_move_rejects_file_inspection_identity(mock_board: object) -> None:
+    footprint = _LiveFootprint()
+    mock_board.get_footprints.return_value = [footprint]
+    result = await call_tool_text(
+        build_server("full"),
+        "pcb_move_footprint",
+        {"reference": f"file:footprint:{footprint.id.value}", "x_mm": 10.0, "y_mm": 20.0},
+    )
+    assert "inspection" in result.lower()
+    mock_board.update_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_move_readback_rejects_replacement_with_same_reference(mock_board: object) -> None:
+    initial = _LiveFootprint()
+    replacement = _LiveFootprint(native_id="22222222-2222-4222-8222-222222222222")
+    replacement.position = Vector2.from_xy_mm(10.0, 20.0)
+    mock_board.get_footprints.side_effect = [[initial], [replacement]]
+    result = await call_tool_text(
+        build_server("full"),
+        "pcb_move_footprint",
+        {"reference": "X2", "x_mm": 10.0, "y_mm": 20.0},
+    )
+    assert "could not be reloaded" in result
+    assert "Moved footprint" not in result
+    mock_board.update_items.assert_called_once()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_move_readback_rejects_wrong_position_even_if_rotation_matches(
+    mock_board: object,
+) -> None:
+    initial = _LiveFootprint()
+    refreshed = _LiveFootprint()
+    refreshed.position = Vector2.from_xy_mm(11.0, 20.0)
+    mock_board.get_footprints.side_effect = [[initial], [refreshed]]
+    result = await call_tool_text(
+        build_server("full"),
+        "pcb_move_footprint",
+        {"reference": "X2", "x_mm": 10.0, "y_mm": 20.0},
+    )
+    assert "position verification failed" in result.lower()
+    assert "Moved footprint" not in result
+    mock_board.update_items.assert_called_once()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_move_rejects_duplicate_native_id_before_mutation(mock_board: object) -> None:
+    first = _LiveFootprint()
+    second = _LiveFootprint()
+    second.reference_field.text.value = "X3"
+    mock_board.get_footprints.return_value = [first, second]
+    result = await call_tool_text(
+        build_server("full"),
+        "pcb_move_footprint",
+        {"reference": "X2", "x_mm": 10.0, "y_mm": 20.0},
+    )
+    assert "ambiguous" in result.lower()
+    assert first.position is None and second.position is None
+    mock_board.update_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+@pytest.mark.parametrize("native_id", ["", "not-a-uuid", "00000000-0000-0000-0000-000000000000"])
+async def test_move_rejects_unverifiable_native_id(mock_board: object, native_id: str) -> None:
+    footprint = _LiveFootprint(native_id=native_id)
+    mock_board.get_footprints.return_value = [footprint]
+    result = await call_tool_text(
+        build_server("full"),
+        "pcb_move_footprint",
+        {"reference": "X2", "x_mm": 10.0, "y_mm": 20.0},
+    )
+    assert "no verifiable native UUID" in result
+    assert footprint.position is None
+    mock_board.update_items.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_move_transaction_verifier_uses_exact_uuid_and_position(
+    mock_board: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    initial = _LiveFootprint()
+    other = _LiveFootprint(native_id="22222222-2222-4222-8222-222222222222")
+    mock_board.get_footprints.return_value = [initial]
+    monkeypatch.setattr("kicad_mcp.tools.pcb._native_live_transaction_active", lambda: True)
+
+    def stage(operation, command, *, verifier):
+        assert operation == "pcb_move_footprint"
+        updated = command(mock_board)
+        assert verifier(mock_board, updated)
+        other.position = initial.position
+        mock_board.get_footprints.return_value = [other]
+        assert not verifier(mock_board, updated)
+        mock_board.get_footprints.return_value = [initial]
+        initial.position = Vector2.from_xy_mm(11.0, 20.0)
+        assert not verifier(mock_board, updated)
+        return updated
+
+    monkeypatch.setattr("kicad_mcp.tools.pcb.execute_live_board_mutation", stage)
+    result = await call_tool_text(
+        build_server("full"),
+        "pcb_move_footprint",
+        {"reference": "X2", "x_mm": 10.0, "y_mm": 20.0},
+    )
+    assert "staged in the active native-live transaction" in result
+    mock_board.update_items.assert_called_once()
