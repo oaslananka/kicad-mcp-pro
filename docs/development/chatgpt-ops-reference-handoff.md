@@ -330,3 +330,39 @@ verified again if the socket, editor, board or fixture changes. Independent
 KiCad `pcbnew` binding availability is a separate verification prerequisite
 for tools that rely on native reopen checks; a Python MCP virtualenv need not
 contain system-only `pcbnew` when the independent verifier uses `/usr/bin/python3`.
+
+
+## Native Codex schematic turn evidence (0.169.0)
+
+The native Codex app-server lifecycle schema for 0.169.0 can be reconciled
+with the same board-scoped native MCP trace. This is a post-run check, not a
+new executor or model identity attestation. Use it only after a separately
+reviewed, isolated execution environment and authorized provider run.
+
+The collector must preserve every item start/completion and turn start/end
+notification for the selected turn, with its actual thread and turn IDs.
+Store the bounded JSONL lifecycle evidence as `codex-turn-events.jsonl`
+beside the reserved board attempt's `ops-mcp-trace.jsonl`. The collector may
+omit prompts, tool arguments/results, reasoning text and private payloads,
+but must not omit or rewrite item types, IDs, names, statuses, timestamps,
+terminal item views or error presence. Do not provide a filtered list of
+only successful MCP calls. Keep evidence owner-private. The existing trace
+reader limits each file to 2 MB and 10,000 records; oversized or incomplete
+evidence is blocked, not silently truncated.
+
+    uv run python scripts/reconcile_reference_codex_turn.py \\
+      --board-id stm32f072-usbc --attempt-id attempt-004 \\
+      --thread-id "$REVIEWED_THREAD_ID" --turn-id "$REVIEWED_TURN_ID" \\
+      --server-trace "$PWD/.dev-tools/reference-agent-runs/stm32f072-usbc/v1/attempt-004/ops-mcp-trace.jsonl"
+
+The result contains sanitized metadata and digests only. Completed, failed
+and interrupted terminal states remain distinct. The checker rejects
+unreviewed tools, command execution, file changes, external searches,
+additional agents, mismatched call/result pairs, foreign turns and incomplete
+lifecycle evidence. Concurrent MCP calls are not supported by this
+conservative sequential reconciliation. It does not prevent an unapproved
+action from executing: pre-execution restrictions are still required.
+Matching metadata remains `client_server_matched_unattested` and
+`counts_as_task_success=false`. No canonical attempt or KPI is changed.
+The CLI and unit fixtures do not establish a live model execution, complete
+client capture, or a supported PCB write session.

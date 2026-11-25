@@ -146,6 +146,7 @@ def _load_trace(
     filename: Literal[
         "ops-mcp-trace.jsonl",
         "ops-client-observed.jsonl",
+        "codex-turn-events.jsonl",
         "ops-gateway-audit.json",
         "signed-gateway-witness.json",
     ],
@@ -162,6 +163,7 @@ def _load_trace(
         not in {
             _TRACE_FILENAME,
             "ops-client-observed.jsonl",
+            "codex-turn-events.jsonl",
             "ops-gateway-audit.json",
             "signed-gateway-witness.json",
         }
