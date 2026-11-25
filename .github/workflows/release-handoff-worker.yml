@@ -1,0 +1,53 @@
+name: Release handoff worker (non-publishing)
+on:
+  workflow_dispatch:
+    inputs:
+      owner_run_id:
+        description: Active rehearsal owner run ID
+        required: true
+        type: string
+      owner_attempt:
+        description: Active rehearsal owner attempt
+        required: true
+        type: string
+      source_commit:
+        description: Exact reviewed source commit
+        required: true
+        type: string
+      manifest_digest:
+        description: SHA-256 of the source server.json (not a publication manifest)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  receipt:
+    if: >-
+      github.repository == 'oaslananka/kicad-mcp-pro' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor_id == '41898282'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify active owner and source; create receipt
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER_RUN_ID: ${{ inputs.owner_run_id }}
+          OWNER_ATTEMPT: ${{ inputs.owner_attempt }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          MANIFEST_DIGEST: ${{ inputs.manifest_digest }}
+        run: bash scripts/rehearse_release_handoff.sh worker
+      - name: Store non-publishing receipt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: handoff-receipt-${{ github.run_attempt }}
+          path: handoff-receipt.json
+          if-no-files-found: error
+          retention-days: 3
