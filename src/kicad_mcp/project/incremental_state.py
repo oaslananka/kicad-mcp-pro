@@ -36,9 +36,12 @@ from kicad_mcp.project.physical_graph import add_physical_footprints, placement_
 
 STATE_SCHEMA_VERSION = 1
 SCHEMATIC_SOURCE_SUFFIX = ".kicad_sch"
+PCB_SOURCE_SUFFIX = ".kicad_pcb"
 MAX_CHANGE_JOURNAL = 32
 # Caller-owned compatibility identity must include KiCad/parser/IR schema versions.
-SUPPORTED_SOURCES = frozenset({SCHEMATIC_SOURCE_SUFFIX, ".kicad_pcb", ".kicad_pro", ".kicad_dru"})
+SUPPORTED_SOURCES = frozenset(
+    {SCHEMATIC_SOURCE_SUFFIX, PCB_SOURCE_SUFFIX, ".kicad_pro", ".kicad_dru"}
+)
 
 
 class StateRebuildRequiredError(ValueError):
@@ -362,7 +365,7 @@ def _capture_native_pcb(
     root: Path, board_name: str, native_sources: tuple[str, ...], reader: FileFootprintIndex
 ) -> NativePcbSnapshot:
     relative = _source_name(board_name)
-    if relative.suffix != ".kicad_pcb" or board_name not in native_sources:
+    if relative.suffix != PCB_SOURCE_SUFFIX or board_name not in native_sources:
         raise StateRebuildRequiredError("invalid native PCB identity")
     before = _source_digests(root, native_sources, allow_hierarchy=True)
     root = root.resolve(strict=True)
@@ -400,7 +403,7 @@ def _validate_pcb_snapshot(
         snapshot.root != root.resolve(strict=True)
         or dict(snapshot.source_hashes) != hashes
         or snapshot.board_name not in hashes
-        or _source_name(snapshot.board_name).suffix != ".kicad_pcb"
+        or _source_name(snapshot.board_name).suffix != PCB_SOURCE_SUFFIX
     ):
         raise StateRebuildRequiredError("native PCB snapshot identity mismatch")
 

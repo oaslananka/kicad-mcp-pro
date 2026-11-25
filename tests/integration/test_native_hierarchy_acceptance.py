@@ -448,7 +448,8 @@ def test_physical_pcb_budget_rejects_relative_warm_regression() -> None:
 
 def _require_pcb_budget_environment() -> None:
     assert sys.platform == "linux", "pinned PCB budget requires Linux"
-    assert platform.machine() == "x86_64" and sys.version_info[:2] == (3, 13)
+    assert platform.machine() == "x86_64"
+    assert sys.version_info[:2] == (3, 13)
     assert "i3-10110U" in Path("/proc/cpuinfo").read_text(encoding="utf-8")
     assert len(os.sched_getaffinity(0)) == 4, "pinned PCB budget requires four logical CPUs"
 

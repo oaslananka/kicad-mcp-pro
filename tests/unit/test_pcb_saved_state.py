@@ -90,13 +90,15 @@ async def test_explicit_save_builds_then_updates_persistent_state(
     server = build_server("full")
     assert not path.exists()
     result = await call_tool_text(server, "pcb_save", {})
-    assert "Board saved." in result and "rebuilt" in result
+    assert "Board saved." in result
+    assert "rebuilt" in result
     before = json.loads(path.read_text())
     assert before["generation"] == 0
     live.x = 11
     assert json.loads(path.read_text()) == before
     result = await call_tool_text(server, "pcb_save", {})
-    assert "Board saved." in result and "1 updated" in result
+    assert "Board saved." in result
+    assert "1 updated" in result
     after = json.loads(path.read_text())
     assert after["generation"] == 1
     assert after["journal"][0]["work_units"] == 1
@@ -167,7 +169,8 @@ async def test_save_cache_failure_does_not_retry_native_save(
         "kicad_mcp.project.incremental_state.PersistentProjectState.save_atomic", fail
     )
     result = await call_tool_text(server, "pcb_save", {})
-    assert "Board saved." in result and "unavailable" in result
+    assert "Board saved." in result
+    assert "unavailable" in result
     assert mock_board.save.call_count == 2
     assert path.read_bytes() == before
     assert get_config().pcb_file.read_text() == _board(11)
@@ -270,7 +273,8 @@ async def test_save_refuses_cache_for_wrong_scope(
     else:
         cfg.transport = "streamable-http"
     result = await call_tool_text(build_server("full"), "pcb_save", {})
-    assert "Board saved." in result and "unavailable" in result
+    assert "Board saved." in result
+    assert "unavailable" in result
     assert not path.exists()
     mock_board.save.assert_called_once()
 

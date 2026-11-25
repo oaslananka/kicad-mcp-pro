@@ -194,7 +194,8 @@ def test_physical_snapshot_distinguishes_placement_from_unknown_changes(tmp_path
     original = _board(_footprint(A, "REF**", 10), _footprint(B, "REF**", 15))
     first = index.refresh(path, original)
     moved = index.refresh(path, original.replace("(at 10 20 90)", "(at 11 20 90)"))
-    assert first is not None and moved is not None
+    assert first is not None
+    assert moved is not None
     assert first.board_context_sha256 == moved.board_context_sha256
     assert first.records[A].nonplacement_sha256 == moved.records[A].nonplacement_sha256
     assert first.records[A].block_sha256 != moved.records[A].block_sha256

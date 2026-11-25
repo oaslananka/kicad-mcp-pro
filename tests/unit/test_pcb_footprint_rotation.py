@@ -948,7 +948,8 @@ async def test_move_rejects_ambiguous_reference_without_mutation(mock_board: obj
     )
     assert "ambiguous" in result.lower()
     assert "UUID" in result
-    assert first.position is None and second.position is None
+    assert first.position is None
+    assert second.position is None
     mock_board.update_items.assert_not_called()
 
 
@@ -1032,7 +1033,8 @@ async def test_move_rejects_duplicate_native_id_before_mutation(mock_board: obje
         {"reference": "X2", "x_mm": 10.0, "y_mm": 20.0},
     )
     assert "ambiguous" in result.lower()
-    assert first.position is None and second.position is None
+    assert first.position is None
+    assert second.position is None
     mock_board.update_items.assert_not_called()
 
 
