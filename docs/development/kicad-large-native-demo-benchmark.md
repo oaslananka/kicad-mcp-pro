@@ -110,9 +110,47 @@ process peak RSS was 193836 KiB, not a per-variant memory comparison. These
 five local observations do not establish a production p95, an end-to-end
 editor speedup, or a CI threshold.
 
+## File-backed footprint listing (#944)
+
+The existing `pcb_get_footprints` file-backed fallback now has a bounded,
+in-process listing index scoped to one board path and supported board format.
+Every request reads the saved board; matching content hashes allow reuse of
+immutable records. After a file change, the board is scanned again and only
+changed footprint blocks are decoded. Full native UUIDs identify records, so
+duplicate references such as `REF**` do not collapse. The returned
+`file:footprint:<uuid>` identifiers are file-backed inspection identifiers,
+not live IPC mutation handles. Older files without supported UUIDs retain the
+uncached legacy fallback. Invalid supported inventories are not reused.
+No sidecar is written by this listing path; live GUI reads, geometry and
+connectivity consumers are unchanged.
+
+On KiCad 10.0.8 with the pinned Jetson AGX Thor demo, a diagnostic copy
+with a single R17 placement change of +0.1 mm on X was checked against
+independent native pcbnew reload and a clean index. All 1,125 footprint UUID,
+reference, value, X/Y and layer records matched, including two distinct
+`REF**` footprints; all 21 original source hashes remained unchanged.
+
+| Observed operation | Duration (ms) | Recomputed footprint records |
+| --- | ---: | ---: |
+| Initial saved board read and index | 9866.711 | 1125 |
+| Unchanged saved board read and index | 519.895 | 0 |
+| Changed saved board read and index | 5216.240 | 1 |
+| Warm file-backed listing adapter, page 1 | 659.636 | 0 |
+| Independent clean index after edit | 6589.635 | 1125 |
+
+These are single local observations, not population latency or reviewed
+regression thresholds. The legacy full-geometry parser exceeded the bounded
+diagnostic timeout, so no exact speedup ratio is claimed. The changed board
+still requires a full text scan; the work-unit count measures decoded
+footprint records, not total I/O or scan work. Diagnostic process peak RSS
+was 732256 KiB (including creation of the edited copy), not an isolated
+cache-memory measurement. Native save/GUI mutation and persistent physical
+PCB graph ingestion are outside this listing acceptance.
+
 ## Follow-up for full #944 acceptance
 
-Native schematic hierarchy is now an opt-in verified path. Remaining work is
-editor integration, representative PCB/object deltas, concurrent-edit handling,
-end-to-end refresh measurements and reviewed non-regression thresholds. This
+Native schematic hierarchy is an opt-in verified path and file-backed
+footprint listing supports bounded record reuse. Remaining work includes
+persistent physical PCB graph deltas, live editor integration, broader
+concurrent-edit acceptance and reviewed non-regression thresholds. This
 benchmark does not claim general PCB performance or manufacturing readiness.

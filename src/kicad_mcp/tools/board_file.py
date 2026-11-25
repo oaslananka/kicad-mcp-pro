@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import math
 import re
+import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+from uuid import UUID
 
-from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION
+from ..file_formats import FOOTPRINT_LIST_READ_VERSIONS, GENERATED_SEXPR_DIALECT_VERSION
 from ..utils import telemetry as otel
 from ..utils.sexpr import _extract_block
 
@@ -346,6 +351,194 @@ def _parse_board_footprint_blocks(content: str) -> dict[str, dict[str, Any]]:
             elapsed_seconds=time.perf_counter() - started,
         )
         return footprints
+
+
+# Only the read-only footprint list projection is cached. Geometry, pad and
+# connectivity consumers continue using the established full parser.
+_BOARD_HEADER = re.compile(r"\s*\(kicad_pcb\s+\(version\s+(\d+)\)")
+_BOARD_TOKENS = re.compile(r'"[^"\\]*(?:\\.[^"\\]*)*"|[()"]')
+_CHILD_TAG = re.compile(r"\(([a-zA-Z_](?a:\w*))\b")
+_MAX_INDEX_CHARS = 128 * 1024 * 1024
+_MAX_INDEX_OBJECTS = 8192
+
+
+def _board_child_tag(text: str, start: int) -> str:
+    tag = _CHILD_TAG.match(text, start)
+    if tag is None:
+        raise ValueError("invalid native PCB child")
+    return tag.group(1)
+
+
+def _direct_board_children(text: str, start: int, end: int) -> Iterator[tuple[str, int, int]]:
+    """Walk direct balanced children; quoted text cannot create a native object."""
+    depth = 0
+    child_start = start
+    for token in _BOARD_TOKENS.finditer(text, start, end):
+        value = token.group()
+        if value == "(":
+            if depth == 1:
+                child_start = token.start()
+            depth += 1
+            continue
+        if value == '"':
+            raise ValueError("unclosed native PCB string")
+        if value != ")":
+            continue
+        depth -= 1
+        if depth == 1:
+            yield _board_child_tag(text, child_start), child_start, token.end()
+        elif depth == 0:
+            break
+    else:
+        raise ValueError("unbalanced native PCB content")
+    if text[token.end() : end].strip():
+        raise ValueError("unexpected trailing native PCB content")
+
+
+@dataclass(frozen=True, slots=True)
+class FootprintListRecord:
+    native_uuid: str
+    reference: str
+    value: str
+    x_mm: float
+    y_mm: float
+    layer_name: str
+
+    def as_entry(self) -> dict[str, Any]:
+        return {
+            "native_uuid": self.native_uuid,
+            "value": self.value,
+            "x_mm": self.x_mm,
+            "y_mm": self.y_mm,
+            "layer_name": self.layer_name,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class FootprintListRefresh:
+    records: dict[str, FootprintListRecord]
+    work_units: int
+
+
+def _native_list_fields(block: str) -> tuple[dict[str, str], dict[str, str]]:
+    fields: dict[str, str] = {}
+    properties: dict[str, str] = {}
+    for tag, start, end in _direct_board_children(block, 0, len(block)):
+        if tag in {"uuid", "at", "layer"}:
+            if tag in fields:
+                raise ValueError("duplicate native footprint field")
+            fields[tag] = block[start:end]
+        elif tag == "property":
+            prop = re.match(
+                rf'\(property\s+"(Reference|Value)"\s+{STRING_PATTERN}', block[start:end]
+            )
+            if prop is not None:
+                if prop.group(1) in properties:
+                    raise ValueError("duplicate native footprint property")
+                properties[prop.group(1)] = prop.group(2)
+    return fields, properties
+
+
+def _native_list_record(block: str) -> FootprintListRecord | None:
+    fields, properties = _native_list_fields(block)
+    if "uuid" not in fields:
+        return None  # Older/synthetic files use the legacy uncached parser.
+    stamp = re.fullmatch(rf"\(uuid\s+{STRING_PATTERN}\s*\)", fields["uuid"])
+    at = re.fullmatch(
+        rf"\(at\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})(?:\s+{FLOAT_PATTERN})?\s*\)",
+        fields.get("at", ""),
+    )
+    layer = re.fullmatch(rf"\(layer\s+{STRING_PATTERN}\s*\)", fields.get("layer", ""))
+    if stamp is None or at is None or layer is None or "Reference" not in properties:
+        raise ValueError("incomplete native footprint identity or placement")
+    identifier = str(UUID(stamp.group(1)))
+    if identifier != stamp.group(1):
+        raise ValueError("noncanonical native footprint UUID")
+    x_mm, y_mm = float(at.group(1)), float(at.group(2))
+    if not (math.isfinite(x_mm) and math.isfinite(y_mm)):
+        raise ValueError("nonfinite native footprint position")
+    return FootprintListRecord(
+        identifier,
+        properties["Reference"],
+        properties.get("Value", ""),
+        x_mm,
+        y_mm,
+        layer.group(1),
+    )
+
+
+class FileFootprintIndex:
+    """One board's transient listing state; no native authority or disk writes.
+
+    Reuse immutable rows only from exact matching decoded native footprint block text.
+    Always read the current saved board before calling refresh; no TTL or
+    filesystem timestamp is accepted as evidence of content equality.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._scope: tuple[Path, str] | None = None
+        self._digest: str | None = None
+        self._blocks: dict[str, FootprintListRecord] = {}
+
+    def clear(self) -> None:
+        with self._lock:
+            self._scope = None
+            self._digest = None
+            self._blocks = {}
+
+    def refresh(self, path: Path, content: str) -> FootprintListRefresh | None:
+        with self._lock:
+            header = _BOARD_HEADER.match(content)
+            if (
+                header is None
+                or header.group(1) not in FOOTPRINT_LIST_READ_VERSIONS
+                or len(content) > _MAX_INDEX_CHARS
+            ):
+                self.clear()
+                return None
+            scope = (path.absolute(), header.group(1))
+            digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            previous = self._blocks if scope == self._scope else {}
+            if scope == self._scope and digest == self._digest:
+                return FootprintListRefresh({r.native_uuid: r for r in previous.values()}, 0)
+            # Clear before parsing: an exception or unsupported board cannot
+            # leave an older snapshot available for later accidental reuse.
+            self.clear()
+            result = self._refresh_blocks(content, content.index("("), previous)
+            if result is None:
+                return None
+            blocks, work_units = result
+            self._scope, self._digest, self._blocks = scope, digest, blocks
+            return FootprintListRefresh({r.native_uuid: r for r in blocks.values()}, work_units)
+
+    @staticmethod
+    def _refresh_blocks(
+        content: str,
+        start: int,
+        previous: dict[str, FootprintListRecord],
+    ) -> tuple[dict[str, FootprintListRecord], int] | None:
+        blocks: dict[str, FootprintListRecord] = {}
+        identities: set[str] = set()
+        work_units = 0
+        for tag, begin, end in _direct_board_children(content, start, len(content)):
+            if tag != "footprint":
+                continue
+            if len(blocks) >= _MAX_INDEX_OBJECTS:
+                return None
+            block = content[begin:end]
+            digest = hashlib.sha256(block.encode("utf-8")).hexdigest()
+            record = previous.get(digest)
+            if record is None:
+                record = _native_list_record(block)
+                if record is None:
+                    return None
+                work_units += 1
+            if record.native_uuid in identities:
+                raise ValueError("duplicate native footprint identity")
+            identities.add(record.native_uuid)
+            blocks[digest] = record
+        return blocks, work_units
 
 
 def _edge_cuts_bounds(content: str) -> tuple[float, float, float, float] | None:
