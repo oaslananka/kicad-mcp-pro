@@ -31,6 +31,13 @@
     "SonarSource/sonarqube-scan-action"
   ],
   "workflow_write_permissions": {
+    "signed-python-handoff-rehearsal.yml": {
+      "sign": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
+      ]
+    },
     "release-handoff-rehearsal.yml": {
       "handoff": [
         "actions"
