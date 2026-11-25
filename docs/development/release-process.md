@@ -37,8 +37,10 @@ merging a release PR is an intentional authorization to publish once those
 checks succeed.
 
 Today Release Please publishes each GitHub Release before the publishers
-attach their assets, and the publishers upload with `--clobber`. This is not
-compatible with immutable GitHub Releases. The step-by-step map, the
+attach their assets. The publishers now verify existing bytes and upload
+missing assets only, without `--clobber`. Missing assets still cannot be
+attached after immutable publication, so this is not yet compatible with
+immutable GitHub Releases. The step-by-step map, the
 `release_asset_mutations` ratchet and the proposed draft-first design are in
 [Release asset immutability](release-asset-immutability.md) (#1179).
 

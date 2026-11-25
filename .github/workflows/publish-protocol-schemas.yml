@@ -117,9 +117,20 @@ jobs:
           path: release-assets/protocol-schemas
           if-no-files-found: error
           retention-days: 14
+      # Recovery may build from an older tag. Run the safety helper from the
+      # exact workflow revision, not the historical package checkout.
+      - name: Load reviewed release attachment helper
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+          sparse-checkout: scripts
+          persist-credentials: false
+
       - name: Attach evidence to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          PYTHONPATH: ${{ github.workspace }}/.release-tools
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
         run: |
           set -euo pipefail
@@ -128,7 +139,10 @@ jobs:
           cp ../../release-assets/protocol-schemas/*.tgz "$upload_dir/"
           cp ../../release-assets/protocol-schemas/SHA256SUMS.txt "$upload_dir/protocol-schemas-SHA256SUMS.txt"
           cp ../../release-assets/protocol-schemas/sbom.cdx.json "$upload_dir/protocol-schemas-sbom.cdx.json"
-          gh release upload "$RELEASE_TAG" "$upload_dir"/* --clobber
+          python3 -P -m scripts.attach_published_release_assets \
+            --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
+            --source-commit "$(git rev-parse HEAD)" --source-root "$GITHUB_WORKSPACE" \
+            --execute "$upload_dir"/*
       - name: Verify checksums before publish
         run: (cd ../../release-assets/protocol-schemas && sha256sum --check SHA256SUMS.txt)
       - name: Check if version already published

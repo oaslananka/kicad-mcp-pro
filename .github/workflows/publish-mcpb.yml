@@ -183,12 +183,26 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # Recovery may build from an older tag. Run the safety helper from the
+      # exact workflow revision, not the historical package checkout.
+      - name: Load reviewed release attachment helper
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+          sparse-checkout: scripts
+          persist-credentials: false
+
       - name: Attach MCPB bundle and evidence to GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          PYTHONPATH: ${{ github.workspace }}/.release-tools
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
           release_tag="$RELEASE_TAG"
-          gh release upload "$release_tag" release-assets/mcpb/* --clobber
+          python3 -P -m scripts.attach_published_release_assets \
+            --repo "$GITHUB_REPOSITORY" --tag "$release_tag" \
+            --source-commit "$(git rev-parse HEAD)" --source-root "$GITHUB_WORKSPACE" \
+            --execute release-assets/mcpb/*
