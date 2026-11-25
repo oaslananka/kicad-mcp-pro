@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import shutil
 import statistics
 import subprocess  # nosec B404
@@ -42,17 +43,33 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "tests/fixtures/native_hierarchy"
 R17_STAMP = "158cb263-f02b-49cd-a384-b1930fe4cc8d"
 REPEATS = 3
+PCB_BUDGET_MODE = os.environ.get("KICAD_MCP_NATIVE_PCB_DEMO") == "budget"
+# Reference: three paired samples on Linux x86_64, i3-10110U (4 threads),
+# Python 3.13, KiCad 10.0.8, pinned manifest. Headroom allows ordinary jitter.
+PCB_PHASE_LIMITS_MS = {
+    "warm_capture_ms": 2000.0,
+    "incremental_capture_update_ms": 7500.0,
+    "clean_capture_build_ms": 14000.0,
+    "reopen_ms_excluding_capture": 3000.0,
+    "fresh_hierarchy_capture_ms": 10000.0,
+}
+PCB_COLD_LIMIT_MS = 14000.0
+PCB_RSS_LIMIT_KIB = 768 * 1024
 
 
 @pytest.fixture
 def native_version(monkeypatch: pytest.MonkeyPatch) -> str:
     executable = shutil.which("kicad-cli")
     if executable is None:
+        if PCB_BUDGET_MODE:
+            pytest.fail("pinned PCB budget requires native KiCad CLI")
         pytest.skip("native KiCad CLI unavailable")
     monkeypatch.setattr(get_config(), "kicad_cli", Path(executable))
     code, stdout, _ = _run_cli("version", timeout=15)
     assert code == 0
     version = stdout.strip()
+    if PCB_BUDGET_MODE:
+        assert version == "10.0.8", "pinned PCB budget requires KiCad 10.0.8"
     if not version.startswith("10."):
         pytest.skip("acceptance uses KiCad 10")
     return version
@@ -369,13 +386,83 @@ def _assert_pcb_graph_parity(graph: EngineeringGraph, rows: list) -> None:
     assert actual == rows
 
 
+def _pcb_budget_violations(
+    p95_ms: dict[str, float], cold_ms: float, peak_rss_kib: int
+) -> list[str]:
+    failures = [
+        f"{phase}: {p95_ms[phase]:.1f} ms > {limit:.0f} ms"
+        for phase, limit in PCB_PHASE_LIMITS_MS.items()
+        if p95_ms[phase] > limit
+    ]
+    if cold_ms > PCB_COLD_LIMIT_MS:
+        failures.append(f"cold capture/build: {cold_ms:.1f} ms > {PCB_COLD_LIMIT_MS:.0f} ms")
+    if peak_rss_kib > PCB_RSS_LIMIT_KIB:
+        failures.append(f"peak process RSS: {peak_rss_kib} KiB > {PCB_RSS_LIMIT_KIB} KiB")
+    clean = p95_ms["clean_capture_build_ms"]
+    if p95_ms["incremental_capture_update_ms"] > 0.8 * clean:
+        failures.append("incremental p95 exceeds 80% of clean p95")
+    if p95_ms["warm_capture_ms"] > 0.3 * clean:
+        failures.append("warm p95 exceeds 30% of clean p95")
+    return failures
+
+
+@pytest.mark.parametrize(
+    ("phase", "value", "expected"),
+    [
+        ("warm_capture_ms", 1100, ""),
+        ("warm_capture_ms", 2001, "warm_capture_ms"),
+        ("incremental_capture_update_ms", 7501, "incremental_capture_update_ms"),
+        ("clean_capture_build_ms", 14001, "clean_capture_build_ms"),
+        ("reopen_ms_excluding_capture", 3001, "reopen_ms_excluding_capture"),
+        ("fresh_hierarchy_capture_ms", 10001, "fresh_hierarchy_capture_ms"),
+        ("incremental_capture_update_ms", 7300, "80% of clean"),
+        ("cold", 14001, "cold capture/build"),
+        ("rss", 786433, "peak process RSS"),
+    ],
+)
+def test_physical_pcb_budget_rejects_regressions(phase: str, value: int, expected: str) -> None:
+    p95 = {
+        "warm_capture_ms": 1100.0,
+        "incremental_capture_update_ms": 5000.0,
+        "clean_capture_build_ms": 9000.0,
+        "reopen_ms_excluding_capture": 1800.0,
+        "fresh_hierarchy_capture_ms": 6300.0,
+    }
+    if phase in p95:
+        p95[phase] = float(value)
+    failures = _pcb_budget_violations(
+        p95, float(value if phase == "cold" else 9000), value if phase == "rss" else 540000
+    )
+    if expected:
+        assert any(expected in failure for failure in failures)
+    else:
+        assert not failures
+
+
+def test_physical_pcb_budget_rejects_relative_warm_regression() -> None:
+    p95 = dict.fromkeys(PCB_PHASE_LIMITS_MS, 1000.0)
+    p95["clean_capture_build_ms"] = 5000.0
+    p95["warm_capture_ms"] = 1800.0
+    assert _pcb_budget_violations(p95, 9000.0, 540000) == ["warm p95 exceeds 30% of clean p95"]
+
+
+def _require_pcb_budget_environment() -> None:
+    assert sys.platform == "linux", "pinned PCB budget requires Linux"
+    assert platform.machine() == "x86_64" and sys.version_info[:2] == (3, 13)
+    assert "i3-10110U" in Path("/proc/cpuinfo").read_text(encoding="utf-8")
+    assert len(os.sched_getaffinity(0)) == 4, "pinned PCB budget requires four logical CPUs"
+
+
 @pytest.mark.slow
 @pytest.mark.skipif(
-    os.environ.get("KICAD_MCP_NATIVE_PCB_DEMO") != "1" or sys.platform != "linux",
+    not PCB_BUDGET_MODE
+    and (os.environ.get("KICAD_MCP_NATIVE_PCB_DEMO") != "1" or sys.platform != "linux"),
     reason="opt-in pinned Linux physical PCB state acceptance",
 )
 def test_pinned_large_native_pcb_placement(tmp_path: Path, native_version: str) -> None:
     """Controlled saved-file translation with independent native reload, not a GUI edit."""
+    if PCB_BUDGET_MODE:
+        _require_pcb_budget_environment()
     import resource
 
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -470,6 +557,17 @@ def test_pinned_large_native_pcb_placement(tmp_path: Path, native_version: str) 
         check=True,
         timeout=10,
     ).stdout.strip()
+    metrics = {key: _summary([item[key] for item in observations]) for key in observations[0]}
+    peak_rss_kib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    failures = (
+        _pcb_budget_violations(
+            {key: nearest_rank_p95([item[key] for item in observations]) for key in metrics},
+            cold_ms,
+            peak_rss_kib,
+        )
+        if PCB_BUDGET_MODE
+        else []
+    )
     print(
         "NATIVE_PCB_STATE_EVIDENCE:"
         + json.dumps(
@@ -483,10 +581,12 @@ def test_pinned_large_native_pcb_placement(tmp_path: Path, native_version: str) 
                 "updated_graph_entities_per_cycle": [1] * len(observations),
                 "decoded_footprints_cold_warm_changed_clean": [1125, 0, 1, 1125],
                 "cold_capture_build_ms": round(cold_ms, 3),
-                "phase_metrics": {
-                    key: _summary([item[key] for item in observations]) for key in observations[0]
-                },
-                "process_peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+                "phase_metrics": metrics,
+                "process_peak_rss_kib": peak_rss_kib,
+                "python_version": platform.python_version(),
+                "architecture": platform.machine(),
+                "budget_enforced": PCB_BUDGET_MODE,
+                "budget_violations": failures,
                 "original_hashes_unchanged": True,
                 "observation_count": len(observations),
             },
@@ -494,3 +594,4 @@ def test_pinned_large_native_pcb_placement(tmp_path: Path, native_version: str) 
         ),
         flush=True,
     )
+    assert not failures, "; ".join(failures)

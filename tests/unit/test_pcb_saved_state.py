@@ -175,6 +175,73 @@ async def test_save_cache_failure_does_not_retry_native_save(
 
 @pytest.mark.anyio
 @pytest.mark.mcp_mode("write")
+async def test_cache_write_failure_rebuilds_on_next_explicit_save(
+    saved_project: tuple[SimpleNamespace, Path],
+    mock_board: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    live, path = saved_project
+    server = build_server("full")
+    assert "rebuilt" in await call_tool_text(server, "pcb_save", {})
+    original = path.read_bytes()
+    live.x = 11
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "kicad_mcp.project.incremental_state.PersistentProjectState.save_atomic",
+            MagicMock(side_effect=OSError("interrupted sidecar write")),
+        )
+        assert "rebuild required" in await call_tool_text(server, "pcb_save", {})
+    assert path.read_bytes() == original
+    assert mock_board.save.call_count == 2
+    assert "rebuilt" in await call_tool_text(server, "pcb_save", {})
+    assert json.loads(path.read_text())["generation"] == 0
+    assert "reopened" in await call_tool_text(build_server("full"), "pcb_save", {})
+    live.x = 12
+    assert "1 updated" in await call_tool_text(server, "pcb_save", {})
+    assert mock_board.save.call_count == 5
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_saved_graph_switches_between_projects_without_reusing_prior_state(
+    saved_project: tuple[SimpleNamespace, Path],
+    mock_board: MagicMock,
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    live, first_cache = saved_project
+    cfg = get_config()
+    server = build_server("full")
+    assert "rebuilt" in await call_tool_text(server, "pcb_save", {})
+    live.x = 11
+    assert "1 updated" in await call_tool_text(server, "pcb_save", {})
+    first_bytes = first_cache.read_bytes()
+    first_board = cfg.pcb_file
+    assert first_board is not None
+    second = tmp_path_factory.mktemp("physical-project")
+    with monkeypatch.context() as patch:
+        patch.setattr(cfg, "project_dir", second)
+        patch.setattr(cfg, "workspace_root", second)
+        for attr, suffix in (("project_file", "pro"), ("pcb_file", "pcb"), ("sch_file", "sch")):
+            source = getattr(cfg, attr)
+            destination = second / f"demo.kicad_{suffix}"
+            destination.write_bytes(source.read_bytes())
+            patch.setattr(cfg, attr, destination)
+        patch.setattr(mock_board.get_project.return_value, "path", str(cfg.project_file))
+        live.x = 42
+        assert "rebuilt" in await call_tool_text(server, "pcb_save", {})
+        second_cache = second / ".kicad-mcp-cache/physical.json"
+        assert json.loads(second_cache.read_text())["generation"] == 0
+        assert first_cache.read_bytes() == first_bytes
+        assert first_board.read_text() == _board(11)
+    live.x = 11
+    assert "reopened" in await call_tool_text(server, "pcb_save", {})
+    assert first_cache.read_bytes() == first_bytes
+    assert (second / "demo.kicad_pcb").read_text() == _board(42)
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
 async def test_failed_native_save_never_publishes_sidecar(
     saved_project: tuple[SimpleNamespace, Path], mock_board: MagicMock
 ) -> None:
