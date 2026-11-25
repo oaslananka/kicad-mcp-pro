@@ -434,13 +434,17 @@ def test_descriptor_boundary_rejects_unapproved_filenames(tmp_path: Path, filena
     outside.chmod(0o600)
     if filename == "absolute":
         filename = str(outside)
-    with pytest.raises(ReferenceOpsTraceValidationError, match="reserved"):
-        fd = reference_ops_trace_validation._open_reserved_trace(
-            root=reference_ops_trace_validation._TRACE_ROOT,
-            attempt_id="attempt-004",
-            filename=filename,
-        )
-        os.close(fd)
+    fd = None
+    try:
+        with pytest.raises(ReferenceOpsTraceValidationError, match="reserved"):
+            fd = reference_ops_trace_validation._open_reserved_trace(
+                root=reference_ops_trace_validation._TRACE_ROOT,
+                attempt_id="attempt-004",
+                filename=filename,
+            )
+    finally:
+        if fd is not None:
+            os.close(fd)
 
 
 @pytest.mark.parametrize("attempt_id", ["attempt-004:alternate", "attempt-004.", "NUL", "COM1"])
