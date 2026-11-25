@@ -100,8 +100,11 @@ def test_publish_workflows_are_idempotent_for_existing_versions() -> None:
     python_workflow = _read(".github/workflows/publish-python.yml")
     npm_workflow = _read(".github/workflows/publish-npm.yml")
 
-    assert python_workflow.count("Check if version already published") == 2
-    assert python_workflow.count("steps.check-published.outputs.already_published != 'true'") == 2
+    assert python_workflow.count("Stage missing verified Python distributions") == 2
+    assert python_workflow.count("steps.stage-upload.outputs.missing_count == '1'") == 2
+    assert python_workflow.count("steps.stage-upload.outputs.missing_count == '2'") == 2
+    assert python_workflow.count("packages-dir: pending-dist") == 2
+    assert python_workflow.count("stage-pypi-upload") == 2
     assert "Check if version already published" in npm_workflow
     assert "steps.check-published.outputs.already_published != 'true'" in npm_workflow
 
