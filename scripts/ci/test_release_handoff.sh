@@ -16,7 +16,8 @@ printf '%s\n' '{"version":"4.23.0"}' > server.json
 
 git() { [[ "$*" == 'rev-parse HEAD' ]] || return 97; printf '%s\n' "$GITHUB_SHA"; }
 gh() {
-    [[ "$1" == api && "$2" == -H && "$3" == 'X-GitHub-Api-Version: 2026-03-10' ]] || return 97
+    local subcommand="$1" header_flag="$2" version_header="$3"
+    [[ "$subcommand" == api && "$header_flag" == -H && "$version_header" == 'X-GitHub-Api-Version: 2026-03-10' ]] || return 97
     shift 3
     local mock_root="repos/$GITHUB_REPOSITORY/actions"
     case "$*" in
@@ -36,8 +37,9 @@ gh() {
 export -f git gh
 
 run_record() {
+    local id="$1" actor="$2" actor_id="$3" path="$4"
     jq -n --arg repo "$GITHUB_REPOSITORY" --arg sha "$GITHUB_SHA" \
-        --argjson id "$1" --arg actor "$2" --argjson actor_id "$3" --arg path "$4" '
+        --argjson id "$id" --arg actor "$actor" --argjson actor_id "$actor_id" --arg path "$path" '
         {id:$id,repository:{full_name:$repo,id:123},head_repository:{full_name:$repo,id:123},
          path:(".github/workflows/"+$path),event:"workflow_dispatch",head_branch:"main",
          head_sha:$sha,run_attempt:1,actor:{login:$actor,id:$actor_id},
@@ -53,8 +55,9 @@ reset_fixture() {
 }
 
 change_json() {
-    jq "$2" "$1" > changed.json
-    mv changed.json "$1"
+    local file="$1" filter="$2"
+    jq "$filter" "$file" > changed.json
+    mv changed.json "$file"
 }
 
 worker_env() {
@@ -87,6 +90,8 @@ run_owner_case() (
         wrong-digest) change_json artifacts.json '.artifacts[0].digest=("sha256:"+("0"*64))';;
         duplicate) change_json artifacts.json '.total_count=2 | .artifacts += .artifacts';;
         ambiguous-dispatch) printf '%s\n' '{}' > dispatch-response.json;;
+        success|wrong-receipt|wrong-manifest) ;;
+        *) printf 'unknown owner scenario: %s\n' "$scenario" >&2; return 1;;
     esac
     local result=0
     bash "$script" owner > owner-output.txt 2>&1 || result=$?
@@ -114,6 +119,7 @@ run_worker_case() (
         ambiguous-owner) change_json owners.json '.total_count=2 | .workflow_runs += .workflow_runs';;
         no-owner) change_json owners.json '.total_count=0 | .workflow_runs=[]';;
         rerun) export GITHUB_RUN_ATTEMPT=2;;
+        *) printf 'unknown worker scenario: %s\n' "$scenario" >&2; return 1;;
     esac
     local result=0
     bash "$script" worker > worker-output.txt 2>&1 || result=$?

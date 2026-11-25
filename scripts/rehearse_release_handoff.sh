@@ -12,7 +12,7 @@ readonly worker_path='.github/workflows/release-handoff-worker.yml'
 
 fail() { printf 'handoff rehearsal: %s\n' "$*" >&2; exit 1; }
 api() { gh api -H "$api_version" "$@"; }
-positive_id() { [[ "$1" =~ ^[1-9][0-9]{0,14}$ ]]; }
+positive_id() { local value="$1"; [[ "$value" =~ ^[1-9][0-9]{0,14}$ ]]; }
 
 # All supplied input stays data. Require the exact canonical main checkout.
 [[ "$GITHUB_REPOSITORY" == "$repo" && "$GITHUB_REF" == refs/heads/main ]] || fail 'wrong repository or ref'
@@ -41,8 +41,9 @@ verify_run() {
 }
 
 receipt() {
+    local worker_id="$1"
     jq -n --arg repository "$repo" --arg source "$GITHUB_SHA" --arg digest "$digest" \
-        --arg owner "$OWNER_RUN_ID" --arg attempt "$OWNER_ATTEMPT" --arg worker "$1" '
+        --arg owner "$OWNER_RUN_ID" --arg attempt "$OWNER_ATTEMPT" --arg worker "$worker_id" '
         {repository: $repository, sourceCommit: $source, manifestSha256: $digest,
          ownerRunId: ($owner|tonumber), ownerRunAttempt: ($attempt|tonumber),
          workerRunId: ($worker|tonumber), workerRunAttempt: 1,
