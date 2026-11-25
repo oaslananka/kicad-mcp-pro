@@ -2247,6 +2247,8 @@ def _register_profile_components(
     server: KiCadFastMCP,
     enabled: set[str],
     cfg: KiCadMCPConfig,
+    *,
+    include_resources_and_prompts: bool = True,
 ) -> None:
     """Register all profile-specific MCP surfaces on an already-created server."""
     from .prompts import workflows
@@ -2271,11 +2273,13 @@ def _register_profile_components(
     _symbol.register(server)
     _upgrade.register(server)
 
-    analysis.register(server)
-    board_state.register(server)
-    server_info.register(server)
-    studio_context.register(server)
-    workflows.register(server)
+    if include_resources_and_prompts:
+        analysis.register(server)
+        board_state.register(server)
+    server_info.register(server, include_resource=include_resources_and_prompts)
+    if include_resources_and_prompts:
+        studio_context.register(server)
+        workflows.register(server)
 
     if cfg.studio_watch_dir is not None:
         ensure_studio_project_watcher(cfg.studio_watch_dir)
@@ -2378,7 +2382,12 @@ def _schematic_mcp_instructions(profile: str, mode: OperatingMode) -> str:
     )
 
 
-def build_server(profile: str | None = None, *, defer_registration: bool = False) -> FastMCP:
+def build_server(
+    profile: str | None = None,
+    *,
+    defer_registration: bool = False,
+    include_resources_and_prompts: bool = True,
+) -> FastMCP:
     """Build a FastMCP server instance for the active profile."""
     cfg = get_config()
     otel.ensure_telemetry_configured(cfg)
@@ -2399,7 +2408,12 @@ def build_server(profile: str | None = None, *, defer_registration: bool = False
 
     server = KiCadFastMCP(
         name="kicad-mcp-pro",
-        instructions=_schematic_mcp_instructions(selected_profile, operating_mode),
+        instructions=(
+            _schematic_mcp_instructions(selected_profile, operating_mode)
+            if include_resources_and_prompts
+            else "Reviewed reference-board session. Use only the listed tools in the isolated "
+            "project and current phase; no resource or workflow prompt access is provided."
+        ),
         website_url="https://oaslananka.github.io/kicad-mcp-pro",
         host=cfg.host,
         port=cfg.port,
@@ -2426,7 +2440,9 @@ def build_server(profile: str | None = None, *, defer_registration: bool = False
     # ------------------------------------------------------------------
 
     def register() -> None:
-        _register_profile_components(server, enabled, cfg)
+        _register_profile_components(
+            server, enabled, cfg, include_resources_and_prompts=include_resources_and_prompts
+        )
 
     if defer_registration:
         server.set_lazy_registration(register)

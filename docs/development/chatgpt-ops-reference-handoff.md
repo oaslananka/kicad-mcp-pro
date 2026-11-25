@@ -366,3 +366,16 @@ Matching metadata remains `client_server_matched_unattested` and
 `counts_as_task_success=false`. No canonical attempt or KPI is changed.
 The CLI and unit fixtures do not establish a live model execution, complete
 client capture, or a supported PCB write session.
+
+### Reference host non-tool surfaces
+
+The reviewed reference host does not register MCP resources, resource templates
+or workflow prompts. This includes otherwise read-oriented resources that
+may run validation or update gate history. Resource/prompt discovery is empty;
+direct reads and prompt retrieval fail. The 37 reviewed schematic tools,
+including `kicad_get_server_info`, remain available. Normal product servers
+retain their existing resources and prompts. This narrows the server surface,
+not the external agent itself: client-side resource helpers and user-input
+tools can still be offered by a host and are not implicitly authorized for
+benchmark execution. The existing provider-cost and PCB isolation gates
+remain unchanged.
