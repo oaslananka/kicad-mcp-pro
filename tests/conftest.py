@@ -187,6 +187,7 @@ def reset_globals(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.delenv("KICAD_MCP_PROFILE", raising=False)
     monkeypatch.delenv("KICAD_MCP_OPERATING_MODE", raising=False)
     monkeypatch.delenv("KICAD_MCP_ENABLE_EXPERIMENTAL_TOOLS", raising=False)
+    monkeypatch.delenv("KICAD_MCP_ENABLE_PERSISTENT_PCB_STATE", raising=False)
     monkeypatch.delenv("KICAD_MCP_TELEMETRY_ENABLED", raising=False)
     monkeypatch.delenv("KICAD_MCP_OTEL_ENDPOINT", raising=False)
     monkeypatch.delenv("KICAD_MCP_OTEL_HEADERS", raising=False)

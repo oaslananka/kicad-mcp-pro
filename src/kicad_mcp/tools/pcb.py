@@ -36,7 +36,7 @@ from mcp.server.mcpserver import MCPServer as FastMCP
 from pydantic import Field
 
 from ..config import get_config
-from ..connection import KiCadConnectionError, get_board, get_kicad
+from ..connection import KiCadConnectionError, get_board, get_connection_epoch, get_kicad
 from ..errors import KiCadNotRunningError
 from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION, upgrade_generated_file
 from ..library_resolution import footprint_file as _footprint_file
@@ -92,6 +92,7 @@ from ..pcb.live_edit_runtime import (
     get_live_edit_service,
 )
 from ..pcb.origin_management import PcbOriginService
+from ..pcb.saved_state import SavedPcbStateService
 from ..pcb.session_inspection import PcbSessionInspectionService
 from ..pcb.stackup_management import PcbStackupManagementService
 from ..pcb.title_block_management import PcbTitleBlockService
@@ -4232,19 +4233,24 @@ def _register_board_deletion_tools(mcp: FastMCP) -> None:
         return str(pcb_delete_items([object_id]))
 
 
-def _register_board_state_tools(mcp: FastMCP) -> None:
+def _register_board_state_tools(mcp: FastMCP, saved_state: SavedPcbStateService) -> None:
     """Register the board state tools."""
 
     @mcp.tool()
     def pcb_save() -> str:
         """Save the active board."""
 
-        def _save() -> None:
-            save = cast(Callable[[], None], get_board().save)
-            save()
-
-        _run_queued_ipc_mutation("pcb_save", _save)
-        return "Board saved."
+        return execute_live_board_mutation(
+            "pcb_save",
+            lambda board: saved_state.save(
+                board,
+                get_config=get_config,
+                get_board=get_board,
+                get_epoch=get_connection_epoch,
+                run_cli=_run_cli,
+            ),
+            verifier=None,
+        )
 
     @mcp.tool()
     def pcb_refill_zones() -> str:
@@ -4578,11 +4584,11 @@ def _register_inner_layer_graphic_tools(mcp: FastMCP) -> None:
         )
 
 
-def _register_board_mutation_tools(mcp: FastMCP) -> None:
+def _register_board_mutation_tools(mcp: FastMCP, saved_state: SavedPcbStateService) -> None:
     """Register board mutation and basic placement tools."""
 
     _register_board_deletion_tools(mcp)
-    _register_board_state_tools(mcp)
+    _register_board_state_tools(mcp, saved_state)
     _register_footprint_placement_tools(mcp)
     _register_footprint_layer_tools(mcp)
     _register_inner_layer_graphic_tools(mcp)
@@ -6213,6 +6219,8 @@ def _register_placement_critique_tools(mcp: FastMCP) -> None:
 def register(mcp: FastMCP) -> None:
     """Register PCB tools."""
 
+    footprint_index = FileFootprintIndex()
+    saved_state = SavedPcbStateService(footprint_index)
     pcb_board_inspection.register(
         mcp,
         pcb_board_inspection.PcbBoardInspectionDependencies(
@@ -6222,7 +6230,7 @@ def register(mcp: FastMCP) -> None:
                 board_summary_report=_board_summary_report,
                 file_backed_tracks=_file_backed_tracks,
                 file_backed_vias=_file_backed_vias,
-                file_backed_footprints=partial(_file_backed_footprints, index=FileFootprintIndex()),
+                file_backed_footprints=partial(_file_backed_footprints, index=footprint_index),
                 paginate=_paginate,
                 limit_items=_limit,
                 matches_layer_filter=_matches_layer_filter,
@@ -6311,7 +6319,7 @@ def register(mcp: FastMCP) -> None:
 
     _register_board_graphics_tools(mcp)
 
-    _register_board_mutation_tools(mcp)
+    _register_board_mutation_tools(mcp, saved_state)
 
     _register_schematic_sync_tools(mcp)
 

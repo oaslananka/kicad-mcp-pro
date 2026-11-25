@@ -339,6 +339,7 @@ class NativePcbSnapshot:
     source_hashes: tuple[tuple[str, str], ...]
     board_context_sha256: str
     records: tuple[FootprintListRecord, ...]
+    decoded_footprints: int
 
 
 def capture_native_pcb(
@@ -388,6 +389,7 @@ def _capture_native_pcb(
         tuple(before.items()),
         result.board_context_sha256,
         tuple(result.records.values()),
+        result.work_units,
     )
 
 

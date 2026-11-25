@@ -155,6 +155,9 @@ class KiCadMCPConfig(BaseSettings):
     log_backup_count: int = Field(default=3, ge=1, le=20)
 
     enable_experimental_tools: bool = Field(default=False)
+    enable_persistent_pcb_state: bool = Field(
+        default=False, description="Opt-in local saved PCB graph updates on explicit pcb_save."
+    )
     enable_tasks: bool = Field(
         default=False,
         description=(

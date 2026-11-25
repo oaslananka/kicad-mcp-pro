@@ -164,8 +164,40 @@ cannot contain physical entities; v2 sidecars cannot reopen via the v1-only
 path. Read-only capture does not create a sidecar or modify native files.
 The caller retains exclusive edit/read-back ownership and must explicitly
 opt in to persistence. The ordinary file-backed listing path still writes
-nothing. No live GUI state, native editor save coordination, arbitrary
-concurrent mutation, or DRC/geometry validity is inferred from saved bytes.
+nothing. No unsaved GUI state, arbitrary concurrent mutation, or DRC/geometry
+validity is inferred from saved bytes.
+
+## Local native save integration
+
+Explicitly set `KICAD_MCP_ENABLE_PERSISTENT_PCB_STATE=true` in trusted server
+configuration for a local stdio session in write/experimental mode with a
+configured KiCad project, PCB and root schematic. The feature defaults to off.
+The project must match the live board's native project path, name and file;
+remote IPC endpoints and HTTP sessions are not supported.
+
+Use the existing `pcb_save` tool to build/reopen the saved graph, move a
+footprint by unique reference or native UUID, and explicitly call
+`pcb_save` again. The normal serialized save/transaction guard remains the
+native mutation authority. No extra native save is issued by the cache.
+Unsaved edits do not publish a graph. A verified single X/Y translation
+updates one node; unsupported or external changes require a fresh native
+capture and rebuild. The tool reports the saved graph as rebuilt, reopened,
+unchanged, updated, or unavailable separately from native save success.
+A cache error does not replay an already completed native save. A failed or
+ambiguous native save cannot publish a new graph. Project/connection changes
+evict the in-process state; a previous sidecar is never used as current
+without native hash verification. The index shared with file-backed listing
+remains read-only there. The sidecar is `.kicad-mcp-cache/physical.json`;
+deleting it while the server is idle is safe and the next explicit save
+rebuilds or recreates verified state. Do not use the opt-in on a project with
+other concurrent native writers.
+
+The maintained Linux private-GUI acceptance test starts a disposable editor
+in its own mount/PID/network namespace and Xvfb display, verifies the IPC
+peer and native project identity, and exercises three move/save cycles and
+verified reopen. It requires installed KiCad, system pcbnew Python, bwrap,
+Xvfb and the repository's Python environment. See the native benchmark
+documentation for the command and limitations.
 
 ## Validated now versus still outstanding
 
@@ -180,8 +212,8 @@ pin-to-net connections and source instance identities against a pinned real
 1,000+ component project and verify bounded updates and structural rebuilds.
 See the [native demo benchmark](kicad-large-native-demo-benchmark.md).
 
-Remaining #944 acceptance work includes editor integration, dependable
-concurrent-edit/watch semantics, end-to-end inspect/update/refresh performance
-(including native capture), representative CI non-regression thresholds, and
-broader PCB/object-level delta support beyond the verified saved-footprint translation. Do not
-claim latency savings or production-ready cache behavior from IR-only tests.
+Remaining #944 acceptance work includes broader editor/physical object support,
+end-to-end latency qualification on representative pinned hardware, reviewed
+wall-clock/memory budgets, and concurrent native writer cases beyond the
+documented exclusive-owner boundary. Do not claim general production cache
+behavior from these bounded tests.

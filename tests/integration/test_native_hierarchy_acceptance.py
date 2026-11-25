@@ -398,47 +398,69 @@ def test_pinned_large_native_pcb_placement(tmp_path: Path, native_version: str) 
     rows = _native_footprint_rows(board)
     assert len(rows) == 1125
     _assert_pcb_graph_parity(state.graph, rows)
-    token = state.prepare_native_edit()
+    assert before.decoded_footprints == 1125
+    observations = []
     # The pinned file manifest makes this literal diagnostic replacement exact.
-    old = '(uuid "3c47f456-5689-4cef-9b95-3444d1fac1a7")\n\t\t(at 182 57.5 -90)'
-    new = old.replace("(at 182 ", "(at 182.1 ")
-    text = board.read_bytes()
-    assert text.count(old.encode()) == 1
-    board.write_bytes(text.replace(old.encode(), new.encode(), 1))
-    del text
-    start = time.perf_counter()
-    after = capture_native_pcb(tmp_path, board_name, sources, index=index)
-    entry = state.apply_pcb_placement(
-        token, after, native_uuid="3c47f456-5689-4cef-9b95-3444d1fac1a7", x_mm=182.1, y_mm=57.5
-    )
-    incremental_ms = (time.perf_counter() - start) * 1000
-    assert entry.work_units == 1
-    updated_rows = _native_footprint_rows(board)
-    _assert_pcb_graph_parity(state.graph, updated_rows)
-    assert sum(old_row != new_row for old_row, new_row in zip(rows, updated_rows, strict=True)) == 1
-    fresh_hierarchy, _, _ = _capture(tmp_path, root_name, sources)
-    start = time.perf_counter()
-    clean_pcb = capture_native_pcb(tmp_path, board_name, sources)
-    clean = PersistentProjectState.rebuild_native(
-        fresh_hierarchy, compatibility_key=compat, pcb_snapshot=clean_pcb
-    )
-    clean_ms = (time.perf_counter() - start) * 1000
-    assert clean.graph.to_document() == state.graph.to_document()
-    assert clean.entity_hashes == state.entity_hashes
-    path = tmp_path / ".kicad-mcp-cache" / "physical.json"
-    state.save_atomic(path)
-    start = time.perf_counter()
-    reopened = PersistentProjectState.load_verified(
-        tmp_path,
-        path,
-        project_key=state.project_key,
-        native_sources=sources,
-        compatibility_key=compat,
-        native_snapshot=fresh_hierarchy,
-        pcb_snapshot=clean_pcb,
-    )
-    reopen_ms = (time.perf_counter() - start) * 1000
-    assert reopened.to_document() == state.to_document()
+    # Alternate the same native UUID so each cycle changes exactly one root X/Y.
+    stamp = "3c47f456-5689-4cef-9b95-3444d1fac1a7"
+    previous_x = 182.0
+    for x in (182.1, 182.2, 182.3):
+        start = time.perf_counter()
+        warm = capture_native_pcb(tmp_path, board_name, sources, index=index)
+        warm_ms = (time.perf_counter() - start) * 1000
+        assert warm.decoded_footprints == 0
+        assert dict(warm.source_hashes) == state.source_hashes
+        token = state.prepare_native_edit()
+        old = f'(uuid "{stamp}")\n\t\t(at {previous_x:g} 57.5 -90)'
+        new = old.replace(f"(at {previous_x:g} ", f"(at {x:g} ")
+        text = board.read_bytes()
+        assert text.count(old.encode()) == 1
+        board.write_bytes(text.replace(old.encode(), new.encode(), 1))
+        del text
+        start = time.perf_counter()
+        after = capture_native_pcb(tmp_path, board_name, sources, index=index)
+        entry = state.apply_pcb_placement(token, after, native_uuid=stamp, x_mm=x, y_mm=57.5)
+        incremental_ms = (time.perf_counter() - start) * 1000
+        assert entry.work_units == after.decoded_footprints == 1
+        updated_rows = _native_footprint_rows(board)
+        _assert_pcb_graph_parity(state.graph, updated_rows)
+        assert sum(a != b for a, b in zip(rows, updated_rows, strict=True)) == 1
+        fresh_hierarchy, _, hierarchy_ms = _capture(tmp_path, root_name, sources)
+        start = time.perf_counter()
+        clean_pcb = capture_native_pcb(tmp_path, board_name, sources)
+        clean = PersistentProjectState.rebuild_native(
+            fresh_hierarchy, compatibility_key=compat, pcb_snapshot=clean_pcb
+        )
+        clean_ms = (time.perf_counter() - start) * 1000
+        assert clean_pcb.decoded_footprints == 1125
+        assert clean.graph.to_document() == state.graph.to_document()
+        assert clean.entity_hashes == state.entity_hashes
+        path = tmp_path / ".kicad-mcp-cache" / "physical.json"
+        state.save_atomic(path)
+        start = time.perf_counter()
+        reopened = PersistentProjectState.load_verified(
+            tmp_path,
+            path,
+            project_key=state.project_key,
+            native_sources=sources,
+            compatibility_key=compat,
+            native_snapshot=fresh_hierarchy,
+            pcb_snapshot=clean_pcb,
+        )
+        reopen_ms = (time.perf_counter() - start) * 1000
+        assert reopened.to_document() == state.to_document()
+        observations.append(
+            {
+                "warm_capture_ms": warm_ms,
+                "incremental_capture_update_ms": incremental_ms,
+                "clean_capture_build_ms": clean_ms,
+                "reopen_ms_excluding_capture": reopen_ms,
+                "fresh_hierarchy_capture_ms": hierarchy_ms,
+            }
+        )
+        state = reopened
+        rows = updated_rows
+        previous_x = x
     assert all(sha256_file(path) == manifest["files"][path.name] for path in originals)
     revision = subprocess.run(  # nosec B603
         ["/usr/bin/git", "rev-parse", "HEAD"],
@@ -458,14 +480,15 @@ def test_pinned_large_native_pcb_placement(tmp_path: Path, native_version: str) 
                 "repository_sha": revision,
                 "pcb_sha256": manifest["files"][board_name],
                 "original_source_count": len(originals),
-                "updated_graph_entities": entry.work_units,
+                "updated_graph_entities_per_cycle": [1] * len(observations),
+                "decoded_footprints_cold_warm_changed_clean": [1125, 0, 1, 1125],
                 "cold_capture_build_ms": round(cold_ms, 3),
-                "incremental_capture_update_ms": round(incremental_ms, 3),
-                "clean_capture_build_ms": round(clean_ms, 3),
-                "reopen_ms_excluding_capture": round(reopen_ms, 3),
+                "phase_metrics": {
+                    key: _summary([item[key] for item in observations]) for key in observations[0]
+                },
                 "process_peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
                 "original_hashes_unchanged": True,
-                "observation_count": 1,
+                "observation_count": len(observations),
             },
             sort_keys=True,
         ),
