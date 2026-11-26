@@ -500,7 +500,7 @@ def download_producer_archive(repo: str, artifact_id: int, output: Path, *, max_
     with (
         path.open("xb") as destination,
         # Fixed GitHub host and repository; artifact ID validated above; no shell.
-        subprocess.Popen(  # nosec B603
+        subprocess.Popen(  # nosec B603  # nosemgrep
             [
                 gh,
                 "api",
@@ -708,7 +708,6 @@ def _verification_report(
         "identity": identity,
         "artifact_id": args.artifact_id,
         "archive": args.archive,
-        "directory": args.directory,
         "runtime_ref": os.environ["GITHUB_REF"],
         "runtime_sha": os.environ["GITHUB_SHA"],
         "runtime_run_id": identity.worker_run_id,
@@ -716,19 +715,19 @@ def _verification_report(
     }
     verifier = GitHubAttestationCLI()
     if args.operation == "fetch-producer":
-        output = options.pop("directory")
         return fetch_producer_delivery(
-            client, verifier, output=output, downloader=download_producer_archive, **options
+            client, verifier, output=args.directory, downloader=download_producer_archive, **options
         )
     if args.operation == "verify-producer":
         return verify_producer_delivery(
             client,
             verifier,
+            directory=args.directory,
             producer_job_id=args.producer_job_id,
             downloaded_zip=args.producer_archive,
             **options,
         )
-    return _verify_delivery(client, verifier, **options)
+    return _verify_delivery(client, verifier, directory=args.directory, **options)
 
 
 def main(argv: list[str] | None = None) -> int:
