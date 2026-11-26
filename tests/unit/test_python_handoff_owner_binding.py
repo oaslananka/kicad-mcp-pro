@@ -50,7 +50,8 @@ class CombinedClient(FakeOwnerClient):
         return copy.deepcopy(self.producer.workflow_run(repo, run_id))
 
     def tag_commit(self, repo: str, tag: str) -> str:
-        assert repo == REPO and tag == TAG
+        assert repo == REPO
+        assert tag == TAG
         if self.change == "tag" and self.owner_reads > 1:
             return "b" * 40
         return SHA
@@ -76,7 +77,9 @@ class Signature:
                 path=path, repo=repo, sha=sha, signer=signer, source_ref=source_ref
             )
         self.owner_calls += 1
-        assert repo == REPO and sha == SHA and source_ref == "refs/heads/main"
+        assert repo == REPO
+        assert sha == SHA
+        assert source_ref == "refs/heads/main"
         uri = f"https://github.com/{REPO}/actions/runs/{RUN}/attempts/2"
         if self.change == "owner-signature":
             uri += "-wrong"
