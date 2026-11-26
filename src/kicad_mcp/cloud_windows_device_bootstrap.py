@@ -384,3 +384,111 @@ async def run_device_only(
             if selected_project() is None:
                 await asyncio.sleep(min(20, 1 + failures * 2))
     status_callback("Project selected in Cloud; switching to local KiCad MCP tools")
+
+
+def repair_device_only(
+    *,
+    origin: str,
+    alias: str,
+    approval: Callable[[str, str, str], None],
+    stop_previous: Callable[[], bool],
+) -> WindowsEnrolledDevice:
+    """Replace only the device selection after browser approval.
+
+    Caller holds the owner connector mutex. Old project markers are archived,
+    not registered against the replacement. A later Add Project is explicit.
+    """
+    from kicad_mcp import cloud_windows_connector as connector
+    from kicad_mcp.cloud_windows_credentials import delete_credential
+    from kicad_mcp.cloud_windows_enrollment import enroll_windows_device
+
+    project = connector.selected_project()
+    device = selected_device()
+    if project is not None:
+        legacy = WindowsEnrolledDevice(
+            project.record_id,
+            project.origin,
+            project.owner_sub,
+            project.device_id,
+            project.fingerprint,
+        )
+        if device is not None and device != legacy:
+            raise LocalApprovalDeniedError(_DENIED)
+        previous = legacy
+    elif device is not None:
+        previous = device
+    else:
+        raise LocalApprovalDeniedError("No saved Cloud device to repair.")
+    if previous.origin != origin:
+        raise LocalApprovalDeniedError(_DENIED)
+
+    slots = (
+        (_DEVICE_SELECTION_SLOT, "selected", "archived_device_selected"),
+        (connector._SELECTED_RECORD_ID, "selected", "archived_selected"),
+        (connector._ACTIVE_RECORD_ID, "active", "archived_active"),
+    )
+    saved = {(slot, part): read_credential(slot, part) for slot, part, _ in slots}
+    active = connector._active() if saved[(connector._ACTIVE_RECORD_ID, "active")] else None
+    if (
+        (device is None) != (saved[(_DEVICE_SELECTION_SLOT, "selected")] is None)
+        or (project is None) != (saved[(connector._SELECTED_RECORD_ID, "selected")] is None)
+        or (
+            saved[(connector._ACTIVE_RECORD_ID, "active")] is not None
+            and (project is None or active is None or active.project != project)
+        )
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+    replacement = enroll_windows_device(origin=origin, alias=alias, owner_approval=approval)
+    if (
+        replacement.origin != origin
+        or replacement.owner_sub != previous.owner_sub
+        or replacement.record_id == previous.record_id
+        or replacement.device_id == previous.device_id
+        or replacement.fingerprint == previous.fingerprint
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+    verified = inspect_local_binding(
+        record_id=replacement.record_id,
+        expected_origin=origin,
+        expected_owner_sub=replacement.owner_sub,
+        expected_device_id=replacement.device_id,
+    )
+    if verified.fingerprint != replacement.fingerprint or not stop_previous():
+        raise LocalApprovalDeniedError(_DENIED)
+    if any(read_credential(slot, part) != saved[(slot, part)] for slot, part, _ in slots):
+        raise LocalApprovalDeniedError(_DENIED)
+    for slot, part, archive in slots:
+        old = saved[(slot, part)]
+        if old is not None:
+            create_credential(replacement.record_id, archive, old)
+            if read_credential(replacement.record_id, archive) != old:
+                raise LocalApprovalDeniedError(_DENIED)
+    new_marker = _device_marker_payload(replacement)
+    try:
+        for slot, part, _ in reversed(slots):
+            if read_credential(slot, part) != saved[(slot, part)]:
+                raise LocalApprovalDeniedError(_DENIED)
+            if saved[(slot, part)] is not None and not delete_credential(slot, part):
+                raise LocalApprovalDeniedError(_DENIED)
+        remember_device(replacement)
+        if selected_device() != replacement or connector.selected_project() is not None:
+            raise LocalApprovalDeniedError(_DENIED)
+    except Exception:
+        # Only restore our exact prior markers; never overwrite a foreign change.
+        for slot, part, _ in slots:
+            old = saved[(slot, part)]
+            current = read_credential(slot, part)
+            if slot == _DEVICE_SELECTION_SLOT and current == new_marker:
+                if not delete_credential(slot, part):
+                    raise LocalApprovalDeniedError(_DENIED) from None
+                current = None
+            if current == old:
+                continue
+            if current is not None:
+                raise LocalApprovalDeniedError(_DENIED) from None
+            if old is not None:
+                create_credential(slot, part, old)
+                if read_credential(slot, part) != old:
+                    raise LocalApprovalDeniedError(_DENIED) from None
+        raise
+    return replacement

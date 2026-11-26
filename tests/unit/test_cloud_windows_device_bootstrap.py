@@ -332,3 +332,115 @@ def test_saved_device_marker_rejects_post_save_identity_change(
     with pytest.raises(LocalApprovalDeniedError):
         boot.remember_device(device)
     assert len(store) == 2, "A failed verification is never advertised as paired"
+
+
+@pytest.mark.parametrize("mode", ["legacy", "bound", "device-only"])
+@pytest.mark.parametrize("fault", ["none", "foreign-owner", "cancel", "stop", "switch"])
+def test_device_repair_archives_without_adding_project(
+    saved_device, monkeypatch: pytest.MonkeyPatch, mode: str, fault: str
+) -> None:
+    from dataclasses import replace
+
+    from kicad_mcp import cloud_windows_connector as connector
+    from kicad_mcp import cloud_windows_credentials as credentials
+    from kicad_mcp import cloud_windows_enrollment as enrollment
+
+    previous, store = saved_device
+    replacement = replace(
+        previous, record_id="b" * 32, device_id=str(uuid4()), fingerprint="b" * 64
+    )
+    if fault == "foreign-owner":
+        replacement = replace(replacement, owner_sub="other")
+    project = enrollment.WindowsRegisteredProject(
+        "c" * 32,
+        previous.record_id,
+        previous.origin,
+        previous.owner_sub,
+        previous.device_id,
+        previous.fingerprint,
+        str(uuid4()),
+        "Existing Board",
+    )
+    device_slot = (boot._DEVICE_SELECTION_SLOT, "selected")
+    project_slot = (connector._SELECTED_RECORD_ID, "selected")
+    active_slot = (connector._ACTIVE_RECORD_ID, "active")
+    if mode != "legacy":
+        boot.remember_device(previous)
+    if mode != "device-only":
+        store[project_slot] = b"previous project"
+        store[active_slot] = b"previous active"
+    before = dict(store)
+
+    def delete(record: str, part: str) -> bool:
+        return store.pop((record, part), None) is not None
+
+    monkeypatch.setattr(credentials, "delete_credential", delete)
+    monkeypatch.setattr(
+        connector, "selected_project", lambda: project if project_slot in store else None
+    )
+    monkeypatch.setattr(
+        connector,
+        "_active",
+        lambda: SimpleNamespace(project=project) if active_slot in store else None,
+    )
+    monkeypatch.setattr(
+        boot,
+        "inspect_local_binding",
+        lambda **kwargs: SimpleNamespace(
+            fingerprint=replacement.fingerprint
+            if kwargs["record_id"] == replacement.record_id
+            else previous.fingerprint
+        ),
+    )
+
+    def enroll(**kwargs: object) -> WindowsEnrolledDevice:
+        assert kwargs["origin"] == previous.origin
+        kwargs["owner_approval"]("https://cloud.example/pair", "challenge", "code")
+        if fault == "cancel":
+            raise LocalApprovalDeniedError("cancelled")
+        return replacement
+
+    monkeypatch.setattr(enrollment, "enroll_windows_device", enroll)
+    monkeypatch.setattr(
+        enrollment,
+        "register_windows_project",
+        lambda *_args, **_kwargs: pytest.fail("device repair must not register any project"),
+    )
+    original_create = boot.create_credential
+
+    def create(record, part, data):
+        if (
+            fault == "switch"
+            and (record, part) == device_slot
+            and data == boot._device_marker_payload(replacement)
+        ):
+            raise OSError("failed to save new marker")
+        original_create(record, part, data)
+
+    monkeypatch.setattr(boot, "create_credential", create)
+    approval_events = []
+    options = dict(
+        origin=previous.origin,
+        alias="PC",
+        approval=lambda *_: approval_events.append("browser"),
+        stop_previous=lambda: fault != "stop",
+    )
+    if fault != "none":
+        with pytest.raises((OSError, LocalApprovalDeniedError)):
+            boot.repair_device_only(**options)
+        for slot in (device_slot, project_slot, active_slot):
+            assert store.get(slot) == before.get(slot)
+    else:
+        assert boot.repair_device_only(**options) == replacement
+        assert boot.selected_device() == replacement
+        assert project_slot not in store and active_slot not in store
+        for slot, archive in (
+            (device_slot, "archived_device_selected"),
+            (project_slot, "archived_selected"),
+            (active_slot, "archived_active"),
+        ):
+            if slot in before:
+                assert store[(replacement.record_id, archive)] == before[slot]
+    assert store[(previous.record_id, "key")] == before[(previous.record_id, "key")]
+    assert approval_events == ["browser"]
+    assert not any(part == "registration" for _, part in store)

@@ -858,10 +858,8 @@ def _notify_owner_reapproval(
             "Cloud closed the signed device session (policy 1008); "
             "pairing may still be valid. "
             f"Check device and project access at {project.origin}/devices. "
-            "If the device remains registered, check the selected KiCad editor "
-            "is open for native checks and restart the same Connector command. "
-            "Use kicad-mcp-pro cloud remote --repair-device only if the device "
-            "is missing or revoked and you intend to approve a new pairing. "
+            "If the device is registered and enabled, restart the Connector. "
+            "Run the same setup command to recover a missing or revoked device. "
             "The local project and saved credentials were not changed."
         )
 
@@ -952,9 +950,9 @@ def main(argv: list[str] | None = None) -> int:
     except CloudOwnerReapprovalRequiredError:
         print(
             "Cloud closed the signed session (policy 1008); pairing may still be valid. "
-            "Check Cloud Devices and the selected KiCad editor. If the device remains "
+            "Check Cloud Devices. If the device remains "
             "registered, restart the same Connector command with its original flags. "
-            "Use cloud remote --repair-device only if the device is missing or revoked. "
+            "Run the same setup command to recover a missing or revoked device. "
             "Local credentials are unchanged.",
             file=sys.stderr,
         )

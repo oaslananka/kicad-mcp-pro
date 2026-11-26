@@ -464,7 +464,7 @@ def test_scheduled_owner_policy_rejection_exits_without_credential_mutation(
     text = capsys.readouterr().err
     assert "policy 1008" in text
     assert "pairing may still be valid" in text
-    assert "KiCad editor" in text
+    assert "KiCad editor" not in text
     assert "credentials are unchanged" in text
     assert "private server reason" not in text
     assert store == before
@@ -607,8 +607,8 @@ async def test_cloud_policy_1008_stops_reconnect_without_changing_owner_pairing(
     assert any("1008" in status for status in statuses)
     assert any("/devices" in status for status in statuses)
     assert any("pairing may still be valid" in status for status in statuses)
-    assert any("KiCad editor" in status for status in statuses)
-    assert any("--repair-device" in status for status in statuses)
+    assert not any("KiCad editor" in status for status in statuses)
+    assert any("same setup command" in status for status in statuses)
     assert not any("Connected" == status for status in statuses)
     assert connector.selected_project() is None, "no implicit write to selected credentials"
     assert connector.local_state() == "Configured (not connected)"

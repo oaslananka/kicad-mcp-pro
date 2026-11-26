@@ -490,50 +490,6 @@ def test_remote_policy_rejection_exits_with_actionable_status_no_traceback(
     assert state["calls"] == ["task_removed"]
 
 
-@pytest.mark.parametrize("invalid", ["no-saved-device", "foreign-cloud", "changed-folder"])
-def test_device_repair_fails_closed_without_changing_existing_project(
-    remote_fixture: tuple[dict[str, Any], Path], invalid: str
-) -> None:
-    state, folder = remote_fixture
-    if invalid == "no-saved-device":
-        state["project"] = None
-    elif invalid == "foreign-cloud":
-        state["project"].origin = "https://other-cloud.example"
-    path = folder if invalid == "changed-folder" else None
-    with pytest.raises(typer.BadParameter):
-        cloud_user_cli._select_remote_project(
-            cloud_user_cli.DEFAULT_CLOUD_ORIGIN,
-            browse=False,
-            project_dir=path,
-            no_browser=False,
-            repair_device=True,
-        )
-    assert state["calls"] == []
-
-
-def test_explicit_device_repair_routes_through_browser_owner_approval(
-    remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    state, _ = remote_fixture
-    approved: list[str] = []
-
-    def repaired(previous: object, **args: object) -> object:
-        assert previous == state["project"]
-        assert args["origin"] == cloud_user_cli.DEFAULT_CLOUD_ORIGIN
-        assert callable(args["approval"])
-        assert callable(args["stop_previous"])
-        approved.append("owner-browser-repair")
-        return previous
-
-    monkeypatch.setattr(cloud_windows_user_cli, "repair_windows_project", repaired)
-    result = cloud_user_cli._select_remote_project(
-        cloud_user_cli.DEFAULT_CLOUD_ORIGIN, False, None, False, True
-    )
-    assert result == state["project"]
-    assert approved == ["owner-browser-repair"]
-    assert state["calls"] == []
-
-
 def test_native_drc_requires_a_foreground_opt_in_on_the_actual_remote_command(
     remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1135,3 +1091,61 @@ def test_unbound_cloud_denied_pairing_never_opens_signed_session(
             cloud_user_cli.DEFAULT_CLOUD_ORIGIN,
             "PC",
         )
+
+
+def test_repair_command_never_registers_old_project(remote_fixture, monkeypatch) -> None:
+    from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
+
+    state, _ = remote_fixture
+    monkeypatch.setattr(
+        bootstrap,
+        "repair_device_only",
+        lambda **kwargs: state["calls"].append("device-only"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "register_windows_project",
+        lambda *_args, **_kwargs: pytest.fail("repair must not register a project"),
+    )
+    result = CliRunner().invoke(server.app, ["cloud", "remote", "--repair-device"])
+    assert result.exit_code == 0, result.output
+    assert state["calls"] == ["device-only"]
+    assert "Add Project" in result.output
+
+
+def test_repair_rejects_project_and_edit_options(remote_fixture, monkeypatch) -> None:
+    from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
+
+    monkeypatch.setattr(
+        bootstrap,
+        "repair_device_only",
+        lambda **kwargs: pytest.fail("must not pair"),
+        raising=False,
+    )
+    for option in ("--browse", "--enable-native-write", "--allow-native-drc"):
+        result = CliRunner().invoke(server.app, ["cloud", "remote", "--repair-device", option])
+        assert result.exit_code != 0
+        assert "repair" in result.output.lower()
+
+
+@pytest.mark.parametrize("approved", [True, False])
+def test_single_command_recovers_policy_failure_at_most_once(monkeypatch, approved) -> None:
+    calls = []
+    monkeypatch.setattr(cloud_user_cli, "_is_windows", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+
+    def session() -> None:
+        calls.append("session")
+        raise typer.Exit(3)
+
+    monkeypatch.setattr(cloud_user_cli, "_run_windows_cloud_session", session, raising=False)
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_offer_device_recovery",
+        lambda: calls.append("recover") or approved,
+        raising=False,
+    )
+    result = CliRunner().invoke(server.app, ["cloud"])
+    assert result.exit_code == 3
+    assert calls == (["session", "recover", "session"] if approved else ["session", "recover"])

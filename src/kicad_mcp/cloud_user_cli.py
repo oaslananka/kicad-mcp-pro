@@ -69,6 +69,47 @@ def cloud_entry(ctx: typer.Context) -> None:
             no_browser=False,
         )
         return
+    try:
+        _run_windows_cloud_session()
+    except typer.Exit as exc:
+        if exc.exit_code != 3 or not _owner_terminal() or not _offer_device_recovery():
+            raise
+        # A single owner-approved replacement, never a re-pairing loop.
+        _run_windows_cloud_session()
+
+
+def _offer_device_recovery() -> bool:
+    """Policy denial alone does not prove that the old device was deleted."""
+    typer.echo(f"Check this computer in {DEFAULT_CLOUD_ORIGIN}/devices.")
+    if not typer.confirm(
+        "Was this device removed or revoked in Cloud? Pair this computer again",
+        default=False,
+    ):
+        typer.echo("Existing pairing kept. Retry this same setup command when ready.")
+        return False
+
+    def recover() -> None:
+        from kicad_mcp.cloud_windows_device_bootstrap import repair_device_only
+        from kicad_mcp.cloud_windows_task_scheduler import stop_and_remove_owner_task
+
+        repair_device_only(
+            origin=DEFAULT_CLOUD_ORIGIN,
+            alias=_resolve_device_alias(None),
+            approval=lambda page, challenge, code: _perform_approval(page, challenge, code, False),
+            stop_previous=stop_and_remove_owner_task,
+        )
+
+    try:
+        _call_with_owner_connector(recover)
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise typer.BadParameter(
+            "Device pairing could not be restored safely. Check Cloud Devices and retry setup."
+        ) from exc
+    typer.echo("Device paired. No projects added; choose Add Project after Online appears.")
+    return True
+
+
+def _run_windows_cloud_session() -> None:
     from kicad_mcp.cloud_windows_connector import selected_project
 
     if selected_project() is None and not _connect_unbound_windows_device(
@@ -95,6 +136,7 @@ def cloud_entry(ctx: typer.Context) -> None:
 
 def _connect_unbound_windows_device(origin: str, alias: str) -> bool:
     """Browser-pair only the first time, then serve owner-initiated Add Project."""
+    from kicad_mcp.cloud_windows_connector import CloudOwnerReapprovalRequiredError
     from kicad_mcp.cloud_windows_device_bootstrap import (
         remember_device,
         run_device_only,
@@ -126,7 +168,10 @@ def _connect_unbound_windows_device(origin: str, alias: str) -> bool:
     else:
         typer.echo("Reusing the same approved Cloud device.")
 
-    typer.echo("Connected device is waiting for a project. Use Add Project in Cloud Devices.")
+    typer.echo(
+        "Connecting device without a project. "
+        "Use Add Project in Cloud Devices after Online appears."
+    )
     typer.echo("Keep this terminal open for live connection and tool activity logs.")
     try:
         asyncio.run(
@@ -135,6 +180,14 @@ def _connect_unbound_windows_device(origin: str, alias: str) -> bool:
                 status_callback=lambda value: _display_cloud_status(value, origin),
             )
         )
+    except CloudOwnerReapprovalRequiredError:
+        typer.echo(
+            "Cloud denied this device session (policy 1008). "
+            f"Check {origin}/devices. The setup command can restore a missing device. "
+            "No projects or saved credentials were changed.",
+            err=True,
+        )
+        raise typer.Exit(3) from None
     except KeyboardInterrupt:
         typer.echo("Disconnected. Your approved device identity remains saved.")
         return False
@@ -450,7 +503,6 @@ def _select_remote_project(
     browse: bool,
     project_dir: Path | None,
     no_browser: bool,
-    repair_device: bool = False,
     alias: str | None = None,
 ) -> WindowsRegisteredProject | None:
     """Reuse the owner-selected project or run first-time browser pairing."""
@@ -459,26 +511,6 @@ def _select_remote_project(
     from kicad_mcp.cloud_windows_user_cli import setup_windows
 
     existing = selected_project()
-    if repair_device:
-        if existing is None:
-            raise typer.BadParameter("No saved device to repair; run cloud remote instead.")
-        if browse or project_dir is not None or existing.origin != origin:
-            raise typer.BadParameter(
-                "Recovery reuses the existing Cloud origin and KiCad folder. "
-                "Remove --browse / --project-dir for --repair-device."
-            )
-        from kicad_mcp.cloud_windows_task_scheduler import stop_and_remove_owner_task
-        from kicad_mcp.cloud_windows_user_cli import repair_windows_project
-
-        return repair_windows_project(
-            existing,
-            origin=origin,
-            alias=_resolve_device_alias(None),
-            approval=lambda page, challenge, code: _perform_approval(
-                page, challenge, code, no_browser
-            ),
-            stop_previous=stop_and_remove_owner_task,
-        )
     if existing is None:
         # A single command handles the first browser-approved pairing and folder selection.
         choose_folder = browse or (
@@ -617,27 +649,27 @@ def _display_cloud_status(value: str, origin: str) -> None:
     # Only short, locally produced status messages are styled. Never
     # print MCP argument contents, access keys, paths or file contents.
     stamp = datetime.now().astimezone().strftime("%H:%M:%S")
-    if value == "Connected":
-        category, icon, color = "ONLINE", "â—", typer.colors.GREEN
+    if value in ("Connected", "Cloud acknowledged this device's signed session"):
+        category, icon, color = "ONLINE", "*", typer.colors.GREEN
         detail = "Cloud acknowledged this device's signed session"
     elif value.startswith("Tool call "):
-        category, icon, color = "TOOL", "â—†", typer.colors.CYAN
+        category, icon, color = "TOOL", "*", typer.colors.CYAN
         detail = value
         if value.endswith("failed"):
             color = typer.colors.RED
     elif "folder" in value.lower() or "dialog" in value.lower():
-        category, icon, color = "FOLDER", "â–£", typer.colors.MAGENTA
+        category, icon, color = "FOLDER", "*", typer.colors.MAGENTA
         detail = value
     elif "reconnect" in value.lower() or "disconnected" in value.lower():
-        category, icon, color = "NETWORK", "â†»", typer.colors.YELLOW
+        category, icon, color = "NETWORK", "*", typer.colors.YELLOW
         detail = value
     else:
-        category, icon, color = "CONNECT", "Â·", typer.colors.BLUE
+        category, icon, color = "CONNECT", "*", typer.colors.BLUE
         detail = value
     typer.echo(f"  {stamp}  ", nl=False)
     typer.secho(f"{_cloud_console_glyph(icon, '*')} {category:<8}", fg=color, bold=True, nl=False)
     typer.echo("  " + detail)
-    if value == "Connected":
+    if category == "ONLINE":
         typer.echo(f"             Manage projects: {origin}/devices")
 
 
@@ -880,9 +912,39 @@ def remote(
     )
     from kicad_mcp.cloud_windows_local_selection import inspect_owner_selected_project
 
-    existing = _select_remote_project(
-        origin, browse, project_dir, no_browser, repair_device=repair_device, alias=alias
-    )
+    if repair_device:
+        if (
+            browse
+            or project_dir is not None
+            or allow_native_drc
+            or allow_native_write
+            or remember_native_write
+        ):
+            raise typer.BadParameter(
+                "Device repair cannot be combined with project or native edit options."
+            )
+        from kicad_mcp.cloud_windows_device_bootstrap import repair_device_only
+        from kicad_mcp.cloud_windows_task_scheduler import stop_and_remove_owner_task
+
+        try:
+            repair_device_only(
+                origin=origin,
+                alias=_resolve_device_alias(alias),
+                approval=lambda page, challenge, code: _perform_approval(
+                    page, challenge, code, no_browser
+                ),
+                stop_previous=stop_and_remove_owner_task,
+            )
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise typer.BadParameter(
+                "Device repair could not be completed safely. Review Cloud Devices before retrying."
+            ) from exc
+        typer.echo(
+            "Device paired. No project was added. "
+            "Start cloud again, then use Add Project in Devices."
+        )
+        return
+    existing = _select_remote_project(origin, browse, project_dir, no_browser, alias=alias)
     if existing is None:
         return
     if existing.origin != origin:
