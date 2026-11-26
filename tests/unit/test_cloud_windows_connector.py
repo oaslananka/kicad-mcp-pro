@@ -1312,7 +1312,7 @@ async def test_normal_signed_session_expiration_recovers_without_new_pairing(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("state", ["project_missing", "active", "unavailable"])
+@pytest.mark.parametrize("state", ["project_missing", "active", "project_disabled", "unavailable"])
 async def test_official_windows_foreground_checks_primary_before_socket(
     monkeypatch: pytest.MonkeyPatch, state: str
 ) -> None:
@@ -1335,6 +1335,11 @@ async def test_official_windows_foreground_checks_primary_before_socket(
         events.append("inventory")
         return state
 
+    def legacy_candidates() -> dict[str, Path]:
+        # A synthetic identity must never read the physical owner's cache.
+        events.append("legacy")
+        return {}
+
     async def attempt(*_args: object, **_kwargs: object):
         events.append("socket")
         stop.set()
@@ -1344,13 +1349,22 @@ async def test_official_windows_foreground_checks_primary_before_socket(
     monkeypatch.setattr(connector, "_active", lambda: active)
     monkeypatch.setattr(connector, "_current_authorization", lambda _: True)
     monkeypatch.setattr("kicad_mcp.cloud_device_inventory_status.inspect_inventory", inspect)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_legacy_project_migration.legacy_candidates", legacy_candidates
+    )
     monkeypatch.setattr(connector, "_attempt_authorized_session", attempt)
     if state == "project_missing":
         with pytest.raises(connector.CloudOwnerReapprovalRequiredError):
             await connector.run_connector(stop=stop, status_callback=lambda _: None)
     else:
         await connector.run_connector(stop=stop, status_callback=lambda _: None)
-    assert events == (["inventory"] if state == "project_missing" else ["inventory", "socket"])
+    expected = {
+        "project_missing": ["inventory"],
+        "active": ["inventory", "legacy", "socket"],
+        "project_disabled": ["inventory", "legacy", "socket"],
+        "unavailable": ["inventory", "socket"],
+    }
+    assert events == expected[state]
 
 
 @pytest.mark.asyncio
