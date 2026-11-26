@@ -243,7 +243,7 @@ def test_device_only_recovery_reconnects_once(tmp_path, monkeypatch, recovered) 
 
     root = tmp_path / "registry"
     root.mkdir(mode=0o700)
-    identities = [(root / "old", {}), (root / "new", {})]
+    identities = [(root / "old", {"origin": ORIGIN}), (root / "new", {"origin": ORIGIN})]
     events = []
     result = {"projectId": str(uuid4())}
 

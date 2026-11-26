@@ -239,6 +239,8 @@ async def _wait_for_project(
             )
             failures = 0
         except (OSError, ValueError, WebSocketException) as exc:
+            if drain is not None and drain.is_set():
+                return None
             if _is_remote_policy_rejection(exc):
                 raise DeviceSessionRejectedError(
                     "Cloud denied the device session. Existing pairing was preserved."
@@ -257,6 +259,17 @@ async def _wait_for_project(
                 except TimeoutError:
                     pass
     return None
+
+
+async def _wait_with_update_control(
+    root: Path, identity: Identity, status: Callable[[str], None]
+) -> dict[str, str] | None:
+    from kicad_mcp.cloud_posix_update_control import watch
+
+    async with watch(root, identity[1]["origin"]) as drain:
+        if drain is None:
+            return await _wait_for_project(root, identity, status)
+        return await _wait_for_project(root, identity, status, drain)
 
 
 def connect_device_only(
@@ -300,7 +313,7 @@ def connect_device_only(
         status("Use Add Project in Cloud Devices after Online appears.")
         try:
             try:
-                return asyncio.run(_wait_for_project(root, identity, status))
+                return asyncio.run(_wait_with_update_control(root, identity, status))
             except DeviceSessionRejectedError:
                 from kicad_mcp.cloud_posix_replacement import recover_device_locked
 
@@ -308,7 +321,7 @@ def connect_device_only(
                     raise
                 identity = ensure_device(root, origin, alias, approval)
                 status("Device restored. Use Add Project after Online appears.")
-                return asyncio.run(_wait_for_project(root, identity, status))
+                return asyncio.run(_wait_with_update_control(root, identity, status))
         except KeyboardInterrupt:
             status("Disconnected. Your approved device identity remains saved.")
             return None

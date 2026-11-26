@@ -26,45 +26,30 @@ select_slot() {
   export PATH="$UV_TOOL_BIN_DIR:$base_path"
   cli="$UV_TOOL_BIN_DIR/kicad-mcp-pro"
 }
-install_and_connect() {
-  # The outer process owns the installer lock. Never update the active slot.
-  # uv environments are not relocatable, so build directly in the other slot.
-  local active=legacy candidate=a old_healthy=false installed=false pointer
-  pointer="$root/active-release"
+prepare_release() {
+  local active="$1" candidate="$2" old_healthy=false
   private_slot "$root/releases"
   private_slot "$root/releases/a"
   private_slot "$root/releases/b"
-  if [[ -e "$pointer" || -L "$pointer" ]]; then
-    [[ -f "$pointer" && ! -L "$pointer" && -O "$pointer" ]] || die "Invalid release selection."
-    active="$(cat -- "$pointer")"
-    [[ "$active" == a || "$active" == b ]] || die "Invalid release selection."
-  fi
   select_slot "$active"
   if connector_healthy "$cli"; then old_healthy=true; fi
-  if [[ "$active" == a ]]; then candidate=b; fi
   select_slot "$candidate"
   printf 'KiCad MCP Pro: Preparing a separate update...\n'
   if "$uv_path" tool install --upgrade kicad-mcp-pro && connector_healthy "$cli"; then
-    installed=true
-  elif [[ "$old_healthy" == false ]]; then
+    return 0
+  fi
+  if [[ "$old_healthy" == false ]]; then
     printf 'KiCad MCP Pro: Installation needs repair. Retrying once...\n'
     if "$uv_path" tool install --force --reinstall kicad-mcp-pro && connector_healthy "$cli"; then
-      installed=true
+      return 0
     fi
+    return 2
   fi
-  if [[ "$installed" == true ]]; then
-    # Atomic replacement only after both CLI smoke checks pass.
-    local temporary
-    temporary="$(mktemp "$root/.active-release.XXXXXXXX")"
-    printf '%s\n' "$candidate" > "$temporary"
-    mv -f -- "$temporary" "$pointer"
-  elif [[ "$old_healthy" == true ]]; then
-    printf 'KiCad MCP Pro: Update unavailable; using the existing version.\n' >&2
-    select_slot "$active"
-    connector_healthy "$cli" || die "Existing installation is no longer healthy."
-  else
-    die "Installation could not be repaired. Existing files were preserved."
-  fi
+  return 1
+}
+launch_release() {
+  select_slot "$1"
+  connector_healthy "$cli" || die "Existing installation is no longer healthy."
   printf 'KiCad MCP Pro: Opening Cloud Connector...\n'
   "$cli" cloud
 }
@@ -140,47 +125,160 @@ fi
 # uv can supply Python on macOS as well as Linux without Xcode or a separate
 # prerequisite command. Keep an inherited kernel lock over both uv's package
 # update and the foreground child; never unlink the lock inode.
-export -f die healthy private_slot connector_healthy select_slot install_and_connect
+export -f die healthy private_slot connector_healthy select_slot prepare_release launch_release
 export root uv_path
+# Embedded Python passes literal Bash positional parameters.
+# shellcheck disable=SC2016
 "$uv_path" run --no-project --no-config --no-env-file --python '>=3.13' -- python -I -c '
 import fcntl
 import os
+import re
 import stat
+import subprocess
 import sys
+import time
+import uuid
 
 def fail(message):
     raise SystemExit("KiCad MCP Pro: " + message)
 
 root = sys.argv[1]
+folder = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
 try:
-    # Pin every ancestor without following symlinks. Require the dedicated
-    # application directory and lock file to belong only to this user.
-    folder = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
-    try:
-        for part in root.split("/")[1:]:
-            if not part or part in (".", ".."):
-                fail("Invalid local application directory.")
-            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=folder)
-            os.close(folder)
-            folder = child
-        info = os.fstat(folder)
-        if info.st_uid != os.getuid() or info.st_mode & 0o077:
-            fail("The local application directory is not private.")
-        fd = os.open("installer-v2.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK,
-                     0o600, dir_fd=folder)
-        metadata = os.fstat(fd)
-        if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid()
-                or metadata.st_nlink != 1 or metadata.st_mode & 0o077 or metadata.st_size != 0):
-            fail("Invalid installer lock.")
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    finally:
+    for part in root.split("/")[1:]:
+        if not part or part in (".", ".."):
+            fail("Invalid local application directory.")
+        child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=folder)
         os.close(folder)
-except BlockingIOError:
-    fail("Another setup or Connector is running. Its installation has not been changed.")
+        folder = child
+    info = os.fstat(folder)
+    if info.st_uid != os.getuid() or info.st_mode & 0o077:
+        fail("The local application directory is not private.")
 except OSError:
-    fail("Cannot verify the local installer lock. No package files were changed.")
-os.set_inheritable(fd, True)
-os.execv("/bin/bash", ["bash", "-c", "set -euo pipefail; install_and_connect"])
+    fail("Cannot verify the local application directory.")
+
+def lock_file(name):
+    fd = os.open(name, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600, dir_fd=folder)
+    metadata = os.fstat(fd)
+    if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid()
+            or metadata.st_nlink != 1 or metadata.st_mode & 0o077 or metadata.st_size != 0):
+        fail("Invalid installer lock.")
+    return fd
+
+def acquire(fd):
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except BlockingIOError:
+        return False
+
+def active_slot():
+    try:
+        fd = os.open("active-release", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder)
+    except FileNotFoundError:
+        return "legacy"
+    with os.fdopen(fd, "rb") as stream:
+        meta = os.fstat(stream.fileno())
+        if (not stat.S_ISREG(meta.st_mode) or meta.st_uid != os.getuid()
+                or meta.st_nlink != 1 or meta.st_mode & 0o077 or meta.st_size > 3):
+            fail("Invalid release selection.")
+        value = stream.read(4)
+    if value not in (b"a", b"a\n", b"b", b"b\n"):
+        fail("Invalid release selection.")
+    return value.decode().strip()
+
+def control(slot, *args):
+    if slot not in ("a", "b"):
+        return None
+    path = os.path.join(root, "releases", slot, "bin", "kicad-mcp-pro")
+    try:
+        for directory in (os.path.join(root, "releases"), os.path.join(root, "releases", slot),
+                          os.path.dirname(path)):
+            meta = os.lstat(directory)
+            if not stat.S_ISDIR(meta.st_mode) or meta.st_uid != os.getuid() or meta.st_mode & 0o022:
+                return None
+        result = subprocess.run([path, "cloud", "_update-control", *args],
+                                stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=8)
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except (OSError, subprocess.TimeoutExpired, UnicodeError):
+        pass
+    return None
+
+def publish(slot):
+    name = ".active-release." + uuid.uuid4().hex
+    fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=folder)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write((slot + "\n").encode())
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(name, "active-release", src_dir_fd=folder, dst_dir_fd=folder)
+        os.fsync(folder)
+    finally:
+        try:
+            os.unlink(name, dir_fd=folder)
+        except FileNotFoundError:
+            pass
+
+try:
+    # One process may prepare a release, while the existing launcher retains
+    # the separate session lock. Older launchers without a live lease fail closed.
+    prepare = lock_file("installer-prepare.lock")
+    if not acquire(prepare):
+        fail("Another setup is preparing an update. Existing installation unchanged.")
+    session = lock_file("installer-v2.lock")
+    owned = acquire(session)
+    active = active_slot()
+    lease = None
+    if not owned:
+        lease = control(active, "probe")
+        if lease is None or re.fullmatch(r"[0-9a-f]{32} " + active, lease) is None:
+            fail("Another setup or Connector is running. Its installation has not been changed.")
+    candidate = "b" if active == "a" else "a"
+    rc = subprocess.run(["/bin/bash", "-c", "set -euo pipefail; prepare_release \"$1\" \"$2\"",
+                         "prepare-release", active, candidate], pass_fds=(prepare, session)).returncode
+    if rc != 0:
+        if not owned:
+            fail("Update unavailable; the existing Connector was not asked to stop.")
+        if rc != 1:
+            fail("Installation could not be repaired. Existing files were preserved.")
+        print("KiCad MCP Pro: Update unavailable; using the existing version.", file=sys.stderr)
+        selected = active
+    else:
+        if not owned:
+            if active_slot() != active:
+                fail("The active release changed during preparation. Retry the same setup.")
+            owned = acquire(session)
+            if not owned:
+                if control(active, "probe") != lease:
+                    fail("The running session changed. Retry the same setup.")
+                assert lease is not None
+                generation, slot = lease.split()
+                accepted = control(active, "request", "--generation", generation, "--slot", slot)
+                if accepted is None and not acquire(session):
+                    fail("The running Connector did not accept the update request.")
+                print("KiCad MCP Pro: Finishing the current Cloud operation before updating...", flush=True)
+                deadline = time.monotonic() + 300
+                while not acquire(session):
+                    if time.monotonic() >= deadline:
+                        fail("The previous Connector is still finishing. Retry the same setup; no process was killed.")
+                    time.sleep(0.2)
+        if active_slot() != active:
+            fail("The active release changed. Retry the same setup.")
+        publish(candidate)
+        selected = candidate
+    # Keep session lock across the new foreground child, release preparation
+    # lock so the next setup may safely stage the inactive version.
+    os.environ["KICAD_CLOUD_UPDATE_GENERATION"] = uuid.uuid4().hex
+    os.environ["KICAD_CLOUD_UPDATE_SLOT"] = selected
+    os.set_inheritable(session, True)
+    os.close(prepare)
+    os.close(folder)
+    os.execv("/bin/bash", ["bash", "-c", "set -euo pipefail; launch_release \"$1\"", "launch-release", selected])
+except OSError:
+    fail("Cannot complete the local update safely. Existing registration was preserved.")
+
 ' "$root"
 }
 # A curl | bash invocation reads code from the pipe; prompts use the owner TTY.

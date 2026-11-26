@@ -11,9 +11,29 @@ export TEST_CLI_TEMPLATE="$work/cli"
 cat > "$TEST_CLI_TEMPLATE" <<'CLI'
 #!/bin/bash
 if [[ "$1" == --version || "$*" == "cloud --help" ]]; then exit 0; fi
+if [[ "$*" == "cloud _update-control probe" ]]; then
+  [[ -n "${TEST_HANDOFF:-}" && -f "$TEST_HANDOFF/lease" ]] || exit 1
+  cat "$TEST_HANDOFF/lease"
+  exit 0
+fi
+if [[ "$1 $2 $3" == "cloud _update-control request" ]]; then
+  [[ -n "${TEST_HANDOFF:-}" && -f "$TEST_HANDOFF/lease" ]] || exit 1
+  [[ "$(cat "$TEST_HANDOFF/lease")" == "$5 $7" ]] || exit 1
+  printf '%s\n' requested >> "$TEST_LOG"
+  touch "$TEST_HANDOFF/drain"
+  exit 0
+fi
 [[ "$*" == cloud && -t 0 ]] || exit 97
 echo connected >> "$TEST_LOG"
 if [[ -n "${TEST_SELECTED_LOG:-}" ]]; then printf "%s\n" "$0" >> "$TEST_SELECTED_LOG"; fi
+if [[ "$TEST_SCENARIO" == live-handoff ]]; then
+  if [[ "$KICAD_CLOUD_UPDATE_SLOT" == a ]]; then
+    printf '%s a\n' "$KICAD_CLOUD_UPDATE_GENERATION" > "$TEST_HANDOFF/lease"
+    while [[ ! -f "$TEST_HANDOFF/drain" ]]; do sleep .05; done
+    rm "$TEST_HANDOFF/lease"
+    printf '%s\n' drained >> "$TEST_LOG"
+  fi
+fi
 if [[ "$TEST_SCENARIO" == live-child ]]; then
   printf '%s\n' "$$" > "$TEST_CHILD_PID"
   while [[ ! -f "$TEST_RELEASE" ]]; do sleep .05; done
@@ -153,3 +173,39 @@ timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
 [[ "$(cat "$app/active-release")" == a ]]
 cmp "$TEST_CLI_TEMPLATE" "$b"
 printf 'PASS: staged release rotation and rollback\n'
+
+# Same setup command while the new-style fixture is still running.
+export HOME="$work/handoff/home"
+export XDG_DATA_HOME="$HOME/data"
+export TEST_LOG="$work/handoff/events"
+export TEST_SELECTED_LOG="$work/handoff/selected"
+export TEST_HANDOFF="$work/handoff/control"
+mkdir -p "$HOME" "$TEST_HANDOFF"
+export TEST_SCENARIO=live-handoff
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null </dev/null &
+launcher=$!
+for _ in $(seq 1 100); do [[ -s "$TEST_HANDOFF/lease" ]] && break; sleep .05; done
+if [[ ! -s "$TEST_HANDOFF/lease" ]]; then
+  touch "$TEST_HANDOFF/drain"
+  wait "$launcher" || true
+  echo "Update-aware fixture did not publish a lease" >&2
+  exit 1
+fi
+app="$XDG_DATA_HOME/KiCadMCPPro"
+a="$app/releases/a/bin/kicad-mcp-pro"
+b="$app/releases/b/bin/kicad-mcp-pro"
+# A broken candidate must not drain A or publish B.
+export TEST_SCENARIO=destructive-update
+if timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null; then
+  echo "Broken live candidate reported success" >&2; exit 1
+fi
+[[ ! -e "$TEST_HANDOFF/drain" && "$(cat "$app/active-release")" == a ]]
+cmp "$TEST_CLI_TEMPLATE" "$a"
+export TEST_SCENARIO=live-handoff
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
+wait "$launcher"
+[[ "$(cat "$app/active-release")" == b ]]
+[[ "$(tail -1 "$TEST_SELECTED_LOG")" == "$b" ]]
+printf 'tool install --upgrade kicad-mcp-pro\nconnected\ntool install --upgrade kicad-mcp-pro\ntool install --upgrade kicad-mcp-pro\nrequested\ndrained\nconnected\n' > "$work/handoff-expected"
+diff -u "$work/handoff-expected" "$TEST_LOG"
+printf 'PASS: live staging, failed candidate keeps A, graceful A-to-B handoff\n'

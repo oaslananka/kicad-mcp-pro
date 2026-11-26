@@ -107,6 +107,29 @@ def cloud_entry(
         _CLOUD_MANAGED_EDIT.reset(token)
 
 
+@cloud_app.command("_update-control", hidden=True)
+def _update_control(
+    action: str,
+    generation: str = "",
+    slot: str = "",
+) -> None:
+    """Installer-only local handoff; no cloud or project authority."""
+    if _is_windows():
+        raise typer.Exit(1)
+    from kicad_mcp.cloud_local_registry import default_registry_root
+    from kicad_mcp.cloud_posix_update_control import probe, request
+
+    root = default_registry_root()
+    if action == "probe" and not generation and not slot:
+        lease = probe(root)
+        if lease is not None:
+            typer.echo(" ".join(lease))
+            return
+    elif action == "request" and request(root, generation, slot):
+        return
+    raise typer.Exit(1)
+
+
 def _offer_device_recovery() -> bool:
     """Diagnose first; only a missing/unverified or revoked identity needs approval."""
     from kicad_mcp import cloud_windows_device_bootstrap as bootstrap

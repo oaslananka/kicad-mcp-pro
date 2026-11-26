@@ -75,19 +75,21 @@ class ConnectorAlreadyRunningError(RuntimeError):
 
 
 @contextmanager
-def _connector_session_lock(root: Path, *, create: bool = True) -> Iterator[None]:
+def _connector_session_lock(
+    root: Path, *, create: bool = True, name: str = _SESSION_LOCK_FILE
+) -> Iterator[None]:
     """Hold one private, nonblocking POSIX process lock for the whole session loop."""
     if sys.platform == "win32":
         raise LocalApprovalDeniedError(_DENIED)
     import fcntl
 
-    folder_fd = _open_owner_private_dir(root / _SESSION_LOCK_FILE)
+    folder_fd = _open_owner_private_dir(root / name)
     try:
         flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
         if create:
             flags |= os.O_CREAT
         fd = os.open(
-            _SESSION_LOCK_FILE,
+            name,
             flags,
             0o600,
             dir_fd=folder_fd,
@@ -117,10 +119,10 @@ def _connector_session_lock(root: Path, *, create: bool = True) -> Iterator[None
         os.close(folder_fd)
 
 
-def _session_lock_held(root: Path) -> bool:
+def _session_lock_held(root: Path, *, name: str = _SESSION_LOCK_FILE) -> bool:
     """Do not report cached connection state without a live lock owner."""
     try:
-        with _connector_session_lock(root, create=False):
+        with _connector_session_lock(root, create=False, name=name):
             return False
     except ConnectorAlreadyRunningError:
         return True
@@ -869,44 +871,56 @@ async def _run_connector(
             registry, foreground, identity_loader, expected_identity
         ) as marker,
     ):
-        # Invalidate the previous process's cached status before loading keys.
-        _write_status(registry, "unavailable")
-        failures = 0
-        while (
-            not stop.is_set()
-            and (drain is None or not drain.is_set())
-            and _enabled_record(registry, marker)
-        ):
-            try:
-                connected = await _run_registered_session(
-                    registry=registry,
-                    stop=stop,
-                    identity_loader=identity_loader,
-                    project_resolver=project_resolver,
-                    key_loader=key_loader,
-                    session_runner=session_runner,
-                    marker=marker,
-                    drain=drain,
-                )
-                if not connected:
-                    break
-                failures = 0
-            except asyncio.CancelledError:
-                raise
-            except (OSError, ValueError, WebSocketException) as exc:
-                _write_status(registry, "unavailable")
-                if foreground:
-                    from kicad_mcp.cloud_windows_connector import _is_remote_policy_rejection
+        from contextlib import nullcontext
 
-                    if isinstance(exc, ProjectSelectionMissingError) or _is_remote_policy_rejection(
-                        exc
-                    ):
-                        return 3
-                failures += 1
-            if drain is not None and drain.is_set():
-                break
-            _report_foreground(marker, "Disconnected")
-            await _wait_before_reconnect(stop, registry, failures, marker, drain)
+        from kicad_mcp.cloud_posix_update_control import watch
+
+        control = (
+            watch(registry, expected_identity["cloudOrigin"])
+            if foreground and expected_identity is not None and drain is None
+            else nullcontext(drain)
+        )
+        async with control as session_drain:
+            # Invalidate the previous process's cached status before loading keys.
+            _write_status(registry, "unavailable")
+            failures = 0
+            while (
+                not stop.is_set()
+                and (session_drain is None or not session_drain.is_set())
+                and _enabled_record(registry, marker)
+            ):
+                try:
+                    connected = await _run_registered_session(
+                        registry=registry,
+                        stop=stop,
+                        identity_loader=identity_loader,
+                        project_resolver=project_resolver,
+                        key_loader=key_loader,
+                        session_runner=session_runner,
+                        marker=marker,
+                        drain=session_drain,
+                    )
+                    if not connected:
+                        break
+                    failures = 0
+                except asyncio.CancelledError:
+                    raise
+                except (OSError, ValueError, WebSocketException) as exc:
+                    _write_status(registry, "unavailable")
+                    if session_drain is not None and session_drain.is_set():
+                        break
+                    if foreground:
+                        from kicad_mcp.cloud_windows_connector import _is_remote_policy_rejection
+
+                        if isinstance(
+                            exc, ProjectSelectionMissingError
+                        ) or _is_remote_policy_rejection(exc):
+                            return 3
+                    failures += 1
+                if session_drain is not None and session_drain.is_set():
+                    break
+                _report_foreground(marker, "Disconnected")
+                await _wait_before_reconnect(stop, registry, failures, marker, session_drain)
 
     return 0
 

@@ -1454,3 +1454,55 @@ async def test_foreground_update_drain_exits_without_reconnecting(tmp_path, monk
     assert (root / "keys" / (DEVICE + ".pem")).exists()
     with connector._connector_session_lock(root):
         pass
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("policy_close", [False, True])
+async def test_installer_request_drains_real_foreground_loop(
+    tmp_path, monkeypatch, policy_close
+) -> None:
+    from kicad_mcp import cloud_posix_update_control as control
+    from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+    root, _ = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    record["cloudOrigin"] = _KICAD_CLOUD_ORIGIN
+    connector._write_private_json(root / "projects", PROJECT + ".json", record)
+    generation = uuid4().hex
+    monkeypatch.setenv("KICAD_CLOUD_UPDATE_GENERATION", generation)
+    monkeypatch.setenv("KICAD_CLOUD_UPDATE_SLOT", "a")
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_device_inventory_status.inspect_inventory", lambda *_: "unavailable"
+    )
+    events = []
+
+    async def session(**kwargs: object) -> None:
+        drain = kwargs["drain"]
+        assert isinstance(drain, asyncio.Event)
+        events.append("connected")
+        assert control.probe(root) == (generation, "a")
+        assert control.request(root, generation, "a")
+        await asyncio.wait_for(drain.wait(), 2)
+        events.append("drained")
+        if policy_close:
+            from websockets.exceptions import ConnectionClosedError
+            from websockets.frames import Close
+
+            raise ConnectionClosedError(Close(1008, "policy"), None)
+
+    monkeypatch.setattr(connector, "_session_until_stopped", session)
+    assert (
+        await asyncio.wait_for(
+            connector._run_connector(
+                root=root,
+                foreground=True,
+                expected_identity=record,
+                key_loader=lambda *_: Ed25519PrivateKey.generate(),
+            ),
+            3,
+        )
+        == 0
+    )
+    assert events == ["connected", "drained"]
+    assert control.probe(root) is None
+    assert not (root / connector._FOREGROUND_FILE).exists()
