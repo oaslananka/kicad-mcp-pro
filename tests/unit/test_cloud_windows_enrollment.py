@@ -581,3 +581,56 @@ def test_unexpected_disabled_device_reply_is_not_claimed_as_connected(
         )
     assert "redeem" in events
     assert len(store) == 1
+
+
+@pytest.mark.parametrize("denied", [False, True])
+def test_recovery_redeem_binds_old_identity_and_requires_same_owner(
+    fake_windows_pair, monkeypatch, denied: bool
+) -> None:
+    store, events, state = fake_windows_pair
+    original = cloud_pair._post
+    old = "39ee4be9-0aec-448e-9873-721ae113ec02"
+
+    def response(target, path, body, status):
+        if not path.endswith("/redeem"):
+            return original(target, path, body, status)
+        assert state["approved"]
+        assert body["recovery"] == {"deviceId": old, "ownerSub": OWNER}
+        assert body["connectOnApproval"] is True
+        encoded = body["signature"]
+        state["public"].verify(
+            base64.urlsafe_b64decode(encoded + "=="),
+            b"kicad-cloud-pairing-recovery-v1\x00"
+            + CHALLENGE.encode()
+            + b"\x00"
+            + SECRET.encode()
+            + b"\x00"
+            + old.encode()
+            + b"\x00"
+            + OWNER.encode(),
+        )
+        events.append("redeem")
+        if denied:
+            return {"recoveryDenied": True}
+        return {
+            "deviceId": DEVICE,
+            "deviceFingerprint": state["fingerprint"],
+            "ownerSub": OWNER,
+            "enabled": True,
+        }
+
+    monkeypatch.setattr(cloud_pair, "_post", response)
+    options = dict(
+        origin=ORIGIN,
+        alias="Lab PC",
+        owner_approval=_approval(events, state),
+        recovery_device_id=old,
+        recovery_owner_sub=OWNER,
+    )
+    if denied:
+        with pytest.raises(cloud_windows_enrollment.WindowsRecoveryDeniedError):
+            cloud_windows_enrollment.enroll_windows_device(**options)
+        assert not store
+    else:
+        result = cloud_windows_enrollment.enroll_windows_device(**options)
+        assert result.owner_sub == OWNER and result.device_id == DEVICE

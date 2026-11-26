@@ -108,14 +108,13 @@ def cloud_entry(
 
 
 def _offer_device_recovery() -> bool:
-    """Policy denial alone does not prove that the old device was deleted."""
-    typer.echo(f"Check this computer in {DEFAULT_CLOUD_ORIGIN}/devices.")
-    if not typer.confirm(
-        "Was this device removed or revoked in Cloud? Pair this computer again",
-        default=False,
-    ):
-        typer.echo("Existing pairing kept. Retry this same setup command when ready.")
-        return False
+    """Browser approval and Cloud verify replacement; no extra terminal question."""
+    from kicad_mcp.cloud_windows_enrollment import WindowsRecoveryDeniedError
+
+    typer.echo(
+        "Cloud could not restore this device session. Opening browser to check replacement. "
+        "Cloud keeps an existing valid device; only a removed or revoked device can be replaced."
+    )
 
     def recover() -> None:
         from kicad_mcp.cloud_windows_device_bootstrap import repair_device_only
@@ -130,6 +129,9 @@ def _offer_device_recovery() -> bool:
 
     try:
         _call_with_owner_connector(recover)
+    except WindowsRecoveryDeniedError as exc:
+        typer.echo(str(exc), err=True)
+        return False
     except (OSError, ValueError, RuntimeError) as exc:
         raise typer.BadParameter(
             "Device pairing could not be restored safely. Check Cloud Devices and retry setup."

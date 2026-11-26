@@ -438,7 +438,13 @@ def repair_device_only(
         )
     ):
         raise LocalApprovalDeniedError(_DENIED)
-    replacement = enroll_windows_device(origin=origin, alias=alias, owner_approval=approval)
+    replacement = enroll_windows_device(
+        origin=origin,
+        alias=alias,
+        owner_approval=approval,
+        recovery_device_id=previous.device_id,
+        recovery_owner_sub=previous.owner_sub,
+    )
     if (
         replacement.origin != origin
         or replacement.owner_sub != previous.owner_sub

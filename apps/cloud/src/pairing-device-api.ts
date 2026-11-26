@@ -1,6 +1,7 @@
 import {createHash,createHmac} from "node:crypto";
 import type {Pool} from "pg";
 import {PgPairingChallenges,type Enrollment} from "./pairing-store.js";
+import {type RecoveryIdentity,validRecoveryIdentity} from "./device-pairing.js";
 import {pairingServerKey} from "./pairing-review.js";
 
 type IssueResult=Awaited<ReturnType<PgPairingChallenges["issue"]>>;
@@ -9,7 +10,7 @@ export type RegisteredProject={projectId:string;alias:string;ownerSub:string;ena
 export interface PairingDevicePort {
   issue(source:string,alias:string,publicKeyDer:Buffer):Promise<PairingDeviceOutcome<IssueResult>>;
   enroll(source:string,id:string,deviceCode:string,signature:Buffer,
-    connectOnApproval?:boolean):Promise<PairingDeviceOutcome<Enrollment>>;
+    connectOnApproval?:boolean,recovery?:RecoveryIdentity):Promise<PairingDeviceOutcome<Enrollment>>;
   approved(source:string,id:string,deviceCode:string,signature:Buffer):
     Promise<PairingDeviceOutcome<{approved:boolean;denied?:true}>>;
   registerProject?(source:string,deviceId:string,alias:string,signature:Buffer):
@@ -80,15 +81,16 @@ export class PgPairingDeviceAPI implements PairingDevicePort {
     return {kind:"ok",data:{approved}};
   }
   async enroll(source:string,id:string,deviceCode:string,signature:Buffer,
-    connectOnApproval=false):Promise<PairingDeviceOutcome<Enrollment>>{
+    connectOnApproval=false,recovery?:RecoveryIdentity):Promise<PairingDeviceOutcome<Enrollment>>{
     if(!source||source.length>256||typeof id!=="string"||!UUID.test(id)||
        typeof deviceCode!=="string"||deviceCode.length!==43||
        !Buffer.isBuffer(signature)||signature.length!==64)
       return {kind:"unavailable"};
+    if(recovery&&(!connectOnApproval||!validRecoveryIdentity(recovery)))return {kind:"unavailable"};
     if(!await this.take("enroll-source",source,40))return {kind:"throttled"};
     if(!await this.take("enroll-challenge",id,8))return {kind:"throttled"};
-    const result=await this.store.enroll(id,deviceCode,signature,connectOnApproval);
-    return result.kind==="enrolled"?{kind:"ok",data:result}:{kind:"unavailable"};
+    const result=await this.store.enroll(id,deviceCode,signature,connectOnApproval,recovery);
+    return result.kind!=="unavailable"?{kind:"ok",data:result}:{kind:"unavailable"};
   }
   async registerProject(source:string,deviceId:string,alias:string,signature:Buffer):
     Promise<PairingDeviceOutcome<RegisteredProject>>{

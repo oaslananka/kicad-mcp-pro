@@ -162,8 +162,20 @@ export function pairingApprovalState(
   return record.state==="approved"&&nowMs<record.expiresAtMs;
 }
 
-export function redemptionProof(id: string, deviceCode: string): Buffer {
-  return Buffer.from("kicad-cloud-pairing-proof-v1\0" + id + "\0" + deviceCode, "utf8");
+export type RecoveryIdentity=Readonly<{deviceId:string;ownerSub:string}>;
+
+export function validRecoveryIdentity(value:RecoveryIdentity):boolean{
+  return typeof value.deviceId==="string"&&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.deviceId)&&
+    typeof value.ownerSub==="string"&&value.ownerSub.length>=1&&value.ownerSub.length<=256&&
+    !/[\x00-\x1f\x7f]/.test(value.ownerSub);
+}
+
+export function redemptionProof(id: string, deviceCode: string, recovery?:RecoveryIdentity): Buffer {
+  return recovery
+    ?Buffer.from("kicad-cloud-pairing-recovery-v1\0"+id+"\0"+deviceCode+"\0"+
+      recovery.deviceId+"\0"+recovery.ownerSub,"utf8")
+    :Buffer.from("kicad-cloud-pairing-proof-v1\0"+id+"\0"+deviceCode,"utf8");
 }
 
 /**
@@ -172,10 +184,10 @@ export function redemptionProof(id: string, deviceCode: string): Buffer {
  */
 export function redeemPairing(
   record: PairingRecord, serverKey: Buffer, nowMs: number,
-  deviceCode: string, signature: Buffer
+  deviceCode: string, signature: Buffer, recovery?:RecoveryIdentity
 ): RedeemResult {
   requireServerKey(serverKey);
-  if (!validClock(nowMs)) return { kind: "unavailable", record };
+  if (!validClock(nowMs)||(recovery&&!validRecoveryIdentity(recovery))) return { kind: "unavailable", record };
   const current = stateAt(record, nowMs);
   if (current.state !== "approved" || !current.ownerSub ||
       typeof deviceCode !== "string" || deviceCode.length > 128 ||
@@ -185,7 +197,7 @@ export function redeemPairing(
   }
   try {
     const key = createPublicKey({ key: Buffer.from(current.devicePublicKeyDer, "base64"), format: "der", type: "spki" });
-    if (key.asymmetricKeyType !== "ed25519" || !verify(null, redemptionProof(current.id, deviceCode), key, signature)) {
+    if (key.asymmetricKeyType !== "ed25519" || !verify(null, redemptionProof(current.id, deviceCode,recovery), key, signature)) {
       return { kind: "unavailable", record: current };
     }
   } catch {

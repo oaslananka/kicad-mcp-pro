@@ -51,6 +51,10 @@ class WindowsEnrollmentDeniedError(WindowsEnrollmentError):
     """Owner rejected the pending challenge before device redemption."""
 
 
+class WindowsRecoveryDeniedError(WindowsEnrollmentError):
+    """Authenticated Cloud refused replacement; no new device was registered."""
+
+
 class WindowsPartialEnrollmentError(WindowsEnrollmentError):
     """Cloud may already have redeemed; owner must inspect the Devices page."""
 
@@ -95,6 +99,7 @@ def _approved_redeem(
     challenge: str,
     secret: str,
     fingerprint: str,
+    recovery: dict[str, str] | None = None,
 ) -> tuple[str, str]:
     proof = (
         b"kicad-cloud-pairing-proof-v1\x00"
@@ -102,6 +107,17 @@ def _approved_redeem(
         + b"\x00"
         + secret.encode("ascii")
     )
+    if recovery is not None:
+        proof = (
+            b"kicad-cloud-pairing-recovery-v1\x00"
+            + challenge.encode("ascii")
+            + b"\x00"
+            + secret.encode("ascii")
+            + b"\x00"
+            + recovery["deviceId"].encode("ascii")
+            + b"\x00"
+            + recovery["ownerSub"].encode("utf-8")
+        )
     signature = base64.urlsafe_b64encode(key.sign(proof)).decode("ascii").rstrip("=")
     result = cloud_pair._post(
         target,
@@ -111,9 +127,19 @@ def _approved_redeem(
             "deviceCode": secret,
             "signature": signature,
             "connectOnApproval": True,
+            **({"recovery": recovery} if recovery is not None else {}),
         },
         200,
     )
+    if (
+        recovery is not None
+        and set(result) == {"recoveryDenied"}
+        and result["recoveryDenied"] is True
+    ):
+        raise WindowsRecoveryDeniedError(
+            "Cloud kept the existing device. No replacement was registered. "
+            "Check the device is enabled and the correct account is signed in."
+        )
     required = {"deviceId", "deviceFingerprint", "enabled", "ownerSub"}
     device_id = result.get("deviceId")
     owner_sub = result.get("ownerSub")
@@ -123,6 +149,10 @@ def _approved_redeem(
         or cloud_pair._UUID.fullmatch(device_id) is None
         or result["deviceFingerprint"] != fingerprint
         or result["enabled"] is not True
+        or (
+            recovery is not None
+            and (owner_sub != recovery["ownerSub"] or device_id == recovery["deviceId"])
+        )
         or not isinstance(owner_sub, str)
         or not 1 <= len(owner_sub) <= 256
         or any(ord(char) < 32 or ord(char) == 127 for char in owner_sub)
@@ -161,6 +191,8 @@ def enroll_windows_device(
     origin: str,
     alias: str,
     owner_approval: Callable[[str, str, str], None],
+    recovery_device_id: str | None = None,
+    recovery_owner_sub: str | None = None,
 ) -> WindowsEnrolledDevice:
     """Require real browser approval, save signing key/binding only to user vault.
 
@@ -170,6 +202,17 @@ def enroll_windows_device(
     redeemed device is never reported as fully configured if vault binding fails.
     """
     _validate_windows_device_name(alias)
+    recovery = None
+    if recovery_device_id is not None or recovery_owner_sub is not None:
+        if (
+            not isinstance(recovery_device_id, str)
+            or cloud_pair._UUID.fullmatch(recovery_device_id) is None
+            or not isinstance(recovery_owner_sub, str)
+            or not 1 <= len(recovery_owner_sub) <= 256
+            or any(ord(char) < 32 or ord(char) == 127 for char in recovery_owner_sub)
+        ):
+            raise WindowsEnrollmentError(_DENIED)
+        recovery = {"deviceId": recovery_device_id, "ownerSub": recovery_owner_sub}
     target = cloud_pair._origin(origin)
     record_id = uuid.uuid4().hex
     key = Ed25519PrivateKey.generate()
@@ -207,7 +250,12 @@ def enroll_windows_device(
         # even if the HTTPS response is lost. Preserve owner key for recovery.
         redeem_attempted = True
         device_id, owner_sub = _approved_redeem(
-            target, key, challenge=challenge, secret=secret, fingerprint=fingerprint
+            target,
+            key,
+            challenge=challenge,
+            secret=secret,
+            fingerprint=fingerprint,
+            recovery=recovery,
         )
         document = {
             "recordId": record_id,
@@ -235,6 +283,10 @@ def enroll_windows_device(
             device_id=device_id,
             fingerprint=fingerprint,
         )
+    except WindowsRecoveryDeniedError:
+        # Exact authenticated refusal: no remote device was created.
+        redeem_attempted = False
+        raise
     except cloud_pair.CloudPairingDeniedError as exc:
         if redeem_attempted:
             raise WindowsPartialEnrollmentError(record_id) from exc

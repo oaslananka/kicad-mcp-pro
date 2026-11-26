@@ -2,7 +2,7 @@ import {createPublicKey, randomUUID, verify} from "node:crypto";
 import type {Pool,PoolClient} from "pg";
 import {PgDeviceManagement} from "./device-management.js";
 import {issuePairing,reviewPairing,redeemPairing,pairingApprovalState,
-  type PairingRecord,type PairingStatus} from "./device-pairing.js";
+  type PairingRecord,type PairingStatus,type RecoveryIdentity} from "./device-pairing.js";
 
 type Row={
   id:string;device_alias:string;device_public_key_der:string;device_fingerprint:string;
@@ -10,7 +10,7 @@ type Row={
   attempts:number;owner_sub:string|null;
 };
 export type BrowserReview="approved"|"denied"|"invalid_code"|"locked"|"unavailable";
-export type Enrollment={kind:"enrolled";deviceId:string;ownerSub:string;deviceFingerprint:string}|{kind:"unavailable"};
+export type Enrollment={kind:"enrolled";deviceId:string;ownerSub:string;deviceFingerprint:string}|{kind:"unavailable"}|{kind:"recovery_denied"};
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function convert(row:Row):PairingRecord {
@@ -100,13 +100,35 @@ export class PgPairingChallenges {
    * There is deliberately no HTTP endpoint or device execution here.
    */
   async enroll(id:string,code:string,signature:Buffer,
-    connectOnApproval=false):Promise<Enrollment>{
+    connectOnApproval=false,recovery?:RecoveryIdentity):Promise<Enrollment>{
     return this.locked(id,{kind:"unavailable"} as Enrollment,async(db,r,now)=>{
-      const proof=redeemPairing(r,this.key,now,code,signature);
+      const proof=redeemPairing(r,this.key,now,code,signature,recovery);
       if(proof.record.state!==r.state && proof.kind!=="redeemed"){
         await save(db,proof.record);
       }
       if(proof.kind!=="redeemed")return {kind:"unavailable"};
+      if(recovery){
+        // Browser approval authenticates the account. Do not disclose or
+        // replace another owner's registration, or a merely disabled device.
+        let permitted=connectOnApproval===true&&proof.ownerSub===recovery.ownerSub;
+        if(permitted){
+          const old=await db.query<{owner_sub:string}>(
+            "SELECT owner_sub FROM devices WHERE id=$1 FOR UPDATE",[recovery.deviceId]);
+          if(old.rows.length!==0){
+            permitted=old.rows.length===1&&old.rows[0]?.owner_sub===proof.ownerSub;
+            if(permitted){
+              const credential=await db.query<{revoked:boolean}>(
+                "SELECT (revoked_at IS NOT NULL) AS revoked FROM device_credentials "+
+                "WHERE device_id=$1 AND owner_sub=$2 FOR UPDATE",[recovery.deviceId,proof.ownerSub]);
+              permitted=credential.rows.length===1&&credential.rows[0]?.revoked===true;
+            }
+          }
+        }
+        if(!permitted){
+          await save(db,proof.record);
+          return {kind:"recovery_denied"};
+        }
+      }
       const deviceId=randomUUID();
       await db.query(
         "INSERT INTO devices(id,owner_sub,alias,enabled) VALUES($1,$2,$3,$4)",

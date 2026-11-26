@@ -1203,3 +1203,24 @@ def test_installer_cloud_managed_edit_uses_only_trusted_owner_session(
         assert state["calls"] == []
         if fault in {"headless", "foreign"}:
             assert events == []
+
+
+@pytest.mark.parametrize("denied", [False, True])
+def test_device_recovery_has_no_terminal_confirmation(monkeypatch, denied: bool) -> None:
+    from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
+    from kicad_mcp.cloud_windows_enrollment import WindowsRecoveryDeniedError
+
+    monkeypatch.setattr(
+        typer, "confirm", lambda *_args, **_kwargs: pytest.fail("extra confirmation")
+    )
+    events = []
+
+    def recover(**kwargs: object) -> None:
+        events.append("browser")
+        if denied:
+            raise WindowsRecoveryDeniedError("Existing device kept.")
+
+    monkeypatch.setattr(bootstrap, "repair_device_only", recover)
+    monkeypatch.setattr(cloud_user_cli, "_call_with_owner_connector", lambda fn: fn())
+    assert cloud_user_cli._offer_device_recovery() is not denied
+    assert events == ["browser"]

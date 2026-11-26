@@ -395,6 +395,8 @@ def test_device_repair_archives_without_adding_project(
 
     def enroll(**kwargs: object) -> WindowsEnrolledDevice:
         assert kwargs["origin"] == previous.origin
+        assert kwargs["recovery_device_id"] == previous.device_id
+        assert kwargs["recovery_owner_sub"] == previous.owner_sub
         kwargs["owner_approval"]("https://cloud.example/pair", "challenge", "code")
         if fault == "cancel":
             raise LocalApprovalDeniedError("cancelled")

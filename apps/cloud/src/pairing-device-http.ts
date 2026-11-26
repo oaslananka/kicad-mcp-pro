@@ -17,7 +17,11 @@ const redeemSchema=z.strictObject({
   deviceCode:z.string().regex(/^[A-Za-z0-9_-]{43}$/),
   signature:z.string().regex(/^[A-Za-z0-9_-]{86}$/),
   // Opt-in in the new client only. Absent means the original disabled-device contract.
-  connectOnApproval:z.literal(true).optional()
+  connectOnApproval:z.literal(true).optional(),
+  recovery:z.strictObject({
+    deviceId:z.uuid(),
+    ownerSub:z.string().min(1).max(256)
+  }).optional()
 });
 const projectSchema=z.strictObject({
   deviceId:z.string().uuid(),
@@ -123,8 +127,11 @@ export async function handlePairingDeviceRequest(
     if(!secret||!sig){reply(res,400,{error:"invalid_request"});return true;}
     const connectOnApproval=fields.data.connectOnApproval===true;
     const result=await api.enroll(source,fields.data.challengeId,fields.data.deviceCode,sig,
-      connectOnApproval);
+      connectOnApproval,fields.data.recovery);
     if(result.kind==="throttled"){reply(res,429,{error:"rate_limited"});return true;}
+    if(result.kind==="ok"&&result.data.kind==="recovery_denied"){
+      reply(res,200,{recoveryDenied:true});return true;
+    }
     if(result.kind!=="ok"||result.data.kind!=="enrolled"){
       reply(res,400,{error:"unavailable"});return true;
     }
