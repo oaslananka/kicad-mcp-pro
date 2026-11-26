@@ -914,3 +914,185 @@ def test_fetch_producer_cli(fetch_case, monkeypatch, capsys) -> None:
     assert report["producerArtifactVerified"] is True
     assert report["publicationAuthorized"] is False
     assert calls == [ARTIFACT_ID]
+
+
+@pytest.fixture
+def registry_case(worker_producer) -> tuple[Any, ...]:
+    import json
+
+    client, verifier, options, _, child, item = worker_producer
+    args = dict(options)
+    args.pop("producer_job_id")
+    args.pop("downloaded_zip")
+    assets = json.loads(manifest_bytes(args["identity"].handoff, args["directory"]))["assets"]
+    version = args["identity"].handoff.tag.removeprefix("mcp-server-v")
+
+    class Registry:
+        def __init__(self) -> None:
+            self.calls = []
+            self.inventory_data = {
+                "info": {"name": "kicad-mcp-pro", "version": version},
+                "urls": [
+                    {
+                        "filename": a["name"],
+                        "size": a["size"],
+                        "digests": {"sha256": a["sha256"]},
+                        "yanked": False,
+                    }
+                    for a in assets
+                ],
+            }
+            self.failure = None
+
+        def inventory(self, requested):
+            assert requested == version
+            self.calls.append("inventory")
+            return copy.deepcopy(self.inventory_data)
+
+        def provenance(self, requested, filename):
+            assert requested == version
+            self.calls.append(filename)
+            return {"filename": filename}
+
+        def verify(self, provenance, path):
+            assert provenance["filename"] == path.name
+            return self.failure
+
+    return client, verifier, args, child, item, Registry()
+
+
+def test_prepare_registry_receipt(registry_case) -> None:
+    import json
+
+    from scripts import check_python_registry_receipt as receipt
+
+    client, verifier, args, _, _, registry = registry_case
+    data = receipt.prepare_registry_receipt(client, verifier, registry, registry.verify, **args)
+    record = json.loads(data)
+    assert record["kind"] == "python-worker-registry-receipt"
+    assert record["manifestSha256"] == args["identity"].manifest_sha256
+    assert record["registryDigestInventoryVerified"] is True
+    assert record["registryPublisherProvenanceVerified"] is True
+    for key in (
+        "registryReceiptVerified",
+        "registryPublicationRunVerified",
+        "exclusiveWriterVerified",
+        "publicationAuthorized",
+    ):
+        assert record[key] is False
+    assert registry.calls.count("inventory") == 2
+    assert len(record["assets"]) == 2
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "extra",
+        "missing",
+        "duplicate",
+        "digest",
+        "size",
+        "yanked",
+        "version",
+        "package",
+        "signature",
+        "owner-signature",
+    ],
+)
+def test_registry_receipt_rejects_bad_evidence(registry_case, change) -> None:
+    from scripts import check_python_registry_receipt as receipt
+
+    client, verifier, args, _, _, registry = registry_case
+    urls = registry.inventory_data["urls"]
+    if change == "extra":
+        urls.append(dict(urls[0], filename="extra.whl"))
+    elif change == "missing":
+        urls.pop()
+    elif change == "duplicate":
+        urls.append(copy.deepcopy(urls[0]))
+    elif change == "digest":
+        urls[0]["digests"]["sha256"] = "0" * 64
+    elif change == "size":
+        urls[0]["size"] += 1
+    elif change == "yanked":
+        urls[0]["yanked"] = True
+    elif change == "version":
+        registry.inventory_data["info"]["version"] = "0.0.0"
+    elif change == "package":
+        registry.inventory_data["info"]["name"] = "other"
+    elif change == "signature":
+        registry.failure = "cryptographic failure"
+    else:
+        verifier.change = "owner-signature"
+    options = dict(args)
+    with pytest.raises(ValueError):
+        receipt.prepare_registry_receipt(client, verifier, registry, registry.verify, **options)
+    if change == "owner-signature":
+        assert not registry.calls
+
+
+@pytest.mark.parametrize("change", ["package", "child", "request", "registry"])
+def test_registry_receipt_rechecks_after_provenance(registry_case, change) -> None:
+    from scripts import check_python_registry_receipt as receipt
+
+    client, verifier, args, child, item, registry = registry_case
+
+    def verify(provenance, path):
+        if change == "package":
+            path.write_bytes(b"changed")
+        elif change == "child":
+            child["run_attempt"] = 2
+        elif change == "request":
+            item["expired"] = True
+        else:
+            registry.inventory_data["urls"][0]["yanked"] = True
+        return None
+
+    options = dict(args)
+    with pytest.raises(ValueError):
+        receipt.prepare_registry_receipt(client, verifier, registry, verify, **options)
+
+
+def test_registry_receipt_event_cli(registry_case, monkeypatch, capsys) -> None:
+    import json
+
+    from scripts import check_python_registry_receipt as receipt
+    from scripts.python_worker_dispatch_inputs import dispatch_payload
+
+    client, verifier, args, _, _, registry = registry_case
+    identity = args["identity"]
+    event = args["archive"].with_name("receipt-event.json")
+    event.write_text(json.dumps(dispatch_payload(identity.handoff, identity.manifest_sha256)))
+    for key, value in {
+        "GITHUB_REPOSITORY": REPO,
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_REF": args["runtime_ref"],
+        "GITHUB_SHA": args["runtime_sha"],
+        "GITHUB_RUN_ID": str(args["runtime_run_id"]),
+        "GITHUB_RUN_ATTEMPT": str(args["runtime_attempt"]),
+        "GITHUB_EVENT_PATH": str(event),
+    }.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(receipt, "DeliveryGitHubCLI", lambda: client)
+    monkeypatch.setattr(receipt, "GitHubAttestationCLI", lambda: verifier)
+    monkeypatch.setattr(receipt, "PyPIReadClient", lambda: registry)
+    monkeypatch.setattr(receipt, "verify_registry_provenance", registry.verify)
+    argv = [
+        "--from-event",
+        "--artifact-id",
+        str(args["artifact_id"]),
+        "--archive",
+        str(args["archive"]),
+        "--directory",
+        str(args["directory"]),
+    ]
+    assert receipt.main(argv) == 0
+    raw = capsys.readouterr().out
+    record = json.loads(raw)
+    assert raw == json.dumps(record, indent=2, sort_keys=True) + "\n"
+    assert record["publicationAuthorized"] is False
+    registry.failure = "invalid provenance"
+    with pytest.raises(SystemExit) as exc:
+        receipt.main(argv)
+    assert exc.value.code == 2
+    assert capsys.readouterr().out == ""

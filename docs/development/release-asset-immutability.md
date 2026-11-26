@@ -958,3 +958,37 @@ observed an owner `queued` transition and recovered; both runs
 succeeded and both ZIPs and signatures were independently verified
 ([#1179 evidence](https://github.com/oaslananka/kicad-mcp-pro/issues/1179#issuecomment-7182409358)).
 No registry environment or production signing identity was used.
+
+
+### Python registry receipt preparation (read-only, not wired)
+
+After the worker has independently verified the signed request and producer
+packages, the future registry-only worker can prepare a canonical unsigned
+receipt from those exact local files:
+
+```bash
+python -m scripts.check_python_registry_receipt --from-event \
+  --artifact-id "$REQUEST_ARTIFACT_ID" --archive "$REQUEST_ZIP" \
+  --directory "$DIST" > python-worker-registry-receipt.json
+```
+
+The command re-verifies both owner signatures, live worker/owner/tag identity,
+the independently pinned manifest and exact local wheel/sdist bytes. It reads
+only production PyPI over HTTPS, with no redirects, a 4 MiB response limit and
+30-second socket timeout. It requires the complete two-file version inventory,
+exact names, sizes and SHA-256 values, and non-yanked files. Both distributions
+must have matching PEP 740 publish metadata **and** cryptographic provenance
+for the reviewed repository, `publish-python.yml` and `pypi` environment
+using the existing release dependency group. It repeats the registry inventory,
+request archive and local manifest checks before emitting the record.
+
+The receipt binds the exact owner, child, producer selectors, manifest pin,
+request artifact ID/digest, package/version and both file digests. It is
+unsigned and not an accepted receipt: publisher provenance does not prove
+which worker run published the files, or that this invocation performed a
+publication. Producer verification, draft/tag policy, exclusive writer
+ownership and publication authorization are not established by this command.
+The future owner must independently verify the worker's signed receipt and
+registry evidence before final Release publication. The current workflow
+does not call this command or grant new permissions. Use runner-private
+staging; repeated reads do not prevent races after the final check.
