@@ -25,6 +25,14 @@ if [[ "$1 $2 $3" == "cloud _update-control request" ]]; then
   [[ "$(cat "$TEST_HANDOFF/lease")" == "$5 $7" ]] || exit 1
   printf '%s\n' requested >> "$TEST_LOG"
   touch "$TEST_HANDOFF/drain"
+  if [[ "$TEST_SCENARIO" == interrupt-handoff ]]; then
+    # Kill only the disposable updater which invoked this fixture. It must
+    # have durably recorded the intent before issuing the stop request.
+    [[ -f "$XDG_DATA_HOME/KiCadMCPPro/pending-release" ]] || exit 98
+    parent_command="$(ps -p "$PPID" -o args=)"
+    [[ "$parent_command" == *"pending_release()"* ]] || exit 98
+    kill -KILL "$PPID"
+  fi
   exit 0
 fi
 [[ "$*" == cloud && -t 0 ]] || exit 97
@@ -299,3 +307,128 @@ timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
 [[ "$(grep -c '^tool install' "$TEST_LOG")" == "$before" ]]
 cmp "$TEST_CLI_TEMPLATE" "$app/bin/kicad-mcp-pro"
 printf 'PASS: legacy working installation recovered without reinstall\n'
+
+# Recreate the durable checkpoint immediately after successful preparation
+# and an interrupted updater. Recovery must not contact the package index
+# or overwrite the prepared candidate, even when the network is unavailable.
+export HOME="$work/interrupted/home"
+export XDG_DATA_HOME="$HOME/data"
+export TEST_LOG="$work/interrupted/events"
+export TEST_SELECTED_LOG="$work/interrupted/selected"
+mkdir -p "$HOME"
+app="$XDG_DATA_HOME/KiCadMCPPro"
+export TEST_SCENARIO=install
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
+a="$app/releases/a/bin/kicad-mcp-pro"
+b="$app/releases/b/bin/kicad-mcp-pro"
+mkdir -p "$(dirname "$b")"
+install -m 700 "$TEST_CLI_TEMPLATE" "$b"
+generation="$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
+printf 'a b %s\n' "$generation" > "$app/pending-release"
+before="$(grep -c '^tool install' "$TEST_LOG")"
+export TEST_SCENARIO=offline
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
+[[ "$(cat "$app/active-release")" == b ]]
+[[ "$(tail -1 "$TEST_SELECTED_LOG")" == "$b" ]]
+[[ ! -e "$app/pending-release" ]]
+[[ "$(grep -c '^tool install' "$TEST_LOG")" == "$before" ]]
+cmp "$TEST_CLI_TEMPLATE" "$a"
+cmp "$TEST_CLI_TEMPLATE" "$b"
+printf 'PASS: interrupted handoff resumes prepared release offline\n'
+
+# Interruption immediately after selector publication is idempotent.
+printf 'a b %s\n' "$generation" > "$app/pending-release"
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
+[[ "$(cat "$app/active-release")" == b && ! -e "$app/pending-release" ]]
+[[ "$(grep -c '^tool install' "$TEST_LOG")" == "$before" ]]
+printf 'PASS: interrupted selector publication reconciles without reinstall\n'
+
+# Malformed journal is not permission to replace either environment.
+printf 'a a %s\n' "$generation" > "$app/pending-release"
+if timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null; then
+  echo 'Malformed pending release was accepted' >&2; exit 1
+fi
+[[ "$(cat "$app/active-release")" == b ]]
+[[ "$(grep -c '^tool install' "$TEST_LOG")" == "$before" ]]
+cmp "$TEST_CLI_TEMPLATE" "$a"
+cmp "$TEST_CLI_TEMPLATE" "$b"
+printf 'PASS: malformed update journal fails closed\n'
+
+# Real process interruption after the fixture receives the drain request.
+export HOME="$work/crash-handoff/home"
+export XDG_DATA_HOME="$HOME/data"
+export TEST_LOG="$work/crash-handoff/events"
+export TEST_SELECTED_LOG="$work/crash-handoff/selected"
+export TEST_HANDOFF="$work/crash-handoff/control"
+mkdir -p "$HOME" "$TEST_HANDOFF"
+export TEST_SCENARIO=live-handoff
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null </dev/null &
+launcher=$!
+for _ in $(seq 1 100); do [[ -s "$TEST_HANDOFF/lease" ]] && break; sleep .05; done
+if [[ ! -s "$TEST_HANDOFF/lease" ]]; then
+  touch "$TEST_HANDOFF/drain"
+  wait "$launcher" || true
+  exit 1
+fi
+app="$XDG_DATA_HOME/KiCadMCPPro"
+a="$app/releases/a/bin/kicad-mcp-pro"
+b="$app/releases/b/bin/kicad-mcp-pro"
+export TEST_SCENARIO=interrupt-handoff
+if timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null; then
+  echo "Interrupted updater unexpectedly succeeded" >&2; exit 1
+fi
+wait "$launcher"
+[[ "$(cat "$app/active-release")" == a && -f "$app/pending-release" ]]
+before="$(grep -c '^tool install' "$TEST_LOG")"
+export TEST_SCENARIO=offline
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
+[[ "$(cat "$app/active-release")" == b && ! -e "$app/pending-release" ]]
+[[ "$(tail -1 "$TEST_SELECTED_LOG")" == "$b" ]]
+[[ "$(grep -c '^tool install' "$TEST_LOG")" == "$before" ]]
+printf 'PASS: actual updater crash after drain resumes offline\n'
+
+# A journal may belong to an earlier process. Do not drain a new generation
+# or a healthy running Connector merely because a saved candidate exists.
+export HOME="$work/stale-handoff/home"
+export XDG_DATA_HOME="$HOME/data"
+export TEST_LOG="$work/stale-handoff/events"
+export TEST_SELECTED_LOG="$work/stale-handoff/selected"
+export TEST_HANDOFF="$work/stale-handoff/control"
+mkdir -p "$HOME" "$TEST_HANDOFF"
+export TEST_SCENARIO=live-handoff
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null </dev/null &
+launcher=$!
+for _ in $(seq 1 100); do [[ -s "$TEST_HANDOFF/lease" ]] && break; sleep .05; done
+if [[ ! -s "$TEST_HANDOFF/lease" ]]; then
+  touch "$TEST_HANDOFF/drain"
+  wait "$launcher" || true
+  exit 1
+fi
+app="$XDG_DATA_HOME/KiCadMCPPro"
+b="$app/releases/b/bin/kicad-mcp-pro"
+mkdir -p "$(dirname "$b")"
+install -m 700 "$TEST_CLI_TEMPLATE" "$b"
+printf 'a b %s\n' "$(python3 -c 'import uuid; print(uuid.uuid4().hex)')" > "$app/pending-release"
+before="$(grep -c '^tool install' "$TEST_LOG")"
+export TEST_SCENARIO=offline
+if timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null; then
+  touch "$TEST_HANDOFF/drain"; wait "$launcher" || true
+  echo "Stale generation was accepted" >&2; exit 1
+fi
+[[ ! -e "$TEST_HANDOFF/drain" && "$(cat "$app/active-release")" == a ]]
+[[ -f "$app/pending-release" ]]
+printf 'a b %s\n' "$(cut -d' ' -f1 "$TEST_HANDOFF/lease")" > "$app/pending-release"
+printf 'broken candidate\n' > "$b"
+if timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null; then
+  touch "$TEST_HANDOFF/drain"; wait "$launcher" || true
+  echo "Unhealthy saved candidate was accepted" >&2; exit 1
+fi
+[[ ! -e "$TEST_HANDOFF/drain" && "$(cat "$app/active-release")" == a ]]
+[[ "$(grep -c '^tool install' "$TEST_LOG")" == "$before" ]]
+touch "$TEST_HANDOFF/drain"
+wait "$launcher"
+# With no running process, recover the still-healthy old release.
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
+[[ "$(cat "$app/active-release")" == a && ! -e "$app/pending-release" ]]
+[[ "$(grep -c '^tool install' "$TEST_LOG")" == "$before" ]]
+printf 'PASS: stale generation and unhealthy saved candidate never drain live Connector\n'
