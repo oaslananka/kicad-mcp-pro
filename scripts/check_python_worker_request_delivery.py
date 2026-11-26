@@ -7,14 +7,17 @@ import hashlib
 import io
 import json
 import os
+import shutil
+import subprocess  # nosec B404
 import tempfile
+import threading
 import time
 import zipfile
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, BinaryIO, Protocol
 
 from scripts.check_draft_producer_archive import REPOSITORY, _verify_artifact
-from scripts.check_draft_producer_job import verify_producer_job
+from scripts.check_draft_producer_job import _REUSABLE_JOB_NAMES, verify_producer_job
 from scripts.check_draft_release_inventory import digest
 from scripts.check_draft_release_owner import (
     _REPOSITORY_ID,
@@ -38,10 +41,11 @@ from scripts.check_signed_python_handoff import (
     manifest_bytes,
     verify_manifest_record,
 )
-from scripts.extract_draft_producer_zip import _MAX_TOTAL_BYTES, _members
+from scripts.extract_draft_producer_zip import _MAX_TOTAL_BYTES, _members, verify_and_extract
 from scripts.python_worker_dispatch_inputs import dispatch_payload, positive_id, read_event_inputs
 from scripts.runtime_path_safety import approved_runtime_path
 
+_DOWNLOAD_TIMEOUT = 120
 _MAX_ARCHIVE = 65536
 _MAX_MEMBER = 16384
 _MAX_POLLS = 30
@@ -319,8 +323,8 @@ def _verify_delivery(
     }
 
 
-def _producer_snapshot(
-    client: ProducerClient, handoff: HandoffIdentity, downloaded_zip: Path
+def _producer_metadata(
+    client: ProducerClient, handoff: HandoffIdentity
 ) -> tuple[dict[str, Any], str]:
     pin = _producer_pin(client, handoff)
     metadata = client.artifact(REPOSITORY, handoff.producer_artifact_id)
@@ -333,14 +337,19 @@ def _producer_snapshot(
         artifact_id=handoff.producer_artifact_id,
         role="python-dist",
     )
-    if checked_pin != pin or downloaded_zip.is_symlink():
-        raise ValueError("producer archive identity changed or linked")
+    if checked_pin != pin or metadata["size_in_bytes"] > _MAX_TOTAL_BYTES:
+        raise ValueError("producer archive identity changed or exceeds limit")
+    return metadata, pin
+
+
+def _producer_snapshot(
+    client: ProducerClient, handoff: HandoffIdentity, downloaded_zip: Path
+) -> tuple[dict[str, Any], str]:
+    metadata, pin = _producer_metadata(client, handoff)
+    if downloaded_zip.is_symlink():
+        raise ValueError("linked producer archive")
     path = approved_runtime_path(downloaded_zip)
-    if (
-        not path.is_file()
-        or metadata["size_in_bytes"] > _MAX_TOTAL_BYTES
-        or path.stat().st_size != metadata["size_in_bytes"]
-    ):
+    if not path.is_file() or path.stat().st_size != metadata["size_in_bytes"]:
         raise ValueError("producer archive size mismatch or exceeds limit")
     return metadata, pin
 
@@ -436,6 +445,186 @@ def verify_producer_delivery(
     }
 
 
+class ArtifactDownloader(Protocol):
+    def __call__(self, repo: str, artifact_id: int, output: Path, *, max_bytes: int) -> None: ...
+
+
+def discover_producer_job(client: ProducerClient, handoff: HandoffIdentity) -> int:
+    """Select one exact reusable job from the complete attempt listing."""
+    collection = client.workflow_jobs(REPOSITORY, handoff.producer_run_id, handoff.producer_attempt)
+    jobs = collection.get("jobs") if isinstance(collection, dict) else None
+    if (
+        not isinstance(jobs, list)
+        or len(jobs) > 100
+        or not _exact_id(collection.get("total_count"), len(jobs))
+        or any(not isinstance(job, dict) for job in jobs)
+    ):
+        raise ValueError("incomplete producer job listing")
+    name = _REUSABLE_JOB_NAMES["python-dist"][1]
+    matches = [job for job in jobs if job.get("name") == name]
+    if len(matches) != 1:
+        raise ValueError("expected exactly one reusable Python producer job")
+    job_id = matches[0].get("id")
+    if type(job_id) is not int or job_id <= 0:
+        raise ValueError("invalid producer job ID")
+    _recheck_producer_job(client, handoff, job_id)
+    return job_id
+
+
+def _copy_bounded(source: BinaryIO, destination: BinaryIO, limit: int) -> None:
+    remaining = limit
+    while remaining:
+        block = source.read(min(1024 * 1024, remaining))
+        if not block:
+            raise ValueError("incomplete producer download")
+        destination.write(block)
+        remaining -= len(block)
+    if source.read(1):
+        raise ValueError("producer download exceeds expected size")
+
+
+def download_producer_archive(repo: str, artifact_id: int, output: Path, *, max_bytes: int) -> None:
+    """Stream only the exact API archive into a private file with byte/time bounds."""
+    if (
+        repo != REPOSITORY
+        or type(artifact_id) is not int
+        or artifact_id <= 0
+        or type(max_bytes) is not int
+        or not 0 < max_bytes <= _MAX_TOTAL_BYTES
+    ):
+        raise ValueError("invalid producer download identity or bound")
+    gh = shutil.which("gh")
+    if gh is None:
+        raise ValueError("GitHub CLI not available")
+    path = approved_runtime_path(output.parent) / output.name
+    with (
+        path.open("xb") as destination,
+        # Fixed GitHub host and repository; artifact ID validated above; no shell.
+        subprocess.Popen(  # nosec B603  # nosemgrep
+            [
+                gh,
+                "api",
+                "--hostname",
+                "github.com",
+                f"repos/{repo}/actions/artifacts/{artifact_id}/zip",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        ) as process,
+    ):
+        if process.stdout is None:
+            raise ValueError("producer download stream unavailable")
+        timer = threading.Timer(_DOWNLOAD_TIMEOUT, process.kill)
+        timer.daemon = True
+        timer.start()
+        try:
+            _copy_bounded(process.stdout, destination, max_bytes)
+            if process.wait() != 0:
+                raise ValueError("producer download failed")
+        finally:
+            timer.cancel()
+            if process.poll() is None:
+                process.kill()
+
+
+def fetch_producer_delivery(
+    client: WorkerProducerClient,
+    verifier: AttestationVerifier,
+    *,
+    identity: DispatchIdentity,
+    artifact_id: int,
+    archive: Path,
+    output: Path,
+    downloader: ArtifactDownloader,
+    runtime_ref: str,
+    runtime_sha: str,
+    runtime_run_id: int,
+    runtime_attempt: int,
+) -> dict[str, Any]:
+    """Preflight before download; expose only fully verified package bytes."""
+    if output.is_symlink() or output.exists():
+        raise ValueError("producer output must not already exist")
+    parent = approved_runtime_path(output.parent)
+    if not parent.is_dir():
+        raise ValueError("producer output parent must exist")
+    output = parent / output.name
+    runtime = {
+        "runtime_ref": runtime_ref,
+        "runtime_sha": runtime_sha,
+        "runtime_run_id": runtime_run_id,
+        "runtime_attempt": runtime_attempt,
+    }
+    request = verify_request_delivery(
+        client,
+        verifier,
+        identity=identity,
+        artifact_id=artifact_id,
+        archive=archive,
+        **runtime,
+    )
+    handoff = identity.handoff
+    metadata, pin = _producer_metadata(client, handoff)
+    job_id = discover_producer_job(client, handoff)
+    _check_live(client, identity)
+    with tempfile.TemporaryDirectory(prefix=".kicad-worker-fetch-", dir=parent) as temporary:
+        root = Path(temporary)
+        downloaded = root / "producer.zip"
+        directory = root / "verified"
+        downloader(
+            REPOSITORY,
+            handoff.producer_artifact_id,
+            downloaded,
+            max_bytes=metadata["size_in_bytes"],
+        )
+        if _producer_snapshot(client, handoff, downloaded) != (metadata, pin):
+            raise ValueError("producer metadata changed during download")
+        verify_and_extract(
+            client,
+            repo=REPOSITORY,
+            role="python-dist",
+            tag=handoff.tag,
+            run_id=handoff.producer_run_id,
+            run_attempt=handoff.producer_attempt,
+            artifact_id=handoff.producer_artifact_id,
+            head_sha=handoff.source_commit,
+            downloaded_zip=downloaded,
+            output=directory,
+            producer_profile="reusable",
+        )
+        report = verify_producer_delivery(
+            client,
+            verifier,
+            identity=identity,
+            artifact_id=artifact_id,
+            archive=archive,
+            directory=directory,
+            producer_job_id=job_id,
+            downloaded_zip=downloaded,
+            **runtime,
+        )
+        if (
+            report["ownerRequestArchiveSha256"] != request["ownerRequestArchiveSha256"]
+            or report["producerArchiveSha256"] != pin
+            or discover_producer_job(client, handoff) != job_id
+            or _producer_snapshot(client, handoff, downloaded) != (metadata, pin)
+        ):
+            raise ValueError("producer delivery evidence changed")
+        _check_live(client, identity)
+        current_request = discover_request(client, identity)
+        if current_request["digest"][7:] != request["ownerRequestArchiveSha256"]:
+            raise ValueError("owner request changed before producer output")
+        _read_archive(archive, current_request)
+        if (
+            hashlib.sha256(manifest_bytes(handoff, directory)).hexdigest()
+            != identity.manifest_sha256
+        ):
+            raise ValueError("producer package bytes changed before output")
+        if output.is_symlink() or output.exists():
+            raise ValueError("producer output appeared during verification")
+        os.rename(directory, output)
+    return report
+
+
 class DeliveryGitHubCLI(OwnerGitHubCLI):
     """Reuse the existing GitHub CLI read-side adapter."""
 
@@ -519,28 +708,40 @@ def _verification_report(
         "identity": identity,
         "artifact_id": args.artifact_id,
         "archive": args.archive,
-        "directory": args.directory,
         "runtime_ref": os.environ["GITHUB_REF"],
         "runtime_sha": os.environ["GITHUB_SHA"],
         "runtime_run_id": identity.worker_run_id,
         "runtime_attempt": identity.worker_attempt,
     }
     verifier = GitHubAttestationCLI()
+    if args.operation == "fetch-producer":
+        return fetch_producer_delivery(
+            client, verifier, output=args.directory, downloader=download_producer_archive, **options
+        )
     if args.operation == "verify-producer":
         return verify_producer_delivery(
             client,
             verifier,
+            directory=args.directory,
             producer_job_id=args.producer_job_id,
             downloaded_zip=args.producer_archive,
             **options,
         )
-    return _verify_delivery(client, verifier, **options)
+    return _verify_delivery(client, verifier, directory=args.directory, **options)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "operation", choices=("discover", "wait", "verify-request", "verify", "verify-producer")
+        "operation",
+        choices=(
+            "discover",
+            "wait",
+            "verify-request",
+            "verify",
+            "verify-producer",
+            "fetch-producer",
+        ),
     )
     parser.add_argument(
         "--from-event",

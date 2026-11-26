@@ -868,6 +868,22 @@ authority remain unverified by the worker. Neither this diagnostic nor
 its predecessors download, install or publish packages. A caller must
 use a separate request preflight before downloading the producer archive.
 
+Alternatively, `fetch-producer` combines request preflight, bounded
+producer download, safe extraction and full producer verification. Pass
+the same request artifact ID and ZIP, independent dispatch selectors
+(or `--from-event`), and a fresh `--directory` under an existing approved
+parent. It accepts neither a producer job ID nor a producer ZIP override:
+it selects one exact approved reusable job from the complete producer
+attempt listing and downloads only the independently identified
+artifact through the GitHub API. The download is bounded by the exact
+metadata size (at most 512 MiB) and a 120-second subprocess deadline.
+Private staging is cleaned on failure; the package directory is exposed
+only after all signature, identity, archive and package checks pass.
+A runner-owned private output parent is required in practice to exclude
+concurrent writers; the final rename is not a filesystem lock. The
+reported success remains diagnostic, not permission to install or
+publish. No production workflow is wired to this operation yet.
+
 Use `wait` instead of `discover` when the owner is still preparing
 the request artifact. It checks live owner, child and tag identities
 at each poll, and repeats those checks when the artifact appears.

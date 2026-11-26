@@ -621,3 +621,85 @@ def test_event_cli_rejects_mismatch_before_api(
     assert error.value.code == 2
     assert not client.reads
     assert client.list_reads == 0
+
+
+@pytest.mark.parametrize(
+    "payload,exit_code,expected",
+    [
+        (b"abc", 0, True),
+        (b"ab", 0, False),
+        (b"abcd", 0, False),
+        (b"abc", 1, False),
+    ],
+)
+def test_bounded_download_adapter(tmp_path, monkeypatch, payload, exit_code, expected) -> None:
+    import subprocess  # nosec B404
+    import sys
+
+    from scripts import check_python_worker_request_delivery as worker
+
+    real_popen = subprocess.Popen
+    monkeypatch.setattr(worker.shutil, "which", lambda _: "gh-test")
+
+    def launch(command, **options: object):
+        assert command == [
+            "gh-test",
+            "api",
+            "--hostname",
+            "github.com",
+            f"repos/{REPO}/actions/artifacts/{ARTIFACT}/zip",
+        ]
+        return real_popen(
+            [
+                sys.executable,
+                "-c",
+                f"import sys; sys.stdout.buffer.write({payload!r}); sys.exit({exit_code})",
+            ],
+            **options,
+        )
+
+    monkeypatch.setattr(worker.subprocess, "Popen", launch)
+    path = tmp_path / "producer.zip"
+    if expected:
+        worker.download_producer_archive(REPO, ARTIFACT, path, max_bytes=3)
+        assert path.read_bytes() == payload
+    else:
+        with pytest.raises(ValueError):
+            worker.download_producer_archive(REPO, ARTIFACT, path, max_bytes=3)
+        assert path.stat().st_size <= 3
+
+
+def test_download_adapter_rejects_existing_file(tmp_path, monkeypatch) -> None:
+    from scripts import check_python_worker_request_delivery as worker
+
+    path = tmp_path / "producer.zip"
+    path.write_bytes(b"preserve")
+    monkeypatch.setattr(worker.shutil, "which", lambda _: "gh-test")
+    with pytest.raises(FileExistsError):
+        worker.download_producer_archive(REPO, ARTIFACT, path, max_bytes=3)
+    assert path.read_bytes() == b"preserve"
+
+
+def test_download_adapter_kills_stalled_process(tmp_path, monkeypatch) -> None:
+    import subprocess  # nosec B404
+    import sys
+
+    from scripts import check_python_worker_request_delivery as worker
+
+    real_popen = subprocess.Popen
+    processes = []
+    monkeypatch.setattr(worker.shutil, "which", lambda _: "gh-test")
+    monkeypatch.setattr(worker, "_DOWNLOAD_TIMEOUT", 0.2)
+
+    def launch(command, **options: object):
+        process = real_popen([sys.executable, "-c", "import time; time.sleep(60)"], **options)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(worker.subprocess, "Popen", launch)
+    path = tmp_path / "producer.zip"
+    with pytest.raises(ValueError):
+        worker.download_producer_archive(REPO, ARTIFACT, path, max_bytes=3)
+    assert len(processes) == 1
+    assert processes[0].poll() is not None
+    assert path.stat().st_size == 0
