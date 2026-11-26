@@ -801,3 +801,39 @@ This command does not publish, install, dispatch or download files
 itself; its output does not establish artifact-producing job identity,
 registry or exclusive-writer authority. No production workflow invokes
 it yet.
+
+#### Integrated tagged handoff rehearsal (non-publishing)
+
+The isolated `tagged-handoff-rehearsal.yml` owner and
+`tagged-handoff-worker.yml` worker exercise real tag-dispatch transport
+without invoking a production publisher. After the workflow pair has
+passed review and is merged, audit the exact reviewed tree's triggers and
+live tag rules; create only the dedicated non-release tag
+`handoff-rehearsal-<reviewed-source-sha>` at that exact main commit.
+Do not create a Release or use a production tag. Run the owner workflow
+on that same main commit. An intervening main change, wrong tag, rerun
+or non-owner dispatch must fail closed.
+
+The owner dispatch job alone receives Actions write access. It dispatches
+once using the versioned API's returned child run ID, never a name/time
+guess or blind retry. The separate signing job prepares two deterministic
+synthetic records and attests them with the rehearsal-only workflow
+identity. The worker receives read-only contents, Actions and attestation
+access, discovers exactly one active owner on the matching source, and
+checks both run identities and the live tag. It waits at most 30 polls
+with five seconds between absent-artifact polls. Only the exact unique
+owner ZIP (maximum 64 KiB) is accepted; it must contain the two bounded
+records, each at most 16 KiB. The download pipeline caps bytes and the
+verifier compares exact metadata, digest and regenerated record bytes,
+verifies both owner attestations, and repeats live identity checks.
+
+The completed child returns a receipt binding the source, tag, owner
+and worker IDs, request artifact ID, archive hash and both record hashes.
+The owner waits at most 60 polls, checks the exact successful child and
+its unique tag-scoped receipt ZIP, and compares the entire receipt against
+the independently regenerated expected value. All jobs have explicit
+timeouts. Rehearsal signatures and receipt checks do not authorize any
+publication or establish production draft, producer, protected-tag,
+registry or exclusive-writer acceptance. The tag metadata shape still
+requires an actual non-publishing run. No registry environment or
+production signing identity is used.
