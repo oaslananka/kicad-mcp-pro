@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import tempfile
+import time
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
@@ -22,6 +23,7 @@ from scripts.check_owner_python_registry_receipt import (
     _receipt_identity,
     _receipt_parser,
     _terminal_child,
+    prepare_receipt_pin,
     verify_signed_receipt,
 )
 from scripts.check_python_handoff_owner_binding import _owner
@@ -39,7 +41,12 @@ from scripts.check_python_worker_request_delivery import (
     download_producer_archive,
 )
 from scripts.check_signed_draft_asset import AttestationVerifier, GitHubAttestationCLI
-from scripts.check_signed_python_dispatch_binding import DispatchIdentity, dispatch_bytes
+from scripts.check_signed_python_dispatch_binding import (
+    DispatchIdentity,
+    _child_identity,
+    _child_status,
+    dispatch_bytes,
+)
 from scripts.check_signed_python_handoff import _read_manifest
 from scripts.extract_draft_producer_zip import _members
 from scripts.python_worker_dispatch_inputs import positive_id
@@ -201,11 +208,67 @@ def fetch_receipt_delivery(
     return report
 
 
+def wait_terminal_worker(client: ReceiptClient, identity: DispatchIdentity) -> None:
+    """Poll only the exact child, with an active draft owner on every observation."""
+    dispatch_bytes(identity)
+    for poll in range(60):
+        _owner(client, identity.handoff)
+        run = _child_identity(client.workflow_run(REPOSITORY, identity.worker_run_id), identity)
+        if run.get("status") == "completed":
+            if run.get("conclusion") != "success":
+                raise ValueError("worker did not complete successfully")
+            return
+        _child_status(run, identity)
+        if poll < 59:
+            time.sleep(5)
+    raise ValueError("terminal worker wait timed out")
+
+
+def reconcile_receipt(
+    client: ReceiptClient,
+    verifier: AttestationVerifier,
+    registry: RegistryClient,
+    verify: Callable[[dict[str, Any], Path], str | None],
+    *,
+    identity: DispatchIdentity,
+    artifact_id: int,
+    archive: Path,
+    directory: Path,
+    producer_job_id: int,
+    downloaded_zip: Path,
+    downloader: ArtifactDownloader,
+) -> dict[str, object]:
+    """Wait, derive independent expected digest, fetch and verify without publishing."""
+    wait_terminal_worker(client, identity)
+    options = {
+        "identity": identity,
+        "artifact_id": artifact_id,
+        "archive": archive,
+        "directory": directory,
+        "producer_job_id": producer_job_id,
+        "downloaded_zip": downloaded_zip,
+    }
+    pin = prepare_receipt_pin(client, verifier, **options)
+    return fetch_receipt_delivery(
+        client,
+        verifier,
+        registry,
+        verify,
+        receipt_sha256=pin,
+        downloader=downloader,
+        **options,
+    )
+
+
 def _report(args: argparse.Namespace) -> dict[str, object]:
     identity = _receipt_identity(args)
-    if args.fetch == (args.receipt_archive is not None or args.receipt_artifact_id is not None):
-        raise ValueError("select fetch or provide both receipt artifact ID and ZIP")
-    if not args.fetch and (args.receipt_archive is None or args.receipt_artifact_id is None):
+    manual = args.receipt_archive is not None or args.receipt_artifact_id is not None
+    if args.reconcile:
+        if manual or args.receipt_sha256 is not None:
+            raise ValueError("reconcile derives the receipt pin and discovers the artifact")
+    elif not args.receipt_sha256 or args.fetch == manual:
+        raise ValueError("select fetch or provide both receipt artifact ID and ZIP, with a pin")
+    if manual and (args.receipt_archive is None or args.receipt_artifact_id is None):
         raise ValueError("manual receipt verification requires artifact ID and ZIP")
     options = {
         "identity": identity,
@@ -214,17 +277,26 @@ def _report(args: argparse.Namespace) -> dict[str, object]:
         "directory": args.directory,
         "producer_job_id": args.producer_job_id,
         "downloaded_zip": args.downloaded_zip,
-        "receipt_sha256": args.receipt_sha256,
     }
     client = DeliveryGitHubCLI()
     verifier = GitHubAttestationCLI()
     registry = PyPIReadClient()
+    if args.reconcile:
+        return reconcile_receipt(
+            client,
+            verifier,
+            registry,
+            verify_registry_provenance,
+            downloader=download_producer_archive,
+            **options,
+        )
     if args.fetch:
         return fetch_receipt_delivery(
             client,
             verifier,
             registry,
             verify_registry_provenance,
+            receipt_sha256=args.receipt_sha256,
             downloader=download_producer_archive,
             **options,
         )
@@ -233,6 +305,7 @@ def _report(args: argparse.Namespace) -> dict[str, object]:
         verifier,
         registry,
         verify_registry_provenance,
+        receipt_sha256=args.receipt_sha256,
         receipt_artifact_id=args.receipt_artifact_id,
         receipt_archive=args.receipt_archive,
         **options,
@@ -240,8 +313,10 @@ def _report(args: argparse.Namespace) -> dict[str, object]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = _receipt_parser(__doc__ or "")
-    parser.add_argument("--fetch", action="store_true")
+    parser = _receipt_parser(__doc__ or "", require_pin=False)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--fetch", action="store_true")
+    mode.add_argument("--reconcile", action="store_true")
     parser.add_argument("--receipt-artifact-id", type=positive_id)
     parser.add_argument("--receipt-archive", type=Path)
     args = parser.parse_args(argv)

@@ -114,6 +114,15 @@ def _request_metadata(client: DeliveryClient, identity: DispatchIdentity) -> dic
     return item
 
 
+def _check_request_pin(metadata: dict[str, Any], report: dict[str, Any]) -> None:
+    """Require both the exact artifact identity and the verified archive digest."""
+    if (
+        not _exact_id(metadata["id"], report["ownerRequestArtifactId"])
+        or metadata["digest"][7:] != report["ownerRequestArchiveSha256"]
+    ):
+        raise ValueError("owner request artifact ID or digest changed")
+
+
 def wait_for_request(client: DeliveryClient, identity: DispatchIdentity) -> dict[str, Any]:
     """Bound discovery attempts; retry absence only, never conflicting evidence.
 
@@ -406,8 +415,7 @@ def verify_producer_delivery(
         runtime_run_id=runtime_run_id,
         runtime_attempt=runtime_attempt,
     )
-    if request["ownerRequestArchiveSha256"] != request_metadata["digest"][7:]:
-        raise ValueError("owner request archive changed before producer verification")
+    _check_request_pin(request_metadata, request)
     expected = manifest_bytes(handoff, directory)
     if hashlib.sha256(expected).hexdigest() != identity.manifest_sha256:
         raise ValueError("worker package bytes changed before producer verification")
@@ -616,8 +624,7 @@ def fetch_producer_delivery(
             raise ValueError("producer delivery evidence changed")
         _check_live(client, identity)
         current_request = discover_request(client, identity)
-        if current_request["digest"][7:] != request["ownerRequestArchiveSha256"]:
-            raise ValueError("owner request changed before producer output")
+        _check_request_pin(current_request, request)
         _read_archive(archive, current_request)
         if (
             hashlib.sha256(manifest_bytes(handoff, directory)).hexdigest()

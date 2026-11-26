@@ -1539,3 +1539,258 @@ def test_receipt_delivery_cli(receipt_delivery_case, monkeypatch, capsys) -> Non
         delivery.main(bad)
     assert exc.value.code == 2
     assert capsys.readouterr().out == ""
+
+
+def test_prepare_independent_receipt_pin(signed_receipt_case) -> None:
+    from scripts import check_owner_python_registry_receipt as owner
+
+    client, verifier, registry, _, _, args = signed_receipt_case
+    expected = args.pop("receipt_sha256")
+    receipt = args.pop("receipt")
+    receipt.unlink()
+    assert owner.prepare_receipt_pin(client, verifier, **args) == expected
+    assert not registry.calls
+
+
+@pytest.mark.parametrize(
+    "change", ["pending", "request", "manifest", "owner", "producer", "signature"]
+)
+def test_prepare_receipt_pin_rejects_unverified_inputs(signed_receipt_case, change) -> None:
+    from scripts import check_owner_python_registry_receipt as owner
+
+    client, verifier, registry, child, item, args = signed_receipt_case
+    args.pop("receipt")
+    args.pop("receipt_sha256")
+    if change == "pending":
+        child.update(status="queued", conclusion=None)
+    elif change == "request":
+        item["expired"] = True
+    elif change == "manifest":
+        args["identity"] = replace(args["identity"], manifest_sha256="0" * 64)
+    elif change == "owner":
+        client.release_data["draft"] = False
+    elif change == "producer":
+        args["downloaded_zip"].write_bytes(b"changed")
+    else:
+        verifier.change = "owner-signature"
+    options = dict(args)
+    with pytest.raises(ValueError):
+        owner.prepare_receipt_pin(client, verifier, **options)
+    assert not registry.calls
+
+
+@pytest.mark.parametrize("status", ["queued", "requested", "waiting", "pending", "in_progress"])
+def test_wait_terminal_worker_recovers(signed_receipt_case, monkeypatch, status) -> None:
+    from scripts import check_owner_python_receipt_delivery as delivery
+
+    client, _, _, child, _, args = signed_receipt_case
+    child.update(status=status, conclusion=None)
+    sleeps = []
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        child.update(status="completed", conclusion="success")
+
+    monkeypatch.setattr(delivery.time, "sleep", sleep)
+    delivery.wait_terminal_worker(client, args["identity"])
+    assert sleeps == [5]
+
+
+@pytest.mark.parametrize("change", ["failure", "cancelled", "unknown", "rerun", "owner", "timeout"])
+def test_wait_terminal_worker_fails_closed(signed_receipt_case, monkeypatch, change) -> None:
+    from scripts import check_owner_python_receipt_delivery as delivery
+
+    client, _, _, child, _, args = signed_receipt_case
+    if change in ("failure", "cancelled"):
+        child["conclusion"] = change
+    elif change == "unknown":
+        child.update(status="unknown", conclusion=None)
+    elif change == "rerun":
+        child["run_attempt"] = 2
+    elif change == "owner":
+        client.release_data["draft"] = False
+    else:
+        child.update(status="queued", conclusion=None)
+    sleeps = []
+    monkeypatch.setattr(delivery.time, "sleep", sleeps.append)
+    identity = args["identity"]
+    with pytest.raises(ValueError):
+        delivery.wait_terminal_worker(client, identity)
+    assert len(sleeps) == (59 if change == "timeout" else 0)
+
+
+def test_reconcile_receipt_without_worker_supplied_pin(receipt_delivery_case, monkeypatch) -> None:
+    from scripts import check_owner_python_receipt_delivery as delivery
+
+    client, verifier, registry, child, item, _, args = receipt_delivery_case
+    expected = args.pop("receipt_sha256")
+    data = args.pop("receipt_archive").read_bytes()
+    args.pop("receipt_artifact_id")
+    child.update(status="queued", conclusion=None)
+
+    def sleep(seconds):
+        assert seconds == 5
+        child.update(status="completed", conclusion="success")
+
+    def download(repo, selected, output, *, max_bytes):
+        assert repo == REPO
+        assert selected == item["id"]
+        assert max_bytes == len(data)
+        output.write_bytes(data)
+
+    monkeypatch.setattr(delivery.time, "sleep", sleep)
+    report = delivery.reconcile_receipt(
+        client, verifier, registry, registry.verify, downloader=download, **args
+    )
+    assert report["receiptSha256"] == expected
+    assert report["receiptArtifactVerified"] is True
+    assert report["publicationAuthorized"] is False
+
+
+def test_receipt_pin_rechecks_request_after_signatures(signed_receipt_case, monkeypatch) -> None:
+    from scripts import check_owner_python_registry_receipt as owner
+
+    client, verifier, registry, _, item, args = signed_receipt_case
+    args.pop("receipt")
+    args.pop("receipt_sha256")
+    original = verifier.verify
+
+    def verify(*, path: Path, repo: str, sha: str, signer: str, source_ref: str):
+        result = original(path=path, repo=repo, sha=sha, signer=signer, source_ref=source_ref)
+        item["expired"] = True
+        return result
+
+    monkeypatch.setattr(verifier, "verify", verify)
+    options = dict(args)
+    with pytest.raises(ValueError):
+        owner.prepare_receipt_pin(client, verifier, **options)
+    assert not registry.calls
+
+
+def test_reconcile_receipt_cli(receipt_delivery_case, monkeypatch, capsys) -> None:
+    import json
+
+    from scripts import check_owner_python_receipt_delivery as delivery
+
+    client, verifier, registry, _, item, _, args = receipt_delivery_case
+    identity = args["identity"]
+    handoff = identity.handoff
+    pin = args.pop("receipt_sha256")
+    data = args.pop("receipt_archive").read_bytes()
+    args.pop("receipt_artifact_id")
+    monkeypatch.setattr(delivery, "DeliveryGitHubCLI", lambda: client)
+    monkeypatch.setattr(delivery, "GitHubAttestationCLI", lambda: verifier)
+    monkeypatch.setattr(delivery, "PyPIReadClient", lambda: registry)
+    monkeypatch.setattr(delivery, "verify_registry_provenance", registry.verify)
+
+    def download(repo, selected, output, *, max_bytes):
+        assert repo == REPO
+        assert selected == item["id"]
+        assert max_bytes == len(data)
+        output.write_bytes(data)
+
+    monkeypatch.setattr(delivery, "download_producer_archive", download)
+    values = {
+        "tag": handoff.tag,
+        "source-commit": handoff.source_commit,
+        "release-id": handoff.release_id,
+        "owner-run-id": handoff.owner_run_id,
+        "owner-attempt": handoff.owner_attempt,
+        "producer-run-id": handoff.producer_run_id,
+        "producer-attempt": handoff.producer_attempt,
+        "producer-artifact-id": handoff.producer_artifact_id,
+        "manifest-sha256": identity.manifest_sha256,
+        "worker-run-id": identity.worker_run_id,
+        "worker-attempt": identity.worker_attempt,
+        **{key.replace("_", "-"): val for key, val in args.items() if key != "identity"},
+    }
+    argv = [entry for key, val in values.items() for entry in (f"--{key}", str(val))]
+    argv.append("--reconcile")
+    assert delivery.main(argv) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["receiptSha256"] == pin
+    assert report["publicationAuthorized"] is False
+    bad = argv + ["--receipt-sha256", pin]
+    with pytest.raises(SystemExit) as exc:
+        delivery.main(bad)
+    assert exc.value.code == 2
+    assert capsys.readouterr().out == ""
+
+
+def _replace_request_artifact(client, item, monkeypatch) -> None:
+    """Simulate re-uploading identical ZIP bytes under a different artifact ID."""
+    old_artifact = client.artifact
+    new_id = item["id"] + 10000
+    item.update(
+        id=new_id,
+        url=f"https://api.github.com/repos/{REPO}/actions/artifacts/{new_id}",
+        archive_download_url=f"https://api.github.com/repos/{REPO}/actions/artifacts/{new_id}/zip",
+    )
+
+    def artifact(repo, artifact_id):
+        if artifact_id == new_id:
+            return copy.deepcopy(item)
+        return old_artifact(repo, artifact_id)
+
+    monkeypatch.setattr(client, "artifact", artifact)
+
+
+def test_registry_receipt_rejects_same_digest_replacement(registry_case, monkeypatch) -> None:
+    from scripts import check_python_registry_receipt as receipt
+
+    client, verifier, args, _, item, registry = registry_case
+
+    def verify(provenance, path):
+        if item["id"] == args["artifact_id"]:
+            _replace_request_artifact(client, item, monkeypatch)
+        return registry.verify(provenance, path)
+
+    options = dict(args)
+    with pytest.raises(ValueError, match="owner request"):
+        receipt.prepare_registry_receipt(client, verifier, registry, verify, **options)
+
+
+def test_fetch_rejects_same_digest_replacement(fetch_case, monkeypatch) -> None:
+    from scripts import check_python_worker_request_delivery as worker
+
+    client, verifier, args, _, _, item, _, download = fetch_case
+    original = worker.verify_producer_delivery
+
+    def verify(
+        client,
+        verifier,
+        *,
+        identity,
+        artifact_id,
+        archive,
+        directory,
+        producer_job_id,
+        downloaded_zip,
+        runtime_ref,
+        runtime_sha,
+        runtime_run_id,
+        runtime_attempt,
+    ):
+        report = original(
+            client,
+            verifier,
+            identity=identity,
+            artifact_id=artifact_id,
+            archive=archive,
+            directory=directory,
+            producer_job_id=producer_job_id,
+            downloaded_zip=downloaded_zip,
+            runtime_ref=runtime_ref,
+            runtime_sha=runtime_sha,
+            runtime_run_id=runtime_run_id,
+            runtime_attempt=runtime_attempt,
+        )
+        _replace_request_artifact(client, item, monkeypatch)
+        return report
+
+    monkeypatch.setattr(worker, "verify_producer_delivery", verify)
+    options = dict(args)
+    with pytest.raises(ValueError, match="owner request"):
+        worker.fetch_producer_delivery(client, verifier, downloader=download, **options)
+    assert not args["output"].exists()
+    assert not list(args["output"].parent.glob(".kicad-worker-fetch-*"))

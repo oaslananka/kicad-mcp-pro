@@ -1062,3 +1062,25 @@ It does not establish an exclusive writer or authorize publication.
 The production workflow is unchanged. The enclosing job must provide a
 wall-clock timeout and runner-private staging; checks are snapshots, not
 a distributed lock.
+
+### Owner reconciliation without a worker-supplied receipt pin
+
+Use the receipt-delivery command with `--reconcile` instead of
+`--fetch` or the manual receipt artifact options. Omit
+`--receipt-sha256` in this mode: it is generated independently from the
+owner's verified request ZIP, signed dispatch and manifest, and verified
+producer package bytes. The command first waits for the exact child run to
+finish (at most 60 observations, five seconds between nonterminal
+observations). It checks the active owner, draft and protected tag on each
+observation and rejects unexpected states, failed runs and changed identities.
+The enclosing job must impose its own wall-clock timeout, including API calls.
+
+Only after verifying the owner/producer evidence and rechecking its bytes
+does the owner derive the expected canonical receipt digest. The digest
+alone is not a registry result or authority to publish. The command then
+fetches and verifies the exact worker receipt artifact, worker signature and
+independent registry evidence using the same verification as manual mode.
+A conflicting or missing artifact fails closed. There is no worker-supplied
+digest override in reconciliation mode, and no dispatch, retry, signing,
+registry write or Release mutation. Exclusive writer verification and the
+production cutover remain separate.

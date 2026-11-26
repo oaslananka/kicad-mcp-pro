@@ -22,6 +22,7 @@ from scripts.check_draft_release_inventory import digest
 from scripts.check_python_worker_request_delivery import (
     DeliveryClient,
     DeliveryGitHubCLI,
+    _check_request_pin,
     _read_archive,
     _runtime,
     discover_request,
@@ -205,8 +206,7 @@ def prepare_registry_receipt(
     _check_provenance(registry, verify, version, directory, assets)
     _check_inventory(registry, version, assets)
     metadata = discover_request(client, identity)
-    if metadata["digest"][7:] != request["ownerRequestArchiveSha256"]:
-        raise ValueError("owner request changed during registry verification")
+    _check_request_pin(metadata, request)
     _check_live(client, identity)
     _read_archive(archive, metadata)
     if manifest_bytes(identity.handoff, directory) != expected:
