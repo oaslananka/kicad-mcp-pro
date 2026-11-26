@@ -388,3 +388,76 @@ def test_rehearsal_record_is_not_production_dispatch(evidence, tmp_path: Path) -
             runtime_attempt=1,
         )
     assert not signature.calls
+
+
+@pytest.mark.parametrize(
+    "listing",
+    [
+        {"total_count": 0, "workflow_runs": []},
+        {"total_count": 2, "workflow_runs": [{"id": OWNER}]},
+        {"total_count": 2, "workflow_runs": [{"id": OWNER}, {"id": CHILD}]},
+        {"total_count": True, "workflow_runs": [{"id": OWNER}]},
+        {"total_count": 1, "workflow_runs": [{"id": True}]},
+        {"total_count": 1, "workflow_runs": [{"id": 0}]},
+    ],
+)
+def test_owner_discovery_rejects_ambiguous_or_invalid_listing(monkeypatch, listing) -> None:
+    client = rehearsal.RehearsalCLI()
+    monkeypatch.setattr(client, "_json", lambda route: listing)
+    with pytest.raises(ValueError):
+        client.active_owner(SHA)
+
+
+def test_owner_discovery_is_exactly_scoped(monkeypatch) -> None:
+    client = rehearsal.RehearsalCLI()
+    routes = []
+
+    def read(route: str) -> dict[str, Any]:
+        routes.append(route)
+        return {"total_count": 1, "workflow_runs": [{"id": OWNER}]}
+
+    monkeypatch.setattr(client, "_json", read)
+    assert client.active_owner(SHA) == OWNER
+    assert routes == [
+        f"repos/{REPO}/actions/workflows/tagged-handoff-rehearsal.yml/runs"
+        f"?branch=main&event=workflow_dispatch&status=in_progress&head_sha={SHA}&per_page=100"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("operation", "arguments"),
+    [
+        ("check-owner", ["--child", str(CHILD)]),
+        ("prepare", ["--child", str(CHILD), "--artifact-id", "303"]),
+        ("wait-request", ["--archive", "ignored.zip"]),
+        ("wait-receipt", ["--child", str(CHILD), "--output", "ignored"]),
+        (
+            "verify-request",
+            ["--artifact-id", "303", "--archive", "request.zip", "--output", "ignored"],
+        ),
+        ("verify-receipt", ["--child", str(CHILD)]),
+    ],
+)
+def test_cli_rejects_irrelevant_or_missing_arguments_before_api(
+    monkeypatch, operation, arguments
+) -> None:
+    worker = operation in ("wait-request", "verify-request")
+    env = {
+        "GITHUB_REPOSITORY": REPO,
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_RUN_ATTEMPT": "1",
+        "GITHUB_SHA": SHA,
+        "GITHUB_RUN_ID": str(CHILD if worker else OWNER),
+        "GITHUB_REF": f"refs/tags/{TAG}" if worker else "refs/heads/main",
+    }
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr("sys.argv", ["rehearse_tagged_handoff", operation, *arguments])
+
+    def forbidden() -> None:
+        pytest.fail("invalid command must not access the API")
+
+    monkeypatch.setattr(rehearsal, "RehearsalCLI", forbidden)
+    with pytest.raises(SystemExit) as error:
+        rehearsal.main()
+    assert error.value.code == 2

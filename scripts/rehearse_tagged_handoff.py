@@ -389,17 +389,30 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     try:
+        required = {
+            "check-owner": set(),
+            "prepare": {"child", "output"},
+            "wait-request": set(),
+            "verify-request": {"archive", "artifact_id"},
+            "wait-receipt": {"child"},
+            "verify-receipt": {"child", "archive", "artifact_id"},
+        }
+        supplied = {
+            name
+            for name in ("child", "archive", "artifact_id", "output")
+            if getattr(args, name) is not None
+        }
+        if supplied != required[args.operation]:
+            raise ValueError("incorrect arguments for rehearsal operation")
         source, run_id, ref = _runtime()
-        client = RehearsalCLI()
         worker = args.operation in ("wait-request", "verify-request")
         expected_ref = f"refs/tags/handoff-rehearsal-{source}" if worker else "refs/heads/main"
         if ref != expected_ref:
             raise ValueError("wrong rehearsal runtime ref")
+        client = RehearsalCLI()
         if args.operation == "check-owner":
             _check_owner(client, source, run_id)
             return 0
-        if worker and args.child is not None:
-            raise ValueError("worker must use independent runtime identity")
         identity = Identity(
             source,
             client.active_owner(source) if worker else run_id,
