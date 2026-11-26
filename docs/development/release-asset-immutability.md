@@ -992,3 +992,41 @@ The future owner must independently verify the worker's signed receipt and
 registry evidence before final Release publication. The current workflow
 does not call this command or grant new permissions. Use runner-private
 staging; repeated reads do not prevent races after the final check.
+
+### Owner acceptance of a signed Python registry receipt (read-only, not wired)
+
+Once the exact independently dispatched worker has completed successfully,
+the maintainer can verify its signed receipt without authorizing publication:
+
+```bash
+python -m scripts.check_owner_python_registry_receipt \
+  --tag "$TAG" --source-commit "$SOURCE_SHA" \
+  --release-id "$RELEASE_ID" --owner-run-id "$OWNER_RUN_ID" \
+  --owner-attempt "$OWNER_ATTEMPT" --producer-run-id "$PRODUCER_RUN_ID" \
+  --producer-attempt "$PRODUCER_ATTEMPT" --producer-artifact-id "$PRODUCER_ARTIFACT_ID" \
+  --producer-job-id "$PRODUCER_JOB_ID" --downloaded-zip "$PRODUCER_ZIP" \
+  --manifest-sha256 "$OWNER_PIN" --worker-run-id "$WORKER_RUN_ID" --worker-attempt 1 \
+  --artifact-id "$REQUEST_ARTIFACT_ID" --archive "$REQUEST_ZIP" --directory "$DIST" \
+  --receipt "$RECEIPT" --receipt-sha256 "$RECEIPT_PIN"
+```
+
+All selectors and pins must be obtained independently of the untrusted receipt.
+The receipt must have the canonical filename and exact canonical bytes. The
+verifier requires a successful terminal child (not a pending, failed or retried
+run), its exact tag source and repository identity, and a cryptographically
+verified SLSA receipt signature for the reviewed worker workflow, exact tag
+and source commit, and exact child invocation in both certificate and predicate.
+It rechecks both signed owner records, draft and tag rules, exact producer
+artifact/job/package signatures and local package bytes. It independently
+reads the complete PyPI inventory and verifies both PEP 740 publisher
+attestations. It repeats child/owner/request/producer/registry and local byte
+checks before reporting success.
+
+Use only an authorized maintainer credential with complete tag ruleset
+visibility, and private staging. Success authenticates the receipt bytes and
+independent registry evidence; it does not prove receipt artifact transport,
+which job uploaded an artifact, dispatch causality, the exact PyPI publication
+invocation, exclusive writer ownership, or authorization to publish. Those
+flags remain false. This command does not sign, dispatch, upload or publish
+anything, and is not called by production workflows. The future owner still
+needs to bind receipt delivery and enforce the exclusive writer lifecycle.

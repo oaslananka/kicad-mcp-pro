@@ -1096,3 +1096,225 @@ def test_registry_receipt_event_cli(registry_case, monkeypatch, capsys) -> None:
         receipt.main(argv)
     assert exc.value.code == 2
     assert capsys.readouterr().out == ""
+
+
+@pytest.fixture
+def signed_receipt_case(registry_case, worker_producer, monkeypatch) -> tuple[Any, ...]:
+    from scripts.check_python_registry_receipt import prepare_registry_receipt
+
+    client, verifier, args, child, item, registry = registry_case
+    _, _, producer_args, source, _, _ = worker_producer
+    data = prepare_registry_receipt(client, verifier, registry, registry.verify, **args)
+    path = args["archive"].with_name("python-worker-registry-receipt.json")
+    path.write_bytes(data)
+    child.update(status="completed", conclusion="success")
+    monkeypatch.setattr(source, "workflow_artifacts", client.workflow_artifacts, raising=False)
+    original_artifact = source.artifact
+
+    def artifact(repo, artifact_id):
+        if artifact_id == item["id"]:
+            return copy.deepcopy(item)
+        return original_artifact(repo, artifact_id)
+
+    monkeypatch.setattr(source, "artifact", artifact)
+    original_verify = verifier.verify
+    identity = args["identity"]
+
+    def verify(*, path, repo, sha, signer, source_ref):
+        if signer != ".github/workflows/publish-python.yml":
+            return original_verify(
+                path=path, repo=repo, sha=sha, signer=signer, source_ref=source_ref
+            )
+        assert repo == REPO
+        assert sha == SHA
+        assert source_ref == f"refs/tags/{TAG}"
+        uri = f"https://github.com/{REPO}/actions/runs/{identity.worker_run_id}/attempts/1"
+        if verifier.change == "worker-signature":
+            uri += "-wrong"
+        return [
+            {
+                "verificationResult": {
+                    "statement": {
+                        "predicateType": "https://slsa.dev/provenance/v1",
+                        "subject": [
+                            {
+                                "name": path.name,
+                                "digest": {"sha256": hashlib.sha256(path.read_bytes()).hexdigest()},
+                            }
+                        ],
+                        "predicate": {"runDetails": {"metadata": {"invocationId": uri}}},
+                    },
+                    "signature": {"certificate": {"runInvocationURI": uri}},
+                }
+            }
+        ]
+
+    monkeypatch.setattr(verifier, "verify", verify)
+    registry.calls.clear()
+    return (
+        source,
+        verifier,
+        registry,
+        child,
+        item,
+        {
+            "identity": identity,
+            "artifact_id": args["artifact_id"],
+            "archive": args["archive"],
+            "directory": args["directory"],
+            "producer_job_id": producer_args["producer_job_id"],
+            "downloaded_zip": producer_args["downloaded_zip"],
+            "receipt": path,
+            "receipt_sha256": hashlib.sha256(data).hexdigest(),
+        },
+    )
+
+
+def test_owner_accepts_signed_registry_receipt(signed_receipt_case) -> None:
+    from scripts import check_owner_python_registry_receipt as owner
+
+    client, verifier, registry, _, _, args = signed_receipt_case
+    report = owner.verify_signed_receipt(client, verifier, registry, registry.verify, **args)
+    for key in (
+        "registryReceiptVerified",
+        "workerReceiptSignatureVerified",
+        "terminalWorkerVerified",
+        "producerPackageSignaturesVerified",
+        "protectedTagVerified",
+        "draftReleaseVerified",
+    ):
+        assert report[key] is True
+    for key in (
+        "registryPublicationRunVerified",
+        "receiptArtifactVerified",
+        "exclusiveWriterVerified",
+        "publicationAuthorized",
+    ):
+        assert report[key] is False
+    assert registry.calls.count("inventory") == 2
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "pending",
+        "failed",
+        "rerun",
+        "wrong-source",
+        "wrong-publisher",
+        "pin",
+        "receipt",
+        "link",
+        "owner-signature",
+        "producer-signature",
+        "request",
+        "registry",
+        "draft",
+    ],
+)
+def test_owner_rejects_bad_signed_receipt(signed_receipt_case, change) -> None:
+    from scripts import check_owner_python_registry_receipt as owner
+
+    client, verifier, registry, child, item, args = signed_receipt_case
+    if change == "pending":
+        child.update(status="in_progress", conclusion=None)
+    elif change == "failed":
+        child["conclusion"] = "failure"
+    elif change == "rerun":
+        child["run_attempt"] = 2
+    elif change == "wrong-source":
+        child["head_sha"] = "b" * 40
+    elif change == "wrong-publisher":
+        verifier.change = "worker-signature"
+    elif change == "pin":
+        args["receipt_sha256"] = "0" * 64
+    elif change == "receipt":
+        args["receipt"].write_bytes(b"{}")
+        args["receipt_sha256"] = hashlib.sha256(b"{}").hexdigest()
+    elif change == "link":
+        original = args["receipt"].with_name("original.json")
+        args["receipt"].rename(original)
+        args["receipt"].symlink_to(original)
+    elif change == "owner-signature":
+        verifier.change = change
+    elif change == "producer-signature":
+        verifier.producer.tamper = "wrong_run"
+    elif change == "request":
+        item["expired"] = True
+    elif change == "registry":
+        registry.inventory_data["urls"][0]["yanked"] = True
+    else:
+        client.release_data["draft"] = False
+    options = dict(args)
+    with pytest.raises(ValueError):
+        owner.verify_signed_receipt(client, verifier, registry, registry.verify, **options)
+    if change != "registry":
+        assert not registry.calls
+
+
+@pytest.mark.parametrize(
+    "change", ["child", "owner", "receipt", "request", "producer", "package", "registry"]
+)
+def test_owner_rechecks_receipt_after_registry(signed_receipt_case, change) -> None:
+    from scripts import check_owner_python_registry_receipt as owner
+
+    client, verifier, registry, child, item, args = signed_receipt_case
+
+    def verify(payload, path):
+        if change == "child":
+            child["run_attempt"] = 2
+        elif change == "owner":
+            client.release_data["draft"] = False
+        elif change == "receipt":
+            args["receipt"].write_bytes(b"changed")
+        elif change == "request":
+            item["expired"] = True
+        elif change == "producer":
+            args["downloaded_zip"].write_bytes(b"changed")
+        elif change == "package":
+            path.write_bytes(b"changed")
+        else:
+            registry.inventory_data["urls"][0]["yanked"] = True
+        return None
+
+    options = dict(args)
+    with pytest.raises(ValueError):
+        owner.verify_signed_receipt(client, verifier, registry, verify, **options)
+
+
+def test_signed_receipt_owner_cli(signed_receipt_case, monkeypatch, capsys) -> None:
+    import json
+
+    from scripts import check_owner_python_registry_receipt as owner
+
+    client, verifier, registry, _, _, args = signed_receipt_case
+    identity = args["identity"]
+    handoff = identity.handoff
+    monkeypatch.setattr(owner, "DeliveryGitHubCLI", lambda: client)
+    monkeypatch.setattr(owner, "GitHubAttestationCLI", lambda: verifier)
+    monkeypatch.setattr(owner, "PyPIReadClient", lambda: registry)
+    monkeypatch.setattr(owner, "verify_registry_provenance", registry.verify)
+    values = {
+        "tag": handoff.tag,
+        "source-commit": handoff.source_commit,
+        "release-id": handoff.release_id,
+        "owner-run-id": handoff.owner_run_id,
+        "owner-attempt": handoff.owner_attempt,
+        "producer-run-id": handoff.producer_run_id,
+        "producer-attempt": handoff.producer_attempt,
+        "producer-artifact-id": handoff.producer_artifact_id,
+        "manifest-sha256": identity.manifest_sha256,
+        "worker-run-id": identity.worker_run_id,
+        "worker-attempt": identity.worker_attempt,
+        **{key.replace("_", "-"): val for key, val in args.items() if key != "identity"},
+    }
+    argv = [item for key, val in values.items() for item in (f"--{key}", str(val))]
+    assert owner.main(argv) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["registryReceiptVerified"] is True
+    assert report["publicationAuthorized"] is False
+    registry.failure = "invalid publisher"
+    with pytest.raises(SystemExit) as exc:
+        owner.main(argv)
+    assert exc.value.code == 2
+    assert capsys.readouterr().out == ""

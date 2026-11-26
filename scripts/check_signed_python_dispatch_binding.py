@@ -112,8 +112,8 @@ def _bot(value: object) -> bool:
     )
 
 
-def _child_status(run: object, identity: DispatchIdentity) -> str:
-    """Validate exact child identity without granting pending worker authority."""
+def _child_identity(run: object, identity: DispatchIdentity) -> dict[str, Any]:
+    """Validate child identity independently of lifecycle state."""
     if not isinstance(run, dict):
         raise ValueError("invalid worker run response")
     expected = {
@@ -133,6 +133,12 @@ def _child_status(run: object, identity: DispatchIdentity) -> str:
         or any(run.get(key) != value for key, value in expected.items())
     ):
         raise ValueError(_CHILD_MISMATCH)
+    return run
+
+
+def _child_status(run: object, identity: DispatchIdentity) -> str:
+    """Validate exact child identity without granting pending worker authority."""
+    run = _child_identity(run, identity)
     status = run.get("status")
     if (
         status not in ("in_progress", "queued", "requested", "waiting", "pending")

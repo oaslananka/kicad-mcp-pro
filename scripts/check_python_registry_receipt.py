@@ -211,6 +211,14 @@ def prepare_registry_receipt(
     _read_archive(archive, metadata)
     if manifest_bytes(identity.handoff, directory) != expected:
         raise ValueError("worker packages changed during registry verification")
+    return receipt_bytes(identity, artifact_id, request["ownerRequestArchiveSha256"], assets)
+
+
+def receipt_bytes(
+    identity: DispatchIdentity, artifact_id: int, archive_sha256: str, assets: list[dict[str, Any]]
+) -> bytes:
+    """Encode the exact unsigned receipt; encoding alone proves nothing."""
+    version = _version(identity.handoff)
     record = json.loads(dispatch_bytes(identity))
     record.update(
         kind="python-worker-registry-receipt",
@@ -218,7 +226,7 @@ def prepare_registry_receipt(
         package=_PACKAGE,
         version=version,
         ownerRequestArtifactId=artifact_id,
-        ownerRequestArchiveSha256=request["ownerRequestArchiveSha256"],
+        ownerRequestArchiveSha256=archive_sha256,
         assets=assets,
         registryDigestInventoryVerified=True,
         registryPublisherProvenanceVerified=True,
