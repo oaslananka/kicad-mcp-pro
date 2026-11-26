@@ -138,6 +138,12 @@ export async function handlePairingDeviceRequest(
     if(result.kind==="ok"&&result.data.kind==="recovery_denied"){
       reply(res,200,{recoveryDenied:true});return true;
     }
+    if(result.kind==="ok"&&result.data.kind==="recovery_receipt"&&connectOnApproval&&fields.data.recovery){
+      reply(res,200,{
+        recoveryReceipt:true,deviceId:result.data.deviceId,
+        deviceFingerprint:result.data.deviceFingerprint,ownerSub:result.data.ownerSub
+      });return true;
+    }
     if(result.kind!=="ok"||result.data.kind!=="enrolled"){
       reply(res,400,{error:"unavailable"});return true;
     }

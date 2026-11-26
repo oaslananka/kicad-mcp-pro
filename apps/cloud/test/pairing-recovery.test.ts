@@ -83,6 +83,9 @@ test("PostgreSQL replacement keeps active devices and never creates a project",{
     const healthy=await attempt();
     assert.equal((await store.enroll(healthy.challenge.id,healthy.challenge.deviceCode,
       healthy.signature,true,recovery)).kind,"recovery_denied");
+    // The refusal response may be lost after the transaction commits.
+    assert.equal((await store.enroll(healthy.challenge.id,healthy.challenge.deviceCode,
+      healthy.signature,true,recovery)).kind,"recovery_denied");
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM devices")).rows[0].n,1);
     await pool.query("UPDATE devices SET enabled=false WHERE id=$1",[original.deviceId]);
     const disabled=await attempt();
@@ -95,6 +98,9 @@ test("PostgreSQL replacement keeps active devices and never creates a project",{
       item.challenge.id,item.challenge.deviceCode,item.signature,true,recovery)));
     assert.deepEqual(results.map(r=>r.kind).sort(),["enrolled","recovery_denied"]);
     const winner=results[0]?.kind==="enrolled"?revoked:competing;
+    const loser=winner===revoked?competing:revoked;
+    assert.equal((await store.enroll(loser.challenge.id,loser.challenge.deviceCode,
+      loser.signature,true,recovery)).kind,"recovery_denied");
     const winningResult=results.find(r=>r.kind==="enrolled");
     assert.ok(winningResult&&winningResult.kind==="enrolled");
     // A lost response may be recovered only with the very same signed challenge.
@@ -105,8 +111,15 @@ test("PostgreSQL replacement keeps active devices and never creates a project",{
     assert.equal((await store.enroll(winner.challenge.id,winner.challenge.deviceCode,
       winner.signature,true,{...recovery,deviceId:randomUUID()})).kind,"unavailable");
     await pool.query("UPDATE devices SET enabled=false WHERE id=$1",[winningResult.deviceId]);
-    assert.equal((await store.enroll(winner.challenge.id,winner.challenge.deviceCode,
-      winner.signature,true,recovery)).kind,"unavailable");
+    const historical={...winningResult,kind:"recovery_receipt"};
+    assert.deepEqual(await store.enroll(winner.challenge.id,winner.challenge.deviceCode,
+      winner.signature,true,recovery),historical);
+    assert.equal((await pool.query("SELECT enabled FROM devices WHERE id=$1",[winningResult.deviceId])).rows[0].enabled,false);
+    await pool.query("UPDATE device_credentials SET revoked_at=clock_timestamp() WHERE device_id=$1",[winningResult.deviceId]);
+    assert.deepEqual(await store.enroll(winner.challenge.id,winner.challenge.deviceCode,
+      winner.signature,true,recovery),historical);
+    assert.ok((await pool.query("SELECT revoked_at FROM device_credentials WHERE device_id=$1",[winningResult.deviceId])).rows[0].revoked_at);
+    await pool.query("UPDATE device_credentials SET revoked_at=NULL WHERE device_id=$1",[winningResult.deviceId]);
     await pool.query("UPDATE devices SET enabled=true WHERE id=$1",[winningResult.deviceId]);
     await pool.query("UPDATE pairing_challenges SET created_at=clock_timestamp()-interval '6 minutes',expires_at=clock_timestamp()-interval '2 minutes' WHERE id=$1",[winner.challenge.id]);
     // Expiry prevents new enrollment, not read-only reconciliation of an
@@ -131,6 +144,10 @@ test("PostgreSQL replacement keeps active devices and never creates a project",{
     const durable=await pool.query("SELECT count(*)::int AS n FROM device_replacements");
     assert.equal(durable.rows[0].n,2);
     await pool.query("DELETE FROM devices WHERE id=$1",[replacement.deviceId]);
+    const missingWinner=missingResults[0]?.kind==="enrolled"?missing:concurrentMissing;
+    assert.deepEqual(await store.enroll(missingWinner.challenge.id,missingWinner.challenge.deviceCode,
+      missingWinner.signature,true,missingIdentity),{...replacement,kind:"recovery_receipt"});
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM devices WHERE id=$1",[replacement.deviceId])).rows[0].n,0);
     const stale=await attempt(missingIdentity);
     assert.equal((await store.enroll(stale.challenge.id,stale.challenge.deviceCode,
       stale.signature,true,missingIdentity)).kind,"recovery_denied");

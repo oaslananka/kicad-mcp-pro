@@ -10,7 +10,7 @@ type Row={
   attempts:number;owner_sub:string|null;
 };
 export type BrowserReview="approved"|"denied"|"invalid_code"|"locked"|"unavailable";
-export type Enrollment={kind:"enrolled";deviceId:string;ownerSub:string;deviceFingerprint:string}|{kind:"unavailable"}|{kind:"recovery_denied"};
+export type Enrollment={kind:"enrolled";deviceId:string;ownerSub:string;deviceFingerprint:string}|{kind:"recovery_receipt";deviceId:string;ownerSub:string;deviceFingerprint:string}|{kind:"unavailable"}|{kind:"recovery_denied"};
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function convert(row:Row):PairingRecord {
@@ -93,22 +93,27 @@ export class PgPairingChallenges {
   }
   private async recoveryReceipt(db:PoolClient,r:PairingRecord,
     code:string,signature:Buffer,recovery:RecoveryIdentity):Promise<Enrollment>{
-    // The enrollment expiry remains enforced. This read-only lookup can
-    // survive a process restart after expiry because it requires the exact
-    // consumed challenge, secret, signing key and still-active replacement.
+    // A consumed challenge cannot issue any more credentials. Authenticate
+    // the original proof before reading the durable transition, even after
+    // expiry. Historical binding metadata is not current connection authority.
     if(!verifyFinishedRecovery(r,this.key,code,signature,recovery))return {kind:"unavailable"};
-    const result=await db.query<{id:string}>(
-      "SELECT d.id FROM device_replacements t "+
-      "JOIN devices d ON d.id=t.replacement_device_id AND d.owner_sub=t.owner_sub "+
-      "JOIN device_credentials c ON c.device_id=d.id AND c.owner_sub=d.owner_sub "+
-      "WHERE t.owner_sub=$1 AND t.previous_device_id=$2 AND t.pairing_challenge_id=$3 "+
-      "AND c.pairing_challenge_id=$3 AND c.key_fingerprint=$4 "+
-      "AND c.public_key_der=$5 AND d.enabled=true AND c.revoked_at IS NULL",
-      [recovery.ownerSub,recovery.deviceId,r.id,r.deviceFingerprint,r.devicePublicKeyDer]);
-    const deviceId=result.rows[0]?.id;
-    return result.rows.length===1&&deviceId
-      ?{kind:"enrolled",deviceId,ownerSub:recovery.ownerSub,deviceFingerprint:r.deviceFingerprint}
-      :{kind:"unavailable"};
+    const result=await db.query<{id:string;previous_device_id:string;owner_sub:string;active:boolean}>(
+      "SELECT t.replacement_device_id AS id,t.previous_device_id,t.owner_sub,"+
+      "COALESCE(d.enabled AND c.revoked_at IS NULL AND c.device_id IS NOT NULL,false) AS active "+
+      "FROM device_replacements t "+
+      "LEFT JOIN devices d ON d.id=t.replacement_device_id AND d.owner_sub=t.owner_sub "+
+      "LEFT JOIN device_credentials c ON c.device_id=d.id AND c.owner_sub=d.owner_sub "+
+      "AND c.pairing_challenge_id=$1 AND c.key_fingerprint=$2 AND c.public_key_der=$3 "+
+      "WHERE t.pairing_challenge_id=$1",
+      [r.id,r.deviceFingerprint,r.devicePublicKeyDer]);
+    // No transition for this consumed challenge means it did not create a
+    // replacement. This also covers losing a concurrent reservation.
+    if(result.rows.length===0)return {kind:"recovery_denied"};
+    const row=result.rows[0];
+    if(result.rows.length!==1||!row||row.owner_sub!==recovery.ownerSub||
+       row.previous_device_id!==recovery.deviceId)return {kind:"unavailable"};
+    return {kind:row.active?"enrolled":"recovery_receipt",deviceId:row.id,
+      ownerSub:recovery.ownerSub,deviceFingerprint:r.deviceFingerprint};
   }
 
   /**

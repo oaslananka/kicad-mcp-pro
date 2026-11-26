@@ -16,10 +16,11 @@ pytestmark = pytest.mark.skipif(os.name != "posix", reason="POSIX private storag
 ORIGIN = "https://kicad-mcp-pro.oaslananka.dev"
 
 
+@pytest.mark.parametrize("historical", [False, True])
 @pytest.mark.parametrize("interrupt", [False, True])
 @pytest.mark.parametrize("switch_crash", [None, "projects", "keys", "new-keys"])
 def test_replacement_stage_resumes_same_approved_request(
-    tmp_path, monkeypatch, interrupt, switch_crash
+    tmp_path, monkeypatch, interrupt, switch_crash, historical
 ) -> None:
     from kicad_mcp import cloud_posix_replacement as replacement
 
@@ -65,16 +66,24 @@ def test_replacement_stage_resumes_same_approved_request(
         events.append("approved")
         args[-1]()
 
-    def redeem(target, key, **options: object):
-        requests.append(options)
-        assert options["recovery"] == {"deviceId": old_id, "ownerSub": "owner"}
+    def redeem(target, endpoint, payload, status):
+        assert endpoint.endswith("/redeem") and status == 200
+        requests.append(payload.copy())
+        assert payload["recovery"] == {"deviceId": old_id, "ownerSub": "owner"}
         if interrupt and len(requests) == 1:
             raise KeyboardInterrupt
-        return new_id, "owner"
+        return {
+            "deviceId": new_id,
+            "deviceFingerprint": cloud_pair_keys._read_private_json(
+                root / replacement._PENDING, "approved.json"
+            )["fingerprint"],
+            "ownerSub": "owner",
+            **({"recoveryReceipt": True} if historical else {"enabled": True}),
+        }
 
     monkeypatch.setattr(cloud_pair, "start_enrollment", begin)
     monkeypatch.setattr(cloud_pair, "_wait_for_owner_approval", wait)
-    monkeypatch.setattr(replacement, "_approved_redeem", redeem)
+    monkeypatch.setattr(cloud_pair, "_post", redeem)
 
     def approval(*_: object) -> None:
         events.append("browser")

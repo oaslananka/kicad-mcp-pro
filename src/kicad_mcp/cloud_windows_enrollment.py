@@ -146,15 +146,22 @@ def _approved_redeem(
             "Cloud kept the existing device. No replacement was registered. "
             "Check the device is enabled and the correct account is signed in."
         )
+    # Historical success reconciles the local identity only. The current
+    # signed inventory/session checks still decide whether it may connect.
+    historical = (
+        recovery is not None
+        and set(result) == {"deviceId", "deviceFingerprint", "ownerSub", "recoveryReceipt"}
+        and result["recoveryReceipt"] is True
+    )
     required = {"deviceId", "deviceFingerprint", "enabled", "ownerSub"}
     device_id = result.get("deviceId")
     owner_sub = result.get("ownerSub")
     if (
-        not required.issubset(result)
+        (not historical and (not required.issubset(result) or "recoveryReceipt" in result))
         or not isinstance(device_id, str)
         or cloud_pair._UUID.fullmatch(device_id) is None
         or result["deviceFingerprint"] != fingerprint
-        or result["enabled"] is not True
+        or (not historical and result["enabled"] is not True)
         or (
             recovery is not None
             and (owner_sub != recovery["ownerSub"] or device_id == recovery["deviceId"])

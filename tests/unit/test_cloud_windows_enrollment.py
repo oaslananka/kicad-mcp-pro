@@ -681,7 +681,7 @@ def test_lost_redeem_response_retries_only_identical_recovery_request(
         assert len(calls) == 1
 
 
-@pytest.mark.parametrize("outcome", ["success", "denied", "tampered"])
+@pytest.mark.parametrize("outcome", ["success", "historical", "denied", "tampered"])
 def test_recovery_resumes_approved_request_after_process_restart(
     fake_windows_pair, monkeypatch, outcome
 ) -> None:
@@ -701,7 +701,7 @@ def test_recovery_resumes_approved_request_after_process_restart(
             "deviceId": DEVICE,
             "deviceFingerprint": state["fingerprint"],
             "ownerSub": OWNER,
-            "enabled": True,
+            **({"recoveryReceipt": True} if outcome == "historical" else {"enabled": True}),
         }
 
     monkeypatch.setattr(cloud_pair, "_post", response)
@@ -744,3 +744,43 @@ def test_recovery_resumes_approved_request_after_process_restart(
     assert events.count("challenge") == events.count("owner_approval") == 1
     assert (result.record_id, "binding") in store
     assert ("a" * 32, "recovery_pending") in store
+
+
+@pytest.mark.parametrize(
+    "variant", ["ordinary", "conflicting", "foreign", "old-id", "bad-fingerprint"]
+)
+def test_historical_receipt_cannot_be_used_as_ordinary_or_foreign_binding(
+    monkeypatch, variant
+) -> None:
+    key = Ed25519PrivateKey.generate()
+    pin = hashlib.sha256(
+        key.public_key().public_bytes(
+            cloud_windows_enrollment.Encoding.DER,
+            cloud_windows_enrollment.PublicFormat.SubjectPublicKeyInfo,
+        )
+    ).hexdigest()
+    old = "39ee4be9-0aec-448e-9873-721ae113ec02"
+    reply = {
+        "deviceId": DEVICE,
+        "deviceFingerprint": pin,
+        "ownerSub": OWNER,
+        "recoveryReceipt": True,
+    }
+    if variant == "conflicting":
+        reply["enabled"] = True
+    elif variant == "foreign":
+        reply["ownerSub"] = "other"
+    elif variant == "old-id":
+        reply["deviceId"] = old
+    elif variant == "bad-fingerprint":
+        reply["deviceFingerprint"] = "0" * 64
+    monkeypatch.setattr(cloud_pair, "_post", lambda *_: reply)
+    with pytest.raises(cloud_windows_enrollment.WindowsEnrollmentError):
+        cloud_windows_enrollment._approved_redeem(
+            cloud_pair._origin(ORIGIN),
+            key,
+            challenge=CHALLENGE,
+            secret=SECRET,
+            fingerprint=pin,
+            recovery=None if variant == "ordinary" else {"deviceId": old, "ownerSub": OWNER},
+        )

@@ -253,3 +253,24 @@ test("inventory diagnosis is device-only and strictly validated",async()=>{
     assert.equal(calls,1);
   }finally{await l.close();}
 });
+
+test("historical recovery receipt is not an enabled device response",async()=>{
+  const deviceId=randomUUID(),deviceFingerprint=randomBytes(32).toString("hex");
+  const api:PairingDevicePort={
+    issue:async()=>({kind:"unavailable"}),
+    approved:async()=>({kind:"unavailable"}),
+    enroll:async()=>({kind:"ok",data:{kind:"recovery_receipt",deviceId,deviceFingerprint,ownerSub:"owner"}})
+  };
+  const server=createHttpServer(config,inventory,async()=>{throw Error("not called");},
+    {pairingDevice:api,deviceSource:req=>req.socket.remoteAddress??null});
+  const l=await listener(server);
+  try{
+    const url=l.origin+"/api/v1/pairing/device/redeem";
+    const body={challengeId:id,deviceCode:secret,signature:randomBytes(64).toString("base64url"),connectOnApproval:true};
+    const post=(data:object)=>fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+    const result=await post({...body,recovery:{deviceId:randomUUID(),ownerSub:"owner"}});
+    assert.equal(result.status,200);
+    assert.deepEqual(await result.json(),{recoveryReceipt:true,deviceId,deviceFingerprint,ownerSub:"owner"});
+    assert.equal((await post(body)).status,400);
+  }finally{await l.close();}
+});
