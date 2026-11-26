@@ -18,7 +18,6 @@ from scripts.check_draft_release_owner import (
     _REPOSITORY_ID,
     OwnerGitHubCLI,
     _exact_id,
-    verify_active_owner_run,
 )
 from scripts.check_signed_draft_asset import AttestationVerifier, GitHubAttestationCLI
 from scripts.check_signed_python_dispatch_binding import (
@@ -53,13 +52,7 @@ def discover_request(client: DeliveryClient, identity: DispatchIdentity) -> dict
     """One bounded listing; missing, ambiguous or truncated metadata fails closed."""
     dispatch_bytes(identity)
     handoff = identity.handoff
-    verify_active_owner_run(
-        client,
-        repo=REPOSITORY,
-        owner_run_id=handoff.owner_run_id,
-        owner_run_attempt=handoff.owner_attempt,
-        owner_head_sha=handoff.source_commit,
-    )
+    _check_live(client, identity)
     name = f"python-worker-request-{handoff.owner_attempt}-{identity.worker_run_id}"
     collection = client.workflow_artifacts(REPOSITORY, handoff.owner_run_id)
     if not isinstance(collection, dict):
@@ -104,7 +97,6 @@ def wait_for_request(client: DeliveryClient, identity: DispatchIdentity) -> dict
     """
     dispatch_bytes(identity)
     for attempt in range(_MAX_POLLS):
-        _check_live(client, identity)
         try:
             metadata = discover_request(client, identity)
         except RequestNotReadyError:

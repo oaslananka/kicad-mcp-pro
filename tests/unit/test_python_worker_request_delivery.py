@@ -394,3 +394,46 @@ def test_wait_cli_does_not_claim_verified_artifact(delivery, monkeypatch, capsys
     assert result["ownerRequestArtifactId"] == ARTIFACT
     assert result["ownerRequestArtifactVerified"] is False
     assert result["publicationAuthorized"] is False
+
+
+def test_discovery_waits_for_owner_transition_before_reading_artifacts(
+    delivery, monkeypatch
+) -> None:
+    from scripts import check_python_worker_request_delivery as cli
+
+    client, _, args = delivery
+    client.owner["status"] = "queued"
+    pauses = []
+
+    def resume(seconds: int) -> None:
+        assert client.list_reads == 0
+        pauses.append(seconds)
+        client.owner["status"] = "in_progress"
+
+    monkeypatch.setattr(cli.time, "sleep", resume)
+    assert discover_request(client, args["identity"])["id"] == ARTIFACT
+    assert pauses == [5]
+
+
+def test_delivery_rechecks_transition_after_artifact_metadata(delivery, monkeypatch) -> None:
+    from scripts import check_python_worker_request_delivery as cli
+
+    client, verifier, args = delivery
+    original = client.artifact
+    pauses = []
+
+    def detail(repo: str, artifact_id: int) -> dict[str, Any]:
+        result = original(repo, artifact_id)
+        client.owner["status"] = "queued"
+        return result
+
+    def resume(seconds: int) -> None:
+        pauses.append(seconds)
+        client.owner["status"] = "in_progress"
+
+    monkeypatch.setattr(client, "artifact", detail)
+    monkeypatch.setattr(cli.time, "sleep", resume)
+    result = verify_delivery(client, verifier, **args)
+    assert pauses == [5, 5]
+    assert result["ownerRequestArtifactVerified"] is True
+    assert result["publicationAuthorized"] is False

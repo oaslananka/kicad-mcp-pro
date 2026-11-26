@@ -330,3 +330,67 @@ def test_request_rechecks_live_identity_after_manifest_signature(
     monkeypatch.setattr(verifier.manifest, "verify", sign)
     with pytest.raises(ValueError):
         verify_worker_request(client, verifier, **args)
+
+
+@pytest.mark.parametrize("status", ["queued", "requested", "waiting", "pending"])
+def test_worker_waits_for_exact_owner_to_resume(binding, monkeypatch, status: str) -> None:
+    import time
+
+    client, verifier, args = binding
+    client.owner["status"] = status
+    pauses = []
+
+    def resume(seconds: int) -> None:
+        assert not verifier.calls
+        pauses.append(seconds)
+        client.owner["status"] = "in_progress"
+
+    monkeypatch.setattr(time, "sleep", resume)
+    report = verify_dispatch_binding(client, verifier, **args)
+    assert pauses == [5]
+    assert report["activeOwnerRunVerified"] is True
+    assert report["publicationAuthorized"] is False
+
+
+def test_pending_owner_timeout_never_verifies_signature(binding, monkeypatch) -> None:
+    import time
+
+    client, verifier, args = binding
+    client.owner["status"] = "queued"
+    pauses = []
+    monkeypatch.setattr(time, "sleep", pauses.append)
+    with pytest.raises(ValueError, match="owner transition timed out"):
+        verify_dispatch_binding(client, verifier, **args)
+    assert pauses == [5] * 11
+    assert not verifier.calls
+
+
+@pytest.mark.parametrize("mutation", ["child", "tag", "owner", "terminal", "api"])
+def test_owner_wait_rejects_changed_evidence(binding, monkeypatch, mutation: str) -> None:
+    import time
+
+    client, verifier, args = binding
+    client.owner["status"] = "queued"
+    pauses = []
+
+    def unavailable(repo: str, run_id: int) -> dict[str, Any]:
+        raise ValueError("GitHub read failed")
+
+    def change(seconds: int) -> None:
+        pauses.append(seconds)
+        if mutation == "child":
+            client.child["run_attempt"] = 2
+        elif mutation == "tag":
+            client.tag_sha = "c" * 40
+        elif mutation == "owner":
+            client.owner["actor"]["id"] = 123
+        elif mutation == "terminal":
+            client.owner.update(status="completed", conclusion="success")
+        else:
+            monkeypatch.setattr(client, "workflow_run", unavailable)
+
+    monkeypatch.setattr(time, "sleep", change)
+    with pytest.raises(ValueError):
+        verify_dispatch_binding(client, verifier, **args)
+    assert pauses == [5]
+    assert not verifier.calls
