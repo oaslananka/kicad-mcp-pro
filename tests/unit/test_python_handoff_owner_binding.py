@@ -1715,3 +1715,82 @@ def test_reconcile_receipt_cli(receipt_delivery_case, monkeypatch, capsys) -> No
         delivery.main(bad)
     assert exc.value.code == 2
     assert capsys.readouterr().out == ""
+
+
+def _replace_request_artifact(client, item, monkeypatch) -> None:
+    """Simulate re-uploading identical ZIP bytes under a different artifact ID."""
+    old_artifact = client.artifact
+    new_id = item["id"] + 10000
+    item.update(
+        id=new_id,
+        url=f"https://api.github.com/repos/{REPO}/actions/artifacts/{new_id}",
+        archive_download_url=f"https://api.github.com/repos/{REPO}/actions/artifacts/{new_id}/zip",
+    )
+
+    def artifact(repo, artifact_id):
+        if artifact_id == new_id:
+            return copy.deepcopy(item)
+        return old_artifact(repo, artifact_id)
+
+    monkeypatch.setattr(client, "artifact", artifact)
+
+
+def test_registry_receipt_rejects_same_digest_replacement(registry_case, monkeypatch) -> None:
+    from scripts import check_python_registry_receipt as receipt
+
+    client, verifier, args, _, item, registry = registry_case
+
+    def verify(provenance, path):
+        if item["id"] == args["artifact_id"]:
+            _replace_request_artifact(client, item, monkeypatch)
+        return registry.verify(provenance, path)
+
+    options = dict(args)
+    with pytest.raises(ValueError, match="owner request"):
+        receipt.prepare_registry_receipt(client, verifier, registry, verify, **options)
+
+
+def test_fetch_rejects_same_digest_replacement(fetch_case, monkeypatch) -> None:
+    from scripts import check_python_worker_request_delivery as worker
+
+    client, verifier, args, _, _, item, _, download = fetch_case
+    original = worker.verify_producer_delivery
+
+    def verify(
+        client,
+        verifier,
+        *,
+        identity,
+        artifact_id,
+        archive,
+        directory,
+        producer_job_id,
+        downloaded_zip,
+        runtime_ref,
+        runtime_sha,
+        runtime_run_id,
+        runtime_attempt,
+    ):
+        report = original(
+            client,
+            verifier,
+            identity=identity,
+            artifact_id=artifact_id,
+            archive=archive,
+            directory=directory,
+            producer_job_id=producer_job_id,
+            downloaded_zip=downloaded_zip,
+            runtime_ref=runtime_ref,
+            runtime_sha=runtime_sha,
+            runtime_run_id=runtime_run_id,
+            runtime_attempt=runtime_attempt,
+        )
+        _replace_request_artifact(client, item, monkeypatch)
+        return report
+
+    monkeypatch.setattr(worker, "verify_producer_delivery", verify)
+    options = dict(args)
+    with pytest.raises(ValueError, match="owner request"):
+        worker.fetch_producer_delivery(client, verifier, downloader=download, **options)
+    assert not args["output"].exists()
+    assert not list(args["output"].parent.glob(".kicad-worker-fetch-*"))
