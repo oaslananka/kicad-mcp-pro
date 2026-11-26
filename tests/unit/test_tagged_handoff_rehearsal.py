@@ -462,3 +462,107 @@ def test_cli_rejects_irrelevant_or_missing_arguments_before_api(
     with pytest.raises(SystemExit) as error:
         rehearsal.main()
     assert error.value.code == 2
+
+
+def test_owner_discovery_retries_only_complete_empty_list(monkeypatch) -> None:
+    client = rehearsal.RehearsalCLI()
+    fixture = Client()
+    responses = iter(
+        [
+            {"total_count": 0, "workflow_runs": []},
+            {"total_count": 1, "workflow_runs": [{"id": OWNER}]},
+        ]
+    )
+    monkeypatch.setattr(client, "_json", lambda route: next(responses))
+    monkeypatch.setattr(client, "workflow_run", fixture.workflow_run)
+    monkeypatch.setattr(client, "tag_commit", fixture.tag_commit)
+    pauses = []
+    monkeypatch.setattr(rehearsal.time, "sleep", pauses.append)
+    assert rehearsal.wait_for_owner(client, SHA, CHILD) == OWNER
+    assert pauses == [5]
+
+
+@pytest.mark.parametrize(
+    "listing",
+    [
+        {"total_count": False, "workflow_runs": []},
+        {"total_count": 1, "workflow_runs": []},
+        {"total_count": 2, "workflow_runs": [{"id": OWNER}, {"id": 203}]},
+        {"total_count": 1, "workflow_runs": [{"id": True}]},
+    ],
+)
+def test_owner_discovery_never_retries_invalid_list(monkeypatch, listing) -> None:
+    client = rehearsal.RehearsalCLI()
+    fixture = Client()
+    monkeypatch.setattr(client, "_json", lambda route: listing)
+    monkeypatch.setattr(client, "workflow_run", fixture.workflow_run)
+    monkeypatch.setattr(client, "tag_commit", fixture.tag_commit)
+    pauses = []
+    monkeypatch.setattr(rehearsal.time, "sleep", pauses.append)
+    with pytest.raises(ValueError):
+        rehearsal.wait_for_owner(client, SHA, CHILD)
+    assert pauses == []
+
+
+def test_owner_discovery_wait_rechecks_live_tag_and_child(monkeypatch) -> None:
+    client = rehearsal.RehearsalCLI()
+    fixture = Client()
+    monkeypatch.setattr(client, "_json", lambda route: {"total_count": 0, "workflow_runs": []})
+    monkeypatch.setattr(client, "workflow_run", fixture.workflow_run)
+    monkeypatch.setattr(client, "tag_commit", fixture.tag_commit)
+    pauses = []
+
+    def change_tag(seconds: int) -> None:
+        pauses.append(seconds)
+        fixture.tag_sha = "b" * 40
+
+    monkeypatch.setattr(rehearsal.time, "sleep", change_tag)
+    with pytest.raises(ValueError, match="tag source mismatch"):
+        rehearsal.wait_for_owner(client, SHA, CHILD)
+    assert pauses == [5]
+
+
+def test_owner_discovery_wait_has_bounded_poll_budget(monkeypatch) -> None:
+    client = rehearsal.RehearsalCLI()
+    fixture = Client()
+    monkeypatch.setattr(client, "_json", lambda route: {"total_count": 0, "workflow_runs": []})
+    monkeypatch.setattr(client, "workflow_run", fixture.workflow_run)
+    monkeypatch.setattr(client, "tag_commit", fixture.tag_commit)
+    pauses = []
+    monkeypatch.setattr(rehearsal.time, "sleep", pauses.append)
+    with pytest.raises(ValueError, match="owner discovery timed out"):
+        rehearsal.wait_for_owner(client, SHA, CHILD)
+    assert pauses == [5] * 11
+
+
+def test_owner_discovery_does_not_retry_api_failure(monkeypatch) -> None:
+    client = rehearsal.RehearsalCLI()
+    fixture = Client()
+    monkeypatch.setattr(client, "workflow_run", fixture.workflow_run)
+    monkeypatch.setattr(client, "tag_commit", fixture.tag_commit)
+    pauses = []
+
+    def fail(route: str) -> dict[str, Any]:
+        raise ValueError("API unavailable")
+
+    monkeypatch.setattr(client, "_json", fail)
+    monkeypatch.setattr(rehearsal.time, "sleep", pauses.append)
+    with pytest.raises(ValueError, match="API unavailable"):
+        rehearsal.wait_for_owner(client, SHA, CHILD)
+    assert pauses == []
+
+
+def test_owner_discovery_does_not_retry_untrusted_candidate(monkeypatch) -> None:
+    client = rehearsal.RehearsalCLI()
+    fixture = Client()
+    fixture.owner["actor"]["id"] = 123
+    monkeypatch.setattr(
+        client, "_json", lambda route: {"total_count": 1, "workflow_runs": [{"id": OWNER}]}
+    )
+    monkeypatch.setattr(client, "workflow_run", fixture.workflow_run)
+    monkeypatch.setattr(client, "tag_commit", fixture.tag_commit)
+    pauses = []
+    monkeypatch.setattr(rehearsal.time, "sleep", pauses.append)
+    with pytest.raises(ValueError, match="run identity mismatch"):
+        rehearsal.wait_for_owner(client, SHA, CHILD)
+    assert pauses == []

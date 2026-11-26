@@ -820,8 +820,13 @@ guess or blind retry. The separate signing job prepares two deterministic
 synthetic records and attests them with the rehearsal-only workflow
 identity. The worker receives read-only contents, Actions and attestation
 access, discovers exactly one active owner on the matching source, and
-checks both run identities and the live tag. It waits at most 30 polls
-with five seconds between absent-artifact polls. Only the exact unique
+checks both run identities and the live tag. During owner discovery,
+only a complete empty active-owner listing permits up to 12 polls
+with five seconds between attempts; the worker run and tag are checked
+before each poll. An ambiguous or malformed listing, an API failure,
+or a mismatched candidate fails immediately. The owner must still be
+active when accepted. It waits at most 30 polls with five seconds
+between absent-artifact polls. Only the exact unique
 owner ZIP (maximum 64 KiB) is accepted; it must contain the two bounded
 records, each at most 16 KiB. The download pipeline caps bytes and the
 verifier compares exact metadata, digest and regenerated record bytes,
