@@ -19,13 +19,35 @@ $oldScenario = $env:KICAD_TEST_SCENARIO
 $oldControl = $env:KICAD_TEST_CONTROL
 $job = $null
 try {
+    # Change only the fixture DACL, without requiring SeSecurityPrivilege
+    # to read or write its audit settings.
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class KiCadFixtureAcl {
+    [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true, ExactSpelling=true)]
+    private static extern bool ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        string sddl, uint revision, out IntPtr descriptor, IntPtr size);
+    [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true, ExactSpelling=true)]
+    private static extern bool SetFileSecurityW(string path, uint information, IntPtr descriptor);
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr LocalFree(IntPtr pointer);
+    public static void SetDacl(string path, string sddl) {
+        IntPtr descriptor;
+        if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, 1, out descriptor, IntPtr.Zero))
+            throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        try {
+            if (!SetFileSecurityW(path, 0x80000004u, descriptor))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+        } finally { LocalFree(descriptor); }
+    }
+}
+'@
     function Set-FixturePermissions([string]$path, [string]$extra = "") {
         $userSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-        $acl = Get-Acl -LiteralPath $path
         $inheritance = if ((Get-Item -LiteralPath $path).PSIsContainer) { "OICI" } else { "" }
         $descriptor = "D:P(A;$inheritance;FA;;;$userSid)(A;$inheritance;FA;;;SY)(A;$inheritance;FA;;;BA)" + $extra
-        $acl.SetSecurityDescriptorSddlForm($descriptor, [System.Security.AccessControl.AccessControlSections]::Access)
-        Set-Acl -LiteralPath $path -AclObject $acl
+        [KiCadFixtureAcl]::SetDacl($path, $descriptor)
     }
     $env:LOCALAPPDATA = Join-Path $root "local"
     $env:UV_INSTALL_DIR = Join-Path $root "uv-bin"

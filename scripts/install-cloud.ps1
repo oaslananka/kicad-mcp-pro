@@ -318,7 +318,7 @@ public static class KiCadCloudInstallerMarkerV1 {
     function Read-ActiveRelease {
         $value = Read-LocalMarker $pointer 3
         if ($null -eq $value) { return "legacy" }
-        if ($value -cmatch '\\A([ab])(?:\\r?\\n)?\\z') { return $Matches[1] }
+        if ($value -cmatch '\A([ab])(?:\r?\n)?\z') { return $Matches[1] }
         throw "Invalid release selection."
     }
 

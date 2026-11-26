@@ -105,3 +105,8 @@ test("Windows validates marker ownership and hardlinks on the read handle before
   assert.match(installer,/Read-LocalMarker \$pointer 3/);
   assert.doesNotMatch(installer,/\[IO\.File\]::ReadAllText\(\$(?:pendingPath|pointer)/);
 });
+
+
+test("Windows active selector regex uses single .NET regex escapes",()=>{
+  assert.ok(installer.includes(String.raw`'\A([ab])(?:\r?\n)?\z'`));
+});
