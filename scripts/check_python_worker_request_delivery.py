@@ -508,6 +508,35 @@ def _validate_producer_options(args: argparse.Namespace) -> None:
         raise ValueError("producer inputs require verify-producer")
 
 
+def _verification_report(
+    client: WorkerProducerClient, identity: DispatchIdentity, args: argparse.Namespace
+) -> dict[str, Any]:
+    if args.artifact_id is None or args.archive is None:
+        raise ValueError("verification requires artifact ID and downloaded archive")
+    if (args.operation != "verify-request") != (args.directory is not None):
+        raise ValueError("full verification requires a package directory; preflight does not")
+    options = {
+        "identity": identity,
+        "artifact_id": args.artifact_id,
+        "archive": args.archive,
+        "directory": args.directory,
+        "runtime_ref": os.environ["GITHUB_REF"],
+        "runtime_sha": os.environ["GITHUB_SHA"],
+        "runtime_run_id": identity.worker_run_id,
+        "runtime_attempt": identity.worker_attempt,
+    }
+    verifier = GitHubAttestationCLI()
+    if args.operation == "verify-producer":
+        return verify_producer_delivery(
+            client,
+            verifier,
+            producer_job_id=args.producer_job_id,
+            downloaded_zip=args.producer_archive,
+            **options,
+        )
+    return _verify_delivery(client, verifier, **options)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -552,33 +581,7 @@ def main(argv: list[str] | None = None) -> int:
                 "publicationAuthorized": False,
             }
         else:
-            if args.artifact_id is None or args.archive is None:
-                raise ValueError("verification requires artifact ID and downloaded archive")
-            if (args.operation != "verify-request") != (args.directory is not None):
-                raise ValueError(
-                    "full verification requires a package directory; preflight does not"
-                )
-            options = {
-                "identity": identity,
-                "artifact_id": args.artifact_id,
-                "archive": args.archive,
-                "directory": args.directory,
-                "runtime_ref": os.environ["GITHUB_REF"],
-                "runtime_sha": os.environ["GITHUB_SHA"],
-                "runtime_run_id": identity.worker_run_id,
-                "runtime_attempt": identity.worker_attempt,
-            }
-            verifier = GitHubAttestationCLI()
-            if args.operation == "verify-producer":
-                result = verify_producer_delivery(
-                    client,
-                    verifier,
-                    producer_job_id=args.producer_job_id,
-                    downloaded_zip=args.producer_archive,
-                    **options,
-                )
-            else:
-                result = _verify_delivery(client, verifier, **options)
+            result = _verification_report(client, identity, args)
     except (ValueError, OSError) as exc:
         parser.exit(2, f"Python worker request delivery: FAIL: {exc}\n")
     print(json.dumps(result, indent=2, sort_keys=True))

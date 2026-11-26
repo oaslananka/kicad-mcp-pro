@@ -589,7 +589,8 @@ def worker_producer(case, monkeypatch, tmp_path) -> tuple[Any, ...]:
             return source.workflow_jobs(repo, run_id, attempt)
 
         def workflow_artifacts(self, repo, run_id):
-            assert repo == REPO and run_id == identity.handoff.owner_run_id
+            assert repo == REPO
+            assert run_id == identity.handoff.owner_run_id
             return {"total_count": 1, "artifacts": [copy.deepcopy(item)]}
 
         def artifact(self, repo, artifact_id):
