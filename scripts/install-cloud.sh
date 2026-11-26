@@ -4,26 +4,71 @@
 set -euo pipefail
 die() { printf 'KiCad MCP Pro: %s\n' "$*" >&2; exit 1; }
 healthy() { [[ -x "$1" ]] && "$1" --version >/dev/null 2>&1; }
-install_and_connect() {
-cli="$UV_TOOL_BIN_DIR/kicad-mcp-pro"
-existing=false
-if healthy "$cli"; then existing=true; fi
-printf 'KiCad MCP Pro: Checking the installed version...\n'
-if ! "$uv_path" tool install --upgrade kicad-mcp-pro; then
-  if [[ "$existing" == true ]] && healthy "$cli"; then
-    printf 'KiCad MCP Pro: Update unavailable; using the existing version.\n' >&2
-  else
-    "$uv_path" tool install --force --reinstall kicad-mcp-pro || die "Installation could not be repaired."
+private_slot() {
+  local dir="$1"
+  [[ ! -L "$dir" ]] || die "Invalid local installation directory."
+  if [[ -e "$dir" ]]; then
+    [[ -d "$dir" && -O "$dir" ]] || die "Invalid local installation directory."
   fi
-fi
-if ! healthy "$cli"; then
-  "$uv_path" tool install --force --reinstall kicad-mcp-pro || die "Installation could not be repaired."
-  healthy "$cli" || die "Installation verification failed."
-fi
-printf 'KiCad MCP Pro: Opening Cloud Connector...\n'
-# The installed version determines supported signed-session capabilities.
-"$cli" cloud
 }
+connector_healthy() { healthy "$1" && "$1" cloud --help >/dev/null 2>&1; }
+select_slot() {
+  local slot="$1"
+  if [[ "$slot" == legacy ]]; then
+    export UV_TOOL_DIR="$root/uv-tools"
+    export UV_TOOL_BIN_DIR="$root/bin"
+  else
+    export UV_TOOL_DIR="$root/releases/$slot/uv-tools"
+    export UV_TOOL_BIN_DIR="$root/releases/$slot/bin"
+  fi
+  private_slot "$UV_TOOL_DIR"
+  private_slot "$UV_TOOL_BIN_DIR"
+  export PATH="$UV_TOOL_BIN_DIR:$base_path"
+  cli="$UV_TOOL_BIN_DIR/kicad-mcp-pro"
+}
+install_and_connect() {
+  # The outer process owns the installer lock. Never update the active slot.
+  # uv environments are not relocatable, so build directly in the other slot.
+  local active=legacy candidate=a old_healthy=false installed=false pointer
+  pointer="$root/active-release"
+  private_slot "$root/releases"
+  private_slot "$root/releases/a"
+  private_slot "$root/releases/b"
+  if [[ -e "$pointer" || -L "$pointer" ]]; then
+    [[ -f "$pointer" && ! -L "$pointer" && -O "$pointer" ]] || die "Invalid release selection."
+    active="$(cat -- "$pointer")"
+    [[ "$active" == a || "$active" == b ]] || die "Invalid release selection."
+  fi
+  select_slot "$active"
+  if connector_healthy "$cli"; then old_healthy=true; fi
+  if [[ "$active" == a ]]; then candidate=b; fi
+  select_slot "$candidate"
+  printf 'KiCad MCP Pro: Preparing a separate update...\n'
+  if "$uv_path" tool install --upgrade kicad-mcp-pro && connector_healthy "$cli"; then
+    installed=true
+  elif [[ "$old_healthy" == false ]]; then
+    printf 'KiCad MCP Pro: Installation needs repair. Retrying once...\n'
+    if "$uv_path" tool install --force --reinstall kicad-mcp-pro && connector_healthy "$cli"; then
+      installed=true
+    fi
+  fi
+  if [[ "$installed" == true ]]; then
+    # Atomic replacement only after both CLI smoke checks pass.
+    local temporary
+    temporary="$(mktemp "$root/.active-release.XXXXXXXX")"
+    printf '%s\n' "$candidate" > "$temporary"
+    mv -f -- "$temporary" "$pointer"
+  elif [[ "$old_healthy" == true ]]; then
+    printf 'KiCad MCP Pro: Update unavailable; using the existing version.\n' >&2
+    select_slot "$active"
+    connector_healthy "$cli" || die "Existing installation is no longer healthy."
+  else
+    die "Installation could not be repaired. Existing files were preserved."
+  fi
+  printf 'KiCad MCP Pro: Opening Cloud Connector...\n'
+  "$cli" cloud
+}
+
 main() {
 umask 077
 case "$(uname -s)" in
@@ -54,7 +99,8 @@ trap 'exit 143' TERM
 export UV_NO_CONFIG=1
 export UV_TOOL_DIR="$root/uv-tools"
 export UV_TOOL_BIN_DIR="$root/bin"
-export PATH="$UV_TOOL_BIN_DIR:$PATH"
+export base_path="$PATH"
+export PATH="$UV_TOOL_BIN_DIR:$base_path"
 uv_path="$(command -v uv || true)"
 if [[ -z "$uv_path" ]] || ! healthy "$uv_path"; then
   uv_path="$root/installer/uv"
@@ -94,7 +140,7 @@ fi
 # uv can supply Python on macOS as well as Linux without Xcode or a separate
 # prerequisite command. Keep an inherited kernel lock over both uv's package
 # update and the foreground child; never unlink the lock inode.
-export -f die healthy install_and_connect
+export -f die healthy private_slot connector_healthy select_slot install_and_connect
 export root uv_path
 "$uv_path" run --no-project --no-config --no-env-file --python '>=3.13' -- python -I -c '
 import fcntl

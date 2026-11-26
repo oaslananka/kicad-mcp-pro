@@ -12,8 +12,8 @@ test("Windows one-command Cloud bootstrap installs or upgrades and repairs only 
   assert.match(installer,/\& \$uvPath tool dir --bin/);
   assert.match(installer,/function Test-Tool\(\[string\]\$executable\)/);
   assert.match(installer,/\& \$cliPath cloud/);
-  assert.match(installer,/\$existingHealthy = Test-Tool \$cliPath/);
-  assert.match(installer,/\$dedicatedTools = Join-Path \$appRoot "uv-tools"/);
+  assert.match(installer,/\$existingHealthy = Test-Connector \$cliPath/);
+  assert.match(installer,/\$dedicatedTools = Join-Path \$slotRoot "uv-tools"/);
   assert.match(installer,/\$env:UV_TOOL_DIR = \$dedicatedTools/);
   assert.match(installer,/\$env:UV_NO_CONFIG = "1"/);
   assert.match(installer,/\$env:UV_NO_CONFIG = \$originalNoConfig/);
@@ -24,11 +24,11 @@ test("Windows one-command Cloud bootstrap installs or upgrades and repairs only 
   assert.match(installer,/\$running\.Count -gt 0/);
   assert.match(installer,/No update or duplicate connection was started/);
   assert.match(installer,/finally \{\s*\$env:UV_TOOL_DIR = \$originalToolDir/);
-  assert.match(installer,/if \(\$existingHealthy -and \(Test-Tool \$cliPath\)\)/);
+  assert.match(installer,/elseif \(\$existingHealthy\)/);
   assert.match(installer,/Update unavailable; starting the existing working version/);
   assert.doesNotMatch(installer,/\& \$uvxPath --from/);
   assert.match(installer,/if \(\$LASTEXITCODE -ne 0\)/);
-  assert.match(installer,/if \(-not \(Test-Tool \$cliPath\)\)/);
+  assert.match(installer,/if \(-not \(Test-Connector \$cliPath\)\)/);
 });
 
 test("Installer preserves user data and uses verified Astral release bytes",()=>{
@@ -52,4 +52,13 @@ test("Windows installer serializes the entire bootstrap and releases its OS mute
   assert.match(installer,/ReleaseMutex\(\)/);
   assert.match(installer,/\.Dispose\(\)/);
   assert.ok(installer.indexOf("WaitOne(0)")<installer.indexOf("Invoke-WebRequest"));
+});
+
+test("Windows publishes only a healthy inactive release and preserves the previous environment",()=>{
+  assert.match(installer,/\$candidate = if \(\$active -eq "a"\) \{ "b" \} else \{ "a" \}/);
+  assert.match(installer,/\$cliPath = Select-ReleaseSlot \$candidate/);
+  assert.match(installer,/\$installed = \(\$LASTEXITCODE -eq 0\) -and \(Test-Connector \$cliPath\)/);
+  assert.match(installer,/if \(\$installed\) \{\s*Publish-Release \$candidate/);
+  assert.match(installer,/\[IO\.File\]::Replace\(\$temporary, \$pointer, \$backup\)/);
+  assert.match(installer,/\$cliPath = Select-ReleaseSlot \$active/);
 });

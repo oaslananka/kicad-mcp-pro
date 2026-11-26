@@ -10,9 +10,10 @@ trap 'rm -rf -- "$work"' EXIT
 export TEST_CLI_TEMPLATE="$work/cli"
 cat > "$TEST_CLI_TEMPLATE" <<'CLI'
 #!/bin/bash
-if [[ "$1" == --version ]]; then exit 0; fi
+if [[ "$1" == --version || "$*" == "cloud --help" ]]; then exit 0; fi
 [[ "$*" == cloud && -t 0 ]] || exit 97
 echo connected >> "$TEST_LOG"
+if [[ -n "${TEST_SELECTED_LOG:-}" ]]; then printf "%s\n" "$0" >> "$TEST_SELECTED_LOG"; fi
 if [[ "$TEST_SCENARIO" == live-child ]]; then
   printf '%s\n' "$$" > "$TEST_CHILD_PID"
   while [[ ! -f "$TEST_RELEASE" ]]; do sleep .05; done
@@ -31,13 +32,19 @@ fi
 [[ "$UV_NO_CONFIG" == 1 ]] || exit 96
 echo "$*" >> "$TEST_LOG"
 if [[ "$TEST_SCENARIO" == offline ]]; then exit 1; fi
+if [[ "$TEST_SCENARIO" == destructive-update || "$TEST_SCENARIO" == unhealthy-update ]]; then
+  mkdir -p "$UV_TOOL_BIN_DIR"
+  printf 'broken update\n' > "$UV_TOOL_BIN_DIR/kicad-mcp-pro"
+  if [[ "$TEST_SCENARIO" == unhealthy-update ]]; then exit 0; fi
+  exit 1
+fi
 mkdir -p "$UV_TOOL_BIN_DIR"
 cp "$TEST_CLI_TEMPLATE" "$UV_TOOL_BIN_DIR/kicad-mcp-pro"
 chmod 700 "$UV_TOOL_BIN_DIR/kicad-mcp-pro"
 UV
 chmod 700 "$work/bin/uv"
 export PATH="$work/bin:$PATH"
-for TEST_SCENARIO in install repeat offline running kernel-running stale-kernel; do
+for TEST_SCENARIO in install repeat offline destructive-update running kernel-running stale-kernel; do
   export TEST_SCENARIO
   export HOME="$work/$TEST_SCENARIO/home"
   export XDG_DATA_HOME="$HOME/data"
@@ -74,6 +81,9 @@ for TEST_SCENARIO in install repeat offline running kernel-running stale-kernel;
     timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
     printf 'tool install --upgrade kicad-mcp-pro\nconnected\n' > "$work/expected"
     diff -u "$work/expected" "$TEST_LOG"
+    if [[ "$TEST_SCENARIO" == destructive-update ]]; then
+      cmp "$TEST_CLI_TEMPLATE" "$app/bin/kicad-mcp-pro"
+    fi
     [[ ! -e "$app/installer.lock" ]]
   fi
   printf 'PASS: %s\n' "$TEST_SCENARIO"
@@ -113,3 +123,33 @@ timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
 cat "$work/expected" "$work/expected" > "$work/expected-twice"
 diff -u "$work/expected-twice" "$TEST_LOG"
 printf 'PASS: live-child crash recovery\n'
+
+# Preserve the already selected release across both resolver failure and a
+# successful resolver exit with an unusable candidate, then switch A -> B -> A.
+export HOME="$work/rotation/home"
+export XDG_DATA_HOME="$HOME/data"
+export TEST_LOG="$work/rotation/events"
+export TEST_SELECTED_LOG="$work/rotation/selected"
+mkdir -p "$HOME"
+app="$XDG_DATA_HOME/KiCadMCPPro"
+a="$app/releases/a/bin/kicad-mcp-pro"
+b="$app/releases/b/bin/kicad-mcp-pro"
+export TEST_SCENARIO=install
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
+[[ "$(cat "$app/active-release")" == a ]]
+for TEST_SCENARIO in destructive-update unhealthy-update; do
+  export TEST_SCENARIO
+  timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
+  [[ "$(cat "$app/active-release")" == a ]]
+  cmp "$TEST_CLI_TEMPLATE" "$a"
+  [[ "$(tail -1 "$TEST_SELECTED_LOG")" == "$a" ]]
+done
+export TEST_SCENARIO=repeat
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
+[[ "$(cat "$app/active-release")" == b ]]
+[[ "$(tail -1 "$TEST_SELECTED_LOG")" == "$b" ]]
+cmp "$TEST_CLI_TEMPLATE" "$a"
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
+[[ "$(cat "$app/active-release")" == a ]]
+cmp "$TEST_CLI_TEMPLATE" "$b"
+printf 'PASS: staged release rotation and rollback\n'

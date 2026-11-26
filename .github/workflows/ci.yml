@@ -345,6 +345,10 @@ jobs:
         if: env.skip_ci != 'true'
       - run: pnpm run test:unit
         if: env.skip_ci != 'true'
+      - name: Test Windows Cloud installer rollback with native fixture
+        if: env.skip_ci != 'true' && matrix.os == 'windows-2025'
+        shell: powershell
+        run: ./tests/shell/cloud-windows-installer.test.ps1
       - name: Compile macOS Cloud folder chooser AppleScript
         if: env.skip_ci != 'true' && matrix.os == 'macos-15'
         shell: bash

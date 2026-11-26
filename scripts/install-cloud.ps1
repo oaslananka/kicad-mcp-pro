@@ -87,72 +87,130 @@
     # Keep this Cloud launcher separate from the user's pip, pipx and uv tools.
     # Windows cannot safely replace an environment while its Python is running.
     $appRoot = Join-Path $env:LOCALAPPDATA "KiCadMCPPro"
-    $dedicatedTools = Join-Path $appRoot "uv-tools"
-    $dedicatedBin = Join-Path $appRoot "bin"
     $originalNoConfig = $env:UV_NO_CONFIG
     $originalToolDir = $env:UV_TOOL_DIR
     $originalBinDir = $env:UV_TOOL_BIN_DIR
     $originalPath = $env:PATH
+    $releases = Join-Path $appRoot "releases"
+    $pointer = Join-Path $appRoot "active-release"
+
+    function Assert-LocalDirectory([string]$path) {
+        $item = Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        if ($null -ne $item -and
+            (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint))) {
+            throw "Invalid local installation directory."
+        }
+    }
+
+    function Test-Connector([string]$executable) {
+        if (-not (Test-Tool $executable)) { return $false }
+        try {
+            & $executable cloud --help *> $null
+            return ($LASTEXITCODE -eq 0)
+        } catch {
+            return $false
+        }
+    }
+
+    function Select-ReleaseSlot([string]$slot) {
+        $slotRoot = if ($slot -eq "legacy") { $appRoot } else { Join-Path $releases $slot }
+        Assert-LocalDirectory $slotRoot
+        $dedicatedTools = Join-Path $slotRoot "uv-tools"
+        $dedicatedBin = Join-Path $slotRoot "bin"
+        Assert-LocalDirectory $dedicatedTools
+        Assert-LocalDirectory $dedicatedBin
+        $env:UV_TOOL_DIR = $dedicatedTools
+        $env:UV_TOOL_BIN_DIR = $dedicatedBin
+        $env:PATH = "$dedicatedBin;$originalPath"
+        $toolBin = & $uvPath tool dir --bin
+        if ($LASTEXITCODE -ne 0 -or -not $toolBin -or
+            -not ([string]($toolBin | Select-Object -Last 1)).Equals($dedicatedBin, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Could not verify the KiCad MCP Pro installation directory."
+        }
+        return (Join-Path $dedicatedBin "$package.exe")
+    }
+
+    function Publish-Release([string]$slot) {
+        # uv environments are not relocatable. Publish only a small selector,
+        # leaving the old environment and the prepared candidate in place.
+        $temporary = Join-Path $appRoot (".active-release-" + [guid]::NewGuid().ToString("N"))
+        $backup = $temporary + ".previous"
+        try {
+            [IO.File]::WriteAllText($temporary, $slot + "`n", [Text.Encoding]::ASCII)
+            if (Test-Path -LiteralPath $pointer -PathType Leaf) {
+                [IO.File]::Replace($temporary, $pointer, $backup)
+            } else {
+                [IO.File]::Move($temporary, $pointer)
+            }
+        } finally {
+            foreach ($file in @($temporary, $backup)) {
+                if (Test-Path -LiteralPath $file -PathType Leaf) {
+                    Remove-Item -LiteralPath $file -Force
+                }
+            }
+        }
+    }
 
     try {
         $env:UV_NO_CONFIG = "1"
-        $env:UV_TOOL_DIR = $dedicatedTools
-        $env:UV_TOOL_BIN_DIR = $dedicatedBin
-        # Keep uv's installer from asking the user to modify PATH manually.
-        $env:PATH = "$dedicatedBin;$originalPath"
-
-        $toolBin = & $uvPath tool dir --bin
-        if ($LASTEXITCODE -ne 0 -or -not $toolBin) {
-            throw "Could not locate the KiCad MCP Pro installation directory."
+        Assert-LocalDirectory $appRoot
+        Assert-LocalDirectory $releases
+        Assert-LocalDirectory (Join-Path $releases "a")
+        Assert-LocalDirectory (Join-Path $releases "b")
+        $active = "legacy"
+        $selection = Get-Item -LiteralPath $pointer -Force -ErrorAction SilentlyContinue
+        if ($null -ne $selection) {
+            if ($selection.PSIsContainer -or ($selection.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+                $selection.Length -gt 3) {
+                throw "Invalid release selection."
+            }
+            $active = [IO.File]::ReadAllText($pointer).TrimEnd([char]10, [char]13)
+            if ($active -cnotin @("a", "b")) { throw "Invalid release selection." }
         }
-        $cliPath = Join-Path ($toolBin | Select-Object -Last 1) "$package.exe"
+        $candidate = if ($active -eq "a") { "b" } else { "a" }
+        $cliPath = Select-ReleaseSlot $active
 
-        # Avoid uv's known Windows in-use upgrade failure, which can leave
-        # site-packages deleted while the executable remains file-locked.
-        if (Test-Path -LiteralPath $dedicatedTools) {
+        # Detect older/manual processes in any dedicated installation slot.
+        # Never modify a potentially running slot, including the inactive one.
+        if (Test-Path -LiteralPath $appRoot) {
             try {
                 $running = @(
-                    Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'kicad-mcp-pro.exe'" -ErrorAction Stop |
+                    Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'pythonw.exe' OR Name = 'kicad-mcp-pro.exe'" -ErrorAction Stop |
                         Where-Object {
                             $path = [string]$_.ExecutablePath
-                            $path.StartsWith($dedicatedTools + [IO.Path]::DirectorySeparatorChar,
-                                [StringComparison]::OrdinalIgnoreCase) -or
-                            $path.Equals($cliPath, [StringComparison]::OrdinalIgnoreCase)
+                            $path.StartsWith($appRoot + [IO.Path]::DirectorySeparatorChar,
+                                [StringComparison]::OrdinalIgnoreCase)
                         }
                 )
             } catch {
                 throw "Could not check whether the Connector is already running. No installation files were changed."
             }
             if ($running.Count -gt 0) {
-                if (Test-Tool $cliPath) {
-                    Write-Host "KiCad MCP Pro: This Connector is already running. No update or duplicate connection was started."
-                    return
-                }
-                throw "KiCad MCP Pro is still running, and Windows has locked its files. Close the older Connector terminal, then run this same command again."
+                Write-Host "KiCad MCP Pro: This Connector is already running. No update or duplicate connection was started."
+                return
             }
         }
 
-        $existingHealthy = Test-Tool $cliPath
-        Write-Host "KiCad MCP Pro: Checking the installed version..."
+        $existingHealthy = Test-Connector $cliPath
+        $cliPath = Select-ReleaseSlot $candidate
+        Write-Host "KiCad MCP Pro: Preparing a separate update..."
         & $uvPath tool install --upgrade $package
-        if ($LASTEXITCODE -ne 0) {
-            if ($existingHealthy -and (Test-Tool $cliPath)) {
-                Write-Warning "Update unavailable; starting the existing working version."
-            } else {
-                Write-Host "KiCad MCP Pro: Installation needs repair. Retrying once..."
-                & $uvPath tool install --force --reinstall $package
-                if ($LASTEXITCODE -ne 0) {
-                    throw "Could not install or repair KiCad MCP Pro. Your projects and Cloud permissions were not modified."
-                }
-            }
-        }
-
-        if (-not (Test-Tool $cliPath)) {
-            Write-Host "KiCad MCP Pro: Verifying the installation failed. Repairing once..."
+        $installed = ($LASTEXITCODE -eq 0) -and (Test-Connector $cliPath)
+        if (-not $installed -and -not $existingHealthy) {
+            Write-Host "KiCad MCP Pro: Installation needs repair. Retrying once..."
             & $uvPath tool install --force --reinstall $package
-            if ($LASTEXITCODE -ne 0 -or -not (Test-Tool $cliPath)) {
-                throw "The application is still not healthy. Your KiCad projects and Cloud permissions were left unchanged."
+            $installed = ($LASTEXITCODE -eq 0) -and (Test-Connector $cliPath)
+        }
+        if ($installed) {
+            Publish-Release $candidate
+        } elseif ($existingHealthy) {
+            Write-Warning "Update unavailable; starting the existing working version."
+            $cliPath = Select-ReleaseSlot $active
+            if (-not (Test-Connector $cliPath)) {
+                throw "Existing installation is no longer healthy."
             }
+        } else {
+            throw "Could not install or repair KiCad MCP Pro. Existing files and Cloud permissions were preserved."
         }
 
         Write-Host "KiCad MCP Pro: Ready. Opening Cloud Connector..."
