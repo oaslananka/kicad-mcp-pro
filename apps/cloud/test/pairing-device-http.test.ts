@@ -274,3 +274,35 @@ test("historical recovery receipt is not an enabled device response",async()=>{
     assert.equal((await post(body)).status,400);
   }finally{await l.close();}
 });
+
+test("resumable initial receipt requires the explicit initial protocol",async()=>{
+  const deviceId=randomUUID(),deviceFingerprint=randomBytes(32).toString("hex");
+  let denied=false,calls=0;
+  const api:PairingDevicePort={
+    issue:async()=>({kind:"unavailable"}),
+    approved:async()=>({kind:"unavailable"}),
+    enroll:async(_source,_id,_code,_signature,_connect,_recovery,resumeInitial)=>{
+      calls++;
+      if(!resumeInitial)return {kind:"unavailable"};
+      return denied?{kind:"ok",data:{kind:"initial_denied"}}:
+        {kind:"ok",data:{kind:"initial_receipt",deviceId,deviceFingerprint,ownerSub:"owner"}};
+    }
+  };
+  const server=createHttpServer(config,inventory,async()=>{throw Error("not called");},
+    {pairingDevice:api,deviceSource:req=>req.socket.remoteAddress??null});
+  const l=await listener(server);
+  try{
+    const url=l.origin+"/api/v1/pairing/device/redeem";
+    const body={challengeId:id,deviceCode:secret,signature:randomBytes(64).toString("base64url"),resumeInitial:true};
+    const post=(data:object)=>fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+    assert.equal((await post(body)).status,400);
+    assert.equal((await post({...body,connectOnApproval:true,recovery:{deviceId:randomUUID(),ownerSub:"owner"}})).status,400);
+    assert.equal(calls,0);
+    const result=await post({...body,connectOnApproval:true});
+    assert.equal(result.status,200);
+    assert.deepEqual(await result.json(),{initialReceipt:true,deviceId,deviceFingerprint,ownerSub:"owner"});
+    denied=true;
+    assert.deepEqual(await (await post({...body,connectOnApproval:true})).json(),{initialDenied:true});
+    assert.equal(calls,2);
+  }finally{await l.close();}
+});

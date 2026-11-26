@@ -18,6 +18,7 @@ const redeemSchema=z.strictObject({
   signature:z.string().regex(/^[A-Za-z0-9_-]{86}$/),
   // Opt-in in the new client only. Absent means the original disabled-device contract.
   connectOnApproval:z.literal(true).optional(),
+  resumeInitial:z.literal(true).optional(),
   recovery:z.strictObject({
     deviceId:z.uuid(),
     ownerSub:z.string().min(1).max(256)
@@ -132,9 +133,20 @@ export async function handlePairingDeviceRequest(
     const sig=canonicalUrlB64(fields.data.signature,64);
     if(!secret||!sig){reply(res,400,{error:"invalid_request"});return true;}
     const connectOnApproval=fields.data.connectOnApproval===true;
+    const resumeInitial=fields.data.resumeInitial===true;
+    if(resumeInitial&&(!connectOnApproval||fields.data.recovery)){
+      reply(res,400,{error:"invalid_request"});return true;
+    }
     const result=await api.enroll(source,fields.data.challengeId,fields.data.deviceCode,sig,
-      connectOnApproval,fields.data.recovery);
+      connectOnApproval,fields.data.recovery,resumeInitial);
     if(result.kind==="throttled"){reply(res,429,{error:"rate_limited"});return true;}
+    if(result.kind==="ok"&&result.data.kind==="initial_denied"&&resumeInitial){
+      reply(res,200,{initialDenied:true});return true;
+    }
+    if(result.kind==="ok"&&result.data.kind==="initial_receipt"&&resumeInitial){
+      reply(res,200,{initialReceipt:true,deviceId:result.data.deviceId,
+        deviceFingerprint:result.data.deviceFingerprint,ownerSub:result.data.ownerSub});return true;
+    }
     if(result.kind==="ok"&&result.data.kind==="recovery_denied"){
       reply(res,200,{recoveryDenied:true});return true;
     }

@@ -52,6 +52,10 @@ class WindowsEnrollmentDeniedError(WindowsEnrollmentError):
     """Owner rejected the pending challenge before device redemption."""
 
 
+class InitialEnrollmentDeniedError(WindowsEnrollmentError):
+    """Authenticated initial request did not register a device."""
+
+
 class WindowsRecoveryDeniedError(WindowsEnrollmentError):
     """Authenticated Cloud refused replacement; no new device was registered."""
 
@@ -101,7 +105,10 @@ def _approved_redeem(
     secret: str,
     fingerprint: str,
     recovery: dict[str, str] | None = None,
+    resume_initial: bool = False,
 ) -> tuple[str, str]:
+    if resume_initial and recovery is not None:
+        raise WindowsEnrollmentError(_DENIED)
     proof = (
         b"kicad-cloud-pairing-proof-v1\x00"
         + challenge.encode("ascii")
@@ -119,6 +126,13 @@ def _approved_redeem(
             + b"\x00"
             + recovery["ownerSub"].encode("utf-8")
         )
+    if resume_initial:
+        proof = (
+            b"kicad-cloud-pairing-initial-v1\x00"
+            + challenge.encode("ascii")
+            + b"\x00"
+            + secret.encode("ascii")
+        )
     signature = base64.urlsafe_b64encode(key.sign(proof)).decode("ascii").rstrip("=")
     payload = {
         "challengeId": challenge,
@@ -126,15 +140,18 @@ def _approved_redeem(
         "signature": signature,
         "connectOnApproval": True,
         **({"recovery": recovery} if recovery is not None else {}),
+        **({"resumeInitial": True} if resume_initial else {}),
     }
     endpoint = "/api/v1/pairing/device/redeem"
     try:
         result = cloud_pair._post(target, endpoint, payload, 200)
     except cloud_pair.CloudPairingError as exc:
-        # The recovery contract returns only the original binding for an
-        # identical approved request. Retry at most once on a lost response,
-        # never for ordinary enrollment, a policy refusal or a TLS error.
-        if recovery is None or not isinstance(exc.__cause__, (ProtocolError, ReadTimeoutError)):
+        # Explicitly resumable initial/replacement requests return only the
+        # original binding. Retry at most once on a lost response, never for
+        # legacy one-use enrollment, policy refusal or TLS errors.
+        if (recovery is None and not resume_initial) or not isinstance(
+            exc.__cause__, (ProtocolError, ReadTimeoutError)
+        ):
             raise
         result = cloud_pair._post(target, endpoint, payload, 200)
     if (
@@ -146,6 +163,10 @@ def _approved_redeem(
             "Cloud kept the existing device. No replacement was registered. "
             "Check the device is enabled and the correct account is signed in."
         )
+    if resume_initial and result == {"initialDenied": True} and result["initialDenied"] is True:
+        raise InitialEnrollmentDeniedError(
+            "Device pairing was denied or expired. Retry the same setup."
+        )
     # Historical success reconciles the local identity only. The current
     # signed inventory/session checks still decide whether it may connect.
     historical = (
@@ -153,11 +174,23 @@ def _approved_redeem(
         and set(result) == {"deviceId", "deviceFingerprint", "ownerSub", "recoveryReceipt"}
         and result["recoveryReceipt"] is True
     )
+    historical = historical or (
+        resume_initial
+        and set(result) == {"deviceId", "deviceFingerprint", "ownerSub", "initialReceipt"}
+        and result["initialReceipt"] is True
+    )
     required = {"deviceId", "deviceFingerprint", "enabled", "ownerSub"}
     device_id = result.get("deviceId")
     owner_sub = result.get("ownerSub")
     if (
-        (not historical and (not required.issubset(result) or "recoveryReceipt" in result))
+        (
+            not historical
+            and (
+                not required.issubset(result)
+                or "recoveryReceipt" in result
+                or "initialReceipt" in result
+            )
+        )
         or not isinstance(device_id, str)
         or cloud_pair._UUID.fullmatch(device_id) is None
         or result["deviceFingerprint"] != fingerprint

@@ -35,6 +35,11 @@ def test_device_only_enrollment_and_reuse(tmp_path, monkeypatch, existing) -> No
         state["candidate"] = (path, binding)
         return binding["deviceId"], binding["fingerprint"]
 
+    def initial(root, origin, alias, approval):
+        enroll(origin, alias, keyfile, approval, connect_on_approval=True)
+        return state["candidate"]
+
+    monkeypatch.setattr("kicad_mcp.cloud_posix_initial_enrollment.enroll_initial", initial)
     monkeypatch.setattr(cloud_pair, "enroll", enroll)
     monkeypatch.setattr(
         cloud_posix_recovery, "inspect_unbound_device", lambda *_: state["candidate"]

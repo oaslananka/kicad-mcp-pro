@@ -171,7 +171,8 @@ export function validRecoveryIdentity(value:RecoveryIdentity):boolean{
     !/[\x00-\x1f\x7f]/.test(value.ownerSub);
 }
 
-export function redemptionProof(id: string, deviceCode: string, recovery?:RecoveryIdentity): Buffer {
+export function redemptionProof(id: string, deviceCode: string, recovery?:RecoveryIdentity, resumeInitial=false): Buffer {
+  if(resumeInitial)return Buffer.from("kicad-cloud-pairing-initial-v1\0"+id+"\0"+deviceCode,"utf8");
   return recovery
     ?Buffer.from("kicad-cloud-pairing-recovery-v1\0"+id+"\0"+deviceCode+"\0"+
       recovery.deviceId+"\0"+recovery.ownerSub,"utf8")
@@ -184,13 +185,13 @@ export function redemptionProof(id: string, deviceCode: string, recovery?:Recove
  */
 export function redeemPairing(
   record: PairingRecord, serverKey: Buffer, nowMs: number,
-  deviceCode: string, signature: Buffer, recovery?:RecoveryIdentity
+  deviceCode: string, signature: Buffer, recovery?:RecoveryIdentity, resumeInitial=false
 ): RedeemResult {
   requireServerKey(serverKey);
-  if (!validClock(nowMs)||(recovery&&!validRecoveryIdentity(recovery))) return { kind: "unavailable", record };
+  if (!validClock(nowMs)||(recovery&&!validRecoveryIdentity(recovery))||(resumeInitial&&recovery)) return { kind: "unavailable", record };
   const current = stateAt(record, nowMs);
   if(current.state!=="approved"||!current.ownerSub||
-     !verifyRedemptionProof(current,serverKey,deviceCode,signature,recovery)){
+     !verifyRedemptionProof(current,serverKey,deviceCode,signature,recovery,resumeInitial)){
     return {kind:"unavailable",record:current};
   }
   return { kind: "redeemed", record: { ...current, state: "consumed" }, ownerSub: current.ownerSub };
@@ -199,14 +200,14 @@ export function redeemPairing(
 
 /** Proof verification alone never issues or re-enables a device. */
 function verifyRedemptionProof(record:PairingRecord,serverKey:Buffer,deviceCode:string,
-  signature:Buffer,recovery?:RecoveryIdentity):boolean{
+  signature:Buffer,recovery?:RecoveryIdentity,resumeInitial=false):boolean{
   if(typeof deviceCode!=="string"||deviceCode.length>128||
      !Buffer.isBuffer(signature)||signature.length!==64||
      !matches(serverKey,"device",deviceCode,record.deviceCodeMac))return false;
   try{
     const key=createPublicKey({key:Buffer.from(record.devicePublicKeyDer,"base64"),format:"der",type:"spki"});
     return key.asymmetricKeyType==="ed25519"&&
-      verify(null,redemptionProof(record.id,deviceCode,recovery),key,signature);
+      verify(null,redemptionProof(record.id,deviceCode,recovery,resumeInitial),key,signature);
   }catch{return false;}
 }
 
@@ -217,4 +218,12 @@ export function verifyFinishedRecovery(record:PairingRecord,serverKey:Buffer,
   return (record.state==="consumed"||record.state==="expired")&&
     validRecoveryIdentity(recovery)&&record.ownerSub===recovery.ownerSub&&
     verifyRedemptionProof(record,serverKey,deviceCode,signature,recovery);
+}
+
+/** A signed, opt-in initial request may reconcile only its own durable receipt. */
+export function verifyFinishedInitial(record:PairingRecord,serverKey:Buffer,
+  deviceCode:string,signature:Buffer):boolean{
+  requireServerKey(serverKey);
+  return (record.state==="consumed"||record.state==="expired"||record.state==="denied"||record.state==="locked")&&
+    verifyRedemptionProof(record,serverKey,deviceCode,signature,undefined,true);
 }

@@ -321,6 +321,8 @@ def _wait_for_owner_approval(
     signing_key: Ed25519PrivateKey,
     expiry_ms: int,
     start_owner_review: Callable[[], None] | None = None,
+    *,
+    allow_existing_approval: bool = False,
 ) -> None:
     """Require a working signed status endpoint before opening owner approval."""
     proof = (
@@ -350,6 +352,8 @@ def _wait_for_owner_approval(
             # A new challenge must be pending before inviting a human to click.
             # This also rejects older Cloud versions with no signed status API.
             if approved:
+                if allow_existing_approval:
+                    return
                 raise CloudPairingError(_PAIRING_DENIED)
             start_owner_review()
             start_owner_review = None
@@ -385,6 +389,18 @@ def start_enrollment(origin: str, alias: str, keyfile: Path) -> tuple[str, str, 
         raise CloudPairingError(_PAIRING_DENIED)
     _require_unused_binding_path(keyfile)
     key = _load_or_create(keyfile)
+    return _issue_enrollment(target, alias, keyfile, key)
+
+
+def _issue_enrollment(
+    target: tuple[str, int, str], alias: str, keyfile: Path, key: Ed25519PrivateKey
+) -> tuple[str, str, str, int]:
+    """Issue a challenge for an already verified, never-redeemed key."""
+    if os.name == "nt":
+        raise CloudPairingError(_PAIRING_DENIED)
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", alias):
+        raise CloudPairingError(_PAIRING_DENIED)
+    _require_unused_binding_path(keyfile)
     der = key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
     result = _post(
         target,

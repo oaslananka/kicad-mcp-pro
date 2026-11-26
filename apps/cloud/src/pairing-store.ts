@@ -1,7 +1,7 @@
 import {createPublicKey, randomUUID, verify} from "node:crypto";
 import type {Pool,PoolClient} from "pg";
 import {PgDeviceManagement} from "./device-management.js";
-import {issuePairing,reviewPairing,redeemPairing,pairingApprovalState,verifyFinishedRecovery,
+import {issuePairing,reviewPairing,redeemPairing,pairingApprovalState,verifyFinishedRecovery,verifyFinishedInitial,
   type PairingRecord,type PairingStatus,type RecoveryIdentity} from "./device-pairing.js";
 
 type Row={
@@ -10,7 +10,7 @@ type Row={
   attempts:number;owner_sub:string|null;
 };
 export type BrowserReview="approved"|"denied"|"invalid_code"|"locked"|"unavailable";
-export type Enrollment={kind:"enrolled";deviceId:string;ownerSub:string;deviceFingerprint:string}|{kind:"recovery_receipt";deviceId:string;ownerSub:string;deviceFingerprint:string}|{kind:"unavailable"}|{kind:"recovery_denied"};
+export type Enrollment={kind:"enrolled";deviceId:string;ownerSub:string;deviceFingerprint:string}|{kind:"recovery_receipt";deviceId:string;ownerSub:string;deviceFingerprint:string}|{kind:"initial_receipt";deviceId:string;ownerSub:string;deviceFingerprint:string}|{kind:"initial_denied"}|{kind:"unavailable"}|{kind:"recovery_denied"};
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function convert(row:Row):PairingRecord {
@@ -116,6 +116,24 @@ export class PgPairingChallenges {
       ownerSub:recovery.ownerSub,deviceFingerprint:r.deviceFingerprint};
   }
 
+  private async initialReceipt(db:PoolClient,r:PairingRecord,
+    code:string,signature:Buffer):Promise<Enrollment>{
+    if(!verifyFinishedInitial(r,this.key,code,signature))return {kind:"unavailable"};
+    const result=await db.query<{id:string;owner_sub:string;active:boolean}>(
+      "SELECT t.device_id AS id,t.owner_sub,"+
+      "COALESCE(d.enabled AND c.revoked_at IS NULL AND c.device_id IS NOT NULL,false) AS active "+
+      "FROM device_initial_enrollments t "+
+      "LEFT JOIN devices d ON d.id=t.device_id AND d.owner_sub=t.owner_sub "+
+      "LEFT JOIN device_credentials c ON c.device_id=d.id AND c.owner_sub=d.owner_sub "+
+      "AND c.pairing_challenge_id=$1 AND c.key_fingerprint=$2 AND c.public_key_der=$3 "+
+      "WHERE t.pairing_challenge_id=$1",
+      [r.id,r.deviceFingerprint,r.devicePublicKeyDer]);
+    const row=result.rows[0];
+    if(result.rows.length!==1||!row||row.owner_sub!==r.ownerSub)return {kind:"unavailable"};
+    return {kind:row.active?"enrolled":"initial_receipt",deviceId:row.id,
+      ownerSub:row.owner_sub,deviceFingerprint:r.deviceFingerprint};
+  }
+
   /**
    * Enroll only after browser approval and Ed25519 proof. One transaction
    * inserts the browser-approved device with a revocable public-key identity
@@ -125,16 +143,20 @@ export class PgPairingChallenges {
    * There is deliberately no HTTP endpoint or device execution here.
    */
   async enroll(id:string,code:string,signature:Buffer,
-    connectOnApproval=false,recovery?:RecoveryIdentity):Promise<Enrollment>{
+    connectOnApproval=false,recovery?:RecoveryIdentity,resumeInitial=false):Promise<Enrollment>{
+    if(resumeInitial&&(recovery||!connectOnApproval))return {kind:"unavailable"};
     return this.locked(id,{kind:"unavailable"} as Enrollment,async(db,r,now)=>{
+      if(resumeInitial&&r.state==="consumed")return this.initialReceipt(db,r,code,signature);
       if(recovery&&connectOnApproval===true&&r.state==="consumed"){
         return this.recoveryReceipt(db,r,code,signature,recovery);
       }
-      const proof=redeemPairing(r,this.key,now,code,signature,recovery);
+      const proof=redeemPairing(r,this.key,now,code,signature,recovery,resumeInitial);
       if(proof.record.state!==r.state && proof.kind!=="redeemed"){
         await save(db,proof.record);
       }
       if(proof.kind!=="redeemed"){
+        if(resumeInitial&&proof.record.state!=="consumed"&&
+           verifyFinishedInitial(proof.record,this.key,code,signature))return {kind:"initial_denied"};
         if(recovery&&connectOnApproval===true&&proof.record.state==="expired"&&
            verifyFinishedRecovery(proof.record,this.key,code,signature,recovery)){
           return {kind:"recovery_denied"};
@@ -186,6 +208,10 @@ export class PgPairingChallenges {
         "(device_id,owner_sub,public_key_der,key_fingerprint,pairing_challenge_id) "+
         "VALUES($1,$2,$3,$4,$5)",
         [deviceId,proof.ownerSub,r.devicePublicKeyDer,r.deviceFingerprint,r.id]);
+      if(resumeInitial){
+        await db.query("INSERT INTO device_initial_enrollments(pairing_challenge_id,device_id,owner_sub) VALUES($1,$2,$3)",
+          [r.id,deviceId,proof.ownerSub]);
+      }
       await save(db,proof.record);
       return {kind:"enrolled",deviceId,ownerSub:proof.ownerSub,deviceFingerprint:r.deviceFingerprint};
     });

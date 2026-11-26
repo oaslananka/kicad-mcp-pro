@@ -25,7 +25,8 @@ export const migrationFiles = [
   "020_connector_write_proof_reservations.pgsql",
   "021_connector_managed_native_operations.pgsql",
   "022_usage_and_owner_api.pgsql",
-  "023_device_recovery.pgsql"
+  "023_device_recovery.pgsql",
+  "024_initial_enrollment_receipts.pgsql"
 ] as const;
 
 type Migration = {version:number;file:string;sql:string;checksum:string};

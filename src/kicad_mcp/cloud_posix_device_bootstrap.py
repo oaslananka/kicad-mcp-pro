@@ -39,9 +39,18 @@ def ensure_device(
     """Caller owns the session lock. Never create a project here."""
     if cloud_posix_recovery._private_names(root / "projects"):
         raise LocalApprovalDeniedError(_DENIED)
+    from kicad_mcp.cloud_posix_initial_enrollment import JOURNAL, enroll_initial
+    from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+    if os.path.lexists(root / JOURNAL):
+        if origin != _KICAD_CLOUD_ORIGIN:
+            raise LocalApprovalDeniedError(_DENIED)
+        return enroll_initial(root, origin, alias, approval)
     existing = cloud_posix_recovery.inspect_unbound_device(root, origin)
     if existing is not None:
         return existing
+    if origin == _KICAD_CLOUD_ORIGIN:
+        return enroll_initial(root, origin, alias, approval)
     keys = root / "keys"
     keys.mkdir(mode=0o700, exist_ok=True)
     keyfile = keys / f"{uuid4()}.pem"

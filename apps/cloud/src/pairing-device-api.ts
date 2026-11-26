@@ -11,7 +11,7 @@ export type RegisteredProject={projectId:string;alias:string;ownerSub:string;ena
 export interface PairingDevicePort {
   issue(source:string,alias:string,publicKeyDer:Buffer):Promise<PairingDeviceOutcome<IssueResult>>;
   enroll(source:string,id:string,deviceCode:string,signature:Buffer,
-    connectOnApproval?:boolean,recovery?:RecoveryIdentity):Promise<PairingDeviceOutcome<Enrollment>>;
+    connectOnApproval?:boolean,recovery?:RecoveryIdentity,resumeInitial?:boolean):Promise<PairingDeviceOutcome<Enrollment>>;
   approved(source:string,id:string,deviceCode:string,signature:Buffer):
     Promise<PairingDeviceOutcome<{approved:boolean;denied?:true}>>;
   inventoryStatus?(source:string,request:InventoryRequest,signature:Buffer):Promise<PairingDeviceOutcome<InventoryStatus>>;
@@ -83,15 +83,16 @@ export class PgPairingDeviceAPI implements PairingDevicePort {
     return {kind:"ok",data:{approved}};
   }
   async enroll(source:string,id:string,deviceCode:string,signature:Buffer,
-    connectOnApproval=false,recovery?:RecoveryIdentity):Promise<PairingDeviceOutcome<Enrollment>>{
+    connectOnApproval=false,recovery?:RecoveryIdentity,resumeInitial=false):Promise<PairingDeviceOutcome<Enrollment>>{
     if(!source||source.length>256||typeof id!=="string"||!UUID.test(id)||
        typeof deviceCode!=="string"||deviceCode.length!==43||
        !Buffer.isBuffer(signature)||signature.length!==64)
       return {kind:"unavailable"};
+    if(resumeInitial&&(recovery||!connectOnApproval))return {kind:"unavailable"};
     if(recovery&&(!connectOnApproval||!validRecoveryIdentity(recovery)))return {kind:"unavailable"};
     if(!await this.take("enroll-source",source,40))return {kind:"throttled"};
     if(!await this.take("enroll-challenge",id,8))return {kind:"throttled"};
-    const result=await this.store.enroll(id,deviceCode,signature,connectOnApproval,recovery);
+    const result=await this.store.enroll(id,deviceCode,signature,connectOnApproval,recovery,resumeInitial);
     return result.kind!=="unavailable"?{kind:"ok",data:result}:{kind:"unavailable"};
   }
   async inventoryStatus(source:string,request:InventoryRequest,signature:Buffer):

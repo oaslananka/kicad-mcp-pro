@@ -58,7 +58,7 @@ test("PostgreSQL replacement keeps active devices and never creates a project",{
     const scoped=new URL(url!);
     scoped.searchParams.set("options","-c search_path="+schema);
     pool=new pg.Pool({connectionString:scoped.toString(),max:4});
-    for(const name of ["001_inventory","007_device_pairing","008_device_credentials","023_device_recovery"]){
+    for(const name of ["001_inventory","007_device_pairing","008_device_credentials","023_device_recovery","024_initial_enrollment_receipts"]){
       await pool.query(await readFile(new URL("../db/"+name+".pgsql",import.meta.url),"utf8"));
     }
     const store=new PgPairingChallenges(pool,randomBytes(32));
@@ -156,6 +156,78 @@ test("PostgreSQL replacement keeps active devices and never creates a project",{
     assert.equal((await store.enroll(next.challenge.id,next.challenge.deviceCode,
       next.signature,true,nextIdentity)).kind,"enrolled");
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM projects")).rows[0].n,0);
+  }finally{
+    await pool?.end();
+    await admin.query('DROP SCHEMA IF EXISTS "'+schema+'" CASCADE');
+    await admin.end();
+  }
+});
+
+test("initial enrollment retries only its opted-in signed operation",{skip:!url},async()=>{
+  const admin=new pg.Pool({connectionString:url});
+  const schema="initial_"+randomBytes(8).toString("hex");
+  let pool:pg.Pool|undefined;
+  try{
+    await admin.query('CREATE SCHEMA "'+schema+'"');
+    const scoped=new URL(url!);
+    scoped.searchParams.set("options","-c search_path="+schema);
+    pool=new pg.Pool({connectionString:scoped.toString(),max:4});
+    for(const name of ["001_inventory","007_device_pairing","008_device_credentials","023_device_recovery","024_initial_enrollment_receipts"]){
+      await pool.query(await readFile(new URL("../db/"+name+".pgsql",import.meta.url),"utf8"));
+    }
+    const store=new PgPairingChallenges(pool,randomBytes(32));
+    const key=generateKeyPairSync("ed25519");
+    const challenge=await store.issue("Initial PC",key.publicKey.export({type:"spki",format:"der"}));
+    const signature=sign(null,Buffer.from("kicad-cloud-pairing-initial-v1\0"+challenge.id+"\0"+challenge.deviceCode),key.privateKey);
+    assert.equal((await store.enroll(challenge.id,challenge.deviceCode,signature,true,undefined,true)).kind,"unavailable");
+    assert.equal(await store.review(challenge.id,"owner",challenge.userCode,"approve"),"approved");
+    const legacy=sign(null,redemptionProof(challenge.id,challenge.deviceCode),key.privateKey);
+    assert.equal((await store.enroll(challenge.id,challenge.deviceCode,legacy,true,undefined,true)).kind,"unavailable");
+    const results=await Promise.all([1,2].map(()=>store.enroll(challenge.id,challenge.deviceCode,signature,true,undefined,true)));
+    assert.equal(results[0]?.kind,"enrolled");
+    assert.deepEqual(results[0],results[1]);
+    const result=results[0];
+    if(result?.kind!=="enrolled")throw Error("initial enrollment failed");
+    assert.equal((await store.enroll(challenge.id,challenge.deviceCode,signature,true)).kind,"unavailable");
+    assert.equal((await store.enroll(challenge.id,challenge.deviceCode,legacy,true)).kind,"unavailable");
+    assert.equal((await store.enroll(challenge.id,challenge.deviceCode,Buffer.alloc(64),true,undefined,true)).kind,"unavailable");
+    await pool.query("UPDATE pairing_challenges SET created_at=clock_timestamp()-interval '6 minutes',expires_at=clock_timestamp()-interval '2 minutes' WHERE id=$1",[challenge.id]);
+    assert.deepEqual(await store.enroll(challenge.id,challenge.deviceCode,signature,true,undefined,true),result);
+    await pool.query("UPDATE devices SET enabled=false WHERE id=$1",[result.deviceId]);
+    assert.deepEqual(await store.enroll(challenge.id,challenge.deviceCode,signature,true,undefined,true),{...result,kind:"initial_receipt"});
+    await pool.query("UPDATE device_credentials SET revoked_at=clock_timestamp() WHERE device_id=$1",[result.deviceId]);
+    assert.deepEqual(await store.enroll(challenge.id,challenge.deviceCode,signature,true,undefined,true),{...result,kind:"initial_receipt"});
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM devices")).rows[0].n,1);
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM projects")).rows[0].n,0);
+    await pool.query("DELETE FROM devices WHERE id=$1",[result.deviceId]);
+    assert.deepEqual(await store.enroll(challenge.id,challenge.deviceCode,signature,true,undefined,true),{...result,kind:"initial_receipt"});
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM devices")).rows[0].n,0);
+    // The normal one-use enrollment is not retroactively opted into replay.
+    const legacyKey=generateKeyPairSync("ed25519");
+    const legacyChallenge=await store.issue("Legacy",legacyKey.publicKey.export({type:"spki",format:"der"}));
+    await store.review(legacyChallenge.id,"owner",legacyChallenge.userCode,"approve");
+    const legacyResult=await store.enroll(legacyChallenge.id,legacyChallenge.deviceCode,
+      sign(null,redemptionProof(legacyChallenge.id,legacyChallenge.deviceCode),legacyKey.privateKey),true);
+    assert.equal(legacyResult.kind,"enrolled");
+    const newProof=sign(null,redemptionProof(legacyChallenge.id,legacyChallenge.deviceCode,undefined,true),legacyKey.privateKey);
+    assert.equal((await store.enroll(legacyChallenge.id,legacyChallenge.deviceCode,newProof,true,undefined,true)).kind,"unavailable");
+    // Expiry and browser refusal are authenticated terminal outcomes.
+    for(const outcome of ["expired","denied"]){
+      const candidateKey=generateKeyPairSync("ed25519");
+      const candidate=await store.issue("Candidate",candidateKey.publicKey.export({type:"spki",format:"der"}));
+      await store.review(candidate.id,"owner",candidate.userCode,outcome==="denied"?"deny":"approve");
+      if(outcome==="expired")await pool.query("UPDATE pairing_challenges SET created_at=clock_timestamp()-interval '6 minutes',expires_at=clock_timestamp()-interval '2 minutes' WHERE id=$1",[candidate.id]);
+      const proof=sign(null,redemptionProof(candidate.id,candidate.deviceCode,undefined,true),candidateKey.privateKey);
+      assert.equal((await store.enroll(candidate.id,candidate.deviceCode,proof,true,undefined,true)).kind,"initial_denied");
+      assert.equal((await store.enroll(candidate.id,candidate.deviceCode,Buffer.alloc(64),true,undefined,true)).kind,"unavailable");
+      assert.equal((await store.enroll(candidate.id,candidate.deviceCode,proof,true,{deviceId:randomUUID(),ownerSub:"owner"},true)).kind,"unavailable");
+    }
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM devices")).rows[0].n,1);
+    // Existing challenge pruning removes the historical receipt too, without
+    // introducing an indefinite retention obligation.
+    await pool.query("DELETE FROM pairing_challenges WHERE id=$1",[challenge.id]);
+    assert.equal((await pool.query("SELECT count(*)::int AS n FROM device_initial_enrollments")).rows[0].n,0);
+    assert.equal((await store.enroll(challenge.id,challenge.deviceCode,signature,true,undefined,true)).kind,"unavailable");
   }finally{
     await pool?.end();
     await admin.query('DROP SCHEMA IF EXISTS "'+schema+'" CASCADE');
