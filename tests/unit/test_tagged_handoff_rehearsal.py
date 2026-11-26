@@ -496,3 +496,63 @@ def test_selector_is_not_authority(evidence, monkeypatch, mutation: str) -> None
     with pytest.raises(SystemExit) as result:
         rehearsal.main()
     assert result.value.code == 2
+
+
+@pytest.mark.parametrize("status", ["queued", "requested", "waiting", "pending"])
+def test_exact_owner_job_transition_waits_for_in_progress(
+    evidence, monkeypatch, status: str
+) -> None:
+    client, _, identity, _, _ = evidence
+    client.owner["status"] = status
+    pauses = []
+
+    def resume(seconds: int) -> None:
+        pauses.append(seconds)
+        client.owner["status"] = "in_progress"
+
+    monkeypatch.setattr(rehearsal.time, "sleep", resume)
+    assert rehearsal._check_runs(client, identity, ("in_progress",)) == "in_progress"
+    assert pauses == [5]
+
+
+def test_owner_job_transition_never_authorizes_pending_owner(evidence, monkeypatch) -> None:
+    client, _, identity, _, _ = evidence
+    client.owner["status"] = "queued"
+    pauses = []
+    monkeypatch.setattr(rehearsal.time, "sleep", pauses.append)
+    with pytest.raises(ValueError, match="owner transition timed out"):
+        rehearsal._check_runs(client, identity, ("in_progress",))
+    assert pauses == [5] * 11
+
+
+@pytest.mark.parametrize("mutation", ["tag", "worker", "owner", "terminal"])
+def test_owner_transition_rechecks_all_identities(evidence, monkeypatch, mutation: str) -> None:
+    client, _, identity, _, _ = evidence
+    client.owner["status"] = "queued"
+    pauses = []
+
+    def change(seconds: int) -> None:
+        pauses.append(seconds)
+        if mutation == "tag":
+            client.tag_sha = "b" * 40
+        elif mutation == "worker":
+            client.child["actor"]["id"] = 123
+        elif mutation == "owner":
+            client.owner["run_attempt"] = 2
+        else:
+            client.owner = run_data(OWNER, owner=True, status="completed")
+
+    monkeypatch.setattr(rehearsal.time, "sleep", change)
+    with pytest.raises(ValueError):
+        rehearsal._check_runs(client, identity, ("in_progress",))
+    assert pauses == [5]
+
+
+def test_dispatch_still_requires_immediately_active_owner(evidence, monkeypatch) -> None:
+    client, _, identity, _, _ = evidence
+    client.owner["status"] = "queued"
+    pauses = []
+    monkeypatch.setattr(rehearsal.time, "sleep", pauses.append)
+    with pytest.raises(ValueError, match="owner is not active"):
+        rehearsal._check_owner(client, identity.source, identity.owner)
+    assert pauses == []

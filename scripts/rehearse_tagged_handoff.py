@@ -8,6 +8,7 @@ import io
 import json
 import os
 import re
+import sys
 import tempfile
 import time
 import zipfile
@@ -117,11 +118,26 @@ def _check_owner(client: DeliveryClient, source: str, owner: int) -> None:
 
 
 def _check_runs(client: DeliveryClient, identity: Identity, statuses: tuple[str, ...]) -> str:
-    _check_owner(client, identity.source, identity.owner)
-    status = _run_status(client, source=identity.source, run_id=identity.child, owner=False)
-    if status not in statuses:
-        raise ValueError("unexpected rehearsal worker status")
-    return status
+    """Wait for an exact owner to resume between jobs, never accept a pending owner."""
+    for poll in range(12):
+        owner_status = _run_status(
+            client, source=identity.source, run_id=identity.owner, owner=True
+        )
+        if owner_status == "completed":
+            raise ValueError("rehearsal owner is not active")
+        if client.tag_commit(REPOSITORY, identity.tag) != identity.source:
+            raise ValueError("rehearsal tag source mismatch")
+        status = _run_status(client, source=identity.source, run_id=identity.child, owner=False)
+        if status not in statuses:
+            raise ValueError("unexpected rehearsal worker status")
+        if owner_status == "in_progress":
+            return status
+        print(
+            f"tagged rehearsal: owner status {owner_status} (poll {poll + 1}/12)", file=sys.stderr
+        )
+        if poll < 11:
+            time.sleep(5)
+    raise ValueError("rehearsal owner transition timed out")
 
 
 def records(identity: Identity) -> dict[str, bytes]:

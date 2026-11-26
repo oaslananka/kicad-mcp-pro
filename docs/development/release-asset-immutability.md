@@ -824,8 +824,15 @@ selector, not authorization. The worker validates its ASCII decimal
 format, rejects its own run ID, and directly reads the exact owner
 and worker runs and live tag. It requires the active owner workflow,
 trusted actor IDs, exact source and attempts; it never searches a
-filtered owner run listing. The subsequently verified signed binding
-must match the worker's own run ID. It waits at most 30 polls with
+filtered owner run listing. Dispatch preflight requires an immediately
+in-progress owner. During delivery and receipt checks, a verified
+nonterminal owner may briefly be queued between jobs. Only those
+known pending states allow up to 12 polls, five seconds apart, per
+identity check. Every poll checks exact owner, worker and tag identity;
+acceptance still requires an in-progress owner. Terminal outcomes,
+identity mismatches and API failures stop immediately. Job timeouts
+bound the combined polling and API latency. The subsequently verified
+signed binding must match the worker's own run ID. It waits at most 30 polls with
 five seconds between absent-artifact polls. Only the exact unique
 owner ZIP (maximum 64 KiB) is accepted; it must contain the two bounded
 records, each at most 16 KiB. The download pipeline caps bytes and the
