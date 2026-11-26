@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from uuid import uuid4
 
 import pytest
@@ -173,3 +174,62 @@ async def test_device_only_session_waits_for_explicit_browser_bind(tmp_path, mon
     record = await boot._wait_for_project(root, identity, status.append)
     assert record["projectId"] == project_id
     assert status == ["Connecting", "Cloud acknowledged this device's signed session"]
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        "project_missing",
+        "active",
+        "unverified",
+        "unavailable",
+        "device_disabled",
+        "foreign_archive",
+    ],
+)
+@pytest.mark.skipif(os.name != "posix", reason="POSIX private registry lock")
+def test_posix_deleted_project_reuses_device_without_pairing(tmp_path, monkeypatch, state) -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from kicad_mcp import cloud_device_inventory_status as inventory
+    from kicad_mcp import cloud_posix_device_bootstrap as boot
+
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    keyfile = root / "keys" / f"{uuid4()}.pem"
+    keyfile.parent.mkdir(mode=0o700)
+    keyfile.touch(mode=0o600)
+    identity = (
+        keyfile,
+        {"origin": ORIGIN, "ownerSub": "owner", "deviceId": str(uuid4()), "fingerprint": "a" * 64},
+    )
+    monkeypatch.setattr(cloud_posix_recovery, "inspect_unbound_device", lambda *_: identity)
+    board = tmp_path / "board"
+    board.mkdir()
+    project = board / "board.kicad_pro"
+    project.write_text("{}")
+    pid = str(uuid4())
+    boot.adopt_project(root, identity, pid, project)
+    record = boot.read_project(root, identity)
+    monkeypatch.setattr(boot, "_load_bound_owner_key", lambda *_: Ed25519PrivateKey.generate())
+    monkeypatch.setattr(
+        inventory,
+        "inspect_inventory",
+        lambda *_: "project_missing" if state == "foreign_archive" else state,
+    )
+    monkeypatch.setattr(cloud_pair, "enroll", lambda *_: pytest.fail("unexpected pairing"))
+    if state == "foreign_archive":
+        archive = root / "detached-projects"
+        archive.mkdir(mode=0o700)
+        cloud_pair_keys._write_private_json(archive, pid + ".json", {"foreign": "record"})
+        with pytest.raises(ValueError):
+            boot.recover_missing_project(root, record)
+    else:
+        assert boot.recover_missing_project(root, record) == (state == "project_missing")
+    assert boot.read_project(root, identity) == (None if state == "project_missing" else record)
+    assert project.read_text() == "{}"
+    assert keyfile.is_file()
+    if state == "project_missing":
+        assert (
+            cloud_pair_keys._read_private_json(root / "detached-projects", pid + ".json") == record
+        )

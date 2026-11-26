@@ -2151,3 +2151,44 @@ def test_posix_first_setup_cannot_pair_during_another_session(monkeypatch, tmp_p
     assert "already running" in result.output
     assert not (root / "keys").exists()
     assert not (root / "projects").exists()
+
+
+@pytest.mark.parametrize("detached", [True, False])
+def test_posix_same_command_recovers_deleted_project(monkeypatch, tmp_path: Path, detached) -> None:
+    from kicad_mcp import cloud_posix_device_bootstrap as boot
+    from kicad_mcp import cloud_user_cli
+
+    root = tmp_path / "registry"
+    folder = root / "projects"
+    folder.mkdir(parents=True)
+    marker = folder / "record.json"
+    marker.write_text("fixture")
+    record = {"cloudOrigin": cloud_user_cli.DEFAULT_CLOUD_ORIGIN}
+    monkeypatch.setattr(cloud_user_cli, "_is_windows", lambda: False)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_registered_pilot._single_registered_identity", lambda _: record
+    )
+    monkeypatch.setattr("kicad_mcp.cloud_posix_recovery.inspect_unbound_device", lambda *_: None)
+    monkeypatch.setattr("kicad_mcp.cloud_pair.enroll", lambda *_: pytest.fail("unexpected pairing"))
+    events = []
+
+    def foreground(_record):
+        events.append("session")
+        raise cloud_user_cli.typer.Exit(3)
+
+    def recover(_root, _record):
+        events.append("diagnosis")
+        if detached:
+            marker.unlink()
+        return detached
+
+    monkeypatch.setattr(cloud_user_cli, "_run_posix_foreground", foreground)
+    monkeypatch.setattr(boot, "recover_missing_project", recover)
+    monkeypatch.setattr(boot, "connect_device_only", lambda *_: events.append("device-only"))
+    result = CliRunner().invoke(app, ["cloud"])
+    assert result.exit_code == (0 if detached else 3), result.output
+    assert events == (
+        ["session", "diagnosis", "device-only"] if detached else ["session", "diagnosis"]
+    )

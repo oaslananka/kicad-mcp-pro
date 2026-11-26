@@ -1231,7 +1231,22 @@ def _connect_registered_posix_device(root: Path, origin: str, new_device: bool) 
         raise typer.BadParameter("A different Cloud origin is already registered.")
     if not new_device:
         if _owner_terminal():
-            _run_posix_foreground(existing)
+            try:
+                _run_posix_foreground(existing)
+            except typer.Exit as exc:
+                if exc.exit_code != 3:
+                    raise
+                from kicad_mcp.cloud_posix_device_bootstrap import recover_missing_project
+
+                if recover_missing_project(root, existing):
+                    typer.echo(
+                        "Cloud project removed. Keeping this device; use Add Project when Online."
+                    )
+                    return False
+                typer.echo(
+                    "Cloud did not confirm project removal. Existing registration kept.", err=True
+                )
+                raise
             return True
         typer.echo("A private local registration exists for this Cloud origin.")
         typer.echo("Cloud enrollment has NOT been verified for this registration.")
@@ -1297,8 +1312,10 @@ def connect(
         has_registration = folder.exists() and any(folder.iterdir())
     except OSError as exc:
         raise typer.BadParameter("Unable to inspect existing Cloud registration.") from exc
-    if has_registration and _connect_registered_posix_device(root, origin, new_device):
-        return
+    if has_registration:
+        if _connect_registered_posix_device(root, origin, new_device):
+            return
+        has_registration = folder.exists() and any(folder.iterdir())
 
     if not has_registration and not new_device and _owner_terminal():
         from kicad_mcp.cloud_posix_recovery import inspect_unbound_device

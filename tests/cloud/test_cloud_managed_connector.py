@@ -1348,3 +1348,39 @@ def test_disable_without_marker_does_not_claim_stop_while_runner_holds_lock(
         captured = capsys.readouterr()
         assert "unverified" in captured.err
         assert "is Off" not in captured.out
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("foreground", [True, False])
+async def test_policy_close_routes_only_foreground_to_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, foreground: bool
+) -> None:
+    from websockets.exceptions import ConnectionClosedError
+    from websockets.frames import Close
+
+    root, project = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    stop = asyncio.Event()
+    if not foreground:
+        connector._write_private_json(
+            root, connector._ENABLED_FILE, connector._identity_state(record)
+        )
+    attempts = []
+
+    async def rejected(**_kwargs: object) -> bool:
+        attempts.append("session")
+        raise ConnectionClosedError(Close(1008, "policy"), None)
+
+    async def wait(*_args: object) -> None:
+        attempts.append("backoff")
+        stop.set()
+
+    monkeypatch.setattr(connector, "_run_registered_session", rejected)
+    monkeypatch.setattr(connector, "_wait_before_reconnect", wait)
+    result = await connector._run_connector(
+        root=root, stop_event=stop, foreground=foreground, expected_identity=record
+    )
+    assert result == (3 if foreground else 0)
+    assert attempts == (["session"] if foreground else ["session", "backoff"])
+    assert not (root / connector._FOREGROUND_FILE).exists()
+    assert project.key_file.exists()

@@ -1,5 +1,6 @@
 import {createPublicKey,verify} from "node:crypto";
 import type {Pool} from "pg";
+import {z} from "zod";
 
 export type InventoryRequest=Readonly<{
   deviceId:string;ownerSub:string;projectId:string|null;nonce:string;issuedAtMs:number
@@ -7,15 +8,23 @@ export type InventoryRequest=Readonly<{
 export type InventoryState="unverified"|"active"|"device_disabled"|"device_revoked"|
   "project_missing"|"project_disabled";
 export type InventoryStatus={nonce:string;state:InventoryState};
-const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-
+const uuid=z.uuid();
+function canonicalUuid(value:unknown):boolean{
+  return typeof value==="string"&&value.length===36&&value===value.toLowerCase()&&
+    "12345678".includes(value.charAt(14))&&"89ab".includes(value.charAt(19))&&uuid.safeParse(value).success;
+}
+function validOwner(value:unknown):boolean{
+  return typeof value==="string"&&value.length>=1&&value.length<=256&&
+    Array.from(value).every(char=>char.charCodeAt(0)>=32&&char.charCodeAt(0)!==127);
+}
+function canonicalNonce(value:unknown):boolean{
+  if(typeof value!=="string"||value.length!==43)return false;
+  const bytes=Buffer.from(value,"base64url");
+  return bytes.length===32&&bytes.toString("base64url")===value;
+}
 export function validInventoryRequest(r:InventoryRequest,now:number):boolean{
-  return typeof r.deviceId==="string"&&UUID.test(r.deviceId)&&
-    typeof r.ownerSub==="string"&&r.ownerSub.length>=1&&r.ownerSub.length<=256&&
-    !/[\x00-\x1f\x7f]/.test(r.ownerSub)&&
-    (r.projectId===null||(typeof r.projectId==="string"&&UUID.test(r.projectId)))&&
-    typeof r.nonce==="string"&&/^[A-Za-z0-9_-]{43}$/.test(r.nonce)&&
-    Buffer.from(r.nonce,"base64url").toString("base64url")===r.nonce&&
+  return canonicalUuid(r.deviceId)&&validOwner(r.ownerSub)&&
+    (r.projectId===null||canonicalUuid(r.projectId))&&canonicalNonce(r.nonce)&&
     Number.isSafeInteger(r.issuedAtMs)&&Math.abs(now-r.issuedAtMs)<=60_000;
 }
 export function deviceInventoryProof(r:InventoryRequest):Buffer{

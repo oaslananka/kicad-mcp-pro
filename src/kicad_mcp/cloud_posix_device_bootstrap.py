@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
@@ -70,6 +71,47 @@ def read_project(root: Path, identity: Identity) -> dict[str, str] | None:
     ):
         raise LocalApprovalDeniedError(_DENIED)
     return record
+
+
+def recover_missing_project(root: Path, record: dict[str, str]) -> bool:
+    """Archive a deleted Cloud project selection while retaining the device key."""
+    from kicad_mcp.cloud_device_inventory_status import inspect_inventory
+    from kicad_mcp.cloud_managed_connector import _ENABLED_FILE, _FOREGROUND_FILE
+
+    with _connector_session_lock(root):
+        if os.path.lexists(root / _ENABLED_FILE) or os.path.lexists(root / _FOREGROUND_FILE):
+            raise LocalApprovalDeniedError(_DENIED)
+        identity = cloud_posix_recovery.inspect_unbound_device(root, record["cloudOrigin"])
+        if identity is None or read_project(root, identity) != record:
+            raise LocalApprovalDeniedError(_DENIED)
+        keyfile, binding = identity
+        key = _load_bound_owner_key(keyfile, binding["origin"], binding["deviceId"])
+        state = inspect_inventory(
+            binding["origin"], binding["ownerSub"], binding["deviceId"], record["projectId"], key
+        )
+        if state != "project_missing":
+            return False
+        if cloud_posix_recovery.inspect_unbound_device(root, binding["origin"]) != identity:
+            raise LocalApprovalDeniedError(_DENIED)
+        if read_project(root, identity) != record:
+            raise LocalApprovalDeniedError(_DENIED)
+        name = record["projectId"] + ".json"
+        archive = root / "detached-projects"
+        archive.mkdir(mode=0o700, exist_ok=True)
+        if not os.path.lexists(archive / name):
+            cloud_pair_keys._write_private_json(archive, name, record)
+        if cloud_pair_keys._read_private_json(archive, name) != record:
+            raise LocalApprovalDeniedError(_DENIED)
+        folder = root / "projects"
+        fd = cloud_pair_keys._open_owner_private_dir(folder / name)
+        try:
+            if read_project(root, identity) != record:
+                raise LocalApprovalDeniedError(_DENIED)
+            os.unlink(name, dir_fd=fd)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        return True
 
 
 def adopt_project(root: Path, identity: Identity, project_id: str, selected: Path) -> bool:

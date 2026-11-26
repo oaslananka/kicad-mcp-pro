@@ -801,8 +801,13 @@ async def _run_connector(
                 failures = 0
             except asyncio.CancelledError:
                 raise
-            except (OSError, ValueError, WebSocketException):
+            except (OSError, ValueError, WebSocketException) as exc:
                 _write_status(registry, "unavailable")
+                if foreground:
+                    from kicad_mcp.cloud_windows_connector import _is_remote_policy_rejection
+
+                    if _is_remote_policy_rejection(exc):
+                        return 3
                 failures += 1
             _report_foreground(marker, "Disconnected")
             await _wait_before_reconnect(stop, registry, failures, marker)

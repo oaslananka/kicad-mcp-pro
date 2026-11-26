@@ -166,6 +166,12 @@ test("signed inventory diagnosis distinguishes project loss without enrolling de
     const {deviceInventoryProof}=await import("../src/device-inventory-status.js");
     const request={deviceId,ownerSub:owner,projectId,nonce:randomBytes(32).toString("base64url"),issuedAtMs:Date.now()};
     const proof=sign(null,deviceInventoryProof(request),key.privateKey);
+    for(const malformed of [
+      {...request,deviceId:"x".repeat(100_000)},
+      {...request,ownerSub:"owner\u0000"},
+      {...request,nonce:"+".repeat(43)},
+      {...request,issuedAtMs:Date.now()-61_000},
+    ])assert.equal((await api.inventoryStatus("peer",malformed,proof)).kind,"unavailable");
     const check=async()=>await api.inventoryStatus("peer",request,proof);
     assert.deepEqual(await check(),{kind:"ok",data:{nonce:request.nonce,state:"project_missing"}});
     await pool.query("INSERT INTO projects(id,owner_sub,device_id,alias,enabled) VALUES($1,$2,$3,'Board',true)",[projectId,owner,deviceId]);
