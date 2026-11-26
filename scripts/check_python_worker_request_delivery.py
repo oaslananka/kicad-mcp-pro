@@ -146,7 +146,7 @@ def _extract_request(data: bytes, output: Path) -> None:
                 if len(raw) != info.file_size or len(raw) > _MAX_MEMBER:
                     raise ValueError("owner request member size mismatch")
                 (output / info.filename).write_bytes(raw)
-    except (zipfile.BadZipFile, RuntimeError, NotImplementedError) as exc:
+    except (zipfile.BadZipFile, RuntimeError) as exc:
         raise ValueError("unreadable owner request archive") from exc
 
 
