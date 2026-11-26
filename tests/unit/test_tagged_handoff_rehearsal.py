@@ -330,7 +330,7 @@ def test_poll_budget_and_fail_closed(evidence, monkeypatch) -> None:
     assert pauses == [5] * 29
 
 
-@pytest.mark.parametrize("mutation", ["ref", "event", "attempt", "repo", "id"])
+@pytest.mark.parametrize("mutation", ["ref", "event", "attempt", "repo", "id", "unicode-id"])
 def test_runtime_rejects_untrusted_context(monkeypatch, mutation: str) -> None:
     env = {
         "GITHUB_REPOSITORY": REPO,
@@ -355,6 +355,7 @@ def test_runtime_rejects_untrusted_context(monkeypatch, mutation: str) -> None:
         "attempt": ("GITHUB_RUN_ATTEMPT", "2"),
         "repo": ("GITHUB_REPOSITORY", "other/repo"),
         "id": ("GITHUB_RUN_ID", "01"),
+        "unicode-id": ("GITHUB_RUN_ID", "1\u0662"),
     }
     key, value = bad[mutation]
     monkeypatch.setenv(key, value)

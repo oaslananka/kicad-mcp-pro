@@ -150,6 +150,29 @@ def records(identity: Identity) -> dict[str, bytes]:
     return {MANIFEST: manifest, BINDING: binding}
 
 
+def _verify_tagged_receipt_metadata(
+    item: dict[str, Any], identity: Identity, artifact_id: int
+) -> None:
+    # Deliberately separate from the main-only production artifact gate.
+    run = item.get("workflow_run")
+    if (
+        not isinstance(run, dict)
+        or not _exact_id(run.get("id"), identity.child)
+        or not _exact_id(run.get("repository_id"), _REPOSITORY_ID)
+        or not _exact_id(run.get("head_repository_id"), _REPOSITORY_ID)
+        or run.get("head_branch") != identity.tag
+        or run.get("head_sha") != identity.source
+        or item.get("expired") is not False
+        or item.get("url")
+        != f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/{artifact_id}"
+        or item.get("archive_download_url")
+        != f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/{artifact_id}/zip"
+        or not isinstance(item.get("digest"), str)
+        or re.fullmatch(r"sha256:[0-9a-f]{64}", item["digest"]) is None
+    ):
+        raise ValueError("invalid tagged receipt artifact identity")
+
+
 def _metadata(client: DeliveryClient, identity: Identity, *, owner: bool) -> dict[str, Any]:
     run_id = identity.owner if owner else identity.child
     name = request_name(identity) if owner else receipt_name(identity)
@@ -182,24 +205,7 @@ def _metadata(client: DeliveryClient, identity: Identity, *, owner: bool) -> dic
             role=name,
         )
     else:
-        # Deliberately separate from the main-only production artifact gate.
-        run = item.get("workflow_run")
-        if (
-            not isinstance(run, dict)
-            or not _exact_id(run.get("id"), run_id)
-            or not _exact_id(run.get("repository_id"), _REPOSITORY_ID)
-            or not _exact_id(run.get("head_repository_id"), _REPOSITORY_ID)
-            or run.get("head_branch") != identity.tag
-            or run.get("head_sha") != identity.source
-            or item.get("expired") is not False
-            or item.get("url")
-            != f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/{artifact_id}"
-            or item.get("archive_download_url")
-            != f"https://api.github.com/repos/{REPOSITORY}/actions/artifacts/{artifact_id}/zip"
-            or not isinstance(item.get("digest"), str)
-            or re.fullmatch(r"sha256:[0-9a-f]{64}", item["digest"]) is None
-        ):
-            raise ValueError("invalid tagged receipt artifact identity")
+        _verify_tagged_receipt_metadata(item, identity, artifact_id)
     size = item.get("size_in_bytes")
     if type(size) is not int or not 0 < size <= 65536:
         raise ValueError("invalid rehearsal artifact size")
@@ -364,10 +370,38 @@ def _runtime() -> tuple[str, int, str]:
         or os.environ.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
         or os.environ.get("GITHUB_RUN_ATTEMPT") != "1"
         or re.fullmatch(r"[0-9a-f]{40}", source) is None
-        or re.fullmatch(r"[1-9][0-9]{0,14}", run_id) is None
+        or re.fullmatch(r"[1-9]\d{0,14}", run_id, flags=re.ASCII) is None
     ):
         raise ValueError("invalid rehearsal runtime")
     return source, int(run_id), ref
+
+
+def _validate_arguments(args: argparse.Namespace) -> None:
+    required = {
+        "check-owner": set(),
+        "prepare": {"child", "output"},
+        "wait-request": set(),
+        "verify-request": {"archive", "artifact_id"},
+        "wait-receipt": {"child"},
+        "verify-receipt": {"child", "archive", "artifact_id"},
+    }
+    supplied = {
+        name
+        for name in ("child", "archive", "artifact_id", "output")
+        if getattr(args, name) is not None
+    }
+    if supplied != required[args.operation]:
+        raise ValueError("incorrect arguments for rehearsal operation")
+
+
+def _prepare_request(client: DeliveryClient, identity: Identity, directory: Path | None) -> None:
+    _check_runs(client, identity, _PENDING)
+    if directory is None or directory.exists() or directory.is_symlink():
+        raise ValueError("expected fresh request output directory")
+    output = approved_runtime_path(directory)
+    output.mkdir()
+    for name, data in records(identity).items():
+        (output / name).write_bytes(data)
 
 
 def main() -> int:
@@ -389,21 +423,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     try:
-        required = {
-            "check-owner": set(),
-            "prepare": {"child", "output"},
-            "wait-request": set(),
-            "verify-request": {"archive", "artifact_id"},
-            "wait-receipt": {"child"},
-            "verify-receipt": {"child", "archive", "artifact_id"},
-        }
-        supplied = {
-            name
-            for name in ("child", "archive", "artifact_id", "output")
-            if getattr(args, name) is not None
-        }
-        if supplied != required[args.operation]:
-            raise ValueError("incorrect arguments for rehearsal operation")
+        _validate_arguments(args)
         source, run_id, ref = _runtime()
         worker = args.operation in ("wait-request", "verify-request")
         expected_ref = f"refs/tags/handoff-rehearsal-{source}" if worker else "refs/heads/main"
@@ -419,13 +439,7 @@ def main() -> int:
             run_id if worker else args.child,
         )
         if args.operation == "prepare":
-            _check_runs(client, identity, _PENDING)
-            if args.output is None or args.output.exists() or args.output.is_symlink():
-                raise ValueError("expected fresh request output directory")
-            output = approved_runtime_path(args.output)
-            output.mkdir()
-            for name, data in records(identity).items():
-                (output / name).write_bytes(data)
+            _prepare_request(client, identity, args.output)
         elif args.operation in ("wait-request", "wait-receipt"):
             metadata = wait_request(client, identity) if worker else wait_receipt(client, identity)
             print(metadata["id"])
