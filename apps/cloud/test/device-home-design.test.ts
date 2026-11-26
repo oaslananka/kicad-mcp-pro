@@ -56,58 +56,25 @@ test("disabled enrollment does not present a fake Add a device action",()=>{
  assert.doesNotMatch(html,/class="device-add-button"/);
  assert.match(html,/not enabled on this deployment/);
 });
-test("first pairing offers one Windows setup command and one installed app entrypoint",()=>{
-  const first=renderDevicesPage([],undefined,true,{projects:[],ownerSub:"owner",clients:[],savedGrants:[],sandboxMode:false});
-  assert.match(first,/irm https:\/\/raw\.githubusercontent\.com\/oaslananka\/kicad-mcp-pro\/main\/scripts\/install-cloud\.ps1 \| iex/);
-  assert.match(first,/kicad-mcp-pro cloud/);
-  assert.match(first,/Connect this device/);
-  assert.match(first,/Keep the terminal open/);
-  assert.doesNotMatch(first,/kicad-mcp-pro cloud connect|kicad-mcp-pro cloud reconnect/);
-  const next=renderDevicesPage([device("Paired computer","connected")],undefined,true,
-    {projects:[],ownerSub:"owner",clients:[],savedGrants:[],sandboxMode:false});
-  assert.match(next,/kicad-mcp-pro cloud/);
-  assert.doesNotMatch(next,/kicad-mcp-pro cloud connect|cloud reconnect/);
-});
-
-test("Windows recovery and POSIX foreground paths are distinguished without false unsupported badges",()=>{
- const first=renderDevicesPage([],undefined,true,{sandboxMode:false});
- assert.match(first,/macOS/);
- assert.match(first,/Linux/);
- assert.match(first,/kicad-mcp-pro cloud/);
- assert.match(first,/interactive owner terminal/i);
- assert.doesNotMatch(first,/macOS[^<]*Not yet available|Linux[^<]*Not yet available/);
- assert.match(first,/No module named kicad_mcp/);
- assert.match(first,/separate managed installation/);
- assert.match(first,/does not remove or overwrite/);
- assert.match(first,/<summary>Existing CLI does not start<\/summary>/);
- assert.match(first,/uv tool install kicad-mcp-pro/);
- assert.match(first,/kicad-mcp-pro cloud setup --browse/);
- assert.match(first,/--project-dir \/path\/to\/project/);
- const installAt=first.indexOf("uv tool install kicad-mcp-pro");
- const pickerAt=first.indexOf("kicad-mcp-pro cloud setup --browse");
- const runAt=first.indexOf("kicad-mcp-pro cloud</code>");
- assert.ok(installAt>0&&pickerAt>installAt&&runAt>pickerAt,"new POSIX owners need install, project picker, then session");
- assert.match(first,/macOS physical onboarding acceptance remains pending/);
-
- const offline=renderDevicesPage([device("Connected later","disconnected")]);
- assert.match(offline,/id="reconnect-computer"/);
- assert.match(offline,/Windows/);
- assert.match(offline,/macOS and Linux/);
- assert.match(offline,/kicad-mcp-pro cloud/);
- assert.match(offline,/already paired/i);
- assert.match(offline,/keep.+terminal open/i);
- assert.match(offline,/No module named kicad_mcp/);
- assert.match(offline,/<summary>Reconnect on macOS or Linux<\/summary>/);
-
- assert.doesNotMatch(offline,/macOS[^<]*Not yet available|Linux[^<]*Not yet available/);
+test("first and returning devices offer one setup command per platform",()=>{
+ for(const devices of [[],[device("Paired computer","connected")]]){
+  const html=renderDevicesPage(devices,undefined,true,{sandboxMode:false});
+  assert.match(html,/scripts\/install-cloud\.ps1/);
+  assert.match(html,/scripts\/install-cloud\.sh/);
+  assert.match(html,/Copy PowerShell setup command/);
+  assert.match(html,/Copy macOS and Linux setup command/);
+  assert.match(html,/Keep the terminal open/);
+  assert.match(html,/currently support Cloud read access/);
+  assert.doesNotMatch(html,/cloud setup --browse|cloud connect --|--project-dir/);
+ }
 });
 
 test("paired offline devices reuse the same install/update command and device identity",()=>{
  const offline=renderDevicesPage([device("Workbench","disconnected")]);
  assert.match(offline,/href="#reconnect-computer"/);
  assert.match(offline,/id="reconnect-computer"/);
- assert.match(offline,/kicad-mcp-pro cloud/);
- assert.match(offline,/same registered device/i);
+ assert.match(offline,/scripts\/install-cloud\.sh/);
+ assert.match(offline,/existing registered device/i);
  assert.match(offline,/irm https:\/\/raw\.githubusercontent\.com\/oaslananka\/kicad-mcp-pro\/main\/scripts\/install-cloud\.ps1 \| iex/);
  assert.doesNotMatch(offline,/kicad-mcp-pro cloud status|kicad-mcp-pro cloud reconnect|read-only background Connector/);
  const connected=renderDevicesPage([device("Workbench","connected")]);

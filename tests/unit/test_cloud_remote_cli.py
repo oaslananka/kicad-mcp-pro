@@ -1149,3 +1149,57 @@ def test_single_command_recovers_policy_failure_at_most_once(monkeypatch, approv
     result = CliRunner().invoke(server.app, ["cloud"])
     assert result.exit_code == 3
     assert calls == (["session", "recover", "session"] if approved else ["session", "recover"])
+
+
+@pytest.mark.parametrize("fault", ["none", "pin", "replay", "headless", "foreign"])
+def test_installer_cloud_managed_edit_uses_only_trusted_owner_session(
+    remote_fixture, monkeypatch, fault
+) -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from kicad_mcp import cloud_windows_write_issuer as issuer
+    from kicad_mcp import cloud_windows_write_marker as marker
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    state, folder = remote_fixture
+    state["project"].record_id = "a" * 32
+    key = Ed25519PrivateKey.generate().public_key()
+    events = []
+    if fault == "headless":
+        monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    if fault == "foreign":
+        state["project"].origin = "https://other.example"
+
+    def pin(record: str, *, origin: str) -> None:
+        assert record == "a" * 32
+        assert origin == cloud_user_cli.DEFAULT_CLOUD_ORIGIN
+        events.append("pin")
+        if fault == "pin":
+            raise LocalWriteDeniedError("denied")
+
+    def replay() -> Path:
+        events.append("replay")
+        if fault == "replay":
+            raise LocalWriteDeniedError("denied")
+        return folder
+
+    async def run(**options: object) -> None:
+        assert options["allow_native_write"] is True
+        assert options["issuer_key"] is key
+        events.append("signed-edit-capable-session")
+
+    monkeypatch.setattr(issuer, "trust_bundled_owner_cloud_issuer", pin)
+    monkeypatch.setattr(issuer, "load_pinned_windows_write_issuer_key", lambda _: key)
+    monkeypatch.setattr(marker, "prepare_owner_windows_write_marker_directory", replay)
+    monkeypatch.setattr(cloud_windows_connector, "run_connector", run)
+    result = CliRunner().invoke(server.app, ["cloud", "--managed-edit"])
+    if fault == "none":
+        assert result.exit_code == 0, result.output
+        assert events == ["pin", "replay", "signed-edit-capable-session"]
+        assert state["calls"] == ["task_removed"]
+    else:
+        assert result.exit_code != 0
+        assert "signed-edit-capable-session" not in events
+        assert state["calls"] == []
+        if fault in {"headless", "foreign"}:
+            assert events == []

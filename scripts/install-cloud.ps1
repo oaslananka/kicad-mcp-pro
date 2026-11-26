@@ -139,7 +139,15 @@
         }
 
         Write-Host "KiCad MCP Pro: Ready. Opening Cloud Connector..."
-        & $cliPath cloud
+        # Main may be ahead of the published wheel. Do not pass an unsupported option.
+        $cloudHelp = (& $cliPath cloud --help 2>&1 | Out-String)
+        if ($LASTEXITCODE -eq 0 -and $cloudHelp -match '(?<![\w-])--managed-edit(?![\w-])') {
+            Write-Host "Cloud Edit grants control editing in this owner-started session."
+            & $cliPath cloud --managed-edit
+        } else {
+            Write-Warning "The installed Connector does not yet support managed editing. Starting its existing connection mode."
+            & $cliPath cloud
+        }
         if ($LASTEXITCODE -ne 0) {
             throw "The Cloud Connector could not start (exit code $LASTEXITCODE). Review the on-screen connection guidance."
         }

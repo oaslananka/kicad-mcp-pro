@@ -52,11 +52,31 @@ cloud_app = typer.Typer(
 )
 
 
+_CLOUD_MANAGED_EDIT: ContextVar[bool] = ContextVar("cloud_managed_edit", default=False)
+
+
 @cloud_app.callback(invoke_without_command=True)
-def cloud_entry(ctx: typer.Context) -> None:
+def cloud_entry(
+    ctx: typer.Context,
+    managed_edit: Annotated[
+        bool,
+        typer.Option(
+            "--managed-edit",
+            help="Owner-started official Cloud session; project Edit grants control signed edits.",
+        ),
+    ] = False,
+) -> None:
     """Start the foreground Cloud Connector without another command."""
     if ctx.invoked_subcommand is not None:
+        if managed_edit:
+            raise typer.BadParameter(
+                "Managed editing applies only to the foreground Cloud session."
+            )
         return
+    if managed_edit and (not _is_windows() or not _owner_terminal()):
+        raise typer.BadParameter(
+            "Cloud-managed editing requires an interactive Windows owner terminal."
+        )
     if not _is_windows():
         if not _owner_terminal():
             raise typer.BadParameter("Cloud foreground requires an interactive owner terminal.")
@@ -69,13 +89,22 @@ def cloud_entry(ctx: typer.Context) -> None:
             no_browser=False,
         )
         return
+    token = _CLOUD_MANAGED_EDIT.set(managed_edit)
     try:
-        _run_windows_cloud_session()
-    except typer.Exit as exc:
-        if exc.exit_code != 3 or not _owner_terminal() or not _offer_device_recovery():
-            raise
-        # A single owner-approved replacement, never a re-pairing loop.
-        _run_windows_cloud_session()
+        if managed_edit:
+            typer.echo(
+                "Cloud manages editing: only apps with your project Edit grant and signed "
+                "write permission can edit. Stop this Connector to end the session."
+            )
+        try:
+            _run_windows_cloud_session()
+        except typer.Exit as exc:
+            if exc.exit_code != 3 or not _owner_terminal() or not _offer_device_recovery():
+                raise
+            # A single owner-approved replacement, never a re-pairing loop.
+            _run_windows_cloud_session()
+    finally:
+        _CLOUD_MANAGED_EDIT.reset(token)
 
 
 def _offer_device_recovery() -> bool:
@@ -950,8 +979,27 @@ def remote(
     if existing.origin != origin:
         raise typer.BadParameter("This device is paired with a different Cloud site.")
 
+    managed_edit = _CLOUD_MANAGED_EDIT.get()
+    if managed_edit:
+        if not interactive or origin != DEFAULT_CLOUD_ORIGIN:
+            raise typer.BadParameter(
+                "Cloud-managed editing requires the official Cloud and owner terminal."
+            )
+        from kicad_mcp.cloud_windows_write_issuer import trust_bundled_owner_cloud_issuer
+        from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+        try:
+            trust_bundled_owner_cloud_issuer(existing.record_id, origin=origin)
+        except LocalWriteDeniedError:
+            raise typer.BadParameter(
+                "Cloud editing cannot start: the official issuer identity could not be verified. "
+                "Existing trust was not replaced. Retry setup after the issue is resolved."
+            ) from None
+
     enable_write = _owner_native_write_enabled(
-        existing, interactive=interactive, requested=allow_native_write or remember_native_write
+        existing,
+        interactive=interactive,
+        requested=managed_edit or allow_native_write or remember_native_write,
     )
     trusted_issuer = _trusted_owner_write_issuer(
         existing, enabled=enable_write, remember=remember_native_write
