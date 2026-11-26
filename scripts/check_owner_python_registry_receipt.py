@@ -234,8 +234,8 @@ def verify_signed_receipt(
     }
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+def _receipt_parser(description: str) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=description)
     for field in ("tag", "source-commit", "manifest-sha256", "receipt-sha256"):
         parser.add_argument(f"--{field}", required=True)
     for field in (
@@ -251,9 +251,12 @@ def main(argv: list[str] | None = None) -> int:
         "producer-job-id",
     ):
         parser.add_argument(f"--{field}", type=positive_id, required=True)
-    for field in ("archive", "directory", "downloaded-zip", "receipt"):
+    for field in ("archive", "directory", "downloaded-zip"):
         parser.add_argument(f"--{field}", type=Path, required=True)
-    args = parser.parse_args(argv)
+    return parser
+
+
+def _receipt_identity(args: argparse.Namespace) -> DispatchIdentity:
     handoff = HandoffIdentity(
         args.tag,
         args.source_commit,
@@ -264,9 +267,14 @@ def main(argv: list[str] | None = None) -> int:
         args.producer_attempt,
         args.producer_artifact_id,
     )
-    identity = DispatchIdentity(
-        handoff, args.manifest_sha256, args.worker_run_id, args.worker_attempt
-    )
+    return DispatchIdentity(handoff, args.manifest_sha256, args.worker_run_id, args.worker_attempt)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _receipt_parser(__doc__ or "")
+    parser.add_argument("--receipt", type=Path, required=True)
+    args = parser.parse_args(argv)
+    identity = _receipt_identity(args)
     try:
         report = verify_signed_receipt(
             DeliveryGitHubCLI(),

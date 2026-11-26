@@ -138,6 +138,7 @@ def _verify_artifact(
     head_sha: str,
     artifact_id: int,
     role: str,
+    head_branch: str = "main",
 ) -> str:
     if not isinstance(artifact, dict):
         raise ValueError("invalid GitHub artifact metadata")
@@ -165,7 +166,7 @@ def _verify_artifact(
         or type(run.get("id")) is not int
         or run.get("repository_id") != repo_id
         or run.get("head_repository_id") != repo_id
-        or run.get("head_branch") != "main"
+        or run.get("head_branch") != head_branch
         or run.get("head_sha") != head_sha
     ):
         raise ValueError("artifact belongs to a different workflow run or repository")
