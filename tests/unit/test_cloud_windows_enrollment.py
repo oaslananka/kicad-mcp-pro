@@ -634,3 +634,48 @@ def test_recovery_redeem_binds_old_identity_and_requires_same_owner(
     else:
         result = cloud_windows_enrollment.enroll_windows_device(**options)
         assert result.owner_sub == OWNER and result.device_id == DEVICE
+
+
+@pytest.mark.parametrize("recovery", [False, True])
+def test_lost_redeem_response_retries_only_identical_recovery_request(
+    monkeypatch, recovery: bool
+) -> None:
+    from urllib3.exceptions import ProtocolError
+
+    calls = []
+    key = Ed25519PrivateKey.generate()
+    fingerprint = hashlib.sha256(
+        key.public_key().public_bytes(
+            cloud_windows_enrollment.Encoding.DER,
+            cloud_windows_enrollment.PublicFormat.SubjectPublicKeyInfo,
+        )
+    ).hexdigest()
+    identity = {"deviceId": "39ee4be9-0aec-448e-9873-721ae113ec02", "ownerSub": OWNER}
+
+    def post(target, path, body, status):
+        calls.append((target, path, body, status))
+        if len(calls) == 1:
+            raise cloud_pair.CloudPairingError("response lost") from ProtocolError("closed")
+        return {
+            "deviceId": DEVICE,
+            "deviceFingerprint": fingerprint,
+            "ownerSub": OWNER,
+            "enabled": True,
+        }
+
+    monkeypatch.setattr(cloud_pair, "_post", post)
+    options = dict(
+        challenge=CHALLENGE,
+        secret=SECRET,
+        fingerprint=fingerprint,
+        recovery=identity if recovery else None,
+    )
+    if recovery:
+        assert cloud_windows_enrollment._approved_redeem(
+            cloud_pair._origin(ORIGIN), key, **options
+        ) == (DEVICE, OWNER)
+        assert len(calls) == 2 and calls[0] == calls[1]
+    else:
+        with pytest.raises(cloud_pair.CloudPairingError):
+            cloud_windows_enrollment._approved_redeem(cloud_pair._origin(ORIGIN), key, **options)
+        assert len(calls) == 1

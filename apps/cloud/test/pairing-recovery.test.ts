@@ -58,7 +58,7 @@ test("PostgreSQL replacement keeps active devices and never creates a project",{
     const scoped=new URL(url!);
     scoped.searchParams.set("options","-c search_path="+schema);
     pool=new pg.Pool({connectionString:scoped.toString(),max:4});
-    for(const name of ["001_inventory","007_device_pairing","008_device_credentials"]){
+    for(const name of ["001_inventory","007_device_pairing","008_device_credentials","023_device_recovery"]){
       await pool.query(await readFile(new URL("../db/"+name+".pgsql",import.meta.url),"utf8"));
     }
     const store=new PgPairingChallenges(pool,randomBytes(32));
@@ -90,15 +90,47 @@ test("PostgreSQL replacement keeps active devices and never creates a project",{
       disabled.signature,true,recovery)).kind,"recovery_denied");
     await pool.query("UPDATE device_credentials SET revoked_at=clock_timestamp() WHERE device_id=$1",[original.deviceId]);
     const revoked=await attempt();
-    const results=await Promise.all([1,2].map(()=>store.enroll(
-      revoked.challenge.id,revoked.challenge.deviceCode,revoked.signature,true,recovery)));
-    assert.deepEqual(results.map(r=>r.kind).sort(),["enrolled","unavailable"]);
+    const competing=await attempt();
+    const results=await Promise.all([revoked,competing].map(item=>store.enroll(
+      item.challenge.id,item.challenge.deviceCode,item.signature,true,recovery)));
+    assert.deepEqual(results.map(r=>r.kind).sort(),["enrolled","recovery_denied"]);
+    const winner=results[0]?.kind==="enrolled"?revoked:competing;
+    const winningResult=results.find(r=>r.kind==="enrolled");
+    assert.ok(winningResult&&winningResult.kind==="enrolled");
+    // A lost response may be recovered only with the very same signed challenge.
+    assert.deepEqual(await store.enroll(winner.challenge.id,winner.challenge.deviceCode,
+      winner.signature,true,recovery),winningResult);
+    assert.equal((await store.enroll(winner.challenge.id,winner.challenge.deviceCode,
+      Buffer.alloc(64),true,recovery)).kind,"unavailable");
+    assert.equal((await store.enroll(winner.challenge.id,winner.challenge.deviceCode,
+      winner.signature,true,{...recovery,deviceId:randomUUID()})).kind,"unavailable");
+    await pool.query("UPDATE devices SET enabled=false WHERE id=$1",[winningResult.deviceId]);
+    assert.equal((await store.enroll(winner.challenge.id,winner.challenge.deviceCode,
+      winner.signature,true,recovery)).kind,"unavailable");
+    await pool.query("UPDATE devices SET enabled=true WHERE id=$1",[winningResult.deviceId]);
+    await pool.query("UPDATE pairing_challenges SET created_at=clock_timestamp()-interval '6 minutes',expires_at=clock_timestamp()-interval '2 minutes' WHERE id=$1",[winner.challenge.id]);
+    assert.equal((await store.enroll(winner.challenge.id,winner.challenge.deviceCode,
+      winner.signature,true,recovery)).kind,"unavailable");
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM devices")).rows[0].n,2);
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM projects")).rows[0].n,0);
     const missingIdentity={deviceId:randomUUID(),ownerSub:owner};
     const missing=await attempt(missingIdentity);
-    assert.equal((await store.enroll(missing.challenge.id,missing.challenge.deviceCode,
-      missing.signature,true,missingIdentity)).kind,"enrolled");
+    const concurrentMissing=await attempt(missingIdentity);
+    const missingResults=await Promise.all([missing,concurrentMissing].map(item=>store.enroll(
+      item.challenge.id,item.challenge.deviceCode,item.signature,true,missingIdentity)));
+    assert.deepEqual(missingResults.map(r=>r.kind).sort(),["enrolled","recovery_denied"]);
+    const replacement=missingResults.find(r=>r.kind==="enrolled");
+    assert.ok(replacement&&replacement.kind==="enrolled");
+    const durable=await pool.query("SELECT count(*)::int AS n FROM device_replacements");
+    assert.equal(durable.rows[0].n,2);
+    await pool.query("DELETE FROM devices WHERE id=$1",[replacement.deviceId]);
+    const stale=await attempt(missingIdentity);
+    assert.equal((await store.enroll(stale.challenge.id,stale.challenge.deviceCode,
+      stale.signature,true,missingIdentity)).kind,"recovery_denied");
+    const nextIdentity={deviceId:replacement.deviceId,ownerSub:owner};
+    const next=await attempt(nextIdentity);
+    assert.equal((await store.enroll(next.challenge.id,next.challenge.deviceCode,
+      next.signature,true,nextIdentity)).kind,"enrolled");
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM projects")).rows[0].n,0);
   }finally{
     await pool?.end();

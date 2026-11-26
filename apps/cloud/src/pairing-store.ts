@@ -91,6 +91,26 @@ export class PgPairingChallenges {
       return result.kind;
     });
   }
+  private async recoveryReceipt(db:PoolClient,r:PairingRecord,now:number,
+    code:string,signature:Buffer,recovery:RecoveryIdentity):Promise<Enrollment>{
+    // Revalidate the exact originally approved proof, within its original
+    // expiry, but never issue another credential or change device state.
+    const proof=redeemPairing({...r,state:"approved"},this.key,now,code,signature,recovery);
+    if(proof.kind!=="redeemed"||proof.ownerSub!==recovery.ownerSub)return {kind:"unavailable"};
+    const result=await db.query<{id:string}>(
+      "SELECT d.id FROM device_replacements t "+
+      "JOIN devices d ON d.id=t.replacement_device_id AND d.owner_sub=t.owner_sub "+
+      "JOIN device_credentials c ON c.device_id=d.id AND c.owner_sub=d.owner_sub "+
+      "WHERE t.owner_sub=$1 AND t.previous_device_id=$2 AND t.pairing_challenge_id=$3 "+
+      "AND c.pairing_challenge_id=$3 AND c.key_fingerprint=$4 "+
+      "AND c.public_key_der=$5 AND d.enabled=true AND c.revoked_at IS NULL",
+      [proof.ownerSub,recovery.deviceId,r.id,r.deviceFingerprint,r.devicePublicKeyDer]);
+    const deviceId=result.rows[0]?.id;
+    return result.rows.length===1&&deviceId
+      ?{kind:"enrolled",deviceId,ownerSub:proof.ownerSub,deviceFingerprint:r.deviceFingerprint}
+      :{kind:"unavailable"};
+  }
+
   /**
    * Enroll only after browser approval and Ed25519 proof. One transaction
    * inserts the browser-approved device with a revocable public-key identity
@@ -102,6 +122,9 @@ export class PgPairingChallenges {
   async enroll(id:string,code:string,signature:Buffer,
     connectOnApproval=false,recovery?:RecoveryIdentity):Promise<Enrollment>{
     return this.locked(id,{kind:"unavailable"} as Enrollment,async(db,r,now)=>{
+      if(recovery&&connectOnApproval===true&&r.state==="consumed"){
+        return this.recoveryReceipt(db,r,now,code,signature,recovery);
+      }
       const proof=redeemPairing(r,this.key,now,code,signature,recovery);
       if(proof.record.state!==r.state && proof.kind!=="redeemed"){
         await save(db,proof.record);
@@ -130,6 +153,20 @@ export class PgPairingChallenges {
         }
       }
       const deviceId=randomUUID();
+      if(recovery){
+        // A missing row cannot be locked. The unique transition reservation
+        // also serializes distinct approvals for a missing or revoked device.
+        // Reservation and credential issuance commit or roll back together.
+        const reserved=await db.query(
+          "INSERT INTO device_replacements "+
+          "(owner_sub,previous_device_id,replacement_device_id,pairing_challenge_id) "+
+          "VALUES($1,$2,$3,$4) ON CONFLICT(owner_sub,previous_device_id) DO NOTHING",
+          [proof.ownerSub,recovery.deviceId,deviceId,r.id]);
+        if(reserved.rowCount!==1){
+          await save(db,proof.record);
+          return {kind:"recovery_denied"};
+        }
+      }
       await db.query(
         "INSERT INTO devices(id,owner_sub,alias,enabled) VALUES($1,$2,$3,$4)",
         [deviceId,proof.ownerSub,r.deviceAlias,connectOnApproval===true]);

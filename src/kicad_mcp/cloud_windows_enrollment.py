@@ -24,6 +24,7 @@ from cryptography.hazmat.primitives.serialization import (
     PublicFormat,
     load_pem_private_key,
 )
+from urllib3.exceptions import ProtocolError, ReadTimeoutError
 
 from kicad_mcp import cloud_pair
 from kicad_mcp.cloud_local_registry import _STEM
@@ -119,18 +120,23 @@ def _approved_redeem(
             + recovery["ownerSub"].encode("utf-8")
         )
     signature = base64.urlsafe_b64encode(key.sign(proof)).decode("ascii").rstrip("=")
-    result = cloud_pair._post(
-        target,
-        "/api/v1/pairing/device/redeem",
-        {
-            "challengeId": challenge,
-            "deviceCode": secret,
-            "signature": signature,
-            "connectOnApproval": True,
-            **({"recovery": recovery} if recovery is not None else {}),
-        },
-        200,
-    )
+    payload = {
+        "challengeId": challenge,
+        "deviceCode": secret,
+        "signature": signature,
+        "connectOnApproval": True,
+        **({"recovery": recovery} if recovery is not None else {}),
+    }
+    endpoint = "/api/v1/pairing/device/redeem"
+    try:
+        result = cloud_pair._post(target, endpoint, payload, 200)
+    except cloud_pair.CloudPairingError as exc:
+        # The recovery contract returns only the original binding for an
+        # identical approved request. Retry at most once on a lost response,
+        # never for ordinary enrollment, a policy refusal or a TLS error.
+        if recovery is None or not isinstance(exc.__cause__, (ProtocolError, ReadTimeoutError)):
+            raise
+        result = cloud_pair._post(target, endpoint, payload, 200)
     if (
         recovery is not None
         and set(result) == {"recoveryDenied"}
