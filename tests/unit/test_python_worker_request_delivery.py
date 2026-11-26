@@ -437,3 +437,97 @@ def test_delivery_rechecks_transition_after_artifact_metadata(delivery, monkeypa
     assert pauses == [5, 5]
     assert result["ownerRequestArtifactVerified"] is True
     assert result["publicationAuthorized"] is False
+
+
+def _preflight_args(args):
+    return {key: value for key, value in args.items() if key != "directory"}
+
+
+def test_request_preflight_verifies_both_signatures_without_packages(delivery) -> None:
+    from scripts import check_python_worker_request_delivery as cli
+
+    client, verifier, args = delivery
+    for package in args["directory"].iterdir():
+        package.unlink()
+    args["directory"].rmdir()
+    report = cli.verify_request_delivery(client, verifier, **_preflight_args(args))
+    assert report["ownerRequestArtifactVerified"] is True
+    assert report["signedDispatchBindingVerified"] is True
+    assert report["signedOwnerManifestVerified"] is True
+    assert report["ownerRunInvocationVerified"] is True
+    assert report["packageBytesVerified"] is False
+    assert report["producerArtifactVerified"] is False
+    assert report["publicationAuthorized"] is False
+    assert len(verifier.dispatch.calls) == len(verifier.manifest.calls) == 1
+
+
+@pytest.mark.parametrize("change", ["pin", "signature", "child", "archive", "metadata"])
+def test_request_preflight_rejects_invalid_or_changed_evidence(
+    delivery, monkeypatch, change
+) -> None:
+    from dataclasses import replace
+
+    from scripts import check_python_worker_request_delivery as cli
+
+    client, verifier, args = delivery
+    if change == "pin":
+        args["identity"] = replace(args["identity"], manifest_sha256="0" * 64)
+    elif change == "signature":
+        verifier.manifest.output = []
+    elif change == "archive":
+        args["archive"].write_bytes(b"changed")
+    else:
+        original = verifier.manifest.verify
+
+        def sign(*, path: Path, repo: str, sha: str, signer: str, source_ref: str):
+            result = original(path=path, repo=repo, sha=sha, signer=signer, source_ref=source_ref)
+            if change == "child":
+                client.child["run_attempt"] = 2
+            else:
+                client.change = True
+            return result
+
+        monkeypatch.setattr(verifier.manifest, "verify", sign)
+    options = _preflight_args(args)
+    with pytest.raises(ValueError):
+        cli.verify_request_delivery(client, verifier, **options)
+
+
+def test_request_preflight_cli_uses_independent_inputs(delivery, monkeypatch, capsys) -> None:
+    from scripts import check_python_worker_request_delivery as cli
+
+    client, verifier, args = delivery
+    _runtime(monkeypatch, args)
+    monkeypatch.setattr(cli, "DeliveryGitHubCLI", lambda: client)
+    monkeypatch.setattr(cli, "GitHubAttestationCLI", lambda: verifier)
+    argv = _cli_args(args, "verify-request") + [
+        "--artifact-id",
+        str(args["artifact_id"]),
+        "--archive",
+        str(args["archive"]),
+    ]
+    assert cli.main(argv) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["signedOwnerManifestVerified"] is True
+    assert report["packageBytesVerified"] is False
+    assert report["publicationAuthorized"] is False
+    argv.extend(["--directory", str(args["directory"])])
+    with pytest.raises(SystemExit) as error:
+        cli.main(argv)
+    assert error.value.code == 2
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("value", ["+901", "0901", "9_01", " 901", "９０１"])
+def test_cli_denies_noncanonical_runtime_id(delivery, monkeypatch, value) -> None:
+    from scripts import check_python_worker_request_delivery as cli
+
+    client, _, args = delivery
+    _runtime(monkeypatch, args)
+    monkeypatch.setenv("GITHUB_RUN_ID", value)
+    monkeypatch.setattr(cli, "DeliveryGitHubCLI", lambda: client)
+    argv = _cli_args(args, "discover")
+    with pytest.raises(SystemExit) as error:
+        cli.main(argv)
+    assert error.value.code == 2
+    assert not client.reads

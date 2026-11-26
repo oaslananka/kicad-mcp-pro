@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -67,6 +68,14 @@ def manifest_bytes(identity: HandoffIdentity, directory: Path) -> bytes:
     """Generate the exact bytes the owner would attest; does not sign them."""
     version = _version(identity)
     packages = _source_files(directory, _expected(version)["python_dist"])
+    assets = [
+        {"name": name, "size": path.stat().st_size, "sha256": digest(path)}
+        for name, path in sorted(packages.items())
+    ]
+    return _encode_manifest(identity, assets)
+
+
+def _encode_manifest(identity: HandoffIdentity, assets: list[dict[str, object]]) -> bytes:
     payload = {
         "schemaVersion": 1,
         "kind": "python-worker-handoff",
@@ -81,10 +90,7 @@ def manifest_bytes(identity: HandoffIdentity, directory: Path) -> bytes:
         "producerArtifactId": identity.producer_artifact_id,
         "workerWorkflow": _WORKER_WORKFLOW,
         "workerSourceRef": f"refs/tags/{identity.tag}",
-        "assets": [
-            {"name": name, "size": path.stat().st_size, "sha256": digest(path)}
-            for name, path in sorted(packages.items())
-        ],
+        "assets": assets,
         "publicationAuthorized": False,
     }
     encoded = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
@@ -151,6 +157,12 @@ def verify_manifest(
     _verify_signature(verifier, path, identity, manifest_sha256, signer=_OWNER_WORKFLOW)
     if _read_manifest(path) != expected or manifest_bytes(identity, directory) != expected:
         raise ValueError("Python worker manifest or packages changed during verification")
+    return _manifest_report(identity, manifest_sha256, packages_verified=True)
+
+
+def _manifest_report(
+    identity: HandoffIdentity, manifest_sha256: str, *, packages_verified: bool
+) -> dict[str, object]:
     return {
         "repository": REPOSITORY,
         "releaseTag": identity.tag,
@@ -165,7 +177,7 @@ def verify_manifest(
         "workerWorkflow": _WORKER_WORKFLOW,
         "signedOwnerManifestVerified": True,
         "ownerRunInvocationVerified": True,
-        "packageBytesVerified": True,
+        "packageBytesVerified": packages_verified,
         "activeOwnerVerified": False,
         "protectedTagVerified": False,
         "producerArtifactVerified": False,
@@ -174,6 +186,61 @@ def verify_manifest(
         "workerRunVerified": False,
         "publicationAuthorized": False,
     }
+
+
+def _record_assets(data: bytes, identity: HandoffIdentity) -> list[dict[str, object]]:
+    names = sorted(_expected(_version(identity))["python_dist"])
+    if len(data) > _MAX_MANIFEST_BYTES:
+        raise ValueError("Python worker manifest exceeds size limit")
+    try:
+        record = json.loads(data)
+    except (ValueError, RecursionError) as exc:
+        raise ValueError("invalid Python worker manifest JSON") from exc
+    assets = record.get("assets") if isinstance(record, dict) else None
+    if not isinstance(assets, list) or len(assets) != len(names):
+        raise ValueError("invalid Python worker manifest inventory")
+    for asset, name in zip(assets, names, strict=True):
+        if not _valid_record_asset(asset, name):
+            raise ValueError("invalid Python worker manifest asset")
+    return assets
+
+
+def _valid_record_asset(asset: object, name: str) -> bool:
+    return (
+        isinstance(asset, dict)
+        and set(asset) == {"name", "size", "sha256"}
+        and asset["name"] == name
+        and type(asset["size"]) is int
+        and asset["size"] > 0
+        and isinstance(asset["sha256"], str)
+        and re.fullmatch(r"[0-9a-f]{64}", asset["sha256"]) is not None
+    )
+
+
+def verify_manifest_record(
+    verifier: AttestationVerifier,
+    *,
+    identity: HandoffIdentity,
+    manifest: Path,
+    manifest_sha256: str,
+) -> dict[str, object]:
+    """Verify signed canonical inventory before downloading packages, not their bytes."""
+    if manifest.is_symlink() or manifest.name != _MANIFEST:
+        raise ValueError("unapproved or linked Python worker manifest")
+    path = approved_runtime_path(manifest)
+    if not path.is_file():
+        raise ValueError("missing Python worker manifest")
+    data = _read_manifest(path)
+    assets = _record_assets(data, identity)
+    if (
+        hashlib.sha256(data).hexdigest() != manifest_sha256
+        or _encode_manifest(identity, assets) != data
+    ):
+        raise ValueError("Python worker manifest bytes or independent digest pin mismatch")
+    _verify_signature(verifier, path, identity, manifest_sha256, signer=_OWNER_WORKFLOW)
+    if manifest.is_symlink() or _read_manifest(path) != data:
+        raise ValueError("Python worker manifest changed during verification")
+    return _manifest_report(identity, manifest_sha256, packages_verified=False)
 
 
 def main() -> int:
