@@ -24,6 +24,11 @@ from scripts.check_draft_release_owner import (
 )
 from scripts.check_signed_draft_asset import AttestationVerifier, GitHubAttestationCLI
 from scripts.check_signed_draft_producer_bundle import ProducerClient, verify_producer_bundle
+from scripts.check_signed_python_dispatch_binding import (
+    DispatchIdentity,
+    _child_status,
+    dispatch_bytes,
+)
 from scripts.check_signed_python_handoff import (
     HandoffIdentity,
     _read_manifest,
@@ -250,11 +255,68 @@ def verify_owner_binding(
     }
 
 
+def prepare_owner_dispatch(
+    client: BindingClient,
+    verifier: AttestationVerifier,
+    *,
+    identity: DispatchIdentity,
+    producer_job_id: int,
+    downloaded_zip: Path,
+    directory: Path,
+    manifest: Path,
+) -> bytes:
+    """Prepare unsigned binding for the caller's exact returned child run ID.
+
+    Known nonterminal child states are allowed for preparation only.
+    This does not establish dispatch causality or grant publication authority.
+    """
+    payload = dispatch_bytes(identity)
+    handoff = identity.handoff
+    _child_status(client.workflow_run(REPOSITORY, identity.worker_run_id), identity)
+    owner = _owner(client, handoff)
+    verified = verify_owner_binding(
+        client,
+        verifier,
+        identity=handoff,
+        producer_job_id=producer_job_id,
+        downloaded_zip=downloaded_zip,
+        directory=directory,
+        manifest=manifest,
+        manifest_sha256=identity.manifest_sha256,
+    )
+    _child_status(client.workflow_run(REPOSITORY, identity.worker_run_id), identity)
+    archive_pin = _producer_pin(client, handoff)
+    if verified["producerArchiveSha256"] != archive_pin:
+        raise ValueError("producer archive identity changed during dispatch preparation")
+    expected = manifest_bytes(handoff, directory)
+    if hashlib.sha256(expected).hexdigest() != identity.manifest_sha256:
+        raise ValueError("owner manifest digest pin mismatch during dispatch preparation")
+    _recheck_inputs(
+        client,
+        identity=handoff,
+        owner=owner,
+        archive_pin=archive_pin,
+        downloaded_zip=downloaded_zip,
+        directory=directory,
+        expected=expected,
+    )
+    if manifest.is_symlink() or _read_manifest(manifest) != expected:
+        raise ValueError("owner manifest changed during dispatch preparation")
+    return payload
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--directory", required=True, type=Path)
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--prepare", action="store_true", help="emit verified unsigned manifest bytes"
+    )
+    mode.add_argument(
+        "--prepare-dispatch",
+        type=int,
+        metavar="WORKER_RUN_ID",
+        help="emit unsigned binding for the exact returned worker run ID",
     )
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--manifest-sha256")
@@ -295,6 +357,18 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.manifest is None or args.manifest_sha256 is None:
             raise ValueError("verification requires signed manifest and independent pin")
+        if args.prepare_dispatch is not None:
+            payload = prepare_owner_dispatch(
+                BindingGitHubCLI(),
+                GitHubAttestationCLI(),
+                identity=DispatchIdentity(identity, args.manifest_sha256, args.prepare_dispatch, 1),
+                producer_job_id=args.producer_job_id,
+                downloaded_zip=args.downloaded_zip,
+                directory=args.directory,
+                manifest=args.manifest,
+            )
+            sys.stdout.buffer.write(payload)
+            return 0
         result = verify_owner_binding(
             BindingGitHubCLI(),
             GitHubAttestationCLI(),

@@ -365,3 +365,169 @@ def test_prepare_cli_outputs_only_verified_unsigned_bytes(case, monkeypatch, cap
         owner.main(argv + ["--manifest", str(args["manifest"])])
     assert exc.value.code == 2
     assert capsys.readouterr().out == ""
+
+
+def _dispatch_case(case, monkeypatch):
+    from scripts.check_signed_python_dispatch_binding import DispatchIdentity
+
+    client, verifier, args = case
+    child_id = 901
+    child = copy.deepcopy(client.run_data)
+    child.update(
+        id=child_id,
+        url=f"https://api.github.com/repos/{REPO}/actions/runs/{child_id}",
+        path=".github/workflows/publish-python.yml",
+        head_branch=TAG,
+        head_sha=SHA,
+        run_attempt=1,
+        actor={"login": "github-actions[bot]", "id": 41898282},
+        triggering_actor={"login": "github-actions[bot]", "id": 41898282},
+    )
+    original = client.workflow_run
+
+    def read_run(repo: str, run_id: int) -> dict[str, Any]:
+        if run_id == child_id:
+            assert repo == REPO
+            return copy.deepcopy(child)
+        return original(repo, run_id)
+
+    monkeypatch.setattr(client, "workflow_run", read_run)
+    options = dict(args)
+    options["identity"] = DispatchIdentity(
+        args["identity"], options.pop("manifest_sha256"), child_id, 1
+    )
+    return client, verifier, options, child
+
+
+@pytest.mark.parametrize("status", ["queued", "requested", "waiting", "pending", "in_progress"])
+def test_prepare_dispatch_accepts_only_known_nonterminal_child(case, monkeypatch, status) -> None:
+    import json
+
+    from scripts import check_python_handoff_owner_binding as owner
+
+    client, verifier, args, child = _dispatch_case(case, monkeypatch)
+    child["status"] = status
+    payload = json.loads(owner.prepare_owner_dispatch(client, verifier, **args))
+    assert payload["workerRunId"] == 901
+    assert payload["workerRunAttempt"] == 1
+    assert payload["manifestSha256"] == hashlib.sha256(args["manifest"].read_bytes()).hexdigest()
+    assert payload["workerSourceRef"] == f"refs/tags/{TAG}"
+    assert payload["ownerRunId"] == RUN
+    assert payload["publicationAuthorized"] is False
+    assert verifier.owner_calls == 1
+    assert len(verifier.producer.calls) == 2
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("status", "completed"),
+        ("status", "unknown"),
+        ("conclusion", "success"),
+        ("run_attempt", 2),
+        ("head_branch", "main"),
+        ("actor", {"login": "github-actions[bot]", "id": 1}),
+        ("triggering_actor", {"login": "oaslananka", "id": 285490571}),
+        ("path", ".github/workflows/other.yml"),
+        ("head_sha", "c" * 40),
+        ("id", 902),
+    ],
+)
+def test_prepare_dispatch_rejects_wrong_child_before_signatures(
+    case, monkeypatch, field, value
+) -> None:
+    from scripts import check_python_handoff_owner_binding as owner
+
+    client, verifier, args, child = _dispatch_case(case, monkeypatch)
+    child[field] = value
+    with pytest.raises(ValueError):
+        owner.prepare_owner_dispatch(client, verifier, **args)
+    assert verifier.owner_calls == 0
+    assert not verifier.producer.calls
+
+
+@pytest.mark.parametrize(
+    "change", ["child", "draft", "producer", "manifest", "package", "signature"]
+)
+def test_prepare_dispatch_rechecks_after_producer_signature(case, monkeypatch, change) -> None:
+    from scripts import check_python_handoff_owner_binding as owner
+
+    client, verifier, args, child = _dispatch_case(case, monkeypatch)
+    original = verifier.producer.verify
+
+    def sign(*, path: Path, repo: str, sha: str, signer: str, source_ref: str):
+        result = original(path=path, repo=repo, sha=sha, signer=signer, source_ref=source_ref)
+        if change == "child":
+            child.update(status="completed", conclusion="success")
+        elif change == "draft":
+            client.release_data["draft"] = False
+        elif change == "producer":
+            client.producer.run["run_attempt"] = ATTEMPT + 1
+        elif change == "manifest":
+            args["manifest"].write_bytes(b"changed")
+        elif change == "package":
+            next(args["directory"].glob("*.whl")).write_bytes(b"changed")
+        return result
+
+    if change == "signature":
+        verifier.change = "owner-signature"
+    monkeypatch.setattr(verifier.producer, "verify", sign)
+    with pytest.raises(ValueError):
+        owner.prepare_owner_dispatch(client, verifier, **args)
+
+
+def test_prepare_dispatch_cli_preserves_signed_manifest_requirement(
+    case, monkeypatch, capsys
+) -> None:
+    import json
+
+    from scripts import check_python_handoff_owner_binding as owner
+
+    client, verifier, args, child = _dispatch_case(case, monkeypatch)
+    child["status"] = "queued"
+    dispatch = args["identity"]
+    identity = dispatch.handoff
+    argv = [
+        "--prepare-dispatch",
+        str(dispatch.worker_run_id),
+        "--directory",
+        str(args["directory"]),
+        "--downloaded-zip",
+        str(args["downloaded_zip"]),
+        "--tag",
+        identity.tag,
+        "--source-commit",
+        identity.source_commit,
+        "--release-id",
+        str(identity.release_id),
+        "--owner-run-id",
+        str(identity.owner_run_id),
+        "--owner-attempt",
+        str(identity.owner_attempt),
+        "--producer-run-id",
+        str(identity.producer_run_id),
+        "--producer-attempt",
+        str(identity.producer_attempt),
+        "--producer-artifact-id",
+        str(identity.producer_artifact_id),
+        "--producer-job-id",
+        str(args["producer_job_id"]),
+    ]
+    monkeypatch.setattr(owner, "BindingGitHubCLI", lambda: client)
+    monkeypatch.setattr(owner, "GitHubAttestationCLI", lambda: verifier)
+    with pytest.raises(SystemExit) as exc:
+        owner.main(argv)
+    assert exc.value.code == 2
+    assert capsys.readouterr().out == ""
+    argv.extend(
+        ["--manifest", str(args["manifest"]), "--manifest-sha256", dispatch.manifest_sha256]
+    )
+    assert owner.main(argv) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["workerRunId"] == 901
+    assert payload["publicationAuthorized"] is False
+    child.update(status="completed", conclusion="success")
+    with pytest.raises(SystemExit) as exc:
+        owner.main(argv)
+    assert exc.value.code == 2
+    assert capsys.readouterr().out == ""

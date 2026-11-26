@@ -394,3 +394,12 @@ def test_owner_wait_rejects_changed_evidence(binding, monkeypatch, mutation: str
         verify_dispatch_binding(client, verifier, **args)
     assert pauses == [5]
     assert not verifier.calls
+
+
+@pytest.mark.parametrize("status", ["queued", "requested", "waiting", "pending"])
+def test_worker_still_requires_active_child(binding, status) -> None:
+    client, verifier, args = binding
+    client.child["status"] = status
+    with pytest.raises(ValueError):
+        verify_dispatch_binding(client, verifier, **args)
+    assert not verifier.calls
