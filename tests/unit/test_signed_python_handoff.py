@@ -294,3 +294,71 @@ def test_verify_cli_requires_independent_pin(handoff, monkeypatch) -> None:
         main()
     assert error.value.code == 2
     assert not verifier.calls
+
+
+def _record_args(args):
+    return {key: value for key, value in args.items() if key != "directory"}
+
+
+def test_manifest_record_verification_does_not_claim_package_bytes(handoff) -> None:
+    from scripts import check_signed_python_handoff as owner
+
+    verifier, args = handoff
+    report = owner.verify_manifest_record(verifier, **_record_args(args))
+    assert report["signedOwnerManifestVerified"] is True
+    assert report["packageBytesVerified"] is False
+    assert report["publicationAuthorized"] is False
+    assert len(verifier.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "identity",
+        "extra",
+        "duplicate",
+        "name",
+        "size",
+        "bool",
+        "digest",
+        "order",
+        "authorization",
+        "noncanonical",
+        "oversize",
+    ],
+)
+def test_manifest_record_rejects_malformed_even_with_matching_pin(handoff, change) -> None:
+    from scripts import check_signed_python_handoff as owner
+
+    verifier, args = handoff
+    manifest = args["manifest"]
+    record = json.loads(manifest.read_bytes())
+    if change == "identity":
+        record["producerArtifactId"] += 1
+    elif change == "extra":
+        record["extra"] = True
+    elif change == "duplicate":
+        record["assets"][1] = record["assets"][0]
+    elif change == "name":
+        record["assets"][0]["name"] = "../other.whl"
+    elif change == "size":
+        record["assets"][0]["size"] = 0
+    elif change == "bool":
+        record["assets"][0]["size"] = True
+    elif change == "digest":
+        record["assets"][0]["sha256"] = "A" * 64
+    elif change == "order":
+        record["assets"].reverse()
+    elif change == "authorization":
+        record["publicationAuthorized"] = True
+    data = (json.dumps(record, indent=2, sort_keys=True) + "\n").encode()
+    if change == "noncanonical":
+        data += b" "
+    elif change == "oversize":
+        data += b" " * 16384
+    manifest.write_bytes(data)
+    args["manifest_sha256"] = hashlib.sha256(data).hexdigest()
+    options = _record_args(args)
+    with pytest.raises(ValueError):
+        owner.verify_manifest_record(verifier, **options)
+    assert not verifier.calls

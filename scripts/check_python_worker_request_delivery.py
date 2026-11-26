@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import tempfile
 import time
 import zipfile
@@ -25,9 +26,15 @@ from scripts.check_signed_python_dispatch_binding import (
     DispatchIdentity,
     _check_live,
     dispatch_bytes,
+    verify_dispatch_binding,
     verify_worker_request,
 )
-from scripts.check_signed_python_handoff import HandoffIdentity, manifest_bytes
+from scripts.check_signed_python_handoff import (
+    HandoffIdentity,
+    _read_manifest,
+    manifest_bytes,
+    verify_manifest_record,
+)
 from scripts.extract_draft_producer_zip import _members
 from scripts.runtime_path_safety import approved_runtime_path
 
@@ -142,6 +149,33 @@ def _extract_request(data: bytes, output: Path) -> None:
         raise ValueError("unreadable owner request archive") from exc
 
 
+def verify_request_delivery(
+    client: DeliveryClient,
+    verifier: AttestationVerifier,
+    *,
+    identity: DispatchIdentity,
+    artifact_id: int,
+    archive: Path,
+    runtime_ref: str,
+    runtime_sha: str,
+    runtime_run_id: int,
+    runtime_attempt: int,
+) -> dict[str, Any]:
+    """Verify the exact signed request before downloading any producer packages."""
+    return _verify_delivery(
+        client,
+        verifier,
+        identity=identity,
+        artifact_id=artifact_id,
+        archive=archive,
+        directory=None,
+        runtime_ref=runtime_ref,
+        runtime_sha=runtime_sha,
+        runtime_run_id=runtime_run_id,
+        runtime_attempt=runtime_attempt,
+    )
+
+
 def verify_delivery(
     client: DeliveryClient,
     verifier: AttestationVerifier,
@@ -155,6 +189,75 @@ def verify_delivery(
     runtime_run_id: int,
     runtime_attempt: int,
 ) -> dict[str, Any]:
+    """Verify the exact signed request and independently downloaded packages."""
+    if directory is None:
+        raise ValueError("package directory is required for full verification")
+    return _verify_delivery(
+        client,
+        verifier,
+        identity=identity,
+        artifact_id=artifact_id,
+        archive=archive,
+        directory=directory,
+        runtime_ref=runtime_ref,
+        runtime_sha=runtime_sha,
+        runtime_run_id=runtime_run_id,
+        runtime_attempt=runtime_attempt,
+    )
+
+
+def _verify_request_records(
+    client: DeliveryClient,
+    verifier: AttestationVerifier,
+    *,
+    identity: DispatchIdentity,
+    binding: Path,
+    manifest: Path,
+    runtime_ref: str,
+    runtime_sha: str,
+    runtime_run_id: int,
+    runtime_attempt: int,
+) -> dict[str, Any]:
+    dispatch = verify_dispatch_binding(
+        client,
+        verifier,
+        identity=identity,
+        binding=binding,
+        runtime_ref=runtime_ref,
+        runtime_sha=runtime_sha,
+        runtime_run_id=runtime_run_id,
+        runtime_attempt=runtime_attempt,
+    )
+    request = verify_manifest_record(
+        verifier,
+        identity=identity.handoff,
+        manifest=manifest,
+        manifest_sha256=identity.manifest_sha256,
+    )
+    _check_live(client, identity)
+    if (
+        binding.is_symlink()
+        or manifest.is_symlink()
+        or _read_manifest(binding) != dispatch_bytes(identity)
+        or hashlib.sha256(_read_manifest(manifest)).hexdigest() != identity.manifest_sha256
+    ):
+        raise ValueError("worker request changed during preflight")
+    return {**request, **dispatch, "signedOwnerManifestVerified": True}
+
+
+def _verify_delivery(
+    client: DeliveryClient,
+    verifier: AttestationVerifier,
+    *,
+    identity: DispatchIdentity,
+    artifact_id: int,
+    archive: Path,
+    directory: Path | None,
+    runtime_ref: str,
+    runtime_sha: str,
+    runtime_run_id: int,
+    runtime_attempt: int,
+) -> dict[str, Any]:
     """Validate exact artifact bytes and both signatures; never grant publish authority."""
     metadata = discover_request(client, identity)
     if not _exact_id(artifact_id, metadata["id"]):
@@ -163,23 +266,39 @@ def verify_delivery(
     with tempfile.TemporaryDirectory(prefix="kicad-worker-request-") as temporary:
         root = Path(temporary)
         _extract_request(data, root)
-        report = verify_worker_request(
-            client,
-            verifier,
-            identity=identity,
-            binding=root / "python-worker-dispatch.json",
-            manifest=root / "python-worker-manifest.json",
-            directory=directory,
-            runtime_ref=runtime_ref,
-            runtime_sha=runtime_sha,
-            runtime_run_id=runtime_run_id,
-            runtime_attempt=runtime_attempt,
-        )
+        binding = root / "python-worker-dispatch.json"
+        manifest = root / "python-worker-manifest.json"
+        runtime = {
+            "runtime_ref": runtime_ref,
+            "runtime_sha": runtime_sha,
+            "runtime_run_id": runtime_run_id,
+            "runtime_attempt": runtime_attempt,
+        }
+        if directory is None:
+            report = _verify_request_records(
+                client,
+                verifier,
+                identity=identity,
+                binding=binding,
+                manifest=manifest,
+                **runtime,
+            )
+        else:
+            report = verify_worker_request(
+                client,
+                verifier,
+                identity=identity,
+                binding=binding,
+                manifest=manifest,
+                directory=directory,
+                **runtime,
+            )
     if discover_request(client, identity) != metadata or _read_archive(archive, metadata) != data:
         raise ValueError("owner request archive changed during verification")
     _check_live(client, identity)
     if (
-        hashlib.sha256(manifest_bytes(identity.handoff, directory)).hexdigest()
+        directory is not None
+        and hashlib.sha256(manifest_bytes(identity.handoff, directory)).hexdigest()
         != identity.manifest_sha256
     ):
         raise ValueError("worker package bytes changed during delivery verification")
@@ -202,6 +321,12 @@ class DeliveryGitHubCLI(OwnerGitHubCLI):
         return self._json(f"repos/{repo}/actions/artifacts/{artifact_id}")
 
 
+def _positive_id(value: str) -> int:
+    if re.fullmatch(r"[1-9]\d{0,14}", value, flags=re.ASCII) is None:
+        raise ValueError("expected canonical positive decimal ID")
+    return int(value)
+
+
 def _runtime(handoff: HandoffIdentity, pin: str) -> DispatchIdentity:
     if (
         os.environ.get("GITHUB_REPOSITORY") != REPOSITORY
@@ -213,8 +338,8 @@ def _runtime(handoff: HandoffIdentity, pin: str) -> DispatchIdentity:
     identity = DispatchIdentity(
         handoff,
         pin,
-        int(os.environ.get("GITHUB_RUN_ID", "")),
-        int(os.environ.get("GITHUB_RUN_ATTEMPT", "")),
+        _positive_id(os.environ.get("GITHUB_RUN_ID", "")),
+        _positive_id(os.environ.get("GITHUB_RUN_ATTEMPT", "")),
     )
     dispatch_bytes(identity)
     return identity
@@ -222,17 +347,17 @@ def _runtime(handoff: HandoffIdentity, pin: str) -> DispatchIdentity:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("discover", "wait", "verify"))
+    parser.add_argument("operation", choices=("discover", "wait", "verify-request", "verify"))
     parser.add_argument("--tag", required=True)
     parser.add_argument("--source-commit", required=True)
-    parser.add_argument("--release-id", required=True, type=int)
-    parser.add_argument("--owner-run-id", required=True, type=int)
-    parser.add_argument("--owner-attempt", required=True, type=int)
-    parser.add_argument("--producer-run-id", required=True, type=int)
-    parser.add_argument("--producer-attempt", required=True, type=int)
-    parser.add_argument("--producer-artifact-id", required=True, type=int)
+    parser.add_argument("--release-id", required=True, type=_positive_id)
+    parser.add_argument("--owner-run-id", required=True, type=_positive_id)
+    parser.add_argument("--owner-attempt", required=True, type=_positive_id)
+    parser.add_argument("--producer-run-id", required=True, type=_positive_id)
+    parser.add_argument("--producer-attempt", required=True, type=_positive_id)
+    parser.add_argument("--producer-artifact-id", required=True, type=_positive_id)
     parser.add_argument("--manifest-sha256", required=True)
-    parser.add_argument("--artifact-id", type=int)
+    parser.add_argument("--artifact-id", type=_positive_id)
     parser.add_argument("--archive", type=Path)
     parser.add_argument("--directory", type=Path)
     args = parser.parse_args(argv)
@@ -255,7 +380,6 @@ def main(argv: list[str] | None = None) -> int:
             if args.operation == "wait":
                 metadata = wait_for_request(client, identity)
             else:
-                _check_live(client, identity)
                 metadata = discover_request(client, identity)
             result = {
                 "ownerRequestArtifactId": metadata["id"],
@@ -264,11 +388,11 @@ def main(argv: list[str] | None = None) -> int:
                 "publicationAuthorized": False,
             }
         else:
-            if args.artifact_id is None or args.archive is None or args.directory is None:
-                raise ValueError(
-                    "verify requires artifact ID, downloaded archive and package directory"
-                )
-            result = verify_delivery(
+            if args.artifact_id is None or args.archive is None:
+                raise ValueError("verification requires artifact ID and downloaded archive")
+            if (args.operation == "verify") != (args.directory is not None):
+                raise ValueError("only full verify requires a package directory")
+            result = _verify_delivery(
                 client,
                 GitHubAttestationCLI(),
                 identity=identity,

@@ -811,6 +811,22 @@ packages and exact child/owner/tag identity. The archive metadata,
 archive bytes, package bytes and live identities are checked again
 before returning.
 
+Before downloading producer packages, use `verify-request` with the same
+independently supplied identity arguments, artifact ID and downloaded
+request ZIP, but **without** a package directory. It validates the exact
+archive, both owner signatures and canonical manifest inventory (exact
+versioned names, positive integer sizes and lowercase SHA-256 digests),
+then repeats live identity and artifact checks. This preflight sets
+`signedOwnerManifestVerified` and `signedDispatchBindingVerified` to true
+but leaves `packageBytesVerified`, `producerArtifactVerified` and
+`publicationAuthorized` false. It does not authorize installation or
+publication. After independently verifying and extracting producer
+packages, the full `verify` operation remains mandatory. Numeric CLI and
+Actions runtime IDs must be canonical positive ASCII decimal strings
+(up to 15 digits); input selectors are not trusted merely because they
+parse successfully. The caller still needs to establish the dispatch
+inputs and independent pin outside the downloaded artifact.
+
 Use `wait` instead of `discover` when the owner is still preparing
 the request artifact. It checks live owner, child and tag identities
 at each poll, and repeats those checks when the artifact appears.
