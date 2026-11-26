@@ -769,6 +769,18 @@ async def _run_registered_session(
                 return False
             if inventory_state == "project_missing":
                 raise ProjectSelectionMissingError(_DENIED)
+            if inventory_state in {"active", "project_disabled"}:
+                from kicad_mcp.cloud_posix_project_bindings import migrate_legacy
+
+                await asyncio.to_thread(
+                    migrate_legacy,
+                    registry,
+                    record,
+                    signing_key,
+                    lambda: not stop.is_set() and _is_enabled(registry, record, marker),
+                )
+                if stop.is_set() or not _is_enabled(registry, record, marker):
+                    return False
     _write_status(registry, "connecting")
     _report_foreground(marker, "Connecting")
     await _session_until_stopped(

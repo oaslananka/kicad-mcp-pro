@@ -385,9 +385,20 @@ async def run_device_only(
     with owner_connector_instance():
         from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
 
-        if device.origin == _KICAD_CLOUD_ORIGIN and restore_existing_project(device):
-            status_callback("Restored an existing Cloud project on this device.")
-            return
+        if device.origin == _KICAD_CLOUD_ORIGIN:
+            from kicad_mcp.cloud_legacy_project_migration import legacy_candidates
+            from kicad_mcp.cloud_windows_scoped_projects import migrate_legacy
+
+            if legacy_candidates():
+                migrate_legacy(
+                    device,
+                    verified_device_key(device),
+                    lambda: selected_device() == device and selected_project() is None,
+                    None,
+                )
+            if restore_existing_project(device):
+                status_callback("Restored an existing Cloud project on this device.")
+                return
         failures = 0
         while selected_project() is None:
             if selected_device() != device:

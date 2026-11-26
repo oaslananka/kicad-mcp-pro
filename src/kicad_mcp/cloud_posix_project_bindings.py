@@ -6,6 +6,8 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from kicad_mcp import cloud_pair_keys
 from kicad_mcp.cloud_folder_browse_receiver import (
     BrowserFolderService,
@@ -126,3 +128,50 @@ def existing_targets(root: Path, record: dict[str, str]) -> list[OperatorProject
         if target is not None:
             targets.append(target)
     return targets
+
+
+def migrate_legacy(
+    root: Path, record: dict[str, str], key: Ed25519PrivateKey, authorized: Callable[[], bool]
+) -> int:
+    """Import old selections only in the official owner foreground session."""
+    from kicad_mcp.cloud_legacy_project_migration import migrate
+    from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+    if record["cloudOrigin"] != _KICAD_CLOUD_ORIGIN:
+        return 0
+    directory = _folder(root, record) / "legacy-migration"
+
+    def completed(pid: str) -> bool:
+        return os.path.lexists(directory / (pid + ".json"))
+
+    def mark(pid: str) -> None:
+        for folder in (directory.parent.parent, directory.parent, directory):
+            folder.mkdir(mode=0o700, exist_ok=True)
+            fd = cloud_pair_keys._open_owner_private_dir(folder / "probe")
+            os.close(fd)
+        name = pid + ".json"
+        if os.path.lexists(directory / name):
+            raise ValueError(_DENIED)
+        cloud_pair_keys._write_private_json(
+            directory,
+            name,
+            {k: v for k, v in _document(record, pid, Path(".")).items() if k != "file"},
+        )
+
+    def publish(pid: str, file: Path) -> bool:
+        return authorized() and _save(root, record, pid, file)
+
+    try:
+        return migrate(
+            origin=record["cloudOrigin"],
+            owner=record["ownerSub"],
+            device=record["deviceId"],
+            primary=record["projectId"] or None,
+            key=key,
+            authorized=authorized,
+            completed=completed,
+            record_completed=mark,
+            save=publish,
+        )
+    except (OSError, ValueError, TypeError):
+        return 0

@@ -256,6 +256,29 @@ def connect_device_only(
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     with _connector_session_lock(root):
         identity = ensure_device(root, origin, alias, approval)
+        from kicad_mcp.cloud_legacy_project_migration import legacy_candidates
+        from kicad_mcp.cloud_posix_project_bindings import migrate_legacy
+        from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+        if origin == _KICAD_CLOUD_ORIGIN and legacy_candidates():
+            keyfile, binding = identity
+            selectors = {
+                "ownerSub": binding["ownerSub"],
+                "cloudOrigin": binding["origin"],
+                "deviceId": binding["deviceId"],
+                "keySlot": keyfile.stem,
+                "projectId": "",
+            }
+            key = _load_bound_owner_key(keyfile, origin, binding["deviceId"])
+            migrate_legacy(
+                root,
+                selectors,
+                key,
+                lambda: (
+                    cloud_posix_recovery.inspect_unbound_device(root, origin) == identity
+                    and read_project(root, identity) is None
+                ),
+            )
         existing = _restore_existing_project(root, identity)
         if existing is not None:
             status("Restored an existing Cloud project on this device.")

@@ -898,6 +898,20 @@ async def run_connector(
                         return
                     if state == "project_missing":
                         raise CloudOwnerReapprovalRequiredError("Cloud project was removed.")
+                    if state in {"active", "project_disabled"}:
+                        from kicad_mcp.cloud_windows_scoped_projects import migrate_legacy
+
+                        await asyncio.to_thread(
+                            migrate_legacy,
+                            project,
+                            key,
+                            lambda project=project: (
+                                not stop.is_set() and _current_authorization(project)
+                            ),
+                            project.project_id,
+                        )
+                        if stop.is_set() or not _current_authorization(project):
+                            return
             _notify_connection_attempt(status_callback, failures)
             runner_for_session = _session_runner_with_status(session_runner, status_callback)
 

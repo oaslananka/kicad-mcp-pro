@@ -219,3 +219,23 @@ def test_native_junction_directory_is_denied(tmp_path: Path) -> None:
         pytest.skip("Junction creation unavailable in this Windows environment")
     with pytest.raises(LocalReadDeniedError):
         read_windows_project_presence(junction, "demo")
+
+
+def test_native_legacy_cache_pinned_read_and_limit(tmp_path: Path) -> None:
+    from kicad_mcp.cloud_windows_project_path import read_legacy_folder_cache
+
+    directory = tmp_path / ".kicad-mcp-cloud" / "connector"
+    directory.mkdir(parents=True)
+    path = directory / "folder-bindings.json"
+    payload = b'{"test":"fixture"}'
+    path.write_bytes(payload)
+    assert read_legacy_folder_cache(path, 1024) == payload
+    with pytest.raises(LocalReadDeniedError):
+        read_legacy_folder_cache(path, 1)
+    other = directory / "other.json"
+    other.write_bytes(payload)
+    with pytest.raises(LocalReadDeniedError):
+        read_legacy_folder_cache(other, 1024)
+    os.link(path, directory / "link.json")
+    with pytest.raises(LocalReadDeniedError):
+        read_legacy_folder_cache(path, 1024)

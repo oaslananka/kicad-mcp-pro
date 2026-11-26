@@ -28,6 +28,7 @@ _PARTS = frozenset(
         "registration",
         "project_path",
         "secondary_project",
+        "legacy_project_migration",
         "active",
         "selected",
         # Owner-approved recovery keeps the old selection in this same user vault.

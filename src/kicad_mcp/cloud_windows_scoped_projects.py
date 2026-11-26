@@ -8,6 +8,8 @@ from collections.abc import Callable
 from pathlib import Path
 from uuid import UUID
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from kicad_mcp.cloud_folder_browse_receiver import BrowserFolderService, default_bindings_file
 from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
 from kicad_mcp.cloud_local_registry import _STEM
@@ -85,7 +87,7 @@ def resolve(
         return None
 
 
-def save(project: WindowsRegisteredProject, pid: str, file: Path) -> bool:
+def save(project: WindowsEnrolledDevice | WindowsRegisteredProject, pid: str, file: Path) -> bool:
     try:
         identity = _identity(project, pid)
         if not _valid_file(file):
@@ -153,3 +155,47 @@ def existing_targets(device: WindowsEnrolledDevice) -> list[OperatorProject]:
         except (OSError, ValueError, TypeError, KeyError, RuntimeError):
             continue
     return sorted(targets, key=lambda target: target.project_id)
+
+
+def migrate_legacy(
+    device: WindowsEnrolledDevice | WindowsRegisteredProject,
+    key: Ed25519PrivateKey,
+    authorized: Callable[[], bool],
+    primary: str | None,
+) -> int:
+    """Owner foreground only, with the verified device key and session mutex."""
+    from kicad_mcp.cloud_legacy_project_migration import migrate
+    from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+    if device.origin != _KICAD_CLOUD_ORIGIN:
+        return 0
+
+    def completed(pid: str) -> bool:
+        identity = _identity(device, pid)
+        return read_credential(_slot(identity), "legacy_project_migration") is not None
+
+    def mark(pid: str) -> None:
+        identity = _identity(device, pid)
+        create_credential(
+            _slot(identity),
+            "legacy_project_migration",
+            json.dumps(identity, sort_keys=True).encode(),
+        )
+
+    def publish(pid: str, file: Path) -> bool:
+        return authorized() and save(device, pid, file)
+
+    try:
+        return migrate(
+            origin=device.origin,
+            owner=device.owner_sub,
+            device=device.device_id,
+            primary=primary,
+            key=key,
+            authorized=authorized,
+            completed=completed,
+            record_completed=mark,
+            save=publish,
+        )
+    except (OSError, ValueError, TypeError):
+        return 0

@@ -278,3 +278,33 @@ def copy_windows_drc_inputs(directory: Path, filename_stem: str, scratch: Path) 
                 )
     except (OSError, ValueError, TypeError) as exc:
         raise LocalReadDeniedError(_DENIED) from exc
+
+
+def read_legacy_folder_cache(path: Path, limit: int) -> bytes:
+    """Bounded, pinned read of the historical current-user local selection file."""
+    import msvcrt
+
+    if path.name != "folder-bindings.json" or path.parent.parent.name != ".kicad-mcp-cloud":
+        raise LocalReadDeniedError(_DENIED)
+    with _pinned_project(path.parent) as directory:
+        handle = _open_checked(directory + "\\" + path.name, directory=False, read_contents=True)
+        if handle is None:
+            raise LocalReadDeniedError(_DENIED)
+        opener = getattr(msvcrt, "open_osfhandle", None)
+        binary_flag = getattr(os, "O_BINARY", None)
+        if not callable(opener) or type(binary_flag) is not int:
+            _api().CloseHandle(handle)
+            raise LocalReadDeniedError(_DENIED)
+        try:
+            fd = opener(handle, os.O_RDONLY | binary_flag)
+        except (OSError, ValueError):
+            _api().CloseHandle(handle)
+            raise
+        with os.fdopen(fd, "rb") as reader:
+            size = os.fstat(reader.fileno()).st_size
+            if not 1 <= size <= limit:
+                raise LocalReadDeniedError(_DENIED)
+            raw = reader.read(limit + 1)
+            if len(raw) != size:
+                raise LocalReadDeniedError(_DENIED)
+            return raw
