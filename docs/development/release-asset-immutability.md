@@ -746,6 +746,17 @@ verify it. The caller must obtain the run ID from the exact dispatch
 response, not a search result. This mode does not establish causality
 or sign, dispatch, upload or publish.
 
+For pre-dispatch API body preparation, use the same signed-manifest
+verification command with `--prepare-inputs` (without
+`--prepare-dispatch`). It verifies the owner, producer and signed
+manifest before emitting JSON with the exact release tag as `ref` and
+nine string-valued selectors under `inputs`: tag, source_commit,
+release_id, owner_run_id, owner_attempt, producer_run_id,
+producer_attempt, producer_artifact_id and manifest_sha256. It does
+not dispatch anything or establish dispatch causality. The caller must
+supply the manifest pin independently and use the exact returned worker
+run ID for subsequent binding preparation.
+
 The worker-side library `scripts.check_signed_python_dispatch_binding`
 validates the signed record, the exact active owner and child run metadata,
 numeric repository and bot identity, and the live tag commit. The expected
@@ -795,6 +806,17 @@ python -m scripts.check_python_worker_request_delivery discover \
   --producer-run-id "$PRODUCER_RUN_ID" --producer-attempt "$PRODUCER_ATTEMPT" \
   --producer-artifact-id "$PRODUCER_ARTIFACT_ID" --manifest-sha256 "$OWNER_PIN"
 ```
+
+Alternatively, replace **all** manual identity flags with
+`--from-event`. The diagnostic reads the exact string input schema from
+the Actions-provided `GITHUB_EVENT_PATH` (bounded to 1 MiB, no linked
+file or duplicate JSON keys), and compares its tag and source with the
+worker runtime. Numeric IDs are canonical positive ASCII decimal
+strings, and owner and producer must be distinct. The worker run ID
+and attempt still come only from the worker runtime. Both modes retain
+the existing live run/tag and signed-record checks; dispatch selectors
+are not authority. No production workflow has been wired to this
+contract yet.
 
 The diagnostic only accepts an untruncated run-scoped artifact listing
 (up to 100 entries), one exact matching name and matching individual

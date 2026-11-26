@@ -531,3 +531,93 @@ def test_cli_denies_noncanonical_runtime_id(delivery, monkeypatch, value) -> Non
         cli.main(argv)
     assert error.value.code == 2
     assert not client.reads
+
+
+def _event_fields(identity: DispatchIdentity) -> dict[str, str]:
+    from scripts.python_worker_dispatch_inputs import dispatch_payload
+
+    return dispatch_payload(identity.handoff, identity.manifest_sha256)["inputs"]
+
+
+def test_event_cli_verifies_request_without_manual_selectors(
+    delivery,
+    monkeypatch,
+    capsys,
+    tmp_path,
+) -> None:
+    from scripts import check_python_worker_request_delivery as cli
+
+    client, verifier, args = delivery
+    _runtime(monkeypatch, args)
+    identity = args["identity"]
+    inputs = _event_fields(identity)
+    event = tmp_path / "event.json"
+    event.write_text(json.dumps({"inputs": inputs, "ref": identity.handoff.tag}))
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
+    monkeypatch.setattr(cli, "DeliveryGitHubCLI", lambda: client)
+    monkeypatch.setattr(cli, "GitHubAttestationCLI", lambda: verifier)
+    argv = [
+        "verify-request",
+        "--from-event",
+        "--artifact-id",
+        str(args["artifact_id"]),
+        "--archive",
+        str(args["archive"]),
+    ]
+    assert cli.main(argv) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["signedOwnerManifestVerified"] is True
+    assert report["packageBytesVerified"] is False
+    assert report["publicationAuthorized"] is False
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "mix",
+        "wrong-ref",
+        "wrong-sha",
+        "wrong-repo",
+        "wrong-event",
+        "wrong-attempt",
+        "self-owner",
+        "missing-event",
+    ],
+)
+def test_event_cli_rejects_mismatch_before_api(
+    delivery,
+    monkeypatch,
+    tmp_path,
+    change,
+) -> None:
+    from scripts import check_python_worker_request_delivery as cli
+
+    client, _, args = delivery
+    _runtime(monkeypatch, args)
+    event = tmp_path / "event.json"
+    inputs = _event_fields(args["identity"])
+    argv = ["discover", "--from-event"]
+    if change == "mix":
+        argv.extend(["--release-id", "42"])
+    elif change == "self-owner":
+        inputs["owner_run_id"] = str(args["runtime_run_id"])
+    elif change == "missing-event":
+        monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
+    else:
+        key, value = {
+            "wrong-ref": ("GITHUB_REF", "refs/heads/main"),
+            "wrong-sha": ("GITHUB_SHA", "b" * 40),
+            "wrong-repo": ("GITHUB_REPOSITORY", "other/repo"),
+            "wrong-event": ("GITHUB_EVENT_NAME", "release"),
+            "wrong-attempt": ("GITHUB_RUN_ATTEMPT", "2"),
+        }[change]
+        monkeypatch.setenv(key, value)
+    if change != "missing-event":
+        event.write_text(json.dumps({"inputs": inputs}))
+        monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
+    monkeypatch.setattr(cli, "DeliveryGitHubCLI", lambda: client)
+    with pytest.raises(SystemExit) as error:
+        cli.main(argv)
+    assert error.value.code == 2
+    assert not client.reads
+    assert client.list_reads == 0

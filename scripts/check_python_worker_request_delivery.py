@@ -7,7 +7,6 @@ import hashlib
 import io
 import json
 import os
-import re
 import tempfile
 import time
 import zipfile
@@ -36,6 +35,7 @@ from scripts.check_signed_python_handoff import (
     verify_manifest_record,
 )
 from scripts.extract_draft_producer_zip import _members
+from scripts.python_worker_dispatch_inputs import dispatch_payload, positive_id, read_event_inputs
 from scripts.runtime_path_safety import approved_runtime_path
 
 _MAX_ARCHIVE = 65536
@@ -321,12 +321,6 @@ class DeliveryGitHubCLI(OwnerGitHubCLI):
         return self._json(f"repos/{repo}/actions/artifacts/{artifact_id}")
 
 
-def _positive_id(value: str) -> int:
-    if re.fullmatch(r"[1-9]\d{0,14}", value, flags=re.ASCII) is None:
-        raise ValueError("expected canonical positive decimal ID")
-    return int(value)
-
-
 def _runtime(handoff: HandoffIdentity, pin: str) -> DispatchIdentity:
     if (
         os.environ.get("GITHUB_REPOSITORY") != REPOSITORY
@@ -338,30 +332,15 @@ def _runtime(handoff: HandoffIdentity, pin: str) -> DispatchIdentity:
     identity = DispatchIdentity(
         handoff,
         pin,
-        _positive_id(os.environ.get("GITHUB_RUN_ID", "")),
-        _positive_id(os.environ.get("GITHUB_RUN_ATTEMPT", "")),
+        positive_id(os.environ.get("GITHUB_RUN_ID", "")),
+        positive_id(os.environ.get("GITHUB_RUN_ATTEMPT", "")),
     )
     dispatch_bytes(identity)
     return identity
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("discover", "wait", "verify-request", "verify"))
-    parser.add_argument("--tag", required=True)
-    parser.add_argument("--source-commit", required=True)
-    parser.add_argument("--release-id", required=True, type=_positive_id)
-    parser.add_argument("--owner-run-id", required=True, type=_positive_id)
-    parser.add_argument("--owner-attempt", required=True, type=_positive_id)
-    parser.add_argument("--producer-run-id", required=True, type=_positive_id)
-    parser.add_argument("--producer-attempt", required=True, type=_positive_id)
-    parser.add_argument("--producer-artifact-id", required=True, type=_positive_id)
-    parser.add_argument("--manifest-sha256", required=True)
-    parser.add_argument("--artifact-id", type=_positive_id)
-    parser.add_argument("--archive", type=Path)
-    parser.add_argument("--directory", type=Path)
-    args = parser.parse_args(argv)
-    handoff = HandoffIdentity(
+def _caller_inputs(args: argparse.Namespace) -> tuple[HandoffIdentity, str]:
+    values = (
         args.tag,
         args.source_commit,
         args.release_id,
@@ -370,9 +349,50 @@ def main(argv: list[str] | None = None) -> int:
         args.producer_run_id,
         args.producer_attempt,
         args.producer_artifact_id,
+        args.manifest_sha256,
     )
+    if args.from_event:
+        if any(value is not None for value in values):
+            raise ValueError("cannot mix dispatch event and manual identity inputs")
+        event = os.environ.get("GITHUB_EVENT_PATH")
+        if not event:
+            raise ValueError("missing Actions dispatch event path")
+        runner_temp = os.environ.get("RUNNER_TEMP")
+        return read_event_inputs(
+            Path(event),
+            runner_temp=Path(runner_temp) if runner_temp else None,
+        )
+    if any(value is None for value in values):
+        raise ValueError("all manual identity inputs are required")
+    identity = HandoffIdentity(*values[:-1])
+    dispatch_payload(identity, values[-1])
+    return identity, values[-1]
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("operation", choices=("discover", "wait", "verify-request", "verify"))
+    parser.add_argument(
+        "--from-event",
+        action="store_true",
+        help="read independent dispatch selectors from the Actions event",
+    )
+    parser.add_argument("--tag")
+    parser.add_argument("--source-commit")
+    parser.add_argument("--release-id", type=positive_id)
+    parser.add_argument("--owner-run-id", type=positive_id)
+    parser.add_argument("--owner-attempt", type=positive_id)
+    parser.add_argument("--producer-run-id", type=positive_id)
+    parser.add_argument("--producer-attempt", type=positive_id)
+    parser.add_argument("--producer-artifact-id", type=positive_id)
+    parser.add_argument("--manifest-sha256")
+    parser.add_argument("--artifact-id", type=positive_id)
+    parser.add_argument("--archive", type=Path)
+    parser.add_argument("--directory", type=Path)
+    args = parser.parse_args(argv)
     try:
-        identity = _runtime(handoff, args.manifest_sha256)
+        handoff, pin = _caller_inputs(args)
+        identity = _runtime(handoff, pin)
         client = DeliveryGitHubCLI()
         if args.operation in ("discover", "wait"):
             if any(value is not None for value in (args.artifact_id, args.archive, args.directory)):

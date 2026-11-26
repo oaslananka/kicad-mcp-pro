@@ -522,6 +522,19 @@ def test_prepare_dispatch_cli_preserves_signed_manifest_requirement(
     argv.extend(
         ["--manifest", str(args["manifest"]), "--manifest-sha256", dispatch.manifest_sha256]
     )
+    inputs_argv = ["--prepare-inputs", *argv[2:]]
+    assert owner.main(inputs_argv) == 0
+    inputs = json.loads(capsys.readouterr().out)
+    assert inputs["ref"] == identity.tag
+    assert inputs["inputs"]["manifest_sha256"] == dispatch.manifest_sha256
+    assert inputs["inputs"]["owner_run_id"] == str(identity.owner_run_id)
+    assert inputs["inputs"]["producer_artifact_id"] == str(identity.producer_artifact_id)
+    assert "worker_run_id" not in inputs["inputs"]
+    invalid = inputs_argv[:-1] + ["0" * 64]
+    with pytest.raises(SystemExit) as exc:
+        owner.main(invalid)
+    assert exc.value.code == 2
+    assert capsys.readouterr().out == ""
     assert owner.main(argv) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["workerRunId"] == 901
