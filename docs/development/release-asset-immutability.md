@@ -752,3 +752,45 @@ path before relying on it. A race after the final read remains possible.
 References: [workflow dispatch API](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event),
 [release visibility](https://docs.github.com/en/rest/releases/releases#list-releases),
 and [GITHUB_TOKEN dispatch behavior](https://docs.github.com/en/actions/concepts/security/github_token).
+
+#### Exact-run delivery of the signed request
+
+The future owner stores only the two signed JSON records together in an
+immutable Actions artifact named
+`python-worker-request-<owner-attempt>-<worker-run-id>`.
+The original package files remain in the independently verified producer
+artifact. The worker uses its own Actions runtime (repository, event,
+tag ref, SHA, run ID and attempt), and independently supplied owner,
+producer, Release and manifest-pin inputs:
+
+```bash
+python -m scripts.check_python_worker_request_delivery discover \
+  --tag "$TAG" --source-commit "$SOURCE_SHA" --release-id "$RELEASE_ID" \
+  --owner-run-id "$OWNER_RUN_ID" --owner-attempt "$OWNER_ATTEMPT" \
+  --producer-run-id "$PRODUCER_RUN_ID" --producer-attempt "$PRODUCER_ATTEMPT" \
+  --producer-artifact-id "$PRODUCER_ARTIFACT_ID" --manifest-sha256 "$OWNER_PIN"
+```
+
+The diagnostic only accepts an untruncated run-scoped artifact listing
+(up to 100 entries), one exact matching name and matching individual
+artifact metadata, including repository IDs, owner run and source, size
+and digest. Download the returned numeric artifact ID using the GitHub
+artifact ZIP endpoint. Run the same command with `verify` instead of
+`discover`, adding `--artifact-id "$REQUEST_ARTIFACT_ID"`,
+`--archive "$DOWNLOADED_ZIP"` and `--directory "$DIST"`.
+The verifier independently rereads metadata and requires the ZIP's exact
+digest and size (maximum 64 KiB). Only the two named, nonlinked JSON
+members are accepted, at most 16 KiB each. The private temporary files
+are removed after checking both production-owner signatures, local
+packages and exact child/owner/tag identity. The archive metadata,
+archive bytes, package bytes and live identities are checked again
+before returning.
+
+Discovery is a single bounded listing, not an automatic retry loop;
+missing, expired, duplicate or inconsistent evidence fails closed.
+A future orchestration job must provide a bounded wait for delivery,
+an overall timeout, trusted expected input provenance, the exact
+artifact download and safe producer extraction. This command does
+not publish, install, dispatch or download files itself; its output
+does not establish artifact-producing job identity, registry or
+exclusive-writer authority. No production workflow invokes it yet.
