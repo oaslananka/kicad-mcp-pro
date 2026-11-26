@@ -64,7 +64,7 @@ test("first and returning devices offer one setup command per platform",()=>{
   assert.match(html,/Copy PowerShell setup command/);
   assert.match(html,/Copy macOS and Linux setup command/);
   assert.match(html,/Keep the terminal open/);
-  assert.match(html,/currently support Cloud read access/);
+  assert.match(html,/Editing depends on/);
   assert.doesNotMatch(html,/cloud setup --browse|cloud connect --|--project-dir/);
  }
 });

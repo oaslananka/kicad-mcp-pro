@@ -127,6 +127,20 @@ _KICAD_CLOUD_ORIGIN = "https://kicad-mcp-pro.oaslananka.dev"
 _KICAD_CLOUD_ISSUER_SHA256 = "f49abb8687a184f842e259744eedcc3ceb80254c91942b7dd485df92ee688b01"
 
 
+def load_bundled_cloud_issuer(origin: str) -> Ed25519PublicKey:
+    """Load the release-pinned official issuer, not a network-supplied key."""
+    if origin != _KICAD_CLOUD_ORIGIN:
+        raise LocalWriteDeniedError(_DENIED)
+    try:
+        pem = (files("kicad_mcp") / "data" / "cloud_write_issuer_public.txt").read_bytes()
+        key = _issuer_key(pem)
+        if not hmac.compare_digest(_fingerprint(key), _KICAD_CLOUD_ISSUER_SHA256):
+            raise LocalWriteDeniedError(_DENIED)
+        return key
+    except (OSError, ValueError, TypeError) as exc:
+        raise LocalWriteDeniedError(_DENIED) from exc
+
+
 def trust_bundled_owner_cloud_issuer(record_id: str, *, origin: str) -> None:
     """One foreground owner action trusts the package-pinned Cloud issuer.
 

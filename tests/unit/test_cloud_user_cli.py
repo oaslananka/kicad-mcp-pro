@@ -1734,7 +1734,7 @@ def test_posix_registered_connect_uses_interactive_foreground(
     assert result.exit_code == exit_code, result.output
     assert calls == [record]
     assert "terminal open" in result.output
-    assert "read-only" in result.output
+    assert "Cloud project Edit grants" in result.output
 
 
 @pytest.mark.parametrize("platform", ["linux", "darwin"])

@@ -82,8 +82,7 @@ if ! healthy "$cli"; then
   healthy "$cli" || die "Installation verification failed."
 fi
 printf 'KiCad MCP Pro: Opening Cloud Connector...\n'
-# The POSIX connector currently supports read-only remote access.
-# Do not claim native edit support before its platform implementation exists.
+# The installed version determines supported signed-session capabilities.
 "$cli" cloud
 }
 # A curl | bash invocation reads code from the pipe; prompts use the owner TTY.

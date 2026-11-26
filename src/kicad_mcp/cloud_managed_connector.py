@@ -513,6 +513,123 @@ def _dispatcher_factory(
     return create
 
 
+def _posix_mcp_settings(
+    root: Path,
+    record: dict[str, str],
+    project: LocalRegisteredRead,
+    marker: str,
+) -> dict[str, Any]:
+    """Owner foreground only; use the same signed worker as Windows."""
+    if marker != _FOREGROUND_FILE:
+        return {}
+    from kicad_mcp.cloud_generic_mcp_transport import GenericProjectMcpService
+    from kicad_mcp.cloud_outbound_handshake import ManagedNativeWriteConfig
+    from kicad_mcp.cloud_windows_write_issuer import (
+        _KICAD_CLOUD_ORIGIN,
+        load_bundled_cloud_issuer,
+    )
+    from kicad_mcp.cloud_write_marker import LocalWriteMarker
+
+    def authorized() -> bool:
+        return _is_enabled(root, record, marker)
+
+    if not authorized():
+        raise LocalApprovalDeniedError(_DENIED)
+    official = record["cloudOrigin"] == _KICAD_CLOUD_ORIGIN
+    issuer = load_bundled_cloud_issuer(record["cloudOrigin"]) if official else None
+    replay = None
+    if issuer is not None:
+        root_fd = _open_owner_private_dir(root / _SESSION_LOCK_FILE)
+        try:
+            try:
+                os.mkdir("write-markers", mode=0o700, dir_fd=root_fd)
+            except FileExistsError:
+                pass
+        finally:
+            os.close(root_fd)
+        directory = root / "write-markers"
+        fd = _open_owner_private_dir(directory / "probe")
+        os.close(fd)
+        replay = LocalWriteMarker(directory)
+
+    def resolve(project_id: str) -> OperatorProject | None:
+        # The primary project is independently selected in the local registry.
+        # Do not accept an arbitrary secondary mapping as write authority.
+        if not authorized() or project_id != record["projectId"]:
+            return None
+        return OperatorProject(
+            record["deviceId"], project_id, project.project_directory, project.filename_stem
+        )
+
+    def factory(receipt: HandshakeReceipt) -> GenericProjectMcpService:
+        if receipt.device_id != record["deviceId"] or not authorized():
+            raise LocalApprovalDeniedError(_DENIED)
+        return GenericProjectMcpService(
+            receipt=receipt,
+            local_project=resolve,
+            current_authorization=authorized,
+            allow_native_write=issuer is not None,
+            trusted_issuer_key=issuer,
+            consume_once=replay.consume_once if replay is not None else None,
+        )
+
+    # The legacy native offer and generic write worker share the same pin,
+    # project, replay fence and live local authorization.
+    options: dict[str, Any] = {"mcp_bridge_factory": factory}
+    if issuer is not None and replay is not None:
+        from kicad_mcp.cloud_native_write_dispatch import (
+            execute_verified_signed_pcb_move,
+            prepare_native_write_revisions,
+        )
+        from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+        receipts: list[HandshakeReceipt] = []
+
+        def with_receipt(receipt: HandshakeReceipt) -> GenericProjectMcpService:
+            service = factory(receipt)
+            receipts[:] = [receipt]
+            return service
+
+        def target(project_id: str) -> OperatorProject:
+            resolved = resolve(project_id)
+            if resolved is None:
+                raise LocalWriteDeniedError(_DENIED)
+            return resolved
+
+        def prepare(project_id: str) -> dict[str, str]:
+            return prepare_native_write_revisions(
+                target(project_id), authorized=authorized, cancelled=lambda: not authorized()
+            )
+
+        def execute(project_id: str, proof: bytes, persist: bool) -> dict[str, object]:
+            if not receipts:
+                raise LocalWriteDeniedError(_DENIED)
+            return execute_verified_signed_pcb_move(
+                proof,
+                issuer_key=issuer,
+                verified=VerifiedLocalBinding(
+                    device_id=record["deviceId"],
+                    project_id=project_id,
+                    operations=frozenset({"pcb_move_footprint"}),
+                    session_id=receipts[0].session_id,
+                    session_expires_unix_ms=time.time_ns() // 1_000_000 + _SESSION_LIFETIME_MS,
+                ),
+                operator_project=target(project_id),
+                consume_once=replay.consume_once,
+                authorized=authorized,
+                cancelled=lambda: not authorized(),
+                persist_to_disk=persist,
+            )
+
+        options.update(
+            mcp_bridge_factory=with_receipt,
+            native_write=ManagedNativeWriteConfig(
+                revisions_preparer=prepare, write_executor=execute
+            ),
+        )
+    return options
+
+
 async def _wait_for_local_stop(
     stop: asyncio.Event, root: Path, record: dict[str, str], marker: str
 ) -> None:
@@ -564,6 +681,7 @@ async def _session_until_stopped(
             options["folder_service_factory"] = folder_factory
             if marker == _FOREGROUND_FILE:
                 options["on_activity"] = lambda message: _report_foreground(marker, message)
+                options.update(_posix_mcp_settings(root, record, project, marker))
         return await session_runner(**options)
 
     session_task = asyncio.create_task(run_session())

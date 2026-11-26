@@ -1400,7 +1400,11 @@ def _recover_posix_setup(
 def _run_posix_foreground(record: dict[str, str]) -> None:
     from kicad_mcp.cloud_managed_connector import run_foreground
 
-    typer.echo("Starting read-only Cloud Connector; keep this terminal open.")
+    if record["cloudOrigin"] == DEFAULT_CLOUD_ORIGIN:
+        typer.echo("Starting Cloud Connector; keep this terminal open.")
+        typer.echo("Cloud project Edit grants control signed editing in supported sessions.")
+    else:
+        typer.echo("Starting read-only Cloud Connector; keep this terminal open.")
     typer.echo("Press Ctrl+C to disconnect. Cloud owner grants still apply.")
     result = run_foreground(record)
     if result:

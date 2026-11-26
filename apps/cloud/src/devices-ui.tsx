@@ -352,8 +352,8 @@ function PlatformSetupCommands(){
     <CopyValue value={CLOUD_WINDOWS_INSTALL} label="PowerShell setup command"/>
     <h3>macOS / Linux</h3>
     <CopyValue value={CLOUD_POSIX_INSTALL} label="macOS and Linux setup command"/>
-    <p className="field-help">macOS and Linux currently support Cloud read access;
-      native editing is not yet available. Updated Connector releases pair before project selection.</p>
+    <p className="field-help">Updated Connector releases pair before project selection. Editing depends on
+      the connected version, project Edit grant and available local KiCad tools.</p>
   </>;
 }
 function WindowsBrokenLauncherHelp(){
