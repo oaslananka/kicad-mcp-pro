@@ -1413,15 +1413,19 @@ def connect(
         has_registration = folder.exists() and any(folder.iterdir())
 
     if not has_registration and not new_device and _owner_terminal():
+        from kicad_mcp.cloud_posix_device_bootstrap import connect_device_only
+        from kicad_mcp.cloud_posix_initial_enrollment import JOURNAL
         from kicad_mcp.cloud_posix_recovery import inspect_unbound_device
 
-        try:
-            inspect_unbound_device(root, origin)
-        except (OSError, ValueError) as exc:
-            raise typer.BadParameter(
-                "Existing device keys require registration repair. Run cloud status."
-            ) from exc
-        from kicad_mcp.cloud_posix_device_bootstrap import connect_device_only
+        # Pending enrollment can legitimately contain a key without an owner binding.
+        # The locked bootstrap validates the journal and exact key before any request.
+        if not os.path.lexists(root / JOURNAL):
+            try:
+                inspect_unbound_device(root, origin)
+            except (OSError, ValueError) as exc:
+                raise typer.BadParameter(
+                    "Existing device keys require registration repair. Run cloud status."
+                ) from exc
 
         try:
             record = connect_device_only(

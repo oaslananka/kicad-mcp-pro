@@ -2249,3 +2249,151 @@ def test_posix_connect_resumes_saved_recovery_before_device_only(
             "connect": ["recover", "approval", "connect"],
         }[fault]
     )
+
+
+@pytest.mark.parametrize("args", [["cloud"], ["cloud", "connect"]])
+@pytest.mark.parametrize("interruption", ["challenge", "approval", "redeem"])
+def test_posix_same_command_resumes_interrupted_initial_pairing(
+    monkeypatch, tmp_path, args, interruption
+) -> None:
+    import base64
+    import hashlib
+    import os
+    import secrets
+    import time
+    from uuid import uuid4
+
+    from cryptography.hazmat.primitives.serialization import load_der_public_key
+
+    from kicad_mcp import cloud_pair, cloud_user_cli
+    from kicad_mcp.cloud_posix_initial_enrollment import JOURNAL
+
+    if os.name != "posix":
+        pytest.skip("Real POSIX private registry and session lock")
+    root = tmp_path / "registry"
+    origin = "https://kicad-mcp-pro.oaslananka.dev"
+    challenge, device = str(uuid4()), str(uuid4())
+    secret = secrets.token_urlsafe(32)
+    issued, approvals, redeemed, sessions = [], [], [], []
+    state = {"approved": False, "interrupted": False}
+
+    def interrupt(stage):
+        if stage == interruption and not state["interrupted"]:
+            state["interrupted"] = True
+            raise OSError("simulated interruption")
+
+    def post(target, endpoint, payload, status):
+        assert target[2] == origin
+        if endpoint.endswith("/challenge"):
+            public = base64.b64decode(payload["publicKeyDer"])
+            issued.append(public)
+            state["public"] = load_der_public_key(public)
+            state["pin"] = hashlib.sha256(public).hexdigest()
+            interrupt("challenge")
+            return {
+                "challengeId": challenge,
+                "deviceCode": secret,
+                "userCode": "ABC123-DEF456",
+                "deviceFingerprint": state["pin"],
+                "expiresAtMs": time.time_ns() // 1_000_000 + 299_000,
+            }
+        assert payload["challengeId"] == challenge and payload["deviceCode"] == secret
+        if endpoint.endswith("/status"):
+            return {"approved": state["approved"]}
+        assert endpoint.endswith("/redeem") and state["approved"]
+        assert payload["resumeInitial"] is True and payload["connectOnApproval"] is True
+        state["public"].verify(
+            base64.urlsafe_b64decode(payload["signature"] + "=="),
+            b"kicad-cloud-pairing-initial-v1\x00" + challenge.encode() + b"\x00" + secret.encode(),
+        )
+        redeemed.append(payload.copy())
+        interrupt("redeem")
+        return {
+            "deviceId": device,
+            "ownerSub": "owner",
+            "deviceFingerprint": state["pin"],
+            "enabled": True,
+        }
+
+    def approve(*_args: object):
+        approvals.append("browser")
+        state["approved"] = True
+        interrupt("approval")
+
+    async def connect(registry, identity, _status):
+        assert registry == root and identity[1]["deviceId"] == device
+        sessions.append(identity[0])
+        return None
+
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_perform_approval", approve)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr("kicad_mcp.cloud_legacy_project_migration.legacy_candidates", lambda: {})
+    monkeypatch.setattr(cloud_pair, "_post", post)
+    monkeypatch.setattr(cloud_pair.time, "sleep", lambda _: None)
+    monkeypatch.setattr("kicad_mcp.cloud_posix_device_bootstrap._wait_for_project", connect)
+    runner = CliRunner()
+    first = runner.invoke(app, args)
+    assert first.exit_code != 0 and state["interrupted"], first.output
+    assert (root / JOURNAL).is_file()
+    (key,) = (root / "keys").glob("*.pem")
+    original = key.read_bytes()
+    assert not (root / "projects").exists()
+    second = runner.invoke(app, args)
+    assert second.exit_code == 0, second.output
+    assert sessions == [key]
+    assert key.read_bytes() == original and len(set(issued)) == 1
+    assert approvals == ["browser"]
+    assert len(redeemed) == (2 if interruption == "redeem" else 1)
+    assert all(payload == redeemed[0] for payload in redeemed)
+    assert not (root / JOURNAL).exists()
+    assert not (root / "projects").exists()
+
+
+@pytest.mark.parametrize("fault", ["foreign-origin", "wrong-slot", "invalid-journal", "symlink"])
+def test_posix_cli_resume_refuses_untrusted_journal_without_changing_key(
+    monkeypatch, tmp_path, fault
+) -> None:
+    import os
+    from uuid import uuid4
+
+    from kicad_mcp import cloud_pair, cloud_pair_keys, cloud_user_cli
+    from kicad_mcp.cloud_posix_initial_enrollment import JOURNAL
+
+    if os.name != "posix":
+        pytest.skip("Real POSIX private registry and session lock")
+    root = tmp_path / "registry"
+    keys = root / "keys"
+    root.mkdir(mode=0o700)
+    keys.mkdir(mode=0o700)
+    slot = str(uuid4())
+    key = keys / (slot + ".pem")
+    cloud_pair._load_or_create(key)
+    origin = "https://kicad-mcp-pro.oaslananka.dev"
+    document = {
+        "origin": "https://foreign.example" if fault == "foreign-origin" else origin,
+        "slot": str(uuid4()) if fault == "wrong-slot" else slot,
+        "phase": "waiting",
+    }
+    if fault == "symlink":
+        cloud_pair_keys._write_private_json(root, "outside.json", document)
+        (root / JOURNAL).symlink_to(root / "outside.json")
+    else:
+        cloud_pair_keys._write_private_json(
+            root, JOURNAL, {} if fault == "invalid-journal" else document
+        )
+    before = {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr(cloud_pair, "_post", lambda *_: pytest.fail("unexpected enrollment"))
+    monkeypatch.setattr(
+        cloud_user_cli, "_perform_approval", lambda *_: pytest.fail("unexpected approval")
+    )
+    result = CliRunner().invoke(app, ["cloud"])
+    assert result.exit_code == 2, result.output
+    assert {
+        str(p.relative_to(root)): p.read_bytes()
+        for p in root.rglob("*")
+        if p.is_file() and p.name != "connector-session.lock"
+    } == before
+    assert not (root / "projects").exists()
