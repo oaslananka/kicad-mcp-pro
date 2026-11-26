@@ -474,6 +474,15 @@ def test_main_sonar_coverage_uses_windows_native_evidence() -> None:
     assert "mcp-server" not in jobs["coverage"]["needs"]
     assert "actions" in jobs["coverage"]["permissions"]
     assert "scripts/merge_platform_coverage.py stamp" in collector["run"]
+    # Native vault and generation mutex tests must contribute actual Windows hits.
+    for path in (
+        "tests/unit/test_cloud_windows_single_instance.py",
+        "tests/unit/test_cloud_windows_update_control.py",
+        "tests/unit/test_cloud_windows_initial_enrollment.py",
+        "tests/unit/test_cloud_windows_scoped_projects.py",
+        "tests/cloud/test_cloud_windows_write_project_binding.py",
+    ):
+        assert path in collector["run"]
     assert "scripts/merge_platform_coverage.py merge" in merge["run"]
     assert "scripts/check_patch_coverage.py" in linux["Enforce Python patch coverage"]["run"]
     assert "--min-percent 90" in linux["Enforce Python patch coverage"]["run"]

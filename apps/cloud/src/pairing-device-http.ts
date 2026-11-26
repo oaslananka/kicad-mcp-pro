@@ -17,7 +17,17 @@ const redeemSchema=z.strictObject({
   deviceCode:z.string().regex(/^[A-Za-z0-9_-]{43}$/),
   signature:z.string().regex(/^[A-Za-z0-9_-]{86}$/),
   // Opt-in in the new client only. Absent means the original disabled-device contract.
-  connectOnApproval:z.literal(true).optional()
+  connectOnApproval:z.literal(true).optional(),
+  resumeInitial:z.literal(true).optional(),
+  recovery:z.strictObject({
+    deviceId:z.uuid(),
+    ownerSub:z.string().min(1).max(256)
+  }).optional()
+});
+const inventorySchema=z.strictObject({
+  deviceId:z.uuid(),ownerSub:z.string().min(1).max(256),projectId:z.uuid().nullable(),
+  nonce:z.string().regex(/^[A-Za-z0-9_-]{43}$/),issuedAtMs:z.number().int(),
+  signature:z.string().regex(/^[A-Za-z0-9_-]{86}$/)
 });
 const projectSchema=z.strictObject({
   deviceId:z.string().uuid(),
@@ -64,7 +74,8 @@ export async function handlePairingDeviceRequest(
   if(path!=="/api/v1/pairing/device/challenge"&&
      path!=="/api/v1/pairing/device/status"&&
      path!=="/api/v1/pairing/device/redeem"&&
-     path!=="/api/v1/pairing/device/project")return false;
+     path!=="/api/v1/pairing/device/project"&&
+     path!=="/api/v1/pairing/device/inventory")return false;
   if(req.method!=="POST"){reply(res,405,{error:"method_not_allowed"});return true;}
   if(req.url!==path||req.headers.origin!==undefined||
      req.headers.cookie!==undefined||req.headers.authorization!==undefined||
@@ -122,9 +133,29 @@ export async function handlePairingDeviceRequest(
     const sig=canonicalUrlB64(fields.data.signature,64);
     if(!secret||!sig){reply(res,400,{error:"invalid_request"});return true;}
     const connectOnApproval=fields.data.connectOnApproval===true;
+    const resumeInitial=fields.data.resumeInitial===true;
+    if(resumeInitial&&(!connectOnApproval||fields.data.recovery)){
+      reply(res,400,{error:"invalid_request"});return true;
+    }
     const result=await api.enroll(source,fields.data.challengeId,fields.data.deviceCode,sig,
-      connectOnApproval);
+      connectOnApproval,fields.data.recovery,resumeInitial);
     if(result.kind==="throttled"){reply(res,429,{error:"rate_limited"});return true;}
+    if(result.kind==="ok"&&result.data.kind==="initial_denied"&&resumeInitial){
+      reply(res,200,{initialDenied:true});return true;
+    }
+    if(result.kind==="ok"&&result.data.kind==="initial_receipt"&&resumeInitial){
+      reply(res,200,{initialReceipt:true,deviceId:result.data.deviceId,
+        deviceFingerprint:result.data.deviceFingerprint,ownerSub:result.data.ownerSub});return true;
+    }
+    if(result.kind==="ok"&&result.data.kind==="recovery_denied"){
+      reply(res,200,{recoveryDenied:true});return true;
+    }
+    if(result.kind==="ok"&&result.data.kind==="recovery_receipt"&&connectOnApproval&&fields.data.recovery){
+      reply(res,200,{
+        recoveryReceipt:true,deviceId:result.data.deviceId,
+        deviceFingerprint:result.data.deviceFingerprint,ownerSub:result.data.ownerSub
+      });return true;
+    }
     if(result.kind!=="ok"||result.data.kind!=="enrolled"){
       reply(res,400,{error:"unavailable"});return true;
     }
@@ -135,6 +166,18 @@ export async function handlePairingDeviceRequest(
       enabled:connectOnApproval
     });
     return true;
+  }
+  if(path.endsWith("/inventory")){
+    const fields=inventorySchema.safeParse(parsed);
+    if(!fields.success){reply(res,400,{error:"invalid_request"});return true;}
+    const {signature:encoded,...request}=fields.data;
+    const signature=canonicalUrlB64(encoded,64);
+    if(!signature){reply(res,400,{error:"invalid_request"});return true;}
+    if(!api.inventoryStatus){reply(res,400,{error:"unavailable"});return true;}
+    const result=await api.inventoryStatus(source,request,signature);
+    if(result.kind==="throttled"){reply(res,429,{error:"rate_limited"});return true;}
+    if(result.kind!=="ok"){reply(res,400,{error:"unavailable"});return true;}
+    reply(res,200,result.data);return true;
   }
   const fields=projectSchema.safeParse(parsed);
   if(!fields.success){reply(res,400,{error:"invalid_request"});return true;}

@@ -581,3 +581,208 @@ def test_unexpected_disabled_device_reply_is_not_claimed_as_connected(
         )
     assert "redeem" in events
     assert len(store) == 1
+
+
+@pytest.mark.parametrize("denied", [False, True])
+def test_recovery_redeem_binds_old_identity_and_requires_same_owner(
+    fake_windows_pair, monkeypatch, denied: bool
+) -> None:
+    store, events, state = fake_windows_pair
+    original = cloud_pair._post
+    old = "39ee4be9-0aec-448e-9873-721ae113ec02"
+
+    def response(target, path, body, status):
+        if not path.endswith("/redeem"):
+            return original(target, path, body, status)
+        assert state["approved"]
+        assert body["recovery"] == {"deviceId": old, "ownerSub": OWNER}
+        assert body["connectOnApproval"] is True
+        encoded = body["signature"]
+        state["public"].verify(
+            base64.urlsafe_b64decode(encoded + "=="),
+            b"kicad-cloud-pairing-recovery-v1\x00"
+            + CHALLENGE.encode()
+            + b"\x00"
+            + SECRET.encode()
+            + b"\x00"
+            + old.encode()
+            + b"\x00"
+            + OWNER.encode(),
+        )
+        events.append("redeem")
+        if denied:
+            return {"recoveryDenied": True}
+        return {
+            "deviceId": DEVICE,
+            "deviceFingerprint": state["fingerprint"],
+            "ownerSub": OWNER,
+            "enabled": True,
+        }
+
+    monkeypatch.setattr(cloud_pair, "_post", response)
+    options = dict(
+        origin=ORIGIN,
+        alias="Lab PC",
+        owner_approval=_approval(events, state),
+        recovery_device_id=old,
+        recovery_owner_sub=OWNER,
+    )
+    if denied:
+        with pytest.raises(cloud_windows_enrollment.WindowsRecoveryDeniedError):
+            cloud_windows_enrollment.enroll_windows_device(**options)
+        assert not store
+    else:
+        result = cloud_windows_enrollment.enroll_windows_device(**options)
+        assert result.owner_sub == OWNER
+        assert result.device_id == DEVICE
+
+
+@pytest.mark.parametrize("recovery", [False, True])
+def test_lost_redeem_response_retries_only_identical_recovery_request(
+    monkeypatch, recovery: bool
+) -> None:
+    from urllib3.exceptions import ProtocolError
+
+    calls = []
+    key = Ed25519PrivateKey.generate()
+    fingerprint = hashlib.sha256(
+        key.public_key().public_bytes(
+            cloud_windows_enrollment.Encoding.DER,
+            cloud_windows_enrollment.PublicFormat.SubjectPublicKeyInfo,
+        )
+    ).hexdigest()
+    identity = {"deviceId": "39ee4be9-0aec-448e-9873-721ae113ec02", "ownerSub": OWNER}
+
+    def post(target, path, body, status):
+        calls.append((target, path, body, status))
+        if len(calls) == 1:
+            raise cloud_pair.CloudPairingError("response lost") from ProtocolError("closed")
+        return {
+            "deviceId": DEVICE,
+            "deviceFingerprint": fingerprint,
+            "ownerSub": OWNER,
+            "enabled": True,
+        }
+
+    monkeypatch.setattr(cloud_pair, "_post", post)
+    options = dict(
+        challenge=CHALLENGE,
+        secret=SECRET,
+        fingerprint=fingerprint,
+        recovery=identity if recovery else None,
+    )
+    if recovery:
+        assert cloud_windows_enrollment._approved_redeem(
+            cloud_pair._origin(ORIGIN), key, **options
+        ) == (DEVICE, OWNER)
+        assert len(calls) == 2
+        assert calls[0] == calls[1]
+    else:
+        with pytest.raises(cloud_pair.CloudPairingError):
+            cloud_windows_enrollment._approved_redeem(cloud_pair._origin(ORIGIN), key, **options)
+        assert len(calls) == 1
+
+
+@pytest.mark.parametrize("outcome", ["success", "historical", "denied", "tampered"])
+def test_recovery_resumes_approved_request_after_process_restart(
+    fake_windows_pair, monkeypatch, outcome
+) -> None:
+    store, events, state = fake_windows_pair
+    original = cloud_pair._post
+    requests = []
+
+    def response(target, path, body, status):
+        if not path.endswith("/redeem"):
+            return original(target, path, body, status)
+        requests.append(body.copy())
+        if len(requests) == 1:
+            raise KeyboardInterrupt
+        if outcome == "denied":
+            return {"recoveryDenied": True}
+        return {
+            "deviceId": DEVICE,
+            "deviceFingerprint": state["fingerprint"],
+            "ownerSub": OWNER,
+            **({"recoveryReceipt": True} if outcome == "historical" else {"enabled": True}),
+        }
+
+    monkeypatch.setattr(cloud_pair, "_post", response)
+    options = dict(
+        origin=ORIGIN,
+        alias="Lab PC",
+        recovery_record_id="a" * 32,
+        recovery_device_id="39ee4be9-0aec-448e-9873-721ae113ec02",
+        recovery_owner_sub=OWNER,
+    )
+    approval = _approval(events, state)
+    with pytest.raises(KeyboardInterrupt):
+        cloud_windows_enrollment.enroll_windows_device(**options, owner_approval=approval)
+    assert ("a" * 32, "recovery_pending") in store
+    if outcome == "tampered":
+        journal = json.loads(store[("a" * 32, "recovery_pending")])
+        journal["ownerSub"] = "foreign-owner"
+        store[("a" * 32, "recovery_pending")] = json.dumps(journal).encode()
+        before = dict(store)
+        with pytest.raises(cloud_windows_enrollment.WindowsEnrollmentError):
+            cloud_windows_enrollment.enroll_windows_device(
+                **options, owner_approval=lambda *_: pytest.fail("already approved")
+            )
+        assert len(requests) == 1
+        assert store == before
+        return
+    if outcome == "denied":
+        with pytest.raises(cloud_windows_enrollment.WindowsRecoveryDeniedError):
+            cloud_windows_enrollment.enroll_windows_device(
+                **options, owner_approval=lambda *_: pytest.fail("already approved")
+            )
+        assert requests[0] == requests[1]
+        assert not store
+        return
+    result = cloud_windows_enrollment.enroll_windows_device(
+        **options, owner_approval=lambda *_: pytest.fail("already approved")
+    )
+    assert result.device_id == DEVICE
+    assert requests[0] == requests[1]
+    assert events.count("challenge") == events.count("owner_approval") == 1
+    assert (result.record_id, "binding") in store
+    assert ("a" * 32, "recovery_pending") in store
+
+
+@pytest.mark.parametrize(
+    "variant", ["ordinary", "conflicting", "foreign", "old-id", "bad-fingerprint"]
+)
+def test_historical_receipt_cannot_be_used_as_ordinary_or_foreign_binding(
+    monkeypatch, variant
+) -> None:
+    key = Ed25519PrivateKey.generate()
+    pin = hashlib.sha256(
+        key.public_key().public_bytes(
+            cloud_windows_enrollment.Encoding.DER,
+            cloud_windows_enrollment.PublicFormat.SubjectPublicKeyInfo,
+        )
+    ).hexdigest()
+    old = "39ee4be9-0aec-448e-9873-721ae113ec02"
+    reply = {
+        "deviceId": DEVICE,
+        "deviceFingerprint": pin,
+        "ownerSub": OWNER,
+        "recoveryReceipt": True,
+    }
+    if variant == "conflicting":
+        reply["enabled"] = True
+    elif variant == "foreign":
+        reply["ownerSub"] = "other"
+    elif variant == "old-id":
+        reply["deviceId"] = old
+    elif variant == "bad-fingerprint":
+        reply["deviceFingerprint"] = "0" * 64
+    monkeypatch.setattr(cloud_pair, "_post", lambda *_: reply)
+    with pytest.raises(cloud_windows_enrollment.WindowsEnrollmentError):
+        cloud_windows_enrollment._approved_redeem(
+            cloud_pair._origin(ORIGIN),
+            key,
+            challenge=CHALLENGE,
+            secret=SECRET,
+            fingerprint=pin,
+            recovery=None if variant == "ordinary" else {"deviceId": old, "ownerSub": OWNER},
+        )

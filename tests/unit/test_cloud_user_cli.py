@@ -1734,7 +1734,7 @@ def test_posix_registered_connect_uses_interactive_foreground(
     assert result.exit_code == exit_code, result.output
     assert calls == [record]
     assert "terminal open" in result.output
-    assert "read-only" in result.output
+    assert "Cloud project Edit grants" in result.output
 
 
 @pytest.mark.parametrize("platform", ["linux", "darwin"])
@@ -1908,22 +1908,26 @@ def test_darwin_headless_setup_rejects_before_registration(monkeypatch, tmp_path
 
 
 @pytest.mark.parametrize("args", [["cloud"], ["cloud", "connect"]])
-def test_posix_first_interactive_command_routes_to_setup(monkeypatch, tmp_path: Path, args) -> None:
+def test_posix_first_interactive_command_routes_to_device_only(
+    monkeypatch, tmp_path: Path, args
+) -> None:
     from kicad_mcp import cloud_user_cli
 
     monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
-    monkeypatch.setattr(
-        "kicad_mcp.cloud_local_registry.default_registry_root", lambda: tmp_path / "registry"
-    )
-    monkeypatch.setattr("kicad_mcp.cloud_pair.main", lambda *_: pytest.fail("pairing-only path"))
+    root = tmp_path / "registry"
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr("kicad_mcp.cloud_pair.main", lambda *_: pytest.fail("legacy pairing"))
+    monkeypatch.setattr(cloud_user_cli, "setup", lambda **_: pytest.fail("implicit project"))
     calls = []
-    monkeypatch.setattr(cloud_user_cli, "setup", lambda **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_posix_device_bootstrap.connect_device_only",
+        lambda *args: calls.append(args),
+    )
     result = CliRunner().invoke(app, args)
     assert result.exit_code == 0, result.output
     assert len(calls) == 1
-    assert calls[0]["new_device"] is False
-    assert calls[0]["project_dir"] is None
-    assert not (tmp_path / "registry").exists()
+    assert calls[0][0] == root
+    assert not root.exists()
 
 
 def test_posix_bare_cloud_requires_owner_terminal(monkeypatch) -> None:
@@ -2008,7 +2012,6 @@ def test_posix_setup_preserves_unbound_keys_without_explicit_new_device(
     "case",
     [
         "confirmed",
-        "bare_confirmed",
         "declined",
         "wrong_fingerprint",
         "wrong_origin",
@@ -2105,13 +2108,10 @@ def test_posix_setup_recovers_single_verified_device(
 
         monkeypatch.setattr(cloud_user_cli.typer, "confirm", change_state)
     args = ["cloud", "setup", "--project-dir", str(board)]
-    if case == "bare_confirmed":
-        monkeypatch.chdir(board)
-        args = ["cloud"]
     result = CliRunner().invoke(app, args, input="n\n" if case == "declined" else "y\n")
     assert {p.name: p.read_bytes() for p in keys.iterdir()} == before
     assert (root / "connector-enabled.json").exists() == (case == "changed_during_confirmation")
-    if case in {"confirmed", "bare_confirmed"}:
+    if case == "confirmed":
         assert result.exit_code == 0, result.output
         record = json.loads((root / "projects" / f"{project}.json").read_text())
         assert record["deviceId"] == device
@@ -2150,4 +2150,256 @@ def test_posix_first_setup_cannot_pair_during_another_session(monkeypatch, tmp_p
     assert result.exit_code != 0
     assert "already running" in result.output
     assert not (root / "keys").exists()
+    assert not (root / "projects").exists()
+
+
+@pytest.mark.parametrize("outcome", ["project", "device", "unchanged"])
+def test_posix_same_command_recovers_deleted_project(monkeypatch, tmp_path: Path, outcome) -> None:
+    from kicad_mcp import cloud_posix_device_bootstrap as boot
+    from kicad_mcp import cloud_user_cli
+
+    root = tmp_path / "registry"
+    folder = root / "projects"
+    folder.mkdir(parents=True)
+    marker = folder / "record.json"
+    marker.write_text("fixture")
+    record = {"cloudOrigin": cloud_user_cli.DEFAULT_CLOUD_ORIGIN}
+    monkeypatch.setattr(cloud_user_cli, "_is_windows", lambda: False)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_registered_pilot._single_registered_identity", lambda _: record
+    )
+    monkeypatch.setattr("kicad_mcp.cloud_posix_recovery.inspect_unbound_device", lambda *_: None)
+    monkeypatch.setattr("kicad_mcp.cloud_pair.enroll", lambda *_: pytest.fail("unexpected pairing"))
+    events = []
+
+    def foreground(_record):
+        events.append("session")
+        raise cloud_user_cli.typer.Exit(3)
+
+    def recover(_root, _record):
+        events.append("diagnosis")
+        if outcome == "project":
+            marker.unlink()
+        return outcome == "project"
+
+    monkeypatch.setattr(cloud_user_cli, "_run_posix_foreground", foreground)
+    monkeypatch.setattr(boot, "recover_missing_project", recover)
+
+    def recover_device(*_args: object) -> bool:
+        events.append("device-diagnosis")
+        if outcome == "device":
+            marker.unlink()
+        return outcome == "device"
+
+    monkeypatch.setattr("kicad_mcp.cloud_posix_replacement.recover_device", recover_device)
+    monkeypatch.setattr(boot, "connect_device_only", lambda *_: events.append("device-only"))
+    result = CliRunner().invoke(app, ["cloud"])
+    assert result.exit_code == (3 if outcome == "unchanged" else 0), result.output
+    expected = ["session", "diagnosis"]
+    if outcome != "project":
+        expected.append("device-diagnosis")
+    if outcome != "unchanged":
+        expected.append("device-only")
+    assert events == expected
+
+
+@pytest.mark.parametrize("fault", ["none", "recovery", "connect"])
+def test_posix_connect_resumes_saved_recovery_before_device_only(
+    monkeypatch, tmp_path, fault
+) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    root = tmp_path / "registry"
+    events = []
+    record = {"projectId": "existing"}
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr("kicad_mcp.cloud_posix_replacement.pending_replacement", lambda _: True)
+    monkeypatch.setattr(cloud_user_cli, "_perform_approval", lambda *_: events.append("approval"))
+    monkeypatch.setattr("kicad_mcp.cloud_posix_recovery.inspect_unbound_device", lambda *_: None)
+
+    def recover(registry, origin, alias, approval):
+        assert registry == root
+        events.append("recover")
+        if fault == "recovery":
+            raise ValueError("recovery refused")
+        approval("page", "challenge", "code")
+        return True
+
+    def connect(*_args: object):
+        events.append("connect")
+        if fault == "connect":
+            raise ValueError("connect refused")
+        return record
+
+    monkeypatch.setattr("kicad_mcp.cloud_posix_replacement.recover_device", recover)
+    monkeypatch.setattr("kicad_mcp.cloud_posix_device_bootstrap.connect_device_only", connect)
+    monkeypatch.setattr(
+        cloud_user_cli, "_run_posix_foreground", lambda _: events.append("foreground")
+    )
+    result = CliRunner().invoke(app, ["cloud", "connect"])
+    assert result.exit_code == (0 if fault == "none" else 2), result.output
+    assert (
+        events
+        == {
+            "none": ["recover", "approval", "connect", "foreground"],
+            "recovery": ["recover"],
+            "connect": ["recover", "approval", "connect"],
+        }[fault]
+    )
+
+
+@pytest.mark.parametrize("args", [["cloud"], ["cloud", "connect"]])
+@pytest.mark.parametrize("interruption", ["challenge", "approval", "redeem"])
+def test_posix_same_command_resumes_interrupted_initial_pairing(
+    monkeypatch, tmp_path, args, interruption
+) -> None:
+    import base64
+    import hashlib
+    import os
+    import secrets
+    import time
+    from uuid import uuid4
+
+    from cryptography.hazmat.primitives.serialization import load_der_public_key
+
+    from kicad_mcp import cloud_pair, cloud_user_cli
+    from kicad_mcp.cloud_posix_initial_enrollment import JOURNAL
+
+    if os.name != "posix":
+        pytest.skip("Real POSIX private registry and session lock")
+    root = tmp_path / "registry"
+    origin = "https://kicad-mcp-pro.oaslananka.dev"
+    challenge, device = str(uuid4()), str(uuid4())
+    secret = secrets.token_urlsafe(32)
+    issued, approvals, redeemed, sessions = [], [], [], []
+    state = {"approved": False, "interrupted": False}
+
+    def interrupt(stage):
+        if stage == interruption and not state["interrupted"]:
+            state["interrupted"] = True
+            raise OSError("simulated interruption")
+
+    def post(target, endpoint, payload, status):
+        assert target[2] == origin
+        if endpoint.endswith("/challenge"):
+            public = base64.b64decode(payload["publicKeyDer"])
+            issued.append(public)
+            state["public"] = load_der_public_key(public)
+            state["pin"] = hashlib.sha256(public).hexdigest()
+            interrupt("challenge")
+            return {
+                "challengeId": challenge,
+                "deviceCode": secret,
+                "userCode": "ABC123-DEF456",
+                "deviceFingerprint": state["pin"],
+                "expiresAtMs": time.time_ns() // 1_000_000 + 299_000,
+            }
+        assert payload["challengeId"] == challenge
+        assert payload["deviceCode"] == secret
+        if endpoint.endswith("/status"):
+            return {"approved": state["approved"]}
+        assert endpoint.endswith("/redeem")
+        assert state["approved"]
+        assert payload["resumeInitial"] is True
+        assert payload["connectOnApproval"] is True
+        state["public"].verify(
+            base64.urlsafe_b64decode(payload["signature"] + "=="),
+            b"kicad-cloud-pairing-initial-v1\x00" + challenge.encode() + b"\x00" + secret.encode(),
+        )
+        redeemed.append(payload.copy())
+        interrupt("redeem")
+        return {
+            "deviceId": device,
+            "ownerSub": "owner",
+            "deviceFingerprint": state["pin"],
+            "enabled": True,
+        }
+
+    def approve(*_args: object):
+        approvals.append("browser")
+        state["approved"] = True
+        interrupt("approval")
+
+    async def connect(registry, identity, _status):
+        assert registry == root
+        assert identity[1]["deviceId"] == device
+        sessions.append(identity[0])
+        return None
+
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_perform_approval", approve)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr("kicad_mcp.cloud_legacy_project_migration.legacy_candidates", lambda: {})
+    monkeypatch.setattr(cloud_pair, "_post", post)
+    monkeypatch.setattr(cloud_pair.time, "sleep", lambda _: None)
+    monkeypatch.setattr("kicad_mcp.cloud_posix_device_bootstrap._wait_for_project", connect)
+    runner = CliRunner()
+    first = runner.invoke(app, args)
+    assert first.exit_code != 0, first.output
+    assert state["interrupted"], first.output
+    assert (root / JOURNAL).is_file()
+    (key,) = (root / "keys").glob("*.pem")
+    original = key.read_bytes()
+    assert not (root / "projects").exists()
+    second = runner.invoke(app, args)
+    assert second.exit_code == 0, second.output
+    assert sessions == [key]
+    assert key.read_bytes() == original
+    assert len(set(issued)) == 1
+    assert approvals == ["browser"]
+    assert len(redeemed) == (2 if interruption == "redeem" else 1)
+    assert all(payload == redeemed[0] for payload in redeemed)
+    assert not (root / JOURNAL).exists()
+    assert not (root / "projects").exists()
+
+
+@pytest.mark.parametrize("fault", ["foreign-origin", "wrong-slot", "invalid-journal", "symlink"])
+def test_posix_cli_resume_refuses_untrusted_journal_without_changing_key(
+    monkeypatch, tmp_path, fault
+) -> None:
+    import os
+    from uuid import uuid4
+
+    from kicad_mcp import cloud_pair, cloud_pair_keys, cloud_user_cli
+    from kicad_mcp.cloud_posix_initial_enrollment import JOURNAL
+
+    if os.name != "posix":
+        pytest.skip("Real POSIX private registry and session lock")
+    root = tmp_path / "registry"
+    keys = root / "keys"
+    root.mkdir(mode=0o700)
+    keys.mkdir(mode=0o700)
+    slot = str(uuid4())
+    key = keys / (slot + ".pem")
+    cloud_pair._load_or_create(key)
+    origin = "https://kicad-mcp-pro.oaslananka.dev"
+    document = {
+        "origin": "https://foreign.example" if fault == "foreign-origin" else origin,
+        "slot": str(uuid4()) if fault == "wrong-slot" else slot,
+        "phase": "waiting",
+    }
+    if fault == "symlink":
+        cloud_pair_keys._write_private_json(root, "outside.json", document)
+        (root / JOURNAL).symlink_to(root / "outside.json")
+    else:
+        cloud_pair_keys._write_private_json(
+            root, JOURNAL, {} if fault == "invalid-journal" else document
+        )
+    before = {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr(cloud_pair, "_post", lambda *_: pytest.fail("unexpected enrollment"))
+    monkeypatch.setattr(
+        cloud_user_cli, "_perform_approval", lambda *_: pytest.fail("unexpected approval")
+    )
+    result = CliRunner().invoke(app, ["cloud"])
+    assert result.exit_code == 2, result.output
+    assert {
+        str(p.relative_to(root)): p.read_bytes()
+        for p in root.rglob("*")
+        if p.is_file() and p.name != "connector-session.lock"
+    } == before
     assert not (root / "projects").exists()

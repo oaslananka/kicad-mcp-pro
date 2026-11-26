@@ -1,0 +1,179 @@
+"""Device-scoped, owner-selected secondary project bindings for POSIX MCP."""
+
+from __future__ import annotations
+
+import os
+from collections.abc import Callable
+from pathlib import Path
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from kicad_mcp import cloud_pair_keys
+from kicad_mcp.cloud_folder_browse_receiver import (
+    BrowserFolderService,
+    _posix_owner_native_picker,
+)
+from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
+from kicad_mcp.cloud_local_registry import _STEM, _UUID, LocalRegisteredRead
+from kicad_mcp.cloud_readonly_boundary import OperatorProject
+
+_DENIED = "Invalid local project binding."
+_PROJECT_SUFFIX = ".kicad_pro"
+_BINDING_SUFFIX = ".json"
+
+
+def _folder(root: Path, record: dict[str, str]) -> Path:
+    if not _UUID.fullmatch(record["deviceId"]):
+        raise ValueError(_DENIED)
+    return root / "project-bindings" / record["deviceId"]
+
+
+def _valid_file(file: Path) -> bool:
+    return (
+        file.is_absolute()
+        and file.suffix == _PROJECT_SUFFIX
+        and _STEM.fullmatch(file.stem) is not None
+        and file.is_file()
+        and not file.is_symlink()
+        and file.resolve(strict=True) == file
+    )
+
+
+def _document(record: dict[str, str], pid: str, file: Path) -> dict[str, str]:
+    return {
+        "ownerSub": record["ownerSub"],
+        "origin": record["cloudOrigin"],
+        "deviceId": record["deviceId"],
+        "keySlot": record["keySlot"],
+        "projectId": pid,
+        "file": str(file),
+    }
+
+
+def resolve_secondary(root: Path, record: dict[str, str], pid: str) -> OperatorProject | None:
+    """Never trust the legacy unscoped browse cache as write authorization."""
+    if not isinstance(pid, str) or not _UUID.fullmatch(pid) or pid == record["projectId"]:
+        return None
+    try:
+        data = cloud_pair_keys._read_private_json(_folder(root, record), pid + _BINDING_SUFFIX)
+        file = Path(data["file"])
+        if data != _document(record, pid, file) or not _valid_file(file):
+            return None
+        return OperatorProject(record["deviceId"], pid, file.parent, file.stem)
+    except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+        return None
+
+
+def _save(root: Path, record: dict[str, str], pid: str, file: Path) -> bool:
+    if not isinstance(pid, str) or not _UUID.fullmatch(pid) or not _valid_file(file):
+        return False
+    directory = _folder(root, record)
+    for folder in (directory.parent, directory):
+        folder.mkdir(mode=0o700, exist_ok=True)
+        fd = cloud_pair_keys._open_owner_private_dir(folder / "probe")
+        os.close(fd)
+    data = _document(record, pid, file)
+    name = pid + _BINDING_SUFFIX
+    if os.path.lexists(directory / name):
+        return cloud_pair_keys._read_private_json(directory, name) == data
+    cloud_pair_keys._write_private_json(directory, name, data)
+    return cloud_pair_keys._read_private_json(directory, name) == data
+
+
+def folder_service(
+    root: Path,
+    record: dict[str, str],
+    project: LocalRegisteredRead,
+    authorized: Callable[[], bool],
+    *,
+    native_picker: Callable[[], Path | None] = _posix_owner_native_picker,
+) -> BrowserFolderService:
+    """Record explicit selection in the exact device's private namespace."""
+
+    def on_bound(pid: str, file: Path) -> bool:
+        if not authorized():
+            return False
+        if pid == record["projectId"]:
+            return file == project.project_directory / (project.filename_stem + _PROJECT_SUFFIX)
+        return _save(root, record, pid, file)
+
+    def bound_path(pid: str) -> str | None:
+        if not authorized():
+            return None
+        if pid == record["projectId"]:
+            file = project.project_directory / (project.filename_stem + _PROJECT_SUFFIX)
+            return str(file) if _valid_file(file) else None
+        target = resolve_secondary(root, record, pid)
+        if target is None:
+            return None
+        return str(target.directory / (target.filename_stem + _PROJECT_SUFFIX))
+
+    return BrowserFolderService(
+        LocalFolderBrowser([], root / "unused-browser-cache.json"),
+        native_picker=native_picker,
+        authorization=authorized,
+        on_bound=on_bound,
+        bound_path=bound_path,
+    )
+
+
+def existing_targets(root: Path, record: dict[str, str]) -> list[OperatorProject]:
+    """Enumerate only previously bound projects of this exact device."""
+    from kicad_mcp.cloud_posix_recovery import _private_names
+
+    names = sorted(_private_names(_folder(root, record)))
+    targets = []
+    for name in names:
+        if not name.endswith(_BINDING_SUFFIX):
+            continue
+        target = resolve_secondary(root, record, name[:-5])
+        if target is not None:
+            targets.append(target)
+    return targets
+
+
+def migrate_legacy(
+    root: Path, record: dict[str, str], key: Ed25519PrivateKey, authorized: Callable[[], bool]
+) -> int:
+    """Import old selections only in the official owner foreground session."""
+    from kicad_mcp.cloud_legacy_project_migration import migrate
+    from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+    if record["cloudOrigin"] != _KICAD_CLOUD_ORIGIN:
+        return 0
+    directory = _folder(root, record) / "legacy-migration"
+
+    def completed(pid: str) -> bool:
+        return os.path.lexists(directory / (pid + _BINDING_SUFFIX))
+
+    def mark(pid: str) -> None:
+        for folder in (directory.parent.parent, directory.parent, directory):
+            folder.mkdir(mode=0o700, exist_ok=True)
+            fd = cloud_pair_keys._open_owner_private_dir(folder / "probe")
+            os.close(fd)
+        name = pid + _BINDING_SUFFIX
+        if os.path.lexists(directory / name):
+            raise ValueError(_DENIED)
+        cloud_pair_keys._write_private_json(
+            directory,
+            name,
+            {k: v for k, v in _document(record, pid, Path(".")).items() if k != "file"},
+        )
+
+    def publish(pid: str, file: Path) -> bool:
+        return authorized() and _save(root, record, pid, file)
+
+    try:
+        return migrate(
+            origin=record["cloudOrigin"],
+            owner=record["ownerSub"],
+            device=record["deviceId"],
+            primary=record["projectId"] or None,
+            key=key,
+            authorized=authorized,
+            completed=completed,
+            record_completed=mark,
+            save=publish,
+        )
+    except (OSError, ValueError, TypeError):
+        return 0

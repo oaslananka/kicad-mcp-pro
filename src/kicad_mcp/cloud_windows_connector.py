@@ -29,7 +29,7 @@ from cryptography.hazmat.primitives.serialization import (
 )
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
-from kicad_mcp.cloud_folder_browse_receiver import LocalFolderBrowseService, device_folder_service
+from kicad_mcp.cloud_folder_browse_receiver import LocalFolderBrowseService
 from kicad_mcp.cloud_managed_read_transport import GenericMcpDispatch
 from kicad_mcp.cloud_outbound_handshake import (
     HandshakeReceipt,
@@ -462,20 +462,9 @@ def _dispatcher(
         """
         if not _current_authorization(project):
             return None
-        from kicad_mcp.cloud_folder_browse_receiver import default_bindings_file
-        from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
+        from kicad_mcp.cloud_windows_scoped_projects import resolve
 
-        browser = LocalFolderBrowser([selected.directory.parent], default_bindings_file())
-        mapped = browser.get_project_path(project_id)
-        if mapped is None:
-            return None
-        file = Path(mapped)
-        return OperatorProject(
-            device_id=project.device_id,
-            project_id=project_id,
-            directory=file.parent,
-            filename_stem=file.stem,
-        )
+        return resolve(project, project_id)
 
     return LocalReadDispatch(
         verified=VerifiedLocalBinding(
@@ -520,15 +509,12 @@ def resolve_owner_write_project(
             return OperatorProject(
                 registered.device_id, project_id, selected.directory, selected.filename_stem
             )
-        from kicad_mcp.cloud_folder_browse_receiver import default_bindings_file
-        from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
+        from kicad_mcp.cloud_windows_scoped_projects import resolve
 
-        browser = LocalFolderBrowser([selected.directory.parent], default_bindings_file())
-        file_path = browser.get_project_path(project_id)
-        if file_path is None:
+        target = resolve(registered, project_id)
+        if target is None:
             raise LocalWriteDeniedError(_WRITE_DENIED)
-        file = Path(file_path)
-        return OperatorProject(registered.device_id, project_id, file.parent, file.stem)
+        return target
     except (OSError, RuntimeError, TypeError, ValueError) as exc:
         raise LocalWriteDeniedError(_WRITE_DENIED) from exc
 
@@ -698,10 +684,9 @@ async def _run_owner_session(
         def folder_factory(receipt: HandshakeReceipt) -> LocalFolderBrowseService:
             if receipt.device_id != project.device_id or not _current_authorization(project):
                 raise LocalApprovalDeniedError(_DENIED)
-            return device_folder_service(
-                selected.directory,
-                authorization=lambda: _current_authorization(project),
-            )
+            from kicad_mcp.cloud_windows_scoped_projects import folder_service
+
+            return folder_service(project, selected, lambda: _current_authorization(project))
 
         settings["folder_service_factory"] = folder_factory
     return await runner(**settings)
@@ -729,6 +714,7 @@ async def _await_authorized_session(
 def _session_runner_with_status(
     session_runner: Callable[..., Awaitable[HandshakeReceipt]],
     status_callback: Callable[[str], None] | None,
+    drain: asyncio.Event | None = None,
 ) -> Callable[..., Awaitable[HandshakeReceipt]]:
     if status_callback is None or session_runner is not execute_owner_managed_read_session:
         return session_runner
@@ -766,6 +752,7 @@ def _session_runner_with_status(
             native_write=native_write,
             mcp_bridge_factory=mcp_bridge_factory,
             on_activity=status_callback,
+            drain=drain,
         )
 
     signed_ready_runner._kicad_supports_folder_browse = True  # type: ignore[attr-defined]
@@ -858,17 +845,166 @@ def _notify_owner_reapproval(
             "Cloud closed the signed device session (policy 1008); "
             "pairing may still be valid. "
             f"Check device and project access at {project.origin}/devices. "
-            "If the device remains registered, check the selected KiCad editor "
-            "is open for native checks and restart the same Connector command. "
-            "Use kicad-mcp-pro cloud remote --repair-device only if the device "
-            "is missing or revoked and you intend to approve a new pairing. "
+            "If the device is registered and enabled, restart the Connector. "
+            "Run the same setup command to recover a missing or revoked device. "
             "The local project and saved credentials were not changed."
         )
+
+
+def _draining(drain: asyncio.Event | None) -> bool:
+    return drain is not None and drain.is_set()
+
+
+async def _verify_foreground_inventory(
+    active: WindowsActiveConnector,
+    stop: asyncio.Event,
+    drain: asyncio.Event | None,
+    status_callback: Callable[[str], None] | None,
+    session_runner: Callable[..., Awaitable[HandshakeReceipt]],
+) -> bool:
+    if status_callback is None or session_runner is not execute_owner_managed_read_session:
+        return True
+    from kicad_mcp.cloud_device_inventory_status import inspect_inventory
+    from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+    project, key = active.project, active.signing_key
+    if project.origin != _KICAD_CLOUD_ORIGIN:
+        return True
+
+    def current() -> bool:
+        return not stop.is_set() and not _draining(drain) and _current_authorization(project)
+
+    state = await asyncio.to_thread(
+        inspect_inventory,
+        project.origin,
+        project.owner_sub,
+        project.device_id,
+        project.project_id,
+        key,
+    )
+    if not current():
+        return False
+    if state == "project_missing":
+        raise CloudOwnerReapprovalRequiredError("Cloud project was removed.")
+    if state in {"active", "project_disabled"}:
+        from kicad_mcp.cloud_windows_scoped_projects import migrate_legacy
+
+        def migration_authorized(
+            target: WindowsRegisteredProject = project,
+        ) -> bool:
+            return not stop.is_set() and _current_authorization(target)
+
+        await asyncio.to_thread(
+            migrate_legacy, project, key, migration_authorized, project.project_id
+        )
+        if not current():
+            return False
+    return True
+
+
+async def _wait_connector_retry(
+    stop: asyncio.Event, drain: asyncio.Event | None, delay: float
+) -> None:
+    if drain is None:
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=delay)
+        except TimeoutError:
+            pass
+    else:
+        stopping = asyncio.create_task(stop.wait())
+        draining = asyncio.create_task(drain.wait())
+        try:
+            await asyncio.wait(
+                {stopping, draining}, timeout=delay, return_when=asyncio.FIRST_COMPLETED
+            )
+        finally:
+            for waiter in (stopping, draining):
+                waiter.cancel()
+            await asyncio.gather(stopping, draining, return_exceptions=True)
+
+
+def _validate_run_options(
+    drain: asyncio.Event | None,
+    session_runner: Callable[..., Awaitable[HandshakeReceipt]],
+    status_callback: Callable[[str], None] | None,
+    allow_native_drc: bool,
+    allow_native_write: bool,
+    issuer_key: Ed25519PublicKey | None,
+) -> None:
+    if (
+        os.name != "nt"
+        or (
+            drain is not None
+            and (
+                status_callback is None or session_runner is not execute_owner_managed_read_session
+            )
+        )
+        or type(allow_native_drc) is not bool
+        or type(allow_native_write) is not bool
+        or (
+            allow_native_write
+            and (issuer_key is None or not isinstance(issuer_key, Ed25519PublicKey))
+        )
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+
+
+async def _run_connector_sessions(
+    stop: asyncio.Event,
+    drain: asyncio.Event | None,
+    session_runner: Callable[..., Awaitable[HandshakeReceipt]],
+    status_callback: Callable[[str], None] | None,
+    allow_native_drc: bool,
+    allow_native_write: bool,
+    issuer_key: Ed25519PublicKey | None,
+) -> None:
+    failures = 0
+    while not stop.is_set() and not _draining(drain):
+        active = _active()
+        if active is None:
+            return
+        project, selected, key = active.project, active.selected, active.signing_key
+
+        if not await _verify_foreground_inventory(
+            active, stop, drain, status_callback, session_runner
+        ):
+            return
+        _notify_connection_attempt(status_callback, failures)
+        runner_for_session = _session_runner_with_status(session_runner, status_callback, drain)
+
+        session_started = time.monotonic()
+        try:
+            result = await _attempt_authorized_session(
+                project,
+                selected,
+                key,
+                runner_for_session,
+                stop,
+                allow_native_drc=allow_native_drc,
+                allow_native_write=allow_native_write,
+                issuer_key=issuer_key,
+            )
+        except CloudOwnerReapprovalRequiredError:
+            if _draining(drain):
+                return
+            _notify_owner_reapproval(status_callback, project)
+            raise
+        if result is None or _draining(drain):
+            return
+        failures = _next_failure_count(result, failures, status_callback)
+        delay = _session_retry_delay(
+            result,
+            time.monotonic() - session_started,
+            failures,
+            secrets.randbelow(1001) / 1000,
+        )
+        await _wait_connector_retry(stop, drain, delay)
 
 
 async def run_connector(
     *,
     stop: asyncio.Event,
+    drain: asyncio.Event | None = None,
     session_runner: Callable[..., Awaitable[HandshakeReceipt]] = execute_owner_managed_read_session,
     status_callback: Callable[[str], None] | None = None,
     allow_native_drc: bool = False,
@@ -880,55 +1016,19 @@ async def run_connector(
     No incoming listener; only an authenticated outbound device session.
     Session restarts are rate-limited, even after clean Cloud disconnects.
     """
-    if (
-        os.name != "nt"
-        or type(allow_native_drc) is not bool
-        or type(allow_native_write) is not bool
-        or (
-            allow_native_write
-            and (issuer_key is None or not isinstance(issuer_key, Ed25519PublicKey))
-        )
-    ):
-        raise LocalApprovalDeniedError(_DENIED)
-    failures = 0
+    _validate_run_options(
+        drain, session_runner, status_callback, allow_native_drc, allow_native_write, issuer_key
+    )
     with owner_connector_instance(reuse_if_held=True):
-        while not stop.is_set():
-            active = _active()
-            if active is None:
-                return
-            project, selected, key = active.project, active.selected, active.signing_key
-
-            _notify_connection_attempt(status_callback, failures)
-            runner_for_session = _session_runner_with_status(session_runner, status_callback)
-
-            session_started = time.monotonic()
-            try:
-                result = await _attempt_authorized_session(
-                    project,
-                    selected,
-                    key,
-                    runner_for_session,
-                    stop,
-                    allow_native_drc=allow_native_drc,
-                    allow_native_write=allow_native_write,
-                    issuer_key=issuer_key,
-                )
-            except CloudOwnerReapprovalRequiredError:
-                _notify_owner_reapproval(status_callback, project)
-                raise
-            if result is None:
-                return
-            failures = _next_failure_count(result, failures, status_callback)
-            delay = _session_retry_delay(
-                result,
-                time.monotonic() - session_started,
-                failures,
-                secrets.randbelow(1001) / 1000,
-            )
-            try:
-                await asyncio.wait_for(stop.wait(), timeout=delay)
-            except TimeoutError:
-                pass
+        await _run_connector_sessions(
+            stop,
+            drain,
+            session_runner,
+            status_callback,
+            allow_native_drc,
+            allow_native_write,
+            issuer_key,
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -952,9 +1052,9 @@ def main(argv: list[str] | None = None) -> int:
     except CloudOwnerReapprovalRequiredError:
         print(
             "Cloud closed the signed session (policy 1008); pairing may still be valid. "
-            "Check Cloud Devices and the selected KiCad editor. If the device remains "
+            "Check Cloud Devices. If the device remains "
             "registered, restart the same Connector command with its original flags. "
-            "Use cloud remote --repair-device only if the device is missing or revoked. "
+            "Run the same setup command to recover a missing or revoked device. "
             "Local credentials are unchanged.",
             file=sys.stderr,
         )

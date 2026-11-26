@@ -220,3 +220,89 @@ test("redemption rejects incorrect signature and code encoding before store",asy
     assert.deepEqual(await wrong.json(),{error:"unavailable"});
   }finally{await l.close();}
 });
+
+test("inventory diagnosis is device-only and strictly validated",async()=>{
+  let calls=0;
+  const api:PairingDevicePort={
+    issue:async()=>({kind:"unavailable"}),enroll:async()=>({kind:"unavailable"}),
+    approved:async()=>({kind:"unavailable"}),
+    async inventoryStatus(_source,request,signature){
+      calls++;
+      assert.equal(signature.length,64);
+      return {kind:"ok",data:{nonce:request.nonce,state:"project_missing"}};
+    }
+  };
+  const server=createHttpServer(config,inventory,async()=>{throw Error("not called");},
+    {pairingDevice:api,deviceSource:req=>req.socket.remoteAddress??null});
+  const l=await listener(server);
+  const url=l.origin+"/api/v1/pairing/device/inventory";
+  const body={deviceId:id,ownerSub:"owner",projectId:randomUUID(),
+    nonce:randomBytes(32).toString("base64url"),issuedAtMs:Date.now(),
+    signature:randomBytes(64).toString("base64url")};
+  try{
+    const request=(data:object,headers:Record<string,string>={})=>fetch(url,{method:"POST",
+      headers:{"Content-Type":"application/json",...headers},body:JSON.stringify(data)});
+    assert.equal((await request(body,{Origin:"https://attacker.example"})).status,403);
+    assert.equal((await request({...body,projectPath:"/private"})).status,400);
+    assert.equal((await request({...body,signature:"x"})).status,400);
+    assert.equal(calls,0);
+    const result=await request(body);
+    assert.equal(result.status,200);
+    assert.equal(result.headers.get("cache-control"),"no-store");
+    assert.deepEqual(await result.json(),{nonce:body.nonce,state:"project_missing"});
+    assert.equal(calls,1);
+  }finally{await l.close();}
+});
+
+test("historical recovery receipt is not an enabled device response",async()=>{
+  const deviceId=randomUUID(),deviceFingerprint=randomBytes(32).toString("hex");
+  const api:PairingDevicePort={
+    issue:async()=>({kind:"unavailable"}),
+    approved:async()=>({kind:"unavailable"}),
+    enroll:async()=>({kind:"ok",data:{kind:"recovery_receipt",deviceId,deviceFingerprint,ownerSub:"owner"}})
+  };
+  const server=createHttpServer(config,inventory,async()=>{throw Error("not called");},
+    {pairingDevice:api,deviceSource:req=>req.socket.remoteAddress??null});
+  const l=await listener(server);
+  try{
+    const url=l.origin+"/api/v1/pairing/device/redeem";
+    const body={challengeId:id,deviceCode:secret,signature:randomBytes(64).toString("base64url"),connectOnApproval:true};
+    const post=(data:object)=>fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+    const result=await post({...body,recovery:{deviceId:randomUUID(),ownerSub:"owner"}});
+    assert.equal(result.status,200);
+    assert.deepEqual(await result.json(),{recoveryReceipt:true,deviceId,deviceFingerprint,ownerSub:"owner"});
+    assert.equal((await post(body)).status,400);
+  }finally{await l.close();}
+});
+
+test("resumable initial receipt requires the explicit initial protocol",async()=>{
+  const deviceId=randomUUID(),deviceFingerprint=randomBytes(32).toString("hex");
+  let denied=false,calls=0;
+  const api:PairingDevicePort={
+    issue:async()=>({kind:"unavailable"}),
+    approved:async()=>({kind:"unavailable"}),
+    enroll:async(_source,_id,_code,_signature,_connect,_recovery,resumeInitial)=>{
+      calls++;
+      if(!resumeInitial)return {kind:"unavailable"};
+      return denied?{kind:"ok",data:{kind:"initial_denied"}}:
+        {kind:"ok",data:{kind:"initial_receipt",deviceId,deviceFingerprint,ownerSub:"owner"}};
+    }
+  };
+  const server=createHttpServer(config,inventory,async()=>{throw Error("not called");},
+    {pairingDevice:api,deviceSource:req=>req.socket.remoteAddress??null});
+  const l=await listener(server);
+  try{
+    const url=l.origin+"/api/v1/pairing/device/redeem";
+    const body={challengeId:id,deviceCode:secret,signature:randomBytes(64).toString("base64url"),resumeInitial:true};
+    const post=(data:object)=>fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});
+    assert.equal((await post(body)).status,400);
+    assert.equal((await post({...body,connectOnApproval:true,recovery:{deviceId:randomUUID(),ownerSub:"owner"}})).status,400);
+    assert.equal(calls,0);
+    const result=await post({...body,connectOnApproval:true});
+    assert.equal(result.status,200);
+    assert.deepEqual(await result.json(),{initialReceipt:true,deviceId,deviceFingerprint,ownerSub:"owner"});
+    denied=true;
+    assert.deepEqual(await (await post({...body,connectOnApproval:true})).json(),{initialDenied:true});
+    assert.equal(calls,2);
+  }finally{await l.close();}
+});

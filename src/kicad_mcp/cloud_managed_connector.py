@@ -21,7 +21,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from websockets.exceptions import WebSocketException
@@ -48,6 +48,14 @@ from kicad_mcp.cloud_readonly_boundary import OperatorProject, VerifiedLocalBind
 from kicad_mcp.cloud_reconnect_policy import reconnect_delay_seconds
 from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
+if TYPE_CHECKING:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+    from kicad_mcp.cloud_folder_browse_receiver import LocalFolderBrowseService
+    from kicad_mcp.cloud_generic_mcp_transport import GenericProjectMcpService
+    from kicad_mcp.cloud_write_marker import LocalWriteMarker
+
+
 _SERVICE_NAME = "kicad-mcp-cloud-connector.service"
 _ENABLED_FILE = "connector-enabled.json"
 _FOREGROUND_FILE = "connector-foreground.json"
@@ -66,24 +74,30 @@ _CONNECTING_STATUS_MAX_AGE_MS = 45_000
 _DENIED = "Registered Cloud Connector unavailable; check its local enable state and registration."
 
 
+class ProjectSelectionMissingError(LocalApprovalDeniedError):
+    """Cloud confirmed the selected transport anchor no longer exists."""
+
+
 class ConnectorAlreadyRunningError(RuntimeError):
     """A different local process owns the Connector session."""
 
 
 @contextmanager
-def _connector_session_lock(root: Path, *, create: bool = True) -> Iterator[None]:
+def _connector_session_lock(
+    root: Path, *, create: bool = True, name: str = _SESSION_LOCK_FILE
+) -> Iterator[None]:
     """Hold one private, nonblocking POSIX process lock for the whole session loop."""
     if sys.platform == "win32":
         raise LocalApprovalDeniedError(_DENIED)
     import fcntl
 
-    folder_fd = _open_owner_private_dir(root / _SESSION_LOCK_FILE)
+    folder_fd = _open_owner_private_dir(root / name)
     try:
         flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
         if create:
             flags |= os.O_CREAT
         fd = os.open(
-            _SESSION_LOCK_FILE,
+            name,
             flags,
             0o600,
             dir_fd=folder_fd,
@@ -113,10 +127,10 @@ def _connector_session_lock(root: Path, *, create: bool = True) -> Iterator[None
         os.close(folder_fd)
 
 
-def _session_lock_held(root: Path) -> bool:
+def _session_lock_held(root: Path, *, name: str = _SESSION_LOCK_FILE) -> bool:
     """Do not report cached connection state without a live lock owner."""
     try:
-        with _connector_session_lock(root, create=False):
+        with _connector_session_lock(root, create=False, name=name):
             return False
     except ConnectorAlreadyRunningError:
         return True
@@ -468,6 +482,10 @@ def _dispatcher_factory(
             """Read only an owner-selected, current local Cloud project mapping."""
             if not _is_enabled(root, record, marker):
                 return None
+            if marker == _FOREGROUND_FILE:
+                from kicad_mcp.cloud_posix_project_bindings import resolve_secondary
+
+                return resolve_secondary(root, record, project_id)
             from kicad_mcp.cloud_folder_browse_receiver import default_bindings_file
             from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
 
@@ -513,6 +531,153 @@ def _dispatcher_factory(
     return create
 
 
+def _private_write_replay(root: Path) -> LocalWriteMarker:
+    from kicad_mcp.cloud_write_marker import LocalWriteMarker
+
+    root_fd = _open_owner_private_dir(root / _SESSION_LOCK_FILE)
+    try:
+        try:
+            os.mkdir("write-markers", mode=0o700, dir_fd=root_fd)
+        except FileExistsError:
+            pass
+    finally:
+        os.close(root_fd)
+    directory = root / "write-markers"
+    fd = _open_owner_private_dir(directory / "probe")
+    os.close(fd)
+    return LocalWriteMarker(directory)
+
+
+def _posix_native_mcp_settings(
+    record: dict[str, str],
+    issuer: Ed25519PublicKey,
+    replay: LocalWriteMarker,
+    factory: Callable[[HandshakeReceipt], GenericProjectMcpService],
+    resolve: Callable[[str], OperatorProject | None],
+    authorized: Callable[[], bool],
+) -> dict[str, Any]:
+    from kicad_mcp.cloud_native_write_dispatch import (
+        execute_verified_signed_pcb_move,
+        prepare_native_write_revisions,
+    )
+    from kicad_mcp.cloud_outbound_handshake import ManagedNativeWriteConfig
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    receipts: list[HandshakeReceipt] = []
+
+    def with_receipt(receipt: HandshakeReceipt) -> GenericProjectMcpService:
+        service = factory(receipt)
+        receipts[:] = [receipt]
+        return service
+
+    def target(project_id: str) -> OperatorProject:
+        resolved = resolve(project_id)
+        if resolved is None:
+            raise LocalWriteDeniedError(_DENIED)
+        return resolved
+
+    def prepare(project_id: str) -> dict[str, str]:
+        selected = target(project_id)
+
+        def current() -> bool:
+            return authorized() and resolve(project_id) == selected
+
+        return prepare_native_write_revisions(
+            selected, authorized=current, cancelled=lambda: not current()
+        )
+
+    def execute(project_id: str, proof: bytes, persist: bool) -> dict[str, object]:
+        if not receipts:
+            raise LocalWriteDeniedError(_DENIED)
+        selected = target(project_id)
+
+        def current() -> bool:
+            return authorized() and resolve(project_id) == selected
+
+        return execute_verified_signed_pcb_move(
+            proof,
+            issuer_key=issuer,
+            verified=VerifiedLocalBinding(
+                device_id=record["deviceId"],
+                project_id=project_id,
+                operations=frozenset({"pcb_move_footprint"}),
+                session_id=receipts[0].session_id,
+                session_expires_unix_ms=time.time_ns() // 1_000_000 + _SESSION_LIFETIME_MS,
+            ),
+            operator_project=selected,
+            consume_once=replay.consume_once,
+            authorized=current,
+            cancelled=lambda: not current(),
+            persist_to_disk=persist,
+        )
+
+    return {
+        "mcp_bridge_factory": with_receipt,
+        "native_write": ManagedNativeWriteConfig(
+            revisions_preparer=prepare, write_executor=execute
+        ),
+    }
+
+
+def _posix_mcp_settings(
+    root: Path,
+    record: dict[str, str],
+    project: LocalRegisteredRead,
+    marker: str,
+) -> dict[str, Any]:
+    """Owner foreground only; use the same signed worker as Windows."""
+    if marker != _FOREGROUND_FILE:
+        return {}
+    from kicad_mcp.cloud_generic_mcp_transport import GenericProjectMcpService
+    from kicad_mcp.cloud_windows_write_issuer import (
+        _KICAD_CLOUD_ORIGIN,
+        load_bundled_cloud_issuer,
+    )
+
+    def authorized() -> bool:
+        return _is_enabled(root, record, marker)
+
+    if not authorized():
+        raise LocalApprovalDeniedError(_DENIED)
+    official = record["cloudOrigin"] == _KICAD_CLOUD_ORIGIN
+    issuer = load_bundled_cloud_issuer(record["cloudOrigin"]) if official else None
+    replay = None
+    if issuer is not None:
+        replay = _private_write_replay(root)
+
+    def resolve(project_id: str) -> OperatorProject | None:
+        if not authorized():
+            return None
+        if project_id != record["projectId"]:
+            from kicad_mcp.cloud_posix_project_bindings import resolve_secondary
+
+            return resolve_secondary(root, record, project_id)
+        return OperatorProject(
+            record["deviceId"], project_id, project.project_directory, project.filename_stem
+        )
+
+    def factory(receipt: HandshakeReceipt) -> GenericProjectMcpService:
+        if receipt.device_id != record["deviceId"] or not authorized():
+            raise LocalApprovalDeniedError(_DENIED)
+        return GenericProjectMcpService(
+            receipt=receipt,
+            local_project=resolve,
+            current_authorization=authorized,
+            allow_native_write=issuer is not None,
+            trusted_issuer_key=issuer,
+            consume_once=replay.consume_once if replay is not None else None,
+        )
+
+    # The legacy native offer and generic write worker share the same pin,
+    # project, replay fence and live local authorization.
+    options: dict[str, Any] = {"mcp_bridge_factory": factory}
+    if issuer is not None and replay is not None:
+        options.update(
+            _posix_native_mcp_settings(record, issuer, replay, factory, resolve, authorized)
+        )
+    return options
+
+
 async def _wait_for_local_stop(
     stop: asyncio.Event, root: Path, record: dict[str, str], marker: str
 ) -> None:
@@ -527,6 +692,57 @@ async def _wait_for_local_stop(
             continue
 
 
+def _registered_folder_factory(
+    root: Path, record: dict[str, str], project: LocalRegisteredRead, marker: str
+) -> Callable[[HandshakeReceipt], LocalFolderBrowseService]:
+    from kicad_mcp.cloud_folder_browse_receiver import (
+        device_folder_service,
+    )
+
+    def folder_factory(receipt: HandshakeReceipt) -> LocalFolderBrowseService:
+        if receipt.device_id != record["deviceId"] or not _is_enabled(root, record, marker):
+            raise LocalApprovalDeniedError(_DENIED)
+        if marker == _FOREGROUND_FILE:
+            from kicad_mcp.cloud_posix_project_bindings import folder_service
+
+            return folder_service(root, record, project, lambda: _is_enabled(root, record, marker))
+        return device_folder_service(
+            project.project_directory,
+            authorization=lambda: _is_enabled(root, record, marker),
+        )
+
+    return folder_factory
+
+
+def _session_options(
+    root: Path,
+    record: dict[str, str],
+    project: LocalRegisteredRead,
+    signing_key: Ed25519PrivateKey,
+    session_runner: Callable[..., Awaitable[HandshakeReceipt]],
+    marker: str,
+    drain: asyncio.Event | None,
+) -> dict[str, Any]:
+    options = {
+        "origin": record["cloudOrigin"],
+        "trusted_origin": record["cloudOrigin"],
+        "owner_sub": record["ownerSub"],
+        "device_id": record["deviceId"],
+        "signing_key": signing_key,
+        "dispatcher_factory": _dispatcher_factory(root, record, project, marker),
+        "max_reads": _MAX_READS,
+    }
+    if session_runner is execute_owner_managed_read_session:
+        folder_factory = _registered_folder_factory(root, record, project, marker)
+        options["folder_service_factory"] = folder_factory
+        if marker == _FOREGROUND_FILE:
+            options["on_activity"] = lambda message: _report_foreground(marker, message)
+            options.update(_posix_mcp_settings(root, record, project, marker))
+            if drain is not None:
+                options["drain"] = drain
+    return options
+
+
 async def _session_until_stopped(
     *,
     stop_event: asyncio.Event,
@@ -536,34 +752,12 @@ async def _session_until_stopped(
     signing_key: Ed25519PrivateKey,
     session_runner: Callable[..., Awaitable[HandshakeReceipt]],
     marker: str,
+    drain: asyncio.Event | None = None,
 ) -> None:
     async def run_session() -> HandshakeReceipt:
-        options = {
-            "origin": record["cloudOrigin"],
-            "trusted_origin": record["cloudOrigin"],
-            "owner_sub": record["ownerSub"],
-            "device_id": record["deviceId"],
-            "signing_key": signing_key,
-            "dispatcher_factory": _dispatcher_factory(root, record, project, marker),
-            "max_reads": _MAX_READS,
-        }
-        if session_runner is execute_owner_managed_read_session:
-            from kicad_mcp.cloud_folder_browse_receiver import (
-                LocalFolderBrowseService,
-                device_folder_service,
-            )
-
-            def folder_factory(receipt: HandshakeReceipt) -> LocalFolderBrowseService:
-                if receipt.device_id != record["deviceId"] or not _is_enabled(root, record, marker):
-                    raise LocalApprovalDeniedError(_DENIED)
-                return device_folder_service(
-                    project.project_directory,
-                    authorization=lambda: _is_enabled(root, record, marker),
-                )
-
-            options["folder_service_factory"] = folder_factory
-            if marker == _FOREGROUND_FILE:
-                options["on_activity"] = lambda message: _report_foreground(marker, message)
+        options = _session_options(
+            root, record, project, signing_key, session_runner, marker, drain
+        )
         return await session_runner(**options)
 
     session_task = asyncio.create_task(run_session())
@@ -582,6 +776,57 @@ async def _session_until_stopped(
         await asyncio.gather(session_task, stop_task, return_exceptions=True)
 
 
+def _draining(drain: asyncio.Event | None) -> bool:
+    return drain is not None and drain.is_set()
+
+
+async def _verify_registered_inventory(
+    registry: Path,
+    record: dict[str, str],
+    signing_key: Ed25519PrivateKey,
+    stop: asyncio.Event,
+    drain: asyncio.Event | None,
+    marker: str,
+    session_runner: Callable[..., Awaitable[HandshakeReceipt]],
+) -> bool:
+    if marker != _FOREGROUND_FILE or session_runner is not execute_owner_managed_read_session:
+        return True
+    from kicad_mcp.cloud_device_inventory_status import inspect_inventory
+    from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+    if record["cloudOrigin"] != _KICAD_CLOUD_ORIGIN:
+        return True
+
+    def current() -> bool:
+        return not stop.is_set() and not _draining(drain) and _is_enabled(registry, record, marker)
+
+    inventory_state = await asyncio.to_thread(
+        inspect_inventory,
+        record["cloudOrigin"],
+        record["ownerSub"],
+        record["deviceId"],
+        record["projectId"],
+        signing_key,
+    )
+    if not current():
+        return False
+    if inventory_state == "project_missing":
+        raise ProjectSelectionMissingError(_DENIED)
+    if inventory_state in {"active", "project_disabled"}:
+        from kicad_mcp.cloud_posix_project_bindings import migrate_legacy
+
+        await asyncio.to_thread(
+            migrate_legacy,
+            registry,
+            record,
+            signing_key,
+            lambda: not stop.is_set() and _is_enabled(registry, record, marker),
+        )
+        if not current():
+            return False
+    return True
+
+
 async def _run_registered_session(
     *,
     registry: Path,
@@ -591,6 +836,7 @@ async def _run_registered_session(
     key_loader: Callable[..., Ed25519PrivateKey],
     session_runner: Callable[..., Awaitable[HandshakeReceipt]],
     marker: str,
+    drain: asyncio.Event | None = None,
 ) -> bool:
     # Revalidate the unique registration and key binding before each reconnect.
     record = identity_loader(registry)
@@ -606,7 +852,15 @@ async def _run_registered_session(
     signing_key = key_loader(project.key_file, record["cloudOrigin"], record["deviceId"])
     # A local disable racing registration/key loading must prevent a new
     # outbound handshake after the owner removes the enable marker.
-    if stop.is_set() or not _is_enabled(registry, record, marker):
+    if (
+        stop.is_set()
+        or (drain is not None and drain.is_set())
+        or not _is_enabled(registry, record, marker)
+    ):
+        return False
+    if not await _verify_registered_inventory(
+        registry, record, signing_key, stop, drain, marker, session_runner
+    ):
         return False
     _write_status(registry, "connecting")
     _report_foreground(marker, "Connecting")
@@ -618,19 +872,32 @@ async def _run_registered_session(
         signing_key=signing_key,
         session_runner=session_runner,
         marker=marker,
+        drain=drain,
     )
     return True
 
 
 async def _wait_before_reconnect(
-    stop: asyncio.Event, registry: Path, failures: int, marker: str
+    stop: asyncio.Event,
+    registry: Path,
+    failures: int,
+    marker: str,
+    drain: asyncio.Event | None = None,
 ) -> None:
-    if stop.is_set() or not _enabled_record(registry, marker):
+    if (
+        stop.is_set()
+        or (drain is not None and drain.is_set())
+        or not _enabled_record(registry, marker)
+    ):
         return
     delay = reconnect_delay_seconds(failures, secrets.randbelow(1001) / 1000)
     _write_status(registry, "unavailable")
     deadline = asyncio.get_running_loop().time() + delay
-    while not stop.is_set() and _enabled_record(registry, marker):
+    while (
+        not stop.is_set()
+        and (drain is None or not drain.is_set())
+        and _enabled_record(registry, marker)
+    ):
         remaining = deadline - asyncio.get_running_loop().time()
         if remaining <= 0:
             return
@@ -642,11 +909,61 @@ async def _wait_before_reconnect(
             continue
 
 
+def _requires_reapproval(exc: BaseException) -> bool:
+    from kicad_mcp.cloud_windows_connector import _is_remote_policy_rejection
+
+    return isinstance(exc, ProjectSelectionMissingError) or _is_remote_policy_rejection(exc)
+
+
+async def _run_registered_loop(
+    registry: Path,
+    stop: asyncio.Event,
+    foreground: bool,
+    identity_loader: Callable[[Path], dict[str, str]],
+    project_resolver: Callable[..., LocalRegisteredRead],
+    key_loader: Callable[..., Ed25519PrivateKey],
+    session_runner: Callable[..., Awaitable[HandshakeReceipt]],
+    marker: str,
+    session_drain: asyncio.Event | None,
+) -> int:
+    # Invalidate the previous process's cached status before loading keys.
+    _write_status(registry, "unavailable")
+    failures = 0
+    while not stop.is_set() and not _draining(session_drain) and _enabled_record(registry, marker):
+        try:
+            connected = await _run_registered_session(
+                registry=registry,
+                stop=stop,
+                identity_loader=identity_loader,
+                project_resolver=project_resolver,
+                key_loader=key_loader,
+                session_runner=session_runner,
+                marker=marker,
+                drain=session_drain,
+            )
+            if not connected:
+                break
+            failures = 0
+        except (OSError, ValueError, WebSocketException) as exc:
+            _write_status(registry, "unavailable")
+            if _draining(session_drain):
+                break
+            if foreground and _requires_reapproval(exc):
+                return 3
+            failures += 1
+        if _draining(session_drain):
+            break
+        _report_foreground(marker, "Disconnected")
+        await _wait_before_reconnect(stop, registry, failures, marker, session_drain)
+    return 0
+
+
 async def _run_connector(
     *,
     root: Path | None = None,
     stop_event: asyncio.Event | None = None,
     foreground: bool = False,
+    drain: asyncio.Event | None = None,
     expected_identity: dict[str, str] | None = None,
     identity_loader: Callable[[Path], dict[str, str]] = _single_registered_identity,
     project_resolver: Callable[..., LocalRegisteredRead] = resolve_registered_read,
@@ -655,6 +972,8 @@ async def _run_connector(
 ) -> int:
     registry = default_registry_root() if root is None else root
     stop = stop_event if stop_event is not None else asyncio.Event()
+    if drain is not None and not foreground:
+        raise LocalApprovalDeniedError(_DENIED)
     if not foreground and not _enabled_record(registry):
         return 0
 
@@ -664,32 +983,27 @@ async def _run_connector(
             registry, foreground, identity_loader, expected_identity
         ) as marker,
     ):
-        # Invalidate the previous process's cached status before loading keys.
-        _write_status(registry, "unavailable")
-        failures = 0
-        while not stop.is_set() and _enabled_record(registry, marker):
-            try:
-                connected = await _run_registered_session(
-                    registry=registry,
-                    stop=stop,
-                    identity_loader=identity_loader,
-                    project_resolver=project_resolver,
-                    key_loader=key_loader,
-                    session_runner=session_runner,
-                    marker=marker,
-                )
-                if not connected:
-                    break
-                failures = 0
-            except asyncio.CancelledError:
-                raise
-            except (OSError, ValueError, WebSocketException):
-                _write_status(registry, "unavailable")
-                failures += 1
-            _report_foreground(marker, "Disconnected")
-            await _wait_before_reconnect(stop, registry, failures, marker)
+        from contextlib import nullcontext
 
-    return 0
+        from kicad_mcp.cloud_posix_update_control import watch
+
+        control = (
+            watch(registry, expected_identity["cloudOrigin"])
+            if foreground and expected_identity is not None and drain is None
+            else nullcontext(drain)
+        )
+        async with control as session_drain:
+            return await _run_registered_loop(
+                registry,
+                stop,
+                foreground,
+                identity_loader,
+                project_resolver,
+                key_loader,
+                session_runner,
+                marker,
+                session_drain,
+            )
 
 
 async def _run_service(

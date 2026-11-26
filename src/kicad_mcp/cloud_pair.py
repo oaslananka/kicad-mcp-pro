@@ -43,6 +43,7 @@ from kicad_mcp.cloud_pair_keys import (
 _PAIRING_DENIED = "pairing denied"
 _CHALLENGE_SUFFIX = ".challenge.json"
 _JSON_MEDIA_TYPE = "application/json"
+_DEVICE_ALIAS_PATTERN = r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}"
 
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 _USER_CODE = re.compile(r"[A-Z0-9]{6}-[A-Z0-9]{6}")
@@ -321,6 +322,8 @@ def _wait_for_owner_approval(
     signing_key: Ed25519PrivateKey,
     expiry_ms: int,
     start_owner_review: Callable[[], None] | None = None,
+    *,
+    allow_existing_approval: bool = False,
 ) -> None:
     """Require a working signed status endpoint before opening owner approval."""
     proof = (
@@ -350,6 +353,8 @@ def _wait_for_owner_approval(
             # A new challenge must be pending before inviting a human to click.
             # This also rejects older Cloud versions with no signed status API.
             if approved:
+                if allow_existing_approval:
+                    return
                 raise CloudPairingError(_PAIRING_DENIED)
             start_owner_review()
             start_owner_review = None
@@ -374,7 +379,7 @@ def start_enrollment(origin: str, alias: str, keyfile: Path) -> tuple[str, str, 
         raise CloudPairingError(
             "Native Windows owner-private Cloud pairing is not available in this release."
         )
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", alias):
+    if not re.fullmatch(_DEVICE_ALIAS_PATTERN, alias):
         raise CloudPairingError(_PAIRING_DENIED)
     target = _origin(origin)
     if keyfile.is_file():
@@ -385,7 +390,21 @@ def start_enrollment(origin: str, alias: str, keyfile: Path) -> tuple[str, str, 
         raise CloudPairingError(_PAIRING_DENIED)
     _require_unused_binding_path(keyfile)
     key = _load_or_create(keyfile)
-    der = key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+    return _issue_enrollment(target, alias, keyfile, key)
+
+
+def _issue_enrollment(
+    target: tuple[str, int, str], alias: str, keyfile: Path, signing_identity: Ed25519PrivateKey
+) -> tuple[str, str, str, int]:
+    """Issue a challenge for an already verified, never-redeemed key."""
+    if os.name == "nt":
+        raise CloudPairingError(_PAIRING_DENIED)
+    if not re.fullmatch(_DEVICE_ALIAS_PATTERN, alias):
+        raise CloudPairingError(_PAIRING_DENIED)
+    _require_unused_binding_path(keyfile)
+    der = signing_identity.public_key().public_bytes(
+        Encoding.DER, PublicFormat.SubjectPublicKeyInfo
+    )
     result = _post(
         target,
         "/api/v1/pairing/device/challenge",
@@ -395,7 +414,7 @@ def start_enrollment(origin: str, alias: str, keyfile: Path) -> tuple[str, str, 
         },
         201,
     )
-    challenge, code, device_secret, fingerprint, expiry = _challenge(result, key)
+    challenge, code, device_secret, fingerprint, expiry = _challenge(result, signing_identity)
     review_url = f"{target[2]}/devices/pairing#challenge={challenge}&code={code}"
     supplied_url = result.get("verificationUriComplete")
     if supplied_url is not None and supplied_url != review_url:
@@ -455,7 +474,9 @@ def enrollment_approved(origin: str, keyfile: Path) -> bool:
     return answer["approved"]
 
 
-def redeem_enrollment(origin: str, keyfile: Path) -> tuple[str, str]:
+def redeem_enrollment(
+    origin: str, keyfile: Path, *, connect_on_approval: bool = False
+) -> tuple[str, str]:
     """Redeem approved pairing challenge using saved challenge metadata.
 
     Returns (device_id, fingerprint).
@@ -485,6 +506,7 @@ def redeem_enrollment(origin: str, keyfile: Path) -> tuple[str, str]:
             "challengeId": challenge,
             "deviceCode": device_secret,
             "signature": signature,
+            **({"connectOnApproval": True} if connect_on_approval else {}),
         },
         200,
     )
@@ -495,6 +517,7 @@ def redeem_enrollment(origin: str, keyfile: Path) -> tuple[str, str]:
         or not _UUID.fullmatch(answer["deviceId"])
         or answer["deviceFingerprint"] != fingerprint
         or type(answer["enabled"]) is not bool
+        or (connect_on_approval and answer["enabled"] is not True)
     ):
         raise CloudPairingError(_PAIRING_DENIED)
     owner_sub = str(answer["ownerSub"]) if isinstance(answer.get("ownerSub"), str) else None
@@ -513,7 +536,12 @@ def redeem_enrollment(origin: str, keyfile: Path) -> tuple[str, str]:
 
 
 def enroll(
-    origin: str, alias: str, keyfile: Path, approval: Callable[[str, str, str], None]
+    origin: str,
+    alias: str,
+    keyfile: Path,
+    approval: Callable[[str, str, str], None],
+    *,
+    connect_on_approval: bool = False,
 ) -> tuple[str, str]:
     _, challenge, code, _ = start_enrollment(origin, alias, keyfile)
     target = _origin(origin)
@@ -530,12 +558,14 @@ def enroll(
         expiry,
         lambda: approval(target[2] + "/devices/pairing", challenge, code),
     )
+    if connect_on_approval:
+        return redeem_enrollment(origin, keyfile, connect_on_approval=True)
     return redeem_enrollment(origin, keyfile)
 
 
 def register_device_project(origin: str, keyfile: Path, alias: str) -> dict[str, object]:
     """Register one read-only KiCad project for an already-enrolled device using its signing key."""
-    if not isinstance(alias, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", alias):
+    if not isinstance(alias, str) or not re.fullmatch(_DEVICE_ALIAS_PATTERN, alias):
         raise CloudPairingError(_PAIRING_DENIED)
     target = _origin(origin)
     key = _load_owner_key(keyfile)

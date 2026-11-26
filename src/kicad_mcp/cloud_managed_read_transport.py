@@ -444,6 +444,39 @@ async def _serve_one_signed_frame(
     return 1
 
 
+async def _receive_before_drain(
+    socket: AuthenticatedReadSocket,
+    remaining: float,
+    drain: asyncio.Event | None,
+) -> str | bytes | None:
+    """Stop accepting frames at a boundary, never cancel an admitted operation.
+
+    A local update is distinct from revocation; the caller's existing
+    authorization and command deadlines still apply throughout the operation.
+    WebSocket recv is cancellation-safe. No worker task is cancelled here.
+    """
+    if drain is None:
+        return await asyncio.wait_for(socket.recv(), timeout=remaining)
+    if drain.is_set():
+        return None
+    incoming = asyncio.create_task(socket.recv())
+    stopping = asyncio.create_task(drain.wait())
+    try:
+        done, _ = await asyncio.wait(
+            {incoming, stopping}, timeout=remaining, return_when=asyncio.FIRST_COMPLETED
+        )
+        if drain.is_set():
+            return None
+        if incoming not in done:
+            raise TimeoutError
+        return incoming.result()
+    finally:
+        for task in (incoming, stopping):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(incoming, stopping, return_exceptions=True)
+
+
 async def _serve_signed_read_frames(
     socket: AuthenticatedReadSocket,
     dispatcher: LocalReadDispatch,
@@ -455,6 +488,7 @@ async def _serve_signed_read_frames(
     revisions_preparer: Callable[[str], dict[str, str]] | None = None,
     write_executor: Callable[[str, bytes, bool], dict[str, object]] | None = None,
     mcp_service: GenericMcpDispatch | None = None,
+    drain: asyncio.Event | None = None,
 ) -> None:
     """Process authenticated frames without charging folder or write prep requests as reads."""
     reads_served = 0
@@ -466,11 +500,13 @@ async def _serve_signed_read_frames(
             _report_activity(on_activity, _LEASE_REFRESH_MESSAGE)
             return
         try:
-            raw = await asyncio.wait_for(socket.recv(), timeout=remaining)
+            raw = await _receive_before_drain(socket, remaining, drain)
         except TimeoutError:
             # This is an expected idle lease refresh, not a failed handshake.
             # Work already dispatched runs to its normal per-command deadline.
             _report_activity(on_activity, _LEASE_REFRESH_MESSAGE)
+            return
+        if raw is None or (drain is not None and drain.is_set()):
             return
         if not isinstance(raw, str):
             raise CloudHandshakeDeniedError(_DENIED)
@@ -502,6 +538,7 @@ async def serve_authenticated_reads(
     write_executor: Callable[[str, bytes, bool], dict[str, object]] | None = None,
     mcp_service_factory: Callable[[HandshakeReceipt], GenericMcpDispatch] | None = None,
     on_activity: Callable[[str], None] | None = None,
+    drain: asyncio.Event | None = None,
 ) -> HandshakeReceipt:
     """Serve bounded serial, independently authorized READs/WRITEs on a signed socket.
 
@@ -528,6 +565,7 @@ async def serve_authenticated_reads(
         or (write_executor is not None and not callable(write_executor))
         or (mcp_service_factory is not None and not callable(mcp_service_factory))
         or (on_activity is not None and not callable(on_activity))
+        or (drain is not None and not isinstance(drain, asyncio.Event))
     ):
         raise CloudHandshakeDeniedError(_DENIED)
 
@@ -552,6 +590,7 @@ async def serve_authenticated_reads(
                     revisions_preparer=revisions_preparer,
                     write_executor=write_executor,
                     mcp_service=mcp_service,
+                    drain=drain,
                 )
         except TimeoutError as exc:
             raise CloudHandshakeDeniedError(_DENIED) from exc
@@ -560,12 +599,22 @@ async def serve_authenticated_reads(
         dispatcher.close()
 
 
+def _folder_only_request(raw: object) -> tuple[str, dict[str, Any]]:
+    if not isinstance(raw, str) or _top_level_kind(raw) != _FOLDER_REQUEST_KIND:
+        raise CloudHandshakeDeniedError(_DENIED)
+    request = _read_strict_json(raw, _FOLDER_REQUEST_KIND)
+    if request.get("operation") not in ("choose", "list", "bind", "path"):
+        raise CloudHandshakeDeniedError(_DENIED)
+    return raw, request
+
+
 async def serve_owner_folder_only(
     socket: AuthenticatedReadSocket,
     receipt: HandshakeReceipt,
     folder_service: LocalFolderBrowseService,
     *,
     on_activity: Callable[[str], None] | None = None,
+    drain: asyncio.Event | None = None,
 ) -> HandshakeReceipt:
     """Bootstrap a signed device without any KiCad project read or write access.
 
@@ -578,6 +627,7 @@ async def serve_owner_folder_only(
         or not callable(getattr(folder_service, "choose", None))
         or not callable(getattr(folder_service, "bind", None))
         or (on_activity is not None and not callable(on_activity))
+        or (drain is not None and not isinstance(drain, asyncio.Event))
     ):
         raise CloudHandshakeDeniedError(_DENIED)
     loop = asyncio.get_running_loop()
@@ -588,15 +638,13 @@ async def serve_owner_folder_only(
             _report_activity(on_activity, _LEASE_REFRESH_MESSAGE)
             return receipt
         try:
-            raw = await asyncio.wait_for(socket.recv(), timeout=remaining)
+            raw = await _receive_before_drain(socket, remaining, drain)
         except TimeoutError:
             _report_activity(on_activity, _LEASE_REFRESH_MESSAGE)
             return receipt
-        if not isinstance(raw, str) or _top_level_kind(raw) != _FOLDER_REQUEST_KIND:
-            raise CloudHandshakeDeniedError(_DENIED)
-        request = _read_strict_json(raw, _FOLDER_REQUEST_KIND)
-        if request.get("operation") not in ("choose", "list", "bind", "path"):
-            raise CloudHandshakeDeniedError(_DENIED)
+        if raw is None or (drain is not None and drain.is_set()):
+            return receipt
+        raw, request = _folder_only_request(raw)
         await _serve_folder_frame(socket, raw, folder_service, on_activity)
         if request["operation"] == "bind":
             # Whether bind succeeded is checked in the native validated reply.

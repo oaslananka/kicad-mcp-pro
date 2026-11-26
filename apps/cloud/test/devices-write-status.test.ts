@@ -29,7 +29,7 @@ test("owner device card differentiates saved edit permission from active server 
     ...options,nativeWriteAvailable:true
   });
   assert.match(available,/Edit permission saved<\/span>/);
-  assert.match(available,/Edits require a compatible Connector in editing mode/);
+  assert.match(available,/Edit access requires the app/);
   assert.doesNotMatch(available,/connect your editing device/i);
   assert.doesNotMatch(available,/Cloud editing is not enabled/);
 });

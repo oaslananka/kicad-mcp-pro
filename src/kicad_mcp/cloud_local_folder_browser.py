@@ -293,8 +293,12 @@ class LocalFolderBrowser:
         staging = self._bindings_file.with_suffix(".tmp")
         staging.write_text(json.dumps(existing, ensure_ascii=False), encoding="utf8")
         staging.replace(self._bindings_file)
+        self.discard_selection(token)
+        return True
+
+    def discard_selection(self, token: str) -> None:
+        """Consume an opaque selection after the owner's binding is persisted."""
         self._selected_native.pop(token, None)
         self._native_project_file.pop(token, None)
         self._paths.pop(token, None)
         self._parents.pop(token, None)
-        return True
