@@ -8,6 +8,7 @@ import io
 import json
 import os
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 from typing import Any, Protocol
@@ -33,6 +34,8 @@ from scripts.runtime_path_safety import approved_runtime_path
 
 _MAX_ARCHIVE = 65536
 _MAX_MEMBER = 16384
+_MAX_POLLS = 30
+_POLL_INTERVAL = 5
 _FILES = {"python-worker-dispatch.json", "python-worker-manifest.json"}
 
 
@@ -40,6 +43,10 @@ class DeliveryClient(DispatchClient, Protocol):
     def workflow_artifacts(self, repo: str, run_id: int) -> dict[str, Any]: ...
 
     def artifact(self, repo: str, artifact_id: int) -> dict[str, Any]: ...
+
+
+class RequestNotReadyError(ValueError):
+    """Only an absent matching artifact may be retried."""
 
 
 def discover_request(client: DeliveryClient, identity: DispatchIdentity) -> dict[str, Any]:
@@ -66,6 +73,8 @@ def discover_request(client: DeliveryClient, identity: DispatchIdentity) -> dict
     ):
         raise ValueError("incomplete owner artifact listing")
     candidates = [item for item in artifacts if item.get("name") == name]
+    if not candidates:
+        raise RequestNotReadyError("owner request artifact not yet present")
     if len(candidates) != 1:
         raise ValueError("expected exactly one owner request artifact")
     item = candidates[0]
@@ -86,6 +95,25 @@ def discover_request(client: DeliveryClient, identity: DispatchIdentity) -> dict
     if client.artifact(REPOSITORY, artifact_id) != item:
         raise ValueError("owner request artifact metadata changed")
     return item
+
+
+def wait_for_request(client: DeliveryClient, identity: DispatchIdentity) -> dict[str, Any]:
+    """Bound discovery attempts; retry absence only, never conflicting evidence.
+
+    The enclosing job must also impose a wall-clock timeout on API calls.
+    """
+    dispatch_bytes(identity)
+    for attempt in range(_MAX_POLLS):
+        _check_live(client, identity)
+        try:
+            metadata = discover_request(client, identity)
+        except RequestNotReadyError:
+            if attempt + 1 < _MAX_POLLS:
+                time.sleep(_POLL_INTERVAL)
+            continue
+        _check_live(client, identity)
+        return metadata
+    raise ValueError("owner request artifact delivery timed out")
 
 
 def _read_archive(archive: Path, metadata: dict[str, Any]) -> bytes:
@@ -202,7 +230,7 @@ def _runtime(handoff: HandoffIdentity, pin: str) -> DispatchIdentity:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("discover", "verify"))
+    parser.add_argument("operation", choices=("discover", "wait", "verify"))
     parser.add_argument("--tag", required=True)
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--release-id", required=True, type=int)
@@ -229,11 +257,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         identity = _runtime(handoff, args.manifest_sha256)
         client = DeliveryGitHubCLI()
-        if args.operation == "discover":
+        if args.operation in ("discover", "wait"):
             if any(value is not None for value in (args.artifact_id, args.archive, args.directory)):
-                raise ValueError("discover accepts identity arguments only")
-            _check_live(client, identity)
-            metadata = discover_request(client, identity)
+                raise ValueError("discover and wait accept identity arguments only")
+            if args.operation == "wait":
+                metadata = wait_for_request(client, identity)
+            else:
+                _check_live(client, identity)
+                metadata = discover_request(client, identity)
             result = {
                 "ownerRequestArtifactId": metadata["id"],
                 "ownerRequestArchiveSha256": metadata["digest"][7:],

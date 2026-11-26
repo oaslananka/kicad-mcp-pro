@@ -786,11 +786,18 @@ packages and exact child/owner/tag identity. The archive metadata,
 archive bytes, package bytes and live identities are checked again
 before returning.
 
-Discovery is a single bounded listing, not an automatic retry loop;
-missing, expired, duplicate or inconsistent evidence fails closed.
-A future orchestration job must provide a bounded wait for delivery,
-an overall timeout, trusted expected input provenance, the exact
-artifact download and safe producer extraction. This command does
-not publish, install, dispatch or download files itself; its output
-does not establish artifact-producing job identity, registry or
-exclusive-writer authority. No production workflow invokes it yet.
+Use `wait` instead of `discover` when the owner is still preparing
+the request artifact. It checks live owner, child and tag identities
+at each poll, and repeats those checks when the artifact appears.
+Only the absence of the exact expected name in a complete listing is
+retryable: at most 30 polls, five seconds between unsuccessful polls.
+Expired, duplicate, truncated, changed or otherwise inconsistent
+evidence and API errors stop immediately. The caller must impose an
+overall job timeout that includes API latency; the poll limit alone
+does not bound wall-clock time. Discovery and wait do not attest ZIP
+bytes. A future orchestration job must provide trusted expected input
+provenance, the exact artifact download and safe producer extraction.
+This command does not publish, install, dispatch or download files
+itself; its output does not establish artifact-producing job identity,
+registry or exclusive-writer authority. No production workflow invokes
+it yet.

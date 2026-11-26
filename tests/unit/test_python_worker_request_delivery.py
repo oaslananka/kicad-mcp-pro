@@ -307,3 +307,96 @@ def test_cli_denies_unexpected_runtime_before_api(delivery, key: str, monkeypatc
     assert error.value.code == 2
     assert not client.reads
     assert client.list_reads == 0
+
+
+def test_wait_retries_only_absent_artifact_then_accepts(delivery, monkeypatch) -> None:
+    from scripts import check_python_worker_request_delivery as cli
+
+    client, _, args = delivery
+    original = client.workflow_artifacts
+    pauses: list[float] = []
+
+    def listing(repo: str, run_id: int) -> dict[str, Any]:
+        if client.list_reads < 2:
+            client.list_reads += 1
+            return {"total_count": 0, "artifacts": []}
+        return original(repo, run_id)
+
+    monkeypatch.setattr(client, "workflow_artifacts", listing)
+    monkeypatch.setattr(cli.time, "sleep", pauses.append)
+    assert cli.wait_for_request(client, args["identity"])["id"] == ARTIFACT
+    assert client.list_reads == 3
+    assert pauses == [5, 5]
+
+
+def test_wait_exhausts_fixed_poll_budget(delivery, monkeypatch) -> None:
+    from scripts import check_python_worker_request_delivery as cli
+
+    client, _, args = delivery
+    client.collection = {"total_count": 0, "artifacts": []}
+    pauses: list[float] = []
+    monkeypatch.setattr(cli.time, "sleep", pauses.append)
+    monkeypatch.setattr(cli, "_MAX_POLLS", 3)
+    with pytest.raises(ValueError, match="timed out"):
+        cli.wait_for_request(client, args["identity"])
+    assert client.list_reads == 3
+    assert pauses == [5, 5]
+
+
+@pytest.mark.parametrize("change", ["duplicate", "truncated", "expired", "api", "owner", "child"])
+def test_wait_rejects_invalid_or_changed_evidence_without_retry(
+    delivery, change, monkeypatch
+) -> None:
+    from scripts import check_python_worker_request_delivery as cli
+
+    client, _, args = delivery
+    pauses: list[float] = []
+    monkeypatch.setattr(cli.time, "sleep", pauses.append)
+    if change == "duplicate":
+        client.collection = {"total_count": 2, "artifacts": [client.item, dict(client.item, id=9)]}
+    elif change == "truncated":
+        client.collection["total_count"] = 2
+    elif change == "expired":
+        client.item["expired"] = True
+    elif change == "api":
+
+        def unavailable(repo: str, run_id: int) -> dict[str, Any]:
+            raise ValueError("GitHub read failed")
+
+        monkeypatch.setattr(client, "workflow_artifacts", unavailable)
+    elif change == "owner":
+        client.owner["status"] = "completed"
+    else:
+        client.child["run_attempt"] = 2
+    with pytest.raises(ValueError):
+        cli.wait_for_request(client, args["identity"])
+    assert pauses == []
+
+
+def test_wait_rechecks_identity_after_delivery_appears(delivery, monkeypatch) -> None:
+    from scripts import check_python_worker_request_delivery as cli
+
+    client, _, args = delivery
+    original = client.artifact
+
+    def detail(repo: str, artifact_id: int) -> dict[str, Any]:
+        result = original(repo, artifact_id)
+        client.child["run_attempt"] = 2
+        return result
+
+    monkeypatch.setattr(client, "artifact", detail)
+    with pytest.raises(ValueError, match="worker run"):
+        cli.wait_for_request(client, args["identity"])
+
+
+def test_wait_cli_does_not_claim_verified_artifact(delivery, monkeypatch, capsys) -> None:
+    from scripts import check_python_worker_request_delivery as cli
+
+    client, _, args = delivery
+    _runtime(monkeypatch, args)
+    monkeypatch.setattr(cli, "DeliveryGitHubCLI", lambda: client)
+    assert cli.main(_cli_args(args, "wait")) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["ownerRequestArtifactId"] == ARTIFACT
+    assert result["ownerRequestArtifactVerified"] is False
+    assert result["publicationAuthorized"] is False
