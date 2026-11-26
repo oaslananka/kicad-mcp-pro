@@ -295,8 +295,9 @@ def test_preparation_rejects_conflicting_evidence(case, change: str) -> None:
         args["identity"] = replace(IDENTITY, producer_run_id=RUN)
     else:
         next(args["directory"].glob("*.whl")).write_bytes(b"substitute")
+    prepare_args = _prepare_args(args)
     with pytest.raises(ValueError):
-        owner.prepare_owner_manifest(client, verifier, **_prepare_args(args))
+        owner.prepare_owner_manifest(client, verifier, **prepare_args)
     assert verifier.owner_calls == 0
 
 
@@ -320,8 +321,9 @@ def test_preparation_rejects_changes_after_producer_signatures(case, monkeypatch
         return result
 
     monkeypatch.setattr(verifier.producer, "verify", sign)
+    prepare_args = _prepare_args(args)
     with pytest.raises(ValueError):
-        owner.prepare_owner_manifest(client, verifier, **_prepare_args(args))
+        owner.prepare_owner_manifest(client, verifier, **prepare_args)
 
 
 def test_prepare_cli_outputs_only_verified_unsigned_bytes(case, monkeypatch, capsys) -> None:
