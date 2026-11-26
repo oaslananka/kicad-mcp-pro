@@ -707,3 +707,97 @@ workflows yet. No production manifest issuer or live draft acceptance is
 claimed. Success does not prove which job uploaded the artifact, an
 independently dispatched child, registry receipts, exclusive writer lock
 or publication authorization. A race after the final read remains possible.
+
+### Post-dispatch signed worker binding (not wired)
+
+The owner must not guess a child run ID from a workflow name or timestamp,
+and the Actions bot identity alone does not identify the dispatching owner.
+The GitHub REST API version 2026-03-10 returns a run ID from a successful
+workflow dispatch and accepts a tag reference. After the exact successful
+dispatch response, the reviewed owner will create a second canonical record
+(`python-worker-dispatch.json`) binding the child run ID and attempt 1 to
+the original signed request's digest and all release/owner/producer identity
+fields. It must attest this record under the same production owner
+workflow and invocation. An ambiguous dispatch response must fail closed;
+do not blindly retry the dispatch.
+
+The worker-side library `scripts.check_signed_python_dispatch_binding`
+validates the signed record, the exact active owner and child run metadata,
+numeric repository and bot identity, and the live tag commit. The expected
+runtime ref, commit, run ID and attempt must originate from trusted Actions
+context. The original request and exact package bytes are checked using
+the manifest digest bound in the second record. Both signatures and
+request bytes are verified before returning, with repeated live run/tag
+checks. All expected identity inputs must be independently established;
+the library does not discover them from an untrusted artifact.
+
+Keep the complete draft and protected-tag ruleset check on the maintainer
+side. GitHub documents draft listing visibility as requiring push access;
+the worker must not receive contents-write or ruleset-write merely to
+read draft metadata. Worker-side tag resolution is not proof of ruleset
+enforcement. The library requires only run/tag reads and signature
+verification, and explicitly denies dispatch causality, independent draft
+and protected-tag verification, producer artifact verification, registry
+receipt verification, exclusive writer and publication authorization.
+The producer package verification remains a separate maintainer gate.
+
+The production signature issuer, bounded artifact discovery and wait,
+real tag-dispatch acceptance, worker receipt and publishing integration
+are not implemented by this library. Existing main-ref transport and
+signature-only rehearsals are not evidence of a production tag dispatch.
+Never invoke an existing publishing workflow as a rehearsal. Validate the
+exact tag-dispatch API shape with a reviewed non-publishing acceptance
+path before relying on it. A race after the final read remains possible.
+
+References: [workflow dispatch API](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event),
+[release visibility](https://docs.github.com/en/rest/releases/releases#list-releases),
+and [GITHUB_TOKEN dispatch behavior](https://docs.github.com/en/actions/concepts/security/github_token).
+
+#### Exact-run delivery of the signed request
+
+The future owner stores only the two signed JSON records together in an
+immutable Actions artifact named
+`python-worker-request-<owner-attempt>-<worker-run-id>`.
+The original package files remain in the independently verified producer
+artifact. The worker uses its own Actions runtime (repository, event,
+tag ref, SHA, run ID and attempt), and independently supplied owner,
+producer, Release and manifest-pin inputs:
+
+```bash
+python -m scripts.check_python_worker_request_delivery discover \
+  --tag "$TAG" --source-commit "$SOURCE_SHA" --release-id "$RELEASE_ID" \
+  --owner-run-id "$OWNER_RUN_ID" --owner-attempt "$OWNER_ATTEMPT" \
+  --producer-run-id "$PRODUCER_RUN_ID" --producer-attempt "$PRODUCER_ATTEMPT" \
+  --producer-artifact-id "$PRODUCER_ARTIFACT_ID" --manifest-sha256 "$OWNER_PIN"
+```
+
+The diagnostic only accepts an untruncated run-scoped artifact listing
+(up to 100 entries), one exact matching name and matching individual
+artifact metadata, including repository IDs, owner run and source, size
+and digest. Download the returned numeric artifact ID using the GitHub
+artifact ZIP endpoint. Run the same command with `verify` instead of
+`discover`, adding `--artifact-id "$REQUEST_ARTIFACT_ID"`,
+`--archive "$DOWNLOADED_ZIP"` and `--directory "$DIST"`.
+The verifier independently rereads metadata and requires the ZIP's exact
+digest and size (maximum 64 KiB). Only the two named, nonlinked JSON
+members are accepted, at most 16 KiB each. The private temporary files
+are removed after checking both production-owner signatures, local
+packages and exact child/owner/tag identity. The archive metadata,
+archive bytes, package bytes and live identities are checked again
+before returning.
+
+Use `wait` instead of `discover` when the owner is still preparing
+the request artifact. It checks live owner, child and tag identities
+at each poll, and repeats those checks when the artifact appears.
+Only the absence of the exact expected name in a complete listing is
+retryable: at most 30 polls, five seconds between unsuccessful polls.
+Expired, duplicate, truncated, changed or otherwise inconsistent
+evidence and API errors stop immediately. The caller must impose an
+overall job timeout that includes API latency; the poll limit alone
+does not bound wall-clock time. Discovery and wait do not attest ZIP
+bytes. A future orchestration job must provide trusted expected input
+provenance, the exact artifact download and safe producer extraction.
+This command does not publish, install, dispatch or download files
+itself; its output does not establish artifact-producing job identity,
+registry or exclusive-writer authority. No production workflow invokes
+it yet.
