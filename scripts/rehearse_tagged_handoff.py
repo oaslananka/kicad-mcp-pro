@@ -8,6 +8,7 @@ import io
 import json
 import os
 import re
+import sys
 import tempfile
 import time
 import zipfile
@@ -342,6 +343,10 @@ def verify_receipt(
     return expected
 
 
+class OwnerNotReadyError(ValueError):
+    """The complete active-owner listing is empty."""
+
+
 class RehearsalCLI(DeliveryGitHubCLI):
     def active_owner(self, source: str) -> int:
         result = self._json(
@@ -349,6 +354,8 @@ class RehearsalCLI(DeliveryGitHubCLI):
             f"?branch=main&event=workflow_dispatch&status=in_progress&head_sha={source}&per_page=100"
         )
         runs = result.get("workflow_runs")
+        if runs == [] and _exact_id(result.get("total_count"), 0):
+            raise OwnerNotReadyError("no active rehearsal owner visible")
         if (
             not isinstance(runs, list)
             or len(runs) != 1
@@ -359,6 +366,27 @@ class RehearsalCLI(DeliveryGitHubCLI):
         if type(owner) is not int or owner <= 0:
             raise ValueError("invalid rehearsal owner ID")
         return owner
+
+
+def wait_for_owner(client: RehearsalCLI, source: str, child: int) -> int:
+    """Retry only a complete empty owner listing, never conflicting evidence."""
+    for poll in range(12):
+        if _run_status(client, source=source, run_id=child, owner=False) != "in_progress":
+            raise ValueError("rehearsal worker is not active")
+        if client.tag_commit(REPOSITORY, f"handoff-rehearsal-{source}") != source:
+            raise ValueError("rehearsal tag source mismatch")
+        try:
+            owner = client.active_owner(source)
+        except OwnerNotReadyError:
+            print(
+                f"tagged rehearsal: active owner not visible (poll {poll + 1}/12)", file=sys.stderr
+            )
+            if poll < 11:
+                time.sleep(5)
+            continue
+        _check_runs(client, Identity(source, owner, child), ("in_progress",))
+        return owner
+    raise ValueError("rehearsal owner discovery timed out")
 
 
 def _runtime() -> tuple[str, int, str]:
@@ -448,7 +476,7 @@ def main() -> int:
             return 0
         identity = Identity(
             source,
-            client.active_owner(source) if worker else run_id,
+            wait_for_owner(client, source, run_id) if worker else run_id,
             run_id if worker else args.child,
         )
         if args.operation == "prepare":
