@@ -12,7 +12,13 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from kicad_mcp import cloud_user_cli, cloud_windows_connector, cloud_windows_user_cli, server
+from kicad_mcp import (
+    cloud_user_cli,
+    cloud_windows_connector,
+    cloud_windows_initial_enrollment,
+    cloud_windows_user_cli,
+    server,
+)
 
 _REAL_SETUP_WINDOWS = cloud_windows_user_cli.setup_windows
 
@@ -1042,7 +1048,7 @@ def test_unbound_cloud_pairs_once_then_reuses_identity_without_browser(
             remember(enroll(origin=origin, alias=alias, owner_approval=approval))
         return current["device"]
 
-    monkeypatch.setattr("kicad_mcp.cloud_windows_initial_enrollment.ensure_device", ensure)
+    monkeypatch.setattr(cloud_windows_initial_enrollment, "ensure_device", ensure)
     monkeypatch.setattr(
         cloud_user_cli,
         "_call_with_owner_connector",
@@ -1097,7 +1103,7 @@ def test_unbound_cloud_denied_pairing_never_opens_signed_session(
     async def must_not_connect(*_args: object, **_kwargs: object) -> None:
         pytest.fail("Denied enrollment must not open signed session")
 
-    monkeypatch.setattr("kicad_mcp.cloud_windows_initial_enrollment.ensure_device", rejected)
+    monkeypatch.setattr(cloud_windows_initial_enrollment, "ensure_device", rejected)
     monkeypatch.setattr(
         cloud_user_cli,
         "_call_with_owner_connector",
@@ -1281,9 +1287,7 @@ def test_unbound_cloud_update_exit_does_not_transition_to_project(monkeypatch) -
     monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
     device = SimpleNamespace(origin=origin)
     monkeypatch.setattr(bootstrap, "selected_device", lambda: device)
-    monkeypatch.setattr(
-        "kicad_mcp.cloud_windows_initial_enrollment.ensure_device", lambda *_: device
-    )
+    monkeypatch.setattr(cloud_windows_initial_enrollment, "ensure_device", lambda *_: device)
     monkeypatch.setattr(
         cloud_user_cli,
         "_call_with_owner_connector",

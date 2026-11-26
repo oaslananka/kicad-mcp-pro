@@ -54,6 +54,7 @@ def test_device_only_enrollment_and_reuse(tmp_path, monkeypatch, existing) -> No
     assert not (root / "projects").exists()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner-private registry")
 def test_browser_binding_requires_exact_selected_file_and_identity(tmp_path, monkeypatch) -> None:
     from kicad_mcp import cloud_posix_device_bootstrap as boot
 
@@ -140,6 +141,7 @@ def test_posix_redeem_connect_only_proof(tmp_path, monkeypatch, enabled) -> None
         assert not bindings and challenge_file.exists()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner-private registry")
 @pytest.mark.asyncio
 async def test_device_only_session_waits_for_explicit_browser_bind(tmp_path, monkeypatch) -> None:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey

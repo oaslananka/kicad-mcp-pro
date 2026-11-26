@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -10,6 +11,7 @@ import pytest
 from kicad_mcp import cloud_managed_connector as connector
 from kicad_mcp.cloud_local_registry import LocalRegisteredRead
 from kicad_mcp.cloud_outbound_handshake import HandshakeReceipt
+from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
 
 ORIGIN = "https://kicad-mcp-pro.oaslananka.dev"
 
@@ -34,6 +36,12 @@ def test_posix_session_factory(tmp_path: Path, monkeypatch, mode: str) -> None:
     if mode == "revoked":
         with pytest.raises(ValueError):
             connector._posix_mcp_settings(root, record, project, marker)
+        return
+    if mode == "official" and os.name != "posix":
+        # The POSIX replay fence must fail closed without openat/no-follow support.
+        with pytest.raises(LocalApprovalDeniedError):
+            connector._posix_mcp_settings(root, record, project, marker)
+        assert not (root / "write-markers").exists()
         return
     options = connector._posix_mcp_settings(root, record, project, marker)
     if mode == "background":
@@ -74,6 +82,7 @@ def test_posix_replay_directory_cannot_be_symlink(tmp_path: Path, monkeypatch) -
     assert not list(outside.iterdir())
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner-private registry")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("secondary", [False, True])
 async def test_posix_signed_schematic_request_uses_real_verifier(
@@ -158,6 +167,7 @@ async def test_posix_signed_schematic_request_uses_real_verifier(
     assert events == ["worker"]
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner-private registry")
 def test_posix_explicit_secondary_project_binding(tmp_path, monkeypatch) -> None:
     from kicad_mcp import cloud_posix_project_bindings as bindings
     from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
