@@ -70,8 +70,7 @@ class ReadClient:
         return self.tag_sha
 
 
-@pytest.fixture
-def binding(tmp_path: Path) -> tuple[ReadClient, StubVerifier, dict[str, Any]]:
+def make_binding(tmp_path: Path) -> tuple[ReadClient, StubVerifier, dict[str, Any]]:
     path = tmp_path / "python-worker-dispatch.json"
     path.write_bytes(dispatch_bytes(DISPATCH))
     verifier = StubVerifier(path)
@@ -90,6 +89,11 @@ def binding(tmp_path: Path) -> tuple[ReadClient, StubVerifier, dict[str, Any]]:
             "runtime_attempt": 1,
         },
     )
+
+
+@pytest.fixture
+def binding(tmp_path: Path) -> tuple[ReadClient, StubVerifier, dict[str, Any]]:
+    return make_binding(tmp_path)
 
 
 def test_signed_exact_child_binding_is_read_only(binding) -> None:
@@ -239,9 +243,8 @@ class CombinedSignature:
         return verifier.verify(path=path, repo=repo, sha=sha, signer=signer, source_ref=source_ref)
 
 
-@pytest.fixture
-def request_case(binding) -> tuple[ReadClient, CombinedSignature, dict[str, Any]]:
-    client, dispatch_signature, args = binding
+def make_request_case(tmp_path: Path) -> tuple[ReadClient, CombinedSignature, dict[str, Any]]:
+    client, _, args = make_binding(tmp_path)
     root = args["binding"].parent
     dist = root / "dist"
     dist.mkdir()
@@ -269,6 +272,11 @@ def request_case(binding) -> tuple[ReadClient, CombinedSignature, dict[str, Any]
     )
 
 
+@pytest.fixture
+def request_case(tmp_path: Path) -> tuple[ReadClient, CombinedSignature, dict[str, Any]]:
+    return make_request_case(tmp_path)
+
+
 def test_worker_request_composes_both_signatures_and_exact_packages(request_case) -> None:
     client, verifier, args = request_case
     result = verify_worker_request(client, verifier, **args)
@@ -281,7 +289,8 @@ def test_worker_request_composes_both_signatures_and_exact_packages(request_case
     assert result["draftReleaseVerified"] is False
     assert result["producerArtifactVerified"] is False
     assert result["publicationAuthorized"] is False
-    assert len(verifier.dispatch.calls) == len(verifier.manifest.calls) == 1
+    assert len(verifier.dispatch.calls) == 1
+    assert len(verifier.manifest.calls) == 1
 
 
 def test_different_validly_signed_manifest_cannot_replace_bound_request(request_case) -> None:

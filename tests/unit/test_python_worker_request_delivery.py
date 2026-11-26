@@ -19,12 +19,7 @@ from tests.unit.test_signed_python_dispatch_binding import (
     RUN,
     CombinedSignature,
     ReadClient,
-)
-from tests.unit.test_signed_python_dispatch_binding import (
-    binding as binding,
-)
-from tests.unit.test_signed_python_dispatch_binding import (
-    request_case as request_case,
+    make_request_case,
 )
 
 ARTIFACT = 88221
@@ -80,10 +75,8 @@ def archive_bytes(files: list[tuple[str, bytes]]) -> bytes:
 
 
 @pytest.fixture
-def delivery(
-    request_case, tmp_path: Path
-) -> tuple[DeliveryClient, CombinedSignature, dict[str, Any]]:
-    source, verifier, args = request_case
+def delivery(tmp_path: Path) -> tuple[DeliveryClient, CombinedSignature, dict[str, Any]]:
+    source, verifier, args = make_request_case(tmp_path)
     files = [(args[key].name, args[key].read_bytes()) for key in ("binding", "manifest")]
     archive = archive_bytes(files)
     path = tmp_path / "owner-request.zip"
@@ -108,7 +101,8 @@ def test_exact_delivery_and_both_signatures(delivery) -> None:
     assert result["packageBytesVerified"] is True
     assert result["publicationAuthorized"] is False
     assert result["artifactProducedByOwnerJobVerified"] is False
-    assert len(verifier.dispatch.calls) == len(verifier.manifest.calls) == 1
+    assert len(verifier.dispatch.calls) == 1
+    assert len(verifier.manifest.calls) == 1
 
 
 @pytest.mark.parametrize(
