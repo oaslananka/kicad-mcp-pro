@@ -68,7 +68,7 @@ def test_actionlint_uses_pinned_upstream_go_module_without_binary_sdist() -> Non
     toolchain = next(
         step
         for step in steps
-        if step.get("uses", "") == "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e"
+        if step.get("uses", "") == "actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5"
     )
     assert toolchain["with"]["go-version"] == "1.27"
     assert toolchain["with"]["cache"] is False
