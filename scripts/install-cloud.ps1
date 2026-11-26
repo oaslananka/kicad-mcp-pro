@@ -20,18 +20,20 @@
     # Serialize all installer work for this Windows user, including bootstrap.
     # Windows releases the mutex even after a crash; never trust a PID file.
     $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $prepareMutex = [System.Threading.Mutex]::new($false, "Global\KiCadMcpProCloudPrepareV1-$sid")
     $installerMutex = [System.Threading.Mutex]::new($false, "Global\KiCadMcpProCloudInstallerV2-$sid")
+    $ownsPrepare = $false
     $ownsInstallerMutex = $false
+    function Enter-InstallerMutex([System.Threading.Mutex]$mutex) {
+        try { return $mutex.WaitOne(0) }
+        catch [System.Threading.AbandonedMutexException] { return $true }
+    }
     try {
-        try {
-            $ownsInstallerMutex = $installerMutex.WaitOne(0)
-        } catch [System.Threading.AbandonedMutexException] {
-            $ownsInstallerMutex = $true
+        $ownsPrepare = Enter-InstallerMutex $prepareMutex
+        if (-not $ownsPrepare) {
+            throw "Another setup is preparing an update. Existing installation unchanged."
         }
-        if (-not $ownsInstallerMutex) {
-            Write-Host "KiCad MCP Pro: Another setup or Connector is running. No installation files were changed."
-            return
-        }
+        $ownsInstallerMutex = Enter-InstallerMutex $installerMutex
     $installDir = if ($env:UV_INSTALL_DIR) { $env:UV_INSTALL_DIR } else {
         Join-Path $HOME ".local\bin"
     }
@@ -91,6 +93,8 @@
     $originalToolDir = $env:UV_TOOL_DIR
     $originalBinDir = $env:UV_TOOL_BIN_DIR
     $originalPath = $env:PATH
+    $originalGeneration = $env:KICAD_CLOUD_UPDATE_GENERATION
+    $originalSlot = $env:KICAD_CLOUD_UPDATE_SLOT
     $releases = Join-Path $appRoot "releases"
     $pointer = Join-Path $appRoot "active-release"
 
@@ -151,6 +155,30 @@
         }
     }
 
+    function Get-InstallProcesses {
+        if (-not (Test-Path -LiteralPath $appRoot)) { return }
+        try {
+            Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'pythonw.exe' OR Name = 'kicad-mcp-pro.exe'" -ErrorAction Stop |
+                Where-Object {
+                    ([string]$_.ExecutablePath).StartsWith($appRoot + [IO.Path]::DirectorySeparatorChar,
+                        [StringComparison]::OrdinalIgnoreCase)
+                }
+        } catch {
+            throw "Could not verify running Connector processes. Existing installation unchanged."
+        }
+    }
+
+    function Get-UpdateLease([string]$executable, [string]$slot) {
+        if ($slot -cnotin @("a", "b")) { return $null }
+        try {
+            $result = (& $executable cloud _update-control probe 2>$null | Out-String).Trim()
+            if ($LASTEXITCODE -eq 0 -and $result -cmatch ('^[0-9a-f]{32} ' + $slot + '$')) {
+                return $result
+            }
+        } catch {}
+        return $null
+    }
+
     try {
         $env:UV_NO_CONFIG = "1"
         Assert-LocalDirectory $appRoot
@@ -170,25 +198,22 @@
         $candidate = if ($active -eq "a") { "b" } else { "a" }
         $cliPath = Select-ReleaseSlot $active
 
-        # Detect older/manual processes in any dedicated installation slot.
-        # Never modify a potentially running slot, including the inactive one.
-        if (Test-Path -LiteralPath $appRoot) {
-            try {
-                $running = @(
-                    Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'pythonw.exe' OR Name = 'kicad-mcp-pro.exe'" -ErrorAction Stop |
-                        Where-Object {
-                            $path = [string]$_.ExecutablePath
-                            $path.StartsWith($appRoot + [IO.Path]::DirectorySeparatorChar,
-                                [StringComparison]::OrdinalIgnoreCase)
-                        }
-                )
-            } catch {
-                throw "Could not check whether the Connector is already running. No installation files were changed."
+        $activeCli = $cliPath
+        $running = @(Get-InstallProcesses)
+        $lease = $null
+        if (-not $ownsInstallerMutex) {
+            $lease = Get-UpdateLease $activeCli $active
+            if (-not $lease) {
+                throw "Another setup or Connector is running. Existing installation unchanged."
             }
-            if ($running.Count -gt 0) {
-                Write-Host "KiCad MCP Pro: This Connector is already running. No update or duplicate connection was started."
-                return
+            $activeRoot = (Join-Path $releases $active) + [IO.Path]::DirectorySeparatorChar
+            if (@($running | Where-Object {
+                -not ([string]$_.ExecutablePath).StartsWith($activeRoot, [StringComparison]::OrdinalIgnoreCase)
+            }).Count -gt 0) {
+                throw "Another installation is running. Existing installation unchanged."
             }
+        } elseif ($running.Count -gt 0) {
+            throw "A manually started or older Connector is running. Existing installation unchanged."
         }
 
         $existingHealthy = Test-Connector $cliPath
@@ -196,15 +221,45 @@
         Write-Host "KiCad MCP Pro: Preparing a separate update..."
         & $uvPath tool install --upgrade $package
         $installed = ($LASTEXITCODE -eq 0) -and (Test-Connector $cliPath)
-        if (-not $installed -and -not $existingHealthy) {
+        if (-not $installed -and -not $existingHealthy -and $ownsInstallerMutex) {
             Write-Host "KiCad MCP Pro: Installation needs repair. Retrying once..."
             & $uvPath tool install --force --reinstall $package
             $installed = ($LASTEXITCODE -eq 0) -and (Test-Connector $cliPath)
         }
         if ($installed) {
+            if (-not $ownsInstallerMutex) {
+                $ownsInstallerMutex = Enter-InstallerMutex $installerMutex
+                if (-not $ownsInstallerMutex) {
+                    if ((Get-UpdateLease $activeCli $active) -cne $lease) {
+                        throw "The running session changed. Retry the same setup."
+                    }
+                    $generation = $lease.Split(" ")[0]
+                    & $activeCli cloud _update-control request --generation $generation --slot $active *> $null
+                    if ($LASTEXITCODE -ne 0) {
+                        $ownsInstallerMutex = Enter-InstallerMutex $installerMutex
+                        if (-not $ownsInstallerMutex) { throw "Connector did not accept the update request." }
+                    }
+                    Write-Host "KiCad MCP Pro: Finishing the current Cloud operation before updating..."
+                    $deadline = [Diagnostics.Stopwatch]::StartNew()
+                    while (-not $ownsInstallerMutex) {
+                        if ($deadline.Elapsed.TotalSeconds -ge 300) {
+                            throw "Previous Connector is still finishing. Retry setup; no process was killed."
+                        }
+                        Start-Sleep -Milliseconds 200
+                        $ownsInstallerMutex = Enter-InstallerMutex $installerMutex
+                    }
+                }
+            }
+            if (@(Get-InstallProcesses).Count -gt 0) {
+                throw "A Connector process is still running. Existing release unchanged."
+            }
             Publish-Release $candidate
+            $selected = $candidate
+        } elseif (-not $ownsInstallerMutex) {
+            throw "Update unavailable; existing Connector was not asked to stop."
         } elseif ($existingHealthy) {
             Write-Warning "Update unavailable; starting the existing working version."
+            $selected = $active
             $cliPath = Select-ReleaseSlot $active
             if (-not (Test-Connector $cliPath)) {
                 throw "Existing installation is no longer healthy."
@@ -213,6 +268,10 @@
             throw "Could not install or repair KiCad MCP Pro. Existing files and Cloud permissions were preserved."
         }
 
+        $env:KICAD_CLOUD_UPDATE_GENERATION = [guid]::NewGuid().ToString("N")
+        $env:KICAD_CLOUD_UPDATE_SLOT = $selected
+        $prepareMutex.ReleaseMutex()
+        $ownsPrepare = $false
         Write-Host "KiCad MCP Pro: Ready. Opening Cloud Connector..."
         # Main may be ahead of the published wheel. Do not pass an unsupported option.
         $cloudHelp = (& $cliPath cloud --help 2>&1 | Out-String)
@@ -231,12 +290,19 @@
         $env:UV_TOOL_BIN_DIR = $originalBinDir
         $env:PATH = $originalPath
         $env:UV_NO_CONFIG = $originalNoConfig
+        $env:KICAD_CLOUD_UPDATE_GENERATION = $originalGeneration
+        $env:KICAD_CLOUD_UPDATE_SLOT = $originalSlot
     }
     } finally {
         try {
             if ($ownsInstallerMutex) { $installerMutex.ReleaseMutex() }
         } finally {
             $installerMutex.Dispose()
+            try {
+                if ($ownsPrepare) { $prepareMutex.ReleaseMutex() }
+            } finally {
+                $prepareMutex.Dispose()
+            }
         }
     }
 }

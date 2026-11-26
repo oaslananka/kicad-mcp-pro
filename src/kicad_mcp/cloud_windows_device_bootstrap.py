@@ -383,7 +383,7 @@ async def run_device_only(
         selected_project,
     )
 
-    with owner_connector_instance():
+    with owner_connector_instance(reuse_if_held=True):
         if drain is not None and drain.is_set():
             return
         from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
@@ -423,6 +423,8 @@ async def run_device_only(
                 )
                 failures = 0
             except (OSError, ValueError) as exc:
+                if drain is not None and drain.is_set():
+                    return
                 if _is_remote_policy_rejection(exc):
                     raise CloudOwnerReapprovalRequiredError(
                         "Cloud denied the signed device session."

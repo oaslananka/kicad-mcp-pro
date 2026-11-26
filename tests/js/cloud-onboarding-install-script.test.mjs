@@ -22,7 +22,7 @@ test("Windows one-command Cloud bootstrap installs or upgrades and repairs only 
   assert.match(installer,/\$env:PATH = \$originalPath/);
   assert.match(installer,/Get-CimInstance Win32_Process/);
   assert.match(installer,/\$running\.Count -gt 0/);
-  assert.match(installer,/No update or duplicate connection was started/);
+  assert.match(installer,/Existing installation unchanged/);
   assert.match(installer,/finally \{\s*\$env:UV_TOOL_DIR = \$originalToolDir/);
   assert.match(installer,/elseif \(\$existingHealthy\)/);
   assert.match(installer,/Update unavailable; starting the existing working version/);
@@ -58,7 +58,17 @@ test("Windows publishes only a healthy inactive release and preserves the previo
   assert.match(installer,/\$candidate = if \(\$active -eq "a"\) \{ "b" \} else \{ "a" \}/);
   assert.match(installer,/\$cliPath = Select-ReleaseSlot \$candidate/);
   assert.match(installer,/\$installed = \(\$LASTEXITCODE -eq 0\) -and \(Test-Connector \$cliPath\)/);
-  assert.match(installer,/if \(\$installed\) \{\s*Publish-Release \$candidate/);
+  assert.match(installer,/if \(\$installed\) \{[\s\S]*Publish-Release \$candidate/);
   assert.match(installer,/\[IO\.File\]::Replace\(\$temporary, \$pointer, \$backup\)/);
   assert.match(installer,/\$cliPath = Select-ReleaseSlot \$active/);
+});
+
+test("Live Windows update prepares before requesting drain and waits for session ownership",()=>{
+  assert.match(installer,/KiCadMcpProCloudPrepareV1/);
+  assert.match(installer,/Get-UpdateLease \$activeCli \$active/);
+  assert.ok(installer.indexOf("tool install --upgrade") < installer.indexOf("cloud _update-control request"));
+  assert.ok(installer.indexOf("cloud _update-control request") < installer.indexOf("Publish-Release $candidate"));
+  assert.match(installer,/while \(-not \$ownsInstallerMutex\)/);
+  assert.match(installer,/Update unavailable; existing Connector was not asked to stop/);
+  assert.doesNotMatch(installer,/Stop-Process|taskkill/i);
 });

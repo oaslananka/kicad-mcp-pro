@@ -175,7 +175,7 @@ def test_unbound_connector_serves_owner_folder_until_project_binding(
     monkeypatch.setattr(boot, "selected_device", lambda: device)
     monkeypatch.setattr(boot, "verified_device_key", lambda _device: key)
     monkeypatch.setattr(boot, "_folder_service", lambda _device: folder)
-    monkeypatch.setattr(boot, "owner_connector_instance", nullcontext)
+    monkeypatch.setattr(boot, "owner_connector_instance", lambda **_: nullcontext())
 
     async def connect(**kwargs: object) -> None:
         assert kwargs["origin"] == device.origin
@@ -217,7 +217,7 @@ def test_unbound_connector_retries_network_without_repairing_device(
     monkeypatch.setattr(connector, "_is_remote_policy_rejection", lambda _exc: False)
     monkeypatch.setattr(boot, "selected_device", lambda: device)
     monkeypatch.setattr(boot, "verified_device_key", lambda _device: object())
-    monkeypatch.setattr(boot, "owner_connector_instance", nullcontext)
+    monkeypatch.setattr(boot, "owner_connector_instance", lambda **_: nullcontext())
     monkeypatch.setattr(boot, "_folder_service", lambda _device: object())
 
     async def connect(**_kwargs: object) -> None:
@@ -253,7 +253,7 @@ def test_unbound_connector_hard_denial_never_retries_or_reapproves(
     monkeypatch.setattr(connector, "_is_remote_policy_rejection", lambda _exc: True)
     monkeypatch.setattr(boot, "selected_device", lambda: device)
     monkeypatch.setattr(boot, "verified_device_key", lambda _device: object())
-    monkeypatch.setattr(boot, "owner_connector_instance", nullcontext)
+    monkeypatch.setattr(boot, "owner_connector_instance", lambda **_: nullcontext())
     monkeypatch.setattr(boot, "_folder_service", lambda _device: object())
 
     async def rejected(**_kwargs: object) -> None:
@@ -276,7 +276,7 @@ def test_unbound_connector_rejects_changed_device_identity_before_network(
     device, _store = saved_device
     monkeypatch.setattr(connector, "selected_project", lambda: None)
     monkeypatch.setattr(boot, "selected_device", lambda: None)
-    monkeypatch.setattr(boot, "owner_connector_instance", nullcontext)
+    monkeypatch.setattr(boot, "owner_connector_instance", lambda **_: nullcontext())
 
     async def must_not_connect(**_kwargs: object) -> None:
         pytest.fail("Unverified device must never open a signed socket")
@@ -617,7 +617,7 @@ async def test_device_only_update_drain_preserves_windows_identity(
     monkeypatch.setattr(connector, "selected_project", lambda: None)
     monkeypatch.setattr(boot, "selected_device", lambda: device)
     monkeypatch.setattr(boot, "verified_device_key", lambda _: Ed25519PrivateKey.generate())
-    monkeypatch.setattr(boot, "owner_connector_instance", nullcontext)
+    monkeypatch.setattr(boot, "owner_connector_instance", lambda **_: nullcontext())
     drain = asyncio.Event()
     calls = []
     activity = []

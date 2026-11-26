@@ -17,9 +17,9 @@ import sys
 import time
 import uuid
 import webbrowser
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
-from functools import wraps
+from functools import partial, wraps
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
@@ -115,17 +115,26 @@ def _update_control(
 ) -> None:
     """Installer-only local handoff; no cloud or project authority."""
     if _is_windows():
-        raise typer.Exit(1)
-    from kicad_mcp.cloud_local_registry import default_registry_root
-    from kicad_mcp.cloud_posix_update_control import probe, request
+        from kicad_mcp.cloud_windows_update_control import (
+            probe as windows_probe,
+        )
+        from kicad_mcp.cloud_windows_update_control import (
+            request as windows_request,
+        )
 
-    root = default_registry_root()
-    if action == "probe" and not generation and not slot:
-        lease = probe(root)
-        if lease is not None:
-            typer.echo(" ".join(lease))
-            return
-    elif action == "request" and request(root, generation, slot):
+        lease = windows_probe() if action == "probe" and not generation and not slot else None
+        accepted = action == "request" and windows_request(generation, slot)
+    else:
+        from kicad_mcp.cloud_local_registry import default_registry_root
+        from kicad_mcp.cloud_posix_update_control import probe, request
+
+        root = default_registry_root()
+        lease = probe(root) if action == "probe" and not generation and not slot else None
+        accepted = action == "request" and request(root, generation, slot)
+    if lease is not None:
+        typer.echo(" ".join(lease))
+        return
+    if accepted:
         return
     raise typer.Exit(1)
 
@@ -236,6 +245,27 @@ def _run_windows_cloud_session() -> None:
     )
 
 
+async def _windows_update_session(origin: str, run: Callable[..., Awaitable[None]]) -> bool:
+    """Return true only when the installer requested a graceful exit."""
+    from kicad_mcp.cloud_windows_update_control import watch
+
+    if (
+        not os.environ.get("KICAD_CLOUD_UPDATE_GENERATION")
+        or not _owner_terminal()
+        or _BACKGROUND_CONNECTOR_HANDOFF.get() is not None
+    ):
+        await run()
+        return False
+    with owner_connector_instance(reuse_if_held=True):
+        async with watch(origin) as drain:
+            if drain is None:
+                await run()
+                return False
+            if not drain.is_set():
+                await run(drain=drain)
+            return drain.is_set()
+
+
 def _connect_unbound_windows_device(origin: str, alias: str) -> bool:
     """Browser-pair only the first time, then serve owner-initiated Add Project."""
     from kicad_mcp.cloud_windows_connector import CloudOwnerReapprovalRequiredError
@@ -276,12 +306,18 @@ def _connect_unbound_windows_device(origin: str, alias: str) -> bool:
     )
     typer.echo("Keep this terminal open for live connection and tool activity logs.")
     try:
-        asyncio.run(
-            run_device_only(
-                enrolled,
-                status_callback=lambda value: _display_cloud_status(value, origin),
+        drained = asyncio.run(
+            _windows_update_session(
+                origin,
+                partial(
+                    run_device_only,
+                    enrolled,
+                    status_callback=lambda value: _display_cloud_status(value, origin),
+                ),
             )
         )
+        if drained:
+            return False
     except CloudOwnerReapprovalRequiredError:
         typer.echo(
             "Cloud denied this device session (policy 1008). "
@@ -1095,26 +1131,24 @@ def remote(
 
     try:
         if enable_write:
-            asyncio.run(
-                run_connector(
-                    stop=asyncio.Event(),
-                    status_callback=show_status,
-                    allow_native_write=True,
-                    issuer_key=trusted_issuer,
-                    allow_native_drc=allow_native_drc,
-                )
+            run = partial(
+                run_connector,
+                stop=asyncio.Event(),
+                status_callback=show_status,
+                allow_native_write=True,
+                issuer_key=trusted_issuer,
+                allow_native_drc=allow_native_drc,
             )
         elif allow_native_drc:
-            asyncio.run(
-                run_connector(
-                    stop=asyncio.Event(),
-                    status_callback=show_status,
-                    allow_native_drc=True,
-                )
+            run = partial(
+                run_connector,
+                stop=asyncio.Event(),
+                status_callback=show_status,
+                allow_native_drc=True,
             )
         else:
-            # Preserve the exact legacy call signature for normal remote use.
-            asyncio.run(run_connector(stop=asyncio.Event(), status_callback=show_status))
+            run = partial(run_connector, stop=asyncio.Event(), status_callback=show_status)
+        asyncio.run(_windows_update_session(origin, run))
     except CloudOwnerReapprovalRequiredError:
         raise typer.Exit(code=3) from None
     except KeyboardInterrupt:

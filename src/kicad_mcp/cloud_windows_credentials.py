@@ -28,6 +28,8 @@ _PARTS = frozenset(
         "registration",
         "project_path",
         "secondary_project",
+        "update_lease",
+        "update_request",
         "legacy_project_migration",
         "active",
         "selected",

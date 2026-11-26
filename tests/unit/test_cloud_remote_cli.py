@@ -1256,3 +1256,17 @@ def test_default_cloud_reconciles_before_reading_selected_project(monkeypatch) -
     result = CliRunner().invoke(server.app, ["cloud"])
     assert result.exit_code == 0, result.output
     assert events == ["resume", "read", "connect"]
+
+
+def test_unbound_cloud_update_exit_does_not_transition_to_project(monkeypatch) -> None:
+    from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
+
+    origin = cloud_user_cli.DEFAULT_CLOUD_ORIGIN
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(bootstrap, "selected_device", lambda: SimpleNamespace(origin=origin))
+
+    async def drained(*_args: object) -> bool:
+        return True
+
+    monkeypatch.setattr(cloud_user_cli, "_windows_update_session", drained)
+    assert not cloud_user_cli._connect_unbound_windows_device(origin, "PC")

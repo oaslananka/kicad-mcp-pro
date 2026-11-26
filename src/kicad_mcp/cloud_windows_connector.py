@@ -944,6 +944,8 @@ async def run_connector(
                     issuer_key=issuer_key,
                 )
             except CloudOwnerReapprovalRequiredError:
+                if drain is not None and drain.is_set():
+                    return
                 _notify_owner_reapproval(status_callback, project)
                 raise
             if result is None or (drain is not None and drain.is_set()):
