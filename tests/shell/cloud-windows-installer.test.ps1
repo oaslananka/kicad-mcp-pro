@@ -49,6 +49,7 @@ public class Fixture {
                 File.AppendAllText(Environment.GetEnvironmentVariable("KICAD_TEST_LOG"),
                     "install " + target + Environment.NewLine);
                 string scenario = Environment.GetEnvironmentVariable("KICAD_TEST_SCENARIO");
+                if (scenario == "offline") return 1;
                 if (scenario == "failure" || scenario == "unhealthy") {
                     File.WriteAllText(target, "broken fixture");
                     return scenario == "failure" ? 1 : 0;
@@ -68,6 +69,10 @@ public class Fixture {
             }
             if (args.Length == 7 && args[1] == "_update-control" && args[2] == "request") {
                 if (!File.Exists(lease) || File.ReadAllText(lease) != args[4] + " " + args[6]) return 1;
+                string journal = Path.Combine(Environment.GetEnvironmentVariable("LOCALAPPDATA"),
+                    "KiCadMCPPro", "pending-release");
+                string next = args[6] == "a" ? "b" : "a";
+                if (!File.Exists(journal) || File.ReadAllText(journal) != args[6] + " " + next + " " + args[4] + "\n") return 95;
                 File.AppendAllText(log, "requested" + Environment.NewLine);
                 File.WriteAllText(request, "drain"); return 0;
             }
@@ -87,7 +92,7 @@ public class Fixture {
                 Environment.GetEnvironmentVariable("KICAD_CLOUD_UPDATE_SLOT") == "a") {
                 File.WriteAllText(lease, Environment.GetEnvironmentVariable("KICAD_CLOUD_UPDATE_GENERATION") + " a");
                 System.Diagnostics.Stopwatch timer = System.Diagnostics.Stopwatch.StartNew();
-                while (!File.Exists(request) && timer.Elapsed.TotalSeconds < 35) System.Threading.Thread.Sleep(50);
+                while (!File.Exists(request) && timer.Elapsed.TotalSeconds < 90) System.Threading.Thread.Sleep(50);
                 bool requested = File.Exists(request);
                 File.Delete(lease);
                 if (!requested) return 99;
@@ -150,6 +155,32 @@ public class Fixture {
     }
     if ((Get-Content -LiteralPath $pointer -Raw).Trim() -cne "a") { throw "A not selected" }
     $hash = (Get-FileHash -LiteralPath $a).Hash
+    $pendingPath = Join-Path $app "pending-release"
+    $count = @(Get-Content -LiteralPath $env:KICAD_TEST_LOG | Where-Object { $_ -like "install *" }).Count
+    $env:KICAD_TEST_SCENARIO = "offline"
+    [IO.File]::WriteAllText($pendingPath, ("a b " + [guid]::NewGuid().ToString("N") + [char]10), [Text.Encoding]::ASCII)
+    $rejected = $false
+    try { & $install } catch {
+        if ($_.Exception.Message -notmatch "A different Connector session is running") { throw }
+        $rejected = $true
+    }
+    if (-not $rejected -or (Test-Path -LiteralPath $requestPath)) { throw "Stale generation drained live A" }
+    $currentGeneration = ([IO.File]::ReadAllText($leasePath)).Split(" ")[0]
+    [IO.File]::WriteAllText($pendingPath, ("a b " + $currentGeneration + [char]10), [Text.Encoding]::ASCII)
+    [IO.File]::WriteAllText($b, "broken saved candidate")
+    $rejected = $false
+    try { & $install } catch {
+        if ($_.Exception.Message -notmatch "Saved candidate is no longer healthy") { throw }
+        $rejected = $true
+    }
+    if (-not $rejected -or (Test-Path -LiteralPath $requestPath) -or
+        (Get-Content -LiteralPath $pointer -Raw).Trim() -cne "a" -or
+        (Get-FileHash -LiteralPath $a).Hash -ne $hash -or
+        @(Get-Content -LiteralPath $env:KICAD_TEST_LOG | Where-Object { $_ -like "install *" }).Count -ne $count) {
+        throw "Unhealthy saved candidate affected live A"
+    }
+    Remove-Item -LiteralPath $pendingPath
+    Write-Output "PASS: Windows stale generation and unhealthy saved candidate never drain live Connector"
     $env:KICAD_TEST_SCENARIO = "failure"
     $rejected = $false
     try { & $install } catch {
@@ -169,6 +200,7 @@ public class Fixture {
     $job = $null
     $tail = @(Get-Content -LiteralPath $env:KICAD_TEST_LOG | Select-Object -Last 3)
     if ((Get-Content -LiteralPath $pointer -Raw).Trim() -cne "b" -or
+        (Test-Path -LiteralPath $pendingPath) -or
         $tail.Count -ne 3 -or $tail[0] -ne "requested" -or $tail[1] -ne "drained" -or
         $tail[2] -ne ("connected " + $b)) { throw "Unexpected handoff order" }
     Write-Output "PASS: Windows graceful live A-to-B handoff"
@@ -205,6 +237,61 @@ public class Fixture {
         throw "Cloud policy rejection was treated as a package failure"
     }
     Write-Output "PASS: Windows policy failure does not downgrade"
+
+    # A prepared, durable intent is left if the updater exits before
+    # publishing its selector. Both installed executables are healthy.
+    $pendingPath = Join-Path $app "pending-release"
+    $generation = [guid]::NewGuid().ToString("N")
+    $journal = "a b $generation" + [char]10
+    $aHash = (Get-FileHash -LiteralPath $a).Hash
+    $bHash = (Get-FileHash -LiteralPath $b).Hash
+    $count = @(Get-Content -LiteralPath $env:KICAD_TEST_LOG | Where-Object { $_ -like "install *" }).Count
+    [IO.File]::WriteAllText($pendingPath, $journal, [Text.Encoding]::ASCII)
+    $env:KICAD_TEST_SCENARIO = "offline"
+    & $install
+    if ((Get-Content -LiteralPath $pointer -Raw).Trim() -cne "b" -or
+        (Test-Path -LiteralPath $pendingPath) -or
+        (Get-Content -LiteralPath $env:KICAD_TEST_LOG | Select-Object -Last 1) -ne ("connected " + $b) -or
+        @(Get-Content -LiteralPath $env:KICAD_TEST_LOG | Where-Object { $_ -like "install *" }).Count -ne $count) {
+        throw "Interrupted update did not recover the prepared candidate offline"
+    }
+    Write-Output "PASS: Windows interrupted handoff resumes offline without reinstall"
+    # Crash immediately after publishing B, before removing the journal.
+    [IO.File]::WriteAllText($pendingPath, $journal, [Text.Encoding]::ASCII)
+    & $install
+    if ((Get-Content -LiteralPath $pointer -Raw).Trim() -cne "b" -or
+        (Test-Path -LiteralPath $pendingPath) -or
+        @(Get-Content -LiteralPath $env:KICAD_TEST_LOG | Where-Object { $_ -like "install *" }).Count -ne $count) {
+        throw "Interrupted selector publication was not idempotent"
+    }
+    Write-Output "PASS: Windows interrupted selector publication reconciles"
+    [IO.File]::WriteAllText($pendingPath, ("b b " + $generation + [char]10), [Text.Encoding]::ASCII)
+    $rejected = $false
+    try { & $install } catch {
+        if ($_.Exception.Message -notmatch "Invalid saved update") { throw }
+        $rejected = $true
+    }
+    if (-not $rejected -or (Get-FileHash -LiteralPath $a).Hash -ne $aHash -or
+        (Get-FileHash -LiteralPath $b).Hash -ne $bHash -or
+        (Get-Content -LiteralPath $pointer -Raw).Trim() -cne "b" -or
+        @(Get-Content -LiteralPath $env:KICAD_TEST_LOG | Where-Object { $_ -like "install *" }).Count -ne $count) {
+        throw "Malformed journal changed installed releases"
+    }
+    Remove-Item -LiteralPath $pendingPath
+    Write-Output "PASS: Windows malformed update journal fails closed"
+    # Prepare B from A but discover corruption before promotion.
+    [IO.File]::WriteAllText($pointer, ("a" + [char]10), [Text.Encoding]::ASCII)
+    [IO.File]::WriteAllText($pendingPath, $journal, [Text.Encoding]::ASCII)
+    [IO.File]::WriteAllText($b, "broken candidate")
+    & $install
+    if ((Get-Content -LiteralPath $pointer -Raw).Trim() -cne "a" -or
+        (Test-Path -LiteralPath $pendingPath) -or
+        (Get-FileHash -LiteralPath $a).Hash -ne $aHash -or
+        @(Get-Content -LiteralPath $env:KICAD_TEST_LOG | Where-Object { $_ -like "install *" }).Count -ne $count) {
+        throw "Unhealthy saved candidate did not preserve A"
+    }
+    Write-Output "PASS: Windows unhealthy saved candidate restores previous release"
+
 
 
 } finally {

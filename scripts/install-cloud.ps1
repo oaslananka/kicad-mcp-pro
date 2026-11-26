@@ -97,6 +97,7 @@
     $originalSlot = $env:KICAD_CLOUD_UPDATE_SLOT
     $releases = Join-Path $appRoot "releases"
     $pointer = Join-Path $appRoot "active-release"
+    $pendingPath = Join-Path $appRoot "pending-release"
 
     function Assert-LocalDirectory([string]$path) {
         $item = Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
@@ -134,13 +135,52 @@
         return (Join-Path $dedicatedBin "$package.exe")
     }
 
+    function Write-DurableMarker([string]$path, [string]$value) {
+        $bytes = [Text.Encoding]::ASCII.GetBytes($value + "`n")
+        $stream = [IO.File]::Open($path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+        try {
+            $stream.Write($bytes, 0, $bytes.Length)
+            $stream.Flush($true)
+        } finally { $stream.Dispose() }
+    }
+
+    function Read-PendingRelease {
+        try {
+            $item = Get-Item -LiteralPath $pendingPath -Force -ErrorAction Stop
+        } catch [System.Management.Automation.ItemNotFoundException] {
+            return $null
+        }
+        if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+            $item.Length -ne 37) { throw "Invalid saved update. Existing releases unchanged." }
+        $value = [IO.File]::ReadAllText($pendingPath, [Text.Encoding]::ASCII)
+        if ($value -cmatch '\A([ab]) ([ab]) ([0-9a-f]{32})\n\z') {
+            if ($Matches[1] -cne $Matches[2]) {
+                return @{ Old = $Matches[1]; Candidate = $Matches[2]; Generation = $Matches[3]; Raw = $value }
+            }
+        }
+        throw "Invalid saved update. Existing releases unchanged."
+    }
+
+    function Save-PendingRelease([string]$old, [string]$next, [string]$generation) {
+        if ($null -ne (Read-PendingRelease)) { throw "A saved update already exists." }
+        $temporary = Join-Path $appRoot (".pending-release-" + [guid]::NewGuid().ToString("N"))
+        try {
+            Write-DurableMarker $temporary "$old $next $generation"
+            [IO.File]::Move($temporary, $pendingPath)
+        } finally {
+            if (Test-Path -LiteralPath $temporary -PathType Leaf) {
+                Remove-Item -LiteralPath $temporary -Force
+            }
+        }
+    }
+
     function Publish-Release([string]$slot) {
         # uv environments are not relocatable. Publish only a small selector,
         # leaving the old environment and the prepared candidate in place.
         $temporary = Join-Path $appRoot (".active-release-" + [guid]::NewGuid().ToString("N"))
         $backup = $temporary + ".previous"
         try {
-            [IO.File]::WriteAllText($temporary, $slot + "`n", [Text.Encoding]::ASCII)
+            Write-DurableMarker $temporary $slot
             if (Test-Path -LiteralPath $pointer -PathType Leaf) {
                 [IO.File]::Replace($temporary, $pointer, $backup)
             } else {
@@ -153,6 +193,20 @@
                 }
             }
         }
+    }
+
+    function Read-ActiveRelease {
+        $active = "legacy"
+        $selection = Get-Item -LiteralPath $pointer -Force -ErrorAction SilentlyContinue
+        if ($null -ne $selection) {
+            if ($selection.PSIsContainer -or ($selection.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+                $selection.Length -gt 3) {
+                throw "Invalid release selection."
+            }
+            $active = [IO.File]::ReadAllText($pointer).TrimEnd([char]10, [char]13)
+            if ($active -cnotin @("a", "b")) { throw "Invalid release selection." }
+        }
+        return $active
     }
 
     function Get-InstallProcesses {
@@ -185,15 +239,14 @@
         Assert-LocalDirectory $releases
         Assert-LocalDirectory (Join-Path $releases "a")
         Assert-LocalDirectory (Join-Path $releases "b")
-        $active = "legacy"
-        $selection = Get-Item -LiteralPath $pointer -Force -ErrorAction SilentlyContinue
-        if ($null -ne $selection) {
-            if ($selection.PSIsContainer -or ($selection.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
-                $selection.Length -gt 3) {
-                throw "Invalid release selection."
+        $active = Read-ActiveRelease
+        $pending = Read-PendingRelease
+        if ($null -ne $pending) {
+            if ($active -cnotin @($pending.Old, $pending.Candidate) -or
+                ($active -ceq $pending.Candidate -and -not $ownsInstallerMutex)) {
+                throw "Saved update conflicts with the active session. Existing releases unchanged."
             }
-            $active = [IO.File]::ReadAllText($pointer).TrimEnd([char]10, [char]13)
-            if ($active -cnotin @("a", "b")) { throw "Invalid release selection." }
+            $active = $pending.Old
         }
         $candidate = if ($active -eq "a") { "b" } else { "a" }
         $cliPath = Select-ReleaseSlot $active
@@ -203,8 +256,11 @@
         $lease = $null
         if (-not $ownsInstallerMutex) {
             $lease = Get-UpdateLease $activeCli $active
-            if (-not $lease) {
+            if (-not $lease -and $null -eq $pending) {
                 throw "Another setup or Connector is running. Existing installation unchanged."
+            }
+            if ($null -ne $pending -and $lease -and $lease -cne ($pending.Generation + " " + $active)) {
+                throw "A different Connector session is running. Saved update preserved."
             }
             $activeRoot = (Join-Path $releases $active) + [IO.Path]::DirectorySeparatorChar
             if (@($running | Where-Object {
@@ -217,7 +273,7 @@
         }
 
         $recovery = $null
-        if ($ownsInstallerMutex -and $active -ne "legacy" -and -not (Test-Connector $activeCli)) {
+        if ($null -eq $pending -and $ownsInstallerMutex -and $active -ne "legacy" -and -not (Test-Connector $activeCli)) {
             $previousCli = Select-ReleaseSlot $candidate
             if (Test-Connector $previousCli) {
                 $recovery = $candidate
@@ -226,7 +282,17 @@
                 if (Test-Connector $legacyCli) { $recovery = "legacy" }
             }
         }
-        if ($null -ne $recovery) {
+        if ($null -ne $pending) {
+            Write-Host "KiCad MCP Pro: Resuming the prepared update without reinstalling..."
+            $candidate = $pending.Candidate
+            $cliPath = Select-ReleaseSlot $candidate
+            if (-not $ownsInstallerMutex -and -not (Test-Connector $cliPath)) {
+                throw "Saved candidate is no longer healthy. No new stop request was sent."
+            }
+            # The final health check under session ownership decides whether
+            # to promote the candidate or restore the previous release.
+            $installed = $true
+        } elseif ($null -ne $recovery) {
             # Never overwrite the remaining working environment while
             # attempting to repair a broken selected release.
             $cliPath = Select-ReleaseSlot $recovery
@@ -250,18 +316,38 @@
                 & $uvPath tool install --force --reinstall $package
                 $installed = ($LASTEXITCODE -eq 0) -and (Test-Connector $cliPath)
             }
+        }
+        if ($null -eq $recovery) {
             if ($installed) {
                 if (-not $ownsInstallerMutex) {
                     $ownsInstallerMutex = Enter-InstallerMutex $installerMutex
-                    if (-not $ownsInstallerMutex) {
-                        if ((Get-UpdateLease $activeCli $active) -cne $lease) {
+                    if ($null -eq $pending) {
+                        if ((Read-ActiveRelease) -cne $active) {
+                            throw "The active release changed. Retry the same setup."
+                        }
+                        if (-not $ownsInstallerMutex -and (Get-UpdateLease $activeCli $active) -cne $lease) {
                             throw "The running session changed. Retry the same setup."
                         }
                         $generation = $lease.Split(" ")[0]
-                        & $activeCli cloud _update-control request --generation $generation --slot $active *> $null
-                        if ($LASTEXITCODE -ne 0) {
-                            $ownsInstallerMutex = Enter-InstallerMutex $installerMutex
-                            if (-not $ownsInstallerMutex) { throw "Connector did not accept the update request." }
+                        Save-PendingRelease $active $candidate $generation
+                        $pending = Read-PendingRelease
+                        if ($null -eq $pending) { throw "Saved update could not be verified." }
+                    }
+                    if (-not $ownsInstallerMutex) {
+                        $generation = $pending.Generation
+                        $expected = $generation + " " + $active
+                        $current = Get-UpdateLease $activeCli $active
+                        if ($current -and $current -cne $expected) {
+                            throw "A different Connector session is running. Saved update preserved."
+                        }
+                        if ($current -ceq $expected) {
+                            & $activeCli cloud _update-control request --generation $generation --slot $active *> $null
+                            if ($LASTEXITCODE -ne 0) {
+                                $ownsInstallerMutex = Enter-InstallerMutex $installerMutex
+                                if (-not $ownsInstallerMutex -and (Get-UpdateLease $activeCli $active)) {
+                                    throw "Connector did not accept the saved update request."
+                                }
+                            }
                         }
                         Write-Host "KiCad MCP Pro: Finishing the current Cloud operation before updating..."
                         $deadline = [Diagnostics.Stopwatch]::StartNew()
@@ -274,8 +360,19 @@
                         }
                     }
                 }
+                $currentSelection = Read-ActiveRelease
+                if ($currentSelection -cne $active -and
+                    ($null -eq $pending -or $currentSelection -cne $candidate)) {
+                    throw "The active release changed. Existing releases unchanged."
+                }
                 if (@(Get-InstallProcesses).Count -gt 0) {
                     throw "A Connector process is still running. Existing release unchanged."
+                }
+                if ($null -ne $pending) {
+                    $verifiedPending = Read-PendingRelease
+                    if ($null -eq $verifiedPending -or $verifiedPending.Raw -cne $pending.Raw) {
+                        throw "Saved update changed. Existing releases preserved."
+                    }
                 }
                 # Recheck the prepared environment once the old launcher has
                 # stopped, before making it the active installation.
@@ -286,8 +383,16 @@
                     Write-Warning "Candidate failed its final startup check; using the previous version."
                     $selected = $active
                     $cliPath = Select-ReleaseSlot $active
+                    if ($null -ne $pending) { Publish-Release $active }
                 } else {
                     throw "Neither installation passed the final startup check. Existing files were preserved."
+                }
+                if ($null -ne $pending) {
+                    $verifiedPending = Read-PendingRelease
+                    if ($null -eq $verifiedPending -or $verifiedPending.Raw -cne $pending.Raw) {
+                        throw "Saved update changed. Existing releases preserved."
+                    }
+                    Remove-Item -LiteralPath $pendingPath
                 }
             } elseif (-not $ownsInstallerMutex) {
                 throw "Update unavailable; existing Connector was not asked to stop."

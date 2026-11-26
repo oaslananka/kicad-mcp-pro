@@ -81,3 +81,16 @@ test("Windows preserves the remaining healthy release and rechecks the candidate
   assert.match(installer,/elseif \(Test-Connector \$activeCli\)/);
   assert.match(installer,/Candidate failed its final startup check/);
 });
+
+test("Windows persists the prepared generation before drain and resumes without installing",()=>{
+  assert.match(installer,/function Read-PendingRelease/);
+  assert.match(installer,/function Save-PendingRelease/);
+  assert.match(installer,/pending-release/);
+  assert.match(installer,/\.Flush\(\$true\)/);
+  const save=installer.indexOf("Save-PendingRelease $active $candidate $generation");
+  const request=installer.indexOf("cloud _update-control request");
+  assert.ok(save>=0 && save<request);
+  assert.match(installer,/if \(\$null -ne \$pending\) \{[\s\S]*Resuming the prepared update without reinstalling/);
+  assert.match(installer,/A different Connector session is running/);
+  assert.match(installer,/Saved candidate is no longer healthy/);
+});
