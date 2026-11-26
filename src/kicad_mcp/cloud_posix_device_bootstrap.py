@@ -210,11 +210,14 @@ def _folder_service(root: Path, identity: Identity) -> BrowserFolderService:
 
 
 async def _wait_for_project(
-    root: Path, identity: Identity, status: Callable[[str], None]
-) -> dict[str, str]:
+    root: Path,
+    identity: Identity,
+    status: Callable[[str], None],
+    drain: asyncio.Event | None = None,
+) -> dict[str, str] | None:
     keyfile, binding = identity
     failures = 0
-    while True:
+    while drain is None or not drain.is_set():
         existing = read_project(root, identity)
         if existing is not None:
             return existing
@@ -232,6 +235,7 @@ async def _wait_for_project(
                 folder_service_factory=lambda _: _folder_service(root, identity),
                 on_ready=lambda _: status("Cloud acknowledged this device's signed session"),
                 on_activity=status,
+                drain=drain,
             )
             failures = 0
         except (OSError, ValueError, WebSocketException) as exc:
@@ -241,8 +245,18 @@ async def _wait_for_project(
                 ) from exc
             failures += 1
             status("Connection interrupted; retrying")
+        if drain is not None and drain.is_set():
+            return None
         if read_project(root, identity) is None:
-            await asyncio.sleep(min(20, 1 + failures * 2))
+            delay = min(20, 1 + failures * 2)
+            if drain is None:
+                await asyncio.sleep(delay)
+            else:
+                try:
+                    await asyncio.wait_for(drain.wait(), timeout=delay)
+                except TimeoutError:
+                    pass
+    return None
 
 
 def connect_device_only(

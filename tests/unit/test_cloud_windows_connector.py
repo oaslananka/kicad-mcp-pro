@@ -1351,3 +1351,32 @@ async def test_official_windows_foreground_checks_primary_before_socket(
     else:
         await connector.run_connector(stop=stop, status_callback=lambda _: None)
     assert events == (["inventory"] if state == "project_missing" else ["inventory", "socket"])
+
+
+@pytest.mark.asyncio
+async def test_windows_update_drain_exits_without_reconnecting(
+    local_user_connector, monkeypatch
+) -> None:
+    project, _store, _folder = local_user_connector
+    connector.activate(project, owner_confirm=lambda _: True)
+    drain = asyncio.Event()
+    calls = []
+
+    async def signed_session(**kwargs: object) -> HandshakeReceipt:
+        assert kwargs["drain"] is drain
+        calls.append("socket")
+        drain.set()
+        return HandshakeReceipt(project.device_id, str(uuid4()))
+
+    monkeypatch.setattr(connector, "execute_owner_managed_read_session", signed_session)
+    await asyncio.wait_for(
+        connector.run_connector(
+            stop=asyncio.Event(),
+            drain=drain,
+            session_runner=signed_session,
+            status_callback=lambda _: None,
+        ),
+        2,
+    )
+    assert calls == ["socket"]
+    assert connector.local_state() == "Configured (not connected)"

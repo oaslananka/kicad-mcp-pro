@@ -374,6 +374,7 @@ async def run_device_only(
     device: WindowsEnrolledDevice,
     *,
     status_callback: Callable[[str], None],
+    drain: asyncio.Event | None = None,
 ) -> None:
     """Reuse the owner key; retry signed network sessions until a folder is bound."""
     from kicad_mcp.cloud_windows_connector import (
@@ -383,6 +384,8 @@ async def run_device_only(
     )
 
     with owner_connector_instance():
+        if drain is not None and drain.is_set():
+            return
         from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
 
         if device.origin == _KICAD_CLOUD_ORIGIN:
@@ -400,7 +403,7 @@ async def run_device_only(
                 status_callback("Restored an existing Cloud project on this device.")
                 return
         failures = 0
-        while selected_project() is None:
+        while selected_project() is None and (drain is None or not drain.is_set()):
             if selected_device() != device:
                 raise LocalApprovalDeniedError(_DENIED)
             status_callback("Connecting")
@@ -416,6 +419,7 @@ async def run_device_only(
                         "Cloud acknowledged this device's signed session"
                     ),
                     on_activity=status_callback,
+                    drain=drain,
                 )
                 failures = 0
             except (OSError, ValueError) as exc:
@@ -425,8 +429,19 @@ async def run_device_only(
                     ) from exc
                 failures += 1
                 status_callback("Connection interrupted; retrying")
+            if drain is not None and drain.is_set():
+                return
             if selected_project() is None:
-                await asyncio.sleep(min(20, 1 + failures * 2))
+                delay = min(20, 1 + failures * 2)
+                if drain is None:
+                    await asyncio.sleep(delay)
+                else:
+                    try:
+                        await asyncio.wait_for(drain.wait(), timeout=delay)
+                    except TimeoutError:
+                        pass
+        if drain is not None and drain.is_set():
+            return
     status_callback("Project selected in Cloud; switching to local KiCad MCP tools")
 
 

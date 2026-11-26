@@ -602,3 +602,34 @@ def test_restore_existing_secondary_uses_same_device_without_picker(
     monkeypatch.setattr(boot, "adopt_browser_project", adopt)
     assert boot.restore_existing_project(device) == (state == "active")
     assert events == ([(device, pid, file)] if state == "active" else [])
+
+
+@pytest.mark.asyncio
+async def test_device_only_update_drain_preserves_windows_identity(
+    saved_device, monkeypatch
+) -> None:
+    import asyncio
+    from contextlib import nullcontext
+
+    from kicad_mcp import cloud_windows_connector as connector
+
+    device, _ = saved_device
+    monkeypatch.setattr(connector, "selected_project", lambda: None)
+    monkeypatch.setattr(boot, "selected_device", lambda: device)
+    monkeypatch.setattr(boot, "verified_device_key", lambda _: Ed25519PrivateKey.generate())
+    monkeypatch.setattr(boot, "owner_connector_instance", nullcontext)
+    drain = asyncio.Event()
+    calls = []
+    activity = []
+
+    async def session(**kwargs: object) -> None:
+        assert kwargs["drain"] is drain
+        calls.append("socket")
+        drain.set()
+
+    monkeypatch.setattr(boot, "execute_owner_folder_only_session", session)
+    await asyncio.wait_for(
+        boot.run_device_only(device, status_callback=activity.append, drain=drain), 2
+    )
+    assert calls == ["socket"] and activity == ["Connecting"]
+    assert boot.selected_device() == device

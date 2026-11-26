@@ -714,6 +714,7 @@ async def _await_authorized_session(
 def _session_runner_with_status(
     session_runner: Callable[..., Awaitable[HandshakeReceipt]],
     status_callback: Callable[[str], None] | None,
+    drain: asyncio.Event | None = None,
 ) -> Callable[..., Awaitable[HandshakeReceipt]]:
     if status_callback is None or session_runner is not execute_owner_managed_read_session:
         return session_runner
@@ -751,6 +752,7 @@ def _session_runner_with_status(
             native_write=native_write,
             mcp_bridge_factory=mcp_bridge_factory,
             on_activity=status_callback,
+            drain=drain,
         )
 
     signed_ready_runner._kicad_supports_folder_browse = True  # type: ignore[attr-defined]
@@ -852,6 +854,7 @@ def _notify_owner_reapproval(
 async def run_connector(
     *,
     stop: asyncio.Event,
+    drain: asyncio.Event | None = None,
     session_runner: Callable[..., Awaitable[HandshakeReceipt]] = execute_owner_managed_read_session,
     status_callback: Callable[[str], None] | None = None,
     allow_native_drc: bool = False,
@@ -865,6 +868,12 @@ async def run_connector(
     """
     if (
         os.name != "nt"
+        or (
+            drain is not None
+            and (
+                status_callback is None or session_runner is not execute_owner_managed_read_session
+            )
+        )
         or type(allow_native_drc) is not bool
         or type(allow_native_write) is not bool
         or (
@@ -875,7 +884,7 @@ async def run_connector(
         raise LocalApprovalDeniedError(_DENIED)
     failures = 0
     with owner_connector_instance(reuse_if_held=True):
-        while not stop.is_set():
+        while not stop.is_set() and (drain is None or not drain.is_set()):
             active = _active()
             if active is None:
                 return
@@ -894,7 +903,11 @@ async def run_connector(
                         project.project_id,
                         key,
                     )
-                    if stop.is_set() or not _current_authorization(project):
+                    if (
+                        stop.is_set()
+                        or (drain is not None and drain.is_set())
+                        or not _current_authorization(project)
+                    ):
                         return
                     if state == "project_missing":
                         raise CloudOwnerReapprovalRequiredError("Cloud project was removed.")
@@ -909,10 +922,14 @@ async def run_connector(
                         await asyncio.to_thread(
                             migrate_legacy, project, key, migration_authorized, project.project_id
                         )
-                        if stop.is_set() or not _current_authorization(project):
+                        if (
+                            stop.is_set()
+                            or (drain is not None and drain.is_set())
+                            or not _current_authorization(project)
+                        ):
                             return
             _notify_connection_attempt(status_callback, failures)
-            runner_for_session = _session_runner_with_status(session_runner, status_callback)
+            runner_for_session = _session_runner_with_status(session_runner, status_callback, drain)
 
             session_started = time.monotonic()
             try:
@@ -929,7 +946,7 @@ async def run_connector(
             except CloudOwnerReapprovalRequiredError:
                 _notify_owner_reapproval(status_callback, project)
                 raise
-            if result is None:
+            if result is None or (drain is not None and drain.is_set()):
                 return
             failures = _next_failure_count(result, failures, status_callback)
             delay = _session_retry_delay(
@@ -938,10 +955,22 @@ async def run_connector(
                 failures,
                 secrets.randbelow(1001) / 1000,
             )
-            try:
-                await asyncio.wait_for(stop.wait(), timeout=delay)
-            except TimeoutError:
-                pass
+            if drain is None:
+                try:
+                    await asyncio.wait_for(stop.wait(), timeout=delay)
+                except TimeoutError:
+                    pass
+            else:
+                stopping = asyncio.create_task(stop.wait())
+                draining = asyncio.create_task(drain.wait())
+                try:
+                    await asyncio.wait(
+                        {stopping, draining}, timeout=delay, return_when=asyncio.FIRST_COMPLETED
+                    )
+                finally:
+                    for waiter in (stopping, draining):
+                        waiter.cancel()
+                    await asyncio.gather(stopping, draining, return_exceptions=True)
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -19,17 +19,28 @@ _LIMIT = 256 * 1024
 
 def _read_posix(path: Path) -> bytes:
     """Old cache was not necessarily mode 0600; never accept shared writers."""
+    getuid = getattr(os, "getuid", None)
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    nonblock = getattr(os, "O_NONBLOCK", None)
+    if (
+        os.name != "posix"
+        or not callable(getuid)
+        or type(nofollow) is not int
+        or type(nonblock) is not int
+    ):
+        raise ValueError("Unsafe legacy cache platform.")
+    uid = getuid()
     folder = cloud_pair_keys._open_owner_directory(path.parent)
     try:
         parent = os.fstat(folder)
-        if parent.st_uid != os.getuid() or parent.st_mode & 0o022:
+        if parent.st_uid != uid or parent.st_mode & 0o022:
             raise ValueError("Unsafe legacy cache directory.")
-        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder)
+        fd = os.open(path.name, os.O_RDONLY | nofollow | nonblock, dir_fd=folder)
         try:
             info = os.fstat(fd)
             if (
                 not stat.S_ISREG(info.st_mode)
-                or info.st_uid != os.getuid()
+                or info.st_uid != uid
                 or info.st_nlink != 1
                 or info.st_mode & 0o022
                 or not 1 <= info.st_size <= _LIMIT

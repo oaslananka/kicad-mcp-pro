@@ -341,3 +341,36 @@ def test_deleted_primary_uses_existing_secondary_without_picker(
     assert (primary / "board.kicad_pro").read_text() == "{}"
     assert (secondary / "board.kicad_pro").read_text() == "{}"
     assert keyfile.exists()
+
+
+@pytest.mark.asyncio
+async def test_device_only_update_drain_preserves_identity(tmp_path, monkeypatch) -> None:
+    import asyncio
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from kicad_mcp import cloud_posix_device_bootstrap as boot
+
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    keyfile = root / "key.pem"
+    keyfile.touch()
+    identity = (keyfile, {"origin": ORIGIN, "ownerSub": "owner", "deviceId": str(uuid4())})
+    monkeypatch.setattr(boot, "read_project", lambda *_: None)
+    monkeypatch.setattr(cloud_posix_recovery, "inspect_unbound_device", lambda *_: identity)
+    monkeypatch.setattr(boot, "_load_bound_owner_key", lambda *_: Ed25519PrivateKey.generate())
+    drain = asyncio.Event()
+    calls = []
+
+    async def session(**kwargs: object) -> None:
+        assert kwargs["drain"] is drain
+        calls.append("socket")
+        drain.set()
+
+    monkeypatch.setattr(boot, "execute_owner_folder_only_session", session)
+    assert (
+        await asyncio.wait_for(boot._wait_for_project(root, identity, lambda _: None, drain), 2)
+        is None
+    )
+    assert calls == ["socket"]
+    assert keyfile.exists() and not (root / "projects").exists()

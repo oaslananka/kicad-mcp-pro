@@ -98,6 +98,7 @@ class OutboundSessionOptions:
     on_ready: Callable[[HandshakeReceipt], None] | None = None
     on_activity: Callable[[str], None] | None = None
     mcp_service_factory: Callable[[HandshakeReceipt], GenericMcpDispatch] | None = None
+    drain: asyncio.Event | None = None
 
 
 def _endpoint(*, origin: str, trusted_origin: str) -> str:
@@ -672,6 +673,11 @@ def _invalid_native_option_settings(options: OutboundSessionOptions) -> bool:
 
 
 def _validate_outbound_options(options: OutboundSessionOptions) -> None:
+    if options.drain is not None and (
+        not isinstance(options.drain, asyncio.Event)
+        or not (options.owner_managed_read or options.owner_folder_only)
+    ):
+        raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     if options.owner_folder_only:
         if _invalid_owner_folder_mode(options):
             raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
@@ -773,6 +779,7 @@ async def _complete_outbound_operation(
             receipt,
             options.folder_service_factory(receipt),
             on_activity=options.on_activity,
+            drain=options.drain,
         )
     if options.owner_managed_read:
         # Avoid a circular module dependency. This code only receives an
@@ -798,6 +805,7 @@ async def _complete_outbound_operation(
             write_executor=options.write_executor,
             on_activity=options.on_activity,
             mcp_service_factory=options.mcp_service_factory,
+            drain=options.drain,
         )
     if options.inspection_factory is not None:
         return await _complete_authorized_inspection(
@@ -1131,6 +1139,7 @@ class ManagedSessionExtras(TypedDict, total=False):
 
     on_activity: Callable[[str], None] | None
     mcp_bridge_factory: Callable[[HandshakeReceipt], GenericMcpDispatch] | None
+    drain: asyncio.Event | None
 
 
 async def execute_owner_folder_only_session(
@@ -1144,6 +1153,7 @@ async def execute_owner_folder_only_session(
     tls_context: ssl.SSLContext | None = None,
     on_ready: Callable[[HandshakeReceipt], None] | None = None,
     on_activity: Callable[[str], None] | None = None,
+    drain: asyncio.Event | None = None,
 ) -> HandshakeReceipt:
     """Owner-connected signed device bootstrap. Never serves local MCP operations."""
     if not callable(folder_service_factory):
@@ -1160,6 +1170,7 @@ async def execute_owner_folder_only_session(
             folder_service_factory=folder_service_factory,
             on_ready=on_ready,
             on_activity=on_activity,
+            drain=drain,
         ),
     )
 
@@ -1193,6 +1204,7 @@ async def execute_owner_managed_read_session(
     it never grants reads, paths outside the bound root, or file contents.
     """
     on_activity = extras.get("on_activity")
+    drain = extras.get("drain")
     mcp_bridge_factory = extras.get("mcp_bridge_factory")
     if (
         not callable(dispatcher_factory)
@@ -1233,5 +1245,6 @@ async def execute_owner_managed_read_session(
             folder_service_factory=folder_service_factory,
             on_ready=on_ready,
             on_activity=on_activity,
+            drain=drain,
         ),
     )

@@ -1423,3 +1423,34 @@ async def test_official_foreground_checks_deleted_primary_before_socket(
     assert calls == ([PROJECT] if state == "project_missing" else [PROJECT, "socket"])
     assert project.key_file.exists()
     assert not (root / connector._FOREGROUND_FILE).exists()
+
+
+@pytest.mark.anyio
+async def test_foreground_update_drain_exits_without_reconnecting(tmp_path, monkeypatch) -> None:
+    root, _ = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    drain = asyncio.Event()
+    calls = []
+
+    async def session(**kwargs: object) -> None:
+        assert kwargs["drain"] is drain
+        calls.append("socket")
+        drain.set()
+
+    monkeypatch.setattr(connector, "_session_until_stopped", session)
+    result = await asyncio.wait_for(
+        connector._run_connector(
+            root=root,
+            foreground=True,
+            expected_identity=record,
+            drain=drain,
+            key_loader=lambda *_: Ed25519PrivateKey.generate(),
+        ),
+        2,
+    )
+    assert result == 0 and calls == ["socket"]
+    assert not (root / connector._FOREGROUND_FILE).exists()
+    assert (root / "projects" / (PROJECT + ".json")).exists()
+    assert (root / "keys" / (DEVICE + ".pem")).exists()
+    with connector._connector_session_lock(root):
+        pass

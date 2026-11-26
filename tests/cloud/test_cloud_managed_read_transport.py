@@ -683,7 +683,10 @@ async def test_managed_write_revisions_returns_prepared_shas(tmp_path: Path) -> 
 
 
 @pytest.mark.anyio
-async def test_managed_authorized_write_executes_and_receives_ack(tmp_path: Path) -> None:
+@pytest.mark.parametrize("update_drain", [False, True])
+async def test_managed_authorized_write_executes_and_receives_ack(
+    tmp_path: Path, update_drain: bool
+) -> None:
     # Real v2 wire proposals carry both disk and live KiCad revision digests.
     # A tiny dummy proof previously masked the 1 KiB transport size failure.
     payload = {
@@ -747,12 +750,16 @@ async def test_managed_authorized_write_executes_and_receives_ack(tmp_path: Path
             msg = json.loads(val)
             self.sent.append(msg)
             if msg.get("kind") == "connector.write_result":
+                if drain is not None:
+                    drain.set()
                 self.incoming.put_nowait(ack_frame)
+                self.incoming.put_nowait(request(2))
 
     socket = CustomSocket()
     receipt = HandshakeReceipt(DEVICE, SESSION)
     calls: list[tuple[str, bytes, bool]] = []
     activity: list[str] = []
+    drain = asyncio.Event() if update_drain else None
 
     def execute(project_id: str, proof: bytes, persist: bool) -> dict[str, object]:
         calls.append((project_id, proof, persist))
@@ -769,7 +776,8 @@ async def test_managed_authorized_write_executes_and_receives_ack(tmp_path: Path
         socket,  # type: ignore[arg-type]
         receipt,
         lambda _: build_dispatcher(tmp_path, [True]),
-        max_reads=1,
+        max_reads=2 if update_drain else 1,
+        drain=drain,
         allow_native_write=True,
         revisions_preparer=lambda project_id: {"expectedBoardSha256": "a" * 64},
         write_executor=execute,
@@ -1403,3 +1411,62 @@ async def test_mcp_activity_labels_real_tool_without_logging_untrusted_data(
     assert "PRIVATE_DATA" not in " ".join(activity)
     assert "C:/private/project" not in " ".join(activity)
     assert "SECRET_ARGUMENTS" not in " ".join(activity)
+
+
+@pytest.mark.anyio
+async def test_update_drain_closes_idle_socket_promptly(tmp_path: Path) -> None:
+    drain = asyncio.Event()
+    socket = Socket([])
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    dispatcher = build_dispatcher(tmp_path, [True])
+    task = asyncio.create_task(
+        serve_authenticated_reads(socket, receipt, lambda _: dispatcher, drain=drain)
+    )
+    await asyncio.sleep(0)
+    drain.set()
+    assert await asyncio.wait_for(task, 1) == receipt
+    assert not socket.sent
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("revoke", [False, True])
+async def test_update_drain_finishes_current_read_but_respects_revocation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, revoke: bool
+) -> None:
+    import threading
+
+    from kicad_mcp import cloud_read_dispatch
+
+    entered = threading.Event()
+    resume = threading.Event()
+    original = cloud_read_dispatch.inspect_readonly
+
+    def delayed(*args: object, **kwargs: object) -> dict[str, object]:
+        entered.set()
+        assert resume.wait(timeout=5)
+        return original(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(cloud_read_dispatch, "inspect_readonly", delayed)
+    grant = [True]
+    socket = Socket([request(1), request(2)])
+    dispatcher = build_dispatcher(tmp_path, grant)
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    drain = asyncio.Event()
+    task = asyncio.create_task(
+        serve_authenticated_reads(socket, receipt, lambda _: dispatcher, drain=drain)
+    )
+    try:
+        assert await asyncio.to_thread(entered.wait, 5)
+        drain.set()
+        grant[0] = not revoke
+        await asyncio.sleep(0)
+        assert not task.done()
+    finally:
+        resume.set()
+    if revoke:
+        with pytest.raises(LocalReadDeniedError):
+            await asyncio.wait_for(task, 2)
+        assert socket.sent == []
+    else:
+        assert await asyncio.wait_for(task, 2) == receipt
+        assert [item["sequence"] for item in socket.sent] == [1]

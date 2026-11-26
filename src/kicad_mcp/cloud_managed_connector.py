@@ -673,6 +673,7 @@ async def _session_until_stopped(
     signing_key: Ed25519PrivateKey,
     session_runner: Callable[..., Awaitable[HandshakeReceipt]],
     marker: str,
+    drain: asyncio.Event | None = None,
 ) -> None:
     async def run_session() -> HandshakeReceipt:
         options = {
@@ -708,6 +709,8 @@ async def _session_until_stopped(
             if marker == _FOREGROUND_FILE:
                 options["on_activity"] = lambda message: _report_foreground(marker, message)
                 options.update(_posix_mcp_settings(root, record, project, marker))
+                if drain is not None:
+                    options["drain"] = drain
         return await session_runner(**options)
 
     session_task = asyncio.create_task(run_session())
@@ -735,6 +738,7 @@ async def _run_registered_session(
     key_loader: Callable[..., Ed25519PrivateKey],
     session_runner: Callable[..., Awaitable[HandshakeReceipt]],
     marker: str,
+    drain: asyncio.Event | None = None,
 ) -> bool:
     # Revalidate the unique registration and key binding before each reconnect.
     record = identity_loader(registry)
@@ -750,7 +754,11 @@ async def _run_registered_session(
     signing_key = key_loader(project.key_file, record["cloudOrigin"], record["deviceId"])
     # A local disable racing registration/key loading must prevent a new
     # outbound handshake after the owner removes the enable marker.
-    if stop.is_set() or not _is_enabled(registry, record, marker):
+    if (
+        stop.is_set()
+        or (drain is not None and drain.is_set())
+        or not _is_enabled(registry, record, marker)
+    ):
         return False
     if marker == _FOREGROUND_FILE and session_runner is execute_owner_managed_read_session:
         from kicad_mcp.cloud_device_inventory_status import inspect_inventory
@@ -765,7 +773,11 @@ async def _run_registered_session(
                 record["projectId"],
                 signing_key,
             )
-            if stop.is_set() or not _is_enabled(registry, record, marker):
+            if (
+                stop.is_set()
+                or (drain is not None and drain.is_set())
+                or not _is_enabled(registry, record, marker)
+            ):
                 return False
             if inventory_state == "project_missing":
                 raise ProjectSelectionMissingError(_DENIED)
@@ -779,7 +791,11 @@ async def _run_registered_session(
                     signing_key,
                     lambda: not stop.is_set() and _is_enabled(registry, record, marker),
                 )
-                if stop.is_set() or not _is_enabled(registry, record, marker):
+                if (
+                    stop.is_set()
+                    or (drain is not None and drain.is_set())
+                    or not _is_enabled(registry, record, marker)
+                ):
                     return False
     _write_status(registry, "connecting")
     _report_foreground(marker, "Connecting")
@@ -791,19 +807,32 @@ async def _run_registered_session(
         signing_key=signing_key,
         session_runner=session_runner,
         marker=marker,
+        drain=drain,
     )
     return True
 
 
 async def _wait_before_reconnect(
-    stop: asyncio.Event, registry: Path, failures: int, marker: str
+    stop: asyncio.Event,
+    registry: Path,
+    failures: int,
+    marker: str,
+    drain: asyncio.Event | None = None,
 ) -> None:
-    if stop.is_set() or not _enabled_record(registry, marker):
+    if (
+        stop.is_set()
+        or (drain is not None and drain.is_set())
+        or not _enabled_record(registry, marker)
+    ):
         return
     delay = reconnect_delay_seconds(failures, secrets.randbelow(1001) / 1000)
     _write_status(registry, "unavailable")
     deadline = asyncio.get_running_loop().time() + delay
-    while not stop.is_set() and _enabled_record(registry, marker):
+    while (
+        not stop.is_set()
+        and (drain is None or not drain.is_set())
+        and _enabled_record(registry, marker)
+    ):
         remaining = deadline - asyncio.get_running_loop().time()
         if remaining <= 0:
             return
@@ -820,6 +849,7 @@ async def _run_connector(
     root: Path | None = None,
     stop_event: asyncio.Event | None = None,
     foreground: bool = False,
+    drain: asyncio.Event | None = None,
     expected_identity: dict[str, str] | None = None,
     identity_loader: Callable[[Path], dict[str, str]] = _single_registered_identity,
     project_resolver: Callable[..., LocalRegisteredRead] = resolve_registered_read,
@@ -828,6 +858,8 @@ async def _run_connector(
 ) -> int:
     registry = default_registry_root() if root is None else root
     stop = stop_event if stop_event is not None else asyncio.Event()
+    if drain is not None and not foreground:
+        raise LocalApprovalDeniedError(_DENIED)
     if not foreground and not _enabled_record(registry):
         return 0
 
@@ -840,7 +872,11 @@ async def _run_connector(
         # Invalidate the previous process's cached status before loading keys.
         _write_status(registry, "unavailable")
         failures = 0
-        while not stop.is_set() and _enabled_record(registry, marker):
+        while (
+            not stop.is_set()
+            and (drain is None or not drain.is_set())
+            and _enabled_record(registry, marker)
+        ):
             try:
                 connected = await _run_registered_session(
                     registry=registry,
@@ -850,6 +886,7 @@ async def _run_connector(
                     key_loader=key_loader,
                     session_runner=session_runner,
                     marker=marker,
+                    drain=drain,
                 )
                 if not connected:
                     break
@@ -866,8 +903,10 @@ async def _run_connector(
                     ):
                         return 3
                 failures += 1
+            if drain is not None and drain.is_set():
+                break
             _report_foreground(marker, "Disconnected")
-            await _wait_before_reconnect(stop, registry, failures, marker)
+            await _wait_before_reconnect(stop, registry, failures, marker, drain)
 
     return 0
 
