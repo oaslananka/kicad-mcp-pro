@@ -322,7 +322,7 @@ class DeliveryGitHubCLI(OwnerGitHubCLI):
 
 
 def _positive_id(value: str) -> int:
-    if re.fullmatch(r"[1-9][0-9]{0,14}", value) is None:
+    if re.fullmatch(r"[1-9]\d{0,14}", value, flags=re.ASCII) is None:
         raise ValueError("expected canonical positive decimal ID")
     return int(value)
 
