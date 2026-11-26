@@ -569,3 +569,36 @@ def test_detach_deleted_project_retains_device_and_archives(
     assert boot.selected_device() == device
     assert store[(device.record_id, "key")] == key
     assert store[(project.registration_id, "registration")] == b"saved registration"
+
+
+@pytest.mark.parametrize("state", ["active", "project_missing", "project_disabled", "unavailable"])
+def test_restore_existing_secondary_uses_same_device_without_picker(
+    saved_device, monkeypatch, tmp_path, state
+) -> None:
+    from kicad_mcp import cloud_windows_connector as connector
+    from kicad_mcp import cloud_windows_scoped_projects as scoped
+    from kicad_mcp.cloud_readonly_boundary import OperatorProject
+
+    device, _ = saved_device
+    boot.remember_device(device)
+    monkeypatch.setattr(connector, "selected_project", lambda: None)
+    board = tmp_path / "board"
+    board.mkdir()
+    file = board / "board.kicad_pro"
+    file.touch()
+    pid = str(uuid4())
+    target = OperatorProject(device.device_id, pid, board, "board")
+    monkeypatch.setattr(scoped, "existing_targets", lambda _: [target])
+    monkeypatch.setattr(scoped, "resolve", lambda *_: target)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_device_inventory_status.inspect_inventory", lambda *_: state
+    )
+    events = []
+
+    def adopt(identity, project_id, chosen):
+        events.append((identity, project_id, chosen))
+        return True
+
+    monkeypatch.setattr(boot, "adopt_browser_project", adopt)
+    assert boot.restore_existing_project(device) == (state == "active")
+    assert events == ([(device, pid, file)] if state == "active" else [])

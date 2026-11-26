@@ -29,7 +29,7 @@ from cryptography.hazmat.primitives.serialization import (
 )
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
-from kicad_mcp.cloud_folder_browse_receiver import LocalFolderBrowseService, device_folder_service
+from kicad_mcp.cloud_folder_browse_receiver import LocalFolderBrowseService
 from kicad_mcp.cloud_managed_read_transport import GenericMcpDispatch
 from kicad_mcp.cloud_outbound_handshake import (
     HandshakeReceipt,
@@ -462,20 +462,9 @@ def _dispatcher(
         """
         if not _current_authorization(project):
             return None
-        from kicad_mcp.cloud_folder_browse_receiver import default_bindings_file
-        from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
+        from kicad_mcp.cloud_windows_scoped_projects import resolve
 
-        browser = LocalFolderBrowser([selected.directory.parent], default_bindings_file())
-        mapped = browser.get_project_path(project_id)
-        if mapped is None:
-            return None
-        file = Path(mapped)
-        return OperatorProject(
-            device_id=project.device_id,
-            project_id=project_id,
-            directory=file.parent,
-            filename_stem=file.stem,
-        )
+        return resolve(project, project_id)
 
     return LocalReadDispatch(
         verified=VerifiedLocalBinding(
@@ -520,15 +509,12 @@ def resolve_owner_write_project(
             return OperatorProject(
                 registered.device_id, project_id, selected.directory, selected.filename_stem
             )
-        from kicad_mcp.cloud_folder_browse_receiver import default_bindings_file
-        from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
+        from kicad_mcp.cloud_windows_scoped_projects import resolve
 
-        browser = LocalFolderBrowser([selected.directory.parent], default_bindings_file())
-        file_path = browser.get_project_path(project_id)
-        if file_path is None:
+        target = resolve(registered, project_id)
+        if target is None:
             raise LocalWriteDeniedError(_WRITE_DENIED)
-        file = Path(file_path)
-        return OperatorProject(registered.device_id, project_id, file.parent, file.stem)
+        return target
     except (OSError, RuntimeError, TypeError, ValueError) as exc:
         raise LocalWriteDeniedError(_WRITE_DENIED) from exc
 
@@ -698,10 +684,9 @@ async def _run_owner_session(
         def folder_factory(receipt: HandshakeReceipt) -> LocalFolderBrowseService:
             if receipt.device_id != project.device_id or not _current_authorization(project):
                 raise LocalApprovalDeniedError(_DENIED)
-            return device_folder_service(
-                selected.directory,
-                authorization=lambda: _current_authorization(project),
-            )
+            from kicad_mcp.cloud_windows_scoped_projects import folder_service
+
+            return folder_service(project, selected, lambda: _current_authorization(project))
 
         settings["folder_service_factory"] = folder_factory
     return await runner(**settings)
@@ -896,6 +881,23 @@ async def run_connector(
                 return
             project, selected, key = active.project, active.selected, active.signing_key
 
+            if status_callback is not None and session_runner is execute_owner_managed_read_session:
+                from kicad_mcp.cloud_device_inventory_status import inspect_inventory
+                from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+                if project.origin == _KICAD_CLOUD_ORIGIN:
+                    state = await asyncio.to_thread(
+                        inspect_inventory,
+                        project.origin,
+                        project.owner_sub,
+                        project.device_id,
+                        project.project_id,
+                        key,
+                    )
+                    if stop.is_set() or not _current_authorization(project):
+                        return
+                    if state == "project_missing":
+                        raise CloudOwnerReapprovalRequiredError("Cloud project was removed.")
             _notify_connection_attempt(status_callback, failures)
             runner_for_session = _session_runner_with_status(session_runner, status_callback)
 

@@ -1015,24 +1015,21 @@ def test_signed_device_dispatch_reads_cloud_added_second_project(
     """A device-bound project must be usable, not just displayed as Registered."""
     import time
 
-    from kicad_mcp.cloud_folder_browse_receiver import default_bindings_file
+    from kicad_mcp import cloud_windows_scoped_projects as scoped
     from kicad_mcp.cloud_readonly_boundary import LocalReadDeniedError
 
-    _ = default_bindings_file  # The real default is not used in this disposable test.
-    project, _store, _directory = local_user_connector
+    project, store, _directory = local_user_connector
     connector.activate(project, owner_confirm=lambda _: True)
     second_id = "4a775779-a8b0-4d64-b287-4539f4823032"
     second_dir = tmp_path / "other"
     second_dir.mkdir()
     (second_dir / "second.kicad_pro").write_text("{}", encoding="utf-8")
-    bindings = tmp_path / "local-bindings.json"
-    bindings.write_text(
-        json.dumps({second_id: str(second_dir / "second.kicad_pro")}), encoding="utf-8"
-    )
+    monkeypatch.setattr(scoped, "read_credential", connector.read_credential)
+    monkeypatch.setattr(scoped, "create_credential", connector.create_credential)
     monkeypatch.setattr(
-        "kicad_mcp.cloud_folder_browse_receiver.default_bindings_file",
-        lambda: bindings,
+        scoped, "read_windows_project_presence", lambda *_: {"projectPresent": True}
     )
+    assert scoped.save(project, second_id, second_dir / "second.kicad_pro")
     receipt = HandshakeReceipt(
         device_id=project.device_id, session_id="b390e00c-3260-4d7f-a09f-e816d0b63043"
     )
@@ -1053,7 +1050,7 @@ def test_signed_device_dispatch_reads_cloud_added_second_project(
         result = dispatch.read(frame, sequence=1)
         assert result["projectId"] == second_id
         assert result["files"]["projectPresent"] is True
-        bindings.unlink()
+        store.pop((scoped._slot(scoped._identity(project, second_id)), "secondary_project"))
         with pytest.raises(LocalReadDeniedError):
             dispatch.assert_delivery_authorized(
                 frame, device_id=receipt.device_id, session_id=receipt.session_id
@@ -1312,3 +1309,45 @@ async def test_normal_signed_session_expiration_recovers_without_new_pairing(
     assert statuses.count("Connecting") >= 1
     assert not any("policy 1008" in status for status in statuses)
     assert connector.local_state() == "Configured (not connected)"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["project_missing", "active", "unavailable"])
+async def test_official_windows_foreground_checks_primary_before_socket(
+    monkeypatch: pytest.MonkeyPatch, state: str
+) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+    project = SimpleNamespace(
+        origin=_KICAD_CLOUD_ORIGIN,
+        owner_sub="owner",
+        device_id=str(uuid4()),
+        project_id=str(uuid4()),
+    )
+    key = Ed25519PrivateKey.generate()
+    active = SimpleNamespace(project=project, selected=None, signing_key=key)
+    events = []
+    stop = asyncio.Event()
+
+    def inspect(*_args: object) -> str:
+        events.append("inventory")
+        return state
+
+    async def attempt(*_args: object, **_kwargs: object):
+        events.append("socket")
+        stop.set()
+        return None
+
+    monkeypatch.setattr(connector, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(connector, "_active", lambda: active)
+    monkeypatch.setattr(connector, "_current_authorization", lambda _: True)
+    monkeypatch.setattr("kicad_mcp.cloud_device_inventory_status.inspect_inventory", inspect)
+    monkeypatch.setattr(connector, "_attempt_authorized_session", attempt)
+    if state == "project_missing":
+        with pytest.raises(connector.CloudOwnerReapprovalRequiredError):
+            await connector.run_connector(stop=stop, status_callback=lambda _: None)
+    else:
+        await connector.run_connector(stop=stop, status_callback=lambda _: None)
+    assert events == (["inventory"] if state == "project_missing" else ["inventory", "socket"])

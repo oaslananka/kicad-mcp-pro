@@ -137,9 +137,7 @@ def _offer_device_recovery() -> bool:
         )
         if state == "project_missing" and project is not None:
             bootstrap.detach_missing_project(device, project, stop_and_remove_owner_task)
-            typer.echo(
-                "Cloud project was removed. Keeping this device; use Add Project when Online."
-            )
+            typer.echo("Cloud project was removed. Keeping this device and its remaining projects.")
             return True
         if state not in {"unverified", "device_revoked"}:
             typer.echo(

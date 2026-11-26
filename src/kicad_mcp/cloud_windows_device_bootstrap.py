@@ -342,6 +342,34 @@ def _folder_service(device: WindowsEnrolledDevice) -> BrowserFolderService:
     )
 
 
+def restore_existing_project(device: WindowsEnrolledDevice) -> bool:
+    """Under the owner mutex, restore only a verified, previously bound project."""
+    from kicad_mcp.cloud_device_inventory_status import inspect_inventory
+    from kicad_mcp.cloud_windows_connector import selected_project
+    from kicad_mcp.cloud_windows_scoped_projects import existing_targets, resolve
+
+    if selected_device() != device or selected_project() is not None:
+        return False
+    targets = existing_targets(device)
+    if not targets:
+        return False
+    key = verified_device_key(device)
+    for target in targets[:25]:
+        state = inspect_inventory(
+            device.origin, device.owner_sub, device.device_id, target.project_id, key
+        )
+        if state in {"device_disabled", "device_revoked", "unverified", "unavailable"}:
+            return False
+        if state != "active":
+            continue
+        if selected_device() != device or resolve(device, target.project_id) != target:
+            raise LocalApprovalDeniedError(_DENIED)
+        return adopt_browser_project(
+            device, target.project_id, target.directory / (target.filename_stem + ".kicad_pro")
+        )
+    return False
+
+
 async def run_device_only(
     device: WindowsEnrolledDevice,
     *,
@@ -355,6 +383,11 @@ async def run_device_only(
     )
 
     with owner_connector_instance():
+        from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+        if device.origin == _KICAD_CLOUD_ORIGIN and restore_existing_project(device):
+            status_callback("Restored an existing Cloud project on this device.")
+            return
         failures = 0
         while selected_project() is None:
             if selected_device() != device:

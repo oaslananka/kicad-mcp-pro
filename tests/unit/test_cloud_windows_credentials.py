@@ -182,12 +182,13 @@ def test_win32_api_declares_exact_credential_abi_and_rejects_dll_failure(
     from types import SimpleNamespace
     from unittest.mock import Mock
 
-    functions = [Mock() for _ in range(4)]
+    functions = [Mock() for _ in range(5)]
     api = SimpleNamespace(
         CredReadW=functions[0],
         CredWriteW=functions[1],
         CredDeleteW=functions[2],
         CredFree=functions[3],
+        CredEnumerateW=functions[4],
     )
 
     def loader(library: str, *, use_last_error: bool) -> object:
@@ -205,6 +206,7 @@ def test_win32_api_declares_exact_credential_abi_and_rejects_dll_failure(
         assert len(api.CredReadW.argtypes) == 4
         assert len(api.CredWriteW.argtypes) == 2
         assert len(api.CredDeleteW.argtypes) == 3
+        assert len(api.CredEnumerateW.argtypes) == 4
         assert len(api.CredFree.argtypes) == 1
         assert api.CredFree.restype is None
         vault._api.cache_clear()
@@ -230,3 +232,63 @@ def test_mock_vault_refuses_failed_credential_write(
     with pytest.raises(LocalApprovalDeniedError, match="local approval denied"):
         vault.create_credential("1" * 32, "key", b"non-secret-test")
     assert api.entries == {}
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Needs real Windows Credential Manager")
+def test_native_enumerates_only_device_secondary_namespace() -> None:
+    prefix = secrets.token_hex(8)
+    slot = prefix + secrets.token_hex(8)
+    other = secrets.token_hex(16)
+    payload = secrets.token_bytes(32)
+    try:
+        create_credential(slot, "secondary_project", payload)
+        create_credential(other, "secondary_project", payload)
+        create_credential(slot, "key", payload)
+        assert vault.list_secondary_slots(prefix) == [slot]
+    finally:
+        delete_credential(slot, "secondary_project")
+        delete_credential(other, "secondary_project")
+        delete_credential(slot, "key")
+
+
+def test_secondary_enumeration_filters_metadata_and_frees_array(monkeypatch) -> None:
+    from ctypes import wintypes
+    from types import SimpleNamespace
+
+    prefix = "a" * 16
+    slot = prefix + "b" * 16
+    entries = []
+    for target, kind in [
+        (_target(slot, "secondary_project"), 1),
+        (_target(slot, "key"), 1),
+        (_target("c" * 32, "secondary_project"), 1),
+        (_target(prefix + "d" * 16, "secondary_project"), 2),
+    ]:
+        entry = vault._CredentialW()
+        entry.Type = kind
+        entry.Persist = 2
+        entry.TargetName = target
+        entries.append(entry)
+    pointer_type = ctypes.POINTER(vault._CredentialW)
+    array = (pointer_type * len(entries))(*(ctypes.pointer(entry) for entry in entries))
+    freed = []
+
+    def enumerate_records(pattern, flags, count, output):
+        assert pattern == f"{vault._PREFIX}/{prefix}*" and flags == 0
+        ctypes.cast(count, ctypes.POINTER(wintypes.DWORD))[0] = len(entries)
+        ctypes.cast(output, ctypes.POINTER(ctypes.POINTER(pointer_type)))[0] = ctypes.cast(
+            array, ctypes.POINTER(pointer_type)
+        )
+        return True
+
+    monkeypatch.setattr(
+        vault,
+        "_api",
+        lambda: SimpleNamespace(
+            CredEnumerateW=enumerate_records, CredFree=lambda _: freed.append(True)
+        ),
+    )
+    assert vault.list_secondary_slots(prefix) == [slot]
+    assert freed == [True]
+    with pytest.raises(LocalApprovalDeniedError):
+        vault.list_secondary_slots("*")

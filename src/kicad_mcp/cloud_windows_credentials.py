@@ -27,6 +27,7 @@ _PARTS = frozenset(
         "binding",
         "registration",
         "project_path",
+        "secondary_project",
         "active",
         "selected",
         # Owner-approved recovery keeps the old selection in this same user vault.
@@ -115,6 +116,13 @@ def _api() -> ctypes.CDLL:
         api.CredWriteW.restype = wintypes.BOOL
         api.CredDeleteW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD]
         api.CredDeleteW.restype = wintypes.BOOL
+        api.CredEnumerateW.argtypes = [
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            ctypes.POINTER(wintypes.DWORD),
+            ctypes.POINTER(ctypes.POINTER(ctypes.POINTER(_CredentialW))),
+        ]
+        api.CredEnumerateW.restype = wintypes.BOOL
         api.CredFree.argtypes = [ctypes.c_void_p]
         api.CredFree.restype = None
         return cast(ctypes.CDLL, api)
@@ -179,3 +187,40 @@ def delete_credential(record_id: str, part: str) -> bool:
     if _last_error() == _ERROR_NOT_FOUND:
         return False
     raise LocalApprovalDeniedError(_DENIED)
+
+
+def list_secondary_slots(prefix: str) -> list[str]:
+    """Enumerate only this device's namespaced secondary records, not secret bytes."""
+    if not isinstance(prefix, str) or re.fullmatch(r"[0-9a-f]{16}", prefix) is None:
+        raise LocalApprovalDeniedError(_DENIED)
+    api = _api()
+    count = wintypes.DWORD()
+    entries = ctypes.POINTER(ctypes.POINTER(_CredentialW))()
+    if not api.CredEnumerateW(
+        f"{_PREFIX}/{prefix}*", 0, ctypes.byref(count), ctypes.byref(entries)
+    ):
+        if _last_error() == _ERROR_NOT_FOUND:
+            return []
+        raise LocalApprovalDeniedError(_DENIED)
+    try:
+        result = []
+        for index in range(count.value):
+            entry = entries[index].contents
+            name = entry.TargetName
+            if (
+                not name
+                or not name.startswith(f"{_PREFIX}/{prefix}")
+                or not name.endswith("/secondary_project")
+            ):
+                continue
+            slot = name.split("/")[-2]
+            if (
+                entry.Type == _CRED_TYPE_GENERIC
+                and entry.Persist == _CRED_PERSIST_LOCAL_MACHINE
+                and _RECORD_ID.fullmatch(slot)
+                and name == _target(slot, "secondary_project")
+            ):
+                result.append(slot)
+        return sorted(set(result))
+    finally:
+        api.CredFree(entries)
