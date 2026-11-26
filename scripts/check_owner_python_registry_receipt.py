@@ -11,6 +11,7 @@ import hashlib
 import json
 import tempfile
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -149,6 +150,144 @@ def _verify_owner_request(
         return result
 
 
+@dataclass(frozen=True)
+class _OwnerEvidence:
+    owner: dict[str, object]
+    metadata: dict[str, Any]
+    request: bytes
+    manifest: bytes
+    producer: tuple[dict[str, Any], str]
+
+
+def _capture_owner_evidence(
+    client: ReceiptClient,
+    *,
+    identity: DispatchIdentity,
+    artifact_id: int,
+    archive: Path,
+    directory: Path,
+    downloaded_zip: Path,
+) -> _OwnerEvidence:
+    handoff = identity.handoff
+    dispatch_bytes(identity)
+    dispatch_payload(handoff, identity.manifest_sha256)
+    _terminal_child(client, identity)
+    owner = _owner(client, handoff)
+    metadata = _request_metadata(client, identity)
+    if not _exact_id(artifact_id, metadata["id"]):
+        raise ValueError("owner request artifact ID mismatch")
+    request = _read_archive(archive, metadata)
+    manifest = manifest_bytes(handoff, directory)
+    if hashlib.sha256(manifest).hexdigest() != identity.manifest_sha256:
+        raise ValueError("owner manifest pin mismatch")
+    producer = _producer_snapshot(client, handoff, downloaded_zip)
+    return _OwnerEvidence(owner, metadata, request, manifest, producer)
+
+
+def _verify_owner_evidence(
+    client: ReceiptClient,
+    verifier: AttestationVerifier,
+    *,
+    identity: DispatchIdentity,
+    evidence: _OwnerEvidence,
+    producer_job_id: int,
+    downloaded_zip: Path,
+    directory: Path,
+) -> dict[str, object]:
+    report = _verify_owner_request(
+        client,
+        verifier,
+        identity=identity,
+        request=evidence.request,
+        producer_job_id=producer_job_id,
+        downloaded_zip=downloaded_zip,
+        directory=directory,
+    )
+    if report["producerArchiveSha256"] != evidence.producer[1]:
+        raise ValueError("producer archive pin changed")
+    return report
+
+
+def _recheck_owner_evidence(
+    client: ReceiptClient,
+    *,
+    identity: DispatchIdentity,
+    evidence: _OwnerEvidence,
+    archive: Path,
+    directory: Path,
+    producer_job_id: int,
+    downloaded_zip: Path,
+) -> None:
+    handoff = identity.handoff
+    _terminal_child(client, identity)
+    if (
+        _owner(client, handoff) != evidence.owner
+        or _request_metadata(client, identity) != evidence.metadata
+    ):
+        raise ValueError("owner or request identity changed during receipt verification")
+    _recheck_producer_job(client, handoff, producer_job_id)
+    if (
+        _producer_snapshot(client, handoff, downloaded_zip) != evidence.producer
+        or digest(downloaded_zip) != evidence.producer[1]
+    ):
+        raise ValueError("producer archive changed during receipt verification")
+    if _read_archive(archive, evidence.metadata) != evidence.request:
+        raise ValueError("owner request archive changed during receipt verification")
+    if manifest_bytes(handoff, directory) != evidence.manifest:
+        raise ValueError("owner package bytes changed during receipt verification")
+
+
+def prepare_receipt_pin(
+    client: ReceiptClient,
+    verifier: AttestationVerifier,
+    *,
+    identity: DispatchIdentity,
+    artifact_id: int,
+    archive: Path,
+    directory: Path,
+    producer_job_id: int,
+    downloaded_zip: Path,
+) -> str:
+    """Derive the expected receipt digest from independently verified owner evidence.
+
+    No worker receipt or registry data is read. The digest is an expectation,
+    not evidence that registry verification or publication occurred.
+    """
+    evidence = _capture_owner_evidence(
+        client,
+        identity=identity,
+        artifact_id=artifact_id,
+        archive=archive,
+        directory=directory,
+        downloaded_zip=downloaded_zip,
+    )
+    _verify_owner_evidence(
+        client,
+        verifier,
+        identity=identity,
+        evidence=evidence,
+        producer_job_id=producer_job_id,
+        downloaded_zip=downloaded_zip,
+        directory=directory,
+    )
+    _recheck_owner_evidence(
+        client,
+        identity=identity,
+        evidence=evidence,
+        archive=archive,
+        directory=directory,
+        producer_job_id=producer_job_id,
+        downloaded_zip=downloaded_zip,
+    )
+    expected = receipt_bytes(
+        identity,
+        artifact_id,
+        evidence.metadata["digest"][7:],
+        json.loads(evidence.manifest)["assets"],
+    )
+    return hashlib.sha256(expected).hexdigest()
+
+
 def verify_signed_receipt(
     client: ReceiptClient,
     verifier: AttestationVerifier,
@@ -165,57 +304,47 @@ def verify_signed_receipt(
     receipt_sha256: str,
 ) -> dict[str, object]:
     """Accept signed receipt evidence, not permission to publish a Release."""
-    handoff = identity.handoff
-    dispatch_bytes(identity)
-    dispatch_payload(handoff, identity.manifest_sha256)
-    _terminal_child(client, identity)
-    owner = _owner(client, handoff)
-    metadata = _request_metadata(client, identity)
-    if not _exact_id(artifact_id, metadata["id"]):
-        raise ValueError("owner request artifact ID mismatch")
-    request = _read_archive(archive, metadata)
-    manifest = manifest_bytes(handoff, directory)
-    if hashlib.sha256(manifest).hexdigest() != identity.manifest_sha256:
-        raise ValueError("owner manifest pin mismatch")
-    assets = json.loads(manifest)["assets"]
-    expected = receipt_bytes(identity, artifact_id, metadata["digest"][7:], assets)
+    evidence = _capture_owner_evidence(
+        client,
+        identity=identity,
+        artifact_id=artifact_id,
+        archive=archive,
+        directory=directory,
+        downloaded_zip=downloaded_zip,
+    )
+    assets = json.loads(evidence.manifest)["assets"]
+    expected = receipt_bytes(identity, artifact_id, evidence.metadata["digest"][7:], assets)
     path = _receipt_record(receipt, expected, receipt_sha256)
     _verify_worker_signature(verifier, path, identity, receipt_sha256)
-    producer = _producer_snapshot(client, handoff, downloaded_zip)
-    report = _verify_owner_request(
+    report = _verify_owner_evidence(
         client,
         verifier,
         identity=identity,
-        request=request,
+        evidence=evidence,
         producer_job_id=producer_job_id,
         downloaded_zip=downloaded_zip,
         directory=directory,
     )
-    if report["producerArchiveSha256"] != producer[1]:
-        raise ValueError("producer archive pin changed")
-    version = _version(handoff)
+    version = _version(identity.handoff)
     _check_inventory(registry, version, assets)
     _check_provenance(registry, verify, version, directory, assets)
     _check_inventory(registry, version, assets)
-    _terminal_child(client, identity)
-    if _owner(client, handoff) != owner or _request_metadata(client, identity) != metadata:
-        raise ValueError("owner or request identity changed during receipt verification")
-    _recheck_producer_job(client, handoff, producer_job_id)
-    if (
-        _producer_snapshot(client, handoff, downloaded_zip) != producer
-        or digest(downloaded_zip) != producer[1]
-    ):
-        raise ValueError("producer archive changed during receipt verification")
-    _read_archive(archive, metadata)
-    if manifest_bytes(handoff, directory) != manifest:
-        raise ValueError("owner package bytes changed during receipt verification")
+    _recheck_owner_evidence(
+        client,
+        identity=identity,
+        evidence=evidence,
+        archive=archive,
+        directory=directory,
+        producer_job_id=producer_job_id,
+        downloaded_zip=downloaded_zip,
+    )
     _receipt_record(receipt, expected, receipt_sha256)
     return {
         **report,
         "workerRunId": identity.worker_run_id,
         "workerRunAttempt": identity.worker_attempt,
         "ownerRequestArtifactId": artifact_id,
-        "ownerRequestArchiveSha256": metadata["digest"][7:],
+        "ownerRequestArchiveSha256": evidence.metadata["digest"][7:],
         "receiptSha256": receipt_sha256,
         "signedDispatchBindingVerified": True,
         "ownerRequestArtifactVerified": True,
@@ -234,10 +363,11 @@ def verify_signed_receipt(
     }
 
 
-def _receipt_parser(description: str) -> argparse.ArgumentParser:
+def _receipt_parser(description: str, *, require_pin: bool = True) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=description)
-    for field in ("tag", "source-commit", "manifest-sha256", "receipt-sha256"):
+    for field in ("tag", "source-commit", "manifest-sha256"):
         parser.add_argument(f"--{field}", required=True)
+    parser.add_argument("--receipt-sha256", required=require_pin)
     for field in (
         "release-id",
         "owner-run-id",
