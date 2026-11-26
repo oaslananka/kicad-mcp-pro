@@ -224,7 +224,8 @@ def test_native_junction_directory_is_denied(tmp_path: Path) -> None:
 def test_native_legacy_cache_pinned_read_and_limit(tmp_path: Path) -> None:
     from kicad_mcp.cloud_windows_project_path import read_legacy_folder_cache
 
-    directory = tmp_path / ".kicad-mcp-cloud" / "connector"
+    home = _private_fixture_home(tmp_path)
+    directory = home / ".kicad-mcp-cloud" / "connector"
     directory.mkdir(parents=True)
     path = directory / "folder-bindings.json"
     payload = b'{"test":"fixture"}'
@@ -239,3 +240,53 @@ def test_native_legacy_cache_pinned_read_and_limit(tmp_path: Path) -> None:
     os.link(path, directory / "link.json")
     with pytest.raises(LocalReadDeniedError):
         read_legacy_folder_cache(path, 1024)
+
+
+def _fixture_acl(path: Path, *options: str) -> None:
+    import subprocess
+
+    exe = Path(os.environ["SystemRoot"]) / "System32" / "icacls.exe"
+    result = subprocess.run(
+        [str(exe), str(path), *options], capture_output=True, text=True, timeout=10, check=False
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def _private_fixture_home(tmp_path: Path) -> Path:
+    from kicad_mcp.cloud_windows_legacy_acl import _current_user
+
+    home = tmp_path / "owner-home"
+    home.mkdir()
+    _fixture_acl(
+        home,
+        "/inheritance:r",
+        "/grant:r",
+        "*" + _current_user() + ":(OI)(CI)F",
+        "*S-1-5-18:(OI)(CI)F",
+        "*S-1-5-32-544:(OI)(CI)F",
+    )
+    return home
+
+
+@pytest.mark.parametrize("target", ["home", "cache", "connector", "leaf"])
+def test_native_legacy_cache_rejects_other_writer_on_each_cache_hop(
+    tmp_path: Path, target: str
+) -> None:
+    from kicad_mcp.cloud_windows_project_path import read_legacy_folder_cache
+
+    home = _private_fixture_home(tmp_path)
+    cache = home / ".kicad-mcp-cloud"
+    directory = cache / "connector"
+    directory.mkdir(parents=True)
+    path = directory / "folder-bindings.json"
+    payload = b'{"test":"fixture"}'
+    path.write_bytes(payload)
+    selected = {"home": home, "cache": cache, "connector": directory, "leaf": path}[target]
+    _fixture_acl(selected, "/grant", "*S-1-1-0:R")
+    assert read_legacy_folder_cache(path, 1024) == payload
+    _fixture_acl(selected, "/grant:r", "*S-1-1-0:M")
+    with pytest.raises(LocalReadDeniedError):
+        read_legacy_folder_cache(path, 1024)
+    assert path.read_bytes() == payload
+    _fixture_acl(selected, "/remove:g", "*S-1-1-0")
+    assert read_legacy_folder_cache(path, 1024) == payload
