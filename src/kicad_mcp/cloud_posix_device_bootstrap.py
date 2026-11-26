@@ -8,6 +8,8 @@ from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
 
+from websockets.exceptions import WebSocketException
+
 from kicad_mcp import cloud_pair, cloud_pair_keys, cloud_posix_recovery
 from kicad_mcp.cloud_folder_browse_receiver import (
     BrowserFolderService,
@@ -25,6 +27,10 @@ from kicad_mcp.cloud_windows_connector import _is_remote_policy_rejection
 
 Identity = tuple[Path, dict[str, str]]
 _DENIED = "Saved Cloud registration cannot be verified. Existing files and keys were kept."
+
+
+class DeviceSessionRejectedError(LocalApprovalDeniedError):
+    """Received policy close; not evidence of device deletion by itself."""
 
 
 def ensure_device(
@@ -185,9 +191,9 @@ async def _wait_for_project(
                 on_activity=status,
             )
             failures = 0
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, WebSocketException) as exc:
             if _is_remote_policy_rejection(exc):
-                raise LocalApprovalDeniedError(
+                raise DeviceSessionRejectedError(
                     "Cloud denied the device session. Existing pairing was preserved."
                 ) from exc
             failures += 1
@@ -209,7 +215,16 @@ def connect_device_only(
         identity = ensure_device(root, origin, alias, approval)
         status("Use Add Project in Cloud Devices after Online appears.")
         try:
-            return asyncio.run(_wait_for_project(root, identity, status))
+            try:
+                return asyncio.run(_wait_for_project(root, identity, status))
+            except DeviceSessionRejectedError:
+                from kicad_mcp.cloud_posix_replacement import recover_device_locked
+
+                if not recover_device_locked(root, origin, alias, approval):
+                    raise
+                identity = ensure_device(root, origin, alias, approval)
+                status("Device restored. Use Add Project after Online appears.")
+                return asyncio.run(_wait_for_project(root, identity, status))
         except KeyboardInterrupt:
             status("Disconnected. Your approved device identity remains saved.")
             return None

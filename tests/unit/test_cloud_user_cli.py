@@ -2153,8 +2153,8 @@ def test_posix_first_setup_cannot_pair_during_another_session(monkeypatch, tmp_p
     assert not (root / "projects").exists()
 
 
-@pytest.mark.parametrize("detached", [True, False])
-def test_posix_same_command_recovers_deleted_project(monkeypatch, tmp_path: Path, detached) -> None:
+@pytest.mark.parametrize("outcome", ["project", "device", "unchanged"])
+def test_posix_same_command_recovers_deleted_project(monkeypatch, tmp_path: Path, outcome) -> None:
     from kicad_mcp import cloud_posix_device_bootstrap as boot
     from kicad_mcp import cloud_user_cli
 
@@ -2180,15 +2180,26 @@ def test_posix_same_command_recovers_deleted_project(monkeypatch, tmp_path: Path
 
     def recover(_root, _record):
         events.append("diagnosis")
-        if detached:
+        if outcome == "project":
             marker.unlink()
-        return detached
+        return outcome == "project"
 
     monkeypatch.setattr(cloud_user_cli, "_run_posix_foreground", foreground)
     monkeypatch.setattr(boot, "recover_missing_project", recover)
+
+    def recover_device(*_args: object) -> bool:
+        events.append("device-diagnosis")
+        if outcome == "device":
+            marker.unlink()
+        return outcome == "device"
+
+    monkeypatch.setattr("kicad_mcp.cloud_posix_replacement.recover_device", recover_device)
     monkeypatch.setattr(boot, "connect_device_only", lambda *_: events.append("device-only"))
     result = CliRunner().invoke(app, ["cloud"])
-    assert result.exit_code == (0 if detached else 3), result.output
-    assert events == (
-        ["session", "diagnosis", "device-only"] if detached else ["session", "diagnosis"]
-    )
+    assert result.exit_code == (3 if outcome == "unchanged" else 0), result.output
+    expected = ["session", "diagnosis"]
+    if outcome != "project":
+        expected.append("device-diagnosis")
+    if outcome != "unchanged":
+        expected.append("device-only")
+    assert events == expected

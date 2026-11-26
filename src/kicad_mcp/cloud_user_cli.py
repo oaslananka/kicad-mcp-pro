@@ -1219,7 +1219,13 @@ def _validate_posix_connect_options(enable_native_write: bool, project_dir: Path
         raise typer.BadParameter("Use cloud setup --project-dir to register a local KiCad project.")
 
 
-def _connect_registered_posix_device(root: Path, origin: str, new_device: bool) -> bool:
+def _connect_registered_posix_device(
+    root: Path,
+    origin: str,
+    new_device: bool,
+    alias: str,
+    approval: Callable[[str, str, str], None],
+) -> bool:
     """Reuse a registered device, never silently replace its signing identity."""
     from kicad_mcp.cloud_registered_pilot import _single_registered_identity
 
@@ -1243,8 +1249,14 @@ def _connect_registered_posix_device(root: Path, origin: str, new_device: bool) 
                         "Cloud project removed. Keeping this device; use Add Project when Online."
                     )
                     return False
+                from kicad_mcp.cloud_posix_replacement import recover_device
+
+                if recover_device(root, origin, alias, approval):
+                    typer.echo("Device restored. Use Add Project after Online appears.")
+                    return False
                 typer.echo(
-                    "Cloud did not confirm project removal. Existing registration kept.", err=True
+                    "Cloud did not confirm a replacement is needed. Existing registration kept.",
+                    err=True,
                 )
                 raise
             return True
@@ -1307,13 +1319,28 @@ def connect(
     from kicad_mcp.cloud_local_registry import default_registry_root
 
     root = default_registry_root()
+    from kicad_mcp.cloud_posix_replacement import pending_replacement, recover_device
+
+    device_alias = _resolve_device_alias(None if alias == _DEFAULT_DEVICE_ALIAS else alias)
+
+    def approval(page: str, challenge: str, code: str) -> None:
+        _perform_approval(page, challenge, code, no_browser)
+
+    if not new_device and _owner_terminal() and pending_replacement(root):
+        try:
+            if recover_device(root, origin, device_alias, approval):
+                typer.echo("Device recovery resumed. Use Add Project after Online appears.")
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise typer.BadParameter(
+                "Saved device recovery could not be resumed. Existing files kept."
+            ) from exc
     folder = root / "projects"
     try:
         has_registration = folder.exists() and any(folder.iterdir())
     except OSError as exc:
         raise typer.BadParameter("Unable to inspect existing Cloud registration.") from exc
     if has_registration:
-        if _connect_registered_posix_device(root, origin, new_device):
+        if _connect_registered_posix_device(root, origin, new_device, device_alias, approval):
             return
         has_registration = folder.exists() and any(folder.iterdir())
 
@@ -1332,8 +1359,8 @@ def connect(
             record = connect_device_only(
                 root,
                 origin,
-                _resolve_device_alias(None if alias == _DEFAULT_DEVICE_ALIAS else alias),
-                lambda page, challenge, code: _perform_approval(page, challenge, code, no_browser),
+                device_alias,
+                approval,
                 lambda value: _display_cloud_status(value, origin),
             )
         except (OSError, ValueError, RuntimeError) as exc:

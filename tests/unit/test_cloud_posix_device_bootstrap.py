@@ -233,3 +233,44 @@ def test_posix_deleted_project_reuses_device_without_pairing(tmp_path, monkeypat
         assert (
             cloud_pair_keys._read_private_json(root / "detached-projects", pid + ".json") == record
         )
+
+
+@pytest.mark.parametrize("recovered", [True, False])
+@pytest.mark.skipif(os.name != "posix", reason="POSIX registry lock")
+def test_device_only_recovery_reconnects_once(tmp_path, monkeypatch, recovered) -> None:
+    from kicad_mcp import cloud_posix_device_bootstrap as boot
+    from kicad_mcp import cloud_posix_replacement as replacement
+
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    identities = [(root / "old", {}), (root / "new", {})]
+    events = []
+    result = {"projectId": str(uuid4())}
+
+    def ensure(*_args: object):
+        identity = identities.pop(0)
+        events.append(identity[0].name)
+        return identity
+
+    async def wait(_root, identity, _status):
+        events.append("connect-" + identity[0].name)
+        if identity[0].name == "old":
+            raise boot.DeviceSessionRejectedError("policy")
+        return result
+
+    def recover(*_args: object) -> bool:
+        events.append("diagnosis")
+        return recovered
+
+    monkeypatch.setattr(boot, "ensure_device", ensure)
+    monkeypatch.setattr(boot, "_wait_for_project", wait)
+    monkeypatch.setattr(replacement, "recover_device_locked", recover)
+    if recovered:
+        assert (
+            boot.connect_device_only(root, ORIGIN, "PC", lambda *_: None, lambda _: None) == result
+        )
+        assert events == ["old", "connect-old", "diagnosis", "new", "connect-new"]
+    else:
+        with pytest.raises(boot.DeviceSessionRejectedError):
+            boot.connect_device_only(root, ORIGIN, "PC", lambda *_: None, lambda _: None)
+        assert events == ["old", "connect-old", "diagnosis"]
