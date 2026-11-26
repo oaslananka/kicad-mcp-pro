@@ -647,3 +647,29 @@ registry receipt or exclusive writer. The child run ID is assigned only
 after dispatch and must be bound independently by the owner and worker.
 All those checks remain mandatory before a production cutover. No new
 credential or ruleset write permission is needed by this verifier.
+
+### Live signature-only rehearsal (non-publishing)
+
+After the reviewed workflow reaches main, the repository owner can manually
+run **Signed Python handoff rehearsal (non-publishing)**. This is separate
+from the existing cross-workflow transport rehearsal. The signing job creates
+two deliberately invalid text fixtures named as distributions for the
+synthetic version 0.0.0 and a clearly marked rehearsal envelope containing
+the production-shaped request with synthetic Release/producer identifiers.
+It attests only that envelope under the dedicated rehearsal signer. The
+independent read-only job downloads the exact numeric artifact ID from the
+same run and verifies the owner job's separately passed manifest pin,
+exact package bytes, source commit, workflow signer and signed run/attempt.
+It checks the manifest and package bytes again after verification.
+
+Only the signing job has OIDC, attestation and artifact-metadata write scopes,
+with no production environment, registry, Release or dispatch permission.
+The verifier uses the existing patched GitHub CLI requirement (at least
+2.102.0); a missing or invalid signature, CLI or digest fails closed.
+Artifacts expire after three days. The production verifier retains its
+separate fixed signer and rejects the rehearsal envelope. A successful
+rehearsal proves real signing/verification of synthetic bytes in separate
+jobs, not the production owner signer, an independently dispatched worker,
+protected tag, actual Release, registry receipt or exclusive writer.
+No tag or Release is created and no package is installed or published.
+Do not dispatch until the workflow has passed review and merged to main.

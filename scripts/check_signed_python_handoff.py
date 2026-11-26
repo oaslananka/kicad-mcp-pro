@@ -99,14 +99,19 @@ def _read_manifest(path: Path) -> bytes:
 
 
 def _verify_signature(
-    verifier: AttestationVerifier, path: Path, identity: HandoffIdentity, sha256: str
+    verifier: AttestationVerifier,
+    path: Path,
+    identity: HandoffIdentity,
+    sha256: str,
+    *,
+    signer: str,
 ) -> None:
     invocation = _approved_run_invocation(identity.owner_run_id, identity.owner_attempt)
     signed = verifier.verify(
         path=path,
         repo=REPOSITORY,
         sha=identity.source_commit,
-        signer=_OWNER_WORKFLOW,
+        signer=signer,
         source_ref="refs/heads/main",
     )
     if not isinstance(signed, list) or not signed:
@@ -143,7 +148,7 @@ def verify_manifest(
     if hashlib.sha256(expected).hexdigest() != manifest_sha256 or _read_manifest(path) != expected:
         raise ValueError("Python worker manifest bytes or independent digest pin mismatch")
 
-    _verify_signature(verifier, path, identity, manifest_sha256)
+    _verify_signature(verifier, path, identity, manifest_sha256, signer=_OWNER_WORKFLOW)
     if _read_manifest(path) != expected or manifest_bytes(identity, directory) != expected:
         raise ValueError("Python worker manifest or packages changed during verification")
     return {
