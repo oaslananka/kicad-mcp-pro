@@ -1,6 +1,11 @@
 name: Tagged handoff worker (non-publishing)
 on:
   workflow_dispatch:
+    inputs:
+      owner_run_id:
+        description: Untrusted owner run selector (verified by the worker)
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -24,6 +29,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          REHEARSAL_OWNER_RUN_ID: ${{ inputs.owner_run_id }}
         run: |
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]

@@ -38,7 +38,7 @@ jobs:
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
           python3 -m scripts.rehearse_tagged_handoff check-owner
-          child="$(jq -n --arg ref "handoff-rehearsal-$GITHUB_SHA" '{ref:$ref}' |
+          child="$(jq -n --arg ref "handoff-rehearsal-$GITHUB_SHA" --arg owner "$GITHUB_RUN_ID" '{ref:$ref,inputs:{owner_run_id:$owner}}' |
             gh api -H 'X-GitHub-Api-Version: 2026-03-10' -X POST               repos/oaslananka/kicad-mcp-pro/actions/workflows/tagged-handoff-worker.yml/dispatches --input - |
             jq -er '.workflow_run_id | select(type == "number" and . > 0 and floor == .) | tostring')"
           [[ "$child" =~ ^[1-9][0-9]{0,14}$ && "$child" != "$GITHUB_RUN_ID" ]]

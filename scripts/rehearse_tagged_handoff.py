@@ -8,7 +8,6 @@ import io
 import json
 import os
 import re
-import sys
 import tempfile
 import time
 import zipfile
@@ -343,50 +342,15 @@ def verify_receipt(
     return expected
 
 
-class OwnerNotReadyError(ValueError):
-    """The complete active-owner listing is empty."""
-
-
-class RehearsalCLI(DeliveryGitHubCLI):
-    def active_owner(self, source: str) -> int:
-        result = self._json(
-            f"repos/{REPOSITORY}/actions/workflows/tagged-handoff-rehearsal.yml/runs"
-            f"?branch=main&event=workflow_dispatch&status=in_progress&head_sha={source}&per_page=100"
-        )
-        runs = result.get("workflow_runs")
-        if runs == [] and _exact_id(result.get("total_count"), 0):
-            raise OwnerNotReadyError("no active rehearsal owner visible")
-        if (
-            not isinstance(runs, list)
-            or len(runs) != 1
-            or not _exact_id(result.get("total_count"), 1)
-        ):
-            raise ValueError("expected one active rehearsal owner")
-        owner = runs[0].get("id") if isinstance(runs[0], dict) else None
-        if type(owner) is not int or owner <= 0:
-            raise ValueError("invalid rehearsal owner ID")
-        return owner
-
-
-def wait_for_owner(client: RehearsalCLI, source: str, child: int) -> int:
-    """Retry only a complete empty owner listing, never conflicting evidence."""
-    for poll in range(12):
-        if _run_status(client, source=source, run_id=child, owner=False) != "in_progress":
-            raise ValueError("rehearsal worker is not active")
-        if client.tag_commit(REPOSITORY, f"handoff-rehearsal-{source}") != source:
-            raise ValueError("rehearsal tag source mismatch")
-        try:
-            owner = client.active_owner(source)
-        except OwnerNotReadyError:
-            print(
-                f"tagged rehearsal: active owner not visible (poll {poll + 1}/12)", file=sys.stderr
-            )
-            if poll < 11:
-                time.sleep(5)
-            continue
-        _check_runs(client, Identity(source, owner, child), ("in_progress",))
-        return owner
-    raise ValueError("rehearsal owner discovery timed out")
+def _owner_selector(child: int) -> int:
+    """An untrusted dispatch selector, never evidence of owner authorization."""
+    value = os.environ.get("REHEARSAL_OWNER_RUN_ID", "")
+    if re.fullmatch(r"[1-9]\d{0,14}", value, flags=re.ASCII) is None:
+        raise ValueError("invalid rehearsal owner selector")
+    owner = int(value)
+    if owner == child:
+        raise ValueError("self-referential rehearsal owner selector")
+    return owner
 
 
 def _runtime() -> tuple[str, int, str]:
@@ -470,13 +434,14 @@ def main() -> int:
         expected_ref = f"refs/tags/handoff-rehearsal-{source}" if worker else "refs/heads/main"
         if ref != expected_ref:
             raise ValueError("wrong rehearsal runtime ref")
-        client = RehearsalCLI()
+        owner = _owner_selector(run_id) if worker else run_id
+        client = DeliveryGitHubCLI()
         if args.operation == "check-owner":
             _check_owner(client, source, run_id)
             return 0
         identity = Identity(
             source,
-            wait_for_owner(client, source, run_id) if worker else run_id,
+            owner,
             run_id if worker else args.child,
         )
         if args.operation == "prepare":
