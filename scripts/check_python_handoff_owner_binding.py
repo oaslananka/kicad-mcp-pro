@@ -36,6 +36,7 @@ from scripts.check_signed_python_handoff import (
     manifest_bytes,
     verify_manifest,
 )
+from scripts.python_worker_dispatch_inputs import dispatch_payload
 
 _ROLE = "python-dist"
 _PROFILE = "reusable"
@@ -313,6 +314,9 @@ def main(argv: list[str] | None = None) -> int:
         "--prepare", action="store_true", help="emit verified unsigned manifest bytes"
     )
     mode.add_argument(
+        "--prepare-inputs", action="store_true", help="emit verified pre-dispatch API body"
+    )
+    mode.add_argument(
         "--prepare-dispatch",
         type=int,
         metavar="WORKER_RUN_ID",
@@ -379,6 +383,8 @@ def main(argv: list[str] | None = None) -> int:
             manifest=args.manifest,
             manifest_sha256=args.manifest_sha256,
         )
+        if args.prepare_inputs:
+            result = dispatch_payload(identity, args.manifest_sha256)
     except (ValueError, OSError) as exc:
         parser.exit(2, f"Python handoff owner binding: FAIL: {exc}\n")
     print(json.dumps(result, indent=2, sort_keys=True))
