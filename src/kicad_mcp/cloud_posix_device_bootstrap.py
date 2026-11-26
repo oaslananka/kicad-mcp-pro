@@ -250,7 +250,7 @@ async def _attempt_folder_session(
             on_activity=status,
             drain=drain,
         )
-        failures = 0
+        return 0
     except (OSError, ValueError, WebSocketException) as exc:
         if drain is not None and drain.is_set():
             return None
@@ -258,9 +258,8 @@ async def _attempt_folder_session(
             raise DeviceSessionRejectedError(
                 "Cloud denied the device session. Existing pairing was preserved."
             ) from exc
-        failures += 1
         status("Connection interrupted; retrying")
-    return failures
+        return failures + 1
 
 
 async def _wait_for_project(

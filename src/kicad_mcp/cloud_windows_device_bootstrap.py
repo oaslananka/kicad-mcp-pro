@@ -428,7 +428,7 @@ async def _attempt_device_session(
             on_activity=status_callback,
             drain=drain,
         )
-        failures = 0
+        return 0
     except (OSError, ValueError) as exc:
         if drain is not None and drain.is_set():
             return None
@@ -436,9 +436,8 @@ async def _attempt_device_session(
             raise CloudOwnerReapprovalRequiredError(
                 "Cloud denied the signed device session."
             ) from exc
-        failures += 1
         status_callback("Connection interrupted; retrying")
-    return failures
+        return failures + 1
 
 
 def _device_draining(drain: asyncio.Event | None) -> bool:

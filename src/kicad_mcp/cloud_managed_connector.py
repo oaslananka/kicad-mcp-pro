@@ -611,10 +611,12 @@ def _posix_native_mcp_settings(
             persist_to_disk=persist,
         )
 
-    return dict(
-        mcp_bridge_factory=with_receipt,
-        native_write=ManagedNativeWriteConfig(revisions_preparer=prepare, write_executor=execute),
-    )
+    return {
+        "mcp_bridge_factory": with_receipt,
+        "native_write": ManagedNativeWriteConfig(
+            revisions_preparer=prepare, write_executor=execute
+        ),
+    }
 
 
 def _posix_mcp_settings(
