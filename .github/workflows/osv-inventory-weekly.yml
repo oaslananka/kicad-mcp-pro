@@ -29,9 +29,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Scan all repository lockfiles with pinned OSV-Scanner 2.7.0
+      - name: Scan all repository lockfiles with pinned OSV-Scanner 2.7.1
         id: scan
-        uses: google/osv-scanner-action/osv-scanner-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347
+        uses: google/osv-scanner-action/osv-scanner-action@32d3cd482bdadfb38b186c0ad1b031902d55d932
         env:
           GOTOOLCHAIN: auto
         with:
@@ -54,7 +54,7 @@ jobs:
           fi
 
       - name: Produce complete dependency SARIF inventory
-        uses: google/osv-scanner-action/osv-reporter-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347
+        uses: google/osv-scanner-action/osv-reporter-action@32d3cd482bdadfb38b186c0ad1b031902d55d932
         with:
           scan-args: |
             --output=results.sarif

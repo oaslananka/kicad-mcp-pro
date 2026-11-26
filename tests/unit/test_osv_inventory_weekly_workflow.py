@@ -32,9 +32,9 @@ def test_osv_weekly_inventory_is_pinned_and_uploads_all_findings() -> None:
     assert checkout["uses"] == "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
     assert checkout["with"]["persist-credentials"] is False
 
-    scan = steps["Scan all repository lockfiles with pinned OSV-Scanner 2.7.0"]
+    scan = steps["Scan all repository lockfiles with pinned OSV-Scanner 2.7.1"]
     assert scan["uses"] == (
-        "google/osv-scanner-action/osv-scanner-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347"
+        "google/osv-scanner-action/osv-scanner-action@32d3cd482bdadfb38b186c0ad1b031902d55d932"
     )
     assert scan["continue-on-error"] is True
     assert scan["with"]["scan-args"].strip().splitlines() == [
@@ -50,7 +50,7 @@ def test_osv_weekly_inventory_is_pinned_and_uploads_all_findings() -> None:
 
     reporter = steps["Produce complete dependency SARIF inventory"]
     assert reporter["uses"] == (
-        "google/osv-scanner-action/osv-reporter-action@9a96bc4d2b09685b6142bcfe25a3dc17cb2d7347"
+        "google/osv-scanner-action/osv-reporter-action@32d3cd482bdadfb38b186c0ad1b031902d55d932"
     )
     assert "--fail-on-vuln=false" in reporter["with"]["scan-args"]
     assert "--new=results.json" in reporter["with"]["scan-args"]
