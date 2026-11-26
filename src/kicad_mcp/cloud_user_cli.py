@@ -1246,7 +1246,7 @@ def _connect_registered_posix_device(
 
                 if recover_missing_project(root, existing):
                     typer.echo(
-                        "Cloud project removed. Keeping this device; use Add Project when Online."
+                        "Cloud project removed. Keeping this device and its remaining projects."
                     )
                     return False
                 from kicad_mcp.cloud_posix_replacement import recover_device

@@ -1386,3 +1386,40 @@ async def test_policy_close_routes_only_foreground_to_recovery(
     assert attempts == (["session"] if foreground else ["session", "backoff"])
     assert not (root / connector._FOREGROUND_FILE).exists()
     assert project.key_file.exists()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("state", ["project_missing", "active", "unavailable"])
+async def test_official_foreground_checks_deleted_primary_before_socket(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, state: str
+) -> None:
+    from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+    root, project = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    record["cloudOrigin"] = _KICAD_CLOUD_ORIGIN
+    connector._write_private_json(root / "projects", PROJECT + ".json", record)
+    stop = asyncio.Event()
+    calls = []
+
+    def inspect(_origin, _owner, _device, pid, _key):
+        calls.append(pid)
+        return state
+
+    async def session(**_kwargs: object) -> None:
+        calls.append("socket")
+        stop.set()
+
+    monkeypatch.setattr("kicad_mcp.cloud_device_inventory_status.inspect_inventory", inspect)
+    monkeypatch.setattr(connector, "_session_until_stopped", session)
+    result = await connector._run_connector(
+        root=root,
+        foreground=True,
+        expected_identity=record,
+        stop_event=stop,
+        key_loader=lambda *_: Ed25519PrivateKey.generate(),
+    )
+    assert result == (3 if state == "project_missing" else 0)
+    assert calls == ([PROJECT] if state == "project_missing" else [PROJECT, "socket"])
+    assert project.key_file.exists()
+    assert not (root / connector._FOREGROUND_FILE).exists()

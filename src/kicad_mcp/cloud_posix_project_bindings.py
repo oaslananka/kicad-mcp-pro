@@ -111,3 +111,18 @@ def folder_service(
         on_bound=on_bound,
         bound_path=bound_path,
     )
+
+
+def existing_targets(root: Path, record: dict[str, str]) -> list[OperatorProject]:
+    """Enumerate only previously bound projects of this exact device."""
+    from kicad_mcp.cloud_posix_recovery import _private_names
+
+    names = sorted(_private_names(_folder(root, record)))
+    targets = []
+    for name in names:
+        if not name.endswith(".json"):
+            continue
+        target = resolve_secondary(root, record, name[:-5])
+        if target is not None:
+            targets.append(target)
+    return targets

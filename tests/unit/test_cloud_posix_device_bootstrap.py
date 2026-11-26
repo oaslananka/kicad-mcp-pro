@@ -274,3 +274,70 @@ def test_device_only_recovery_reconnects_once(tmp_path, monkeypatch, recovered) 
         with pytest.raises(boot.DeviceSessionRejectedError):
             boot.connect_device_only(root, ORIGIN, "PC", lambda *_: None, lambda _: None)
         assert events == ["old", "connect-old", "diagnosis"]
+
+
+@pytest.mark.parametrize("state", ["active", "project_missing", "project_disabled", "unavailable"])
+@pytest.mark.skipif(os.name != "posix", reason="POSIX registry lock")
+def test_deleted_primary_uses_existing_secondary_without_picker(
+    tmp_path, monkeypatch, state
+) -> None:
+    from kicad_mcp import cloud_posix_device_bootstrap as boot
+    from kicad_mcp import cloud_posix_project_bindings as bindings
+    from kicad_mcp.cloud_local_registry import LocalRegisteredRead
+
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    keyfile = root / "keys" / f"{uuid4()}.pem"
+    keyfile.parent.mkdir(mode=0o700)
+    keyfile.touch(mode=0o600)
+    identity = (
+        keyfile,
+        {"origin": ORIGIN, "ownerSub": "owner", "deviceId": str(uuid4()), "fingerprint": "a" * 64},
+    )
+    monkeypatch.setattr(cloud_posix_recovery, "inspect_unbound_device", lambda *_: identity)
+    monkeypatch.setattr(boot, "_load_bound_owner_key", lambda *_: object())
+    primary, secondary = tmp_path / "primary", tmp_path / "secondary"
+    for path in (primary, secondary):
+        path.mkdir()
+        (path / "board.kicad_pro").write_text("{}")
+    first, second = str(uuid4()), str(uuid4())
+    boot.adopt_project(root, identity, first, primary / "board.kicad_pro")
+    record = boot.read_project(root, identity)
+    service = bindings.folder_service(
+        root,
+        record,
+        LocalRegisteredRead(keyfile, primary, "board"),
+        lambda: True,
+        native_picker=lambda: secondary,
+    )
+    assert service.bind(service.choose()["projects"][0]["id"], second)
+    calls = []
+
+    def status(_origin, _owner, _device, pid, _key):
+        calls.append(pid)
+        return "project_missing" if pid == first else state
+
+    monkeypatch.setattr("kicad_mcp.cloud_device_inventory_status.inspect_inventory", status)
+    monkeypatch.setattr(cloud_pair, "enroll", lambda *_: pytest.fail("unexpected pairing"))
+    assert boot.recover_missing_project(root, record)
+    assert boot.read_project(root, identity) is None
+
+    async def wait(*_args: object):
+        assert state != "active"
+        return None
+
+    monkeypatch.setattr(boot, "_wait_for_project", wait)
+    result = boot.connect_device_only(
+        root, ORIGIN, "PC", lambda *_: pytest.fail("unexpected approval"), lambda _: None
+    )
+    if state == "active":
+        assert result["projectId"] == second
+        assert result["directory"] == str(secondary)
+        assert boot.read_project(root, identity) == result
+    else:
+        assert result is None
+        assert boot.read_project(root, identity) is None
+    assert calls == [first, second]
+    assert (primary / "board.kicad_pro").read_text() == "{}"
+    assert (secondary / "board.kicad_pro").read_text() == "{}"
+    assert keyfile.exists()

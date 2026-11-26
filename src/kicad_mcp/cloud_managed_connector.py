@@ -66,6 +66,10 @@ _CONNECTING_STATUS_MAX_AGE_MS = 45_000
 _DENIED = "Registered Cloud Connector unavailable; check its local enable state and registration."
 
 
+class ProjectSelectionMissingError(LocalApprovalDeniedError):
+    """Cloud confirmed the selected transport anchor no longer exists."""
+
+
 class ConnectorAlreadyRunningError(RuntimeError):
     """A different local process owns the Connector session."""
 
@@ -748,6 +752,23 @@ async def _run_registered_session(
     # outbound handshake after the owner removes the enable marker.
     if stop.is_set() or not _is_enabled(registry, record, marker):
         return False
+    if marker == _FOREGROUND_FILE and session_runner is execute_owner_managed_read_session:
+        from kicad_mcp.cloud_device_inventory_status import inspect_inventory
+        from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+        if record["cloudOrigin"] == _KICAD_CLOUD_ORIGIN:
+            inventory_state = await asyncio.to_thread(
+                inspect_inventory,
+                record["cloudOrigin"],
+                record["ownerSub"],
+                record["deviceId"],
+                record["projectId"],
+                signing_key,
+            )
+            if stop.is_set() or not _is_enabled(registry, record, marker):
+                return False
+            if inventory_state == "project_missing":
+                raise ProjectSelectionMissingError(_DENIED)
     _write_status(registry, "connecting")
     _report_foreground(marker, "Connecting")
     await _session_until_stopped(
@@ -828,7 +849,9 @@ async def _run_connector(
                 if foreground:
                     from kicad_mcp.cloud_windows_connector import _is_remote_policy_rejection
 
-                    if _is_remote_policy_rejection(exc):
+                    if isinstance(exc, ProjectSelectionMissingError) or _is_remote_policy_rejection(
+                        exc
+                    ):
                         return 3
                 failures += 1
             _report_foreground(marker, "Disconnected")

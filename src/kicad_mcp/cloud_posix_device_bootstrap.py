@@ -120,6 +120,49 @@ def recover_missing_project(root: Path, record: dict[str, str]) -> bool:
         return True
 
 
+def _restore_existing_project(root: Path, identity: Identity) -> dict[str, str] | None:
+    """Restore a connection anchor, never create a Cloud project or grant.
+
+    The caller owns the session lock. A crash after detaching the old primary
+    is safe: the independently recorded secondary bindings remain available.
+    """
+    from kicad_mcp.cloud_device_inventory_status import inspect_inventory
+    from kicad_mcp.cloud_posix_project_bindings import existing_targets
+
+    if not os.path.lexists(root / "project-bindings"):
+        return None
+    keyfile, binding = identity
+    if read_project(root, identity) is not None:
+        raise LocalApprovalDeniedError(_DENIED)
+    selectors = {
+        "ownerSub": binding["ownerSub"],
+        "cloudOrigin": binding["origin"],
+        "deviceId": binding["deviceId"],
+        "keySlot": keyfile.stem,
+        "projectId": "",
+    }
+    targets = existing_targets(root, selectors)
+    if not targets:
+        return None
+    key = _load_bound_owner_key(keyfile, binding["origin"], binding["deviceId"])
+    # Keep the diagnosis bounded below the server's source rate limit.
+    # Sorting UUIDs chooses an internal transport anchor, not a user project.
+    for target in targets[:25]:
+        state = inspect_inventory(
+            binding["origin"], binding["ownerSub"], binding["deviceId"], target.project_id, key
+        )
+        if state in {"device_disabled", "device_revoked", "unverified", "unavailable"}:
+            break
+        if state != "active":
+            continue
+        if target not in existing_targets(root, selectors):
+            raise LocalApprovalDeniedError(_DENIED)
+        selected = target.directory / (target.filename_stem + ".kicad_pro")
+        adopt_project(root, identity, target.project_id, selected)
+        return read_project(root, identity)
+    return None
+
+
 def adopt_project(root: Path, identity: Identity, project_id: str, selected: Path) -> bool:
     """Persist only an explicit native picker + owner Cloud bind result."""
     keyfile, binding = identity
@@ -213,6 +256,10 @@ def connect_device_only(
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     with _connector_session_lock(root):
         identity = ensure_device(root, origin, alias, approval)
+        existing = _restore_existing_project(root, identity)
+        if existing is not None:
+            status("Restored an existing Cloud project on this device.")
+            return existing
         status("Use Add Project in Cloud Devices after Online appears.")
         try:
             try:
