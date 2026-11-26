@@ -790,9 +790,14 @@ Use `wait` instead of `discover` when the owner is still preparing
 the request artifact. It checks live owner, child and tag identities
 at each poll, and repeats those checks when the artifact appears.
 Only the absence of the exact expected name in a complete listing is
-retryable: at most 30 polls, five seconds between unsuccessful polls.
+retryable for artifact discovery: at most 30 polls, five seconds between unsuccessful polls.
 Expired, duplicate, truncated, changed or otherwise inconsistent
-evidence and API errors stop immediately. The caller must impose an
+evidence and API errors stop immediately. The production-shaped worker
+diagnostics also wait for a verified owner to resume from a known
+nonterminal job-boundary state: at most 12 polls, five seconds apart,
+per paired identity check. Each poll validates the exact owner, active
+worker and tag; no pending owner authorizes acceptance. Maintainer
+preflight still requires an immediately in-progress owner. The caller must impose an
 overall job timeout that includes API latency; the poll limit alone
 does not bound wall-clock time. Discovery and wait do not attest ZIP
 bytes. A future orchestration job must provide trusted expected input
@@ -846,6 +851,12 @@ its unique tag-scoped receipt ZIP, and compares the entire receipt against
 the independently regenerated expected value. All jobs have explicit
 timeouts. Rehearsal signatures and receipt checks do not authorize any
 publication or establish production draft, producer, protected-tag,
-registry or exclusive-writer acceptance. The tag metadata shape still
-requires an actual non-publishing run. No registry environment or
-production signing identity is used.
+registry or exclusive-writer acceptance. The integrated non-publishing tag transport, actual two-subject
+attestation verification and receipt round trip were accepted in
+[owner run 45753637083](https://github.com/oaslananka/kicad-mcp-pro/actions/runs/45753637083)
+and [worker run 45753660771](https://github.com/oaslananka/kicad-mcp-pro/actions/runs/45753660771)
+at source `cb93dd8e15624325bf68839b6ee7e2f6e93f6908`. The worker
+observed an owner `queued` transition and recovered; both runs
+succeeded and both ZIPs and signatures were independently verified
+([#1179 evidence](https://github.com/oaslananka/kicad-mcp-pro/issues/1179#issuecomment-7182409358)).
+No registry environment or production signing identity was used.

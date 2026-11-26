@@ -15,6 +15,7 @@ from scripts.check_release_family_inventory import _TAG
 from scripts.stage_draft_release_assets import _SHA, GitHubCLI, _valid_inputs
 
 _OWNER_PATH = ".github/workflows/publish-release.yml"
+_OWNER_RUN_MISMATCH = "workflow run is not the expected active main owner dispatch"
 # Only the reviewed personal repository owner may initiate or re-run
 # a release-authorizing workflow_dispatch; repository write access is broader.
 _TRUSTED_DISPATCH_OWNER = {"oaslananka/kicad-mcp-pro": "oaslananka"}
@@ -90,15 +91,15 @@ def verify_tag_protection(client: OwnerClient, repo: str, tag: str) -> None:
         raise ValueError("tag protection update or deletion rule missing")
 
 
-def verify_active_owner_run(
+def _owner_run_status(
     client: OwnerRunClient,
     *,
     repo: str,
     owner_run_id: int,
     owner_run_attempt: int,
     owner_head_sha: str,
-) -> None:
-    """Check active production owner identity without draft or ruleset access."""
+) -> str:
+    """Validate exact production owner identity and a known nonterminal status."""
     expected_actor = _TRUSTED_DISPATCH_OWNER.get(repo)
     if expected_actor is None:
         raise ValueError("no trusted owner dispatch principal for repository")
@@ -147,10 +148,37 @@ def verify_active_owner_run(
         or run.get("head_sha") != owner_head_sha
         or type(run.get("run_attempt")) is not int
         or run["run_attempt"] != owner_run_attempt
-        or run.get("status") != "in_progress"
+    ):
+        raise ValueError(_OWNER_RUN_MISMATCH)
+    status = run.get("status")
+    if (
+        status not in ("in_progress", "queued", "requested", "waiting", "pending")
         or run.get("conclusion") is not None
     ):
-        raise ValueError("workflow run is not the expected active main owner dispatch")
+        raise ValueError(_OWNER_RUN_MISMATCH)
+    return str(status)
+
+
+def verify_active_owner_run(
+    client: OwnerRunClient,
+    *,
+    repo: str,
+    owner_run_id: int,
+    owner_run_attempt: int,
+    owner_head_sha: str,
+) -> None:
+    """Maintainer preflight requires an immediately active production owner."""
+    if (
+        _owner_run_status(
+            client,
+            repo=repo,
+            owner_run_id=owner_run_id,
+            owner_run_attempt=owner_run_attempt,
+            owner_head_sha=owner_head_sha,
+        )
+        != "in_progress"
+    ):
+        raise ValueError(_OWNER_RUN_MISMATCH)
 
 
 def verify_owner(

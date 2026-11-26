@@ -11,6 +11,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -20,7 +22,7 @@ from scripts.check_draft_release_owner import (
     _REPOSITORY_ID,
     OwnerRunClient,
     _exact_id,
-    verify_active_owner_run,
+    _owner_run_status,
 )
 from scripts.check_signed_draft_asset import AttestationVerifier
 from scripts.check_signed_python_handoff import (
@@ -134,17 +136,25 @@ def _check_child(run: object, identity: DispatchIdentity) -> None:
 
 
 def _check_live(client: DispatchClient, identity: DispatchIdentity) -> None:
+    """Wait for a verified owner to resume, without accepting pending authority."""
     handoff = identity.handoff
-    verify_active_owner_run(
-        client,
-        repo=REPOSITORY,
-        owner_run_id=handoff.owner_run_id,
-        owner_run_attempt=handoff.owner_attempt,
-        owner_head_sha=handoff.source_commit,
-    )
-    _check_child(client.workflow_run(REPOSITORY, identity.worker_run_id), identity)
-    if client.tag_commit(REPOSITORY, handoff.tag) != handoff.source_commit:
-        raise ValueError("worker tag source mismatch")
+    for poll in range(12):
+        status = _owner_run_status(
+            client,
+            repo=REPOSITORY,
+            owner_run_id=handoff.owner_run_id,
+            owner_run_attempt=handoff.owner_attempt,
+            owner_head_sha=handoff.source_commit,
+        )
+        _check_child(client.workflow_run(REPOSITORY, identity.worker_run_id), identity)
+        if client.tag_commit(REPOSITORY, handoff.tag) != handoff.source_commit:
+            raise ValueError("worker tag source mismatch")
+        if status == "in_progress":
+            return
+        print(f"Python handoff: owner status {status} (poll {poll + 1}/12)", file=sys.stderr)
+        if poll < 11:
+            time.sleep(5)
+    raise ValueError("Python handoff owner transition timed out")
 
 
 def verify_dispatch_binding(
