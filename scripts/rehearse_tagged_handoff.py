@@ -404,6 +404,19 @@ def _prepare_request(client: DeliveryClient, identity: Identity, directory: Path
         (output / name).write_bytes(data)
 
 
+def _verify_downloaded(
+    client: DeliveryClient, identity: Identity, args: argparse.Namespace, *, worker: bool
+) -> None:
+    if args.archive is None or args.artifact_id is None:
+        raise ValueError("exact downloaded artifact ID and ZIP required")
+    result = (
+        verify_request(client, GitHubAttestationCLI(), identity, args.artifact_id, args.archive)
+        if worker
+        else verify_receipt(client, identity, args.artifact_id, args.archive)
+    )
+    print(result.decode(), end="")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -444,16 +457,7 @@ def main() -> int:
             metadata = wait_request(client, identity) if worker else wait_receipt(client, identity)
             print(metadata["id"])
         else:
-            if args.archive is None or args.artifact_id is None:
-                raise ValueError("exact downloaded artifact ID and ZIP required")
-            result = (
-                verify_request(
-                    client, GitHubAttestationCLI(), identity, args.artifact_id, args.archive
-                )
-                if worker
-                else verify_receipt(client, identity, args.artifact_id, args.archive)
-            )
-            print(result.decode(), end="")
+            _verify_downloaded(client, identity, args, worker=worker)
     except (ValueError, OSError) as exc:
         parser.exit(2, f"tagged rehearsal: FAIL: {exc}\n")
     return 0
