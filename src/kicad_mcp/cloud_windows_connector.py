@@ -851,21 +851,86 @@ def _notify_owner_reapproval(
         )
 
 
-async def run_connector(
-    *,
-    stop: asyncio.Event,
-    drain: asyncio.Event | None = None,
-    session_runner: Callable[..., Awaitable[HandshakeReceipt]] = execute_owner_managed_read_session,
-    status_callback: Callable[[str], None] | None = None,
-    allow_native_drc: bool = False,
-    allow_native_write: bool = False,
-    issuer_key: Ed25519PublicKey | None = None,
-) -> None:
-    """Local-only execution core; supervisor controls process startup/shutdown.
+def _draining(drain: asyncio.Event | None) -> bool:
+    return drain is not None and drain.is_set()
 
-    No incoming listener; only an authenticated outbound device session.
-    Session restarts are rate-limited, even after clean Cloud disconnects.
-    """
+
+async def _verify_foreground_inventory(
+    active: WindowsActiveConnector,
+    stop: asyncio.Event,
+    drain: asyncio.Event | None,
+    status_callback: Callable[[str], None] | None,
+    session_runner: Callable[..., Awaitable[HandshakeReceipt]],
+) -> bool:
+    if status_callback is None or session_runner is not execute_owner_managed_read_session:
+        return True
+    from kicad_mcp.cloud_device_inventory_status import inspect_inventory
+    from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+    project, key = active.project, active.signing_key
+    if project.origin != _KICAD_CLOUD_ORIGIN:
+        return True
+
+    def current() -> bool:
+        return not stop.is_set() and not _draining(drain) and _current_authorization(project)
+
+    state = await asyncio.to_thread(
+        inspect_inventory,
+        project.origin,
+        project.owner_sub,
+        project.device_id,
+        project.project_id,
+        key,
+    )
+    if not current():
+        return False
+    if state == "project_missing":
+        raise CloudOwnerReapprovalRequiredError("Cloud project was removed.")
+    if state in {"active", "project_disabled"}:
+        from kicad_mcp.cloud_windows_scoped_projects import migrate_legacy
+
+        def migration_authorized(
+            target: WindowsRegisteredProject = project,
+        ) -> bool:
+            return not stop.is_set() and _current_authorization(target)
+
+        await asyncio.to_thread(
+            migrate_legacy, project, key, migration_authorized, project.project_id
+        )
+        if not current():
+            return False
+    return True
+
+
+async def _wait_connector_retry(
+    stop: asyncio.Event, drain: asyncio.Event | None, delay: float
+) -> None:
+    if drain is None:
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=delay)
+        except TimeoutError:
+            pass
+    else:
+        stopping = asyncio.create_task(stop.wait())
+        draining = asyncio.create_task(drain.wait())
+        try:
+            await asyncio.wait(
+                {stopping, draining}, timeout=delay, return_when=asyncio.FIRST_COMPLETED
+            )
+        finally:
+            for waiter in (stopping, draining):
+                waiter.cancel()
+            await asyncio.gather(stopping, draining, return_exceptions=True)
+
+
+def _validate_run_options(
+    drain: asyncio.Event | None,
+    session_runner: Callable[..., Awaitable[HandshakeReceipt]],
+    status_callback: Callable[[str], None] | None,
+    allow_native_drc: bool,
+    allow_native_write: bool,
+    issuer_key: Ed25519PublicKey | None,
+) -> None:
     if (
         os.name != "nt"
         or (
@@ -882,97 +947,88 @@ async def run_connector(
         )
     ):
         raise LocalApprovalDeniedError(_DENIED)
+
+
+async def _run_connector_sessions(
+    stop: asyncio.Event,
+    drain: asyncio.Event | None,
+    session_runner: Callable[..., Awaitable[HandshakeReceipt]],
+    status_callback: Callable[[str], None] | None,
+    allow_native_drc: bool,
+    allow_native_write: bool,
+    issuer_key: Ed25519PublicKey | None,
+) -> None:
     failures = 0
-    with owner_connector_instance(reuse_if_held=True):
-        while not stop.is_set() and (drain is None or not drain.is_set()):
-            active = _active()
-            if active is None:
-                return
-            project, selected, key = active.project, active.selected, active.signing_key
+    while not stop.is_set() and not _draining(drain):
+        active = _active()
+        if active is None:
+            return
+        project, selected, key = active.project, active.selected, active.signing_key
 
-            if status_callback is not None and session_runner is execute_owner_managed_read_session:
-                from kicad_mcp.cloud_device_inventory_status import inspect_inventory
-                from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+        if not await _verify_foreground_inventory(
+            active, stop, drain, status_callback, session_runner
+        ):
+            return
+        _notify_connection_attempt(status_callback, failures)
+        runner_for_session = _session_runner_with_status(session_runner, status_callback, drain)
 
-                if project.origin == _KICAD_CLOUD_ORIGIN:
-                    state = await asyncio.to_thread(
-                        inspect_inventory,
-                        project.origin,
-                        project.owner_sub,
-                        project.device_id,
-                        project.project_id,
-                        key,
-                    )
-                    if (
-                        stop.is_set()
-                        or (drain is not None and drain.is_set())
-                        or not _current_authorization(project)
-                    ):
-                        return
-                    if state == "project_missing":
-                        raise CloudOwnerReapprovalRequiredError("Cloud project was removed.")
-                    if state in {"active", "project_disabled"}:
-                        from kicad_mcp.cloud_windows_scoped_projects import migrate_legacy
-
-                        def migration_authorized(
-                            target: WindowsRegisteredProject = project,
-                        ) -> bool:
-                            return not stop.is_set() and _current_authorization(target)
-
-                        await asyncio.to_thread(
-                            migrate_legacy, project, key, migration_authorized, project.project_id
-                        )
-                        if (
-                            stop.is_set()
-                            or (drain is not None and drain.is_set())
-                            or not _current_authorization(project)
-                        ):
-                            return
-            _notify_connection_attempt(status_callback, failures)
-            runner_for_session = _session_runner_with_status(session_runner, status_callback, drain)
-
-            session_started = time.monotonic()
-            try:
-                result = await _attempt_authorized_session(
-                    project,
-                    selected,
-                    key,
-                    runner_for_session,
-                    stop,
-                    allow_native_drc=allow_native_drc,
-                    allow_native_write=allow_native_write,
-                    issuer_key=issuer_key,
-                )
-            except CloudOwnerReapprovalRequiredError:
-                if drain is not None and drain.is_set():
-                    return
-                _notify_owner_reapproval(status_callback, project)
-                raise
-            if result is None or (drain is not None and drain.is_set()):
-                return
-            failures = _next_failure_count(result, failures, status_callback)
-            delay = _session_retry_delay(
-                result,
-                time.monotonic() - session_started,
-                failures,
-                secrets.randbelow(1001) / 1000,
+        session_started = time.monotonic()
+        try:
+            result = await _attempt_authorized_session(
+                project,
+                selected,
+                key,
+                runner_for_session,
+                stop,
+                allow_native_drc=allow_native_drc,
+                allow_native_write=allow_native_write,
+                issuer_key=issuer_key,
             )
-            if drain is None:
-                try:
-                    await asyncio.wait_for(stop.wait(), timeout=delay)
-                except TimeoutError:
-                    pass
-            else:
-                stopping = asyncio.create_task(stop.wait())
-                draining = asyncio.create_task(drain.wait())
-                try:
-                    await asyncio.wait(
-                        {stopping, draining}, timeout=delay, return_when=asyncio.FIRST_COMPLETED
-                    )
-                finally:
-                    for waiter in (stopping, draining):
-                        waiter.cancel()
-                    await asyncio.gather(stopping, draining, return_exceptions=True)
+        except CloudOwnerReapprovalRequiredError:
+            if _draining(drain):
+                return
+            _notify_owner_reapproval(status_callback, project)
+            raise
+        if result is None or _draining(drain):
+            return
+        failures = _next_failure_count(result, failures, status_callback)
+        delay = _session_retry_delay(
+            result,
+            time.monotonic() - session_started,
+            failures,
+            secrets.randbelow(1001) / 1000,
+        )
+        await _wait_connector_retry(stop, drain, delay)
+
+
+async def run_connector(
+    *,
+    stop: asyncio.Event,
+    drain: asyncio.Event | None = None,
+    session_runner: Callable[..., Awaitable[HandshakeReceipt]] = execute_owner_managed_read_session,
+    status_callback: Callable[[str], None] | None = None,
+    allow_native_drc: bool = False,
+    allow_native_write: bool = False,
+    issuer_key: Ed25519PublicKey | None = None,
+) -> None:
+    """Local-only execution core; supervisor controls process startup/shutdown.
+
+    No incoming listener; only an authenticated outbound device session.
+    Session restarts are rate-limited, even after clean Cloud disconnects.
+    """
+    _validate_run_options(
+        drain, session_runner, status_callback, allow_native_drc, allow_native_write, issuer_key
+    )
+    with owner_connector_instance(reuse_if_held=True):
+        await _run_connector_sessions(
+            stop,
+            drain,
+            session_runner,
+            status_callback,
+            allow_native_drc,
+            allow_native_write,
+            issuer_key,
+        )
 
 
 def main(argv: list[str] | None = None) -> int:

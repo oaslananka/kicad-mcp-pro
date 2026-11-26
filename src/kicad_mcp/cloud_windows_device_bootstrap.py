@@ -370,6 +370,81 @@ def restore_existing_project(device: WindowsEnrolledDevice) -> bool:
     return False
 
 
+def _restore_device_projects(
+    device: WindowsEnrolledDevice, status_callback: Callable[[str], None]
+) -> bool:
+    from kicad_mcp.cloud_windows_connector import selected_project
+    from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+    if device.origin == _KICAD_CLOUD_ORIGIN:
+        from kicad_mcp.cloud_legacy_project_migration import legacy_candidates
+        from kicad_mcp.cloud_windows_scoped_projects import migrate_legacy
+
+        if legacy_candidates():
+            migrate_legacy(
+                device,
+                verified_device_key(device),
+                lambda: selected_device() == device and selected_project() is None,
+                None,
+            )
+        if restore_existing_project(device):
+            status_callback("Restored an existing Cloud project on this device.")
+            return True
+    return False
+
+
+async def _wait_device_retry(delay: float, drain: asyncio.Event | None) -> None:
+    if drain is None:
+        await asyncio.sleep(delay)
+    else:
+        try:
+            await asyncio.wait_for(drain.wait(), timeout=delay)
+        except TimeoutError:
+            pass
+
+
+async def _attempt_device_session(
+    device: WindowsEnrolledDevice,
+    status_callback: Callable[[str], None],
+    drain: asyncio.Event | None,
+    failures: int,
+) -> int | None:
+    from kicad_mcp.cloud_windows_connector import (
+        CloudOwnerReapprovalRequiredError,
+        _is_remote_policy_rejection,
+    )
+
+    try:
+        await execute_owner_folder_only_session(
+            origin=device.origin,
+            trusted_origin=device.origin,
+            owner_sub=device.owner_sub,
+            device_id=device.device_id,
+            signing_key=verified_device_key(device),
+            folder_service_factory=lambda _receipt: _folder_service(device),
+            on_ready=lambda _receipt: status_callback(
+                "Cloud acknowledged this device's signed session"
+            ),
+            on_activity=status_callback,
+            drain=drain,
+        )
+        failures = 0
+    except (OSError, ValueError) as exc:
+        if drain is not None and drain.is_set():
+            return None
+        if _is_remote_policy_rejection(exc):
+            raise CloudOwnerReapprovalRequiredError(
+                "Cloud denied the signed device session."
+            ) from exc
+        failures += 1
+        status_callback("Connection interrupted; retrying")
+    return failures
+
+
+def _device_draining(drain: asyncio.Event | None) -> bool:
+    return drain is not None and drain.is_set()
+
+
 async def run_device_only(
     device: WindowsEnrolledDevice,
     *,
@@ -378,73 +453,62 @@ async def run_device_only(
 ) -> None:
     """Reuse the owner key; retry signed network sessions until a folder is bound."""
     from kicad_mcp.cloud_windows_connector import (
-        CloudOwnerReapprovalRequiredError,
-        _is_remote_policy_rejection,
         selected_project,
     )
 
     with owner_connector_instance(reuse_if_held=True):
-        if drain is not None and drain.is_set():
+        if _device_draining(drain):
             return
-        from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
-
-        if device.origin == _KICAD_CLOUD_ORIGIN:
-            from kicad_mcp.cloud_legacy_project_migration import legacy_candidates
-            from kicad_mcp.cloud_windows_scoped_projects import migrate_legacy
-
-            if legacy_candidates():
-                migrate_legacy(
-                    device,
-                    verified_device_key(device),
-                    lambda: selected_device() == device and selected_project() is None,
-                    None,
-                )
-            if restore_existing_project(device):
-                status_callback("Restored an existing Cloud project on this device.")
-                return
+        if _restore_device_projects(device, status_callback):
+            return
         failures = 0
-        while selected_project() is None and (drain is None or not drain.is_set()):
+        while selected_project() is None and not _device_draining(drain):
             if selected_device() != device:
                 raise LocalApprovalDeniedError(_DENIED)
             status_callback("Connecting")
-            try:
-                await execute_owner_folder_only_session(
-                    origin=device.origin,
-                    trusted_origin=device.origin,
-                    owner_sub=device.owner_sub,
-                    device_id=device.device_id,
-                    signing_key=verified_device_key(device),
-                    folder_service_factory=lambda _receipt: _folder_service(device),
-                    on_ready=lambda _receipt: status_callback(
-                        "Cloud acknowledged this device's signed session"
-                    ),
-                    on_activity=status_callback,
-                    drain=drain,
-                )
-                failures = 0
-            except (OSError, ValueError) as exc:
-                if drain is not None and drain.is_set():
-                    return
-                if _is_remote_policy_rejection(exc):
-                    raise CloudOwnerReapprovalRequiredError(
-                        "Cloud denied the signed device session."
-                    ) from exc
-                failures += 1
-                status_callback("Connection interrupted; retrying")
-            if drain is not None and drain.is_set():
+            next_failures = await _attempt_device_session(device, status_callback, drain, failures)
+            if next_failures is None:
+                return
+            failures = next_failures
+            if _device_draining(drain):
                 return
             if selected_project() is None:
                 delay = min(20, 1 + failures * 2)
-                if drain is None:
-                    await asyncio.sleep(delay)
-                else:
-                    try:
-                        await asyncio.wait_for(drain.wait(), timeout=delay)
-                    except TimeoutError:
-                        pass
-        if drain is not None and drain.is_set():
+                await _wait_device_retry(delay, drain)
+        if _device_draining(drain):
             return
     status_callback("Project selected in Cloud; switching to local KiCad MCP tools")
+
+
+def _archive_detached_markers(
+    project: WindowsRegisteredProject,
+    slots: tuple[tuple[str, str, str], ...],
+    saved: dict[tuple[str, str], bytes | None],
+) -> None:
+    for slot, part, archive in slots:
+        old = saved[(slot, part)]
+        if read_credential(slot, part) != old:
+            raise LocalApprovalDeniedError(_DENIED)
+        if old is not None:
+            if read_credential(project.registration_id, archive) is None:
+                create_credential(project.registration_id, archive, old)
+            if read_credential(project.registration_id, archive) != old:
+                raise LocalApprovalDeniedError(_DENIED)
+
+
+def _remove_detached_markers(
+    device: WindowsEnrolledDevice,
+    slots: tuple[tuple[str, str, str], ...],
+    saved: dict[tuple[str, str], bytes | None],
+) -> None:
+    from kicad_mcp.cloud_windows_credentials import delete_credential
+
+    for slot, part, _ in slots:
+        old = saved[(slot, part)]
+        if selected_device() != device or read_credential(slot, part) != old:
+            raise LocalApprovalDeniedError(_DENIED)
+        if old is not None and not delete_credential(slot, part):
+            raise LocalApprovalDeniedError(_DENIED)
 
 
 def detach_missing_project(
@@ -459,7 +523,6 @@ def detach_missing_project(
     deletion leaves the same selected project available for another diagnosis.
     """
     from kicad_mcp import cloud_windows_connector as connector
-    from kicad_mcp.cloud_windows_credentials import delete_credential
 
     if (
         selected_device() != device
@@ -490,21 +553,8 @@ def detach_missing_project(
         raise LocalApprovalDeniedError(_DENIED)
     if selected_device() != device or connector.selected_project() != project:
         raise LocalApprovalDeniedError(_DENIED)
-    for slot, part, archive in slots:
-        old = saved[(slot, part)]
-        if read_credential(slot, part) != old:
-            raise LocalApprovalDeniedError(_DENIED)
-        if old is not None:
-            if read_credential(project.registration_id, archive) is None:
-                create_credential(project.registration_id, archive, old)
-            if read_credential(project.registration_id, archive) != old:
-                raise LocalApprovalDeniedError(_DENIED)
-    for slot, part, _ in slots:
-        old = saved[(slot, part)]
-        if selected_device() != device or read_credential(slot, part) != old:
-            raise LocalApprovalDeniedError(_DENIED)
-        if old is not None and not delete_credential(slot, part):
-            raise LocalApprovalDeniedError(_DENIED)
+    _archive_detached_markers(project, slots, saved)
+    _remove_detached_markers(device, slots, saved)
     if selected_device() != device or connector.selected_project() is not None:
         raise LocalApprovalDeniedError(_DENIED)
 
@@ -546,17 +596,9 @@ def _load_switch_identity(record_id: str, origin: str) -> WindowsEnrolledDevice:
     return device
 
 
-def _finish_switch(
-    previous: WindowsEnrolledDevice,
-    replacement: WindowsEnrolledDevice,
-    saved: dict[tuple[str, str], bytes | None],
-    journal: bytes,
+def _verify_switch_markers(
+    slots: tuple[tuple[str, str, str], ...], saved: dict[tuple[str, str], bytes | None], new: bytes
 ) -> None:
-    from kicad_mcp import cloud_windows_connector as connector
-    from kicad_mcp.cloud_windows_credentials import delete_credential
-
-    slots = _switch_slots()
-    new = _device_marker_payload(replacement)
     # Check every marker before changing any. Only the old bytes, absence, or
     # the exact committed new device marker are legitimate interruption states.
     for slot, part, _ in slots:
@@ -566,6 +608,16 @@ def _finish_switch(
             allowed += (new,)
         if current not in allowed:
             raise LocalApprovalDeniedError(_DENIED)
+
+
+def _remove_switch_markers(
+    slots: tuple[tuple[str, str, str], ...],
+    saved: dict[tuple[str, str], bytes | None],
+    new: bytes,
+    journal: bytes,
+) -> None:
+    from kicad_mcp.cloud_windows_credentials import delete_credential
+
     for slot, part, _ in reversed(slots):
         if read_credential(_DEVICE_SELECTION_SLOT, "recovery_switch") != journal:
             raise LocalApprovalDeniedError(_DENIED)
@@ -576,11 +628,13 @@ def _finish_switch(
             current != saved[(slot, part)] or not delete_credential(slot, part)
         ):
             raise LocalApprovalDeniedError(_DENIED)
-    remember_device(replacement)
-    if selected_device() != replacement or connector.selected_project() is not None:
-        raise LocalApprovalDeniedError(_DENIED)
-    if read_credential(slots[2][0], slots[2][1]) is not None:
-        raise LocalApprovalDeniedError(_DENIED)
+
+
+def _clear_switch_journals(
+    previous: WindowsEnrolledDevice, replacement: WindowsEnrolledDevice, journal: bytes
+) -> None:
+    from kicad_mcp.cloud_windows_credentials import delete_credential
+
     pending = read_credential(previous.record_id, "recovery_pending")
     if pending is not None:
         data = json.loads(pending, object_pairs_hook=_unique)
@@ -592,6 +646,26 @@ def _finish_switch(
         raise LocalApprovalDeniedError(_DENIED)
     if not delete_credential(_DEVICE_SELECTION_SLOT, "recovery_switch"):
         raise LocalApprovalDeniedError(_DENIED)
+
+
+def _finish_switch(
+    previous: WindowsEnrolledDevice,
+    replacement: WindowsEnrolledDevice,
+    saved: dict[tuple[str, str], bytes | None],
+    journal: bytes,
+) -> None:
+    from kicad_mcp import cloud_windows_connector as connector
+
+    slots = _switch_slots()
+    new = _device_marker_payload(replacement)
+    _verify_switch_markers(slots, saved, new)
+    _remove_switch_markers(slots, saved, new, journal)
+    remember_device(replacement)
+    if selected_device() != replacement or connector.selected_project() is not None:
+        raise LocalApprovalDeniedError(_DENIED)
+    if read_credential(slots[2][0], slots[2][1]) is not None:
+        raise LocalApprovalDeniedError(_DENIED)
+    _clear_switch_journals(previous, replacement, journal)
 
 
 def resume_device_switch(origin: str, *, stop_previous: Callable[[], bool] | None = None) -> bool:
@@ -668,21 +742,10 @@ def resume_owner_recovery(origin: str, stop_previous: Callable[[], bool]) -> boo
     return True
 
 
-def repair_device_only(
-    *,
+def _repair_preflight(
     origin: str,
-    alias: str,
-    approval: Callable[[str, str, str], None],
-    stop_previous: Callable[[], bool],
-) -> WindowsEnrolledDevice:
-    """Replace only the device selection after browser approval.
-
-    Caller holds the owner connector mutex. Old project markers are archived,
-    not registered against the replacement. A later Add Project is explicit.
-    """
+) -> tuple[WindowsEnrolledDevice, dict[tuple[str, str], bytes | None]]:
     from kicad_mcp import cloud_windows_connector as connector
-    from kicad_mcp.cloud_windows_credentials import delete_credential
-    from kicad_mcp.cloud_windows_enrollment import enroll_windows_device
 
     project = connector.selected_project()
     device = selected_device()
@@ -716,14 +779,15 @@ def repair_device_only(
         )
     ):
         raise LocalApprovalDeniedError(_DENIED)
-    replacement = enroll_windows_device(
-        origin=origin,
-        alias=alias,
-        owner_approval=approval,
-        recovery_device_id=previous.device_id,
-        recovery_owner_sub=previous.owner_sub,
-        recovery_record_id=previous.record_id,
-    )
+    return previous, saved
+
+
+def _verify_replacement(
+    previous: WindowsEnrolledDevice,
+    replacement: WindowsEnrolledDevice,
+    origin: str,
+    stop_previous: Callable[[], bool],
+) -> None:
     if (
         replacement.origin != origin
         or replacement.owner_sub != previous.owner_sub
@@ -740,6 +804,14 @@ def repair_device_only(
     )
     if verified.fingerprint != replacement.fingerprint or not stop_previous():
         raise LocalApprovalDeniedError(_DENIED)
+
+
+def _archive_and_record_switch(
+    previous: WindowsEnrolledDevice,
+    replacement: WindowsEnrolledDevice,
+    slots: tuple[tuple[str, str, str], ...],
+    saved: dict[tuple[str, str], bytes | None],
+) -> bytes:
     if any(read_credential(slot, part) != saved[(slot, part)] for slot, part, _ in slots):
         raise LocalApprovalDeniedError(_DENIED)
     for slot, part, archive in slots:
@@ -763,27 +835,71 @@ def repair_device_only(
         sort_keys=True,
     ).encode()
     create_credential(_DEVICE_SELECTION_SLOT, "recovery_switch", journal)
+    return journal
+
+
+def _restore_prior_markers(
+    slots: tuple[tuple[str, str, str], ...],
+    saved: dict[tuple[str, str], bytes | None],
+    new_marker: bytes,
+) -> None:
+
+    # Only restore our exact prior markers; never overwrite a foreign change.
+    for slot, part, _ in slots:
+        _restore_prior_marker(slot, part, saved[(slot, part)], new_marker)
+
+
+def _restore_prior_marker(slot: str, part: str, old: bytes | None, new_marker: bytes) -> None:
+    from kicad_mcp.cloud_windows_credentials import delete_credential
+
+    current = read_credential(slot, part)
+    if slot == _DEVICE_SELECTION_SLOT and current == new_marker:
+        if not delete_credential(slot, part):
+            raise LocalApprovalDeniedError(_DENIED) from None
+        current = None
+    if current == old:
+        return
+    if current is not None:
+        raise LocalApprovalDeniedError(_DENIED) from None
+    if old is not None:
+        create_credential(slot, part, old)
+        if read_credential(slot, part) != old:
+            raise LocalApprovalDeniedError(_DENIED) from None
+
+
+def repair_device_only(
+    *,
+    origin: str,
+    alias: str,
+    approval: Callable[[str, str, str], None],
+    stop_previous: Callable[[], bool],
+) -> WindowsEnrolledDevice:
+    """Replace only the device selection after browser approval.
+
+    Caller holds the owner connector mutex. Old project markers are archived,
+    not registered against the replacement. A later Add Project is explicit.
+    """
+    from kicad_mcp import cloud_windows_connector as connector
+    from kicad_mcp.cloud_windows_enrollment import enroll_windows_device
+
+    previous, saved = _repair_preflight(origin)
+    slots = _switch_slots()
+    replacement = enroll_windows_device(
+        origin=origin,
+        alias=alias,
+        owner_approval=approval,
+        recovery_device_id=previous.device_id,
+        recovery_owner_sub=previous.owner_sub,
+        recovery_record_id=previous.record_id,
+    )
+    _verify_replacement(previous, replacement, origin, stop_previous)
+    journal = _archive_and_record_switch(previous, replacement, slots, saved)
     new_marker = _device_marker_payload(replacement)
     try:
         _finish_switch(previous, replacement, saved, journal)
     except Exception:
         if selected_device() == replacement and connector.selected_project() is None:
             raise
-        # Only restore our exact prior markers; never overwrite a foreign change.
-        for slot, part, _ in slots:
-            old = saved[(slot, part)]
-            current = read_credential(slot, part)
-            if slot == _DEVICE_SELECTION_SLOT and current == new_marker:
-                if not delete_credential(slot, part):
-                    raise LocalApprovalDeniedError(_DENIED) from None
-                current = None
-            if current == old:
-                continue
-            if current is not None:
-                raise LocalApprovalDeniedError(_DENIED) from None
-            if old is not None:
-                create_credential(slot, part, old)
-                if read_credential(slot, part) != old:
-                    raise LocalApprovalDeniedError(_DENIED) from None
+        _restore_prior_markers(slots, saved, new_marker)
         raise
     return replacement

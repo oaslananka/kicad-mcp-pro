@@ -8,6 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from websockets.exceptions import WebSocketException
 
 from kicad_mcp import cloud_pair, cloud_pair_keys, cloud_posix_recovery
@@ -218,6 +219,50 @@ def _folder_service(root: Path, identity: Identity) -> BrowserFolderService:
     )
 
 
+async def _wait_retry(delay: float, drain: asyncio.Event | None) -> None:
+    if drain is None:
+        await asyncio.sleep(delay)
+    else:
+        try:
+            await asyncio.wait_for(drain.wait(), timeout=delay)
+        except TimeoutError:
+            pass
+
+
+async def _attempt_folder_session(
+    root: Path,
+    identity: Identity,
+    status: Callable[[str], None],
+    drain: asyncio.Event | None,
+    key: Ed25519PrivateKey,
+    failures: int,
+) -> int | None:
+    _, binding = identity
+    try:
+        await execute_owner_folder_only_session(
+            origin=binding["origin"],
+            trusted_origin=binding["origin"],
+            owner_sub=binding["ownerSub"],
+            device_id=binding["deviceId"],
+            signing_key=key,
+            folder_service_factory=lambda _: _folder_service(root, identity),
+            on_ready=lambda _: status("Cloud acknowledged this device's signed session"),
+            on_activity=status,
+            drain=drain,
+        )
+        failures = 0
+    except (OSError, ValueError, WebSocketException) as exc:
+        if drain is not None and drain.is_set():
+            return None
+        if _is_remote_policy_rejection(exc):
+            raise DeviceSessionRejectedError(
+                "Cloud denied the device session. Existing pairing was preserved."
+            ) from exc
+        failures += 1
+        status("Connection interrupted; retrying")
+    return failures
+
+
 async def _wait_for_project(
     root: Path,
     identity: Identity,
@@ -234,39 +279,15 @@ async def _wait_for_project(
             raise LocalApprovalDeniedError(_DENIED)
         key = _load_bound_owner_key(keyfile, binding["origin"], binding["deviceId"])
         status("Connecting")
-        try:
-            await execute_owner_folder_only_session(
-                origin=binding["origin"],
-                trusted_origin=binding["origin"],
-                owner_sub=binding["ownerSub"],
-                device_id=binding["deviceId"],
-                signing_key=key,
-                folder_service_factory=lambda _: _folder_service(root, identity),
-                on_ready=lambda _: status("Cloud acknowledged this device's signed session"),
-                on_activity=status,
-                drain=drain,
-            )
-            failures = 0
-        except (OSError, ValueError, WebSocketException) as exc:
-            if drain is not None and drain.is_set():
-                return None
-            if _is_remote_policy_rejection(exc):
-                raise DeviceSessionRejectedError(
-                    "Cloud denied the device session. Existing pairing was preserved."
-                ) from exc
-            failures += 1
-            status("Connection interrupted; retrying")
+        next_failures = await _attempt_folder_session(root, identity, status, drain, key, failures)
+        if next_failures is None:
+            return None
+        failures = next_failures
         if drain is not None and drain.is_set():
             return None
         if read_project(root, identity) is None:
             delay = min(20, 1 + failures * 2)
-            if drain is None:
-                await asyncio.sleep(delay)
-            else:
-                try:
-                    await asyncio.wait_for(drain.wait(), timeout=delay)
-                except TimeoutError:
-                    pass
+            await _wait_retry(delay, drain)
     return None
 
 

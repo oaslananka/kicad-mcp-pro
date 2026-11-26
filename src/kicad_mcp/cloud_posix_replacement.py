@@ -305,6 +305,18 @@ def _archive_old_project(root: Path, archive: Path, project: dict[str, str] | No
         _move_directory(root / "projects", archive / "projects")
 
 
+def _remove_pairing_secret(stage: Path) -> None:
+    # Do not retain the pairing code/secret after the new device is selected.
+    fd = cloud_pair_keys._open_owner_private_dir(stage / _APPROVED_FILE)
+    try:
+        if os.path.lexists(stage / _APPROVED_FILE):
+            cloud_pair_keys._read_private_json(stage, _APPROVED_FILE)
+            os.unlink(_APPROVED_FILE, dir_fd=fd)
+            os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def resume_switch(root: Path, origin: str) -> bool:
     """Resume only a recorded switch. Caller holds the owner session lock."""
     from kicad_mcp.cloud_managed_connector import _ENABLED_FILE, _FOREGROUND_FILE
@@ -345,15 +357,7 @@ def resume_switch(root: Path, origin: str) -> bool:
         raise LocalApprovalDeniedError(_DENIED)
     if cloud_posix_recovery._private_names(root / "projects"):
         raise LocalApprovalDeniedError(_DENIED)
-    # Do not retain the pairing code/secret after the new device is selected.
-    fd = cloud_pair_keys._open_owner_private_dir(stage / _APPROVED_FILE)
-    try:
-        if os.path.lexists(stage / _APPROVED_FILE):
-            cloud_pair_keys._read_private_json(stage, _APPROVED_FILE)
-            os.unlink(_APPROVED_FILE, dir_fd=fd)
-            os.fsync(fd)
-    finally:
-        os.close(fd)
+    _remove_pairing_secret(stage)
     _move_directory(stage, final)
     return True
 

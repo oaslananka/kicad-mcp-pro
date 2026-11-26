@@ -107,6 +107,44 @@ def _load_key(slot: str, *, may_create: bool) -> Ed25519PrivateKey:
     return loaded
 
 
+def _issue_challenge(
+    slot: str, origin: str, alias: str, private: Ed25519PrivateKey, der: bytes
+) -> bytes:
+    target = cloud_pair._origin(origin)
+    result = cloud_pair._post(
+        target,
+        "/api/v1/pairing/device/challenge",
+        {"alias": alias, "publicKeyDer": base64.b64encode(der).decode("ascii")},
+        201,
+    )
+    challenge, code, secret, fingerprint, expiry = cloud_pair._challenge(result, private)
+    url = origin + "/devices/pairing#challenge=" + challenge + "&code=" + code
+    if result.get("verificationUriComplete") not in (None, url):
+        raise WindowsEnrollmentError(_DENIED)
+    challenge_blob = _save(
+        slot,
+        _CHALLENGE,
+        {
+            "challenge": challenge,
+            "code": code,
+            "secret": secret,
+            "fingerprint": fingerprint,
+            "expiry": expiry,
+        },
+    )
+    return challenge_blob
+
+
+def _resume_bound_device(
+    slot: str, origin: str, pin: str, binding_blob: bytes
+) -> WindowsEnrolledDevice:
+    data = _document(binding_blob)
+    owner, device = data.get("ownerSub"), data.get("deviceId")
+    if not isinstance(owner, str) or not isinstance(device, str):
+        raise WindowsEnrollmentError(_DENIED)
+    return _finish_device_binding(slot, origin, owner, device, pin)
+
+
 def _finish_pending(
     slot: str,
     origin: str,
@@ -122,37 +160,13 @@ def _finish_pending(
     der = private.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
     pin = hashlib.sha256(der).hexdigest()
     if binding_blob is not None:
-        data = _document(binding_blob)
-        owner, device = data.get("ownerSub"), data.get("deviceId")
-        if not isinstance(owner, str) or not isinstance(device, str):
-            raise WindowsEnrollmentError(_DENIED)
-        return _finish_device_binding(slot, origin, owner, device, pin)
+        return _resume_bound_device(slot, origin, pin, binding_blob)
     target = cloud_pair._origin(origin)
     fresh = challenge_blob is None
     if fresh:
         if approved_blob is not None:
             raise WindowsEnrollmentError(_DENIED)
-        result = cloud_pair._post(
-            target,
-            "/api/v1/pairing/device/challenge",
-            {"alias": alias, "publicKeyDer": base64.b64encode(der).decode("ascii")},
-            201,
-        )
-        challenge, code, secret, fingerprint, expiry = cloud_pair._challenge(result, private)
-        url = origin + "/devices/pairing#challenge=" + challenge + "&code=" + code
-        if result.get("verificationUriComplete") not in (None, url):
-            raise WindowsEnrollmentError(_DENIED)
-        challenge_blob = _save(
-            slot,
-            _CHALLENGE,
-            {
-                "challenge": challenge,
-                "code": code,
-                "secret": secret,
-                "fingerprint": fingerprint,
-                "expiry": expiry,
-            },
-        )
+        challenge_blob = _issue_challenge(slot, origin, alias, private, der)
     if challenge_blob is None:
         raise WindowsEnrollmentError(_DENIED)
     challenge, code, secret, expiry = _challenge(challenge_blob, pin)
@@ -193,6 +207,45 @@ def _finish_pending(
     return _finish_device_binding(slot, origin, owner, device, pin)
 
 
+def _clear_pending_selection(device: WindowsEnrolledDevice, pointer: bytes) -> None:
+    slot = device.record_id
+    if selected_device() != device or read_credential(_DEVICE_SELECTION_SLOT, _POINTER) != pointer:
+        raise WindowsEnrollmentError(_DENIED)
+    for part in (_APPROVED, _CHALLENGE):
+        raw = read_credential(slot, part)
+        if raw is not None:
+            _remove(slot, part, raw)
+    _remove(_DEVICE_SELECTION_SLOT, _POINTER, pointer)
+
+
+def _select_pending_device(
+    origin: str,
+    alias: str,
+    approval: Callable[[str, str, str], None],
+    selected: WindowsEnrolledDevice | None,
+    pointer: bytes,
+) -> WindowsEnrolledDevice:
+    data = _document(pointer)
+    slot = data.get("recordId")
+    if (
+        set(data) != {"origin", "recordId"}
+        or data["origin"] != origin
+        or not isinstance(slot, str)
+        or not re.fullmatch(r"[0-9a-f]{32}", slot)
+        or slot in {"0" * 32, "1" * 32, "2" * 32, "f" * 32}
+    ):
+        raise WindowsEnrollmentError(_DENIED)
+    if selected is not None:
+        if selected.record_id != slot or selected.origin != origin:
+            raise WindowsEnrollmentError(_DENIED)
+        device = selected
+    else:
+        device = _finish_pending(slot, origin, alias, approval)
+        remember_device(device)
+    _clear_pending_selection(device, pointer)
+    return device
+
+
 def ensure_device(
     origin: str, alias: str, approval: Callable[[str, str, str], None]
 ) -> WindowsEnrolledDevice:
@@ -211,34 +264,7 @@ def ensure_device(
             pointer = _save(
                 _DEVICE_SELECTION_SLOT, _POINTER, {"origin": origin, "recordId": uuid4().hex}
             )
-        data = _document(pointer)
-        slot = data.get("recordId")
-        if (
-            set(data) != {"origin", "recordId"}
-            or data["origin"] != origin
-            or not isinstance(slot, str)
-            or not re.fullmatch(r"[0-9a-f]{32}", slot)
-            or slot in {"0" * 32, "1" * 32, "2" * 32, "f" * 32}
-        ):
-            raise WindowsEnrollmentError(_DENIED)
-        if selected is not None:
-            if selected.record_id != slot or selected.origin != origin:
-                raise WindowsEnrollmentError(_DENIED)
-            device = selected
-        else:
-            device = _finish_pending(slot, origin, alias, approval)
-            remember_device(device)
-        if (
-            selected_device() != device
-            or read_credential(_DEVICE_SELECTION_SLOT, _POINTER) != pointer
-        ):
-            raise WindowsEnrollmentError(_DENIED)
-        for part in (_APPROVED, _CHALLENGE):
-            raw = read_credential(slot, part)
-            if raw is not None:
-                _remove(slot, part, raw)
-        _remove(_DEVICE_SELECTION_SLOT, _POINTER, pointer)
-        return device
+        return _select_pending_device(origin, alias, approval, selected, pointer)
     except (OSError, ValueError, TypeError) as exc:
         if isinstance(exc, WindowsEnrollmentError):
             raise

@@ -154,6 +154,12 @@ def _approved_redeem(
         ):
             raise
         result = cloud_pair._post(target, endpoint, payload, 200)
+    return _verify_redeem_result(result, fingerprint, recovery, resume_initial)
+
+
+def _historical_receipt(
+    result: dict[str, object], recovery: dict[str, str] | None, resume_initial: bool
+) -> bool:
     if (
         recovery is not None
         and set(result) == {"recoveryDenied"}
@@ -179,6 +185,16 @@ def _approved_redeem(
         and set(result) == {"deviceId", "deviceFingerprint", "ownerSub", "initialReceipt"}
         and result["initialReceipt"] is True
     )
+    return historical
+
+
+def _verify_redeem_result(
+    result: dict[str, object],
+    fingerprint: str,
+    recovery: dict[str, str] | None,
+    resume_initial: bool,
+) -> tuple[str, str]:
+    historical = _historical_receipt(result, recovery, resume_initial)
     required = {"deviceId", "deviceFingerprint", "enabled", "ownerSub"}
     device_id = result.get("deviceId")
     owner_sub = result.get("ownerSub")
@@ -259,6 +275,50 @@ def _finish_device_binding(
     return WindowsEnrolledDevice(record_id, origin, owner_sub, device_id, fingerprint)
 
 
+def _recovery_journal(
+    blob: bytes, old_record: str, target: tuple[str, int, str], recovery: dict[str, str]
+) -> dict[str, str]:
+    from kicad_mcp.cloud_pair_keys import _unique
+
+    data = json.loads(blob, object_pairs_hook=_unique)
+    fields = {
+        "recordId",
+        "origin",
+        "deviceId",
+        "ownerSub",
+        "challenge",
+        "secret",
+        "fingerprint",
+    }
+    if (
+        not isinstance(data, dict)
+        or set(data) != fields
+        or not all(isinstance(value, str) for value in data.values())
+        or data["origin"] != target[2]
+        or data["deviceId"] != recovery["deviceId"]
+        or data["ownerSub"] != recovery["ownerSub"]
+        or not re.fullmatch(r"[0-9a-f]{32}", data["recordId"])
+        or data["recordId"] == old_record
+        or not cloud_pair._UUID.fullmatch(data["challenge"])
+        or not re.fullmatch(r"[A-Za-z0-9_-]{43}", data["secret"])
+        or not re.fullmatch(r"[0-9a-f]{64}", data["fingerprint"])
+    ):
+        raise WindowsEnrollmentError(_DENIED)
+    return data
+
+
+def _clear_refused_recovery(old_record: str, data: dict[str, str], blob: bytes, raw: bytes) -> None:
+    # Exact refusal proves no new binding for this request. Never clear
+    # an existing local binding or foreign journal.
+    if read_credential(data["recordId"], "binding") is not None:
+        raise WindowsEnrollmentError(_DENIED) from None
+    if read_credential(old_record, "recovery_pending") != blob:
+        raise WindowsEnrollmentError(_DENIED) from None
+    if not delete_credential(old_record, "recovery_pending"):
+        raise WindowsEnrollmentError(_DENIED) from None
+    _remove_unused_owner_credential(data["recordId"], raw)
+
+
 def _pending_recovery(
     old_record: str, target: tuple[str, int, str], recovery: dict[str, str]
 ) -> WindowsEnrolledDevice | None:
@@ -267,32 +327,7 @@ def _pending_recovery(
         return None
     raw: bytes | None = None
     try:
-        from kicad_mcp.cloud_pair_keys import _unique
-
-        data = json.loads(blob, object_pairs_hook=_unique)
-        fields = {
-            "recordId",
-            "origin",
-            "deviceId",
-            "ownerSub",
-            "challenge",
-            "secret",
-            "fingerprint",
-        }
-        if (
-            not isinstance(data, dict)
-            or set(data) != fields
-            or not all(isinstance(value, str) for value in data.values())
-            or data["origin"] != target[2]
-            or data["deviceId"] != recovery["deviceId"]
-            or data["ownerSub"] != recovery["ownerSub"]
-            or not re.fullmatch(r"[0-9a-f]{32}", data["recordId"])
-            or data["recordId"] == old_record
-            or not cloud_pair._UUID.fullmatch(data["challenge"])
-            or not re.fullmatch(r"[A-Za-z0-9_-]{43}", data["secret"])
-            or not re.fullmatch(r"[0-9a-f]{64}", data["fingerprint"])
-        ):
-            raise WindowsEnrollmentError(_DENIED)
+        data = _recovery_journal(blob, old_record, target, recovery)
         raw = read_credential(data["recordId"], "key")
         if raw is None:
             raise WindowsEnrollmentError(_DENIED)
@@ -316,21 +351,114 @@ def _pending_recovery(
             data["recordId"], target[2], owner, device_id, data["fingerprint"]
         )
     except WindowsRecoveryDeniedError:
-        # Exact refusal proves no new binding for this request. Never clear
-        # an existing local binding or foreign journal.
-        if raw is None or read_credential(data["recordId"], "binding") is not None:
+        if raw is None:
             raise WindowsEnrollmentError(_DENIED) from None
-        if read_credential(old_record, "recovery_pending") != blob:
-            raise WindowsEnrollmentError(_DENIED) from None
-        if not delete_credential(old_record, "recovery_pending"):
-            raise WindowsEnrollmentError(_DENIED) from None
-        _remove_unused_owner_credential(data["recordId"], raw)
+        _clear_refused_recovery(old_record, data, blob, raw)
         raise
     except (OSError, ValueError, TypeError) as exc:
         raise WindowsEnrollmentError(
             "Device recovery is incomplete. "
             "Saved recovery information was kept; retry the same setup."
         ) from exc
+
+
+def _recovery_selectors(
+    recovery_device_id: str | None, recovery_owner_sub: str | None
+) -> dict[str, str] | None:
+    recovery = None
+    if recovery_device_id is not None or recovery_owner_sub is not None:
+        if (
+            not isinstance(recovery_device_id, str)
+            or cloud_pair._UUID.fullmatch(recovery_device_id) is None
+            or not isinstance(recovery_owner_sub, str)
+            or not 1 <= len(recovery_owner_sub) <= 256
+            or any(ord(char) < 32 or ord(char) == 127 for char in recovery_owner_sub)
+        ):
+            raise WindowsEnrollmentError(_DENIED)
+        recovery = {"deviceId": recovery_device_id, "ownerSub": recovery_owner_sub}
+    return recovery
+
+
+def _resume_enrollment(
+    recovery_record_id: str | None, target: tuple[str, int, str], recovery: dict[str, str] | None
+) -> WindowsEnrolledDevice | None:
+    if recovery_record_id is not None:
+        if recovery is None or not re.fullmatch(r"[0-9a-f]{32}", recovery_record_id):
+            raise WindowsEnrollmentError(_DENIED)
+        resumed = _pending_recovery(recovery_record_id, target, recovery)
+        if resumed is not None:
+            return resumed
+    return None
+
+
+def _approve_enrollment(
+    record_id: str,
+    key: Ed25519PrivateKey,
+    target: tuple[str, int, str],
+    alias: str,
+    owner_approval: Callable[[str, str, str], None],
+) -> tuple[str, str, str]:
+    _same_key(record_id, key)
+    der = key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+    challenge_data = cloud_pair._post(
+        target,
+        "/api/v1/pairing/device/challenge",
+        {"alias": alias, "publicKeyDer": base64.b64encode(der).decode("ascii")},
+        201,
+    )
+    challenge, code, secret, fingerprint, expiry = cloud_pair._challenge(challenge_data, key)
+    url = f"{target[2]}/devices/pairing#challenge={challenge}&code={code}"
+    if challenge_data.get("verificationUriComplete") not in (None, url):
+        raise WindowsEnrollmentError(_DENIED)
+    cloud_pair._wait_for_owner_approval(
+        target,
+        challenge,
+        secret,
+        key,
+        expiry,
+        lambda: owner_approval(target[2] + "/devices/pairing", challenge, code),
+    )
+    # Check the credential again before redeem; do not trust a racing
+    # same-user vault write merely because the in-memory key still exists.
+    _same_key(record_id, key)
+    return challenge, secret, fingerprint
+
+
+def _recovery_journal_bytes(
+    record_id: str,
+    target: tuple[str, int, str],
+    recovery: dict[str, str],
+    challenge: str,
+    secret: str,
+    fingerprint: str,
+) -> bytes:
+    journal = json.dumps(
+        {
+            "recordId": record_id,
+            "origin": target[2],
+            **recovery,
+            "challenge": challenge,
+            "secret": secret,
+            "fingerprint": fingerprint,
+        },
+        sort_keys=True,
+    ).encode()
+    return journal
+
+
+def _persist_recovery_journal(record_id: str, journal: bytes) -> None:
+    create_credential(record_id, "recovery_pending", journal)
+    if read_credential(record_id, "recovery_pending") != journal:
+        raise WindowsEnrollmentError(_DENIED)
+
+
+def _remove_recovery_journal(record_id: str | None, journal: bytes | None) -> None:
+    if record_id is None or journal is None:
+        return
+    if read_credential(record_id, "recovery_pending") != journal:
+        raise WindowsEnrollmentError(_DENIED) from None
+    if not delete_credential(record_id, "recovery_pending"):
+        raise WindowsEnrollmentError(_DENIED) from None
 
 
 def enroll_windows_device(
@@ -350,24 +478,11 @@ def enroll_windows_device(
     redeemed device is never reported as fully configured if vault binding fails.
     """
     _validate_windows_device_name(alias)
-    recovery = None
-    if recovery_device_id is not None or recovery_owner_sub is not None:
-        if (
-            not isinstance(recovery_device_id, str)
-            or cloud_pair._UUID.fullmatch(recovery_device_id) is None
-            or not isinstance(recovery_owner_sub, str)
-            or not 1 <= len(recovery_owner_sub) <= 256
-            or any(ord(char) < 32 or ord(char) == 127 for char in recovery_owner_sub)
-        ):
-            raise WindowsEnrollmentError(_DENIED)
-        recovery = {"deviceId": recovery_device_id, "ownerSub": recovery_owner_sub}
+    recovery = _recovery_selectors(recovery_device_id, recovery_owner_sub)
     target = cloud_pair._origin(origin)
-    if recovery_record_id is not None:
-        if recovery is None or not re.fullmatch(r"[0-9a-f]{32}", recovery_record_id):
-            raise WindowsEnrollmentError(_DENIED)
-        resumed = _pending_recovery(recovery_record_id, target, recovery)
-        if resumed is not None:
-            return resumed
+    resumed = _resume_enrollment(recovery_record_id, target, recovery)
+    if resumed is not None:
+        return resumed
     record_id = uuid.uuid4().hex
     key = Ed25519PrivateKey.generate()
     key_blob = key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
@@ -378,48 +493,18 @@ def enroll_windows_device(
     try:
         create_credential(record_id, "key", key_blob)
         key_saved = True
-        _same_key(record_id, key)
-        der = key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
-        challenge_data = cloud_pair._post(
-            target,
-            "/api/v1/pairing/device/challenge",
-            {"alias": alias, "publicKeyDer": base64.b64encode(der).decode("ascii")},
-            201,
+        challenge, secret, fingerprint = _approve_enrollment(
+            record_id, key, target, alias, owner_approval
         )
-        challenge, code, secret, fingerprint, expiry = cloud_pair._challenge(challenge_data, key)
-        url = f"{target[2]}/devices/pairing#challenge={challenge}&code={code}"
-        if challenge_data.get("verificationUriComplete") not in (None, url):
-            raise WindowsEnrollmentError(_DENIED)
-        cloud_pair._wait_for_owner_approval(
-            target,
-            challenge,
-            secret,
-            key,
-            expiry,
-            lambda: owner_approval(target[2] + "/devices/pairing", challenge, code),
-        )
-        # Check the credential again before redeem; do not trust a racing
-        # same-user vault write merely because the in-memory key still exists.
-        _same_key(record_id, key)
         # Once a one-use redeem was *sent*, the server may have accepted it
         # even if the HTTPS response is lost. Preserve owner key for recovery.
         if recovery_record_id is not None and recovery is not None:
-            journal = json.dumps(
-                {
-                    "recordId": record_id,
-                    "origin": target[2],
-                    **recovery,
-                    "challenge": challenge,
-                    "secret": secret,
-                    "fingerprint": fingerprint,
-                },
-                sort_keys=True,
-            ).encode()
+            journal = _recovery_journal_bytes(
+                record_id, target, recovery, challenge, secret, fingerprint
+            )
             # A failed vault call may have persisted the journal; preserve its key.
             redeem_attempted = True
-            create_credential(recovery_record_id, "recovery_pending", journal)
-            if read_credential(recovery_record_id, "recovery_pending") != journal:
-                raise WindowsEnrollmentError(_DENIED)
+            _persist_recovery_journal(recovery_record_id, journal)
         redeem_attempted = True
         device_id, owner_sub = _approved_redeem(
             target,
@@ -434,11 +519,7 @@ def enroll_windows_device(
         return result
     except WindowsRecoveryDeniedError:
         # Exact authenticated refusal: no remote device was created.
-        if recovery_record_id is not None and journal is not None:
-            if read_credential(recovery_record_id, "recovery_pending") != journal:
-                raise WindowsEnrollmentError(_DENIED) from None
-            if not delete_credential(recovery_record_id, "recovery_pending"):
-                raise WindowsEnrollmentError(_DENIED) from None
+        _remove_recovery_journal(recovery_record_id, journal)
         redeem_attempted = False
         raise
     except cloud_pair.CloudPairingDeniedError as exc:

@@ -599,6 +599,15 @@ async def serve_authenticated_reads(
         dispatcher.close()
 
 
+def _folder_only_request(raw: object) -> tuple[str, dict[str, Any]]:
+    if not isinstance(raw, str) or _top_level_kind(raw) != _FOLDER_REQUEST_KIND:
+        raise CloudHandshakeDeniedError(_DENIED)
+    request = _read_strict_json(raw, _FOLDER_REQUEST_KIND)
+    if request.get("operation") not in ("choose", "list", "bind", "path"):
+        raise CloudHandshakeDeniedError(_DENIED)
+    return raw, request
+
+
 async def serve_owner_folder_only(
     socket: AuthenticatedReadSocket,
     receipt: HandshakeReceipt,
@@ -635,11 +644,7 @@ async def serve_owner_folder_only(
             return receipt
         if raw is None or (drain is not None and drain.is_set()):
             return receipt
-        if not isinstance(raw, str) or _top_level_kind(raw) != _FOLDER_REQUEST_KIND:
-            raise CloudHandshakeDeniedError(_DENIED)
-        request = _read_strict_json(raw, _FOLDER_REQUEST_KIND)
-        if request.get("operation") not in ("choose", "list", "bind", "path"):
-            raise CloudHandshakeDeniedError(_DENIED)
+        raw, request = _folder_only_request(raw)
         await _serve_folder_frame(socket, raw, folder_service, on_activity)
         if request["operation"] == "bind":
             # Whether bind succeeded is checked in the native validated reply.

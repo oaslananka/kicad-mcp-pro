@@ -1033,6 +1033,45 @@ def _trust_managed_edit(existing: WindowsRegisteredProject, origin: str, interac
         ) from None
 
 
+def _run_remote_connector(
+    origin: str, enable_write: bool, trusted_issuer: Ed25519PublicKey | None, allow_native_drc: bool
+) -> None:
+    from kicad_mcp.cloud_windows_connector import CloudOwnerReapprovalRequiredError, run_connector
+
+    def show_status(value: str) -> None:
+        _display_cloud_status(value, origin)
+
+    import asyncio
+
+    try:
+        if enable_write:
+            run = partial(
+                run_connector,
+                stop=asyncio.Event(),
+                status_callback=show_status,
+                allow_native_write=True,
+                issuer_key=trusted_issuer,
+                allow_native_drc=allow_native_drc,
+            )
+        elif allow_native_drc:
+            run = partial(
+                run_connector,
+                stop=asyncio.Event(),
+                status_callback=show_status,
+                allow_native_drc=True,
+            )
+        else:
+            run = partial(run_connector, stop=asyncio.Event(), status_callback=show_status)
+        asyncio.run(_windows_update_session(origin, run))
+    except CloudOwnerReapprovalRequiredError:
+        raise typer.Exit(code=3) from None
+    except KeyboardInterrupt:
+        if _BACKGROUND_CONNECTOR_HANDOFF.get() is not None:
+            typer.echo("\nForeground session closed; restoring previous read-only Connector.")
+        else:
+            typer.echo("\nDisconnected. Pairing stays saved; run cloud connect to return.")
+
+
 @cloud_app.command("remote")
 @_single_owner_cloud_remote
 def remote(
@@ -1098,10 +1137,6 @@ def remote(
         allow_native_write or remember_native_write,
     )
     origin = _verified_origin(cloud_origin)
-    from kicad_mcp.cloud_windows_connector import (
-        CloudOwnerReapprovalRequiredError,
-        run_connector,
-    )
     from kicad_mcp.cloud_windows_local_selection import inspect_owner_selected_project
 
     if repair_device:
@@ -1146,38 +1181,7 @@ def remote(
         allow_native_drc=allow_native_drc,
     )
 
-    def show_status(value: str) -> None:
-        _display_cloud_status(value, origin)
-
-    import asyncio
-
-    try:
-        if enable_write:
-            run = partial(
-                run_connector,
-                stop=asyncio.Event(),
-                status_callback=show_status,
-                allow_native_write=True,
-                issuer_key=trusted_issuer,
-                allow_native_drc=allow_native_drc,
-            )
-        elif allow_native_drc:
-            run = partial(
-                run_connector,
-                stop=asyncio.Event(),
-                status_callback=show_status,
-                allow_native_drc=True,
-            )
-        else:
-            run = partial(run_connector, stop=asyncio.Event(), status_callback=show_status)
-        asyncio.run(_windows_update_session(origin, run))
-    except CloudOwnerReapprovalRequiredError:
-        raise typer.Exit(code=3) from None
-    except KeyboardInterrupt:
-        if _BACKGROUND_CONNECTOR_HANDOFF.get() is not None:
-            typer.echo("\nForeground session closed; restoring previous read-only Connector.")
-        else:
-            typer.echo("\nDisconnected. Pairing stays saved; run cloud connect to return.")
+    _run_remote_connector(origin, enable_write, trusted_issuer, allow_native_drc)
 
 
 @cloud_app.command("forget-native-write")
@@ -1336,31 +1340,31 @@ def _connect_registered_posix_device(
         raise typer.BadParameter("Existing Cloud registration needs local repair.") from exc
     if existing["cloudOrigin"] != origin:
         raise typer.BadParameter("A different Cloud origin is already registered.")
-    if not new_device:
-        if _owner_terminal():
-            try:
-                _run_posix_foreground(existing)
-            except typer.Exit as exc:
-                if exc.exit_code != 3:
-                    raise
-                if _recover_registered_posix_device(root, origin, alias, approval, existing):
-                    return False
-                raise
-            return True
-        typer.echo("A private local registration exists for this Cloud origin.")
-        typer.echo("Cloud enrollment has NOT been verified for this registration.")
-        typer.echo(f"Check your enrolled devices at {origin}/devices.")
+    if new_device:
         typer.echo(
-            "If the device is missing, run cloud connect --new-device "
-            "from an interactive owner terminal."
+            "Starting a distinct browser-approved device pairing. "
+            "Existing registration and keys will be preserved."
         )
-        typer.echo("The existing local registration and keys were not changed.")
+        return False
+    if _owner_terminal():
+        try:
+            _run_posix_foreground(existing)
+        except typer.Exit as exc:
+            if exc.exit_code != 3:
+                raise
+            if _recover_registered_posix_device(root, origin, alias, approval, existing):
+                return False
+            raise
         return True
+    typer.echo("A private local registration exists for this Cloud origin.")
+    typer.echo("Cloud enrollment has NOT been verified for this registration.")
+    typer.echo(f"Check your enrolled devices at {origin}/devices.")
     typer.echo(
-        "Starting a distinct browser-approved device pairing. "
-        "Existing registration and keys will be preserved."
+        "If the device is missing, run cloud connect --new-device "
+        "from an interactive owner terminal."
     )
-    return False
+    typer.echo("The existing local registration and keys were not changed.")
+    return True
 
 
 def _resume_posix_replacement(
@@ -1406,6 +1410,24 @@ def _connect_posix_device_only(
         raise typer.BadParameter(str(exc)) from exc
     if record is not None:
         _run_posix_foreground(record)
+
+
+def _pair_explicit_device(origin: str, alias: str, no_browser: bool) -> None:
+    from kicad_mcp.cloud_pair import main as pair
+
+    pairing_args = ["--cloud-origin", origin, "--alias", alias, "--begin-pairing"]
+    if no_browser:
+        pairing_args.append("--no-browser")
+    result = pair(pairing_args)
+    if result:
+        raise typer.Exit(result)
+    typer.echo("Device pairing completed; the new device remains disabled by default.")
+    typer.echo(
+        "In Cloud Devices, explicitly enable the device and create a read-only project. "
+        "The owner-private local project registry must also reference that new "
+        "device, project and signing key before enabling the Connector."
+    )
+    typer.echo("Pairing alone does not enable the persistent Connector or project access.")
 
 
 @cloud_app.command()
@@ -1474,21 +1496,7 @@ def connect(
         _connect_posix_device_only(root, origin, device_alias, approval)
         return
 
-    from kicad_mcp.cloud_pair import main as pair
-
-    pairing_args = ["--cloud-origin", origin, "--alias", alias, "--begin-pairing"]
-    if no_browser:
-        pairing_args.append("--no-browser")
-    result = pair(pairing_args)
-    if result:
-        raise typer.Exit(result)
-    typer.echo("Device pairing completed; the new device remains disabled by default.")
-    typer.echo(
-        "In Cloud Devices, explicitly enable the device and create a read-only project. "
-        "The owner-private local project registry must also reference that new "
-        "device, project and signing key before enabling the Connector."
-    )
-    typer.echo("Pairing alone does not enable the persistent Connector or project access.")
+    _pair_explicit_device(origin, alias, no_browser)
 
 
 @cloud_app.command("trust-write-issuer")
