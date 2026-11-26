@@ -134,9 +134,10 @@ curl -fsSL https://raw.githubusercontent.com/oaslananka/kicad-mcp-pro/main/scrip
 
 The installer creates a separate managed CLI installation, updates it when
 possible, and starts the owner-terminal connection. On macOS and Linux the
-current Connector supports read-only Cloud access; native editing and
-device-only enrollment parity remain in development. First pairing requires
-browser approval and local project selection.
+current Connector supports read-only Cloud access; native editing remains
+in development. Updated Connector releases pair the device before project
+selection. Approve the device in your browser, then use Add Project in
+Cloud Devices to choose a local KiCad project.
 
 ### Optional Cloud remote — Windows
 

@@ -455,7 +455,9 @@ def enrollment_approved(origin: str, keyfile: Path) -> bool:
     return answer["approved"]
 
 
-def redeem_enrollment(origin: str, keyfile: Path) -> tuple[str, str]:
+def redeem_enrollment(
+    origin: str, keyfile: Path, *, connect_on_approval: bool = False
+) -> tuple[str, str]:
     """Redeem approved pairing challenge using saved challenge metadata.
 
     Returns (device_id, fingerprint).
@@ -485,6 +487,7 @@ def redeem_enrollment(origin: str, keyfile: Path) -> tuple[str, str]:
             "challengeId": challenge,
             "deviceCode": device_secret,
             "signature": signature,
+            **({"connectOnApproval": True} if connect_on_approval else {}),
         },
         200,
     )
@@ -495,6 +498,7 @@ def redeem_enrollment(origin: str, keyfile: Path) -> tuple[str, str]:
         or not _UUID.fullmatch(answer["deviceId"])
         or answer["deviceFingerprint"] != fingerprint
         or type(answer["enabled"]) is not bool
+        or (connect_on_approval and answer["enabled"] is not True)
     ):
         raise CloudPairingError(_PAIRING_DENIED)
     owner_sub = str(answer["ownerSub"]) if isinstance(answer.get("ownerSub"), str) else None
@@ -513,7 +517,12 @@ def redeem_enrollment(origin: str, keyfile: Path) -> tuple[str, str]:
 
 
 def enroll(
-    origin: str, alias: str, keyfile: Path, approval: Callable[[str, str, str], None]
+    origin: str,
+    alias: str,
+    keyfile: Path,
+    approval: Callable[[str, str, str], None],
+    *,
+    connect_on_approval: bool = False,
 ) -> tuple[str, str]:
     _, challenge, code, _ = start_enrollment(origin, alias, keyfile)
     target = _origin(origin)
@@ -530,6 +539,8 @@ def enroll(
         expiry,
         lambda: approval(target[2] + "/devices/pairing", challenge, code),
     )
+    if connect_on_approval:
+        return redeem_enrollment(origin, keyfile, connect_on_approval=True)
     return redeem_enrollment(origin, keyfile)
 
 

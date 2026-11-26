@@ -1908,22 +1908,26 @@ def test_darwin_headless_setup_rejects_before_registration(monkeypatch, tmp_path
 
 
 @pytest.mark.parametrize("args", [["cloud"], ["cloud", "connect"]])
-def test_posix_first_interactive_command_routes_to_setup(monkeypatch, tmp_path: Path, args) -> None:
+def test_posix_first_interactive_command_routes_to_device_only(
+    monkeypatch, tmp_path: Path, args
+) -> None:
     from kicad_mcp import cloud_user_cli
 
     monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
-    monkeypatch.setattr(
-        "kicad_mcp.cloud_local_registry.default_registry_root", lambda: tmp_path / "registry"
-    )
-    monkeypatch.setattr("kicad_mcp.cloud_pair.main", lambda *_: pytest.fail("pairing-only path"))
+    root = tmp_path / "registry"
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr("kicad_mcp.cloud_pair.main", lambda *_: pytest.fail("legacy pairing"))
+    monkeypatch.setattr(cloud_user_cli, "setup", lambda **_: pytest.fail("implicit project"))
     calls = []
-    monkeypatch.setattr(cloud_user_cli, "setup", lambda **kwargs: calls.append(kwargs))
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_posix_device_bootstrap.connect_device_only",
+        lambda *args: calls.append(args),
+    )
     result = CliRunner().invoke(app, args)
     assert result.exit_code == 0, result.output
     assert len(calls) == 1
-    assert calls[0]["new_device"] is False
-    assert calls[0]["project_dir"] is None
-    assert not (tmp_path / "registry").exists()
+    assert calls[0][0] == root
+    assert not root.exists()
 
 
 def test_posix_bare_cloud_requires_owner_terminal(monkeypatch) -> None:
@@ -2008,7 +2012,6 @@ def test_posix_setup_preserves_unbound_keys_without_explicit_new_device(
     "case",
     [
         "confirmed",
-        "bare_confirmed",
         "declined",
         "wrong_fingerprint",
         "wrong_origin",
@@ -2105,13 +2108,10 @@ def test_posix_setup_recovers_single_verified_device(
 
         monkeypatch.setattr(cloud_user_cli.typer, "confirm", change_state)
     args = ["cloud", "setup", "--project-dir", str(board)]
-    if case == "bare_confirmed":
-        monkeypatch.chdir(board)
-        args = ["cloud"]
     result = CliRunner().invoke(app, args, input="n\n" if case == "declined" else "y\n")
     assert {p.name: p.read_bytes() for p in keys.iterdir()} == before
     assert (root / "connector-enabled.json").exists() == (case == "changed_during_confirmation")
-    if case in {"confirmed", "bare_confirmed"}:
+    if case == "confirmed":
         assert result.exit_code == 0, result.output
         record = json.loads((root / "projects" / f"{project}.json").read_text())
         assert record["deviceId"] == device

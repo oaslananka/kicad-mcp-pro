@@ -1,0 +1,175 @@
+"""Device-only setup must never infer a project from the terminal directory."""
+
+from __future__ import annotations
+
+from uuid import uuid4
+
+import pytest
+
+from kicad_mcp import cloud_pair, cloud_pair_keys, cloud_posix_recovery
+
+ORIGIN = "https://kicad-mcp-pro.oaslananka.dev"
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_device_only_enrollment_and_reuse(tmp_path, monkeypatch, existing) -> None:
+    from kicad_mcp import cloud_posix_device_bootstrap as boot
+
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    keyfile = root / "keys" / f"{uuid4()}.pem"
+    binding = {
+        "origin": ORIGIN,
+        "ownerSub": "owner",
+        "deviceId": str(uuid4()),
+        "fingerprint": "a" * 64,
+    }
+    state = {"candidate": (keyfile, binding) if existing else None}
+    calls = []
+
+    def enroll(origin, alias, path, approval, *, connect_on_approval=False):
+        assert origin == ORIGIN and connect_on_approval is True
+        assert alias == "PC"
+        calls.append("enroll")
+        state["candidate"] = (path, binding)
+        return binding["deviceId"], binding["fingerprint"]
+
+    monkeypatch.setattr(cloud_pair, "enroll", enroll)
+    monkeypatch.setattr(
+        cloud_posix_recovery, "inspect_unbound_device", lambda *_: state["candidate"]
+    )
+    monkeypatch.setattr(cloud_pair_keys, "_read_owner_binding", lambda _: binding)
+    monkeypatch.setattr(
+        cloud_pair, "register_device_project", lambda *_: pytest.fail("implicit project")
+    )
+    result = boot.ensure_device(root, ORIGIN, "PC", lambda *_: None)
+    assert result == state["candidate"]
+    assert calls == ([] if existing else ["enroll"])
+    assert not (root / "projects").exists()
+
+
+def test_browser_binding_requires_exact_selected_file_and_identity(tmp_path, monkeypatch) -> None:
+    from kicad_mcp import cloud_posix_device_bootstrap as boot
+
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    keyfile = root / "keys" / f"{uuid4()}.pem"
+    keyfile.parent.mkdir(mode=0o700)
+    keyfile.touch(mode=0o600)
+    identity = (
+        keyfile,
+        {"origin": ORIGIN, "ownerSub": "owner", "deviceId": str(uuid4()), "fingerprint": "a" * 64},
+    )
+    monkeypatch.setattr(cloud_posix_recovery, "inspect_unbound_device", lambda *_: identity)
+    board = tmp_path / "board"
+    board.mkdir()
+    project = board / "board.kicad_pro"
+    project.touch()
+    pid = str(uuid4())
+    with pytest.raises(ValueError):
+        boot.adopt_project(root, identity, pid, board / "missing.kicad_pro")
+    assert not (root / "projects").exists()
+    assert boot.adopt_project(root, identity, pid, project)
+    record = boot.read_project(root, identity)
+    assert record["projectId"] == pid and record["directory"] == str(board)
+    assert record["deviceId"] == identity[1]["deviceId"]
+    with pytest.raises(ValueError):
+        boot.adopt_project(root, identity, str(uuid4()), project)
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_posix_redeem_connect_only_proof(tmp_path, monkeypatch, enabled) -> None:
+    import base64
+    import time
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    key = Ed25519PrivateKey.generate()
+    keyfile = tmp_path / "device.pem"
+    challenge, device = str(uuid4()), str(uuid4())
+    secret = base64.urlsafe_b64encode(bytes(range(32))).decode().rstrip("=")
+    fingerprint = "a" * 64
+    challenge_file = keyfile.with_suffix(cloud_pair._CHALLENGE_SUFFIX)
+    challenge_file.touch()
+    monkeypatch.setattr(cloud_pair, "_load_owner_key", lambda _: key)
+    monkeypatch.setattr(
+        cloud_pair,
+        "_read_private_json",
+        lambda *_: {
+            "challenge": challenge,
+            "secret": secret,
+            "expiry": time.time_ns() // 1_000_000 + 60000,
+            "fingerprint": fingerprint,
+        },
+    )
+    bindings = []
+
+    def post(_target, path, payload, status):
+        assert path == "/api/v1/pairing/device/redeem" and status == 200
+        assert set(payload) == {"challengeId", "deviceCode", "signature", "connectOnApproval"}
+        assert payload["connectOnApproval"] is True
+        proof = b"kicad-cloud-pairing-proof-v1\x00" + challenge.encode() + b"\x00" + secret.encode()
+        key.public_key().verify(base64.urlsafe_b64decode(payload["signature"] + "=="), proof)
+        return {
+            "deviceId": device,
+            "deviceFingerprint": fingerprint,
+            "ownerSub": "owner",
+            "enabled": enabled,
+        }
+
+    monkeypatch.setattr(cloud_pair, "_post", post)
+    monkeypatch.setattr(
+        cloud_pair, "_save_owner_binding", lambda *args, **kwargs: bindings.append(kwargs)
+    )
+    if enabled:
+        assert cloud_pair.redeem_enrollment(ORIGIN, keyfile, connect_on_approval=True) == (
+            device,
+            fingerprint,
+        )
+        assert len(bindings) == 1
+        assert not challenge_file.exists()
+    else:
+        with pytest.raises(cloud_pair.CloudPairingError):
+            cloud_pair.redeem_enrollment(ORIGIN, keyfile, connect_on_approval=True)
+        assert not bindings and challenge_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_device_only_session_waits_for_explicit_browser_bind(tmp_path, monkeypatch) -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from kicad_mcp import cloud_posix_device_bootstrap as boot
+
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    keyfile = root / "keys" / f"{uuid4()}.pem"
+    keyfile.parent.mkdir(mode=0o700)
+    keyfile.touch(mode=0o600)
+    identity = (
+        keyfile,
+        {"origin": ORIGIN, "ownerSub": "owner", "deviceId": str(uuid4()), "fingerprint": "a" * 64},
+    )
+    monkeypatch.setattr(cloud_posix_recovery, "inspect_unbound_device", lambda *_: identity)
+    monkeypatch.setattr(boot, "_load_bound_owner_key", lambda *_: Ed25519PrivateKey.generate())
+    monkeypatch.setattr(boot, "default_bindings_file", lambda: root / "folder-bindings.json")
+    board = tmp_path / "board"
+    board.mkdir()
+    (board / "board.kicad_pro").touch()
+    monkeypatch.setattr(boot, "_posix_owner_native_picker", lambda: board)
+    project_id = str(uuid4())
+    status = []
+
+    async def run(**kwargs: object) -> None:
+        assert not (root / "projects").exists()
+        assert "dispatcher_factory" not in kwargs and "native_write" not in kwargs
+        kwargs["on_ready"](None)
+        service = kwargs["folder_service_factory"](None)
+        chosen = service.choose()
+        assert chosen["status"] == "selected"
+        assert not (root / "projects").exists()
+        assert service.bind(chosen["projects"][0]["id"], project_id)
+
+    monkeypatch.setattr(boot, "execute_owner_folder_only_session", run)
+    record = await boot._wait_for_project(root, identity, status.append)
+    assert record["projectId"] == project_id
+    assert status == ["Connecting", "Cloud acknowledged this device's signed session"]

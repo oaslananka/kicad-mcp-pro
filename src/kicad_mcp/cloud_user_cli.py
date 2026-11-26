@@ -1257,14 +1257,20 @@ def connect(
             raise typer.BadParameter(
                 "Existing device keys require registration repair. Run cloud status."
             ) from exc
-        setup(
-            project_dir=None,
-            browse=False,
-            alias=alias,
-            cloud_origin=origin,
-            no_browser=no_browser,
-            new_device=False,
-        )
+        from kicad_mcp.cloud_posix_device_bootstrap import connect_device_only
+
+        try:
+            record = connect_device_only(
+                root,
+                origin,
+                _resolve_device_alias(None if alias == _DEFAULT_DEVICE_ALIAS else alias),
+                lambda page, challenge, code: _perform_approval(page, challenge, code, no_browser),
+                lambda value: _display_cloud_status(value, origin),
+            )
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        if record is not None:
+            _run_posix_foreground(record)
         return
 
     from kicad_mcp.cloud_pair import main as pair

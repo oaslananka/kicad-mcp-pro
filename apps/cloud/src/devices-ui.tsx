@@ -353,7 +353,7 @@ function PlatformSetupCommands(){
     <h3>macOS / Linux</h3>
     <CopyValue value={CLOUD_POSIX_INSTALL} label="macOS and Linux setup command"/>
     <p className="field-help">macOS and Linux currently support Cloud read access;
-      native editing and device-only setup parity are not yet available.</p>
+      native editing is not yet available. Updated Connector releases pair before project selection.</p>
   </>;
 }
 function WindowsBrokenLauncherHelp(){
@@ -388,7 +388,7 @@ function CloudQuickStart({existing}:Readonly<{existing:boolean}>){
     <WindowsBrokenLauncherHelp/>
     <p className="field-help">First pairing opens your browser for device approval.
       {existing?" Existing paired computers retain their identities.":""}
-      {" "}On Windows, Add Project opens the folder picker on an Online device.
+      {" "}On an Online device with a compatible Connector, Add Project opens the local folder picker.
       Keep the terminal open while working.</p>
     <a className="text-link"
        href="https://github.com/oaslananka/kicad-mcp-pro/blob/main/scripts/install-cloud.ps1"
