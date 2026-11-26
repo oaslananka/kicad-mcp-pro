@@ -682,6 +682,10 @@ def _validate_outbound_options(options: OutboundSessionOptions) -> None:
         if _invalid_owner_folder_mode(options):
             raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
         return
+    _validate_managed_session_options(options)
+
+
+def _validate_managed_session_options(options: OutboundSessionOptions) -> None:
     if _invalid_native_option_settings(options):
         raise CloudHandshakeDeniedError(_HANDSHAKE_DENIED)
     if options.owner_managed_read and _invalid_owner_managed_mode(options):

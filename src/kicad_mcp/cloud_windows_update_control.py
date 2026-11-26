@@ -146,6 +146,35 @@ def request(generation: str, slot: str) -> bool:
         return False
 
 
+def _replace_stale_lease(generation: str, slot: str) -> None:
+    old = _read(_SLOT, "update_lease")
+    if old is not None:
+        if _generation_live(old[0]):
+            raise LocalApprovalDeniedError("Another update lease is active.")
+        delete_credential(_SLOT, "update_lease")
+        if old[0] != generation:
+            delete_credential(old[0], "update_request")
+    create_credential(_SLOT, "update_lease", _payload(generation, slot))
+
+
+async def _poll_update_lease(identity: tuple[str, str], drain: asyncio.Event) -> None:
+    while not drain.is_set():
+        try:
+            if (
+                _read(_SLOT, "update_lease") != identity
+                or _read(identity[0], "update_request") == identity
+            ):
+                drain.set()
+                return
+        except (OSError, ValueError, TypeError):
+            drain.set()
+            return
+        try:
+            await asyncio.wait_for(drain.wait(), timeout=0.2)
+        except TimeoutError:
+            pass
+
+
 @asynccontextmanager
 async def watch(origin: str) -> AsyncIterator[asyncio.Event | None]:
     generation = os.environ.get("KICAD_CLOUD_UPDATE_GENERATION", "")
@@ -157,31 +186,9 @@ async def watch(origin: str) -> AsyncIterator[asyncio.Event | None]:
         raise LocalApprovalDeniedError("No local owner Connector holds the session mutex.")
     identity = (generation, slot)
     with _generation_mutex(generation):
-        old = _read(_SLOT, "update_lease")
-        if old is not None:
-            if _generation_live(old[0]):
-                raise LocalApprovalDeniedError("Another update lease is active.")
-            delete_credential(_SLOT, "update_lease")
-            if old[0] != generation:
-                delete_credential(old[0], "update_request")
-        create_credential(_SLOT, "update_lease", _payload(generation, slot))
+        _replace_stale_lease(generation, slot)
         drain = asyncio.Event()
-
-        async def poll() -> None:
-            while not drain.is_set():
-                try:
-                    if (
-                        _read(_SLOT, "update_lease") != identity
-                        or _read(generation, "update_request") == identity
-                    ):
-                        drain.set()
-                        return
-                except (OSError, ValueError, TypeError):
-                    drain.set()
-                    return
-                await asyncio.sleep(0.2)
-
-        waiter = asyncio.create_task(poll())
+        waiter = asyncio.create_task(_poll_update_lease(identity, drain))
         try:
             if _read(generation, "update_request") == identity:
                 drain.set()

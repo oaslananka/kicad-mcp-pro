@@ -117,7 +117,9 @@ async def test_posix_signed_schematic_request_uses_real_verifier(
 
     @asynccontextmanager
     async def worker(directory, *, profile, operating_mode):
-        assert directory == board and profile == "expert" and operating_mode == "write"
+        assert directory == board
+        assert profile == "expert"
+        assert operating_mode == "write"
         events.append("worker")
         yield FakeWorker()
 
@@ -257,14 +259,18 @@ def test_native_edit_adapter_requires_bound_receipt_and_current_authority(
     calls = []
 
     def prepare(selected, *, authorized, cancelled):
-        assert selected.directory == board and authorized() and not cancelled()
+        assert selected.directory == board
+        assert authorized()
+        assert not cancelled()
         calls.append("prepare")
         return {"board": "revision"}
 
     def execute(proof, **kwargs: object):
-        assert proof == b"proof" and kwargs["operator_project"].directory == board
+        assert proof == b"proof"
+        assert kwargs["operator_project"].directory == board
         assert kwargs["verified"].session_id == receipt.session_id
-        assert kwargs["authorized"]() and not kwargs["cancelled"]()
+        assert kwargs["authorized"]()
+        assert not kwargs["cancelled"]()
         assert kwargs["persist_to_disk"] is True
         calls.append("execute")
         return {"ok": True}

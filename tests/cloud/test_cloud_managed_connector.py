@@ -1448,7 +1448,8 @@ async def test_foreground_update_drain_exits_without_reconnecting(tmp_path, monk
         ),
         2,
     )
-    assert result == 0 and calls == ["socket"]
+    assert result == 0
+    assert calls == ["socket"]
     assert not (root / connector._FOREGROUND_FILE).exists()
     assert (root / "projects" / (PROJECT + ".json")).exists()
     assert (root / "keys" / (DEVICE + ".pem")).exists()

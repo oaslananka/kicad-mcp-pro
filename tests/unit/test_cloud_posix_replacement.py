@@ -67,7 +67,8 @@ def test_replacement_stage_resumes_same_approved_request(
         args[-1]()
 
     def redeem(target, endpoint, payload, status):
-        assert endpoint.endswith("/redeem") and status == 200
+        assert endpoint.endswith("/redeem")
+        assert status == 200
         requests.append(payload.copy())
         assert payload["recovery"] == {"deviceId": old_id, "ownerSub": "owner"}
         if interrupt and len(requests) == 1:

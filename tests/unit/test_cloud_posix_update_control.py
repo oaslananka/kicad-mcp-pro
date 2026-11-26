@@ -149,13 +149,18 @@ async def test_update_lease_requires_owner_and_preserves_matching_request(
     generation = uuid4().hex
     monkeypatch.setenv("KICAD_CLOUD_UPDATE_GENERATION", generation)
     monkeypatch.setenv("KICAD_CLOUD_UPDATE_SLOT", "a")
-    with pytest.raises(ValueError, match="No local foreground"):
+
+    async def start_without_owner():
         async with control.watch(root, ORIGIN):
             pytest.fail("lease without owner")
+
+    with pytest.raises(ValueError, match="No local foreground"):
+        await start_without_owner()
     _write_private_json(root, control.REQUEST, {"generation": generation, "slot": "a"})
     with _connector_session_lock(root):
         async with control.watch(root, ORIGIN) as drain:
-            assert drain is not None and drain.is_set()
+            assert drain is not None
+            assert drain.is_set()
 
             def write_failed(*_args: object):
                 raise OSError("cannot write")

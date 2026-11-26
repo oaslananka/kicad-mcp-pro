@@ -130,26 +130,26 @@ def _entries(dacl: ctypes.c_void_p) -> list[_Ace] | None:
         raise LocalReadDeniedError(_DENIED)
     if size.count > 1024 or not 8 <= size.used <= 65535:
         raise LocalReadDeniedError(_DENIED)
-    entries = []
-    for index in range(size.count):
-        address = ctypes.c_void_p()
-        if not security.GetAce(dacl, index, ctypes.byref(address)) or address.value is None:
-            raise LocalReadDeniedError(_DENIED)
-        kind, flags, length = struct.unpack("<BBH", ctypes.string_at(address, 4))
-        if length < 4 or length > size.used:
-            raise LocalReadDeniedError(_DENIED)
-        if kind not in (0, 1) or flags & 8:
-            entries.append((kind, flags, 0, ""))
-            continue
-        # Standard allow/deny ACE: header, mask, variable-length SID.
-        if length < 16:
-            raise LocalReadDeniedError(_DENIED)
-        raw = ctypes.string_at(address, length)
-        mask = struct.unpack_from("<I", raw, 4)[0]
-        if raw[8] != 1 or raw[9] > 15 or 16 + raw[9] * 4 != length:
-            raise LocalReadDeniedError(_DENIED)
-        entries.append((kind, flags, mask, _sid(ctypes.c_void_p(address.value + 8))))
-    return entries
+    return [_read_ace(security, dacl, index, size.used) for index in range(size.count)]
+
+
+def _read_ace(security: ctypes.CDLL, dacl: ctypes.c_void_p, index: int, used: int) -> _Ace:
+    address = ctypes.c_void_p()
+    if not security.GetAce(dacl, index, ctypes.byref(address)) or address.value is None:
+        raise LocalReadDeniedError(_DENIED)
+    kind, flags, length = struct.unpack("<BBH", ctypes.string_at(address, 4))
+    if length < 4 or length > used:
+        raise LocalReadDeniedError(_DENIED)
+    if kind not in (0, 1) or flags & 8:
+        return kind, flags, 0, ""
+    # Standard allow/deny ACE: header, mask, variable-length SID.
+    if length < 16:
+        raise LocalReadDeniedError(_DENIED)
+    raw = ctypes.string_at(address, length)
+    mask = struct.unpack_from("<I", raw, 4)[0]
+    if raw[8] != 1 or raw[9] > 15 or 16 + raw[9] * 4 != length:
+        raise LocalReadDeniedError(_DENIED)
+    return kind, flags, mask, _sid(ctypes.c_void_p(address.value + 8))
 
 
 def require_private_writers(handle: int) -> None:

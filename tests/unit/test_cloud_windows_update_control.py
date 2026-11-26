@@ -101,7 +101,8 @@ async def test_windows_cli_and_foreground_wrapper(control_fixture, monkeypatch) 
 
     async def session(*, drain: asyncio.Event) -> None:
         result = runner.invoke(app, ["cloud", "_update-control", "probe"])
-        assert result.exit_code == 0 and result.output.strip() == generation + " a"
+        assert result.exit_code == 0
+        assert result.output.strip() == generation + " a"
         result = runner.invoke(
             app, ["cloud", "_update-control", "request", "--generation", generation, "--slot", "a"]
         )
@@ -129,7 +130,8 @@ async def test_native_windows_update_control_uses_isolated_vault_and_mutex(monke
     try:
         with guard.owner_connector_instance():
             async with control.watch(ORIGIN) as drain:
-                assert drain is not None and control.probe() == (generation, "b")
+                assert drain is not None
+                assert control.probe() == (generation, "b")
                 assert control.request(generation, "b")
                 await asyncio.wait_for(drain.wait(), 2)
             assert control.probe() is None
@@ -161,7 +163,9 @@ async def test_update_wrapper_does_not_publish_lease_for_ineligible_session(
 
     try:
         assert not await cloud_user_cli._windows_update_session(ORIGIN, session)
-        assert calls == ["ordinary"] and not store and control.probe() is None
+        assert calls == ["ordinary"]
+        assert not store
+        assert control.probe() is None
     finally:
         cloud_user_cli._BACKGROUND_CONNECTOR_HANDOFF.reset(token)
 
@@ -180,20 +184,29 @@ async def test_update_lease_requires_owner_and_discards_only_stale_generation(
     store[(old, "update_request")] = control._payload(old, "b")
     before = store.copy()
     monkeypatch.setattr(control, "_owner_held", lambda: False)
-    with pytest.raises(LocalApprovalDeniedError):
+
+    async def start_without_authority():
         async with control.watch(ORIGIN):
             pytest.fail("unauthorized owner")
+
+    with pytest.raises(LocalApprovalDeniedError):
+        await start_without_authority()
     assert store == before
     monkeypatch.setattr(control, "_owner_held", lambda: True)
     live = control._generation_live
     monkeypatch.setattr(control, "_generation_live", lambda generation: generation == old)
-    with pytest.raises(LocalApprovalDeniedError):
+
+    async def replace_live_generation():
         async with control.watch(ORIGIN):
             pytest.fail("must not replace live generation")
+
+    with pytest.raises(LocalApprovalDeniedError):
+        await replace_live_generation()
     assert store == before
     monkeypatch.setattr(control, "_generation_live", live)
     async with control.watch(ORIGIN) as drain:
-        assert drain is not None and not drain.is_set()
+        assert drain is not None
+        assert not drain.is_set()
         assert (old, "update_request") not in store
         assert control.probe() == (current, "a")
         assert control.request(current, "a")
@@ -212,7 +225,8 @@ async def test_update_watch_stops_on_lost_or_invalid_lease(
     monkeypatch.setenv("KICAD_CLOUD_UPDATE_GENERATION", current)
     monkeypatch.setenv("KICAD_CLOUD_UPDATE_SLOT", "a")
     async with control.watch(ORIGIN) as drain:
-        assert drain is not None and not drain.is_set()
+        assert drain is not None
+        assert not drain.is_set()
         slot = (control._SLOT, "update_lease")
         if fault == "missing":
             store.pop(slot)
@@ -250,12 +264,14 @@ async def test_update_request_survives_same_generation_transition(
     monkeypatch.setenv("KICAD_CLOUD_UPDATE_GENERATION", current)
     monkeypatch.setenv("KICAD_CLOUD_UPDATE_SLOT", "b")
     async with control.watch(ORIGIN) as drain:
-        assert drain is not None and not drain.is_set()
+        assert drain is not None
+        assert not drain.is_set()
         # The device-only session completes immediately after the installer request.
         assert control.request(current, "b")
     assert store[(current, "update_request")] == control._payload(current, "b")
     async with control.watch(ORIGIN) as drain:
-        assert drain is not None and drain.is_set()
+        assert drain is not None
+        assert drain.is_set()
     assert not store
 
 
@@ -289,9 +305,13 @@ def test_generation_mutex_denies_unverifiable_kernel_results(monkeypatch, error)
     monkeypatch.setattr(control, "_kernel", lambda: kernel)
     monkeypatch.setattr(credentials, "_last_error", lambda: error)
     generation = uuid4().hex
-    with pytest.raises(LocalApprovalDeniedError):
+
+    def acquire_unverified_mutex():
         with control._generation_mutex(generation):
             pytest.fail("unverified mutex must not be acquired")
+
+    with pytest.raises(LocalApprovalDeniedError):
+        acquire_unverified_mutex()
     assert closed == ([123] if error == 183 else [])
     if error == 2:
         assert not control._generation_live(generation)

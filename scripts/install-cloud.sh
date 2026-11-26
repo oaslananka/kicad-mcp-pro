@@ -3,7 +3,10 @@
 # Keeps the Cloud tool separate from the user's other Python installations.
 set -euo pipefail
 die() { printf 'KiCad MCP Pro: %s\n' "$*" >&2; exit 1; }
-healthy() { [[ -x "$1" ]] && "$1" --version >/dev/null 2>&1; }
+healthy() {
+  local executable="$1"
+  [[ -x "$executable" ]] && "$executable" --version >/dev/null 2>&1
+}
 private_slot() {
   local dir="$1"
   [[ ! -L "$dir" ]] || die "Invalid local installation directory."
@@ -11,36 +14,39 @@ private_slot() {
     [[ -d "$dir" && -O "$dir" ]] || die "Invalid local installation directory."
   fi
 }
-connector_healthy() { healthy "$1" && "$1" cloud --help >/dev/null 2>&1; }
+connector_healthy() {
+  local executable="$1"
+  healthy "$executable" && "$executable" cloud --help >/dev/null 2>&1
+}
 select_slot() {
   local slot="$1"
   if [[ "$slot" == legacy ]]; then
-    export UV_TOOL_DIR="$root/uv-tools"
-    export UV_TOOL_BIN_DIR="$root/bin"
+    export UV_TOOL_DIR="$INSTALL_ROOT/uv-tools"
+    export UV_TOOL_BIN_DIR="$INSTALL_ROOT/bin"
   else
-    export UV_TOOL_DIR="$root/releases/$slot/uv-tools"
-    export UV_TOOL_BIN_DIR="$root/releases/$slot/bin"
+    export UV_TOOL_DIR="$INSTALL_ROOT/releases/$slot/uv-tools"
+    export UV_TOOL_BIN_DIR="$INSTALL_ROOT/releases/$slot/bin"
   fi
   private_slot "$UV_TOOL_DIR"
   private_slot "$UV_TOOL_BIN_DIR"
-  export PATH="$UV_TOOL_BIN_DIR:$base_path"
+  export PATH="$UV_TOOL_BIN_DIR:$BASE_PATH"
   cli="$UV_TOOL_BIN_DIR/kicad-mcp-pro"
 }
 prepare_release() {
   local active="$1" candidate="$2" old_healthy=false
-  private_slot "$root/releases"
-  private_slot "$root/releases/a"
-  private_slot "$root/releases/b"
+  private_slot "$INSTALL_ROOT/releases"
+  private_slot "$INSTALL_ROOT/releases/a"
+  private_slot "$INSTALL_ROOT/releases/b"
   select_slot "$active"
   if connector_healthy "$cli"; then old_healthy=true; fi
   select_slot "$candidate"
   printf 'KiCad MCP Pro: Preparing a separate update...\n'
-  if "$uv_path" tool install --upgrade kicad-mcp-pro && connector_healthy "$cli"; then
+  if "$UV_PATH" tool install --upgrade kicad-mcp-pro && connector_healthy "$cli"; then
     return 0
   fi
   if [[ "$old_healthy" == false ]]; then
     printf 'KiCad MCP Pro: Installation needs repair. Retrying once...\n'
-    if "$uv_path" tool install --force --reinstall kicad-mcp-pro && connector_healthy "$cli"; then
+    if "$UV_PATH" tool install --force --reinstall kicad-mcp-pro && connector_healthy "$cli"; then
       return 0
     fi
     return 2
@@ -48,13 +54,15 @@ prepare_release() {
   return 1
 }
 verify_release() {
-  private_slot "$root/releases"
-  if [[ "$1" != legacy ]]; then private_slot "$root/releases/$1"; fi
-  select_slot "$1"
+  local slot="$1"
+  private_slot "$INSTALL_ROOT/releases"
+  if [[ "$slot" != legacy ]]; then private_slot "$INSTALL_ROOT/releases/$slot"; fi
+  select_slot "$slot"
   connector_healthy "$cli"
 }
 launch_release() {
-  select_slot "$1"
+  local slot="$1"
+  select_slot "$slot"
   connector_healthy "$cli" || die "Existing installation is no longer healthy."
   printf 'KiCad MCP Pro: Opening Cloud Connector...\n'
   "$cli" cloud
@@ -63,8 +71,8 @@ launch_release() {
 main() {
 umask 077
 case "$(uname -s)" in
-  Darwin) root="$HOME/Library/Application Support/KiCadMCPPro"; os=apple-darwin ;;
-  Linux) root="${XDG_DATA_HOME:-$HOME/.local/share}/KiCadMCPPro"; os=unknown-linux-gnu ;;
+  Darwin) INSTALL_ROOT="$HOME/Library/Application Support/KiCadMCPPro"; os=apple-darwin ;;
+  Linux) INSTALL_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}/KiCadMCPPro"; os=unknown-linux-gnu ;;
   *) die "Use the Windows setup command in Cloud Devices on Windows." ;;
 esac
 case "$(uname -m)" in
@@ -73,12 +81,12 @@ case "$(uname -m)" in
   *) die "This processor is not supported by the Cloud installer." ;;
 esac
 [[ -t 0 && -t 1 ]] || die "Open a local interactive terminal to connect this computer."
-[[ "$root" = /* && ! -L "$root" ]] || die "Invalid local application directory."
-mkdir -p "$root"
-[[ -O "$root" && ! -L "$root" ]] || die "Invalid local application directory."
+[[ "$INSTALL_ROOT" = /* && ! -L "$INSTALL_ROOT" ]] || die "Invalid local application directory."
+mkdir -p "$INSTALL_ROOT"
+[[ -O "$INSTALL_ROOT" && ! -L "$INSTALL_ROOT" ]] || die "Invalid local application directory."
 # An older launcher uses a directory with no verifiable ownership token.
 # Do not remove it or update an installation it might still be using.
-[[ ! -e "$root/installer.lock" && ! -L "$root/installer.lock" ]] ||
+[[ ! -e "$INSTALL_ROOT/installer.lock" && ! -L "$INSTALL_ROOT/installer.lock" ]] ||
   die "An older setup or Connector may still be running. No installation files were changed."
 tmp=""
 cleanup() {
@@ -88,15 +96,15 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 export UV_NO_CONFIG=1
-export UV_TOOL_DIR="$root/uv-tools"
-export UV_TOOL_BIN_DIR="$root/bin"
-export base_path="$PATH"
-export PATH="$UV_TOOL_BIN_DIR:$base_path"
-uv_path="$(command -v uv || true)"
-if [[ -z "$uv_path" ]] || ! healthy "$uv_path"; then
-  uv_path="$root/installer/uv"
+export UV_TOOL_DIR="$INSTALL_ROOT/uv-tools"
+export UV_TOOL_BIN_DIR="$INSTALL_ROOT/bin"
+export BASE_PATH="$PATH"
+export PATH="$UV_TOOL_BIN_DIR:$BASE_PATH"
+UV_PATH="$(command -v uv || true)"
+if [[ -z "$UV_PATH" ]] || ! healthy "$UV_PATH"; then
+  UV_PATH="$INSTALL_ROOT/installer/uv"
 fi
-if ! healthy "$uv_path"; then
+if ! healthy "$UV_PATH"; then
   release=0.13.9
   artifact="uv-$arch-$os.tar.gz"
   case "$artifact" in
@@ -118,24 +126,24 @@ if ! healthy "$uv_path"; then
   fi
   [[ "${actual%% *}" == "$pin" ]] || die "Installer download failed integrity verification."
   tar -xzf "$tmp/uv.tar.gz" -C "$tmp" "uv-$arch-$os/uv"
-  mkdir -p "$root/installer"
-  [[ -O "$root/installer" && ! -L "$root/installer" ]] || die "Invalid installer directory."
+  mkdir -p "$INSTALL_ROOT/installer"
+  [[ -O "$INSTALL_ROOT/installer" && ! -L "$INSTALL_ROOT/installer" ]] || die "Invalid installer directory."
   # The same verified bytes may be prepared by two first-run processes.
   # Publish atomically, rather than truncating a potentially running uv.
-  staged_uv="$(mktemp "$root/installer/.uv.XXXXXXXX")"
+  staged_uv="$(mktemp "$INSTALL_ROOT/installer/.uv.XXXXXXXX")"
   install -m 700 "$tmp/uv-$arch-$os/uv" "$staged_uv"
-  mv -f -- "$staged_uv" "$uv_path"
-  healthy "$uv_path" || die "The verified installer could not start."
+  mv -f -- "$staged_uv" "$UV_PATH"
+  healthy "$UV_PATH" || die "The verified installer could not start."
 fi
 
 # uv can supply Python on macOS as well as Linux without Xcode or a separate
 # prerequisite command. Keep an inherited kernel lock over both uv's package
 # update and the foreground child; never unlink the lock inode.
 export -f die healthy private_slot connector_healthy select_slot prepare_release verify_release launch_release
-export root uv_path
+export INSTALL_ROOT UV_PATH
 # Embedded Python passes literal Bash positional parameters.
 # shellcheck disable=SC2016
-"$uv_path" run --no-project --no-config --no-env-file --python '>=3.13' -- python -I -c '
+"$UV_PATH" run --no-project --no-config --no-env-file --python '>=3.13' -- python -I -c '
 import fcntl
 import os
 import re
@@ -383,7 +391,7 @@ try:
 except OSError:
     fail("Cannot complete the local update safely. Existing registration was preserved.")
 
-' "$root"
+' "$INSTALL_ROOT"
 }
 # A curl | bash invocation reads code from the pipe; prompts use the owner TTY.
 main </dev/tty

@@ -18,6 +18,9 @@ from kicad_mcp.cloud_windows_enrollment import WindowsRecoveryDeniedError, _appr
 
 Identity = tuple[Path, dict[str, str]]
 _PENDING = "replacement-pending"
+_REQUEST_FILE = "request.json"
+_APPROVED_FILE = "approved.json"
+_SWITCH_FILE = "switch.json"
 _DENIED = "Saved device replacement could not be verified. Existing registration was kept."
 
 
@@ -30,7 +33,7 @@ def _directory(path: Path) -> None:
 def _validate_stage(stage: Path, identity: Identity) -> Path:
     old, binding = identity
     _directory(stage)
-    journal = stage / "request.json"
+    journal = stage / _REQUEST_FILE
     if not os.path.lexists(journal):
         if cloud_posix_recovery._private_names(stage):
             raise LocalApprovalDeniedError(_DENIED)
@@ -55,7 +58,7 @@ def _validate_stage(stage: Path, identity: Identity) -> Path:
     ):
         raise LocalApprovalDeniedError(_DENIED)
     if not cloud_posix_recovery._private_names(stage).issubset(
-        {"request.json", "approved.json", "keys"}
+        {_REQUEST_FILE, _APPROVED_FILE, "keys"}
     ):
         raise LocalApprovalDeniedError(_DENIED)
     _directory(stage / "keys")
@@ -78,7 +81,7 @@ def _approved_challenge(
     alias: str,
     approval: Callable[[str, str, str], None],
 ) -> dict[str, Any]:
-    approved = stage / "approved.json"
+    approved = stage / _APPROVED_FILE
     challenge_file = keyfile.with_suffix(cloud_pair._CHALLENGE_SUFFIX)
     if os.path.lexists(approved):
         return cloud_pair_keys._read_private_json(stage, approved.name)
@@ -126,7 +129,7 @@ def prepare_replacement(
     approval: Callable[[str, str, str], None],
 ) -> Identity:
     """Caller holds session lock. Resume exact approved proof after interruption."""
-    old, binding = identity
+    _, binding = identity
     if cloud_posix_recovery.inspect_unbound_device(root, binding["origin"]) != identity:
         raise LocalApprovalDeniedError(_DENIED)
     stage = root / _PENDING
@@ -226,12 +229,12 @@ def complete_replacement(
     if (
         cloud_posix_recovery.inspect_unbound_device(root, previous[1]["origin"]) != previous
         or cloud_posix_recovery.inspect_unbound_device(stage, previous[1]["origin"]) != replacement
-        or os.path.lexists(stage / "switch.json")
+        or os.path.lexists(stage / _SWITCH_FILE)
     ):
         raise LocalApprovalDeniedError(_DENIED)
     cloud_pair_keys._write_private_json(
         stage,
-        "switch.json",
+        _SWITCH_FILE,
         {
             "previous": previous[0].stem,
             "oldBinding": previous[1],
@@ -244,7 +247,7 @@ def complete_replacement(
 
 
 def _verify_switch(stage: Path, origin: str) -> dict[str, Any]:
-    data = cloud_pair_keys._read_private_json(stage, "switch.json")
+    data = cloud_pair_keys._read_private_json(stage, _SWITCH_FILE)
     if set(data) != {"previous", "oldBinding", "replacement", "newBinding", "project"}:
         raise LocalApprovalDeniedError(_DENIED)
     for name in ("previous", "replacement"):
@@ -263,7 +266,7 @@ def _verify_switch(stage: Path, origin: str) -> dict[str, Any]:
         or data["previous"] == data["replacement"]
     ):
         raise LocalApprovalDeniedError(_DENIED)
-    request = cloud_pair_keys._read_private_json(stage, "request.json")
+    request = cloud_pair_keys._read_private_json(stage, _REQUEST_FILE)
     if request != {
         "previous": data["previous"],
         "binding": old,
@@ -287,12 +290,27 @@ def _verify_switch(stage: Path, origin: str) -> dict[str, Any]:
     return data
 
 
+def _archive_old_project(root: Path, archive: Path, project: dict[str, str] | None) -> None:
+    if project is None:
+        if cloud_posix_recovery._private_names(root / "projects") or os.path.lexists(
+            archive / "projects"
+        ):
+            raise LocalApprovalDeniedError(_DENIED)
+    elif os.path.lexists(archive / "projects"):
+        _check_project_location(archive / "projects", project)
+        if os.path.lexists(root / "projects"):
+            raise LocalApprovalDeniedError(_DENIED)
+    else:
+        _check_project_location(root / "projects", project)
+        _move_directory(root / "projects", archive / "projects")
+
+
 def resume_switch(root: Path, origin: str) -> bool:
     """Resume only a recorded switch. Caller holds the owner session lock."""
     from kicad_mcp.cloud_managed_connector import _ENABLED_FILE, _FOREGROUND_FILE
 
     stage = root / _PENDING
-    if not os.path.lexists(stage / "switch.json"):
+    if not os.path.lexists(stage / _SWITCH_FILE):
         return False
     if os.path.lexists(root / _ENABLED_FILE) or os.path.lexists(root / _FOREGROUND_FILE):
         raise LocalApprovalDeniedError(_DENIED)
@@ -315,19 +333,7 @@ def resume_switch(root: Path, origin: str) -> bool:
             binding,
         ):
             raise LocalApprovalDeniedError(_DENIED)
-    project = data["project"]
-    if project is None:
-        if cloud_posix_recovery._private_names(root / "projects") or os.path.lexists(
-            archive / "projects"
-        ):
-            raise LocalApprovalDeniedError(_DENIED)
-    elif os.path.lexists(archive / "projects"):
-        _check_project_location(archive / "projects", project)
-        if os.path.lexists(root / "projects"):
-            raise LocalApprovalDeniedError(_DENIED)
-    else:
-        _check_project_location(root / "projects", project)
-        _move_directory(root / "projects", archive / "projects")
+    _archive_old_project(root, archive, data["project"])
     if old_location == root:
         _move_directory(root / "keys", archive / "keys")
     if new_location == stage:
@@ -340,11 +346,11 @@ def resume_switch(root: Path, origin: str) -> bool:
     if cloud_posix_recovery._private_names(root / "projects"):
         raise LocalApprovalDeniedError(_DENIED)
     # Do not retain the pairing code/secret after the new device is selected.
-    fd = cloud_pair_keys._open_owner_private_dir(stage / "approved.json")
+    fd = cloud_pair_keys._open_owner_private_dir(stage / _APPROVED_FILE)
     try:
-        if os.path.lexists(stage / "approved.json"):
-            cloud_pair_keys._read_private_json(stage, "approved.json")
-            os.unlink("approved.json", dir_fd=fd)
+        if os.path.lexists(stage / _APPROVED_FILE):
+            cloud_pair_keys._read_private_json(stage, _APPROVED_FILE)
+            os.unlink(_APPROVED_FILE, dir_fd=fd)
             os.fsync(fd)
     finally:
         os.close(fd)
@@ -425,7 +431,7 @@ def _archive_refused_stage(root: Path, identity: Identity) -> None:
     final = root / ("rejected-" + keyfile.stem)
     if os.path.lexists(final):
         raise LocalApprovalDeniedError(_DENIED)
-    for item in (stage / "approved.json", keyfile.with_suffix(cloud_pair._CHALLENGE_SUFFIX)):
+    for item in (stage / _APPROVED_FILE, keyfile.with_suffix(cloud_pair._CHALLENGE_SUFFIX)):
         if os.path.lexists(item):
             cloud_pair_keys._read_private_json(item.parent, item.name)
             fd = cloud_pair_keys._open_owner_private_dir(item)

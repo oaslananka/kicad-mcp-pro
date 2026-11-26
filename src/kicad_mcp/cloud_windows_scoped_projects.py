@@ -24,6 +24,8 @@ from kicad_mcp.cloud_windows_enrollment import WindowsEnrolledDevice, WindowsReg
 from kicad_mcp.cloud_windows_local_selection import WindowsLocalProjectSelection
 from kicad_mcp.cloud_windows_project_path import read_windows_project_presence
 
+_PROJECT_SUFFIX = ".kicad_pro"
+
 
 def _identity(
     project: WindowsEnrolledDevice | WindowsRegisteredProject, pid: str
@@ -60,7 +62,7 @@ def _slot(identity: dict[str, str]) -> str:
 def _valid_file(file: Path) -> bool:
     return (
         file.is_absolute()
-        and file.suffix.lower() == ".kicad_pro"
+        and file.suffix.lower() == _PROJECT_SUFFIX
         and _STEM.fullmatch(file.stem) is not None
         and file.is_file()
         and not file.is_symlink()
@@ -115,19 +117,19 @@ def folder_service(
         if not authorized():
             return False
         if pid == project.project_id:
-            return file == selected.directory / (selected.filename_stem + ".kicad_pro")
+            return file == selected.directory / (selected.filename_stem + _PROJECT_SUFFIX)
         return save(project, pid, file)
 
     def bound_path(pid: str) -> str | None:
         if not authorized():
             return None
         if pid == project.project_id:
-            file = selected.directory / (selected.filename_stem + ".kicad_pro")
+            file = selected.directory / (selected.filename_stem + _PROJECT_SUFFIX)
             return str(file) if _valid_file(file) else None
         target = resolve(project, pid)
         if target is None:
             return None
-        return str(target.directory / (target.filename_stem + ".kicad_pro"))
+        return str(target.directory / (target.filename_stem + _PROJECT_SUFFIX))
 
     return BrowserFolderService(
         LocalFolderBrowser([], default_bindings_file()),

@@ -633,7 +633,8 @@ def test_recovery_redeem_binds_old_identity_and_requires_same_owner(
         assert not store
     else:
         result = cloud_windows_enrollment.enroll_windows_device(**options)
-        assert result.owner_sub == OWNER and result.device_id == DEVICE
+        assert result.owner_sub == OWNER
+        assert result.device_id == DEVICE
 
 
 @pytest.mark.parametrize("recovery", [False, True])
@@ -674,7 +675,8 @@ def test_lost_redeem_response_retries_only_identical_recovery_request(
         assert cloud_windows_enrollment._approved_redeem(
             cloud_pair._origin(ORIGIN), key, **options
         ) == (DEVICE, OWNER)
-        assert len(calls) == 2 and calls[0] == calls[1]
+        assert len(calls) == 2
+        assert calls[0] == calls[1]
     else:
         with pytest.raises(cloud_pair.CloudPairingError):
             cloud_windows_enrollment._approved_redeem(cloud_pair._origin(ORIGIN), key, **options)
@@ -712,10 +714,9 @@ def test_recovery_resumes_approved_request_after_process_restart(
         recovery_device_id="39ee4be9-0aec-448e-9873-721ae113ec02",
         recovery_owner_sub=OWNER,
     )
+    approval = _approval(events, state)
     with pytest.raises(KeyboardInterrupt):
-        cloud_windows_enrollment.enroll_windows_device(
-            **options, owner_approval=_approval(events, state)
-        )
+        cloud_windows_enrollment.enroll_windows_device(**options, owner_approval=approval)
     assert ("a" * 32, "recovery_pending") in store
     if outcome == "tampered":
         journal = json.loads(store[("a" * 32, "recovery_pending")])
@@ -726,7 +727,8 @@ def test_recovery_resumes_approved_request_after_process_restart(
             cloud_windows_enrollment.enroll_windows_device(
                 **options, owner_approval=lambda *_: pytest.fail("already approved")
             )
-        assert len(requests) == 1 and store == before
+        assert len(requests) == 1
+        assert store == before
         return
     if outcome == "denied":
         with pytest.raises(cloud_windows_enrollment.WindowsRecoveryDeniedError):

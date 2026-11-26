@@ -274,7 +274,8 @@ def test_secondary_enumeration_filters_metadata_and_frees_array(monkeypatch) -> 
     freed = []
 
     def enumerate_records(pattern, flags, count, output):
-        assert pattern == f"{vault._PREFIX}/{prefix}*" and flags == 0
+        assert pattern == f"{vault._PREFIX}/{prefix}*"
+        assert flags == 0
         ctypes.cast(count, ctypes.POINTER(wintypes.DWORD))[0] = len(entries)
         ctypes.cast(output, ctypes.POINTER(ctypes.POINTER(pointer_type)))[0] = ctypes.cast(
             array, ctypes.POINTER(pointer_type)

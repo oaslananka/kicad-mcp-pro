@@ -73,10 +73,12 @@ def test_windows_initial_restart(monkeypatch, stage) -> None:
                 "deviceFingerprint": state["fingerprint"],
                 "expiresAtMs": time.time_ns() // 1_000_000 + 299_000,
             }
-        assert payload["challengeId"] == challenge and payload["deviceCode"] == secret
+        assert payload["challengeId"] == challenge
+        assert payload["deviceCode"] == secret
         if endpoint.endswith("/status"):
             return {"approved": state["approved"]}
-        assert endpoint.endswith("/redeem") and state["approved"]
+        assert endpoint.endswith("/redeem")
+        assert state["approved"]
         assert payload["resumeInitial"] is True
         state["public"].verify(
             base64.urlsafe_b64decode(payload["signature"] + "=="),
@@ -106,7 +108,8 @@ def test_windows_initial_restart(monkeypatch, stage) -> None:
     ):
         initial.ensure_device(ORIGIN, "PC", approve)
     result = initial.ensure_device(ORIGIN, "PC", approve)
-    assert result.device_id == device and boot.selected_device() == result
+    assert result.device_id == device
+    assert boot.selected_device() == result
     assert initial.ensure_device(ORIGIN, "PC", approve) == result
     assert approved == [True] * (2 if stage == "refused" else 1)
     assert len(set(issued)) == 1

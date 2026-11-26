@@ -113,6 +113,16 @@ def _path_parts(directory: Path) -> tuple[str, ...]:
     return (root, *parts[1:])
 
 
+def _missing_handle(missing_ok: bool) -> None:
+    last_error = getattr(ctypes, "get_last_error", None)
+    if not callable(last_error):
+        raise LocalReadDeniedError(_DENIED)
+    error = int(last_error())
+    if missing_ok and error in {_ERROR_FILE_NOT_FOUND, _ERROR_PATH_NOT_FOUND}:
+        return None
+    raise LocalReadDeniedError(_DENIED)
+
+
 def _open_checked(
     path: str,
     *,
@@ -135,13 +145,7 @@ def _open_checked(
     )
     invalid = ctypes.c_void_p(-1).value
     if not handle or handle == invalid:
-        last_error = getattr(ctypes, "get_last_error", None)
-        if not callable(last_error):
-            raise LocalReadDeniedError(_DENIED)
-        error = int(last_error())
-        if missing_ok and error in {_ERROR_FILE_NOT_FOUND, _ERROR_PATH_NOT_FOUND}:
-            return None
-        raise LocalReadDeniedError(_DENIED)
+        return _missing_handle(missing_ok)
     try:
         info = _FileInfo()
         if not api.GetFileInformationByHandle(handle, ctypes.byref(info)):

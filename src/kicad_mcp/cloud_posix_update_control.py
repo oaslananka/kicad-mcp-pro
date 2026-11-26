@@ -104,7 +104,10 @@ async def watch(root: Path, origin: str) -> AsyncIterator[asyncio.Event | None]:
                 if _read(root, LEASE) != identity or _read(root, REQUEST) == identity:
                     drain.set()
                     return
-                await asyncio.sleep(0.2)
+                try:
+                    await asyncio.wait_for(drain.wait(), timeout=0.2)
+                except TimeoutError:
+                    pass
 
         waiter = asyncio.create_task(poll())
         try:

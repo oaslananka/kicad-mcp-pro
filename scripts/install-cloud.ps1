@@ -342,7 +342,10 @@ public static class KiCadCloudInstallerMarkerV1 {
             if ($LASTEXITCODE -eq 0 -and $result -cmatch ('^[0-9a-f]{32} ' + $slot + '$')) {
                 return $result
             }
-        } catch {}
+        } catch {
+            # An unverifiable lease is not permission to replace a live installation.
+            return $null
+        }
         return $null
     }
 

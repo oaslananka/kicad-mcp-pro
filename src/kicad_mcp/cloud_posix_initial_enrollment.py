@@ -9,6 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 from uuid import uuid4
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from kicad_mcp import cloud_pair, cloud_pair_keys, cloud_posix_recovery
@@ -65,11 +66,9 @@ def _challenge(keyfile: Path, origin: str, fingerprint: str) -> tuple[str, str, 
     return challenge, code, secret, expiry
 
 
-def enroll_initial(
-    root: Path, origin: str, alias: str, approval: Callable[[str, str, str], None]
-) -> tuple[Path, dict[str, str]]:
-    """Caller holds session lock; no implicit project or grant is created."""
-    journal = _journal(root, origin)
+def _initial_key(
+    root: Path, journal: dict[str, str]
+) -> tuple[Path, Ed25519PrivateKey, str, set[str]]:
     folder = root / "keys"
     folder.mkdir(mode=0o700, exist_ok=True)
     keyfile = folder / (journal["slot"] + ".pem")
@@ -84,16 +83,33 @@ def enroll_initial(
     pin = hashlib.sha256(
         key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
     ).hexdigest()
+    return keyfile, key, pin, names
+
+
+def _existing_binding(keyfile: Path, journal: dict[str, str], pin: str) -> dict[str, str]:
+    if journal["phase"] != "redeem":
+        raise LocalApprovalDeniedError(_DENIED)
+    binding = cloud_pair_keys._read_owner_binding(keyfile)
+    if (
+        binding["origin"] != journal["origin"]
+        or binding["fingerprint"] != pin
+        or not binding.get("ownerSub")
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+    return binding
+
+
+def enroll_initial(
+    root: Path, origin: str, alias: str, approval: Callable[[str, str, str], None]
+) -> tuple[Path, dict[str, str]]:
+    """Caller holds session lock; no implicit project or grant is created."""
+    journal = _journal(root, origin)
+    keyfile, key, pin, names = _initial_key(root, journal)
+    folder = keyfile.parent
+    challenge_file = keyfile.with_suffix(cloud_pair._CHALLENGE_SUFFIX)
+    binding_file = folder / (keyfile.name + cloud_pair_keys._BINDING_SUFFIX)
     if binding_file.name in names:
-        if journal["phase"] != "redeem":
-            raise LocalApprovalDeniedError(_DENIED)
-        binding = cloud_pair_keys._read_owner_binding(keyfile)
-        if (
-            binding["origin"] != origin
-            or binding["fingerprint"] != pin
-            or not binding.get("ownerSub")
-        ):
-            raise LocalApprovalDeniedError(_DENIED)
+        binding = _existing_binding(keyfile, journal, pin)
     else:
         fresh = challenge_file.name not in names
         if fresh:
@@ -136,6 +152,15 @@ def enroll_initial(
             keyfile, origin=origin, device_id=device, fingerprint=pin, owner_sub=owner
         )
         binding = cloud_pair_keys._read_owner_binding(keyfile)
+    return _finish_initial(root, keyfile, journal, pin, binding)
+
+
+def _finish_initial(
+    root: Path, keyfile: Path, journal: dict[str, str], pin: str, binding: dict[str, str]
+) -> tuple[Path, dict[str, str]]:
+    origin = journal["origin"]
+    folder = keyfile.parent
+    challenge_file = keyfile.with_suffix(cloud_pair._CHALLENGE_SUFFIX)
     if cloud_pair_keys._read_private_json(root, JOURNAL) != journal:
         raise LocalApprovalDeniedError(_DENIED)
     if os.path.lexists(challenge_file):

@@ -43,6 +43,7 @@ from kicad_mcp.cloud_pair_keys import (
 _PAIRING_DENIED = "pairing denied"
 _CHALLENGE_SUFFIX = ".challenge.json"
 _JSON_MEDIA_TYPE = "application/json"
+_DEVICE_ALIAS_PATTERN = r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}"
 
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 _USER_CODE = re.compile(r"[A-Z0-9]{6}-[A-Z0-9]{6}")
@@ -378,7 +379,7 @@ def start_enrollment(origin: str, alias: str, keyfile: Path) -> tuple[str, str, 
         raise CloudPairingError(
             "Native Windows owner-private Cloud pairing is not available in this release."
         )
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", alias):
+    if not re.fullmatch(_DEVICE_ALIAS_PATTERN, alias):
         raise CloudPairingError(_PAIRING_DENIED)
     target = _origin(origin)
     if keyfile.is_file():
@@ -398,7 +399,7 @@ def _issue_enrollment(
     """Issue a challenge for an already verified, never-redeemed key."""
     if os.name == "nt":
         raise CloudPairingError(_PAIRING_DENIED)
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", alias):
+    if not re.fullmatch(_DEVICE_ALIAS_PATTERN, alias):
         raise CloudPairingError(_PAIRING_DENIED)
     _require_unused_binding_path(keyfile)
     der = signing_identity.public_key().public_bytes(
@@ -564,7 +565,7 @@ def enroll(
 
 def register_device_project(origin: str, keyfile: Path, alias: str) -> dict[str, object]:
     """Register one read-only KiCad project for an already-enrolled device using its signing key."""
-    if not isinstance(alias, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", alias):
+    if not isinstance(alias, str) or not re.fullmatch(_DEVICE_ALIAS_PATTERN, alias):
         raise CloudPairingError(_PAIRING_DENIED)
     target = _origin(origin)
     key = _load_owner_key(keyfile)

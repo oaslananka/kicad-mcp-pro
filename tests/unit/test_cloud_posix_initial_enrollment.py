@@ -56,11 +56,14 @@ def test_initial_pairing_resumes_without_duplicate_device(
                 "deviceFingerprint": state["fingerprint"],
                 "expiresAtMs": time.time_ns() // 1_000_000 + 299_000,
             }
-        assert payload["challengeId"] == challenge and payload["deviceCode"] == secret
+        assert payload["challengeId"] == challenge
+        assert payload["deviceCode"] == secret
         if endpoint.endswith("/status"):
             return {"approved": state["approved"]}
-        assert endpoint.endswith("/redeem") and state["approved"]
-        assert payload["resumeInitial"] is True and payload["connectOnApproval"] is True
+        assert endpoint.endswith("/redeem")
+        assert state["approved"]
+        assert payload["resumeInitial"] is True
+        assert payload["connectOnApproval"] is True
         state["public"].verify(
             base64.urlsafe_b64decode(payload["signature"] + "=="),
             b"kicad-cloud-pairing-initial-v1\0" + challenge.encode() + b"\0" + secret.encode(),

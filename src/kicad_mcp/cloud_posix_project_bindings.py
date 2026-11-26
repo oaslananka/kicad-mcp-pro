@@ -18,6 +18,8 @@ from kicad_mcp.cloud_local_registry import _STEM, _UUID, LocalRegisteredRead
 from kicad_mcp.cloud_readonly_boundary import OperatorProject
 
 _DENIED = "Invalid local project binding."
+_PROJECT_SUFFIX = ".kicad_pro"
+_BINDING_SUFFIX = ".json"
 
 
 def _folder(root: Path, record: dict[str, str]) -> Path:
@@ -29,7 +31,7 @@ def _folder(root: Path, record: dict[str, str]) -> Path:
 def _valid_file(file: Path) -> bool:
     return (
         file.is_absolute()
-        and file.suffix == ".kicad_pro"
+        and file.suffix == _PROJECT_SUFFIX
         and _STEM.fullmatch(file.stem) is not None
         and file.is_file()
         and not file.is_symlink()
@@ -53,7 +55,7 @@ def resolve_secondary(root: Path, record: dict[str, str], pid: str) -> OperatorP
     if not isinstance(pid, str) or not _UUID.fullmatch(pid) or pid == record["projectId"]:
         return None
     try:
-        data = cloud_pair_keys._read_private_json(_folder(root, record), pid + ".json")
+        data = cloud_pair_keys._read_private_json(_folder(root, record), pid + _BINDING_SUFFIX)
         file = Path(data["file"])
         if data != _document(record, pid, file) or not _valid_file(file):
             return None
@@ -71,7 +73,7 @@ def _save(root: Path, record: dict[str, str], pid: str, file: Path) -> bool:
         fd = cloud_pair_keys._open_owner_private_dir(folder / "probe")
         os.close(fd)
     data = _document(record, pid, file)
-    name = pid + ".json"
+    name = pid + _BINDING_SUFFIX
     if os.path.lexists(directory / name):
         return cloud_pair_keys._read_private_json(directory, name) == data
     cloud_pair_keys._write_private_json(directory, name, data)
@@ -92,19 +94,19 @@ def folder_service(
         if not authorized():
             return False
         if pid == record["projectId"]:
-            return file == project.project_directory / (project.filename_stem + ".kicad_pro")
+            return file == project.project_directory / (project.filename_stem + _PROJECT_SUFFIX)
         return _save(root, record, pid, file)
 
     def bound_path(pid: str) -> str | None:
         if not authorized():
             return None
         if pid == record["projectId"]:
-            file = project.project_directory / (project.filename_stem + ".kicad_pro")
+            file = project.project_directory / (project.filename_stem + _PROJECT_SUFFIX)
             return str(file) if _valid_file(file) else None
         target = resolve_secondary(root, record, pid)
         if target is None:
             return None
-        return str(target.directory / (target.filename_stem + ".kicad_pro"))
+        return str(target.directory / (target.filename_stem + _PROJECT_SUFFIX))
 
     return BrowserFolderService(
         LocalFolderBrowser([], root / "unused-browser-cache.json"),
@@ -122,7 +124,7 @@ def existing_targets(root: Path, record: dict[str, str]) -> list[OperatorProject
     names = sorted(_private_names(_folder(root, record)))
     targets = []
     for name in names:
-        if not name.endswith(".json"):
+        if not name.endswith(_BINDING_SUFFIX):
             continue
         target = resolve_secondary(root, record, name[:-5])
         if target is not None:
@@ -142,14 +144,14 @@ def migrate_legacy(
     directory = _folder(root, record) / "legacy-migration"
 
     def completed(pid: str) -> bool:
-        return os.path.lexists(directory / (pid + ".json"))
+        return os.path.lexists(directory / (pid + _BINDING_SUFFIX))
 
     def mark(pid: str) -> None:
         for folder in (directory.parent.parent, directory.parent, directory):
             folder.mkdir(mode=0o700, exist_ok=True)
             fd = cloud_pair_keys._open_owner_private_dir(folder / "probe")
             os.close(fd)
-        name = pid + ".json"
+        name = pid + _BINDING_SUFFIX
         if os.path.lexists(directory / name):
             raise ValueError(_DENIED)
         cloud_pair_keys._write_private_json(

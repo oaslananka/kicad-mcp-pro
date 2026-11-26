@@ -34,8 +34,10 @@ def test_signed_inventory_status(monkeypatch, state) -> None:
 
     def post(origin, path, body, status):
         assert origin[2] == cloud_user_cli.DEFAULT_CLOUD_ORIGIN
-        assert path == "/api/v1/pairing/device/inventory" and status == 200
-        assert body["deviceId"] == device and body["projectId"] == project
+        assert path == "/api/v1/pairing/device/inventory"
+        assert status == 200
+        assert body["deviceId"] == device
+        assert body["projectId"] == project
         assert body["ownerSub"] == "owner"
         proof = "\0".join(
             (

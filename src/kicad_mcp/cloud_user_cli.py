@@ -139,60 +139,62 @@ def _update_control(
     raise typer.Exit(1)
 
 
-def _offer_device_recovery() -> bool:
-    """Diagnose first; only a missing/unverified or revoked identity needs approval."""
+def _recover_windows_device() -> bool:
+    """Inspect and recover only the selected device under the owner mutex."""
     from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
     from kicad_mcp.cloud_device_inventory_status import inspect_inventory
     from kicad_mcp.cloud_windows_connector import selected_project
-    from kicad_mcp.cloud_windows_enrollment import WindowsRecoveryDeniedError
     from kicad_mcp.cloud_windows_task_scheduler import stop_and_remove_owner_task
 
-    def recover() -> bool:
-        device = bootstrap.selected_device()
-        project = selected_project()
-        if device is None or device.origin != DEFAULT_CLOUD_ORIGIN:
-            return False
-        if project is not None and (
-            project.record_id != device.record_id
-            or project.device_id != device.device_id
-            or project.owner_sub != device.owner_sub
-            or project.origin != device.origin
-            or project.fingerprint != device.fingerprint
-        ):
-            raise ValueError("Selected project belongs to a different device.")
-        state = inspect_inventory(
-            device.origin,
-            device.owner_sub,
-            device.device_id,
-            project.project_id if project is not None else None,
-            bootstrap.verified_device_key(device),
-        )
-        if state == "project_missing" and project is not None:
-            bootstrap.detach_missing_project(device, project, stop_and_remove_owner_task)
-            typer.echo("Cloud project was removed. Keeping this device and its remaining projects.")
-            return True
-        if state not in {"unverified", "device_revoked"}:
-            typer.echo(
-                "Cloud did not confirm that this device needs replacement. "
-                "Existing pairing kept. Check Cloud Devices and retry the same setup.",
-                err=True,
-            )
-            return False
-        typer.echo(
-            "Opening browser to verify device replacement. "
-            "Cloud will preserve a valid existing device."
-        )
-        bootstrap.repair_device_only(
-            origin=device.origin,
-            alias=_resolve_device_alias(None),
-            approval=lambda page, challenge, code: _perform_approval(page, challenge, code, False),
-            stop_previous=stop_and_remove_owner_task,
-        )
-        typer.echo("Device paired. No projects added; choose Add Project after Online appears.")
+    device = bootstrap.selected_device()
+    project = selected_project()
+    if device is None or device.origin != DEFAULT_CLOUD_ORIGIN:
+        return False
+    if project is not None and (
+        project.record_id != device.record_id
+        or project.device_id != device.device_id
+        or project.owner_sub != device.owner_sub
+        or project.origin != device.origin
+        or project.fingerprint != device.fingerprint
+    ):
+        raise ValueError("Selected project belongs to a different device.")
+    state = inspect_inventory(
+        device.origin,
+        device.owner_sub,
+        device.device_id,
+        project.project_id if project is not None else None,
+        bootstrap.verified_device_key(device),
+    )
+    if state == "project_missing" and project is not None:
+        bootstrap.detach_missing_project(device, project, stop_and_remove_owner_task)
+        typer.echo("Cloud project was removed. Keeping this device and its remaining projects.")
         return True
+    if state not in {"unverified", "device_revoked"}:
+        typer.echo(
+            "Cloud did not confirm that this device needs replacement. "
+            "Existing pairing kept. Check Cloud Devices and retry the same setup.",
+            err=True,
+        )
+        return False
+    typer.echo(
+        "Opening browser to verify device replacement. Cloud will preserve a valid existing device."
+    )
+    bootstrap.repair_device_only(
+        origin=device.origin,
+        alias=_resolve_device_alias(None),
+        approval=lambda page, challenge, code: _perform_approval(page, challenge, code, False),
+        stop_previous=stop_and_remove_owner_task,
+    )
+    typer.echo("Device paired. No projects added; choose Add Project after Online appears.")
+    return True
+
+
+def _offer_device_recovery() -> bool:
+    """Diagnose first; only a missing/unverified or revoked identity needs approval."""
+    from kicad_mcp.cloud_windows_enrollment import WindowsRecoveryDeniedError
 
     try:
-        return _call_with_owner_connector(recover)
+        return _call_with_owner_connector(_recover_windows_device)
     except WindowsRecoveryDeniedError as exc:
         typer.echo(str(exc), err=True)
         return False
@@ -992,6 +994,45 @@ def _single_owner_cloud_remote[**Args, Result](
     return guarded
 
 
+def _repair_remote_device(origin: str, alias: str | None, no_browser: bool) -> None:
+    from kicad_mcp.cloud_windows_device_bootstrap import repair_device_only
+    from kicad_mcp.cloud_windows_task_scheduler import stop_and_remove_owner_task
+
+    try:
+        repair_device_only(
+            origin=origin,
+            alias=_resolve_device_alias(alias),
+            approval=lambda page, challenge, code: _perform_approval(
+                page, challenge, code, no_browser
+            ),
+            stop_previous=stop_and_remove_owner_task,
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise typer.BadParameter(
+            "Device repair could not be completed safely. Review Cloud Devices before retrying."
+        ) from exc
+    typer.echo(
+        "Device paired. No project was added. Start cloud again, then use Add Project in Devices."
+    )
+
+
+def _trust_managed_edit(existing: WindowsRegisteredProject, origin: str, interactive: bool) -> None:
+    if not interactive or origin != DEFAULT_CLOUD_ORIGIN:
+        raise typer.BadParameter(
+            "Cloud-managed editing requires the official Cloud and owner terminal."
+        )
+    from kicad_mcp.cloud_windows_write_issuer import trust_bundled_owner_cloud_issuer
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    try:
+        trust_bundled_owner_cloud_issuer(existing.record_id, origin=origin)
+    except LocalWriteDeniedError:
+        raise typer.BadParameter(
+            "Cloud editing cannot start: the official issuer identity could not be verified. "
+            "Existing trust was not replaced. Retry setup after the issue is resolved."
+        ) from None
+
+
 @cloud_app.command("remote")
 @_single_owner_cloud_remote
 def remote(
@@ -1074,26 +1115,7 @@ def remote(
             raise typer.BadParameter(
                 "Device repair cannot be combined with project or native edit options."
             )
-        from kicad_mcp.cloud_windows_device_bootstrap import repair_device_only
-        from kicad_mcp.cloud_windows_task_scheduler import stop_and_remove_owner_task
-
-        try:
-            repair_device_only(
-                origin=origin,
-                alias=_resolve_device_alias(alias),
-                approval=lambda page, challenge, code: _perform_approval(
-                    page, challenge, code, no_browser
-                ),
-                stop_previous=stop_and_remove_owner_task,
-            )
-        except (OSError, ValueError, RuntimeError) as exc:
-            raise typer.BadParameter(
-                "Device repair could not be completed safely. Review Cloud Devices before retrying."
-            ) from exc
-        typer.echo(
-            "Device paired. No project was added. "
-            "Start cloud again, then use Add Project in Devices."
-        )
+        _repair_remote_device(origin, alias, no_browser)
         return
     existing = _select_remote_project(origin, browse, project_dir, no_browser, alias=alias)
     if existing is None:
@@ -1103,20 +1125,7 @@ def remote(
 
     managed_edit = _CLOUD_MANAGED_EDIT.get()
     if managed_edit:
-        if not interactive or origin != DEFAULT_CLOUD_ORIGIN:
-            raise typer.BadParameter(
-                "Cloud-managed editing requires the official Cloud and owner terminal."
-            )
-        from kicad_mcp.cloud_windows_write_issuer import trust_bundled_owner_cloud_issuer
-        from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
-
-        try:
-            trust_bundled_owner_cloud_issuer(existing.record_id, origin=origin)
-        except LocalWriteDeniedError:
-            raise typer.BadParameter(
-                "Cloud editing cannot start: the official issuer identity could not be verified. "
-                "Existing trust was not replaced. Retry setup after the issue is resolved."
-            ) from None
+        _trust_managed_edit(existing, origin, interactive)
 
     enable_write = _owner_native_write_enabled(
         existing,
@@ -1287,6 +1296,30 @@ def _validate_posix_connect_options(enable_native_write: bool, project_dir: Path
         raise typer.BadParameter("Use cloud setup --project-dir to register a local KiCad project.")
 
 
+def _recover_registered_posix_device(
+    root: Path,
+    origin: str,
+    alias: str,
+    approval: Callable[[str, str, str], None],
+    existing: dict[str, str],
+) -> bool:
+    from kicad_mcp.cloud_posix_device_bootstrap import recover_missing_project
+
+    if recover_missing_project(root, existing):
+        typer.echo("Cloud project removed. Keeping this device and its remaining projects.")
+        return True
+    from kicad_mcp.cloud_posix_replacement import recover_device
+
+    if recover_device(root, origin, alias, approval):
+        typer.echo("Device restored. Use Add Project after Online appears.")
+        return True
+    typer.echo(
+        "Cloud did not confirm a replacement is needed. Existing registration kept.",
+        err=True,
+    )
+    return False
+
+
 def _connect_registered_posix_device(
     root: Path,
     origin: str,
@@ -1310,22 +1343,8 @@ def _connect_registered_posix_device(
             except typer.Exit as exc:
                 if exc.exit_code != 3:
                     raise
-                from kicad_mcp.cloud_posix_device_bootstrap import recover_missing_project
-
-                if recover_missing_project(root, existing):
-                    typer.echo(
-                        "Cloud project removed. Keeping this device and its remaining projects."
-                    )
+                if _recover_registered_posix_device(root, origin, alias, approval, existing):
                     return False
-                from kicad_mcp.cloud_posix_replacement import recover_device
-
-                if recover_device(root, origin, alias, approval):
-                    typer.echo("Device restored. Use Add Project after Online appears.")
-                    return False
-                typer.echo(
-                    "Cloud did not confirm a replacement is needed. Existing registration kept.",
-                    err=True,
-                )
                 raise
             return True
         typer.echo("A private local registration exists for this Cloud origin.")
@@ -1342,6 +1361,51 @@ def _connect_registered_posix_device(
         "Existing registration and keys will be preserved."
     )
     return False
+
+
+def _resume_posix_replacement(
+    root: Path, origin: str, device_alias: str, approval: Callable[[str, str, str], None]
+) -> None:
+    from kicad_mcp.cloud_posix_replacement import recover_device
+
+    try:
+        if recover_device(root, origin, device_alias, approval):
+            typer.echo("Device recovery resumed. Use Add Project after Online appears.")
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise typer.BadParameter(
+            "Saved device recovery could not be resumed. Existing files kept."
+        ) from exc
+
+
+def _connect_posix_device_only(
+    root: Path, origin: str, device_alias: str, approval: Callable[[str, str, str], None]
+) -> None:
+    from kicad_mcp.cloud_posix_device_bootstrap import connect_device_only
+    from kicad_mcp.cloud_posix_initial_enrollment import JOURNAL
+    from kicad_mcp.cloud_posix_recovery import inspect_unbound_device
+
+    # Pending enrollment can legitimately contain a key without an owner binding.
+    # The locked bootstrap validates the journal and exact key before any request.
+    if not os.path.lexists(root / JOURNAL):
+        try:
+            inspect_unbound_device(root, origin)
+        except (OSError, ValueError) as exc:
+            raise typer.BadParameter(
+                "Existing device keys require registration repair. Run cloud status."
+            ) from exc
+
+    try:
+        record = connect_device_only(
+            root,
+            origin,
+            device_alias,
+            approval,
+            lambda value: _display_cloud_status(value, origin),
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if record is not None:
+        _run_posix_foreground(record)
 
 
 @cloud_app.command()
@@ -1387,7 +1451,7 @@ def connect(
     from kicad_mcp.cloud_local_registry import default_registry_root
 
     root = default_registry_root()
-    from kicad_mcp.cloud_posix_replacement import pending_replacement, recover_device
+    from kicad_mcp.cloud_posix_replacement import pending_replacement
 
     device_alias = _resolve_device_alias(None if alias == _DEFAULT_DEVICE_ALIAS else alias)
 
@@ -1395,13 +1459,7 @@ def connect(
         _perform_approval(page, challenge, code, no_browser)
 
     if not new_device and _owner_terminal() and pending_replacement(root):
-        try:
-            if recover_device(root, origin, device_alias, approval):
-                typer.echo("Device recovery resumed. Use Add Project after Online appears.")
-        except (OSError, ValueError, RuntimeError) as exc:
-            raise typer.BadParameter(
-                "Saved device recovery could not be resumed. Existing files kept."
-            ) from exc
+        _resume_posix_replacement(root, origin, device_alias, approval)
     folder = root / "projects"
     try:
         has_registration = folder.exists() and any(folder.iterdir())
@@ -1413,32 +1471,7 @@ def connect(
         has_registration = folder.exists() and any(folder.iterdir())
 
     if not has_registration and not new_device and _owner_terminal():
-        from kicad_mcp.cloud_posix_device_bootstrap import connect_device_only
-        from kicad_mcp.cloud_posix_initial_enrollment import JOURNAL
-        from kicad_mcp.cloud_posix_recovery import inspect_unbound_device
-
-        # Pending enrollment can legitimately contain a key without an owner binding.
-        # The locked bootstrap validates the journal and exact key before any request.
-        if not os.path.lexists(root / JOURNAL):
-            try:
-                inspect_unbound_device(root, origin)
-            except (OSError, ValueError) as exc:
-                raise typer.BadParameter(
-                    "Existing device keys require registration repair. Run cloud status."
-                ) from exc
-
-        try:
-            record = connect_device_only(
-                root,
-                origin,
-                device_alias,
-                approval,
-                lambda value: _display_cloud_status(value, origin),
-            )
-        except (OSError, ValueError, RuntimeError) as exc:
-            raise typer.BadParameter(str(exc)) from exc
-        if record is not None:
-            _run_posix_foreground(record)
+        _connect_posix_device_only(root, origin, device_alias, approval)
         return
 
     from kicad_mcp.cloud_pair import main as pair

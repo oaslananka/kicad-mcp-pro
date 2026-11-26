@@ -2297,11 +2297,14 @@ def test_posix_same_command_resumes_interrupted_initial_pairing(
                 "deviceFingerprint": state["pin"],
                 "expiresAtMs": time.time_ns() // 1_000_000 + 299_000,
             }
-        assert payload["challengeId"] == challenge and payload["deviceCode"] == secret
+        assert payload["challengeId"] == challenge
+        assert payload["deviceCode"] == secret
         if endpoint.endswith("/status"):
             return {"approved": state["approved"]}
-        assert endpoint.endswith("/redeem") and state["approved"]
-        assert payload["resumeInitial"] is True and payload["connectOnApproval"] is True
+        assert endpoint.endswith("/redeem")
+        assert state["approved"]
+        assert payload["resumeInitial"] is True
+        assert payload["connectOnApproval"] is True
         state["public"].verify(
             base64.urlsafe_b64decode(payload["signature"] + "=="),
             b"kicad-cloud-pairing-initial-v1\x00" + challenge.encode() + b"\x00" + secret.encode(),
@@ -2321,7 +2324,8 @@ def test_posix_same_command_resumes_interrupted_initial_pairing(
         interrupt("approval")
 
     async def connect(registry, identity, _status):
-        assert registry == root and identity[1]["deviceId"] == device
+        assert registry == root
+        assert identity[1]["deviceId"] == device
         sessions.append(identity[0])
         return None
 
@@ -2334,7 +2338,8 @@ def test_posix_same_command_resumes_interrupted_initial_pairing(
     monkeypatch.setattr("kicad_mcp.cloud_posix_device_bootstrap._wait_for_project", connect)
     runner = CliRunner()
     first = runner.invoke(app, args)
-    assert first.exit_code != 0 and state["interrupted"], first.output
+    assert first.exit_code != 0, first.output
+    assert state["interrupted"], first.output
     assert (root / JOURNAL).is_file()
     (key,) = (root / "keys").glob("*.pem")
     original = key.read_bytes()
@@ -2342,7 +2347,8 @@ def test_posix_same_command_resumes_interrupted_initial_pairing(
     second = runner.invoke(app, args)
     assert second.exit_code == 0, second.output
     assert sessions == [key]
-    assert key.read_bytes() == original and len(set(issued)) == 1
+    assert key.read_bytes() == original
+    assert len(set(issued)) == 1
     assert approvals == ["browser"]
     assert len(redeemed) == (2 if interruption == "redeem" else 1)
     assert all(payload == redeemed[0] for payload in redeemed)

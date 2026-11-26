@@ -51,7 +51,8 @@ def test_migration_checks_membership_and_never_reimports_completed_entry(
     if expected:
         migrated.clear()
         assert migration.migrate(**options) == 0
-        assert not migrated and calls == [pid]
+        assert not migrated
+        assert calls == [pid]
     elif state == "project_missing":
         assert pid in receipts
     else:

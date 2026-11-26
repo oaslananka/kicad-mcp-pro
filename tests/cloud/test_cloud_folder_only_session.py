@@ -299,4 +299,5 @@ async def test_update_drain_prevents_new_folder_request() -> None:
         await asyncio.wait_for(serve_owner_folder_only(socket, receipt, folder, drain=drain), 1)
         == receipt
     )
-    assert not folder.bound and not socket.sent
+    assert not folder.bound
+    assert not socket.sent

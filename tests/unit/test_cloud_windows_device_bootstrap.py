@@ -484,7 +484,8 @@ def test_device_repair_archives_without_adding_project(
         assert store[(device_slot[0], "recovery_switch")] == journal
         assert boot.resume_device_switch(previous.origin)
         assert boot.selected_device() == replacement
-        assert project_slot not in store and active_slot not in store
+        assert project_slot not in store
+        assert active_slot not in store
         assert not boot.resume_device_switch(previous.origin)
     elif fault != "none":
         with pytest.raises((OSError, LocalApprovalDeniedError)):
@@ -494,7 +495,8 @@ def test_device_repair_archives_without_adding_project(
     else:
         assert boot.repair_device_only(**options) == replacement
         assert boot.selected_device() == replacement
-        assert project_slot not in store and active_slot not in store
+        assert project_slot not in store
+        assert active_slot not in store
         for slot, archive in (
             (device_slot, "archived_device_selected"),
             (project_slot, "archived_selected"),
@@ -561,9 +563,11 @@ def test_detach_deleted_project_retains_device_and_archives(
         if fault == "crash":
             with pytest.raises(KeyboardInterrupt):
                 boot.detach_missing_project(device, project, lambda: True)
-            assert selected in store and active not in store
+            assert selected in store
+            assert active not in store
         boot.detach_missing_project(device, project, lambda: True)
-        assert selected not in store and active not in store
+        assert selected not in store
+        assert active not in store
         assert store[(project.registration_id, "detached_selected")] == b"selected project"
         assert store[(project.registration_id, "detached_active")] == b"active project"
     assert boot.selected_device() == device
@@ -631,7 +635,8 @@ async def test_device_only_update_drain_preserves_windows_identity(
     await asyncio.wait_for(
         boot.run_device_only(device, status_callback=activity.append, drain=drain), 2
     )
-    assert calls == ["socket"] and activity == ["Connecting"]
+    assert calls == ["socket"]
+    assert activity == ["Connecting"]
     assert boot.selected_device() == device
 
 
@@ -726,7 +731,8 @@ def test_resume_switch_verifies_journal_and_archives_before_mutating(
     if fault == "none":
         assert boot.resume_owner_recovery(previous.origin, lambda: True)
         assert store[selected] == boot._device_marker_payload(replacement)
-        assert journal_slot not in store and pending not in store
+        assert journal_slot not in store
+        assert pending not in store
     else:
         with pytest.raises(LocalApprovalDeniedError):
             boot.resume_device_switch(previous.origin, stop_previous=lambda: fault != "stop")
@@ -788,7 +794,10 @@ async def test_official_device_only_migrates_scoped_legacy_selection_before_sock
     calls = []
 
     def migrate(identity, signing_key, authorized, primary):
-        assert identity == device and signing_key is key and authorized() and primary is None
+        assert identity == device
+        assert signing_key is key
+        assert authorized()
+        assert primary is None
         calls.append("migration")
         return 1
 
