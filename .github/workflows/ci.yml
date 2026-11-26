@@ -384,6 +384,15 @@ jobs:
             'tests/unit/test_cloud_windows_binding.py'
             'tests/unit/test_cloud_windows_credentials.py'
             'tests/unit/test_cloud_windows_project_record.py'
+            # Capture the real Windows-only owner vault, mutex and ACL paths.
+            'tests/unit/test_cloud_windows_device_bootstrap.py'
+            'tests/unit/test_cloud_windows_initial_enrollment.py'
+            'tests/unit/test_cloud_windows_legacy_acl.py'
+            'tests/unit/test_cloud_windows_native_picker_mocks.py'
+            'tests/unit/test_cloud_windows_onboarding_ui.py'
+            'tests/unit/test_cloud_windows_scoped_projects.py'
+            'tests/unit/test_cloud_windows_single_instance.py'
+            'tests/unit/test_cloud_windows_update_control.py'
             'tests/cloud/test_cloud_pair.py'
             'tests/cloud/test_cloud_native_drc_windows.py'
             # Newly reviewed Cloud owner/native write test paths must be
@@ -396,6 +405,7 @@ jobs:
             'tests/cloud/test_cloud_windows_write_marker.py'
             'tests/cloud/test_cloud_windows_write_revision.py'
             'tests/cloud/test_cloud_windows_write_transaction.py'
+            'tests/cloud/test_cloud_windows_write_project_binding.py'
             'tests/cloud/test_cloud_native_write_dispatch.py'
             'tests/cloud/test_cloud_write_contract.py'
             'tests/cloud/test_cloud_write_proof.py'

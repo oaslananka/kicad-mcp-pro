@@ -189,3 +189,37 @@ def test_migration_rechecks_local_authority_after_inventory(tmp_path, monkeypatc
         == 0
     )
     assert not receipts
+
+
+@pytest.mark.parametrize("fault", ["shared-parent", "hardlink", "empty", "not-object", "bad-entry"])
+def test_legacy_cache_never_imports_untrusted_paths(tmp_path, monkeypatch, fault) -> None:
+    import json
+    import os
+
+    from kicad_mcp import cloud_legacy_project_migration as migration
+
+    if os.name != "posix":
+        pytest.skip("POSIX private directory checks")
+    folder = tmp_path / "connector"
+    folder.mkdir(mode=0o700)
+    file = tmp_path / "board.kicad_pro"
+    file.touch()
+    cache = folder / "folder-bindings.json"
+    pid = str(uuid4())
+    cache.write_text(json.dumps({pid: str(file)}))
+    cache.chmod(0o600)
+    monkeypatch.setattr(migration, "default_bindings_file", lambda: cache)
+    if fault == "shared-parent":
+        folder.chmod(0o777)
+    elif fault == "hardlink":
+        os.link(cache, folder / "other.json")
+    elif fault == "empty":
+        cache.write_bytes(b"")
+    elif fault == "not-object":
+        cache.write_text("[]")
+    else:
+        cache.write_text(json.dumps({pid: 42, "invalid-uuid": str(file)}))
+    try:
+        assert migration.legacy_candidates() == {}
+    finally:
+        folder.chmod(0o700)

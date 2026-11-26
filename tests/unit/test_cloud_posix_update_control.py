@@ -136,3 +136,31 @@ async def test_private_control_ignores_symlink_and_public_request(tmp_path, monk
             assert not drain.is_set()
             assert control.request(root, generation, "a")
             await asyncio.wait_for(drain.wait(), 2)
+
+
+@pytest.mark.asyncio
+async def test_update_lease_requires_owner_and_preserves_matching_request(
+    tmp_path, monkeypatch
+) -> None:
+    from kicad_mcp import cloud_posix_update_control as control
+
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    generation = uuid4().hex
+    monkeypatch.setenv("KICAD_CLOUD_UPDATE_GENERATION", generation)
+    monkeypatch.setenv("KICAD_CLOUD_UPDATE_SLOT", "a")
+    with pytest.raises(ValueError, match="No local foreground"):
+        async with control.watch(root, ORIGIN):
+            pytest.fail("lease without owner")
+    _write_private_json(root, control.REQUEST, {"generation": generation, "slot": "a"})
+    with _connector_session_lock(root):
+        async with control.watch(root, ORIGIN) as drain:
+            assert drain is not None and drain.is_set()
+
+            def write_failed(*_args: object):
+                raise OSError("cannot write")
+
+            monkeypatch.setattr(control, "_write_private_json", write_failed)
+            assert not control.request(root, generation, "a")
+    assert not (root / control.LEASE).exists()
+    assert (root / control.REQUEST).exists()

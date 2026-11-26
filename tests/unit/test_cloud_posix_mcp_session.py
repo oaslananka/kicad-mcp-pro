@@ -218,6 +218,10 @@ def test_posix_explicit_secondary_project_binding(tmp_path, monkeypatch) -> None
     )
     conflicting_token = conflicting.choose()["projects"][0]["id"]
     assert not conflicting.bind(conflicting_token, pid)
+    assert conflicting.bind(conflicting_token, record["projectId"])
+    assert folder.project_path(record["projectId"]) == str(primary / "first.kicad_pro")
+    assert folder.project_path(str(uuid4())) is None
+    assert bindings.resolve_secondary(root, record, "invalid") is None
     assert folder.project_path(pid) == str(selected)
     other = {**record, "deviceId": str(uuid4())}
     assert bindings.resolve_secondary(root, other, pid) is None
@@ -228,3 +232,58 @@ def test_posix_explicit_secondary_project_binding(tmp_path, monkeypatch) -> None
     state["authorized"] = False
     with pytest.raises(ValueError):
         service._current_project(record["projectId"])
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner-private registry")
+def test_native_edit_adapter_requires_bound_receipt_and_current_authority(
+    tmp_path, monkeypatch
+) -> None:
+    from kicad_mcp import cloud_native_write_dispatch as dispatch
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    board = tmp_path / "board"
+    board.mkdir()
+    record = {
+        "ownerSub": "owner",
+        "cloudOrigin": ORIGIN,
+        "deviceId": str(uuid4()),
+        "projectId": str(uuid4()),
+    }
+    project = LocalRegisteredRead(root / "key.pem", board, "board")
+    allowed = {"value": True}
+    monkeypatch.setattr(connector, "_is_enabled", lambda *_: allowed["value"])
+    calls = []
+
+    def prepare(selected, *, authorized, cancelled):
+        assert selected.directory == board and authorized() and not cancelled()
+        calls.append("prepare")
+        return {"board": "revision"}
+
+    def execute(proof, **kwargs: object):
+        assert proof == b"proof" and kwargs["operator_project"].directory == board
+        assert kwargs["verified"].session_id == receipt.session_id
+        assert kwargs["authorized"]() and not kwargs["cancelled"]()
+        assert kwargs["persist_to_disk"] is True
+        calls.append("execute")
+        return {"ok": True}
+
+    monkeypatch.setattr(dispatch, "prepare_native_write_revisions", prepare)
+    monkeypatch.setattr(dispatch, "execute_verified_signed_pcb_move", execute)
+    options = connector._posix_mcp_settings(root, record, project, connector._FOREGROUND_FILE)
+    native = options["native_write"]
+    with pytest.raises(LocalWriteDeniedError):
+        native.write_executor(record["projectId"], b"proof", True)
+    with pytest.raises(LocalApprovalDeniedError):
+        options["mcp_bridge_factory"](HandshakeReceipt(str(uuid4()), str(uuid4())))
+    receipt = HandshakeReceipt(record["deviceId"], str(uuid4()))
+    options["mcp_bridge_factory"](receipt)
+    with pytest.raises(LocalWriteDeniedError):
+        native.revisions_preparer(str(uuid4()))
+    assert native.revisions_preparer(record["projectId"]) == {"board": "revision"}
+    assert native.write_executor(record["projectId"], b"proof", True) == {"ok": True}
+    allowed["value"] = False
+    with pytest.raises(LocalWriteDeniedError):
+        native.write_executor(record["projectId"], b"proof", True)
+    assert calls == ["prepare", "execute"]

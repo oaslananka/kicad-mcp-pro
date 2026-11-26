@@ -633,3 +633,177 @@ async def test_device_only_update_drain_preserves_windows_identity(
     )
     assert calls == ["socket"] and activity == ["Connecting"]
     assert boot.selected_device() == device
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "none",
+        "journal",
+        "missing-binding",
+        "foreign-origin",
+        "foreign-owner",
+        "fingerprint",
+        "archives",
+        "hash",
+        "stop",
+        "delete-refused",
+        "pending-tamper",
+        "pending-delete-refused",
+        "journal-delete-refused",
+    ],
+)
+def test_resume_switch_verifies_journal_and_archives_before_mutating(
+    saved_device, monkeypatch, fault
+) -> None:
+    from dataclasses import replace
+
+    from kicad_mcp import cloud_windows_connector as connector
+    from kicad_mcp import cloud_windows_credentials as credentials
+
+    previous, store = saved_device
+    replacement = replace(
+        previous, record_id="b" * 32, device_id=str(uuid4()), fingerprint="b" * 64
+    )
+    boot.remember_device(previous)
+    selected = (boot._DEVICE_SELECTION_SLOT, "selected")
+    journal_slot = (boot._DEVICE_SELECTION_SLOT, "recovery_switch")
+    archives = {}
+    for slot, part, archive in boot._switch_slots():
+        old = store.get((slot, part))
+        archives[archive] = hashlib.sha256(old).hexdigest() if old is not None else None
+        if old is not None:
+            store[replacement.record_id, archive] = old
+    if fault == "foreign-origin":
+        replacement = replace(replacement, origin="https://foreign.example")
+    elif fault == "foreign-owner":
+        replacement = replace(replacement, owner_sub="foreign")
+    for identity in (previous, replacement):
+        store[identity.record_id, "binding"] = boot._device_marker_payload(identity)
+    if fault == "missing-binding":
+        store.pop((replacement.record_id, "binding"))
+    if fault == "archives":
+        archives.pop("archived_active")
+    if fault == "hash":
+        store[replacement.record_id, "archived_device_selected"] = b"tampered"
+    journal = {
+        "previous": previous.record_id,
+        "replacement": replacement.record_id,
+        "archives": archives,
+    }
+    store[journal_slot] = b"[]" if fault == "journal" else json.dumps(journal).encode()
+    pending = (previous.record_id, "recovery_pending")
+    store[pending] = json.dumps(
+        {"recordId": replacement.record_id if fault != "pending-tamper" else "foreign"}
+    ).encode()
+
+    def inspect(**kwargs: object):
+        fingerprint = (
+            previous.fingerprint
+            if kwargs["record_id"] == previous.record_id
+            else replacement.fingerprint
+        )
+        return SimpleNamespace(fingerprint="0" * 64 if fault == "fingerprint" else fingerprint)
+
+    monkeypatch.setattr(boot, "inspect_local_binding", inspect)
+    monkeypatch.setattr(connector, "selected_project", lambda: None)
+    monkeypatch.setattr(
+        credentials,
+        "delete_credential",
+        lambda slot, part: (
+            False
+            if (slot, part)
+            == {
+                "delete-refused": selected,
+                "pending-delete-refused": pending,
+                "journal-delete-refused": journal_slot,
+            }.get(fault)
+            else store.pop((slot, part), None) is not None
+        ),
+    )
+    before = store.copy()
+    assert boot.owner_recovery_pending()
+    if fault == "none":
+        assert boot.resume_owner_recovery(previous.origin, lambda: True)
+        assert store[selected] == boot._device_marker_payload(replacement)
+        assert journal_slot not in store and pending not in store
+    else:
+        with pytest.raises(LocalApprovalDeniedError):
+            boot.resume_device_switch(previous.origin, stop_previous=lambda: fault != "stop")
+        if fault in {"pending-tamper", "pending-delete-refused", "journal-delete-refused"}:
+            assert store[selected] == boot._device_marker_payload(replacement)
+            assert store[journal_slot] == before[journal_slot]
+            if fault != "journal-delete-refused":
+                assert store[pending] == before[pending]
+        else:
+            assert store == before
+
+
+@pytest.mark.parametrize("pending", [False, True])
+def test_resume_owner_recovery_never_opens_new_approval(saved_device, monkeypatch, pending) -> None:
+    from kicad_mcp import cloud_windows_connector as connector
+
+    device, store = saved_device
+    boot.remember_device(device)
+    monkeypatch.setattr(connector, "selected_project", lambda: None)
+    if pending:
+        store[device.record_id, "recovery_pending"] = b"approved"
+    events = []
+
+    def repair(**kwargs: object) -> None:
+        events.append(kwargs["alias"])
+        with pytest.raises(LocalApprovalDeniedError):
+            kwargs["approval"]("page", "challenge", "code")
+
+    monkeypatch.setattr(boot, "repair_device_only", repair)
+    assert boot.owner_recovery_pending() is pending
+    assert boot.resume_owner_recovery(device.origin, lambda: True) is pending
+    assert events == (["Recovery"] if pending else [])
+
+
+@pytest.mark.asyncio
+async def test_official_device_only_migrates_scoped_legacy_selection_before_socket(
+    saved_device, monkeypatch, tmp_path
+) -> None:
+    import asyncio
+    from contextlib import nullcontext
+    from dataclasses import replace
+
+    from kicad_mcp import cloud_windows_connector as connector
+    from kicad_mcp import cloud_windows_scoped_projects as scoped
+    from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+    device, _ = saved_device
+    device = replace(device, origin=_KICAD_CLOUD_ORIGIN)
+    monkeypatch.setattr(boot, "owner_connector_instance", lambda **_: nullcontext())
+    monkeypatch.setattr(boot, "selected_device", lambda: device)
+    monkeypatch.setattr(connector, "selected_project", lambda: None)
+    key = Ed25519PrivateKey.generate()
+    monkeypatch.setattr(boot, "verified_device_key", lambda _: key)
+    pid = str(uuid4())
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_legacy_project_migration.legacy_candidates",
+        lambda: {pid: tmp_path / "board.kicad_pro"},
+    )
+    calls = []
+
+    def migrate(identity, signing_key, authorized, primary):
+        assert identity == device and signing_key is key and authorized() and primary is None
+        calls.append("migration")
+        return 1
+
+    monkeypatch.setattr(scoped, "migrate_legacy", migrate)
+    monkeypatch.setattr(boot, "restore_existing_project", lambda _: calls.append("restore") or True)
+
+    async def no_socket(**kwargs: object) -> None:
+        pytest.fail("restored project must not start folder-only socket")
+
+    monkeypatch.setattr(boot, "execute_owner_folder_only_session", no_socket)
+    drain = asyncio.Event()
+    activity = []
+    await boot.run_device_only(device, status_callback=activity.append, drain=drain)
+    assert calls == ["migration", "restore"]
+    assert activity == ["Restored an existing Cloud project on this device."]
+    drain.set()
+    await boot.run_device_only(device, status_callback=activity.append, drain=drain)
+    assert calls == ["migration", "restore"]

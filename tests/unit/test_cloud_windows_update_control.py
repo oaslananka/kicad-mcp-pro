@@ -164,3 +164,137 @@ async def test_update_wrapper_does_not_publish_lease_for_ineligible_session(
         assert calls == ["ordinary"] and not store and control.probe() is None
     finally:
         cloud_user_cli._BACKGROUND_CONNECTOR_HANDOFF.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_update_lease_requires_owner_and_discards_only_stale_generation(
+    control_fixture, monkeypatch
+) -> None:
+    from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
+
+    control, store = control_fixture
+    old, current = uuid4().hex, uuid4().hex
+    monkeypatch.setenv("KICAD_CLOUD_UPDATE_GENERATION", current)
+    monkeypatch.setenv("KICAD_CLOUD_UPDATE_SLOT", "a")
+    store[(control._SLOT, "update_lease")] = control._payload(old, "b")
+    store[(old, "update_request")] = control._payload(old, "b")
+    before = store.copy()
+    monkeypatch.setattr(control, "_owner_held", lambda: False)
+    with pytest.raises(LocalApprovalDeniedError):
+        async with control.watch(ORIGIN):
+            pytest.fail("unauthorized owner")
+    assert store == before
+    monkeypatch.setattr(control, "_owner_held", lambda: True)
+    live = control._generation_live
+    monkeypatch.setattr(control, "_generation_live", lambda generation: generation == old)
+    with pytest.raises(LocalApprovalDeniedError):
+        async with control.watch(ORIGIN):
+            pytest.fail("must not replace live generation")
+    assert store == before
+    monkeypatch.setattr(control, "_generation_live", live)
+    async with control.watch(ORIGIN) as drain:
+        assert drain is not None and not drain.is_set()
+        assert (old, "update_request") not in store
+        assert control.probe() == (current, "a")
+        assert control.request(current, "a")
+        assert control.request(current, "a")
+        await asyncio.wait_for(drain.wait(), 2)
+    assert not store
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["foreign", "malformed", "missing"])
+async def test_update_watch_stops_on_lost_or_invalid_lease(
+    control_fixture, monkeypatch, fault
+) -> None:
+    control, store = control_fixture
+    current = uuid4().hex
+    monkeypatch.setenv("KICAD_CLOUD_UPDATE_GENERATION", current)
+    monkeypatch.setenv("KICAD_CLOUD_UPDATE_SLOT", "a")
+    async with control.watch(ORIGIN) as drain:
+        assert drain is not None and not drain.is_set()
+        slot = (control._SLOT, "update_lease")
+        if fault == "missing":
+            store.pop(slot)
+        elif fault == "foreign":
+            store[slot] = control._payload(uuid4().hex, "b")
+        else:
+            store[slot] = b'{"generation":3,"slot":"bad"}'
+        assert control.probe() is None
+        assert not control.request(current, "a")
+        before = store.copy()
+        await asyncio.wait_for(drain.wait(), 2)
+        # Restore a parseable record only for cleanup of this test's lease.
+        if fault == "malformed":
+            store.pop(slot)
+            before = store.copy()
+    assert store == before
+
+
+@pytest.mark.parametrize("raw", [b"[]", b"{}", b'{"generation":1,"slot":"a"}', b"not-json"])
+def test_malformed_update_lease_does_not_authorize_request(control_fixture, raw) -> None:
+    control, store = control_fixture
+    store[(control._SLOT, "update_lease")] = raw
+    before = store.copy()
+    assert control.probe() is None
+    assert not control.request(uuid4().hex, "a")
+    assert store == before
+
+
+@pytest.mark.asyncio
+async def test_update_request_survives_same_generation_transition(
+    control_fixture, monkeypatch
+) -> None:
+    control, store = control_fixture
+    current = uuid4().hex
+    monkeypatch.setenv("KICAD_CLOUD_UPDATE_GENERATION", current)
+    monkeypatch.setenv("KICAD_CLOUD_UPDATE_SLOT", "b")
+    async with control.watch(ORIGIN) as drain:
+        assert drain is not None and not drain.is_set()
+        # The device-only session completes immediately after the installer request.
+        assert control.request(current, "b")
+    assert store[(current, "update_request")] == control._payload(current, "b")
+    async with control.watch(ORIGIN) as drain:
+        assert drain is not None and drain.is_set()
+    assert not store
+
+
+def test_update_control_rejects_unsupported_platform_and_invalid_generation(monkeypatch) -> None:
+    from kicad_mcp import cloud_windows_update_control as control
+    from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
+
+    monkeypatch.setattr(control, "_supported", lambda: False)
+    assert control.probe() is None
+    with pytest.raises(LocalApprovalDeniedError):
+        control._kernel()
+    with pytest.raises(LocalApprovalDeniedError):
+        control._name("invalid")
+
+
+@pytest.mark.parametrize("error", [2, 5, 183])
+def test_generation_mutex_denies_unverifiable_kernel_results(monkeypatch, error) -> None:
+    from types import SimpleNamespace
+
+    from kicad_mcp import cloud_windows_credentials as credentials
+    from kicad_mcp import cloud_windows_update_control as control
+    from kicad_mcp.cloud_pair_keys import LocalApprovalDeniedError
+
+    closed = []
+    kernel = SimpleNamespace(
+        CreateMutexW=lambda *_: 123 if error == 183 else None,
+        OpenMutexW=lambda *_: None,
+        CloseHandle=closed.append,
+        ReleaseMutex=lambda *_: pytest.fail("must not release a mutex we did not acquire"),
+    )
+    monkeypatch.setattr(control, "_kernel", lambda: kernel)
+    monkeypatch.setattr(credentials, "_last_error", lambda: error)
+    generation = uuid4().hex
+    with pytest.raises(LocalApprovalDeniedError):
+        with control._generation_mutex(generation):
+            pytest.fail("unverified mutex must not be acquired")
+    assert closed == ([123] if error == 183 else [])
+    if error == 2:
+        assert not control._generation_live(generation)
+    else:
+        with pytest.raises(LocalApprovalDeniedError):
+            control._generation_live(generation)

@@ -2203,3 +2203,49 @@ def test_posix_same_command_recovers_deleted_project(monkeypatch, tmp_path: Path
     if outcome != "unchanged":
         expected.append("device-only")
     assert events == expected
+
+
+@pytest.mark.parametrize("fault", ["none", "recovery", "connect"])
+def test_posix_connect_resumes_saved_recovery_before_device_only(
+    monkeypatch, tmp_path, fault
+) -> None:
+    from kicad_mcp import cloud_user_cli
+
+    root = tmp_path / "registry"
+    events = []
+    record = {"projectId": "existing"}
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr("kicad_mcp.cloud_local_registry.default_registry_root", lambda: root)
+    monkeypatch.setattr("kicad_mcp.cloud_posix_replacement.pending_replacement", lambda _: True)
+    monkeypatch.setattr(cloud_user_cli, "_perform_approval", lambda *_: events.append("approval"))
+    monkeypatch.setattr("kicad_mcp.cloud_posix_recovery.inspect_unbound_device", lambda *_: None)
+
+    def recover(registry, origin, alias, approval):
+        assert registry == root
+        events.append("recover")
+        if fault == "recovery":
+            raise ValueError("recovery refused")
+        approval("page", "challenge", "code")
+        return True
+
+    def connect(*_args: object):
+        events.append("connect")
+        if fault == "connect":
+            raise ValueError("connect refused")
+        return record
+
+    monkeypatch.setattr("kicad_mcp.cloud_posix_replacement.recover_device", recover)
+    monkeypatch.setattr("kicad_mcp.cloud_posix_device_bootstrap.connect_device_only", connect)
+    monkeypatch.setattr(
+        cloud_user_cli, "_run_posix_foreground", lambda _: events.append("foreground")
+    )
+    result = CliRunner().invoke(app, ["cloud", "connect"])
+    assert result.exit_code == (0 if fault == "none" else 2), result.output
+    assert (
+        events
+        == {
+            "none": ["recover", "approval", "connect", "foreground"],
+            "recovery": ["recover"],
+            "connect": ["recover", "approval", "connect"],
+        }[fault]
+    )

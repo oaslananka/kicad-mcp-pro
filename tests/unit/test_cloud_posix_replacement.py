@@ -208,3 +208,127 @@ def test_definite_refusal_archives_staging_without_changing_old_identity(
     assert len(archives) == 1
     assert not (archives[0] / "approved.json").exists()
     assert not list((archives[0] / "keys").glob("*.challenge.json"))
+
+
+@pytest.mark.parametrize("fault", ["orphan", "foreign-journal", "foreign-file", "foreign-key"])
+def test_replacement_stage_preserves_unrecognized_private_records(tmp_path, fault) -> None:
+    from kicad_mcp import cloud_posix_replacement as replacement
+
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    keys = root / "keys"
+    keys.mkdir(mode=0o700)
+    old = keys / f"{uuid4()}.pem"
+    key = cloud_pair._load_or_create(old)
+    fingerprint = hashlib.sha256(
+        key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+    ).hexdigest()
+    cloud_pair_keys._save_owner_binding(
+        old, origin=ORIGIN, device_id=str(uuid4()), fingerprint=fingerprint, owner_sub="owner"
+    )
+    identity = cloud_posix_recovery.inspect_unbound_device(root, ORIGIN)
+    stage = root / replacement._PENDING
+    stage.mkdir(mode=0o700)
+    if fault == "orphan":
+        cloud_pair_keys._write_private_json(stage, "orphan.json", {})
+    else:
+        journal = {
+            "previous": str(uuid4()) if fault == "foreign-journal" else old.stem,
+            "binding": identity[1],
+            "replacement": str(uuid4()),
+        }
+        cloud_pair_keys._write_private_json(stage, "request.json", journal)
+        if fault == "foreign-file":
+            cloud_pair_keys._write_private_json(stage, "foreign.json", {})
+        elif fault == "foreign-key":
+            pending_keys = stage / "keys"
+            pending_keys.mkdir(mode=0o700)
+            cloud_pair._load_or_create(pending_keys / f"{uuid4()}.pem")
+    before = {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+    with pytest.raises(ValueError):
+        replacement._validate_stage(stage, identity)
+    assert {
+        str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()
+    } == before
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "foreground",
+        "invalid-journal",
+        "wrong-owner",
+        "changed-request",
+        "archive-exists",
+        "unexpected-project",
+        "changed-binding",
+        "missing-staged-key",
+    ],
+)
+def test_resume_replacement_refuses_inconsistent_switch_before_moving_keys(tmp_path, fault) -> None:
+    from kicad_mcp import cloud_posix_replacement as replacement
+    from kicad_mcp.cloud_managed_connector import _FOREGROUND_FILE
+
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    keys = root / "keys"
+    keys.mkdir(mode=0o700)
+    old = keys / f"{uuid4()}.pem"
+    key = cloud_pair._load_or_create(old)
+    pin = hashlib.sha256(
+        key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+    ).hexdigest()
+    cloud_pair_keys._save_owner_binding(
+        old, origin=ORIGIN, device_id=str(uuid4()), fingerprint=pin, owner_sub="owner"
+    )
+    identity = cloud_posix_recovery.inspect_unbound_device(root, ORIGIN)
+    stage = root / replacement._PENDING
+    new = replacement._validate_stage(stage, identity)
+    new_key = cloud_pair._load_or_create(new)
+    new_pin = hashlib.sha256(
+        new_key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+    ).hexdigest()
+    cloud_pair_keys._save_owner_binding(
+        new,
+        origin=ORIGIN,
+        device_id=str(uuid4()),
+        fingerprint=new_pin,
+        owner_sub="foreign" if fault == "wrong-owner" else "owner",
+    )
+    new_identity = cloud_posix_recovery.inspect_unbound_device(stage, ORIGIN)
+    journal = {
+        "previous": old.stem,
+        "oldBinding": identity[1],
+        "replacement": new.stem,
+        "newBinding": new_identity[1],
+        "project": None,
+    }
+    cloud_pair_keys._write_private_json(
+        stage, "switch.json", {} if fault == "invalid-journal" else journal
+    )
+    if fault == "foreground":
+        cloud_pair_keys._write_private_json(root, _FOREGROUND_FILE, {})
+    elif fault == "changed-request":
+        cloud_pair_keys._write_private_json(stage, "request.json", {})
+    elif fault == "archive-exists":
+        (root / ("replaced-" + old.stem)).mkdir(mode=0o700)
+    elif fault == "unexpected-project":
+        projects = root / "projects"
+        projects.mkdir(mode=0o700)
+        cloud_pair_keys._write_private_json(projects, "unexpected.json", {})
+    elif fault == "changed-binding":
+        cloud_pair_keys._write_private_json(
+            stage,
+            "switch.json",
+            {**journal, "newBinding": {**new_identity[1], "deviceId": str(uuid4())}},
+        )
+    elif fault == "missing-staged-key":
+        import shutil
+
+        shutil.rmtree(new.parent)
+    before = {str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+    with pytest.raises(ValueError):
+        replacement.resume_switch(root, ORIGIN)
+    assert {
+        str(p.relative_to(root)): p.read_bytes() for p in root.rglob("*") if p.is_file()
+    } == before

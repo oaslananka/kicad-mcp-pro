@@ -381,3 +381,207 @@ async def test_device_only_update_drain_preserves_identity(tmp_path, monkeypatch
     )
     assert calls == ["socket"]
     assert keyfile.exists() and not (root / "projects").exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner-private registry")
+@pytest.mark.parametrize(
+    "result", ["valid", "unverified", "different-key", "different-device", "different-pin"]
+)
+def test_custom_origin_enrollment_only_accepts_verified_device(
+    tmp_path, monkeypatch, result
+) -> None:
+    from kicad_mcp import cloud_posix_device_bootstrap as boot
+
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    origin = "https://other.example"
+    device, pin = str(uuid4()), "a" * 64
+    state = {"identity": None}
+
+    def enroll(target, alias, path, approval, *, connect_on_approval):
+        assert target == origin and alias == "PC" and connect_on_approval
+        state["identity"] = (
+            (
+                path if result != "different-key" else path.with_name("other.pem"),
+                {
+                    "origin": target,
+                    "deviceId": device if result != "different-device" else str(uuid4()),
+                    "fingerprint": pin if result != "different-pin" else "b" * 64,
+                    "ownerSub": "owner",
+                },
+            )
+            if result != "unverified"
+            else None
+        )
+        return device, pin
+
+    monkeypatch.setattr(
+        cloud_posix_recovery, "inspect_unbound_device", lambda *_: state["identity"]
+    )
+    monkeypatch.setattr(cloud_pair, "enroll", enroll)
+    if result == "valid":
+        assert boot.ensure_device(root, origin, "PC", lambda *_: None) == state["identity"]
+    else:
+        with pytest.raises(ValueError):
+            boot.ensure_device(root, origin, "PC", lambda *_: None)
+    assert not (root / "projects").exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner-private registry")
+@pytest.mark.parametrize("fault", ["already-bound", "foreign-journal"])
+def test_device_only_enrollment_refuses_existing_local_authority(
+    tmp_path, monkeypatch, fault
+) -> None:
+    from kicad_mcp import cloud_posix_device_bootstrap as boot
+    from kicad_mcp.cloud_posix_initial_enrollment import JOURNAL
+
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    if fault == "already-bound":
+        folder = root / "projects"
+        folder.mkdir(mode=0o700)
+        record = folder / (str(uuid4()) + ".json")
+    else:
+        record = root / JOURNAL
+    record.write_text("{}")
+    record.chmod(0o600)
+    monkeypatch.setattr(cloud_pair, "enroll", lambda *_: pytest.fail("unexpected enrollment"))
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_posix_initial_enrollment.enroll_initial",
+        lambda *_: pytest.fail("unexpected enrollment"),
+    )
+    with pytest.raises(ValueError):
+        boot.ensure_device(root, "https://other.example", "PC", lambda *_: None)
+    assert record.read_text() == "{}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["retry", "rejected", "drain", "identity"])
+async def test_device_only_connection_retry_never_reenrolls(tmp_path, monkeypatch, fault) -> None:
+    import asyncio
+
+    from kicad_mcp import cloud_posix_device_bootstrap as boot
+
+    identity = (
+        tmp_path / "key.pem",
+        {"origin": ORIGIN, "deviceId": str(uuid4()), "ownerSub": "owner"},
+    )
+    drain = asyncio.Event()
+    activity = []
+    attempts = []
+    delays = []
+    monkeypatch.setattr(boot, "read_project", lambda *_: None)
+    monkeypatch.setattr(
+        cloud_posix_recovery,
+        "inspect_unbound_device",
+        lambda *_: None if fault == "identity" else identity,
+    )
+    monkeypatch.setattr(boot, "_load_bound_owner_key", lambda *_: object())
+    monkeypatch.setattr(boot, "_is_remote_policy_rejection", lambda _: fault == "rejected")
+
+    async def connect(**kwargs: object) -> None:
+        attempts.append(kwargs["device_id"])
+        if fault == "drain":
+            drain.set()
+        raise OSError("connection interrupted")
+
+    async def timeout(waiter, timeout):
+        delays.append(timeout)
+        waiter.close()
+        drain.set()
+        raise TimeoutError
+
+    monkeypatch.setattr(boot, "execute_owner_folder_only_session", connect)
+    monkeypatch.setattr(boot.asyncio, "wait_for", timeout)
+    if fault in {"rejected", "identity"}:
+        with pytest.raises(ValueError):
+            await boot._wait_for_project(tmp_path, identity, activity.append, drain)
+    else:
+        assert await boot._wait_for_project(tmp_path, identity, activity.append, drain) is None
+    assert attempts == ([] if fault == "identity" else [identity[1]["deviceId"]])
+    assert delays == ([3] if fault == "retry" else [])
+    assert ("Connection interrupted; retrying" in activity) == (fault == "retry")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner-private registry")
+def test_official_device_only_migrates_before_connect_and_interrupt_keeps_pairing(
+    tmp_path, monkeypatch
+) -> None:
+    from kicad_mcp import cloud_posix_device_bootstrap as boot
+
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    keyfile = root / "key.pem"
+    keyfile.write_text("existing-key")
+    binding = {"origin": ORIGIN, "ownerSub": "owner", "deviceId": str(uuid4())}
+    identity = (keyfile, binding)
+    events = []
+    monkeypatch.setattr(boot, "ensure_device", lambda *_: identity)
+    monkeypatch.setattr(cloud_posix_recovery, "inspect_unbound_device", lambda *_: identity)
+    monkeypatch.setattr(boot, "_load_bound_owner_key", lambda *_: "verified")
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_legacy_project_migration.legacy_candidates", lambda: ["old"]
+    )
+
+    def migrate(registry, selectors, key, authorized):
+        assert registry == root and key == "verified"
+        assert selectors == {
+            "ownerSub": "owner",
+            "cloudOrigin": ORIGIN,
+            "deviceId": binding["deviceId"],
+            "keySlot": keyfile.stem,
+            "projectId": "",
+        }
+        assert authorized()
+        events.append("migrate")
+
+    async def wait(*_args: object):
+        events.append("connect")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("kicad_mcp.cloud_posix_project_bindings.migrate_legacy", migrate)
+    monkeypatch.setattr(boot, "_wait_with_update_control", wait)
+    assert boot.connect_device_only(root, ORIGIN, "PC", lambda *_: None, events.append) is None
+    assert events[0] == "migrate"
+    assert events[-2:] == ["connect", "Disconnected. Your approved device identity remains saved."]
+    assert keyfile.read_text() == "existing-key"
+    assert not (root / "projects").exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner-private registry")
+@pytest.mark.parametrize("fault", ["active", "identity", "record", "identity-race", "record-race"])
+def test_missing_project_recovery_preserves_selection_if_authority_changes(
+    tmp_path, monkeypatch, fault
+) -> None:
+    from kicad_mcp import cloud_posix_device_bootstrap as boot
+    from kicad_mcp.cloud_managed_connector import _FOREGROUND_FILE
+
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    keyfile = root / "key.pem"
+    keyfile.write_text("existing-key")
+    identity = (keyfile, {"origin": ORIGIN, "ownerSub": "owner", "deviceId": str(uuid4())})
+    record = {"cloudOrigin": ORIGIN, "projectId": str(uuid4())}
+    state = {"identity": identity, "record": record}
+    monkeypatch.setattr(
+        cloud_posix_recovery, "inspect_unbound_device", lambda *_: state["identity"]
+    )
+    monkeypatch.setattr(boot, "read_project", lambda *_: state["record"])
+    monkeypatch.setattr(boot, "_load_bound_owner_key", lambda *_: object())
+    if fault == "active":
+        (root / _FOREGROUND_FILE).touch()
+    if fault == "identity":
+        state["identity"] = None
+    if fault == "record":
+        state["record"] = None
+
+    def inventory(*_args: object):
+        assert fault.endswith("-race")
+        state["identity" if fault == "identity-race" else "record"] = None
+        return "project_missing"
+
+    monkeypatch.setattr("kicad_mcp.cloud_device_inventory_status.inspect_inventory", inventory)
+    with pytest.raises(ValueError):
+        boot.recover_missing_project(root, record)
+    assert not (root / "detached-projects").exists()
+    assert keyfile.read_text() == "existing-key"
