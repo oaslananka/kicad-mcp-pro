@@ -1,4 +1,4 @@
-"""Maintainer-side, read-only acceptance of a signed Python worker request.
+"""Maintainer-side preparation and read-only acceptance of a Python worker request.
 
 The existing reusable preflight producer is a separate completed run. This
 diagnostic requires complete ruleset visibility, never grants that permission
@@ -10,10 +10,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import sys
 from pathlib import Path
 from typing import Any, Protocol
 
 from scripts.check_draft_producer_archive import REPOSITORY, _verify_artifact, _verify_run
+from scripts.check_draft_release_inventory import digest
 from scripts.check_draft_release_owner import (
     _REPOSITORY_ID,
     OwnerClient,
@@ -97,18 +99,7 @@ def _match_producer_bytes(expected: bytes, producer: dict[str, object]) -> None:
         raise ValueError("producer package digests differ from signed owner request")
 
 
-def verify_owner_binding(
-    client: BindingClient,
-    verifier: AttestationVerifier,
-    *,
-    identity: HandoffIdentity,
-    producer_job_id: int,
-    downloaded_zip: Path,
-    directory: Path,
-    manifest: Path,
-    manifest_sha256: str,
-) -> dict[str, object]:
-    """Bind separate completed producer evidence to an active owner request."""
+def _validate_identity(identity: HandoffIdentity, producer_job_id: int) -> None:
     _version(identity)
     if (
         identity.owner_run_id == identity.producer_run_id
@@ -116,18 +107,18 @@ def verify_owner_binding(
         or producer_job_id <= 0
     ):
         raise ValueError("expected distinct owner and completed reusable producer identity")
-    expected = manifest_bytes(identity, directory)
-    if hashlib.sha256(expected).hexdigest() != manifest_sha256:
-        raise ValueError("owner manifest digest pin mismatch")
-    owner = _owner(client, identity)
-    archive_pin = _producer_pin(client, identity)
-    request = verify_manifest(
-        verifier,
-        identity=identity,
-        directory=directory,
-        manifest=manifest,
-        manifest_sha256=manifest_sha256,
-    )
+
+
+def _verify_producer_inputs(
+    client: BindingClient,
+    verifier: AttestationVerifier,
+    *,
+    identity: HandoffIdentity,
+    producer_job_id: int,
+    downloaded_zip: Path,
+    expected: bytes,
+    archive_pin: str,
+) -> None:
     producer = verify_producer_bundle(
         client,
         verifier,
@@ -145,14 +136,106 @@ def verify_owner_binding(
     _match_producer_bytes(expected, producer)
     if producer["archiveSha256"] != archive_pin or _producer_pin(client, identity) != archive_pin:
         raise ValueError("producer archive identity changed during verification")
+
+
+def _recheck_inputs(
+    client: BindingClient,
+    *,
+    identity: HandoffIdentity,
+    owner: dict[str, object],
+    archive_pin: str,
+    downloaded_zip: Path,
+    directory: Path,
+    expected: bytes,
+) -> None:
     if _owner(client, identity) != owner:
         raise ValueError("owner identity changed during verification")
-    if (
-        manifest.is_symlink()
-        or _read_manifest(manifest) != expected
-        or manifest_bytes(identity, directory) != expected
-    ):
-        raise ValueError("owner manifest or package bytes changed during verification")
+    if downloaded_zip.is_symlink() or digest(downloaded_zip) != archive_pin:
+        raise ValueError("producer ZIP changed during verification")
+    if manifest_bytes(identity, directory) != expected:
+        raise ValueError("owner package bytes changed during verification")
+
+
+def prepare_owner_manifest(
+    client: BindingClient,
+    verifier: AttestationVerifier,
+    *,
+    identity: HandoffIdentity,
+    producer_job_id: int,
+    downloaded_zip: Path,
+    directory: Path,
+) -> bytes:
+    """Return unsigned canonical bytes only after independent producer and owner checks."""
+    _validate_identity(identity, producer_job_id)
+    expected = manifest_bytes(identity, directory)
+    owner = _owner(client, identity)
+    archive_pin = _producer_pin(client, identity)
+    _verify_producer_inputs(
+        client,
+        verifier,
+        identity=identity,
+        producer_job_id=producer_job_id,
+        downloaded_zip=downloaded_zip,
+        expected=expected,
+        archive_pin=archive_pin,
+    )
+    _recheck_inputs(
+        client,
+        identity=identity,
+        owner=owner,
+        archive_pin=archive_pin,
+        downloaded_zip=downloaded_zip,
+        directory=directory,
+        expected=expected,
+    )
+    return expected
+
+
+def verify_owner_binding(
+    client: BindingClient,
+    verifier: AttestationVerifier,
+    *,
+    identity: HandoffIdentity,
+    producer_job_id: int,
+    downloaded_zip: Path,
+    directory: Path,
+    manifest: Path,
+    manifest_sha256: str,
+) -> dict[str, object]:
+    """Bind separate completed producer evidence to an active owner request."""
+    _validate_identity(identity, producer_job_id)
+    expected = manifest_bytes(identity, directory)
+    if hashlib.sha256(expected).hexdigest() != manifest_sha256:
+        raise ValueError("owner manifest digest pin mismatch")
+    owner = _owner(client, identity)
+    archive_pin = _producer_pin(client, identity)
+    request = verify_manifest(
+        verifier,
+        identity=identity,
+        directory=directory,
+        manifest=manifest,
+        manifest_sha256=manifest_sha256,
+    )
+    _verify_producer_inputs(
+        client,
+        verifier,
+        identity=identity,
+        producer_job_id=producer_job_id,
+        downloaded_zip=downloaded_zip,
+        expected=expected,
+        archive_pin=archive_pin,
+    )
+    _recheck_inputs(
+        client,
+        identity=identity,
+        owner=owner,
+        archive_pin=archive_pin,
+        downloaded_zip=downloaded_zip,
+        directory=directory,
+        expected=expected,
+    )
+    if manifest.is_symlink() or _read_manifest(manifest) != expected:
+        raise ValueError("owner manifest changed during verification")
     return {
         **request,
         "activeOwnerVerified": True,
@@ -167,11 +250,14 @@ def verify_owner_binding(
     }
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--directory", required=True, type=Path)
-    parser.add_argument("--manifest", required=True, type=Path)
-    parser.add_argument("--manifest-sha256", required=True)
+    parser.add_argument(
+        "--prepare", action="store_true", help="emit verified unsigned manifest bytes"
+    )
+    parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--manifest-sha256")
     parser.add_argument("--downloaded-zip", required=True, type=Path)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--source-commit", required=True)
@@ -182,7 +268,7 @@ def main() -> int:
     parser.add_argument("--producer-attempt", required=True, type=int)
     parser.add_argument("--producer-artifact-id", required=True, type=int)
     parser.add_argument("--producer-job-id", required=True, type=int)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     identity = HandoffIdentity(
         args.tag,
         args.source_commit,
@@ -194,6 +280,21 @@ def main() -> int:
         args.producer_artifact_id,
     )
     try:
+        if args.prepare:
+            if args.manifest is not None or args.manifest_sha256 is not None:
+                raise ValueError("prepare accepts no signed manifest or pin")
+            payload = prepare_owner_manifest(
+                BindingGitHubCLI(),
+                GitHubAttestationCLI(),
+                identity=identity,
+                producer_job_id=args.producer_job_id,
+                downloaded_zip=args.downloaded_zip,
+                directory=args.directory,
+            )
+            sys.stdout.buffer.write(payload)
+            return 0
+        if args.manifest is None or args.manifest_sha256 is None:
+            raise ValueError("verification requires signed manifest and independent pin")
         result = verify_owner_binding(
             BindingGitHubCLI(),
             GitHubAttestationCLI(),

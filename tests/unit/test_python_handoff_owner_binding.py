@@ -246,3 +246,120 @@ def test_draft_published_during_package_verification_is_rejected(case, monkeypat
     monkeypatch.setattr(verifier.producer, "verify", sign)
     with pytest.raises(ValueError, match="published"):
         verify_owner_binding(client, verifier, **args)
+
+
+def _prepare_args(args: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in args.items() if key not in ("manifest", "manifest_sha256")}
+
+
+def test_prepare_unsigned_manifest_from_verified_producer(case) -> None:
+    from scripts import check_python_handoff_owner_binding as owner
+
+    client, verifier, args = case
+    prepared = owner.prepare_owner_manifest(client, verifier, **_prepare_args(args))
+    assert prepared == args["manifest"].read_bytes()
+    assert verifier.owner_calls == 0
+    assert len(verifier.producer.calls) == 2
+    assert client.owner_reads == 2
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "owner",
+        "tag",
+        "producer-signature",
+        "archive",
+        "job",
+        "repository",
+        "distinct-run",
+        "package",
+    ],
+)
+def test_preparation_rejects_conflicting_evidence(case, change: str) -> None:
+    from scripts import check_python_handoff_owner_binding as owner
+
+    client, verifier, args = case
+    if change in ("owner", "tag"):
+        client.change = change
+    elif change == "producer-signature":
+        verifier.producer.tamper = "wrong_run"
+    elif change == "archive":
+        args["downloaded_zip"].write_bytes(b"wrong")
+    elif change == "job":
+        args["producer_job_id"] = 1
+    elif change == "repository":
+        client.producer.run["repository"]["id"] = 1
+        client.producer.run["head_repository"]["id"] = 1
+    elif change == "distinct-run":
+        args["identity"] = replace(IDENTITY, producer_run_id=RUN)
+    else:
+        next(args["directory"].glob("*.whl")).write_bytes(b"substitute")
+    with pytest.raises(ValueError):
+        owner.prepare_owner_manifest(client, verifier, **_prepare_args(args))
+    assert verifier.owner_calls == 0
+
+
+@pytest.mark.parametrize("change", ["draft", "producer-attempt", "package", "archive"])
+def test_preparation_rejects_changes_after_producer_signatures(case, monkeypatch, change) -> None:
+    from scripts import check_python_handoff_owner_binding as owner
+
+    client, verifier, args = case
+    original = verifier.producer.verify
+
+    def sign(*, path: Path, repo: str, sha: str, signer: str, source_ref: str):
+        result = original(path=path, repo=repo, sha=sha, signer=signer, source_ref=source_ref)
+        if change == "draft":
+            client.release_data["draft"] = False
+        elif change == "producer-attempt":
+            client.producer.run["run_attempt"] = ATTEMPT + 1
+        elif change == "package":
+            next(args["directory"].glob("*.whl")).write_bytes(b"changed")
+        else:
+            args["downloaded_zip"].write_bytes(b"changed")
+        return result
+
+    monkeypatch.setattr(verifier.producer, "verify", sign)
+    with pytest.raises(ValueError):
+        owner.prepare_owner_manifest(client, verifier, **_prepare_args(args))
+
+
+def test_prepare_cli_outputs_only_verified_unsigned_bytes(case, monkeypatch, capsys) -> None:
+    from scripts import check_python_handoff_owner_binding as owner
+
+    client, verifier, args = case
+    identity = args["identity"]
+    argv = [
+        "--prepare",
+        "--directory",
+        str(args["directory"]),
+        "--downloaded-zip",
+        str(args["downloaded_zip"]),
+        "--tag",
+        identity.tag,
+        "--source-commit",
+        identity.source_commit,
+        "--release-id",
+        str(identity.release_id),
+        "--owner-run-id",
+        str(identity.owner_run_id),
+        "--owner-attempt",
+        str(identity.owner_attempt),
+        "--producer-run-id",
+        str(identity.producer_run_id),
+        "--producer-attempt",
+        str(identity.producer_attempt),
+        "--producer-artifact-id",
+        str(identity.producer_artifact_id),
+        "--producer-job-id",
+        str(args["producer_job_id"]),
+    ]
+    monkeypatch.setattr(owner, "BindingGitHubCLI", lambda: client)
+    monkeypatch.setattr(owner, "GitHubAttestationCLI", lambda: verifier)
+    assert owner.main(argv) == 0
+    assert capsys.readouterr().out.encode() == args["manifest"].read_bytes()
+    assert verifier.owner_calls == 0
+    with pytest.raises(SystemExit) as exc:
+        owner.main(argv + ["--manifest", str(args["manifest"])])
+    assert exc.value.code == 2
+    assert capsys.readouterr().out == ""

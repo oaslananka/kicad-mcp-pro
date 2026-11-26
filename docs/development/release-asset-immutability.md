@@ -689,6 +689,19 @@ python -m scripts.check_python_handoff_owner_binding \
   --producer-job-id "$PRODUCER_JOB_ID"
 ```
 
+To prepare the unsigned bytes before the future owner signs them, use
+the same command with `--prepare` instead of `--manifest` and
+`--manifest-sha256`. The preparation mode checks the same separate
+completed reusable producer, active owner, draft and tag rules,
+safe ZIP and both producer signatures. It compares local package
+digests, repeats the live producer and owner checks, and rehashes
+the downloaded ZIP and packages before returning canonical unsigned
+bytes on stdout. It does not sign, dispatch, upload or publish.
+The future owner must independently pin and sign those exact bytes,
+then run the signed verification with the independent pin.
+Use private staging and recheck immediately before signing; the
+read-only checks are snapshots, not a writer lock.
+
 All expected identities and the manifest pin are independently supplied.
 The diagnostic accepts only the separate completed reusable preflight
 producer profile, not the legacy publisher or a synthetic rehearsal.
@@ -703,8 +716,8 @@ A valid signature over different owner-approved package bytes is rejected.
 Run only with an already authorized maintainer credential that can read
 the full tag ruleset, including bypass actors. Never grant ruleset-write
 access to the registry worker. This command is not called by production
-workflows yet. No production manifest issuer or live draft acceptance is
-claimed. Success does not prove which job uploaded the artifact, an
+workflows yet. Unsigned preparation is implemented; no production signing workflow
+or live draft acceptance is claimed. Success does not prove which job uploaded the artifact, an
 independently dispatched child, registry receipts, exclusive writer lock
 or publication authorization. A race after the final read remains possible.
 
