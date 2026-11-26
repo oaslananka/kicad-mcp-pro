@@ -1030,3 +1030,35 @@ invocation, exclusive writer ownership, or authorization to publish. Those
 flags remain false. This command does not sign, dispatch, upload or publish
 anything, and is not called by production workflows. The future owner still
 needs to bind receipt delivery and enforce the exclusive writer lifecycle.
+
+### Exact worker receipt delivery (read-only, not wired)
+
+The owner may now use `python -m scripts.check_owner_python_receipt_delivery`
+with the same independent selectors, manifest/receipt pins, request ZIP,
+producer ZIP and package directory as the preceding command. Replace
+`--receipt "$RECEIPT"` with either:
+
+- `--receipt-artifact-id "$RECEIPT_ARTIFACT_ID" --receipt-archive "$RECEIPT_ZIP"`
+  to verify an existing archive; or
+- `--fetch` to discover and download the exact receipt from the terminal worker.
+
+The expected artifact name is
+`python-worker-receipt-<worker-attempt>-<owner-run-id>` on the exact child
+run. The owner requires a complete listing of at most 100 artifacts, exactly
+one matching unexpired artifact, matching list/detail metadata, numeric
+repository and run identity, exact tag and source commit, a valid SHA-256
+archive digest and a size of at most 64 KiB. Fetch uses the existing fixed-host,
+exact-ID bounded downloader (120-second timeout) in a private temporary
+directory, never a caller-supplied remote URL. Both modes reject unsafe,
+duplicate or additional ZIP members, require the single canonical receipt
+JSON (at most 16 KiB), compare its bytes to the independent receipt pin and
+run the full owner-side signed receipt and registry verification. The
+artifact identity and bytes are checked again before success; temporary
+files are removed on failure and success.
+
+This proves receipt artifact delivery and signed receipt acceptance, not
+which worker job uploaded the artifact or which run published to PyPI.
+It does not establish an exclusive writer or authorize publication.
+The production workflow is unchanged. The enclosing job must provide a
+wall-clock timeout and runner-private staging; checks are snapshots, not
+a distributed lock.

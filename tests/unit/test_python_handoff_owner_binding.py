@@ -1318,3 +1318,224 @@ def test_signed_receipt_owner_cli(signed_receipt_case, monkeypatch, capsys) -> N
         owner.main(argv)
     assert exc.value.code == 2
     assert capsys.readouterr().out == ""
+
+
+@pytest.fixture
+def receipt_delivery_case(signed_receipt_case, monkeypatch) -> tuple[Any, ...]:
+    from tests.unit.test_python_worker_request_delivery import archive_bytes
+
+    client, verifier, registry, child, _, args = signed_receipt_case
+    identity = args["identity"]
+    receipt = args.pop("receipt")
+    data = archive_bytes([(receipt.name, receipt.read_bytes())])
+    archive = receipt.with_name("receipt.zip")
+    archive.write_bytes(data)
+    artifact_id = 99001
+    item = {
+        "id": artifact_id,
+        "name": f"python-worker-receipt-{identity.worker_attempt}-{identity.handoff.owner_run_id}",
+        "expired": False,
+        "size_in_bytes": len(data),
+        "digest": "sha256:" + hashlib.sha256(data).hexdigest(),
+        "url": f"https://api.github.com/repos/{REPO}/actions/artifacts/{artifact_id}",
+        "archive_download_url": f"https://api.github.com/repos/{REPO}/actions/artifacts/{artifact_id}/zip",
+        "workflow_run": {
+            "id": identity.worker_run_id,
+            "repository_id": 1255527274,
+            "head_repository_id": 1255527274,
+            "head_branch": identity.handoff.tag,
+            "head_sha": identity.handoff.source_commit,
+        },
+    }
+    listing = {"total_count": 1, "artifacts": [item]}
+    original_listing = client.workflow_artifacts
+    original_artifact = client.artifact
+
+    def artifacts(repo, run_id):
+        if run_id == identity.worker_run_id:
+            assert repo == REPO
+            return copy.deepcopy(listing)
+        return original_listing(repo, run_id)
+
+    def artifact(repo, selected):
+        if selected == artifact_id:
+            return copy.deepcopy(item)
+        return original_artifact(repo, selected)
+
+    monkeypatch.setattr(client, "workflow_artifacts", artifacts)
+    monkeypatch.setattr(client, "artifact", artifact)
+    args.update(receipt_artifact_id=artifact_id, receipt_archive=archive)
+    return client, verifier, registry, child, item, listing, args
+
+
+def test_verify_receipt_delivery(receipt_delivery_case) -> None:
+    from scripts import check_owner_python_receipt_delivery as delivery
+
+    client, verifier, registry, _, item, _, args = receipt_delivery_case
+    report = delivery.verify_receipt_delivery(client, verifier, registry, registry.verify, **args)
+    assert report["receiptArtifactVerified"] is True
+    assert report["registryReceiptVerified"] is True
+    assert report["receiptArtifactId"] == item["id"]
+    assert report["receiptArchiveSha256"] == item["digest"][7:]
+    assert report["artifactProducedByWorkerJobVerified"] is False
+    assert report["publicationAuthorized"] is False
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "missing",
+        "duplicate",
+        "truncated",
+        "expired",
+        "wrong-id",
+        "wrong-run",
+        "wrong-ref",
+        "wrong-repo",
+        "oversize",
+        "digest",
+        "extra-member",
+        "linked-zip",
+        "pin",
+        "signature",
+    ],
+)
+def test_receipt_delivery_rejects_bad_evidence(receipt_delivery_case, change) -> None:
+    from scripts import check_owner_python_receipt_delivery as delivery
+    from tests.unit.test_python_worker_request_delivery import archive_bytes
+
+    client, verifier, registry, _, item, listing, args = receipt_delivery_case
+    if change == "missing":
+        listing.update(total_count=0, artifacts=[])
+    elif change == "duplicate":
+        listing.update(total_count=2, artifacts=[item, copy.deepcopy(item)])
+    elif change == "truncated":
+        listing["total_count"] = 2
+    elif change == "expired":
+        item["expired"] = True
+    elif change == "wrong-id":
+        args["receipt_artifact_id"] += 1
+    elif change == "wrong-run":
+        item["workflow_run"]["id"] += 1
+    elif change == "wrong-ref":
+        item["workflow_run"]["head_branch"] = "main"
+    elif change == "wrong-repo":
+        item["workflow_run"]["repository_id"] = 1
+    elif change == "oversize":
+        item["size_in_bytes"] = 65537
+    elif change == "digest":
+        item["digest"] = "sha256:" + "0" * 64
+    elif change == "extra-member":
+        data = archive_bytes([("python-worker-registry-receipt.json", b"{}"), ("extra", b"x")])
+        args["receipt_archive"].write_bytes(data)
+        item.update(size_in_bytes=len(data), digest="sha256:" + hashlib.sha256(data).hexdigest())
+    elif change == "linked-zip":
+        path = args["receipt_archive"]
+        original = path.with_name("original.zip")
+        path.rename(original)
+        path.symlink_to(original)
+    elif change == "pin":
+        args["receipt_sha256"] = "0" * 64
+    else:
+        verifier.change = "worker-signature"
+    options = dict(args)
+    with pytest.raises(ValueError):
+        delivery.verify_receipt_delivery(client, verifier, registry, registry.verify, **options)
+    assert not registry.calls
+
+
+@pytest.mark.parametrize("change", ["metadata", "archive", "child"])
+def test_receipt_delivery_rechecks_after_registry(receipt_delivery_case, change) -> None:
+    from scripts import check_owner_python_receipt_delivery as delivery
+
+    client, verifier, registry, child, item, _, args = receipt_delivery_case
+
+    def verify(payload, path):
+        if change == "metadata":
+            item["expired"] = True
+        elif change == "archive":
+            args["receipt_archive"].write_bytes(b"changed")
+        else:
+            child["run_attempt"] = 2
+        return None
+
+    options = dict(args)
+    with pytest.raises(ValueError):
+        delivery.verify_receipt_delivery(client, verifier, registry, verify, **options)
+
+
+@pytest.mark.parametrize("change", [None, "short", "long", "metadata", "io"])
+def test_fetch_receipt_delivery(receipt_delivery_case, change) -> None:
+    from scripts import check_owner_python_receipt_delivery as delivery
+
+    client, verifier, registry, _, item, _, args = receipt_delivery_case
+    archive = args.pop("receipt_archive")
+    artifact_id = args.pop("receipt_artifact_id")
+    data = archive.read_bytes()
+    staged = []
+
+    def download(repo, selected, output, *, max_bytes):
+        assert repo == REPO
+        assert selected == artifact_id
+        assert max_bytes == len(data)
+        staged.append(output)
+        if change == "io":
+            raise OSError("download failed")
+        if change == "metadata":
+            item["expired"] = True
+        payload = data[:-1] if change == "short" else data
+        if change == "long":
+            payload += b"x"
+        output.write_bytes(payload)
+
+    if change is None:
+        report = delivery.fetch_receipt_delivery(
+            client, verifier, registry, registry.verify, downloader=download, **args
+        )
+        assert report["receiptArtifactVerified"] is True
+        assert report["publicationAuthorized"] is False
+    else:
+        options = dict(args)
+        with pytest.raises((ValueError, OSError)):
+            delivery.fetch_receipt_delivery(
+                client, verifier, registry, registry.verify, downloader=download, **options
+            )
+        assert not registry.calls
+    assert len(staged) == 1
+    assert not staged[0].parent.exists()
+
+
+def test_receipt_delivery_cli(receipt_delivery_case, monkeypatch, capsys) -> None:
+    import json
+
+    from scripts import check_owner_python_receipt_delivery as delivery
+
+    client, verifier, registry, _, _, _, args = receipt_delivery_case
+    identity = args["identity"]
+    handoff = identity.handoff
+    monkeypatch.setattr(delivery, "DeliveryGitHubCLI", lambda: client)
+    monkeypatch.setattr(delivery, "GitHubAttestationCLI", lambda: verifier)
+    monkeypatch.setattr(delivery, "PyPIReadClient", lambda: registry)
+    monkeypatch.setattr(delivery, "verify_registry_provenance", registry.verify)
+    values = {
+        "tag": handoff.tag,
+        "source-commit": handoff.source_commit,
+        "release-id": handoff.release_id,
+        "owner-run-id": handoff.owner_run_id,
+        "owner-attempt": handoff.owner_attempt,
+        "producer-run-id": handoff.producer_run_id,
+        "producer-attempt": handoff.producer_attempt,
+        "producer-artifact-id": handoff.producer_artifact_id,
+        "manifest-sha256": identity.manifest_sha256,
+        "worker-run-id": identity.worker_run_id,
+        "worker-attempt": identity.worker_attempt,
+        **{key.replace("_", "-"): val for key, val in args.items() if key != "identity"},
+    }
+    argv = [entry for key, val in values.items() for entry in (f"--{key}", str(val))]
+    assert delivery.main(argv) == 0
+    assert json.loads(capsys.readouterr().out)["receiptArtifactVerified"] is True
+    bad = argv + ["--fetch"]
+    with pytest.raises(SystemExit) as exc:
+        delivery.main(bad)
+    assert exc.value.code == 2
+    assert capsys.readouterr().out == ""
