@@ -40,6 +40,7 @@ from scripts.runtime_path_safety import approved_runtime_path
 _NAME = "python-worker-dispatch.json"
 _BOT_ID = 41898282
 _BOT_LOGIN = "github-actions[bot]"
+_CHILD_MISMATCH = "worker run does not match expected active tag dispatch"
 
 
 class DispatchClient(OwnerRunClient, Protocol):
@@ -111,7 +112,8 @@ def _bot(value: object) -> bool:
     )
 
 
-def _check_child(run: object, identity: DispatchIdentity) -> None:
+def _child_status(run: object, identity: DispatchIdentity) -> str:
+    """Validate exact child identity without granting pending worker authority."""
     if not isinstance(run, dict):
         raise ValueError("invalid worker run response")
     expected = {
@@ -120,8 +122,6 @@ def _check_child(run: object, identity: DispatchIdentity) -> None:
         "event": "workflow_dispatch",
         "head_branch": identity.handoff.tag,
         "head_sha": identity.handoff.source_commit,
-        "status": "in_progress",
-        "conclusion": None,
     }
     if (
         not _exact_id(run.get("id"), identity.worker_run_id)
@@ -132,7 +132,20 @@ def _check_child(run: object, identity: DispatchIdentity) -> None:
         or not _bot(run.get("triggering_actor"))
         or any(run.get(key) != value for key, value in expected.items())
     ):
-        raise ValueError("worker run does not match expected active tag dispatch")
+        raise ValueError(_CHILD_MISMATCH)
+    status = run.get("status")
+    if (
+        status not in ("in_progress", "queued", "requested", "waiting", "pending")
+        or "conclusion" not in run
+        or run["conclusion"] is not None
+    ):
+        raise ValueError(_CHILD_MISMATCH)
+    return str(status)
+
+
+def _check_child(run: object, identity: DispatchIdentity) -> None:
+    if _child_status(run, identity) != "in_progress":
+        raise ValueError(_CHILD_MISMATCH)
 
 
 def _check_live(client: DispatchClient, identity: DispatchIdentity) -> None:

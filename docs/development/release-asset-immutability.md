@@ -734,6 +734,18 @@ fields. It must attest this record under the same production owner
 workflow and invocation. An ambiguous dispatch response must fail closed;
 do not blindly retry the dispatch.
 
+The maintainer-side command above also accepts
+`--prepare-dispatch "$WORKER_RUN_ID"` together with the signed manifest
+and independent pin (not `--prepare`). It emits canonical unsigned
+dispatch bytes on stdout only after checking the exact returned child
+before and after signed owner/producer verification, repeating live
+owner/draft/tag and producer identity checks, and rechecking ZIP, manifest
+and package bytes. The child may be in a known nonterminal state while
+the owner prepares the record; the worker still must be in progress to
+verify it. The caller must obtain the run ID from the exact dispatch
+response, not a search result. This mode does not establish causality
+or sign, dispatch, upload or publish.
+
 The worker-side library `scripts.check_signed_python_dispatch_binding`
 validates the signed record, the exact active owner and child run metadata,
 numeric repository and bot identity, and the live tag commit. The expected
