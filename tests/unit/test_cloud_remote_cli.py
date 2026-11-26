@@ -1212,6 +1212,16 @@ def test_device_recovery_has_no_terminal_confirmation(monkeypatch, denied: bool)
     from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
     from kicad_mcp.cloud_windows_enrollment import WindowsRecoveryDeniedError
 
+    device = SimpleNamespace(
+        origin=cloud_user_cli.DEFAULT_CLOUD_ORIGIN, owner_sub="owner", device_id=str(uuid4())
+    )
+    monkeypatch.setattr(bootstrap, "selected_device", lambda: device)
+    monkeypatch.setattr(cloud_windows_connector, "selected_project", lambda: None)
+    monkeypatch.setattr(bootstrap, "verified_device_key", lambda _: object())
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_device_inventory_status.inspect_inventory", lambda *_: "unverified"
+    )
+
     monkeypatch.setattr(
         typer, "confirm", lambda *_args, **_kwargs: pytest.fail("extra confirmation")
     )

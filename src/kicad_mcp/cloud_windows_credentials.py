@@ -36,6 +36,8 @@ _PARTS = frozenset(
         "archived_device_selected",
         "recovery_pending",
         "recovery_switch",
+        "detached_selected",
+        "detached_active",
         "owner_api",
         # A public Ed25519 issuer key independently approved by the local
         # Windows owner. Never a key furnished by a write request itself.

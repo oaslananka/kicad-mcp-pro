@@ -386,6 +386,68 @@ async def run_device_only(
     status_callback("Project selected in Cloud; switching to local KiCad MCP tools")
 
 
+def detach_missing_project(
+    device: WindowsEnrolledDevice,
+    project: WindowsRegisteredProject,
+    stop_previous: Callable[[], bool],
+) -> None:
+    """Drop only a verified deleted Cloud project's local selection, never its files.
+
+    The caller holds the owner mutex and has just authenticated project_missing.
+    Archive before deleting active first, selected last: a crash before the last
+    deletion leaves the same selected project available for another diagnosis.
+    """
+    from kicad_mcp import cloud_windows_connector as connector
+    from kicad_mcp.cloud_windows_credentials import delete_credential
+
+    if (
+        selected_device() != device
+        or connector.selected_project() != project
+        or (
+            project.record_id,
+            project.origin,
+            project.owner_sub,
+            project.device_id,
+            project.fingerprint,
+        )
+        != (device.record_id, device.origin, device.owner_sub, device.device_id, device.fingerprint)
+        or owner_recovery_pending()
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+    slots = (
+        (connector._ACTIVE_RECORD_ID, "active", "detached_active"),
+        (connector._SELECTED_RECORD_ID, "selected", "detached_selected"),
+    )
+    saved = {(slot, part): read_credential(slot, part) for slot, part, _ in slots}
+    if saved[(connector._SELECTED_RECORD_ID, "selected")] is None:
+        raise LocalApprovalDeniedError(_DENIED)
+    if saved[(connector._ACTIVE_RECORD_ID, "active")] is not None:
+        active = connector._active()
+        if active is None or active.project != project:
+            raise LocalApprovalDeniedError(_DENIED)
+    if not stop_previous():
+        raise LocalApprovalDeniedError(_DENIED)
+    if selected_device() != device or connector.selected_project() != project:
+        raise LocalApprovalDeniedError(_DENIED)
+    for slot, part, archive in slots:
+        old = saved[(slot, part)]
+        if read_credential(slot, part) != old:
+            raise LocalApprovalDeniedError(_DENIED)
+        if old is not None:
+            if read_credential(project.registration_id, archive) is None:
+                create_credential(project.registration_id, archive, old)
+            if read_credential(project.registration_id, archive) != old:
+                raise LocalApprovalDeniedError(_DENIED)
+    for slot, part, _ in slots:
+        old = saved[(slot, part)]
+        if selected_device() != device or read_credential(slot, part) != old:
+            raise LocalApprovalDeniedError(_DENIED)
+        if old is not None and not delete_credential(slot, part):
+            raise LocalApprovalDeniedError(_DENIED)
+    if selected_device() != device or connector.selected_project() is not None:
+        raise LocalApprovalDeniedError(_DENIED)
+
+
 def _switch_slots() -> tuple[tuple[str, str, str], ...]:
     from kicad_mcp import cloud_windows_connector as connector
 

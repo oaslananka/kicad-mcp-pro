@@ -2,6 +2,7 @@ import {createHash,createHmac} from "node:crypto";
 import type {Pool} from "pg";
 import {PgPairingChallenges,type Enrollment} from "./pairing-store.js";
 import {type RecoveryIdentity,validRecoveryIdentity} from "./device-pairing.js";
+import {readDeviceInventory,validInventoryRequest,type InventoryRequest,type InventoryStatus} from "./device-inventory-status.js";
 import {pairingServerKey} from "./pairing-review.js";
 
 type IssueResult=Awaited<ReturnType<PgPairingChallenges["issue"]>>;
@@ -13,6 +14,7 @@ export interface PairingDevicePort {
     connectOnApproval?:boolean,recovery?:RecoveryIdentity):Promise<PairingDeviceOutcome<Enrollment>>;
   approved(source:string,id:string,deviceCode:string,signature:Buffer):
     Promise<PairingDeviceOutcome<{approved:boolean;denied?:true}>>;
+  inventoryStatus?(source:string,request:InventoryRequest,signature:Buffer):Promise<PairingDeviceOutcome<InventoryStatus>>;
   registerProject?(source:string,deviceId:string,alias:string,signature:Buffer):
     Promise<PairingDeviceOutcome<RegisteredProject>>;
 }
@@ -91,6 +93,13 @@ export class PgPairingDeviceAPI implements PairingDevicePort {
     if(!await this.take("enroll-challenge",id,8))return {kind:"throttled"};
     const result=await this.store.enroll(id,deviceCode,signature,connectOnApproval,recovery);
     return result.kind!=="unavailable"?{kind:"ok",data:result}:{kind:"unavailable"};
+  }
+  async inventoryStatus(source:string,request:InventoryRequest,signature:Buffer):
+    Promise<PairingDeviceOutcome<InventoryStatus>>{
+    if(!source||source.length>256||!validInventoryRequest(request,Date.now())||
+       !Buffer.isBuffer(signature)||signature.length!==64)return {kind:"unavailable"};
+    if(!await this.take("inventory-source",source,40))return {kind:"throttled"};
+    return {kind:"ok",data:await readDeviceInventory(this.pool,request,signature)};
   }
   async registerProject(source:string,deviceId:string,alias:string,signature:Buffer):
     Promise<PairingDeviceOutcome<RegisteredProject>>{

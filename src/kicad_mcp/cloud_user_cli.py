@@ -108,27 +108,61 @@ def cloud_entry(
 
 
 def _offer_device_recovery() -> bool:
-    """Browser approval and Cloud verify replacement; no extra terminal question."""
+    """Diagnose first; only a missing/unverified or revoked identity needs approval."""
+    from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
+    from kicad_mcp.cloud_device_inventory_status import inspect_inventory
+    from kicad_mcp.cloud_windows_connector import selected_project
     from kicad_mcp.cloud_windows_enrollment import WindowsRecoveryDeniedError
+    from kicad_mcp.cloud_windows_task_scheduler import stop_and_remove_owner_task
 
-    typer.echo(
-        "Cloud could not restore this device session. Opening browser to check replacement. "
-        "Cloud keeps an existing valid device; only a removed or revoked device can be replaced."
-    )
-
-    def recover() -> None:
-        from kicad_mcp.cloud_windows_device_bootstrap import repair_device_only
-        from kicad_mcp.cloud_windows_task_scheduler import stop_and_remove_owner_task
-
-        repair_device_only(
-            origin=DEFAULT_CLOUD_ORIGIN,
+    def recover() -> bool:
+        device = bootstrap.selected_device()
+        project = selected_project()
+        if device is None or device.origin != DEFAULT_CLOUD_ORIGIN:
+            return False
+        if project is not None and (
+            project.record_id != device.record_id
+            or project.device_id != device.device_id
+            or project.owner_sub != device.owner_sub
+            or project.origin != device.origin
+            or project.fingerprint != device.fingerprint
+        ):
+            raise ValueError("Selected project belongs to a different device.")
+        state = inspect_inventory(
+            device.origin,
+            device.owner_sub,
+            device.device_id,
+            project.project_id if project is not None else None,
+            bootstrap.verified_device_key(device),
+        )
+        if state == "project_missing" and project is not None:
+            bootstrap.detach_missing_project(device, project, stop_and_remove_owner_task)
+            typer.echo(
+                "Cloud project was removed. Keeping this device; use Add Project when Online."
+            )
+            return True
+        if state not in {"unverified", "device_revoked"}:
+            typer.echo(
+                "Cloud did not confirm that this device needs replacement. "
+                "Existing pairing kept. Check Cloud Devices and retry the same setup.",
+                err=True,
+            )
+            return False
+        typer.echo(
+            "Opening browser to verify device replacement. "
+            "Cloud will preserve a valid existing device."
+        )
+        bootstrap.repair_device_only(
+            origin=device.origin,
             alias=_resolve_device_alias(None),
             approval=lambda page, challenge, code: _perform_approval(page, challenge, code, False),
             stop_previous=stop_and_remove_owner_task,
         )
+        typer.echo("Device paired. No projects added; choose Add Project after Online appears.")
+        return True
 
     try:
-        _call_with_owner_connector(recover)
+        return _call_with_owner_connector(recover)
     except WindowsRecoveryDeniedError as exc:
         typer.echo(str(exc), err=True)
         return False
@@ -136,8 +170,6 @@ def _offer_device_recovery() -> bool:
         raise typer.BadParameter(
             "Device pairing could not be restored safely. Check Cloud Devices and retry setup."
         ) from exc
-    typer.echo("Device paired. No projects added; choose Add Project after Online appears.")
-    return True
 
 
 def _run_windows_cloud_session() -> None:

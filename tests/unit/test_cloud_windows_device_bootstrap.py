@@ -505,3 +505,67 @@ def test_device_repair_archives_without_adding_project(
     assert store[(previous.record_id, "key")] == before[(previous.record_id, "key")]
     assert approval_events == ["browser"]
     assert not any(part == "registration" for _, part in store)
+
+
+@pytest.mark.parametrize("fault", ["none", "crash", "foreign", "stop"])
+def test_detach_deleted_project_retains_device_and_archives(
+    saved_device, monkeypatch: pytest.MonkeyPatch, fault: str
+) -> None:
+    from kicad_mcp import cloud_windows_connector as connector
+    from kicad_mcp import cloud_windows_credentials as credentials
+    from kicad_mcp.cloud_windows_enrollment import WindowsRegisteredProject
+
+    device, store = saved_device
+    boot.remember_device(device)
+    project = WindowsRegisteredProject(
+        "c" * 32,
+        device.record_id,
+        device.origin,
+        device.owner_sub,
+        device.device_id,
+        device.fingerprint,
+        str(uuid4()),
+        "board",
+    )
+    selected = (connector._SELECTED_RECORD_ID, "selected")
+    active = (connector._ACTIVE_RECORD_ID, "active")
+    store[selected] = b"selected project"
+    store[active] = b"active project"
+    key = store[(device.record_id, "key")]
+    store[(project.registration_id, "registration")] = b"saved registration"
+    monkeypatch.setattr(
+        connector, "selected_project", lambda: project if selected in store else None
+    )
+    monkeypatch.setattr(
+        connector, "_active", lambda: SimpleNamespace(project=project) if active in store else None
+    )
+    crash = fault == "crash"
+
+    def delete(record: str, part: str) -> bool:
+        nonlocal crash
+        removed = store.pop((record, part), None) is not None
+        if crash and (record, part) == active:
+            crash = False
+            raise KeyboardInterrupt
+        return removed
+
+    monkeypatch.setattr(credentials, "delete_credential", delete)
+    if fault == "foreign":
+        store[(project.registration_id, "detached_selected")] = b"foreign"
+    if fault in {"foreign", "stop"}:
+        with pytest.raises(LocalApprovalDeniedError):
+            boot.detach_missing_project(device, project, lambda: fault != "stop")
+        assert store[selected] == b"selected project"
+        assert store[active] == b"active project"
+    else:
+        if fault == "crash":
+            with pytest.raises(KeyboardInterrupt):
+                boot.detach_missing_project(device, project, lambda: True)
+            assert selected in store and active not in store
+        boot.detach_missing_project(device, project, lambda: True)
+        assert selected not in store and active not in store
+        assert store[(project.registration_id, "detached_selected")] == b"selected project"
+        assert store[(project.registration_id, "detached_active")] == b"active project"
+    assert boot.selected_device() == device
+    assert store[(device.record_id, "key")] == key
+    assert store[(project.registration_id, "registration")] == b"saved registration"

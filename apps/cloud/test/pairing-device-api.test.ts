@@ -151,3 +151,35 @@ test("unknown challenge attempts share an atomic redemption limit",
 test("pairing device API fails closed when secret is too short",()=>{
   assert.throws(()=>new PgPairingDeviceAPI({} as never,"short"),/SECRET_TOO_SHORT/);
 });
+
+test("signed inventory diagnosis distinguishes project loss without enrolling devices",{skip:!conn},async()=>{
+  await inIsolatedDatabase(conn!,migrations,async pool=>{
+    const api=new PgPairingDeviceAPI(pool,secret),review=new PgPairingReview(pool,secret);
+    const key=generateKeyPairSync("ed25519");
+    const issued=await api.issue("peer","PC",key.publicKey.export({format:"der",type:"spki"}));
+    if(issued.kind!=="ok")throw Error("issue failed");
+    const c=issued.data,owner="owner";
+    assert.equal(await review.review(c.id,owner,c.userCode,"approve"),"approved");
+    const enrolled=await api.enroll("peer",c.id,c.deviceCode,sign(null,redemptionProof(c.id,c.deviceCode),key.privateKey),true);
+    if(enrolled.kind!=="ok"||enrolled.data.kind!=="enrolled")throw Error("enroll failed");
+    const deviceId=enrolled.data.deviceId, projectId=randomUUID();
+    const {deviceInventoryProof}=await import("../src/device-inventory-status.js");
+    const request={deviceId,ownerSub:owner,projectId,nonce:randomBytes(32).toString("base64url"),issuedAtMs:Date.now()};
+    const proof=sign(null,deviceInventoryProof(request),key.privateKey);
+    const check=async()=>await api.inventoryStatus("peer",request,proof);
+    assert.deepEqual(await check(),{kind:"ok",data:{nonce:request.nonce,state:"project_missing"}});
+    await pool.query("INSERT INTO projects(id,owner_sub,device_id,alias,enabled) VALUES($1,$2,$3,'Board',true)",[projectId,owner,deviceId]);
+    assert.deepEqual(await check(),{kind:"ok",data:{nonce:request.nonce,state:"active"}});
+    await pool.query("UPDATE projects SET enabled=false WHERE id=$1",[projectId]);
+    assert.deepEqual(await check(),{kind:"ok",data:{nonce:request.nonce,state:"project_disabled"}});
+    const invalid=await api.inventoryStatus("peer",{...request,projectId:randomUUID()},proof);
+    assert.deepEqual(invalid,{kind:"ok",data:{nonce:request.nonce,state:"unverified"}});
+    await pool.query("UPDATE devices SET enabled=false WHERE id=$1",[deviceId]);
+    assert.deepEqual(await check(),{kind:"ok",data:{nonce:request.nonce,state:"device_disabled"}});
+    await pool.query("UPDATE device_credentials SET revoked_at=clock_timestamp() WHERE device_id=$1",[deviceId]);
+    assert.deepEqual(await check(),{kind:"ok",data:{nonce:request.nonce,state:"device_revoked"}});
+    await pool.query("DELETE FROM devices WHERE id=$1",[deviceId]);
+    assert.deepEqual(await check(),{kind:"ok",data:{nonce:request.nonce,state:"unverified"}});
+    assert.equal((await pool.query("SELECT count(*)::int n FROM devices")).rows[0].n,0);
+  });
+});
