@@ -849,6 +849,25 @@ Actions runtime IDs must be canonical positive ASCII decimal strings
 parse successfully. The caller still needs to establish the dispatch
 inputs and independent pin outside the downloaded artifact.
 
+After request preflight and safe producer extraction, use
+`verify-producer` instead of full `verify`, adding
+`--producer-job-id "$PRODUCER_JOB_ID"` and
+`--producer-archive "$PRODUCER_ZIP"`. The job ID is a separate
+selector from the completed producer run, not authority from the request
+ZIP. The worker first verifies the exact owner request and local package
+bytes, then the separate completed reusable producer run, the approved
+job and its successful attest/upload steps, exact artifact metadata and
+ZIP (maximum 512 MiB), and both package SLSA signatures. It matches
+the signed producer digests to the independently pinned owner manifest
+and repeats producer job, artifact, live owner/child/tag and local byte
+checks. This needs only read-side run, tag, artifact and attestation
+access. It reports producer artifact and package signature verification,
+not proof that a particular job uploaded the artifact. Draft Release,
+protected-tag ruleset, registry, exclusive-writer and publication
+authority remain unverified by the worker. Neither this diagnostic nor
+its predecessors download, install or publish packages. A caller must
+use a separate request preflight before downloading the producer archive.
+
 Use `wait` instead of `discover` when the owner is still preparing
 the request artifact. It checks live owner, child and tag identities
 at each poll, and repeats those checks when the artifact appears.

@@ -116,7 +116,7 @@ def _validate_identity(identity: HandoffIdentity, producer_job_id: int) -> None:
 
 
 def _verify_producer_inputs(
-    client: BindingClient,
+    client: ProducerClient,
     verifier: AttestationVerifier,
     *,
     identity: HandoffIdentity,

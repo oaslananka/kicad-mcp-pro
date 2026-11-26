@@ -544,3 +544,226 @@ def test_prepare_dispatch_cli_preserves_signed_manifest_requirement(
         owner.main(argv)
     assert exc.value.code == 2
     assert capsys.readouterr().out == ""
+
+
+@pytest.fixture
+def worker_producer(case, monkeypatch, tmp_path) -> tuple[Any, ...]:
+    from scripts.check_signed_python_dispatch_binding import dispatch_bytes
+    from tests.unit.test_python_worker_request_delivery import ARTIFACT, archive_bytes
+
+    source, verifier, options, child = _dispatch_case(case, monkeypatch)
+    identity = options["identity"]
+    data = archive_bytes(
+        [
+            ("python-worker-dispatch.json", dispatch_bytes(identity)),
+            ("python-worker-manifest.json", options.pop("manifest").read_bytes()),
+        ]
+    )
+    archive = tmp_path / "request.zip"
+    archive.write_bytes(data)
+    item = {
+        "id": ARTIFACT,
+        "name": f"python-worker-request-{identity.handoff.owner_attempt}-{identity.worker_run_id}",
+        "expired": False,
+        "size_in_bytes": len(data),
+        "digest": "sha256:" + hashlib.sha256(data).hexdigest(),
+        "url": f"https://api.github.com/repos/{REPO}/actions/artifacts/{ARTIFACT}",
+        "archive_download_url": f"https://api.github.com/repos/{REPO}/actions/artifacts/{ARTIFACT}/zip",
+        "workflow_run": {
+            "id": identity.handoff.owner_run_id,
+            "repository_id": 1255527274,
+            "head_repository_id": 1255527274,
+            "head_branch": "main",
+            "head_sha": identity.handoff.source_commit,
+        },
+    }
+
+    class Worker:
+        def workflow_run(self, repo, run_id):
+            return source.workflow_run(repo, run_id)
+
+        def tag_commit(self, repo, tag):
+            return source.tag_commit(repo, tag)
+
+        def workflow_jobs(self, repo, run_id, attempt):
+            return source.workflow_jobs(repo, run_id, attempt)
+
+        def workflow_artifacts(self, repo, run_id):
+            assert repo == REPO and run_id == identity.handoff.owner_run_id
+            return {"total_count": 1, "artifacts": [copy.deepcopy(item)]}
+
+        def artifact(self, repo, artifact_id):
+            if artifact_id == ARTIFACT:
+                return copy.deepcopy(item)
+            return source.artifact(repo, artifact_id)
+
+    return (
+        Worker(),
+        verifier,
+        options
+        | {
+            "artifact_id": ARTIFACT,
+            "archive": archive,
+            "runtime_ref": f"refs/tags/{identity.handoff.tag}",
+            "runtime_sha": identity.handoff.source_commit,
+            "runtime_run_id": identity.worker_run_id,
+            "runtime_attempt": identity.worker_attempt,
+        },
+        source,
+        child,
+        item,
+    )
+
+
+def test_worker_producer_composes_all_signatures_read_only(worker_producer) -> None:
+    from scripts import check_python_worker_request_delivery as worker
+
+    client, verifier, args, _, _, _ = worker_producer
+    report = worker.verify_producer_delivery(client, verifier, **args)
+    for key in (
+        "ownerRequestArtifactVerified",
+        "signedDispatchBindingVerified",
+        "signedOwnerManifestVerified",
+        "packageBytesVerified",
+        "producerArtifactVerified",
+        "producerJobMetadataVerified",
+        "producerPackageSignaturesVerified",
+        "manifestProducerBytesMatch",
+    ):
+        assert report[key] is True
+    for key in (
+        "protectedTagVerified",
+        "draftReleaseVerified",
+        "artifactProducedByThisJobVerified",
+        "registryReceiptVerified",
+        "exclusiveWriterVerified",
+        "publicationAuthorized",
+    ):
+        assert report[key] is False
+    assert verifier.owner_calls == 2
+    assert len(verifier.producer.calls) == 2
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "owner-signature",
+        "producer-signature",
+        "archive",
+        "job",
+        "repository",
+        "size",
+        "local-package",
+    ],
+)
+def test_worker_producer_rejects_bad_evidence(worker_producer, change) -> None:
+    from scripts import check_python_worker_request_delivery as worker
+
+    client, verifier, args, source, _, _ = worker_producer
+    if change == "owner-signature":
+        verifier.change = change
+    elif change == "producer-signature":
+        verifier.producer.tamper = "wrong_run"
+    elif change == "archive":
+        args["downloaded_zip"].write_bytes(b"wrong")
+    elif change == "job":
+        args["producer_job_id"] = 1
+    elif change == "repository":
+        source.producer.run["repository"]["id"] = 1
+        source.producer.run["head_repository"]["id"] = 1
+        source.producer.art["workflow_run"]["repository_id"] = 1
+        source.producer.art["workflow_run"]["head_repository_id"] = 1
+    elif change == "size":
+        source.producer.art["size_in_bytes"] += 1
+    else:
+        next(args["directory"].glob("*.whl")).write_bytes(b"wrong")
+    options = dict(args)
+    with pytest.raises(ValueError):
+        worker.verify_producer_delivery(client, verifier, **options)
+    if change == "owner-signature":
+        assert not verifier.producer.calls
+
+
+@pytest.mark.parametrize(
+    "change",
+    ["child", "request", "producer-attempt", "producer-job", "producer-archive", "local-package"],
+)
+def test_worker_producer_rechecks_after_package_signatures(
+    worker_producer, monkeypatch, change
+) -> None:
+    from scripts import check_python_worker_request_delivery as worker
+
+    client, verifier, args, source, child, item = worker_producer
+    original = verifier.producer.verify
+
+    def sign(*, path: Path, repo: str, sha: str, signer: str, source_ref: str):
+        result = original(path=path, repo=repo, sha=sha, signer=signer, source_ref=source_ref)
+        if change == "child":
+            child["run_attempt"] = 2
+        elif change == "request":
+            item["expired"] = True
+        elif change == "producer-attempt":
+            source.producer.run["run_attempt"] += 1
+        elif change == "producer-job":
+            source.producer.jobs["jobs"][0]["conclusion"] = "failure"
+        elif change == "producer-archive":
+            args["downloaded_zip"].write_bytes(b"changed")
+        else:
+            next(args["directory"].glob("*.whl")).write_bytes(b"changed")
+        return result
+
+    monkeypatch.setattr(verifier.producer, "verify", sign)
+    options = dict(args)
+    with pytest.raises(ValueError):
+        worker.verify_producer_delivery(client, verifier, **options)
+
+
+def test_worker_producer_cli(worker_producer, monkeypatch, capsys) -> None:
+    import json
+
+    from scripts import check_python_worker_request_delivery as worker
+    from scripts.python_worker_dispatch_inputs import dispatch_payload
+
+    client, verifier, args, _, _, _ = worker_producer
+    identity = args["identity"]
+    event = args["archive"].with_name("event.json")
+    event.write_text(json.dumps(dispatch_payload(identity.handoff, identity.manifest_sha256)))
+    for key, value in {
+        "GITHUB_REPOSITORY": REPO,
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_REF": args["runtime_ref"],
+        "GITHUB_SHA": args["runtime_sha"],
+        "GITHUB_RUN_ID": str(args["runtime_run_id"]),
+        "GITHUB_RUN_ATTEMPT": str(args["runtime_attempt"]),
+        "GITHUB_EVENT_PATH": str(event),
+    }.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(worker, "DeliveryGitHubCLI", lambda: client)
+    monkeypatch.setattr(worker, "GitHubAttestationCLI", lambda: verifier)
+    argv = [
+        "verify-producer",
+        "--from-event",
+        "--artifact-id",
+        str(args["artifact_id"]),
+        "--archive",
+        str(args["archive"]),
+        "--directory",
+        str(args["directory"]),
+        "--producer-job-id",
+        str(args["producer_job_id"]),
+        "--producer-archive",
+        str(args["downloaded_zip"]),
+    ]
+    assert worker.main(argv) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["producerArtifactVerified"] is True
+    assert report["publicationAuthorized"] is False
+    wrong_mode = ["verify", *argv[1:]]
+    with pytest.raises(SystemExit) as exc:
+        worker.main(wrong_mode)
+    assert exc.value.code == 2
+    assert capsys.readouterr().out == ""
+    with pytest.raises(SystemExit) as exc:
+        worker.main(argv[:-2])
+    assert exc.value.code == 2
+    assert capsys.readouterr().out == ""
