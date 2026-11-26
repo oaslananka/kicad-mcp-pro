@@ -72,10 +72,17 @@ public class Fixture {
                 File.WriteAllText(request, "drain"); return 0;
             }
             if (args.Length == 2 && args[1] == "--help") {
+                if (Environment.GetEnvironmentVariable("KICAD_TEST_SCENARIO") == "late-unhealthy" &&
+                    self.IndexOf("\\releases\\a\\", StringComparison.OrdinalIgnoreCase) >= 0) {
+                    string check = Path.Combine(control, "late-check");
+                    if (File.Exists(check)) return 1;
+                    File.WriteAllText(check, "checked");
+                }
                 Console.WriteLine("--managed-edit"); return 0;
             }
             File.AppendAllText(Environment.GetEnvironmentVariable("KICAD_TEST_LOG"),
                 "connected " + self + Environment.NewLine);
+            if (Environment.GetEnvironmentVariable("KICAD_TEST_SCENARIO") == "policy-rejection") return 3;
             if (Environment.GetEnvironmentVariable("KICAD_TEST_SCENARIO") == "live" &&
                 Environment.GetEnvironmentVariable("KICAD_CLOUD_UPDATE_SLOT") == "a") {
                 File.WriteAllText(lease, Environment.GetEnvironmentVariable("KICAD_CLOUD_UPDATE_GENERATION") + " a");
@@ -165,6 +172,40 @@ public class Fixture {
         $tail.Count -ne 3 -or $tail[0] -ne "requested" -or $tail[1] -ne "drained" -or
         $tail[2] -ne ("connected " + $b)) { throw "Unexpected handoff order" }
     Write-Output "PASS: Windows graceful live A-to-B handoff"
+    # The final startup check must run before selecting the new slot.
+    $hash = (Get-FileHash -LiteralPath $b).Hash
+    $env:KICAD_TEST_SCENARIO = "late-unhealthy"
+    & $install
+    if ((Get-Content -LiteralPath $pointer -Raw).Trim() -cne "b" -or
+        (Get-FileHash -LiteralPath $b).Hash -ne $hash -or
+        (Get-Content -LiteralPath $env:KICAD_TEST_LOG | Select-Object -Last 1) -ne ("connected " + $b)) {
+        throw "Late startup failure did not preserve B"
+    }
+    Write-Output "PASS: Windows final startup check preserves previous release"
+    $env:KICAD_TEST_SCENARIO = "success"
+    & $install
+    if ((Get-Content -LiteralPath $pointer -Raw).Trim() -cne "a") { throw "A not selected" }
+    [IO.File]::WriteAllText($a, "corrupt selected fixture")
+    $count = @(Get-Content -LiteralPath $env:KICAD_TEST_LOG | Where-Object { $_ -like "install *" }).Count
+    $env:KICAD_TEST_SCENARIO = "failure"
+    & $install
+    if ((Get-Content -LiteralPath $pointer -Raw).Trim() -cne "b" -or
+        (Get-FileHash -LiteralPath $b).Hash -ne $hash -or
+        @(Get-Content -LiteralPath $env:KICAD_TEST_LOG | Where-Object { $_ -like "install *" }).Count -ne $count) {
+        throw "Recovery modified the last working installation"
+    }
+    Write-Output "PASS: Windows corrupt selected release restores backup without upgrading"
+    $env:KICAD_TEST_SCENARIO = "policy-rejection"
+    $denied = $false
+    try { & $install } catch {
+        if ($_.Exception.Message -notmatch "exit code 3") { throw }
+        $denied = $true
+    }
+    if (-not $denied -or (Get-Content -LiteralPath $pointer -Raw).Trim() -cne "a") {
+        throw "Cloud policy rejection was treated as a package failure"
+    }
+    Write-Output "PASS: Windows policy failure does not downgrade"
+
 
 } finally {
     $env:PATH = $oldPath

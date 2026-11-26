@@ -216,56 +216,91 @@
             throw "A manually started or older Connector is running. Existing installation unchanged."
         }
 
-        $existingHealthy = Test-Connector $cliPath
-        $cliPath = Select-ReleaseSlot $candidate
-        Write-Host "KiCad MCP Pro: Preparing a separate update..."
-        & $uvPath tool install --upgrade $package
-        $installed = ($LASTEXITCODE -eq 0) -and (Test-Connector $cliPath)
-        if (-not $installed -and -not $existingHealthy -and $ownsInstallerMutex) {
-            Write-Host "KiCad MCP Pro: Installation needs repair. Retrying once..."
-            & $uvPath tool install --force --reinstall $package
-            $installed = ($LASTEXITCODE -eq 0) -and (Test-Connector $cliPath)
+        $recovery = $null
+        if ($ownsInstallerMutex -and $active -ne "legacy" -and -not (Test-Connector $activeCli)) {
+            $previousCli = Select-ReleaseSlot $candidate
+            if (Test-Connector $previousCli) {
+                $recovery = $candidate
+            } else {
+                $legacyCli = Select-ReleaseSlot "legacy"
+                if (Test-Connector $legacyCli) { $recovery = "legacy" }
+            }
         }
-        if ($installed) {
-            if (-not $ownsInstallerMutex) {
-                $ownsInstallerMutex = Enter-InstallerMutex $installerMutex
+        if ($null -ne $recovery) {
+            # Never overwrite the remaining working environment while
+            # attempting to repair a broken selected release.
+            $cliPath = Select-ReleaseSlot $recovery
+            if (-not (Test-Connector $cliPath)) { throw "Previous installation is no longer healthy." }
+            if ($recovery -eq "legacy") {
+                Remove-Item -LiteralPath $pointer -Force
+            } else {
+                Publish-Release $recovery
+            }
+            $selected = $recovery
+            Write-Warning "Restored the previous working installation without upgrading it."
+        } else {
+            $cliPath = Select-ReleaseSlot $active
+            $existingHealthy = Test-Connector $cliPath
+            $cliPath = Select-ReleaseSlot $candidate
+            Write-Host "KiCad MCP Pro: Preparing a separate update..."
+            & $uvPath tool install --upgrade $package
+            $installed = ($LASTEXITCODE -eq 0) -and (Test-Connector $cliPath)
+            if (-not $installed -and -not $existingHealthy -and $ownsInstallerMutex) {
+                Write-Host "KiCad MCP Pro: Installation needs repair. Retrying once..."
+                & $uvPath tool install --force --reinstall $package
+                $installed = ($LASTEXITCODE -eq 0) -and (Test-Connector $cliPath)
+            }
+            if ($installed) {
                 if (-not $ownsInstallerMutex) {
-                    if ((Get-UpdateLease $activeCli $active) -cne $lease) {
-                        throw "The running session changed. Retry the same setup."
-                    }
-                    $generation = $lease.Split(" ")[0]
-                    & $activeCli cloud _update-control request --generation $generation --slot $active *> $null
-                    if ($LASTEXITCODE -ne 0) {
-                        $ownsInstallerMutex = Enter-InstallerMutex $installerMutex
-                        if (-not $ownsInstallerMutex) { throw "Connector did not accept the update request." }
-                    }
-                    Write-Host "KiCad MCP Pro: Finishing the current Cloud operation before updating..."
-                    $deadline = [Diagnostics.Stopwatch]::StartNew()
-                    while (-not $ownsInstallerMutex) {
-                        if ($deadline.Elapsed.TotalSeconds -ge 300) {
-                            throw "Previous Connector is still finishing. Retry setup; no process was killed."
+                    $ownsInstallerMutex = Enter-InstallerMutex $installerMutex
+                    if (-not $ownsInstallerMutex) {
+                        if ((Get-UpdateLease $activeCli $active) -cne $lease) {
+                            throw "The running session changed. Retry the same setup."
                         }
-                        Start-Sleep -Milliseconds 200
-                        $ownsInstallerMutex = Enter-InstallerMutex $installerMutex
+                        $generation = $lease.Split(" ")[0]
+                        & $activeCli cloud _update-control request --generation $generation --slot $active *> $null
+                        if ($LASTEXITCODE -ne 0) {
+                            $ownsInstallerMutex = Enter-InstallerMutex $installerMutex
+                            if (-not $ownsInstallerMutex) { throw "Connector did not accept the update request." }
+                        }
+                        Write-Host "KiCad MCP Pro: Finishing the current Cloud operation before updating..."
+                        $deadline = [Diagnostics.Stopwatch]::StartNew()
+                        while (-not $ownsInstallerMutex) {
+                            if ($deadline.Elapsed.TotalSeconds -ge 300) {
+                                throw "Previous Connector is still finishing. Retry setup; no process was killed."
+                            }
+                            Start-Sleep -Milliseconds 200
+                            $ownsInstallerMutex = Enter-InstallerMutex $installerMutex
+                        }
                     }
                 }
+                if (@(Get-InstallProcesses).Count -gt 0) {
+                    throw "A Connector process is still running. Existing release unchanged."
+                }
+                # Recheck the prepared environment once the old launcher has
+                # stopped, before making it the active installation.
+                if (Test-Connector $cliPath) {
+                    Publish-Release $candidate
+                    $selected = $candidate
+                } elseif (Test-Connector $activeCli) {
+                    Write-Warning "Candidate failed its final startup check; using the previous version."
+                    $selected = $active
+                    $cliPath = Select-ReleaseSlot $active
+                } else {
+                    throw "Neither installation passed the final startup check. Existing files were preserved."
+                }
+            } elseif (-not $ownsInstallerMutex) {
+                throw "Update unavailable; existing Connector was not asked to stop."
+            } elseif ($existingHealthy) {
+                Write-Warning "Update unavailable; starting the existing working version."
+                $selected = $active
+                $cliPath = Select-ReleaseSlot $active
+                if (-not (Test-Connector $cliPath)) {
+                    throw "Existing installation is no longer healthy."
+                }
+            } else {
+                throw "Could not install or repair KiCad MCP Pro. Existing files and Cloud permissions were preserved."
             }
-            if (@(Get-InstallProcesses).Count -gt 0) {
-                throw "A Connector process is still running. Existing release unchanged."
-            }
-            Publish-Release $candidate
-            $selected = $candidate
-        } elseif (-not $ownsInstallerMutex) {
-            throw "Update unavailable; existing Connector was not asked to stop."
-        } elseif ($existingHealthy) {
-            Write-Warning "Update unavailable; starting the existing working version."
-            $selected = $active
-            $cliPath = Select-ReleaseSlot $active
-            if (-not (Test-Connector $cliPath)) {
-                throw "Existing installation is no longer healthy."
-            }
-        } else {
-            throw "Could not install or repair KiCad MCP Pro. Existing files and Cloud permissions were preserved."
         }
 
         $env:KICAD_CLOUD_UPDATE_GENERATION = [guid]::NewGuid().ToString("N")
@@ -275,7 +310,10 @@
         Write-Host "KiCad MCP Pro: Ready. Opening Cloud Connector..."
         # Main may be ahead of the published wheel. Do not pass an unsupported option.
         $cloudHelp = (& $cliPath cloud --help 2>&1 | Out-String)
-        if ($LASTEXITCODE -eq 0 -and $cloudHelp -match '(?<![\w-])--managed-edit(?![\w-])') {
+        if ($LASTEXITCODE -ne 0) {
+            throw "Selected Connector failed its launch check. Retry the same setup; no Cloud session was started."
+        }
+        if ($cloudHelp -match '(?<![\w-])--managed-edit(?![\w-])') {
             Write-Host "Cloud Edit grants control editing in this owner-started session."
             & $cliPath cloud --managed-edit
         } else {

@@ -47,6 +47,12 @@ prepare_release() {
   fi
   return 1
 }
+verify_release() {
+  private_slot "$root/releases"
+  if [[ "$1" != legacy ]]; then private_slot "$root/releases/$1"; fi
+  select_slot "$1"
+  connector_healthy "$cli"
+}
 launch_release() {
   select_slot "$1"
   connector_healthy "$cli" || die "Existing installation is no longer healthy."
@@ -125,7 +131,7 @@ fi
 # uv can supply Python on macOS as well as Linux without Xcode or a separate
 # prerequisite command. Keep an inherited kernel lock over both uv's package
 # update and the foreground child; never unlink the lock inode.
-export -f die healthy private_slot connector_healthy select_slot prepare_release launch_release
+export -f die healthy private_slot connector_healthy select_slot prepare_release verify_release launch_release
 export root uv_path
 # Embedded Python passes literal Bash positional parameters.
 # shellcheck disable=SC2016
@@ -221,6 +227,22 @@ def publish(slot):
         except FileNotFoundError:
             pass
 
+def verify(slot):
+    return subprocess.run(
+        ["/bin/bash", "-c", "set -euo pipefail; verify_release \"$1\"", "verify-release", slot],
+        pass_fds=(prepare, session)
+    ).returncode == 0
+
+def restore_previous(slot):
+    # An absent selector is the legacy layout. Do not overwrite a working
+    # backup just because the selected environment is damaged.
+    if slot == "legacy":
+        os.unlink("active-release", dir_fd=folder)
+        os.fsync(folder)
+    else:
+        publish(slot)
+
+
 try:
     # One process may prepare a release, while the existing launcher retains
     # the separate session lock. Older launchers without a live lease fail closed.
@@ -236,38 +258,58 @@ try:
         if lease is None or re.fullmatch(r"[0-9a-f]{32} " + active, lease) is None:
             fail("Another setup or Connector is running. Its installation has not been changed.")
     candidate = "b" if active == "a" else "a"
-    rc = subprocess.run(["/bin/bash", "-c", "set -euo pipefail; prepare_release \"$1\" \"$2\"",
-                         "prepare-release", active, candidate], pass_fds=(prepare, session)).returncode
-    if rc != 0:
-        if not owned:
-            fail("Update unavailable; the existing Connector was not asked to stop.")
-        if rc != 1:
-            fail("Installation could not be repaired. Existing files were preserved.")
-        print("KiCad MCP Pro: Update unavailable; using the existing version.", file=sys.stderr)
-        selected = active
+    recovery = None
+    if owned and active != "legacy" and not verify(active):
+        if verify(candidate):
+            recovery = candidate
+        elif verify("legacy"):
+            recovery = "legacy"
+    if recovery is not None:
+        restore_previous(recovery)
+        print("KiCad MCP Pro: Restored the previous working installation without upgrading it.", file=sys.stderr)
+        selected = recovery
     else:
-        if not owned:
-            if active_slot() != active:
-                fail("The active release changed during preparation. Retry the same setup.")
-            owned = acquire(session)
+        rc = subprocess.run(["/bin/bash", "-c", "set -euo pipefail; prepare_release \"$1\" \"$2\"",
+                             "prepare-release", active, candidate], pass_fds=(prepare, session)).returncode
+        if rc != 0:
             if not owned:
-                if control(active, "probe") != lease:
-                    fail("The running session changed. Retry the same setup.")
-                assert lease is not None
-                generation, slot = lease.split()
-                accepted = control(active, "request", "--generation", generation, "--slot", slot)
-                if accepted is None and not acquire(session):
-                    fail("The running Connector did not accept the update request.")
-                print("KiCad MCP Pro: Finishing the current Cloud operation before updating...", flush=True)
-                deadline = time.monotonic() + 300
-                while not acquire(session):
-                    if time.monotonic() >= deadline:
-                        fail("The previous Connector is still finishing. Retry the same setup; no process was killed.")
-                    time.sleep(0.2)
-        if active_slot() != active:
-            fail("The active release changed. Retry the same setup.")
-        publish(candidate)
-        selected = candidate
+                fail("Update unavailable; the existing Connector was not asked to stop.")
+            if rc != 1:
+                fail("Installation could not be repaired. Existing files were preserved.")
+            print("KiCad MCP Pro: Update unavailable; using the existing version.", file=sys.stderr)
+            selected = active
+        else:
+            if not owned:
+                if active_slot() != active:
+                    fail("The active release changed during preparation. Retry the same setup.")
+                owned = acquire(session)
+                if not owned:
+                    if control(active, "probe") != lease:
+                        fail("The running session changed. Retry the same setup.")
+                    assert lease is not None
+                    generation, slot = lease.split()
+                    accepted = control(active, "request", "--generation", generation, "--slot", slot)
+                    if accepted is None and not acquire(session):
+                        fail("The running Connector did not accept the update request.")
+                    print("KiCad MCP Pro: Finishing the current Cloud operation before updating...", flush=True)
+                    deadline = time.monotonic() + 300
+                    while not acquire(session):
+                        if time.monotonic() >= deadline:
+                            fail("The previous Connector is still finishing. Retry the same setup; no process was killed.")
+                        time.sleep(0.2)
+            if active_slot() != active:
+                fail("The active release changed. Retry the same setup.")
+            # Revalidate after the old process has released its lock, before
+            # committing selection. Never interpret a Cloud operation error
+            # as a package startup failure or retry an ambiguous operation.
+            if verify(candidate):
+                publish(candidate)
+                selected = candidate
+            elif verify(active):
+                print("KiCad MCP Pro: Candidate failed its final startup check; using the previous version.", file=sys.stderr)
+                selected = active
+            else:
+                fail("Neither installation passed the final startup check. Existing files were preserved.")
     # Keep session lock across the new foreground child, release preparation
     # lock so the next setup may safely stage the inactive version.
     os.environ["KICAD_CLOUD_UPDATE_GENERATION"] = uuid.uuid4().hex

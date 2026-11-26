@@ -10,6 +10,10 @@ trap 'rm -rf -- "$work"' EXIT
 export TEST_CLI_TEMPLATE="$work/cli"
 cat > "$TEST_CLI_TEMPLATE" <<'CLI'
 #!/bin/bash
+if [[ "$*" == "cloud --help" && "$TEST_SCENARIO" == late-unhealthy && "$0" == */releases/b/bin/kicad-mcp-pro ]]; then
+  if [[ -e "$TEST_LATE_CHECK" ]]; then exit 1; fi
+  touch "$TEST_LATE_CHECK"
+fi
 if [[ "$1" == --version || "$*" == "cloud --help" ]]; then exit 0; fi
 if [[ "$*" == "cloud _update-control probe" ]]; then
   [[ -n "${TEST_HANDOFF:-}" && -f "$TEST_HANDOFF/lease" ]] || exit 1
@@ -25,6 +29,7 @@ if [[ "$1 $2 $3" == "cloud _update-control request" ]]; then
 fi
 [[ "$*" == cloud && -t 0 ]] || exit 97
 echo connected >> "$TEST_LOG"
+if [[ "$TEST_SCENARIO" == policy-rejection ]]; then exit 3; fi
 if [[ -n "${TEST_SELECTED_LOG:-}" ]]; then printf "%s\n" "$0" >> "$TEST_SELECTED_LOG"; fi
 if [[ "$TEST_SCENARIO" == live-handoff ]]; then
   if [[ "$KICAD_CLOUD_UPDATE_SLOT" == a ]]; then
@@ -209,3 +214,88 @@ wait "$launcher"
 printf 'tool install --upgrade kicad-mcp-pro\nconnected\ntool install --upgrade kicad-mcp-pro\ntool install --upgrade kicad-mcp-pro\nrequested\ndrained\nconnected\n' > "$work/handoff-expected"
 diff -u "$work/handoff-expected" "$TEST_LOG"
 printf 'PASS: live staging, failed candidate keeps A, graceful A-to-B handoff\n'
+
+# A previously healthy installed slot may become unusable after selection
+# (disk corruption, interrupted environment, missing interpreter). Do not
+# write over the remaining known-good slot merely to attempt an update.
+unset TEST_HANDOFF
+export HOME="$work/runtime/home"
+export XDG_DATA_HOME="$HOME/data"
+export TEST_LOG="$work/runtime/events"
+export TEST_SELECTED_LOG="$work/runtime/selected"
+export TEST_LATE_CHECK="$work/runtime/late-check"
+mkdir -p "$HOME"
+app="$XDG_DATA_HOME/KiCadMCPPro"
+a="$app/releases/a/bin/kicad-mcp-pro"
+b="$app/releases/b/bin/kicad-mcp-pro"
+export TEST_SCENARIO=install
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
+[[ "$(cat "$app/active-release")" == a ]]
+export TEST_SCENARIO=late-unhealthy
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
+[[ "$(cat "$app/active-release")" == a ]]
+[[ "$(tail -1 "$TEST_SELECTED_LOG")" == "$a" ]]
+cmp "$TEST_CLI_TEMPLATE" "$a"
+export TEST_SCENARIO=repeat
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
+[[ "$(cat "$app/active-release")" == b ]]
+printf 'corrupt selected fixture\n' > "$b"
+export TEST_SCENARIO=destructive-update
+before="$(grep -c '^tool install' "$TEST_LOG")"
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
+[[ "$(cat "$app/active-release")" == a ]]
+[[ "$(tail -1 "$TEST_SELECTED_LOG")" == "$a" ]]
+[[ "$(grep -c '^tool install' "$TEST_LOG")" == "$before" ]]
+cmp "$TEST_CLI_TEMPLATE" "$a"
+printf 'PASS: late startup check and broken active release recover without overwriting backup\n'
+export TEST_SCENARIO=policy-rejection
+if timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null; then
+  echo "Policy failure incorrectly reported success" >&2; exit 1
+fi
+[[ "$(cat "$app/active-release")" == b ]]
+printf 'PASS: runtime policy failure is not an automatic downgrade\n'
+
+# A final startup failure after the old session was drained must restart
+# the old release in this same setup command, without publishing the candidate.
+export HOME="$work/late-live/home"
+export XDG_DATA_HOME="$HOME/data"
+export TEST_LOG="$work/late-live/events"
+export TEST_SELECTED_LOG="$work/late-live/selected"
+export TEST_LATE_CHECK="$work/late-live/late-check"
+export TEST_HANDOFF="$work/late-live/control"
+mkdir -p "$HOME" "$TEST_HANDOFF"
+export TEST_SCENARIO=live-handoff
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null </dev/null &
+launcher=$!
+for _ in $(seq 1 100); do [[ -s "$TEST_HANDOFF/lease" ]] && break; sleep .05; done
+if [[ ! -s "$TEST_HANDOFF/lease" ]]; then
+  touch "$TEST_HANDOFF/drain"
+  wait "$launcher" || true
+  exit 1
+fi
+app="$XDG_DATA_HOME/KiCadMCPPro"
+a="$app/releases/a/bin/kicad-mcp-pro"
+export TEST_SCENARIO=late-unhealthy
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
+wait "$launcher"
+[[ "$(cat "$app/active-release")" == a ]]
+[[ "$(tail -1 "$TEST_SELECTED_LOG")" == "$a" ]]
+[[ "$(tail -3 "$TEST_LOG")" == "$(printf 'requested\ndrained\nconnected')" ]]
+cmp "$TEST_CLI_TEMPLATE" "$a"
+printf 'PASS: final candidate failure after drain restarts previous release\n'
+
+# Recovery can also preserve a working legacy installation if both slots
+# became unusable. Do not fetch packages or change either damaged slot.
+unset TEST_HANDOFF
+mkdir -p "$app/bin"
+install -m 700 "$TEST_CLI_TEMPLATE" "$app/bin/kicad-mcp-pro"
+printf 'broken A\n' > "$a"
+printf 'broken B\n' > "$app/releases/b/bin/kicad-mcp-pro"
+before="$(grep -c '^tool install' "$TEST_LOG")"
+export TEST_SCENARIO=destructive-update
+timeout 20s script -qec "cat \"\$TEST_INSTALLER\" | bash" /dev/null
+[[ ! -e "$app/active-release" ]]
+[[ "$(tail -1 "$TEST_SELECTED_LOG")" == "$app/bin/kicad-mcp-pro" ]]
+[[ "$(grep -c '^tool install' "$TEST_LOG")" == "$before" ]]
+cmp "$TEST_CLI_TEMPLATE" "$app/bin/kicad-mcp-pro"
+printf 'PASS: legacy working installation recovered without reinstall\n'

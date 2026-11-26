@@ -72,3 +72,12 @@ test("Live Windows update prepares before requesting drain and waits for session
   assert.match(installer,/Update unavailable; existing Connector was not asked to stop/);
   assert.doesNotMatch(installer,/Stop-Process|taskkill/i);
 });
+
+test("Windows preserves the remaining healthy release and rechecks the candidate after drain",()=>{
+  assert.match(installer,/\$ownsInstallerMutex -and \$active -ne "legacy" -and -not \(Test-Connector \$activeCli\)/);
+  assert.match(installer,/\$previousCli = Select-ReleaseSlot \$candidate/);
+  assert.match(installer,/Restored the previous working installation without upgrading it/);
+  assert.match(installer,/if \(Test-Connector \$cliPath\) \{\s*Publish-Release \$candidate/);
+  assert.match(installer,/elseif \(Test-Connector \$activeCli\)/);
+  assert.match(installer,/Candidate failed its final startup check/);
+});
