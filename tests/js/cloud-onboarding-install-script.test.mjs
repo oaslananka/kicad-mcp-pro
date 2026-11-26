@@ -94,3 +94,14 @@ test("Windows persists the prepared generation before drain and resumes without 
   assert.match(installer,/A different Connector session is running/);
   assert.match(installer,/Saved candidate is no longer healthy/);
 });
+
+test("Windows validates marker ownership and hardlinks on the read handle before choosing a release",()=>{
+  assert.match(installer,/GetSecurityInfo/);
+  assert.match(installer,/GetFileInformationByHandle/);
+  assert.match(installer,/info\.Links != 1/);
+  assert.match(installer,/RawSecurityDescriptor/);
+  assert.match(installer,/DiscretionaryAcl == null/);
+  assert.match(installer,/Read-LocalMarker \$pendingPath 37/);
+  assert.match(installer,/Read-LocalMarker \$pointer 3/);
+  assert.doesNotMatch(installer,/\[IO\.File\]::ReadAllText\(\$(?:pendingPath|pointer)/);
+});

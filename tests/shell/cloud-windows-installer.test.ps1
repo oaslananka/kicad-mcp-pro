@@ -19,9 +19,18 @@ $oldScenario = $env:KICAD_TEST_SCENARIO
 $oldControl = $env:KICAD_TEST_CONTROL
 $job = $null
 try {
+    function Set-FixturePermissions([string]$path, [string]$extra = "") {
+        $userSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $acl = Get-Acl -LiteralPath $path
+        $inheritance = if ((Get-Item -LiteralPath $path).PSIsContainer) { "OICI" } else { "" }
+        $descriptor = "D:P(A;$inheritance;FA;;;$userSid)(A;$inheritance;FA;;;SY)(A;$inheritance;FA;;;BA)" + $extra
+        $acl.SetSecurityDescriptorSddlForm($descriptor, [System.Security.AccessControl.AccessControlSections]::Access)
+        Set-Acl -LiteralPath $path -AclObject $acl
+    }
     $env:LOCALAPPDATA = Join-Path $root "local"
     $env:UV_INSTALL_DIR = Join-Path $root "uv-bin"
     New-Item -ItemType Directory -Path $env:LOCALAPPDATA,$env:UV_INSTALL_DIR | Out-Null
+    Set-FixturePermissions $env:LOCALAPPDATA
     $env:PATH = $env:UV_INSTALL_DIR + ";" + $oldPath
     $env:KICAD_TEST_LOG = Join-Path $root "events"
     $env:KICAD_TEST_CONTROL = Join-Path $root "control"
@@ -291,6 +300,49 @@ public class Fixture {
         throw "Unhealthy saved candidate did not preserve A"
     }
     Write-Output "PASS: Windows unhealthy saved candidate restores previous release"
+
+    # Rejections happen before the package fixture is invoked.
+    foreach ($marker in @($pointer, $pendingPath)) {
+        if ($marker -ceq $pendingPath) {
+            [IO.File]::WriteAllText($pendingPath, $journal, [Text.Encoding]::ASCII)
+        }
+        $contents = [IO.File]::ReadAllText($marker)
+        $other = Join-Path $app ("marker-link-" + [guid]::NewGuid().ToString("N"))
+        New-Item -ItemType HardLink -Path $other -Target $marker | Out-Null
+        $rejected = $false
+        try { & $install } catch {
+            if ($_.Exception.Message -notmatch "Unsafe local installation entry") { throw }
+            $rejected = $true
+        }
+        if (-not $rejected -or [IO.File]::ReadAllText($marker) -cne $contents) {
+            throw "Hardlinked marker was accepted or changed"
+        }
+        Remove-Item -LiteralPath $other
+        Set-FixturePermissions $marker "(A;;FW;;;WD)"
+        $rejected = $false
+        try { & $install } catch {
+            if ($_.Exception.Message -notmatch "Unsafe installation ownership or permissions") { throw }
+            $rejected = $true
+        }
+        if (-not $rejected -or [IO.File]::ReadAllText($marker) -cne $contents) {
+            throw "Shared-write marker was accepted or changed"
+        }
+        Set-FixturePermissions $marker
+        if ($marker -ceq $pendingPath) { Remove-Item -LiteralPath $marker }
+    }
+    Set-FixturePermissions $app "(A;;FW;;;WD)"
+    $rejected = $false
+    try { & $install } catch {
+        if ($_.Exception.Message -notmatch "Unsafe installation ownership or permissions") { throw }
+        $rejected = $true
+    }
+    Set-FixturePermissions $app
+    if (-not $rejected -or (Get-Content -LiteralPath $pointer -Raw).Trim() -cne "a" -or
+        @(Get-Content -LiteralPath $env:KICAD_TEST_LOG | Where-Object { $_ -like "install *" }).Count -ne $count) {
+        throw "Unsafe marker or directory triggered installation"
+    }
+    Write-Output "PASS: Windows hardlinked/shared-write markers and directories fail closed"
+
 
 
 

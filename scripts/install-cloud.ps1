@@ -99,15 +99,139 @@
     $pointer = Join-Path $appRoot "active-release"
     $pendingPath = Join-Path $appRoot "pending-release"
 
-    function Assert-LocalDirectory([string]$path) {
-        $item = Get-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
-        if ($null -ne $item -and
-            (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint))) {
-            throw "Invalid local installation directory."
+    # Standalone installer: no installed Python is required for these checks.
+    if (-not ("KiCadCloudInstallerMarkerV1" -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Text;
+using System.Runtime.InteropServices;
+using System.Security.AccessControl;
+using System.Security.Principal;
+using Microsoft.Win32.SafeHandles;
+
+public static class KiCadCloudInstallerMarkerV1 {
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Info {
+        public uint Attributes, CreationLow, CreationHigh, AccessLow, AccessHigh,
+            WriteLow, WriteHigh, Volume, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
+    }
+    [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true, ExactSpelling=true)]
+    private static extern SafeFileHandle CreateFileW(string path, uint access, uint share,
+        IntPtr security, uint disposition, uint flags, IntPtr template);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    private static extern bool GetFileInformationByHandle(SafeFileHandle file, out Info info);
+    [DllImport("advapi32.dll")]
+    private static extern uint GetSecurityInfo(SafeFileHandle file, int type, uint flags,
+        out IntPtr owner, out IntPtr group, out IntPtr dacl, out IntPtr sacl, out IntPtr descriptor);
+    [DllImport("advapi32.dll")]
+    private static extern uint GetSecurityDescriptorLength(IntPtr descriptor);
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr LocalFree(IntPtr pointer);
+
+    private static bool Trusted(SecurityIdentifier identity, string sid) {
+        if (identity == null) return false;
+        string value = identity.Value;
+        return value == sid || value == "S-1-5-18" || value == "S-1-5-32-544";
+    }
+
+    private static void CheckAcl(SafeFileHandle file, string sid) {
+        IntPtr owner, group, dacl, sacl, descriptor;
+        uint result = GetSecurityInfo(file, 1, 5, out owner, out group, out dacl,
+            out sacl, out descriptor);
+        try {
+            if (result != 0 || descriptor == IntPtr.Zero)
+                throw new IOException("Cannot verify installation security.");
+            uint length = GetSecurityDescriptorLength(descriptor);
+            if (length < 20 || length > 131072)
+                throw new IOException("Invalid installation security descriptor.");
+            byte[] bytes = new byte[(int)length];
+            Marshal.Copy(descriptor, bytes, 0, bytes.Length);
+            RawSecurityDescriptor sd = new RawSecurityDescriptor(bytes, 0);
+            if (!Trusted(sd.Owner, sid) || sd.DiscretionaryAcl == null)
+                throw new IOException("Unsafe installation ownership or permissions.");
+            foreach (GenericAce entry in sd.DiscretionaryAcl) {
+                if ((entry.AceFlags & AceFlags.InheritOnly) != 0) continue;
+                CommonAce ace = entry as CommonAce;
+                if (ace == null || ace.IsCallback)
+                    throw new IOException("Unsupported installation access rule.");
+                if (ace.AceQualifier == AceQualifier.AccessDenied) continue;
+                if (ace.AceQualifier != AceQualifier.AccessAllowed ||
+                    (!Trusted(ace.SecurityIdentifier, sid) &&
+                    (unchecked((uint)ace.AccessMask) & ~0xA01200A9u) != 0))
+                    throw new IOException("Unsafe installation ownership or permissions.");
+            }
+        } finally {
+            if (descriptor != IntPtr.Zero) LocalFree(descriptor);
         }
     }
 
+    private static SafeFileHandle OpenChecked(string path, string sid, bool directory,
+        bool missingOk, out Info info) {
+        info = new Info();
+        // READ_CONTROL and attributes; marker reads also deny write/delete sharing.
+        SafeFileHandle file = CreateFileW(path, directory ? 0x00020080u : 0x80020080u,
+            directory ? 3u : 1u, IntPtr.Zero, 3, 0x02200000u, IntPtr.Zero);
+        if (file.IsInvalid) {
+            int error = Marshal.GetLastWin32Error();
+            file.Dispose();
+            if (missingOk && (error == 2 || error == 3)) return null;
+            throw new IOException("Cannot safely open local installation entry (" + error + ").");
+        }
+        try {
+            if (!GetFileInformationByHandle(file, out info) ||
+                (info.Attributes & 0x1400u) != 0 ||
+                ((info.Attributes & 0x10u) != 0) != directory ||
+                (!directory && info.Links != 1))
+                throw new IOException("Unsafe local installation entry.");
+            CheckAcl(file, sid);
+            return file;
+        } catch {
+            file.Dispose();
+            throw;
+        }
+    }
+
+    public static void CheckDirectory(string path, string sid, bool missingOk) {
+        Info info;
+        using (SafeFileHandle file = OpenChecked(path, sid, true, missingOk, out info)) {}
+    }
+
+    public static string ReadMarker(string path, string sid, int limit) {
+        Info info;
+        using (SafeFileHandle file = OpenChecked(path, sid, false, true, out info)) {
+            if (file == null) return null;
+            if (info.SizeHigh != 0 || info.SizeLow == 0 || info.SizeLow > (uint)limit)
+                throw new IOException("Invalid local release marker size.");
+            using (FileStream stream = new FileStream(file, FileAccess.Read)) {
+                byte[] bytes = new byte[(int)info.SizeLow];
+                int offset = 0;
+                while (offset < bytes.Length) {
+                    int count = stream.Read(bytes, offset, bytes.Length - offset);
+                    if (count == 0) throw new IOException("Local release marker changed.");
+                    offset += count;
+                }
+                if (stream.ReadByte() != -1) throw new IOException("Local release marker changed.");
+                return Encoding.ASCII.GetString(bytes);
+            }
+        }
+    }
+}
+'@
+    }
+
+    function Assert-LocalDirectory([string]$path) {
+        [KiCadCloudInstallerMarkerV1]::CheckDirectory($path, $sid, $true)
+    }
+
+    function Read-LocalMarker([string]$path, [int]$limit) {
+        return [KiCadCloudInstallerMarkerV1]::ReadMarker($path, $sid, $limit)
+    }
+
     function Test-Connector([string]$executable) {
+        $bin = Split-Path -Parent $executable
+        Assert-LocalDirectory (Split-Path -Parent $bin)
+        Assert-LocalDirectory $bin
         if (-not (Test-Tool $executable)) { return $false }
         try {
             & $executable cloud --help *> $null
@@ -145,14 +269,8 @@
     }
 
     function Read-PendingRelease {
-        try {
-            $item = Get-Item -LiteralPath $pendingPath -Force -ErrorAction Stop
-        } catch [System.Management.Automation.ItemNotFoundException] {
-            return $null
-        }
-        if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
-            $item.Length -ne 37) { throw "Invalid saved update. Existing releases unchanged." }
-        $value = [IO.File]::ReadAllText($pendingPath, [Text.Encoding]::ASCII)
+        $value = Read-LocalMarker $pendingPath 37
+        if ($null -eq $value) { return $null }
         if ($value -cmatch '\A([ab]) ([ab]) ([0-9a-f]{32})\n\z') {
             if ($Matches[1] -cne $Matches[2]) {
                 return @{ Old = $Matches[1]; Candidate = $Matches[2]; Generation = $Matches[3]; Raw = $value }
@@ -165,6 +283,7 @@
         if ($null -ne (Read-PendingRelease)) { throw "A saved update already exists." }
         $temporary = Join-Path $appRoot (".pending-release-" + [guid]::NewGuid().ToString("N"))
         try {
+            Assert-LocalDirectory $appRoot
             Write-DurableMarker $temporary "$old $next $generation"
             [IO.File]::Move($temporary, $pendingPath)
         } finally {
@@ -180,8 +299,9 @@
         $temporary = Join-Path $appRoot (".active-release-" + [guid]::NewGuid().ToString("N"))
         $backup = $temporary + ".previous"
         try {
+            Assert-LocalDirectory $appRoot
             Write-DurableMarker $temporary $slot
-            if (Test-Path -LiteralPath $pointer -PathType Leaf) {
+            if ((Read-ActiveRelease) -cne "legacy") {
                 [IO.File]::Replace($temporary, $pointer, $backup)
             } else {
                 [IO.File]::Move($temporary, $pointer)
@@ -196,17 +316,10 @@
     }
 
     function Read-ActiveRelease {
-        $active = "legacy"
-        $selection = Get-Item -LiteralPath $pointer -Force -ErrorAction SilentlyContinue
-        if ($null -ne $selection) {
-            if ($selection.PSIsContainer -or ($selection.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
-                $selection.Length -gt 3) {
-                throw "Invalid release selection."
-            }
-            $active = [IO.File]::ReadAllText($pointer).TrimEnd([char]10, [char]13)
-            if ($active -cnotin @("a", "b")) { throw "Invalid release selection." }
-        }
-        return $active
+        $value = Read-LocalMarker $pointer 3
+        if ($null -eq $value) { return "legacy" }
+        if ($value -cmatch '\\A([ab])(?:\\r?\\n)?\\z') { return $Matches[1] }
+        throw "Invalid release selection."
     }
 
     function Get-InstallProcesses {
@@ -235,6 +348,7 @@
 
     try {
         $env:UV_NO_CONFIG = "1"
+        [KiCadCloudInstallerMarkerV1]::CheckDirectory($env:LOCALAPPDATA, $sid, $false)
         Assert-LocalDirectory $appRoot
         Assert-LocalDirectory $releases
         Assert-LocalDirectory (Join-Path $releases "a")

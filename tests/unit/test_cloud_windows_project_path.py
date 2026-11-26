@@ -242,29 +242,46 @@ def test_native_legacy_cache_pinned_read_and_limit(tmp_path: Path) -> None:
         read_legacy_folder_cache(path, 1024)
 
 
-def _fixture_acl(path: Path, *options: str) -> None:
-    import subprocess
+def _fixture_acl(path: Path, extra: str = "") -> None:
+    import ctypes
+    from ctypes import wintypes
 
-    exe = Path(os.environ["SystemRoot"]) / "System32" / "icacls.exe"
-    result = subprocess.run(
-        [str(exe), str(path), *options], capture_output=True, text=True, timeout=10, check=False
+    from kicad_mcp.cloud_windows_legacy_acl import _current_user
+
+    loader = getattr(ctypes, "WinDLL", None)
+    assert callable(loader)
+    security = loader("advapi32.dll", use_last_error=True, winmode=0x800)
+    kernel = loader("kernel32.dll", use_last_error=True, winmode=0x800)
+    security.ConvertStringSecurityDescriptorToSecurityDescriptorW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.c_void_p,
+    ]
+    security.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = wintypes.BOOL
+    security.SetFileSecurityW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_void_p]
+    security.SetFileSecurityW.restype = wintypes.BOOL
+    kernel.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel.LocalFree.restype = ctypes.c_void_p
+    inherit = "OICI" if path.is_dir() else ""
+    sddl = (
+        f"D:P(A;{inherit};FA;;;{_current_user()})(A;{inherit};FA;;;SY)(A;{inherit};FA;;;BA)" + extra
     )
-    assert result.returncode == 0, result.stdout + result.stderr
+    descriptor = ctypes.c_void_p()
+    assert security.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+        sddl, 1, ctypes.byref(descriptor), None
+    )
+    try:
+        # DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION.
+        assert security.SetFileSecurityW(str(path), 0x80000004, descriptor)
+    finally:
+        kernel.LocalFree(descriptor)
 
 
 def _private_fixture_home(tmp_path: Path) -> Path:
-    from kicad_mcp.cloud_windows_legacy_acl import _current_user
-
     home = tmp_path / "owner-home"
     home.mkdir()
-    _fixture_acl(
-        home,
-        "/inheritance:r",
-        "/grant:r",
-        "*" + _current_user() + ":(OI)(CI)F",
-        "*S-1-5-18:(OI)(CI)F",
-        "*S-1-5-32-544:(OI)(CI)F",
-    )
+    _fixture_acl(home)
     return home
 
 
@@ -282,11 +299,11 @@ def test_native_legacy_cache_rejects_other_writer_on_each_cache_hop(
     payload = b'{"test":"fixture"}'
     path.write_bytes(payload)
     selected = {"home": home, "cache": cache, "connector": directory, "leaf": path}[target]
-    _fixture_acl(selected, "/grant", "*S-1-1-0:R")
+    _fixture_acl(selected, "(A;;FR;;;WD)")
     assert read_legacy_folder_cache(path, 1024) == payload
-    _fixture_acl(selected, "/grant:r", "*S-1-1-0:M")
+    _fixture_acl(selected, "(A;;FW;;;WD)")
     with pytest.raises(LocalReadDeniedError):
         read_legacy_folder_cache(path, 1024)
     assert path.read_bytes() == payload
-    _fixture_acl(selected, "/remove:g", "*S-1-1-0")
+    _fixture_acl(selected)
     assert read_legacy_folder_cache(path, 1024) == payload
