@@ -230,7 +230,7 @@ def test_workflows_isolate_dispatch_signing_and_receipt() -> None:
     owner = yaml.safe_load((root / rehearsal.OWNER_PATH).read_text(encoding="utf-8"))
     worker = yaml.safe_load((root / rehearsal.WORKER_PATH).read_text(encoding="utf-8"))
     assert owner[True] == {"workflow_dispatch": None}
-    assert worker[True] == {"workflow_dispatch": None}
+    assert set(worker[True]) == {"workflow_dispatch"}
     assert owner["permissions"] == {"contents": "read"}
     assert worker["permissions"] == {"contents": "read", "actions": "read", "attestations": "read"}
     assert owner["concurrency"]["cancel-in-progress"] is False
@@ -272,6 +272,18 @@ def test_workflows_isolate_dispatch_signing_and_receipt() -> None:
     assert "tagged-handoff-worker.yml/dispatches" in dispatch
     assert "handoff-rehearsal-$GITHUB_SHA" in dispatch
     assert "check-owner" in dispatch
+    assert '--arg owner "$GITHUB_RUN_ID"' in dispatch
+    assert "inputs:{owner_run_id:$owner}" in dispatch
+    assert worker[True]["workflow_dispatch"]["inputs"] == {
+        "owner_run_id": {
+            "description": "Untrusted owner run selector (verified by the worker)",
+            "required": True,
+            "type": "string",
+        }
+    }
+    verify_step = next(step for step in worker_job["steps"] if "run" in step)
+    assert verify_step["env"]["REHEARSAL_OWNER_RUN_ID"] == "${{ inputs.owner_run_id }}"
+    assert "inputs.owner_run_id" not in verify_step["run"]
     for job in (jobs["receipt"], worker_job):
         steps = "\n".join(step.get("run", "") for step in job["steps"])
         assert "head -c 65537" in steps
@@ -392,40 +404,6 @@ def test_rehearsal_record_is_not_production_dispatch(evidence, tmp_path: Path) -
 
 
 @pytest.mark.parametrize(
-    "listing",
-    [
-        {"total_count": 0, "workflow_runs": []},
-        {"total_count": 2, "workflow_runs": [{"id": OWNER}]},
-        {"total_count": 2, "workflow_runs": [{"id": OWNER}, {"id": CHILD}]},
-        {"total_count": True, "workflow_runs": [{"id": OWNER}]},
-        {"total_count": 1, "workflow_runs": [{"id": True}]},
-        {"total_count": 1, "workflow_runs": [{"id": 0}]},
-    ],
-)
-def test_owner_discovery_rejects_ambiguous_or_invalid_listing(monkeypatch, listing) -> None:
-    client = rehearsal.RehearsalCLI()
-    monkeypatch.setattr(client, "_json", lambda route: listing)
-    with pytest.raises(ValueError):
-        client.active_owner(SHA)
-
-
-def test_owner_discovery_is_exactly_scoped(monkeypatch) -> None:
-    client = rehearsal.RehearsalCLI()
-    routes = []
-
-    def read(route: str) -> dict[str, Any]:
-        routes.append(route)
-        return {"total_count": 1, "workflow_runs": [{"id": OWNER}]}
-
-    monkeypatch.setattr(client, "_json", read)
-    assert client.active_owner(SHA) == OWNER
-    assert routes == [
-        f"repos/{REPO}/actions/workflows/tagged-handoff-rehearsal.yml/runs"
-        f"?branch=main&event=workflow_dispatch&status=in_progress&head_sha={SHA}&per_page=100"
-    ]
-
-
-@pytest.mark.parametrize(
     ("operation", "arguments"),
     [
         ("check-owner", ["--child", str(CHILD)]),
@@ -458,111 +436,63 @@ def test_cli_rejects_irrelevant_or_missing_arguments_before_api(
     def forbidden() -> None:
         pytest.fail("invalid command must not access the API")
 
-    monkeypatch.setattr(rehearsal, "RehearsalCLI", forbidden)
+    monkeypatch.setattr(rehearsal, "DeliveryGitHubCLI", forbidden)
     with pytest.raises(SystemExit) as error:
         rehearsal.main()
     assert error.value.code == 2
 
 
-def test_owner_discovery_retries_only_complete_empty_list(monkeypatch) -> None:
-    client = rehearsal.RehearsalCLI()
-    fixture = Client()
-    responses = iter(
-        [
-            {"total_count": 0, "workflow_runs": []},
-            {"total_count": 1, "workflow_runs": [{"id": OWNER}]},
-        ]
-    )
-    monkeypatch.setattr(client, "_json", lambda route: next(responses))
-    monkeypatch.setattr(client, "workflow_run", fixture.workflow_run)
-    monkeypatch.setattr(client, "tag_commit", fixture.tag_commit)
-    pauses = []
-    monkeypatch.setattr(rehearsal.time, "sleep", pauses.append)
-    assert rehearsal.wait_for_owner(client, SHA, CHILD) == OWNER
-    assert pauses == [5]
+@pytest.mark.parametrize("value", ["", "0", "01", "-1", "1.2", "1\u0662", "1" * 16, "202", "101\n"])
+def test_worker_rejects_invalid_owner_selector_before_api(monkeypatch, value: str) -> None:
+    monkeypatch.setenv("REHEARSAL_OWNER_RUN_ID", value)
+    with pytest.raises(ValueError, match="owner selector"):
+        rehearsal._owner_selector(CHILD)
 
 
-@pytest.mark.parametrize(
-    "listing",
-    [
-        {"total_count": False, "workflow_runs": []},
-        {"total_count": 1, "workflow_runs": []},
-        {"total_count": 2, "workflow_runs": [{"id": OWNER}, {"id": 203}]},
-        {"total_count": 1, "workflow_runs": [{"id": True}]},
-    ],
-)
-def test_owner_discovery_never_retries_invalid_list(monkeypatch, listing) -> None:
-    client = rehearsal.RehearsalCLI()
-    fixture = Client()
-    monkeypatch.setattr(client, "_json", lambda route: listing)
-    monkeypatch.setattr(client, "workflow_run", fixture.workflow_run)
-    monkeypatch.setattr(client, "tag_commit", fixture.tag_commit)
-    pauses = []
-    monkeypatch.setattr(rehearsal.time, "sleep", pauses.append)
-    with pytest.raises(ValueError):
-        rehearsal.wait_for_owner(client, SHA, CHILD)
-    assert pauses == []
+def test_worker_reads_exact_owner_selector(monkeypatch) -> None:
+    monkeypatch.setenv("REHEARSAL_OWNER_RUN_ID", str(OWNER))
+    assert rehearsal._owner_selector(CHILD) == OWNER
 
 
-def test_owner_discovery_wait_rechecks_live_tag_and_child(monkeypatch) -> None:
-    client = rehearsal.RehearsalCLI()
-    fixture = Client()
-    monkeypatch.setattr(client, "_json", lambda route: {"total_count": 0, "workflow_runs": []})
-    monkeypatch.setattr(client, "workflow_run", fixture.workflow_run)
-    monkeypatch.setattr(client, "tag_commit", fixture.tag_commit)
-    pauses = []
-
-    def change_tag(seconds: int) -> None:
-        pauses.append(seconds)
-        fixture.tag_sha = "b" * 40
-
-    monkeypatch.setattr(rehearsal.time, "sleep", change_tag)
-    with pytest.raises(ValueError, match="tag source mismatch"):
-        rehearsal.wait_for_owner(client, SHA, CHILD)
-    assert pauses == [5]
-
-
-def test_owner_discovery_wait_has_bounded_poll_budget(monkeypatch) -> None:
-    client = rehearsal.RehearsalCLI()
-    fixture = Client()
-    monkeypatch.setattr(client, "_json", lambda route: {"total_count": 0, "workflow_runs": []})
-    monkeypatch.setattr(client, "workflow_run", fixture.workflow_run)
-    monkeypatch.setattr(client, "tag_commit", fixture.tag_commit)
-    pauses = []
-    monkeypatch.setattr(rehearsal.time, "sleep", pauses.append)
-    with pytest.raises(ValueError, match="owner discovery timed out"):
-        rehearsal.wait_for_owner(client, SHA, CHILD)
-    assert pauses == [5] * 11
+def test_worker_cli_uses_exact_owner_without_listing(evidence, monkeypatch, capsys) -> None:
+    client, _, _, _, _ = evidence
+    monkeypatch.setattr(rehearsal, "DeliveryGitHubCLI", lambda: client)
+    for key, value in {
+        "GITHUB_REPOSITORY": REPO,
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_RUN_ATTEMPT": "1",
+        "GITHUB_SHA": SHA,
+        "GITHUB_RUN_ID": str(CHILD),
+        "GITHUB_REF": f"refs/tags/{TAG}",
+        "REHEARSAL_OWNER_RUN_ID": str(OWNER),
+    }.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr("sys.argv", ["rehearse_tagged_handoff", "wait-request"])
+    assert rehearsal.main() == 0
+    assert capsys.readouterr().out == "303\n"
 
 
-def test_owner_discovery_does_not_retry_api_failure(monkeypatch) -> None:
-    client = rehearsal.RehearsalCLI()
-    fixture = Client()
-    monkeypatch.setattr(client, "workflow_run", fixture.workflow_run)
-    monkeypatch.setattr(client, "tag_commit", fixture.tag_commit)
-    pauses = []
-
-    def fail(route: str) -> dict[str, Any]:
-        raise ValueError("API unavailable")
-
-    monkeypatch.setattr(client, "_json", fail)
-    monkeypatch.setattr(rehearsal.time, "sleep", pauses.append)
-    with pytest.raises(ValueError, match="API unavailable"):
-        rehearsal.wait_for_owner(client, SHA, CHILD)
-    assert pauses == []
-
-
-def test_owner_discovery_does_not_retry_untrusted_candidate(monkeypatch) -> None:
-    client = rehearsal.RehearsalCLI()
-    fixture = Client()
-    fixture.owner["actor"]["id"] = 123
-    monkeypatch.setattr(
-        client, "_json", lambda route: {"total_count": 1, "workflow_runs": [{"id": OWNER}]}
-    )
-    monkeypatch.setattr(client, "workflow_run", fixture.workflow_run)
-    monkeypatch.setattr(client, "tag_commit", fixture.tag_commit)
-    pauses = []
-    monkeypatch.setattr(rehearsal.time, "sleep", pauses.append)
-    with pytest.raises(ValueError, match="run identity mismatch"):
-        rehearsal.wait_for_owner(client, SHA, CHILD)
-    assert pauses == []
+@pytest.mark.parametrize("mutation", ["wrong-id", "wrong-actor", "completed-owner", "wrong-tag"])
+def test_selector_is_not_authority(evidence, monkeypatch, mutation: str) -> None:
+    client, _, _, _, _ = evidence
+    monkeypatch.setattr(rehearsal, "DeliveryGitHubCLI", lambda: client)
+    for key, value in {
+        "GITHUB_REPOSITORY": REPO,
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_RUN_ATTEMPT": "1",
+        "GITHUB_SHA": SHA,
+        "GITHUB_RUN_ID": str(CHILD),
+        "GITHUB_REF": f"refs/tags/{TAG}",
+        "REHEARSAL_OWNER_RUN_ID": str(203 if mutation == "wrong-id" else OWNER),
+    }.items():
+        monkeypatch.setenv(key, value)
+    if mutation == "wrong-actor":
+        client.owner["actor"]["id"] = 123
+    elif mutation == "completed-owner":
+        client.owner = run_data(OWNER, owner=True, status="completed")
+    elif mutation == "wrong-tag":
+        client.tag_sha = "b" * 40
+    monkeypatch.setattr("sys.argv", ["rehearse_tagged_handoff", "wait-request"])
+    with pytest.raises(SystemExit) as result:
+        rehearsal.main()
+    assert result.value.code == 2
