@@ -29,14 +29,16 @@ _TAG_PATTERNS = (
 )
 
 
-class OwnerClient(Protocol):
+class OwnerRunClient(Protocol):
+    def workflow_run(self, repo: str, run_id: int) -> dict[str, Any]: ...
+
+
+class OwnerClient(OwnerRunClient, Protocol):
     def release(self, repo: str, release_id: int) -> dict[str, Any]: ...
 
     def tag_commit(self, repo: str, tag: str) -> str: ...
 
     def tag_ruleset(self, repo: str) -> dict[str, Any]: ...
-
-    def workflow_run(self, repo: str, run_id: int) -> dict[str, Any]: ...
 
 
 class OwnerGitHubCLI(GitHubCLI):
@@ -88,23 +90,18 @@ def verify_tag_protection(client: OwnerClient, repo: str, tag: str) -> None:
         raise ValueError("tag protection update or deletion rule missing")
 
 
-def verify_owner(
-    client: OwnerClient,
+def verify_active_owner_run(
+    client: OwnerRunClient,
     *,
     repo: str,
-    release_id: int,
-    tag: str,
-    source_commit: str,
     owner_run_id: int,
     owner_run_attempt: int,
     owner_head_sha: str,
-) -> dict[str, object]:
-    """Verify Release and workflow-run identity against independent GitHub reads.
-
-    Must be rerun immediately before any eventual write; orchestration must
-    separately provide exclusive writer serialization for the full lifecycle.
-    """
-    _valid_inputs(repo, release_id, tag, source_commit)
+) -> None:
+    """Check active production owner identity without draft or ruleset access."""
+    expected_actor = _TRUSTED_DISPATCH_OWNER.get(repo)
+    if expected_actor is None:
+        raise ValueError("no trusted owner dispatch principal for repository")
     if (
         type(owner_run_id) is not int
         or owner_run_id <= 0
@@ -113,16 +110,6 @@ def verify_owner(
         or not _SHA.fullmatch(owner_head_sha)
     ):
         raise ValueError("invalid owner workflow run identity")
-    if owner_head_sha != source_commit:
-        raise ValueError("owner main commit differs from protected release source")
-
-    expected_actor = _TRUSTED_DISPATCH_OWNER.get(repo)
-    if expected_actor is None:
-        raise ValueError("no trusted owner dispatch principal for repository")
-
-    if _TAG.fullmatch(tag) is None:
-        raise ValueError("unsupported release tag")
-
     run = client.workflow_run(repo, owner_run_id)
     if not isinstance(run, dict):
         raise ValueError("GitHub owner workflow response is invalid")
@@ -165,6 +152,37 @@ def verify_owner(
     ):
         raise ValueError("workflow run is not the expected active main owner dispatch")
 
+
+def verify_owner(
+    client: OwnerClient,
+    *,
+    repo: str,
+    release_id: int,
+    tag: str,
+    source_commit: str,
+    owner_run_id: int,
+    owner_run_attempt: int,
+    owner_head_sha: str,
+) -> dict[str, object]:
+    """Verify Release and workflow-run identity against independent GitHub reads.
+
+    Must be rerun immediately before any eventual write; orchestration must
+    separately provide exclusive writer serialization for the full lifecycle.
+    """
+    _valid_inputs(repo, release_id, tag, source_commit)
+    if owner_head_sha != source_commit:
+        raise ValueError("owner main commit differs from protected release source")
+
+    if _TAG.fullmatch(tag) is None:
+        raise ValueError("unsupported release tag")
+
+    verify_active_owner_run(
+        client,
+        repo=repo,
+        owner_run_id=owner_run_id,
+        owner_run_attempt=owner_run_attempt,
+        owner_head_sha=owner_head_sha,
+    )
     verify_tag_protection(client, repo, tag)
     release = client.release(repo, release_id)
     if (

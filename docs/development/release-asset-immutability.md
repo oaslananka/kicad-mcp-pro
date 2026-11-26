@@ -707,3 +707,48 @@ workflows yet. No production manifest issuer or live draft acceptance is
 claimed. Success does not prove which job uploaded the artifact, an
 independently dispatched child, registry receipts, exclusive writer lock
 or publication authorization. A race after the final read remains possible.
+
+### Post-dispatch signed worker binding (not wired)
+
+The owner must not guess a child run ID from a workflow name or timestamp,
+and the Actions bot identity alone does not identify the dispatching owner.
+The GitHub REST API version 2026-03-10 returns a run ID from a successful
+workflow dispatch and accepts a tag reference. After the exact successful
+dispatch response, the reviewed owner will create a second canonical record
+(`python-worker-dispatch.json`) binding the child run ID and attempt 1 to
+the original signed request's digest and all release/owner/producer identity
+fields. It must attest this record under the same production owner
+workflow and invocation. An ambiguous dispatch response must fail closed;
+do not blindly retry the dispatch.
+
+The worker-side library `scripts.check_signed_python_dispatch_binding`
+validates the signed record, the exact active owner and child run metadata,
+numeric repository and bot identity, and the live tag commit. The expected
+runtime ref, commit, run ID and attempt must originate from trusted Actions
+context. The original request and exact package bytes are checked using
+the manifest digest bound in the second record. Both signatures and
+request bytes are verified before returning, with repeated live run/tag
+checks. All expected identity inputs must be independently established;
+the library does not discover them from an untrusted artifact.
+
+Keep the complete draft and protected-tag ruleset check on the maintainer
+side. GitHub documents draft listing visibility as requiring push access;
+the worker must not receive contents-write or ruleset-write merely to
+read draft metadata. Worker-side tag resolution is not proof of ruleset
+enforcement. The library requires only run/tag reads and signature
+verification, and explicitly denies dispatch causality, independent draft
+and protected-tag verification, producer artifact verification, registry
+receipt verification, exclusive writer and publication authorization.
+The producer package verification remains a separate maintainer gate.
+
+The production signature issuer, bounded artifact discovery and wait,
+real tag-dispatch acceptance, worker receipt and publishing integration
+are not implemented by this library. Existing main-ref transport and
+signature-only rehearsals are not evidence of a production tag dispatch.
+Never invoke an existing publishing workflow as a rehearsal. Validate the
+exact tag-dispatch API shape with a reviewed non-publishing acceptance
+path before relying on it. A race after the final read remains possible.
+
+References: [workflow dispatch API](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event),
+[release visibility](https://docs.github.com/en/rest/releases/releases#list-releases),
+and [GITHUB_TOKEN dispatch behavior](https://docs.github.com/en/actions/concepts/security/github_token).
