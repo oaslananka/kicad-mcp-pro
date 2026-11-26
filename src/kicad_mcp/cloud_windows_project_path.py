@@ -145,7 +145,8 @@ def _open_checked(
     )
     invalid = ctypes.c_void_p(-1).value
     if not handle or handle == invalid:
-        return _missing_handle(missing_ok)
+        _missing_handle(missing_ok)
+        return None
     try:
         info = _FileInfo()
         if not api.GetFileInformationByHandle(handle, ctypes.byref(info)):
