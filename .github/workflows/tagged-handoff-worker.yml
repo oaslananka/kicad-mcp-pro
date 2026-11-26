@@ -1,0 +1,43 @@
+name: Tagged handoff worker (non-publishing)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  attestations: read
+
+jobs:
+  verify:
+    if: >-
+      github.repository == 'oaslananka/kicad-mcp-pro' &&
+      github.ref == format('refs/tags/handoff-rehearsal-{0}', github.sha) &&
+      github.actor_id == '41898282' &&
+      github.run_attempt == '1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify exact owner request and both rehearsal signatures
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          artifact="$(python3 -m scripts.rehearse_tagged_handoff wait-request)"
+          [[ "$artifact" =~ ^[1-9][0-9]{0,14}$ ]]
+          scratch="$(mktemp -d)"
+          trap 'rm -f -- "$scratch/request.zip"; rmdir -- "$scratch"' EXIT
+          gh api "repos/oaslananka/kicad-mcp-pro/actions/artifacts/$artifact/zip" |
+            head -c 65537 > "$scratch/request.zip"
+          python3 -m scripts.rehearse_tagged_handoff verify-request             --artifact-id "$artifact" --archive "$scratch/request.zip" > tagged-handoff-receipt.json
+      - name: Store non-publishing receipt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: tagged-handoff-receipt-1-${{ github.run_id }}
+          path: tagged-handoff-receipt.json
+          if-no-files-found: error
+          retention-days: 3
