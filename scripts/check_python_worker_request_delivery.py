@@ -14,12 +14,16 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from scripts.check_draft_producer_archive import REPOSITORY, _verify_artifact
+from scripts.check_draft_producer_job import verify_producer_job
+from scripts.check_draft_release_inventory import digest
 from scripts.check_draft_release_owner import (
     _REPOSITORY_ID,
     OwnerGitHubCLI,
     _exact_id,
 )
+from scripts.check_python_handoff_owner_binding import _producer_pin, _verify_producer_inputs
 from scripts.check_signed_draft_asset import AttestationVerifier, GitHubAttestationCLI
+from scripts.check_signed_draft_producer_bundle import ProducerClient
 from scripts.check_signed_python_dispatch_binding import (
     DispatchClient,
     DispatchIdentity,
@@ -34,7 +38,7 @@ from scripts.check_signed_python_handoff import (
     manifest_bytes,
     verify_manifest_record,
 )
-from scripts.extract_draft_producer_zip import _members
+from scripts.extract_draft_producer_zip import _MAX_TOTAL_BYTES, _members
 from scripts.python_worker_dispatch_inputs import dispatch_payload, positive_id, read_event_inputs
 from scripts.runtime_path_safety import approved_runtime_path
 
@@ -49,6 +53,10 @@ class DeliveryClient(DispatchClient, Protocol):
     def workflow_artifacts(self, repo: str, run_id: int) -> dict[str, Any]: ...
 
     def artifact(self, repo: str, artifact_id: int) -> dict[str, Any]: ...
+
+
+class WorkerProducerClient(DeliveryClient, ProducerClient, Protocol):
+    """Read-only worker evidence; no draft or ruleset permission needed."""
 
 
 class RequestNotReadyError(ValueError):
@@ -311,6 +319,123 @@ def _verify_delivery(
     }
 
 
+def _producer_snapshot(
+    client: ProducerClient, handoff: HandoffIdentity, downloaded_zip: Path
+) -> tuple[dict[str, Any], str]:
+    pin = _producer_pin(client, handoff)
+    metadata = client.artifact(REPOSITORY, handoff.producer_artifact_id)
+    checked_pin = _verify_artifact(
+        metadata,
+        repo=REPOSITORY,
+        repo_id=_REPOSITORY_ID,
+        run_id=handoff.producer_run_id,
+        head_sha=handoff.source_commit,
+        artifact_id=handoff.producer_artifact_id,
+        role="python-dist",
+    )
+    if checked_pin != pin or downloaded_zip.is_symlink():
+        raise ValueError("producer archive identity changed or linked")
+    path = approved_runtime_path(downloaded_zip)
+    if (
+        not path.is_file()
+        or metadata["size_in_bytes"] > _MAX_TOTAL_BYTES
+        or path.stat().st_size != metadata["size_in_bytes"]
+    ):
+        raise ValueError("producer archive size mismatch or exceeds limit")
+    return metadata, pin
+
+
+def _recheck_producer_job(client: ProducerClient, handoff: HandoffIdentity, job_id: int) -> None:
+    verify_producer_job(
+        client,
+        repo=REPOSITORY,
+        role="python-dist",
+        run_id=handoff.producer_run_id,
+        run_attempt=handoff.producer_attempt,
+        job_id=job_id,
+        source_commit=handoff.source_commit,
+        producer_profile="reusable",
+    )
+
+
+def verify_producer_delivery(
+    client: WorkerProducerClient,
+    verifier: AttestationVerifier,
+    *,
+    identity: DispatchIdentity,
+    artifact_id: int,
+    archive: Path,
+    directory: Path,
+    producer_job_id: int,
+    downloaded_zip: Path,
+    runtime_ref: str,
+    runtime_sha: str,
+    runtime_run_id: int,
+    runtime_attempt: int,
+) -> dict[str, Any]:
+    """Compose signed request, local packages and exact reusable producer evidence."""
+    if type(producer_job_id) is not int or producer_job_id <= 0:
+        raise ValueError("invalid producer job ID")
+    handoff = identity.handoff
+    if handoff.owner_run_id == handoff.producer_run_id:
+        raise ValueError("owner and completed producer must be distinct")
+    request_metadata = discover_request(client, identity)
+    request = verify_delivery(
+        client,
+        verifier,
+        identity=identity,
+        artifact_id=artifact_id,
+        archive=archive,
+        directory=directory,
+        runtime_ref=runtime_ref,
+        runtime_sha=runtime_sha,
+        runtime_run_id=runtime_run_id,
+        runtime_attempt=runtime_attempt,
+    )
+    if request["ownerRequestArchiveSha256"] != request_metadata["digest"][7:]:
+        raise ValueError("owner request archive changed before producer verification")
+    expected = manifest_bytes(handoff, directory)
+    if hashlib.sha256(expected).hexdigest() != identity.manifest_sha256:
+        raise ValueError("worker package bytes changed before producer verification")
+    metadata, pin = _producer_snapshot(client, handoff, downloaded_zip)
+    _verify_producer_inputs(
+        client,
+        verifier,
+        identity=handoff,
+        producer_job_id=producer_job_id,
+        downloaded_zip=downloaded_zip,
+        expected=expected,
+        archive_pin=pin,
+    )
+    _recheck_producer_job(client, handoff, producer_job_id)
+    if _producer_snapshot(client, handoff, downloaded_zip) != (metadata, pin):
+        raise ValueError("producer archive metadata changed during verification")
+    if discover_request(client, identity) != request_metadata:
+        raise ValueError("owner request metadata changed during producer verification")
+    _check_live(client, identity)
+    _read_archive(archive, request_metadata)
+    path = approved_runtime_path(downloaded_zip)
+    if (
+        downloaded_zip.is_symlink()
+        or not path.is_file()
+        or path.stat().st_size != metadata["size_in_bytes"]
+        or digest(path) != pin
+    ):
+        raise ValueError("producer ZIP changed during worker verification")
+    if manifest_bytes(handoff, directory) != expected:
+        raise ValueError("worker package bytes changed during producer verification")
+    return {
+        **request,
+        "producerArtifactVerified": True,
+        "producerJobId": producer_job_id,
+        "producerArchiveSha256": pin,
+        "producerJobMetadataVerified": True,
+        "producerPackageSignaturesVerified": True,
+        "manifestProducerBytesMatch": True,
+        "artifactProducedByThisJobVerified": False,
+    }
+
+
 class DeliveryGitHubCLI(OwnerGitHubCLI):
     """Reuse the existing GitHub CLI read-side adapter."""
 
@@ -319,6 +444,11 @@ class DeliveryGitHubCLI(OwnerGitHubCLI):
 
     def artifact(self, repo: str, artifact_id: int) -> dict[str, Any]:
         return self._json(f"repos/{repo}/actions/artifacts/{artifact_id}")
+
+    def workflow_jobs(self, repo: str, run_id: int, attempt: int) -> dict[str, Any]:
+        return self._json(
+            f"repos/{repo}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100"
+        )
 
 
 def _runtime(handoff: HandoffIdentity, pin: str) -> DispatchIdentity:
@@ -369,9 +499,49 @@ def _caller_inputs(args: argparse.Namespace) -> tuple[HandoffIdentity, str]:
     return identity, values[-1]
 
 
+def _validate_producer_options(args: argparse.Namespace) -> None:
+    producer_args = (args.producer_job_id, args.producer_archive)
+    if args.operation == "verify-producer":
+        if any(value is None for value in producer_args):
+            raise ValueError("producer verification requires job ID and archive")
+    elif any(value is not None for value in producer_args):
+        raise ValueError("producer inputs require verify-producer")
+
+
+def _verification_report(
+    client: WorkerProducerClient, identity: DispatchIdentity, args: argparse.Namespace
+) -> dict[str, Any]:
+    if args.artifact_id is None or args.archive is None:
+        raise ValueError("verification requires artifact ID and downloaded archive")
+    if (args.operation != "verify-request") != (args.directory is not None):
+        raise ValueError("full verification requires a package directory; preflight does not")
+    options = {
+        "identity": identity,
+        "artifact_id": args.artifact_id,
+        "archive": args.archive,
+        "directory": args.directory,
+        "runtime_ref": os.environ["GITHUB_REF"],
+        "runtime_sha": os.environ["GITHUB_SHA"],
+        "runtime_run_id": identity.worker_run_id,
+        "runtime_attempt": identity.worker_attempt,
+    }
+    verifier = GitHubAttestationCLI()
+    if args.operation == "verify-producer":
+        return verify_producer_delivery(
+            client,
+            verifier,
+            producer_job_id=args.producer_job_id,
+            downloaded_zip=args.producer_archive,
+            **options,
+        )
+    return _verify_delivery(client, verifier, **options)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("discover", "wait", "verify-request", "verify"))
+    parser.add_argument(
+        "operation", choices=("discover", "wait", "verify-request", "verify", "verify-producer")
+    )
     parser.add_argument(
         "--from-event",
         action="store_true",
@@ -389,11 +559,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--artifact-id", type=positive_id)
     parser.add_argument("--archive", type=Path)
     parser.add_argument("--directory", type=Path)
+    parser.add_argument("--producer-job-id", type=positive_id)
+    parser.add_argument("--producer-archive", type=Path)
     args = parser.parse_args(argv)
     try:
         handoff, pin = _caller_inputs(args)
         identity = _runtime(handoff, pin)
         client = DeliveryGitHubCLI()
+        _validate_producer_options(args)
         if args.operation in ("discover", "wait"):
             if any(value is not None for value in (args.artifact_id, args.archive, args.directory)):
                 raise ValueError("discover and wait accept identity arguments only")
@@ -408,22 +581,7 @@ def main(argv: list[str] | None = None) -> int:
                 "publicationAuthorized": False,
             }
         else:
-            if args.artifact_id is None or args.archive is None:
-                raise ValueError("verification requires artifact ID and downloaded archive")
-            if (args.operation == "verify") != (args.directory is not None):
-                raise ValueError("only full verify requires a package directory")
-            result = _verify_delivery(
-                client,
-                GitHubAttestationCLI(),
-                identity=identity,
-                artifact_id=args.artifact_id,
-                archive=args.archive,
-                directory=args.directory,
-                runtime_ref=os.environ["GITHUB_REF"],
-                runtime_sha=os.environ["GITHUB_SHA"],
-                runtime_run_id=identity.worker_run_id,
-                runtime_attempt=identity.worker_attempt,
-            )
+            result = _verification_report(client, identity, args)
     except (ValueError, OSError) as exc:
         parser.exit(2, f"Python worker request delivery: FAIL: {exc}\n")
     print(json.dumps(result, indent=2, sort_keys=True))
