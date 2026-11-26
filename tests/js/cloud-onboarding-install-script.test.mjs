@@ -15,6 +15,8 @@ test("Windows one-command Cloud bootstrap installs or upgrades and repairs only 
   assert.match(installer,/\$existingHealthy = Test-Tool \$cliPath/);
   assert.match(installer,/\$dedicatedTools = Join-Path \$appRoot "uv-tools"/);
   assert.match(installer,/\$env:UV_TOOL_DIR = \$dedicatedTools/);
+  assert.match(installer,/\$env:UV_NO_CONFIG = "1"/);
+  assert.match(installer,/\$env:UV_NO_CONFIG = \$originalNoConfig/);
   assert.match(installer,/\$env:UV_TOOL_BIN_DIR = \$dedicatedBin/);
   assert.match(installer,/\$env:PATH = "\$dedicatedBin;\$originalPath"/);
   assert.match(installer,/\$env:PATH = \$originalPath/);
@@ -40,4 +42,14 @@ test("Installer preserves user data and uses verified Astral release bytes",()=>
   assert.doesNotMatch(installer,/cloud (?:setup|remote|connect|reconnect|repair)|new-device|enable-native-write/);
   assert.doesNotMatch(installer,/uv tool uninstall|pip uninstall|pipx uninstall|Remove-Item.*kicad-mcp-pro/i);
   assert.match(installer,/Remove-Item -LiteralPath \$temporary -Recurse -Force/);
+});
+
+test("Windows installer serializes the entire bootstrap and releases its OS mutex",()=>{
+  assert.match(installer,/WindowsIdentity\]::GetCurrent\(\)\.User\.Value/);
+  assert.match(installer,/System\.Threading\.Mutex/);
+  assert.match(installer,/WaitOne\(0\)/);
+  assert.match(installer,/AbandonedMutexException/);
+  assert.match(installer,/ReleaseMutex\(\)/);
+  assert.match(installer,/\.Dispose\(\)/);
+  assert.ok(installer.indexOf("WaitOne(0)")<installer.indexOf("Invoke-WebRequest"));
 });

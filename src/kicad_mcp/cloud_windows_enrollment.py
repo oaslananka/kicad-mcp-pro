@@ -225,6 +225,7 @@ def _pending_recovery(
     blob = read_credential(old_record, "recovery_pending")
     if blob is None:
         return None
+    raw: bytes | None = None
     try:
         from kicad_mcp.cloud_pair_keys import _unique
 
@@ -277,7 +278,7 @@ def _pending_recovery(
     except WindowsRecoveryDeniedError:
         # Exact refusal proves no new binding for this request. Never clear
         # an existing local binding or foreign journal.
-        if read_credential(data["recordId"], "binding") is not None:
+        if raw is None or read_credential(data["recordId"], "binding") is not None:
             raise WindowsEnrollmentError(_DENIED) from None
         if read_credential(old_record, "recovery_pending") != blob:
             raise WindowsEnrollmentError(_DENIED) from None

@@ -901,14 +901,13 @@ async def run_connector(
                     if state in {"active", "project_disabled"}:
                         from kicad_mcp.cloud_windows_scoped_projects import migrate_legacy
 
+                        def migration_authorized(
+                            target: WindowsRegisteredProject = project,
+                        ) -> bool:
+                            return not stop.is_set() and _current_authorization(target)
+
                         await asyncio.to_thread(
-                            migrate_legacy,
-                            project,
-                            key,
-                            lambda project=project: (
-                                not stop.is_set() and _current_authorization(project)
-                            ),
-                            project.project_id,
+                            migrate_legacy, project, key, migration_authorized, project.project_id
                         )
                         if stop.is_set() or not _current_authorization(project):
                             return

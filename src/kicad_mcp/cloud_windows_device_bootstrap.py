@@ -544,7 +544,7 @@ def _finish_switch(
     # the exact committed new device marker are legitimate interruption states.
     for slot, part, _ in slots:
         current = read_credential(slot, part)
-        allowed = (None, saved[(slot, part)])
+        allowed: tuple[bytes | None, ...] = (None, saved[(slot, part)])
         if (slot, part) == (_DEVICE_SELECTION_SLOT, "selected"):
             allowed += (new,)
         if current not in allowed:
@@ -733,16 +733,15 @@ def repair_device_only(
                 create_credential(replacement.record_id, archive, old)
             if read_credential(replacement.record_id, archive) != old:
                 raise LocalApprovalDeniedError(_DENIED)
+    archives: dict[str, str | None] = {}
+    for slot, part, archive in slots:
+        old = saved[(slot, part)]
+        archives[archive] = hashlib.sha256(old).hexdigest() if old is not None else None
     journal = json.dumps(
         {
             "previous": previous.record_id,
             "replacement": replacement.record_id,
-            "archives": {
-                archive: hashlib.sha256(saved[(slot, part)]).hexdigest()
-                if saved[(slot, part)] is not None
-                else None
-                for slot, part, archive in slots
-            },
+            "archives": archives,
         },
         sort_keys=True,
     ).encode()

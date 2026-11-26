@@ -17,6 +17,21 @@
         }
     }
 
+    # Serialize all installer work for this Windows user, including bootstrap.
+    # Windows releases the mutex even after a crash; never trust a PID file.
+    $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $installerMutex = [System.Threading.Mutex]::new($false, "Global\KiCadMcpProCloudInstallerV2-$sid")
+    $ownsInstallerMutex = $false
+    try {
+        try {
+            $ownsInstallerMutex = $installerMutex.WaitOne(0)
+        } catch [System.Threading.AbandonedMutexException] {
+            $ownsInstallerMutex = $true
+        }
+        if (-not $ownsInstallerMutex) {
+            Write-Host "KiCad MCP Pro: Another setup or Connector is running. No installation files were changed."
+            return
+        }
     $installDir = if ($env:UV_INSTALL_DIR) { $env:UV_INSTALL_DIR } else {
         Join-Path $HOME ".local\bin"
     }
@@ -74,11 +89,13 @@
     $appRoot = Join-Path $env:LOCALAPPDATA "KiCadMCPPro"
     $dedicatedTools = Join-Path $appRoot "uv-tools"
     $dedicatedBin = Join-Path $appRoot "bin"
+    $originalNoConfig = $env:UV_NO_CONFIG
     $originalToolDir = $env:UV_TOOL_DIR
     $originalBinDir = $env:UV_TOOL_BIN_DIR
     $originalPath = $env:PATH
 
     try {
+        $env:UV_NO_CONFIG = "1"
         $env:UV_TOOL_DIR = $dedicatedTools
         $env:UV_TOOL_BIN_DIR = $dedicatedBin
         # Keep uv's installer from asking the user to modify PATH manually.
@@ -155,5 +172,13 @@
         $env:UV_TOOL_DIR = $originalToolDir
         $env:UV_TOOL_BIN_DIR = $originalBinDir
         $env:PATH = $originalPath
+        $env:UV_NO_CONFIG = $originalNoConfig
+    }
+    } finally {
+        try {
+            if ($ownsInstallerMutex) { $installerMutex.ReleaseMutex() }
+        } finally {
+            $installerMutex.Dispose()
+        }
     }
 }

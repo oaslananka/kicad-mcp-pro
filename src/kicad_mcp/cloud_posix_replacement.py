@@ -7,6 +7,7 @@ import os
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
@@ -76,7 +77,7 @@ def _approved_challenge(
     origin: str,
     alias: str,
     approval: Callable[[str, str, str], None],
-) -> dict:
+) -> dict[str, Any]:
     approved = stage / "approved.json"
     challenge_file = keyfile.with_suffix(cloud_pair._CHALLENGE_SUFFIX)
     if os.path.lexists(approved):
@@ -242,7 +243,7 @@ def complete_replacement(
     resume_switch(root, previous[1]["origin"])
 
 
-def _verify_switch(stage: Path, origin: str) -> dict:
+def _verify_switch(stage: Path, origin: str) -> dict[str, Any]:
     data = cloud_pair_keys._read_private_json(stage, "switch.json")
     if set(data) != {"previous", "oldBinding", "replacement", "newBinding", "project"}:
         raise LocalApprovalDeniedError(_DENIED)
