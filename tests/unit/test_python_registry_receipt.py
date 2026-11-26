@@ -45,8 +45,9 @@ def test_registry_json_rejects_invalid_response(monkeypatch, payload, status) ->
             closed.append(True)
 
     monkeypatch.setattr(receipt.urllib3, "PoolManager", Pool)
+    client = receipt.PyPIReadClient()
     with pytest.raises(ValueError):
-        receipt.PyPIReadClient().inventory("1.2.3")
+        client.inventory("1.2.3")
     assert closed == [True]
 
 
