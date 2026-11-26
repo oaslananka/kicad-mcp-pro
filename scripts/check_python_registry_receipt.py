@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import http.client
 import json
 import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import quote, urlsplit
+
+import urllib3
 
 from scripts.check_draft_producer_archive import REPOSITORY
 from scripts.check_draft_release_inventory import digest
@@ -65,15 +66,23 @@ def _read_registry_json(url: str, accept: str) -> dict[str, Any]:
     target = urlsplit(url)
     if target.scheme != "https" or target.netloc != "pypi.org" or target.query or target.fragment:
         raise ValueError("unapproved registry URL")
-    connection = http.client.HTTPSConnection("pypi.org", timeout=30)
+    # The project already pins urllib3; no proxy, redirects, retries or decompression.
+    pool = urllib3.PoolManager(cert_reqs="CERT_REQUIRED", timeout=30.0)
     try:
-        connection.request("GET", target.path, headers={"Accept": accept})
-        with connection.getresponse() as response:
+        with pool.request(
+            "GET",
+            url,
+            headers={"Accept": accept, "Accept-Encoding": "identity"},
+            preload_content=False,
+            redirect=False,
+            retries=False,
+            decode_content=False,
+        ) as response:
             if response.status != 200:
                 raise ValueError("registry response is not HTTP 200")
             raw = response.read(_MAX_JSON + 1)
     finally:
-        connection.close()
+        pool.clear()
     if len(raw) > _MAX_JSON:
         raise ValueError("registry JSON exceeds size limit")
     try:
@@ -256,7 +265,7 @@ def main(argv: list[str] | None = None) -> int:
             runtime_run_id=identity.worker_run_id,
             runtime_attempt=identity.worker_attempt,
         )
-    except (ValueError, OSError, http.client.HTTPException) as exc:
+    except (ValueError, OSError, urllib3.exceptions.HTTPError) as exc:
         parser.exit(2, f"Python registry receipt: FAIL: {exc}\n")
     print(data.decode("utf-8"), end="")
     return 0

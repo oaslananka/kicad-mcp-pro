@@ -24,23 +24,27 @@ def test_registry_json_rejects_invalid_response(monkeypatch, payload, status) ->
     monkeypatch.setattr(receipt, "_MAX_JSON", 1024)
     closed = []
 
-    class Connection:
-        def __init__(self, host, *, timeout) -> None:
-            assert host == "pypi.org"
-            assert timeout == 30
+    class Pool:
+        def __init__(self, *, cert_reqs, timeout) -> None:
+            assert cert_reqs == "CERT_REQUIRED"
+            assert timeout == 30.0
 
-        def request(self, method, path, *, headers):
+        def request(
+            self, method, url, *, headers, preload_content, redirect, retries, decode_content
+        ):
             assert method == "GET"
-            assert path == "/pypi/kicad-mcp-pro/1.2.3/json"
-            assert headers == {"Accept": "application/json"}
-
-        def getresponse(self):
+            assert url == "https://pypi.org/pypi/kicad-mcp-pro/1.2.3/json"
+            assert headers == {"Accept": "application/json", "Accept-Encoding": "identity"}
+            assert preload_content is False
+            assert redirect is False
+            assert retries is False
+            assert decode_content is False
             return Response(payload, status)
 
-        def close(self):
+        def clear(self):
             closed.append(True)
 
-    monkeypatch.setattr(receipt.http.client, "HTTPSConnection", Connection)
+    monkeypatch.setattr(receipt.urllib3, "PoolManager", Pool)
     with pytest.raises(ValueError):
         receipt.PyPIReadClient().inventory("1.2.3")
     assert closed == [True]
