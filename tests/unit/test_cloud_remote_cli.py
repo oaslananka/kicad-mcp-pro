@@ -20,7 +20,9 @@ _REAL_SETUP_WINDOWS = cloud_windows_user_cli.setup_windows
 @pytest.fixture(autouse=True)
 def _isolate_test_connector_mutex(monkeypatch: pytest.MonkeyPatch) -> None:
     """Unit tests use their own mutex, never the owner's running Connector."""
-    from kicad_mcp import cloud_windows_single_instance
+    from kicad_mcp import cloud_windows_device_bootstrap, cloud_windows_single_instance
+
+    monkeypatch.setattr(cloud_windows_device_bootstrap, "owner_recovery_pending", lambda: False)
 
     monkeypatch.setattr(
         cloud_windows_single_instance,
@@ -1224,3 +1226,23 @@ def test_device_recovery_has_no_terminal_confirmation(monkeypatch, denied: bool)
     monkeypatch.setattr(cloud_user_cli, "_call_with_owner_connector", lambda fn: fn())
     assert cloud_user_cli._offer_device_recovery() is not denied
     assert events == ["browser"]
+
+
+def test_default_cloud_reconciles_before_reading_selected_project(monkeypatch) -> None:
+    from kicad_mcp import cloud_windows_device_bootstrap as boot
+
+    events = []
+    monkeypatch.setattr(cloud_user_cli, "_is_windows", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(boot, "owner_recovery_pending", lambda: True)
+    monkeypatch.setattr(boot, "resume_owner_recovery", lambda *_: events.append("resume") or True)
+    monkeypatch.setattr(cloud_user_cli, "_call_with_owner_connector", lambda fn, *args: fn(*args))
+    monkeypatch.setattr(cloud_windows_connector, "selected_project", lambda: events.append("read"))
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_connect_unbound_windows_device",
+        lambda *_: events.append("connect") or False,
+    )
+    result = CliRunner().invoke(server.app, ["cloud"])
+    assert result.exit_code == 0, result.output
+    assert events == ["resume", "read", "connect"]

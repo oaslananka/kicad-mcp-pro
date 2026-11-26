@@ -142,6 +142,24 @@ def _offer_device_recovery() -> bool:
 
 def _run_windows_cloud_session() -> None:
     from kicad_mcp.cloud_windows_connector import selected_project
+    from kicad_mcp.cloud_windows_device_bootstrap import (
+        owner_recovery_pending,
+        resume_owner_recovery,
+    )
+    from kicad_mcp.cloud_windows_task_scheduler import stop_and_remove_owner_task
+
+    if _owner_terminal():
+        try:
+            resumed = owner_recovery_pending() and _call_with_owner_connector(
+                resume_owner_recovery, DEFAULT_CLOUD_ORIGIN, stop_and_remove_owner_task
+            )
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise typer.BadParameter(
+                "Saved device recovery could not be resumed. Retry the same setup; "
+                "existing local project files were kept."
+            ) from exc
+        if resumed:
+            typer.echo("Device recovery resumed. Use Add Project after Online appears.")
 
     if selected_project() is None and not _connect_unbound_windows_device(
         DEFAULT_CLOUD_ORIGIN, _DEFAULT_DEVICE_ALIAS

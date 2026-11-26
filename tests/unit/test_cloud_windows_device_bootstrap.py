@@ -335,7 +335,20 @@ def test_saved_device_marker_rejects_post_save_identity_change(
 
 
 @pytest.mark.parametrize("mode", ["legacy", "bound", "device-only"])
-@pytest.mark.parametrize("fault", ["none", "foreign-owner", "cancel", "stop", "switch"])
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "none",
+        "foreign-owner",
+        "cancel",
+        "stop",
+        "switch",
+        "crash-active",
+        "crash-project",
+        "crash-device",
+        "crash-selected",
+    ],
+)
 def test_device_repair_archives_without_adding_project(
     saved_device, monkeypatch: pytest.MonkeyPatch, mode: str, fault: str
 ) -> None:
@@ -369,10 +382,21 @@ def test_device_repair_archives_without_adding_project(
     if mode != "device-only":
         store[project_slot] = b"previous project"
         store[active_slot] = b"previous active"
+    for identity in (previous, replacement):
+        store[(identity.record_id, "binding")] = boot._device_marker_payload(identity)
     before = dict(store)
+    crash = {"enabled": True}
 
     def delete(record: str, part: str) -> bool:
-        return store.pop((record, part), None) is not None
+        removed = store.pop((record, part), None) is not None
+        target = {
+            "crash-active": active_slot,
+            "crash-project": project_slot,
+            "crash-device": device_slot,
+        }.get(fault)
+        if crash["enabled"] and removed and (record, part) == target:
+            raise KeyboardInterrupt
+        return removed
 
     monkeypatch.setattr(credentials, "delete_credential", delete)
     monkeypatch.setattr(
@@ -418,6 +442,13 @@ def test_device_repair_archives_without_adding_project(
         ):
             raise OSError("failed to save new marker")
         original_create(record, part, data)
+        if (
+            crash["enabled"]
+            and fault == "crash-selected"
+            and (record, part) == device_slot
+            and data == boot._device_marker_payload(replacement)
+        ):
+            raise KeyboardInterrupt
 
     monkeypatch.setattr(boot, "create_credential", create)
     approval_events = []
@@ -427,7 +458,35 @@ def test_device_repair_archives_without_adding_project(
         approval=lambda *_: approval_events.append("browser"),
         stop_previous=lambda: fault != "stop",
     )
-    if fault != "none":
+    if fault.startswith("crash"):
+        target_exists = (
+            fault == "crash-selected"
+            or (fault == "crash-device" and mode != "legacy")
+            or (fault in {"crash-active", "crash-project"} and mode != "device-only")
+        )
+        if not target_exists:
+            pytest.skip("marker does not exist in this mode")
+        with pytest.raises(KeyboardInterrupt):
+            boot.repair_device_only(**options)
+        crash["enabled"] = False
+        journal = store[(device_slot[0], "recovery_switch")]
+        # A foreign edit must not be removed or partially applied.
+        old = store.get(project_slot)
+        store[project_slot] = b"foreign project"
+        before_resume = dict(store)
+        with pytest.raises(LocalApprovalDeniedError):
+            boot.resume_device_switch(previous.origin)
+        assert store == before_resume
+        if old is None:
+            store.pop(project_slot)
+        else:
+            store[project_slot] = old
+        assert store[(device_slot[0], "recovery_switch")] == journal
+        assert boot.resume_device_switch(previous.origin)
+        assert boot.selected_device() == replacement
+        assert project_slot not in store and active_slot not in store
+        assert not boot.resume_device_switch(previous.origin)
+    elif fault != "none":
         with pytest.raises((OSError, LocalApprovalDeniedError)):
             boot.repair_device_only(**options)
         for slot in (device_slot, project_slot, active_slot):

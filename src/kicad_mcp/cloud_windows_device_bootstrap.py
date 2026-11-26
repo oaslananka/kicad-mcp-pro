@@ -386,6 +386,165 @@ async def run_device_only(
     status_callback("Project selected in Cloud; switching to local KiCad MCP tools")
 
 
+def _switch_slots() -> tuple[tuple[str, str, str], ...]:
+    from kicad_mcp import cloud_windows_connector as connector
+
+    return (
+        (_DEVICE_SELECTION_SLOT, "selected", "archived_device_selected"),
+        (connector._SELECTED_RECORD_ID, "selected", "archived_selected"),
+        (connector._ACTIVE_RECORD_ID, "active", "archived_active"),
+    )
+
+
+def _load_switch_identity(record_id: str, origin: str) -> WindowsEnrolledDevice:
+    raw = read_credential(record_id, "binding")
+    if raw is None:
+        raise LocalApprovalDeniedError(_DENIED)
+    data = json.loads(raw, object_pairs_hook=_unique)
+    if (
+        not isinstance(data, dict)
+        or set(data) != _MARKER_FIELDS
+        or not all(isinstance(value, str) for value in data.values())
+        or data["recordId"] != record_id
+        or data["origin"] != origin
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+    device = WindowsEnrolledDevice(
+        record_id, origin, data["ownerSub"], data["deviceId"], data["fingerprint"]
+    )
+    verified = inspect_local_binding(
+        record_id=record_id,
+        expected_origin=origin,
+        expected_owner_sub=device.owner_sub,
+        expected_device_id=device.device_id,
+    )
+    if verified.fingerprint != device.fingerprint:
+        raise LocalApprovalDeniedError(_DENIED)
+    return device
+
+
+def _finish_switch(
+    previous: WindowsEnrolledDevice,
+    replacement: WindowsEnrolledDevice,
+    saved: dict[tuple[str, str], bytes | None],
+    journal: bytes,
+) -> None:
+    from kicad_mcp import cloud_windows_connector as connector
+    from kicad_mcp.cloud_windows_credentials import delete_credential
+
+    slots = _switch_slots()
+    new = _device_marker_payload(replacement)
+    # Check every marker before changing any. Only the old bytes, absence, or
+    # the exact committed new device marker are legitimate interruption states.
+    for slot, part, _ in slots:
+        current = read_credential(slot, part)
+        allowed = (None, saved[(slot, part)])
+        if (slot, part) == (_DEVICE_SELECTION_SLOT, "selected"):
+            allowed += (new,)
+        if current not in allowed:
+            raise LocalApprovalDeniedError(_DENIED)
+    for slot, part, _ in reversed(slots):
+        if read_credential(_DEVICE_SELECTION_SLOT, "recovery_switch") != journal:
+            raise LocalApprovalDeniedError(_DENIED)
+        current = read_credential(slot, part)
+        if (slot, part) == (_DEVICE_SELECTION_SLOT, "selected") and current == new:
+            continue
+        if current is not None and (
+            current != saved[(slot, part)] or not delete_credential(slot, part)
+        ):
+            raise LocalApprovalDeniedError(_DENIED)
+    remember_device(replacement)
+    if selected_device() != replacement or connector.selected_project() is not None:
+        raise LocalApprovalDeniedError(_DENIED)
+    if read_credential(slots[2][0], slots[2][1]) is not None:
+        raise LocalApprovalDeniedError(_DENIED)
+    pending = read_credential(previous.record_id, "recovery_pending")
+    if pending is not None:
+        data = json.loads(pending, object_pairs_hook=_unique)
+        if not isinstance(data, dict) or data.get("recordId") != replacement.record_id:
+            raise LocalApprovalDeniedError(_DENIED)
+        if not delete_credential(previous.record_id, "recovery_pending"):
+            raise LocalApprovalDeniedError(_DENIED)
+    if read_credential(_DEVICE_SELECTION_SLOT, "recovery_switch") != journal:
+        raise LocalApprovalDeniedError(_DENIED)
+    if not delete_credential(_DEVICE_SELECTION_SLOT, "recovery_switch"):
+        raise LocalApprovalDeniedError(_DENIED)
+
+
+def resume_device_switch(origin: str, *, stop_previous: Callable[[], bool] | None = None) -> bool:
+    """Finish a durable, already approved selection switch under the owner mutex."""
+    journal = read_credential(_DEVICE_SELECTION_SLOT, "recovery_switch")
+    if journal is None:
+        return False
+    data = json.loads(journal, object_pairs_hook=_unique)
+    if (
+        not isinstance(data, dict)
+        or set(data) != {"previous", "replacement", "archives"}
+        or not all(isinstance(data[key], str) for key in ("previous", "replacement"))
+        or not isinstance(data["archives"], dict)
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+    previous = _load_switch_identity(data["previous"], origin)
+    replacement = _load_switch_identity(data["replacement"], origin)
+    if (
+        previous.owner_sub != replacement.owner_sub
+        or previous.record_id == replacement.record_id
+        or previous.device_id == replacement.device_id
+        or previous.fingerprint == replacement.fingerprint
+    ):
+        raise LocalApprovalDeniedError(_DENIED)
+    slots = _switch_slots()
+    if set(data["archives"]) != {archive for _, _, archive in slots}:
+        raise LocalApprovalDeniedError(_DENIED)
+    saved = {}
+    for slot, part, archive in slots:
+        old = read_credential(replacement.record_id, archive)
+        digest = hashlib.sha256(old).hexdigest() if old is not None else None
+        if digest != data["archives"][archive]:
+            raise LocalApprovalDeniedError(_DENIED)
+        saved[(slot, part)] = old
+    if stop_previous is not None and not stop_previous():
+        raise LocalApprovalDeniedError(_DENIED)
+    _finish_switch(previous, replacement, saved, journal)
+    return True
+
+
+def owner_recovery_pending() -> bool:
+    """Read-only preflight; ordinary startup must not acquire a second mutex."""
+    if read_credential(_DEVICE_SELECTION_SLOT, "recovery_switch") is not None:
+        return True
+    from kicad_mcp.cloud_windows_connector import selected_project
+
+    previous = selected_device() or selected_project()
+    return (
+        previous is not None and read_credential(previous.record_id, "recovery_pending") is not None
+    )
+
+
+def resume_owner_recovery(origin: str, stop_previous: Callable[[], bool]) -> bool:
+    """Before opening any session, continue only an already approved recovery."""
+    if resume_device_switch(origin, stop_previous=stop_previous):
+        return True
+    from kicad_mcp.cloud_windows_connector import selected_project
+
+    device = selected_device()
+    project = selected_project()
+    previous = device if device is not None else project
+    if previous is None or read_credential(previous.record_id, "recovery_pending") is None:
+        return False
+
+    def no_new_approval(_page: str, _challenge: str, _code: str) -> None:
+        raise LocalApprovalDeniedError(_DENIED)
+
+    repair_device_only(
+        origin=origin,
+        alias="Recovery",
+        approval=no_new_approval,
+        stop_previous=stop_previous,
+    )
+    return True
+
+
 def repair_device_only(
     *,
     origin: str,
@@ -422,11 +581,7 @@ def repair_device_only(
     if previous.origin != origin:
         raise LocalApprovalDeniedError(_DENIED)
 
-    slots = (
-        (_DEVICE_SELECTION_SLOT, "selected", "archived_device_selected"),
-        (connector._SELECTED_RECORD_ID, "selected", "archived_selected"),
-        (connector._ACTIVE_RECORD_ID, "active", "archived_active"),
-    )
+    slots = _switch_slots()
     saved = {(slot, part): read_credential(slot, part) for slot, part, _ in slots}
     active = connector._active() if saved[(connector._ACTIVE_RECORD_ID, "active")] else None
     if (
@@ -472,17 +627,26 @@ def repair_device_only(
                 create_credential(replacement.record_id, archive, old)
             if read_credential(replacement.record_id, archive) != old:
                 raise LocalApprovalDeniedError(_DENIED)
+    journal = json.dumps(
+        {
+            "previous": previous.record_id,
+            "replacement": replacement.record_id,
+            "archives": {
+                archive: hashlib.sha256(saved[(slot, part)]).hexdigest()
+                if saved[(slot, part)] is not None
+                else None
+                for slot, part, archive in slots
+            },
+        },
+        sort_keys=True,
+    ).encode()
+    create_credential(_DEVICE_SELECTION_SLOT, "recovery_switch", journal)
     new_marker = _device_marker_payload(replacement)
     try:
-        for slot, part, _ in reversed(slots):
-            if read_credential(slot, part) != saved[(slot, part)]:
-                raise LocalApprovalDeniedError(_DENIED)
-            if saved[(slot, part)] is not None and not delete_credential(slot, part):
-                raise LocalApprovalDeniedError(_DENIED)
-        remember_device(replacement)
-        if selected_device() != replacement or connector.selected_project() is not None:
-            raise LocalApprovalDeniedError(_DENIED)
+        _finish_switch(previous, replacement, saved, journal)
     except Exception:
+        if selected_device() == replacement and connector.selected_project() is None:
+            raise
         # Only restore our exact prior markers; never overwrite a foreign change.
         for slot, part, _ in slots:
             old = saved[(slot, part)]
@@ -500,12 +664,4 @@ def repair_device_only(
                 if read_credential(slot, part) != old:
                     raise LocalApprovalDeniedError(_DENIED) from None
         raise
-    pending = read_credential(previous.record_id, "recovery_pending")
-    if pending is not None:
-        try:
-            data = json.loads(pending, object_pairs_hook=_unique)
-            if data.get("recordId") == replacement.record_id:
-                delete_credential(previous.record_id, "recovery_pending")
-        except (OSError, ValueError, TypeError, AttributeError):
-            pass
     return replacement
