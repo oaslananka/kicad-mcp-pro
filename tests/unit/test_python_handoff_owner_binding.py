@@ -768,3 +768,149 @@ def test_worker_producer_cli(worker_producer, monkeypatch, capsys) -> None:
         worker.main(argv[:-2])
     assert exc.value.code == 2
     assert capsys.readouterr().out == ""
+
+
+@pytest.fixture
+def fetch_case(worker_producer, tmp_path) -> tuple[Any, ...]:
+    client, verifier, args, source, child, item = worker_producer
+    payload = args.pop("downloaded_zip").read_bytes()
+    args.pop("directory")
+    args.pop("producer_job_id")
+    args["output"] = tmp_path / "verified-dist"
+    calls = []
+
+    def download(repo, artifact_id, output, *, max_bytes):
+        assert repo == REPO
+        assert artifact_id == ARTIFACT_ID
+        assert max_bytes == len(payload)
+        assert verifier.owner_calls == 2
+        assert not args["output"].exists()
+        calls.append(artifact_id)
+        output.write_bytes(payload)
+
+    return client, verifier, args, source, child, item, calls, download
+
+
+def test_fetch_producer_after_signed_request(fetch_case) -> None:
+    from scripts import check_python_worker_request_delivery as worker
+
+    client, verifier, args, _, _, _, calls, download = fetch_case
+    report = worker.fetch_producer_delivery(client, verifier, downloader=download, **args)
+    assert calls == [ARTIFACT_ID]
+    assert report["producerArtifactVerified"] is True
+    assert report["packageBytesVerified"] is True
+    assert report["publicationAuthorized"] is False
+    assert report["artifactProducedByThisJobVerified"] is False
+    assert {p.name: p.read_bytes() for p in args["output"].iterdir()} == dict(_files("python-dist"))
+    assert not list(args["output"].parent.glob(".kicad-worker-fetch-*"))
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "request-signature",
+        "job-missing",
+        "job-duplicate",
+        "job-truncated",
+        "expired",
+        "oversize",
+        "existing-output",
+    ],
+)
+def test_fetch_rejects_before_download(fetch_case, change) -> None:
+    from scripts import check_python_worker_request_delivery as worker
+
+    client, verifier, args, source, _, _, calls, download = fetch_case
+    if change == "request-signature":
+        verifier.change = "owner-signature"
+    elif change == "job-missing":
+        source.producer.jobs["jobs"][0]["name"] = "other"
+    elif change == "job-duplicate":
+        source.producer.jobs["jobs"].append(copy.deepcopy(source.producer.jobs["jobs"][0]))
+        source.producer.jobs["total_count"] += 1
+    elif change == "job-truncated":
+        source.producer.jobs["total_count"] += 1
+    elif change == "expired":
+        source.producer.art["expired"] = True
+    elif change == "oversize":
+        source.producer.art["size_in_bytes"] = 512 * 1024 * 1024 + 1
+    else:
+        args["output"].mkdir()
+    options = dict(args)
+    with pytest.raises(ValueError):
+        worker.fetch_producer_delivery(client, verifier, downloader=download, **options)
+    assert not calls
+
+
+@pytest.mark.parametrize("change", ["short", "long", "signature", "child", "metadata", "failure"])
+def test_fetch_failure_leaves_no_packages(fetch_case, change) -> None:
+    from scripts import check_python_worker_request_delivery as worker
+
+    client, verifier, args, source, child, _, _, download = fetch_case
+
+    def changed_download(repo, artifact_id, output, *, max_bytes):
+        download(repo, artifact_id, output, max_bytes=max_bytes)
+        if change == "short":
+            output.write_bytes(b"x")
+        elif change == "long":
+            output.write_bytes(output.read_bytes() + b"x")
+        elif change == "signature":
+            verifier.producer.tamper = "wrong_run"
+        elif change == "child":
+            child["run_attempt"] = 2
+        elif change == "metadata":
+            source.producer.art["expired"] = True
+        else:
+            raise OSError("download failed")
+
+    options = dict(args)
+    with pytest.raises((ValueError, OSError)):
+        worker.fetch_producer_delivery(client, verifier, downloader=changed_download, **options)
+    assert not args["output"].exists()
+    assert not list(args["output"].parent.glob(".kicad-worker-fetch-*"))
+
+
+def test_fetch_producer_cli(fetch_case, monkeypatch, capsys) -> None:
+    import json
+
+    from scripts import check_python_worker_request_delivery as worker
+    from scripts.python_worker_dispatch_inputs import dispatch_payload
+
+    client, verifier, args, _, _, _, calls, download = fetch_case
+    identity = args["identity"]
+    event = args["archive"].with_name("event.json")
+    event.write_text(json.dumps(dispatch_payload(identity.handoff, identity.manifest_sha256)))
+    for key, value in {
+        "GITHUB_REPOSITORY": REPO,
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_REF": args["runtime_ref"],
+        "GITHUB_SHA": args["runtime_sha"],
+        "GITHUB_RUN_ID": str(args["runtime_run_id"]),
+        "GITHUB_RUN_ATTEMPT": str(args["runtime_attempt"]),
+        "GITHUB_EVENT_PATH": str(event),
+    }.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(worker, "DeliveryGitHubCLI", lambda: client)
+    monkeypatch.setattr(worker, "GitHubAttestationCLI", lambda: verifier)
+    monkeypatch.setattr(worker, "download_producer_archive", download)
+    argv = [
+        "fetch-producer",
+        "--from-event",
+        "--artifact-id",
+        str(args["artifact_id"]),
+        "--archive",
+        str(args["archive"]),
+        "--directory",
+        str(args["output"]),
+    ]
+    invalid = argv + ["--producer-job-id", "1"]
+    with pytest.raises(SystemExit) as exc:
+        worker.main(invalid)
+    assert exc.value.code == 2
+    assert not calls
+    assert capsys.readouterr().out == ""
+    assert worker.main(argv) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["producerArtifactVerified"] is True
+    assert report["publicationAuthorized"] is False
+    assert calls == [ARTIFACT_ID]
