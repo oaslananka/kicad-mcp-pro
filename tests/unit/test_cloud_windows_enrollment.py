@@ -679,3 +679,68 @@ def test_lost_redeem_response_retries_only_identical_recovery_request(
         with pytest.raises(cloud_pair.CloudPairingError):
             cloud_windows_enrollment._approved_redeem(cloud_pair._origin(ORIGIN), key, **options)
         assert len(calls) == 1
+
+
+@pytest.mark.parametrize("outcome", ["success", "denied", "tampered"])
+def test_recovery_resumes_approved_request_after_process_restart(
+    fake_windows_pair, monkeypatch, outcome
+) -> None:
+    store, events, state = fake_windows_pair
+    original = cloud_pair._post
+    requests = []
+
+    def response(target, path, body, status):
+        if not path.endswith("/redeem"):
+            return original(target, path, body, status)
+        requests.append(body.copy())
+        if len(requests) == 1:
+            raise KeyboardInterrupt
+        if outcome == "denied":
+            return {"recoveryDenied": True}
+        return {
+            "deviceId": DEVICE,
+            "deviceFingerprint": state["fingerprint"],
+            "ownerSub": OWNER,
+            "enabled": True,
+        }
+
+    monkeypatch.setattr(cloud_pair, "_post", response)
+    options = dict(
+        origin=ORIGIN,
+        alias="Lab PC",
+        recovery_record_id="a" * 32,
+        recovery_device_id="39ee4be9-0aec-448e-9873-721ae113ec02",
+        recovery_owner_sub=OWNER,
+    )
+    with pytest.raises(KeyboardInterrupt):
+        cloud_windows_enrollment.enroll_windows_device(
+            **options, owner_approval=_approval(events, state)
+        )
+    assert ("a" * 32, "recovery_pending") in store
+    if outcome == "tampered":
+        journal = json.loads(store[("a" * 32, "recovery_pending")])
+        journal["ownerSub"] = "foreign-owner"
+        store[("a" * 32, "recovery_pending")] = json.dumps(journal).encode()
+        before = dict(store)
+        with pytest.raises(cloud_windows_enrollment.WindowsEnrollmentError):
+            cloud_windows_enrollment.enroll_windows_device(
+                **options, owner_approval=lambda *_: pytest.fail("already approved")
+            )
+        assert len(requests) == 1 and store == before
+        return
+    if outcome == "denied":
+        with pytest.raises(cloud_windows_enrollment.WindowsRecoveryDeniedError):
+            cloud_windows_enrollment.enroll_windows_device(
+                **options, owner_approval=lambda *_: pytest.fail("already approved")
+            )
+        assert requests[0] == requests[1]
+        assert not store
+        return
+    result = cloud_windows_enrollment.enroll_windows_device(
+        **options, owner_approval=lambda *_: pytest.fail("already approved")
+    )
+    assert result.device_id == DEVICE
+    assert requests[0] == requests[1]
+    assert events.count("challenge") == events.count("owner_approval") == 1
+    assert (result.record_id, "binding") in store
+    assert ("a" * 32, "recovery_pending") in store

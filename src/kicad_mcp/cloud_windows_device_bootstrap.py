@@ -444,6 +444,7 @@ def repair_device_only(
         owner_approval=approval,
         recovery_device_id=previous.device_id,
         recovery_owner_sub=previous.owner_sub,
+        recovery_record_id=previous.record_id,
     )
     if (
         replacement.origin != origin
@@ -466,7 +467,9 @@ def repair_device_only(
     for slot, part, archive in slots:
         old = saved[(slot, part)]
         if old is not None:
-            create_credential(replacement.record_id, archive, old)
+            archived = read_credential(replacement.record_id, archive)
+            if archived is None:
+                create_credential(replacement.record_id, archive, old)
             if read_credential(replacement.record_id, archive) != old:
                 raise LocalApprovalDeniedError(_DENIED)
     new_marker = _device_marker_payload(replacement)
@@ -497,4 +500,12 @@ def repair_device_only(
                 if read_credential(slot, part) != old:
                     raise LocalApprovalDeniedError(_DENIED) from None
         raise
+    pending = read_credential(previous.record_id, "recovery_pending")
+    if pending is not None:
+        try:
+            data = json.loads(pending, object_pairs_hook=_unique)
+            if data.get("recordId") == replacement.record_id:
+                delete_credential(previous.record_id, "recovery_pending")
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
     return replacement

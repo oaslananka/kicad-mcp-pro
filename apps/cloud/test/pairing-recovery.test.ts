@@ -109,8 +109,15 @@ test("PostgreSQL replacement keeps active devices and never creates a project",{
       winner.signature,true,recovery)).kind,"unavailable");
     await pool.query("UPDATE devices SET enabled=true WHERE id=$1",[winningResult.deviceId]);
     await pool.query("UPDATE pairing_challenges SET created_at=clock_timestamp()-interval '6 minutes',expires_at=clock_timestamp()-interval '2 minutes' WHERE id=$1",[winner.challenge.id]);
-    assert.equal((await store.enroll(winner.challenge.id,winner.challenge.deviceCode,
-      winner.signature,true,recovery)).kind,"unavailable");
+    // Expiry prevents new enrollment, not read-only reconciliation of an
+    // already committed binding by its exact original device proof.
+    assert.deepEqual(await store.enroll(winner.challenge.id,winner.challenge.deviceCode,
+      winner.signature,true,recovery),winningResult);
+    const expiredIdentity={deviceId:randomUUID(),ownerSub:owner};
+    const expired=await attempt(expiredIdentity);
+    await pool.query("UPDATE pairing_challenges SET created_at=clock_timestamp()-interval '6 minutes',expires_at=clock_timestamp()-interval '2 minutes' WHERE id=$1",[expired.challenge.id]);
+    assert.equal((await store.enroll(expired.challenge.id,expired.challenge.deviceCode,
+      expired.signature,true,expiredIdentity)).kind,"recovery_denied");
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM devices")).rows[0].n,2);
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM projects")).rows[0].n,0);
     const missingIdentity={deviceId:randomUUID(),ownerSub:owner};

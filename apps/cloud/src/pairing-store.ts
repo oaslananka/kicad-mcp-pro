@@ -1,7 +1,7 @@
 import {createPublicKey, randomUUID, verify} from "node:crypto";
 import type {Pool,PoolClient} from "pg";
 import {PgDeviceManagement} from "./device-management.js";
-import {issuePairing,reviewPairing,redeemPairing,pairingApprovalState,
+import {issuePairing,reviewPairing,redeemPairing,pairingApprovalState,verifyFinishedRecovery,
   type PairingRecord,type PairingStatus,type RecoveryIdentity} from "./device-pairing.js";
 
 type Row={
@@ -91,12 +91,12 @@ export class PgPairingChallenges {
       return result.kind;
     });
   }
-  private async recoveryReceipt(db:PoolClient,r:PairingRecord,now:number,
+  private async recoveryReceipt(db:PoolClient,r:PairingRecord,
     code:string,signature:Buffer,recovery:RecoveryIdentity):Promise<Enrollment>{
-    // Revalidate the exact originally approved proof, within its original
-    // expiry, but never issue another credential or change device state.
-    const proof=redeemPairing({...r,state:"approved"},this.key,now,code,signature,recovery);
-    if(proof.kind!=="redeemed"||proof.ownerSub!==recovery.ownerSub)return {kind:"unavailable"};
+    // The enrollment expiry remains enforced. This read-only lookup can
+    // survive a process restart after expiry because it requires the exact
+    // consumed challenge, secret, signing key and still-active replacement.
+    if(!verifyFinishedRecovery(r,this.key,code,signature,recovery))return {kind:"unavailable"};
     const result=await db.query<{id:string}>(
       "SELECT d.id FROM device_replacements t "+
       "JOIN devices d ON d.id=t.replacement_device_id AND d.owner_sub=t.owner_sub "+
@@ -104,10 +104,10 @@ export class PgPairingChallenges {
       "WHERE t.owner_sub=$1 AND t.previous_device_id=$2 AND t.pairing_challenge_id=$3 "+
       "AND c.pairing_challenge_id=$3 AND c.key_fingerprint=$4 "+
       "AND c.public_key_der=$5 AND d.enabled=true AND c.revoked_at IS NULL",
-      [proof.ownerSub,recovery.deviceId,r.id,r.deviceFingerprint,r.devicePublicKeyDer]);
+      [recovery.ownerSub,recovery.deviceId,r.id,r.deviceFingerprint,r.devicePublicKeyDer]);
     const deviceId=result.rows[0]?.id;
     return result.rows.length===1&&deviceId
-      ?{kind:"enrolled",deviceId,ownerSub:proof.ownerSub,deviceFingerprint:r.deviceFingerprint}
+      ?{kind:"enrolled",deviceId,ownerSub:recovery.ownerSub,deviceFingerprint:r.deviceFingerprint}
       :{kind:"unavailable"};
   }
 
@@ -123,13 +123,19 @@ export class PgPairingChallenges {
     connectOnApproval=false,recovery?:RecoveryIdentity):Promise<Enrollment>{
     return this.locked(id,{kind:"unavailable"} as Enrollment,async(db,r,now)=>{
       if(recovery&&connectOnApproval===true&&r.state==="consumed"){
-        return this.recoveryReceipt(db,r,now,code,signature,recovery);
+        return this.recoveryReceipt(db,r,code,signature,recovery);
       }
       const proof=redeemPairing(r,this.key,now,code,signature,recovery);
       if(proof.record.state!==r.state && proof.kind!=="redeemed"){
         await save(db,proof.record);
       }
-      if(proof.kind!=="redeemed")return {kind:"unavailable"};
+      if(proof.kind!=="redeemed"){
+        if(recovery&&connectOnApproval===true&&proof.record.state==="expired"&&
+           verifyFinishedRecovery(proof.record,this.key,code,signature,recovery)){
+          return {kind:"recovery_denied"};
+        }
+        return {kind:"unavailable"};
+      }
       if(recovery){
         // Browser approval authenticates the account. Do not disclose or
         // replace another owner's registration, or a merely disabled device.

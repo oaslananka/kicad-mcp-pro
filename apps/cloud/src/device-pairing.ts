@@ -189,19 +189,32 @@ export function redeemPairing(
   requireServerKey(serverKey);
   if (!validClock(nowMs)||(recovery&&!validRecoveryIdentity(recovery))) return { kind: "unavailable", record };
   const current = stateAt(record, nowMs);
-  if (current.state !== "approved" || !current.ownerSub ||
-      typeof deviceCode !== "string" || deviceCode.length > 128 ||
-      !Buffer.isBuffer(signature) || signature.length !== 64 ||
-      !matches(serverKey, "device", deviceCode, current.deviceCodeMac)) {
-    return { kind: "unavailable", record: current };
-  }
-  try {
-    const key = createPublicKey({ key: Buffer.from(current.devicePublicKeyDer, "base64"), format: "der", type: "spki" });
-    if (key.asymmetricKeyType !== "ed25519" || !verify(null, redemptionProof(current.id, deviceCode,recovery), key, signature)) {
-      return { kind: "unavailable", record: current };
-    }
-  } catch {
-    return { kind: "unavailable", record: current };
+  if(current.state!=="approved"||!current.ownerSub||
+     !verifyRedemptionProof(current,serverKey,deviceCode,signature,recovery)){
+    return {kind:"unavailable",record:current};
   }
   return { kind: "redeemed", record: { ...current, state: "consumed" }, ownerSub: current.ownerSub };
+}
+
+
+/** Proof verification alone never issues or re-enables a device. */
+function verifyRedemptionProof(record:PairingRecord,serverKey:Buffer,deviceCode:string,
+  signature:Buffer,recovery?:RecoveryIdentity):boolean{
+  if(typeof deviceCode!=="string"||deviceCode.length>128||
+     !Buffer.isBuffer(signature)||signature.length!==64||
+     !matches(serverKey,"device",deviceCode,record.deviceCodeMac))return false;
+  try{
+    const key=createPublicKey({key:Buffer.from(record.devicePublicKeyDer,"base64"),format:"der",type:"spki"});
+    return key.asymmetricKeyType==="ed25519"&&
+      verify(null,redemptionProof(record.id,deviceCode,recovery),key,signature);
+  }catch{return false;}
+}
+
+/** Only for an immutable receipt lookup or authenticated terminal refusal. */
+export function verifyFinishedRecovery(record:PairingRecord,serverKey:Buffer,
+  deviceCode:string,signature:Buffer,recovery:RecoveryIdentity):boolean{
+  requireServerKey(serverKey);
+  return (record.state==="consumed"||record.state==="expired")&&
+    validRecoveryIdentity(recovery)&&record.ownerSub===recovery.ownerSub&&
+    verifyRedemptionProof(record,serverKey,deviceCode,signature,recovery);
 }
