@@ -56,7 +56,7 @@ jobs:
             --argjson id "$RELEASE_ID" --arg tag "$RELEASE_TAG" \
             '.id == $id and .tag_name == $tag and .draft == false and
              (.published_at | type == "string" and length > 0)' >/dev/null
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d
         with:
           enable-cache: false
           version-file: uv.toml
@@ -148,7 +148,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d
         with:
           enable-cache: false
           version-file: uv.toml
@@ -216,7 +216,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d
         with:
           enable-cache: false
           version-file: uv.toml
