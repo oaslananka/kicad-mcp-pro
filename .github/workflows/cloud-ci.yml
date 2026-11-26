@@ -68,6 +68,9 @@ jobs:
       # Fail before deployment if a required build helper is excluded.
       - name: Build Cloud production container (no publish)
         run: docker build --file Dockerfile --tag "kicad-cloud-ci:$GITHUB_SHA" --build-arg "APP_REVISION=$GITHUB_SHA" .
+      - name: Verify PostgreSQL backup and restore (isolated fixtures)
+        timeout-minutes: 5
+        run: bash scripts/ci-db-restore-drill.sh "kicad-cloud-ci:$GITHUB_SHA"
       - name: Validate Cloudflare edge contracts
         run: node --test scripts/test-cloudflare-edge.mjs
 
