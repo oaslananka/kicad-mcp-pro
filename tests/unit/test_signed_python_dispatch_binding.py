@@ -64,7 +64,8 @@ class ReadClient:
         return copy.deepcopy(self.child)
 
     def tag_commit(self, repo: str, tag: str) -> str:
-        assert repo == REPO and tag == IDENTITY.tag
+        assert repo == REPO
+        assert tag == IDENTITY.tag
         self.tag_reads += 1
         return self.tag_sha
 
@@ -138,7 +139,8 @@ def test_runtime_identity_mismatch_rejected_before_reads(binding, field, value) 
     args[field] = value
     with pytest.raises(ValueError, match="runtime"):
         verify_dispatch_binding(client, verifier, **args)
-    assert not client.reads and not verifier.calls
+    assert not client.reads
+    assert not verifier.calls
 
 
 @pytest.mark.parametrize(

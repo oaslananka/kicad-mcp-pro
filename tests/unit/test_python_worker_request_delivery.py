@@ -57,12 +57,14 @@ class DeliveryClient(ReadClient):
         self.list_reads = 0
 
     def workflow_artifacts(self, repo: str, run_id: int) -> dict[str, Any]:
-        assert repo == REPO and run_id == self.owner["id"]
+        assert repo == REPO
+        assert run_id == self.owner["id"]
         self.list_reads += 1
         return copy.deepcopy(self.collection)
 
     def artifact(self, repo: str, artifact_id: int) -> dict[str, Any]:
-        assert repo == REPO and artifact_id == ARTIFACT
+        assert repo == REPO
+        assert artifact_id == ARTIFACT
         item = copy.deepcopy(self.item)
         if self.change:
             item["expired"] = True
@@ -179,7 +181,8 @@ def test_invalid_archive_never_reaches_signature_verifier(delivery, change: str)
         client.item["digest"] = "sha256:" + hashlib.sha256(data).hexdigest()
     with pytest.raises(ValueError):
         verify_delivery(client, verifier, **args)
-    assert not verifier.dispatch.calls and not verifier.manifest.calls
+    assert not verifier.dispatch.calls
+    assert not verifier.manifest.calls
 
 
 def test_live_artifact_replacement_during_signature_verification(delivery, monkeypatch) -> None:
