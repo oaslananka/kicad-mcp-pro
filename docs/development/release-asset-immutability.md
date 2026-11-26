@@ -673,3 +673,37 @@ jobs, not the production owner signer, an independently dispatched worker,
 protected tag, actual Release, registry receipt or exclusive writer.
 No tag or Release is created and no package is installed or published.
 Do not dispatch until the workflow has passed review and merged to main.
+
+### Maintainer-side owner and producer binding (read-only)
+
+Before any future Python worker dispatch, the maintainer can compose the
+existing owner and producer checks with the signed request:
+
+```bash
+python -m scripts.check_python_handoff_owner_binding \
+  --directory "$DIST" --manifest "$MANIFEST" --manifest-sha256 "$OWNER_PIN" \
+  --downloaded-zip "$PRODUCER_ZIP" --tag "$TAG" --source-commit "$SOURCE_SHA" \
+  --release-id "$RELEASE_ID" --owner-run-id "$OWNER_RUN_ID" \
+  --owner-attempt "$OWNER_ATTEMPT" --producer-run-id "$PRODUCER_RUN_ID" \
+  --producer-attempt "$PRODUCER_ATTEMPT" --producer-artifact-id "$ARTIFACT_ID" \
+  --producer-job-id "$PRODUCER_JOB_ID"
+```
+
+All expected identities and the manifest pin are independently supplied.
+The diagnostic accepts only the separate completed reusable preflight
+producer profile, not the legacy publisher or a synthetic rehearsal.
+It checks the active production owner, draft and observed protected tag
+rules; exact producer repository, run, attempt, job and artifact; safe ZIP
+inventory and each package's signed provenance; and the production owner's
+signed manifest. It compares the producer package digests to the
+manifest's exact wheel and sdist digests, then repeats producer run/archive
+identity and active owner/draft/tag checks and rechecks request bytes.
+A valid signature over different owner-approved package bytes is rejected.
+
+Run only with an already authorized maintainer credential that can read
+the full tag ruleset, including bypass actors. Never grant ruleset-write
+access to the registry worker. This command is not called by production
+workflows yet. No production manifest issuer or live draft acceptance is
+claimed. Success does not prove which job uploaded the artifact, an
+independently dispatched child, registry receipts, exclusive writer lock
+or publication authorization. A race after the final read remains possible.
