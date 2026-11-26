@@ -15,6 +15,7 @@ from scripts.check_release_family_inventory import _TAG
 from scripts.stage_draft_release_assets import _SHA, GitHubCLI, _valid_inputs
 
 _OWNER_PATH = ".github/workflows/publish-release.yml"
+_OWNER_RUN_MISMATCH = "workflow run is not the expected active main owner dispatch"
 # Only the reviewed personal repository owner may initiate or re-run
 # a release-authorizing workflow_dispatch; repository write access is broader.
 _TRUSTED_DISPATCH_OWNER = {"oaslananka/kicad-mcp-pro": "oaslananka"}
@@ -148,13 +149,13 @@ def _owner_run_status(
         or type(run.get("run_attempt")) is not int
         or run["run_attempt"] != owner_run_attempt
     ):
-        raise ValueError("workflow run is not the expected active main owner dispatch")
+        raise ValueError(_OWNER_RUN_MISMATCH)
     status = run.get("status")
     if (
         status not in ("in_progress", "queued", "requested", "waiting", "pending")
         or run.get("conclusion") is not None
     ):
-        raise ValueError("workflow run is not the expected active main owner dispatch")
+        raise ValueError(_OWNER_RUN_MISMATCH)
     return str(status)
 
 
@@ -177,7 +178,7 @@ def verify_active_owner_run(
         )
         != "in_progress"
     ):
-        raise ValueError("workflow run is not the expected active main owner dispatch")
+        raise ValueError(_OWNER_RUN_MISMATCH)
 
 
 def verify_owner(
