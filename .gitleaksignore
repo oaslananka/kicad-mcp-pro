@@ -2,3 +2,5 @@
 # The scanner must still report every other genuine credential match.
 2ac4acc766ef7797b09a4d7e5192a056d1acb0d7:src/kicad_mcp/cloud_windows_connector.py:generic-api-key:68
 87ac915f91d334d0c947fa6f5105e302b3d1fcbe:src/kicad_mcp/cloud_windows_connector.py:generic-api-key:69
+# Exact historical false positive: Ed25519PrivateKey type annotation, not key material.
+409da0689304e2a6debaf76777b87819b1eb4c7d:src/kicad_mcp/cloud_pair.py:generic-api-key:396

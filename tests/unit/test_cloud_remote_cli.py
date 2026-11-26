@@ -1036,7 +1036,18 @@ def test_unbound_cloud_pairs_once_then_reuses_identity_without_browser(
         status_callback("Connected")
 
     monkeypatch.setattr(bootstrap, "remember_device", remember)
-    monkeypatch.setattr(enrollment, "enroll_windows_device", enroll)
+
+    def ensure(origin, alias, approval):
+        if "device" not in current:
+            remember(enroll(origin=origin, alias=alias, owner_approval=approval))
+        return current["device"]
+
+    monkeypatch.setattr("kicad_mcp.cloud_windows_initial_enrollment.ensure_device", ensure)
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_call_with_owner_connector",
+        lambda fn, *args, **kwargs: fn(*args, **kwargs),
+    )
     monkeypatch.setattr(bootstrap, "run_device_only", serve)
     monkeypatch.setattr(
         cloud_user_cli, "_display_cloud_status", lambda event, _origin: calls.append(event)
@@ -1080,13 +1091,18 @@ def test_unbound_cloud_denied_pairing_never_opens_signed_session(
     monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
     monkeypatch.setattr(bootstrap, "selected_device", lambda: None)
 
-    def rejected(**_kwargs: object) -> None:
+    def rejected(*_args: object, **_kwargs: object) -> None:
         raise enrollment.WindowsEnrollmentError("Owner denied pairing")
 
     async def must_not_connect(*_args: object, **_kwargs: object) -> None:
         pytest.fail("Denied enrollment must not open signed session")
 
-    monkeypatch.setattr(enrollment, "enroll_windows_device", rejected)
+    monkeypatch.setattr("kicad_mcp.cloud_windows_initial_enrollment.ensure_device", rejected)
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_call_with_owner_connector",
+        lambda fn, *args, **kwargs: fn(*args, **kwargs),
+    )
     monkeypatch.setattr(bootstrap, "run_device_only", must_not_connect)
     with pytest.raises(typer.BadParameter, match="Owner denied pairing"):
         cloud_user_cli._connect_unbound_windows_device(
@@ -1263,7 +1279,16 @@ def test_unbound_cloud_update_exit_does_not_transition_to_project(monkeypatch) -
 
     origin = cloud_user_cli.DEFAULT_CLOUD_ORIGIN
     monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
-    monkeypatch.setattr(bootstrap, "selected_device", lambda: SimpleNamespace(origin=origin))
+    device = SimpleNamespace(origin=origin)
+    monkeypatch.setattr(bootstrap, "selected_device", lambda: device)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_windows_initial_enrollment.ensure_device", lambda *_: device
+    )
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_call_with_owner_connector",
+        lambda fn, *args, **kwargs: fn(*args, **kwargs),
+    )
 
     async def drained(*_args: object) -> bool:
         return True

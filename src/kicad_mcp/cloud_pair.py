@@ -393,7 +393,7 @@ def start_enrollment(origin: str, alias: str, keyfile: Path) -> tuple[str, str, 
 
 
 def _issue_enrollment(
-    target: tuple[str, int, str], alias: str, keyfile: Path, key: Ed25519PrivateKey
+    target: tuple[str, int, str], alias: str, keyfile: Path, signing_identity: Ed25519PrivateKey
 ) -> tuple[str, str, str, int]:
     """Issue a challenge for an already verified, never-redeemed key."""
     if os.name == "nt":
@@ -401,7 +401,9 @@ def _issue_enrollment(
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}", alias):
         raise CloudPairingError(_PAIRING_DENIED)
     _require_unused_binding_path(keyfile)
-    der = key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+    der = signing_identity.public_key().public_bytes(
+        Encoding.DER, PublicFormat.SubjectPublicKeyInfo
+    )
     result = _post(
         target,
         "/api/v1/pairing/device/challenge",
@@ -411,7 +413,7 @@ def _issue_enrollment(
         },
         201,
     )
-    challenge, code, device_secret, fingerprint, expiry = _challenge(result, key)
+    challenge, code, device_secret, fingerprint, expiry = _challenge(result, signing_identity)
     review_url = f"{target[2]}/devices/pairing#challenge={challenge}&code={code}"
     supplied_url = result.get("verificationUriComplete")
     if supplied_url is not None and supplied_url != review_url:

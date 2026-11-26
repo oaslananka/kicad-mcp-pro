@@ -282,23 +282,36 @@ def _connect_unbound_windows_device(origin: str, alias: str) -> bool:
     if not _owner_terminal():
         raise typer.BadParameter("Start the Cloud Connector in an interactive owner terminal.")
     enrolled = selected_device()
-    if enrolled is None:
-        typer.echo("Opening browser for a one-time Cloud device approval...")
-        try:
-            enrolled = enroll_windows_device(
+    if enrolled is not None and enrolled.origin != origin:
+        raise typer.BadParameter("A Cloud identity for a different origin is already saved.")
+    try:
+        if origin == DEFAULT_CLOUD_ORIGIN:
+            from kicad_mcp.cloud_windows_initial_enrollment import ensure_device
+
+            if enrolled is None:
+                typer.echo("Preparing one-time Cloud device approval...")
+            else:
+                typer.echo("Reusing the same approved Cloud device.")
+            enrolled = _call_with_owner_connector(
+                ensure_device,
+                origin,
+                _resolve_device_alias(alias),
+                lambda page, challenge, code: _perform_approval(page, challenge, code, False),
+            )
+        elif enrolled is None:
+            enrolled = _call_with_owner_connector(
+                enroll_windows_device,
                 origin=origin,
                 alias=_resolve_device_alias(alias),
                 owner_approval=lambda page, challenge, code: _perform_approval(
                     page, challenge, code, False
                 ),
             )
-            remember_device(enrolled)
-        except WindowsEnrollmentError as exc:
-            raise typer.BadParameter(str(exc)) from exc
-    elif enrolled.origin != origin:
-        raise typer.BadParameter("A Cloud identity for a different origin is already saved.")
-    else:
-        typer.echo("Reusing the same approved Cloud device.")
+            _call_with_owner_connector(remember_device, enrolled)
+        else:
+            typer.echo("Reusing the same approved Cloud device.")
+    except WindowsEnrollmentError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
     typer.echo(
         "Connecting device without a project. "

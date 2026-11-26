@@ -39,6 +39,9 @@ _PARTS = frozenset(
         # Preserve the device-only marker through an approved project repair.
         "archived_device_selected",
         "recovery_pending",
+        "initial_pending",
+        "initial_challenge",
+        "initial_approved",
         "recovery_switch",
         "detached_selected",
         "detached_active",
