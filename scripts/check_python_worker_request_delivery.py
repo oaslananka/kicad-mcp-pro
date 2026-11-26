@@ -70,8 +70,13 @@ class RequestNotReadyError(ValueError):
 def discover_request(client: DeliveryClient, identity: DispatchIdentity) -> dict[str, Any]:
     """One bounded listing; missing, ambiguous or truncated metadata fails closed."""
     dispatch_bytes(identity)
-    handoff = identity.handoff
     _check_live(client, identity)
+    return _request_metadata(client, identity)
+
+
+def _request_metadata(client: DeliveryClient, identity: DispatchIdentity) -> dict[str, Any]:
+    """Read exact owner artifact metadata; caller must check lifecycle separately."""
+    handoff = identity.handoff
     name = f"python-worker-request-{handoff.owner_attempt}-{identity.worker_run_id}"
     collection = client.workflow_artifacts(REPOSITORY, handoff.owner_run_id)
     if not isinstance(collection, dict):
