@@ -283,7 +283,11 @@ class BrowserFolderService:
         native_picker: Callable[[], Path | None] = choose_project_folder,
         authorization: Callable[[], bool] | None = None,
         on_bound: Callable[[str, Path], bool] | None = None,
+        bound_path: Callable[[str], str | None] | None = None,
     ) -> None:
+        if bound_path is not None and on_bound is None:
+            raise ValueError(_DENIED)
+        self._bound_path = bound_path
         self._on_bound = on_bound
         self._browser = browser
         self._native_picker = native_picker
@@ -304,6 +308,13 @@ class BrowserFolderService:
         )
         if self._on_bound is not None and selected is None:
             return False
+        if self._bound_path is not None:
+            if selected is None or self._on_bound is None:
+                return False
+            if self._on_bound(project_id, selected) is not True:
+                return False
+            self._browser.discard_selection(folder_id)
+            return True
         if not self._browser.bind(folder_id, project_id):
             return False
         if self._on_bound is None:
@@ -322,6 +333,8 @@ class BrowserFolderService:
             UUID(project_id)
         except (ValueError, AttributeError) as exc:
             raise CloudHandshakeDeniedError(_DENIED) from exc
+        if self._bound_path is not None:
+            return self._bound_path(project_id)
         return self._browser.get_project_path(project_id)
 
 

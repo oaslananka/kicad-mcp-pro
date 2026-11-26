@@ -329,6 +329,12 @@ class GenericProjectMcpService:
             raise GenericMcpTransportError(_DENIED)
         return project
 
+    def _same_project(self, project: OperatorProject) -> bool:
+        try:
+            return self._current_project(project.project_id) == project
+        except (OSError, ValueError, TypeError):
+            return False
+
     def _verify_write(
         self, frame: dict[str, Any], project: OperatorProject, binding: VerifiedLocalBinding
     ) -> int:
@@ -408,10 +414,10 @@ class GenericProjectMcpService:
         async with project_stdio_worker(
             project.directory, profile="expert", operating_mode=mode
         ) as worker:
-            if self.authorized() is not True:
+            if not self._same_project(project):
                 raise GenericMcpTransportError(_DENIED)
             await self._activate_owner_worker(worker, selection)
-            if self.authorized() is not True:
+            if not self._same_project(project):
                 raise GenericMcpTransportError(_DENIED)
             if frame["method"] == "catalog":
                 catalog = await bridge.list_tools(
@@ -489,7 +495,7 @@ class GenericProjectMcpService:
             bridge = GenericProjectMcpBridge(
                 verified=binding,
                 operator_project=project,
-                current_authorization=self.authorized,
+                current_authorization=lambda: self._same_project(project),
                 allow_native_write=self.allow_write,
                 profile="expert",
             )
@@ -497,7 +503,7 @@ class GenericProjectMcpService:
                 self._prepare_call(frame, project, binding) if frame["method"] == "call" else None
             )
             response = await self._bounded_worker_result(frame, project, bridge, call)
-            if self.authorized() is not True:
+            if not self._same_project(project):
                 raise GenericMcpTransportError(_DENIED)
             response = _fit_cloud_mcp_response(
                 response, write_approved=bool(call and call.write_approved)

@@ -468,6 +468,10 @@ def _dispatcher_factory(
             """Read only an owner-selected, current local Cloud project mapping."""
             if not _is_enabled(root, record, marker):
                 return None
+            if marker == _FOREGROUND_FILE:
+                from kicad_mcp.cloud_posix_project_bindings import resolve_secondary
+
+                return resolve_secondary(root, record, project_id)
             from kicad_mcp.cloud_folder_browse_receiver import default_bindings_file
             from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
 
@@ -553,10 +557,12 @@ def _posix_mcp_settings(
         replay = LocalWriteMarker(directory)
 
     def resolve(project_id: str) -> OperatorProject | None:
-        # The primary project is independently selected in the local registry.
-        # Do not accept an arbitrary secondary mapping as write authority.
-        if not authorized() or project_id != record["projectId"]:
+        if not authorized():
             return None
+        if project_id != record["projectId"]:
+            from kicad_mcp.cloud_posix_project_bindings import resolve_secondary
+
+            return resolve_secondary(root, record, project_id)
         return OperatorProject(
             record["deviceId"], project_id, project.project_directory, project.filename_stem
         )
@@ -597,13 +603,23 @@ def _posix_mcp_settings(
             return resolved
 
         def prepare(project_id: str) -> dict[str, str]:
+            selected = target(project_id)
+
+            def current() -> bool:
+                return authorized() and resolve(project_id) == selected
+
             return prepare_native_write_revisions(
-                target(project_id), authorized=authorized, cancelled=lambda: not authorized()
+                selected, authorized=current, cancelled=lambda: not current()
             )
 
         def execute(project_id: str, proof: bytes, persist: bool) -> dict[str, object]:
             if not receipts:
                 raise LocalWriteDeniedError(_DENIED)
+            selected = target(project_id)
+
+            def current() -> bool:
+                return authorized() and resolve(project_id) == selected
+
             return execute_verified_signed_pcb_move(
                 proof,
                 issuer_key=issuer,
@@ -614,10 +630,10 @@ def _posix_mcp_settings(
                     session_id=receipts[0].session_id,
                     session_expires_unix_ms=time.time_ns() // 1_000_000 + _SESSION_LIFETIME_MS,
                 ),
-                operator_project=target(project_id),
+                operator_project=selected,
                 consume_once=replay.consume_once,
-                authorized=authorized,
-                cancelled=lambda: not authorized(),
+                authorized=current,
+                cancelled=lambda: not current(),
                 persist_to_disk=persist,
             )
 
@@ -673,6 +689,12 @@ async def _session_until_stopped(
             def folder_factory(receipt: HandshakeReceipt) -> LocalFolderBrowseService:
                 if receipt.device_id != record["deviceId"] or not _is_enabled(root, record, marker):
                     raise LocalApprovalDeniedError(_DENIED)
+                if marker == _FOREGROUND_FILE:
+                    from kicad_mcp.cloud_posix_project_bindings import folder_service
+
+                    return folder_service(
+                        root, record, project, lambda: _is_enabled(root, record, marker)
+                    )
                 return device_folder_service(
                     project.project_directory,
                     authorization=lambda: _is_enabled(root, record, marker),

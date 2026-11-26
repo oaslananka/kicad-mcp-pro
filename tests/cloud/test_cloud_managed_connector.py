@@ -252,7 +252,8 @@ def test_posix_cloud_device_bound_second_project_is_readable_then_revocable(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The project the owner added on Devices must actually work, and revoke."""
-    from kicad_mcp.cloud_folder_browse_receiver import device_folder_service, handle_folder_frame
+    from kicad_mcp.cloud_folder_browse_receiver import handle_folder_frame
+    from kicad_mcp.cloud_posix_project_bindings import folder_service
 
     root, project = _root(tmp_path)
     (project.project_directory / "board.kicad_pro").write_text("{}", encoding="utf-8")
@@ -271,11 +272,12 @@ def test_posix_cloud_device_bound_second_project_is_readable_then_revocable(
         connector._FOREGROUND_FILE,
         connector._identity_state(record, connector._FOREGROUND_FILE),
     )
-    service = device_folder_service(
-        project.project_directory,
-        bindings_file=bindings_file,
+    service = folder_service(
+        root,
+        record,
+        project,
+        lambda: connector._is_enabled(root, record, connector._FOREGROUND_FILE),
         native_picker=lambda: chosen,
-        authorization=lambda: connector._is_enabled(root, record, connector._FOREGROUND_FILE),
     )
 
     def browser_frame(operation: str, **fields: object) -> str:
@@ -329,7 +331,7 @@ def test_posix_cloud_device_bound_second_project_is_readable_then_revocable(
     dispatcher.assert_delivery_authorized(raw, device_id=DEVICE, session_id=SESSION)
 
     # Removing the local mapping must deny delivery even after read completed.
-    bindings_file.unlink()
+    (root / "project-bindings" / DEVICE / (new_project + ".json")).unlink()
     with pytest.raises(LocalReadDeniedError):
         dispatcher.assert_delivery_authorized(raw, device_id=DEVICE, session_id=SESSION)
     revoked_read = frame(new_project)

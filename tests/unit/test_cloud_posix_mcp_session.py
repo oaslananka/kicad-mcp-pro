@@ -75,7 +75,10 @@ def test_posix_replay_directory_cannot_be_symlink(tmp_path: Path, monkeypatch) -
 
 
 @pytest.mark.asyncio
-async def test_posix_signed_schematic_request_uses_real_verifier(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("secondary", [False, True])
+async def test_posix_signed_schematic_request_uses_real_verifier(
+    tmp_path, monkeypatch, secondary
+) -> None:
     from contextlib import asynccontextmanager
 
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -110,9 +113,35 @@ async def test_posix_signed_schematic_request_uses_real_verifier(tmp_path, monke
         yield FakeWorker()
 
     monkeypatch.setattr("kicad_mcp.cloud_generic_mcp_transport.project_stdio_worker", worker)
-    record = {"cloudOrigin": ORIGIN, "deviceId": DEVICE, "projectId": PROJECT}
+    record = {
+        "cloudOrigin": ORIGIN,
+        "deviceId": DEVICE,
+        "projectId": PROJECT,
+        "ownerSub": "owner",
+        "keySlot": str(uuid4()),
+    }
+    primary = board
+    if secondary:
+        from kicad_mcp.cloud_posix_project_bindings import folder_service
+
+        primary = tmp_path / "primary"
+        primary.mkdir()
+        record["projectId"] = str(uuid4())
+        (primary / "board.kicad_pro").write_text("{}")
+        folder = folder_service(
+            root,
+            record,
+            LocalRegisteredRead(root / "key", primary, "board"),
+            lambda: True,
+            native_picker=lambda: board,
+        )
+        token = folder.choose()["projects"][0]["id"]
+        assert folder.bind(token, PROJECT)
     settings = connector._posix_mcp_settings(
-        root, record, LocalRegisteredRead(root / "key", board, "board"), connector._FOREGROUND_FILE
+        root,
+        record,
+        LocalRegisteredRead(root / "key", primary, "board"),
+        connector._FOREGROUND_FILE,
     )
     service = settings["mcp_bridge_factory"](HandshakeReceipt(DEVICE, SESSION))
     args = '{"reference":"R9"}'
@@ -127,3 +156,65 @@ async def test_posix_signed_schematic_request_uses_real_verifier(tmp_path, monke
     with pytest.raises(GenericMcpTransportError):
         await service.dispatch(request)
     assert events == ["worker"]
+
+
+def test_posix_explicit_secondary_project_binding(tmp_path, monkeypatch) -> None:
+    from kicad_mcp import cloud_posix_project_bindings as bindings
+    from kicad_mcp.cloud_local_folder_browser import LocalFolderBrowser
+
+    root = tmp_path / "registry"
+    root.mkdir(mode=0o700)
+    primary = tmp_path / "first"
+    primary.mkdir()
+    secondary = tmp_path / "second"
+    secondary.mkdir()
+    selected = secondary / "second.kicad_pro"
+    selected.write_text("{}")
+    record = {
+        "ownerSub": "owner",
+        "cloudOrigin": ORIGIN,
+        "deviceId": str(uuid4()),
+        "projectId": str(uuid4()),
+        "keySlot": str(uuid4()),
+    }
+    project = LocalRegisteredRead(root / "key.pem", primary, "first")
+    state = {"authorized": True}
+    monkeypatch.setattr(connector, "_is_enabled", lambda *_: state["authorized"])
+    pid = str(uuid4())
+    legacy = tmp_path / "legacy.json"
+    browser = LocalFolderBrowser([], legacy)
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_folder_browse_receiver.default_bindings_file", lambda: legacy
+    )
+    options = connector._posix_mcp_settings(root, record, project, connector._FOREGROUND_FILE)
+    service = options["mcp_bridge_factory"](HandshakeReceipt(record["deviceId"], str(uuid4())))
+    token = browser.choose_native(lambda: secondary)["projects"][0]["id"]
+    assert browser.bind(token, pid)
+    # A legacy unscoped mapping alone cannot authorize an edit.
+    with pytest.raises(ValueError):
+        service._current_project(pid)
+    folder = bindings.folder_service(
+        root, record, project, lambda: state["authorized"], native_picker=lambda: secondary
+    )
+    token = folder.choose()["projects"][0]["id"]
+    assert folder.bind(token, pid)
+    assert service._current_project(pid).directory == secondary
+    assert service._current_project(pid).filename_stem == "second"
+    assert folder.project_path(pid) == str(selected)
+    assert not (root / "unused-browser-cache.json").exists()
+    (primary / "first.kicad_pro").write_text("{}")
+    conflicting = bindings.folder_service(
+        root, record, project, lambda: True, native_picker=lambda: primary
+    )
+    conflicting_token = conflicting.choose()["projects"][0]["id"]
+    assert not conflicting.bind(conflicting_token, pid)
+    assert folder.project_path(pid) == str(selected)
+    other = {**record, "deviceId": str(uuid4())}
+    assert bindings.resolve_secondary(root, other, pid) is None
+    # A replaced project path may not silently change the bound file.
+    selected.unlink()
+    with pytest.raises(ValueError):
+        service._current_project(pid)
+    state["authorized"] = False
+    with pytest.raises(ValueError):
+        service._current_project(record["projectId"])

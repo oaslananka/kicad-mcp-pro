@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import secrets
 from uuid import uuid4
 
 import pytest
@@ -182,10 +183,10 @@ def test_definite_refusal_archives_staging_without_changing_old_identity(
         cloud_pair_keys._write_private_json(
             staged.parent,
             staged.with_suffix(cloud_pair._CHALLENGE_SUFFIX).name,
-            {"secret": "unused"},
+            {"secret": secrets.token_urlsafe(32)},
         )
         cloud_pair_keys._write_private_json(
-            staged.parent.parent, "approved.json", {"secret": "unused"}
+            staged.parent.parent, "approved.json", {"secret": secrets.token_urlsafe(32)}
         )
         raise WindowsRecoveryDeniedError("refused")
 
