@@ -6,7 +6,7 @@ import argparse
 import json
 import re
 import time
-from urllib.request import Request, urlopen
+from http.client import HTTPException, HTTPSConnection
 
 
 def has_matching_wheel(payload: object, version: str) -> bool:
@@ -28,14 +28,21 @@ def has_matching_wheel(payload: object, version: str) -> bool:
 
 
 def fetch_release(version: str) -> object:
-    if not re.fullmatch(r"[0-9]+\\.[0-9]+\\.[0-9]+", version):
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
         raise ValueError("Expected a stable Python release version.")
-    request = Request(
-        f"https://pypi.org/pypi/kicad-mcp-pro/{version}/json",
-        headers={"User-Agent": "kicad-mcp-pro-release-wheel-gate"},
-    )
-    with urlopen(request, timeout=10) as response:  # noqa: S310 - fixed HTTPS host/version
-        return json.load(response)
+    connection = HTTPSConnection("pypi.org", timeout=10)
+    try:
+        connection.request(
+            "GET",
+            f"/pypi/kicad-mcp-pro/{version}/json",
+            headers={"User-Agent": "kicad-mcp-pro-release-wheel-gate"},
+        )
+        response = connection.getresponse()
+        if response.status != 200:
+            raise OSError(f"PyPI returned HTTP {response.status}")
+        return json.loads(response.read())
+    finally:
+        connection.close()
 
 
 def wait_for_wheel(version: str, *, attempts: int = 30, delay: int = 20) -> bool:
@@ -44,7 +51,7 @@ def wait_for_wheel(version: str, *, attempts: int = 30, delay: int = 20) -> bool
             if has_matching_wheel(fetch_release(version), version):
                 print(f"Matching non-yanked Python wheel is available: {version}")
                 return True
-        except (OSError, ValueError):
+        except (OSError, ValueError, HTTPException):
             pass
         print(f"Python wheel {version} not ready (attempt {attempt + 1}/{attempts}).", flush=True)
         if attempt + 1 < attempts:
@@ -56,7 +63,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("version")
     args = parser.parse_args()
-    if not re.fullmatch(r"[0-9]+\\.[0-9]+\\.[0-9]+", args.version):
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.version):
         parser.error("Expected a stable release version.")
     return 0 if wait_for_wheel(args.version) else 1
 

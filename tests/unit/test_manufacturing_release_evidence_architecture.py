@@ -44,4 +44,14 @@ def test_validation_uses_domain_release_file_helper_not_tool_monolith() -> None:
     validation = Path(boundaries.SRC_ROOT / "kicad_mcp" / "tools" / "validation.py")
     source = validation.read_text(encoding="utf-8")
     assert "from .manufacturing import _find_release_files" not in source
-    assert "from ..manufacturing.release_evidence import find_release_files" in source
+    tree = ast.parse(source)
+    imported = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        and node.level == 2
+        and node.module == "manufacturing.release_evidence"
+        for alias in node.names
+    }
+    assert {"artifact_coverage", "verified_release_files"} <= imported
+    assert "find_release_files" not in imported

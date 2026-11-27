@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 import pytest
@@ -46,3 +47,49 @@ def test_wait_is_bounded_and_retries_unavailable_release() -> None:
             assert not gate.wait_for_wheel("4.24.0", attempts=2, delay=1)
             assert fetch.call_count == 2
             sleep.assert_called_once_with(1)
+
+
+def test_fetch_release_uses_fixed_https_host_and_valid_version() -> None:
+    with patch.object(gate, "HTTPSConnection") as connect:
+        connection = connect.return_value
+        response = connection.getresponse.return_value
+        response.status = 200
+        response.read.return_value = json.dumps(_payload()).encode()
+        assert gate.fetch_release("4.24.0") == _payload()
+        connect.assert_called_once_with("pypi.org", timeout=10)
+        connection.request.assert_called_once_with(
+            "GET",
+            "/pypi/kicad-mcp-pro/4.24.0/json",
+            headers={"User-Agent": "kicad-mcp-pro-release-wheel-gate"},
+        )
+        connection.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "version", ["file:///etc/passwd", "../other", "4.24.0/other", "4.24.0-rc1"]
+)
+def test_fetch_rejects_invalid_version_before_connecting(version: str) -> None:
+    with patch.object(gate, "HTTPSConnection") as connect:
+        with pytest.raises(ValueError, match="stable"):
+            gate.fetch_release(version)
+        connect.assert_not_called()
+
+
+@pytest.mark.parametrize("status", [302, 404, 503])
+def test_fetch_rejects_non_success_without_following_redirects(status: int) -> None:
+    with patch.object(gate, "HTTPSConnection") as connect:
+        connection = connect.return_value
+        response = connection.getresponse.return_value
+        response.status = status
+        with pytest.raises(OSError, match=str(status)):
+            gate.fetch_release("4.24.0")
+        connection.request.assert_called_once()
+        response.read.assert_not_called()
+        connection.close.assert_called_once()
+
+
+def test_main_accepts_stable_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sys.argv", ["wait_for_pypi_wheel.py", "4.24.0"])
+    with patch.object(gate, "wait_for_wheel", return_value=True) as wait:
+        assert gate.main() == 0
+        wait.assert_called_once_with("4.24.0")
