@@ -12,6 +12,7 @@ import threading
 import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from typing import Any
 
 import structlog
 from starlette.requests import Request
@@ -511,7 +512,8 @@ async def api_config_post(request: Request) -> JSONResponse:
 
     def apply_settings() -> None:
         with _config_post_lock:
-            KiCadMCPConfig(**{key: str(value) for key, value in safe_body.items()})
+            overrides: dict[str, Any] = {key: str(value) for key, value in safe_body.items()}
+            KiCadMCPConfig(**overrides)
             for key, value in safe_body.items():
                 env_key = f"KICAD_MCP_{key.upper()}"
                 os.environ[env_key] = str(value)
