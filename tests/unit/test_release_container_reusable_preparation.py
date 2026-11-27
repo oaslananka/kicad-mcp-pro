@@ -184,3 +184,87 @@ def test_source_gate_fail_closed(
         check=False,
     )
     assert (result.returncode == 0) is accepted, result.stderr
+
+
+def test_publish_promotes_only_scanned_and_signed_multiarch_digest() -> None:
+    job = yaml.safe_load(PUBLISH.read_text(encoding="utf-8"))["jobs"]["publish"]
+    steps = job["steps"]
+    build = next(step for step in steps if step.get("id") == "build-push")
+    scans = [
+        step for step in steps if step.get("uses", "").startswith("aquasecurity/trivy-action@")
+    ]
+    sign = next(step for step in steps if step.get("name") == "Sign image digest")
+    assert "tags" not in build["with"]
+    assert "push-by-digest=true" in build["with"]["outputs"]
+    assert "push=true" in build["with"]["outputs"]
+    assert {step["env"]["TRIVY_PLATFORM"] for step in scans} == {"linux/amd64", "linux/arm64"}
+    promote = next(
+        step for step in steps if step.get("name") == "Promote verified digest to release tags"
+    )
+    for scan in scans:
+        assert steps.index(build) < steps.index(scan) < steps.index(sign) < steps.index(promote)
+        assert (
+            scan["with"]["image-ref"]
+            == "${{ env.GHCR_IMAGE }}@${{ steps.build-push.outputs.digest }}"
+        )
+        assert str(scan["with"]["exit-code"]) == "1"
+        assert "continue-on-error" not in scan
+        assert "if" not in scan
+    assert sign["env"]["IMAGE_DIGEST"] == promote["env"]["IMAGE_DIGEST"]
+    assert promote["env"]["RELEASE_IMAGE_TAGS"] == "${{ steps.meta.outputs.tags }}"
+    assert "imagetools create" in promote["run"]
+    assert '"${GHCR_IMAGE}@${IMAGE_DIGEST}"' in promote["run"]
+    assert "if" not in promote
+    assert "continue-on-error" not in sign
+    assert "continue-on-error" not in promote
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Bash digest-promotion test")
+@pytest.mark.parametrize(
+    ("digest", "tags", "accepted"),
+    [
+        ("sha256:" + "a" * 64, "ghcr.io/oaslananka/kicad-mcp-pro:4.5.0", True),
+        (
+            "sha256:" + "a" * 64,
+            "ghcr.io/oaslananka/kicad-mcp-pro:4.5.0\nghcr.io/oaslananka/kicad-mcp-pro:latest",
+            True,
+        ),
+        ("bad", "ghcr.io/oaslananka/kicad-mcp-pro:4.5.0", False),
+        ("sha256:" + "a" * 64, "another.example/repo:latest", False),
+        ("sha256:" + "a" * 64, "", False),
+    ],
+)
+def test_digest_promotion_passes_only_verified_source_and_release_tags(
+    tmp_path: Path, digest: str, tags: str, accepted: bool
+) -> None:
+    steps = yaml.safe_load(PUBLISH.read_text(encoding="utf-8"))["jobs"]["publish"]["steps"]
+    promote = next(
+        step for step in steps if step.get("name") == "Promote verified digest to release tags"
+    )
+    log = tmp_path / "docker-args"
+    docker = tmp_path / "docker"
+    docker.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$MOCK_LOG"\n', encoding="utf-8")
+    docker.chmod(0o755)
+    image = "ghcr.io/oaslananka/kicad-mcp-pro"
+    result = subprocess.run(
+        ["/bin/bash", "-euo", "pipefail", "-c", promote["run"]],
+        env={
+            **os.environ,
+            "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
+            "MOCK_LOG": str(log),
+            "GHCR_IMAGE": image,
+            "IMAGE_DIGEST": digest,
+            "RELEASE_IMAGE_TAGS": tags,
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert (result.returncode == 0) is accepted, result.stderr
+    if not accepted:
+        assert not log.exists()
+        return
+    expected = ["buildx", "imagetools", "create"]
+    for tag in tags.splitlines():
+        expected.extend(["--tag", tag])
+    assert log.read_text(encoding="utf-8").splitlines() == [*expected, f"{image}@{digest}"]

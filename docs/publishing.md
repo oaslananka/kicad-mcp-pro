@@ -65,9 +65,12 @@ MCP server release tags such as `mcp-server-v1.1.0`, and pushes multi-arch
 `ghcr.io/oaslananka/kicad-mcp-pro:latest`; production deployments should use
 the release version tag or immutable GHCR digest.
 
-The publish job signs the pushed image digest with Sigstore `cosign`, requests
-BuildKit provenance, attaches a BuildKit SBOM, and runs Trivy against the image
-digest before signing.
+The publish job pushes an untagged multi-platform digest with BuildKit provenance
+and an SBOM. Trivy must pass for both AMD64 and ARM64 before Sigstore `cosign`
+signs that digest. Only then does Buildx attach the release tags to the same
+image index, without rebuilding. A failed scan or signing step leaves the
+existing release and latest tags untouched. The untagged digest may remain
+in GHCR for investigation.
 
 Run the default streamable HTTP image:
 
