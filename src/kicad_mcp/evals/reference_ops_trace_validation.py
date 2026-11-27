@@ -10,14 +10,20 @@ import hashlib
 import os
 import re
 import stat as stat_module
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import datetime
+from os.path import basename
 from pathlib import Path
 from typing import Final, Literal
 
 from pydantic import ValidationError
 
-from .reference_agent_runner import ReferenceAgentPhase, reviewed_mcp_tools
+from .reference_agent_runner import (
+    _REVIEWED_BOARD_ROOTS,
+    ReferenceAgentPhase,
+    reviewed_mcp_tools,
+)
 from .reference_corpus import REFERENCE_IDENTIFIER_PATTERN, ReferenceAgentLogEvent
 
 _MAX_TRACE_BYTES = 2_000_000
@@ -25,6 +31,19 @@ _MAX_EVENTS = 10_000
 _TRACE_ROOT = Path(__file__).resolve().parents[3] / ".dev-tools/reference-agent-runs"
 _TRACE_FILENAME: Final = "ops-mcp-trace.jsonl"
 _ERR_RESERVED_DIRECTORY: Final = "trace must be in its reserved private directory"
+_ALLOWED_FILENAMES = frozenset(
+    {
+        _TRACE_FILENAME,
+        "ops-client-observed.jsonl",
+        "codex-turn-events.jsonl",
+        "ops-gateway-audit.json",
+        "signed-gateway-witness.json",
+    }
+)
+# Windows device aliases and alternate streams are not portable directory names.
+_RESERVED_COMPONENT = re.compile(
+    r"(?:CON|PRN|AUX|NUL|COM\d|LPT\d)(?:\..*)?", re.ASCII | re.IGNORECASE
+)
 
 
 class ReferenceOpsTraceValidationError(ValueError):
@@ -39,30 +58,54 @@ class ReferenceOpsTraceSummary:
     failed_calls: int
     digest: str
     counts_as_task_success: bool = False
+    board_id: str | None = None
 
 
-def _approved_trace_path(path: Path, attempt_id: str) -> Path:
-    """Resolve only the reserved trace location, never an arbitrary CLI path."""
-    if not re.fullmatch(REFERENCE_IDENTIFIER_PATTERN, attempt_id) or attempt_id in {".", ".."}:
+def _trace_parts(attempt_id: str, board_id: str | None) -> list[str]:
+    """Use the maintained corpus namespace, or the legacy flat smoke namespace."""
+    if (
+        not re.fullmatch(REFERENCE_IDENTIFIER_PATTERN, attempt_id)
+        or ":" in attempt_id
+        or attempt_id.endswith(".")
+        or _RESERVED_COMPONENT.fullmatch(attempt_id)
+    ):
         raise ReferenceOpsTraceValidationError("invalid reference attempt identifier")
-    expected = _TRACE_ROOT / attempt_id / _TRACE_FILENAME
+    if board_id is None:
+        return [attempt_id]
+    if board_id not in _REVIEWED_BOARD_ROOTS or not re.fullmatch(
+        r"attempt-(?!000)\d{3}", attempt_id, flags=re.ASCII
+    ):
+        raise ReferenceOpsTraceValidationError(_ERR_RESERVED_DIRECTORY)
+    return [board_id, "v1", attempt_id]
+
+
+def _redirected(path: Path) -> bool:
+    return path.is_symlink() or path.is_junction()
+
+
+def _approved_trace_path(path: Path, attempt_id: str, *, board_id: str | None = None) -> Path:
+    parts = _trace_parts(attempt_id, board_id)
+    expected = _TRACE_ROOT.joinpath(*parts, _TRACE_FILENAME)
     if (
         not path.is_absolute()
         or path != expected
-        or path.is_symlink()
-        or path.parent.is_symlink()
-        or _TRACE_ROOT.is_symlink()
+        or _redirected(path)
+        or _redirected(_TRACE_ROOT)
+        or _redirected(_TRACE_ROOT.parent)
+        or any(_redirected(_TRACE_ROOT.joinpath(*parts[:i])) for i in range(1, len(parts) + 1))
     ):
         raise ReferenceOpsTraceValidationError(_ERR_RESERVED_DIRECTORY)
-    if expected.resolve().parent != (_TRACE_ROOT / attempt_id).resolve():
-        raise ReferenceOpsTraceValidationError("trace directory escaped its reservation")
     return expected
 
 
-def _open_reserved_trace(*, root: Path, attempt_id: str, filename: str) -> int:
-    """Open the reserved trace without following a replaced directory or file."""
-    # Windows CRT defaults os.open to text mode; CRLF translation changes
-    # the byte count read and falsely trips the exact-size trace check.
+def _open_reserved_trace(
+    *, root: Path, attempt_id: str, filename: str, board_id: str | None = None
+) -> int:
+    """Open fixed path components without following a replaced directory or file."""
+    if filename not in _ALLOWED_FILENAMES or not root.is_absolute():
+        raise ReferenceOpsTraceValidationError(_ERR_RESERVED_DIRECTORY)
+    parts = _trace_parts(attempt_id, board_id)
+    # Windows CRT defaults os.open to text mode; preserve exact byte lengths.
     flags = (
         os.O_RDONLY
         | getattr(os, "O_BINARY", 0)
@@ -70,24 +113,27 @@ def _open_reserved_trace(*, root: Path, attempt_id: str, filename: str) -> int:
         | getattr(os, "O_NONBLOCK", 0)
     )
     if os.name == "nt":
-        directory = root / attempt_id
-        expected = directory / filename
-        if directory.is_symlink() or expected.is_symlink():
+        expected = root.joinpath(*parts, basename(filename))
+        if _redirected(expected) or any(
+            _redirected(root.joinpath(*parts[:i])) for i in range(1, len(parts) + 1)
+        ):
             raise ReferenceOpsTraceValidationError(_ERR_RESERVED_DIRECTORY)
         return os.open(expected, flags)
 
     directory_flags = flags | getattr(os, "O_DIRECTORY", 0)
-    root_fd = os.open(root, directory_flags)
-    try:
-        directory_fd = os.open(attempt_id, directory_flags, dir_fd=root_fd)
-        try:
-            if os.fstat(directory_fd).st_mode & 0o077:
-                raise ReferenceOpsTraceValidationError("trace directory must be private")
-            return os.open(filename, flags, dir_fd=directory_fd)
-        finally:
-            os.close(directory_fd)
-    finally:
-        os.close(root_fd)
+    with ExitStack() as stack:
+        directory_fd = os.open(root, directory_flags)
+        stack.callback(os.close, directory_fd)
+        for part in parts:
+            # Recheck a single path component at the descriptor boundary. A
+            # dir_fd does not itself constrain absolute paths or parent traversal.
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", part):
+                raise ReferenceOpsTraceValidationError(_ERR_RESERVED_DIRECTORY)
+            directory_fd = os.open(basename(part), directory_flags, dir_fd=directory_fd)
+            stack.callback(os.close, directory_fd)
+        if os.fstat(directory_fd).st_mode & 0o077:
+            raise ReferenceOpsTraceValidationError("trace directory must be private")
+        return os.open(basename(filename), flags, dir_fd=directory_fd)
 
 
 def _read_open_trace(fd: int, *, require_jsonl: bool = True) -> bytes:
@@ -125,27 +171,25 @@ def _load_trace(
     filename: Literal[
         "ops-mcp-trace.jsonl",
         "ops-client-observed.jsonl",
+        "codex-turn-events.jsonl",
         "ops-gateway-audit.json",
         "signed-gateway-witness.json",
     ],
+    board_id: str | None = None,
 ) -> bytes:
     """Read fixed evidence only, never opening the untrusted CLI pathname."""
     if (
         not re.fullmatch(REFERENCE_IDENTIFIER_PATTERN, attempt_id)
         or attempt_id in {".", ".."}
         or not root.is_absolute()
-        or root.is_symlink()
-        or root.parent.is_symlink()
-        or filename
-        not in {
-            _TRACE_FILENAME,
-            "ops-client-observed.jsonl",
-            "ops-gateway-audit.json",
-            "signed-gateway-witness.json",
-        }
+        or _redirected(root)
+        or _redirected(root.parent)
+        or filename not in _ALLOWED_FILENAMES
     ):
         raise ReferenceOpsTraceValidationError(_ERR_RESERVED_DIRECTORY)
-    fd = _open_reserved_trace(root=root, attempt_id=attempt_id, filename=filename)
+    fd = _open_reserved_trace(
+        root=root, attempt_id=attempt_id, filename=filename, board_id=board_id
+    )
     try:
         return _read_open_trace(fd, require_jsonl=filename != "signed-gateway-witness.json")
     finally:
@@ -220,15 +264,17 @@ def _verify_events(
 
 
 def validate_reference_ops_trace(
-    path: Path, *, attempt_id: str, phase_name: str
+    path: Path, *, attempt_id: str, phase_name: str, board_id: str | None = None
 ) -> ReferenceOpsTraceSummary:
     """Fail closed on unauthorized paths and malformed or unpaired tool events."""
     phase = ReferenceAgentPhase.for_name(phase_name)
     if phase.name == "manufacturing":
         raise ReferenceOpsTraceValidationError("manufacturing trace is not approved")
     try:
-        _approved_trace_path(path, attempt_id)
-        content = _load_trace(root=_TRACE_ROOT, attempt_id=attempt_id, filename=_TRACE_FILENAME)
+        _approved_trace_path(path, attempt_id, board_id=board_id)
+        content = _load_trace(
+            root=_TRACE_ROOT, attempt_id=attempt_id, filename=_TRACE_FILENAME, board_id=board_id
+        )
         calls, failures = _verify_events(content, attempt_id=attempt_id, phase=phase)
     except (OSError, UnicodeError, ValidationError) as exc:
         raise ReferenceOpsTraceValidationError("invalid server trace content or file") from exc
@@ -238,4 +284,5 @@ def validate_reference_ops_trace(
         tool_calls=calls,
         failed_calls=failures,
         digest="sha256:" + hashlib.sha256(content).hexdigest(),
+        board_id=board_id,
     )

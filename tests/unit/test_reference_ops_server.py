@@ -189,3 +189,37 @@ def test_guarded_runtime_never_autodiscovers_host_socket() -> None:
         reset_config()
         assert str(get_config().kicad_socket_path) == endpoint
     assert "KICAD_MCP_KICAD_SOCKET_PATH" not in os.environ
+
+
+@pytest.mark.parametrize("defer_registration", [False, True])
+@pytest.mark.asyncio
+async def test_reference_host_has_no_unreviewed_resources_or_prompts(
+    defer_registration: bool,
+) -> None:
+    from mcp.server.mcpserver.exceptions import ResourceNotFoundError
+
+    server = build_reference_ops_server(
+        phase_name="schematic", defer_registration=defer_registration
+    )
+    assert await server.list_resources() == []
+    assert await server.list_resource_templates() == []
+    assert await server.list_prompts() == []
+    with pytest.raises(ResourceNotFoundError):
+        await server.read_resource("kicad://project/gate_history")
+    with pytest.raises(ResourceNotFoundError):
+        await server.read_resource("kicad://gate/manufacturing")
+    with pytest.raises(ValueError, match="Unknown prompt"):
+        await server.get_prompt("first_pcb")
+
+
+@pytest.mark.asyncio
+async def test_normal_server_keeps_resources_and_workflow_prompts() -> None:
+    from kicad_mcp.server import build_server
+
+    server = build_server("schematic_authoring")
+    assert any(
+        str(resource.uri) == "kicad://project/gate_history"
+        for resource in await server.list_resources()
+    )
+    assert await server.list_resource_templates()
+    assert any(prompt.name == "first_pcb" for prompt in await server.list_prompts())
