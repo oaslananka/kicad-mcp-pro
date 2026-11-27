@@ -579,3 +579,38 @@ def test_session_capacity_rejects_zero_and_negative(invalid_limit: int) -> None:
 
     with pytest.raises(ValueError, match="max_sessions"):
         _StreamableHttpContractMiddleware(app, max_sessions=invalid_limit)
+
+
+def test_stateless_initialized_notification_and_header_probes(
+    sample_project: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    cfg = get_config()
+    cfg.transport = "streamable-http"
+    cfg.stateful_http = False
+    server = build_server("minimal")
+    with TestClient(server.streamable_http_app(), base_url="http://127.0.0.1:3334") as client:
+        initialized = client.post("/mcp", headers=_headers(), json=_initialize_request())
+        notification = client.post("/mcp", headers=_headers(), json=_initialized_notification())
+        missing_accept = client.post(
+            "/mcp", headers={"Accept": "application/json"}, json=_tools_list_request()
+        )
+        get_probe = client.get("/mcp", headers={"Accept": "application/json"})
+        metadata = client.get("/.well-known/oauth-authorization-server")
+        listed = client.post("/mcp", headers=_headers(), json=_tools_list_request())
+        called = client.post("/mcp", headers=_headers(), json=_tool_call_request())
+
+    assert initialized.status_code == 200
+    assert "mcp-session-id" not in initialized.headers
+    assert notification.status_code == 202
+    assert notification.content == b""
+    assert missing_accept.status_code == 400
+    assert get_probe.status_code == 406
+    assert metadata.status_code == 404
+    assert listed.status_code == 200
+    names = [tool["name"] for tool in listed.json()["result"]["tools"]]
+    assert len(names) == len(set(names))
+    assert called.status_code == 200
+    assert not called.json()["result"].get("isError", False)
+    assert not any(
+        "no handler for notification" in record.getMessage().lower() for record in caplog.records
+    )

@@ -461,7 +461,7 @@ async def test_cli_nonzero_result_returns_structured_error(
     class Result:
         returncode = 2
         stdout = ""
-        stderr = "fatal export failed"
+        stderr = "fatal export failed: private-board-reference"
 
     monkeypatch.setattr(
         "kicad_mcp.tools.export.get_cli_capabilities",
@@ -475,8 +475,15 @@ async def test_cli_nonzero_result_returns_structured_error(
     )
     monkeypatch.setattr("kicad_mcp.tools.export.subprocess.run", lambda *_args, **_kwargs: Result())
 
+    get_config().transport = "streamable-http"
     server = build_server("full")
     await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    events: list[tuple[str, dict[str, object]]] = []
+    for level in ("info", "warning", "error"):
+        monkeypatch.setattr(
+            f"kicad_mcp.server.logger.{level}",
+            lambda event, **kwargs: events.append((event, kwargs)),
+        )
     result = await server.call_tool("export_gerber", {})
 
     assert isinstance(result, CallToolResult)
@@ -486,6 +493,10 @@ async def test_cli_nonzero_result_returns_structured_error(
     text = result.content[0].text
     assert "CLI_COMMAND_FAILED" in text
     assert "Gerber export failed" in text
+    audit = [data for event, data in events if event == "tool_call_audit"][-1]
+    assert audit["status"] == "error"
+    assert audit["error_code"] == "CLI_COMMAND_FAILED"
+    assert "private-board-reference" not in str(events)
 
 
 def test_tool_failure_message_detects_could_not_and_failed_to_prefixes() -> None:
@@ -1661,3 +1672,41 @@ def test_live_model_release_readiness_checkouts_fetch_full_history() -> None:
                     f"{path.name}:{job_name} must fetch full history before live-model readiness"
                 )
         assert matched, f"{path.name} readiness command was not found in parsed steps"
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("readonly")
+async def test_http_denial_audit_retains_error_code_without_arguments(
+    sample_project, monkeypatch
+) -> None:
+    cfg = get_config()
+    cfg.transport = "streamable-http"
+    server = build_server("full")
+    events: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        "kicad_mcp.server.logger.info", lambda event, **kwargs: events.append((event, kwargs))
+    )
+
+    result = await server.call_tool("pcb_move_footprint", {"reference": "private-reference-123"})
+
+    assert isinstance(result, CallToolResult)
+    assert result.is_error
+    assert result.structured_content is None
+    assert "MODE_FORBIDDEN" in result.content[0].text
+    audit = [data for event, data in events if event == "tool_call_audit"][-1]
+    assert audit["status"] == "error"
+    assert audit["error_code"] == "MODE_FORBIDDEN"
+    assert "private-reference-123" not in str(events)
+
+
+def test_promoted_domain_failure_retains_distinct_audit_status() -> None:
+    from kicad_mcp.server import _promote_failed_tool_result, _status_from_result
+
+    result = CallToolResult(
+        content=[], structuredContent={"result": {"ok": False, "errors": ["private"]}}
+    )
+    promoted = _promote_failed_tool_result(result)
+    assert isinstance(promoted, CallToolResult)
+    assert promoted.is_error
+    assert promoted.structured_content == result.structured_content
+    assert _status_from_result(promoted) == ("error", "TOOL_RESULT_FAILURE")
