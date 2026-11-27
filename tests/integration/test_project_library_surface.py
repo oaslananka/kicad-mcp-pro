@@ -435,7 +435,7 @@ async def test_project_resources_prompts_and_library_surface(
 
 @pytest.mark.anyio
 async def test_lib_create_custom_symbol_escapes_sexpr_strings(sample_project: Path) -> None:
-    server = build_server("library")
+    server = build_server("schematic_only")
     await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
 
     name = 'Bad")\n\t(symbol "Injected"'

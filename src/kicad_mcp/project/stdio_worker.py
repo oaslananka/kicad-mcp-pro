@@ -175,7 +175,10 @@ class LocalProjectWorkerRouter:
             raise ProjectWorkerDeniedError(_PROJECT_NOT_AUTHORIZED) from exc
         if granted is not True:
             raise ProjectWorkerDeniedError(_PROJECT_NOT_AUTHORIZED)
-        async with project_stdio_worker(directory) as session:
+        # The bounded review profile does not expose schematic population
+        # inspection. The local process is read-only; this wrapper still
+        # authorizes only _SCOPED_INSPECTION_TOOLS, never arbitrary tool names.
+        async with project_stdio_worker(directory, profile="expert") as session:
             worker = ProjectInspectionSession(session, project_id, self._authorized)
             worker._check_grant()
             yield worker

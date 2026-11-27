@@ -404,7 +404,7 @@ async function handleRequest(
         const apiRequest=new Request(config.publicOrigin+(req.url??"/"),{
           method,headers,body:payload?.toString("utf8")});
         const answer=await ownerApiResponse(apiRequest,config.publicOrigin,{
-          ownerApi:services.ownerApi,devices,
+          ownerApi:services.ownerApi,devices,requestSource:deviceSource?.(req)??null,
           ...(grants?{grants}:{}),
           ...(services.usage?{usage:services.usage}:{}),
           deviceConnection:summaryRelay?.()?.isDeviceConnected});

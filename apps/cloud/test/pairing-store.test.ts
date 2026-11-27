@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {randomBytes,generateKeyPairSync,sign} from "node:crypto";
 import {readFile} from "node:fs/promises";
 import {test} from "node:test";
+import {inIsolatedDatabase} from "./isolated-db.js";
 import pg from "pg";
 import {PgPairingChallenges} from "../src/pairing-store.js";
 import {redemptionProof,MAX_USER_CODE_ATTEMPTS} from "../src/device-pairing.js";
@@ -104,4 +105,37 @@ test("isolated PostgreSQL pairing transitions serialize competing workers",
     await admin.query('DROP SCHEMA IF EXISTS "'+schema+'" CASCADE');
     await admin.end();
   }
+});
+
+test("signed project registration preserves disabled devices and revoked project access",
+  {skip:!url},async()=>{
+  await inIsolatedDatabase(url!,[
+    "001_inventory.pgsql","002_client_grants.pgsql","007_device_pairing.pgsql",
+    "008_device_credentials.pgsql","019_connector_managed_read_access.pgsql"
+  ],async db=>{
+    const pair=generateKeyPairSync("ed25519");
+    const store=new PgPairingChallenges(db,randomBytes(32));
+    const challenge=await store.issue("Fixture PC",pair.publicKey.export({format:"der",type:"spki"}) as Buffer);
+    assert.equal(await store.review(challenge.id,"owner",challenge.userCode,"approve"),"approved");
+    const enrollment=await store.enroll(challenge.id,challenge.deviceCode,
+      sign(null,redemptionProof(challenge.id,challenge.deviceCode),pair.privateKey),true);
+    assert.equal(enrollment.kind,"enrolled");
+    if(enrollment.kind!=="enrolled")throw Error("Expected enrollment");
+    const deviceId=enrollment.deviceId,alias="Fixture Board";
+    const proof=sign(null,Buffer.from("kicad-cloud-device-project-v1\0"+deviceId+"\0"+alias),pair.privateKey);
+    const first=await store.registerProject(deviceId,alias,proof);
+    assert.equal(first.kind,"ok");
+    if(first.kind!=="ok")throw Error("Expected registration");
+    await db.query("UPDATE devices SET enabled=false WHERE id=$1",[deviceId]);
+    assert.deepEqual(await store.registerProject(deviceId,alias,proof),{kind:"unavailable"});
+    assert.equal((await db.query("SELECT enabled FROM devices WHERE id=$1",[deviceId])).rows[0].enabled,false);
+    await db.query("UPDATE devices SET enabled=true WHERE id=$1",[deviceId]);
+    await db.query("UPDATE projects SET enabled=false WHERE id=$1",[first.projectId]);
+    await db.query("UPDATE connector_managed_read_access SET enabled=false WHERE project_id=$1",[first.projectId]);
+    assert.deepEqual(await store.registerProject(deviceId,alias,proof),{...first,enabled:false});
+    assert.equal((await db.query("SELECT enabled FROM connector_managed_read_access WHERE project_id=$1",[first.projectId])).rows[0].enabled,false);
+    await db.query("DELETE FROM connector_managed_read_access WHERE project_id=$1",[first.projectId]);
+    assert.deepEqual(await store.registerProject(deviceId,alias,proof),{...first,enabled:false});
+    assert.equal((await db.query("SELECT 1 FROM connector_managed_read_access WHERE project_id=$1",[first.projectId])).rowCount,0);
+  });
 });

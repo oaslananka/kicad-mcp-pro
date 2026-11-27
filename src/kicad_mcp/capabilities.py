@@ -423,7 +423,7 @@ def _is_read_tool(name: str, category: str) -> bool:
 
 
 def _tier_for_tool(name: str, category: str) -> AccessTier:
-    if name == "export_manufacturing_package":
+    if name in {"export_manufacturing_package", "variant_export_manufacturing_package"}:
         return AccessTier.HUMAN_ONLY
     if _is_read_tool(name, category):
         return AccessTier.READ

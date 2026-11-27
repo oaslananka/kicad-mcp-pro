@@ -18,7 +18,8 @@ def write_manufacturing_approval(project: Path) -> str:
             if p.is_file()
             and (
                 p.suffix in {".kicad_pro", ".kicad_pcb", ".kicad_sch", ".kicad_dru"}
-                or p.relative_to(project).as_posix() == ".kicad-mcp/project_spec.json"
+                or p.relative_to(project).as_posix()
+                in {".kicad-mcp/project_spec.json", ".kicad-mcp/variants.json"}
             )
         ),
         key=lambda p: p.relative_to(project).as_posix(),

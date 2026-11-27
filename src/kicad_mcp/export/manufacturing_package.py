@@ -21,7 +21,7 @@ _MISSING_APPROVAL_EVIDENCE = (
     "Manufacturing package export is hard-blocked until approval_evidence_path is supplied."
 )
 _APPROVED_PROJECT_SUFFIXES = frozenset({".kicad_pro", ".kicad_sch", ".kicad_pcb", ".kicad_dru"})
-_APPROVED_PROJECT_SPEC = ".kicad-mcp/project_spec.json"
+_APPROVED_PROJECT_METADATA = frozenset({".kicad-mcp/project_spec.json", ".kicad-mcp/variants.json"})
 _REFERENCE_APPROVAL_FILENAME = "reference-manufacturing-approval.json"
 _INVALID_APPROVED_PROJECT_FILES = "Manufacturing evidence approved project files are invalid."
 
@@ -68,30 +68,19 @@ def _verify_project_state_digest(
 
 
 @dataclass(frozen=True)
-class ExportManufacturingPackageService:
-    """Generate a gated manufacturing handoff without depending on MCP types."""
+class ManufacturingApprovalService:
+    """Shared project quality and human approval boundary for release packages."""
 
     resolve_project_path: Callable[[str], Path]
-    ensure_output_dir: Callable[[], Path]
-    export_gerber: VariantExport
-    export_drill: VariantExport
-    export_bom: VariantExport
-    export_pick_and_place: VariantExport
-    export_ipc2581: VariantExport
-    export_odb: VariantExport
 
-    async def export(
+    def authorize(
         self,
         *,
-        variant: str = "",
-        approval_evidence_path: str = "",
-        evaluate_project_gate: GateEvaluator,
+        outcomes: list[Any],
         render_gate_report: GateRenderer,
-        report_progress: ProgressReporter,
-    ) -> str:
-        variant_name = variant.strip() or None
-        await report_progress(5, 100, "Running full project quality gate...")
-        outcomes = await anyio.to_thread.run_sync(evaluate_project_gate)
+        approval_evidence_path: str,
+    ) -> tuple[Path, dict[str, Any]] | str:
+        """Verify release eligibility before creating any manufacturing output."""
         blocking = [outcome for outcome in outcomes if outcome.status != "PASS"]
         if blocking:
             return render_gate_report(
@@ -119,48 +108,7 @@ class ExportManufacturingPackageService:
                     "- Obtain fresh human approval for the current project state.",
                 ]
             )
-
-        await report_progress(25, 100, "Exporting Gerbers...")
-        results = [
-            await anyio.to_thread.run_sync(lambda: self.export_gerber(variant_name)),
-        ]
-        await report_progress(45, 100, "Exporting drill files...")
-        results.append(await anyio.to_thread.run_sync(lambda: self.export_drill(variant_name)))
-        await report_progress(65, 100, "Exporting BOM...")
-        results.append(await anyio.to_thread.run_sync(lambda: self.export_bom(variant_name)))
-        await report_progress(85, 100, "Exporting pick-and-place data...")
-        results.append(
-            await anyio.to_thread.run_sync(lambda: self.export_pick_and_place(variant_name))
-        )
-
-        ipc_result = await anyio.to_thread.run_sync(lambda: self.export_ipc2581(variant_name))
-        if not ipc_result.startswith("IPC-2581 export is not supported"):
-            results.append(ipc_result)
-        odb_result = await anyio.to_thread.run_sync(lambda: self.export_odb(variant_name))
-        if not odb_result.startswith("ODB++ export is not supported"):
-            results.append(odb_result)
-
-        report_path = self._write_handoff_report(
-            variant_name=variant_name,
-            evidence_path=evidence_path,
-            evidence=evidence_payload,
-            outcomes=outcomes,
-            results=results,
-        )
-        artifact_count = len(self._manufacturing_artifacts())
-        results.append(
-            "\n".join(
-                [
-                    "Manufacturing release evidence:",
-                    f"- Approval evidence: {evidence_path}",
-                    f"- Release report: {report_path}",
-                    f"- Linked artifacts: {artifact_count}",
-                    "- Human approval is recorded as evidence, not replaced by automation.",
-                ]
-            )
-        )
-        await report_progress(100, 100, "Manufacturing package complete.")
-        return "\n\n".join(results)
+        return evidence_path, evidence_payload
 
     def _load_approval_evidence(self, path_text: str) -> tuple[Path, dict[str, Any]] | str:
         if not path_text.strip():
@@ -226,7 +174,7 @@ class ExportManufacturingPackageService:
         for path in root.rglob("*"):
             relative = path.relative_to(root).as_posix()
             relevant = (
-                path.suffix in _APPROVED_PROJECT_SUFFIXES or relative == _APPROVED_PROJECT_SPEC
+                path.suffix in _APPROVED_PROJECT_SUFFIXES or relative in _APPROVED_PROJECT_METADATA
             )
             if not relevant:
                 continue
@@ -245,6 +193,82 @@ class ExportManufacturingPackageService:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
         return digest.hexdigest()
+
+
+@dataclass(frozen=True)
+class ExportManufacturingPackageService(ManufacturingApprovalService):
+    """Generate a gated manufacturing handoff without depending on MCP types."""
+
+    ensure_output_dir: Callable[[], Path]
+    export_gerber: VariantExport
+    export_drill: VariantExport
+    export_bom: VariantExport
+    export_pick_and_place: VariantExport
+    export_ipc2581: VariantExport
+    export_odb: VariantExport
+
+    async def export(
+        self,
+        *,
+        variant: str = "",
+        approval_evidence_path: str = "",
+        evaluate_project_gate: GateEvaluator,
+        render_gate_report: GateRenderer,
+        report_progress: ProgressReporter,
+    ) -> str:
+        variant_name = variant.strip() or None
+        await report_progress(5, 100, "Running full project quality gate...")
+        outcomes = await anyio.to_thread.run_sync(evaluate_project_gate)
+        evidence = self.authorize(
+            outcomes=outcomes,
+            render_gate_report=render_gate_report,
+            approval_evidence_path=approval_evidence_path,
+        )
+        if isinstance(evidence, str):
+            return evidence
+        evidence_path, evidence_payload = evidence
+
+        await report_progress(25, 100, "Exporting Gerbers...")
+        results = [
+            await anyio.to_thread.run_sync(lambda: self.export_gerber(variant_name)),
+        ]
+        await report_progress(45, 100, "Exporting drill files...")
+        results.append(await anyio.to_thread.run_sync(lambda: self.export_drill(variant_name)))
+        await report_progress(65, 100, "Exporting BOM...")
+        results.append(await anyio.to_thread.run_sync(lambda: self.export_bom(variant_name)))
+        await report_progress(85, 100, "Exporting pick-and-place data...")
+        results.append(
+            await anyio.to_thread.run_sync(lambda: self.export_pick_and_place(variant_name))
+        )
+
+        ipc_result = await anyio.to_thread.run_sync(lambda: self.export_ipc2581(variant_name))
+        if not ipc_result.startswith("IPC-2581 export is not supported"):
+            results.append(ipc_result)
+        odb_result = await anyio.to_thread.run_sync(lambda: self.export_odb(variant_name))
+        if not odb_result.startswith("ODB++ export is not supported"):
+            results.append(odb_result)
+
+        report_path = self._write_handoff_report(
+            variant_name=variant_name,
+            evidence_path=evidence_path,
+            evidence=evidence_payload,
+            outcomes=outcomes,
+            results=results,
+        )
+        artifact_count = len(self._manufacturing_artifacts())
+        results.append(
+            "\n".join(
+                [
+                    "Manufacturing release evidence:",
+                    f"- Approval evidence: {evidence_path}",
+                    f"- Release report: {report_path}",
+                    f"- Linked artifacts: {artifact_count}",
+                    "- Human approval is recorded as evidence, not replaced by automation.",
+                ]
+            )
+        )
+        await report_progress(100, 100, "Manufacturing package complete.")
+        return "\n\n".join(results)
 
     def _manufacturing_artifacts(self) -> list[dict[str, Any]]:
         root = self.ensure_output_dir()

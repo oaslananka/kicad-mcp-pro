@@ -286,3 +286,19 @@ in a privately approved isolated environment, review of trusted TLS ingress
 and device-source rules, revocation during an actual local read, both PRs'
 exact-head CI/security acceptance, and separate explicit production approval.
 Until then, both PRs remain DRAFT and production flags remain OFF.
+
+### Command-line owner authorization
+
+New owner CLI authorization uses protocol version 2. The CLI retains its random
+proof secret locally and sends only a hash commitment as the browser request
+identifier. The browser still requires explicit owner approval. The request
+and approved redemption each expire after ten minutes; new requests are
+limited to twelve per trusted source per fifteen minutes. Older clients must
+upgrade before starting or polling an authorization. Existing issued tokens
+retain their normal expiry and revocation behavior. Configure trusted ingress
+for owner CLI authorization; forwarded source headers alone are not trusted.
+
+The explicit metadata retention operation also covers expired CLI requests,
+expired or revoked owner tokens (30-day grace), and tool-call telemetry older
+than 365 days. Dry-run remains non-mutating; apply is operator-initiated and
+bounded. No automatic production cleanup is activated by this change.

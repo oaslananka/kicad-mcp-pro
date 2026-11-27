@@ -11,6 +11,7 @@ from typing import Any, cast
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
+from ..export.manufacturing_package import ManufacturingApprovalService
 from ..path_safety import resolve_under
 from .metadata import headless_compatible
 from .schematic import native_population_flags, parse_schematic_file
@@ -28,9 +29,7 @@ def _variants_path() -> Path:
             "Resolution: call kicad_set_project('/absolute/path/to/project') first.\n"
             "Help: https://oaslananka.github.io/kicad-mcp-pro/installation/"
         )
-    target = cfg.project_dir / _VARIANTS_DIRNAME
-    target.mkdir(parents=True, exist_ok=True)
-    return target / _VARIANTS_FILENAME
+    return resolve_under(cfg.project_dir, Path(_VARIANTS_DIRNAME) / _VARIANTS_FILENAME)
 
 
 def _project_variants_path() -> Path | None:
@@ -95,6 +94,7 @@ def _write_variant_state(path: Path, state: dict[str, Any]) -> Path:
     if cfg.project_dir is None:
         raise ValueError("No active project directory is configured.")
     safe_path = resolve_under(cfg.project_dir, path)
+    safe_path.parent.mkdir(parents=True, exist_ok=True)
     with safe_path.open("w", encoding="utf-8") as handle:
         handle.write(json.dumps(state, indent=2))
     return safe_path
@@ -103,9 +103,7 @@ def _write_variant_state(path: Path, state: dict[str, Any]) -> Path:
 def _load_sidecar_state() -> dict[str, Any]:
     path = _variants_path()
     if not path.exists():
-        state = _default_state()
-        _write_variant_state(path, state)
-        return state
+        return _default_state()
     return cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
 
 
@@ -213,8 +211,7 @@ def _bom_rows(state: dict[str, Any], name: str) -> list[dict[str, Any]]:
     return rows
 
 
-def _safe_variant_export_path(output_dir: Path, variant: str, filename: str) -> Path:
-    """Keep variant-generated artifacts within their designated output directory."""
+def _validate_variant_export_names(variant: str, filename: str) -> None:
     for value in (variant, filename):
         if (
             not value
@@ -222,6 +219,11 @@ def _safe_variant_export_path(output_dir: Path, variant: str, filename: str) -> 
             or any(char in value for char in ("/", "\\", ":", "\x00"))
         ):
             raise ValueError("Variant export names must be single filename components.")
+
+
+def _safe_variant_export_path(output_dir: Path, variant: str, filename: str) -> Path:
+    """Keep variant-generated artifacts within their designated output directory."""
+    _validate_variant_export_names(variant, filename)
     return resolve_under(output_dir, filename, allow_absolute=False)
 
 
@@ -501,11 +503,12 @@ def variant_export_schematic(variant: str, output_name: str | None = None) -> st
 def variant_export_manufacturing_package(
     variant: str,
     output_name: str | None = None,
+    approval_evidence_path: str = "",
 ) -> str:
     """Export a manufacturing package for a specific variant.
 
-    Combines Gerber, drill, BOM, and pick-and-place exports with
-    the variant's overrides applied.
+    Requires a passing project quality gate and human approval bound to
+    the project files before exporting Gerber, drill and variant BOM data.
 
     Parameters
     ----------
@@ -514,6 +517,8 @@ def variant_export_manufacturing_package(
     output_name : str | None
         Output filename for the package manifest (defaults to
         ``<variant>_manufacturing.json``).
+    approval_evidence_path : str
+        Project-relative human approval JSON, bound to current project files.
     """
     from .export_support import (
         _ensure_output_dir,
@@ -521,14 +526,27 @@ def variant_export_manufacturing_package(
         _get_sch_file,
         _run_cli_variants,
     )
+    from .validation import _evaluate_project_gate, _render_project_gate_report
 
+    manifest_name = output_name or f"{variant}_manufacturing.json"
+    _validate_variant_export_names(variant, manifest_name)
     state = _load_state()
     _ensure_variant(state, variant)
-    get_config()
-    out_dir = _ensure_output_dir("variants")
-    manifest_path = _safe_variant_export_path(
-        out_dir, variant, output_name or f"{variant}_manufacturing.json"
+    cfg = get_config()
+    approval = ManufacturingApprovalService(
+        resolve_project_path=lambda path: cfg.resolve_within_project(path, allow_absolute=False)
+    ).authorize(
+        outcomes=_evaluate_project_gate(),
+        render_gate_report=lambda outcomes, summary: _render_project_gate_report(
+            outcomes, summary=summary
+        ),
+        approval_evidence_path=approval_evidence_path,
     )
+    if isinstance(approval, str):
+        return approval
+    evidence_path, evidence_payload = approval
+    out_dir = _ensure_output_dir("variants")
+    manifest_path = _safe_variant_export_path(out_dir, variant, manifest_name)
 
     is_default = variant == state.get("default_variant", "default")
     variant_args = [f"--variant={variant}"] if not is_default else []
@@ -608,6 +626,8 @@ def variant_export_manufacturing_package(
 
     manifest = {
         "variant": variant,
+        "approval_evidence_path": str(evidence_path),
+        "approval_evidence": evidence_payload,
         "artifacts": artifacts,
         "errors": errors,
         "component_count": len(rows),

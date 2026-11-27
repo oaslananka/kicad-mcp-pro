@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -20,6 +22,9 @@ def export_setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path,
     }
 
     class Config:
+        def resolve_within_project(self, path: str, *, allow_absolute: bool = False) -> Path:
+            return variants.resolve_under(tmp_path, path, allow_absolute=allow_absolute)
+
         def ensure_output_dir(self, subdir: str) -> Path:
             assert subdir == "variants"
             return out_dir
@@ -156,10 +161,29 @@ def test_manufacturing_export_writes_manifest_only_within_output_dir(
     export_setup: tuple[Path, dict], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     out_dir, _state = export_setup
+    project = out_dir.parents[1]
+    board = project / "board.kicad_pcb"
+    board.write_text("board", encoding="utf-8")
+    (project / "approval.json").write_text(
+        json.dumps(
+            {
+                "approved_by": "Test Reviewer",
+                "approved_at_utc": "2026-11-27T00:00:00Z",
+                "approval_scope": "manufacturing release",
+                "approved_project_files": [
+                    {"path": board.name, "sha256": hashlib.sha256(board.read_bytes()).hexdigest()}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("kicad_mcp.tools.validation._evaluate_project_gate", lambda: [])
     monkeypatch.setattr(
         export_support, "_run_cli_variants", lambda _commands: (1, "", "mocked CLI")
     )
-    result = variants.variant_export_manufacturing_package("default", "custom-manufacturing.json")
+    result = variants.variant_export_manufacturing_package(
+        "default", "custom-manufacturing.json", "approval.json"
+    )
     assert "custom-manufacturing.json" in result
     assert (out_dir / "custom-manufacturing.json").is_file()
     assert (out_dir / "default_bom.csv").is_file()
@@ -182,3 +206,61 @@ def test_bom_export_never_overwrites_external_symlink(
     with pytest.raises(UnsafePathError):
         variants.variant_export_bom("default")
     assert outside.read_text(encoding="utf-8") == "unchanged"
+
+
+def test_variant_manufacturing_requires_approval_before_artifacts(
+    export_setup: tuple[Path, dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out_dir, _ = export_setup
+    monkeypatch.setattr("kicad_mcp.tools.validation._evaluate_project_gate", lambda: [])
+    result = variants.variant_export_manufacturing_package("default")
+    assert "approval_evidence_path" in result
+    assert list(out_dir.iterdir()) == []
+
+
+def test_variant_manufacturing_rejects_changed_project_before_export(
+    export_setup: tuple[Path, dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out_dir, _ = export_setup
+    project = out_dir.parents[1]
+    board = project / "board.kicad_pcb"
+    board.write_text("changed", encoding="utf-8")
+    (project / "approval.json").write_text(
+        json.dumps(
+            {
+                "approved_by": "Test Reviewer",
+                "approved_at_utc": "2026-11-27T00:00:00Z",
+                "approval_scope": "manufacturing release",
+                "approved_project_files": [
+                    {"path": board.name, "sha256": hashlib.sha256(b"before").hexdigest()}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("kicad_mcp.tools.validation._evaluate_project_gate", lambda: [])
+    result = variants.variant_export_manufacturing_package(
+        "default", approval_evidence_path="approval.json"
+    )
+    assert "project file digest mismatch" in result
+    assert list(out_dir.iterdir()) == []
+
+
+def test_variant_manufacturing_rejects_failed_gate_before_approval(
+    export_setup: tuple[Path, dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    out_dir, _ = export_setup
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._evaluate_project_gate",
+        lambda: [SimpleNamespace(status="FAIL")],
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.validation._render_project_gate_report", lambda outcomes, summary: summary
+    )
+    result = variants.variant_export_manufacturing_package(
+        "default", approval_evidence_path="unreadable.json"
+    )
+    assert "hard-blocked until the full project quality gate passes" in result
+    assert list(out_dir.iterdir()) == []

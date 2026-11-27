@@ -42,7 +42,7 @@ def test_load_state_falls_back_to_sidecar_when_no_project_file(
     state = _load_state()
 
     assert state["active_variant"] == "default"
-    assert _variants_path().exists()
+    assert not _variants_path().exists()
 
 
 def test_project_state_from_payload_returns_none_for_incomplete_section() -> None:

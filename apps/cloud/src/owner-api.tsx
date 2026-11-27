@@ -1,4 +1,4 @@
-import {randomBytes,timingSafeEqual} from "node:crypto";
+import {createHash,randomBytes,timingSafeEqual} from "node:crypto";
 import {makeSignature} from "better-auth/crypto";
 import type {Pool} from "pg";
 import type {BrowserIdentity} from "./browser.js";
@@ -9,6 +9,7 @@ import type {DeviceManagementPort} from "./devices.js";
 import type {GrantManagement,BrowserGrantSummary} from "./grants.js";
 import type {PgUsage,UsageEvent} from "./usage.js";
 import {hashToken} from "./usage.js";
+import {PgPairingBudget} from "./pairing-budget.js";
 
 const OPAQUE_CHARS="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
 function validRequestId(value:unknown):value is string{
@@ -16,6 +17,11 @@ function validRequestId(value:unknown):value is string{
     [...value].every(char=>OPAQUE_CHARS.includes(char));
 }
 const TOKEN_PREFIX="kmpc1_";
+
+/** Public browser identifier is a one-way commitment to the CLI-only secret. */
+export function cliRequestId(cliSecret:string):string{
+  return createHash("sha256").update(cliSecret,"ascii").digest("base64url");
+}
 
 const ALLOWED_LABEL="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 ._()-";
 function validLabel(label:string):boolean{
@@ -41,7 +47,8 @@ function validUuid(value:unknown):value is string{
   return true;
 }
 const REQUEST_TTL_MS=10*60_000;
-const MAX_PENDING=50;
+const CLI_STARTS_PER_WINDOW=12;
+const CLI_PROTOCOL_VERSION=2;
 const MAX_POLLS=240;
 const TOKEN_TTL_DAYS=30;
 
@@ -49,45 +56,33 @@ export type DeviceConnectionLookup=(ownerSub:string,deviceId:string)=>boolean;
 
 /** Owns command-line pairing state and issued management tokens. */
 export class PgOwnerApiAccess {
-  constructor(private readonly pool:Pool){}
+  private readonly budget:PgPairingBudget;
+  constructor(private readonly pool:Pool,authSecret:string){
+    this.budget=new PgPairingBudget(pool,authSecret);
+  }
 
   /** A CLI-open request starts pending and anonymous; only browser approval
    * binds an owner, and only that approval can mint one token, once. */
-  async startRequest(requestId:string,label:string):Promise<boolean>{
-    if(!validRequestId(requestId)||!validLabel(label))return false;
-    const db=await this.pool.connect();
-    try{
-      await db.query("BEGIN");
-      // Bound the pending backlog so anonymous traffic cannot grow it forever.
-      await db.query(
-        "DELETE FROM owner_api_cli_requests WHERE state='pending' "+
-        "AND created_at < statement_timestamp() - interval '10 minutes'");
-      const backlog=await db.query<{n:string}>(
-        "SELECT count(*)::text AS n FROM owner_api_cli_requests WHERE state='pending'");
-      if(Number(backlog.rows[0]?.n??"0")>=MAX_PENDING){await db.query("ROLLBACK");return false;}
-      const inserted=await db.query(
-        "INSERT INTO owner_api_cli_requests(request_id,label,state) VALUES($1,$2,'pending') "+
-        "ON CONFLICT (request_id) DO NOTHING RETURNING request_id",[requestId,label]);
-      await db.query("COMMIT");
-      return inserted.rowCount===1;
-    }catch(error){
-      await db.query("ROLLBACK");
-      throw error;
-    }finally{db.release();}
+  async startRequest(requestId:string,label:string,source:string):Promise<boolean|"throttled">{
+    if(!validRequestId(requestId)||!validLabel(label)||!source||source.length>256)return false;
+    if(!await this.budget.take("owner-cli-start-source",source,CLI_STARTS_PER_WINDOW))
+      return "throttled";
+    const inserted=await this.pool.query(
+      "INSERT INTO owner_api_cli_requests(request_id,label,state) VALUES($1,$2,'pending') "+
+      "ON CONFLICT (request_id) DO NOTHING RETURNING request_id",[requestId,label]);
+    return inserted.rowCount===1;
   }
 
   async getRequest(requestId:string):Promise<{state:string;label:string}|null>{
     if(!validRequestId(requestId))return null;
-    const rows=await this.pool.query<{state:string;label:string;created_at:Date;poll_count:number}>(
-      "SELECT state,label,created_at,poll_count FROM owner_api_cli_requests "+
+    const rows=await this.pool.query<{state:string;label:string;created_at:Date;updated_at:Date;poll_count:number}>(
+      "SELECT state,label,created_at,updated_at,poll_count FROM owner_api_cli_requests "+
       "WHERE request_id=$1",[requestId]);
     const row=rows.rows[0];
     if(!row)return null;
-    if(row.state==="pending" &&
-       (Date.now()-row.created_at.getTime()>REQUEST_TTL_MS || row.poll_count>MAX_POLLS)){
-      await this.pool.query(
-        "UPDATE owner_api_cli_requests SET state='expired',updated_at=statement_timestamp() "+
-        "WHERE request_id=$1 AND state='pending'",[requestId]);
+    if((row.state==="pending" &&
+       (Date.now()-row.created_at.getTime()>REQUEST_TTL_MS || row.poll_count>=MAX_POLLS)) ||
+       (row.state==="approved" && Date.now()-row.updated_at.getTime()>REQUEST_TTL_MS)){
       return {state:"expired",label:row.label};
     }
     return {state:row.state,label:row.label};
@@ -100,25 +95,27 @@ export class PgOwnerApiAccess {
       "UPDATE owner_api_cli_requests SET owner_sub=$1,state='approved',updated_at=statement_timestamp() "+
       "WHERE request_id=$2 AND state='pending' "+
       "AND created_at >= statement_timestamp() - interval '10 minutes' "+
-      "RETURNING request_id",[ownerSub,requestId]);
+      "AND poll_count < $3 RETURNING request_id",[ownerSub,requestId,MAX_POLLS]);
     return rows.rowCount===1;
   }
 
   async countPoll(requestId:string):Promise<void>{
     await this.pool.query(
       "UPDATE owner_api_cli_requests SET poll_count=poll_count+1,updated_at=statement_timestamp() "+
-      "WHERE request_id=$1 AND state='pending'",[requestId]);
+      "WHERE request_id=$1 AND state='pending' AND poll_count < $2 "+
+      "AND created_at >= statement_timestamp() - interval '10 minutes'",[requestId,MAX_POLLS]);
   }
 
   /** Exactly one token is ever issued per approved request. */
-  async issueToken(requestId:string):Promise<{token:string;expiresAt:Date}|null>{
-    if(!validRequestId(requestId))return null;
+  async issueToken(cliSecret:string):Promise<{token:string;expiresAt:Date}|null>{
+    if(!validRequestId(cliSecret))return null;
+    const requestId=cliRequestId(cliSecret);
     const db=await this.pool.connect();
     try{
       await db.query("BEGIN");
       const request=await db.query<{owner_sub:string;label:string}>(
         "SELECT owner_sub,label FROM owner_api_cli_requests WHERE request_id=$1 AND state='approved' "+
-        "FOR UPDATE",[requestId]);
+        "AND updated_at >= statement_timestamp() - interval '10 minutes' FOR UPDATE",[requestId]);
       const row=request.rows[0];
       if(!row||!row.owner_sub){await db.query("ROLLBACK");return null;}
       const token=TOKEN_PREFIX+randomBytes(32).toString("base64url");
@@ -261,6 +258,7 @@ export type OwnerApiServices={
   grants?:GrantManagement;
   usage?:PgUsage;
   deviceConnection?:DeviceConnectionLookup;
+  requestSource?:string|null;
 };
 
 /**
@@ -277,17 +275,20 @@ export async function ownerApiResponse(request:Request,origin:string,
       return apiError(415,"unsupported_media_type");
     const body=await readJson(request,256);
     if(!body)return apiError(400,"invalid_request");
-    if(Object.keys(body).length!==2||
-       !["requestId","label"].every(key=>Object.hasOwn(body,key)))
+    if(body.protocolVersion!==CLI_PROTOCOL_VERSION)return apiError(426,"cli_upgrade_required");
+    if(Object.keys(body).length!==3||
+       !["requestId","label","protocolVersion"].every(key=>Object.hasOwn(body,key)))
       return apiError(400,"invalid_request");
     const {requestId,label}=body;
     if(typeof requestId!=="string"||!validRequestId(requestId))
       return apiError(400,"invalid_request");
     const safeLabel=sanitizedLabel(label);
     if(!safeLabel)return apiError(400,"invalid_request");
-    let started:boolean;
-    try{started=await ownerApi.startRequest(requestId,safeLabel);}
+    if(!services.requestSource)return apiError(403,"source_not_allowed");
+    let started:boolean|"throttled";
+    try{started=await ownerApi.startRequest(requestId,safeLabel,services.requestSource);}
     catch{return apiError(503,"unavailable");}
+    if(started==="throttled")return apiError(429,"rate_limited");
     if(!started)return apiError(409,"request_conflict");
     return jsonBody({status:"pending",
       approveUrl:origin+"/api/owner/cli/approve?request_id="+encodeURIComponent(requestId)});
@@ -296,10 +297,12 @@ export async function ownerApiResponse(request:Request,origin:string,
     if(request.headers.get("content-type")?.split(";")[0]?.trim()!=="application/json")
       return apiError(415,"unsupported_media_type");
     const body=await readJson(request,128);
-    if(!body||Object.keys(body).length!==1||typeof body.requestId!=="string"||
-       !validRequestId(body.requestId))
+    if(!body)return apiError(400,"invalid_request");
+    if(body.protocolVersion!==CLI_PROTOCOL_VERSION)return apiError(426,"cli_upgrade_required");
+    if(Object.keys(body).length!==2||!validRequestId(body.cliSecret))
       return apiError(400,"invalid_request");
-    const requestId=body.requestId;
+    const cliSecret=body.cliSecret;
+    const requestId=cliRequestId(cliSecret);
     let state:{state:string;label:string}|null;
     try{
       state=await ownerApi.getRequest(requestId);
@@ -308,7 +311,7 @@ export async function ownerApiResponse(request:Request,origin:string,
     if(!state)return apiError(404,"unknown_request");
     if(state.state==="approved"){
       let issued:{token:string;expiresAt:Date}|null;
-      try{issued=await ownerApi.issueToken(requestId);}
+      try{issued=await ownerApi.issueToken(cliSecret);}
       catch{return apiError(503,"unavailable");}
       if(issued)return jsonBody({status:"approved",token:issued.token,
         expiresAt:issued.expiresAt.toISOString()});

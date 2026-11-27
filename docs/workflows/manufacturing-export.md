@@ -112,9 +112,10 @@ approval evidence JSON file is supplied via `approval_evidence_path`. That file 
 include `approved_by`, `approved_at_utc`, `approval_scope`, and `approved_project_files`:
 an array of project-relative `path` and lowercase hexadecimal `sha256` pairs,
 sorted by path, covering all project schematic, PCB, project and design-rule
-files and the project specification when present. The reviewer must approve those
+files, the project specification and the variant sidecar when present. The reviewer must approve those
 exact bytes; any added, removed or modified file invalidates that approval.
-Older unbound approvals must be replaced with a fresh review. The export writes a
+Older unbound approvals must be replaced with a fresh review. The legacy
+variant package tool also requires this evidence and the same project gate. The export writes a
 `manufacturing_release_report.json` that links the approval evidence, quality-gate
 outcomes, exported Gerber/drill/BOM/PnP/IPC artifacts, file sizes, and SHA256 hashes.
 Direct `export_*()` tools do not enforce the full gate or approval evidence — use

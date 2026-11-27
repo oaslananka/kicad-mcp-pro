@@ -8,6 +8,7 @@ POSIX registry. No redirect follows an Authorization header.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -223,10 +224,22 @@ def _open_owner_approval(url: str, no_browser: bool) -> None:
     print("Open the link above to continue.")
 
 
-def _await_owner_cli_approval(api: CloudOwnerApi, request_id: str, timeout_seconds: int) -> None:
+def _cli_request_id(cli_secret: str) -> str:
+    return (
+        base64.urlsafe_b64encode(hashlib.sha256(cli_secret.encode("ascii")).digest())
+        .decode("ascii")
+        .rstrip("=")
+    )
+
+
+def _await_owner_cli_approval(api: CloudOwnerApi, cli_secret: str, timeout_seconds: int) -> None:
     deadline = time.monotonic() + min(600, max(1, timeout_seconds))
     while time.monotonic() < deadline:
-        state = api.request("POST", "/api/owner/cli/poll", payload={"requestId": request_id})
+        state = api.request(
+            "POST",
+            "/api/owner/cli/poll",
+            payload={"cliSecret": cli_secret, "protocolVersion": 2},
+        )
         status = state.get("status")
         if status == "approved":
             token = state.get("token")
@@ -239,7 +252,7 @@ def _await_owner_cli_approval(api: CloudOwnerApi, request_id: str, timeout_secon
             raise CloudManagementError("Cloud approval was not completed. Start a new login.")
         if status != "pending":
             raise CloudManagementError("Unexpected Cloud approval state.")
-        time.sleep(2)
+        time.sleep(3)
     raise CloudManagementError("Cloud approval timed out. Start a new login.")
 
 
@@ -267,16 +280,19 @@ def authorize(
     if current:
         _verify_existing_owner_access(api, current)
         return
-    request_id = secrets.token_urlsafe(32)
-    if not _REQUEST_ID.fullmatch(request_id):
+    cli_secret = secrets.token_urlsafe(32)
+    if not _REQUEST_ID.fullmatch(cli_secret):
         raise CloudManagementError("Could not create a Cloud approval request.")
+    request_id = _cli_request_id(cli_secret)
     hostname = label if label is not None else socket.gethostname()
     safe_label = re.sub(r"[^A-Za-z0-9 ._()-]", "", hostname)[:64].strip() or "My computer"
     started = api.request(
-        "POST", "/api/owner/cli/start", payload={"requestId": request_id, "label": safe_label}
+        "POST",
+        "/api/owner/cli/start",
+        payload={"requestId": request_id, "label": safe_label, "protocolVersion": 2},
     )
     expected_url = api.origin + "/api/owner/cli/approve?request_id=" + request_id
     if started.get("status") != "pending" or started.get("approveUrl") != expected_url:
         raise CloudManagementError("Cloud returned an untrusted approval destination.")
     _open_owner_approval(expected_url, no_browser)
-    _await_owner_cli_approval(api, request_id, timeout_seconds)
+    _await_owner_cli_approval(api, cli_secret, timeout_seconds)

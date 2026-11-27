@@ -76,6 +76,11 @@ while the operating mode still blocks unsafe calls.
 | `manufacturing` | `readonly` plus manufacturing package and handoff workflows. General schematic/PCB write tools stay hidden. |
 | `experimental` | Full opt-in surface including write, manufacturing, routing, tuning, and unstable tools. |
 
+Fabrication exports (Gerber, drill, IPC-2581, ODB++, pick-and-place, GenCAD and
+IPC-D-356) require manufacturing or experimental mode. Source-safe BOM, netlist
+and PDF inspection remain available in readonly mode. Both manufacturing package
+entry points additionally require a passing project gate and bound human approval.
+
 Equivalent CLI usage:
 
 ```bash

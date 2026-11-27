@@ -12,14 +12,17 @@ const BATCH_SIZE=100;
 export type RetentionTable=
   "connector_sessions"|"device_handshake_challenges"|"pairing_challenges"|
   "pairing_review_budget"|"pairing_device_budget"|
-  "connector_write_proof_reservations";
+  "connector_write_proof_reservations"|"owner_api_cli_requests"|"owner_api_tokens"|"usage_tool_calls";
 const ORDER:readonly RetentionTable[]=[
   "connector_write_proof_reservations",
   "connector_sessions",
   "device_handshake_challenges",
   "pairing_challenges",
   "pairing_review_budget",
-  "pairing_device_budget"
+  "pairing_device_budget",
+  "owner_api_cli_requests",
+  "owner_api_tokens",
+  "usage_tool_calls"
 ];
 const PAIRING_GRACE="30 days";
 const BUDGET_GRACE="24 hours";
@@ -33,6 +36,18 @@ export type RetentionSummary={
 };
 
 function selection(table:RetentionTable):{key:string;condition:string}{
+  if(table==="owner_api_cli_requests")return {
+    key:"request_id",
+    condition:"updated_at < statement_timestamp() - interval '30 days 10 minutes'"
+  };
+  if(table==="owner_api_tokens")return {
+    key:"token_hash",
+    condition:"LEAST(expires_at,COALESCE(revoked_at,expires_at)) < statement_timestamp() - interval '30 days'"
+  };
+  if(table==="usage_tool_calls")return {
+    key:"id",
+    condition:"occurred_at < statement_timestamp() - interval '365 days'"
+  };
   if(table==="connector_write_proof_reservations")return {
     key:"request_id",
     condition:"expires_at < statement_timestamp() - interval '"+BUDGET_GRACE+"'"

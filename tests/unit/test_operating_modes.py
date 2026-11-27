@@ -187,3 +187,31 @@ def test_experimental_cli_flag_is_explicit_mode_opt_in(monkeypatch) -> None:
 
     assert os.environ["KICAD_MCP_ENABLE_EXPERIMENTAL_TOOLS"] == "true"
     assert os.environ["KICAD_MCP_OPERATING_MODE"] == "experimental"
+
+
+def test_variant_manufacturing_requires_manufacturing_mode() -> None:
+    name = "variant_export_manufacturing_package"
+    assert tool_required_mode(name) is OperatingMode.MANUFACTURING
+    assert not is_tool_allowed_in_mode(name, OperatingMode.READONLY)
+    assert not is_tool_allowed_in_mode(name, OperatingMode.WRITE)
+    assert is_tool_allowed_in_mode(name, OperatingMode.MANUFACTURING)
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "export_gerber",
+        "export_gerbers",
+        "export_drill",
+        "export_ipc2581",
+        "export_odb",
+        "export_pick_and_place",
+        "export_gencad",
+        "export_ipc_d356",
+    ],
+)
+def test_fabrication_artifacts_require_manufacturing_mode(name: str) -> None:
+    assert tool_required_mode(name) is OperatingMode.MANUFACTURING
+    assert not is_tool_allowed_in_mode(name, OperatingMode.READONLY)
+    assert not is_tool_allowed_in_mode(name, OperatingMode.WRITE)
+    assert is_tool_allowed_in_mode(name, OperatingMode.MANUFACTURING)

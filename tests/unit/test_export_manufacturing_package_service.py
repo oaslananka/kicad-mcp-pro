@@ -448,3 +448,23 @@ async def test_ordinary_approval_requires_bound_state(tmp_path: Path) -> None:
     result, _, _ = await _run_export(service, approval_evidence_path="approval.json")
     assert "requires bound project state evidence" in result
     assert all(not calls[name] for name in ("gerber", "drill", "bom", "pick", "ipc", "odb"))
+
+
+@pytest.mark.anyio
+async def test_manufacturing_approval_rejects_changed_variant_sidecar(tmp_path: Path) -> None:
+    service, calls, _ = _service(tmp_path)
+    board = tmp_path / "board.kicad_pcb"
+    board.write_text("board", encoding="utf-8")
+    sidecar = tmp_path / ".kicad-mcp" / "variants.json"
+    sidecar.parent.mkdir()
+    sidecar.write_text("changed", encoding="utf-8")
+    payload = _approval_payload() | {
+        "approved_project_files": [
+            {"path": ".kicad-mcp/variants.json", "sha256": hashlib.sha256(b"before").hexdigest()},
+            {"path": "board.kicad_pcb", "sha256": hashlib.sha256(board.read_bytes()).hexdigest()},
+        ]
+    }
+    (tmp_path / "approval.json").write_text(json.dumps(payload), encoding="utf-8")
+    result, _, _ = await _run_export(service, approval_evidence_path="approval.json")
+    assert "file digest mismatch" in result
+    assert not calls["gerber"]
