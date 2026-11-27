@@ -217,3 +217,27 @@ def test_setup_rejects_invalid_existing_mcp_namespace_without_overwrite(tmp_path
             registry_root=tmp_path / "registry",
         )
     assert config.read_text(encoding="utf-8") == content
+
+
+def test_zed_context_servers_roundtrip_preserves_other_entries(tmp_path) -> None:
+    from kicad_mcp.services.client_config import (
+        remove_client_config_entry,
+        write_client_config_safe,
+    )
+
+    config_path = tmp_path / "settings.json"
+    registry = tmp_path / "registry"
+    original = {"context_servers": {"other": {"command": "other"}}}
+    config_path.write_text(json.dumps(original), encoding="utf8")
+    result = write_client_config_safe(
+        "zed",
+        config_path,
+        {"context_servers": {"kicad-mcp-pro": {"url": "http://127.0.0.1:3334/mcp"}}},
+        registry_root=registry,
+    )
+    assert result.success
+    assert json.loads(config_path.read_text(encoding="utf8"))["context_servers"]["other"] == {
+        "command": "other"
+    }
+    assert remove_client_config_entry("zed", config_path, registry_root=registry)
+    assert json.loads(config_path.read_text(encoding="utf8")) == original

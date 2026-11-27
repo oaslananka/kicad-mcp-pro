@@ -11,7 +11,7 @@ from pathlib import Path
 from ..config import get_config
 from ..library_resolution import active_project_dir
 from ..utils.library_tables import lib_table_paths, parse_lib_table
-from ..utils.sexpr import _extract_block
+from ..utils.sexpr import _extract_block, _unescape_sexpr_string, iter_root_children
 
 _symbol_index: dict[str, dict[str, str]] | None = None
 _symbol_index_lock = threading.Lock()
@@ -39,6 +39,17 @@ def symbol_library_files() -> dict[str, Path]:
     return files
 
 
+_SEARCH_PROPERTY = re.compile(r'\(property\s+"(Description|ki_keywords)"\s+"((?:\\.|[^"\\])*)"')
+
+
+def _symbol_search_properties(block: str) -> dict[str, str]:
+    properties: dict[str, str] = {}
+    for kind, child in iter_root_children(block):
+        if kind == "property" and (match := _SEARCH_PROPERTY.match(child)):
+            properties[match.group(1)] = _unescape_sexpr_string(match.group(2))
+    return properties
+
+
 def build_symbol_index() -> dict[str, dict[str, str]]:
     """Build the in-memory search index from discoverable symbol libraries."""
     index: dict[str, dict[str, str]] = {}
@@ -47,26 +58,19 @@ def build_symbol_index() -> dict[str, dict[str, str]]:
             content = sym_file.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        for match in re.finditer(r'\(symbol\s+"([^"]+)"', content):
-            symbol_name = match.group(1)
-            if re.search(r"_\d+_\d+$", symbol_name):
+        for kind, block in iter_root_children(content):
+            if kind != "symbol":
                 continue
-            key = f"{library}:{symbol_name}"
-            description_match = re.search(
-                rf'\(symbol\s+"{re.escape(symbol_name)}".*?\(property\s+"Description"\s+"([^"]*)"',
-                content,
-                re.DOTALL,
-            )
-            keyword_match = re.search(
-                rf'\(symbol\s+"{re.escape(symbol_name)}".*?\(property\s+"ki_keywords"\s+"([^"]*)"',
-                content,
-                re.DOTALL,
-            )
-            index[key] = {
+            match = re.match(r'\(symbol\s+"((?:\\.|[^"\\])*)"', block)
+            if match is None:
+                continue
+            symbol_name = _unescape_sexpr_string(match.group(1))
+            properties = _symbol_search_properties(block)
+            index[f"{library}:{symbol_name}"] = {
                 "library": library,
                 "name": symbol_name,
-                "description": description_match.group(1) if description_match else "",
-                "keywords": keyword_match.group(1) if keyword_match else "",
+                "description": properties.get("Description", ""),
+                "keywords": properties.get("ki_keywords", ""),
             }
     return index
 

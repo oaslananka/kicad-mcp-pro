@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -67,9 +68,8 @@ class TestGenerateMcpConfig:
     def test_http_transport(self) -> None:
         result = _generate_mcp_config("streamable-http", 3334)
         mcp = result["mcpServers"]["kicad-mcp-pro"]
-        assert mcp["command"] == "uvx"
-        assert "streamable-http" in mcp["args"]
-        assert mcp["env"] == {}
+        assert mcp["url"] == "http://127.0.0.1:3334/mcp"
+        assert "command" not in mcp
 
     def test_stdio_transport(self) -> None:
         result = _generate_mcp_config("stdio", 3334)
@@ -78,7 +78,7 @@ class TestGenerateMcpConfig:
         assert "stdio" not in mcp["args"]  # stdio uses just the package name
 
     def test_custom_version(self) -> None:
-        result = _generate_mcp_config("streamable-http", 8080, version="4.0.0")
+        result = _generate_mcp_config("stdio", 8080, version="4.0.0")
         mcp = result["mcpServers"]["kicad-mcp-pro"]
         assert any("4.0.0" in arg for arg in mcp["args"])
 
@@ -153,13 +153,13 @@ class TestWriteMcpConfig:
 
 class TestWriteKicadMcpConfig:
     def test_writes_config(self, tmp_path: Path) -> None:
-        output = tmp_path / "kicad-mcp" / "config.json"
+        output = tmp_path / "kicad-mcp" / "config.toml"
         kicad_path = Path("/usr/local/bin/kicad-cli")  # noqa: S108
         result = _write_kicad_mcp_config(kicad_path, "streamable-http", 3334, output=output)
         assert result == output
         assert output.exists()
-        data = json.loads(output.read_text(encoding="utf-8"))
-        assert data["kicad_path"] == str(kicad_path)
+        data = tomllib.loads(output.read_text(encoding="utf-8"))
+        assert data["kicad_cli"] == str(kicad_path)
         assert data["transport"] == "streamable-http"
         assert data["port"] == 3334
 
@@ -167,12 +167,15 @@ class TestWriteKicadMcpConfig:
         # Point HOME at a temporary directory: the writer resolves its default
         # output through Path.home(), and a developer machine may already hold an
         # unrelated ~/.kicad-mcp whose contents break the cleanup below.
-        monkeypatch.setenv("HOME", str(tmp_path))
-        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        from kicad_mcp import config
+
+        monkeypatch.setattr(
+            config, "CONFIG_FILE", tmp_path / ".config" / "kicad-mcp-pro" / "config.toml"
+        )
 
         kicad_path = Path("/usr/local/bin/kicad-cli")  # noqa: S108
         result = _write_kicad_mcp_config(kicad_path, "stdio", 0)
-        expected = tmp_path / ".kicad-mcp" / "config.json"
+        expected = tmp_path / ".config" / "kicad-mcp-pro" / "config.toml"
         assert result == expected
         assert result.exists()
         result.unlink()
@@ -210,9 +213,9 @@ def test_run_wizard_yes_mode_writes_selected_client_and_summary(
 
     cli_init.run_wizard(yes=True, output=output)
 
-    payload = json.loads(output.read_text(encoding="utf-8"))
+    payload = tomllib.loads(output.read_text(encoding="utf-8"))
     assert payload == {
-        "kicad_path": str(kicad_path),
+        "kicad_cli": str(kicad_path),
         "transport": cli_init.TRANSPORT_STREAMABLE_HTTP,
         "port": 4444,
     }
@@ -255,8 +258,9 @@ def test_detect_kicad_interactive_manual_cancel(monkeypatch) -> None:
     monkeypatch.setattr(cli_init, "discover_kicad_cli", lambda: Path("/opt/kicad-cli"))
     monkeypatch.setattr(cli_init, "find_kicad_version", lambda path: "10.0.6")
     monkeypatch.setattr(cli_init.typer, "prompt", lambda *args, **kwargs: "")
+    monkeypatch.setattr(cli_init.typer, "confirm", lambda *args, **kwargs: False)
 
-    assert cli_init._detect_kicad_interactive(Console(), yes=True) is None
+    assert cli_init._detect_kicad_interactive(Console(), yes=False) is None
 
 
 def test_select_transport_interactive_yes_mode() -> None:
@@ -265,7 +269,7 @@ def test_select_transport_interactive_yes_mode() -> None:
     import kicad_mcp.cli_init as cli_init
 
     assert cli_init._select_transport_interactive(Console(), yes=True) == (
-        cli_init.TRANSPORT_STREAMABLE_HTTP,
+        cli_init.TRANSPORT_STDIO,
         cli_init.DEFAULT_HTTP_PORT,
     )
 
@@ -414,3 +418,84 @@ def test_run_wizard_warns_when_client_config_cannot_be_written(
     cli_init.run_wizard(yes=True, output=output)
 
     assert output.exists()
+
+
+def test_wizard_http_client_connects_to_selected_port() -> None:
+    snippet = _generate_mcp_config("streamable-http", 4444)
+    entry = snippet["mcpServers"]["kicad-mcp-pro"]
+    assert entry["url"] == "http://127.0.0.1:4444/mcp"
+    assert "command" not in entry
+
+
+def test_wizard_writes_actual_runtime_config_and_preserves_other_settings(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from kicad_mcp import config
+
+    target = tmp_path / "config.toml"
+    target.write_text(
+        'log_level = "DEBUG"\nport = 1234\n[unrelated]\nvalue = "keep"\n', encoding="utf8"
+    )
+    monkeypatch.setattr(config, "CONFIG_FILE", target)
+    _write_kicad_mcp_config(tmp_path / "kicad-cli", "streamable-http", 4444)
+    parsed = tomllib.loads(target.read_text(encoding="utf8"))
+    assert parsed["port"] == 4444
+    assert parsed["kicad_cli"] == str(tmp_path / "kicad-cli")
+    assert parsed["transport"] == "streamable-http"
+    assert parsed["log_level"] == "DEBUG"
+    assert parsed["unrelated"] == {"value": "keep"}
+
+
+def test_wizard_yes_uses_detected_cli_without_prompt(tmp_path: Path, monkeypatch) -> None:
+    from rich.console import Console
+
+    from kicad_mcp import cli_init
+
+    cli = tmp_path / "kicad-cli"
+    monkeypatch.setattr(cli_init, "discover_kicad_cli", lambda: cli)
+    monkeypatch.setattr(cli_init, "find_kicad_version", lambda _: "10.0.6")
+    monkeypatch.setattr(
+        cli_init.typer, "prompt", lambda *args, **kwargs: pytest.fail("unexpected prompt")
+    )
+    assert cli_init._detect_kicad_interactive(Console(), True) == cli
+
+
+@pytest.mark.parametrize(
+    "client,namespace,url_key",
+    [
+        ("cursor", "mcpServers", "url"),
+        ("vscode", "servers", "url"),
+        ("windsurf", "mcpServers", "serverUrl"),
+        ("zed", "context_servers", "url"),
+    ],
+)
+def test_http_client_uses_native_namespace_and_endpoint(
+    client: str, namespace: str, url_key: str
+) -> None:
+    snippet = _generate_mcp_config("streamable-http", 4444, client=client)
+    entry = snippet[namespace]["kicad-mcp-pro"]
+    assert entry[url_key] == "http://127.0.0.1:4444/mcp"
+    assert "command" not in entry
+
+
+def test_claude_desktop_rejects_http_local_launcher() -> None:
+    with pytest.raises(ValueError, match="requires stdio"):
+        _generate_mcp_config("streamable-http", 4444, client="claude-desktop")
+
+
+def test_wizard_does_not_overwrite_protected_http_configuration(tmp_path: Path) -> None:
+    target = tmp_path / "config.toml"
+    original = 'host = "0.0.0.0"\nport = 3334\n'
+    target.write_text(original, encoding="utf8")
+    with pytest.raises(ValueError, match="manual configuration"):
+        _write_kicad_mcp_config(tmp_path / "cli", "streamable-http", 4444, output=target)
+    assert target.read_text(encoding="utf8") == original
+
+
+def test_wizard_preserves_complex_toml_on_failure(tmp_path: Path) -> None:
+    target = tmp_path / "config.toml"
+    original = '"port" = 1234\nlog_level = "DEBUG"\n'
+    target.write_text(original, encoding="utf8")
+    with pytest.raises(ValueError):
+        _write_kicad_mcp_config(tmp_path / "cli", "streamable-http", 4444, output=target)
+    assert target.read_text(encoding="utf8") == original

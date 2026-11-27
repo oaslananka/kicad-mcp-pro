@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Iterator
+
 
 def _escape_sexpr_string(value: str) -> str:
     """Escape a Python string for inclusion in a KiCad S-expression."""
@@ -41,7 +44,8 @@ def _extract_block(content: str, start: int) -> tuple[str, int]:
     depth = 0
     in_string = False
     escaped = False
-    for index, char in enumerate(content[start:]):
+    for index in range(start, len(content)):
+        char = content[index]
         if in_string:
             if escaped:
                 escaped = False
@@ -56,8 +60,41 @@ def _extract_block(content: str, start: int) -> tuple[str, int]:
         elif char == ")":
             depth -= 1
             if depth == 0:
-                return content[start : start + index + 1], index + 1
+                return content[start : index + 1], index - start + 1
     return "", 0
+
+
+_HEAD = re.compile(r"[a-zA-Z0-9_-]+")
+
+
+def iter_root_children(content: str) -> Iterator[tuple[str, str]]:
+    """Yield immediate child blocks in one pass, ignoring quoted parentheses."""
+    depth = 0
+    in_string = False
+    escaped = False
+    start = 0
+    for index, char in enumerate(content):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "(":
+            if depth == 1:
+                start = index
+            depth += 1
+        elif char == ")":
+            if depth == 2:
+                head = _HEAD.match(content, start + 1)
+                if head is not None:
+                    yield head.group(), content[start : index + 1]
+            depth -= 1
+            if depth == 0:
+                return
 
 
 __all__ = [
@@ -65,4 +102,5 @@ __all__ = [
     "_extract_block",
     "_sexpr_string",
     "_unescape_sexpr_string",
+    "iter_root_children",
 ]

@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -53,17 +55,17 @@ MCP_CLIENT_CONFIGS: dict[str, dict[str, str]] = {
         "linux": "~/.config/Claude/claude_desktop_config.json",
     },
     CLIENT_CURSOR: {
-        "windows": "%APPDATA%\\Cursor\\User\\globalStorage\\cursor.mcp\\config.json",
+        "windows": "~/.cursor/mcp.json",
         "darwin": "~/.cursor/mcp.json",
         "linux": "~/.cursor/mcp.json",
     },
     CLIENT_VSCODE: {
-        "windows": "%APPDATA%\\Code\\User\\settings.json",
-        "darwin": "~/Library/Application Support/Code/User/settings.json",
-        "linux": "~/.config/Code/User/settings.json",
+        "windows": "%APPDATA%\\Code\\User\\mcp.json",
+        "darwin": "~/Library/Application Support/Code/User/mcp.json",
+        "linux": "~/.config/Code/User/mcp.json",
     },
     CLIENT_WINDSURF: {
-        "windows": "%APPDATA%\\Windsurf\\mcp_config.json",
+        "windows": "~/.codeium/windsurf/mcp_config.json",
         "darwin": "~/.codeium/windsurf/mcp_config.json",
         "linux": "~/.codeium/windsurf/mcp_config.json",
     },
@@ -128,23 +130,61 @@ def _generate_mcp_config(
     transport: str,
     port: int,
     version: str = __version__,
+    *,
+    client: str = CLIENT_CURSOR,
 ) -> dict[str, Any]:
-    """Generate the ``mcpServers`` snippet for a client config file."""
-    _ = port
+    """Generate a client-native launcher or endpoint, never HTTP over stdio."""
+    if transport not in {TRANSPORT_STDIO, TRANSPORT_STREAMABLE_HTTP}:
+        raise ValueError("Unsupported transport.")
+    if transport == TRANSPORT_STREAMABLE_HTTP and not 1 <= port <= 65535:
+        raise ValueError("HTTP port must be between 1 and 65535.")
+    if client == CLIENT_CLAUDE_DESKTOP and transport != TRANSPORT_STDIO:
+        raise ValueError("Claude Desktop local configuration requires stdio.")
+    namespace = {
+        CLIENT_VSCODE: "servers",
+        CLIENT_ZED: "context_servers",
+    }.get(client, "mcpServers")
+    entry: dict[str, Any]
     if transport == TRANSPORT_STDIO:
-        args: list[str] = [f"kicad-mcp-pro@{version}"]
-    else:
-        args = [f"kicad-mcp-pro@{version}", "--transport", transport]
-
-    return {
-        "mcpServers": {
-            "kicad-mcp-pro": {
-                "command": "uvx",
-                "args": args,
-                "env": {},
-            }
+        entry = {
+            "command": "uvx",
+            "args": [f"kicad-mcp-pro@{version}"],
+            "env": {"KICAD_MCP_TRANSPORT": "stdio"},
         }
-    }
+        if client == CLIENT_VSCODE:
+            entry["type"] = "stdio"
+    else:
+        endpoint = f"http://127.0.0.1:{port}/mcp"
+        entry = {"serverUrl" if client == CLIENT_WINDSURF else "url": endpoint}
+        if client in {CLIENT_VSCODE, CLIENT_CURSOR}:
+            entry["type"] = "http"
+    return {namespace: {"kicad-mcp-pro": entry}}
+
+
+def _merge_runtime_settings(existing: str, updates: dict[str, str | int]) -> str:
+    """Edit only simple root settings; prove all unrelated TOML values survive."""
+    before = tomllib.loads(existing)
+    rendered = existing
+    for key in updates:
+        # Complex spellings or multiline values are not rewritten. The
+        # semantic check below rejects duplicates or any collateral edit.
+        rendered = (
+            re.sub(
+                rf"(?m)^[ \t]*{re.escape(key)}[ \t]*=[^\r\n]*(?:\r?\n|$)",
+                "",
+                rendered,
+                count=1,
+            )
+            if key in before
+            else rendered
+        )
+    prefix = "".join(
+        f"{key} = {json.dumps(value, ensure_ascii=False)}\n" for key, value in updates.items()
+    )
+    merged = prefix + rendered
+    if tomllib.loads(merged) != {**before, **updates}:
+        raise ValueError("Existing config uses complex settings; edit the runtime TOML manually.")
+    return merged
 
 
 def _write_kicad_mcp_config(
@@ -153,18 +193,33 @@ def _write_kicad_mcp_config(
     port: int,
     output: Path | None = None,
 ) -> Path:
-    """Write ``~/.kicad-mcp/config.json`` with the wizard choices."""
-    config_path = output or (Path.home() / ".kicad-mcp" / "config.json")
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config = {
-        "kicad_path": str(kicad_path),
+    """Write the trusted TOML file actually read by KiCadMCPConfig."""
+    from kicad_mcp.config import CONFIG_FILE
+    from kicad_mcp.setup import _atomic_write_text
+
+    if transport not in {TRANSPORT_STDIO, TRANSPORT_STREAMABLE_HTTP}:
+        raise ValueError("Unsupported transport.")
+    if transport == TRANSPORT_STREAMABLE_HTTP and not 1 <= port <= 65535:
+        raise ValueError("HTTP port must be between 1 and 65535.")
+    config_path = (output or CONFIG_FILE).expanduser().resolve()
+    existing = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
+    before = tomllib.loads(existing)
+    if transport == TRANSPORT_STREAMABLE_HTTP and (
+        before.get("host", "127.0.0.1") not in {"127.0.0.1", "localhost"}
+        or before.get("mount_path", "/mcp") != "/mcp"
+        or before.get("http_boundary", "direct") != "direct"
+        or before.get("tls_cert_file")
+        or before.get("auth_token")
+    ):
+        raise ValueError("Existing protected/custom HTTP settings require manual configuration.")
+    updates: dict[str, str | int] = {
+        "kicad_cli": str(kicad_path),
         "transport": transport,
-        "port": port,
+        "port": port if transport != TRANSPORT_STDIO else DEFAULT_HTTP_PORT,
     }
-    config_path.write_text(
-        json.dumps(config, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    merged = _merge_runtime_settings(existing, updates)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write_text(config_path, merged)
     return config_path
 
 
@@ -204,7 +259,12 @@ def run_wizard(
 
     # ── 4. Config uret ve yaz ────────────────────────────────────
     console.print("\n[bold]4/4 — Config File[/bold]")
-    snippet = _generate_mcp_config(transport, port)
+    try:
+        snippet = _generate_mcp_config(transport, port, client=client)
+        kicad_config_path = _write_kicad_mcp_config(kicad_path, transport, port, output)
+    except (OSError, ValueError) as exc:
+        console.print(f"  [red]Setup could not save configuration: {exc}[/red]")
+        raise typer.Exit(1) from exc
 
     json_syntax = Syntax(
         json.dumps(snippet, indent=2, ensure_ascii=False),
@@ -225,8 +285,6 @@ def run_wizard(
             else:
                 console.print("  [yellow]Config file not found, please copy manually.[/yellow]")
 
-    # Write ~/.kicad-mcp/config.json
-    kicad_config_path = _write_kicad_mcp_config(kicad_path, transport, port, output)
     console.print(f"  [green]kicad-mcp-pro config:[/green] {kicad_config_path}")
 
     # ── 5. Summary ───────────────────────────────────────────────
@@ -246,7 +304,9 @@ def run_wizard(
         Panel.fit(
             "[bold green]Setup completed![/bold green]\n\n"
             "To start:\n"
-            f"  [cyan]kicad-mcp-pro serve --transport {transport}[/cyan]\n\n"
+            f"  [cyan]kicad-mcp-pro serve --transport {transport}"
+            + (f" --host 127.0.0.1 --port {port}" if transport == TRANSPORT_STREAMABLE_HTTP else "")
+            + "[/cyan]\n\n"
             "For tray app:\n"
             "  [cyan]kicad-mcp-pro tray[/cyan]",
             border_style="green",
@@ -262,12 +322,13 @@ def _detect_kicad_interactive(console: Console, yes: bool) -> Path | None:
         version = find_kicad_version(cli_path)
         if version:
             console.print(f"  [green]Found KiCad {version}:[/green] {cli_path}")
-            if not yes:
-                confirm = typer.confirm("  Use this path?", default=True)
-                if confirm:
-                    return cli_path
+            if yes or typer.confirm("  Use this path?", default=True):
+                return cli_path
     except Exception:
         console.print("  [yellow]KiCad not found automatically.[/yellow]")
+
+    if yes:
+        return None
 
     # Manual entry
     while True:
@@ -283,15 +344,13 @@ def _detect_kicad_interactive(console: Console, yes: bool) -> Path | None:
 def _select_transport_interactive(console: Console, yes: bool) -> tuple[str, int]:
     """Step 2: choose transport and port."""
     if yes:
-        return TRANSPORT_STREAMABLE_HTTP, DEFAULT_HTTP_PORT
+        return TRANSPORT_STDIO, DEFAULT_HTTP_PORT
 
-    console.print(
-        f"  1) {TRANSPORT_STREAMABLE_HTTP} (Recommended) — Claude Desktop, Cursor, Windsurf"
-    )
-    console.print(f"  2) {TRANSPORT_STDIO} — Terminal-based clients only")
+    console.print(f"  1) {TRANSPORT_STREAMABLE_HTTP} - local HTTP endpoint")
+    console.print(f"  2) {TRANSPORT_STDIO} (Recommended) - client-managed process")
 
-    choice = typer.prompt("  Choice", default="1")
-    transport = TRANSPORT_STREAMABLE_HTTP if choice.strip() in ("1", "") else TRANSPORT_STDIO
+    choice = typer.prompt("  Choice", default="2")
+    transport = TRANSPORT_STREAMABLE_HTTP if choice.strip() == "1" else TRANSPORT_STDIO
 
     port = DEFAULT_HTTP_PORT
     if transport == TRANSPORT_STREAMABLE_HTTP:

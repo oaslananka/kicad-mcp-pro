@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 
 # nosemgrep: python37-compatibility-importlib2
 from importlib import resources
@@ -19,17 +18,17 @@ from ..config import get_config
 from ..connection import KiCadConnectionError, get_board
 from ..discovery import get_cli_capabilities
 from ..models.verdict import Verdict, VerdictReport
-from ..utils.sexpr import _extract_block
 from ..utils.units import nm_to_mm
 from ..validation import drc_runner
 from ..validation.drc_report import courtyard_violations, report_entries
+from .board_file import _edge_cuts_bounds
 from .export_support import _ensure_output_dir, _get_pcb_file, _run_cli_variants
 from .metadata import headless_compatible
 from .pth_annular_audit import audit_pth_annular_ring_lines
 
 logger = structlog.get_logger(__name__)
 DEFAULT_PROFILE = ("JLCPCB", "standard")
-FLOAT_PATTERN = r"-?\d+(?:\.\d+)?"
+_outline_bounds_mm = _edge_cuts_bounds
 
 
 class _BoardMetricsLike(Protocol):
@@ -147,38 +146,6 @@ def _run_drc_report(report_name: str) -> tuple[Path, dict[str, Any] | None, str 
     )
     path, report, error = result.as_legacy_tuple()
     return path, cast(dict[str, Any] | None, report), error
-
-
-def _outline_bounds_mm(content: str) -> tuple[float, float, float, float] | None:
-    xs: list[float] = []
-    ys: list[float] = []
-    cursor = 0
-    while cursor < len(content):
-        next_line = content.find("(gr_line", cursor)
-        next_rect = content.find("(gr_rect", cursor)
-        indices = [index for index in (next_line, next_rect) if index != -1]
-        if not indices:
-            break
-        start = min(indices)
-        block, length = _extract_block(content, start)
-        if not block:
-            break
-        cursor = start + length
-        if '(layer "Edge.Cuts")' not in block:
-            continue
-        match = re.search(
-            rf"\(start\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\).*?"
-            rf"\(end\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\)",
-            block,
-            re.DOTALL,
-        )
-        if match is None:
-            continue
-        xs.extend([float(match.group(1)), float(match.group(3))])
-        ys.extend([float(match.group(2)), float(match.group(4))])
-    if not xs or not ys:
-        return None
-    return min(xs), min(ys), max(xs), max(ys)
 
 
 def _board_outline_area_cm2() -> tuple[float | None, float | None, float | None]:

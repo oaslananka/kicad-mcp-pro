@@ -420,7 +420,6 @@ def test_windows_connector_enable_rejects_before_creating_enabled_marker(
 
 def test_inspect_uses_local_tcp_and_does_not_open_external_website(monkeypatch) -> None:
     import socket
-    import subprocess
     import webbrowser
     from unittest.mock import MagicMock
 
@@ -434,10 +433,9 @@ def test_inspect_uses_local_tcp_and_does_not_open_external_website(monkeypatch) 
     child.poll.return_value = 0
     child.wait.return_value = 0
     popen = MagicMock(return_value=child)
-    monkeypatch.setattr(subprocess, "Popen", popen)
+    monkeypatch.setattr(server.subprocess, "Popen", popen)
     browser = MagicMock()
     monkeypatch.setattr(webbrowser, "open", browser)
-    monkeypatch.setattr(server.shutil, "which", lambda _: None)
     result = CliRunner().invoke(app, ["inspect"])
     assert result.exit_code == 0, result.output
     socket_factory.assert_called_once_with(socket.AF_INET, socket.SOCK_STREAM)
@@ -450,9 +448,8 @@ def test_inspect_uses_local_tcp_and_does_not_open_external_website(monkeypatch) 
     )
 
 
-def test_inspect_launches_installed_local_inspector_and_cleans_up(monkeypatch) -> None:
+def test_inspect_stops_server_when_interrupted(monkeypatch) -> None:
     import socket
-    import subprocess
     from unittest.mock import MagicMock
 
     from kicad_mcp import server
@@ -462,16 +459,9 @@ def test_inspect_launches_installed_local_inspector_and_cleans_up(monkeypatch) -
     monkeypatch.setattr(socket, "socket", MagicMock(return_value=sock))
     child = MagicMock()
     child.poll.return_value = None
-    child.wait.return_value = 0
-    monkeypatch.setattr(subprocess, "Popen", MagicMock(return_value=child))
-    run = MagicMock(return_value=MagicMock(returncode=0))
-    monkeypatch.setattr(subprocess, "run", run)
-    monkeypatch.setattr(server.shutil, "which", lambda _: "local-inspector")
+    child.wait.side_effect = [KeyboardInterrupt, 0]
+    monkeypatch.setattr(server.subprocess, "Popen", MagicMock(return_value=child))
     result = CliRunner().invoke(app, ["inspect", "--port", "45678"])
     assert result.exit_code == 0, result.output
     sock.bind.assert_called_once_with(("127.0.0.1", 45678))
-    run.assert_called_once_with(
-        ["local-inspector", "--transport", "http", "--server-url", "http://127.0.0.1:45678/mcp"],
-        check=False,
-    )
     child.terminate.assert_called_once()

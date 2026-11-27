@@ -282,6 +282,14 @@ fallback before a project is selected.
 ### Local MCP Inspector
 
 Run `kicad-mcp-pro inspect` to start a loopback-only Streamable HTTP server.
-If the official `mcp-inspector` command is installed, the CLI opens it;
-otherwise it prints the local Inspector command for a separate terminal.
+The CLI prints the official local Inspector command for a separate terminal.
+This keeps package installation and execution an explicit operator choice.
 The server does not grant a public Inspector origin access to local MCP.
+
+### Interactive setup
+
+`kicad-mcp-pro init --interactive` stores the selected CLI path, transport and port
+in the trusted runtime TOML file above. Existing unrelated settings are preserved;
+complex or protected HTTP configurations require manual editing. Stdio is the
+recommended local client transport. For HTTP clients, start the loopback server
+using the command shown by the wizard before connecting to the selected endpoint.

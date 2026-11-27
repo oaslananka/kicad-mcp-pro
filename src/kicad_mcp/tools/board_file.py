@@ -10,7 +10,7 @@ from typing import Any
 
 from ..file_formats import GENERATED_SEXPR_DIALECT_VERSION
 from ..utils import telemetry as otel
-from ..utils.sexpr import _extract_block
+from ..utils.sexpr import _extract_block, iter_root_children
 
 BOARD_FILE_VERSION = GENERATED_SEXPR_DIALECT_VERSION
 FLOAT_PATTERN = r"-?\d+(?:\.\d+)?"
@@ -351,14 +351,21 @@ def _parse_board_footprint_blocks(content: str) -> dict[str, dict[str, Any]]:
 def _edge_cuts_bounds(content: str) -> tuple[float, float, float, float] | None:
     xs: list[float] = []
     ys: list[float] = []
-    patterns = [
-        rf"\(gr_line\s+\(start\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\)\s+\(end\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\).*?\(layer\s+\"Edge\.Cuts\"\)",
-        rf"\(gr_rect\s+\(start\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\)\s+\(end\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\).*?\(layer\s+\"Edge\.Cuts\"\)",
-    ]
-    for pattern in patterns:
-        for match in re.finditer(pattern, content, flags=re.DOTALL):
-            xs.extend([float(match.group(1)), float(match.group(3))])
-            ys.extend([float(match.group(2)), float(match.group(4))])
+    for kind, block in iter_root_children(content):
+        if kind not in {"gr_line", "gr_rect"}:
+            continue
+        fields = dict(iter_root_children(block))
+        if not re.fullmatch(r'\(layer\s+"Edge\.Cuts"\s*\)', fields.get("layer", "")):
+            continue
+        start = re.fullmatch(
+            rf"\(start\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\s*\)", fields.get("start", "")
+        )
+        end = re.fullmatch(
+            rf"\(end\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\s*\)", fields.get("end", "")
+        )
+        if start is not None and end is not None:
+            xs.extend([float(start.group(1)), float(end.group(1))])
+            ys.extend([float(start.group(2)), float(end.group(2))])
     if not xs or not ys:
         return None
     return min(xs), min(ys), max(xs), max(ys)

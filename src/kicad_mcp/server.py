@@ -3985,25 +3985,16 @@ def inspect_command(
     )
 
     endpoint = f"http://127.0.0.1:{server_port}/mcp"
-    inspector_args = ["--transport", "http", "--server-url", endpoint]
     try:
-        # The official local Inspector uses its own local proxy; never add a
-        # public browser origin to the server or download executable code here.
-        inspector = shutil.which("mcp-inspector")
-        if inspector:
-            result = subprocess.run([inspector, *inspector_args], check=False)
-            if result.returncode:
-                raise typer.Exit(result.returncode)
-        else:
-            typer.echo(
-                "Open the official local MCP Inspector in another terminal:\n"
-                f"  npx @modelcontextprotocol/inspector --transport http --server-url {endpoint}",
-                err=True,
-            )
-            typer.echo("Press Ctrl+C to stop the local server.", err=True)
-            exit_code = server_proc.wait()
-            if exit_code:
-                raise typer.Exit(exit_code)
+        typer.echo(
+            "Open the official local MCP Inspector in another terminal:\n"
+            f"  npx @modelcontextprotocol/inspector --transport http --server-url {endpoint}",
+            err=True,
+        )
+        typer.echo("Press Ctrl+C to stop the local server.", err=True)
+        exit_code = server_proc.wait()
+        if exit_code:
+            raise typer.Exit(exit_code)
     except KeyboardInterrupt:
         pass
     finally:
