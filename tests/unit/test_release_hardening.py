@@ -1198,7 +1198,8 @@ async def test_export_manufacturing_package_accepts_explicit_variant(
             output_path.write_text("generated\n", encoding="utf-8")
         else:
             output_path.mkdir(parents=True, exist_ok=True)
-            (output_path / "board-F_Cu.gbr").write_text("gerber\n", encoding="utf-8")
+            name = "board.drl" if command[2] == "drill" else "board-F_Cu.gbr"
+            (output_path / name).write_text("fabrication\n", encoding="utf-8")
         return 0, "", ""
 
     monkeypatch.setattr(

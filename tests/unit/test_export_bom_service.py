@@ -108,7 +108,6 @@ def test_csv_single_schematic_preserves_cli_fallbacks_variant_and_preview(tmp_pa
                 "--format-preset",
                 "CSV",
             ],
-            ["sch", "export", "python-bom", "--output", str(out_file), str(sch)],
         ]
     ]
     assert preview_calls == [out_file]
@@ -165,7 +164,7 @@ def test_csv_multi_schematic_preserves_consolidated_writer_and_skips_cli(tmp_pat
         tmp_path, schematic_files=sheets, rows=rows
     )
 
-    result = service.export(format="csv", variant_name="assembly-a")
+    result = service.export(format="csv")
 
     out_file = out_dir / "bom.csv"
     text = out_file.read_text(encoding="utf-8")
@@ -173,7 +172,7 @@ def test_csv_multi_schematic_preserves_consolidated_writer_and_skips_cli(tmp_pat
     assert "R1,10k,R_0805,Device:R,C1,MPN1,Maker1," in text
     assert "C1,100n,C_0805,Device:C,C2,MPN2,Maker2,DNP" in text
     assert cli.calls == []
-    assert variant_args.calls == []
+    assert variant_args.calls == [None]
     assert preview_calls == [out_file]
     assert result.startswith(
         f"BOM exported to {out_file}\nConsolidated 2 reference(s) from 2 schematic files.\n\n"
@@ -195,11 +194,11 @@ def test_csv_multi_schematic_preserves_consolidation_failure_messages(
 
     assert service.export() == f"BOM export failed: {error}"
     assert cli.calls == []
-    assert variant_args.calls == []
+    assert variant_args.calls == [None]
     assert preview_calls == []
 
 
-def test_cli_failure_only_fails_when_output_file_is_absent(tmp_path: Path) -> None:
+def test_cli_failure_is_not_success_even_with_existing_output(tmp_path: Path) -> None:
     service, _out_dir, _sch, _cli, _variant_args, _preview_calls = _service(
         tmp_path, cli_result=(2, "", "cli failed")
     )
@@ -209,7 +208,7 @@ def test_cli_failure_only_fails_when_output_file_is_absent(tmp_path: Path) -> No
         tmp_path, cli_result=(2, "", "cli failed")
     )
     (out_dir / "bom.csv").write_text("cached\n", encoding="utf-8")
-    assert service.export() == f"BOM exported to {out_dir / 'bom.csv'}\n\ncached\n"
+    assert service.export() == "BOM export failed: cli failed"
 
 
 def test_export_preserves_pydantic_format_validation(tmp_path: Path) -> None:
@@ -217,3 +216,15 @@ def test_export_preserves_pydantic_format_validation(tmp_path: Path) -> None:
 
     with pytest.raises(ValidationError):
         service.export(format="json")
+
+
+def test_explicit_variant_does_not_fall_back_to_unqualified_bom(tmp_path: Path) -> None:
+    service, _, _, cli, _, _ = _service(
+        tmp_path,
+        schematic_files=[tmp_path / "root.kicad_sch", tmp_path / "child.kicad_sch"],
+        cli_result=(1, "", "variant unavailable"),
+    )
+    result = service.export(variant_name="assembly-a")
+    assert result == "BOM export failed: variant unavailable"
+    assert cli.calls
+    assert all("--variant" in command for command in cli.calls[0])

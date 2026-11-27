@@ -12,6 +12,9 @@ from typing import Any
 
 import anyio
 
+from ..utils.metadata_write import atomic_metadata_write
+from .inventory import discover_drill_output_files, discover_gerber_output_files
+
 GateEvaluator = Callable[[], list[Any]]
 GateRenderer = Callable[[list[Any], str], str]
 ProgressReporter = Callable[[int, int, str], Awaitable[None]]
@@ -196,6 +199,16 @@ class ManufacturingApprovalService:
 
 
 @dataclass(frozen=True)
+class _PackageStep:
+    kind: str
+    export: VariantExport
+    success: str
+    progress: int | None = None
+    message: str = ""
+    unsupported: str = ""
+
+
+@dataclass(frozen=True)
 class ExportManufacturingPackageService(ManufacturingApprovalService):
     """Generate a gated manufacturing handoff without depending on MCP types."""
 
@@ -228,41 +241,176 @@ class ExportManufacturingPackageService(ManufacturingApprovalService):
             return evidence
         evidence_path, evidence_payload = evidence
 
-        await report_progress(25, 100, "Exporting Gerbers...")
-        results = [
-            await anyio.to_thread.run_sync(lambda: self.export_gerber(variant_name)),
+        root = self.ensure_output_dir()
+        lock = root / ".manufacturing-package-in-progress"
+        try:
+            lock.mkdir()
+        except FileExistsError:
+            return "Manufacturing package export blocked: an existing export lock is present."
+        try:
+            return await self._export_approved(
+                root,
+                variant_name,
+                evidence_path,
+                evidence_payload,
+                outcomes,
+                approval_evidence_path,
+                render_gate_report,
+                report_progress,
+            )
+        finally:
+            lock.rmdir()
+
+    @staticmethod
+    def _existing_outputs(root: Path) -> bool:
+        for name in ("bom.csv", "manufacturing_release_report.json"):
+            target = root / name
+            if target.exists() or target.is_symlink():
+                return True
+        for name in ("gerber", "pos", "ipc2581", "odb"):
+            target = root / name
+            if target.is_symlink() or (
+                target.exists() and (not target.is_dir() or any(target.iterdir()))
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _artifact_paths(root: Path, kind: str) -> list[Path]:
+        if kind == "gerber":
+            candidates = discover_gerber_output_files(root / "gerber")
+        elif kind == "drill":
+            candidates = discover_drill_output_files(root / "gerber")
+        else:
+            names = {
+                "bom": [root / "bom.csv"],
+                "pick": list((root / "pos").glob("*.csv")),
+                "ipc": [root / "ipc2581" / "board.ipc2581"],
+                "odb": [root / "odb" / "board.odb"],
+            }
+            candidates = names[kind]
+        return [
+            path
+            for path in candidates
+            if not path.is_symlink()
+            and path.is_file()
+            and path.stat().st_size > 0
+            and path.resolve().is_relative_to(root.resolve())
         ]
-        await report_progress(45, 100, "Exporting drill files...")
-        results.append(await anyio.to_thread.run_sync(lambda: self.export_drill(variant_name)))
-        await report_progress(65, 100, "Exporting BOM...")
-        results.append(await anyio.to_thread.run_sync(lambda: self.export_bom(variant_name)))
-        await report_progress(85, 100, "Exporting pick-and-place data...")
-        results.append(
-            await anyio.to_thread.run_sync(lambda: self.export_pick_and_place(variant_name))
+
+    def _steps(self) -> tuple[_PackageStep, ...]:
+        return (
+            _PackageStep(
+                "gerber", self.export_gerber, "Gerber export completed", 25, "Exporting Gerbers..."
+            ),
+            _PackageStep(
+                "drill", self.export_drill, "Drill export completed", 45, "Exporting drill files..."
+            ),
+            _PackageStep("bom", self.export_bom, "BOM exported to", 65, "Exporting BOM..."),
+            _PackageStep(
+                "pick",
+                self.export_pick_and_place,
+                "Pick and place data exported to",
+                85,
+                "Exporting pick-and-place data...",
+            ),
+            _PackageStep(
+                "ipc",
+                self.export_ipc2581,
+                "IPC-2581 exported to",
+                unsupported="IPC-2581 export is not supported",
+            ),
+            _PackageStep(
+                "odb",
+                self.export_odb,
+                "ODB++ exported to",
+                unsupported="ODB++ export is not supported",
+            ),
         )
 
-        ipc_result = await anyio.to_thread.run_sync(lambda: self.export_ipc2581(variant_name))
-        if not ipc_result.startswith("IPC-2581 export is not supported"):
-            results.append(ipc_result)
-        odb_result = await anyio.to_thread.run_sync(lambda: self.export_odb(variant_name))
-        if not odb_result.startswith("ODB++ export is not supported"):
-            results.append(odb_result)
+    async def _run_package_step(
+        self,
+        root: Path,
+        step: _PackageStep,
+        variant_name: str | None,
+        report_progress: ProgressReporter,
+    ) -> tuple[str, list[Path]] | str | None:
+        if self._artifact_paths(root, step.kind):
+            return f"Manufacturing package export failed: existing {step.kind} output appeared."
+        if step.progress is not None:
+            await report_progress(step.progress, 100, step.message)
+        result = await anyio.to_thread.run_sync(step.export, variant_name)
+        if step.unsupported and result.startswith(step.unsupported):
+            return None
+        files = self._artifact_paths(root, step.kind)
+        if (
+            not result.startswith(step.success)
+            or not files
+            or (step.kind == "gerber" and all(path.suffix.lower() == ".gbrjob" for path in files))
+        ):
+            return (
+                f"Manufacturing package export failed ({step.kind}): {result}\n"
+                "No release report published. Archive incomplete outputs before retrying."
+            )
+        return result, files
 
+    async def _export_approved(
+        self,
+        root: Path,
+        variant_name: str | None,
+        evidence_path: Path,
+        evidence_payload: dict[str, Any],
+        outcomes: list[Any],
+        approval_evidence_path: str,
+        render_gate_report: GateRenderer,
+        report_progress: ProgressReporter,
+    ) -> str:
+        if self._existing_outputs(root):
+            return (
+                "Manufacturing package export blocked: existing manufacturing outputs. "
+                "Archive them before retrying; no existing artifacts were changed."
+            )
+        results: list[str] = []
+        paths: list[Path] = []
+        for step in self._steps():
+            completed = await self._run_package_step(root, step, variant_name, report_progress)
+            if isinstance(completed, str):
+                return completed
+            if completed is not None:
+                result, files = completed
+                results.append(result)
+                paths.extend(files)
+        fresh = self.authorize(
+            outcomes=outcomes,
+            render_gate_report=render_gate_report,
+            approval_evidence_path=approval_evidence_path,
+        )
+        if isinstance(fresh, str):
+            return f"Manufacturing package export failed: {fresh}"
+        if fresh != (evidence_path, evidence_payload):
+            return "Manufacturing package export failed: approval changed during export."
+        if self.ensure_output_dir() != root:
+            return "Manufacturing package export failed: active output directory changed."
+        report_target = root / "manufacturing_release_report.json"
+        if report_target.exists() or report_target.is_symlink():
+            return "Manufacturing package export blocked: existing release report appeared."
+        artifacts = self._manufacturing_artifacts(root, paths)
         report_path = self._write_handoff_report(
+            out_dir=root,
             variant_name=variant_name,
             evidence_path=evidence_path,
             evidence=evidence_payload,
             outcomes=outcomes,
             results=results,
+            artifacts=artifacts,
         )
-        artifact_count = len(self._manufacturing_artifacts())
         results.append(
             "\n".join(
                 [
                     "Manufacturing release evidence:",
                     f"- Approval evidence: {evidence_path}",
                     f"- Release report: {report_path}",
-                    f"- Linked artifacts: {artifact_count}",
+                    f"- Linked artifacts: {len(artifacts)}",
                     "- Human approval is recorded as evidence, not replaced by automation.",
                 ]
             )
@@ -270,35 +418,28 @@ class ExportManufacturingPackageService(ManufacturingApprovalService):
         await report_progress(100, 100, "Manufacturing package complete.")
         return "\n\n".join(results)
 
-    def _manufacturing_artifacts(self) -> list[dict[str, Any]]:
-        root = self.ensure_output_dir()
-        files: list[Path] = []
-        for subdir in (root, root / "gerber", root / "pos", root / "ipc2581", root / "odb"):
-            if subdir.exists():
-                files.extend(path for path in subdir.rglob("*") if path.is_file())
-        records = []
-        for path in sorted(set(files)):
-            relative = str(path.relative_to(root)) if path.is_relative_to(root) else path.name
-            records.append(
-                {
-                    "path": str(path),
-                    "relative_path": relative,
-                    "size_bytes": path.stat().st_size,
-                    "sha256": self._file_sha256(path),
-                }
-            )
-        return records
+    def _manufacturing_artifacts(self, root: Path, files: list[Path]) -> list[dict[str, Any]]:
+        return [
+            {
+                "path": str(path),
+                "relative_path": str(path.relative_to(root)),
+                "size_bytes": path.stat().st_size,
+                "sha256": self._file_sha256(path),
+            }
+            for path in sorted(set(files))
+        ]
 
     def _write_handoff_report(
         self,
         *,
+        out_dir: Path,
         variant_name: str | None,
         evidence_path: Path,
         evidence: dict[str, Any],
         outcomes: list[Any],
         results: list[str],
+        artifacts: list[dict[str, Any]],
     ) -> Path:
-        out_dir = self.ensure_output_dir()
         report_path = out_dir / "manufacturing_release_report.json"
         payload = {
             "schema_version": "manufacturing_release.v1",
@@ -316,7 +457,7 @@ class ExportManufacturingPackageService(ManufacturingApprovalService):
                 for item in outcomes
             ],
             "export_results": results,
-            "artifacts": self._manufacturing_artifacts(),
+            "artifacts": artifacts,
         }
-        report_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        atomic_metadata_write(report_path, json.dumps(payload, indent=2, sort_keys=True))
         return report_path

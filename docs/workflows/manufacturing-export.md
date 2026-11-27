@@ -118,6 +118,18 @@ Older unbound approvals must be replaced with a fresh review. The legacy
 variant package tool also requires this evidence and the same project gate. The export writes a
 `manufacturing_release_report.json` that links the approval evidence, quality-gate
 outcomes, exported Gerber/drill/BOM/PnP/IPC artifacts, file sizes, and SHA256 hashes.
+The report is published only after required exports succeed and produce nonempty
+files, supported optional exports succeed, and the same approval evidence is
+revalidated. Archive previous manufacturing outputs (Gerber/drill, BOM,
+pick-and-place, IPC-2581, ODB++, and the previous release report) before starting
+another package. Existing files are not overwritten by the package workflow.
+If an export fails, no new release report is published; incomplete output may
+remain for diagnosis and must be archived before retrying. If an interrupted
+process leaves the `.manufacturing-package-in-progress` directory behind,
+verify no export is running before removing that empty lock directory.
+The report inventories only the expected manufacturing artifacts, not unrelated
+files in the output directory. File presence and hashes do not replace the
+fabricator's format and layer-completeness checks.
 Direct `export_*()` tools do not enforce the full gate or approval evidence — use
 them only for low-level debug or interchange artifacts, switching to a broader
 profile (`full`/`minimal`) if needed. Finish with `mfg_generate_release_manifest()`
