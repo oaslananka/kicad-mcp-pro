@@ -2146,6 +2146,45 @@ def _schematic_pad_net_summary(
     }
 
 
+def _transform_zone_arc(node: str, transform_point: Callable[[str], str]) -> str:
+    for name, arc_start, arc_end in reversed(_direct_child_spans(node)):
+        if name not in {"start", "mid", "end"}:
+            raise ValueError("Unsupported arc in footprint zone polygon.")
+        node = node[:arc_start] + transform_point(node[arc_start:arc_end]) + node[arc_end:]
+    return node
+
+
+def _transform_zone_points(points: str, transform_point: Callable[[str], str]) -> str:
+    for keyword, start, end in reversed(_direct_child_spans(points)):
+        node = points[start:end]
+        if keyword == "xy":
+            replacement = transform_point(node)
+        elif keyword == "arc":
+            replacement = _transform_zone_arc(node, transform_point)
+        else:
+            raise ValueError("Unsupported footprint zone polygon node; placement refused.")
+        points = points[:start] + replacement + points[end:]
+    return points
+
+
+def _transform_zone_polygons(zone: str, transform_point: Callable[[str], str]) -> str:
+    for name, poly_start, poly_end in reversed(_direct_child_spans(zone)):
+        if name not in {"polygon", "filled_polygon"}:
+            continue
+        polygon = zone[poly_start:poly_end]
+        span = _child_span(polygon, "pts")
+        if span is None:
+            raise ValueError("Missing footprint zone polygon points; placement refused.")
+        pts_start, pts_end = span
+        polygon = (
+            polygon[:pts_start]
+            + _transform_zone_points(polygon[pts_start:pts_end], transform_point)
+            + polygon[pts_end:]
+        )
+        zone = zone[:poly_start] + polygon + zone[poly_end:]
+    return zone
+
+
 def _transform_footprint_zone_geometry(
     block: str,
     *,
@@ -2178,43 +2217,13 @@ def _transform_footprint_zone_geometry(
         ty = round(new_y - x * sine + y * cosine, 6)
         return f"({match.group(1)} {tx:.6f} {ty:.6f})"
 
-    def transform_points(points: str) -> str:
-        for keyword, start, end in reversed(_direct_child_spans(points)):
-            node = points[start:end]
-            if keyword == "xy":
-                replacement = transform_point(node)
-            elif keyword == "arc":
-                for name, arc_start, arc_end in reversed(_direct_child_spans(node)):
-                    if name not in {"start", "mid", "end"}:
-                        raise ValueError("Unsupported arc in footprint zone polygon.")
-                    node = (
-                        node[:arc_start] + transform_point(node[arc_start:arc_end]) + node[arc_end:]
-                    )
-                replacement = node
-            else:
-                raise ValueError("Unsupported footprint zone polygon node; placement refused.")
-            points = points[:start] + replacement + points[end:]
-        return points
-
     for keyword, start, end in reversed(_direct_child_spans(block)):
-        if keyword != "zone":
-            continue
-        zone = block[start:end]
-        for name, poly_start, poly_end in reversed(_direct_child_spans(zone)):
-            if name not in {"polygon", "filled_polygon"}:
-                continue
-            polygon = zone[poly_start:poly_end]
-            span = _child_span(polygon, "pts")
-            if span is None:
-                raise ValueError("Missing footprint zone polygon points; placement refused.")
-            pts_start, pts_end = span
-            polygon = (
-                polygon[:pts_start]
-                + transform_points(polygon[pts_start:pts_end])
-                + polygon[pts_end:]
+        if keyword == "zone":
+            block = (
+                block[:start]
+                + _transform_zone_polygons(block[start:end], transform_point)
+                + block[end:]
             )
-            zone = zone[:poly_start] + polygon + zone[poly_end:]
-        block = block[:start] + zone + block[end:]
     return block
 
 

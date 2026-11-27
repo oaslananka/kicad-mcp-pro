@@ -1158,20 +1158,20 @@ def test_native_cardinal_rotation_preserves_integer_world_geometry(
 
     apply_footprint_rotation(footprint, angle)
     refreshed = FootprintInstance(proto=footprint.proto)
-    assert (
+    assert expected == (
         refreshed.reference_field.text.position.x,
         refreshed.reference_field.text.position.y,
-    ) == expected
+    )
     items = refreshed.definition.items
     assert isinstance(items[0], Pad)
-    assert (items[0].position.x, items[0].position.y) == expected
+    assert expected == (items[0].position.x, items[0].position.y)
     for outline in (
         items[1].proto.shape.polygon.polygons[0].outline,
         items[2].proto.outline.polygons[0].outline,
     ):
         assert outline.closed
         assert len(outline.nodes) == 4
-        assert (outline.nodes[0].point.x_nm, outline.nodes[0].point.y_nm) == expected
+        assert expected == (outline.nodes[0].point.x_nm, outline.nodes[0].point.y_nm)
         assert outline.nodes[0] == outline.nodes[-1]
 
 
@@ -1207,7 +1207,7 @@ def test_cardinal_rotation_preserves_text_segment_and_filled_zone() -> None:
         items[2].proto.shape.segment.start,
         items[3].proto.filled_polygons[0].shapes.polygons[0].outline.nodes[0].point,
     ):
-        assert (vector.x_nm, vector.y_nm) == expected
+        assert expected == (vector.x_nm, vector.y_nm)
 
 
 def test_cardinal_rotation_refuses_changed_geometry_structure() -> None:

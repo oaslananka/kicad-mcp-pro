@@ -74,27 +74,31 @@ def _world_vectors(footprint: FootprintInstance) -> Iterator[VectorProto]:
     ):
         yield field.proto.text.text.position
     for item in footprint.definition.items:
-        if isinstance(item, Field):
-            yield item.proto.text.text.position
-        elif isinstance(item, BoardText):
-            yield item.proto.text.position
-        elif isinstance(item, Pad):
-            yield item.proto.position
-        elif isinstance(item, Zone):
-            yield from _geometry_vectors(item.proto.outline)
-            for filled in item.proto.filled_polygons:
-                yield from _geometry_vectors(filled)
-        elif isinstance(item, BoardPolygon):
-            # The SDK concrete-shape conversion reads the packed proto.
-            # Synchronize cached polygons before that conversion.
-            _ = item.proto
-            for polygon in item.polygons:
-                yield from _geometry_vectors(polygon.proto)
-        elif isinstance(item, BoardShape):
-            shape = item.proto.shape
-            geometry = shape.WhichOneof("geometry")
-            if geometry is not None:
-                yield from _geometry_vectors(getattr(shape, geometry))
+        yield from _item_world_vectors(item)
+
+
+def _item_world_vectors(item: object) -> Iterator[VectorProto]:
+    if isinstance(item, Field):
+        yield item.proto.text.text.position
+    elif isinstance(item, BoardText):
+        yield item.proto.text.position
+    elif isinstance(item, Pad):
+        yield item.proto.position
+    elif isinstance(item, Zone):
+        yield from _geometry_vectors(item.proto.outline)
+        for filled in item.proto.filled_polygons:
+            yield from _geometry_vectors(filled)
+    elif isinstance(item, BoardPolygon):
+        # The SDK concrete-shape conversion reads the packed proto.
+        # Synchronize cached polygons before that conversion.
+        _ = item.proto
+        for polygon in item.polygons:
+            yield from _geometry_vectors(polygon.proto)
+    elif isinstance(item, BoardShape):
+        shape = item.proto.shape
+        geometry = shape.WhichOneof("geometry")
+        if geometry is not None:
+            yield from _geometry_vectors(getattr(shape, geometry))
 
 
 def _cardinal_world_positions(
@@ -157,31 +161,10 @@ def apply_footprint_rotation(footprint: object, rotation_deg: float) -> Rotation
         except AttributeError:
             continue
         available.append(attribute)
-        # kicad-python <= 0.8.0 reconstructs definition.items when orientation
-        # is assigned and silently drops 3D models. Avoid a no-op assignment
-        # altogether, then restore only lost models after an actual rotation.
-        try:
-            current_deg = _rotation_degrees(getattr(footprint, attribute))
-        except FootprintRotationError:
-            current_deg = None
-        if current_deg is not None and abs((current_deg - rotation_deg + 180) % 360 - 180) < 1e-9:
+        failure = _apply_rotation_attribute(footprint, attribute, requested, rotation_deg)
+        if failure is None:
             return attribute
-        definition = getattr(footprint, "definition", None)
-        models_before = list(getattr(definition, "models", ()))
-        expected_positions = None
-        if isinstance(footprint, FootprintInstance) and current_deg is not None:
-            delta = (rotation_deg - current_deg) % 360
-            if delta % 90 == 0:
-                expected_positions = _cardinal_world_positions(footprint, int(delta // 90))
-        try:
-            setattr(footprint, attribute, requested)
-        except Exception as exc:  # KiCad IPC surfaces raise generated transport/type errors.
-            failures.append(f"{attribute}: {type(exc).__name__}")
-            continue
-        _restore_missing_3d_models(definition, models_before)
-        if isinstance(footprint, FootprintInstance) and expected_positions is not None:
-            _restore_cardinal_world_positions(footprint, expected_positions)
-        return attribute
+        failures.append(failure)
 
     if not available:
         raise FootprintRotationError(
@@ -189,6 +172,42 @@ def apply_footprint_rotation(footprint: object, rotation_deg: float) -> Rotation
         )
     detail = ", ".join(failures) if failures else ", ".join(available)
     raise FootprintRotationError(f"Requested footprint rotation could not be applied ({detail}).")
+
+
+def _expected_cardinal_positions(
+    footprint: object, current_deg: float | None, rotation_deg: float
+) -> list[tuple[int, int]] | None:
+    if not isinstance(footprint, FootprintInstance) or current_deg is None:
+        return None
+    delta = (rotation_deg - current_deg) % 360
+    if delta % 90 == 0:
+        return _cardinal_world_positions(footprint, int(delta // 90))
+    return None
+
+
+def _apply_rotation_attribute(
+    footprint: object, attribute: RotationAttribute, requested: Angle, rotation_deg: float
+) -> str | None:
+    # kicad-python <= 0.8.0 reconstructs definition.items when orientation
+    # is assigned and silently drops 3D models. Avoid a no-op assignment
+    # altogether, then restore only lost models after an actual rotation.
+    try:
+        current_deg = _rotation_degrees(getattr(footprint, attribute))
+    except FootprintRotationError:
+        current_deg = None
+    if current_deg is not None and abs((current_deg - rotation_deg + 180) % 360 - 180) < 1e-9:
+        return None
+    definition = getattr(footprint, "definition", None)
+    models_before = list(getattr(definition, "models", ()))
+    expected_positions = _expected_cardinal_positions(footprint, current_deg, rotation_deg)
+    try:
+        setattr(footprint, attribute, requested)
+    except Exception as exc:  # KiCad IPC surfaces raise generated transport/type errors.
+        return f"{attribute}: {type(exc).__name__}"
+    _restore_missing_3d_models(definition, models_before)
+    if isinstance(footprint, FootprintInstance) and expected_positions is not None:
+        _restore_cardinal_world_positions(footprint, expected_positions)
+    return None
 
 
 def verify_footprint_rotation(
