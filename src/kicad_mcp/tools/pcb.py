@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
+import stat
 import threading
 import uuid
 from collections.abc import Callable, Iterable, Sequence
@@ -99,6 +101,7 @@ from ..pcb.session_inspection import PcbSessionInspectionService
 from ..pcb.stackup_management import PcbStackupManagementService
 from ..pcb.title_block_management import PcbTitleBlockService
 from ..utils.cache import clear_ttl_cache
+from ..utils.file_replace import replace_if_unchanged
 from ..utils.impedance import TraceType, copper_thickness_mm, trace_impedance
 from ..utils.layers import CANONICAL_LAYER_NAMES, resolve_layer, resolve_layer_name
 from ..utils.metadata_write import serialized_metadata_write
@@ -1336,7 +1339,11 @@ def run_auto_refill_zones() -> str:
 def _transactional_board_write(mutator: Callable[[str], str]) -> str:
     with _BOARD_FILE_WRITE_LOCK:
         board_file = _get_pcb_file_for_sync()
-        current = _normalize_board_content(board_file.read_text(encoding="utf-8"))
+        original = board_file.read_bytes()
+        original_mode = stat.S_IMODE(board_file.stat().st_mode)
+        current = _normalize_board_content(
+            original.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+        )
         updated = mutator(current)
         _validate_board_text(updated)
         temp_path: Path | None = None
@@ -1346,7 +1353,10 @@ def _transactional_board_write(mutator: Callable[[str], str]) -> str:
             ) as handle:
                 temp_path = Path(handle.name)
                 handle.write(updated)
-            temp_path.replace(board_file)
+                handle.flush()
+                os.fsync(handle.fileno())
+            temp_path.chmod(original_mode)
+            replace_if_unchanged(temp_path, board_file, original)
         finally:
             if temp_path is not None:
                 temp_path.unlink(missing_ok=True)
