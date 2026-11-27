@@ -231,12 +231,12 @@ jobs:
           RELEASE_IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           set -euo pipefail
-          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "Invalid image digest" >&2; exit 1; }
           tags=()
           while IFS= read -r tag; do
             [[ -n "$tag" ]] || continue
-            [[ "$tag" == "${GHCR_IMAGE}:"* ]]
+            [[ "$tag" == "${GHCR_IMAGE}:"* ]] || { echo "Unexpected release image tag" >&2; exit 1; }
             tags+=(--tag "$tag")
           done <<< "$RELEASE_IMAGE_TAGS"
-          (( ${#tags[@]} > 0 ))
+          (( ${#tags[@]} > 0 )) || { echo "No release image tags" >&2; exit 1; }
           docker buildx imagetools create "${tags[@]}" "${GHCR_IMAGE}@${IMAGE_DIGEST}"

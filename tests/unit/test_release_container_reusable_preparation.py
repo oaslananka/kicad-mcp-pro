@@ -219,7 +219,20 @@ def test_publish_promotes_only_scanned_and_signed_multiarch_digest() -> None:
     assert "continue-on-error" not in promote
 
 
+def test_digest_promotion_validation_has_explicit_failure_paths() -> None:
+    steps = yaml.safe_load(PUBLISH.read_text(encoding="utf-8"))["jobs"]["publish"]["steps"]
+    promote = next(
+        step for step in steps if step.get("name") == "Promote verified digest to release tags"
+    )
+    script = promote["run"]
+    assert '[[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] ||' in script
+    assert '[[ "$tag" == "${GHCR_IMAGE}:"* ]] ||' in script
+    assert "(( ${#tags[@]} > 0 )) ||" in script
+    assert script.count("exit 1") == 3
+
+
 @pytest.mark.skipif(os.name == "nt", reason="Bash digest-promotion test")
+@pytest.mark.parametrize("conditional", [False, True])
 @pytest.mark.parametrize(
     ("digest", "tags", "accepted"),
     [
@@ -232,10 +245,15 @@ def test_publish_promotes_only_scanned_and_signed_multiarch_digest() -> None:
         ("bad", "ghcr.io/oaslananka/kicad-mcp-pro:4.5.0", False),
         ("sha256:" + "a" * 64, "another.example/repo:latest", False),
         ("sha256:" + "a" * 64, "", False),
+        (
+            "sha256:" + "a" * 64,
+            "ghcr.io/oaslananka/kicad-mcp-pro:4.5.0\nanother.example/repo:latest",
+            False,
+        ),
     ],
 )
 def test_digest_promotion_passes_only_verified_source_and_release_tags(
-    tmp_path: Path, digest: str, tags: str, accepted: bool
+    tmp_path: Path, digest: str, tags: str, accepted: bool, conditional: bool
 ) -> None:
     steps = yaml.safe_load(PUBLISH.read_text(encoding="utf-8"))["jobs"]["publish"]["steps"]
     promote = next(
@@ -246,8 +264,11 @@ def test_digest_promotion_passes_only_verified_source_and_release_tags(
     docker.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$MOCK_LOG"\n', encoding="utf-8")
     docker.chmod(0o755)
     image = "ghcr.io/oaslananka/kicad-mcp-pro"
+    script = promote["run"]
+    if conditional:
+        script = "promote() {\n" + script + "\n}\nif promote; then exit 0; else exit 1; fi"
     result = subprocess.run(
-        ["/bin/bash", "-euo", "pipefail", "-c", promote["run"]],
+        ["/bin/bash", "-euo", "pipefail", "-c", script],
         env={
             **os.environ,
             "PATH": str(tmp_path) + os.pathsep + os.environ["PATH"],
