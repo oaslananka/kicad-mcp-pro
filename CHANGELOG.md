@@ -10,6 +10,28 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.25.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.24.0...mcp-server-v4.25.0) (2026-11-27)
+
+
+### Features
+
+* **eval:** reviewed Codex reference-board execution evidence ([#1214](https://github.com/oaslananka/kicad-mcp-pro/issues/1214)) ([#1913](https://github.com/oaslananka/kicad-mcp-pro/issues/1913)) ([a1bb3fa](https://github.com/oaslananka/kicad-mcp-pro/commit/a1bb3fa8675aadf48348edeaf40f69607e0b22b7))
+
+
+### Bug Fixes
+
+* harden tool execution and release boundaries ([#1970](https://github.com/oaslananka/kicad-mcp-pro/issues/1970)) ([bff270c](https://github.com/oaslananka/kicad-mcp-pro/commit/bff270c4a37aabcb541f1a9f52c8f937fbe174c4))
+* **ipc:** normalize filesystem socket paths at the connection boundary ([#1962](https://github.com/oaslananka/kicad-mcp-pro/issues/1962)) ([c0c2155](https://github.com/oaslananka/kicad-mcp-pro/commit/c0c2155b9915539b0e3d6b8ab1686bfa0ae0feb9))
+* **pcb:** preserve native upright text alignment during rotation ([#1967](https://github.com/oaslananka/kicad-mcp-pro/issues/1967)) ([9f7a4ed](https://github.com/oaslananka/kicad-mcp-pro/commit/9f7a4ed79fb35ac4a3e1134c648a0b6ee22d6e3c))
+* **pcb:** transform footprint rule areas in board coordinates ([#1965](https://github.com/oaslananka/kicad-mcp-pro/issues/1965)) ([31e9ad9](https://github.com/oaslananka/kicad-mcp-pro/commit/31e9ad9ff040f925c75e6ef15ecadf56d6e5c05e))
+* **validation:** serialize placement metrics from one analysis ([#1969](https://github.com/oaslananka/kicad-mcp-pro/issues/1969)) ([8f3627c](https://github.com/oaslananka/kicad-mcp-pro/commit/8f3627c7ece04e3c14b72e2224f62c35b1c6b6f8))
+
+
+### Documentation
+
+* **pcm:** record current IPC qualification and platform blockers ([#1959](https://github.com/oaslananka/kicad-mcp-pro/issues/1959)) ([41c6eef](https://github.com/oaslananka/kicad-mcp-pro/commit/41c6eef58e0df63d175b9f64ed797be97801b3f7))
+* **pcm:** record integrated Linux install-to-sync acceptance ([#1960](https://github.com/oaslananka/kicad-mcp-pro/issues/1960)) ([8cf0aec](https://github.com/oaslananka/kicad-mcp-pro/commit/8cf0aecb5e3457029b89f0b68211cc5d9717bf2c))
+
 ## [4.24.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.23.0...mcp-server-v4.24.0) (2026-11-27)
 
 
