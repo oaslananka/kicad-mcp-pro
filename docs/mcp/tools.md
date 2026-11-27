@@ -235,7 +235,7 @@ Total public tools: 257.
 | `sch_update_properties` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Update a property on a placed symbol. This KiCad MCP Pro tool supports production EDA automation workflows for MCP cl... |
 | `schematic_connectivity_gate` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | no | no | no | yes | no | Evaluate whether schematic structure and hierarchy look electrically meaningful. This KiCad MCP Pro tool supports pro... |
 | `schematic_quality_gate` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | Evaluate whether the schematic is clean enough to proceed. This KiCad MCP Pro tool supports production EDA automation... |
-| `si_bind_interfaces_to_net_classes` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Map interface specs from the project design intent to KiCad net classes. |
+| `si_bind_interfaces_to_net_classes` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Plan net-class routing constraints for interfaces without assigning nets. |
 | `si_calculate_decoupling_placement` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Estimate decoupling placement quality around an IC power pin. This KiCad MCP Pro tool supports production EDA automat... |
 | `si_calculate_trace_impedance` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Estimate PCB trace impedance using quasi-static interconnect formulas. This KiCad MCP Pro tool supports production ED... |
 | `si_calculate_trace_width_for_impedance` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Solve for a trace width that meets the requested impedance target. |
@@ -243,7 +243,7 @@ Total public tools: 257.
 | `si_check_via_stub` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Estimate via-stub resonance and risk for selected vias on the active board. |
 | `si_generate_stackup` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Generate a practical board stackup recommendation and target trace geometry. |
 | `si_list_dielectric_materials` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | List all built-in dielectric materials with Er, loss tangent, and frequency range. |
-| `si_synthesize_stackup_for_interfaces` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Synthesise a PCB stackup that meets the impedance requirements of the given interfaces. |
+| `si_synthesize_stackup_for_interfaces` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Synthesise a candidate PCB stackup and first-pass impedance estimates. |
 | `si_validate_length_matching` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Validate that each net group is matched within the supplied tolerance. |
 | `sim_add_spice_directive` | agent_full, full, high_speed, simulation | no | yes | no | yes | no | Persist a SPICE directive used by future MCP simulation runs. |
 | `sim_check_stability` | agent_full, full, high_speed, simulation | no | no | no | yes | no | Estimate loop crossover and phase margin from an AC sweep. |

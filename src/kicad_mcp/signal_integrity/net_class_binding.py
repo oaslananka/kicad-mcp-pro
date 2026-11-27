@@ -125,7 +125,9 @@ class SignalIntegrityNetClassBindingService:
         if dry_run:
             lines.extend(
                 [
-                    "Inspect the actual board nets:",
+                    "Inspect the actual board nets and match the literal prefix (if supplied). "
+                    "Confirm exact names and class membership; stop if no intended nets resolve. "
+                    "If a tool is absent from tools/list, use Board Setup instead:",
                     "```json",
                     json.dumps({"tool": "pcb_get_nets", "arguments": {}}, indent=2),
                     "```",
