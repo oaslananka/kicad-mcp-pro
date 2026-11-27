@@ -16,7 +16,10 @@ fields; the repository copy then adds `download_url`, `download_sha256`,
 
 Do not submit until all of these are true:
 
-1. #731's physical KiCad install/connect/update/uninstall/rollback evidence is complete.
+1. The current IPC release has integrated install/connect/update/uninstall/rollback
+   evidence on the applicable physical platforms. Historical #731 evidence is
+   insufficient. See the [current evidence](../evidence/kicad-pcm/2026-11-27/kicad-10.0.8-ipc.md); Windows interactive
+   readiness and macOS physical acceptance remain pending.
 2. A tagged `mcp-server-v<version>` release contains the deterministic
    `kicad-mcp-pro-pcm-<version>.zip` produced by `publish-kicad-pcm.yml`.
 3. The release checksum and GitHub attestation have been verified.

@@ -43,8 +43,9 @@ uv run --all-extras python scripts/build_kicad_pcm.py \
 Verify the release checksum and provenance. In KiCad open **Plugin and Content
 Manager**, choose **Install from File**, select
 `kicad-mcp-pro-pcm-<version>.zip`, and restart KiCad. Open a PCB and choose
-**Open MCP Pro Companion** from the PCB Editor toolbar. This local-file PCM
-path is not an official PCM listing.
+**Open MCP Pro Companion** from the PCB Editor toolbar. In KiCad 10.0.8, the Tools → External Plugins
+menu is the legacy Action Plugin list, not the IPC discovery surface.
+This local-file PCM path is not an official PCM listing.
 
 The existing `uvx kicad-mcp-pro` entry point remains supported independently
 of PCM. Start the separately installed compatible backend when you need to sync:
@@ -73,7 +74,9 @@ Sync requires a current board and a ready backend, and rechecks the selection
 before sending context. Missing or malformed compatibility metadata fails
 closed. If IPC dependencies are incomplete, use **Repair KiCad IPC
 dependencies…** only after reviewing the confirmation; the repair targets the
-KiCad-managed environment, not global Python.
+KiCad-managed environment, not global Python. If the window reports a missing
+Python module such as `google`, the repair can restore board access. Declining
+the confirmation leaves dependencies unchanged.
 
 ### Guided MCP client configuration
 
@@ -129,7 +132,9 @@ The maintained package already uses the modern KiCad plugin API (IPC), with
 `plugin.json`, a separate Python process and no SWIG fallback. The package
 retains its development status. Historical Linux/Windows PCM evidence is not
 a qualification of the current IPC artifact; current platform-specific
-acceptance is required. KiCad 11 support remains preview-only until its own
+acceptance is required. See the [dated 4.24.0 qualification](../evidence/kicad-pcm/2026-11-27/kicad-10.0.8-ipc.md)
+for the current Linux results and outstanding Windows/macOS acceptance.
+KiCad 11 support remains preview-only until its own
 native gates pass. See [ADR 0007](../adr/0007-kicad-adapter-selection-and-swig-retirement.md).
 
 ## Smoke test plan
