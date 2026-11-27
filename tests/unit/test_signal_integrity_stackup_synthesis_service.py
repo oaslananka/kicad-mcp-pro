@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import json
+import re
+
+import pytest
+
+from kicad_mcp.models.pcb import SetStackupInput
 from kicad_mcp.signal_integrity import stackup_synthesis as synthesis
 
 
@@ -53,7 +59,7 @@ def test_synthesize_preserves_stackup_report_contract(monkeypatch) -> None:
     assert "- Layer count: **6**" in result
     assert "- Dielectric: **Fixture laminate** (Er=3.7, tan_d=0.009)" in result
     assert "- Board thickness: 1.2 mm" in result
-    assert "- 50ohm trace width: **0.300 mm** (actual Z=49.8ohm)" in result
+    assert "- 50ohm trace width: **0.300 mm** (estimated Z=49.8ohm)" in result
     assert "- 90ohm diff-pair gap: **0.170 mm**" in result
     assert "Material note: fixture material" in result
 
@@ -89,3 +95,45 @@ def test_synthesize_defaults_unknown_cost_tier_to_standard(monkeypatch) -> None:
     )
 
     assert selected == ["fr4_standard"]
+
+
+@pytest.mark.parametrize(
+    ("kind", "count"), [("i2c", 2), ("usb2", 4), ("usb3", 6), ("usb3_gen2", 8)]
+)
+def test_synthesis_returns_valid_candidate_stackup_call(kind: str, count: int) -> None:
+    report = synthesis.SignalIntegrityStackupSynthesisService().synthesize(
+        [{"kind": kind}], board_thickness_mm=1.6
+    )
+    actions = [json.loads(x) for x in re.findall(r"```json\n(.*?)\n```", report, re.S)]
+    stackup = next(a for a in actions if a["tool"] == "pcb_set_stackup")
+    args = stackup["arguments"]
+    assert args["allow_open_board"] is False
+    payload = SetStackupInput.model_validate({"layers": args["layers"]})
+    names = [layer.name for layer in payload.layers if layer.name.endswith(".Cu")]
+    assert names == ["F.Cu", *[f"In{i}.Cu" for i in range(1, count - 1)], "B.Cu"]
+    assert sum(layer.thickness_mm for layer in payload.layers) == pytest.approx(1.6)
+    assert "estimate" in report.casefold()
+    assert "fabricator" in report.casefold()
+    assert "with layer_count and dielectric params" not in report
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {},
+        {"kind": "usb22"},
+        {"kind": "custom"},
+        {"kind": "usb2", "differential": "false"},
+        {"kind": "usb2", "impedance_target_ohm": -1},
+    ],
+)
+def test_synthesis_rejects_unusable_interface_specs(raw: dict[str, object]) -> None:
+    with pytest.raises(ValueError, match="interface"):
+        synthesis.SignalIntegrityStackupSynthesisService().synthesize([raw])
+
+
+def test_synthesis_rejects_impossible_thickness() -> None:
+    with pytest.raises(ValueError, match="thickness"):
+        synthesis.SignalIntegrityStackupSynthesisService().synthesize(
+            [{"kind": "usb3_gen2"}], board_thickness_mm=0.1
+        )
