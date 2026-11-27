@@ -128,6 +128,14 @@
           "description": "Docker image to run",
           "default": "ghcr.io/oaslananka/kicad-mcp-pro:4.24.0",
           "isRequired": true
+        },
+        {
+          "type": "positional",
+          "value": "--transport"
+        },
+        {
+          "type": "positional",
+          "value": "stdio"
         }
       ]
     }

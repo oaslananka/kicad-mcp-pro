@@ -180,6 +180,25 @@ def _evaluate_artifact_gate(
     return gate, blocking
 
 
+def _report_entries(report: dict[str, Any], key: str) -> list[dict[str, Any]]:
+    """Reject malformed finding lists instead of interpreting them as clean."""
+    entries = report.get(key)
+    if not isinstance(entries, list) or not all(isinstance(entry, dict) for entry in entries):
+        raise ValueError(f"Invalid KiCad report field: {key}.")
+    return entries
+
+
+def _erc_violation_count(report: dict[str, Any]) -> int:
+    """Count legacy flat findings and native per-sheet findings."""
+    if "violations" not in report and "sheets" not in report:
+        raise ValueError("ERC report contains no findings or sheets.")
+    total = len(_report_entries(report, "violations")) if "violations" in report else 0
+    if "sheets" in report:
+        for sheet in _report_entries(report, "sheets"):
+            total += len(_report_entries(sheet, "violations"))
+    return total
+
+
 def _run_cli_drc(
     run_cli: CliRunner,
     pcb_file: Path,
@@ -199,10 +218,10 @@ def _run_cli_drc(
         )
         if code == 0 and os.path.exists(tmp_path):
             report = json.loads(Path(tmp_path).read_text(encoding="utf-8"))
-            violations = report.get("violations", [])
-            unconnected = report.get("unconnected_items", [])
-            drc_violations = len(violations) if isinstance(violations, list) else 0
-            drc_unconnected = len(unconnected) if isinstance(unconnected, list) else 0
+            drc_violations = len(_report_entries(report, "violations"))
+            if "schematic_parity" in report:
+                drc_violations += len(_report_entries(report, "schematic_parity"))
+            drc_unconnected = len(_report_entries(report, "unconnected_items"))
             drc_passed = drc_violations == 0 and drc_unconnected == 0
             return drc_passed, drc_violations, drc_unconnected, None
         return False, -1, -1, stderr or stdout or f"DRC exited with code {code}"
@@ -265,8 +284,7 @@ def _run_cli_erc(
         )
         if code == 0 and os.path.exists(tmp_path):
             report = json.loads(Path(tmp_path).read_text(encoding="utf-8"))
-            violations = report.get("violations", [])
-            erc_violations = len(violations) if isinstance(violations, list) else 0
+            erc_violations = _erc_violation_count(report)
             erc_passed = erc_violations == 0
             return erc_passed, erc_violations, None
         return False, -1, stderr or stdout or f"ERC exited with code {code}"

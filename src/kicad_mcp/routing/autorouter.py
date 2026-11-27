@@ -9,6 +9,7 @@ from typing import Protocol
 
 import anyio
 
+from ..config import get_config
 from ..errors import ManualStepRequiredError
 from ..models.tool_result import ArtifactRef, StateDelta, ToolResult
 from ..utils.freerouting import FreeRoutingResult
@@ -262,8 +263,30 @@ class RoutingAutorouterService:
         drc_report_path: str = "output/routing/freerouting.drc.json",
         report_progress: ProgressReporter | None = None,
     ) -> ToolResult:
-        runner = self.runner_factory()
         pcb_file = self.get_pcb_file()
+        cfg = get_config()
+        configured_jar = cfg.freerouting_jar
+        if freerouting_jar_path is not None:
+            if (
+                configured_jar is None
+                or Path(freerouting_jar_path).expanduser().resolve()
+                != configured_jar.expanduser().resolve()
+            ):
+                return ToolResult.failure(
+                    "route_autoroute_freerouting",
+                    "Use the operator-configured FreeRouting JAR (KICAD_MCP_FREEROUTING_JAR).",
+                )
+        if configured_jar is not None:
+            configured_jar = configured_jar.expanduser()
+            project_root = cfg.project_dir or pcb_file.parent
+            if not configured_jar.is_absolute() or configured_jar.resolve().is_relative_to(
+                project_root.resolve()
+            ):
+                return ToolResult.failure(
+                    "route_autoroute_freerouting",
+                    "The configured FreeRouting JAR must be absolute and outside the project.",
+                )
+        runner = self.runner_factory()
         dsn_target = self.resolve_within_project(Path(dsn_path))
         ses_target = self.resolve_within_project(Path(ses_path))
         drc_target = self.resolve_within_project(Path(drc_report_path)) if drc_report_path else None
@@ -282,7 +305,7 @@ class RoutingAutorouterService:
             max_passes=max_passes,
             thread_count=thread_count,
             use_docker=use_docker,
-            freerouting_jar_path=freerouting_jar_path,
+            freerouting_jar_path=None,
             net_classes_to_ignore=net_classes_to_ignore,
             exclude_nets=exclude_nets,
         )

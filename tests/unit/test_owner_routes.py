@@ -120,3 +120,46 @@ def test_local_drc_is_only_offered_when_cli_detected(
     response = client.get("/api/experience")
     assert response.status_code == 200
     assert "run_drc" in response.json()["available_actions"]
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        ("/api/config", {}),
+        ("/api/tools/test_tool/test", {"dry_run": False}),
+        ("/api/server/start", {}),
+    ],
+)
+def test_dashboard_mutation_requires_owner_session(
+    client: TestClient, path: str, body: dict[str, object]
+) -> None:
+    assert client.post(path, json=body).status_code == 403
+
+
+def test_invalid_configuration_does_not_poison_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    from kicad_mcp.config import get_config, reset_config
+
+    monkeypatch.setenv("KICAD_MCP_PORT", "3334")
+    monkeypatch.delenv("KICAD_MCP_ENABLE_TASKS", raising=False)
+    reset_config()
+    app = Starlette(routes=web_routes)
+    try:
+        with TestClient(
+            app,
+            base_url="http://127.0.0.1:3334",
+            client=("127.0.0.1", 50000),
+            raise_server_exceptions=False,
+        ) as c:
+            session = c.get("/api/owner/session")
+            headers = {
+                "Origin": "http://127.0.0.1:3334",
+                "X-KiCad-Owner-CSRF": session.json()["csrf_token"],
+            }
+            result = c.post("/api/config", json={"port": "invalid"}, headers=headers)
+            assert result.status_code == 400
+            assert get_config().port == 3334
+            result = c.post("/api/config", json={"enable_tasks": True}, headers=headers)
+            assert result.status_code == 400
+            assert not get_config().enable_tasks
+    finally:
+        reset_config()

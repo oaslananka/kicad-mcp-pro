@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import importlib.util
 import json
@@ -173,7 +174,14 @@ async def test_package_preserves_explicit_variant_progress_report_and_artifacts(
     service, calls, output_root = _service(tmp_path)
     evidence_path = tmp_path / ".kicad-mcp" / "manufacturing_approval.json"
     evidence_path.parent.mkdir(parents=True)
-    evidence_path.write_text(json.dumps(_approval_payload()), encoding="utf-8")
+    board = tmp_path / "board.kicad_pcb"
+    board.write_text("board", encoding="utf-8")
+    payload = _approval_payload() | {
+        "approved_project_files": [
+            {"path": board.name, "sha256": hashlib.sha256(board.read_bytes()).hexdigest()}
+        ]
+    }
+    evidence_path.write_text(json.dumps(payload), encoding="utf-8")
 
     result, progress, rendered = await _run_export(
         service,
@@ -226,7 +234,14 @@ async def test_package_preserves_explicit_variant_progress_report_and_artifacts(
 async def test_package_omits_unsupported_optional_manufacturing_formats(tmp_path: Path) -> None:
     service, _calls, _output_root = _service(tmp_path)
     evidence_path = tmp_path / "approval.json"
-    evidence_path.write_text(json.dumps(_approval_payload()), encoding="utf-8")
+    board = tmp_path / "board.kicad_pcb"
+    board.write_text("board", encoding="utf-8")
+    payload = _approval_payload() | {
+        "approved_project_files": [
+            {"path": board.name, "sha256": hashlib.sha256(board.read_bytes()).hexdigest()}
+        ]
+    }
+    evidence_path.write_text(json.dumps(payload), encoding="utf-8")
 
     result, _progress, _rendered = await _run_export(
         service,
@@ -423,4 +438,13 @@ async def test_package_rejects_invalid_project_root_for_bound_manifest(tmp_path:
     )
 
     assert "project root is invalid" in result
+    assert all(not calls[name] for name in ("gerber", "drill", "bom", "pick", "ipc", "odb"))
+
+
+@pytest.mark.anyio
+async def test_ordinary_approval_requires_bound_state(tmp_path: Path) -> None:
+    service, calls, _ = _service(tmp_path)
+    (tmp_path / "approval.json").write_text(json.dumps(_approval_payload()), encoding="utf-8")
+    result, _, _ = await _run_export(service, approval_evidence_path="approval.json")
+    assert "requires bound project state evidence" in result
     assert all(not calls[name] for name in ("gerber", "drill", "bom", "pick", "ipc", "odb"))

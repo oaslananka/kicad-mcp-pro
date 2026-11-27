@@ -73,3 +73,40 @@ def test_npm_wrapper_build_smoke_tolerates_unpublished_python_package() -> None:
     assert result.returncode == 0
     assert "npm launcher smoke skipped: uvx is not available on PATH." in result.stderr
     assert "wrapper itself still exits non-zero for users" in result.stderr
+
+
+def test_windows_launcher_uses_executable_not_batch_or_directory() -> None:
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not available")
+    script = """
+const fs = require('node:fs');
+const vm = require('node:vm');
+const path = require('node:path').win32;
+const source = fs.readFileSync(process.argv[1], 'utf8');
+let selected;
+const mockFs = {
+  existsSync: () => true,
+  statSync: candidate => ({isFile: () => candidate.startsWith('second')}),
+};
+vm.runInNewContext(source, {
+  require: name => ({
+    'node:fs': mockFs, 'node:path': path,
+    'node:child_process': {spawn: candidate => {
+      selected = candidate; return {on() {}};
+    }},
+    '../package.json': {version: '1.0.0'},
+  })[name],
+  process: {platform: 'win32', env: {PATH: 'first;second'}, argv: []},
+  console,
+});
+if (selected !== path.join('second', 'uvx.exe')) throw Error(selected);
+"""
+    result = subprocess.run(
+        [node, "-e", script, str(WRAPPER_ROOT / "bin" / "kicad-mcp-pro.js")],
+        capture_output=True,
+        text=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr

@@ -69,8 +69,17 @@ def test_origin_validation_blocks_unauthorized_cross_origin_mutations(sample_pro
     assert resp.status_code == 403
     assert "Origin not allowed" in resp.text
 
-    # 4. Same request with legitimate loopback origin is accepted
+    # 4. A legitimate origin alone is insufficient; a session and CSRF token are required.
+    client = TestClient(
+        server.streamable_http_app(),
+        base_url=f"http://127.0.0.1:{cfg.port}",
+        client=("127.0.0.1", 50000),
+    )
     loopback_headers = {"Origin": f"http://127.0.0.1:{cfg.port}"}
+    assert client.post("/api/config", headers=loopback_headers, json={}).status_code == 403
+    session = client.get("/api/owner/session")
+    assert session.status_code == 200
+    loopback_headers["X-KiCad-Owner-CSRF"] = session.json()["csrf_token"]
     resp_loopback = client.post(
         "/api/config",
         headers=loopback_headers,

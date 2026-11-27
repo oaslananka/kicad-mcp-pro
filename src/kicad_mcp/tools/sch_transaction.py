@@ -17,6 +17,7 @@ in the plan/preview and is expected to reuse ``sch_add_symbol`` as a follow-up.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -26,6 +27,7 @@ from mcp.server.mcpserver import MCPServer as FastMCP
 from ..config import get_config
 from ..discovery import find_kicad_version
 from ..models import sch_transaction as txn
+from ..path_safety import resolve_under
 from .metadata import headless_compatible
 
 
@@ -33,20 +35,25 @@ def _plans_dir() -> Path:
     cfg = get_config()
     if cfg.project_dir is None:
         raise ValueError("No active project is configured. Call kicad_set_project() first.")
-    target = cfg.project_dir / ".kicad-mcp" / "plans"
+    target = cfg.resolve_within_project(".kicad-mcp/plans", allow_absolute=False)
     target.mkdir(parents=True, exist_ok=True)
     return target
 
 
 def _plan_path(plan_id: str) -> Path:
-    return _plans_dir() / f"{plan_id}.json"
+    if not re.fullmatch(r"plan_[0-9a-f]{12}", plan_id):
+        raise ValueError("Invalid schematic plan ID.")
+    return resolve_under(_plans_dir(), f"{plan_id}.json", allow_absolute=False)
 
 
 def _load_stored(plan_id: str) -> txn.StoredPlan | None:
     path = _plan_path(plan_id)
     if not path.exists():
         return None
-    return txn.StoredPlan.from_dict(json.loads(path.read_text(encoding="utf-8")))
+    stored = txn.StoredPlan.from_dict(json.loads(path.read_text(encoding="utf-8")))
+    if stored.plan.plan_id != plan_id:
+        raise ValueError("Stored schematic plan ID does not match its filename.")
+    return stored
 
 
 def _save_stored(stored: txn.StoredPlan) -> None:
@@ -137,12 +144,19 @@ def sch_apply_plan(plan_id: str) -> str:
             {"plan_id": plan_id, "status": "applied", "note": "Plan was already applied."}
         )
 
-    checkpoint_dir = _plans_dir() / plan_id / "checkpoint"
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_dir = resolve_under(_plans_dir(), f"{plan_id}/checkpoint", allow_absolute=False)
+    cfg = get_config()
+    if cfg.project_dir is None:
+        raise ValueError("No active project is configured.")
+    root = cfg.project_dir.resolve()
     backed_up: list[str] = []
     for sch_file in project_schematic_files():
-        shutil.copy2(sch_file, checkpoint_dir / sch_file.name)
-        backed_up.append(sch_file.name)
+        relative = sch_file.resolve().relative_to(root).as_posix()
+        source = cfg.resolve_within_project(relative, allow_absolute=False)
+        destination = resolve_under(checkpoint_dir, relative, allow_absolute=False)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        backed_up.append(relative)
 
     active = _active_schematic()
     labels = stored.plan.labels
@@ -308,16 +322,26 @@ def sch_rollback_plan(plan_id: str) -> str:
             {"plan_id": plan_id, "status": stored.status, "note": "Nothing to roll back."}
         )
 
-    checkpoint_dir = Path(stored.checkpoint_dir)
+    from .schematic import project_schematic_files
+
+    checkpoint_dir = resolve_under(_plans_dir(), f"{plan_id}/checkpoint", allow_absolute=False)
     cfg = get_config()
     if cfg.project_dir is None:
         return json.dumps({"error": "No active project is configured."})
-    restored: list[str] = []
+    root = cfg.project_dir.resolve()
+    current = {path.resolve().relative_to(root).as_posix() for path in project_schematic_files()}
+    if set(stored.applied_files) != current or len(stored.applied_files) != len(current):
+        raise ValueError("Checkpoint does not match the current schematic hierarchy.")
+    copies: list[tuple[Path, Path]] = []
     for name in stored.applied_files:
-        source = checkpoint_dir / name
-        if source.exists():
-            shutil.copy2(source, cfg.project_dir / name)
-            restored.append(name)
+        source = resolve_under(checkpoint_dir, name, allow_absolute=False)
+        destination = cfg.resolve_within_project(name, allow_absolute=False)
+        if not source.is_file() or not destination.is_file():
+            raise ValueError("Schematic checkpoint is incomplete.")
+        copies.append((source, destination))
+    for source, destination in copies:
+        shutil.copy2(source, destination)
+    restored = list(stored.applied_files)
 
     rolled_back = txn.StoredPlan(
         plan=stored.plan,

@@ -21,7 +21,7 @@ from starlette.routing import Route
 from .. import __version__
 from ..cli_init import MCP_CLIENT_CONFIGS
 from ..compatibility import DESKTOP_API_CONTRACT_VERSION, DESKTOP_BACKEND_VERSION_POLICY
-from ..config import get_config, reset_config
+from ..config import KiCadMCPConfig, get_config, reset_config
 from ..diagnostics import build_health_report
 from ..discovery import find_kicad_version
 from ..errors import UnsafePathError
@@ -33,6 +33,7 @@ from ..project.http_binding import PROJECT_CONFIG_FIELDS, HttpProjectBinding
 from ..tools.router import available_profiles, tool_count_for_profile
 from .dashboard import DASHBOARD_HTML
 from .owner_routes import (
+    _authorize_mutation,
     _owner_session,
     api_client_config_apply,
     api_client_config_preview,
@@ -452,7 +453,6 @@ ALLOWED_CONFIG_KEYS = {
     "sch_file",
     "operating_mode",
     "enable_experimental_tools",
-    "enable_tasks",
 }
 _config_post_lock = threading.Lock()
 
@@ -481,6 +481,9 @@ def _validate_config_project_directory(
 
 async def api_config_post(request: Request) -> JSONResponse:
     """Update the server configuration at runtime via environment overrides."""
+    _, denial = _authorize_mutation(request)
+    if denial is not None:
+        return denial
     try:
         body = await request.json()
     except Exception:
@@ -488,6 +491,10 @@ async def api_config_post(request: Request) -> JSONResponse:
     if not isinstance(body, dict):
         return JSONResponse({"error": "Body must be a JSON object."}, status_code=400)
 
+    if "enable_tasks" in body:
+        return JSONResponse(
+            {"error": "Tasks cannot be enabled through the dashboard."}, status_code=400
+        )
     applied: list[str] = []
     errors: list[dict[str, str]] = []
 
@@ -504,6 +511,7 @@ async def api_config_post(request: Request) -> JSONResponse:
 
     def apply_settings() -> None:
         with _config_post_lock:
+            KiCadMCPConfig(**{key: str(value) for key, value in safe_body.items()})
             for key, value in safe_body.items():
                 env_key = f"KICAD_MCP_{key.upper()}"
                 os.environ[env_key] = str(value)
@@ -512,16 +520,21 @@ async def api_config_post(request: Request) -> JSONResponse:
                 reset_config()
                 logger.info("config_updated_via_api", keys=applied)
 
-    if isinstance(binding, HttpProjectBinding):
-        with binding.configuration_update() as can_select:
-            if not can_select and PROJECT_CONFIG_FIELDS.intersection(safe_body):
-                return JSONResponse(
-                    {"error": "The HTTP project is active. Restart to select another project."},
-                    status_code=409,
-                )
+    try:
+        if isinstance(binding, HttpProjectBinding):
+            with binding.configuration_update() as can_select:
+                if not can_select and PROJECT_CONFIG_FIELDS.intersection(safe_body):
+                    return JSONResponse(
+                        {"error": "The HTTP project is active. Restart to select another project."},
+                        status_code=409,
+                    )
+                apply_settings()
+        else:
             apply_settings()
-    else:
-        apply_settings()
+    except ValueError:
+        return JSONResponse(
+            {"error": "Invalid configuration. No settings changed."}, status_code=400
+        )
 
     payload = _config_public_payload()
     result = {
@@ -588,11 +601,14 @@ async def api_tool_test(request: Request) -> JSONResponse:
     if not isinstance(arguments, dict):
         return JSONResponse({"error": "arguments must be an object."}, status_code=400)
 
+    dry_run = body.get("dry_run", True) is True
+    if not dry_run:
+        _, denial = _authorize_mutation(request)
+        if denial is not None:
+            return denial
     handle = get_server_handle()
     if handle is None:
         return JSONResponse({"error": "Server not initialized"}, status_code=503)
-
-    dry_run = bool(body.get("dry_run", True))
     if dry_run:
         return JSONResponse(
             {
@@ -643,6 +659,9 @@ async def api_server_action(request: Request) -> JSONResponse:  # noqa: S7503 --
     POST /api/server/restart
     POST /api/server/shutdown
     """
+    _, denial = _authorize_mutation(request)
+    if denial is not None:
+        return denial
     action = request.path_params.get("action", "").strip().casefold()
     if action not in {"start", "stop", "shutdown", "restart"}:
         return JSONResponse(

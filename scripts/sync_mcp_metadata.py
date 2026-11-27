@@ -335,6 +335,8 @@ def _oci_package(metadata: dict[str, Any]) -> dict[str, Any]:
                 "default": f"{GHCR_IMAGE}:{metadata['version']}",
                 "isRequired": True,
             },
+            {"type": "positional", "value": "--transport"},
+            {"type": "positional", "value": "stdio"},
         ],
     }
 

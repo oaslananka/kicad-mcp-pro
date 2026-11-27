@@ -39,7 +39,7 @@ KICAD_MCP_PROFILE=release
 KICAD_MCP_OPERATING_MODE=manufacturing
 ```
 
-The profile controls discovery. The operating mode is an independent execution-risk gate. Selecting `build` while remaining in `readonly` mode does not silently enable write operations. Selecting `release` without manufacturing mode does not expose the final package operation.
+The profile limits both discovery and direct tool execution. The operating mode is an independent execution-risk gate. Selecting `build` while remaining in `readonly` mode does not silently enable write operations. Selecting `release` without manufacturing mode does not expose the final package operation.
 
 ## Safety boundaries
 

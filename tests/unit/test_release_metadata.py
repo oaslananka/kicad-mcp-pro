@@ -111,6 +111,10 @@ def test_release_metadata_is_synchronised() -> None:
     assert server_oci["registry"] == "container"
     assert server_oci["image"] == "ghcr.io/oaslananka/kicad-mcp-pro"
     assert server_oci["identifier"] == f"{server_oci['image']}:{version}"
+    assert server_oci["packageArguments"][-2:] == [
+        {"type": "positional", "value": "--transport"},
+        {"type": "positional", "value": "stdio"},
+    ]
     assert mcp_oci["identifier"] == f"{mcp_oci['image']}:{version}"
     assert mcp_json["version"] == version
     assert server_json["name"] == "io.github.oaslananka/kicad-mcp-pro"

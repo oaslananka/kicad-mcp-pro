@@ -288,8 +288,16 @@ def test_http_project_binding_blocks_dashboard_change(sample_project: Path, tmp_
     app = server.streamable_http_app()
     second = tmp_path / "second"
     second.mkdir()
-    with TestClient(app, base_url="http://127.0.0.1:3334") as client:
-        first = client.post("/api/config", json={"project_dir": str(sample_project)})
+    with TestClient(app, base_url="http://127.0.0.1:3334", client=("127.0.0.1", 50000)) as client:
+        session = client.get("/api/owner/session")
+        assert session.status_code == 200
+        headers = {
+            "Origin": "http://127.0.0.1:3334",
+            "X-KiCad-Owner-CSRF": session.json()["csrf_token"],
+        }
+        first = client.post(
+            "/api/config", json={"project_dir": str(sample_project)}, headers=headers
+        )
         assert first.status_code == 200
         assert get_config().project_dir == sample_project.resolve()
         result = client.post(
@@ -298,7 +306,7 @@ def test_http_project_binding_blocks_dashboard_change(sample_project: Path, tmp_
             json=_request("tools/call", params={"name": "kicad_get_version", "arguments": {}}),
         )
         assert result.status_code == 200
-        denied = client.post("/api/config", json={"project_dir": str(second)})
+        denied = client.post("/api/config", json={"project_dir": str(second)}, headers=headers)
         assert denied.status_code == 409
         assert get_config().project_dir == sample_project.resolve()
 

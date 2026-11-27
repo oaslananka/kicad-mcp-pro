@@ -376,3 +376,52 @@ def test_ngspice_runner_inspice_result_parsers(tmp_path: Path) -> None:
     assert transient.traces[0].values == [0.0, 1.2]
     assert dc.x_label == "sweep"
     assert dc.x_values == [0.0, 5.0]
+
+
+@pytest.mark.parametrize("probe", ["bad name", "net)\ninvalid", "net;invalid", "net'"])
+def test_ngspice_rejects_unsafe_probe_before_deck_generation(tmp_path: Path, probe: str) -> None:
+    runner = NgspiceRunner()
+    with pytest.raises(ValueError, match="SPICE.*name"):
+        runner._build_cli_deck(
+            "operating-point", "* deck\n.end\n", tmp_path / "data", tmp_path / "raw", [probe]
+        )
+
+
+def test_ngspice_rejects_untrusted_control_block(tmp_path: Path) -> None:
+    runner = NgspiceRunner()
+    with pytest.raises(ValueError, match="SPICE.*control"):
+        runner._build_cli_deck(
+            "operating-point",
+            "* deck\n .CoNtRoL\nquit\n.endc\n.end\n",
+            tmp_path / "data",
+            tmp_path / "raw",
+            [],
+        )
+
+
+def test_ngspice_rejects_unsafe_sweep_source(tmp_path: Path) -> None:
+    runner = NgspiceRunner()
+    with pytest.raises(ValueError, match="SPICE.*name"):
+        runner._build_cli_deck(
+            "dc",
+            "* deck\n.end\n",
+            tmp_path / "data",
+            tmp_path / "raw",
+            [],
+            source_ref="V1 invalid",
+            start_v=0,
+            stop_v=1,
+            step_v=1,
+        )
+
+
+def test_ngspice_rejects_control_output_path_quote(tmp_path: Path) -> None:
+    runner = NgspiceRunner()
+    with pytest.raises(ValueError, match="SPICE.*path"):
+        runner._build_cli_deck(
+            "operating-point",
+            "* deck\n.end\n",
+            tmp_path / "user's data",
+            tmp_path / "raw",
+            [],
+        )

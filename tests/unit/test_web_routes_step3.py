@@ -35,6 +35,7 @@ def _clean_globals(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("KICAD_MCP_TRANSPORT", raising=False)
     monkeypatch.delenv("KICAD_MCP_CORS_ORIGINS", raising=False)
     reset_config()
+    monkeypatch.setattr("kicad_mcp.web.routes._authorize_mutation", lambda _: ("test", None))
     # Reset server handle and metrics to prevent cross-test pollution
     set_server_handle(None)
     reset_metrics()

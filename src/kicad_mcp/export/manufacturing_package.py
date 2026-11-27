@@ -189,14 +189,14 @@ class ExportManufacturingPackageService:
     def _verify_approved_project_files(
         self, evidence_path: Path, payload: dict[str, Any]
     ) -> str | None:
-        """Revalidate reference file-level approval bindings at the export boundary."""
+        """Revalidate file-level approval bindings at the export boundary."""
         bound_reference_approval = evidence_path.name == _REFERENCE_APPROVAL_FILENAME
         raw_files = payload.get("approved_project_files")
         expected_state = payload.get("project_state_digest")
         if bound_reference_approval and (raw_files is None or expected_state is None):
             return "Manufacturing reference approval requires bound project state evidence."
         if raw_files is None:
-            return None
+            return "Manufacturing approval requires bound project state evidence."
 
         parsed = _parse_approved_project_files(raw_files)
         if isinstance(parsed, str):

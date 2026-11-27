@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Protocol
 
 from ..errors import SchematicWriteUnsafeError
+from ..path_safety import resolve_under
 from .guarded_api_save import guarded_kicad_api_save
 from .sheet_pins import (
     EDGES,
@@ -281,7 +282,7 @@ class SchematicHierarchyAuthoringService:
         child_name = filename
         if not child_name.endswith(".kicad_sch"):
             child_name = f"{child_name}.kicad_sch"
-        child_path = top_schematic_path.parent / child_name
+        child_path = resolve_under(top_schematic_path.parent, child_name, allow_absolute=False)
 
         try:
             schematic = self.load_schematic(top_schematic_path)

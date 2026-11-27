@@ -1365,14 +1365,10 @@ function saveSettings(e) {
   new FormData(form).forEach((v, k) => { data[k.replace('cfg-','')] = v; });
   data.port = parseInt(data.port, 10) || 3334;
   byId('settings-msg').innerHTML = '';
-  fetch('/api/config', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify(data),
-  }).then(r => r.json()).then(res => {
+  gpPostOwner('/api/config', data).then(res => {
     showMsg('settings-msg', res.message || res.status || 'Settings saved. Some changes require a restart.', res.error ? 'error' : 'success');
-  }).catch(() => {
-    showMsg('settings-msg', 'Failed to save settings', 'error');
+  }).catch(error => {
+    showMsg('settings-msg', error.message || 'Failed to save settings', 'error');
   });
 }
 
@@ -1765,13 +1761,8 @@ function wizardNext() {
 
   // Explicitly save before exporting client configuration. Previously Next
   // discarded the typed folder, silently connecting the MCP host elsewhere.
-  fetch('/api/config', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({project_dir: project})
-  }).then(async response => {
-    const result = await response.json();
-    if (!response.ok || !Array.isArray(result.applied) ||
+  gpPostOwner('/api/config', {project_dir: project}).then(result => {
+    if (!Array.isArray(result.applied) ||
         !result.applied.includes('project_dir')) {
       throw new Error(result.error || 'Cannot select this project folder.');
     }
@@ -2063,7 +2054,7 @@ function serverAction(action) {
   const dangerous = action === 'stop' || action === 'restart';
   if (dangerous && !confirm('Server action: ' + action + '. Continue?')) return;
   showMsg('action-msg', 'Sending ' + action + ' request...', 'info');
-  fetch('/api/server/' + action, { method: 'POST' }).then(r => r.json()).then(d => {
+  gpPostOwner('/api/server/' + action).then(d => {
     const msg = d.message || d.status || (action + ' requested');
     showMsg('action-msg', msg, d.error ? 'error' : 'info');
     setTimeout(refreshStatus, 1500);
@@ -2076,7 +2067,7 @@ function serverAction(action) {
 function confirmRestart() {
   if (confirm('Are you sure you want to restart the server?')) {
     showMsg('action-msg', 'Restart initiated...', 'info');
-    fetch('/api/server/restart', { method: 'POST' }).then(r => r.json()).then(d => {
+    gpPostOwner('/api/server/restart').then(d => {
       showMsg('action-msg', d.message || d.status || 'Restart initiated...', 'info');
       setTimeout(refreshStatus, 3000);
     }).catch(err => {

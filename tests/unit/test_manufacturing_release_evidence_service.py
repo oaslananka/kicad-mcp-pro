@@ -415,3 +415,40 @@ def test_run_cli_drc_and_erc_handle_unlink_os_error(tmp_path: Path) -> None:
     assert erc_passed is False
     assert erc_violations == -1
     assert erc_err == "ERC exited with code 0"
+
+
+@pytest.mark.parametrize(
+    ("kind", "report", "gate"),
+    [
+        ("sch", {"sheets": [{"path": "/", "violations": [{"severity": "error"}]}]}, "erc"),
+        (
+            "pcb",
+            {
+                "violations": [],
+                "unconnected_items": [],
+                "schematic_parity": [{"severity": "error"}],
+            },
+            "drc",
+        ),
+        ("sch", {}, "erc"),
+        ("pcb", {"violations": None, "unconnected_items": []}, "drc"),
+    ],
+)
+def test_release_evidence_blocks_findings_or_invalid_report(
+    tmp_path: Path, kind: str, report: dict[str, object], gate: str
+) -> None:
+    module = _module()
+    context = _context(tmp_path)
+
+    def runner(*args: str) -> tuple[int, str, str]:
+        if args[0] == kind:
+            output = Path(args[args.index("--output") + 1])
+            output.write_text(json.dumps(report), encoding="utf-8")
+            return 0, "", ""
+        return _successful_runner(*args)
+
+    service = module.ReleaseEvidenceService(run_cli=runner)
+    payload = json.loads(service.create_evidence(context=context, dry_run=True))
+
+    assert payload["verdict"] == "release_blocked"
+    assert _gate(payload, gate)["passed"] is False

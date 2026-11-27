@@ -2433,6 +2433,7 @@ def build_server(
     server.operating_mode = operating_mode
     server.allow_experimental_tools = operating_mode is OperatingMode.EXPERIMENTAL
     server.allowed_tool_names = set(tools_for_profile(selected_profile))
+    server.execution_tool_names = server.allowed_tool_names
 
     # MCP SDK v2 removed the legacy experimental Tasks runtime. Configuration
     # rejects that superseded draft fail-closed; no task handlers are registered.

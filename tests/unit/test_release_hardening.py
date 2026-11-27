@@ -1501,8 +1501,19 @@ def test_dashboard_config_filtering(sample_project: Path) -> None:
 
     # Post updates: safe key (log_level) and unsafe key (kicad_cli)
     original_cli = cfg.kicad_cli
+    client = TestClient(
+        server.streamable_http_app(),
+        base_url=f"http://127.0.0.1:{cfg.port}",
+        client=("127.0.0.1", 50000),
+    )
+    session = client.get("/api/owner/session")
+    assert session.status_code == 200
     response = client.post(
         "/api/config",
+        headers={
+            "Origin": f"http://127.0.0.1:{cfg.port}",
+            "X-KiCad-Owner-CSRF": session.json()["csrf_token"],
+        },
         json={
             "log_level": "DEBUG",
             "kicad_cli": "/path/to/malicious/binary",

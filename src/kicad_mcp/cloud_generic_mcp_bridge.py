@@ -51,11 +51,12 @@ def is_generic_cloud_tool_safe(name: str) -> bool:
 def _safe_string_argument(value: str) -> bool:
     if len(value) > 16_384 or "\x00" in value:
         return False
+    value = value.strip()
     if value.lower().startswith(("file:", "smb:", "ssh:", "ftp:")):
         return False
     path = value.replace("\\", "/")
     # Never allow device/UNC roots, Windows drive paths or path traversal.
-    if re.search(r"(?i)(?:^|\s)[a-z]:/", path) or path.startswith(("//", "/")):
+    if re.search(r"(?i)(?:^|\s)[a-z]:", path) or path.startswith(("//", "/")):
         return False
     return ".." not in PurePosixPath(path).parts and ".." not in PureWindowsPath(value).parts
 

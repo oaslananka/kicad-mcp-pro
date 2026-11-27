@@ -365,3 +365,48 @@ async def test_verify_plan_rejects_unusable_configured_cli(
     )
     assert verified["erc"] == "unavailable"
     assert "KICAD_MCP_KICAD_CLI" in verified["erc_note"]
+
+
+@pytest.mark.parametrize(
+    "plan_id", ["../outside", "plan-invalid", "plan_123", "plan_abcdefabcdef/extra"]
+)
+def test_plan_path_rejects_noncanonical_ids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, plan_id: str
+) -> None:
+    from kicad_mcp.tools import sch_transaction
+
+    monkeypatch.setattr(sch_transaction, "_plans_dir", lambda: tmp_path)
+    with pytest.raises(ValueError, match="plan ID"):
+        sch_transaction._plan_path(plan_id)
+
+
+@pytest.mark.anyio
+async def test_nested_schematic_checkpoint_preserves_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.server import create_server
+    from kicad_mcp.tools import schematic
+    from tests.conftest import call_tool_text
+
+    root = tmp_path / "test.kicad_sch"
+    child = tmp_path / "sub" / "test.kicad_sch"
+    child.parent.mkdir()
+    (tmp_path / "test.kicad_pro").write_text("{}", encoding="utf-8")
+    (tmp_path / "test.kicad_pcb").write_text("", encoding="utf-8")
+    root.write_text(MINIMAL_SCH, encoding="utf-8")
+    child.write_text(MINIMAL_SCH.replace("Transaction Test", "Child"), encoding="utf-8")
+    original = {p: p.read_bytes() for p in (root, child)}
+    server = create_server()
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(tmp_path)})
+    monkeypatch.setattr(schematic, "project_schematic_files", lambda: [root, child])
+    planned = json.loads(
+        await call_tool_text(
+            server, "sch_plan_from_spec", {"spec_json": json.dumps(SUBCIRCUIT_SPEC)}
+        )
+    )
+    await call_tool_text(server, "sch_apply_plan", {"plan_id": planned["plan_id"]})
+    rolled = json.loads(
+        await call_tool_text(server, "sch_rollback_plan", {"plan_id": planned["plan_id"]})
+    )
+    assert rolled["status"] == "rolled_back"
+    assert {p: p.read_bytes() for p in (root, child)} == original

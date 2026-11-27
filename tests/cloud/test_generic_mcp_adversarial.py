@@ -841,3 +841,8 @@ async def test_stalled_read_never_reports_recovery_after_grant_revoked(
     pending = asyncio.wait_for(service.dispatch(request), timeout=0.3)
     with pytest.raises(GenericMcpTransportError, match="mcp_bridge_request_denied"):
         await pending
+
+
+@pytest.mark.parametrize("value", ["C:board.kicad_pcb", " /etc/passwd", " file:///tmp/file"])
+def test_remote_path_rejects_drive_relative_and_padded_paths(value: str) -> None:
+    assert not _safe_arguments({"path": value})
