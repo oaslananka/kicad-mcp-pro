@@ -779,7 +779,8 @@ async def test_project_release_readiness_exports_markdown_when_evidence_is_compl
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "bom.csv").write_text("ref,mpn\nR1,RC0603FR-0710KL\n", encoding="utf-8")
     (output_dir / "board-pos.csv").write_text("ref,x,y,rot\nR1,0,0,0\n", encoding="utf-8")
-    (output_dir / "fabrication.pdf").write_text("placeholder", encoding="utf-8")
+    (output_dir / "board.gbr").write_text("gerber", encoding="utf-8")
+    (output_dir / "board.drl").write_text("drill", encoding="utf-8")
     (output_dir / "manifest.json").write_text(
         json.dumps({"content_hash": "abc123", "files": [{"filename": "bom.csv"}]}),
         encoding="utf-8",

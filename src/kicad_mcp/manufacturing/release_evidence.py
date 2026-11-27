@@ -10,7 +10,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from ..path_safety import resolve_under
@@ -44,22 +44,88 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+_REPORT_NAME = "manufacturing_release_report.json"
+_EXPORT_LOCK = ".manufacturing-package-in-progress"
+
+
+def _usable_artifact(path: Path, root: Path) -> bool:
+    try:
+        return (
+            path.is_file()
+            and not path.is_symlink()
+            and path.stat().st_size > 0
+            and path.resolve().is_relative_to(root.resolve())
+        )
+    except OSError:
+        return False
+
+
 def find_release_files(output_dir: Path) -> list[Path]:
-    """Return manufacturing release files using the repository's reviewed patterns."""
-    patterns = [
+    """Discover nonempty local files for legacy standalone release tools."""
+    patterns = (
         "**/*.gbr",
         "**/*.drl",
+        "**/*.xnc",
         "**/*.csv",
         "**/*.ipc",
+        "**/*.ipc2581",
+        "**/*.odb",
         "**/*.pos",
         "**/*.step",
         "**/*.xml",
         "**/*.pdf",
-    ]
-    files: list[Path] = []
-    for pattern in patterns:
-        files.extend(output_dir.glob(pattern))
-    return sorted(set(files))
+    )
+    files = {path for pattern in patterns for path in output_dir.glob(pattern)}
+    return sorted(path for path in files if _usable_artifact(path, output_dir))
+
+
+def _verified_report_artifact(root: Path, item: object) -> Path:
+    if not isinstance(item, dict):
+        raise ValueError("Manufacturing report contains an invalid artifact record.")
+    relative = item.get("relative_path")
+    if not isinstance(relative, str) or not relative:
+        raise ValueError("Manufacturing report contains an invalid artifact path.")
+    spelling = PureWindowsPath(relative)
+    if spelling.anchor or ".." in spelling.parts:
+        raise ValueError("Manufacturing report contains an unsafe artifact path.")
+    path = root.joinpath(*spelling.parts)
+    if (
+        not _usable_artifact(path, root)
+        or type(item.get("size_bytes")) is not int
+        or item["size_bytes"] != path.stat().st_size
+        or item.get("sha256") != sha256_file(path)
+        or item.get("sha256") == "unavailable"
+    ):
+        raise ValueError(f"Manufacturing report artifact is missing or changed: {relative}")
+    return path
+
+
+def verified_release_files(output_dir: Path) -> list[Path]:
+    """Use the handoff's exact artifact hashes when it exists; never fall back on error."""
+    lock = output_dir / _EXPORT_LOCK
+    if lock.exists() or lock.is_symlink():
+        raise ValueError("Manufacturing report unavailable: a package export is in progress.")
+    report = output_dir / _REPORT_NAME
+    if not report.exists() and not report.is_symlink():
+        return find_release_files(output_dir)
+    if report.is_symlink() or not report.is_file():
+        raise ValueError("Manufacturing report is not a regular local file.")
+    try:
+        payload = json.loads(report.read_text(encoding="utf-8"))
+        if (
+            not isinstance(payload, dict)
+            or payload.get("schema_version") != "manufacturing_release.v1"
+        ):
+            raise ValueError("Manufacturing report has an invalid schema.")
+        entries = payload.get("artifacts")
+        if not isinstance(entries, list) or not entries:
+            raise ValueError("Manufacturing report has no artifact records.")
+        files = [_verified_report_artifact(output_dir, item) for item in entries]
+        if len(set(files)) != len(files):
+            raise ValueError("Manufacturing report contains duplicate artifact paths.")
+        return sorted(files)
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError("Manufacturing report could not be read or verified.") from exc
 
 
 def _name_has_token(path: Path, *tokens: str) -> bool:
@@ -98,7 +164,7 @@ def artifact_coverage(
             for path in files
             if path.suffix.casefold() == ".gbr" and path not in pick_and_place_set
         ],
-        "drill": [path for path in files if path.suffix.casefold() == ".drl"],
+        "drill": [path for path in files if path.suffix.casefold() in {".drl", ".xnc"}],
         "bom": [path for path in files if _is_bom(path)],
         "pick_and_place": pick_and_place,
     }
@@ -392,8 +458,13 @@ class ReleaseEvidenceService:
         gates: list[dict[str, Any]] = []
         blocking: list[str] = []
 
-        release_files = find_release_files(artifact_dir) if artifact_dir.exists() else []
+        try:
+            release_files = verified_release_files(artifact_dir)
+        except ValueError as exc:
+            release_files = []
+            blocking.append(str(exc))
 
+        initial_hashes = build_release_file_hashes(release_files, relative_to=artifact_dir)
         artifact_gate, artifact_blocking = _evaluate_artifact_gate(
             artifact_dir, release_files, waive_missing_artifacts
         )
@@ -414,8 +485,18 @@ class ReleaseEvidenceService:
         gates.append(hv_gate)
         blocking.extend(hv_blocking)
 
-        verdict = "release_approved" if not blocking else "release_blocked"
         file_hashes = build_release_file_hashes(release_files, relative_to=artifact_dir)
+        try:
+            if (
+                verified_release_files(artifact_dir) != release_files
+                or file_hashes != initial_hashes
+            ):
+                blocking.append("Manufacturing artifacts changed during release validation.")
+        except ValueError as exc:
+            blocking.append(str(exc))
+        if any("unavailable" in (item["sha256"], item["size_bytes"]) for item in file_hashes):
+            blocking.append("Manufacturing artifact could not be hashed.")
+        verdict = "release_approved" if not blocking else "release_blocked"
         source_hashes = build_source_hashes(
             [
                 ("project", context.project_file),

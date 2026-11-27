@@ -3133,7 +3133,7 @@ def _release_bom_readiness() -> BomReadinessPayload:
 
 
 def _release_artifact_evidence() -> ReadinessEvidencePayload:
-    from ..manufacturing.release_evidence import find_release_files
+    from ..manufacturing.release_evidence import artifact_coverage, verified_release_files
 
     cfg = get_config()
     if cfg.project_dir is None:
@@ -3147,24 +3147,25 @@ def _release_artifact_evidence() -> ReadinessEvidencePayload:
             metadata={"missing_categories": ["bom", "pick_and_place", "manufacturing"]},
         )
 
-    release_files = find_release_files(output_dir)
-    bom_paths: list[str] = []
-    pick_and_place_paths: list[str] = []
-    manufacturing_paths: list[str] = []
-    for file_path in release_files:
-        lowered = file_path.name.casefold()
-        if "bom" in lowered:
-            bom_paths.append(str(file_path))
-        elif any(token in lowered for token in ("pos", "cpl", "pick", "place")):
-            pick_and_place_paths.append(str(file_path))
-        else:
-            manufacturing_paths.append(str(file_path))
+    try:
+        release_files = verified_release_files(output_dir)
+    except ValueError as exc:
+        return ReadinessEvidencePayload(
+            available=False,
+            summary=str(exc),
+            path=str(output_dir),
+            metadata={"missing_categories": ["bom", "pick_and_place", "manufacturing"]},
+        )
+    coverage = artifact_coverage(output_dir, files=release_files)
+    bom_paths = [str(path) for path in coverage["bom"]]
+    pick_and_place_paths = [str(path) for path in coverage["pick_and_place"]]
+    manufacturing_paths = [str(path) for path in coverage["gerber"] + coverage["drill"]]
     missing_categories = [
         name
         for name, paths in (
             ("bom", bom_paths),
             ("pick_and_place", pick_and_place_paths),
-            ("manufacturing", manufacturing_paths),
+            ("manufacturing", coverage["gerber"] and coverage["drill"]),
         )
         if not paths
     ]

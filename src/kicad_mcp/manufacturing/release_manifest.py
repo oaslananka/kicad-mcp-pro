@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from .release_evidence import build_release_file_hashes, build_source_hashes, find_release_files
+from .release_evidence import build_release_file_hashes, build_source_hashes, verified_release_files
 
 
 class DesignIntentLike(Protocol):
@@ -64,14 +64,19 @@ class ReleaseManifestService:
                 "Run export_manufacturing_package() first."
             )
 
-        release_files = find_release_files(out_dir)
+        try:
+            release_files = verified_release_files(out_dir)
+        except ValueError as exc:
+            raise ReleaseManifestPrerequisiteError(str(exc)) from exc
         if not release_files:
             raise ReleaseManifestPrerequisiteError(
                 "No release files found in output directory.\n"
                 "Run export_manufacturing_package() first to generate Gerber/drill/BOM files."
             )
 
-        file_hashes = build_release_file_hashes(release_files)
+        file_hashes = build_release_file_hashes(release_files, relative_to=out_dir)
+        if any("unavailable" in (item["sha256"], item["size_bytes"]) for item in file_hashes):
+            raise ReleaseManifestPrerequisiteError("Manufacturing artifact could not be hashed.")
 
         intent_json = json.dumps(intent.model_dump(), sort_keys=True)
         intent_hash = hashlib.sha256(intent_json.encode()).hexdigest()[:16]

@@ -103,3 +103,31 @@ def test_release_manifest_persists_deterministic_hash_and_provenance(tmp_path: P
     assert f"Content hash: {second_payload['content_hash']}" in manifest_text
     assert "demo-F_Cu.gbr" in manifest_text
     assert "demo.drl" in manifest_text
+
+
+def test_manifest_preserves_distinct_relative_paths(tmp_path: Path) -> None:
+    module = _module()
+    context = _context(tmp_path)
+    for name in ("gerber", "pos"):
+        folder = context.output_dir / name
+        folder.mkdir(parents=True)
+        (folder / "board.gbr").write_text(name, encoding="utf8")
+    module.ReleaseManifestService().create_manifest(intent=FakeIntent({}), context=context)
+    manifest = json.loads((context.output_dir / "manifest.json").read_text())
+    assert [item["filename"] for item in manifest["files"]] == ["gerber/board.gbr", "pos/board.gbr"]
+
+
+def test_manifest_rejects_tampered_handoff_report(tmp_path: Path) -> None:
+    module = _module()
+    context = _context(tmp_path)
+    context.output_dir.mkdir()
+    artifact = context.output_dir / "board.gbr"
+    artifact.write_text("changed", encoding="utf8")
+    report = {
+        "schema_version": "manufacturing_release.v1",
+        "artifacts": [{"relative_path": artifact.name, "sha256": "0" * 64, "size_bytes": 7}],
+    }
+    (context.output_dir / "manufacturing_release_report.json").write_text(json.dumps(report))
+    with pytest.raises(module.ReleaseManifestPrerequisiteError, match="report"):
+        module.ReleaseManifestService().create_manifest(intent=FakeIntent({}), context=context)
+    assert not (context.output_dir / "manifest.json").exists()

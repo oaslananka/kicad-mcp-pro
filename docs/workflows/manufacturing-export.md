@@ -128,7 +128,12 @@ remain for diagnosis and must be archived before retrying. If an interrupted
 process leaves the `.manufacturing-package-in-progress` directory behind,
 verify no export is running before removing that empty lock directory.
 The report inventories only the expected manufacturing artifacts, not unrelated
-files in the output directory. File presence and hashes do not replace the
+files in the output directory. When the report exists, downstream manifest and release
+evidence generation verify its exact relative artifact paths, sizes and SHA256
+hashes rather than discovering unrelated files. An invalid report or active
+package lock blocks these operations even if missing artifact coverage is waived.
+Standalone release tools without a handoff report retain their file-discovery
+behavior; file discovery alone does not establish human-approved provenance. File presence and hashes do not replace the
 fabricator's format and layer-completeness checks.
 Direct `export_*()` tools do not enforce the full gate or approval evidence — use
 them only for low-level debug or interchange artifacts, switching to a broader
