@@ -11,6 +11,7 @@ from urllib3 import PoolManager
 from urllib3.exceptions import HTTPError
 
 MAX_JSON_BYTES = 4 * 1024 * 1024
+_STABLE_VERSION = re.compile(r"\d+\.\d+\.\d+", re.ASCII)
 
 
 def has_matching_wheel(payload: object, version: str) -> bool:
@@ -32,7 +33,7 @@ def has_matching_wheel(payload: object, version: str) -> bool:
 
 
 def fetch_release(version: str) -> object:
-    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+    if not _STABLE_VERSION.fullmatch(version):
         raise ValueError("Expected a stable Python release version.")
     pool = PoolManager(cert_reqs="CERT_REQUIRED", timeout=10.0)
     try:
@@ -73,7 +74,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("version")
     args = parser.parse_args()
-    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", args.version):
+    if not _STABLE_VERSION.fullmatch(args.version):
         parser.error("Expected a stable release version.")
     return 0 if wait_for_wheel(args.version) else 1
 

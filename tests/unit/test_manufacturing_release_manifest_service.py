@@ -128,6 +128,8 @@ def test_manifest_rejects_tampered_handoff_report(tmp_path: Path) -> None:
         "artifacts": [{"relative_path": artifact.name, "sha256": "0" * 64, "size_bytes": 7}],
     }
     (context.output_dir / "manufacturing_release_report.json").write_text(json.dumps(report))
+    service = module.ReleaseManifestService()
+    intent = FakeIntent({})
     with pytest.raises(module.ReleaseManifestPrerequisiteError, match="report"):
-        module.ReleaseManifestService().create_manifest(intent=FakeIntent({}), context=context)
+        service.create_manifest(intent=intent, context=context)
     assert not (context.output_dir / "manifest.json").exists()

@@ -71,7 +71,15 @@ def test_fetch_release_uses_verified_https_without_redirects() -> None:
 
 
 @pytest.mark.parametrize(
-    "version", ["file:///etc/passwd", "../other", "4.24.0/other", "4.24.0-rc1"]
+    "version",
+    [
+        "file:///etc/passwd",
+        "../other",
+        "4.24.0/other",
+        "4.24.0-rc1",
+        "\u0664.24.0",
+        "4.\uff12\uff14.0",
+    ],
 )
 def test_fetch_rejects_invalid_version_before_connecting(version: str) -> None:
     with patch.object(gate, "PoolManager") as create_pool:
@@ -109,3 +117,15 @@ def test_main_accepts_stable_version(monkeypatch: pytest.MonkeyPatch) -> None:
     with patch.object(gate, "wait_for_wheel", return_value=True) as wait:
         assert gate.main() == 0
         wait.assert_called_once_with("4.24.0")
+
+
+@pytest.mark.parametrize("version", ["4.24.0-rc1", "\u0664.24.0", "4.\uff12\uff14.0"])
+def test_main_rejects_invalid_version_without_polling(
+    monkeypatch: pytest.MonkeyPatch, version: str
+) -> None:
+    monkeypatch.setattr("sys.argv", ["wait_for_pypi_wheel.py", version])
+    with patch.object(gate, "wait_for_wheel") as wait:
+        with pytest.raises(SystemExit) as error:
+            gate.main()
+        assert error.value.code == 2
+        wait.assert_not_called()

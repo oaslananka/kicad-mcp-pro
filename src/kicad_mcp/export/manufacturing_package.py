@@ -26,6 +26,7 @@ _MISSING_APPROVAL_EVIDENCE = (
 _APPROVED_PROJECT_SUFFIXES = frozenset({".kicad_pro", ".kicad_sch", ".kicad_pcb", ".kicad_dru"})
 _APPROVED_PROJECT_METADATA = frozenset({".kicad-mcp/project_spec.json", ".kicad-mcp/variants.json"})
 _REFERENCE_APPROVAL_FILENAME = "reference-manufacturing-approval.json"
+_RELEASE_REPORT_NAME = "manufacturing_release_report.json"
 _INVALID_APPROVED_PROJECT_FILES = "Manufacturing evidence approved project files are invalid."
 
 
@@ -268,7 +269,7 @@ class ExportManufacturingPackageService(ManufacturingApprovalService):
 
     @staticmethod
     def _existing_outputs(root: Path) -> bool:
-        for name in ("bom.csv", "manufacturing_release_report.json"):
+        for name in ("bom.csv", _RELEASE_REPORT_NAME):
             target = root / name
             if target.exists() or target.is_symlink():
                 return True
@@ -396,7 +397,7 @@ class ExportManufacturingPackageService(ManufacturingApprovalService):
             return "Manufacturing package export failed: approval changed during export."
         if self.ensure_output_dir() != root:
             return "Manufacturing package export failed: active output directory changed."
-        report_target = root / "manufacturing_release_report.json"
+        report_target = root / _RELEASE_REPORT_NAME
         if report_target.exists() or report_target.is_symlink():
             return "Manufacturing package export blocked: existing release report appeared."
         artifacts = self._manufacturing_artifacts(root, paths)
@@ -445,7 +446,7 @@ class ExportManufacturingPackageService(ManufacturingApprovalService):
         results: list[str],
         artifacts: list[dict[str, Any]],
     ) -> Path:
-        report_path = out_dir / "manufacturing_release_report.json"
+        report_path = out_dir / _RELEASE_REPORT_NAME
         payload = {
             "schema_version": "manufacturing_release.v1",
             "created_at_utc": datetime.now(UTC).isoformat(),
