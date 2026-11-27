@@ -18,6 +18,7 @@ from kipy.board_types import (
     Zone,
 )
 from kipy.geometry import Angle
+from kipy.proto.common import types as common_types
 from kipy.proto.common.types.base_types_pb2 import Vector2 as VectorProto
 
 RotationAttribute = Literal["angle", "orientation"]
@@ -174,6 +175,51 @@ def apply_footprint_rotation(footprint: object, rotation_deg: float) -> Rotation
     raise FootprintRotationError(f"Requested footprint rotation could not be applied ({detail}).")
 
 
+def native_text_rotation(angle: float, *, keep_upright: bool) -> tuple[float, bool]:
+    """Match KiCad footprint Rotate/KeepUpright after applying the child angle delta."""
+    normalized = angle % 360
+    if keep_upright and normalized >= 180:
+        return normalized - 180, True
+    return normalized, False
+
+
+def _footprint_texts(footprint: FootprintInstance) -> Iterator[BoardText]:
+    for field in (
+        footprint.reference_field,
+        footprint.value_field,
+        footprint.datasheet_field,
+        footprint.description_field,
+    ):
+        yield field.text
+    for item in footprint.definition.items:
+        if isinstance(item, Field):
+            yield item.text
+        elif isinstance(item, BoardText):
+            yield item
+
+
+def _normalize_footprint_text(footprint: FootprintInstance) -> None:
+    horizontal = {
+        common_types.HA_LEFT: common_types.HA_RIGHT,
+        common_types.HA_RIGHT: common_types.HA_LEFT,
+    }
+    vertical = {
+        common_types.VA_TOP: common_types.VA_BOTTOM,
+        common_types.VA_BOTTOM: common_types.VA_TOP,
+    }
+    for text in _footprint_texts(footprint):
+        attrs = text.attributes
+        angle, flipped = native_text_rotation(attrs.angle, keep_upright=attrs.keep_upright)
+        attrs.angle = angle
+        if flipped:
+            attrs.horizontal_alignment = horizontal.get(
+                attrs.horizontal_alignment, attrs.horizontal_alignment
+            )
+            attrs.vertical_alignment = vertical.get(
+                attrs.vertical_alignment, attrs.vertical_alignment
+            )
+
+
 def _expected_cardinal_positions(
     footprint: object, current_deg: float | None, rotation_deg: float
 ) -> list[tuple[int, int]] | None:
@@ -205,8 +251,10 @@ def _apply_rotation_attribute(
     except Exception as exc:  # KiCad IPC surfaces raise generated transport/type errors.
         return f"{attribute}: {type(exc).__name__}"
     _restore_missing_3d_models(definition, models_before)
-    if isinstance(footprint, FootprintInstance) and expected_positions is not None:
-        _restore_cardinal_world_positions(footprint, expected_positions)
+    if isinstance(footprint, FootprintInstance):
+        if expected_positions is not None:
+            _restore_cardinal_world_positions(footprint, expected_positions)
+        _normalize_footprint_text(footprint)
     return None
 
 

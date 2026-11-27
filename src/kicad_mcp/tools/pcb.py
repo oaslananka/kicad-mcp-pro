@@ -85,6 +85,7 @@ from ..pcb.footprint_transform import (
     RotationAttribute,
     apply_footprint_rotation,
     get_current_footprint_rotation,
+    native_text_rotation,
     verify_footprint_rotation,
 )
 from ..pcb.groups_inspection import PcbGroupsInspectionService
@@ -3062,26 +3063,68 @@ def _apply_schematic_footprint_fields(block: str, properties: dict[str, str]) ->
     return block
 
 
+def _text_keeps_upright(child: str, *, legacy_unlocked: bool) -> bool:
+    unlocked = _child_span(child, "unlocked")
+    if unlocked is None:
+        return not legacy_unlocked
+    start, end = unlocked
+    match = re.fullmatch(r"\(unlocked\s+(yes|no)\s*\)", child[start:end])
+    if match is None:
+        raise ValueError("Unsupported footprint text upright flag; rotation refused.")
+    return match.group(1) == "no"
+
+
+def _reverse_text_justification(child: str) -> str:
+    effects = _child_span(child, "effects")
+    if effects is None:
+        return child
+    start, end = effects
+    effect = child[start:end]
+    justify = _child_span(effect, "justify")
+    if justify is None:
+        return child
+    jstart, jend = justify
+    opposite = {"left": "right", "right": "left", "top": "bottom", "bottom": "top"}
+    tokens = re.sub(
+        r"\b(left|right|top|bottom)\b",
+        lambda match: opposite[match.group()],
+        effect[jstart:jend],
+    )
+    return child[:start] + effect[:jstart] + tokens + effect[jend:] + child[end:]
+
+
+def _rotate_footprint_child_angle(
+    child: str, keyword: str, rotation: float, at: re.Pattern[str]
+) -> str:
+    span = _child_span(child, "at")
+    if span is None:
+        return child
+    at_start, at_end = span
+    match = at.fullmatch(child[at_start:at_end])
+    if match is None or (keyword == "pad" and match.group(4)):
+        raise ValueError("Unsupported footprint child placement; rotation refused.")
+    legacy = match.group(4) or ""
+    keep_upright = keyword != "pad" and _text_keeps_upright(child, legacy_unlocked=bool(legacy))
+    angle, flipped = native_text_rotation(
+        float(match.group(3) or 0) + rotation, keep_upright=keep_upright
+    )
+    position = f"(at {match.group(1)} {match.group(2)} {angle:g}{legacy})"
+    child = child[:at_start] + position + child[at_end:]
+    return _reverse_text_justification(child) if flipped else child
+
+
 def _rotate_footprint_child_angles(block: str, rotation: float) -> str:
     """Pad/text local XY stays fixed; KiCad PCB child angles are absolute."""
     if rotation % 360 == 0:
         return block
-    at = re.compile(rf"\(at\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})(?:\s+({FLOAT_PATTERN}))?\s*\)")
+    at = re.compile(
+        rf"\(at\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})(?:\s+({FLOAT_PATTERN}))?"
+        r"(\s+unlocked)?\s*\)"
+    )
     for keyword, start, end in reversed(_direct_child_spans(block)):
-        if keyword not in {"pad", "property", "fp_text"}:
-            continue
-        child = block[start:end]
-        span = _child_span(child, "at")
-        if span is None:
-            continue
-        at_start, at_end = span
-        match = at.fullmatch(child[at_start:at_end])
-        if match is None:
-            raise ValueError("Unsupported footprint child placement; rotation refused.")
-        angle = (float(match.group(3) or 0) + rotation) % 360
-        position = f"(at {match.group(1)} {match.group(2)} {angle:g})"
-        child = child[:at_start] + position + child[at_end:]
-        block = block[:start] + child + block[end:]
+        if keyword in {"pad", "property", "fp_text"}:
+            child = _rotate_footprint_child_angle(block[start:end], keyword, rotation, at)
+            block = block[:start] + child + block[end:]
     return block
 
 

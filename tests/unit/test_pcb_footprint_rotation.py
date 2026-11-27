@@ -1215,3 +1215,45 @@ def test_cardinal_rotation_refuses_changed_geometry_structure() -> None:
 
     with pytest.raises(FootprintRotationError, match="geometry changed structure"):
         _restore_cardinal_world_positions(FootprintInstance(), [])
+
+
+@pytest.mark.parametrize(
+    ("delta", "upright", "expected_angle", "expected_h", "expected_v"),
+    [
+        (90, True, 0, 3, 3),
+        (89, True, 179, 1, 1),
+        (-90, True, 0, 1, 1),
+        (90, False, 180, 1, 1),
+        (0, True, 90, 1, 1),
+    ],
+)
+def test_sdk_rotation_matches_native_keep_upright(
+    delta: int, upright: bool, expected_angle: int, expected_h: int, expected_v: int
+) -> None:
+    from kipy.board_types import BoardText, Field
+
+    footprint = FootprintInstance()
+    text = BoardText()
+    field = Field()
+    for item in (footprint.reference_field.text, footprint.value_field.text, field.text, text):
+        attrs = item.attributes
+        attrs.angle = 90
+        attrs.keep_upright = upright
+        attrs.horizontal_alignment = 1
+        attrs.vertical_alignment = 1
+        attrs.mirrored = True
+    footprint.definition.items = [field, text]
+    apply_footprint_rotation(footprint, delta)
+    refreshed = FootprintInstance(proto=footprint.proto)
+    for item in (
+        refreshed.reference_field.text,
+        refreshed.value_field.text,
+        refreshed.definition.items[0].text,
+        refreshed.definition.items[1],
+    ):
+        attrs = item.attributes
+        assert expected_angle == attrs.angle
+        assert expected_h == attrs.horizontal_alignment
+        assert expected_v == attrs.vertical_alignment
+        assert upright == attrs.keep_upright
+        assert attrs.mirrored

@@ -386,3 +386,75 @@ def test_unplaced_footprint_without_zone_can_receive_root_pose() -> None:
     placed = pcb._replace_root_at(block, x_mm=30, y_mm=40, rotation=0)
     assert "(at 30.0000 40.0000 0)" in placed
     assert '(pad "1" smd rect (at 1 2))' in placed
+
+
+@pytest.mark.parametrize(
+    ("delta", "flags", "expected_angle", "expected_justify"),
+    [
+        (90, "", 0, "right bottom mirror"),
+        (89, "", 179, "left top mirror"),
+        (-90, "", 0, "left top mirror"),
+        (90, "(unlocked yes)", 180, "left top mirror"),
+        (90, "(unlocked no)", 0, "right bottom mirror"),
+        (0, "", 90, "left top mirror"),
+    ],
+)
+def test_file_rotation_matches_native_keep_upright(
+    delta: int, flags: str, expected_angle: int, expected_justify: str
+) -> None:
+    block = (
+        '(footprint "RF" (at 60 50 0) '
+        f'(property "Reference" "U3" (at 1 2 90) {flags} '
+        "(effects (font (size 1 1)) (justify left top mirror))) "
+        '(pad "1" smd rect (at 1 2 90)))'
+    )
+    result = pcb._replace_root_at(block, x_mm=60, y_mm=50, rotation=delta)
+    assert f"(at 1 2 {expected_angle})" in result.split("(pad ")[0]
+    assert f"(justify {expected_justify})" in result
+    assert f'(pad "1" smd rect (at 1 2 {(90 + delta) % 360}))' in result
+
+
+def test_file_rotation_preserves_legacy_unlocked_text() -> None:
+    block = (
+        '(footprint "RF" (at 60 50 0) '
+        '(fp_text user "example" (at 1 2 90 unlocked) (effects (justify left))))'
+    )
+    result = pcb._replace_root_at(block, x_mm=60, y_mm=50, rotation=90)
+    assert "(at 1 2 180 unlocked)" in result
+    assert "(justify left)" in result
+
+
+@pytest.mark.parametrize(
+    ("effects", "expected"),
+    [
+        ("", ""),
+        ("(effects (font (size 1 1)))", "(effects (font (size 1 1)))"),
+        ("(effects (justify right bottom mirror))", "(effects (justify left top mirror))"),
+    ],
+)
+def test_file_rotation_preserves_center_or_reverses_explicit_alignment(
+    effects: str, expected: str
+) -> None:
+    block = f'(footprint "RF" (at 60 50 0) (fp_text user "example" (at 1 2 90) {effects}))'
+    result = pcb._replace_root_at(block, x_mm=60, y_mm=50, rotation=90)
+    assert f'(fp_text user "example" (at 1 2 0) {expected})' in result
+
+
+@pytest.mark.parametrize(
+    ("child", "message"),
+    [
+        ('(fp_text user "x" (at 1 2 90) (unlocked invalid))', "upright flag"),
+        ('(pad "1" smd rect (at 1 2 90 unlocked))', "child placement"),
+    ],
+)
+def test_file_rotation_rejects_invalid_text_flags(child: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        pcb._replace_root_at(
+            f'(footprint "RF" (at 60 50 0) {child})', x_mm=60, y_mm=50, rotation=90
+        )
+
+
+def test_file_rotation_preserves_child_without_explicit_placement() -> None:
+    block = '(footprint "RF" (at 60 50 0) (property "Value" "unchanged"))'
+    result = pcb._replace_root_at(block, x_mm=60, y_mm=50, rotation=90)
+    assert '(property "Value" "unchanged")' in result
