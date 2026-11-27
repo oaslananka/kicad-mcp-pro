@@ -221,6 +221,13 @@ File logging rotates by size with bounded retention. Configure the default
 5,000,000 byte limit and three retained backups through
 `KICAD_MCP_LOG_MAX_BYTES` and `KICAD_MCP_LOG_BACKUP_COUNT`.
 
+At DEBUG level, high-volume per-item index and insertion traces from the
+schematic dependency are suppressed by default. To include these exact
+diagnostic events during troubleshooting, explicitly set
+`KICAD_MCP_LOG_SCHEMATIC_ITEM_DETAILS=true` alongside
+`KICAD_MCP_LOG_LEVEL=DEBUG`. Other debug events, warnings, errors and tool
+audit records are unaffected.
+
 JSON log records always carry `ts`, `level`, `event`, `request_id`,
 `mcp_session_id`, `tool`, `latency_ms`, and `error` fields. Tool calls emit
 entry and exit events; Streamable HTTP logs initialize, session creation, and

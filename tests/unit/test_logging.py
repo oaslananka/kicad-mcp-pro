@@ -4,6 +4,7 @@ import json
 import logging
 from pathlib import Path
 
+import pytest
 import structlog
 
 from kicad_mcp.utils.logging import redact_sensitive_keys, setup_logging
@@ -77,3 +78,27 @@ def test_setup_logging_rotates_bounded_json_log_file(tmp_path: Path) -> None:
     assert Path(f"{log_file}.1").exists()
     assert Path(f"{log_file}.2").exists()
     assert not Path(f"{log_file}.3").exists()
+
+
+@pytest.mark.parametrize("details", [False, True])
+def test_schematic_collection_trace_is_explicit_opt_in(
+    capsys, tmp_path: Path, details: bool
+) -> None:
+    log_file = tmp_path / "schematic.log"
+    setup_logging("DEBUG", "json", log_file=log_file, schematic_item_details=details)
+    collection = logging.getLogger("kicad_sch_api.collections.base")
+    collection.debug("Indexes marked dirty")
+    collection.debug("Added item with UUID fixture-id")
+    collection.debug("Other dependency debug diagnostic")
+    collection.warning("Indexes marked dirty")
+    logging.getLogger("other.dependency").debug("Added item with UUID fixture-id")
+    structlog.get_logger("schematic-audit").info("tool_call_finished", tool="sch_list_symbols")
+
+    lines = capsys.readouterr().err.splitlines()
+    assert lines.count("Indexes marked dirty") == (2 if details else 1)
+    assert lines.count("Added item with UUID fixture-id") == (2 if details else 1)
+    assert "Other dependency debug diagnostic" in lines
+    assert any("tool_call_finished" in line for line in lines)
+    for handler in logging.getLogger().handlers:
+        handler.flush()
+    assert log_file.read_text(encoding="utf-8").splitlines() == lines
