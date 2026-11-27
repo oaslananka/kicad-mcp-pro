@@ -480,6 +480,19 @@ def _validate_config_project_directory(
     return None
 
 
+def _apply_config_settings(safe_body: dict[str, object]) -> list[str]:
+    with _config_post_lock:
+        overrides: dict[str, Any] = {key: str(value) for key, value in safe_body.items()}
+        KiCadMCPConfig(**overrides)
+        for key, value in safe_body.items():
+            os.environ[f"KICAD_MCP_{key.upper()}"] = str(value)
+        applied = list(safe_body)
+        if applied:
+            reset_config()
+            logger.info("config_updated_via_api", keys=applied)
+        return applied
+
+
 async def api_config_post(request: Request) -> JSONResponse:
     """Update the server configuration at runtime via environment overrides."""
     _, denial = _authorize_mutation(request)
@@ -496,9 +509,6 @@ async def api_config_post(request: Request) -> JSONResponse:
         return JSONResponse(
             {"error": "Tasks cannot be enabled through the dashboard."}, status_code=400
         )
-    applied: list[str] = []
-    errors: list[dict[str, str]] = []
-
     # Filter body to only contain safe config keys
     safe_body = {k: v for k, v in body.items() if k in ALLOWED_CONFIG_KEYS}
 
@@ -510,18 +520,6 @@ async def api_config_post(request: Request) -> JSONResponse:
     if invalid_project is not None:
         return invalid_project
 
-    def apply_settings() -> None:
-        with _config_post_lock:
-            overrides: dict[str, Any] = {key: str(value) for key, value in safe_body.items()}
-            KiCadMCPConfig(**overrides)
-            for key, value in safe_body.items():
-                env_key = f"KICAD_MCP_{key.upper()}"
-                os.environ[env_key] = str(value)
-                applied.append(key)
-            if applied:
-                reset_config()
-                logger.info("config_updated_via_api", keys=applied)
-
     try:
         if isinstance(binding, HttpProjectBinding):
             with binding.configuration_update() as can_select:
@@ -530,9 +528,9 @@ async def api_config_post(request: Request) -> JSONResponse:
                         {"error": "The HTTP project is active. Restart to select another project."},
                         status_code=409,
                     )
-                apply_settings()
+                applied = _apply_config_settings(safe_body)
         else:
-            apply_settings()
+            applied = _apply_config_settings(safe_body)
     except ValueError:
         return JSONResponse(
             {"error": "Invalid configuration. No settings changed."}, status_code=400
@@ -541,13 +539,11 @@ async def api_config_post(request: Request) -> JSONResponse:
     payload = _config_public_payload()
     result = {
         "applied": applied,
-        "errors": errors,
+        "errors": [],
         "config": payload,
         **payload,
         "message": "Settings saved. Some changes require a restart.",
     }
-    if errors:
-        result["warning"] = "Some values were not applied."
     return JSONResponse(result)
 
 

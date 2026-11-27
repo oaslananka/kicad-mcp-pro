@@ -67,12 +67,10 @@ def _extract_block(content: str, start: int) -> tuple[str, int]:
 _HEAD = re.compile(r"[a-zA-Z0-9_-]+")
 
 
-def iter_root_children(content: str) -> Iterator[tuple[str, str]]:
-    """Yield immediate child blocks in one pass, ignoring quoted parentheses."""
-    depth = 0
+def _unquoted_parentheses(content: str) -> Iterator[tuple[int, str]]:
+    """Yield structural parentheses, excluding quoted text and its escapes."""
     in_string = False
     escaped = False
-    start = 0
     for index, char in enumerate(content):
         if in_string:
             if escaped:
@@ -83,18 +81,27 @@ def iter_root_children(content: str) -> Iterator[tuple[str, str]]:
                 in_string = False
         elif char == '"':
             in_string = True
-        elif char == "(":
+        elif char in "()":
+            yield index, char
+
+
+def iter_root_children(content: str) -> Iterator[tuple[str, str]]:
+    """Yield immediate child blocks in one pass, ignoring quoted parentheses."""
+    depth = 0
+    start = 0
+    for index, char in _unquoted_parentheses(content):
+        if char == "(":
             if depth == 1:
                 start = index
             depth += 1
-        elif char == ")":
-            if depth == 2:
-                head = _HEAD.match(content, start + 1)
-                if head is not None:
-                    yield head.group(), content[start : index + 1]
-            depth -= 1
-            if depth == 0:
-                return
+            continue
+        if depth == 2:
+            head = _HEAD.match(content, start + 1)
+            if head is not None:
+                yield head.group(), content[start : index + 1]
+        depth -= 1
+        if depth == 0:
+            return
 
 
 __all__ = [

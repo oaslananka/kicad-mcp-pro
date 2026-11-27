@@ -240,6 +240,25 @@ def _build_autoroute_fallback(
     return fallback
 
 
+def _configured_jar_error(pcb_file: Path, requested_jar: str | None) -> str | None:
+    cfg = get_config()
+    configured_jar = cfg.freerouting_jar
+    if requested_jar is not None and (
+        configured_jar is None
+        or Path(requested_jar).expanduser().resolve() != configured_jar.expanduser().resolve()
+    ):
+        return "Use the operator-configured FreeRouting JAR (KICAD_MCP_FREEROUTING_JAR)."
+    if configured_jar is None:
+        return None
+    configured_jar = configured_jar.expanduser()
+    project_root = cfg.project_dir or pcb_file.parent
+    if not configured_jar.is_absolute() or configured_jar.resolve().is_relative_to(
+        project_root.resolve()
+    ):
+        return "The configured FreeRouting JAR must be absolute and outside the project."
+    return None
+
+
 @dataclass(frozen=True)
 class RoutingAutorouterService:
     """Run FreeRouting and apply or stage its routed SES result."""
@@ -264,28 +283,9 @@ class RoutingAutorouterService:
         report_progress: ProgressReporter | None = None,
     ) -> ToolResult:
         pcb_file = self.get_pcb_file()
-        cfg = get_config()
-        configured_jar = cfg.freerouting_jar
-        if freerouting_jar_path is not None:
-            if (
-                configured_jar is None
-                or Path(freerouting_jar_path).expanduser().resolve()
-                != configured_jar.expanduser().resolve()
-            ):
-                return ToolResult.failure(
-                    "route_autoroute_freerouting",
-                    "Use the operator-configured FreeRouting JAR (KICAD_MCP_FREEROUTING_JAR).",
-                )
-        if configured_jar is not None:
-            configured_jar = configured_jar.expanduser()
-            project_root = cfg.project_dir or pcb_file.parent
-            if not configured_jar.is_absolute() or configured_jar.resolve().is_relative_to(
-                project_root.resolve()
-            ):
-                return ToolResult.failure(
-                    "route_autoroute_freerouting",
-                    "The configured FreeRouting JAR must be absolute and outside the project.",
-                )
+        jar_error = _configured_jar_error(pcb_file, freerouting_jar_path)
+        if jar_error is not None:
+            return ToolResult.failure("route_autoroute_freerouting", jar_error)
         runner = self.runner_factory()
         dsn_target = self.resolve_within_project(Path(dsn_path))
         ses_target = self.resolve_within_project(Path(ses_path))

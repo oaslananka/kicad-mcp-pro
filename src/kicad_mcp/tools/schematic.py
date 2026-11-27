@@ -6831,6 +6831,54 @@ def _next_reference(prefix: str) -> str:
     return f"{prefix}{highest + 1}"
 
 
+def _read_schematic_snapshot(path: Path, *, normalize_wires: bool) -> str:
+    if normalize_wires:
+        return path.read_text(encoding="utf-8")
+    return path.read_bytes().decode("utf-8")
+
+
+def _replace_schematic_with_retry(
+    temporary: Path, destination: Path, current: str, *, normalize_wires: bool
+) -> None:
+    # Windows readers can briefly deny rename/delete sharing. Retry only
+    # atomic replacement, never the mutation itself.
+    for attempt in range(6):
+        try:
+            temporary.replace(destination)
+            return
+        except PermissionError as exc:
+            if getattr(exc, "winerror", None) not in {5, 32, 33} or attempt == 5:
+                raise
+            time.sleep(0.02 * (attempt + 1))
+            if _read_schematic_snapshot(destination, normalize_wires=normalize_wires) != current:
+                raise SchematicWriteUnsafeError(
+                    "The schematic changed while awaiting atomic replacement. "
+                    "Retry the edit against the current file."
+                ) from exc
+
+
+def _publish_schematic_update(
+    destination: Path, current: str, updated: str, *, normalize_wires: bool
+) -> None:
+    temporary: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            newline=None if normalize_wires else "",
+            delete=False,
+            dir=destination.parent,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(updated)
+        _replace_schematic_with_retry(
+            temporary, destination, current, normalize_wires=normalize_wires
+        )
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def _transactional_write_to_schematic_file(
     sch_file: Path,
     mutator: Callable[[str], str],
@@ -6846,11 +6894,7 @@ def _transactional_write_to_schematic_file(
     """
     with _SCHEMATIC_WRITE_LOCK:
         sch_file = sch_file.resolve()
-        current = (
-            sch_file.read_text(encoding="utf-8")
-            if normalize_wires
-            else sch_file.read_bytes().decode("utf-8")
-        )
+        current = _read_schematic_snapshot(sch_file, normalize_wires=normalize_wires)
         mutated = mutator(current)
         if not normalize_wires and mutated == current:
             return str(sch_file)
@@ -6859,40 +6903,7 @@ def _transactional_write_to_schematic_file(
         )
         updated = _normalize_schematic_wire_connectivity(mutated) if normalize_wires else mutated
         _validate_schematic_text(updated)
-        temp_path: Path | None = None
-        try:
-            with NamedTemporaryFile(
-                "w",
-                encoding="utf-8",
-                newline=None if normalize_wires else "",
-                delete=False,
-                dir=sch_file.parent,
-            ) as handle:
-                temp_path = Path(handle.name)
-                handle.write(updated)
-            # Windows readers can briefly deny rename/delete sharing. Retry
-            # only the atomic replacement, never the mutation itself.
-            for attempt in range(6):
-                try:
-                    temp_path.replace(sch_file)
-                    break
-                except PermissionError as exc:
-                    if getattr(exc, "winerror", None) not in {5, 32, 33} or attempt == 5:
-                        raise
-                    time.sleep(0.02 * (attempt + 1))
-                    baseline = (
-                        sch_file.read_text(encoding="utf-8")
-                        if normalize_wires
-                        else sch_file.read_bytes().decode("utf-8")
-                    )
-                    if baseline != current:
-                        raise SchematicWriteUnsafeError(
-                            "The schematic changed while awaiting atomic replacement. "
-                            "Retry the edit against the current file."
-                        ) from exc
-        finally:
-            if temp_path is not None:
-                temp_path.unlink(missing_ok=True)
+        _publish_schematic_update(sch_file, current, updated, normalize_wires=normalize_wires)
         if updated != current:
             try:
                 _record_schematic_visual_diff(sch_file, current, updated)
