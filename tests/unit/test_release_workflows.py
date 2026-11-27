@@ -223,5 +223,6 @@ def test_npm_publish_waits_for_matching_python_distribution() -> None:
     assert gate < publish
     assert steps[gate]["if"] == steps[publish]["if"]
     assert "wait_for_pypi_wheel.py" in steps[gate]["run"]
+    assert "uv run --project ../.. --frozen --no-sync python -I" in steps[gate]["run"]
     assert "package.json" in steps[gate]["run"]
     assert steps[gate]["timeout-minutes"] == 15

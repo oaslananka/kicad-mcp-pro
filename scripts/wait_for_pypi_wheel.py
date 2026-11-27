@@ -6,7 +6,11 @@ import argparse
 import json
 import re
 import time
-from http.client import HTTPException, HTTPSConnection
+
+from urllib3 import PoolManager
+from urllib3.exceptions import HTTPError
+
+MAX_JSON_BYTES = 4 * 1024 * 1024
 
 
 def has_matching_wheel(payload: object, version: str) -> bool:
@@ -30,19 +34,25 @@ def has_matching_wheel(payload: object, version: str) -> bool:
 def fetch_release(version: str) -> object:
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
         raise ValueError("Expected a stable Python release version.")
-    connection = HTTPSConnection("pypi.org", timeout=10)
+    pool = PoolManager(cert_reqs="CERT_REQUIRED", timeout=10.0)
     try:
-        connection.request(
+        with pool.request(
             "GET",
-            f"/pypi/kicad-mcp-pro/{version}/json",
-            headers={"User-Agent": "kicad-mcp-pro-release-wheel-gate"},
-        )
-        response = connection.getresponse()
-        if response.status != 200:
-            raise OSError(f"PyPI returned HTTP {response.status}")
-        return json.loads(response.read())
+            f"https://pypi.org/pypi/kicad-mcp-pro/{version}/json",
+            headers={"Accept": "application/json", "Accept-Encoding": "identity"},
+            preload_content=False,
+            redirect=False,
+            retries=False,
+            decode_content=False,
+        ) as response:
+            if response.status != 200:
+                raise OSError(f"PyPI returned HTTP {response.status}")
+            raw = response.read(MAX_JSON_BYTES + 1)
     finally:
-        connection.close()
+        pool.clear()
+    if len(raw) > MAX_JSON_BYTES:
+        raise ValueError("PyPI JSON exceeds size limit.")
+    return json.loads(raw)
 
 
 def wait_for_wheel(version: str, *, attempts: int = 30, delay: int = 20) -> bool:
@@ -51,7 +61,7 @@ def wait_for_wheel(version: str, *, attempts: int = 30, delay: int = 20) -> bool
             if has_matching_wheel(fetch_release(version), version):
                 print(f"Matching non-yanked Python wheel is available: {version}")
                 return True
-        except (OSError, ValueError, HTTPException):
+        except (OSError, ValueError, HTTPError):
             pass
         print(f"Python wheel {version} not ready (attempt {attempt + 1}/{attempts}).", flush=True)
         if attempt + 1 < attempts:

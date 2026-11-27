@@ -163,7 +163,7 @@ jobs:
         run: |
           set -euo pipefail
           version="$(node -p "require('./package.json').version")"
-          python3 ../../.release-tools/scripts/wait_for_pypi_wheel.py "$version"
+          uv run --project ../.. --frozen --no-sync python -I ../../.release-tools/scripts/wait_for_pypi_wheel.py "$version"
       - run: npm publish "${NPM_TARBALL}" --access public --provenance
         if: steps.check-published.outputs.already_published != 'true'
         env:

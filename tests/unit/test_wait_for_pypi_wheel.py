@@ -49,43 +49,59 @@ def test_wait_is_bounded_and_retries_unavailable_release() -> None:
             sleep.assert_called_once_with(1)
 
 
-def test_fetch_release_uses_fixed_https_host_and_valid_version() -> None:
-    with patch.object(gate, "HTTPSConnection") as connect:
-        connection = connect.return_value
-        response = connection.getresponse.return_value
+def test_fetch_release_uses_verified_https_without_redirects() -> None:
+    with patch.object(gate, "PoolManager") as create_pool:
+        pool = create_pool.return_value
+        response = pool.request.return_value.__enter__.return_value
         response.status = 200
         response.read.return_value = json.dumps(_payload()).encode()
         assert gate.fetch_release("4.24.0") == _payload()
-        connect.assert_called_once_with("pypi.org", timeout=10)
-        connection.request.assert_called_once_with(
+        create_pool.assert_called_once_with(cert_reqs="CERT_REQUIRED", timeout=10.0)
+        pool.request.assert_called_once_with(
             "GET",
-            "/pypi/kicad-mcp-pro/4.24.0/json",
-            headers={"User-Agent": "kicad-mcp-pro-release-wheel-gate"},
+            "https://pypi.org/pypi/kicad-mcp-pro/4.24.0/json",
+            headers={"Accept": "application/json", "Accept-Encoding": "identity"},
+            preload_content=False,
+            redirect=False,
+            retries=False,
+            decode_content=False,
         )
-        connection.close.assert_called_once()
+        response.read.assert_called_once_with(gate.MAX_JSON_BYTES + 1)
+        pool.clear.assert_called_once()
 
 
 @pytest.mark.parametrize(
     "version", ["file:///etc/passwd", "../other", "4.24.0/other", "4.24.0-rc1"]
 )
 def test_fetch_rejects_invalid_version_before_connecting(version: str) -> None:
-    with patch.object(gate, "HTTPSConnection") as connect:
+    with patch.object(gate, "PoolManager") as create_pool:
         with pytest.raises(ValueError, match="stable"):
             gate.fetch_release(version)
-        connect.assert_not_called()
+        create_pool.assert_not_called()
 
 
 @pytest.mark.parametrize("status", [302, 404, 503])
 def test_fetch_rejects_non_success_without_following_redirects(status: int) -> None:
-    with patch.object(gate, "HTTPSConnection") as connect:
-        connection = connect.return_value
-        response = connection.getresponse.return_value
+    with patch.object(gate, "PoolManager") as create_pool:
+        pool = create_pool.return_value
+        response = pool.request.return_value.__enter__.return_value
         response.status = status
         with pytest.raises(OSError, match=str(status)):
             gate.fetch_release("4.24.0")
-        connection.request.assert_called_once()
+        pool.request.assert_called_once()
         response.read.assert_not_called()
-        connection.close.assert_called_once()
+        pool.clear.assert_called_once()
+
+
+def test_fetch_rejects_oversized_json() -> None:
+    with patch.object(gate, "PoolManager") as create_pool:
+        pool = create_pool.return_value
+        response = pool.request.return_value.__enter__.return_value
+        response.status = 200
+        response.read.return_value = b"x" * (gate.MAX_JSON_BYTES + 1)
+        with pytest.raises(ValueError, match="size limit"):
+            gate.fetch_release("4.24.0")
+        pool.clear.assert_called_once()
 
 
 def test_main_accepts_stable_version(monkeypatch: pytest.MonkeyPatch) -> None:
