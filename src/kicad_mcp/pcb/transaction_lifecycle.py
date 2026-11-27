@@ -234,13 +234,17 @@ class PcbTransactionLifecycleService:
             supported = self._transaction_supported
             if self._transaction_support_epoch != self.get_connection_epoch():
                 supported = None
+            if supported is None:
+                support_status = "unknown"
+            elif supported:
+                support_status = "supported"
+            else:
+                support_status = "unsupported"
             return {
                 "schema_version": "pcb-live-edit-state.v1",
                 "state": self._state_name(),
                 "transaction_supported": supported is True,
-                "transaction_support_status": (
-                    "unknown" if supported is None else "supported" if supported else "unsupported"
-                ),
+                "transaction_support_status": support_status,
                 "board_fingerprint": board_fingerprint,
                 "board_name": board_name,
                 "mutation_count": len(self._receipts) if identity is not None else 0,
