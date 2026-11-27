@@ -25,15 +25,47 @@ Actual KiCad 10.0.8 used a private Xvfb virtual display.
 | Selection and incompatibility | Actual transient IPC selection R1/LED1, 2 pads each; multi hides card, clear resets. Programmatic wx activation refreshed selection without another health request. Synthetic 4.25.0 health response disabled Sync/Dashboard; POST count 0. | [Behavior](https://github.com/oaslananka/kicad-mcp-pro/issues/412#issuecomment-7209168260) |
 
 The IPC action is on the PCB Editor toolbar, not the legacy External Plugins
-menu. These separate runs are not a single integrated PCM install-to-sync
-session or physical-display acceptance. The sync run used direct managed
-Python launch and existing isolated wheel dependencies, not a clean wheel
-install. Selection/focus was programmatic, not a physical gesture. The
+menu. These earlier separate runs are distinct from the integrated virtual-display
+acceptance below. The earlier sync run used direct managed Python launch and
+existing isolated wheel dependencies, not a clean wheel install. Selection/focus was programmatic, not a physical gesture. The
 incompatible response was synthetic, not a real incompatible backend.
 Several successful inner probes reported outer command exit 1; original
 records retain these distinctions. One earlier quit/restart changed the
 disposable project hash (semantic diff unavailable), but PCB/SCH hashes
 were unchanged. Later selection tests preserved all four fixture files.
+
+## Linux: integrated PCM install-to-sync acceptance
+
+A subsequent run used the same disposable KiCad profile throughout, on a
+private Xvfb display with isolated D-Bus, documents and plugin directories.
+The actual PCM file chooser installed the verified 4.24.0 ZIP, reported
+Installed (1), and all 10 payload files matched. After normal manager Quit
+(exit 0), a fresh PCB Editor opened the fixture. Its own IPC socket and the
+backend's own loopback listener were verified independently.
+
+The exact published 4.24.0 wheel was extracted and used with existing isolated
+dependencies (not a clean wheel install). With an explicit `ipc://` endpoint,
+the backend returned HTTP 200, `ok: true`, runtime available and live PCB
+context available. The actual editor toolbar launched the installed Companion.
+After explicit private-environment repair consent, pip check passed and the
+window reported Connected, 3 footprints, 3 nets and 0 selected.
+
+The actual Sync PCB context button reported `PCB context synced.` An independent
+MCP initialize/initialized/resources/read sequence verified
+`kicad://studio/context`, server version 4.24.0, the exact fixture PCB and
+project root. All four PCB/SCH/PRO/DRU hashes were unchanged; cleanup and
+independent absence of remaining fixture processes/directories were verified.
+The inner flow exited 0; the outer command reported exit 1. This is
+integrated virtual-display install-to-sync evidence, not physical-display
+acceptance or a single integrated update/uninstall/rollback run.
+
+[Integrated acceptance](https://github.com/oaslananka/kicad-mcp-pro/issues/412#issuecomment-7210504870)
+and [backend-down install/read acceptance](https://github.com/oaslananka/kicad-mcp-pro/issues/412#issuecomment-7210177059).
+A separate same-socket diagnostic found that a raw absolute filesystem socket
+path was rejected as an invalid address, while the explicit NNG `ipc://` URI
+worked. Use the URI for this tested configuration; the raw-path compatibility
+gap is separate from PCM qualification and has not been fixed here.
+[Endpoint diagnostic](https://github.com/oaslananka/kicad-mcp-pro/issues/412#issuecomment-7210349668).
 
 ## Windows interactive acceptance: pending
 

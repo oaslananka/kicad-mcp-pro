@@ -14,7 +14,7 @@ They do not establish current host/skill/extension compatibility; see #1219.
 | MCPB | Existing release surface | `.github/workflows/publish-mcpb.yml`, `tests/unit/test_release_hardening.py` | Attested/versioned release asset contract. |
 | Docker / GHCR | Existing release surface | `.github/workflows/publish-mcp-container.yml`, container tests | No change from PCM work. |
 | Local browser dashboard | Active local UI | `tests/e2e/test_web_dashboard.py`, [installation guide](../installation.md) | Account-free loopback HTTP; historic Tauri installers are archive-only ([#1676](https://github.com/oaslananka/kicad-mcp-pro/pull/1676), [#1680](https://github.com/oaslananka/kicad-mcp-pro/pull/1680)). |
-| **KiCad PCM** | **IPC package: Linux virtual-display lifecycle and behavior verified; Windows/macOS interactive acceptance pending** | [Current 4.24.0 IPC evidence](../evidence/kicad-pcm/2026-11-27/kicad-10.0.8-ipc.md), [Linux physical evidence](../evidence/kicad-pcm/2026-08-29/linux-kicad-10.0.5.md), [Windows physical evidence](../evidence/kicad-pcm/2026-08-29/windows-kicad-10.0.5.md), `tests/unit/test_kicad_pcm_packaging.py`, `tests/unit/test_companion_context.py`, `.github/workflows/publish-kicad-pcm.yml` | Linux KiCad 10.0.8: PCM file lifecycle and separate toolbar/repair/read/sync checks. Windows: dependency and transport checks passed; board read returned AS_NOT_READY on an inactive private desktop. Historical SWIG-era evidence does not qualify current IPC; macOS physical host unavailable. |
+| **KiCad PCM** | **IPC package: Linux virtual-display lifecycle and integrated install-to-sync verified; Windows/macOS interactive acceptance pending** | [Current 4.24.0 IPC evidence](../evidence/kicad-pcm/2026-11-27/kicad-10.0.8-ipc.md), [Linux physical evidence](../evidence/kicad-pcm/2026-08-29/linux-kicad-10.0.5.md), [Windows physical evidence](../evidence/kicad-pcm/2026-08-29/windows-kicad-10.0.5.md), `tests/unit/test_kicad_pcm_packaging.py`, `tests/unit/test_companion_context.py`, `.github/workflows/publish-kicad-pcm.yml` | Linux KiCad 10.0.8: PCM file lifecycle, integrated install/restart/toolbar/repair/sync and independent MCP resource read. Windows: dependency and transport checks passed; board read returned AS_NOT_READY on an inactive private desktop. Historical SWIG-era evidence does not qualify current IPC; macOS physical host unavailable. |
 | Claude Code guided config | Real client connect verified | [Linux physical evidence](../evidence/kicad-pcm/2026-08-29/linux-kicad-10.0.5.md), `tests/unit/test_issue_731_onboarding.py` | Claude Code `2.1.238` used its native `mcp add`/`mcp get` flow against the live loopback backend and reported `Status: Connected`; user configuration was isolated. |
 | Codex guided config | Real client connect verified | [Linux physical evidence](../evidence/kicad-pcm/2026-08-29/linux-kicad-10.0.5.md), `tests/unit/test_issue_731_onboarding.py` | Codex CLI `0.150.1` completed initialize/initialized/tools-list and a real read-only `kicad_get_version` tool call after negotiated-protocol compatibility was fixed in #813. |
 | Cursor guided config | Physical guided transaction verified | [Linux physical evidence](../evidence/kicad-pcm/2026-08-29/linux-kicad-10.0.5.md), `tests/unit/test_issue_731_onboarding.py` | A disposable project-scoped config exercised side-effect-free preview, explicit write, unrelated-key preservation, backup, exact-targeting, and hash-exact restore. A Cursor binary connect is not claimed. |
@@ -28,10 +28,11 @@ and the historical Windows physical PCM flow, including install/restart, health,
 MCP, uninstall and rollback on the documented 3.33.3 release. It must not be
 promoted to current IPC qualification. The [current IPC evidence](../evidence/kicad-pcm/2026-11-27/kicad-10.0.8-ipc.md) records
 the exact published 4.23.0 and 4.24.0 Linux virtual-display PCM lifecycle,
-separate toolbar/repair/read/sync checks and the Windows readiness blocker.
-These are separate acceptance runs, not a single integrated physical flow.
+integrated install-to-sync acceptance, separate selection/compatibility checks
+and the Windows readiness blocker. The Linux lifecycle and integrated sync
+runs are virtual-display evidence, not a single integrated physical flow.
 Keep the package in development status until the outstanding integrated and
-applicable platform evidence is verified. Official listing remains not submitted.
+applicable physical platform evidence is verified. Official listing remains not submitted.
 
 Physical evidence must identify the exact source revision and artifact SHA256 without
 exposing local credentials, private paths, or unrelated desktop content.
