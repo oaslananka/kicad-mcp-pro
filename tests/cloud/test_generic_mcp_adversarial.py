@@ -841,3 +841,25 @@ async def test_stalled_read_never_reports_recovery_after_grant_revoked(
     pending = asyncio.wait_for(service.dispatch(request), timeout=0.3)
     with pytest.raises(GenericMcpTransportError, match="mcp_bridge_request_denied"):
         await pending
+
+
+@pytest.mark.parametrize("value", ["C:board.kicad_pcb", " /etc/passwd", " file:///tmp/file"])
+def test_remote_path_rejects_drive_relative_and_padded_paths(value: str) -> None:
+    assert not _safe_arguments({"path": value})
+
+
+def test_hierarchical_net_names_allowed_only_for_reviewed_net_arguments() -> None:
+    assert _safe_arguments({"filter_net": "/Power/VCC"}, tool_name="pcb_get_tracks")
+    assert _safe_arguments({"net_name": "/Power/VCC"}, tool_name="pcb_add_track")
+    assert not _safe_arguments({"path": "/Power/VCC"}, tool_name="pcb_get_tracks")
+    assert not _safe_arguments({"filter_net": "/Power/VCC"}, tool_name="unreviewed_tool")
+    assert not _safe_arguments({"nested": {"filter_net": "/Power/VCC"}}, tool_name="pcb_get_tracks")
+    for value in [
+        "//server/share",
+        "/Power/../VCC",
+        "/Power\\VCC",
+        "/Power/C:secret",
+        " /Power/VCC",
+        "/Power/\x00VCC",
+    ]:
+        assert not _safe_arguments({"filter_net": value}, tool_name="pcb_get_tracks")

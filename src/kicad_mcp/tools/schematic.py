@@ -15,6 +15,7 @@ import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Literal, Protocol, TextIO, TypedDict, cast
@@ -101,10 +102,10 @@ from ..utils.schematic_router import (
     segments_merge,
 )
 from ..utils.sexpr import (
-    _escape_sexpr_string,
     _extract_block,
     _sexpr_string,
     _unescape_sexpr_string,
+    iter_root_children,
 )
 from . import (
     schematic_back_annotation,
@@ -2595,6 +2596,9 @@ def _nonquoted_parentheses(content: str) -> Iterable[tuple[int, str]]:
             yield index, char
 
 
+_SEXPR_HEAD = re.compile(r"[a-zA-Z0-9_-]+")
+
+
 def _top_level_sexpr_blocks(content: str) -> list[tuple[str, int, int]]:
     """Locate KiCad root children, never quoted text posing as a wire."""
     blocks: list[tuple[str, int, int]] = []
@@ -2605,7 +2609,7 @@ def _top_level_sexpr_blocks(content: str) -> list[tuple[str, int, int]]:
         if paren == "(":
             if depth == 1:
                 child_start = index
-                name_match = re.match(r"[a-zA-Z0-9_-]+", content[index + 1 :])
+                name_match = _SEXPR_HEAD.match(content, index + 1)
                 child_name = name_match.group(0) if name_match else ""
             depth += 1
         else:
@@ -2805,8 +2809,7 @@ def get_symbol_primitive_bounds(
     if sym_file is None:
         return None
 
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    blocks = _collect_symbol_blocks(content, symbol_name)
+    blocks = _read_symbol_blocks(sym_file, symbol_name)
     if not blocks:
         return None
 
@@ -3834,8 +3837,7 @@ def load_lib_symbol(library: str, symbol_name: str) -> str | None:
     if sym_file is None:
         return None
 
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    blocks = _collect_symbol_blocks(content, symbol_name)
+    blocks = _read_symbol_blocks(sym_file, symbol_name)
     if not blocks:
         return None
 
@@ -3950,25 +3952,59 @@ def _find_symbol_extends(block: str) -> str | None:
     return match.group(1) if match else None
 
 
-def _collect_symbol_blocks(
-    content: str,
-    symbol_name: str,
-    visited: set[str] | None = None,
+_LIBRARY_SYMBOL_NAME = re.compile(r'\(symbol\s+"((?:\\.|[^"\\])*)"')
+_MAX_CACHED_LIBRARY_BYTES = 4 * 1024 * 1024
+
+
+def _library_symbol_blocks(content: str) -> dict[str, str]:
+    """Index actual library-root definitions, not child drawing units."""
+    symbols: dict[str, str] = {}
+    for kind, block in iter_root_children(content):
+        if kind == "symbol" and (match := _LIBRARY_SYMBOL_NAME.match(block)):
+            symbols.setdefault(_unescape_sexpr_string(match.group(1)), block)
+    return symbols
+
+
+@lru_cache(maxsize=4)
+def _read_cached_library_symbols(content: str) -> dict[str, str]:
+    return _library_symbol_blocks(content)
+
+
+def _library_symbols_from_file(path: Path) -> dict[str, str]:
+    # Filesystems can report identical metadata for different contents, notably
+    # after rapid same-size edits on Windows. Cache parsing, not disk reads.
+    raw = path.read_bytes()
+    content = raw.decode("utf-8", errors="ignore").replace("\r\n", "\n").replace("\r", "\n")
+    if len(raw) > _MAX_CACHED_LIBRARY_BYTES:
+        return _library_symbol_blocks(content)
+    return _read_cached_library_symbols(content)
+
+
+def _symbol_inheritance_chain(
+    symbols: Mapping[str, str], symbol_name: str, visited: set[str] | None = None
 ) -> list[str]:
-    if visited is None:
-        visited = set()
-    if symbol_name in visited:
-        return []
-    visited.add(symbol_name)
+    seen = visited if visited is not None else set()
+    chain: list[str] = []
+    current: str | None = symbol_name
+    while current is not None and current not in seen:
+        seen.add(current)
+        block = symbols.get(current)
+        if block is None:
+            break
+        chain.append(block)
+        current = _find_symbol_extends(block)
+    chain.reverse()
+    return chain
 
-    block = _find_symbol_block(content, symbol_name)
-    if block is None:
-        return []
 
-    parent_name = _find_symbol_extends(block)
-    if parent_name is None:
-        return [block]
-    return [*_collect_symbol_blocks(content, parent_name, visited), block]
+def _collect_symbol_blocks(
+    content: str, symbol_name: str, visited: set[str] | None = None
+) -> list[str]:
+    return _symbol_inheritance_chain(_library_symbol_blocks(content), symbol_name, visited)
+
+
+def _read_symbol_blocks(path: Path, symbol_name: str) -> list[str]:
+    return _symbol_inheritance_chain(_library_symbols_from_file(path), symbol_name)
 
 
 def _symbol_block_name(block: str) -> str | None:
@@ -4194,8 +4230,7 @@ def get_pin_positions(
     if sym_file is None:
         return {}
 
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    blocks = _collect_symbol_blocks(content, symbol_name)
+    blocks = _read_symbol_blocks(sym_file, symbol_name)
     if not blocks:
         return {}
     available_units = _available_units_from_blocks(blocks)
@@ -4227,8 +4262,7 @@ def _load_symbol_blocks_for_unit(
             sym_file = fallback
     if sym_file is None:
         return None
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    blocks = _collect_symbol_blocks(content, symbol_name)
+    blocks = _read_symbol_blocks(sym_file, symbol_name)
     if not blocks:
         return None
     available_units = _available_units_from_blocks(blocks)
@@ -4431,8 +4465,7 @@ def get_pin_alias_positions(
     if sym_file is None:
         return {}
 
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    blocks = _collect_symbol_blocks(content, symbol_name)
+    blocks = _read_symbol_blocks(sym_file, symbol_name)
     if not blocks:
         return {}
     available_units = _available_units_from_blocks(blocks)
@@ -4455,8 +4488,7 @@ def get_symbol_available_units(library: str, symbol_name: str) -> set[int]:
     if sym_file is None:
         return set()
 
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    blocks = _collect_symbol_blocks(content, symbol_name)
+    blocks = _read_symbol_blocks(sym_file, symbol_name)
     if not blocks:
         return set()
     return _available_units_from_blocks(blocks)
@@ -4473,8 +4505,7 @@ def symbol_exists(library: str, symbol_name: str) -> bool | None:
     sym_file = _symbol_library_file(library)
     if sym_file is None:
         return None
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    return bool(_collect_symbol_blocks(content, symbol_name))
+    return bool(_read_symbol_blocks(sym_file, symbol_name))
 
 
 def suggest_symbol_names(library: str, symbol_name: str, *, limit: int = 3) -> list[str]:
@@ -4486,12 +4517,7 @@ def suggest_symbol_names(library: str, symbol_name: str, *, limit: int = 3) -> l
     sym_file = _symbol_library_file(library)
     if sym_file is None:
         return []
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    tops = [
-        name
-        for name in re.findall(r'\(symbol\s+"([^"]+)"', content)
-        if not re.search(r"_\d+_\d+$", name)  # drop graphic child-unit symbols
-    ]
+    tops = _library_symbols_from_file(sym_file)
     target = symbol_name.lower()
 
     def _score(name: str) -> int:
@@ -4833,8 +4859,7 @@ def get_pin_outward_normals(
     if sym_file is None:
         return {}
 
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    blocks = _collect_symbol_blocks(content, symbol_name)
+    blocks = _read_symbol_blocks(sym_file, symbol_name)
     if not blocks:
         return {}
     available_units = _available_units_from_blocks(blocks)
@@ -6832,6 +6857,54 @@ def _next_reference(prefix: str) -> str:
     return f"{prefix}{highest + 1}"
 
 
+def _read_schematic_snapshot(path: Path, *, normalize_wires: bool) -> str:
+    if normalize_wires:
+        return path.read_text(encoding="utf-8")
+    return path.read_bytes().decode("utf-8")
+
+
+def _replace_schematic_with_retry(
+    temporary: Path, destination: Path, current: str, *, normalize_wires: bool
+) -> None:
+    # Windows readers can briefly deny rename/delete sharing. Retry only
+    # atomic replacement, never the mutation itself.
+    for attempt in range(6):
+        try:
+            temporary.replace(destination)
+            return
+        except PermissionError as exc:
+            if getattr(exc, "winerror", None) not in {5, 32, 33} or attempt == 5:
+                raise
+            time.sleep(0.02 * (attempt + 1))
+            if _read_schematic_snapshot(destination, normalize_wires=normalize_wires) != current:
+                raise SchematicWriteUnsafeError(
+                    "The schematic changed while awaiting atomic replacement. "
+                    "Retry the edit against the current file."
+                ) from exc
+
+
+def _publish_schematic_update(
+    destination: Path, current: str, updated: str, *, normalize_wires: bool
+) -> None:
+    temporary: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            newline=None if normalize_wires else "",
+            delete=False,
+            dir=destination.parent,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(updated)
+        _replace_schematic_with_retry(
+            temporary, destination, current, normalize_wires=normalize_wires
+        )
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def _transactional_write_to_schematic_file(
     sch_file: Path,
     mutator: Callable[[str], str],
@@ -6847,11 +6920,7 @@ def _transactional_write_to_schematic_file(
     """
     with _SCHEMATIC_WRITE_LOCK:
         sch_file = sch_file.resolve()
-        current = (
-            sch_file.read_text(encoding="utf-8")
-            if normalize_wires
-            else sch_file.read_bytes().decode("utf-8")
-        )
+        current = _read_schematic_snapshot(sch_file, normalize_wires=normalize_wires)
         mutated = mutator(current)
         if not normalize_wires and mutated == current:
             return str(sch_file)
@@ -6860,16 +6929,7 @@ def _transactional_write_to_schematic_file(
         )
         updated = _normalize_schematic_wire_connectivity(mutated) if normalize_wires else mutated
         _validate_schematic_text(updated)
-        with NamedTemporaryFile(
-            "w",
-            encoding="utf-8",
-            newline=None if normalize_wires else "",
-            delete=False,
-            dir=sch_file.parent,
-        ) as handle:
-            handle.write(updated)
-            temp_path = Path(handle.name)
-        temp_path.replace(sch_file)
+        _publish_schematic_update(sch_file, current, updated, normalize_wires=normalize_wires)
         if updated != current:
             try:
                 _record_schematic_visual_diff(sch_file, current, updated)
@@ -6927,16 +6987,16 @@ def _update_symbol_property_block(
     property entry so the value is recorded without disturbing the layout.
     """
     pattern = re.compile(
-        rf'(\(property\s+"{re.escape(field)}"\s+")([^"]*)(")',
+        rf'(\(property\s+{re.escape(_sexpr_string(field))}\s+)("(?:\\.|[^"\\])*")',
         re.DOTALL,
     )
-    if pattern.search(block):
-        escaped_value = _escape_sexpr_string(value)
-        updated = pattern.sub(
-            lambda match: f"{match.group(1)}{escaped_value}{match.group(3)}",
-            block,
-            count=1,
-        )
+    for name, start, end in _top_level_sexpr_blocks(block):
+        if name != "property":
+            continue
+        match = pattern.match(block, start, end)
+        if match is None:
+            continue
+        updated = block[: match.start(2)] + _sexpr_string(value) + block[match.end(2) :]
         if field == "Reference":
             return rewrite_symbol_instance_reference(
                 updated, str(parsed.get("reference", "")), value, _project_name()

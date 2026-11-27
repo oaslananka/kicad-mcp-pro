@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -333,6 +334,8 @@ def vcs_restore_checkpoint(commit_hash: str, confirm: bool = False) -> str:
     """Restore project files and keep a recovery branch for the stashed pre-restore state."""
     if not commit_hash.strip():
         raise ValueError("Commit hash must not be empty.")
+    if not re.fullmatch(r"[0-9a-fA-F]{7,40}", commit_hash):
+        raise ValueError("Commit hash must be a 7?40 character hexadecimal object ID.")
     project_dir = _resolve_project_dir()
     repo_root = _git_repo_root(project_dir)
     if repo_root is None:
@@ -379,6 +382,8 @@ def vcs_diff_with_checkpoint(commit_hash: str) -> str:
     """Show the current project diff versus a checkpoint commit."""
     if not commit_hash.strip():
         raise ValueError("Commit hash must not be empty.")
+    if not re.fullmatch(r"[0-9a-fA-F]{7,40}", commit_hash):
+        raise ValueError("Commit hash must be a 7?40 character hexadecimal object ID.")
     project_dir = _resolve_project_dir()
     repo_root = _git_repo_root(project_dir)
     if repo_root is None:
@@ -412,12 +417,15 @@ def vcs_tag_release(tag: str, message: str, dry_run: bool = True, confirm: bool 
     """Create an annotated release tag after the full project quality gate passes."""
     if not tag.strip():
         raise ValueError("Release tag must not be empty.")
+    if tag.strip().startswith("-"):
+        raise ValueError("Release tag must not start with a hyphen.")
     if not message.strip():
         raise ValueError("Release tag message must not be empty.")
     project_dir = _resolve_project_dir()
     repo_root = _git_repo_root(project_dir)
     if repo_root is None:
         raise ValueError(_MISSING_GIT_REPOSITORY_MESSAGE)
+    _run_git(repo_root, "check-ref-format", f"refs/tags/{tag.strip()}")
     if _combined_status(_evaluate_project_gate()) != "PASS":
         raise ValueError(
             "Release tagging is only allowed after project_quality_gate() returns PASS."

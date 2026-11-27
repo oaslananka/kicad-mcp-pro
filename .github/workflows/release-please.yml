@@ -63,6 +63,7 @@ jobs:
       - if: ${{ steps.release-pr-branch.outputs.branch != '' }}
         uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d
         with:
+          version-file: uv.toml
           enable-cache: false
       - if: ${{ steps.release-pr-branch.outputs.branch != '' }}
         name: Sync canonical release artifacts onto the release PR

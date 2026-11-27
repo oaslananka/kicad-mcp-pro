@@ -49,7 +49,8 @@ class ExportBomService:
         suffix = "csv" if payload.format == "csv" else "xml"
         out_file = out_dir / f"bom.{suffix}"
 
-        if payload.format == "csv":
+        variant_args = self.active_variant_args(variant_name)
+        if payload.format == "csv" and not variant_args:
             try:
                 schematic_files = self.project_schematic_files()
                 if len(schematic_files) > 1:
@@ -67,35 +68,36 @@ class ExportBomService:
             except (OSError, ValueError, RuntimeError) as exc:
                 return f"BOM export failed: {exc}"
 
-        variant_args = self.active_variant_args(variant_name)
-        code, _stdout, stderr = self.run_cli_variants(
+        commands = [
             [
-                [
-                    "sch",
-                    "export",
-                    "bom",
-                    *variant_args,
-                    "--output",
-                    str(out_file),
-                    "--format-preset",
-                    "CSV",
-                    str(sch_file),
-                ],
-                [
-                    "sch",
-                    "export",
-                    "bom",
-                    *variant_args,
-                    "--input",
-                    str(sch_file),
-                    "--output",
-                    str(out_file),
-                    "--format-preset",
-                    "CSV",
-                ],
-                ["sch", "export", "python-bom", "--output", str(out_file), str(sch_file)],
-            ]
-        )
-        if code != 0 and not out_file.exists():
+                "sch",
+                "export",
+                "bom",
+                *variant_args,
+                "--output",
+                str(out_file),
+                "--format-preset",
+                "CSV",
+                str(sch_file),
+            ],
+            [
+                "sch",
+                "export",
+                "bom",
+                *variant_args,
+                "--input",
+                str(sch_file),
+                "--output",
+                str(out_file),
+                "--format-preset",
+                "CSV",
+            ],
+        ]
+        if not variant_args:
+            commands.append(
+                ["sch", "export", "python-bom", "--output", str(out_file), str(sch_file)]
+            )
+        code, _stdout, stderr = self.run_cli_variants(commands)
+        if code != 0:
             return f"BOM export failed: {stderr or 'unknown error'}"
         return f"BOM exported to {out_file}\n\n{self.read_preview(out_file)}"

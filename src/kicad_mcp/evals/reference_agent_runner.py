@@ -366,7 +366,10 @@ def _reference_project_files(workspace: ReferenceAgentWorkspace) -> tuple[tuple[
         if not path.is_file():
             continue
         relative = path.relative_to(root).as_posix()
-        if path.suffix in _REFERENCE_DESIGN_SUFFIXES or relative == ".kicad-mcp/project_spec.json":
+        if path.suffix in _REFERENCE_DESIGN_SUFFIXES or relative in {
+            ".kicad-mcp/project_spec.json",
+            ".kicad-mcp/variants.json",
+        }:
             files.append(path)
     if not any(path.suffix == ".kicad_sch" for path in files) or not any(
         path.suffix == ".kicad_pcb" for path in files

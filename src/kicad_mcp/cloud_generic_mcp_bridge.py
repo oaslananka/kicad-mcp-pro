@@ -51,22 +51,54 @@ def is_generic_cloud_tool_safe(name: str) -> bool:
 def _safe_string_argument(value: str) -> bool:
     if len(value) > 16_384 or "\x00" in value:
         return False
+    value = value.strip()
     if value.lower().startswith(("file:", "smb:", "ssh:", "ftp:")):
         return False
     path = value.replace("\\", "/")
     # Never allow device/UNC roots, Windows drive paths or path traversal.
-    if re.search(r"(?i)(?:^|\s)[a-z]:/", path) or path.startswith(("//", "/")):
+    if re.search(r"(?i)(?:^|\s)[a-z]:", path) or path.startswith(("//", "/")):
         return False
     return ".." not in PurePosixPath(path).parts and ".." not in PureWindowsPath(value).parts
 
 
-def _safe_arguments(value: object, *, depth: int = 0) -> bool:
+# Only reviewed arguments whose implementation performs a net lookup/filter,
+# never a filesystem operation, may carry absolute-looking KiCad net names.
+_HIERARCHICAL_NET_ARGUMENTS = {
+    "pcb_get_tracks": "filter_net",
+    "pcb_add_track": "net_name",
+    "pcb_add_track_segment": "net_name",
+    "pcb_add_via": "net_name",
+}
+
+
+def _safe_hierarchical_net(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) <= 16_384
+        and value.startswith("/")
+        and value == value.strip()
+        and ":" not in value
+        and "\\" not in value
+        and not any(ord(char) < 32 or ord(char) == 127 for char in value)
+        and all(part not in {"", ".", ".."} for part in value[1:].split("/"))
+    )
+
+
+def _safe_arguments(value: object, *, depth: int = 0, tool_name: str = "") -> bool:
     """Fail closed on remote paths and unbounded recursion."""
     if depth > 12:
         return False
     if isinstance(value, dict):
         return all(
-            isinstance(key, str) and _safe_arguments(item, depth=depth + 1)
+            isinstance(key, str)
+            and (
+                _safe_arguments(item, depth=depth + 1)
+                or (
+                    depth == 0
+                    and key == _HIERARCHICAL_NET_ARGUMENTS.get(tool_name)
+                    and _safe_hierarchical_net(item)
+                )
+            )
             for key, item in value.items()
         )
     if isinstance(value, list):
@@ -246,7 +278,7 @@ class GenericProjectMcpBridge:
         mode = self._access_mode(name)
         if mode == "write" and (not self._write or write_approved is not True):
             raise GenericMcpDeniedError(_DENIED)
-        if not isinstance(arguments, dict) or not _safe_arguments(arguments):
+        if not isinstance(arguments, dict) or not _safe_arguments(arguments, tool_name=name):
             raise GenericMcpDeniedError(_DENIED)
         try:
             encoded = json.dumps(arguments, ensure_ascii=False, allow_nan=False)

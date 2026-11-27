@@ -395,3 +395,68 @@ def test_import_tray_without_pillow_installed(monkeypatch: pytest.MonkeyPatch) -
     assert namespace["ImageDraw"] is None
     with pytest.raises(ImportError, match="Pillow"):
         namespace["_create_icon"]()
+
+
+@pytest.mark.parametrize("returncode,expected", [(1, "failed"), (0, "No files")])
+def test_tray_gerber_does_not_claim_success_without_artifacts(
+    tmp_path: Path, returncode: int, expected: str
+) -> None:
+    from kicad_mcp.tray import KiCadTrayApp
+
+    board = tmp_path / "board.kicad_pcb"
+    board.write_text("(kicad_pcb)", encoding="utf8")
+    cfg = MagicMock()
+    cfg.pcb_file = board
+    cfg.operating_mode = "manufacturing"
+    cfg.enable_experimental_tools = False
+    cfg.kicad_cli = Path("kicad-cli")
+    cfg.ensure_output_dir.return_value = tmp_path
+    app = KiCadTrayApp()
+    with (
+        patch("kicad_mcp.config.get_config", return_value=cfg),
+        patch("kicad_mcp.tools.export.get_config", return_value=cfg),
+        patch("kicad_mcp.tools.export_support.get_config", return_value=cfg),
+        patch("kicad_mcp.tools.export._active_variant_args", return_value=[]),
+        patch(
+            "kicad_mcp.tools.export.get_cli_capabilities",
+            return_value=MagicMock(gerber_command="gerbers"),
+        ),
+        patch(
+            "kicad_mcp.tools.export._run_cli_variants",
+            return_value=(returncode, "", "export error"),
+        ) as runner,
+        patch(
+            "kicad_mcp.tray.subprocess.run", return_value=MagicMock(returncode=returncode)
+        ) as direct_run,
+        patch.object(app, "_show_notification") as notify,
+    ):
+        app._action_export_gerber()
+    direct_run.assert_not_called()
+    assert runner.call_args.args[0][0][2] == "gerbers"
+    assert expected.lower() in notify.call_args.args[0].lower()
+
+
+@pytest.mark.parametrize("mode", ["readonly", "manufacturing"])
+def test_tray_gerber_preserves_mode_gate_and_debug_notice(tmp_path: Path, mode: str) -> None:
+    from kicad_mcp.tray import KiCadTrayApp
+
+    cfg = MagicMock()
+    cfg.pcb_file = tmp_path / "board.kicad_pcb"
+    cfg.pcb_file.write_text("(kicad_pcb)", encoding="utf8")
+    cfg.operating_mode = mode
+    cfg.enable_experimental_tools = False
+    service = MagicMock()
+    service.export.return_value = "Gerber export completed in output:\n- board-F_Cu.gbr"
+    app = KiCadTrayApp()
+    with (
+        patch("kicad_mcp.config.get_config", return_value=cfg),
+        patch("kicad_mcp.tools.export.build_gerber_service", return_value=service) as build,
+        patch.object(app, "_show_notification") as notify,
+    ):
+        app._action_export_gerber()
+    if mode == "readonly":
+        build.assert_not_called()
+        assert "requires manufacturing" in notify.call_args.args[0]
+    else:
+        service.export.assert_called_once_with()
+        assert notify.call_args.args[0].startswith("Debug export only:")

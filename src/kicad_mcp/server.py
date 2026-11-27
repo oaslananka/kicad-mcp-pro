@@ -2433,6 +2433,7 @@ def build_server(
     server.operating_mode = operating_mode
     server.allow_experimental_tools = operating_mode is OperatingMode.EXPERIMENTAL
     server.allowed_tool_names = set(tools_for_profile(selected_profile))
+    server.execution_tool_names = server.allowed_tool_names
 
     # MCP SDK v2 removed the legacy experimental Tasks runtime. Configuration
     # rejects that superseded draft fail-closed; no task handlers are registered.
@@ -3944,14 +3945,17 @@ def inspect_command(
     experimental: bool | None = typer.Option(None, help=option_help(_HELP_EXPERIMENTAL)),
 ) -> None:
     """Launch the MCP Inspector GUI for interactive tool debugging."""
-    # Start server on a random port for the inspector
     import socket
     import subprocess
-    import webbrowser
 
-    with contextlib.closing(socket.socket(socket.AF_INET, socket.AF_INET)) as s:
-        s.bind(("", 0))
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if transport not in {None, "http", "streamable-http"}:
+        raise typer.BadParameter("Inspector uses local Streamable HTTP.")
+    if host not in {None, "127.0.0.1", "localhost"}:
+        raise typer.BadParameter("Inspector only binds to local IPv4 loopback.")
+    if port is not None and not 0 <= port <= 65535:
+        raise typer.BadParameter("Port must be between 0 and 65535.")
+    with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.bind(("127.0.0.1", port or 0))
         server_port = s.getsockname()[1]
 
     typer.echo(f"Starting kicad-mcp-pro on port {server_port} for MCP Inspector...", err=True)
@@ -3972,22 +3976,29 @@ def inspect_command(
     if experimental:
         env["KICAD_MCP_ENABLE_EXPERIMENTAL_TOOLS"] = "1"
 
+    env["KICAD_MCP_MOUNT_PATH"] = "/mcp"
     server_proc = subprocess.Popen(
         [sys.executable, "-m", "kicad_mcp.server"],
         env=env,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
+        stderr=None,
     )
 
-    inspector_url = f"https://mcp.inspect.ai/?server=http://127.0.0.1:{server_port}/mcp"
-    typer.echo(f"Opening MCP Inspector at: {inspector_url}", err=True)
-    webbrowser.open(inspector_url)
-
+    endpoint = f"http://127.0.0.1:{server_port}/mcp"
     try:
-        server_proc.wait()
+        typer.echo(
+            "Open the official local MCP Inspector in another terminal:\n"
+            f"  npx @modelcontextprotocol/inspector --transport http --server-url {endpoint}",
+            err=True,
+        )
+        typer.echo("Press Ctrl+C to stop the local server.", err=True)
+        exit_code = server_proc.wait()
+        if exit_code:
+            raise typer.Exit(exit_code)
     except KeyboardInterrupt:
-        server_proc.terminate()
-        server_proc.wait()
+        pass
+    finally:
+        _terminate_watch_process(server_proc)
 
 
 def main() -> None:

@@ -1535,3 +1535,14 @@ def test_create_sheet_unsafe_root_save_removes_only_new_child(
     assert root_path.read_text() == original
     assert not (tmp_path / "fresh").exists()
     assert child.saved == [(tmp_path / "fresh" / "new.kicad_sch", True)]
+
+
+def test_create_sheet_rejects_escape_before_child_creation(tmp_path: Path) -> None:
+    root_path = tmp_path / "project" / "demo.kicad_sch"
+    root_path.parent.mkdir()
+    service, root, child, _tx, _warnings = _service(root_path=root_path)
+    with pytest.raises(ValueError, match="escapes workspace"):
+        service.create_sheet("Power", "../outside", 10.0, 20.0, True)
+    assert child.saved == []
+    assert root.added == []
+    assert not (tmp_path / "outside.kicad_sch").exists()

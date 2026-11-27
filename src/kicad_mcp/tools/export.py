@@ -172,9 +172,15 @@ def _active_variant_args(variant_name: str | None = None) -> list[str]:
     return args
 
 
-def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
-    """Register export tools."""
-    gerber_service = ExportGerberService(
+def _resolve_manufacturing_variant(variant_name: str | None) -> str:
+    """Pin the actual variant, including the synthetic baseline, for the handoff."""
+    args = variant_apply_to_kicad_cli_args(variant_name)
+    return args[1] if args else "default"
+
+
+def build_gerber_service() -> ExportGerberService:
+    """Compose the same low-level Gerber export for MCP and the local tray."""
+    return ExportGerberService(
         get_pcb_file=_get_pcb_file,
         ensure_output_dir=_ensure_output_dir,
         get_gerber_command=lambda: get_cli_capabilities(get_config().kicad_cli).gerber_command,
@@ -183,6 +189,10 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         format_file_list=_format_file_list,
     )
 
+
+def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
+    """Register export tools."""
+    gerber_service = build_gerber_service()
     bom_service = ExportBomService(
         get_sch_file=_get_sch_file,
         ensure_output_dir=lambda: _ensure_output_dir(),
@@ -257,6 +267,7 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
             path_text, allow_absolute=False
         ),
         ensure_output_dir=lambda: _ensure_output_dir(),
+        resolve_variant=_resolve_manufacturing_variant,
         export_gerber=lambda variant_name: gerber_service.export(variant_name=variant_name),
         export_drill=lambda variant_name: drill_service.export(variant_name=variant_name),
         export_bom=lambda variant_name: bom_service.export(variant_name=variant_name),

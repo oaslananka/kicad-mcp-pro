@@ -184,7 +184,7 @@ class KiCadTrayApp:
                 ],
                 env=env,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
+                stderr=None,
             )
             self._update_icon("running")
             logger.info("tray_server_started", pid=self._server_proc.pid, port=self._server_port)
@@ -267,28 +267,28 @@ class KiCadTrayApp:
         """Export Gerber files."""
         try:
             from .config import get_config
+            from .operating_modes import active_operating_mode, is_tool_allowed_in_mode
+            from .tools.export import build_gerber_service
 
             cfg = get_config()
-            if cfg.pcb_file and cfg.pcb_file.exists():
-                output_dir = cfg.ensure_output_dir("gerber")
-                subprocess.run(
-                    [
-                        str(cfg.kicad_cli),
-                        "pcb",
-                        "export",
-                        "gerber",
-                        "-o",
-                        str(output_dir),
-                        str(cfg.pcb_file),
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=120,
-                )
-                self._show_notification(f"Gerber exported to {output_dir}")
-                logger.info("tray_gerber_exported", output=str(output_dir))
-            else:
+            if not cfg.pcb_file or not cfg.pcb_file.exists():
                 self._show_notification("No PCB file configured")
+                return
+            if not is_tool_allowed_in_mode("export_gerber", active_operating_mode(cfg)):
+                self._show_notification(
+                    "Gerber export requires manufacturing or experimental mode."
+                )
+                return
+            result = build_gerber_service().export()
+            if "No files were produced." in result:
+                self._show_notification("Gerber export failed: No files were produced.")
+                return
+            if result.startswith("Gerber export completed"):
+                self._show_notification("Debug export only: " + result.splitlines()[0])
+                logger.info("tray_gerber_exported")
+            else:
+                self._show_notification(result[:200])
+                logger.warning("tray_gerber_failed")
         except Exception as exc:
             logger.error("tray_gerber_failed", error=str(exc))
             self._show_notification(f"Gerber export failed: {exc}")

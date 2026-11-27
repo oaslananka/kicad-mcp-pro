@@ -1,9 +1,10 @@
-import {createHash,createHmac} from "node:crypto";
+import {createHash} from "node:crypto";
 import type {Pool} from "pg";
 import {PgPairingChallenges,type Enrollment} from "./pairing-store.js";
 import {type RecoveryIdentity,validRecoveryIdentity} from "./device-pairing.js";
 import {readDeviceInventory,validInventoryRequest,type InventoryRequest,type InventoryStatus} from "./device-inventory-status.js";
 import {pairingServerKey} from "./pairing-review.js";
+import {PgPairingBudget} from "./pairing-budget.js";
 
 type IssueResult=Awaited<ReturnType<PgPairingChallenges["issue"]>>;
 export type PairingDeviceOutcome<T>={kind:"ok";data:T}|{kind:"throttled"}|{kind:"unavailable"};
@@ -29,28 +30,11 @@ const WINDOW_MINUTES=15;
  */
 export class PgPairingDeviceAPI implements PairingDevicePort {
   private readonly store:PgPairingChallenges;
-  private readonly key:Buffer;
+  private readonly budget:PgPairingBudget;
   constructor(private readonly pool:Pool,authSecret:string){
     const base=pairingServerKey(authSecret);
     this.store=new PgPairingChallenges(pool,base);
-    this.key=createHmac("sha256",authSecret)
-      .update("kicad-cloud-pairing-throttle-v1").digest();
-  }
-  private digest(domain:string,value:string):string{
-    return createHmac("sha256",this.key).update(domain).update("\0").update(value).digest("hex");
-  }
-  private async take(domain:string,value:string,limit:number):Promise<boolean>{
-    const key=this.digest(domain,value);
-    const count=await this.pool.query<{attempts:number}>(
-      "INSERT INTO pairing_device_budget(budget_key,window_started_at,attempts) "+
-      "VALUES($1,statement_timestamp(),1) ON CONFLICT(budget_key) DO UPDATE SET "+
-      "attempts=CASE WHEN pairing_device_budget.window_started_at <= "+
-      "statement_timestamp()-interval '15 minutes' THEN 1 "+
-      "ELSE LEAST(pairing_device_budget.attempts+1,41) END, "+
-      "window_started_at=CASE WHEN pairing_device_budget.window_started_at <= "+
-      "statement_timestamp()-interval '15 minutes' THEN statement_timestamp() "+
-      "ELSE pairing_device_budget.window_started_at END RETURNING attempts",[key]);
-    return (count.rows[0]?.attempts??42)<=limit;
+    this.budget=new PgPairingBudget(pool,authSecret);
   }
   async issue(source:string,alias:string,publicKeyDer:Buffer):
     Promise<PairingDeviceOutcome<IssueResult>>{
@@ -59,9 +43,9 @@ export class PgPairingDeviceAPI implements PairingDevicePort {
        typeof alias!=="string"||alias.length<1||alias.length>64){
       return {kind:"unavailable"};
     }
-    if(!await this.take("issue-source",source,12))return {kind:"throttled"};
+    if(!await this.budget.take("issue-source",source,12))return {kind:"throttled"};
     const fingerprint=createHash("sha256").update(publicKeyDer).digest("hex");
-    if(!await this.take("issue-key",fingerprint,3))return {kind:"throttled"};
+    if(!await this.budget.take("issue-key",fingerprint,3))return {kind:"throttled"};
     try{return {kind:"ok",data:await this.store.issue(alias,publicKeyDer)};}
     catch(error){
       if(error instanceof Error && /^(INVALID_DEVICE_ALIAS|INVALID_DEVICE_KEY|DEVICE_KEY_MUST_BE_ED25519)$/.test(error.message))
@@ -74,8 +58,8 @@ export class PgPairingDeviceAPI implements PairingDevicePort {
     if(!source||source.length>256||typeof deviceCode!=="string"||!UUID.test(id)||deviceCode.length!==43||
        !Buffer.isBuffer(signature)||signature.length!==64)return {kind:"unavailable"};
     // Allow at most 40 checks within 15 minutes; DB counters saturate at 41.
-    if(!await this.take("status-source",source,40))return {kind:"throttled"};
-    if(!await this.take("status-challenge",id,40))return {kind:"throttled"};
+    if(!await this.budget.take("status-source",source,40))return {kind:"throttled"};
+    if(!await this.budget.take("status-challenge",id,40))return {kind:"throttled"};
     const approved=await this.store.approved(id,deviceCode,signature);
     if(approved===null)return {kind:"unavailable"};
     // Only the device proving BOTH its secret and key can see denial.
@@ -90,8 +74,8 @@ export class PgPairingDeviceAPI implements PairingDevicePort {
       return {kind:"unavailable"};
     if(resumeInitial&&(recovery||!connectOnApproval))return {kind:"unavailable"};
     if(recovery&&(!connectOnApproval||!validRecoveryIdentity(recovery)))return {kind:"unavailable"};
-    if(!await this.take("enroll-source",source,40))return {kind:"throttled"};
-    if(!await this.take("enroll-challenge",id,8))return {kind:"throttled"};
+    if(!await this.budget.take("enroll-source",source,40))return {kind:"throttled"};
+    if(!await this.budget.take("enroll-challenge",id,8))return {kind:"throttled"};
     const result=await this.store.enroll(id,deviceCode,signature,connectOnApproval,recovery,resumeInitial);
     return result.kind!=="unavailable"?{kind:"ok",data:result}:{kind:"unavailable"};
   }
@@ -99,7 +83,7 @@ export class PgPairingDeviceAPI implements PairingDevicePort {
     Promise<PairingDeviceOutcome<InventoryStatus>>{
     if(!source||source.length>256||!validInventoryRequest(request,Date.now())||
        !Buffer.isBuffer(signature)||signature.length!==64)return {kind:"unavailable"};
-    if(!await this.take("inventory-source",source,40))return {kind:"throttled"};
+    if(!await this.budget.take("inventory-source",source,40))return {kind:"throttled"};
     return {kind:"ok",data:await readDeviceInventory(this.pool,request,signature)};
   }
   async registerProject(source:string,deviceId:string,alias:string,signature:Buffer):
@@ -108,8 +92,8 @@ export class PgPairingDeviceAPI implements PairingDevicePort {
        typeof alias!=="string"||alias.length<1||alias.length>64||
        !Buffer.isBuffer(signature)||signature.length!==64)
       return {kind:"unavailable"};
-    if(!await this.take("project-source",source,40))return {kind:"throttled"};
-    if(!await this.take("project-device",deviceId,20))return {kind:"throttled"};
+    if(!await this.budget.take("project-source",source,40))return {kind:"throttled"};
+    if(!await this.budget.take("project-device",deviceId,20))return {kind:"throttled"};
     const result=await this.store.registerProject(deviceId,alias,signature);
     return result.kind==="ok"?{kind:"ok",data:result}:{kind:"unavailable"};
   }

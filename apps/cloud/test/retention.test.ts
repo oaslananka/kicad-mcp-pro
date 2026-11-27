@@ -10,7 +10,7 @@ const migrations=[
   "007_device_pairing.pgsql","008_device_credentials.pgsql",
   "009_device_handshake.pgsql","010_connector_sessions.pgsql",
   "011_pairing_review_budget.pgsql","012_pairing_device_budget.pgsql",
-  "020_connector_write_proof_reservations.pgsql"
+  "020_connector_write_proof_reservations.pgsql","022_usage_and_owner_api.pgsql"
 ];
 type FixtureIds={
   oldSession:string;currentSession:string;oldHandshake:string;
@@ -175,4 +175,31 @@ test("bounded 100-row batches and concurrent workers never double-delete",
 });
 test("retention action cannot silently switch to deletion",async()=>{
   await assert.rejects(pruneExpiredMetadata({} as never,"invalid" as never),/INVALID_RETENTION_ACTION/);
+});
+
+test("owner CLI and telemetry retention preserves current credentials and recent activity",
+  {skip:!conn},async()=>{
+  await inIsolatedDatabase(conn!,migrations,async db=>{
+    await db.query("INSERT INTO owner_api_cli_requests(request_id,label,state,created_at,updated_at) VALUES "+
+      "(repeat('A',43),'Old','pending',now()-interval '31 days',now()-interval '31 days'),"+
+      "(repeat('B',43),'Current','pending',now(),now())");
+    await db.query("INSERT INTO owner_api_tokens(token_hash,owner_sub,label,expires_at,revoked_at) VALUES "+
+      "(repeat('a',64),'owner','Expired',now()-interval '31 days',NULL),"+
+      "(repeat('b',64),'owner','Revoked',now()+interval '1 day',now()-interval '31 days'),"+
+      "(repeat('c',64),'owner','Current',now()+interval '1 day',NULL)");
+    await db.query("INSERT INTO usage_tool_calls(owner_sub,client_id,tool,status,occurred_at) VALUES "+
+      "('owner','client','inspect','success',now()-interval '366 days'),"+
+      "('owner','client','inspect','success',now()-interval '364 days')");
+    const preview=await pruneExpiredMetadata(db,"dry-run");
+    assert.equal(preview.tables.owner_api_cli_requests.eligible,1);
+    assert.equal(preview.tables.owner_api_tokens.eligible,2);
+    assert.equal(preview.tables.usage_tool_calls.eligible,1);
+    const applied=await pruneExpiredMetadata(db,"apply");
+    assert.equal(applied.tables.owner_api_cli_requests.deleted,1);
+    assert.equal(applied.tables.owner_api_tokens.deleted,2);
+    assert.equal(applied.tables.usage_tool_calls.deleted,1);
+    assert.equal((await db.query("SELECT request_id FROM owner_api_cli_requests")).rows[0].request_id,"B".repeat(43));
+    assert.equal((await db.query("SELECT token_hash FROM owner_api_tokens")).rows[0].token_hash,"c".repeat(64));
+    assert.equal((await db.query("SELECT count(*)::integer AS n FROM usage_tool_calls")).rows[0].n,1);
+  });
 });

@@ -33,6 +33,15 @@ _ALLOWED_REQUIREMENTS: dict[OperatingMode, frozenset[OperatingMode]] = {
 _MANUFACTURING_TOOL_NAMES = frozenset(
     {
         "export_manufacturing_package",
+        "variant_export_manufacturing_package",
+        "export_gerber",
+        "export_gerbers",
+        "export_drill",
+        "export_ipc2581",
+        "export_odb",
+        "export_pick_and_place",
+        "export_gencad",
+        "export_ipc_d356",
         "manufacturing_quality_gate",
         "check_design_for_manufacture",
     }

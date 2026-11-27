@@ -391,3 +391,19 @@ def test_reset_connection_closes_cached_instance(monkeypatch) -> None:
     connection.reset_connection()
 
     closable.close.assert_called_once()
+
+
+def test_cli_version_probe_rejects_failed_command(monkeypatch, tmp_path: Path) -> None:
+    cli = tmp_path / "kicad-cli"
+    run = MagicMock(return_value=SimpleNamespace(returncode=1, stdout="", stderr="KiCad failed"))
+    monkeypatch.setattr("kicad_mcp.discovery.subprocess.run", run)
+
+    assert find_kicad_version(cli) is None
+    run.assert_called_once_with(
+        [str(cli), "--version"],
+        capture_output=True,
+        text=True,
+        errors="replace",
+        timeout=10,
+        check=False,
+    )

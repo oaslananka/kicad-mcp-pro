@@ -250,3 +250,41 @@ def test_get_datasheet_url_preserves_exact_missing_and_match_behavior(tmp_path: 
         service.get_datasheet_url("Device", "NoUrl")
         == "No datasheet URL was found for 'Device:NoUrl'."
     )
+
+
+def test_index_uses_only_own_properties_and_top_level_symbols(tmp_path: Path, monkeypatch) -> None:
+    from kicad_mcp.library import catalog
+
+    library = tmp_path / "test.kicad_sym"
+    library.write_text(
+        r"""(kicad_symbol_lib
+          (symbol "Missing" (symbol "Missing_1_1" (property "Description" "nested")))
+          (symbol "Next" (property "Description" "a \"quoted\" description")
+            (property "ki_keywords" "next keyword"))
+          (symbol "Valid_1_1" (property "Description" "real top level")))""",
+        encoding="utf8",
+    )
+    monkeypatch.setattr(catalog, "symbol_library_files", lambda: {"Test": library})
+    index = catalog.build_symbol_index()
+    assert index["Test:Missing"]["description"] == ""
+    assert index["Test:Missing"]["keywords"] == ""
+    assert index["Test:Next"]["description"] == 'a "quoted" description'
+    assert index["Test:Valid_1_1"]["description"] == "real top level"
+    assert "Test:Missing_1_1" not in index
+
+
+def test_symbol_index_follows_project_library_changes(tmp_path: Path, monkeypatch) -> None:
+    from kicad_mcp.library import catalog
+
+    first = tmp_path / "first.kicad_sym"
+    second = tmp_path / "second.kicad_sym"
+    first.write_text('(kicad_symbol_lib (symbol "First"))', encoding="utf8")
+    second.write_text('(kicad_symbol_lib (symbol "Second"))', encoding="utf8")
+    current = first
+    monkeypatch.setattr(catalog, "_symbol_index", None)
+    monkeypatch.setattr(catalog, "symbol_library_files", lambda: {"Project": current})
+    assert set(catalog.get_symbol_index()) == {"Project:First"}
+    current = second
+    assert set(catalog.get_symbol_index()) == {"Project:Second"}
+    second.write_text('(kicad_symbol_lib (symbol "EditedSymbol"))', encoding="utf8")
+    assert set(catalog.get_symbol_index()) == {"Project:EditedSymbol"}

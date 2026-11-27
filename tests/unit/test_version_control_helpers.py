@@ -423,3 +423,22 @@ def test_register_version_control_tools(monkeypatch, tmp_path: Path) -> None:
     assert "Dry run: release tag was not created." in tag_preview
     assert "Release tag created." in tag_text
     assert "deadbeef" in tag_text
+
+
+@pytest.mark.parametrize("name", ["vcs_restore_checkpoint", "vcs_diff_with_checkpoint"])
+def test_checkpoint_rejects_non_hash_before_git(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    def unexpected() -> Path:
+        pytest.fail("Invalid checkpoint must be rejected before resolving Git")
+
+    monkeypatch.setattr(version_control, "_resolve_project_dir", unexpected)
+    with pytest.raises(ValueError, match="Commit hash"):
+        getattr(version_control, name)("--invalid")
+
+
+def test_release_tag_rejects_option_before_git(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unexpected() -> Path:
+        pytest.fail("Invalid tag must be rejected before resolving Git")
+
+    monkeypatch.setattr(version_control, "_resolve_project_dir", unexpected)
+    with pytest.raises(ValueError, match="Release tag"):
+        version_control.vcs_tag_release("--invalid", "message")

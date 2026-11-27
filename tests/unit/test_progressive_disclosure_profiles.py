@@ -191,3 +191,11 @@ async def test_default_surfaces_hierarchical_sheet_discovery() -> None:
         server, "kicad_get_tools_in_category", {"category": "schematic"}
     )
     assert "sch_list_sheets" in discovery
+
+
+@pytest.mark.anyio
+async def test_build_profile_rejects_hidden_tool_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("KICAD_MCP_OPERATING_MODE", "write")
+    server = build_server("build")
+    result = await call_tool_text(server, "sch_delete_sheet", {"sheet": "unused"})
+    assert "not available in this server execution surface" in result

@@ -42,7 +42,7 @@ def test_load_state_falls_back_to_sidecar_when_no_project_file(
     state = _load_state()
 
     assert state["active_variant"] == "default"
-    assert _variants_path().exists()
+    assert not _variants_path().exists()
 
 
 def test_project_state_from_payload_returns_none_for_incomplete_section() -> None:
@@ -191,3 +191,23 @@ def test_render_variant_components_merges_unknown_override_reference(
 
     assert "U99" in rendered
     assert rendered["U99"]["enabled"] is False
+
+
+@pytest.mark.parametrize(
+    "args, expected",
+    [
+        (["--variant", "lite"], "lite"),
+        (["--variant", "default"], "default"),
+        ([], "default"),
+    ],
+)
+def test_manufacturing_variant_pins_effective_selection(
+    monkeypatch: pytest.MonkeyPatch, args: list[str], expected: str
+) -> None:
+    from kicad_mcp.tools.export import _resolve_manufacturing_variant
+
+    monkeypatch.setattr(
+        "kicad_mcp.tools.export.variant_apply_to_kicad_cli_args",
+        lambda requested: args,
+    )
+    assert _resolve_manufacturing_variant(None) == expected

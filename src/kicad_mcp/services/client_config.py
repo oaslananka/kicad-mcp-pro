@@ -78,7 +78,7 @@ def _save_owned_hashes(
     client: str, config_path: Path, content: dict[str, Any], registry_root: Path | None
 ) -> None:
     hashes = _read_entry_hashes(registry_root)
-    for namespace in ("mcpServers", "servers"):
+    for namespace in ("mcpServers", "servers", "context_servers"):
         entries = content.get(namespace)
         if isinstance(entries, dict) and "kicad-mcp-pro" in entries:
             hashes[_hash_key(client, config_path, namespace, "kicad-mcp-pro")] = _hash_value(
@@ -146,7 +146,7 @@ def _prepare_config_contents(
     except OSError as err:
         raise ClientConfigError(f"Failed to create backup at {backup_path}: {err}") from err
 
-    for namespace in ("mcpServers", "servers"):
+    for namespace in ("mcpServers", "servers", "context_servers"):
         if namespace not in snippet:
             continue
         entries = data.setdefault(namespace, {})
@@ -155,7 +155,7 @@ def _prepare_config_contents(
             raise ClientConfigError("Existing MCP client server entries are invalid")
         entries.update(incoming)
     for key, value in snippet.items():
-        if key not in ("mcpServers", "servers"):
+        if key not in ("mcpServers", "servers", "context_servers"):
             data[key] = value
     return data, backup_path
 
@@ -214,7 +214,7 @@ def remove_client_config_entry(
         raise ClientConfigError("Configuration entry is not recorded as application-owned")
     namespaces = [
         kind
-        for kind in ("mcpServers", "servers")
+        for kind in ("mcpServers", "servers", "context_servers")
         if isinstance(data.get(kind), dict) and server_key in data[kind]
     ]
     if not namespaces:

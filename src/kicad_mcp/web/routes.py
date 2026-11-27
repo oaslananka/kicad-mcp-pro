@@ -12,6 +12,7 @@ import threading
 import time
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from typing import Any
 
 import structlog
 from starlette.requests import Request
@@ -21,7 +22,7 @@ from starlette.routing import Route
 from .. import __version__
 from ..cli_init import MCP_CLIENT_CONFIGS
 from ..compatibility import DESKTOP_API_CONTRACT_VERSION, DESKTOP_BACKEND_VERSION_POLICY
-from ..config import get_config, reset_config
+from ..config import KiCadMCPConfig, get_config, reset_config
 from ..diagnostics import build_health_report
 from ..discovery import find_kicad_version
 from ..errors import UnsafePathError
@@ -33,6 +34,7 @@ from ..project.http_binding import PROJECT_CONFIG_FIELDS, HttpProjectBinding
 from ..tools.router import available_profiles, tool_count_for_profile
 from .dashboard import DASHBOARD_HTML
 from .owner_routes import (
+    _authorize_mutation,
     _owner_session,
     api_client_config_apply,
     api_client_config_preview,
@@ -452,7 +454,6 @@ ALLOWED_CONFIG_KEYS = {
     "sch_file",
     "operating_mode",
     "enable_experimental_tools",
-    "enable_tasks",
 }
 _config_post_lock = threading.Lock()
 
@@ -479,8 +480,24 @@ def _validate_config_project_directory(
     return None
 
 
+def _apply_config_settings(safe_body: dict[str, object]) -> list[str]:
+    with _config_post_lock:
+        overrides: dict[str, Any] = {key: str(value) for key, value in safe_body.items()}
+        KiCadMCPConfig(**overrides)
+        for key, value in safe_body.items():
+            os.environ[f"KICAD_MCP_{key.upper()}"] = str(value)
+        applied = list(safe_body)
+        if applied:
+            reset_config()
+            logger.info("config_updated_via_api", keys=applied)
+        return applied
+
+
 async def api_config_post(request: Request) -> JSONResponse:
     """Update the server configuration at runtime via environment overrides."""
+    _, denial = _authorize_mutation(request)
+    if denial is not None:
+        return denial
     try:
         body = await request.json()
     except Exception:
@@ -488,9 +505,10 @@ async def api_config_post(request: Request) -> JSONResponse:
     if not isinstance(body, dict):
         return JSONResponse({"error": "Body must be a JSON object."}, status_code=400)
 
-    applied: list[str] = []
-    errors: list[dict[str, str]] = []
-
+    if "enable_tasks" in body:
+        return JSONResponse(
+            {"error": "Tasks cannot be enabled through the dashboard."}, status_code=400
+        )
     # Filter body to only contain safe config keys
     safe_body = {k: v for k, v in body.items() if k in ALLOWED_CONFIG_KEYS}
 
@@ -502,37 +520,30 @@ async def api_config_post(request: Request) -> JSONResponse:
     if invalid_project is not None:
         return invalid_project
 
-    def apply_settings() -> None:
-        with _config_post_lock:
-            for key, value in safe_body.items():
-                env_key = f"KICAD_MCP_{key.upper()}"
-                os.environ[env_key] = str(value)
-                applied.append(key)
-            if applied:
-                reset_config()
-                logger.info("config_updated_via_api", keys=applied)
-
-    if isinstance(binding, HttpProjectBinding):
-        with binding.configuration_update() as can_select:
-            if not can_select and PROJECT_CONFIG_FIELDS.intersection(safe_body):
-                return JSONResponse(
-                    {"error": "The HTTP project is active. Restart to select another project."},
-                    status_code=409,
-                )
-            apply_settings()
-    else:
-        apply_settings()
+    try:
+        if isinstance(binding, HttpProjectBinding):
+            with binding.configuration_update() as can_select:
+                if not can_select and PROJECT_CONFIG_FIELDS.intersection(safe_body):
+                    return JSONResponse(
+                        {"error": "The HTTP project is active. Restart to select another project."},
+                        status_code=409,
+                    )
+                applied = _apply_config_settings(safe_body)
+        else:
+            applied = _apply_config_settings(safe_body)
+    except ValueError:
+        return JSONResponse(
+            {"error": "Invalid configuration. No settings changed."}, status_code=400
+        )
 
     payload = _config_public_payload()
     result = {
         "applied": applied,
-        "errors": errors,
+        "errors": [],
         "config": payload,
         **payload,
         "message": "Settings saved. Some changes require a restart.",
     }
-    if errors:
-        result["warning"] = "Some values were not applied."
     return JSONResponse(result)
 
 
@@ -588,11 +599,14 @@ async def api_tool_test(request: Request) -> JSONResponse:
     if not isinstance(arguments, dict):
         return JSONResponse({"error": "arguments must be an object."}, status_code=400)
 
+    dry_run = body.get("dry_run", True) is True
+    if not dry_run:
+        _, denial = _authorize_mutation(request)
+        if denial is not None:
+            return denial
     handle = get_server_handle()
     if handle is None:
         return JSONResponse({"error": "Server not initialized"}, status_code=503)
-
-    dry_run = bool(body.get("dry_run", True))
     if dry_run:
         return JSONResponse(
             {
@@ -643,6 +657,9 @@ async def api_server_action(request: Request) -> JSONResponse:  # noqa: S7503 --
     POST /api/server/restart
     POST /api/server/shutdown
     """
+    _, denial = _authorize_mutation(request)
+    if denial is not None:
+        return denial
     action = request.path_params.get("action", "").strip().casefold()
     if action not in {"start", "stop", "shutdown", "restart"}:
         return JSONResponse(

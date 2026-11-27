@@ -179,8 +179,7 @@ jobs:
           context: .
           file: Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          outputs: type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             KICAD_MCP_VERSION=${{ steps.source.outputs.version }}
@@ -188,7 +187,10 @@ jobs:
           sbom: true
           provenance: mode=max
 
-      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+      - name: Scan AMD64 image digest
+        env:
+          TRIVY_PLATFORM: linux/amd64
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
         with:
           image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.build-push.outputs.digest }}
           severity: HIGH,CRITICAL
@@ -196,6 +198,20 @@ jobs:
           format: table
           exit-code: "1"
           version: v0.70.0
+
+      - name: Scan ARM64 image digest
+        env:
+          TRIVY_PLATFORM: linux/arm64
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
+        with:
+          image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.build-push.outputs.digest }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "1"
+          version: v0.70.0
+          skip-setup-trivy: true
+          cache: false
 
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532
         with:
@@ -206,3 +222,21 @@ jobs:
           COSIGN_EXPERIMENTAL: "true"
           IMAGE_DIGEST: ${{ steps.build-push.outputs.digest }}
         run: cosign sign --yes "${GHCR_IMAGE}@${IMAGE_DIGEST}"
+
+      # Both scans and signing must succeed before any consumer tag is moved.
+      - name: Promote verified digest to release tags
+        shell: bash
+        env:
+          IMAGE_DIGEST: ${{ steps.build-push.outputs.digest }}
+          RELEASE_IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "Invalid image digest" >&2; exit 1; }
+          tags=()
+          while IFS= read -r tag; do
+            [[ -n "$tag" ]] || continue
+            [[ "$tag" == "${GHCR_IMAGE}:"* ]] || { echo "Unexpected release image tag" >&2; exit 1; }
+            tags+=(--tag "$tag")
+          done <<< "$RELEASE_IMAGE_TAGS"
+          (( ${#tags[@]} > 0 )) || { echo "No release image tags" >&2; exit 1; }
+          docker buildx imagetools create "${tags[@]}" "${GHCR_IMAGE}@${IMAGE_DIGEST}"

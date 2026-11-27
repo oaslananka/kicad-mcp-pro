@@ -36,3 +36,20 @@ def test_project_is_required_before_release_or_drc_state_access(
 
     assert not (tmp_path / "state.json").exists()
     assert not (tmp_path / ".kicad-mcp").exists()
+
+
+def test_release_artifact_readiness_requires_gerber_and_drill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    output = tmp_path / "output"
+    output.mkdir()
+    monkeypatch.setattr(
+        validation, "get_config", lambda: SimpleNamespace(project_dir=tmp_path, output_dir=output)
+    )
+    for name in ("bom.csv", "board-pos.csv", "fabrication.pdf"):
+        (output / name).write_text("placeholder", encoding="utf8")
+    assert validation._release_artifact_evidence().available is False
+    (output / "board.gbr").write_text("gerber", encoding="utf8")
+    assert validation._release_artifact_evidence().available is False
+    (output / "board.drl").write_text("drill", encoding="utf8")
+    assert validation._release_artifact_evidence().available is True

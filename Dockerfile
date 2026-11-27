@@ -35,7 +35,7 @@ COPY --from=uv-bin /uv /usr/local/bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src/ src/
-RUN uv sync --frozen --extra http --extra simulation --extra freerouting
+RUN uv sync --frozen --no-dev --no-editable --extra http --extra simulation --extra freerouting
 
 FROM python:3.14.10-alpine3.23@sha256:f6a7dec95e6205059dccfcb07faca3ca38729ea35df01231caf1d127bacedec8 AS runtime
 ARG KICAD_MCP_VERSION=0.0.0
@@ -53,7 +53,7 @@ LABEL io.modelcontextprotocol.server.name="io.github.oaslananka/kicad-mcp-pro" \
   org.opencontainers.image.source="https://github.com/oaslananka/kicad-mcp-pro" \
   org.opencontainers.image.version="${KICAD_MCP_VERSION}" \
   org.opencontainers.image.revision="${VCS_REF}" \
-  org.opencontainers.image.licenses="MIT"
+  org.opencontainers.image.licenses="AGPL-3.0-only"
 RUN apk upgrade --no-cache \
   && if [ -n "${KICAD_CLI_APK_PACKAGE}" ]; then apk add --no-cache "${KICAD_CLI_APK_PACKAGE}"; fi \
   && addgroup -S kicadmcp \
@@ -103,7 +103,7 @@ LABEL io.modelcontextprotocol.server.name="io.github.oaslananka/kicad-mcp-pro" \
   org.opencontainers.image.source="https://github.com/oaslananka/kicad-mcp-pro" \
   org.opencontainers.image.version="${KICAD_MCP_VERSION}" \
   org.opencontainers.image.revision="${VCS_REF}" \
-  org.opencontainers.image.licenses="MIT"
+  org.opencontainers.image.licenses="AGPL-3.0-only"
 USER kicadmcp
 EXPOSE 3334
 ENTRYPOINT ["kicad-mcp-pro-entrypoint"]

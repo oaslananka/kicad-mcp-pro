@@ -22,6 +22,7 @@ from ..models.simulation import (
     TransientAnalysisInput,
 )
 from ..path_safety import resolve_under
+from ..utils.metadata_write import atomic_metadata_write, serialized_metadata_write
 from ..utils.ngspice import NgspiceRunner, SimulationResult, prepare_spice_netlist
 from .export_support import _ensure_output_dir, _get_sch_file, _run_cli_variants
 from .metadata import headless_compatible
@@ -501,7 +502,7 @@ def _write_project_json(payload: dict[str, Any]) -> str:
     cfg = get_config()
     if cfg.project_file is None:
         raise ValueError("No project file is configured.")
-    cfg.project_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    atomic_metadata_write(cfg.project_file, json.dumps(payload, indent=2))
     return str(cfg.project_file)
 
 
@@ -529,6 +530,7 @@ def sim_list_spice_libraries() -> str:
 
 
 @headless_compatible
+@serialized_metadata_write
 def sim_add_spice_library(name: str, uri: str) -> str:
     """Register a SPICE model library in the active project file.
 
@@ -560,6 +562,7 @@ def sim_add_spice_library(name: str, uri: str) -> str:
 
 
 @headless_compatible
+@serialized_metadata_write
 def sim_remove_spice_library(name: str) -> str:
     """Unregister a SPICE model library from the active project file."""
     project = _read_project_json()

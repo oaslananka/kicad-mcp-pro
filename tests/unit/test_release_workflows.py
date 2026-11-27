@@ -207,3 +207,22 @@ def test_published_pypi_smoke_binds_install_and_mcp_assertions_to_selected_sourc
     assert "4.5.0" not in workflow
     assert "contents: read" in workflow
     assert "id-token: write" not in workflow
+
+
+def test_npm_publish_waits_for_matching_python_distribution() -> None:
+    import yaml
+
+    workflow = yaml.safe_load(_read(".github/workflows/publish-npm.yml"))
+    steps = workflow["jobs"]["publish"]["steps"]
+    gate = next(
+        i for i, step in enumerate(steps) if step.get("name") == "Wait for matching Python wheel"
+    )
+    publish = next(
+        i for i, step in enumerate(steps) if step.get("run", "").startswith("npm publish ")
+    )
+    assert gate < publish
+    assert steps[gate]["if"] == steps[publish]["if"]
+    assert "wait_for_pypi_wheel.py" in steps[gate]["run"]
+    assert "uv run --project ../.. --frozen --no-sync python -I" in steps[gate]["run"]
+    assert "package.json" in steps[gate]["run"]
+    assert steps[gate]["timeout-minutes"] == 15

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import math
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -108,6 +109,30 @@ def prepare_spice_netlist(
     prepared = output_dir / "simulation_input.cir"
     prepared.write_text(merged, encoding="utf-8")
     return prepared
+
+
+def _validate_spice_names(probe_nets: list[str], source_ref: object | None = None) -> None:
+    """Only literal node and source names may enter ngspice control commands."""
+    names = [probe for probe in probe_nets if probe.strip()]
+    if source_ref is not None:
+        names.append(str(source_ref))
+    for name in names:
+        if not re.fullmatch(r"[A-Za-z0-9_./#+-]+", name):
+            raise ValueError("Invalid SPICE node or source name.")
+
+
+def _validate_spice_netlist(content: str) -> None:
+    """Do not accept executable control sections from a supplied deck."""
+    for line in content.splitlines():
+        if re.match(r"\s*(?:\.control\b|\.endc\b|!)", line, re.IGNORECASE):
+            raise ValueError("Untrusted SPICE control statements are not supported.")
+
+
+def _spice_control_path(path: PurePath) -> str:
+    value = path.as_posix()
+    if any(character in value for character in ("'", "\r", "\n", "\x00")):
+        raise ValueError("Invalid SPICE control output path.")
+    return value
 
 
 def _strip_spice_end(content: str) -> str:
@@ -327,6 +352,8 @@ class NgspiceRunner:
         probe_nets: list[str],
         **kwargs: float | int | str,
     ) -> SimulationResult:
+        _validate_spice_names(probe_nets, kwargs.get("source_ref"))
+        _validate_spice_netlist(netlist_path.read_text(encoding="utf-8", errors="ignore"))
         modules = _import_inspice_modules()
         if modules is not None:
             try:
@@ -500,7 +527,7 @@ class NgspiceRunner:
         deck_path.write_text(deck_text, encoding="utf-8")
 
         result = subprocess.run(
-            [str(cli), "-b", "-o", str(log_path), str(deck_path)],
+            [str(cli), "-n", "-b", "-o", str(log_path), str(deck_path)],
             capture_output=True,
             text=True,
             errors="replace",
@@ -533,6 +560,8 @@ class NgspiceRunner:
         probe_nets: list[str],
         **kwargs: float | int | str,
     ) -> str:
+        _validate_spice_names(probe_nets, kwargs.get("source_ref"))
+        _validate_spice_netlist(base_netlist)
         probe_nets = [probe for probe in probe_nets if probe.strip()]
         header_exprs: list[str]
         if analysis == "operating-point":
@@ -564,8 +593,8 @@ class NgspiceRunner:
 
         # ngspice control strings treat backslashes as escapes and preserve double quotes in
         # output filenames. POSIX separators plus single quotes are portable and keep spaces intact.
-        data_path_text = data_path.as_posix()
-        raw_path_text = raw_path.as_posix()
+        data_path_text = _spice_control_path(data_path)
+        raw_path_text = _spice_control_path(raw_path)
         wrdata_line = f"wrdata '{data_path_text}' {' '.join(header_exprs)}"
         stripped = _strip_spice_end(base_netlist)
         return (

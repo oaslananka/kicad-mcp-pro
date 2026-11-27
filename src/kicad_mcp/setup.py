@@ -503,7 +503,7 @@ def _generate_local_config(
     env = _env_for_mode(mode, project_dir)
 
     if transport == "http":
-        url = url or os.environ.get("KICAD_MCP_URL", "http://127.0.0.1:8765/mcp")
+        url = url or os.environ.get("KICAD_MCP_URL", "http://127.0.0.1:3334/mcp")
         return _generate_http_config(agent_key, url, env)
 
     env["KICAD_MCP_TRANSPORT"] = "stdio"

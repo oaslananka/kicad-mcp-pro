@@ -11,10 +11,11 @@ from pathlib import Path
 from ..config import get_config
 from ..library_resolution import active_project_dir
 from ..utils.library_tables import lib_table_paths, parse_lib_table
-from ..utils.sexpr import _extract_block
+from ..utils.sexpr import _extract_block, _unescape_sexpr_string, iter_root_children
 
 _symbol_index: dict[str, dict[str, str]] | None = None
 _symbol_index_lock = threading.Lock()
+_symbol_index_signature: tuple[tuple[object, ...], ...] | None = None
 
 
 def symbol_library_dir() -> Path:
@@ -39,53 +40,72 @@ def symbol_library_files() -> dict[str, Path]:
     return files
 
 
-def build_symbol_index() -> dict[str, dict[str, str]]:
+_SEARCH_PROPERTY = re.compile(r'\(property\s+"(Description|ki_keywords)"\s+"((?:\\.|[^"\\])*)"')
+
+
+def _symbol_search_properties(block: str) -> dict[str, str]:
+    properties: dict[str, str] = {}
+    for kind, child in iter_root_children(block):
+        if kind == "property" and (match := _SEARCH_PROPERTY.match(child)):
+            properties[match.group(1)] = _unescape_sexpr_string(match.group(2))
+    return properties
+
+
+def build_symbol_index(files: dict[str, Path] | None = None) -> dict[str, dict[str, str]]:
     """Build the in-memory search index from discoverable symbol libraries."""
     index: dict[str, dict[str, str]] = {}
-    for library, sym_file in symbol_library_files().items():
+    for library, sym_file in (symbol_library_files() if files is None else files).items():
         try:
             content = sym_file.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        for match in re.finditer(r'\(symbol\s+"([^"]+)"', content):
-            symbol_name = match.group(1)
-            if re.search(r"_\d+_\d+$", symbol_name):
+        for kind, block in iter_root_children(content):
+            if kind != "symbol":
                 continue
-            key = f"{library}:{symbol_name}"
-            description_match = re.search(
-                rf'\(symbol\s+"{re.escape(symbol_name)}".*?\(property\s+"Description"\s+"([^"]*)"',
-                content,
-                re.DOTALL,
-            )
-            keyword_match = re.search(
-                rf'\(symbol\s+"{re.escape(symbol_name)}".*?\(property\s+"ki_keywords"\s+"([^"]*)"',
-                content,
-                re.DOTALL,
-            )
-            index[key] = {
+            match = re.match(r'\(symbol\s+"((?:\\.|[^"\\])*)"', block)
+            if match is None:
+                continue
+            symbol_name = _unescape_sexpr_string(match.group(1))
+            properties = _symbol_search_properties(block)
+            index[f"{library}:{symbol_name}"] = {
                 "library": library,
                 "name": symbol_name,
-                "description": description_match.group(1) if description_match else "",
-                "keywords": keyword_match.group(1) if keyword_match else "",
+                "description": properties.get("Description", ""),
+                "keywords": properties.get("ki_keywords", ""),
             }
     return index
 
 
+def _library_signature(files: dict[str, Path]) -> tuple[tuple[object, ...], ...]:
+    entries: list[tuple[object, ...]] = []
+    for name, path in sorted(files.items()):
+        try:
+            stat = path.stat()
+            entries.append((name, path.resolve(), stat.st_mtime_ns, stat.st_size, stat.st_ino))
+        except OSError:
+            entries.append((name, path, None))
+    return tuple(entries)
+
+
 def get_symbol_index() -> dict[str, dict[str, str]]:
-    """Return the lazily-built process-wide symbol search index."""
-    global _symbol_index
-    if _symbol_index is None:
-        with _symbol_index_lock:
-            if _symbol_index is None:
-                _symbol_index = build_symbol_index()
-    return _symbol_index
+    """Return the index for the current discoverable libraries, not another project."""
+    global _symbol_index, _symbol_index_signature
+    with _symbol_index_lock:
+        files = symbol_library_files()
+        signature = _library_signature(files)
+        if _symbol_index is None or signature != _symbol_index_signature:
+            _symbol_index = build_symbol_index(files)
+            _symbol_index_signature = signature
+        return _symbol_index
 
 
 def rebuild_symbol_index() -> int:
-    """Rebuild the process-wide symbol search index and return its size."""
-    global _symbol_index
+    """Rebuild the current symbol search index and return its size."""
+    global _symbol_index, _symbol_index_signature
     with _symbol_index_lock:
-        _symbol_index = build_symbol_index()
+        files = symbol_library_files()
+        _symbol_index_signature = _library_signature(files)
+        _symbol_index = build_symbol_index(files)
         return len(_symbol_index)
 
 

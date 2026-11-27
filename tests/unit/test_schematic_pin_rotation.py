@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -149,3 +150,65 @@ def test_connectivity_graph_reads_symbol_mirror(tmp_path: Path) -> None:
         for group in groups
     }
     assert pins_by_net == {("A_NET",): ["D1:2"], ("K_NET",): ["D1:1"]}
+
+
+def test_pin_inspection_reuses_parse_and_observes_edits_with_same_stat(
+    tmp_path: Path, monkeypatch
+) -> None:
+    library = tmp_path / "Device.kicad_sym"
+    library.write_text(DEVICE_LIBRARY, encoding="utf8")
+    monkeypatch.setattr(schematic, "_symbol_library_file", lambda _: library)
+    schematic._read_cached_library_symbols.cache_clear()
+    original_stat = Path.stat
+    initial_stat = library.stat()
+    original_parse = schematic._library_symbol_blocks
+    parses = 0
+
+    def unchanged_stat(path: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        if path == library:
+            return initial_stat
+        return original_stat(path, follow_symlinks=follow_symlinks)
+
+    def tracked_parse(content: str) -> dict[str, str]:
+        nonlocal parses
+        parses += 1
+        return original_parse(content)
+
+    monkeypatch.setattr(Path, "stat", unchanged_stat)
+    monkeypatch.setattr(schematic, "_library_symbol_blocks", tracked_parse)
+    assert schematic.get_pin_positions("Device", "R", 0, 0)["1"] == (0, -3.81)
+    assert schematic.get_pin_metadata("Device", "R")["1"]["etype"] == "passive"
+    assert schematic.get_pin_alias_positions("Device", "LED", 0, 0)["K"] == (-3.81, 0)
+    assert parses == 1
+    library.write_text(DEVICE_LIBRARY.replace("0 3.81 270", "0 12.7 270"), encoding="utf8")
+    assert schematic.get_pin_positions("Device", "R", 0, 0)["1"] == (0, -12.7)
+    assert parses == 2
+
+    other = tmp_path / "other.kicad_sym"
+    other.write_text(DEVICE_LIBRARY.replace("0 3.81 270", "0 5.08 270"), encoding="utf8")
+    monkeypatch.setattr(schematic, "_symbol_library_file", lambda _: other)
+    assert schematic.get_pin_positions("Device", "R", 0, 0)["1"] == (0, -5.08)
+    assert parses == 3
+
+
+def test_nested_unit_is_not_a_library_symbol(tmp_path: Path, monkeypatch) -> None:
+    library = tmp_path / "Device.kicad_sym"
+    library.write_text(DEVICE_LIBRARY, encoding="utf8")
+    monkeypatch.setattr(schematic, "_symbol_library_file", lambda _: library)
+    assert schematic.symbol_exists("Device", "R_1_1") is False
+    assert schematic.get_pin_positions("Device", "R_1_1", 0, 0) == {}
+    library.write_text(
+        DEVICE_LIBRARY.replace('(symbol "LED"', '(symbol "Genuine_1_1") (symbol "LED"', 1),
+        encoding="utf8",
+    )
+    assert schematic.symbol_exists("Device", "Genuine_1_1") is True
+    assert schematic.suggest_symbol_names("Device", "Genuine_1_1") == ["Genuine_1_1"]
+
+
+def test_large_symbol_library_is_not_retained_in_parse_cache(tmp_path: Path, monkeypatch) -> None:
+    library = tmp_path / "Device.kicad_sym"
+    library.write_text(DEVICE_LIBRARY, encoding="utf8")
+    monkeypatch.setattr(schematic, "_MAX_CACHED_LIBRARY_BYTES", 1)
+    schematic._read_cached_library_symbols.cache_clear()
+    assert "R" in schematic._library_symbols_from_file(library)
+    assert schematic._read_cached_library_symbols.cache_info().currsize == 0

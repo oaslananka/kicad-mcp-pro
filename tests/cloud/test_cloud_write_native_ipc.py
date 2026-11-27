@@ -283,3 +283,17 @@ def test_existing_native_transaction_does_not_allow_new_begin(tmp_path: Path) ->
     assert native.begin() is False
     assert board.calls == ["begin"]
     assert native._service.drop() == "Transaction group discarded successfully."
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows native path spelling")
+def test_windows_native_board_path_accepts_same_directory_with_slashes(tmp_path: Path) -> None:
+    from kicad_mcp.cloud_write_native_ipc import _require_approved_live_board
+
+    policy, board, _ = setup(tmp_path)
+    board.project.path = policy.directory.as_posix()
+    assert _require_approved_live_board(board, policy) == (str(policy.directory), board.name)
+    board.project.path = str(policy.directory).upper()
+    assert _require_approved_live_board(board, policy) == (str(policy.directory), board.name)
+    board.project.path = str(policy.directory / ".." / policy.directory.name)
+    with pytest.raises(LocalWriteDeniedError):
+        _require_approved_live_board(board, policy)

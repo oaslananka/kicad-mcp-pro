@@ -368,11 +368,13 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
     assert.match(JSON.stringify(wrongMode.data),/write_tool_requires_local_mcp_write/);
     assert.equal(localWrites,0);
 
+    catalogsBefore=catalogAttempts;
     const noScope=await invoke(enabled,"token-read","tools/call",{
       name:"local_mcp_write",arguments:{project_id:projectId,
         tool_name:"sch_move_symbol",arguments:{reference:"R1",x_mm:10,y_mm:20}}
     },4,"local_mcp_write");
     assert.match(JSON.stringify(noScope.data),/insufficient_scope_write_required/);
+    assert.equal(catalogAttempts,catalogsBefore,"Denied WRITE must not query local catalog");
     assert.equal(localWrites,0);
 
     const noGrant=await invoke(enabled,"token-edit","tools/call",{
@@ -380,6 +382,7 @@ test("generic and direct Cloud MCP routes share the signed local write boundary"
         tool_name:"sch_move_symbol",arguments:{reference:"R1",x_mm:10,y_mm:20}}
     },5,"local_mcp_write");
     assert.match(JSON.stringify(noGrant.data),/project_edit_permission_required/);
+    assert.equal(catalogAttempts,catalogsBefore,"Read grant must not query local WRITE catalog");
     assert.equal(localWrites,0);
 
     const directNoScope=await invoke(direct,"token-read","tools/call",{

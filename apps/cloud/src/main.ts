@@ -114,13 +114,13 @@ const usage=usageEnabled&&connectorPool?new PgUsage(connectorPool):undefined;
 // Browser-approved command-line management needs the same database-backed
 // token store and built-in identity as the approval page. Without identity,
 // no approval can complete, so the surface is not constructed at all.
-const ownerApi=identity&&connectorPool?new PgOwnerApiAccess(connectorPool):undefined;
+const ownerApi=identity&&connectorPool?new PgOwnerApiAccess(connectorPool,process.env.BETTER_AUTH_SECRET??""):undefined;
 // Enabling either public device surface requires an explicit, fixed
 // cloudflared TCP peer allowlist; no trust-all or unverified header fallback.
 // Device source trust is explicit and mutually exclusive; only an accepted,
 // private owner SSH forward may use the private mode. The default stays the
 // existing fail-closed Cloudflare source policy.
-const deviceSource=(wsEnabled||pairingDeviceEnabled)?
+const deviceSource=(wsEnabled||pairingDeviceEnabled||ownerApi)?
   (localDevWorkspace?localDevLoopbackSource:configuredDeviceSource(process.env)):undefined;
 // Lazy binding keeps all read surfaces absent when connector WS is disabled.
 let connectorRelay:ReturnType<typeof attachConnectorWebSocket>|null=null;

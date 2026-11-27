@@ -248,20 +248,22 @@ export class PgPairingChallenges {
         return {kind:"unavailable"};
       }
       if(!enabled){
-        await db.query("UPDATE devices SET enabled=true WHERE id=$1",[deviceId]);
+        await db.query("ROLLBACK");
+        return {kind:"unavailable"};
       }
       const existing=await db.query<{id:string;alias:string;enabled:boolean}>(
         "SELECT id,alias,enabled FROM projects WHERE device_id=$1 AND owner_sub=$2 AND alias=$3",[deviceId,owner_sub,alias]);
       let projectId:string;
       if(existing.rows[0]){
-        projectId=existing.rows[0].id;
+        await db.query("COMMIT");
+        return {kind:"ok",projectId:existing.rows[0].id,alias,ownerSub:owner_sub,enabled:existing.rows[0].enabled};
       }else{
         projectId=randomUUID();
         await db.query(
           "INSERT INTO projects(id,owner_sub,device_id,alias,enabled,max_mode) VALUES($1,$2,$3,$4,true,'readonly')",[projectId,owner_sub,deviceId,alias]);
       }
       await db.query(
-        "INSERT INTO connector_managed_read_access(project_id,enabled) VALUES($1,true) ON CONFLICT(project_id) DO UPDATE SET enabled=true,updated_at=now()",[projectId]);
+        "INSERT INTO connector_managed_read_access(project_id,enabled) VALUES($1,true) ON CONFLICT(project_id) DO NOTHING",[projectId]);
       await db.query("COMMIT");
       return {kind:"ok",projectId,alias,ownerSub:owner_sub,enabled:true};
     }catch(e){

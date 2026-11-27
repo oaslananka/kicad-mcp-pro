@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -49,11 +50,20 @@ def _require_approved_live_board(board: object, policy: OperatorProject) -> tupl
         or not isinstance(actual_name, str)
         or not Path(actual_path).is_absolute()
         or ".." in Path(actual_path).parts
-        or actual_path != str(approved)
         or actual_name != policy.filename_stem + ".kicad_pcb"
     ):
         raise LocalWriteDeniedError(_DENIED)
-    return actual_path, actual_name
+    if actual_path != str(approved):
+        # Windows IPC may return slash or case variants. Require both lexical
+        # equivalence and actual filesystem identity, not arbitrary aliases.
+        if os.name != "nt" or Path(actual_path) != approved:
+            raise LocalWriteDeniedError(_DENIED)
+        try:
+            if not Path(actual_path).samefile(approved):
+                raise LocalWriteDeniedError(_DENIED)
+        except OSError as exc:
+            raise LocalWriteDeniedError(_DENIED) from exc
+    return str(approved), actual_name
 
 
 def _require_expected_live_snapshot(board: object, expected: str) -> None:

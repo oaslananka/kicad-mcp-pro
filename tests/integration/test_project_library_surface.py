@@ -435,7 +435,7 @@ async def test_project_resources_prompts_and_library_surface(
 
 @pytest.mark.anyio
 async def test_lib_create_custom_symbol_escapes_sexpr_strings(sample_project: Path) -> None:
-    server = build_server("library")
+    server = build_server("schematic_only")
     await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
 
     name = 'Bad")\n\t(symbol "Injected"'
@@ -517,7 +517,9 @@ async def test_schematic_surface(sample_project: Path, mock_kicad) -> None:
         call_tool_text(server, "sch_add_no_connect", {"x_mm": 25.0, "y_mm": 25.0}),
     )
 
-    assert any("updated" in result.lower() or "reload" in result.lower() for result in results)
+    assert all("updated" in result.lower() or "reload" in result.lower() for result in results), (
+        results
+    )
 
     assigned = await call_tool_text(
         server,

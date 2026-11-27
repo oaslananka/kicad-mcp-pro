@@ -167,6 +167,7 @@ async def test_manufacturing_profile_exposes_release_exports_only() -> None:
     assert "export_bom" not in tool_names
 
 
+@pytest.mark.mcp_mode("manufacturing")
 @pytest.mark.anyio
 async def test_full_profile_keeps_low_level_exports_available() -> None:
     server = build_server("full")
@@ -175,6 +176,19 @@ async def test_full_profile_keeps_low_level_exports_available() -> None:
     assert "export_gerber" in tool_names
     assert "export_drill" in tool_names
     assert "export_bom" in tool_names
+
+
+@pytest.mark.mcp_mode("readonly")
+@pytest.mark.anyio
+async def test_full_readonly_profile_hides_fabrication_exports() -> None:
+    server = build_server("full")
+    tool_names = {tool.name for tool in await server.list_tools()}
+    assert "export_gerber" not in tool_names
+    assert "export_drill" not in tool_names
+    assert "export_bom" in tool_names
+    result = await server.call_tool("export_gerber", {})
+    assert result.is_error
+    assert "MODE_FORBIDDEN" in result.content[0].text
 
 
 @pytest.mark.anyio

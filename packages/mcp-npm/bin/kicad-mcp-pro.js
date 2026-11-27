@@ -7,7 +7,7 @@ const { spawn } = require("node:child_process");
 const pkg = require("../package.json");
 
 function executableNames() {
-  return process.platform === "win32" ? ["uvx.cmd", "uvx.exe", "uvx"] : ["uvx"];
+  return process.platform === "win32" ? ["uvx.exe"] : ["uvx"];
 }
 
 function findOnPath(commandNames) {
@@ -16,7 +16,7 @@ function findOnPath(commandNames) {
   for (const entry of entries) {
     for (const commandName of commandNames) {
       const candidate = path.join(entry, commandName);
-      if (fs.existsSync(candidate)) {
+      if (fs.statSync(candidate, { throwIfNoEntry: false })?.isFile()) {
         return candidate;
       }
     }

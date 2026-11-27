@@ -156,6 +156,7 @@ async def test_metrics_increment_after_tool_call(sample_project: Path) -> None:
     assert "kicad_mcp_tool_latency_p95_ms" in response.text
 
 
+@pytest.mark.mcp_mode("manufacturing")
 @pytest.mark.anyio
 async def test_heavy_tool_calls_are_rate_limited(sample_project: Path, monkeypatch) -> None:
     _ = sample_project
@@ -434,6 +435,7 @@ def test_token_rotation_rejects_non_string_token(sample_project: Path) -> None:
     assert cfg.auth_token == STRONG_TOKEN
 
 
+@pytest.mark.mcp_mode("manufacturing")
 @pytest.mark.anyio
 async def test_tool_exception_returns_structured_error() -> None:
     server = build_server("full")
@@ -450,6 +452,7 @@ async def test_tool_exception_returns_structured_error() -> None:
     assert "Hint:" in text
 
 
+@pytest.mark.mcp_mode("manufacturing")
 @pytest.mark.anyio
 async def test_cli_nonzero_result_returns_structured_error(
     sample_project: Path,
@@ -607,6 +610,7 @@ async def test_template_parse_failure_is_reported_as_tool_error(monkeypatch) -> 
     assert "Hint:" in text
 
 
+@pytest.mark.mcp_mode("manufacturing")
 @pytest.mark.anyio
 async def test_export_gerber_sends_progress_notifications(
     sample_project: Path,
@@ -1194,7 +1198,8 @@ async def test_export_manufacturing_package_accepts_explicit_variant(
             output_path.write_text("generated\n", encoding="utf-8")
         else:
             output_path.mkdir(parents=True, exist_ok=True)
-            (output_path / "board-F_Cu.gbr").write_text("gerber\n", encoding="utf-8")
+            name = "board.drl" if command[2] == "drill" else "board-F_Cu.gbr"
+            (output_path / name).write_text("fabrication\n", encoding="utf-8")
         return 0, "", ""
 
     monkeypatch.setattr(
@@ -1501,8 +1506,19 @@ def test_dashboard_config_filtering(sample_project: Path) -> None:
 
     # Post updates: safe key (log_level) and unsafe key (kicad_cli)
     original_cli = cfg.kicad_cli
+    client = TestClient(
+        server.streamable_http_app(),
+        base_url=f"http://127.0.0.1:{cfg.port}",
+        client=("127.0.0.1", 50000),
+    )
+    session = client.get("/api/owner/session")
+    assert session.status_code == 200
     response = client.post(
         "/api/config",
+        headers={
+            "Origin": f"http://127.0.0.1:{cfg.port}",
+            "X-KiCad-Owner-CSRF": session.json()["csrf_token"],
+        },
         json={
             "log_level": "DEBUG",
             "kicad_cli": "/path/to/malicious/binary",

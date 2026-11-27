@@ -240,9 +240,34 @@ def test_format_upgrade_does_not_follow_target_symlink_swapped_during_cli(
         return 0, "", ""
 
     result = upgrade_generated_file(target, kind, run_cli, allowed_root=allowed_root)
-    assert result.upgraded is True
+    assert result.upgraded is False
+    assert "changed" in result.detail
     assert outside.read_text(encoding="utf-8") == "keep-existing-owner-content"
-    assert not target.is_symlink()
-    assert target.read_text(encoding="utf-8") == (
-        "migrated-footprint" if kind == "fp" else "migrated-board"
-    )
+    assert target.is_symlink()
+
+
+@pytest.mark.parametrize("kind,suffix", [("pcb", ".kicad_pcb"), ("fp", ".kicad_mod")])
+def test_format_upgrade_preserves_concurrent_external_edit(
+    tmp_path: Path, kind: str, suffix: str
+) -> None:
+    from kicad_mcp.file_formats import upgrade_generated_file
+
+    target = tmp_path / f"generated{suffix}"
+    target.write_text('(footprint "Demo")' if kind == "fp" else "(kicad_pcb)", encoding="utf8")
+    external = b"external change"
+
+    def runner(*args: str) -> tuple[int, str, str]:
+        target.write_bytes(external)
+        if kind == "fp":
+            folder = Path(args[4])
+            folder.mkdir()
+            (folder / "Demo.kicad_mod").write_text("upgraded", encoding="utf8")
+        else:
+            Path(args[-1]).write_text("upgraded", encoding="utf8")
+        return 0, "", ""
+
+    result = upgrade_generated_file(target, kind, runner, allowed_root=tmp_path)
+    assert result.upgraded is False
+    assert "changed" in result.detail
+    assert target.read_bytes() == external
+    assert list(tmp_path.iterdir()) == [target]

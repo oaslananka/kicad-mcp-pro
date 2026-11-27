@@ -246,3 +246,19 @@ async def test_path_resolution_error_timing_is_preserved(tmp_path: Path) -> None
 
     with pytest.raises(ValueError, match="outside"):
         await service.autoroute()
+
+
+@pytest.mark.anyio
+async def test_autoroute_rejects_unapproved_jar_before_export(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("KICAD_MCP_FREEROUTING_JAR", raising=False)
+    runner = FakeRunner(tmp_path / "board.dsn", RuntimeError("not called"))
+    service, writes = _service(tmp_path, runner)
+    result = await service.autoroute(
+        use_docker=False, freerouting_jar_path=str(tmp_path / "unapproved.jar")
+    )
+    assert not result.ok
+    assert not runner.export_calls
+    assert not runner.run_calls
+    assert not writes

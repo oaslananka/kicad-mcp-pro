@@ -415,3 +415,137 @@ def test_run_cli_drc_and_erc_handle_unlink_os_error(tmp_path: Path) -> None:
     assert erc_passed is False
     assert erc_violations == -1
     assert erc_err == "ERC exited with code 0"
+
+
+@pytest.mark.parametrize(
+    ("kind", "report", "gate"),
+    [
+        ("sch", {"sheets": [{"path": "/", "violations": [{"severity": "error"}]}]}, "erc"),
+        (
+            "pcb",
+            {
+                "violations": [],
+                "unconnected_items": [],
+                "schematic_parity": [{"severity": "error"}],
+            },
+            "drc",
+        ),
+        ("sch", {}, "erc"),
+        ("pcb", {"violations": None, "unconnected_items": []}, "drc"),
+    ],
+)
+def test_release_evidence_blocks_findings_or_invalid_report(
+    tmp_path: Path, kind: str, report: dict[str, object], gate: str
+) -> None:
+    module = _module()
+    context = _context(tmp_path)
+
+    def runner(*args: str) -> tuple[int, str, str]:
+        if args[0] == kind:
+            output = Path(args[args.index("--output") + 1])
+            output.write_text(json.dumps(report), encoding="utf-8")
+            return 0, "", ""
+        return _successful_runner(*args)
+
+    service = module.ReleaseEvidenceService(run_cli=runner)
+    payload = json.loads(service.create_evidence(context=context, dry_run=True))
+
+    assert payload["verdict"] == "release_blocked"
+    assert _gate(payload, gate)["passed"] is False
+
+
+def test_empty_artifact_cannot_satisfy_release_coverage(tmp_path: Path) -> None:
+    module = _module()
+    context = _context(tmp_path)
+    (context.output_dir / "demo.drl").write_bytes(b"")
+    payload = json.loads(_successful_service(module).create_evidence(context=context, dry_run=True))
+    assert payload["verdict"] == "release_blocked"
+    assert "drill" in _gate(payload, "artifact_coverage")["missing"]
+
+
+def test_report_bound_artifact_changed_blocks_even_with_waiver(tmp_path: Path) -> None:
+    module = _module()
+    context = _context(tmp_path)
+    artifact = context.output_dir / "demo-F_Cu.gbr"
+    report = {
+        "schema_version": "manufacturing_release.v1",
+        "artifacts": [
+            {
+                "relative_path": artifact.name,
+                "sha256": module.sha256_file(artifact),
+                "size_bytes": artifact.stat().st_size,
+            }
+        ],
+    }
+    (context.output_dir / "manufacturing_release_report.json").write_text(json.dumps(report))
+    artifact.write_text("changed", encoding="utf8")
+    payload = json.loads(
+        _successful_service(module).create_evidence(
+            context=context, dry_run=True, waive_missing_artifacts=True
+        )
+    )
+    assert payload["verdict"] == "release_blocked"
+    assert any("report" in reason.lower() for reason in payload["blocking_reasons"])
+
+
+def test_in_progress_export_cannot_be_approved(tmp_path: Path) -> None:
+    module = _module()
+    context = _context(tmp_path)
+    (context.output_dir / ".manufacturing-package-in-progress").mkdir()
+    payload = json.loads(
+        _successful_service(module).create_evidence(
+            context=context, dry_run=True, waive_missing_artifacts=True
+        )
+    )
+    assert payload["verdict"] == "release_blocked"
+
+
+def test_valid_report_excludes_unbound_files(tmp_path: Path) -> None:
+    module = _module()
+    context = _context(tmp_path)
+    records = [
+        {
+            "relative_path": path.name,
+            "sha256": module.sha256_file(path),
+            "size_bytes": path.stat().st_size,
+        }
+        for path in sorted(context.output_dir.iterdir())
+    ]
+    (context.output_dir / "manufacturing_release_report.json").write_text(
+        json.dumps({"schema_version": "manufacturing_release.v1", "artifacts": records}),
+        encoding="utf8",
+    )
+    archive = context.output_dir / "archive"
+    archive.mkdir()
+    (archive / "old.gbr").write_text("old", encoding="utf8")
+    payload = json.loads(_successful_service(module).create_evidence(context=context, dry_run=True))
+    assert payload["verdict"] == "release_approved"
+    assert payload["file_count"] == 4
+    assert all("archive" not in item["filename"] for item in payload["files"])
+
+
+def test_report_artifact_changed_during_validation_blocks(tmp_path: Path) -> None:
+    module = _module()
+    context = _context(tmp_path)
+    records = [
+        {
+            "relative_path": path.name,
+            "sha256": module.sha256_file(path),
+            "size_bytes": path.stat().st_size,
+        }
+        for path in sorted(context.output_dir.iterdir())
+    ]
+    (context.output_dir / "manufacturing_release_report.json").write_text(
+        json.dumps({"schema_version": "manufacturing_release.v1", "artifacts": records}),
+        encoding="utf8",
+    )
+
+    def runner(*args: str) -> tuple[int, str, str]:
+        if args[:2] == ("sch", "erc"):
+            (context.output_dir / "demo.drl").write_text("new drill", encoding="utf8")
+        return _successful_runner(*args)
+
+    payload = json.loads(
+        module.ReleaseEvidenceService(run_cli=runner).create_evidence(context=context, dry_run=True)
+    )
+    assert payload["verdict"] == "release_blocked"

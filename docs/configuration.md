@@ -76,6 +76,13 @@ while the operating mode still blocks unsafe calls.
 | `manufacturing` | `readonly` plus manufacturing package and handoff workflows. General schematic/PCB write tools stay hidden. |
 | `experimental` | Full opt-in surface including write, manufacturing, routing, tuning, and unstable tools. |
 
+Fabrication exports (Gerber, drill, IPC-2581, ODB++, pick-and-place, GenCAD and
+IPC-D-356) require manufacturing or experimental mode. Source-safe BOM, netlist
+and PDF inspection remain available in readonly mode. Both manufacturing package
+entry points additionally require a passing project gate and bound human approval.
+The tray's Gerber command also requires manufacturing or experimental mode;
+it is a low-level debug export, not a gated production handoff.
+
 Equivalent CLI usage:
 
 ```bash
@@ -271,3 +278,18 @@ When `KICAD_MCP_WORKSPACE_ROOT` is set, project artifact reads and writes must
 stay under that root. Without an explicit workspace root, the active project root
 is used for normal project artifacts and the current working directory is the
 fallback before a project is selected.
+
+### Local MCP Inspector
+
+Run `kicad-mcp-pro inspect` to start a loopback-only Streamable HTTP server.
+The CLI prints the official local Inspector command for a separate terminal.
+This keeps package installation and execution an explicit operator choice.
+The server does not grant a public Inspector origin access to local MCP.
+
+### Interactive setup
+
+`kicad-mcp-pro init --interactive` stores the selected CLI path, transport and port
+in the trusted runtime TOML file above. Existing unrelated settings are preserved;
+complex or protected HTTP configurations require manual editing. Stdio is the
+recommended local client transport. For HTTP clients, start the loopback server
+using the command shown by the wizard before connecting to the selected endpoint.

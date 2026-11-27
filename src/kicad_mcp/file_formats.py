@@ -16,6 +16,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from .utils.file_replace import FileChangedError, replace_if_unchanged
+
 GENERATED_SEXPR_DIALECT_VERSION = "20250316"
 # Explicit reader compatibility, independent of the generated writer dialect.
 FOOTPRINT_LIST_READ_VERSIONS = frozenset({"20241229", "20250216", "20250316", "20260206"})
@@ -39,12 +41,10 @@ def _resolve_generated_path(path: Path, allowed_root: Path) -> Path:
     return (resolved_root / relative_path).resolve(strict=True)
 
 
-def _commit_upgraded_file(safe_path: Path, content: str, original_mode: int) -> None:
-    """Atomically replace the file, not a symlink substituted during conversion.
-
-    Preserve the original file's mode, captured before invoking the KiCad CLI,
-    rather than trusting the mode of a potentially swapped symlink.
-    """
+def _commit_upgraded_file(
+    safe_path: Path, content: str, original_mode: int, original: bytes
+) -> GeneratedFormatUpgradeResult:
+    """Publish a conversion only if the original destination still matches."""
     staged: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -56,8 +56,13 @@ def _commit_upgraded_file(safe_path: Path, content: str, original_mode: int) -> 
         ) as output:
             staged = Path(output.name)
             output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
         os.chmod(staged, original_mode)
-        os.replace(staged, safe_path)
+        replace_if_unchanged(staged, safe_path, original)
+        return GeneratedFormatUpgradeResult(upgraded=True)
+    except (FileChangedError, OSError) as exc:
+        return GeneratedFormatUpgradeResult(upgraded=False, detail=str(exc))
     finally:
         if staged is not None:
             staged.unlink(missing_ok=True)
@@ -69,7 +74,8 @@ def _upgrade_non_footprint(
     run_cli: RunCli,
 ) -> GeneratedFormatUpgradeResult:
     try:
-        original = safe_path.read_text(encoding="utf-8")
+        original_bytes = safe_path.read_bytes()
+        original = original_bytes.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
         original_mode = stat.S_IMODE(safe_path.stat().st_mode)
     except OSError as exc:
         return GeneratedFormatUpgradeResult(upgraded=False, detail=str(exc))
@@ -96,13 +102,15 @@ def _upgrade_non_footprint(
                 upgraded=False,
                 detail="KiCad format upgrade did not preserve the temporary output file.",
             )
-        _commit_upgraded_file(safe_path, temp_file.read_text(encoding="utf-8"), original_mode)
-        return GeneratedFormatUpgradeResult(upgraded=True)
+        return _commit_upgraded_file(
+            safe_path, temp_file.read_text(encoding="utf-8"), original_mode, original_bytes
+        )
 
 
 def _upgrade_footprint(safe_path: Path, run_cli: RunCli) -> GeneratedFormatUpgradeResult:
     try:
-        content = safe_path.read_text(encoding="utf-8")
+        original_bytes = safe_path.read_bytes()
+        content = original_bytes.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
         original_mode = stat.S_IMODE(safe_path.stat().st_mode)
     except OSError as exc:
         return GeneratedFormatUpgradeResult(upgraded=False, detail=str(exc))
@@ -151,8 +159,9 @@ def _upgrade_footprint(safe_path: Path, run_cli: RunCli) -> GeneratedFormatUpgra
                 upgraded=False,
                 detail="KiCad footprint upgrade did not produce the expected output file.",
             )
-        _commit_upgraded_file(safe_path, upgraded_file.read_text(encoding="utf-8"), original_mode)
-        return GeneratedFormatUpgradeResult(upgraded=True)
+        return _commit_upgraded_file(
+            safe_path, upgraded_file.read_text(encoding="utf-8"), original_mode, original_bytes
+        )
 
 
 def upgrade_generated_file(

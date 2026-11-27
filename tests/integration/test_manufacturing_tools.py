@@ -201,8 +201,12 @@ async def test_manufacturing_import_support_and_import_cli(
         in imported
     )
 
+    denied = await call_tool_text(
+        server, "pcb_import_board", {"input_file": "legacy.brd", "format": "allegro"}
+    )
+    assert "not available in this server execution surface" in denied
     board_import_blocked = await call_tool_text(
-        server,
+        build_server("full"),
         "pcb_import_board",
         {"input_file": "legacy.brd", "format": "allegro"},
     )

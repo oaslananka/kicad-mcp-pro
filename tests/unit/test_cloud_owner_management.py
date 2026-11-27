@@ -92,9 +92,10 @@ def test_approve_browser_once_then_store_only_valid_management_token(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     seen: list[tuple[object, ...]] = []
-    request_id = "Z" * 43
+    cli_secret = "Z" * 43
+    request_id = cloud_owner_management._cli_request_id(cli_secret)
     states = iter(("pending", "approved"))
-    monkeypatch.setattr(cloud_owner_management.secrets, "token_urlsafe", lambda _: request_id)
+    monkeypatch.setattr(cloud_owner_management.secrets, "token_urlsafe", lambda _: cli_secret)
     monkeypatch.setattr(cloud_owner_management, "load_token", lambda _: None)
     monkeypatch.setattr(
         cloud_owner_management,
@@ -119,12 +120,13 @@ def test_approve_browser_once_then_store_only_valid_management_token(
         assert token is None
         assert method == "POST"
         if path.endswith("/start"):
-            assert payload == {"requestId": request_id, "label": "Office PC"}
+            assert payload == {"requestId": request_id, "label": "Office PC", "protocolVersion": 2}
             return {
                 "status": "pending",
                 "approveUrl": (_ORIGIN + "/api/owner/cli/approve?request_id=" + request_id),
             }
         assert path.endswith("/poll")
+        assert payload == {"cliSecret": cli_secret, "protocolVersion": 2}
         state = next(states)
         return {"status": state, **({"token": _TOKEN} if state == "approved" else {})}
 
@@ -132,7 +134,10 @@ def test_approve_browser_once_then_store_only_valid_management_token(
     cloud_owner_management.authorize(_ORIGIN, label="Office PC", timeout_seconds=30)
     assert seen[0] == ("browser", _ORIGIN + "/api/owner/cli/approve?request_id=" + request_id)
     assert seen[1] == ("saved", _ORIGIN, _TOKEN)
-    assert _TOKEN not in capsys.readouterr().out
+    output = capsys.readouterr().out
+    assert _TOKEN not in output
+    assert cli_secret not in output
+    assert request_id != cli_secret
 
 
 def test_cli_devices_projects_access_and_write_routes_are_real(
@@ -513,8 +518,9 @@ def test_owner_api_invalid_approval_url_never_launches_browser_or_saves_token(
 def test_owner_api_browser_rejection_is_not_a_session(
     monkeypatch: pytest.MonkeyPatch, status: str
 ) -> None:
-    request_id = "Z" * 43
-    monkeypatch.setattr(cloud_owner_management.secrets, "token_urlsafe", lambda _: request_id)
+    cli_secret = "Z" * 43
+    request_id = cloud_owner_management._cli_request_id(cli_secret)
+    monkeypatch.setattr(cloud_owner_management.secrets, "token_urlsafe", lambda _: cli_secret)
     monkeypatch.setattr(cloud_owner_management, "load_token", lambda _origin: None)
     monkeypatch.setattr(
         cloud_owner_management,
@@ -615,8 +621,9 @@ def test_cloud_management_request_denies_malformed_success_responses(
 def test_cloud_owner_authorize_fails_cleanly_when_browser_open_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    request_id = "Z" * 43
-    monkeypatch.setattr(cloud_owner_management.secrets, "token_urlsafe", lambda _: request_id)
+    cli_secret = "Z" * 43
+    request_id = cloud_owner_management._cli_request_id(cli_secret)
+    monkeypatch.setattr(cloud_owner_management.secrets, "token_urlsafe", lambda _: cli_secret)
     monkeypatch.setattr(cloud_owner_management, "load_token", lambda _origin: None)
     monkeypatch.setattr(
         cloud_owner_management.webbrowser,
