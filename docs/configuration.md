@@ -190,9 +190,11 @@ For external KiCad plugin launchers, `KICAD_API_SOCKET` and `KICAD_API_TOKEN`
 are accepted alongside the `KICAD_MCP_*` equivalents. Explicit IPC endpoints
 may be NNG URIs such as `ipc:///tmp/kicad/api.sock`,
 `ipc://C:\Users\Admin\AppData\Local\Temp\kicad\api.sock`, or
-`tcp://127.0.0.1:4242`. URI values are passed to kipy unchanged; plain filesystem
-paths continue to be expanded as socket paths. Leave the socket setting unset to
-use kipy's platform-default discovery.
+`tcp://127.0.0.1:4242`. URI values are passed to kipy unchanged. Plain filesystem
+paths are expanded in configuration and prefixed with `ipc://` at the kipy
+connection boundary (for example, `/tmp/kicad/api.sock` becomes
+`ipc:///tmp/kicad/api.sock`). Leave the socket setting unset to use kipy's
+platform-default discovery.
 
 ## Structured Logging
 
