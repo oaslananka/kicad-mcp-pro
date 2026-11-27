@@ -46,7 +46,8 @@ def bridge_start(
     """Start the bridge daemon (entry point called from server.py)."""
     from .setup import _check_kicad_mcp_available
 
-    pairing_code = code if code else _generate_pairing_code()
+    inherited_code = os.environ.pop("KICAD_MCP_BRIDGE_PAIRING_CODE", "")
+    pairing_code = code or inherited_code or _generate_pairing_code()
     state = BridgeState(
         pairing_code=pairing_code,
         port=port,
@@ -378,7 +379,9 @@ def _handle_bridge_pair(
         return _rate_limited_error(msg_id)
     params = message.get("params", {})
     code = params.get("code", "") if isinstance(params, dict) else ""
-    if code == state.pairing_code:
+    if isinstance(code, str) and secrets.compare_digest(
+        code.encode("utf-8", errors="surrogatepass"), state.pairing_code.encode("utf-8")
+    ):
         now = time.time()
         if session is not None:
             session.paired = True
@@ -463,7 +466,7 @@ async def _proxy_to_local(
     state: BridgeState, message: dict[str, object], msg_id: object
 ) -> dict[str, object] | None:
     """Proxy a tool call to the local kicad-mcp-pro server."""
-    import httpx
+    import httpx2 as httpx
 
     method = message.get("method", "")
     params = message.get("params", {}) or {}
@@ -563,8 +566,6 @@ def _start_daemon(state: BridgeState) -> None:
             "start",
             "--port",
             str(state.port),
-            "--code",
-            state.pairing_code,
             "--mcp-port",
             mcp_port,
         ]
@@ -579,6 +580,7 @@ def _start_daemon(state: BridgeState) -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
+            env={**os.environ, "KICAD_MCP_BRIDGE_PAIRING_CODE": state.pairing_code},
             creationflags=creationflags,
             close_fds=True,
         )

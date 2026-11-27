@@ -416,3 +416,62 @@ def test_windows_connector_enable_rejects_before_creating_enabled_marker(
         cloud_managed_connector._enable()
     assert not list(tmp_path.iterdir())
     assert cloud_managed_connector._status() == "Off"
+
+
+def test_inspect_uses_local_tcp_and_does_not_open_external_website(monkeypatch) -> None:
+    import socket
+    import subprocess
+    import webbrowser
+    from unittest.mock import MagicMock
+
+    from kicad_mcp import server
+
+    sock = MagicMock()
+    sock.getsockname.return_value = ("127.0.0.1", 45678)
+    socket_factory = MagicMock(return_value=sock)
+    monkeypatch.setattr(socket, "socket", socket_factory)
+    child = MagicMock()
+    child.poll.return_value = 0
+    child.wait.return_value = 0
+    popen = MagicMock(return_value=child)
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    browser = MagicMock()
+    monkeypatch.setattr(webbrowser, "open", browser)
+    monkeypatch.setattr(server.shutil, "which", lambda _: None)
+    result = CliRunner().invoke(app, ["inspect"])
+    assert result.exit_code == 0, result.output
+    socket_factory.assert_called_once_with(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind.assert_called_once_with(("127.0.0.1", 0))
+    browser.assert_not_called()
+    assert popen.call_args.kwargs["stderr"] is None
+    assert (
+        "npx @modelcontextprotocol/inspector --transport http --server-url http://127.0.0.1:45678/mcp"
+        in result.output
+    )
+
+
+def test_inspect_launches_installed_local_inspector_and_cleans_up(monkeypatch) -> None:
+    import socket
+    import subprocess
+    from unittest.mock import MagicMock
+
+    from kicad_mcp import server
+
+    sock = MagicMock()
+    sock.getsockname.return_value = ("127.0.0.1", 45678)
+    monkeypatch.setattr(socket, "socket", MagicMock(return_value=sock))
+    child = MagicMock()
+    child.poll.return_value = None
+    child.wait.return_value = 0
+    monkeypatch.setattr(subprocess, "Popen", MagicMock(return_value=child))
+    run = MagicMock(return_value=MagicMock(returncode=0))
+    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(server.shutil, "which", lambda _: "local-inspector")
+    result = CliRunner().invoke(app, ["inspect", "--port", "45678"])
+    assert result.exit_code == 0, result.output
+    sock.bind.assert_called_once_with(("127.0.0.1", 45678))
+    run.assert_called_once_with(
+        ["local-inspector", "--transport", "http", "--server-url", "http://127.0.0.1:45678/mcp"],
+        check=False,
+    )
+    child.terminate.assert_called_once()

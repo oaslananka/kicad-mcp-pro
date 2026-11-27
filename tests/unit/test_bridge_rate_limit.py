@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 
-import httpx
+import httpx2 as httpx
 
 from kicad_mcp.bridge import (
     BRIDGE_MAX_MESSAGE_BYTES,

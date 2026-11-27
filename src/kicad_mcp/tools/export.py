@@ -172,9 +172,9 @@ def _active_variant_args(variant_name: str | None = None) -> list[str]:
     return args
 
 
-def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
-    """Register export tools."""
-    gerber_service = ExportGerberService(
+def build_gerber_service() -> ExportGerberService:
+    """Compose the same low-level Gerber export for MCP and the local tray."""
+    return ExportGerberService(
         get_pcb_file=_get_pcb_file,
         ensure_output_dir=_ensure_output_dir,
         get_gerber_command=lambda: get_cli_capabilities(get_config().kicad_cli).gerber_command,
@@ -183,6 +183,10 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
         format_file_list=_format_file_list,
     )
 
+
+def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
+    """Register export tools."""
+    gerber_service = build_gerber_service()
     bom_service = ExportBomService(
         get_sch_file=_get_sch_file,
         ensure_output_dir=lambda: _ensure_output_dir(),

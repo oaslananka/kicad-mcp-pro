@@ -215,7 +215,8 @@ def test_start_daemon_windows_fallback(
     assert "python_bin" in args
     assert "bridge" in args
     assert "start" in args
-    assert "CODE123" in args
+    assert "CODE123" not in args
+    assert mock_popen.call_args.kwargs["env"]["KICAD_MCP_BRIDGE_PAIRING_CODE"] == "CODE123"
 
     # Verify PID file was written
     mock_path.write_text.assert_called_once_with("9988")
@@ -274,7 +275,7 @@ async def test_route_message_unpaired_proxy_denied() -> None:
 
 
 @pytest.mark.asyncio
-@patch("httpx.AsyncClient.post")
+@patch("httpx2.AsyncClient.post")
 async def test_proxy_to_local_success(mock_post: MagicMock) -> None:
     """Test successful proxy forwarding to local HTTP MCP endpoint."""
     state = BridgeState(
@@ -301,7 +302,7 @@ async def test_proxy_to_local_success(mock_post: MagicMock) -> None:
 
 
 @pytest.mark.asyncio
-@patch("httpx.AsyncClient.post")
+@patch("httpx2.AsyncClient.post")
 async def test_proxy_to_local_connection_error(mock_post: MagicMock) -> None:
     """Test proxy error handling when the local server is unreachable."""
     state = BridgeState(
@@ -312,7 +313,7 @@ async def test_proxy_to_local_connection_error(mock_post: MagicMock) -> None:
     )
     msg = {"jsonrpc": "2.0", "method": "pcb_get_tracks", "id": 9}
 
-    import httpx
+    import httpx2 as httpx
 
     mock_post.side_effect = httpx.RequestError("Connection refused")
 
@@ -382,7 +383,7 @@ def test_bridge_start_flows(
 
 
 @pytest.mark.asyncio
-@patch("httpx.AsyncClient.post")
+@patch("httpx2.AsyncClient.post")
 async def test_proxy_to_local_http_status_error(mock_post: MagicMock) -> None:
     state = BridgeState(
         pairing_code="CODE123",
@@ -392,7 +393,7 @@ async def test_proxy_to_local_http_status_error(mock_post: MagicMock) -> None:
     )
     msg = {"jsonrpc": "2.0", "method": "pcb_get_tracks", "id": 11}
 
-    import httpx
+    import httpx2 as httpx
 
     mock_resp = MagicMock()
     mock_resp.status_code = 502
@@ -409,7 +410,7 @@ async def test_proxy_to_local_http_status_error(mock_post: MagicMock) -> None:
 
 
 @pytest.mark.asyncio
-@patch("httpx.AsyncClient.post")
+@patch("httpx2.AsyncClient.post")
 async def test_proxy_to_local_auth_token_header(
     mock_post: MagicMock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -490,3 +491,31 @@ async def test_bridge_server_tcp_lifecycle() -> None:
     finally:
         server_task.cancel()
         await asyncio.gather(server_task, return_exceptions=True)
+
+
+def test_bridge_windows_spawn_keeps_pairing_secret_out_of_arguments(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import kicad_mcp.bridge as bridge
+
+    monkeypatch.delattr(bridge.os, "fork", raising=False)
+    monkeypatch.setattr(bridge, "_bridge_pid_path", lambda: tmp_path / "bridge.pid")
+    proc = MagicMock(pid=12345)
+    with patch("subprocess.Popen", return_value=proc) as popen:
+        _start_daemon(
+            BridgeState(
+                pairing_code="PRIVATE-SECRET", port=9090, target_url="http://127.0.0.1:3334"
+            )
+        )
+    args = popen.call_args.args[0]
+    assert "PRIVATE-SECRET" not in args
+    assert "--code" not in args
+    assert popen.call_args.kwargs["env"]["KICAD_MCP_BRIDGE_PAIRING_CODE"] == "PRIVATE-SECRET"
+
+
+def test_bridge_child_consumes_secret_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv("KICAD_MCP_BRIDGE_PAIRING_CODE", "child-secret")
+    with patch("kicad_mcp.bridge._start_daemon") as start:
+        bridge_start(daemon=True)
+    assert start.call_args.args[0].pairing_code == "child-secret"
+    assert "KICAD_MCP_BRIDGE_PAIRING_CODE" not in os.environ

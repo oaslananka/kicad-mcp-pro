@@ -80,6 +80,8 @@ Fabrication exports (Gerber, drill, IPC-2581, ODB++, pick-and-place, GenCAD and
 IPC-D-356) require manufacturing or experimental mode. Source-safe BOM, netlist
 and PDF inspection remain available in readonly mode. Both manufacturing package
 entry points additionally require a passing project gate and bound human approval.
+The tray's Gerber command also requires manufacturing or experimental mode;
+it is a low-level debug export, not a gated production handoff.
 
 Equivalent CLI usage:
 
@@ -276,3 +278,10 @@ When `KICAD_MCP_WORKSPACE_ROOT` is set, project artifact reads and writes must
 stay under that root. Without an explicit workspace root, the active project root
 is used for normal project artifacts and the current working directory is the
 fallback before a project is selected.
+
+### Local MCP Inspector
+
+Run `kicad-mcp-pro inspect` to start a loopback-only Streamable HTTP server.
+If the official `mcp-inspector` command is installed, the CLI opens it;
+otherwise it prints the local Inspector command for a separate terminal.
+The server does not grant a public Inspector origin access to local MCP.

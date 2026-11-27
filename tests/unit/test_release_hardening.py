@@ -156,6 +156,7 @@ async def test_metrics_increment_after_tool_call(sample_project: Path) -> None:
     assert "kicad_mcp_tool_latency_p95_ms" in response.text
 
 
+@pytest.mark.mcp_mode("manufacturing")
 @pytest.mark.anyio
 async def test_heavy_tool_calls_are_rate_limited(sample_project: Path, monkeypatch) -> None:
     _ = sample_project
@@ -434,6 +435,7 @@ def test_token_rotation_rejects_non_string_token(sample_project: Path) -> None:
     assert cfg.auth_token == STRONG_TOKEN
 
 
+@pytest.mark.mcp_mode("manufacturing")
 @pytest.mark.anyio
 async def test_tool_exception_returns_structured_error() -> None:
     server = build_server("full")
@@ -450,6 +452,7 @@ async def test_tool_exception_returns_structured_error() -> None:
     assert "Hint:" in text
 
 
+@pytest.mark.mcp_mode("manufacturing")
 @pytest.mark.anyio
 async def test_cli_nonzero_result_returns_structured_error(
     sample_project: Path,
@@ -607,6 +610,7 @@ async def test_template_parse_failure_is_reported_as_tool_error(monkeypatch) -> 
     assert "Hint:" in text
 
 
+@pytest.mark.mcp_mode("manufacturing")
 @pytest.mark.anyio
 async def test_export_gerber_sends_progress_notifications(
     sample_project: Path,
