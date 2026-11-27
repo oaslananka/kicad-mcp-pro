@@ -412,7 +412,10 @@ def _clean_tool_error(exc: BaseException) -> str:
 def _classify_system_error_code(lowered: str, tool_name: str) -> str | None:
     if "operating mode" in lowered and "requires" in lowered:
         return "MODE_FORBIDDEN"
-    if "not available in this server execution surface" in lowered:
+    if (
+        "not available in this server execution surface" in lowered
+        or "does not participate in the active native-live transaction" in lowered
+    ):
         return "PERMISSION_DENIED"
     if "timed out" in lowered or "timeout" in lowered:
         return "CLI_TIMEOUT"
@@ -1370,12 +1373,15 @@ class KiCadFastMCP(FastMCP):
         _log_tool_call_started(name, arguments)
         _error_detail: dict[str, object] = {"tool": name}
         with otel.tool_span(name) as span:
-            if not reserve_tool_execution():
-                return _structured_tool_error_from_message(
-                    "The application is preparing a desktop update. Try again after the update.",
-                    tool_name=name,
-                )
+            reserved = reserve_tool_execution()
             try:
+                if not reserved:
+                    message = (
+                        "The application is preparing a desktop update. Try again after the update."
+                    )
+                    status, error_code = "error", _tool_error_code(message, tool_name=name)
+                    logger.warning("tool_denied_by_maintenance", tool=name)
+                    return _structured_tool_error_from_message(message, tool_name=name)
                 await self._ensure_registered_async()
                 execution_tool_names = getattr(self, "execution_tool_names", None)
                 if execution_tool_names is not None and name not in execution_tool_names:
@@ -1455,7 +1461,8 @@ class KiCadFastMCP(FastMCP):
                 )
                 raise
             finally:
-                finish_tool_execution()
+                if reserved:
+                    finish_tool_execution()
                 elapsed_ms = (time.perf_counter() - started) * 1000.0
                 _record_tool_metric(name, status, elapsed_ms)
                 otel.record_tool_invocation(name, status, elapsed_ms / 1000.0)
@@ -1466,7 +1473,7 @@ class KiCadFastMCP(FastMCP):
                         "status": status,
                         "elapsed_ms": round(elapsed_ms, 2),
                         "error_code": error_code or "",
-                        **self._telemetry_context_attributes(),
+                        **(self._telemetry_context_attributes() if reserved else {}),
                     },
                 )
                 otel.finish_tool_span(span, status=status, error_code=error_code)
