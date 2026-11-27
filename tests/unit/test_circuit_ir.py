@@ -623,3 +623,27 @@ class TestLint:
             assert f.rule_id
             assert f.severity in (IRLintSeverity.ERROR, IRLintSeverity.WARNING, IRLintSeverity.INFO)
             assert f.message
+
+
+def test_multi_unit_symbol_preserves_all_physical_pins(monkeypatch, tmp_path: Path) -> None:
+    from kicad_mcp.ir import from_kicad
+
+    def metadata(
+        library: str, symbol: str, unit: int, **kwargs: object
+    ) -> dict[str, dict[str, str]]:
+        return {"8": {"name": "VCC"}, str(unit): {"name": f"IN{unit}"}}
+
+    monkeypatch.setattr(from_kicad, "get_pin_metadata", metadata)
+    symbol = {"reference": "U1", "lib_id": "Logic:Gate", "value": "Gate"}
+    ir = IRCircuit()
+    from_kicad._populate_components(
+        ir,
+        {"symbols": [symbol | {"unit": 2}, symbol | {"unit": 1}]},
+        tmp_path / "board.kicad_sch",
+        True,
+    )
+    assert [(pin.number, pin.name) for pin in ir.components["U1"].pins] == [
+        ("1", "IN1"),
+        ("2", "IN2"),
+        ("8", "VCC"),
+    ]

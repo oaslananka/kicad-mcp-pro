@@ -251,6 +251,14 @@ def _populate_components(
                     )
                 )
 
+        # A multi-unit symbol represents one physical component. Preserve pins
+        # from every placed unit, deduplicating shared power pins by number.
+        previous = ir.components.get(reference)
+        if previous is not None and previous.lib_id == lib_id:
+            merged_pins = {pin.number: pin for pin in previous.pins}
+            merged_pins.update((pin.number, pin) for pin in pins)
+            pins = sorted(merged_pins.values(), key=lambda pin: _pin_sort_key(pin.number))
+
         ir.components[reference] = IRComponent(
             reference=reference,
             lib_id=lib_id,

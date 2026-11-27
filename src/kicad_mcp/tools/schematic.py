@@ -101,7 +101,6 @@ from ..utils.schematic_router import (
     segments_merge,
 )
 from ..utils.sexpr import (
-    _escape_sexpr_string,
     _extract_block,
     _sexpr_string,
     _unescape_sexpr_string,
@@ -6860,16 +6859,40 @@ def _transactional_write_to_schematic_file(
         )
         updated = _normalize_schematic_wire_connectivity(mutated) if normalize_wires else mutated
         _validate_schematic_text(updated)
-        with NamedTemporaryFile(
-            "w",
-            encoding="utf-8",
-            newline=None if normalize_wires else "",
-            delete=False,
-            dir=sch_file.parent,
-        ) as handle:
-            handle.write(updated)
-            temp_path = Path(handle.name)
-        temp_path.replace(sch_file)
+        temp_path: Path | None = None
+        try:
+            with NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                newline=None if normalize_wires else "",
+                delete=False,
+                dir=sch_file.parent,
+            ) as handle:
+                temp_path = Path(handle.name)
+                handle.write(updated)
+            # Windows readers can briefly deny rename/delete sharing. Retry
+            # only the atomic replacement, never the mutation itself.
+            for attempt in range(6):
+                try:
+                    temp_path.replace(sch_file)
+                    break
+                except PermissionError as exc:
+                    if getattr(exc, "winerror", None) not in {5, 32, 33} or attempt == 5:
+                        raise
+                    time.sleep(0.02 * (attempt + 1))
+                    baseline = (
+                        sch_file.read_text(encoding="utf-8")
+                        if normalize_wires
+                        else sch_file.read_bytes().decode("utf-8")
+                    )
+                    if baseline != current:
+                        raise SchematicWriteUnsafeError(
+                            "The schematic changed while awaiting atomic replacement. "
+                            "Retry the edit against the current file."
+                        ) from exc
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
         if updated != current:
             try:
                 _record_schematic_visual_diff(sch_file, current, updated)
@@ -6927,16 +6950,16 @@ def _update_symbol_property_block(
     property entry so the value is recorded without disturbing the layout.
     """
     pattern = re.compile(
-        rf'(\(property\s+"{re.escape(field)}"\s+")([^"]*)(")',
+        rf'(\(property\s+{re.escape(_sexpr_string(field))}\s+)("(?:\\.|[^"\\])*")',
         re.DOTALL,
     )
-    if pattern.search(block):
-        escaped_value = _escape_sexpr_string(value)
-        updated = pattern.sub(
-            lambda match: f"{match.group(1)}{escaped_value}{match.group(3)}",
-            block,
-            count=1,
-        )
+    for name, start, end in _top_level_sexpr_blocks(block):
+        if name != "property":
+            continue
+        match = pattern.match(block, start, end)
+        if match is None:
+            continue
+        updated = block[: match.start(2)] + _sexpr_string(value) + block[match.end(2) :]
         if field == "Reference":
             return rewrite_symbol_instance_reference(
                 updated, str(parsed.get("reference", "")), value, _project_name()

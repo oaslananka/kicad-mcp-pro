@@ -10440,7 +10440,7 @@
         }
       },
       "runtime": "none",
-      "tier": "export",
+      "tier": "human_only",
       "tool": "variant_export_manufacturing_package",
       "writesFiles": true
     },

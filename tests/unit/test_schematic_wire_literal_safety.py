@@ -142,3 +142,38 @@ def test_large_root_wire_batch_no_unbounded_repeated_insert(
     output = s._normalize_schematic_wire_connectivity(source)
     assert len(s._extract_wires(output)) == 150
     assert len(insertions) == 1
+
+
+@pytest.mark.parametrize("transient", [True, False])
+def test_schematic_atomic_replace_handles_windows_sharing_denial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, transient: bool
+) -> None:
+    from kicad_mcp.tools import schematic
+
+    target = tmp_path / "board.kicad_sch"
+    original = "(kicad_sch (version 20250114) (generator eeschema))"
+    target.write_text(original, encoding="utf8")
+    replace = Path.replace
+    calls = []
+
+    def sharing_denied(self, destination):
+        calls.append(self)
+        if destination == target and (not transient or len(calls) == 1):
+            exc = PermissionError("sharing violation")
+            exc.winerror = 32
+            raise exc
+        return replace(self, destination)
+
+    monkeypatch.setattr(Path, "replace", sharing_denied)
+    monkeypatch.setattr(schematic.time, "sleep", lambda _: None)
+    updated = original.replace("eeschema", "test")
+    if transient:
+        schematic._transactional_write_to_schematic_file(target, lambda _: updated)
+        assert target.read_text(encoding="utf8") == updated
+        assert len(calls) >= 2
+    else:
+        with pytest.raises(PermissionError):
+            schematic._transactional_write_to_schematic_file(target, lambda _: updated)
+        assert target.read_text(encoding="utf8") == original
+        assert len(calls) <= 6
+    assert not any(path.exists() for path in calls)

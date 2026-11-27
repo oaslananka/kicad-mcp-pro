@@ -517,7 +517,9 @@ async def test_schematic_surface(sample_project: Path, mock_kicad) -> None:
         call_tool_text(server, "sch_add_no_connect", {"x_mm": 25.0, "y_mm": 25.0}),
     )
 
-    assert any("updated" in result.lower() or "reload" in result.lower() for result in results)
+    assert all("updated" in result.lower() or "reload" in result.lower() for result in results), (
+        results
+    )
 
     assigned = await call_tool_text(
         server,
