@@ -1247,6 +1247,9 @@ def _verify_footprint_flip(
         layer_map = _footprint_flip_layer_map(expected_layer) if flip_children else {}
         if flip_children and not layer_map:
             return False
+        # A native flip swaps both sides, including dual-sided through-hole
+        # copper/mask sets. A one-way map incorrectly duplicates target layers.
+        layer_map |= {back: front for front, back in layer_map.items()}
         after_snapshot = _footprint_flip_layer_snapshot(cast(FootprintInstance, refreshed))
         expected_text_layers = tuple(
             sorted((key, layer_map.get(layer, layer)) for key, layer in before_snapshot[0])
@@ -2143,18 +2146,106 @@ def _schematic_pad_net_summary(
     }
 
 
-def _replace_root_at(block: str, *, x_mm: float, y_mm: float, rotation: int) -> str:
-    lines = block.splitlines()
-    for index, line in enumerate(lines[:20]):
-        match = re.match(
-            rf"(\s*)\(at\s+{FLOAT_PATTERN}\s+{FLOAT_PATTERN}(?:\s+{FLOAT_PATTERN})?\)",
-            line,
+def _transform_zone_arc(node: str, transform_point: Callable[[str], str]) -> str:
+    for name, arc_start, arc_end in reversed(_direct_child_spans(node)):
+        if name not in {"start", "mid", "end"}:
+            raise ValueError("Unsupported arc in footprint zone polygon.")
+        node = node[:arc_start] + transform_point(node[arc_start:arc_end]) + node[arc_end:]
+    return node
+
+
+def _transform_zone_points(points: str, transform_point: Callable[[str], str]) -> str:
+    for keyword, start, end in reversed(_direct_child_spans(points)):
+        node = points[start:end]
+        if keyword == "xy":
+            replacement = transform_point(node)
+        elif keyword == "arc":
+            replacement = _transform_zone_arc(node, transform_point)
+        else:
+            raise ValueError("Unsupported footprint zone polygon node; placement refused.")
+        points = points[:start] + replacement + points[end:]
+    return points
+
+
+def _transform_zone_polygons(zone: str, transform_point: Callable[[str], str]) -> str:
+    for name, poly_start, poly_end in reversed(_direct_child_spans(zone)):
+        if name not in {"polygon", "filled_polygon"}:
+            continue
+        polygon = zone[poly_start:poly_end]
+        span = _child_span(polygon, "pts")
+        if span is None:
+            raise ValueError("Missing footprint zone polygon points; placement refused.")
+        pts_start, pts_end = span
+        polygon = (
+            polygon[:pts_start]
+            + _transform_zone_points(polygon[pts_start:pts_end], transform_point)
+            + polygon[pts_end:]
         )
-        if match:
-            indent = match.group(1)
-            lines[index] = f"{indent}(at {x_mm:.4f} {y_mm:.4f} {rotation})"
-            return "\n".join(lines)
-    return _inject_root_placement(block, x_mm=x_mm, y_mm=y_mm, rotation=rotation)
+        zone = zone[:poly_start] + polygon + zone[poly_end:]
+    return zone
+
+
+def _transform_footprint_zone_geometry(
+    block: str,
+    *,
+    old_pose: tuple[float, float, float],
+    new_pose: tuple[float, float, float],
+) -> str:
+    """Transform footprint-owned zone polygons, which use board coordinates.
+
+    Library zone points start at the library origin; existing board zones
+    already use world coordinates. Pads, graphics, and quoted metadata must
+    not be transformed here.
+    """
+    if old_pose == new_pose:
+        return block
+    old_x, old_y, old_angle = old_pose
+    new_x, new_y, new_angle = new_pose
+    radians = math.radians(new_angle - old_angle)
+    cosine, sine = math.cos(radians), math.sin(radians)
+    point_pattern = re.compile(
+        rf"\((xy|start|mid|end)\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})\s*\)"
+    )
+
+    def transform_point(point: str) -> str:
+        match = point_pattern.fullmatch(point)
+        if match is None:
+            raise ValueError("Unsupported coordinate in footprint zone polygon; placement refused.")
+        x, y = float(match.group(2)) - old_x, float(match.group(3)) - old_y
+        # KiCad's positive angle rotates clockwise in the mathematical XY frame.
+        tx = round(new_x + x * cosine + y * sine, 6)
+        ty = round(new_y - x * sine + y * cosine, 6)
+        return f"({match.group(1)} {tx:.6f} {ty:.6f})"
+
+    for keyword, start, end in reversed(_direct_child_spans(block)):
+        if keyword == "zone":
+            block = (
+                block[:start]
+                + _transform_zone_polygons(block[start:end], transform_point)
+                + block[end:]
+            )
+    return block
+
+
+def _replace_root_at(block: str, *, x_mm: float, y_mm: float, rotation: int) -> str:
+    span = _child_span(block, "at")
+    if span is None:
+        # The old pose is not known. Never guess a zone's coordinate frame.
+        if _child_span(block, "zone") is not None:
+            raise ValueError("Footprint with zone has no root placement; placement refused.")
+        return _inject_root_placement(block, x_mm=x_mm, y_mm=y_mm, rotation=rotation)
+    start, end = span
+    match = re.fullmatch(
+        rf"\(at\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})(?:\s+({FLOAT_PATTERN}))?\s*\)",
+        block[start:end],
+    )
+    if match is None:
+        raise ValueError("Unsupported footprint root placement; placement refused.")
+    old_pose = (float(match.group(1)), float(match.group(2)), float(match.group(3) or 0))
+    new_pose = (round(x_mm, 4), round(y_mm, 4), float(rotation))
+    block = block[:start] + f"(at {x_mm:.4f} {y_mm:.4f} {rotation})" + block[end:]
+    block = _rotate_footprint_child_angles(block, new_pose[2] - old_pose[2])
+    return _transform_footprint_zone_geometry(block, old_pose=old_pose, new_pose=new_pose)
 
 
 def _collect_occupied_boxes(
@@ -2971,33 +3062,27 @@ def _apply_schematic_footprint_fields(block: str, properties: dict[str, str]) ->
     return block
 
 
-def _rotate_footprint_child_angles(block: str, rotation: int) -> str:
+def _rotate_footprint_child_angles(block: str, rotation: float) -> str:
     """Pad/text local XY stays fixed; KiCad PCB child angles are absolute."""
     if rotation % 360 == 0:
         return block
-    child = re.compile(r"\((?:pad|property|fp_text)\s+")
-    at = re.compile(rf"\(at\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})(?:\s+({FLOAT_PATTERN}))?\)")
-    rendered: list[str] = []
-    cursor = 0
-    for match in child.finditer(block):
-        if match.start() < cursor:
+    at = re.compile(rf"\(at\s+({FLOAT_PATTERN})\s+({FLOAT_PATTERN})(?:\s+({FLOAT_PATTERN}))?\s*\)")
+    for keyword, start, end in reversed(_direct_child_spans(block)):
+        if keyword not in {"pad", "property", "fp_text"}:
             continue
-        section, length = _extract_block(block, match.start())
-        if not section:
+        child = block[start:end]
+        span = _child_span(child, "at")
+        if span is None:
             continue
-        rendered.append(block[cursor : match.start()])
-        section = at.sub(
-            lambda found: (
-                f"(at {found.group(1)} {found.group(2)} "
-                f"{(float(found.group(3) or 0) + rotation) % 360:g})"
-            ),
-            section,
-            count=1,
-        )
-        rendered.append(section)
-        cursor = match.start() + length
-    rendered.append(block[cursor:])
-    return "".join(rendered)
+        at_start, at_end = span
+        match = at.fullmatch(child[at_start:at_end])
+        if match is None:
+            raise ValueError("Unsupported footprint child placement; rotation refused.")
+        angle = (float(match.group(3) or 0) + rotation) % 360
+        position = f"(at {match.group(1)} {match.group(2)} {angle:g})"
+        child = child[:at_start] + position + child[at_end:]
+        block = block[:start] + child + block[end:]
+    return block
 
 
 def _inject_root_placement(block: str, *, x_mm: float, y_mm: float, rotation: int) -> str:
@@ -3041,6 +3126,11 @@ def _render_board_footprint_block(
     block = _apply_schematic_footprint_fields(block, properties or {})
     block = _assign_pad_nets(block, pad_nets)
     block = _rotate_footprint_child_angles(block, rotation)
+    block = _transform_footprint_zone_geometry(
+        block,
+        old_pose=(0.0, 0.0, 0.0),
+        new_pose=(round(x_mm, 4), round(y_mm, 4), float(rotation)),
+    )
     return _inject_root_placement(block, x_mm=x_mm, y_mm=y_mm, rotation=rotation)
 
 
