@@ -1173,3 +1173,45 @@ def test_native_cardinal_rotation_preserves_integer_world_geometry(
         assert len(outline.nodes) == 4
         assert (outline.nodes[0].point.x_nm, outline.nodes[0].point.y_nm) == expected
         assert outline.nodes[0] == outline.nodes[-1]
+
+
+def test_cardinal_rotation_preserves_text_segment_and_filled_zone() -> None:
+    from kipy.board_types import BoardSegment, BoardText, Field, Zone
+
+    footprint = FootprintInstance()
+    footprint.position = Vector2.from_xy_mm(60, 50)
+    position = Vector2.from_xy_mm(61.27, 50.744)
+    text = BoardText()
+    text.position = position
+    field = Field()
+    field.text.position = position
+    segment = BoardSegment()
+    segment.start = position
+    segment.end = Vector2.from_xy_mm(62, 50)
+    zone = Zone()
+    outlines = [
+        zone.proto.outline.polygons.add().outline,
+        zone.proto.filled_polygons.add().shapes.polygons.add().outline,
+    ]
+    for outline in outlines:
+        outline.closed = True
+        for x, y in [(61.27, 50.744), (62, 51), (62, 50)]:
+            outline.nodes.add().point.CopyFrom(Vector2.from_xy_mm(x, y).proto)
+    footprint.definition.items = [text, field, segment, zone]
+    apply_footprint_rotation(footprint, -90)
+    items = FootprintInstance(proto=footprint.proto).definition.items
+    expected = (59256000, 51270000)
+    for vector in (
+        items[0].proto.text.position,
+        items[1].proto.text.text.position,
+        items[2].proto.shape.segment.start,
+        items[3].proto.filled_polygons[0].shapes.polygons[0].outline.nodes[0].point,
+    ):
+        assert (vector.x_nm, vector.y_nm) == expected
+
+
+def test_cardinal_rotation_refuses_changed_geometry_structure() -> None:
+    from kicad_mcp.pcb.footprint_transform import _restore_cardinal_world_positions
+
+    with pytest.raises(FootprintRotationError, match="geometry changed structure"):
+        _restore_cardinal_world_positions(FootprintInstance(), [])

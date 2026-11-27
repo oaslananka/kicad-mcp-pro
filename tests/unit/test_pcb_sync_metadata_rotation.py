@@ -352,3 +352,37 @@ def test_unplaced_footprint_with_zone_refuses_unknown_world_pose() -> None:
     block = '(footprint "RF" (layer "F.Cu") (zone (polygon (pts (xy 0 0)))))'
     with pytest.raises(ValueError, match="no root placement"):
         pcb._replace_root_at(block, x_mm=60, y_mm=50, rotation=0)
+
+
+@pytest.mark.parametrize(
+    ("polygon", "message"),
+    [
+        ("(polygon (pts (xy invalid 2)))", "Unsupported coordinate"),
+        ("(polygon (pts (arc (center 1 2))))", "Unsupported arc"),
+        ("(polygon (pts (curve (xy 1 2))))", "Unsupported footprint zone polygon node"),
+        ("(polygon)", "Missing footprint zone polygon points"),
+    ],
+)
+def test_file_placement_rejects_unrecognized_zone_geometry(polygon: str, message: str) -> None:
+    block = f'(footprint "RF" (at 10 20) (zone {polygon}))'
+    with pytest.raises(ValueError, match=message):
+        pcb._replace_root_at(block, x_mm=30, y_mm=40, rotation=90)
+
+
+def test_file_placement_refuses_invalid_root_and_child_poses() -> None:
+    with pytest.raises(ValueError, match="Unsupported footprint root placement"):
+        pcb._replace_root_at('(footprint "RF" (at invalid 20))', x_mm=30, y_mm=40, rotation=90)
+    with pytest.raises(ValueError, match="Unsupported footprint child placement"):
+        pcb._replace_root_at(
+            '(footprint "RF" (at 10 20) (pad "1" smd rect (at invalid 2)))',
+            x_mm=30,
+            y_mm=40,
+            rotation=90,
+        )
+
+
+def test_unplaced_footprint_without_zone_can_receive_root_pose() -> None:
+    block = '(footprint "RF"\n  (layer "F.Cu")\n  (pad "1" smd rect (at 1 2))\n)'
+    placed = pcb._replace_root_at(block, x_mm=30, y_mm=40, rotation=0)
+    assert "(at 30.0000 40.0000 0)" in placed
+    assert '(pad "1" smd rect (at 1 2))' in placed
