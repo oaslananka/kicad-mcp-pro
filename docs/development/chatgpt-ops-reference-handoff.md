@@ -131,6 +131,23 @@ A passing result is server_trace_valid with SHA-256 digest, call counts
 and counts_as_task_success=false. Invalid or truncated evidence is
 blocked (exit code 2).
 
+For a real reserved v1 corpus attempt, use the explicit reviewed board ID
+with the matching private trace path:
+
+    uv run python scripts/validate_reference_ops_trace.py \\
+      --trace "$PWD/.dev-tools/reference-agent-runs/stm32f072-usbc/v1/attempt-004/ops-mcp-trace.jsonl" \\
+      --board-id stm32f072-usbc --attempt-id attempt-004 --phase schematic
+
+The validator checks that exact board/version/attempt directory and reports
+the board ID with the digest. Flat diagnostic traces remain supported without
+the board option. On POSIX the initial attempt reservation uses mode 0700;
+the validator opens each nested directory without following symlinks.
+Windows rejects symlink and junction redirects at the path check; this is
+not a guarantee against a concurrent filesystem replacement. Board scope
+identifies the reserved storage location, not cryptographic board provenance.
+Client and Gateway reconciliation still require their existing reviewed
+evidence contracts; a passing server trace alone is not an attested attempt.
+
 This does NOT authenticate ChatGPT or prove an electrical design succeeds.
 Do not publish an official benchmark attempt from server trace alone;
 complete client transcript reconciliation and native ERC/DRC still apply.
@@ -313,3 +330,52 @@ verified again if the socket, editor, board or fixture changes. Independent
 KiCad `pcbnew` binding availability is a separate verification prerequisite
 for tools that rely on native reopen checks; a Python MCP virtualenv need not
 contain system-only `pcbnew` when the independent verifier uses `/usr/bin/python3`.
+
+
+## Native Codex schematic turn evidence (0.169.0)
+
+The native Codex app-server lifecycle schema for 0.169.0 can be reconciled
+with the same board-scoped native MCP trace. This is a post-run check, not a
+new executor or model identity attestation. Use it only after a separately
+reviewed, isolated execution environment and authorized provider run.
+
+The collector must preserve every item start/completion and turn start/end
+notification for the selected turn, with its actual thread and turn IDs.
+Store the bounded JSONL lifecycle evidence as `codex-turn-events.jsonl`
+beside the reserved board attempt's `ops-mcp-trace.jsonl`. The collector may
+omit prompts, tool arguments/results, reasoning text and private payloads,
+but must not omit or rewrite item types, IDs, names, statuses, timestamps,
+terminal item views or error presence. Do not provide a filtered list of
+only successful MCP calls. Keep evidence owner-private. The existing trace
+reader limits each file to 2 MB and 10,000 records; oversized or incomplete
+evidence is blocked, not silently truncated.
+
+    uv run python scripts/reconcile_reference_codex_turn.py \\
+      --board-id stm32f072-usbc --attempt-id attempt-004 \\
+      --thread-id "$REVIEWED_THREAD_ID" --turn-id "$REVIEWED_TURN_ID" \\
+      --server-trace "$PWD/.dev-tools/reference-agent-runs/stm32f072-usbc/v1/attempt-004/ops-mcp-trace.jsonl"
+
+The result contains sanitized metadata and digests only. Completed, failed
+and interrupted terminal states remain distinct. The checker rejects
+unreviewed tools, command execution, file changes, external searches,
+additional agents, mismatched call/result pairs, foreign turns and incomplete
+lifecycle evidence. Concurrent MCP calls are not supported by this
+conservative sequential reconciliation. It does not prevent an unapproved
+action from executing: pre-execution restrictions are still required.
+Matching metadata remains `client_server_matched_unattested` and
+`counts_as_task_success=false`. No canonical attempt or KPI is changed.
+The CLI and unit fixtures do not establish a live model execution, complete
+client capture, or a supported PCB write session.
+
+### Reference host non-tool surfaces
+
+The reviewed reference host does not register MCP resources, resource templates
+or workflow prompts. This includes otherwise read-oriented resources that
+may run validation or update gate history. Resource/prompt discovery is empty;
+direct reads and prompt retrieval fail. The 37 reviewed schematic tools,
+including `kicad_get_server_info`, remain available. Normal product servers
+retain their existing resources and prompts. This narrows the server surface,
+not the external agent itself: client-side resource helpers and user-input
+tools can still be offered by a host and are not implicitly authorized for
+benchmark execution. The existing provider-cost and PCB isolation gates
+remain unchanged.

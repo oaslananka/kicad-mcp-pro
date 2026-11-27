@@ -69,7 +69,14 @@ def build_reference_ops_server(*, phase_name: str, defer_registration: bool = Tr
     cfg = get_config()
     if cfg.profile != phase.profile or cfg.operating_mode != phase.mode:
         raise ReferenceAgentRunnerError("ChatGPT Ops phase profile/mode mismatch")
-    server = cast(KiCadFastMCP, build_server(phase.profile, defer_registration=defer_registration))
+    server = cast(
+        KiCadFastMCP,
+        build_server(
+            phase.profile,
+            defer_registration=defer_registration,
+            include_resources_and_prompts=False,
+        ),
+    )
     exact = {tool.removeprefix(_PREFIX) for tool in reviewed_mcp_tools(phase)}
     server.allowed_tool_names = exact
     server.execution_tool_names = exact
