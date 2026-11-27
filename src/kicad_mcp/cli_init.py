@@ -338,9 +338,9 @@ def _detect_kicad_interactive(console: Console, yes: bool) -> Path | None:
         if not raw.strip():
             return None
         candidate = Path(os.path.expandvars(os.path.expanduser(raw.strip())))
-        if candidate.exists():
-            return candidate
-        console.print(f"  [red]Path not found:[/red] {candidate}")
+        if candidate.is_file() and find_kicad_version(candidate.resolve()):
+            return candidate.resolve()
+        console.print(f"  [red]A working KiCad CLI executable is required:[/red] {candidate}")
 
 
 def _select_transport_interactive(console: Console, yes: bool) -> tuple[str, int]:

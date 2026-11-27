@@ -149,3 +149,45 @@ def test_connectivity_graph_reads_symbol_mirror(tmp_path: Path) -> None:
         for group in groups
     }
     assert pins_by_net == {("A_NET",): ["D1:2"], ("K_NET",): ["D1:1"]}
+
+
+def test_pin_inspection_reuses_library_read_and_observes_edits(tmp_path: Path, monkeypatch) -> None:
+    library = tmp_path / "Device.kicad_sym"
+    library.write_text(DEVICE_LIBRARY, encoding="utf8")
+    monkeypatch.setattr(schematic, "_symbol_library_file", lambda _: library)
+    original_read = Path.read_text
+    reads = 0
+
+    def tracked_read(path: Path, *args: str, **kwargs: str) -> str:
+        nonlocal reads
+        if path == library:
+            reads += 1
+        return original_read(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", tracked_read)
+    assert schematic.get_pin_positions("Device", "R", 0, 0)["1"] == (0, -3.81)
+    assert schematic.get_pin_metadata("Device", "R")["1"]["etype"] == "passive"
+    assert schematic.get_pin_alias_positions("Device", "LED", 0, 0)["K"] == (-3.81, 0)
+    assert reads == 1
+    library.write_text(DEVICE_LIBRARY.replace("0 3.81 270", "0 12.7 270"), encoding="utf8")
+    assert schematic.get_pin_positions("Device", "R", 0, 0)["1"] == (0, -12.7)
+    assert reads == 2
+
+    other = tmp_path / "other.kicad_sym"
+    other.write_text(DEVICE_LIBRARY.replace("0 3.81 270", "0 5.08 270"), encoding="utf8")
+    monkeypatch.setattr(schematic, "_symbol_library_file", lambda _: other)
+    assert schematic.get_pin_positions("Device", "R", 0, 0)["1"] == (0, -5.08)
+
+
+def test_nested_unit_is_not_a_library_symbol(tmp_path: Path, monkeypatch) -> None:
+    library = tmp_path / "Device.kicad_sym"
+    library.write_text(DEVICE_LIBRARY, encoding="utf8")
+    monkeypatch.setattr(schematic, "_symbol_library_file", lambda _: library)
+    assert schematic.symbol_exists("Device", "R_1_1") is False
+    assert schematic.get_pin_positions("Device", "R_1_1", 0, 0) == {}
+    library.write_text(
+        DEVICE_LIBRARY.replace('(symbol "LED"', '(symbol "Genuine_1_1") (symbol "LED"', 1),
+        encoding="utf8",
+    )
+    assert schematic.symbol_exists("Device", "Genuine_1_1") is True
+    assert schematic.suggest_symbol_names("Device", "Genuine_1_1") == ["Genuine_1_1"]

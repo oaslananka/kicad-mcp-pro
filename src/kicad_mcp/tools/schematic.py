@@ -15,6 +15,7 @@ import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Literal, Protocol, TextIO, TypedDict, cast
@@ -104,6 +105,7 @@ from ..utils.sexpr import (
     _extract_block,
     _sexpr_string,
     _unescape_sexpr_string,
+    iter_root_children,
 )
 from . import (
     schematic_back_annotation,
@@ -2594,6 +2596,9 @@ def _nonquoted_parentheses(content: str) -> Iterable[tuple[int, str]]:
             yield index, char
 
 
+_SEXPR_HEAD = re.compile(r"[a-zA-Z0-9_-]+")
+
+
 def _top_level_sexpr_blocks(content: str) -> list[tuple[str, int, int]]:
     """Locate KiCad root children, never quoted text posing as a wire."""
     blocks: list[tuple[str, int, int]] = []
@@ -2604,7 +2609,7 @@ def _top_level_sexpr_blocks(content: str) -> list[tuple[str, int, int]]:
         if paren == "(":
             if depth == 1:
                 child_start = index
-                name_match = re.match(r"[a-zA-Z0-9_-]+", content[index + 1 :])
+                name_match = _SEXPR_HEAD.match(content, index + 1)
                 child_name = name_match.group(0) if name_match else ""
             depth += 1
         else:
@@ -2804,8 +2809,7 @@ def get_symbol_primitive_bounds(
     if sym_file is None:
         return None
 
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    blocks = _collect_symbol_blocks(content, symbol_name)
+    blocks = _read_symbol_blocks(sym_file, symbol_name)
     if not blocks:
         return None
 
@@ -3833,8 +3837,7 @@ def load_lib_symbol(library: str, symbol_name: str) -> str | None:
     if sym_file is None:
         return None
 
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    blocks = _collect_symbol_blocks(content, symbol_name)
+    blocks = _read_symbol_blocks(sym_file, symbol_name)
     if not blocks:
         return None
 
@@ -3949,25 +3952,65 @@ def _find_symbol_extends(block: str) -> str | None:
     return match.group(1) if match else None
 
 
-def _collect_symbol_blocks(
-    content: str,
-    symbol_name: str,
-    visited: set[str] | None = None,
+_LIBRARY_SYMBOL_NAME = re.compile(r'\(symbol\s+"((?:\\.|[^"\\])*)"')
+_MAX_CACHED_LIBRARY_BYTES = 4 * 1024 * 1024
+
+
+def _library_symbol_blocks(content: str) -> dict[str, str]:
+    """Index actual library-root definitions, not child drawing units."""
+    symbols: dict[str, str] = {}
+    for kind, block in iter_root_children(content):
+        if kind == "symbol" and (match := _LIBRARY_SYMBOL_NAME.match(block)):
+            symbols.setdefault(_unescape_sexpr_string(match.group(1)), block)
+    return symbols
+
+
+def _library_revision(path: Path) -> tuple[int, int, int, int]:
+    stat = path.stat()
+    return stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size, stat.st_ino
+
+
+@lru_cache(maxsize=4)
+def _read_cached_library_symbols(path: Path, revision: tuple[int, int, int, int]) -> dict[str, str]:
+    content = path.read_text(encoding="utf-8", errors="ignore")
+    if _library_revision(path) != revision:
+        raise OSError(f"Symbol library changed during read: {path}. Retry the inspection.")
+    return _library_symbol_blocks(content)
+
+
+def _library_symbols_from_file(path: Path) -> dict[str, str]:
+    path = path.resolve()
+    revision = _library_revision(path)
+    if revision[2] > _MAX_CACHED_LIBRARY_BYTES:
+        return _library_symbol_blocks(path.read_text(encoding="utf-8", errors="ignore"))
+    return _read_cached_library_symbols(path, revision)
+
+
+def _symbol_inheritance_chain(
+    symbols: Mapping[str, str], symbol_name: str, visited: set[str] | None = None
 ) -> list[str]:
-    if visited is None:
-        visited = set()
-    if symbol_name in visited:
-        return []
-    visited.add(symbol_name)
+    seen = visited if visited is not None else set()
+    chain: list[str] = []
+    current: str | None = symbol_name
+    while current is not None and current not in seen:
+        seen.add(current)
+        block = symbols.get(current)
+        if block is None:
+            break
+        chain.append(block)
+        current = _find_symbol_extends(block)
+    chain.reverse()
+    return chain
 
-    block = _find_symbol_block(content, symbol_name)
-    if block is None:
-        return []
 
-    parent_name = _find_symbol_extends(block)
-    if parent_name is None:
-        return [block]
-    return [*_collect_symbol_blocks(content, parent_name, visited), block]
+def _collect_symbol_blocks(
+    content: str, symbol_name: str, visited: set[str] | None = None
+) -> list[str]:
+    return _symbol_inheritance_chain(_library_symbol_blocks(content), symbol_name, visited)
+
+
+def _read_symbol_blocks(path: Path, symbol_name: str) -> list[str]:
+    return _symbol_inheritance_chain(_library_symbols_from_file(path), symbol_name)
 
 
 def _symbol_block_name(block: str) -> str | None:
@@ -4193,8 +4236,7 @@ def get_pin_positions(
     if sym_file is None:
         return {}
 
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    blocks = _collect_symbol_blocks(content, symbol_name)
+    blocks = _read_symbol_blocks(sym_file, symbol_name)
     if not blocks:
         return {}
     available_units = _available_units_from_blocks(blocks)
@@ -4226,8 +4268,7 @@ def _load_symbol_blocks_for_unit(
             sym_file = fallback
     if sym_file is None:
         return None
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    blocks = _collect_symbol_blocks(content, symbol_name)
+    blocks = _read_symbol_blocks(sym_file, symbol_name)
     if not blocks:
         return None
     available_units = _available_units_from_blocks(blocks)
@@ -4430,8 +4471,7 @@ def get_pin_alias_positions(
     if sym_file is None:
         return {}
 
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    blocks = _collect_symbol_blocks(content, symbol_name)
+    blocks = _read_symbol_blocks(sym_file, symbol_name)
     if not blocks:
         return {}
     available_units = _available_units_from_blocks(blocks)
@@ -4454,8 +4494,7 @@ def get_symbol_available_units(library: str, symbol_name: str) -> set[int]:
     if sym_file is None:
         return set()
 
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    blocks = _collect_symbol_blocks(content, symbol_name)
+    blocks = _read_symbol_blocks(sym_file, symbol_name)
     if not blocks:
         return set()
     return _available_units_from_blocks(blocks)
@@ -4472,8 +4511,7 @@ def symbol_exists(library: str, symbol_name: str) -> bool | None:
     sym_file = _symbol_library_file(library)
     if sym_file is None:
         return None
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    return bool(_collect_symbol_blocks(content, symbol_name))
+    return bool(_read_symbol_blocks(sym_file, symbol_name))
 
 
 def suggest_symbol_names(library: str, symbol_name: str, *, limit: int = 3) -> list[str]:
@@ -4485,12 +4523,7 @@ def suggest_symbol_names(library: str, symbol_name: str, *, limit: int = 3) -> l
     sym_file = _symbol_library_file(library)
     if sym_file is None:
         return []
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    tops = [
-        name
-        for name in re.findall(r'\(symbol\s+"([^"]+)"', content)
-        if not re.search(r"_\d+_\d+$", name)  # drop graphic child-unit symbols
-    ]
+    tops = _library_symbols_from_file(sym_file)
     target = symbol_name.lower()
 
     def _score(name: str) -> int:
@@ -4832,8 +4865,7 @@ def get_pin_outward_normals(
     if sym_file is None:
         return {}
 
-    content = sym_file.read_text(encoding="utf-8", errors="ignore")
-    blocks = _collect_symbol_blocks(content, symbol_name)
+    blocks = _read_symbol_blocks(sym_file, symbol_name)
     if not blocks:
         return {}
     available_units = _available_units_from_blocks(blocks)

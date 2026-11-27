@@ -239,7 +239,14 @@ def test_detect_kicad_interactive_manual_retry(monkeypatch, tmp_path: Path) -> N
 
     import kicad_mcp.cli_init as cli_init
 
-    responses = iter([str(tmp_path / "missing"), str(tmp_path)])
+    cli = tmp_path / "kicad-cli"
+    cli.touch()
+    bad = tmp_path / "not-kicad"
+    bad.touch()
+    responses = iter([str(tmp_path / "missing"), str(tmp_path), str(bad), str(cli)])
+    monkeypatch.setattr(
+        cli_init, "find_kicad_version", lambda path: "10.0.6" if path == cli else None
+    )
     monkeypatch.setattr(
         cli_init,
         "discover_kicad_cli",
@@ -247,7 +254,7 @@ def test_detect_kicad_interactive_manual_retry(monkeypatch, tmp_path: Path) -> N
     )
     monkeypatch.setattr(cli_init.typer, "prompt", lambda *args, **kwargs: next(responses))
 
-    assert cli_init._detect_kicad_interactive(Console(), yes=False) == tmp_path
+    assert cli_init._detect_kicad_interactive(Console(), yes=False) == cli
 
 
 def test_detect_kicad_interactive_manual_cancel(monkeypatch) -> None:
