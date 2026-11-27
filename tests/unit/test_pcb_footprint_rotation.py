@@ -1084,3 +1084,92 @@ async def test_move_transaction_verifier_uses_exact_uuid_and_position(
     )
     assert "staged in the active native-live transaction" in result
     mock_board.update_items.assert_called_once()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_native_flip_preserves_dual_side_pad_layer_set(
+    mock_board: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    footprint = _make_flippable_footprint(BoardLayer.BL_F_Cu)
+    layers = [BoardLayer.BL_F_Cu, BoardLayer.BL_B_Cu, BoardLayer.BL_F_Mask, BoardLayer.BL_B_Mask]
+    pad = SimpleNamespace(
+        id=SimpleNamespace(value="through-hole"),
+        number="3",
+        padstack=SimpleNamespace(layers=layers.copy()),
+    )
+    footprint.definition.pads.append(pad)
+    mock_board.get_footprints.return_value = [footprint]
+
+    def native_flip(item: _LiveFootprint, direction: object) -> list[object]:
+        result = _mock_flip_footprint(item, BoardLayer.BL_B_Cu)
+        # Native through-hole layers remain a symmetric set.
+        pad.padstack.layers = layers.copy()
+        return result
+
+    mock_board.flip_items.side_effect = native_flip
+    monkeypatch.setattr(
+        "kicad_mcp.tools.pcb.get_kicad",
+        lambda: SimpleNamespace(get_version=lambda: SimpleNamespace(major=10, minor=0, patch=8)),
+    )
+    result = await call_tool_text(
+        build_server("full"),
+        "pcb_set_footprint_layer",
+        {"reference": "X2", "layer": "B.Cu"},
+    )
+    assert "Flipped footprint 'X2'" in result
+    assert set(pad.padstack.layers) == set(layers)
+    mock_board.flip_items.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("angle", "expected"),
+    [
+        (90, (60744000, 48730000)),
+        (-90, (59256000, 51270000)),
+        (180, (58730000, 49256000)),
+    ],
+)
+def test_native_cardinal_rotation_preserves_integer_world_geometry(
+    angle: int, expected: tuple[int, int]
+) -> None:
+    from kipy.board_types import BoardPolygon, Pad, Zone
+    from kipy.geometry import PolygonWithHoles
+
+    footprint = FootprintInstance()
+    footprint.position = Vector2.from_xy_mm(60, 50)
+    # The point (61.27, 50.744) is deliberately not at the origin.
+    position = Vector2.from_xy_mm(61.27, 50.744)
+    footprint.reference_field.text.position = position
+    pad = Pad()
+    pad.position = position
+    polygon = BoardPolygon()
+    polygon.polygons.append(PolygonWithHoles())
+    zone = Zone()
+    outlines = [
+        polygon.polygons[0].proto.outline,
+        zone.proto.outline.polygons.add().outline,
+    ]
+    for outline in outlines:
+        outline.closed = True
+        for x, y in [(61.27, 50.744), (62, 51), (62, 50), (61.27, 50.744)]:
+            outline.nodes.add().point.CopyFrom(Vector2.from_xy_mm(x, y).proto)
+    footprint.definition.items = [pad, polygon, zone]
+
+    apply_footprint_rotation(footprint, angle)
+    refreshed = FootprintInstance(proto=footprint.proto)
+    assert (
+        refreshed.reference_field.text.position.x,
+        refreshed.reference_field.text.position.y,
+    ) == expected
+    items = refreshed.definition.items
+    assert isinstance(items[0], Pad)
+    assert (items[0].position.x, items[0].position.y) == expected
+    for outline in (
+        items[1].proto.shape.polygon.polygons[0].outline,
+        items[2].proto.outline.polygons[0].outline,
+    ):
+        assert outline.closed
+        assert len(outline.nodes) == 4
+        assert (outline.nodes[0].point.x_nm, outline.nodes[0].point.y_nm) == expected
+        assert outline.nodes[0] == outline.nodes[-1]

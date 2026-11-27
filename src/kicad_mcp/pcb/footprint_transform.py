@@ -3,9 +3,22 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterator
 from typing import Any, Literal, cast
 
+from google.protobuf.descriptor import FieldDescriptor  # type: ignore[import-untyped]
+from google.protobuf.message import Message  # type: ignore[import-untyped]
+from kipy.board_types import (
+    BoardPolygon,
+    BoardShape,
+    BoardText,
+    Field,
+    FootprintInstance,
+    Pad,
+    Zone,
+)
 from kipy.geometry import Angle
+from kipy.proto.common.types.base_types_pb2 import Vector2 as VectorProto
 
 RotationAttribute = Literal["angle", "orientation"]
 _SUPPORTED_ROTATION_ATTRIBUTES: tuple[RotationAttribute, ...] = ("angle", "orientation")
@@ -35,6 +48,77 @@ def _restore_missing_3d_models(definition: object | None, original_models: list[
     if missing:
         preserved = cast(Any, definition)
         preserved.items = [*preserved.items, *missing]
+
+
+def _geometry_vectors(message: Message) -> Iterator[VectorProto]:
+    """Traverse geometry-only messages, never padstack offsets or 3D models."""
+    if isinstance(message, VectorProto):
+        yield message
+        return
+    for descriptor, value in message.ListFields():
+        if descriptor.message_type is None:
+            continue
+        if descriptor.label == FieldDescriptor.LABEL_REPEATED:
+            for child in value:
+                yield from _geometry_vectors(child)
+        else:
+            yield from _geometry_vectors(value)
+
+
+def _world_vectors(footprint: FootprintInstance) -> Iterator[VectorProto]:
+    for field in (
+        footprint.reference_field,
+        footprint.value_field,
+        footprint.datasheet_field,
+        footprint.description_field,
+    ):
+        yield field.proto.text.text.position
+    for item in footprint.definition.items:
+        if isinstance(item, Field):
+            yield item.proto.text.text.position
+        elif isinstance(item, BoardText):
+            yield item.proto.text.position
+        elif isinstance(item, Pad):
+            yield item.proto.position
+        elif isinstance(item, Zone):
+            yield from _geometry_vectors(item.proto.outline)
+            for filled in item.proto.filled_polygons:
+                yield from _geometry_vectors(filled)
+        elif isinstance(item, BoardPolygon):
+            # The SDK concrete-shape conversion reads the packed proto.
+            # Synchronize cached polygons before that conversion.
+            _ = item.proto
+            for polygon in item.polygons:
+                yield from _geometry_vectors(polygon.proto)
+        elif isinstance(item, BoardShape):
+            shape = item.proto.shape
+            geometry = shape.WhichOneof("geometry")
+            if geometry is not None:
+                yield from _geometry_vectors(getattr(shape, geometry))
+
+
+def _cardinal_world_positions(
+    footprint: FootprintInstance, quarter_turns: int
+) -> list[tuple[int, int]]:
+    """KiCad's orthogonal rotations are exact integer nanometer transforms."""
+    cx, cy = footprint.position.x, footprint.position.y
+    result: list[tuple[int, int]] = []
+    for vector in _world_vectors(footprint):
+        x, y = vector.x_nm - cx, vector.y_nm - cy
+        for _ in range(quarter_turns % 4):
+            x, y = y, -x
+        result.append((x + cx, y + cy))
+    return result
+
+
+def _restore_cardinal_world_positions(
+    footprint: FootprintInstance, expected: list[tuple[int, int]]
+) -> None:
+    vectors = list(_world_vectors(footprint))
+    if len(vectors) != len(expected):
+        raise FootprintRotationError("Footprint geometry changed structure during rotation.")
+    for vector, (x, y) in zip(vectors, expected, strict=True):
+        vector.x_nm, vector.y_nm = x, y
 
 
 def get_current_footprint_rotation(footprint: object) -> tuple[RotationAttribute, float]:
@@ -84,12 +168,19 @@ def apply_footprint_rotation(footprint: object, rotation_deg: float) -> Rotation
             return attribute
         definition = getattr(footprint, "definition", None)
         models_before = list(getattr(definition, "models", ()))
+        expected_positions = None
+        if isinstance(footprint, FootprintInstance) and current_deg is not None:
+            delta = (rotation_deg - current_deg) % 360
+            if delta % 90 == 0:
+                expected_positions = _cardinal_world_positions(footprint, int(delta // 90))
         try:
             setattr(footprint, attribute, requested)
         except Exception as exc:  # KiCad IPC surfaces raise generated transport/type errors.
             failures.append(f"{attribute}: {type(exc).__name__}")
             continue
         _restore_missing_3d_models(definition, models_before)
+        if isinstance(footprint, FootprintInstance) and expected_positions is not None:
+            _restore_cardinal_world_positions(footprint, expected_positions)
         return attribute
 
     if not available:
