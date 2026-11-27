@@ -10,6 +10,13 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.25.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-npm-v4.24.0...mcp-npm-v4.25.0) (2026-11-27)
+
+
+### Bug Fixes
+
+* harden tool execution and release boundaries ([#1970](https://github.com/oaslananka/kicad-mcp-pro/issues/1970)) ([bff270c](https://github.com/oaslananka/kicad-mcp-pro/commit/bff270c4a37aabcb541f1a9f52c8f937fbe174c4))
+
 ## [4.24.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-npm-v4.23.0...mcp-npm-v4.24.0) (2026-11-27)
 
 
