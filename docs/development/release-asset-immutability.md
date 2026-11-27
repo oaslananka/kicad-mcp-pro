@@ -26,28 +26,29 @@ Today the repository publishes first and attaches assets afterwards:
    `release-please-config.json` sets no `draft` option, so Release Please
    creates the tag **and a published, non-draft GitHub Release** for each
    released component before any asset exists.
-2. The tag push and the `release: published` event then start the per-family
+2. The `release: published` event then starts the per-family
    publishers.
-3. Each publisher builds, attests and verifies its artifacts and runs
-   `gh release upload ... --clobber` against the **already published**
-   release. `--clobber` replaces any existing asset with the same name.
+3. Each active publisher builds, attests and verifies its artifacts, then
+   attaches missing assets to the already published release. The reviewed
+   shared helper verifies existing target asset bytes and IDs before writing,
+   never replaces an asset, and independently verifies completed uploads.
 
-With immutability enabled, step 3 would fail for every family. A publisher
-that re-ran (recovery or backfill) would also be rejected, because it relies
-on `--clobber` to overwrite assets.
+With immutability enabled, step 3 still fails whenever an asset is missing.
+The former --clobber recovery behavior is removed from active upload steps;
+a conflicting rebuilt artifact must not replace published bytes.
 
 ## Release families
 
 Tag prefixes come from `release-please-config.json`. Release Please links the
-versions of `mcp-server`, `mcp-npm` and `kicad-mcp-gui` (`linked-versions`
+versions of `mcp-server` and `mcp-npm` (`linked-versions`
 plugin). `protocol-schemas` is versioned on its own.
 
 | Family | Tag prefix | Release created by | Publisher workflows and trigger |
 | --- | --- | --- | --- |
-| MCP server (Python, MCPB, KiCad PCM, container, MCP Registry) | `mcp-server-v` | `publish-release.yml` (Release Please) | `publish-python.yml` (`push: tags mcp-server-v*`); `publish-mcpb.yml`, `publish-kicad-pcm.yml`, `publish-mcp-container.yml`, `publish-mcp-registry.yml`, `release.yml` (`release: published`); each also has `workflow_dispatch` recovery |
+| MCP server (Python, MCPB, KiCad PCM, container, MCP Registry) | `mcp-server-v` | `publish-release.yml` (Release Please) | `publish-python.yml`, `publish-mcpb.yml`, `publish-kicad-pcm.yml`, `publish-mcp-container.yml`, `publish-mcp-registry.yml`, `release.yml` (`release: published`); other publishers also have `workflow_dispatch` recovery; Python manual main dispatch is TestPyPI only |
 | npm launcher | `mcp-npm-v` | `publish-release.yml` (Release Please) | `publish-npm.yml` (`release: published`, `workflow_dispatch` backfill) |
 | Protocol schemas | `protocol-schemas-v` | `publish-release.yml` (Release Please) | `publish-protocol-schemas.yml` (`release: published`, `workflow_dispatch` backfill) |
-| Desktop GUI | `kicad-mcp-gui-v` | `publish-release.yml` (Release Please), **or** `gui-release.yml` if the release does not exist yet | `gui-release.yml` (`push: tags kicad-mcp-gui-v*`, `workflow_dispatch`) |
+| Desktop GUI (retired; historical) | `kicad-mcp-gui-v` | Historical Release Please / `gui-release.yml` | Retired Tauri workflow; no active publisher |
 
 The `release: published` workflows are started by the Release Please run
 because it uses the release-automation GitHub App token, not `GITHUB_TOKEN`.
@@ -60,14 +61,16 @@ keys entries by workflow, job and step name, not by line number.
 | Workflow : job | Step | Required assets | Command (line) | Timing relative to publication | `--clobber` | Registry or digest verification | Mutates a published release |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `publish-release.yml` : `publish` | Publish merged Release Please versions | none (creates tags and releases) | `googleapis/release-please-action`, `skip-github-release: false` (111-118) | creates the published release | n/a | n/a | **yes** (creates non-draft releases) |
-| `publish-python.yml` : `build` | Attach Python evidence to GitHub Release | wheel, sdist, `kicad-mcp-pro-python-SHA256SUMS.txt`, `kicad-mcp-pro-python-sbom.cdx.json`, `kicad-mcp-pro-python-release-evidence.json` | `gh release upload ... --clobber` (80-105; waits up to 18 x 10 s for the release; `push` events only) | after publication; before TestPyPI/PyPI publish | yes | `verify-pypi` and `verify-pypi-provenance` (153-165, 220-235); `actions/attest` (62-64) | **yes** |
-| `publish-npm.yml` : `publish` | Attach npm evidence to GitHub Release | launcher `.tgz`, `mcp-npm-SHA256SUMS.txt`, `mcp-npm-sbom.cdx.json` | `gh release upload ... --clobber` (115-126) | after publication; before `npm publish` | yes | `isDraft == false` source check (59); `actions/attest` (102-104) | **yes** |
-| `publish-npm.yml` : `publish` | Attach npm post-publish verification to GitHub Release | `npm-published-digest.json` | `gh release upload ... --clobber` (154-158) | after publication **and** after `npm publish` (140) | yes | `scripts/verify-npm-release.mjs` (144-153) | **yes** |
-| `publish-mcpb.yml` : `publish` | Attach MCPB bundle and evidence to GitHub Release | `kicad-mcp-pro-<version>.mcpb`, `kicad-mcp-pro-mcpb-SHA256SUMS.txt`, `kicad-mcp-pro-mcpb-release-evidence.json` | `gh release upload ... --clobber` (178-186) | after publication | yes | `targetCommitish` source check (86); `actions/attest` (164-166) | **yes** |
-| `publish-protocol-schemas.yml` : `publish` | Attach evidence to GitHub Release | schemas `.tgz`, `protocol-schemas-SHA256SUMS.txt`, `protocol-schemas-sbom.cdx.json` | `gh release upload ... --clobber` (111-122) | after publication; before `npm publish` (141) | yes | `isDraft == false` source check (59); `scripts/verify-npm-release.mjs` (144-153); `actions/attest` (99-100) | **yes** |
-| `publish-kicad-pcm.yml` : `publish` | Attach KiCad PCM package and evidence to GitHub Release | `kicad-mcp-pro-pcm-<version>.zip`, `kicad-mcp-pro-pcm-SHA256SUMS.txt`, PCM evidence | `gh release upload ... --clobber` (114-122) | after publication | yes | downloads the published zip and checks SHA256SUMS (124-150); `actions/attest` (100-102) | **yes** |
-| `gui-release.yml` : `create-release` | Prepare release inventory | none (creates the release) | `gh release create --verify-tag --generate-notes` when `gh release view` fails (161-163) | races with `publish-release.yml` | n/a | tag commit equals source commit (151-159) | **yes** (creates a non-draft release) |
-| `gui-release.yml` : `create-release` | Upload installers and evidence to GitHub Release | `.deb`, `.rpm`, `.AppImage`, `.dmg`, `.msi`, `.exe` installers, GUI SHA256SUMS, SBOM and release evidence | `gh release upload ... --clobber` (229-238) | after publication | yes | `verify-local` before (216-220); `verify-published` after download (240-253); `actions/attest` (222-227) | **yes** |
+| `publish-python.yml` : `build` | Attach Python evidence to GitHub Release | wheel, sdist, `kicad-mcp-pro-python-SHA256SUMS.txt`, `kicad-mcp-pro-python-sbom.cdx.json`, `kicad-mcp-pro-python-release-evidence.json` | `scripts.attach_published_release_assets --execute` | after publication; before TestPyPI/PyPI publish | no | `verify-pypi` and `verify-pypi-provenance` (153-165, 220-235); `actions/attest` (62-64) | **yes** |
+| `publish-npm.yml` : `publish` | Attach npm evidence to GitHub Release | launcher `.tgz`, `mcp-npm-SHA256SUMS.txt`, `mcp-npm-sbom.cdx.json` | `scripts.attach_published_release_assets --execute` | after publication; before `npm publish` | no | `isDraft == false` source check (59); `actions/attest` (102-104) | **yes** |
+| `publish-npm.yml` : `publish` | Attach npm post-publish verification to GitHub Release | `npm-published-digest.json` | `scripts.attach_published_release_assets --execute` | after publication **and** after `npm publish` (140) | no | `scripts/verify-npm-release.mjs` (144-153) | **yes** |
+| `publish-mcpb.yml` : `publish` | Attach MCPB bundle and evidence to GitHub Release | `kicad-mcp-pro-<version>.mcpb`, `kicad-mcp-pro-mcpb-SHA256SUMS.txt`, `kicad-mcp-pro-mcpb-release-evidence.json` | `scripts.attach_published_release_assets --execute` | after publication | no | `targetCommitish` source check (86); `actions/attest` (164-166) | **yes** |
+| `publish-protocol-schemas.yml` : `publish` | Attach evidence to GitHub Release | schemas `.tgz`, `protocol-schemas-SHA256SUMS.txt`, `protocol-schemas-sbom.cdx.json` | `scripts.attach_published_release_assets --execute` | after publication; before `npm publish` (141) | no | `isDraft == false` source check (59); `scripts/verify-npm-release.mjs` (144-153); `actions/attest` (99-100) | **yes** |
+| `publish-kicad-pcm.yml` : `publish` | Attach KiCad PCM package and evidence to GitHub Release | `kicad-mcp-pro-pcm-<version>.zip`, `kicad-mcp-pro-pcm-SHA256SUMS.txt`, PCM evidence | `scripts.attach_published_release_assets --execute` | after publication | no | downloads the published zip and checks SHA256SUMS (124-150); `actions/attest` (100-102) | **yes** |
+
+The two retired Tauri GUI mutation rows are historical only. The active
+ratchet retains seven entries: one release creation and six missing-only
+attachment steps. All six still count as post-publication mutations.
 
 Workflows that read a release but do not change it:
 
@@ -84,11 +87,51 @@ Workflows that read a release but do not change it:
 - `release-please.yml` runs Release Please with `skip-github-release: true`.
   It prepares the release PR only and creates no release.
 
+## Python production trigger boundary
+
+A protected tag alone no longer triggers the Python publisher. The legacy
+production path now starts on the published release event, verifies the
+numeric Release ID, actual published state, exact tag, event and checkout
+commit, and package version before building or attaching evidence. The
+manual main workflow remains TestPyPI-only. The existing PyPI trusted
+publisher workflow filename, environment, OIDC and provenance checks are
+unchanged. This removes the tag-creation race in the legacy Python path,
+but does not authorize draft-first registry publication or remove the
+other autonomous published-release consumers.
+
+## Published-release recovery without replacement
+
+The six active attachment steps invoke the same Python module from a separate
+read-only checkout of the exact workflow revision. That checkout is important
+for a manual recovery from an older package tag: the reviewed upload policy
+must not silently revert to the historical script. Package inputs still come
+from the exact protected tag/source checkout.
+
+The helper validates the repository, published Release ID, protected tag SHA,
+local nonempty regular files, and all existing target names and asset IDs.
+It compares GitHub metadata and independently downloads existing bytes by ID
+before the first write. Unrelated family assets are left alone. Missing files
+are uploaded by numeric Release ID without clobber; the helper rechecks live
+state before each upload and independently downloads the completed target set.
+A name collision or changed existing bytes stops the operation. A complete
+byte-identical retry makes no upload. An interrupted upload can resume from the
+same reviewed original bytes. Freshly regenerated SBOM/evidence may differ
+(for example, because of timestamps or producer-run IDs); use the original
+retained build artifacts for a recovery rather than overwriting history.
+
+The default CLI is read-only; only trusted publisher/recovery workflows use
+`--execute`. There is no delete, replacement, Release creation or publish
+operation. Concurrent legacy writers are still possible, so these checks are
+not proof of an exclusive owner lock. Registry publication, attestation
+acceptance, draft-first ordering and the immutable setting remain separate
+#1179 acceptance requirements.
+
 ## Ratchet: `scripts/check_release_asset_mutations.py`
 
 The checker loads every workflow and walks each job's steps in order. It
 records each step that:
 
+- invokes the reviewed missing-only attachment module (conservatively classified as a published upload even in read-only mode);
 - runs `gh release create`, `upload`, `edit`, `delete` or `delete-asset`;
 - runs `gh api` with a write method (`POST`, `PATCH`, `PUT`, `DELETE`, or
   implied by `-f`/`-F`/`--input`) on a `releases` path;
@@ -433,6 +476,19 @@ non-main or completed owner runs, published Releases, and changed tags.
 Only an **active manual dispatch of `publish-release.yml` on main** can
 qualify; current production release dispatches and workflows are unchanged.
 
+The preflight also binds the numeric owner and repository identities and
+reads the reviewed repository `release-tags` ruleset by numeric ID. It
+requires active tag update/deletion protection, exact coverage of the four
+stable release families, no exclusions, and an explicitly empty bypass
+list. A missing bypass list is not evidence of no bypass. GitHub exposes
+that field only to callers with ruleset write access
+([REST ruleset reference](https://docs.github.com/en/rest/repos/rules#get-a-repository-ruleset)).
+This read-only maintainer diagnostic fails closed for restricted credentials;
+do not grant a publishing worker ruleset write access to make it pass.
+Replacing the ruleset or changing its coverage requires a reviewed update
+to the pinned policy. This observation cannot prevent subsequent ruleset
+changes and does not prove the tag's creation provenance.
+
 **Identity is not a lock.** A validated owner run could still race with
 another writer or a late publication. The result intentionally reports
 `exclusiveWriterVerified: false` and `publicationAuthorized: false`.
@@ -459,7 +515,7 @@ Registry preparers:
 | Opt-in preparer | Accepted Actions artifact roles | Required verified job |
 | --- | --- | --- |
 | npm launcher | `npm-draft-release-evidence` | `npm / prepare` |
-| Desktop GUI | `gui-draft-installers`, `gui-draft-evidence` | `gui / attest-and-store` |
+| Desktop GUI (historical preparer) | `gui-draft-installers`, `gui-draft-evidence` | `gui / attest-and-store` |
 | Container | `container-build-source-evidence` | `container / prepare` |
 | MCP Registry | `mcp-registry-draft-evidence` | `registry / prepare` |
 
@@ -529,7 +585,8 @@ independently pinned manifest by verify(...). It verifies the active
 owner run and matching draft/tag identity a second time after the downloads,
 so a detected mid-verification publication or owner change fails closed.
 
-Run this from a trusted active owner job, with protected owner inputs:
+Run this with trusted active owner inputs and a maintainer credential that
+can read the complete ruleset. It is not yet a production worker gate:
 
     python -m scripts.check_draft_release_owner_readiness \
       --manifest "$MANIFEST" --manifest-sha256 "$OWNER_PIN" \
@@ -541,7 +598,7 @@ Run this from a trusted active owner job, with protected owner inputs:
 
 Only gh api GET and authenticated asset download operations are used by
 this command. A successful result reports exact asset role and read-back
-integrity plus owner identity. It explicitly reports false for
+integrity plus owner identity and observed tag protection. It explicitly reports false for
 exclusiveWriterVerified, registriesVerified, attestationsVerified, and
 publicationAuthorized. Repeated reads cannot prove lock ownership or prevent
 races after the final read. The owner must acquire/reuse a single workflow-level
@@ -549,3 +606,481 @@ concurrency group across the complete lifecycle (including former family
 writers), independently check registry/attestation provenance and authorize a
 final publish transaction. This gate is deliberately not called from
 production workflows yet; no real draft E2E acceptance is claimed.
+
+
+## Signed Python worker input manifest (read-only, not wired)
+
+The Python worker must verify the two exact distribution files **before**
+registry publication. Do not use the final per-family draft inventory as
+the pre-publication request: final registry receipts are not available yet.
+
+The owner-side generator emits canonical unsigned JSON to stdout:
+
+```bash
+python -m scripts.check_signed_python_handoff generate \
+  --directory "$DIST" --tag "$TAG" --source-commit "$SOURCE_SHA" \
+  --release-id "$RELEASE_ID" --owner-run-id "$OWNER_RUN_ID" \
+  --owner-attempt "$OWNER_ATTEMPT" --producer-run-id "$PRODUCER_RUN_ID" \
+  --producer-attempt "$PRODUCER_ATTEMPT" --producer-artifact-id "$ARTIFACT_ID" \
+  > python-worker-manifest.json
+```
+
+The future owner must attest these exact bytes under the reviewed
+`publish-release.yml` workflow and separately pin the manifest SHA-256.
+The read-only verifier accepts the same identity arguments with operation
+`verify`, plus `--manifest python-worker-manifest.json` and
+`--manifest-sha256 "$OWNER_PIN"`. Expected IDs, tag, source and pin must
+come from a trusted caller, never from the downloaded request itself.
+The verifier reconstructs canonical bytes from those inputs and the exact
+wheel/sdist files, rejects other files and links, and verifies the signed
+subject with the existing patched GitHub CLI SLSA gate (repository, owner
+signer, main ref, source digest and exact invocation in both certificate
+and predicate). It rechecks manifest and package bytes after verification.
+
+This is a format and verifier contract, not a deployed signature issuer.
+The current production workflows do not generate this manifest or grant
+new permissions. A successful verification binds the requested draft,
+tag, producer artifact and target worker workflow to a signed owner
+invocation; it does not independently verify live tag protection, active
+owner, artifact metadata, dispatched child, individual package provenance,
+registry receipt or exclusive writer. The child run ID is assigned only
+after dispatch and must be bound independently by the owner and worker.
+All those checks remain mandatory before a production cutover. No new
+credential or ruleset write permission is needed by this verifier.
+
+### Live signature-only rehearsal (non-publishing)
+
+After the reviewed workflow reaches main, the repository owner can manually
+run **Signed Python handoff rehearsal (non-publishing)**. This is separate
+from the existing cross-workflow transport rehearsal. The signing job creates
+two deliberately invalid text fixtures named as distributions for the
+synthetic version 0.0.0 and a clearly marked rehearsal envelope containing
+the production-shaped request with synthetic Release/producer identifiers.
+It attests only that envelope under the dedicated rehearsal signer. The
+independent read-only job downloads the exact numeric artifact ID from the
+same run and verifies the owner job's separately passed manifest pin,
+exact package bytes, source commit, workflow signer and signed run/attempt.
+It checks the manifest and package bytes again after verification.
+
+Only the signing job has OIDC, attestation and artifact-metadata write scopes,
+with no production environment, registry, Release or dispatch permission.
+The verifier uses the existing patched GitHub CLI requirement (at least
+2.102.0); a missing or invalid signature, CLI or digest fails closed.
+Artifacts expire after three days. The production verifier retains its
+separate fixed signer and rejects the rehearsal envelope. A successful
+rehearsal proves real signing/verification of synthetic bytes in separate
+jobs, not the production owner signer, an independently dispatched worker,
+protected tag, actual Release, registry receipt or exclusive writer.
+No tag or Release is created and no package is installed or published.
+Do not dispatch until the workflow has passed review and merged to main.
+
+### Maintainer-side owner and producer binding (read-only)
+
+Before any future Python worker dispatch, the maintainer can compose the
+existing owner and producer checks with the signed request:
+
+```bash
+python -m scripts.check_python_handoff_owner_binding \
+  --directory "$DIST" --manifest "$MANIFEST" --manifest-sha256 "$OWNER_PIN" \
+  --downloaded-zip "$PRODUCER_ZIP" --tag "$TAG" --source-commit "$SOURCE_SHA" \
+  --release-id "$RELEASE_ID" --owner-run-id "$OWNER_RUN_ID" \
+  --owner-attempt "$OWNER_ATTEMPT" --producer-run-id "$PRODUCER_RUN_ID" \
+  --producer-attempt "$PRODUCER_ATTEMPT" --producer-artifact-id "$ARTIFACT_ID" \
+  --producer-job-id "$PRODUCER_JOB_ID"
+```
+
+To prepare the unsigned bytes before the future owner signs them, use
+the same command with `--prepare` instead of `--manifest` and
+`--manifest-sha256`. The preparation mode checks the same separate
+completed reusable producer, active owner, draft and tag rules,
+safe ZIP and both producer signatures. It compares local package
+digests, repeats the live producer and owner checks, and rehashes
+the downloaded ZIP and packages before returning canonical unsigned
+bytes on stdout. It does not sign, dispatch, upload or publish.
+The future owner must independently pin and sign those exact bytes,
+then run the signed verification with the independent pin.
+Use private staging and recheck immediately before signing; the
+read-only checks are snapshots, not a writer lock.
+
+All expected identities and the manifest pin are independently supplied.
+The diagnostic accepts only the separate completed reusable preflight
+producer profile, not the legacy publisher or a synthetic rehearsal.
+It checks the active production owner, draft and observed protected tag
+rules; exact producer repository, run, attempt, job and artifact; safe ZIP
+inventory and each package's signed provenance; and the production owner's
+signed manifest. It compares the producer package digests to the
+manifest's exact wheel and sdist digests, then repeats producer run/archive
+identity and active owner/draft/tag checks and rechecks request bytes.
+A valid signature over different owner-approved package bytes is rejected.
+
+Run only with an already authorized maintainer credential that can read
+the full tag ruleset, including bypass actors. Never grant ruleset-write
+access to the registry worker. This command is not called by production
+workflows yet. Unsigned preparation is implemented; no production signing workflow
+or live draft acceptance is claimed. Success does not prove which job uploaded the artifact, an
+independently dispatched child, registry receipts, exclusive writer lock
+or publication authorization. A race after the final read remains possible.
+
+### Post-dispatch signed worker binding (not wired)
+
+The owner must not guess a child run ID from a workflow name or timestamp,
+and the Actions bot identity alone does not identify the dispatching owner.
+The GitHub REST API version 2026-03-10 returns a run ID from a successful
+workflow dispatch and accepts a tag reference. After the exact successful
+dispatch response, the reviewed owner will create a second canonical record
+(`python-worker-dispatch.json`) binding the child run ID and attempt 1 to
+the original signed request's digest and all release/owner/producer identity
+fields. It must attest this record under the same production owner
+workflow and invocation. An ambiguous dispatch response must fail closed;
+do not blindly retry the dispatch.
+
+The maintainer-side command above also accepts
+`--prepare-dispatch "$WORKER_RUN_ID"` together with the signed manifest
+and independent pin (not `--prepare`). It emits canonical unsigned
+dispatch bytes on stdout only after checking the exact returned child
+before and after signed owner/producer verification, repeating live
+owner/draft/tag and producer identity checks, and rechecking ZIP, manifest
+and package bytes. The child may be in a known nonterminal state while
+the owner prepares the record; the worker still must be in progress to
+verify it. The caller must obtain the run ID from the exact dispatch
+response, not a search result. This mode does not establish causality
+or sign, dispatch, upload or publish.
+
+For pre-dispatch API body preparation, use the same signed-manifest
+verification command with `--prepare-inputs` (without
+`--prepare-dispatch`). It verifies the owner, producer and signed
+manifest before emitting JSON with the exact release tag as `ref` and
+nine string-valued selectors under `inputs`: tag, source_commit,
+release_id, owner_run_id, owner_attempt, producer_run_id,
+producer_attempt, producer_artifact_id and manifest_sha256. It does
+not dispatch anything or establish dispatch causality. The caller must
+supply the manifest pin independently and use the exact returned worker
+run ID for subsequent binding preparation.
+
+The worker-side library `scripts.check_signed_python_dispatch_binding`
+validates the signed record, the exact active owner and child run metadata,
+numeric repository and bot identity, and the live tag commit. The expected
+runtime ref, commit, run ID and attempt must originate from trusted Actions
+context. The original request and exact package bytes are checked using
+the manifest digest bound in the second record. Both signatures and
+request bytes are verified before returning, with repeated live run/tag
+checks. All expected identity inputs must be independently established;
+the library does not discover them from an untrusted artifact.
+
+Keep the complete draft and protected-tag ruleset check on the maintainer
+side. GitHub documents draft listing visibility as requiring push access;
+the worker must not receive contents-write or ruleset-write merely to
+read draft metadata. Worker-side tag resolution is not proof of ruleset
+enforcement. The library requires only run/tag reads and signature
+verification, and explicitly denies dispatch causality, independent draft
+and protected-tag verification, producer artifact verification, registry
+receipt verification, exclusive writer and publication authorization.
+The producer package verification remains a separate maintainer gate.
+
+The production signature issuer, bounded artifact discovery and wait,
+real tag-dispatch acceptance, worker receipt and publishing integration
+are not implemented by this library. Existing main-ref transport and
+signature-only rehearsals are not evidence of a production tag dispatch.
+Never invoke an existing publishing workflow as a rehearsal. Validate the
+exact tag-dispatch API shape with a reviewed non-publishing acceptance
+path before relying on it. A race after the final read remains possible.
+
+References: [workflow dispatch API](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event),
+[release visibility](https://docs.github.com/en/rest/releases/releases#list-releases),
+and [GITHUB_TOKEN dispatch behavior](https://docs.github.com/en/actions/concepts/security/github_token).
+
+#### Exact-run delivery of the signed request
+
+The future owner stores only the two signed JSON records together in an
+immutable Actions artifact named
+`python-worker-request-<owner-attempt>-<worker-run-id>`.
+The original package files remain in the independently verified producer
+artifact. The worker uses its own Actions runtime (repository, event,
+tag ref, SHA, run ID and attempt), and independently supplied owner,
+producer, Release and manifest-pin inputs:
+
+```bash
+python -m scripts.check_python_worker_request_delivery discover \
+  --tag "$TAG" --source-commit "$SOURCE_SHA" --release-id "$RELEASE_ID" \
+  --owner-run-id "$OWNER_RUN_ID" --owner-attempt "$OWNER_ATTEMPT" \
+  --producer-run-id "$PRODUCER_RUN_ID" --producer-attempt "$PRODUCER_ATTEMPT" \
+  --producer-artifact-id "$PRODUCER_ARTIFACT_ID" --manifest-sha256 "$OWNER_PIN"
+```
+
+Alternatively, replace **all** manual identity flags with
+`--from-event`. The diagnostic reads the exact string input schema from
+the Actions-provided `GITHUB_EVENT_PATH` (bounded to 1 MiB, no linked
+file or duplicate JSON keys), and compares its tag and source with the
+worker runtime. Numeric IDs are canonical positive ASCII decimal
+strings, and owner and producer must be distinct. The worker run ID
+and attempt still come only from the worker runtime. Both modes retain
+the existing live run/tag and signed-record checks; dispatch selectors
+are not authority. No production workflow has been wired to this
+contract yet.
+
+The diagnostic only accepts an untruncated run-scoped artifact listing
+(up to 100 entries), one exact matching name and matching individual
+artifact metadata, including repository IDs, owner run and source, size
+and digest. Download the returned numeric artifact ID using the GitHub
+artifact ZIP endpoint. Run the same command with `verify` instead of
+`discover`, adding `--artifact-id "$REQUEST_ARTIFACT_ID"`,
+`--archive "$DOWNLOADED_ZIP"` and `--directory "$DIST"`.
+The verifier independently rereads metadata and requires the ZIP's exact
+digest and size (maximum 64 KiB). Only the two named, nonlinked JSON
+members are accepted, at most 16 KiB each. The private temporary files
+are removed after checking both production-owner signatures, local
+packages and exact child/owner/tag identity. The archive metadata,
+archive bytes, package bytes and live identities are checked again
+before returning.
+
+Before downloading producer packages, use `verify-request` with the same
+independently supplied identity arguments, artifact ID and downloaded
+request ZIP, but **without** a package directory. It validates the exact
+archive, both owner signatures and canonical manifest inventory (exact
+versioned names, positive integer sizes and lowercase SHA-256 digests),
+then repeats live identity and artifact checks. This preflight sets
+`signedOwnerManifestVerified` and `signedDispatchBindingVerified` to true
+but leaves `packageBytesVerified`, `producerArtifactVerified` and
+`publicationAuthorized` false. It does not authorize installation or
+publication. After independently verifying and extracting producer
+packages, the full `verify` operation remains mandatory. Numeric CLI and
+Actions runtime IDs must be canonical positive ASCII decimal strings
+(up to 15 digits); input selectors are not trusted merely because they
+parse successfully. The caller still needs to establish the dispatch
+inputs and independent pin outside the downloaded artifact.
+
+After request preflight and safe producer extraction, use
+`verify-producer` instead of full `verify`, adding
+`--producer-job-id "$PRODUCER_JOB_ID"` and
+`--producer-archive "$PRODUCER_ZIP"`. The job ID is a separate
+selector from the completed producer run, not authority from the request
+ZIP. The worker first verifies the exact owner request and local package
+bytes, then the separate completed reusable producer run, the approved
+job and its successful attest/upload steps, exact artifact metadata and
+ZIP (maximum 512 MiB), and both package SLSA signatures. It matches
+the signed producer digests to the independently pinned owner manifest
+and repeats producer job, artifact, live owner/child/tag and local byte
+checks. This needs only read-side run, tag, artifact and attestation
+access. It reports producer artifact and package signature verification,
+not proof that a particular job uploaded the artifact. Draft Release,
+protected-tag ruleset, registry, exclusive-writer and publication
+authority remain unverified by the worker. Neither this diagnostic nor
+its predecessors download, install or publish packages. A caller must
+use a separate request preflight before downloading the producer archive.
+
+Alternatively, `fetch-producer` combines request preflight, bounded
+producer download, safe extraction and full producer verification. Pass
+the same request artifact ID and ZIP, independent dispatch selectors
+(or `--from-event`), and a fresh `--directory` under an existing approved
+parent. It accepts neither a producer job ID nor a producer ZIP override:
+it selects one exact approved reusable job from the complete producer
+attempt listing and downloads only the independently identified
+artifact through the GitHub API. The download is bounded by the exact
+metadata size (at most 512 MiB) and a 120-second subprocess deadline.
+Private staging is cleaned on failure; the package directory is exposed
+only after all signature, identity, archive and package checks pass.
+A runner-owned private output parent is required in practice to exclude
+concurrent writers; the final rename is not a filesystem lock. The
+reported success remains diagnostic, not permission to install or
+publish. No production workflow is wired to this operation yet.
+
+Use `wait` instead of `discover` when the owner is still preparing
+the request artifact. It checks live owner, child and tag identities
+at each poll, and repeats those checks when the artifact appears.
+Only the absence of the exact expected name in a complete listing is
+retryable for artifact discovery: at most 30 polls, five seconds between unsuccessful polls.
+Expired, duplicate, truncated, changed or otherwise inconsistent
+evidence and API errors stop immediately. The production-shaped worker
+diagnostics also wait for a verified owner to resume from a known
+nonterminal job-boundary state: at most 12 polls, five seconds apart,
+per paired identity check. Each poll validates the exact owner, active
+worker and tag; no pending owner authorizes acceptance. Maintainer
+preflight still requires an immediately in-progress owner. The caller must impose an
+overall job timeout that includes API latency; the poll limit alone
+does not bound wall-clock time. Discovery and wait do not attest ZIP
+bytes. A future orchestration job must provide trusted expected input
+provenance, the exact artifact download and safe producer extraction.
+This command does not publish, install, dispatch or download files
+itself; its output does not establish artifact-producing job identity,
+registry or exclusive-writer authority. No production workflow invokes
+it yet.
+
+#### Integrated tagged handoff rehearsal (non-publishing)
+
+The isolated `tagged-handoff-rehearsal.yml` owner and
+`tagged-handoff-worker.yml` worker exercise real tag-dispatch transport
+without invoking a production publisher. After the workflow pair has
+passed review and is merged, audit the exact reviewed tree's triggers and
+live tag rules; create only the dedicated non-release tag
+`handoff-rehearsal-<reviewed-source-sha>` at that exact main commit.
+Do not create a Release or use a production tag. Run the owner workflow
+on that same main commit. An intervening main change, wrong tag, rerun
+or non-owner dispatch must fail closed.
+
+The owner dispatch job alone receives Actions write access. It dispatches
+once using the versioned API's returned child run ID, never a name/time
+guess or blind retry. The separate signing job prepares two deterministic
+synthetic records and attests them with the rehearsal-only workflow
+identity. The worker receives read-only contents, Actions and attestation
+access. Dispatch supplies the numeric owner run ID as an untrusted
+selector, not authorization. The worker validates its ASCII decimal
+format, rejects its own run ID, and directly reads the exact owner
+and worker runs and live tag. It requires the active owner workflow,
+trusted actor IDs, exact source and attempts; it never searches a
+filtered owner run listing. Dispatch preflight requires an immediately
+in-progress owner. During delivery and receipt checks, a verified
+nonterminal owner may briefly be queued between jobs. Only those
+known pending states allow up to 12 polls, five seconds apart, per
+identity check. Every poll checks exact owner, worker and tag identity;
+acceptance still requires an in-progress owner. Terminal outcomes,
+identity mismatches and API failures stop immediately. Job timeouts
+bound the combined polling and API latency. The subsequently verified
+signed binding must match the worker's own run ID. It waits at most 30 polls with
+five seconds between absent-artifact polls. Only the exact unique
+owner ZIP (maximum 64 KiB) is accepted; it must contain the two bounded
+records, each at most 16 KiB. The download pipeline caps bytes and the
+verifier compares exact metadata, digest and regenerated record bytes,
+verifies both owner attestations, and repeats live identity checks.
+
+The completed child returns a receipt binding the source, tag, owner
+and worker IDs, request artifact ID, archive hash and both record hashes.
+The owner waits at most 60 polls, checks the exact successful child and
+its unique tag-scoped receipt ZIP, and compares the entire receipt against
+the independently regenerated expected value. All jobs have explicit
+timeouts. Rehearsal signatures and receipt checks do not authorize any
+publication or establish production draft, producer, protected-tag,
+registry or exclusive-writer acceptance. The integrated non-publishing tag transport, actual two-subject
+attestation verification and receipt round trip were accepted in
+[owner run 45753637083](https://github.com/oaslananka/kicad-mcp-pro/actions/runs/45753637083)
+and [worker run 45753660771](https://github.com/oaslananka/kicad-mcp-pro/actions/runs/45753660771)
+at source `cb93dd8e15624325bf68839b6ee7e2f6e93f6908`. The worker
+observed an owner `queued` transition and recovered; both runs
+succeeded and both ZIPs and signatures were independently verified
+([#1179 evidence](https://github.com/oaslananka/kicad-mcp-pro/issues/1179#issuecomment-7182409358)).
+No registry environment or production signing identity was used.
+
+
+### Python registry receipt preparation (read-only, not wired)
+
+After the worker has independently verified the signed request and producer
+packages, the future registry-only worker can prepare a canonical unsigned
+receipt from those exact local files:
+
+```bash
+python -m scripts.check_python_registry_receipt --from-event \
+  --artifact-id "$REQUEST_ARTIFACT_ID" --archive "$REQUEST_ZIP" \
+  --directory "$DIST" > python-worker-registry-receipt.json
+```
+
+The command re-verifies both owner signatures, live worker/owner/tag identity,
+the independently pinned manifest and exact local wheel/sdist bytes. It reads
+only production PyPI over HTTPS, with no redirects, a 4 MiB response limit and
+30-second socket timeout. It requires the complete two-file version inventory,
+exact names, sizes and SHA-256 values, and non-yanked files. Both distributions
+must have matching PEP 740 publish metadata **and** cryptographic provenance
+for the reviewed repository, `publish-python.yml` and `pypi` environment
+using the existing release dependency group. It repeats the registry inventory,
+request archive and local manifest checks before emitting the record.
+
+The receipt binds the exact owner, child, producer selectors, manifest pin,
+request artifact ID/digest, package/version and both file digests. It is
+unsigned and not an accepted receipt: publisher provenance does not prove
+which worker run published the files, or that this invocation performed a
+publication. Producer verification, draft/tag policy, exclusive writer
+ownership and publication authorization are not established by this command.
+The future owner must independently verify the worker's signed receipt and
+registry evidence before final Release publication. The current workflow
+does not call this command or grant new permissions. Use runner-private
+staging; repeated reads do not prevent races after the final check.
+
+### Owner acceptance of a signed Python registry receipt (read-only, not wired)
+
+Once the exact independently dispatched worker has completed successfully,
+the maintainer can verify its signed receipt without authorizing publication:
+
+```bash
+python -m scripts.check_owner_python_registry_receipt \
+  --tag "$TAG" --source-commit "$SOURCE_SHA" \
+  --release-id "$RELEASE_ID" --owner-run-id "$OWNER_RUN_ID" \
+  --owner-attempt "$OWNER_ATTEMPT" --producer-run-id "$PRODUCER_RUN_ID" \
+  --producer-attempt "$PRODUCER_ATTEMPT" --producer-artifact-id "$PRODUCER_ARTIFACT_ID" \
+  --producer-job-id "$PRODUCER_JOB_ID" --downloaded-zip "$PRODUCER_ZIP" \
+  --manifest-sha256 "$OWNER_PIN" --worker-run-id "$WORKER_RUN_ID" --worker-attempt 1 \
+  --artifact-id "$REQUEST_ARTIFACT_ID" --archive "$REQUEST_ZIP" --directory "$DIST" \
+  --receipt "$RECEIPT" --receipt-sha256 "$RECEIPT_PIN"
+```
+
+All selectors and pins must be obtained independently of the untrusted receipt.
+The receipt must have the canonical filename and exact canonical bytes. The
+verifier requires a successful terminal child (not a pending, failed or retried
+run), its exact tag source and repository identity, and a cryptographically
+verified SLSA receipt signature for the reviewed worker workflow, exact tag
+and source commit, and exact child invocation in both certificate and predicate.
+It rechecks both signed owner records, draft and tag rules, exact producer
+artifact/job/package signatures and local package bytes. It independently
+reads the complete PyPI inventory and verifies both PEP 740 publisher
+attestations. It repeats child/owner/request/producer/registry and local byte
+checks before reporting success.
+
+Use only an authorized maintainer credential with complete tag ruleset
+visibility, and private staging. Success authenticates the receipt bytes and
+independent registry evidence; it does not prove receipt artifact transport,
+which job uploaded an artifact, dispatch causality, the exact PyPI publication
+invocation, exclusive writer ownership, or authorization to publish. Those
+flags remain false. This command does not sign, dispatch, upload or publish
+anything, and is not called by production workflows. The future owner still
+needs to bind receipt delivery and enforce the exclusive writer lifecycle.
+
+### Exact worker receipt delivery (read-only, not wired)
+
+The owner may now use `python -m scripts.check_owner_python_receipt_delivery`
+with the same independent selectors, manifest/receipt pins, request ZIP,
+producer ZIP and package directory as the preceding command. Replace
+`--receipt "$RECEIPT"` with either:
+
+- `--receipt-artifact-id "$RECEIPT_ARTIFACT_ID" --receipt-archive "$RECEIPT_ZIP"`
+  to verify an existing archive; or
+- `--fetch` to discover and download the exact receipt from the terminal worker.
+
+The expected artifact name is
+`python-worker-receipt-<worker-attempt>-<owner-run-id>` on the exact child
+run. The owner requires a complete listing of at most 100 artifacts, exactly
+one matching unexpired artifact, matching list/detail metadata, numeric
+repository and run identity, exact tag and source commit, a valid SHA-256
+archive digest and a size of at most 64 KiB. Fetch uses the existing fixed-host,
+exact-ID bounded downloader (120-second timeout) in a private temporary
+directory, never a caller-supplied remote URL. Both modes reject unsafe,
+duplicate or additional ZIP members, require the single canonical receipt
+JSON (at most 16 KiB), compare its bytes to the independent receipt pin and
+run the full owner-side signed receipt and registry verification. The
+artifact identity and bytes are checked again before success; temporary
+files are removed on failure and success.
+
+This proves receipt artifact delivery and signed receipt acceptance, not
+which worker job uploaded the artifact or which run published to PyPI.
+It does not establish an exclusive writer or authorize publication.
+The production workflow is unchanged. The enclosing job must provide a
+wall-clock timeout and runner-private staging; checks are snapshots, not
+a distributed lock.
+
+### Owner reconciliation without a worker-supplied receipt pin
+
+Use the receipt-delivery command with `--reconcile` instead of
+`--fetch` or the manual receipt artifact options. Omit
+`--receipt-sha256` in this mode: it is generated independently from the
+owner's verified request ZIP, signed dispatch and manifest, and verified
+producer package bytes. The command first waits for the exact child run to
+finish (at most 60 observations, five seconds between nonterminal
+observations). It checks the active owner, draft and protected tag on each
+observation and rejects unexpected states, failed runs and changed identities.
+The enclosing job must impose its own wall-clock timeout, including API calls.
+
+Only after verifying the owner/producer evidence and rechecking its bytes
+does the owner derive the expected canonical receipt digest. The digest
+alone is not a registry result or authority to publish. The command then
+fetches and verifies the exact worker receipt artifact, worker signature and
+independent registry evidence using the same verification as manual mode.
+A conflicting or missing artifact fails closed. There is no worker-supplied
+digest override in reconciliation mode, and no dispatch, retry, signing,
+registry write or Release mutation. Exclusive writer verification and the
+production cutover remain separate.

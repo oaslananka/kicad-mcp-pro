@@ -12,7 +12,13 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from kicad_mcp import cloud_user_cli, cloud_windows_connector, cloud_windows_user_cli, server
+from kicad_mcp import (
+    cloud_user_cli,
+    cloud_windows_connector,
+    cloud_windows_initial_enrollment,
+    cloud_windows_user_cli,
+    server,
+)
 
 _REAL_SETUP_WINDOWS = cloud_windows_user_cli.setup_windows
 
@@ -20,7 +26,9 @@ _REAL_SETUP_WINDOWS = cloud_windows_user_cli.setup_windows
 @pytest.fixture(autouse=True)
 def _isolate_test_connector_mutex(monkeypatch: pytest.MonkeyPatch) -> None:
     """Unit tests use their own mutex, never the owner's running Connector."""
-    from kicad_mcp import cloud_windows_single_instance
+    from kicad_mcp import cloud_windows_device_bootstrap, cloud_windows_single_instance
+
+    monkeypatch.setattr(cloud_windows_device_bootstrap, "owner_recovery_pending", lambda: False)
 
     monkeypatch.setattr(
         cloud_windows_single_instance,
@@ -488,50 +496,6 @@ def test_remote_policy_rejection_exits_with_actionable_status_no_traceback(
     assert "/devices" in result.output
     assert "Traceback" not in result.output
     assert state["calls"] == ["task_removed"]
-
-
-@pytest.mark.parametrize("invalid", ["no-saved-device", "foreign-cloud", "changed-folder"])
-def test_device_repair_fails_closed_without_changing_existing_project(
-    remote_fixture: tuple[dict[str, Any], Path], invalid: str
-) -> None:
-    state, folder = remote_fixture
-    if invalid == "no-saved-device":
-        state["project"] = None
-    elif invalid == "foreign-cloud":
-        state["project"].origin = "https://other-cloud.example"
-    path = folder if invalid == "changed-folder" else None
-    with pytest.raises(typer.BadParameter):
-        cloud_user_cli._select_remote_project(
-            cloud_user_cli.DEFAULT_CLOUD_ORIGIN,
-            browse=False,
-            project_dir=path,
-            no_browser=False,
-            repair_device=True,
-        )
-    assert state["calls"] == []
-
-
-def test_explicit_device_repair_routes_through_browser_owner_approval(
-    remote_fixture: tuple[dict[str, Any], Path], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    state, _ = remote_fixture
-    approved: list[str] = []
-
-    def repaired(previous: object, **args: object) -> object:
-        assert previous == state["project"]
-        assert args["origin"] == cloud_user_cli.DEFAULT_CLOUD_ORIGIN
-        assert callable(args["approval"])
-        assert callable(args["stop_previous"])
-        approved.append("owner-browser-repair")
-        return previous
-
-    monkeypatch.setattr(cloud_windows_user_cli, "repair_windows_project", repaired)
-    result = cloud_user_cli._select_remote_project(
-        cloud_user_cli.DEFAULT_CLOUD_ORIGIN, False, None, False, True
-    )
-    assert result == state["project"]
-    assert approved == ["owner-browser-repair"]
-    assert state["calls"] == []
 
 
 def test_native_drc_requires_a_foreground_opt_in_on_the_actual_remote_command(
@@ -1078,7 +1042,18 @@ def test_unbound_cloud_pairs_once_then_reuses_identity_without_browser(
         status_callback("Connected")
 
     monkeypatch.setattr(bootstrap, "remember_device", remember)
-    monkeypatch.setattr(enrollment, "enroll_windows_device", enroll)
+
+    def ensure(origin, alias, approval):
+        if "device" not in current:
+            remember(enroll(origin=origin, alias=alias, owner_approval=approval))
+        return current["device"]
+
+    monkeypatch.setattr(cloud_windows_initial_enrollment, "ensure_device", ensure)
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_call_with_owner_connector",
+        lambda fn, *args, **kwargs: fn(*args, **kwargs),
+    )
     monkeypatch.setattr(bootstrap, "run_device_only", serve)
     monkeypatch.setattr(
         cloud_user_cli, "_display_cloud_status", lambda event, _origin: calls.append(event)
@@ -1122,16 +1097,205 @@ def test_unbound_cloud_denied_pairing_never_opens_signed_session(
     monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
     monkeypatch.setattr(bootstrap, "selected_device", lambda: None)
 
-    def rejected(**_kwargs: object) -> None:
+    def rejected(*_args: object, **_kwargs: object) -> None:
         raise enrollment.WindowsEnrollmentError("Owner denied pairing")
 
     async def must_not_connect(*_args: object, **_kwargs: object) -> None:
         pytest.fail("Denied enrollment must not open signed session")
 
-    monkeypatch.setattr(enrollment, "enroll_windows_device", rejected)
+    monkeypatch.setattr(cloud_windows_initial_enrollment, "ensure_device", rejected)
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_call_with_owner_connector",
+        lambda fn, *args, **kwargs: fn(*args, **kwargs),
+    )
     monkeypatch.setattr(bootstrap, "run_device_only", must_not_connect)
     with pytest.raises(typer.BadParameter, match="Owner denied pairing"):
         cloud_user_cli._connect_unbound_windows_device(
             cloud_user_cli.DEFAULT_CLOUD_ORIGIN,
             "PC",
         )
+
+
+def test_repair_command_never_registers_old_project(remote_fixture, monkeypatch) -> None:
+    from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
+
+    state, _ = remote_fixture
+    monkeypatch.setattr(
+        bootstrap,
+        "repair_device_only",
+        lambda **kwargs: state["calls"].append("device-only"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        cloud_windows_user_cli,
+        "register_windows_project",
+        lambda *_args, **_kwargs: pytest.fail("repair must not register a project"),
+    )
+    result = CliRunner().invoke(server.app, ["cloud", "remote", "--repair-device"])
+    assert result.exit_code == 0, result.output
+    assert state["calls"] == ["device-only"]
+    assert "Add Project" in result.output
+
+
+def test_repair_rejects_project_and_edit_options(remote_fixture, monkeypatch) -> None:
+    from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
+
+    monkeypatch.setattr(
+        bootstrap,
+        "repair_device_only",
+        lambda **kwargs: pytest.fail("must not pair"),
+        raising=False,
+    )
+    for option in ("--browse", "--enable-native-write", "--allow-native-drc"):
+        result = CliRunner().invoke(server.app, ["cloud", "remote", "--repair-device", option])
+        assert result.exit_code != 0
+        assert "repair" in result.output.lower()
+
+
+@pytest.mark.parametrize("approved", [True, False])
+def test_single_command_recovers_policy_failure_at_most_once(monkeypatch, approved) -> None:
+    calls = []
+    monkeypatch.setattr(cloud_user_cli, "_is_windows", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+
+    def session() -> None:
+        calls.append("session")
+        raise typer.Exit(3)
+
+    monkeypatch.setattr(cloud_user_cli, "_run_windows_cloud_session", session, raising=False)
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_offer_device_recovery",
+        lambda: calls.append("recover") or approved,
+        raising=False,
+    )
+    result = CliRunner().invoke(server.app, ["cloud"])
+    assert result.exit_code == 3
+    assert calls == (["session", "recover", "session"] if approved else ["session", "recover"])
+
+
+@pytest.mark.parametrize("fault", ["none", "pin", "replay", "headless", "foreign"])
+def test_installer_cloud_managed_edit_uses_only_trusted_owner_session(
+    remote_fixture, monkeypatch, fault
+) -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from kicad_mcp import cloud_windows_write_issuer as issuer
+    from kicad_mcp import cloud_windows_write_marker as marker
+    from kicad_mcp.cloud_write_contract import LocalWriteDeniedError
+
+    state, folder = remote_fixture
+    state["project"].record_id = "a" * 32
+    key = Ed25519PrivateKey.generate().public_key()
+    events = []
+    if fault == "headless":
+        monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: False)
+    if fault == "foreign":
+        state["project"].origin = "https://other.example"
+
+    def pin(record: str, *, origin: str) -> None:
+        assert record == "a" * 32
+        assert origin == cloud_user_cli.DEFAULT_CLOUD_ORIGIN
+        events.append("pin")
+        if fault == "pin":
+            raise LocalWriteDeniedError("denied")
+
+    def replay() -> Path:
+        events.append("replay")
+        if fault == "replay":
+            raise LocalWriteDeniedError("denied")
+        return folder
+
+    async def run(**options: object) -> None:
+        assert options["allow_native_write"] is True
+        assert options["issuer_key"] is key
+        events.append("signed-edit-capable-session")
+
+    monkeypatch.setattr(issuer, "trust_bundled_owner_cloud_issuer", pin)
+    monkeypatch.setattr(issuer, "load_pinned_windows_write_issuer_key", lambda _: key)
+    monkeypatch.setattr(marker, "prepare_owner_windows_write_marker_directory", replay)
+    monkeypatch.setattr(cloud_windows_connector, "run_connector", run)
+    result = CliRunner().invoke(server.app, ["cloud", "--managed-edit"])
+    if fault == "none":
+        assert result.exit_code == 0, result.output
+        assert events == ["pin", "replay", "signed-edit-capable-session"]
+        assert state["calls"] == ["task_removed"]
+    else:
+        assert result.exit_code != 0
+        assert "signed-edit-capable-session" not in events
+        assert state["calls"] == []
+        if fault in {"headless", "foreign"}:
+            assert events == []
+
+
+@pytest.mark.parametrize("denied", [False, True])
+def test_device_recovery_has_no_terminal_confirmation(monkeypatch, denied: bool) -> None:
+    from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
+    from kicad_mcp.cloud_windows_enrollment import WindowsRecoveryDeniedError
+
+    device = SimpleNamespace(
+        origin=cloud_user_cli.DEFAULT_CLOUD_ORIGIN, owner_sub="owner", device_id=str(uuid4())
+    )
+    monkeypatch.setattr(bootstrap, "selected_device", lambda: device)
+    monkeypatch.setattr(cloud_windows_connector, "selected_project", lambda: None)
+    monkeypatch.setattr(bootstrap, "verified_device_key", lambda _: object())
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_device_inventory_status.inspect_inventory", lambda *_: "unverified"
+    )
+
+    monkeypatch.setattr(
+        typer, "confirm", lambda *_args, **_kwargs: pytest.fail("extra confirmation")
+    )
+    events = []
+
+    def recover(**kwargs: object) -> None:
+        events.append("browser")
+        if denied:
+            raise WindowsRecoveryDeniedError("Existing device kept.")
+
+    monkeypatch.setattr(bootstrap, "repair_device_only", recover)
+    monkeypatch.setattr(cloud_user_cli, "_call_with_owner_connector", lambda fn: fn())
+    assert cloud_user_cli._offer_device_recovery() is not denied
+    assert events == ["browser"]
+
+
+def test_default_cloud_reconciles_before_reading_selected_project(monkeypatch) -> None:
+    from kicad_mcp import cloud_windows_device_bootstrap as boot
+
+    events = []
+    monkeypatch.setattr(cloud_user_cli, "_is_windows", lambda: True)
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    monkeypatch.setattr(boot, "owner_recovery_pending", lambda: True)
+    monkeypatch.setattr(boot, "resume_owner_recovery", lambda *_: events.append("resume") or True)
+    monkeypatch.setattr(cloud_user_cli, "_call_with_owner_connector", lambda fn, *args: fn(*args))
+    monkeypatch.setattr(cloud_windows_connector, "selected_project", lambda: events.append("read"))
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_connect_unbound_windows_device",
+        lambda *_: events.append("connect") or False,
+    )
+    result = CliRunner().invoke(server.app, ["cloud"])
+    assert result.exit_code == 0, result.output
+    assert events == ["resume", "read", "connect"]
+
+
+def test_unbound_cloud_update_exit_does_not_transition_to_project(monkeypatch) -> None:
+    from kicad_mcp import cloud_windows_device_bootstrap as bootstrap
+
+    origin = cloud_user_cli.DEFAULT_CLOUD_ORIGIN
+    monkeypatch.setattr(cloud_user_cli, "_owner_terminal", lambda: True)
+    device = SimpleNamespace(origin=origin)
+    monkeypatch.setattr(bootstrap, "selected_device", lambda: device)
+    monkeypatch.setattr(cloud_windows_initial_enrollment, "ensure_device", lambda *_: device)
+    monkeypatch.setattr(
+        cloud_user_cli,
+        "_call_with_owner_connector",
+        lambda fn, *args, **kwargs: fn(*args, **kwargs),
+    )
+
+    async def drained(*_args: object) -> bool:
+        return True
+
+    monkeypatch.setattr(cloud_user_cli, "_windows_update_session", drained)
+    assert not cloud_user_cli._connect_unbound_windows_device(origin, "PC")

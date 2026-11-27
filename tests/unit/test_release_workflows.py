@@ -33,14 +33,14 @@ def test_protocol_schema_release_contract_matches_existing_release_history() -> 
     assert "startsWith(github.event.release.tag_name, 'protocol-schemas-v')" in workflow
 
 
-def test_python_trusted_publish_is_tag_gated_and_provenance_verified() -> None:
+def test_python_trusted_publish_is_published_release_gated_and_provenance_verified() -> None:
     workflow = _read(".github/workflows/publish-python.yml")
 
-    assert 'tags:\n      - "mcp-server-v*"' in workflow
-    assert "\n  release:" not in workflow
+    assert "\n  release:\n    types: [published]" in workflow
+    assert "\n  push:" not in workflow
     assert "inputs.target == 'pypi'" not in workflow
     assert "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'" in workflow
-    assert "startsWith(github.ref, 'refs/tags/mcp-server-v')" in workflow
+    assert "startsWith(github.event.release.tag_name, 'mcp-server-v')" in workflow
     assert workflow.count("verify-pypi-provenance") == 2
     assert "pypi-attestations verify pypi" not in workflow
     assert "--staging" not in workflow
@@ -100,8 +100,11 @@ def test_publish_workflows_are_idempotent_for_existing_versions() -> None:
     python_workflow = _read(".github/workflows/publish-python.yml")
     npm_workflow = _read(".github/workflows/publish-npm.yml")
 
-    assert python_workflow.count("Check if version already published") == 2
-    assert python_workflow.count("steps.check-published.outputs.already_published != 'true'") == 2
+    assert python_workflow.count("Stage missing verified Python distributions") == 2
+    assert python_workflow.count("steps.stage-upload.outputs.missing_count == '1'") == 2
+    assert python_workflow.count("steps.stage-upload.outputs.missing_count == '2'") == 2
+    assert python_workflow.count("packages-dir: pending-dist") == 2
+    assert python_workflow.count("stage-pypi-upload") == 2
     assert "Check if version already published" in npm_workflow
     assert "steps.check-published.outputs.already_published != 'true'" in npm_workflow
 

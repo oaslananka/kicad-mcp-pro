@@ -284,3 +284,20 @@ async def test_folder_only_entrypoint_rejects_missing_local_folder_factory() -> 
             signing_key=Ed25519PrivateKey.generate(),
             folder_service_factory=None,
         )
+
+
+@pytest.mark.asyncio
+async def test_update_drain_prevents_new_folder_request() -> None:
+    from kicad_mcp.cloud_managed_read_transport import serve_owner_folder_only
+
+    drain = asyncio.Event()
+    drain.set()
+    socket = Socket([folder_request("bind", folderId="token", projectId=PROJECT)])
+    folder = OwnerFolder()
+    receipt = HandshakeReceipt(DEVICE, SESSION)
+    assert (
+        await asyncio.wait_for(serve_owner_folder_only(socket, receipt, folder, drain=drain), 1)
+        == receipt
+    )
+    assert not folder.bound
+    assert not socket.sent

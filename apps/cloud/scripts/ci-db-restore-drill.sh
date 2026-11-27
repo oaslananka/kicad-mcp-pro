@@ -12,6 +12,11 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 image=$1
 docker image inspect "$image" >/dev/null
+# Read the reviewed manifest from the exact image under test, not a
+# hard-coded count which drifts whenever a new migration is added.
+migration_count="$(docker run --rm --network none "$image" node --input-type=module -e \
+  'import {migrationFiles} from "./dist/migrations.js"; console.log(migrationFiles.length)')"
+[[ "$migration_count" =~ ^[1-9][0-9]*$ ]] || { echo 'Invalid migration manifest count' >&2; exit 1; }
 suffix="$(openssl rand -hex 7)"
 # Generated for disposable test containers only. Never persisted or logged.
 fixture_password="$(openssl rand -hex 24)"
@@ -31,7 +36,9 @@ for name in "$source" "$target"; do
     -e POSTGRES_USER=fixture -e "POSTGRES_PASSWORD=$fixture_password" \
     -e POSTGRES_DB=cloud_fixture postgres:17-alpine >/dev/null
   attempts=0
-  until docker exec "$name" pg_isready -q -U fixture -d cloud_fixture; do
+  # pg_isready alone can succeed during PostgreSQL's temporary init server.
+  until docker logs "$name" 2>&1 | grep -F 'PostgreSQL init process complete; ready for start up' >/dev/null &&
+    docker exec "$name" pg_isready -q -h 127.0.0.1 -U fixture -d cloud_fixture; do
     attempts=$((attempts+1))
     if ((attempts>=35)); then
       echo 'Temporary PostgreSQL fixture failed to become ready' >&2
@@ -63,7 +70,7 @@ assert_eq() {
 echo 'Restore drill: applying reviewed database schema in source fixture'
 cli "$source" --status >/dev/null
 cli "$source" --apply >/dev/null
-assert_eq "$(sql "$source" 'SELECT count(*) FROM schema_migrations')" "18" "source migration count"
+assert_eq "$(sql "$source" 'SELECT count(*) FROM schema_migrations')" "$migration_count" "source migration count"
 
 # Only synthetic metadata; no physical KiCad paths, files or user credentials.
 sql "$source" "INSERT INTO devices(id,owner_sub,alias,enabled) VALUES
@@ -93,6 +100,28 @@ sql "$source" "INSERT INTO device_credentials
   VALUES ('c3e0d32d-d8bf-49c8-ae15-f2acc4c147b7','fixture-owner',
     repeat('A',64),repeat('a',64),
     'd83484f3-5515-46a5-96dd-3b92b73721c0')" >/dev/null
+
+# Receipt is metadata only; restoration must not reactivate a device.
+sql "$source" "INSERT INTO device_initial_enrollments(pairing_challenge_id,device_id,owner_sub)
+  VALUES ('d83484f3-5515-46a5-96dd-3b92b73721c0','c3e0d32d-d8bf-49c8-ae15-f2acc4c147b7',
+    'fixture-owner')" >/dev/null
+
+# Preserve historical receipts whose devices have been deleted. Neither
+# record confers a credential, a project grant, or an enabled device.
+sql "$source" "INSERT INTO pairing_challenges
+  (id,device_alias,device_public_key_der,device_fingerprint,user_code_mac,device_code_mac,expires_at,state,owner_sub)
+  VALUES ('9d4ad18e-5772-477a-96e2-1689e69511d4','Removed Initial Device',
+    repeat('B',64),repeat('1',64),repeat('2',64),repeat('3',64),
+    clock_timestamp()+interval '4 minutes','consumed','fixture-owner'),
+  ('396183c4-d2fe-490c-a6cb-ab38b2f88b19','Removed Replacement',
+    repeat('C',64),repeat('4',64),repeat('5',64),repeat('6',64),
+    clock_timestamp()+interval '4 minutes','consumed','fixture-owner')" >/dev/null
+sql "$source" "INSERT INTO device_initial_enrollments(pairing_challenge_id,device_id,owner_sub)
+  VALUES ('9d4ad18e-5772-477a-96e2-1689e69511d4','e90ded38-a190-4bcd-9870-2a944dbe384f',
+    'fixture-owner')" >/dev/null
+sql "$source" "INSERT INTO device_replacements(owner_sub,previous_device_id,replacement_device_id,pairing_challenge_id)
+  VALUES ('fixture-owner','05f5801f-8294-4f3b-b950-18b4fa896144','4c2c7ec7-f40c-469b-a61c-2c37a2c7cf45',
+    '396183c4-d2fe-490c-a6cb-ab38b2f88b19')" >/dev/null
 
 # Synthetic pending nonce DIGEST only; neither a real nonce nor a signing key.
 sql "$source" "INSERT INTO device_handshake_challenges
@@ -138,7 +167,7 @@ docker exec "$source" pg_dump -Fc -U fixture -d cloud_fixture \
 echo 'Restore drill: checking migrations, permissions and authorization fences'
 cli "$target" --status >/dev/null
 cli "$target" --apply >/dev/null
-assert_eq "$(sql "$target" 'SELECT count(*) FROM schema_migrations')" "18" "restored migration ledger"
+assert_eq "$(sql "$target" 'SELECT count(*) FROM schema_migrations')" "$migration_count" "restored migration ledger"
 assert_eq "$(sql "$target" "SELECT count(*) FROM devices WHERE owner_sub='fixture-owner'")" "1" "device metadata"
 assert_eq "$(sql "$target" "SELECT count(*) FROM projects WHERE owner_sub='fixture-owner'")" "1" "project metadata"
 assert_eq "$(sql "$target" "SELECT count(*) FROM project_client_grants WHERE owner_sub='fixture-owner' AND client_id='fixture-client' AND enabled")" "1" "client grant metadata"
@@ -157,7 +186,7 @@ END \$do\$" >/dev/null
 assert_eq "$(sql "$target" 'SELECT count(*) FROM "oauthRefreshToken"')" "0" "rejected token was not inserted"
 source_ledger="$(sql "$source" "SELECT md5(string_agg(version || ':' || checksum, '|' ORDER BY version)) FROM schema_migrations")"
 target_ledger="$(sql "$target" "SELECT md5(string_agg(version || ':' || checksum, '|' ORDER BY version)) FROM schema_migrations")"
-assert_eq "$(sql "$target" 'SELECT count(*) FROM pairing_challenges')" "1" "restored pairing metadata"
+assert_eq "$(sql "$target" 'SELECT count(*) FROM pairing_challenges')" "3" "restored pairing metadata"
 assert_eq "$(sql "$target" "SELECT attempts FROM pairing_review_budget WHERE owner_sub='fixture-owner'")" "3" "restored pairing review budget"
 assert_eq "$(sql "$target" "SELECT attempts FROM pairing_device_budget WHERE budget_key=repeat('f',64)")" "4" "restored device pairing budget"
 assert_eq "$(sql "$target" 'SELECT count(*) FROM device_credentials WHERE revoked_at IS NULL')" "1" "restored public-key device credential"
@@ -169,5 +198,18 @@ assert_eq "$(sql "$target" "SELECT count(*) FROM owner_read_approvals
 assert_eq "$(sql "$target" "SELECT state FROM connector_sessions WHERE id='17bcf345-4d7f-43f1-b2d6-ed6ee2418a6e'")" "pending" "restored pending session"
 assert_eq "$(sql "$target" "SELECT status FROM device_handshake_challenges WHERE id='41763f41-bebb-476c-a18a-58d303841e91'")" "pending" "handshake remains pending"
 assert_eq "$(sql "$target" "SELECT count(*) FROM device_credentials WHERE owner_sub='fixture-owner' AND device_id IN (SELECT id FROM devices WHERE owner_sub='fixture-owner')")" "1" "credential ownership"
+assert_eq "$(sql "$target" "SELECT count(*) FROM device_initial_enrollments
+  WHERE pairing_challenge_id='d83484f3-5515-46a5-96dd-3b92b73721c0'
+    AND device_id='c3e0d32d-d8bf-49c8-ae15-f2acc4c147b7' AND owner_sub='fixture-owner'")" "1" "restored initial receipt"
+assert_eq "$(sql "$target" "SELECT count(*) FROM device_initial_enrollments i
+  JOIN pairing_challenges p ON p.id=i.pairing_challenge_id AND p.owner_sub=i.owner_sub
+  WHERE i.device_id='e90ded38-a190-4bcd-9870-2a944dbe384f' AND p.state='consumed'
+  AND NOT EXISTS (SELECT 1 FROM devices d WHERE d.id=i.device_id)")" "1" "restored deleted initial receipt"
+assert_eq "$(sql "$target" "SELECT count(*) FROM device_replacements r
+  JOIN pairing_challenges p ON p.id=r.pairing_challenge_id AND p.owner_sub=r.owner_sub
+  WHERE r.previous_device_id='05f5801f-8294-4f3b-b950-18b4fa896144'
+  AND r.replacement_device_id='4c2c7ec7-f40c-469b-a61c-2c37a2c7cf45' AND p.state='consumed'
+  AND NOT EXISTS (SELECT 1 FROM devices d WHERE d.id IN (r.previous_device_id,r.replacement_device_id))")" "1" "restored deleted replacement receipt"
+assert_eq "$(sql "$target" 'SELECT count(*) FROM device_credentials')" "1" "no extra restored credentials"
 assert_eq "$target_ledger" "$source_ledger" "restored checksum ledger"
-echo 'Restore drill passed: all thirteen migrations, owner receipt ledger, pairing metadata, cutoff policy and triggers recovered'
+printf 'Restore drill passed: all %s migrations, owner receipt ledger, pairing metadata, cutoff policy and triggers recovered\n' "$migration_count"

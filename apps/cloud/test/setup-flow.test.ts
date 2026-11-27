@@ -56,5 +56,8 @@ test("AI setup precedes the empty app list and leads back to project access",()=
   const devices=renderDevicesPage([]);
   assert.match(devices,/Copy PowerShell setup command/);
   assert.match(devices,/scripts\/install-cloud\.ps1/);
+  assert.match(devices,/Copy macOS and Linux setup command/);
+  assert.match(devices,/scripts\/install-cloud\.sh/);
+  assert.doesNotMatch(devices,/cloud setup --browse/);
   assert.match(devices,/src="\/assets\/copy-value\.js"/);
 });

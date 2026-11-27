@@ -61,7 +61,7 @@ jobs:
           package_version="$(python -c 'import json; print(json.load(open("packages/mcp-npm/package.json"))["version"])')"
           test "$version" = "$package_version"
           echo "sha=$head_sha" >> "$GITHUB_OUTPUT"
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d
         with:
           enable-cache: false
           version-file: uv.toml
@@ -117,9 +117,20 @@ jobs:
           path: release-assets/mcp-npm
           if-no-files-found: error
           retention-days: 14
+      # Recovery may build from an older tag. Run the safety helper from the
+      # exact workflow revision, not the historical package checkout.
+      - name: Load reviewed release attachment helper
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+          sparse-checkout: scripts
+          persist-credentials: false
+
       - name: Attach npm evidence to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          PYTHONPATH: ${{ github.workspace }}/.release-tools
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
         run: |
           set -euo pipefail
@@ -128,7 +139,10 @@ jobs:
           cp ../../release-assets/mcp-npm/*.tgz "$upload_dir/"
           cp ../../release-assets/mcp-npm/SHA256SUMS.txt "$upload_dir/mcp-npm-SHA256SUMS.txt"
           cp ../../release-assets/mcp-npm/sbom.cdx.json "$upload_dir/mcp-npm-sbom.cdx.json"
-          gh release upload "$RELEASE_TAG" "$upload_dir"/* --clobber
+          python3 -P -m scripts.attach_published_release_assets \
+            --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
+            --source-commit "$(git rev-parse HEAD)" --source-root "$GITHUB_WORKSPACE" \
+            --execute "$upload_dir"/*
       - name: Verify npm checksums before publish
         run: (cd ../../release-assets/mcp-npm && sha256sum --check SHA256SUMS.txt)
       - name: Check if version already published
@@ -159,5 +173,11 @@ jobs:
       - name: Attach npm post-publish verification to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          PYTHONPATH: ${{ github.workspace }}/.release-tools
           RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.release_tag }}
-        run: gh release upload "$RELEASE_TAG" ../../release-assets/npm-verify/npm-published-digest.json --clobber
+        run: |
+          set -euo pipefail
+          python3 -P -m scripts.attach_published_release_assets \
+            --repo "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
+            --source-commit "$(git rev-parse HEAD)" --source-root "$GITHUB_WORKSPACE" \
+            --execute ../../release-assets/npm-verify/npm-published-digest.json

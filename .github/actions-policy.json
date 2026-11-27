@@ -31,6 +31,22 @@
     "SonarSource/sonarqube-scan-action"
   ],
   "workflow_write_permissions": {
+    "tagged-handoff-rehearsal.yml": {
+      "dispatch": ["actions"],
+      "sign": ["artifact-metadata", "attestations", "id-token"]
+    },
+    "signed-python-handoff-rehearsal.yml": {
+      "sign": [
+        "artifact-metadata",
+        "attestations",
+        "id-token"
+      ]
+    },
+    "release-handoff-rehearsal.yml": {
+      "handoff": [
+        "actions"
+      ]
+    },
     "auto-assign.yml": {
       "assign": [
         "issues"
@@ -259,54 +275,54 @@
       "job": "build",
       "step": "Attach Python evidence to GitHub Release",
       "kind": "upload_asset",
-      "clobber": true,
+      "clobber": false,
       "issue": "#1179",
-      "reason": "Python wheel/sdist, SHA256SUMS, SBOM and release evidence are uploaded with --clobber after Release Please has already published the mcp-server release."
+      "reason": "Legacy published-release attachment: independently verify existing bytes, upload missing assets only, and verify readback. Still incompatible with immutable releases when an asset is missing."
     },
     {
       "workflow": "publish-npm.yml",
       "job": "publish",
       "step": "Attach npm evidence to GitHub Release",
       "kind": "upload_asset",
-      "clobber": true,
+      "clobber": false,
       "issue": "#1179",
-      "reason": "npm launcher tarball, SHA256SUMS and SBOM are uploaded with --clobber from a release:published run."
+      "reason": "Legacy published-release attachment: independently verify existing bytes, upload missing assets only, and verify readback. Still incompatible with immutable releases when an asset is missing."
     },
     {
       "workflow": "publish-npm.yml",
       "job": "publish",
       "step": "Attach npm post-publish verification to GitHub Release",
       "kind": "upload_asset",
-      "clobber": true,
+      "clobber": false,
       "issue": "#1179",
-      "reason": "npm-published-digest.json is produced after npm publish and uploaded with --clobber onto the published release; it must move to attestations/workflow artifacts or run before release publication."
+      "reason": "Legacy published-release attachment: independently verify existing bytes, upload missing assets only, and verify readback. Still incompatible with immutable releases when an asset is missing."
     },
     {
       "workflow": "publish-mcpb.yml",
       "job": "publish",
       "step": "Attach MCPB bundle and evidence to GitHub Release",
       "kind": "upload_asset",
-      "clobber": true,
+      "clobber": false,
       "issue": "#1179",
-      "reason": "MCPB bundle and evidence are uploaded with --clobber from a release:published run."
+      "reason": "Legacy published-release attachment: independently verify existing bytes, upload missing assets only, and verify readback. Still incompatible with immutable releases when an asset is missing."
     },
     {
       "workflow": "publish-protocol-schemas.yml",
       "job": "publish",
       "step": "Attach evidence to GitHub Release",
       "kind": "upload_asset",
-      "clobber": true,
+      "clobber": false,
       "issue": "#1179",
-      "reason": "Protocol schemas tarball, SHA256SUMS and SBOM are uploaded with --clobber from a release:published run."
+      "reason": "Legacy published-release attachment: independently verify existing bytes, upload missing assets only, and verify readback. Still incompatible with immutable releases when an asset is missing."
     },
     {
       "workflow": "publish-kicad-pcm.yml",
       "job": "publish",
       "step": "Attach KiCad PCM package and evidence to GitHub Release",
       "kind": "upload_asset",
-      "clobber": true,
+      "clobber": false,
       "issue": "#1179",
-      "reason": "KiCad PCM package and evidence are uploaded with --clobber from a release:published run."
+      "reason": "Legacy published-release attachment: independently verify existing bytes, upload missing assets only, and verify readback. Still incompatible with immutable releases when an asset is missing."
     }
   ]
 }

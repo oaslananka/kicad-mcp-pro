@@ -1,0 +1,84 @@
+name: Signed Python handoff rehearsal (non-publishing)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signed-python-handoff-rehearsal-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    if: >-
+      github.repository == 'oaslananka/kicad-mcp-pro' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'oaslananka' &&
+      github.actor_id == '285490571' &&
+      github.triggering_actor == 'oaslananka'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    outputs:
+      manifest-pin: ${{ steps.fixture.outputs.pin }}
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Prepare synthetic manifest and independent pin
+        id: fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          pin="$(python3 -m scripts.rehearse_signed_python_handoff generate \
+            --bundle rehearsal-bundle --source "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT")"
+          [[ "$pin" =~ ^[a-f0-9]{64}$ ]]
+          printf 'pin=%s\n' "$pin" >> "$GITHUB_OUTPUT"
+      - name: Attest synthetic manifest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: rehearsal-bundle/python-worker-rehearsal.json
+      - name: Store synthetic bundle
+        id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: signed-handoff-rehearsal-${{ github.run_attempt }}
+          path: rehearsal-bundle/
+          if-no-files-found: error
+          retention-days: 3
+  verify:
+    needs: sign
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          artifact-ids: ${{ needs.sign.outputs.artifact-id }}
+          path: rehearsal-bundle
+      - name: Verify exact signed rehearsal evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANIFEST_PIN: ${{ needs.sign.outputs.manifest-pin }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          python3 -m scripts.rehearse_signed_python_handoff verify \
+            --bundle rehearsal-bundle --source "$GITHUB_SHA" \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
+            --pin "$MANIFEST_PIN"

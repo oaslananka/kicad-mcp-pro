@@ -10,6 +10,62 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.24.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.23.0...mcp-server-v4.24.0) (2026-11-27)
+
+
+### Features
+
+* **release:** bind independent dispatch inputs to worker runtime ([#1936](https://github.com/oaslananka/kicad-mcp-pro/issues/1936)) ([ec55735](https://github.com/oaslananka/kicad-mcp-pro/commit/ec5573581fd7fb76063b5cff1ef37d661c311c98))
+* **release:** bind signed Python request to owner and producer ([#1924](https://github.com/oaslananka/kicad-mcp-pro/issues/1924)) ([8f49d85](https://github.com/oaslananka/kicad-mcp-pro/commit/8f49d85dad5169e5cde38a78d08c1078f0e2da1e))
+* **release:** fetch verified worker producer packages after preflight ([#1938](https://github.com/oaslananka/kicad-mcp-pro/issues/1938)) ([446673e](https://github.com/oaslananka/kicad-mcp-pro/commit/446673eea687f91855ed2432241096387a2678c6))
+* **release:** independently verify worker producer evidence ([#1937](https://github.com/oaslananka/kicad-mcp-pro/issues/1937)) ([4e15b86](https://github.com/oaslananka/kicad-mcp-pro/commit/4e15b86c87a5e4d52a728ddcc090dbbf7f72bb9f))
+* **release:** prepare read-only Python registry receipt ([#1939](https://github.com/oaslananka/kicad-mcp-pro/issues/1939)) ([0791a8d](https://github.com/oaslananka/kicad-mcp-pro/commit/0791a8dba83b14418f3539fcc7a88fd18c5f31d8))
+* **release:** prepare verified post-dispatch owner bindings ([#1934](https://github.com/oaslananka/kicad-mcp-pro/issues/1934)) ([c8aafc4](https://github.com/oaslananka/kicad-mcp-pro/commit/c8aafc416b9e5b8149aa9fe6be017e391b83cffe))
+* **release:** prepare verified unsigned owner manifests ([#1933](https://github.com/oaslananka/kicad-mcp-pro/issues/1933)) ([386920e](https://github.com/oaslananka/kicad-mcp-pro/commit/386920e5c79353bad332068af0e136d776d7966f))
+* **release:** reconcile Python worker receipt with independent owner pin ([#1179](https://github.com/oaslananka/kicad-mcp-pro/issues/1179)) ([#1942](https://github.com/oaslananka/kicad-mcp-pro/issues/1942)) ([dbb01b5](https://github.com/oaslananka/kicad-mcp-pro/commit/dbb01b55352862bf2108c91576f9b277a3d2cb46))
+* **release:** rehearse isolated owner and registry worker handoff ([#1920](https://github.com/oaslananka/kicad-mcp-pro/issues/1920)) ([017d5f9](https://github.com/oaslananka/kicad-mcp-pro/commit/017d5f99d0b0c9cee214966d4f490d3fd6775463))
+* **release:** rehearse isolated signed Python handoff ([#1923](https://github.com/oaslananka/kicad-mcp-pro/issues/1923)) ([f1e8a3c](https://github.com/oaslananka/kicad-mcp-pro/commit/f1e8a3c3f13665172bcf9ec6723d0338546e5256))
+* **release:** rehearse signed handoff on isolated tag ([#1928](https://github.com/oaslananka/kicad-mcp-pro/issues/1928)) ([6cc882b](https://github.com/oaslananka/kicad-mcp-pro/commit/6cc882b467b36a91e6e43f4c9ce54c226fefd7d6))
+* **release:** verify and fetch exact terminal Python receipt artifact ([#1941](https://github.com/oaslananka/kicad-mcp-pro/issues/1941)) ([71b0d23](https://github.com/oaslananka/kicad-mcp-pro/commit/71b0d237942c58deaec4b0d0fd448484a24236ef))
+* **release:** verify exact signed Python worker request delivery ([#1925](https://github.com/oaslananka/kicad-mcp-pro/issues/1925)) ([80ca50c](https://github.com/oaslananka/kicad-mcp-pro/commit/80ca50cde9a5048db4272834fca4e19098df6dc2))
+* **release:** verify live protected tag and numeric owner identity ([#1921](https://github.com/oaslananka/kicad-mcp-pro/issues/1921)) ([0a31629](https://github.com/oaslananka/kicad-mcp-pro/commit/0a31629db6ccaee425d73274cfcf73abba6a3ae8))
+* **release:** verify signed Python worker handoff manifest ([#1922](https://github.com/oaslananka/kicad-mcp-pro/issues/1922)) ([4da905a](https://github.com/oaslananka/kicad-mcp-pro/commit/4da905ae9a5720ac8d65f14e99d446bea8e317de))
+* **release:** verify signed terminal Python registry receipt as owner ([#1940](https://github.com/oaslananka/kicad-mcp-pro/issues/1940)) ([1566957](https://github.com/oaslananka/kicad-mcp-pro/commit/1566957dab42ac07da3bcc2c2de7c2709ea16ae0))
+* **release:** verify signed worker requests before package download ([#1935](https://github.com/oaslananka/kicad-mcp-pro/issues/1935)) ([9ec10c4](https://github.com/oaslananka/kicad-mcp-pro/commit/9ec10c4c4ad8911dcfd1b1f9ce3e9bc703e80456))
+
+
+### Bug Fixes
+
+* **cloud:** single-command device recovery without implicit projects ([#1944](https://github.com/oaslananka/kicad-mcp-pro/issues/1944)) ([#1945](https://github.com/oaslananka/kicad-mcp-pro/issues/1945)) ([71e03fb](https://github.com/oaslananka/kicad-mcp-pro/commit/71e03fb10661e24ac938dad8c38c8aedfe14297b))
+* **docs:** describe current IPC companion and qualify PCM evidence ([#1918](https://github.com/oaslananka/kicad-mcp-pro/issues/1918)) ([aaecbfa](https://github.com/oaslananka/kicad-mcp-pro/commit/aaecbfaf7626582f722abc14546e00ca5a94982a))
+* **release:** await exact owner job transitions ([#1931](https://github.com/oaslananka/kicad-mcp-pro/issues/1931)) ([cb93dd8](https://github.com/oaslananka/kicad-mcp-pro/commit/cb93dd8e15624325bf68839b6ee7e2f6e93f6908))
+* **release:** bound tagged owner discovery wait ([#1929](https://github.com/oaslananka/kicad-mcp-pro/issues/1929)) ([54e46e4](https://github.com/oaslananka/kicad-mcp-pro/commit/54e46e4a8ec500e65d944d0986a2965bfc15597f))
+* **release:** handle production worker owner transitions ([#1932](https://github.com/oaslananka/kicad-mcp-pro/issues/1932)) ([fa2fa78](https://github.com/oaslananka/kicad-mcp-pro/commit/fa2fa7831ea11beafd01d9455415e4dc4681cb9c))
+* **release:** recover interrupted Python package uploads ([#1179](https://github.com/oaslananka/kicad-mcp-pro/issues/1179)) ([#1919](https://github.com/oaslananka/kicad-mcp-pro/issues/1919)) ([fb192a7](https://github.com/oaslananka/kicad-mcp-pro/commit/fb192a79b54186ebf8724889e698373bc8c145a0))
+* **release:** use exact tagged owner selector ([#1930](https://github.com/oaslananka/kicad-mcp-pro/issues/1930)) ([32ccfb8](https://github.com/oaslananka/kicad-mcp-pro/commit/32ccfb8dd6c40f0d8854b752a1553d5fc2a94380))
+
+## [4.23.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.6...mcp-server-v4.23.0) (2026-11-25)
+
+
+### Features
+
+* **ir:** ingest verified native schematic hierarchies ([#1907](https://github.com/oaslananka/kicad-mcp-pro/issues/1907)) ([8cf3067](https://github.com/oaslananka/kicad-mcp-pro/commit/8cf3067c85b659bbf2bb381d68d3ea7c445680ae))
+* **pcb:** integrate verified persistent physical footprint state ([#1912](https://github.com/oaslananka/kicad-mcp-pro/issues/1912)) ([cb905fa](https://github.com/oaslananka/kicad-mcp-pro/commit/cb905fa6373f0b23eb171fb73a472bf68c4cc009))
+
+
+### Bug Fixes
+
+* **release:** preserve published assets on recovery ([#1179](https://github.com/oaslananka/kicad-mcp-pro/issues/1179)) ([#1914](https://github.com/oaslananka/kicad-mcp-pro/issues/1914)) ([c6d3d4d](https://github.com/oaslananka/kicad-mcp-pro/commit/c6d3d4d71f2d490702f75753e014f21b8168f4a8))
+* **release:** require published release for Python production ([#1179](https://github.com/oaslananka/kicad-mcp-pro/issues/1179)) ([#1916](https://github.com/oaslananka/kicad-mcp-pro/issues/1916)) ([78cda19](https://github.com/oaslananka/kicad-mcp-pro/commit/78cda19ef76e249e486c8cf60bc78fd69552db36))
+* **state:** scope native edit tokens to live state instances ([#1908](https://github.com/oaslananka/kicad-mcp-pro/issues/1908)) ([603e194](https://github.com/oaslananka/kicad-mcp-pro/commit/603e194846b7b8249453ed150f2296401bcdea98))
+* **state:** verify native sources at sidecar publication and reopen ([#1910](https://github.com/oaslananka/kicad-mcp-pro/issues/1910)) ([8a50c93](https://github.com/oaslananka/kicad-mcp-pro/commit/8a50c938a4011b45036ba249afef492c9e18a243))
+
+
+### Performance Improvements
+
+* **pcb:** reuse verified file-backed footprint listing records ([#1911](https://github.com/oaslananka/kicad-mcp-pro/issues/1911)) ([a4ec723](https://github.com/oaslananka/kicad-mcp-pro/commit/a4ec72305c11b87daf3d533ee98a5683648d439e))
+* **state:** verify native sidecars without duplicate graph construction ([#1909](https://github.com/oaslananka/kicad-mcp-pro/issues/1909)) ([8c4e1a0](https://github.com/oaslananka/kicad-mcp-pro/commit/8c4e1a0ea502e1337773242ed29a556ba8d38374))
+
 ## [4.22.6](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.22.5...mcp-server-v4.22.6) (2026-11-24)
 
 

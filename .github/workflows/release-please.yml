@@ -25,7 +25,7 @@ jobs:
       # release-artifact sync push trigger the normal CI graph without a long-lived maintainer PAT.
       - name: Mint release automation token
         id: release-app-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc
         with:
           client-id: ${{ vars.OASLANANKA_OPS_APP_CLIENT_ID }}
           private-key: ${{ secrets.OASLANANKA_OPS_APP_PRIVATE_KEY }}
@@ -61,7 +61,7 @@ jobs:
           token: ${{ steps.release-app-token.outputs.token }}
           persist-credentials: false
       - if: ${{ steps.release-pr-branch.outputs.branch != '' }}
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
+        uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d
         with:
           enable-cache: false
       - if: ${{ steps.release-pr-branch.outputs.branch != '' }}

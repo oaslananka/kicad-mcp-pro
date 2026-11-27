@@ -5,10 +5,14 @@ on:
     branches: [main]
     paths:
       - "apps/cloud/**"
+      - "scripts/install-cloud.sh"
+      - "tests/shell/cloud-posix-installer.test.sh"
       - ".github/workflows/cloud-ci.yml"
   pull_request:
     paths:
       - "apps/cloud/**"
+      - "scripts/install-cloud.sh"
+      - "tests/shell/cloud-posix-installer.test.sh"
       - ".github/workflows/cloud-ci.yml"
   workflow_dispatch:
 
@@ -53,6 +57,9 @@ jobs:
           node-version-file: .node-version
           cache: npm
           cache-dependency-path: apps/cloud/package-lock.json
+      - name: Test POSIX setup in isolated owner terminals
+        working-directory: .
+        run: bash tests/shell/cloud-posix-installer.test.sh
       - name: Install Cloud dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Validate Cloud types, build and tests
@@ -61,6 +68,9 @@ jobs:
       # Fail before deployment if a required build helper is excluded.
       - name: Build Cloud production container (no publish)
         run: docker build --file Dockerfile --tag "kicad-cloud-ci:$GITHUB_SHA" --build-arg "APP_REVISION=$GITHUB_SHA" .
+      - name: Verify PostgreSQL backup and restore (isolated fixtures)
+        timeout-minutes: 5
+        run: bash scripts/ci-db-restore-drill.sh "kicad-cloud-ci:$GITHUB_SHA"
       - name: Validate Cloudflare edge contracts
         run: node --test scripts/test-cloudflare-edge.mjs
 

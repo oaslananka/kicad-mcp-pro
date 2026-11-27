@@ -91,6 +91,7 @@ def test_package_built_and_attested_without_any_release_or_registry_writes() -> 
     for phrase in (
         "gh release ",
         "gh release upload",
+        "scripts.attach_published_release_assets",
         "npm publish",
         "docker push",
         "mcp-publisher publish",

@@ -30,15 +30,17 @@ failed CI runs, cancelled/skipped aggregate gates, fork-originated CI and daily
 release preparation cannot start publication. The publish-capable GitHub App
 token is minted **only after** this verification.
 
-The existing tag/release-triggered workflows then publish the respective
+The existing published-release-triggered workflows then publish the respective
 packages and verify the usual checksums, SBOMs, provenance, and attestations.
 This keeps protected PR review and CI as the publication approval boundary;
 merging a release PR is an intentional authorization to publish once those
 checks succeed.
 
 Today Release Please publishes each GitHub Release before the publishers
-attach their assets, and the publishers upload with `--clobber`. This is not
-compatible with immutable GitHub Releases. The step-by-step map, the
+attach their assets. The publishers now verify existing bytes and upload
+missing assets only, without `--clobber`. Missing assets still cannot be
+attached after immutable publication, so this is not yet compatible with
+immutable GitHub Releases. The step-by-step map, the
 `release_asset_mutations` ratchet and the proposed draft-first design are in
 [Release asset immutability](release-asset-immutability.md) (#1179).
 
@@ -67,6 +69,36 @@ or permission to enable immutable Releases**. The existing publish-first
 owner workflow remains active until the separately reviewed and fully
 accepted draft-first cutover. Do not replay previously published v4.7.0 tags
 to exercise this migration.
+
+### Registry worker handoff rehearsal (#1179)
+
+After the reviewed rehearsal workflows reach main, an authorized maintainer
+can manually run **Release handoff rehearsal (non-publishing)** on main.
+The single serialized rehearsal job dispatches exactly one separate,
+top-level worker using the versioned GitHub API, and waits at most five
+minutes for that returned run ID. It does not discover a child by name
+or time. The worker accepts no dispatch inputs. It resolves exactly one active
+serialized rehearsal owner for its own main commit, verifies that run and
+attempt and its own bot identity, and computes the source manifest digest.
+The
+owner validates the completed child run, numeric artifact ID, archive
+size and SHA-256, and exact receipt bytes. Missing, stale, duplicate,
+failed or conflicting evidence fails closed.
+
+Only the dispatch job has Actions write permission; the worker has Actions
+and contents read permission. The Actions write scope is needed for the
+fixed dispatch endpoint, not a capability restricted by GitHub to that
+endpoint. Neither job receives a production publishing environment,
+OIDC, contents write or packages write permission. The receipt has
+three-day retention and explicitly denies publication authorization
+and exclusive-writer proof. A cancelled or failed rehearsal must not be
+treated as an accepted handoff; rerun the owner rather than the worker.
+
+This tests the dispatch/receipt transport using the main source manifest,
+not protected-tag registry authentication, package provenance, draft
+creation, exclusive production ownership or immutable publication. The
+existing release producers and publishers remain unchanged. A live run
+is required before claiming transport acceptance.
 
 For recovery only, an authorized maintainer can still use **Actions → Publish
 Release → Run workflow**, selecting `main`. The automatic and manual paths

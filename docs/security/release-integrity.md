@@ -11,7 +11,8 @@ Current target: **evidence-backed professional release integrity**. The project 
 Each release artifact class should provide the strongest evidence supported by its ecosystem: checksums, SBOMs, GitHub artifact attestations, package-registry provenance, container digests, and post-publish verification. A future formal level can be defined per artifact class after the evidence map is stable.
 
 Release assets are currently attached after the GitHub Release is published,
-so they can still be replaced. The per-family asset and upload map, and the
+so they are not yet immutable. Active publishers verify existing bytes and
+upload missing assets only. The per-family asset and upload map, and the
 ratchet that blocks new post-publication mutations, are documented in
 [Release asset immutability](../development/release-asset-immutability.md)
 (#1179).
@@ -77,6 +78,26 @@ This verifies **PyPI publication provenance**, not a separately distributed
 Sigstore signature file for the GitHub Release wheel. The repository does not
 publish a standalone wheel signature bundle for `4.0.2`, so a plain
 `python -m sigstore verify identity <wheel>` command is not a working substitute.
+
+### Interrupted Python uploads
+
+PyPI and TestPyPI publish the wheel and source archive independently. A
+version appearing in the registry does not prove both files were uploaded.
+The existing trusted-publisher jobs now verify the complete local distribution
+inventory, then stage only missing files in a fresh upload directory.
+An existing file must match its approved SHA-256 digest and pass cryptographic
+PEP 740 publisher verification before any missing file is staged. Only a
+version lookup returning HTTP 404 is treated as absent; other HTTP errors,
+malformed inventories, unexpected files and digest or provenance conflicts
+stop the job without authorizing a publish. A fully matching release stages
+zero files and skips the upload action. The original distributions and both
+final full-release digest and provenance checks remain intact.
+
+This recovers partial registry publication in the existing reviewed release
+workflow, not an immutable GitHub Release cutover. Do not replace a registry
+file, relax its trusted-publisher identity, or enable immutable Releases
+based on this change. If a concurrent upload races the preflight, allow the
+registry to reject it and revalidate the exact approved bytes on recovery.
 
 ## GitHub Artifact Attestations
 

@@ -1,0 +1,33 @@
+name: Release handoff rehearsal (non-publishing)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-handoff-rehearsal-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  handoff:
+    if: >-
+      github.repository == 'oaslananka/kicad-mcp-pro' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == 'oaslananka' &&
+      github.actor_id == '285490571' &&
+      github.triggering_actor == 'oaslananka'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Dispatch and verify one non-publishing worker
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/rehearse_release_handoff.sh owner

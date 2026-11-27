@@ -162,8 +162,21 @@ export function pairingApprovalState(
   return record.state==="approved"&&nowMs<record.expiresAtMs;
 }
 
-export function redemptionProof(id: string, deviceCode: string): Buffer {
-  return Buffer.from("kicad-cloud-pairing-proof-v1\0" + id + "\0" + deviceCode, "utf8");
+export type RecoveryIdentity=Readonly<{deviceId:string;ownerSub:string}>;
+
+export function validRecoveryIdentity(value:RecoveryIdentity):boolean{
+  return typeof value.deviceId==="string"&&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value.deviceId)&&
+    typeof value.ownerSub==="string"&&value.ownerSub.length>=1&&value.ownerSub.length<=256&&
+    !/[\x00-\x1f\x7f]/.test(value.ownerSub);
+}
+
+export function redemptionProof(id: string, deviceCode: string, recovery?:RecoveryIdentity, resumeInitial=false): Buffer {
+  if(resumeInitial)return Buffer.from("kicad-cloud-pairing-initial-v1\0"+id+"\0"+deviceCode,"utf8");
+  return recovery
+    ?Buffer.from("kicad-cloud-pairing-recovery-v1\0"+id+"\0"+deviceCode+"\0"+
+      recovery.deviceId+"\0"+recovery.ownerSub,"utf8")
+    :Buffer.from("kicad-cloud-pairing-proof-v1\0"+id+"\0"+deviceCode,"utf8");
 }
 
 /**
@@ -172,24 +185,45 @@ export function redemptionProof(id: string, deviceCode: string): Buffer {
  */
 export function redeemPairing(
   record: PairingRecord, serverKey: Buffer, nowMs: number,
-  deviceCode: string, signature: Buffer
+  deviceCode: string, signature: Buffer, recovery?:RecoveryIdentity, resumeInitial=false
 ): RedeemResult {
   requireServerKey(serverKey);
-  if (!validClock(nowMs)) return { kind: "unavailable", record };
+  if (!validClock(nowMs)||(recovery&&!validRecoveryIdentity(recovery))||(resumeInitial&&recovery)) return { kind: "unavailable", record };
   const current = stateAt(record, nowMs);
-  if (current.state !== "approved" || !current.ownerSub ||
-      typeof deviceCode !== "string" || deviceCode.length > 128 ||
-      !Buffer.isBuffer(signature) || signature.length !== 64 ||
-      !matches(serverKey, "device", deviceCode, current.deviceCodeMac)) {
-    return { kind: "unavailable", record: current };
-  }
-  try {
-    const key = createPublicKey({ key: Buffer.from(current.devicePublicKeyDer, "base64"), format: "der", type: "spki" });
-    if (key.asymmetricKeyType !== "ed25519" || !verify(null, redemptionProof(current.id, deviceCode), key, signature)) {
-      return { kind: "unavailable", record: current };
-    }
-  } catch {
-    return { kind: "unavailable", record: current };
+  if(current.state!=="approved"||!current.ownerSub||
+     !verifyRedemptionProof(current,serverKey,deviceCode,signature,recovery,resumeInitial)){
+    return {kind:"unavailable",record:current};
   }
   return { kind: "redeemed", record: { ...current, state: "consumed" }, ownerSub: current.ownerSub };
+}
+
+
+/** Proof verification alone never issues or re-enables a device. */
+function verifyRedemptionProof(record:PairingRecord,serverKey:Buffer,deviceCode:string,
+  signature:Buffer,recovery?:RecoveryIdentity,resumeInitial=false):boolean{
+  if(typeof deviceCode!=="string"||deviceCode.length>128||
+     !Buffer.isBuffer(signature)||signature.length!==64||
+     !matches(serverKey,"device",deviceCode,record.deviceCodeMac))return false;
+  try{
+    const key=createPublicKey({key:Buffer.from(record.devicePublicKeyDer,"base64"),format:"der",type:"spki"});
+    return key.asymmetricKeyType==="ed25519"&&
+      verify(null,redemptionProof(record.id,deviceCode,recovery,resumeInitial),key,signature);
+  }catch{return false;}
+}
+
+/** Only for an immutable receipt lookup or authenticated terminal refusal. */
+export function verifyFinishedRecovery(record:PairingRecord,serverKey:Buffer,
+  deviceCode:string,signature:Buffer,recovery:RecoveryIdentity):boolean{
+  requireServerKey(serverKey);
+  return (record.state==="consumed"||record.state==="expired")&&
+    validRecoveryIdentity(recovery)&&record.ownerSub===recovery.ownerSub&&
+    verifyRedemptionProof(record,serverKey,deviceCode,signature,recovery);
+}
+
+/** A signed, opt-in initial request may reconcile only its own durable receipt. */
+export function verifyFinishedInitial(record:PairingRecord,serverKey:Buffer,
+  deviceCode:string,signature:Buffer):boolean{
+  requireServerKey(serverKey);
+  return (record.state==="consumed"||record.state==="expired"||record.state==="denied"||record.state==="locked")&&
+    verifyRedemptionProof(record,serverKey,deviceCode,signature,undefined,true);
 }

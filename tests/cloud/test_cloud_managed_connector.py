@@ -252,7 +252,8 @@ def test_posix_cloud_device_bound_second_project_is_readable_then_revocable(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """The project the owner added on Devices must actually work, and revoke."""
-    from kicad_mcp.cloud_folder_browse_receiver import device_folder_service, handle_folder_frame
+    from kicad_mcp.cloud_folder_browse_receiver import handle_folder_frame
+    from kicad_mcp.cloud_posix_project_bindings import folder_service
 
     root, project = _root(tmp_path)
     (project.project_directory / "board.kicad_pro").write_text("{}", encoding="utf-8")
@@ -271,11 +272,12 @@ def test_posix_cloud_device_bound_second_project_is_readable_then_revocable(
         connector._FOREGROUND_FILE,
         connector._identity_state(record, connector._FOREGROUND_FILE),
     )
-    service = device_folder_service(
-        project.project_directory,
-        bindings_file=bindings_file,
+    service = folder_service(
+        root,
+        record,
+        project,
+        lambda: connector._is_enabled(root, record, connector._FOREGROUND_FILE),
         native_picker=lambda: chosen,
-        authorization=lambda: connector._is_enabled(root, record, connector._FOREGROUND_FILE),
     )
 
     def browser_frame(operation: str, **fields: object) -> str:
@@ -329,7 +331,7 @@ def test_posix_cloud_device_bound_second_project_is_readable_then_revocable(
     dispatcher.assert_delivery_authorized(raw, device_id=DEVICE, session_id=SESSION)
 
     # Removing the local mapping must deny delivery even after read completed.
-    bindings_file.unlink()
+    (root / "project-bindings" / DEVICE / (new_project + ".json")).unlink()
     with pytest.raises(LocalReadDeniedError):
         dispatcher.assert_delivery_authorized(raw, device_id=DEVICE, session_id=SESSION)
     revoked_read = frame(new_project)
@@ -1348,3 +1350,160 @@ def test_disable_without_marker_does_not_claim_stop_while_runner_holds_lock(
         captured = capsys.readouterr()
         assert "unverified" in captured.err
         assert "is Off" not in captured.out
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("foreground", [True, False])
+async def test_policy_close_routes_only_foreground_to_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, foreground: bool
+) -> None:
+    from websockets.exceptions import ConnectionClosedError
+    from websockets.frames import Close
+
+    root, project = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    stop = asyncio.Event()
+    if not foreground:
+        connector._write_private_json(
+            root, connector._ENABLED_FILE, connector._identity_state(record)
+        )
+    attempts = []
+
+    async def rejected(**_kwargs: object) -> bool:
+        attempts.append("session")
+        raise ConnectionClosedError(Close(1008, "policy"), None)
+
+    async def wait(*_args: object) -> None:
+        attempts.append("backoff")
+        stop.set()
+
+    monkeypatch.setattr(connector, "_run_registered_session", rejected)
+    monkeypatch.setattr(connector, "_wait_before_reconnect", wait)
+    result = await connector._run_connector(
+        root=root, stop_event=stop, foreground=foreground, expected_identity=record
+    )
+    assert result == (3 if foreground else 0)
+    assert attempts == (["session"] if foreground else ["session", "backoff"])
+    assert not (root / connector._FOREGROUND_FILE).exists()
+    assert project.key_file.exists()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("state", ["project_missing", "active", "unavailable"])
+async def test_official_foreground_checks_deleted_primary_before_socket(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, state: str
+) -> None:
+    from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+    root, project = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    record["cloudOrigin"] = _KICAD_CLOUD_ORIGIN
+    connector._write_private_json(root / "projects", PROJECT + ".json", record)
+    stop = asyncio.Event()
+    calls = []
+
+    def inspect(_origin, _owner, _device, pid, _key):
+        calls.append(pid)
+        return state
+
+    async def session(**_kwargs: object) -> None:
+        calls.append("socket")
+        stop.set()
+
+    monkeypatch.setattr("kicad_mcp.cloud_device_inventory_status.inspect_inventory", inspect)
+    monkeypatch.setattr(connector, "_session_until_stopped", session)
+    result = await connector._run_connector(
+        root=root,
+        foreground=True,
+        expected_identity=record,
+        stop_event=stop,
+        key_loader=lambda *_: Ed25519PrivateKey.generate(),
+    )
+    assert result == (3 if state == "project_missing" else 0)
+    assert calls == ([PROJECT] if state == "project_missing" else [PROJECT, "socket"])
+    assert project.key_file.exists()
+    assert not (root / connector._FOREGROUND_FILE).exists()
+
+
+@pytest.mark.anyio
+async def test_foreground_update_drain_exits_without_reconnecting(tmp_path, monkeypatch) -> None:
+    root, _ = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    drain = asyncio.Event()
+    calls = []
+
+    async def session(**kwargs: object) -> None:
+        assert kwargs["drain"] is drain
+        calls.append("socket")
+        drain.set()
+
+    monkeypatch.setattr(connector, "_session_until_stopped", session)
+    result = await asyncio.wait_for(
+        connector._run_connector(
+            root=root,
+            foreground=True,
+            expected_identity=record,
+            drain=drain,
+            key_loader=lambda *_: Ed25519PrivateKey.generate(),
+        ),
+        2,
+    )
+    assert result == 0
+    assert calls == ["socket"]
+    assert not (root / connector._FOREGROUND_FILE).exists()
+    assert (root / "projects" / (PROJECT + ".json")).exists()
+    assert (root / "keys" / (DEVICE + ".pem")).exists()
+    with connector._connector_session_lock(root):
+        pass
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("policy_close", [False, True])
+async def test_installer_request_drains_real_foreground_loop(
+    tmp_path, monkeypatch, policy_close
+) -> None:
+    from kicad_mcp import cloud_posix_update_control as control
+    from kicad_mcp.cloud_windows_write_issuer import _KICAD_CLOUD_ORIGIN
+
+    root, _ = _root(tmp_path)
+    record = connector._single_registered_identity(root)
+    record["cloudOrigin"] = _KICAD_CLOUD_ORIGIN
+    connector._write_private_json(root / "projects", PROJECT + ".json", record)
+    generation = uuid4().hex
+    monkeypatch.setenv("KICAD_CLOUD_UPDATE_GENERATION", generation)
+    monkeypatch.setenv("KICAD_CLOUD_UPDATE_SLOT", "a")
+    monkeypatch.setattr(
+        "kicad_mcp.cloud_device_inventory_status.inspect_inventory", lambda *_: "unavailable"
+    )
+    events = []
+
+    async def session(**kwargs: object) -> None:
+        drain = kwargs["drain"]
+        assert isinstance(drain, asyncio.Event)
+        events.append("connected")
+        assert control.probe(root) == (generation, "a")
+        assert control.request(root, generation, "a")
+        await asyncio.wait_for(drain.wait(), 2)
+        events.append("drained")
+        if policy_close:
+            from websockets.exceptions import ConnectionClosedError
+            from websockets.frames import Close
+
+            raise ConnectionClosedError(Close(1008, "policy"), None)
+
+    monkeypatch.setattr(connector, "_session_until_stopped", session)
+    assert (
+        await asyncio.wait_for(
+            connector._run_connector(
+                root=root,
+                foreground=True,
+                expected_identity=record,
+                key_loader=lambda *_: Ed25519PrivateKey.generate(),
+            ),
+            3,
+        )
+        == 0
+    )
+    assert events == ["connected", "drained"]
+    assert control.probe(root) is None
+    assert not (root / connector._FOREGROUND_FILE).exists()

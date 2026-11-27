@@ -68,7 +68,7 @@ def test_actionlint_uses_pinned_upstream_go_module_without_binary_sdist() -> Non
     toolchain = next(
         step
         for step in steps
-        if step.get("uses", "") == "actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e"
+        if step.get("uses", "") == "actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5"
     )
     assert toolchain["with"]["go-version"] == "1.27"
     assert toolchain["with"]["cache"] is False
@@ -474,6 +474,15 @@ def test_main_sonar_coverage_uses_windows_native_evidence() -> None:
     assert "mcp-server" not in jobs["coverage"]["needs"]
     assert "actions" in jobs["coverage"]["permissions"]
     assert "scripts/merge_platform_coverage.py stamp" in collector["run"]
+    # Native vault and generation mutex tests must contribute actual Windows hits.
+    for path in (
+        "tests/unit/test_cloud_windows_single_instance.py",
+        "tests/unit/test_cloud_windows_update_control.py",
+        "tests/unit/test_cloud_windows_initial_enrollment.py",
+        "tests/unit/test_cloud_windows_scoped_projects.py",
+        "tests/cloud/test_cloud_windows_write_project_binding.py",
+    ):
+        assert path in collector["run"]
     assert "scripts/merge_platform_coverage.py merge" in merge["run"]
     assert "scripts/check_patch_coverage.py" in linux["Enforce Python patch coverage"]["run"]
     assert "--min-percent 90" in linux["Enforce Python patch coverage"]["run"]

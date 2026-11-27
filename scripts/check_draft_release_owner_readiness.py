@@ -119,6 +119,7 @@ def check_readiness(
         "assetCount": len(family["assetNames"]),
         "familyAssetNamesVerified": True,
         "ownerIdentityVerified": True,
+        "tagProtectionVerified": True,
         "draftAssetsVerified": True,
         "downloadedByAssetId": True,
         "registriesVerified": False,

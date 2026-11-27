@@ -27,6 +27,7 @@ _DENIED = "Windows KiCad project presence inspection denied."
 _STEM = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}\Z", re.ASCII)
 _LOCAL_DRIVE = re.compile(r"[A-Za-z]:\\")
 _FILE_READ_ATTRIBUTES = 0x0080
+_READ_CONTROL = 0x00020000
 _FILE_GENERIC_READ = 0x80000000
 _FILE_SHARE_READ = 0x00000001
 _FILE_SHARE_WRITE = 0x00000002
@@ -112,13 +113,29 @@ def _path_parts(directory: Path) -> tuple[str, ...]:
     return (root, *parts[1:])
 
 
+def _missing_handle(missing_ok: bool) -> None:
+    last_error = getattr(ctypes, "get_last_error", None)
+    if not callable(last_error):
+        raise LocalReadDeniedError(_DENIED)
+    error = int(last_error())
+    if missing_ok and error in {_ERROR_FILE_NOT_FOUND, _ERROR_PATH_NOT_FOUND}:
+        return None
+    raise LocalReadDeniedError(_DENIED)
+
+
 def _open_checked(
-    path: str, *, directory: bool, missing_ok: bool = False, read_contents: bool = False
+    path: str,
+    *,
+    directory: bool,
+    missing_ok: bool = False,
+    read_contents: bool = False,
+    legacy_acl: bool = False,
 ) -> int | None:
     api = _api()
     handle = api.CreateFileW(
         path,
-        _FILE_GENERIC_READ if read_contents else _FILE_READ_ATTRIBUTES,
+        (_FILE_GENERIC_READ if read_contents else _FILE_READ_ATTRIBUTES)
+        | (_READ_CONTROL if legacy_acl else 0),
         (_FILE_SHARE_READ if read_contents else _FILE_SHARE_READ | _FILE_SHARE_WRITE),
         # Data-read handles also exclude concurrent writers and delete/replace.
         None,
@@ -128,13 +145,8 @@ def _open_checked(
     )
     invalid = ctypes.c_void_p(-1).value
     if not handle or handle == invalid:
-        last_error = getattr(ctypes, "get_last_error", None)
-        if not callable(last_error):
-            raise LocalReadDeniedError(_DENIED)
-        error = int(last_error())
-        if missing_ok and error in {_ERROR_FILE_NOT_FOUND, _ERROR_PATH_NOT_FOUND}:
-            return None
-        raise LocalReadDeniedError(_DENIED)
+        _missing_handle(missing_ok)
+        return None
     try:
         info = _FileInfo()
         if not api.GetFileInformationByHandle(handle, ctypes.byref(info)):
@@ -145,6 +157,10 @@ def _open_checked(
             or (not directory and info.links != 1)
         ):
             raise LocalReadDeniedError(_DENIED)
+        if legacy_acl:
+            from kicad_mcp.cloud_windows_legacy_acl import require_private_writers
+
+            require_private_writers(int(handle))
         return int(handle)
     except BaseException:
         api.CloseHandle(handle)
@@ -152,7 +168,7 @@ def _open_checked(
 
 
 @contextmanager
-def _pinned_project(directory: Path) -> Iterator[str]:
+def _pinned_project(directory: Path, *, legacy_acl: bool = False) -> Iterator[str]:
     """Retain read-only handles for every path hop throughout a presence read."""
     parts = _path_parts(directory)
     api = _api()
@@ -161,10 +177,15 @@ def _pinned_project(directory: Path) -> Iterator[str]:
     opened: list[int] = []
     try:
         path = parts[0]
-        for component in (None, *parts[1:]):
+        for index, component in enumerate((None, *parts[1:])):
             if component is not None:
                 path = path.rstrip("\\") + "\\" + component
-            handle = _open_checked(path, directory=True)
+            # Verify the cache tree and its immediate enclosing user directory.
+            # Do not require drive-root ACLs to be user-private.
+            if legacy_acl and index >= len(parts) - 3:
+                handle = _open_checked(path, directory=True, legacy_acl=True)
+            else:
+                handle = _open_checked(path, directory=True)
             if handle is None:
                 raise LocalReadDeniedError(_DENIED)
             opened.append(handle)
@@ -278,3 +299,39 @@ def copy_windows_drc_inputs(directory: Path, filename_stem: str, scratch: Path) 
                 )
     except (OSError, ValueError, TypeError) as exc:
         raise LocalReadDeniedError(_DENIED) from exc
+
+
+def read_legacy_folder_cache(path: Path, limit: int) -> bytes:
+    """Bounded, pinned read of the historical current-user local selection file."""
+    import msvcrt
+
+    if (
+        path.name != "folder-bindings.json"
+        or path.parent.name != "connector"
+        or path.parent.parent.name != ".kicad-mcp-cloud"
+    ):
+        raise LocalReadDeniedError(_DENIED)
+    with _pinned_project(path.parent, legacy_acl=True) as directory:
+        handle = _open_checked(
+            directory + "\\" + path.name, directory=False, read_contents=True, legacy_acl=True
+        )
+        if handle is None:
+            raise LocalReadDeniedError(_DENIED)
+        opener = getattr(msvcrt, "open_osfhandle", None)
+        binary_flag = getattr(os, "O_BINARY", None)
+        if not callable(opener) or type(binary_flag) is not int:
+            _api().CloseHandle(handle)
+            raise LocalReadDeniedError(_DENIED)
+        try:
+            fd = opener(handle, os.O_RDONLY | binary_flag)
+        except (OSError, ValueError):
+            _api().CloseHandle(handle)
+            raise
+        with os.fdopen(fd, "rb") as reader:
+            size = os.fstat(reader.fileno()).st_size
+            if not 1 <= size <= limit:
+                raise LocalReadDeniedError(_DENIED)
+            raw = reader.read(limit + 1)
+            if len(raw) != size:
+                raise LocalReadDeniedError(_DENIED)
+            return raw
