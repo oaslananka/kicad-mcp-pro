@@ -176,24 +176,25 @@ class ProjectReleaseReadinessPayload(BaseModel):
 
 
 class PlacementGateReportPayload(BaseModel):
-    """Structured placement analysis payload."""
+    """Structured placement analysis; null metrics mean the analysis was blocked."""
 
     text: str
     status: GateStatus
     summary: str
     score: int | None = None
     footprint_count: int | None = None
-    checked_connectors: int = 0
-    checked_decoupling_pairs: int = 0
-    checked_keepouts: int = 0
-    checked_power_tree_refs: int = 0
-    checked_analog_refs: int = 0
-    checked_digital_refs: int = 0
-    checked_sensor_cluster_refs: int = 0
-    critical_net_proxy_mm: float = 0.0
-    critical_net_proxy_density: float = 0.0
-    checked_thermal_hotspot_refs: int = 0
-    thermal_proximity_sum: float = 0.0
+    checked_connectors: int | None = None
+    checked_decoupling_pairs: int | None = None
+    checked_keepouts: int | None = None
+    checked_power_tree_refs: int | None = None
+    checked_analog_refs: int | None = None
+    checked_digital_refs: int | None = None
+    checked_sensor_cluster_refs: int | None = None
+    critical_net_proxy_mm: float | None = None
+    critical_net_proxy_density: float | None = None
+    checked_thermal_hotspot_refs: int | None = None
+    thermal_proximity_sum: float | None = None
+    checked_hs_interfaces: int | None = None
     hard_failures: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
@@ -2780,6 +2781,11 @@ def _evaluate_pcb_placement_gate() -> GateOutcome:
     if analysis is None:
         raise RuntimeError(_MISSING_PLACEMENT_ANALYSIS)
 
+    return _placement_gate_outcome(analysis)
+
+
+def _placement_gate_outcome(analysis: PlacementAnalysis) -> GateOutcome:
+    """Render the verdict from a single measured placement snapshot."""
     status, summary = _placement_gate_verdict(analysis)
     details = [
         f"Footprints analysed: {analysis.footprint_count}",
@@ -2796,6 +2802,7 @@ def _evaluate_pcb_placement_gate() -> GateOutcome:
         f"Critical-net proxy density: {analysis.critical_net_proxy_density:.2f} mm per 1000 mm^2",
         f"Thermal hotspot refs checked: {analysis.checked_thermal_hotspot_refs}",
         f"Thermal hotspot proximity: {analysis.thermal_proximity_sum:.4f}",
+        f"High-speed interfaces checked: {analysis.checked_hs_interfaces}",
         f"Placement score: {analysis.score}/100",
     ]
     details.extend(f"FAIL: {item}" for item in analysis.hard_failures[:12])
@@ -3652,7 +3659,7 @@ def _placement_gate_report_payload() -> PlacementGateReportPayload:
         )
     if analysis is None:
         raise RuntimeError(_MISSING_PLACEMENT_ANALYSIS)
-    outcome = _evaluate_pcb_placement_gate()
+    outcome = _placement_gate_outcome(analysis)
     return PlacementGateReportPayload(
         text=_format_gate(outcome),
         status=outcome.status,
@@ -3666,6 +3673,11 @@ def _placement_gate_report_payload() -> PlacementGateReportPayload:
         checked_analog_refs=analysis.checked_analog_refs,
         checked_digital_refs=analysis.checked_digital_refs,
         checked_sensor_cluster_refs=analysis.checked_sensor_cluster_refs,
+        critical_net_proxy_mm=analysis.critical_net_proxy_mm,
+        critical_net_proxy_density=analysis.critical_net_proxy_density,
+        checked_thermal_hotspot_refs=analysis.checked_thermal_hotspot_refs,
+        thermal_proximity_sum=analysis.thermal_proximity_sum,
+        checked_hs_interfaces=analysis.checked_hs_interfaces,
         hard_failures=analysis.hard_failures,
         warnings=analysis.warnings,
     )

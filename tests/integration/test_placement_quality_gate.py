@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from jsonschema import Draft202012Validator
 
 from kicad_mcp.server import build_server
 from tests.conftest import call_tool_payload, call_tool_text
@@ -555,3 +557,112 @@ async def test_inferred_connectors_do_not_form_unrequested_power_tree(
     score = await call_tool_text(server, "pcb_score_placement", {})
     assert "Power-tree step" not in gate
     assert "Power-tree step" not in score
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("distance", "with_intent", "expected_status"),
+    [(6, False, "PASS"), (6, True, "PASS"), (20, True, "WARN"), (30, True, "FAIL")],
+)
+async def test_placement_report_serializes_one_measured_snapshot(
+    sample_project: Path,
+    mock_kicad,
+    monkeypatch: pytest.MonkeyPatch,
+    distance: int,
+    with_intent: bool,
+    expected_status: str,
+) -> None:
+    from kicad_mcp.tools import validation
+    from kicad_mcp.tools.design_intent_state import ProjectDesignIntent
+
+    _write_board(
+        sample_project,
+        _footprint_block("R1", "10k", 5, 10, net_name="DATA"),
+        _footprint_block("R2", "10k", 5 + distance, 10, net_name="DATA"),
+    )
+    intent = ProjectDesignIntent.model_validate(
+        {
+            "critical_nets": ["DATA"] if with_intent else [],
+            "thermal_hotspots": ["R1", "R2"] if with_intent else [],
+            "interfaces": [{"kind": "custom", "refs": ["R1", "R2"]}] if with_intent else [],
+        }
+    )
+    monkeypatch.setattr(
+        "kicad_mcp.tools.design_intent_state.resolve_design_intent",
+        lambda: SimpleNamespace(resolved=intent),
+    )
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    original = validation._placement_analysis
+    snapshots = []
+
+    def evaluate_once():
+        result = original()
+        snapshots.append(result)
+        return result
+
+    monkeypatch.setattr(validation, "_placement_analysis", evaluate_once)
+    payload = await call_tool_payload(server, "pcb_placement_quality_report", {})
+    assert isinstance(payload, dict)
+    assert len(snapshots) == 1
+    analysis, blocked = snapshots[0]
+    assert blocked is None
+    assert analysis is not None
+    expected_length = float(distance) if with_intent else 0.0
+    expected_density = round(expected_length / 1.2, 2)
+    expected_thermal = round(1 / distance, 4) if with_intent else 0.0
+    assert expected_status == payload["status"]
+    assert expected_length == payload["critical_net_proxy_mm"]
+    assert expected_density == payload["critical_net_proxy_density"]
+    assert (2 if with_intent else 0) == payload["checked_thermal_hotspot_refs"]
+    assert expected_thermal == payload["thermal_proximity_sum"]
+    assert int(with_intent) == payload["checked_hs_interfaces"]
+    assert analysis.score == payload["score"]
+    assert analysis.hard_failures == payload["hard_failures"]
+    assert analysis.warnings == payload["warnings"]
+    assert f"Critical-net Manhattan proxy: {expected_length:.2f} mm" in payload["text"]
+    assert f"Critical-net proxy density: {expected_density:.2f}" in payload["text"]
+    assert f"Thermal hotspot proximity: {expected_thermal:.4f}" in payload["text"]
+    assert f"High-speed interfaces checked: {int(with_intent)}" in payload["text"]
+    tool = next(t for t in await server.list_tools() if t.name == "pcb_placement_quality_report")
+    assert tool.output_schema is not None
+    Draft202012Validator(tool.output_schema).validate(payload)
+    assert payload == validation.PlacementGateReportPayload.model_validate(payload).model_dump()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("missing_file", [False, True])
+async def test_placement_report_marks_unavailable_metrics_null(
+    sample_project: Path, mock_kicad, monkeypatch: pytest.MonkeyPatch, missing_file: bool
+) -> None:
+    _write_board(sample_project)
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    if missing_file:
+        path = sample_project / "demo.kicad_pcb"
+        path.unlink()
+        # Model a file disappearing after successful project path resolution.
+        monkeypatch.setattr("kicad_mcp.tools.validation._get_pcb_file", lambda: path)
+    payload = await call_tool_payload(server, "pcb_placement_quality_report", {})
+    assert isinstance(payload, dict)
+    assert payload["status"] == "BLOCKED"
+    for field in (
+        "score",
+        "footprint_count",
+        "checked_connectors",
+        "checked_decoupling_pairs",
+        "checked_keepouts",
+        "checked_power_tree_refs",
+        "checked_analog_refs",
+        "checked_digital_refs",
+        "checked_sensor_cluster_refs",
+        "critical_net_proxy_mm",
+        "critical_net_proxy_density",
+        "checked_thermal_hotspot_refs",
+        "thermal_proximity_sum",
+        "checked_hs_interfaces",
+    ):
+        assert payload[field] is None
+    tool = next(t for t in await server.list_tools() if t.name == "pcb_placement_quality_report")
+    assert tool.output_schema is not None
+    Draft202012Validator(tool.output_schema).validate(payload)
