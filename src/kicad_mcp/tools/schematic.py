@@ -3965,25 +3965,19 @@ def _library_symbol_blocks(content: str) -> dict[str, str]:
     return symbols
 
 
-def _library_revision(path: Path) -> tuple[int, int, int, int]:
-    stat = path.stat()
-    return stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size, stat.st_ino
-
-
 @lru_cache(maxsize=4)
-def _read_cached_library_symbols(path: Path, revision: tuple[int, int, int, int]) -> dict[str, str]:
-    content = path.read_text(encoding="utf-8", errors="ignore")
-    if _library_revision(path) != revision:
-        raise OSError(f"Symbol library changed during read: {path}. Retry the inspection.")
+def _read_cached_library_symbols(content: str) -> dict[str, str]:
     return _library_symbol_blocks(content)
 
 
 def _library_symbols_from_file(path: Path) -> dict[str, str]:
-    path = path.resolve()
-    revision = _library_revision(path)
-    if revision[2] > _MAX_CACHED_LIBRARY_BYTES:
-        return _library_symbol_blocks(path.read_text(encoding="utf-8", errors="ignore"))
-    return _read_cached_library_symbols(path, revision)
+    # Filesystems can report identical metadata for different contents, notably
+    # after rapid same-size edits on Windows. Cache parsing, not disk reads.
+    raw = path.read_bytes()
+    content = raw.decode("utf-8", errors="ignore").replace("\r\n", "\n").replace("\r", "\n")
+    if len(raw) > _MAX_CACHED_LIBRARY_BYTES:
+        return _library_symbol_blocks(content)
+    return _read_cached_library_symbols(content)
 
 
 def _symbol_inheritance_chain(
