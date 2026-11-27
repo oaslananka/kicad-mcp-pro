@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import csv
 import json
+from collections.abc import Callable
 from io import StringIO
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, cast
 
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..config import get_config
+from ..export.inventory import discover_drill_output_files, discover_gerber_output_files
 from ..export.manufacturing_package import ManufacturingApprovalService
 from ..path_safety import resolve_under
 from ..utils.metadata_write import atomic_metadata_write, serialized_metadata_write
@@ -504,7 +507,60 @@ def variant_export_schematic(variant: str, output_name: str | None = None) -> st
     )
 
 
+def _variant_fabrication_files(directory: Path, kind: str) -> list[Path]:
+    candidates = (
+        discover_gerber_output_files(directory)
+        if kind == "gerber"
+        else discover_drill_output_files(directory)
+    )
+    return [
+        path
+        for path in candidates
+        if path.suffix.lower() != ".gbrjob"
+        and not path.is_symlink()
+        and path.is_file()
+        and path.stat().st_size > 0
+    ]
+
+
+def _export_variant_fabrication(
+    stage: Path,
+    kind: str,
+    pcb_file: Path,
+    variant_args: list[str],
+    run_cli: Callable[[list[list[str]]], tuple[int, str, str]],
+) -> str | None:
+    commands = ("gerbers", "gerber") if kind == "gerber" else ("drill",)
+    last_error = "No manufacturing files produced."
+    for command in commands:
+        for explicit_input in (False, True):
+            with TemporaryDirectory(prefix=f"{kind}-attempt-", dir=stage.parent) as attempt:
+                output = Path(attempt)
+                source = ["--input", str(pcb_file)] if explicit_input else []
+                trailing = [] if explicit_input else [str(pcb_file)]
+                code, _, stderr = run_cli(
+                    [
+                        [
+                            "pcb",
+                            "export",
+                            command,
+                            *variant_args,
+                            *source,
+                            "--output",
+                            str(output),
+                            *trailing,
+                        ]
+                    ]
+                )
+                if code == 0 and _variant_fabrication_files(output, kind):
+                    output.rename(stage)
+                    return None
+                last_error = stderr or "No nonempty manufacturing files produced."
+    return f"{kind.capitalize()} export failed: {last_error}"
+
+
 @headless_compatible
+@serialized_metadata_write
 def variant_export_manufacturing_package(
     variant: str,
     output_name: str | None = None,
@@ -538,18 +594,26 @@ def variant_export_manufacturing_package(
     state = _load_state()
     _ensure_variant(state, variant)
     cfg = get_config()
-    approval = ManufacturingApprovalService(
+    approval_service = ManufacturingApprovalService(
         resolve_project_path=lambda path: cfg.resolve_within_project(path, allow_absolute=False)
-    ).authorize(
-        outcomes=_evaluate_project_gate(),
-        render_gate_report=lambda outcomes, summary: _render_project_gate_report(
-            outcomes, summary=summary
-        ),
-        approval_evidence_path=approval_evidence_path,
     )
+    outcomes = _evaluate_project_gate()
+
+    def authorize() -> tuple[Path, dict[str, Any]] | str:
+        return approval_service.authorize(
+            outcomes=outcomes,
+            render_gate_report=lambda items, summary: _render_project_gate_report(
+                items, summary=summary
+            ),
+            approval_evidence_path=approval_evidence_path,
+        )
+
+    approval = authorize()
     if isinstance(approval, str):
         return approval
     evidence_path, evidence_payload = approval
+    state = _load_state()
+    _ensure_variant(state, variant)
     out_dir = _ensure_output_dir("variants")
     manifest_path = _safe_variant_export_path(out_dir, variant, manifest_name)
 
@@ -558,93 +622,51 @@ def variant_export_manufacturing_package(
     pcb_file = _get_pcb_file()
     _get_sch_file()
 
-    artifacts: dict[str, str] = {}
-    errors: list[str] = []
-
-    # Gerber
     gerber_dir = _safe_variant_export_path(out_dir, variant, f"{variant}_gerber")
-    gerber_dir.mkdir(exist_ok=True)
-    code, _, stderr = _run_cli_variants(
-        [
-            [
-                "pcb",
-                "export",
-                "gerber",
-                *variant_args,
-                "--output",
-                str(gerber_dir),
-                str(pcb_file),
-            ],
-            [
-                "pcb",
-                "export",
-                "gerber",
-                *variant_args,
-                "--input",
-                str(pcb_file),
-                "--output",
-                str(gerber_dir),
-            ],
-        ]
-    )
-    if code == 0:
-        artifacts["gerber"] = str(gerber_dir)
-    else:
-        errors.append(f"Gerber: {stderr or 'unknown error'}")
-
-    # Drill
     drill_dir = _safe_variant_export_path(out_dir, variant, f"{variant}_drill")
-    drill_dir.mkdir(exist_ok=True)
-    code, _, stderr = _run_cli_variants(
-        [
-            [
-                "pcb",
-                "export",
-                "drill",
-                *variant_args,
-                "--output",
-                str(drill_dir),
-                str(pcb_file),
-            ],
-            [
-                "pcb",
-                "export",
-                "drill",
-                *variant_args,
-                "--input",
-                str(pcb_file),
-                "--output",
-                str(drill_dir),
-            ],
-        ]
-    )
-    if code == 0:
-        artifacts["drill"] = str(drill_dir)
-    else:
-        errors.append(f"Drill: {stderr or 'unknown error'}")
-
-    # BOM
     bom_path = _safe_variant_export_path(out_dir, variant, f"{variant}_bom.csv")
-    rows = _bom_rows(state, variant)
-    _write_bom(bom_path, rows, "csv")
-    artifacts["bom"] = str(bom_path)
+    destinations = (gerber_dir, drill_dir, bom_path, manifest_path)
+    if len(set(destinations)) != len(destinations) or any(path.exists() for path in destinations):
+        return (
+            "Manufacturing package export blocked: existing or conflicting output paths. "
+            "Archive the previous package before retrying; no existing artifacts were changed."
+        )
 
-    manifest = {
-        "variant": variant,
-        "approval_evidence_path": str(evidence_path),
-        "approval_evidence": evidence_payload,
-        "artifacts": artifacts,
-        "errors": errors,
-        "component_count": len(rows),
-    }
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    artifacts = {"gerber": str(gerber_dir), "drill": str(drill_dir), "bom": str(bom_path)}
+    with TemporaryDirectory(prefix=".variant-package-", dir=out_dir) as temporary:
+        stage = Path(temporary)
+        for kind, target in (("gerber", gerber_dir), ("drill", drill_dir)):
+            error = _export_variant_fabrication(
+                stage / target.name, kind, pcb_file, variant_args, _run_cli_variants
+            )
+            if error is not None:
+                return f"Manufacturing package export failed: {error} No manifest published."
+
+        rows = _bom_rows(state, variant)
+        _write_bom(stage / bom_path.name, rows, "csv")
+        fresh = authorize()
+        if isinstance(fresh, str):
+            return f"Manufacturing package export failed: {fresh}"
+        if fresh != (evidence_path, evidence_payload):
+            return "Manufacturing package export failed: approval changed during export."
+        if any(path.exists() for path in destinations):
+            return "Manufacturing package export blocked: existing output appeared during export."
+
+        manifest = {
+            "variant": variant,
+            "approval_evidence_path": str(evidence_path),
+            "approval_evidence": evidence_payload,
+            "artifacts": artifacts,
+            "errors": [],
+            "component_count": len(rows),
+        }
+        # Publish the manifest last, only after all required files exist.
+        (stage / manifest_path.name).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        for path in destinations:
+            (stage / path.name).rename(path)
+
     lines = [f"Manufacturing package for variant '{variant}':"]
-    for key, val in artifacts.items():
-        lines.append(f"  {key}: {val}")
-    if errors:
-        lines.append("Errors:")
-        for err in errors:
-            lines.append(f"  ! {err}")
+    lines.extend(f"  {key}: {val}" for key, val in artifacts.items())
     lines.append(f"Manifest: {manifest_path}")
     return "\n".join(lines)
 

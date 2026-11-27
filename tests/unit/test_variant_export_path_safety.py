@@ -157,10 +157,7 @@ def test_schematic_export_preserves_valid_custom_filename(
     assert (out_dir / "custom-schematic.pdf").read_bytes() == b"fake-pdf"
 
 
-def test_manufacturing_export_writes_manifest_only_within_output_dir(
-    export_setup: tuple[Path, dict], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    out_dir, _state = export_setup
+def _approved_variant_fixture(out_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project = out_dir.parents[1]
     board = project / "board.kicad_pcb"
     board.write_text("board", encoding="utf-8")
@@ -178,17 +175,64 @@ def test_manufacturing_export_writes_manifest_only_within_output_dir(
         encoding="utf-8",
     )
     monkeypatch.setattr("kicad_mcp.tools.validation._evaluate_project_gate", lambda: [])
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_manufacturing_export_fails_without_fresh_fabrication_files(
+    export_setup: tuple[Path, dict], monkeypatch: pytest.MonkeyPatch, exit_code: int
+) -> None:
+    out_dir, _ = export_setup
+    _approved_variant_fixture(out_dir, monkeypatch)
     monkeypatch.setattr(
-        export_support, "_run_cli_variants", lambda _commands: (1, "", "mocked CLI")
+        export_support, "_run_cli_variants", lambda _commands: (exit_code, "", "mocked CLI")
     )
     result = variants.variant_export_manufacturing_package(
         "default", "custom-manufacturing.json", "approval.json"
     )
+    assert "failed" in result.lower()
+    assert list(out_dir.iterdir()) == []
+
+
+def test_manufacturing_export_writes_manifest_only_within_output_dir(
+    export_setup: tuple[Path, dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out_dir, _ = export_setup
+    _approved_variant_fixture(out_dir, monkeypatch)
+
+    def export_files(commands: list[list[str]]) -> tuple[int, str, str]:
+        command = commands[0]
+        destination = Path(command[command.index("--output") + 1])
+        name = "board.drl" if command[2] == "drill" else "board.gbr"
+        (destination / name).write_bytes(b"fresh")
+        return 0, "", ""
+
+    monkeypatch.setattr(export_support, "_run_cli_variants", export_files)
+    result = variants.variant_export_manufacturing_package(
+        "default", "custom-manufacturing.json", "approval.json"
+    )
     assert "custom-manufacturing.json" in result
-    assert (out_dir / "custom-manufacturing.json").is_file()
+    manifest = json.loads((out_dir / "custom-manufacturing.json").read_text(encoding="utf-8"))
+    assert manifest["errors"] == []
     assert (out_dir / "default_bom.csv").is_file()
-    assert (out_dir / "default_gerber").is_dir()
-    assert (out_dir / "default_drill").is_dir()
+    assert (out_dir / "default_gerber" / "board.gbr").read_bytes() == b"fresh"
+    assert (out_dir / "default_drill" / "board.drl").read_bytes() == b"fresh"
+
+
+def test_manufacturing_export_does_not_reuse_or_delete_previous_artifacts(
+    export_setup: tuple[Path, dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out_dir, _ = export_setup
+    _approved_variant_fixture(out_dir, monkeypatch)
+    old = out_dir / "default_gerber"
+    old.mkdir()
+    sentinel = old / "old.gbr"
+    sentinel.write_bytes(b"previous")
+    result = variants.variant_export_manufacturing_package(
+        "default", "custom-manufacturing.json", "approval.json"
+    )
+    assert "existing" in result.lower()
+    assert sentinel.read_bytes() == b"previous"
+    assert not (out_dir / "custom-manufacturing.json").exists()
 
 
 def test_bom_export_never_overwrites_external_symlink(
@@ -263,4 +307,55 @@ def test_variant_manufacturing_rejects_failed_gate_before_approval(
         "default", approval_evidence_path="unreadable.json"
     )
     assert "hard-blocked until the full project quality gate passes" in result
+    assert list(out_dir.iterdir()) == []
+
+
+def test_manufacturing_export_does_not_mix_failed_cli_attempts(
+    export_setup: tuple[Path, dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out_dir, _ = export_setup
+    _approved_variant_fixture(out_dir, monkeypatch)
+    attempts = 0
+
+    def export_files(commands: list[list[str]]) -> tuple[int, str, str]:
+        nonlocal attempts
+        attempts += 1
+        command = commands[0]
+        destination = Path(command[command.index("--output") + 1])
+        if attempts == 1:
+            (destination / "failed.gbr").write_bytes(b"partial")
+            return 1, "", "partial output"
+        name = "board.drl" if command[2] == "drill" else "board.gbr"
+        (destination / name).write_bytes(b"fresh")
+        return 0, "", ""
+
+    monkeypatch.setattr(export_support, "_run_cli_variants", export_files)
+    result = variants.variant_export_manufacturing_package(
+        "default", approval_evidence_path="approval.json"
+    )
+    assert "Manifest:" in result
+    assert sorted(path.name for path in (out_dir / "default_gerber").iterdir()) == ["board.gbr"]
+
+
+def test_manufacturing_export_rechecks_approval_after_cli_work(
+    export_setup: tuple[Path, dict], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out_dir, _ = export_setup
+    _approved_variant_fixture(out_dir, monkeypatch)
+
+    def export_files(commands: list[list[str]]) -> tuple[int, str, str]:
+        command = commands[0]
+        destination = Path(command[command.index("--output") + 1])
+        name = "board.drl" if command[2] == "drill" else "board.gbr"
+        (destination / name).write_bytes(b"fresh")
+        (out_dir.parents[1] / "board.kicad_pcb").write_text(
+            "changed during export", encoding="utf-8"
+        )
+        return 0, "", ""
+
+    monkeypatch.setattr(export_support, "_run_cli_variants", export_files)
+    result = variants.variant_export_manufacturing_package(
+        "default", approval_evidence_path="approval.json"
+    )
+    assert "project file digest mismatch" in result
     assert list(out_dir.iterdir()) == []
