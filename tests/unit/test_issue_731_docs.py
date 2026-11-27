@@ -35,7 +35,7 @@ def test_distribution_readiness_records_linux_and_windows_pcm_evidence() -> None
     doc = (ROOT / "docs" / "status" / "distribution-readiness.md").read_text(encoding="utf-8")
 
     assert "KiCad PCM" in doc
-    assert "Linux virtual-display lifecycle and behavior verified" in doc
+    assert "Linux virtual-display lifecycle and integrated install-to-sync verified" in doc
     assert "Windows/macOS interactive acceptance pending" in doc
     assert "AS_NOT_READY" in doc
     assert "not a single integrated physical flow" in doc
@@ -111,6 +111,15 @@ def test_current_pcm_evidence_preserves_acceptance_boundaries() -> None:
         "4.23.0",
         "virtual display",
         "manual staging",
+        "Linux: integrated PCM install-to-sync acceptance",
+        "7210504870",
+        "7210177059",
+        "7210349668",
+        "Installed (1)",
+        "All four PCB/SCH/PRO/DRU hashes were unchanged",
+        "not a clean wheel install",
+        "not physical-display",
+        "raw-path compatibility",
         "AS_NOT_READY",
         "probe exit 2",
         "synthetic",

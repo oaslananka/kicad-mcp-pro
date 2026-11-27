@@ -133,7 +133,8 @@ The maintained package already uses the modern KiCad plugin API (IPC), with
 retains its development status. Historical Linux/Windows PCM evidence is not
 a qualification of the current IPC artifact; current platform-specific
 acceptance is required. See the [dated 4.24.0 qualification](../evidence/kicad-pcm/2026-11-27/kicad-10.0.8-ipc.md)
-for the current Linux results and outstanding Windows/macOS acceptance.
+for the integrated Linux virtual-display install-to-sync result, separate
+lifecycle checks and outstanding Windows/macOS acceptance.
 KiCad 11 support remains preview-only until its own
 native gates pass. See [ADR 0007](../adr/0007-kicad-adapter-selection-and-swig-retirement.md).
 
