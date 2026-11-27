@@ -208,6 +208,93 @@ async def test_sdk_v2_supported_host_profiles_preserve_bearer_authorization(
 
 
 @pytest.mark.asyncio
+async def test_runtime_ipc_catalog_refreshes_in_same_stateless_sdk_session(
+    sample_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from kicad_mcp.ipc.capabilities import get_ipc_capability_state
+    from kicad_mcp.ipc.errors import KiCadIpcUnavailableError
+    from kicad_mcp.pcb import live_edit_runtime
+    from kicad_mcp.pcb.transaction_lifecycle import PcbTransactionLifecycleService
+    from kicad_mcp.server import IPC_CAPABILITY_CACHE_TTL_SEC
+
+    class ControlledIpc:
+        connected = False
+
+        def probe(self) -> dict[str, object]:
+            if not self.connected:
+                raise KiCadIpcUnavailableError("Disposable IPC is disconnected.")
+            return {"connected": True, "version": "KiCad 10.0.8", "apiVersion": "10.0.0"}
+
+        def board(self) -> object:
+            if not self.connected:
+                raise KiCadIpcUnavailableError("Disposable PCB is not open.")
+            return object()
+
+        def has_open_schematic(self) -> bool:
+            return False
+
+    ipc = ControlledIpc()
+
+    def unavailable_board():
+        raise OSError("Disposable IPC is disconnected.")
+
+    def forbidden_mutation(operation, command):
+        pytest.fail(f"Disconnected mutation reached native IPC: {operation}")
+
+    service = PcbTransactionLifecycleService(
+        get_board=unavailable_board,
+        run_mutation=forbidden_mutation,
+        connection_errors=(OSError,),
+    )
+    monkeypatch.setattr(live_edit_runtime, "_SERVICE", service)
+    monkeypatch.setattr(
+        "kicad_mcp.server.get_ipc_capability_state",
+        lambda: get_ipc_capability_state(client=ipc),
+    )
+    cfg = get_config()
+    monkeypatch.setattr(cfg, "operating_mode", "write")
+    monkeypatch.setattr(cfg, "filter_runtime_tools", True)
+    server = _configure_native_v2_server(sample_project, profile="pcb_only")
+    before = {
+        p: hashlib.sha256(p.read_bytes()).hexdigest() for p in sample_project.glob("*.kicad_*")
+    }
+
+    async def catalog(session: ClientSession) -> dict[str, dict[str, object]]:
+        tools = (await session.list_tools()).tools
+        assert len(tools) == len({tool.name for tool in tools})
+        return {tool.name: tool.model_dump(by_alias=True) for tool in tools}
+
+    async def transition(connected: bool) -> None:
+        ipc.connected = connected
+        await asyncio.sleep(IPC_CAPABILITY_CACHE_TTL_SEC + 0.1)
+
+    with _running_http_server(server.streamable_http_app()) as base_url:
+        async with streamable_http_client(f"{base_url}/mcp") as (reader, writer):
+            async with ClientSession(reader, writer) as session:
+                await session.initialize()
+                disconnected = await catalog(session)
+                assert "pcb_begin_commit" not in disconnected
+                assert "pcb_get_live_edit_state" in disconnected
+                denied = await session.call_tool("pcb_begin_commit", {})
+                assert denied.is_error
+                await transition(True)
+                connected = await catalog(session)
+                assert "pcb_begin_commit" in connected
+                assert "pcb_move_footprint" in connected
+                assert set(disconnected) < set(connected)
+                assert all(connected[name] == value for name, value in disconnected.items())
+                await transition(False)
+                assert await catalog(session) == disconnected
+                assert (await session.call_tool("pcb_begin_commit", {})).is_error
+                await transition(True)
+                assert await catalog(session) == connected
+
+    assert {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in before} == before
+
+
+@pytest.mark.asyncio
 async def test_sdk_v2_readonly_mode_rejects_pcb_mutations_over_http(
     sample_project: Path,
 ) -> None:

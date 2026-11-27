@@ -88,7 +88,8 @@ class PcbTransactionLifecycleService:
     _active_identity: LiveBoardIdentity | None = field(default=None, init=False, repr=False)
     _pre_state_digest: str | None = field(default=None, init=False, repr=False)
     _connection_epoch: object | None = field(default=None, init=False, repr=False)
-    _transaction_supported: bool = field(default=False, init=False, repr=False)
+    _transaction_supported: bool | None = field(default=None, init=False, repr=False)
+    _transaction_support_epoch: object | None = field(default=None, init=False, repr=False)
     _receipts: list[LiveMutationReceipt] = field(default_factory=list, init=False, repr=False)
     _pending_verifications: list[_PendingVerification] = field(
         default_factory=list, init=False, repr=False
@@ -230,10 +231,16 @@ class PcbTransactionLifecycleService:
             else:
                 board_fingerprint = ""
                 board_name = ""
+            supported = self._transaction_supported
+            if self._transaction_support_epoch != self.get_connection_epoch():
+                supported = None
             return {
                 "schema_version": "pcb-live-edit-state.v1",
                 "state": self._state_name(),
-                "transaction_supported": self._transaction_supported,
+                "transaction_supported": supported is True,
+                "transaction_support_status": (
+                    "unknown" if supported is None else "supported" if supported else "unsupported"
+                ),
                 "board_fingerprint": board_fingerprint,
                 "board_name": board_name,
                 "mutation_count": len(self._receipts) if identity is not None else 0,
@@ -261,18 +268,21 @@ class PcbTransactionLifecycleService:
                     "A transaction group is already active. Commit or discard it before starting "
                     "another."
                 )
+            self._transaction_supported = None
+            self._transaction_support_epoch = None
             try:
                 board = self.get_board()
+                connection_epoch = self.get_connection_epoch()
                 command = getattr(board, "begin_commit", None)
                 if not callable(command):
                     self._transaction_supported = False
+                    self._transaction_support_epoch = connection_epoch
                     return (
                         "Transaction grouping is not supported by the current KiCad IPC version. "
                         "Mutations will be applied individually without atomic grouping."
                     )
                 identity = self._identity_for(board)
                 pre_state_digest = self._state_digest(board)
-                connection_epoch = self.get_connection_epoch()
                 try:
                     commit_handle = self.run_mutation("pcb_begin_commit", command)
                 except AmbiguousMutationError:
@@ -283,12 +293,14 @@ class PcbTransactionLifecycleService:
                     raise
                 if commit_handle is None:
                     self._transaction_supported = False
+                    self._transaction_support_epoch = connection_epoch
                     return (
                         "Transaction grouping is not supported by the current KiCad IPC version. "
                         "Mutations will be applied individually without atomic grouping."
                     )
                 self._commit_handle = commit_handle
                 self._transaction_supported = True
+                self._transaction_support_epoch = connection_epoch
                 self._active_identity = identity
                 self._pre_state_digest = pre_state_digest
                 self._connection_epoch = connection_epoch
