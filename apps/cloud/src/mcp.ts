@@ -463,6 +463,19 @@ export function createCloudMcpHandler(
           inventory,actor,request.project_id);
         if(!project)return {...text({success:false,selectionRequired,reason:"project_not_granted"}),
           isError:true};
+        const write=mode==="write";
+        if(write&&(!actor.scopes.has("projects:write")||project.maxMode!=="write")){
+          const denied=text({success:false,reason:!actor.scopes.has("projects:write")?
+            "insufficient_scope_write_required":"project_edit_permission_required",
+            guidance:"Approve projects:write for this application and choose Edit for this project."});
+          if(!actor.scopes.has("projects:write")&&protectedResourceMetadataUrl)return {
+            ...denied,isError:true,_meta:{"mcp/www_authenticate":[
+              'Bearer resource_metadata="'+protectedResourceMetadataUrl+'", '+
+              'error="insufficient_scope", scope="projects:read projects:write"'
+            ]}
+          };
+          return {...denied,isError:true};
+        }
         const execute=async()=>{
           let catalog:Awaited<ReturnType<GenericMcpCatalogReader>>=null;
           try{
@@ -478,7 +491,7 @@ export function createCloudMcpHandler(
           if(!catalog)return {...text({success:false,reason:"owner_connector_mcp_unavailable",
             guidance:"The signed local catalog could not be retrieved. Check the device connection and run operations one at a time; retry discovery after the current operation or session refresh completes. No local tool call was dispatched."
           }),isError:true};
-          if(mode==="write"&&actor.scopes.has("projects:write")&&currentGrant.maxMode!=="write")
+          if(write&&currentGrant.maxMode!=="write")
             return {...text({success:false,reason:"project_edit_permission_required"}),isError:true};
           const tool=catalog.tools.find(t=>t.name===request.tool_name);
           if(!tool)return {...text({success:false,reason:"local_tool_unavailable",
@@ -488,19 +501,6 @@ export function createCloudMcpHandler(
             success:false,reason:tool.accessMode==="write"
               ?"write_tool_requires_local_mcp_write":"read_tool_requires_local_mcp_read"
           }),isError:true};
-          const write=mode==="write";
-          if(write&&(!actor.scopes.has("projects:write")||project.maxMode!=="write")){
-            const denied=text({success:false,reason:!actor.scopes.has("projects:write")?
-              "insufficient_scope_write_required":"project_edit_permission_required",
-              guidance:"Approve projects:write for this application and choose Edit for this project."});
-            if(!actor.scopes.has("projects:write")&&protectedResourceMetadataUrl)return {
-              ...denied,isError:true,_meta:{"mcp/www_authenticate":[
-                'Bearer resource_metadata="'+protectedResourceMetadataUrl+'", '+
-                'error="insufficient_scope", scope="projects:read projects:write"'
-              ]}
-            };
-            return {...denied,isError:true};
-          }
           try{
             const result=await genericMcpCall(
               project.deviceId,project.id,request.tool_name,request.arguments,write);
