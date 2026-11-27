@@ -129,7 +129,7 @@ def test_registration_preserves_exact_names_descriptions_schemas_and_metadata() 
         assert metadata.requires_kicad_running is False
 
 
-def test_registration_preserves_delegation_defaults_and_symbol_search_cache() -> None:
+def test_registration_preserves_delegation_defaults_and_fresh_symbol_search() -> None:
     server, service = _registered()
     tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
     assert tools["lib_list_libraries"].fn() == "libraries"
@@ -143,6 +143,7 @@ def test_registration_preserves_delegation_defaults_and_symbol_search_cache() ->
     assert tools["lib_get_footprint_3d_model"].fn("Resistor_SMD", "R_0805") == "model"
     assert service.calls == [
         ("libraries",),
+        ("symbols", "R", "", 1, 50),
         ("symbols", "R", "", 1, 50),
         ("symbol", "Device", "R"),
         ("footprints", "0805", "", 1, 50),

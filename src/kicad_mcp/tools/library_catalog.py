@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 from ..library.catalog import LibraryCatalogService
-from ..utils.cache import ttl_cache
 from .metadata import headless_compatible
 
 
@@ -32,7 +31,6 @@ def register(mcp: FastMCP, dependencies: LibraryCatalogDependencies) -> None:
 
     @mcp.tool()
     @headless_compatible
-    @ttl_cache(ttl_seconds=60)
     def lib_search_symbols(
         query: str,
         library_filter: str = "",

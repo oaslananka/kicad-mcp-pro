@@ -101,6 +101,7 @@ from ..pcb.title_block_management import PcbTitleBlockService
 from ..utils.cache import clear_ttl_cache
 from ..utils.impedance import TraceType, copper_thickness_mm, trace_impedance
 from ..utils.layers import CANONICAL_LAYER_NAMES, resolve_layer, resolve_layer_name
+from ..utils.metadata_write import serialized_metadata_write
 from ..utils.pcb_readability import run_pcb_readability
 from ..utils.placement import (
     BGABall,
@@ -3637,6 +3638,7 @@ def _register_board_rules_mutation_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @headless_compatible
+    @serialized_metadata_write
     def pcb_set_design_rules(
         min_trace_width_mm: float = 0.15,
         min_clearance_mm: float = 0.15,

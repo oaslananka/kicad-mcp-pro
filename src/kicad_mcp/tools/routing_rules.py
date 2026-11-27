@@ -15,6 +15,7 @@ from ..utils.dru import (
 from ..utils.dru import (
     rule_name as parsed_rule_name,
 )
+from ..utils.metadata_write import atomic_metadata_write, serialized_metadata_write
 
 
 def _rules_file_path() -> Path:
@@ -92,11 +93,11 @@ def _write_rules_content(path: Path, content: str) -> Path:
     if cfg.project_dir is None:
         raise ValueError("No project directory is configured.")
     safe_path = resolve_under(cfg.project_dir, path)
-    with safe_path.open("w", encoding="utf-8") as handle:
-        handle.write(content)
+    atomic_metadata_write(safe_path, content)
     return safe_path
 
 
+@serialized_metadata_write
 def _write_rule(rule_name: str, rule_body: str) -> Path:
     path = _rules_file_path()
     content = _load_rules_content(path)

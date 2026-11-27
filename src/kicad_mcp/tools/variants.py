@@ -13,6 +13,7 @@ from mcp.server.mcpserver import MCPServer as FastMCP
 from ..config import get_config
 from ..export.manufacturing_package import ManufacturingApprovalService
 from ..path_safety import resolve_under
+from ..utils.metadata_write import atomic_metadata_write, serialized_metadata_write
 from .metadata import headless_compatible
 from .schematic import native_population_flags, parse_schematic_file
 
@@ -95,8 +96,7 @@ def _write_variant_state(path: Path, state: dict[str, Any]) -> Path:
         raise ValueError("No active project directory is configured.")
     safe_path = resolve_under(cfg.project_dir, path)
     safe_path.parent.mkdir(parents=True, exist_ok=True)
-    with safe_path.open("w", encoding="utf-8") as handle:
-        handle.write(json.dumps(state, indent=2))
+    atomic_metadata_write(safe_path, json.dumps(state, indent=2))
     return safe_path
 
 
@@ -272,6 +272,7 @@ def variant_list() -> str:
 
 
 @headless_compatible
+@serialized_metadata_write
 def variant_create(name: str, base_variant: str | None = None) -> str:
     """Create a new design variant, optionally cloning an existing variant."""
     if not name.strip():
@@ -289,6 +290,7 @@ def variant_create(name: str, base_variant: str | None = None) -> str:
 
 
 @headless_compatible
+@serialized_metadata_write
 def variant_set_active(name: str) -> str:
     """Set the active design variant for the current project."""
     state = _load_state()
@@ -299,6 +301,7 @@ def variant_set_active(name: str) -> str:
 
 
 @headless_compatible
+@serialized_metadata_write
 def variant_set_component_override(
     variant: str,
     reference: str,
@@ -372,6 +375,7 @@ def variant_export_bom(variant: str, format: str = "csv") -> str:
 
 
 @headless_compatible
+@serialized_metadata_write
 def variant_clone(name: str, new_name: str) -> str:
     """Clone an existing design variant under a new name.
 
@@ -397,6 +401,7 @@ def variant_clone(name: str, new_name: str) -> str:
 
 
 @headless_compatible
+@serialized_metadata_write
 def variant_delete(name: str) -> str:
     """Delete a design variant.
 

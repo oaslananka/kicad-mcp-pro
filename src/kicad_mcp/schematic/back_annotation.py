@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from ..utils.metadata_write import atomic_metadata_write, serialized_metadata_write
+
 type ProjectFile = Callable[[], Path | None]
 type SymbolByReference = Callable[[str], Mapping[str, Any]]
 type SplitLibId = Callable[[str], tuple[str, str]]
@@ -36,6 +38,7 @@ class SchematicBackAnnotationService:
     load_state: LoadState
     save_state: SaveState
 
+    @serialized_metadata_write
     def set_hop_over(self, enabled: bool = True) -> str:
         """Toggle KiCad 10 hop-over display in the active project settings."""
         project_file = self.project_file()
@@ -57,7 +60,7 @@ class SchematicBackAnnotationService:
             project_payload.setdefault("schematic", {}),
         )
         schematic_settings["hop_over_display"] = bool(enabled)
-        project_file.write_text(json.dumps(project_payload, indent=2), encoding="utf-8")
+        atomic_metadata_write(project_file, json.dumps(project_payload, indent=2))
         state = "enabled" if enabled else "disabled"
         return f"Hop-over display set to {state} in {project_file}."
 
@@ -95,6 +98,7 @@ class SchematicBackAnnotationService:
         """List candidate pins and units that can participate in a swap workflow."""
         return json.dumps(self._swappable_payload(component_ref), indent=2)
 
+    @serialized_metadata_write
     def swap_pins(self, component_ref: str, pin_a: str, pin_b: str) -> str:
         """Record a pin-swap back-annotation intent for a component."""
         payload = self._swappable_payload(component_ref)
@@ -117,6 +121,7 @@ class SchematicBackAnnotationService:
         path = self.save_state("pin_swaps.json", state)
         return f"Recorded pin swap {component_ref}:{pin_a}<->{pin_b} in {path}."
 
+    @serialized_metadata_write
     def swap_gates(self, component_ref: str, gate_a: int, gate_b: int) -> str:
         """Record a gate-swap back-annotation intent for a multi-unit component."""
         payload = self._swappable_payload(component_ref)

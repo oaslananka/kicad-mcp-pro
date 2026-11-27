@@ -39,6 +39,7 @@ from ..utils.dru import (
     parse_dru,
     upsert_rule,
 )
+from ..utils.metadata_write import atomic_metadata_write, serialized_metadata_write
 from ..utils.schematic_rules import rail_voltage
 from ..validation import drc_runner
 from ..validation.drc_report import (
@@ -4112,8 +4113,7 @@ def _write_drc_state(path: Path, payload: dict[str, object]) -> Path:
     if cfg.project_dir is None:
         raise ValueError(_NO_ACTIVE_PROJECT_ERROR)
     safe_path = resolve_under(cfg.project_dir, path)
-    with safe_path.open("w", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, indent=2))
+    atomic_metadata_write(safe_path, json.dumps(payload, indent=2))
     return safe_path
 
 
@@ -4121,7 +4121,6 @@ def _load_drc_state() -> dict[str, object]:
     path = _drc_state_path()
     if not path.exists():
         payload: dict[str, object] = {"enabled": {}, "severity": {}}
-        _write_drc_state(path, payload)
         return payload
     return cast(dict[str, object], json.loads(path.read_text(encoding="utf-8")))
 
@@ -4290,6 +4289,7 @@ def _register_drc_rule_edit_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @headless_compatible
+    @serialized_metadata_write
     def drc_rule_create(
         name: str,
         constraint_type: str,
@@ -4325,6 +4325,7 @@ def _register_drc_rule_edit_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @headless_compatible
+    @serialized_metadata_write
     def drc_rule_delete(rule_name: str) -> str:
         """Delete a custom DRC rule from the active rules file."""
         from .routing_rules import _load_rules_content, _rules_file_path, _write_rules_content
@@ -4346,6 +4347,7 @@ def _register_drc_rule_toggle_export_tools(mcp: FastMCP) -> None:
 
     @mcp.tool()
     @headless_compatible
+    @serialized_metadata_write
     def drc_rule_enable(rule_name: str, enabled: bool = True) -> str:
         """Enable or disable a custom DRC rule."""
         from .routing_rules import _load_rules_content, _rules_file_path, _write_rules_content
