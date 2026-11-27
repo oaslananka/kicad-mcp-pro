@@ -35,7 +35,11 @@ def test_distribution_readiness_records_linux_and_windows_pcm_evidence() -> None
     doc = (ROOT / "docs" / "status" / "distribution-readiness.md").read_text(encoding="utf-8")
 
     assert "KiCad PCM" in doc
-    assert "IPC package: Linux GUI smoke; current PCM lifecycle pending" in doc
+    assert "Linux virtual-display lifecycle and integrated install-to-sync verified" in doc
+    assert "Windows/macOS interactive acceptance pending" in doc
+    assert "AS_NOT_READY" in doc
+    assert "not a single integrated physical flow" in doc
+    assert "../evidence/kicad-pcm/2026-11-27/kicad-10.0.8-ipc.md" in doc
     assert "Historical SWIG-era" in doc
     assert "4.23.0" in doc
     assert "../evidence/kicad-pcm/2026-08-29/linux-kicad-10.0.5.md" in doc
@@ -95,3 +99,33 @@ def test_linux_evidence_records_real_supported_client_connect() -> None:
     assert "kicad_get_version" in doc
     assert "Cursor project configuration" in doc
     assert "restore returned the original file hash" in doc
+
+
+def test_current_pcm_evidence_preserves_acceptance_boundaries() -> None:
+    evidence = (
+        ROOT / "docs" / "evidence" / "kicad-pcm" / "2026-11-27" / "kicad-10.0.8-ipc.md"
+    ).read_text(encoding="utf-8")
+    for marker in (
+        "6a2b7908a19e8be53b5dd3927a45787baeae1f2d",
+        "4390c704c4343765c2cab9e37a8f74b7f7a42cbdf2112e72e11ff34eceaa6733",
+        "4.23.0",
+        "virtual display",
+        "manual staging",
+        "Linux: integrated PCM install-to-sync acceptance",
+        "7210504870",
+        "7210177059",
+        "7210349668",
+        "Installed (1)",
+        "All four PCB/SCH/PRO/DRU hashes were unchanged",
+        "not a clean wheel install",
+        "not physical-display",
+        "raw-path compatibility",
+        "AS_NOT_READY",
+        "probe exit 2",
+        "synthetic",
+        "outer",
+        "not submitted",
+        "Windows interactive acceptance: pending",
+        "macOS physical acceptance: pending",
+    ):
+        assert marker in evidence

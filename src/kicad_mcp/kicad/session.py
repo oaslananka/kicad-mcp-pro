@@ -175,7 +175,9 @@ class KiCadSession:
         kwargs: KiCadKwargs = {}
 
         if "socket_path" in available and cfg.kicad_socket_path is not None:
-            kwargs["socket_path"] = str(cfg.kicad_socket_path)
+            endpoint = str(cfg.kicad_socket_path)
+            # kipy passes this value directly to NNG, which needs a transport URI.
+            kwargs["socket_path"] = endpoint if "://" in endpoint else f"ipc://{endpoint}"
         if "kicad_token" in available and cfg.kicad_token is not None:
             kwargs["kicad_token"] = cfg.kicad_token
         if "client_name" in available:

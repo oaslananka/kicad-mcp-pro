@@ -136,8 +136,12 @@ companion will not install or start the backend automatically.
 Real KiCad 10.0.7 GUI acceptance on an isolated Linux test profile confirmed:
 KiCad discovered the manifest, provisioned kicad-python 0.8.0, the toolbar
 action opened the wxPython window and the official IPC API read a saved
-board's project name, three footprints and one net. Windows and macOS
-acceptance is still required; the PCM version remains development pending
-that verification.
+board's project name, three footprints and one net. The [dated 4.24.0 qualification](../../docs/evidence/kicad-pcm/2026-11-27/kicad-10.0.8-ipc.md)
+adds Linux KiCad 10.0.8 virtual-display PCM lifecycle and integrated
+install-to-sync evidence (actual PCM install, restart, toolbar, repair,
+connected board and independent MCP resource read), plus separate selection
+refresh evidence. These runs do not establish physical-display acceptance. Windows interactive board readiness and
+macOS physical acceptance remain pending; the package stays in development.
+The legacy External Plugins menu is not the IPC toolbar discovery surface.
 
 Reference: https://dev-docs.kicad.org/en/apis-and-binding/ipc-api/for-addon-developers/
