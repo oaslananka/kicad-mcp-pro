@@ -172,6 +172,12 @@ def _active_variant_args(variant_name: str | None = None) -> list[str]:
     return args
 
 
+def _resolve_manufacturing_variant(variant_name: str | None) -> str:
+    """Pin the actual variant, including the synthetic baseline, for the handoff."""
+    args = variant_apply_to_kicad_cli_args(variant_name)
+    return args[1] if args else "default"
+
+
 def build_gerber_service() -> ExportGerberService:
     """Compose the same low-level Gerber export for MCP and the local tray."""
     return ExportGerberService(
@@ -261,6 +267,7 @@ def register(mcp: FastMCP, *, include_low_level_exports: bool = True) -> None:
             path_text, allow_absolute=False
         ),
         ensure_output_dir=lambda: _ensure_output_dir(),
+        resolve_variant=_resolve_manufacturing_variant,
         export_gerber=lambda variant_name: gerber_service.export(variant_name=variant_name),
         export_drill=lambda variant_name: drill_service.export(variant_name=variant_name),
         export_bom=lambda variant_name: bom_service.export(variant_name=variant_name),

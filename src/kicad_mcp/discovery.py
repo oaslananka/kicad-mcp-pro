@@ -199,6 +199,8 @@ def find_kicad_version(cli_path: Path) -> str | None:
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
+    if result.returncode != 0:
+        return None
     text = (result.stdout or result.stderr).strip()
     return text or None
 

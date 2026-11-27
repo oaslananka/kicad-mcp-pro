@@ -191,3 +191,23 @@ def test_render_variant_components_merges_unknown_override_reference(
 
     assert "U99" in rendered
     assert rendered["U99"]["enabled"] is False
+
+
+@pytest.mark.parametrize(
+    "args, expected",
+    [
+        (["--variant", "lite"], "lite"),
+        (["--variant", "default"], "default"),
+        ([], "default"),
+    ],
+)
+def test_manufacturing_variant_pins_effective_selection(
+    monkeypatch: pytest.MonkeyPatch, args: list[str], expected: str
+) -> None:
+    from kicad_mcp.tools.export import _resolve_manufacturing_variant
+
+    monkeypatch.setattr(
+        "kicad_mcp.tools.export.variant_apply_to_kicad_cli_args",
+        lambda requested: args,
+    )
+    assert _resolve_manufacturing_variant(None) == expected

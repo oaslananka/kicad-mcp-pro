@@ -219,6 +219,7 @@ class ExportManufacturingPackageService(ManufacturingApprovalService):
     export_pick_and_place: VariantExport
     export_ipc2581: VariantExport
     export_odb: VariantExport
+    resolve_variant: Callable[[str | None], str | None]
 
     async def export(
         self,
@@ -240,6 +241,10 @@ class ExportManufacturingPackageService(ManufacturingApprovalService):
         if isinstance(evidence, str):
             return evidence
         evidence_path, evidence_payload = evidence
+        try:
+            variant_name = self.resolve_variant(variant_name)
+        except (OSError, ValueError) as exc:
+            return f"Manufacturing package export blocked: invalid variant selection: {exc}"
 
         root = self.ensure_output_dir()
         lock = root / ".manufacturing-package-in-progress"

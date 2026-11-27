@@ -87,6 +87,7 @@ def _service(tmp_path: Path):  # type: ignore[no-untyped-def]
     service = module.ExportManufacturingPackageService(
         resolve_project_path=resolve_project_path,
         ensure_output_dir=ensure_output_dir,
+        resolve_variant=lambda requested: requested,
         export_gerber=lambda variant_name: write_export("gerber", variant_name),
         export_drill=lambda variant_name: write_export("drill", variant_name),
         export_bom=lambda variant_name: write_export("bom", variant_name),
@@ -571,3 +572,39 @@ async def test_package_refuses_another_in_progress_export(tmp_path: Path) -> Non
     assert "existing export lock" in result
     assert not calls["gerber"]
     assert lock.is_dir()
+
+
+@pytest.mark.anyio
+async def test_package_pins_active_variant_in_all_exports_and_report(tmp_path: Path) -> None:
+    service, calls, output_root = _service(tmp_path)
+    _bound_approval(tmp_path)
+    resolutions = []
+
+    def resolve(requested: str | None) -> str:
+        resolutions.append(requested)
+        return "lite"
+
+    object.__setattr__(service, "resolve_variant", resolve)
+    result, _, _ = await _run_export(service, approval_evidence_path="approval.json")
+    assert "Manufacturing release evidence:" in result
+    assert resolutions == [None]
+    assert all(calls[name] == ["lite"] for name in ("gerber", "drill", "bom", "pick", "ipc", "odb"))
+    report = json.loads(
+        (output_root / "manufacturing_release_report.json").read_text(encoding="utf-8")
+    )
+    assert report["variant"] == "lite"
+
+
+@pytest.mark.anyio
+async def test_package_rejects_invalid_variant_before_outputs(tmp_path: Path) -> None:
+    service, calls, output = _service(tmp_path)
+    _bound_approval(tmp_path)
+
+    def resolve(_requested: str | None) -> str:
+        raise ValueError("unknown variant")
+
+    object.__setattr__(service, "resolve_variant", resolve)
+    result, _, _ = await _run_export(service, approval_evidence_path="approval.json")
+    assert "invalid variant selection: unknown variant" in result
+    assert not output.exists()
+    assert all(not calls[name] for name in ("gerber", "drill", "bom", "pick", "ipc", "odb"))
