@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -28,6 +27,7 @@ from tests.integration.test_mcp_native_v2_protocol import (
     _configure_native_v2_server,
     _running_http_server,
 )
+from tests.integration.test_routing_native_drc_preflight import _run_native_python
 
 pytestmark = [
     pytest.mark.gui,
@@ -101,21 +101,6 @@ _EMC_CALLS = {
 }
 
 
-def _build_native_fixture(bin_dir: Path, board: Path, env: dict[str, str]) -> None:
-    native_python = bin_dir / "python.exe"
-    assert native_python.is_file()
-    assert native_python.resolve(strict=True) == native_python
-    completed = subprocess.run(
-        [str(native_python), "-I", "-c", _NATIVE_FIXTURE, str(board)],
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=40,
-    )
-    assert completed.returncode == 0, completed.stderr[-1200:]
-
-
 async def _exercise_readonly_emc(board: Path) -> None:
     native = get_board()
     assert Path(native.get_project().path).resolve() == board.parent.resolve()
@@ -164,7 +149,7 @@ def test_native_windows_emc_readonly(monkeypatch: pytest.MonkeyPatch) -> None:
             board, env, endpoint = _configure_private_project(
                 Path(temp), bin_dir, monkeypatch, mode="readonly"
             )
-            _build_native_fixture(bin_dir, board, env)
+            _run_native_python(bin_dir / "python.exe", _NATIVE_FIXTURE, board, env=env)
             digest = hashlib.sha256(board.read_bytes()).hexdigest()
             with _private_editor(bin_dir / "pcbnew.exe", board, env, endpoint):
                 asyncio.run(_exercise_readonly_emc(board))
