@@ -67,6 +67,13 @@ stateless HTTP session receives an automatic catalog-change notification.
 A discovered tool is not proof that IPC is still connected when it is called;
 the normal operating-mode and native execution guards remain authoritative.
 
+Maintainers can reproduce the Windows native discovery and recovery contract
+with the opt-in `tests/gui/test_native_ipc_discovery_recovery.py` test. Set
+`KICAD_NATIVE_WINDOWS_IPC_GUI_BIN` to an installed KiCad 10.0 bin directory
+and run `uv run --locked pytest tests/gui/test_native_ipc_discovery_recovery.py`.
+It uses a disposable project, private configuration and IPC endpoint, and
+loopback HTTP only; it does not qualify an external Cloud Tunnel.
+
 ## Versioned local capability contract
 
 The machine-readable contract under integrations/common/capability-catalog.json
