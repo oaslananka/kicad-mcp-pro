@@ -323,6 +323,7 @@ def test_ambiguous_begin_enters_recovery_required_and_blocks_mutations() -> None
     assert payload["state"] == "recovery_required"
     assert payload["recovery_required"] is True
     assert payload["board_name"] == "demo.kicad_pcb"
+    assert payload["transaction_support_status"] == "unknown"
     assert service.last_evidence is not None
     assert service.last_evidence.outcome == "recovery_required"
 
@@ -579,3 +580,111 @@ def test_standalone_verifier_exception_is_actionable() -> None:
             verifier=lambda _board, _result: (_ for _ in ()).throw(ValueError("bad reread")),
             participates_in_live_session=True,
         )
+
+
+def test_transaction_capability_initially_unknown_without_native_probe() -> None:
+    board = FakeBoard()
+    service = _service([board])
+
+    payload = service.status_payload()
+
+    assert payload["transaction_support_status"] == "unknown"
+    assert payload["transaction_supported"] is False
+    assert board.calls == []
+
+
+def test_transaction_capability_evidence_expires_when_connection_epoch_changes() -> None:
+    board = FakeBoard()
+    epoch = [0]
+    service = _service([board], epoch_ref=epoch)
+    assert service.begin().startswith("Transaction group started")
+    assert "discarded" in service.drop().casefold()
+    assert service.status_payload()["transaction_support_status"] == "supported"
+
+    epoch[0] += 1
+    payload = service.status_payload()
+    assert payload["transaction_support_status"] == "unknown"
+    assert payload["transaction_supported"] is False
+
+    assert service.begin().startswith("Transaction group started")
+    assert service.status_payload()["transaction_support_status"] == "supported"
+
+
+def test_native_unsupported_is_distinct_from_unprobed_connection() -> None:
+    board = FakeBoard()
+    epoch = [0]
+    board.begin_commit = lambda: None  # type: ignore[method-assign]
+    service = _service([board], epoch_ref=epoch)
+
+    assert "not supported" in service.begin()
+    assert service.status_payload()["transaction_support_status"] == "unsupported"
+    assert service.status_payload()["transaction_supported"] is False
+
+    epoch[0] += 1
+    assert service.status_payload()["transaction_support_status"] == "unknown"
+
+
+def test_missing_native_begin_reports_unsupported_without_mutation() -> None:
+    board = FakeBoard()
+    board.begin_commit = None  # type: ignore[method-assign]
+    service = _service([board])
+
+    assert "not supported" in service.begin()
+    assert service.status_payload()["transaction_support_status"] == "unsupported"
+    assert board.calls == []
+
+
+def test_failed_new_probe_does_not_reuse_previous_support_evidence() -> None:
+    board = FakeBoard()
+    service = _service([board])
+    assert service.begin().startswith("Transaction group started")
+    assert "discarded" in service.drop().casefold()
+    assert service.status_payload()["transaction_support_status"] == "supported"
+
+    def unavailable():
+        raise OSError("IPC unavailable")
+
+    service.get_board = unavailable
+    assert service.begin().startswith("Failed to begin transaction")
+    assert service.status_payload()["transaction_support_status"] == "unknown"
+    assert service.status_payload()["transaction_supported"] is False
+
+
+def test_status_marks_lost_active_epoch_as_recovery_without_ipc_writes() -> None:
+    board = FakeBoard()
+    epoch = [0]
+    service = _service([board], epoch_ref=epoch)
+    assert service.begin().startswith("Transaction group started")
+    service.execute_board_mutation(
+        "pcb_add_track",
+        lambda _board: "staged",
+        verifier=lambda _board, _result: True,
+        participates_in_live_session=True,
+    )
+    calls = board.calls[:]
+    epoch[0] += 1
+    payload = service.status_payload()
+    assert payload["state"] == "recovery_required"
+    assert payload["transaction_support_status"] == "unknown"
+    assert payload["recovery_required"] is True
+    assert service.last_evidence is not None
+    assert service.last_evidence.outcome == "recovery_required"
+    assert service.status_payload() == payload
+    assert "ambiguous" in service.push().casefold()
+    assert board.calls == calls
+
+
+def test_mutation_response_never_claims_success_when_recovery_is_required(monkeypatch) -> None:
+    from kicad_mcp.tools import pcb
+
+    board = FakeBoard()
+    epoch = [0]
+    service = _service([board], epoch_ref=epoch)
+    monkeypatch.setattr(pcb, "get_live_edit_service", lambda: service)
+    assert pcb._native_live_transaction_active() is False
+    assert service.begin().startswith("Transaction group started")
+    assert pcb._native_live_transaction_active() is True
+    epoch[0] += 1
+    with pytest.raises(RuntimeError, match="recovery is required"):
+        pcb._native_live_transaction_active()
+    assert board.calls == [("begin",)]

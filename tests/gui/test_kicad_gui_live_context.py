@@ -209,11 +209,15 @@ def _launch_process(
     executable: Path,
     target: Path,
     log_dir: Path,
+    *,
+    env: dict[str, str] | None = None,
 ) -> ManagedProcess:
+    """Start an owned editor, optionally with a caller-provided private environment."""
     log_dir.mkdir(parents=True, exist_ok=True)
     process = subprocess.Popen(
         [str(executable), str(target)],
         cwd=target.parent,
+        env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
