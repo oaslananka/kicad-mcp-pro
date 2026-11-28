@@ -154,7 +154,7 @@ def _areas(footprint: str) -> list[_RuleArea]:
 
 
 def _apply_edits(content: str, edits: list[tuple[int, int, str]]) -> str:
-    for start, end, value in reversed(sorted(edits)):
+    for start, end, value in sorted(edits, reverse=True):
         content = content[:start] + value + content[end:]
     return content
 
@@ -200,6 +200,26 @@ def _ambiguous(footprint: str, rule: _RuleArea) -> ValueError:
     )
 
 
+def _explicit_decision(
+    footprint: str,
+    rule: _RuleArea,
+    intents: KeepoutLayerIntents,
+    decisions: KeepoutLayerIntents,
+    used: set[str],
+) -> KeepoutLayerIntent | None:
+    key = _decision_key(footprint, rule) if decisions else None
+    if rule.identity is None or key is None or key not in decisions:
+        return None
+    if key in used:
+        raise ValueError(f"Duplicate footprint/rule identity {key}.")
+    used.add(key)
+    choice = decisions[key]
+    if choice == "fixed_layers" and rule.layers == {"*.Cu"}:
+        raise ValueError("Fixed layers require a concrete rule layer mask.")
+    intents[rule.identity] = choice
+    return choice
+
+
 def _resolve_rule_intent(
     footprint: str,
     rule: _RuleArea,
@@ -208,15 +228,8 @@ def _resolve_rule_intent(
     used: set[str],
     old_copper: set[str],
 ) -> KeepoutLayerIntent | None:
-    key = _decision_key(footprint, rule) if decisions else None
-    if rule.identity is not None and key is not None and key in decisions:
-        if key in used:
-            raise ValueError(f"Duplicate footprint/rule identity {key}.")
-        used.add(key)
-        choice = decisions[key]
-        if choice == "fixed_layers" and rule.layers == {"*.Cu"}:
-            raise ValueError("Fixed layers require a concrete rule layer mask.")
-        intents[rule.identity] = choice
+    choice = _explicit_decision(footprint, rule, intents, decisions, used)
+    if choice is not None:
         return choice
 
     intent = intents.get(rule.identity) if rule.identity is not None else None

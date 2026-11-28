@@ -105,8 +105,9 @@ def test_ambiguous_saved_footprint_is_not_silently_widened() -> None:
         + _rule(ALL_ID, ["F.Cu", "B.Cu"], "antenna")
         + ")"
     )
+    board, layers = _board(footprint), _stackup(4)
     with pytest.raises(ValueError, match=r"(?i)ambiguous.*U1"):
-        pcb._apply_stackup_to_board(_board(footprint), _stackup(4))
+        pcb._apply_stackup_to_board(board, layers)
 
 
 def test_unrelated_board_rule_is_not_reinterpreted() -> None:
@@ -127,8 +128,9 @@ def test_existing_ambiguous_rule_requires_explicit_identity_scoped_resolution(
         + ")"
     )
     key = f"{root_id}/{ALL_ID}"
+    board, layers = _board(footprint), _stackup(4)
     with pytest.raises(ValueError, match=key):
-        pcb._apply_stackup_to_board(_board(footprint), _stackup(4))
+        pcb._apply_stackup_to_board(board, layers)
     updated = pcb._apply_stackup_to_board(
         _board(footprint), _stackup(4), keepout_layer_intents={key: decision}
     )
@@ -142,8 +144,8 @@ def test_existing_ambiguous_rule_requires_explicit_identity_scoped_resolution(
     assert _layers(_rules(grown)[ALL_ID]) == expected
     with pytest.raises(ValueError, match="Unknown.*rule"):
         pcb._apply_stackup_to_board(
-            _board(footprint),
-            _stackup(4),
+            board,
+            layers,
             keepout_layer_intents={key: decision, f"{root_id}/{FIXED_ID}": "fixed_layers"},
         )
 
@@ -182,8 +184,9 @@ def test_invalid_saved_provenance_refuses_layer_change(value: str) -> None:
     footprint = _footprint(
         _rule(ALL_ID, ["F.Cu", "B.Cu"], "antenna"), f'(property "{FIELD}" "{value}")'
     )
+    board, layers = _board(footprint), _stackup(4)
     with pytest.raises(ValueError, match=f"Invalid {FIELD}"):
-        pcb._apply_stackup_to_board(_board(footprint), _stackup(4))
+        pcb._apply_stackup_to_board(board, layers)
 
 
 def test_deleted_rule_and_conflicting_mask_require_reconciliation() -> None:
@@ -191,11 +194,13 @@ def test_deleted_rule_and_conflicting_mask_require_reconciliation() -> None:
 
     original = _rule(ALL_ID, ALL_LAYERS, "antenna")
     marked = mark_library_keepout_intent(_footprint(original))
+    stale_board, layers = _board(marked.replace(original, "")), _stackup(4)
     with pytest.raises(ValueError, match="Stale.*provenance"):
-        pcb._apply_stackup_to_board(_board(marked.replace(original, "")), _stackup(4))
+        pcb._apply_stackup_to_board(stale_board, layers)
     narrowed = marked.replace(_layer_clause(ALL_LAYERS), _layer_clause(["F.Cu"]), 1)
+    narrowed_board = _board(narrowed)
     with pytest.raises(ValueError, match="Ambiguous.*U1"):
-        pcb._apply_stackup_to_board(_board(narrowed), _stackup(4))
+        pcb._apply_stackup_to_board(narrowed_board, layers)
     corrected = pcb._apply_stackup_to_board(
         _board(narrowed), _stackup(4), keepout_layer_intents={f"{ROOT_ID}/{ALL_ID}": "fixed_layers"}
     )
@@ -211,7 +216,8 @@ def test_source_marker_is_reserved_and_missing_rule_uuid_is_assigned() -> None:
     no_uuid = _rule(ALL_ID, ALL_LAYERS, "antenna").replace(f'(uuid "{ALL_ID}")', "")
     marked = mark_library_keepout_intent(_footprint(no_uuid))
     identity = next(iter(_rules(_board(marked))))
-    assert identity != ALL_ID and f"{identity}=all_copper" in marked
+    assert identity != ALL_ID
+    assert f"{identity}=all_copper" in marked
 
 
 @pytest.mark.parametrize(
@@ -224,8 +230,9 @@ def test_source_marker_is_reserved_and_missing_rule_uuid_is_assigned() -> None:
 def test_invalid_or_duplicate_rule_uuid_refuses_library_import(rule: str) -> None:
     from kicad_mcp.pcb.rule_layer_intent import mark_library_keepout_intent
 
+    footprint = _footprint(rule)
     with pytest.raises(ValueError, match="keepout UUID"):
-        mark_library_keepout_intent(_footprint(rule))
+        mark_library_keepout_intent(footprint)
 
 
 def test_ordinary_and_non_copper_zones_are_not_marked() -> None:
@@ -251,17 +258,19 @@ def test_explicit_full_declaration_on_existing_board_can_be_preserved() -> None:
 
 def test_missing_identity_and_wildcard_fixed_choice_are_refused() -> None:
     no_uuid = _rule(ALL_ID, ["F.Cu", "B.Cu"], "antenna").replace(f'(uuid "{ALL_ID}")', "")
+    board, layers = _board(_footprint(no_uuid)), _stackup(4)
     with pytest.raises(ValueError, match="Save the board in KiCad"):
-        pcb._apply_stackup_to_board(_board(_footprint(no_uuid)), _stackup(4))
+        pcb._apply_stackup_to_board(board, layers)
+    wildcard_board = _board(_footprint(_rule(ALL_ID, ["*.Cu"], "antenna")))
     with pytest.raises(ValueError, match="concrete rule layer mask"):
         pcb._apply_stackup_to_board(
-            _board(_footprint(_rule(ALL_ID, ["*.Cu"], "antenna"))),
-            _stackup(4),
+            wildcard_board,
+            layers,
             keepout_layer_intents={f"{ROOT_ID}/{ALL_ID}": "fixed_layers"},
         )
     with pytest.raises(ValueError, match="without a board layer table"):
         pcb._apply_stackup_to_board(
-            "(kicad_pcb)", _stackup(4), keepout_layer_intents={f"{ROOT_ID}/{ALL_ID}": "all_copper"}
+            "(kicad_pcb)", layers, keepout_layer_intents={f"{ROOT_ID}/{ALL_ID}": "all_copper"}
         )
 
 
@@ -272,14 +281,16 @@ def test_duplicate_composite_decision_is_refused_and_stale_clone_does_not_guess(
     )
 
     footprint = _footprint(_rule(ALL_ID, ["F.Cu", "B.Cu"], "antenna"))
+    board, layers = _board(footprint + footprint), _stackup(4)
     with pytest.raises(ValueError, match="Duplicate footprint/rule identity"):
         pcb._apply_stackup_to_board(
-            _board(footprint + footprint),
-            _stackup(4),
+            board,
+            layers,
             keepout_layer_intents={f"{ROOT_ID}/{ALL_ID}": "all_copper"},
         )
+    marked = mark_library_keepout_intent(footprint)
     with pytest.raises(ValueError, match="Cannot safely remap"):
-        remap_cloned_rule_intents(mark_library_keepout_intent(footprint), {})
+        remap_cloned_rule_intents(marked, {})
 
 
 def test_fixed_inner_layer_rule_prevents_dropping_its_layer() -> None:
@@ -290,5 +301,6 @@ def test_fixed_inner_layer_rule_prevents_dropping_its_layer() -> None:
     )
     four_layer = pcb._apply_stackup_to_board(_board(), _stackup(4))
     board = four_layer.rstrip()[:-1] + "\n" + footprint + "\n)\n"
+    layers = _stackup(2)
     with pytest.raises(ValueError, match=r"still carry board items: In1\.Cu"):
-        pcb._apply_stackup_to_board(board, _stackup(2))
+        pcb._apply_stackup_to_board(board, layers)
