@@ -322,3 +322,93 @@ async def test_tool_reports_unknown_reference(
     raw = await call_tool_text(server, "lib_verify_component_contract", {"reference": "R404"})
     report = json.loads(raw)
     assert "error" in report
+
+
+def _grouped_ground_symbol(number: str = "[1,15,38,39]") -> str:
+    return (
+        '(symbol "RF:Module" (symbol "Module_1_1" '
+        f'(pin power_in line (name "GND") (number "{number}")) '
+        '(pin power_in line (name "VDD") (number "2"))))'
+    )
+
+
+def _grouped_ground_footprint(numbers: tuple[str, ...] = ("1", "15", "38", "39", "2")):
+    return parse_footprint(
+        '(footprint "Module" (fp_line (layer "F.SilkS")) (fp_line (layer "F.Fab")) '
+        '(fp_line (layer "F.CrtYd")) (model "Module.step") '
+        + " ".join(f'(pad "{number}" smd rect)' for number in numbers)
+        + ")"
+    )
+
+
+def test_explicit_group_counts_every_physical_pad() -> None:
+    pins = parse_symbol_pins(_grouped_ground_symbol())
+    assert {p.number for p in pins if p.name == "GND"} == {"1", "15", "38", "39"}
+    assert all(p.electrical_type == "power_in" for p in pins)
+    report = verify_contract(
+        reference="U1",
+        lib_id="RF:Module",
+        footprint_id="RF:Module",
+        pins=pins,
+        footprint=_grouped_ground_footprint(),
+    )
+    assert report.status == "PASS"
+    assert any(
+        f.code == "pin_pad_count" and f.message == "Pin count matches pad count (5)."
+        for f in report.findings
+    )
+
+
+def test_missing_group_member_is_a_genuine_contract_failure() -> None:
+    report = verify_contract(
+        reference="U1",
+        lib_id="RF:Module",
+        footprint_id="RF:Module",
+        pins=parse_symbol_pins(_grouped_ground_symbol()),
+        footprint=_grouped_ground_footprint(("1", "15", "38", "2")),
+    )
+    assert report.status == "FAIL"
+    assert any(
+        f.level == "FAIL" and f.message == "Pins with no matching pad: 39." for f in report.findings
+    )
+
+
+@pytest.mark.parametrize(
+    "number", ["[1,15,,39]", "[1,1]", "[1-39]", "[1,15,39", "[1,\u0662]", "[1,\uff12]"]
+)
+def test_unverified_group_is_not_certified_or_inferred_from_pads(number: str) -> None:
+    report = verify_contract(
+        reference="U1",
+        lib_id="RF:Module",
+        footprint_id="RF:Module",
+        pins=parse_symbol_pins(_grouped_ground_symbol(number)),
+        footprint=_grouped_ground_footprint(),
+    )
+    assert report.status == "WARN"
+    assert any(
+        f.code == "symbol_pin_group_unverified" and f.level == "WARN" for f in report.findings
+    )
+    assert not any(f.code == "pin_pad_count" and f.level == "PASS" for f in report.findings)
+
+
+def test_unknown_group_does_not_hide_a_missing_known_pin() -> None:
+    report = verify_contract(
+        reference="U1",
+        lib_id="RF:Module",
+        footprint_id="RF:Module",
+        pins=parse_symbol_pins(_grouped_ground_symbol("[1-39]")),
+        footprint=_grouped_ground_footprint(("1", "15", "38", "39")),
+    )
+    assert report.status == "FAIL"
+    assert any(
+        f.level == "FAIL" and f.message == "Pins with no matching pad: 2." for f in report.findings
+    )
+
+
+def test_group_members_repeated_across_units_count_once() -> None:
+    symbol = _grouped_ground_symbol()[:-1] + (
+        '(symbol "Module_2_1" (pin power_in line (name "GND") (number "1"))))'
+    )
+    pins = parse_symbol_pins(symbol)
+    assert len(pins) == 5
+    assert {p.number for p in pins} == {"1", "2", "15", "38", "39"}
