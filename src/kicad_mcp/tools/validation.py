@@ -1039,6 +1039,24 @@ def _evaluate_pcb_transfer_gate() -> GateOutcome:
 
 
 def _evaluate_schematic_gate() -> GateOutcome:
+    from .schematic import SchematicChangedDuringAnalysisError, SchematicFileRevision
+
+    path = get_config().sch_file
+    try:
+        revision = SchematicFileRevision.capture(path) if path is not None else None
+        outcome = _evaluate_schematic_gate_report()
+        if revision is not None:
+            revision.verify_unchanged()
+    except (OSError, SchematicChangedDuringAnalysisError) as exc:
+        return GateOutcome(
+            name="Schematic",
+            status="BLOCKED",
+            summary=f"Schematic evidence unavailable ({exc}).",
+        )
+    return outcome
+
+
+def _evaluate_schematic_gate_report() -> GateOutcome:
     from .schematic import SchematicChangedDuringAnalysisError, analyze_schematic_file
 
     _, report, error = _run_erc_report("schematic_quality_gate.json")

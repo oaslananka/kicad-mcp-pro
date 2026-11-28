@@ -1002,3 +1002,23 @@ async def test_schematic_quality_gate_blocks_changed_analysis(
     assert "Schematic quality gate: BLOCKED" in result
     assert "changed during analysis" in result
     assert erc_calls == ["schematic_quality_gate.json"]
+
+
+@pytest.mark.anyio
+async def test_schematic_quality_gate_blocks_edit_during_native_erc(
+    sample_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.tools import validation
+
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    schematic_file = sample_project / "demo.kicad_sch"
+
+    def changed_erc(report_name: str) -> tuple[Path, dict, None]:
+        schematic_file.write_bytes(schematic_file.read_bytes() + b"\n")
+        return sample_project / report_name, {"sheets": [{"path": "/", "violations": []}]}, None
+
+    monkeypatch.setattr(validation, "_run_erc_report", changed_erc)
+    result = await call_tool_text(server, "schematic_quality_gate", {})
+    assert "Schematic quality gate: BLOCKED" in result
+    assert "changed during analysis" in result

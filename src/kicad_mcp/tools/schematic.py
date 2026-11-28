@@ -6437,6 +6437,31 @@ def _schematic_file_identity(stat_result: os.stat_result) -> tuple[int, ...]:
     )
 
 
+@dataclass(frozen=True)
+class SchematicFileRevision:
+    """File content and identity scoped to one analysis, never cached."""
+
+    path: Path
+    identity: tuple[int, ...]
+    content: bytes
+
+    @classmethod
+    def capture(cls, path: Path) -> SchematicFileRevision:
+        return cls(path, _schematic_file_identity(path.stat()), path.read_bytes())
+
+    def verify_unchanged(self) -> None:
+        message = "Schematic changed during analysis; save edits and retry."
+        try:
+            unchanged = (
+                self.path.read_bytes() == self.content
+                and _schematic_file_identity(self.path.stat()) == self.identity
+            )
+        except OSError as exc:
+            raise SchematicChangedDuringAnalysisError(message) from exc
+        if not unchanged:
+            raise SchematicChangedDuringAnalysisError(message)
+
+
 def analyze_schematic_file(
     sch_file: Path,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -6446,21 +6471,11 @@ def analyze_schematic_file(
     file identity around analysis to detect external edits/replacements. This
     is not a persistent cache or an exclusive filesystem lock.
     """
-    before = _schematic_file_identity(sch_file.stat())
-    original = sch_file.read_bytes()
+    revision = SchematicFileRevision.capture(sch_file)
     data = parse_schematic_file(sch_file)
-    content = original.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    content = revision.content.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
     groups = _connectivity_groups_from_data(data, content)
-    message = "Schematic changed during analysis; save edits and retry."
-    try:
-        unchanged = (
-            sch_file.read_bytes() == original
-            and _schematic_file_identity(sch_file.stat()) == before
-        )
-    except OSError as exc:
-        raise SchematicChangedDuringAnalysisError(message) from exc
-    if not unchanged:
-        raise SchematicChangedDuringAnalysisError(message)
+    revision.verify_unchanged()
     return data, groups
 
 
