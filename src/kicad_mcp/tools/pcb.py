@@ -2450,12 +2450,45 @@ def _degrading_placement_message(
         reasons.append("placement score would decrease")
     if new_failures:
         reasons.append(f"{len(new_failures)} new hard placement failure(s)")
+    details = ""
+    if new_failures:
+        details = "\nNew hard failures (up to 5):\n- " + "\n- ".join(new_failures[:5])
     return (
         "Auto-placement candidate rejected: "
         + "; ".join(reasons)
         + f". Current board preserved. Score {before_score}/100"
         + f" -> {candidate_score}/100."
+        + details
+        + "\nThis rejected candidate is not proof that the board is infeasible. "
+        "Review the reported constraints and adjust placement before retrying."
     )
+
+
+def _footprint_placement_locked(block: str) -> bool:
+    span = _child_span(block, "locked")
+    if span is None:
+        return False
+    start, end = span
+    return re.fullmatch(r"\(locked\s+no\s*\)", block[start:end]) is None
+
+
+def _placement_candidate_replacements(
+    footprints: dict[str, dict[str, Any]],
+    result: list[PlacementComponent],
+) -> dict[str, str]:
+    """Build replacement blocks without rewriting fixed footprints."""
+    replacements: dict[str, str] = {}
+    for placed in result:
+        if placed.fixed:
+            continue
+        entry = footprints[placed.ref]
+        replacements[placed.ref] = _replace_root_at(
+            str(entry["block"]),
+            x_mm=placed.x,
+            y_mm=placed.y,
+            rotation=int(entry["rotation"]),
+        )
+    return replacements
 
 
 def _auto_place_force_directed_board_file(
@@ -2487,11 +2520,11 @@ def _auto_place_force_directed_board_file(
     components = [
         PlacementComponent(
             ref=reference,
-            x=float(entry["x_mm"]),
-            y=float(entry["y_mm"]),
+            x=float(entry["x_mm"]) - x_min,
+            y=float(entry["y_mm"]) - y_min,
             w=float(entry["width_mm"]),
             h=float(entry["height_mm"]),
-            fixed=False,
+            fixed=_footprint_placement_locked(str(entry["block"])),
         )
         for reference, entry in movable
     ]
@@ -2515,6 +2548,10 @@ def _auto_place_force_directed_board_file(
         ),
         stats=stats,
     )
+    # The solver uses a zero-origin frame; restore board coordinates before comparison and write.
+    for placed in result:
+        placed.x += x_min
+        placed.y += y_min
     if all(
         abs(placed.x - float(footprints[placed.ref]["x_mm"])) < 1e-6
         and abs(placed.y - float(footprints[placed.ref]["y_mm"])) < 1e-6
@@ -2522,15 +2559,7 @@ def _auto_place_force_directed_board_file(
     ):
         return "Auto-placement skipped: candidate leaves footprint positions unchanged."
 
-    replacements: dict[str, str] = {}
-    for placed in result:
-        entry = footprints[placed.ref]
-        replacements[placed.ref] = _replace_root_at(
-            str(entry["block"]),
-            x_mm=placed.x,
-            y_mm=placed.y,
-            rotation=int(entry["rotation"]),
-        )
+    replacements = _placement_candidate_replacements(footprints, result)
     candidate_content = _replace_board_blocks(board_content, replacements, [])
     candidate_analysis = _placement_analysis_from_content(candidate_content)
     if candidate_analysis is None:
