@@ -80,7 +80,8 @@ def _assert_track_exclusion(board: Path, report: Path, baseline: str) -> None:
         str(report),
         str(board),
     )
-    assert code == 5 and report.is_file(), stderr or stdout
+    assert code == 5, stderr or stdout
+    assert report.is_file()
     data = json.loads(report.read_text(encoding="utf-8"))
     observed = {
         probes[item["uuid"]]
@@ -114,7 +115,8 @@ def _assert_pour_exclusion(board: Path, report: Path, baseline: str) -> None:
         str(report),
         str(board),
     )
-    assert code in {0, 5} and report.is_file(), stderr or stdout
+    assert code in {0, 5}, stderr or stdout
+    assert report.is_file()
     observed = {}
     for kind, zone in iter_root_children(board.read_text(encoding="utf-8")):
         if kind != "zone":
@@ -149,7 +151,8 @@ async def test_native_footprint_keepouts_follow_explicit_layer_intent(
         pytest.skip("Explicit native KiCad CLI and stock ESP32-C6-MINI-1 footprint required")
     executable = Path(cli).resolve(strict=True)
     stock = Path(library).resolve(strict=True)
-    assert executable.is_file() and stock.is_file()
+    assert executable.is_file()
+    assert stock.is_file()
     original = stock.read_bytes()
     fixture = FIXTURE / "empty-board.kicad_pcb"
     fixture_bytes = fixture.read_bytes()
@@ -182,7 +185,8 @@ async def test_native_footprint_keepouts_follow_explicit_layer_intent(
     reset_config()
     reset_connection()
     version_code, version, error = _run_cli("version")
-    assert version_code == 0 and version.strip().startswith("10."), error or version
+    assert version_code == 0, error or version
+    assert version.strip().startswith("10."), version
     monkeypatch.setattr(
         pcb, "_footprint_file", lambda _lib, name: stock if name == "ESP32-C6-MINI-1" else fixed
     )
@@ -224,4 +228,5 @@ async def test_native_footprint_keepouts_follow_explicit_layer_intent(
     report = project / "drc.json"
     _assert_track_exclusion(board, report, baseline)
     _assert_pour_exclusion(board, report, baseline)
-    assert stock.read_bytes() == original and fixture.read_bytes() == fixture_bytes
+    assert stock.read_bytes() == original
+    assert fixture.read_bytes() == fixture_bytes

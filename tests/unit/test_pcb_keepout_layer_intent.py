@@ -280,3 +280,15 @@ def test_duplicate_composite_decision_is_refused_and_stale_clone_does_not_guess(
         )
     with pytest.raises(ValueError, match="Cannot safely remap"):
         remap_cloned_rule_intents(mark_library_keepout_intent(footprint), {})
+
+
+def test_fixed_inner_layer_rule_prevents_dropping_its_layer() -> None:
+    from kicad_mcp.pcb.rule_layer_intent import mark_library_keepout_intent
+
+    footprint = mark_library_keepout_intent(
+        _footprint(_rule(ALL_ID, ["In1.Cu"], "fixed inner layer"))
+    )
+    four_layer = pcb._apply_stackup_to_board(_board(), _stackup(4))
+    board = four_layer.rstrip()[:-1] + "\n" + footprint + "\n)\n"
+    with pytest.raises(ValueError, match=r"still carry board items: In1\.Cu"):
+        pcb._apply_stackup_to_board(board, _stackup(2))
