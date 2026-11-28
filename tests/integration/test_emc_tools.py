@@ -405,3 +405,42 @@ def test_stored_fill_without_filled_zones() -> None:
 
     result = describe_stored_plane([], [SimpleNamespace(filled=False)], BoardLayer.BL_B_Cu)
     assert "unfilled" in result
+
+
+@pytest.mark.parametrize("mode", ["outer_edge", "hole_edge", "fractured_edge"])
+def test_stored_fill_boundary_is_not_counted_as_confirmed_interior(mode) -> None:
+    from kicad_mcp.pcb.return_path_evidence import describe_stored_plane
+
+    vertices = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    holes = []
+    if mode == "outer_edge":
+        x, y = 2, 0
+    elif mode == "hole_edge":
+        holes = [[(4, 4), (4, 6), (6, 6), (6, 4)]]
+        x, y = 6, 5
+    else:
+        vertices = [
+            (0, 0),
+            (4, 0),
+            (4, 4),
+            (4, 6),
+            (6, 6),
+            (6, 4),
+            (4, 4),
+            (4, 0),
+            (10, 0),
+            (10, 10),
+            (0, 10),
+        ]
+        x, y = 6, 5
+    start = SimpleNamespace(x_nm=x * 1_000_000, y_nm=y * 1_000_000)
+    end = SimpleNamespace(x_nm=x * 1_000_000, y_nm=(y + 0.1) * 1_000_000)
+    if mode == "outer_edge":
+        end = SimpleNamespace(x_nm=(x + 0.1) * 1_000_000, y_nm=y * 1_000_000)
+    result = describe_stored_plane(
+        [SimpleNamespace(start=start, end=end)],
+        [_filled_reference_zone(vertices, holes)],
+        BoardLayer.BL_B_Cu,
+    )
+    assert re.search(r"0/\d+ covered", result), result
+    assert "boundary" in result.lower()

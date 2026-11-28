@@ -29,14 +29,36 @@ def _ring(polyline: PolyLine) -> Ring:
     return points
 
 
-def _inside(point: Point, ring: Ring) -> bool:
+_BOUNDARY_TOL_MM = 0.000001  # one native nanometre
+
+
+def _on_edge(point: Point, start: Point, end: Point) -> bool:
+    x, y = point
+    ax, ay = start
+    bx, by = end
+    tol = _BOUNDARY_TOL_MM
+    if not (min(ax, bx) - tol <= x <= max(ax, bx) + tol):
+        return False
+    if not (min(ay, by) - tol <= y <= max(ay, by) + tol):
+        return False
+    length = math.hypot(bx - ax, by - ay)
+    cross = (x - ax) * (by - ay) - (y - ay) * (bx - ax)
+    return abs(cross) <= tol * length
+
+
+def _ring_location(point: Point, ring: Ring) -> int:
+    """Return 1 for interior, 0 for boundary, -1 for exterior."""
     # Even/odd crossings also handle KiCad's fractured hole contours.
     x, y = point
     inside = False
-    for (ax, ay), (bx, by) in zip(ring, (*ring[1:], ring[0]), strict=True):
+    for a, b in zip(ring, (*ring[1:], ring[0]), strict=True):
+        if _on_edge(point, a, b):
+            return 0
+        ax, ay = a
+        bx, by = b
         if (ay > y) != (by > y) and x < ax + (y - ay) * (bx - ax) / (by - ay):
             inside = not inside
-    return inside
+    return 1 if inside else -1
 
 
 @dataclass(frozen=True)
@@ -45,7 +67,9 @@ class _Fill:
     holes: tuple[Ring, ...]
 
     def contains(self, point: Point) -> bool:
-        return _inside(point, self.outline) and not any(_inside(point, h) for h in self.holes)
+        return _ring_location(point, self.outline) == 1 and all(
+            _ring_location(point, h) == -1 for h in self.holes
+        )
 
 
 def _read_fill(zones: Iterable[object], layer: BoardLayer.ValueType) -> list[_Fill]:
@@ -98,5 +122,6 @@ def describe_stored_plane(
         return f"Stored fill geometry unavailable or unsupported: {exc}."
     return (
         f"Stored fill centerline samples: {covered}/{len(samples)} covered, "
-        f"{len(samples) - covered} uncovered (spacing <= 0.1 mm)."
+        f"{len(samples) - covered} uncovered (spacing <= 0.1 mm; "
+        "boundary points conservatively excluded, including fractured contour bridges)."
     )
