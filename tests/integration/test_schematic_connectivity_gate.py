@@ -467,7 +467,8 @@ def test_connectivity_page_blocks_edit_during_parse(
         failures=[],
         page_summaries=summaries,
     )
-    assert blocked and "changed during" in blocked[0]
+    assert blocked
+    assert "changed during" in blocked[0]
     assert summaries == []
 
 
