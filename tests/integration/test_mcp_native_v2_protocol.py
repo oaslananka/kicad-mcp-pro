@@ -289,3 +289,34 @@ async def test_new_schematic_authoring_permission_is_explicit_over_real_http(
         assert "KICAD_MCP_PROFILE=schematic_authoring" in discovered.instructions
         assert "KICAD_MCP_OPERATING_MODE=write" in discovered.instructions
         assert "never elevate permissions automatically" in discovered.instructions
+
+
+@pytest.mark.asyncio
+async def test_readonly_sdk_tool_denial_keeps_rpc_delivery_and_audit_distinct(
+    sample_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(get_config(), "operating_mode", "readonly")
+    server = _configure_native_v2_server(sample_project, profile="pcb_only")
+    events: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        "kicad_mcp.server.logger.info",
+        lambda event, **kwargs: events.append((event, kwargs)),
+    )
+    with _running_http_server(server.streamable_http_app()) as base_url:
+        async with streamable_http_client(f"{base_url}/mcp") as (reader, writer):
+            async with ClientSession(reader, writer) as session:
+                await session.initialize()
+                succeeded = await session.call_tool("kicad_get_version", {})
+                denied = await session.call_tool(
+                    "pcb_move_footprint", {"reference": "private-board-reference"}
+                )
+
+    assert not succeeded.is_error
+    assert denied.is_error
+    assert "MODE_FORBIDDEN" in denied.content[0].text
+    assert denied.structured_content is None
+    audits = {data["tool"]: data for event, data in events if event == "tool_call_audit"}
+    assert audits["kicad_get_version"]["status"] == "ok"
+    assert audits["pcb_move_footprint"]["status"] == "error"
+    assert audits["pcb_move_footprint"]["error_code"] == "MODE_FORBIDDEN"
+    assert "private-board-reference" not in str(events)

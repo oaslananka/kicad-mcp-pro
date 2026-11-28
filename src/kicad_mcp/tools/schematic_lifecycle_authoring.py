@@ -42,8 +42,6 @@ def register(mcp: FastMCP, dependencies: SchematicLifecycleAuthoringDependencies
         )
 
     @mcp.tool()
-    @mcp.tool()
-    @mcp.tool()
     def sch_annotate(start_number: int = 1, order: str = "alpha") -> str:
         """Renumber schematic references sequentially."""
         return service.annotate(start_number=start_number, order=order)

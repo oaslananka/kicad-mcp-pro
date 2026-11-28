@@ -461,7 +461,7 @@ async def test_cli_nonzero_result_returns_structured_error(
     class Result:
         returncode = 2
         stdout = ""
-        stderr = "fatal export failed"
+        stderr = "fatal export failed: private-board-reference"
 
     monkeypatch.setattr(
         "kicad_mcp.tools.export.get_cli_capabilities",
@@ -475,8 +475,15 @@ async def test_cli_nonzero_result_returns_structured_error(
     )
     monkeypatch.setattr("kicad_mcp.tools.export.subprocess.run", lambda *_args, **_kwargs: Result())
 
+    get_config().transport = "streamable-http"
     server = build_server("full")
     await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    events: list[tuple[str, dict[str, object]]] = []
+    for level in ("info", "warning", "error"):
+        monkeypatch.setattr(
+            f"kicad_mcp.server.logger.{level}",
+            lambda event, **kwargs: events.append((event, kwargs)),
+        )
     result = await server.call_tool("export_gerber", {})
 
     assert isinstance(result, CallToolResult)
@@ -486,6 +493,10 @@ async def test_cli_nonzero_result_returns_structured_error(
     text = result.content[0].text
     assert "CLI_COMMAND_FAILED" in text
     assert "Gerber export failed" in text
+    audit = [data for event, data in events if event == "tool_call_audit"][-1]
+    assert audit["status"] == "error"
+    assert audit["error_code"] == "CLI_COMMAND_FAILED"
+    assert "private-board-reference" not in str(events)
 
 
 def test_tool_failure_message_detects_could_not_and_failed_to_prefixes() -> None:
@@ -1661,3 +1672,170 @@ def test_live_model_release_readiness_checkouts_fetch_full_history() -> None:
                     f"{path.name}:{job_name} must fetch full history before live-model readiness"
                 )
         assert matched, f"{path.name} readiness command was not found in parsed steps"
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("readonly")
+async def test_http_denial_audit_retains_error_code_without_arguments(
+    sample_project, monkeypatch
+) -> None:
+    cfg = get_config()
+    cfg.transport = "streamable-http"
+    server = build_server("full")
+    events: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        "kicad_mcp.server.logger.info", lambda event, **kwargs: events.append((event, kwargs))
+    )
+
+    result = await server.call_tool("pcb_move_footprint", {"reference": "private-reference-123"})
+
+    assert isinstance(result, CallToolResult)
+    assert result.is_error
+    assert result.structured_content is None
+    assert "MODE_FORBIDDEN" in result.content[0].text
+    audit = [data for event, data in events if event == "tool_call_audit"][-1]
+    assert audit["status"] == "error"
+    assert audit["error_code"] == "MODE_FORBIDDEN"
+    assert "private-reference-123" not in str(events)
+
+
+def test_promoted_domain_failure_retains_distinct_audit_status() -> None:
+    from kicad_mcp.server import _promote_failed_tool_result, _status_from_result
+
+    result = CallToolResult(
+        content=[], structuredContent={"result": {"ok": False, "errors": ["private"]}}
+    )
+    promoted = _promote_failed_tool_result(result)
+    assert isinstance(promoted, CallToolResult)
+    assert promoted.is_error
+    assert promoted.structured_content == result.structured_content
+    assert _status_from_result(promoted) == ("error", "TOOL_RESULT_FAILURE")
+
+
+def test_native_transaction_refusal_is_classified_as_permission_denied() -> None:
+    from kicad_mcp.server import _tool_error_code
+
+    message = (
+        "pcb_add_zone does not participate in the active native-live transaction. "
+        "Commit or discard the transaction before using this operation."
+    )
+    assert _tool_error_code(message, tool_name="pcb_add_zone") == "PERMISSION_DENIED"
+
+
+@pytest.mark.anyio
+async def test_maintenance_refusal_finishes_audit_without_releasing_unreserved_call(
+    sample_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.web.state import begin_maintenance, end_maintenance
+
+    get_config().transport = "streamable-http"
+    server = build_server("minimal")
+    events: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        "kicad_mcp.server.logger.info",
+        lambda event, **kwargs: events.append((event, kwargs)),
+    )
+    original_context = server._telemetry_context_attributes
+
+    def reject_catalog_during_maintenance() -> dict[str, object]:
+        raise AssertionError("Maintenance refusal must not trigger tool catalog discovery")
+
+    monkeypatch.setattr(server, "_telemetry_context_attributes", reject_catalog_during_maintenance)
+    owner = "test-maintenance-owner"
+    token = begin_maintenance(owner)
+    assert token is not None
+    try:
+        denied = await server.call_tool("kicad_get_version", {})
+        assert isinstance(denied, CallToolResult)
+        assert denied.is_error
+        assert "preparing a desktop update" in denied.content[0].text
+        assert not begin_maintenance("another-owner")
+        finished = [data for event, data in events if event == "tool_call_finished"]
+        audits = [data for event, data in events if event == "tool_call_audit"]
+        assert len(finished) == len(audits) == 1
+        assert audits[0]["status"] == "error"
+        assert audits[0]["error_code"] == "TOOL_EXECUTION_FAILED"
+    finally:
+        assert end_maintenance(owner, token)
+    monkeypatch.setattr(server, "_telemetry_context_attributes", original_context)
+    assert not (await server.call_tool("kicad_get_version", {})).is_error
+
+
+@pytest.mark.parametrize(
+    ("structured", "expected_code"),
+    [
+        ({"error_code": "KICAD_NOT_RUNNING"}, "KICAD_NOT_RUNNING"),
+        (None, "TOOL_ERROR"),
+    ],
+)
+def test_mcp_error_status_retains_explicit_code_or_generic_fallback(
+    structured: dict[str, object] | None, expected_code: str
+) -> None:
+    from kicad_mcp.server import _status_from_result
+
+    result = CallToolResult(content=[], isError=True, structuredContent=structured)
+    assert _status_from_result(result) == ("error", expected_code)
+
+
+@pytest.mark.anyio
+async def test_unexpected_server_error_is_audited_without_raw_exception_details(
+    sample_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    get_config().transport = "streamable-http"
+    server = build_server("minimal")
+    events: list[tuple[str, dict[str, object]]] = []
+    for level in ("info", "warning", "error"):
+        monkeypatch.setattr(
+            f"kicad_mcp.server.logger.{level}",
+            lambda event, **kwargs: events.append((event, kwargs)),
+        )
+
+    async def registration_failed() -> None:
+        raise RuntimeError("private-board-detail")
+
+    monkeypatch.setattr(server, "_ensure_registered_async", registration_failed)
+    with pytest.raises(RuntimeError, match="private-board-detail"):
+        await server.call_tool("kicad_get_version", {})
+
+    unexpected = [data for event, data in events if event == "tool_unexpected_error"]
+    audits = [data for event, data in events if event == "tool_call_audit"]
+    assert len(unexpected) == len(audits) == 1
+    assert unexpected[0]["error_code"] == "RuntimeError"
+    assert audits[0]["status"] == "error"
+    assert audits[0]["error_code"] == "RuntimeError"
+    assert "private-board-detail" not in str(events)
+    assert "_exc_info" not in unexpected[0]
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_native_transaction_reconciliation_is_mcp_error(mock_board, monkeypatch) -> None:
+    from kicad_mcp.pcb import live_edit_runtime
+    from tests.unit.test_pcb_live_edit_session import FakeBoard, _service
+
+    board = FakeBoard()
+    epoch = [0]
+    service = _service([board], epoch_ref=epoch)
+    assert service.begin().startswith("Transaction group started")
+    epoch[0] += 1
+    with pytest.raises(RuntimeError, match="IPC session changed"):
+        service.push()
+    monkeypatch.setattr(live_edit_runtime, "_SERVICE", service)
+    cfg = get_config()
+    monkeypatch.setattr(cfg, "filter_runtime_tools", False)
+    monkeypatch.setattr(cfg, "transport", "streamable-http")
+    server = build_server("full")
+    events: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        "kicad_mcp.server.logger.info", lambda event, **kwargs: events.append((event, kwargs))
+    )
+    for name in ("pcb_begin_commit", "pcb_push_commit", "pcb_drop_commit", "pcb_revert"):
+        result = await server.call_tool(name, {})
+        assert result.is_error, name
+        assert "reconcile the active KiCad board" in result.content[0].text
+        assert "Do not retry" in result.content[0].text
+        audit = [data for event, data in events if event == "tool_call_audit"][-1]
+        assert audit["status"] == "error"
+        assert audit["error_code"] == "TOOL_EXECUTION_FAILED"
+    assert board.calls == [("begin",)]
+    assert service.status_payload()["state"] == "recovery_required"
