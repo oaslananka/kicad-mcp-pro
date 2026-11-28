@@ -308,10 +308,15 @@ class StackupLayerSpec(BaseModel):
     loss_tangent: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
+KeepoutLayerIntent = Literal["all_copper", "fixed_layers"]
+KeepoutLayerIntents = dict[str, KeepoutLayerIntent]
+
+
 class SetStackupInput(BaseModel):
     """Stackup programming parameters."""
 
     layers: list[StackupLayerSpec] = Field(min_length=2, max_length=64)
+    keepout_layer_intents: KeepoutLayerIntents = Field(default_factory=dict, max_length=256)
 
 
 class LayerViaInput(BaseModel):
