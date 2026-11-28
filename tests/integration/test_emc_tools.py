@@ -243,7 +243,8 @@ async def test_return_path_reports_stored_geometry_without_physical_pass(
     match = re.search(r"(\d+)/(\d+) covered, (\d+) uncovered", result["summary"])
     assert match is not None
     covered, total, uncovered = map(int, match.groups())
-    assert total > 0 and covered + uncovered == total
+    assert total > 0
+    assert covered + uncovered == total
     if expected == "unverified":
         assert covered == total
     elif vertices[0] == (30, 30):
