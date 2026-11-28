@@ -2472,6 +2472,25 @@ def _footprint_placement_locked(block: str) -> bool:
     return re.fullmatch(r"\(locked\s+no\s*\)", block[start:end]) is None
 
 
+def _placement_candidate_replacements(
+    footprints: dict[str, dict[str, Any]],
+    result: list[PlacementComponent],
+) -> dict[str, str]:
+    """Build replacement blocks without rewriting fixed footprints."""
+    replacements: dict[str, str] = {}
+    for placed in result:
+        if placed.fixed:
+            continue
+        entry = footprints[placed.ref]
+        replacements[placed.ref] = _replace_root_at(
+            str(entry["block"]),
+            x_mm=placed.x,
+            y_mm=placed.y,
+            rotation=int(entry["rotation"]),
+        )
+    return replacements
+
+
 def _auto_place_force_directed_board_file(
     *,
     grid_mm: float = 1.0,
@@ -2540,17 +2559,7 @@ def _auto_place_force_directed_board_file(
     ):
         return "Auto-placement skipped: candidate leaves footprint positions unchanged."
 
-    replacements: dict[str, str] = {}
-    for placed in result:
-        if placed.fixed:
-            continue
-        entry = footprints[placed.ref]
-        replacements[placed.ref] = _replace_root_at(
-            str(entry["block"]),
-            x_mm=placed.x,
-            y_mm=placed.y,
-            rotation=int(entry["rotation"]),
-        )
+    replacements = _placement_candidate_replacements(footprints, result)
     candidate_content = _replace_board_blocks(board_content, replacements, [])
     candidate_analysis = _placement_analysis_from_content(candidate_content)
     if candidate_analysis is None:
