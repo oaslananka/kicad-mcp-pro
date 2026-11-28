@@ -76,6 +76,12 @@ async def test_native_grouped_ground_matches_physical_contract(
         marker, f'(symbol "{LIB_ID}"', 1
     )
     assert '(number "[1,15,38,39]"' in block
+    # Resolve the actual registered tool against a disposable copy of the stock
+    # footprint so negative checks cannot write to the installed library.
+    private_libraries = tmp_path / "footprints"
+    private_footprint = private_libraries / "RF_Module.pretty" / footprint.name
+    private_footprint.parent.mkdir(parents=True)
+    private_footprint.write_bytes(footprint_bytes)
     project = tmp_path / "project"
     project.mkdir()
     sch = project / "probe.kicad_sch"
@@ -90,7 +96,7 @@ async def test_native_grouped_ground_matches_physical_contract(
         "KICAD_MCP_KICAD_CLI": str(Path(cli).resolve(strict=True)),
         "KICAD_MCP_PROJECT_DIR": str(project),
         "KICAD_MCP_WORKSPACE_ROOT": str(project),
-        "KICAD_MCP_FOOTPRINT_LIBRARY_DIR": str(root / "footprints"),
+        "KICAD_MCP_FOOTPRINT_LIBRARY_DIR": str(private_libraries),
         "KICAD_MCP_KICAD_SOCKET_PATH": str(tmp_path / "unbound.sock"),
         "KICAD_MCP_OPERATING_MODE": "write",
         "KICAD_MCP_FILTER_RUNTIME_TOOLS": "false",
@@ -119,5 +125,39 @@ async def test_native_grouped_ground_matches_physical_contract(
     assert report["status"] == "PASS", report
     assert {f["code"]: f["level"] for f in report["findings"]}["pin_pad_numbers"] == "PASS"
     assert any(f["message"] == "Pin count matches pad count (39)." for f in report["findings"])
+    # An equal-count footprint with the wrong member must still fail numbering.
+    footprint_text = footprint_bytes.decode("utf-8")
+    assert '(pad "39"' in footprint_text
+    private_footprint.write_text(footprint_text.replace('(pad "39"', '(pad "99"'), encoding="utf-8")
+    wrong = json.loads(
+        tool_text(await server.call_tool("lib_verify_component_contract", {"reference": "U1"}))
+    )
+    assert wrong["status"] == "FAIL", wrong
+    findings = {finding["message"]: finding["level"] for finding in wrong["findings"]}
+    assert findings["Pin count matches pad count (39)."] == "PASS"
+    assert findings["Pins with no matching pad: 39."] == "FAIL"
+    assert findings["Pads with no matching pin: 99."] == "WARN"
+
+    # Removing the whole physical pad number (including repeated copper shapes)
+    # must also fail. Only the disposable library is mutated.
+    from kicad_mcp.utils.sexpr import iter_root_children
+
+    missing = footprint_text
+    blocks = [
+        value
+        for name, value in iter_root_children(footprint_text)
+        if name == "pad" and value.startswith('(pad "39"')
+    ]
+    assert blocks
+    for pad in blocks:
+        missing = missing.replace(pad, "", 1)
+    private_footprint.write_text(missing, encoding="utf-8")
+    absent = json.loads(
+        tool_text(await server.call_tool("lib_verify_component_contract", {"reference": "U1"}))
+    )
+    assert absent["status"] == "FAIL", absent
+    findings = {finding["message"]: finding["level"] for finding in absent["findings"]}
+    assert findings["Symbol has 39 pins but footprint has 38 connectable pads."] == "FAIL"
+    assert findings["Pins with no matching pad: 39."] == "FAIL"
     assert library.read_bytes() == library_bytes
     assert footprint.read_bytes() == footprint_bytes
