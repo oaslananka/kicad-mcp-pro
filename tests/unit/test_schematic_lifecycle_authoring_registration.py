@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from mcp.server.mcpserver import MCPServer as FastMCP
 
 from kicad_mcp.tools.metadata import get_tool_metadata
@@ -157,4 +158,13 @@ def test_registration_delegates_exact_arguments() -> None:
         ),
         ("annotate", {"start_number": 10, "order": "sheet"}),
         ("reload", {}),
+    ]
+
+
+def test_registration_emits_no_duplicate_tool_warnings(caplog: pytest.LogCaptureFixture) -> None:
+    _registered()
+    assert not [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("Tool already exists:")
     ]

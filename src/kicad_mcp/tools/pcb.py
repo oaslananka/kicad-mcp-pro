@@ -68,6 +68,7 @@ from ..models.pcb import (
     StackupLayerSpec,
     SyncPcbFromSchematicInput,
     ZoneCornerInput,
+    ZoneCorners,
 )
 from ..models.verdict import Finding, SuggestedFix, VerdictReport, stable_finding_id
 from ..operating_modes import OperatingMode, active_operating_mode
@@ -2551,17 +2552,20 @@ def _auto_place_force_directed_board_file(
 _KEEPOUT_POLYGON_SIDES = 36
 
 
-def _mounting_hole_keepout_zone(radius_mm: float, allow_pours: bool) -> list[str]:
+def _mounting_hole_keepout_zone(
+    radius_mm: float, allow_pours: bool, *, x_mm: float, y_mm: float
+) -> list[str]:
     """Footprint rule area on F.Cu and B.Cu covering a circle of ``radius_mm``.
 
-    The polygon circumscribes the circle, so the whole courtyard is inside it.
+    Board-file zone points are absolute, unlike the footprint's local pad and
+    courtyard coordinates. The circumscribed polygon covers the full courtyard.
     Tracks, vias, pads and other footprints are not allowed; copper pours as chosen.
     """
     sides = _KEEPOUT_POLYGON_SIDES
     outer = radius_mm / math.cos(math.pi / sides)
     points = " ".join(
-        f"(xy {outer * math.cos(2 * math.pi * i / sides):.4f} "
-        f"{outer * math.sin(2 * math.pi * i / sides):.4f})"
+        f"(xy {x_mm + outer * math.cos(2 * math.pi * i / sides):.4f} "
+        f"{y_mm + outer * math.sin(2 * math.pi * i / sides):.4f})"
         for i in range(sides)
     )
     pours = "allowed" if allow_pours else "not_allowed"
@@ -2594,10 +2598,17 @@ def _mounting_hole_block(
     outer_radius_mm = max((diameter_mm / 2) + clearance_mm, diameter_mm)
     pad_clearance = f" (clearance {hole_clearance_mm:.4f})" if hole_clearance_mm is not None else ""
     keepout_lines = (
-        _mounting_hole_keepout_zone(outer_radius_mm, keepout_allow_pours) if keepout else []
+        _mounting_hole_keepout_zone(outer_radius_mm, keepout_allow_pours, x_mm=x_mm, y_mm=y_mm)
+        if keepout
+        else []
     )
-    # An NPTH mounting hole has no copper annulus. Screw-head clearance is
-    # represented by the courtyard, never by enlarging the physical pad.
+    # An NPTH mounting hole has no copper annulus. With a rule area, omit its
+    # own copper layers so KiCad does not reject the mechanical hole as a pad
+    # in that keepout. Drill geometry, mask openings and hole clearance remain
+    # intact; the area still disallows every copper pad. Preserve legacy layers
+    # when keepout is not requested.
+    pad_layers = '"*.Mask"' if keepout else '"*.Cu" "*.Mask"'
+    # Screw-head clearance is represented by the courtyard, never by enlarging the pad.
     return "\n".join(
         [
             f'(footprint "MountingHole_{diameter_mm:.2f}mm"',
@@ -2624,7 +2635,7 @@ def _mounting_hole_block(
             (
                 f'\t(pad "" np_thru_hole circle (at 0 0) '
                 f"(size {diameter_mm:.4f} {diameter_mm:.4f}) "
-                f'(drill {diameter_mm:.4f}) (layers "*.Cu" "*.Mask"){pad_clearance})'
+                f"(drill {diameter_mm:.4f}) (layers {pad_layers}){pad_clearance})"
             ),
             *keepout_lines,
             ")",
@@ -5508,7 +5519,7 @@ def _register_copper_zone_tools(mcp: FastMCP) -> None:
     def pcb_add_zone(
         net_name: str,
         layer: str,
-        corners: list[dict[str, float]],
+        corners: ZoneCorners,
         clearance_mm: float = 0.3,
         min_width_mm: float = 0.25,
         thermal_relief: bool = True,
@@ -5517,7 +5528,13 @@ def _register_copper_zone_tools(mcp: FastMCP) -> None:
         priority: int = 0,
         name: str = "",
     ) -> str:
-        """Add a copper zone with an arbitrary polygon outline on one copper layer."""
+        """Add and refill a copper zone on one layer, outside an active transaction.
+
+        Supply 3?128 polygon corners as objects with x_mm and y_mm coordinates.
+        This mutation does not participate in native-live transaction groups.
+        Check pcb_get_live_edit_state; explicitly finish or discard any active
+        group before calling this tool. It never commits or drops a group for you.
+        """
         payload = AddZoneInput(
             net_name=net_name,
             layer=layer,
@@ -5577,7 +5594,7 @@ def _register_copper_zone_tools(mcp: FastMCP) -> None:
     def pcb_add_copper_zone(
         net_name: str,
         layer: str,
-        corners: list[dict[str, float]],
+        corners: ZoneCorners,
         clearance_mm: float = 0.3,
         min_width_mm: float = 0.25,
         thermal_relief: bool = True,
@@ -5586,7 +5603,11 @@ def _register_copper_zone_tools(mcp: FastMCP) -> None:
         priority: int = 0,
         name: str = "",
     ) -> str:
-        """Backward-compatible alias for pcb_add_zone()."""
+        """Alias for pcb_add_zone; use only outside an active transaction.
+
+        Supply 3?128 polygon corners as objects with x_mm and y_mm coordinates.
+        Zone creation and refill do not participate in native-live transaction groups.
+        """
         return str(
             pcb_add_zone(
                 net_name=net_name,

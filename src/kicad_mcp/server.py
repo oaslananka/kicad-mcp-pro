@@ -412,6 +412,11 @@ def _clean_tool_error(exc: BaseException) -> str:
 def _classify_system_error_code(lowered: str, tool_name: str) -> str | None:
     if "operating mode" in lowered and "requires" in lowered:
         return "MODE_FORBIDDEN"
+    if (
+        "not available in this server execution surface" in lowered
+        or "does not participate in the active native-live transaction" in lowered
+    ):
+        return "PERMISSION_DENIED"
     if "timed out" in lowered or "timeout" in lowered:
         return "CLI_TIMEOUT"
     if "kicad-cli" in lowered and (
@@ -482,6 +487,17 @@ def _tool_error_code(message: str, *, tool_name: str = "") -> str:
 
 
 def _classify_system_error_hint(lowered: str) -> str | None:
+    if lowered.startswith(
+        (
+            "transaction state is ambiguous after an ipc failure",
+            "native-live transaction recovery is required",
+            "the kicad ipc session changed during the native-live transaction",
+        )
+    ):
+        return (
+            "Do not retry the transaction or another write. Reconcile the active KiCad board "
+            "and verify its saved state before resetting or reselecting the project."
+        )
     if "operating mode" in lowered and "requires" in lowered:
         return (
             "Start kicad-mcp-pro with --mode write, --mode manufacturing, "
@@ -665,6 +681,15 @@ def _promote_failed_tool_result(result: object) -> object:
     return result
 
 
+def _is_transaction_recovery_message(tool_name: str, first_line: str) -> bool:
+    return tool_name in {
+        "pcb_begin_commit",
+        "pcb_push_commit",
+        "pcb_drop_commit",
+        "pcb_revert",
+    } and first_line.startswith("transaction state is ambiguous after an ipc failure")
+
+
 def _tool_failure_message(tool_name: str, result: object) -> str | None:
     text = _result_text(result).strip()
     lowered = text.casefold()
@@ -673,6 +698,7 @@ def _tool_failure_message(tool_name: str, result: object) -> str | None:
         _is_manufacturing_block_message(tool_name, lowered)
         or _is_cli_failure_message(tool_name, lowered)
         or _is_generic_first_line_failure(first_line)
+        or _is_transaction_recovery_message(tool_name, first_line)
         or (
             tool_name
             in {
@@ -700,15 +726,15 @@ def _tool_failure_message(tool_name: str, result: object) -> str | None:
 
 def _status_from_result(result: object) -> tuple[str, str | None]:
     if isinstance(result, mcp_types.CallToolResult):
-        if result.is_error:
-            structured = result.structured_content or {}
-            return "error", str(structured.get("error_code", "TOOL_ERROR"))
-        # ToolResult-returning tools embed ok=False inside structuredContent.result
-        # rather than setting isError; surface those as errors for metrics/audit.
         structured = result.structured_content or {}
+        if result.is_error and structured.get("error_code"):
+            return "error", str(structured["error_code"])
+        # Preserve domain failure classification after promotion to isError.
         inner = structured.get("result")
-        if isinstance(inner, dict) and not inner.get("ok", True):
+        if isinstance(inner, dict) and inner.get("ok") is False:
             return "error", "TOOL_RESULT_FAILURE"
+        if result.is_error:
+            return "error", "TOOL_ERROR"
     return "ok", None
 
 
@@ -1368,29 +1394,28 @@ class KiCadFastMCP(FastMCP):
         _log_tool_call_started(name, arguments)
         _error_detail: dict[str, object] = {"tool": name}
         with otel.tool_span(name) as span:
-            if not reserve_tool_execution():
-                return _structured_tool_error_from_message(
-                    "The application is preparing a desktop update. Try again after the update.",
-                    tool_name=name,
-                )
+            reserved = reserve_tool_execution()
             try:
+                if not reserved:
+                    message = (
+                        "The application is preparing a desktop update. Try again after the update."
+                    )
+                    status, error_code = "error", _tool_error_code(message, tool_name=name)
+                    logger.warning("tool_denied_by_maintenance", tool=name)
+                    return _structured_tool_error_from_message(message, tool_name=name)
                 await self._ensure_registered_async()
                 execution_tool_names = getattr(self, "execution_tool_names", None)
                 if execution_tool_names is not None and name not in execution_tool_names:
-                    result = _structured_tool_error_from_message(
-                        f"Tool '{name}' is not available in this server execution surface.",
-                        tool_name=name,
-                    )
-                    status, error_code = _status_from_result(result)
+                    message = f"Tool '{name}' is not available in this server execution surface."
+                    result = _structured_tool_error_from_message(message, tool_name=name)
+                    status, error_code = "error", _tool_error_code(message, tool_name=name)
                     logger.warning("tool_denied_by_execution_surface", tool=name)
                     return result
                 mode = getattr(self, "operating_mode", active_operating_mode())
                 if not is_tool_allowed_in_mode(name, mode):
-                    result = _structured_tool_error_from_message(
-                        denial_message(name, mode),
-                        tool_name=name,
-                    )
-                    status, error_code = _status_from_result(result)
+                    message = denial_message(name, mode)
+                    result = _structured_tool_error_from_message(message, tool_name=name)
+                    status, error_code = "error", _tool_error_code(message, tool_name=name)
                     logger.warning("tool_denied_by_mode", tool=name, mode=mode.value)
                     return result
                 if limiter is None:
@@ -1402,25 +1427,17 @@ class KiCadFastMCP(FastMCP):
                 failure_message = _tool_failure_message(name, result)
                 if failure_message is not None:
                     result = _structured_tool_error_from_message(failure_message, tool_name=name)
-                    logger.warning(
-                        "tool_result_failure",
-                        tool=name,
-                        failure=failure_message[:200],
-                        error_code=_tool_error_code(failure_message, tool_name=name),
-                    )
-                status, error_code = _status_from_result(result)
+                    status, error_code = "error", _tool_error_code(failure_message, tool_name=name)
+                    logger.warning("tool_result_failure", tool=name, error_code=error_code)
+                else:
+                    status, error_code = _status_from_result(result)
                 return result
             except ToolError as exc:
-                exc_message = str(exc)
-                result = _structured_tool_error(exc, tool_name=name)
-                status, error_code = _status_from_result(result)
-                _error_detail["error_code"] = error_code or type(exc).__name__
-                _error_detail["message"] = exc_message[:300]
-                logger.error(
-                    "tool_tool_error",
-                    **_error_detail,
-                    _exc_info=True,
-                )
+                message = _clean_tool_error(exc)
+                result = _structured_tool_error_from_message(message, tool_name=name)
+                status, error_code = "error", _tool_error_code(message, tool_name=name)
+                _error_detail["error_code"] = error_code
+                logger.error("tool_tool_error", **_error_detail)
                 otel.record_error_event(
                     _TOOL_ERROR_EVENT_NAME,
                     exc,
@@ -1435,8 +1452,6 @@ class KiCadFastMCP(FastMCP):
                 status = "error"
                 error_code = exc.code
                 _error_detail["error_code"] = exc.code
-                _error_detail["message"] = str(exc)[:300]
-                _error_detail["hint"] = exc.hint
                 logger.error(
                     "tool_ipc_error",
                     **_error_detail,
@@ -1455,12 +1470,7 @@ class KiCadFastMCP(FastMCP):
                 status = "error"
                 error_code = type(exc).__name__
                 _error_detail["error_code"] = error_code
-                _error_detail["message"] = str(exc)[:300]
-                logger.error(
-                    "tool_unexpected_error",
-                    **_error_detail,
-                    _exc_info=True,
-                )
+                logger.error("tool_unexpected_error", **_error_detail)
                 otel.record_error_event(
                     _TOOL_ERROR_EVENT_NAME,
                     exc,
@@ -1472,7 +1482,8 @@ class KiCadFastMCP(FastMCP):
                 )
                 raise
             finally:
-                finish_tool_execution()
+                if reserved:
+                    finish_tool_execution()
                 elapsed_ms = (time.perf_counter() - started) * 1000.0
                 _record_tool_metric(name, status, elapsed_ms)
                 otel.record_tool_invocation(name, status, elapsed_ms / 1000.0)
@@ -1483,7 +1494,7 @@ class KiCadFastMCP(FastMCP):
                         "status": status,
                         "elapsed_ms": round(elapsed_ms, 2),
                         "error_code": error_code or "",
-                        **self._telemetry_context_attributes(),
+                        **(self._telemetry_context_attributes() if reserved else {}),
                     },
                 )
                 otel.finish_tool_span(span, status=status, error_code=error_code)
@@ -2634,6 +2645,7 @@ def _run_server_from_options(
             cfg.log_file,
             cfg.log_max_bytes,
             cfg.log_backup_count,
+            cfg.log_schematic_item_details,
         )
 
         selected_transport = "stdio" if cfg.transport == "stdio" else "streamable-http"

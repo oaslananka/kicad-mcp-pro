@@ -6,6 +6,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any, Protocol
 
+import pytest
+
 
 def _service_module() -> ModuleType:
     spec = importlib.util.find_spec("kicad_mcp.export.pcb_3d_render")
@@ -101,6 +103,8 @@ def test_render_preserves_default_argv_and_active_variant_order(tmp_path: Path) 
                 "top",
                 "--zoom",
                 "1.0",
+                "--floor",
+                "--perspective",
                 "--variant",
                 "assembly-a",
                 str(tmp_path / "demo.kicad_pcb"),
@@ -160,8 +164,6 @@ def test_render_preserves_all_optional_flags_and_order(tmp_path: Path) -> None:
                 "--preset",
                 "photo",
                 "--use-board-stackup-colors",
-                "--no-floor",
-                "--orthographic",
                 "--pan",
                 "1.25,-2.5",
                 "--rotate",
@@ -206,12 +208,43 @@ def test_render_preserves_capability_and_path_failures(tmp_path: Path) -> None:
     assert invalid_calls["cli"] == []
 
 
-def test_render_preserves_failure_precedence_and_ignores_stdout(tmp_path: Path) -> None:
-    stderr_service, _ = _service(tmp_path, cli_result=(2, "stdout detail", "stderr detail"))
-    assert _render(stderr_service).text == "3D render failed: stderr detail"
+@pytest.mark.parametrize(
+    ("floor", "perspective"),
+    [(True, True), (True, False), (False, True), (False, False)],
+)
+def test_render_uses_native_positive_switches(
+    tmp_path: Path, floor: bool, perspective: bool
+) -> None:
+    service, calls = _service(tmp_path)
+    _render(service, floor=floor, perspective=perspective)
+    argv = calls["cli"][0][0]
+    assert ("--floor" in argv) is floor
+    assert ("--perspective" in argv) is perspective
+    assert "--no-floor" not in argv
+    assert "--orthographic" not in argv
 
-    stdout_only_service, _ = _service(tmp_path, cli_result=(2, "stdout detail", ""))
-    assert _render(stdout_only_service).text == "3D render failed: unknown error"
+
+@pytest.mark.parametrize(
+    ("stdout", "stderr", "expected"),
+    [
+        ("stdout detail", "stderr detail", "stderr detail"),
+        ("Unknown argument: --example\nUsage: pcb render", "", "Unknown argument: --example"),
+        ("stdout detail", "  ", "stdout detail"),
+        ("", "", "No diagnostic output; check KiCad CLI render options and project."),
+    ],
+)
+def test_render_failure_preserves_exit_code_and_useful_diagnostic(
+    tmp_path: Path, stdout: str, stderr: str, expected: str
+) -> None:
+    service, _ = _service(tmp_path, cli_result=(2, stdout, stderr))
+    assert _render(service).text == f"3D render failed: exit code 2; {expected}"
+
+
+def test_render_failure_diagnostic_is_bounded(tmp_path: Path) -> None:
+    service, _ = _service(tmp_path, cli_result=(1, "x" * 10000, ""))
+    text = _render(service).text
+    assert text.startswith("3D render failed: exit code 1; xxx")
+    assert len(text) < 600
 
 
 def test_render_returns_image_response_with_human_size_when_artifact_exists(tmp_path: Path) -> None:

@@ -376,8 +376,8 @@ async def test_schematic_connectivity_gate_flags_component_contract_violation(
         },
     )
     monkeypatch.setattr(
-        "kicad_mcp.tools.schematic._build_connectivity_groups",
-        lambda _path: [
+        "kicad_mcp.tools.schematic._connectivity_groups_from_data",
+        lambda _data, _content: [
             {
                 "names": ["GND"],
                 "points": [(0.0, 0.0)],
@@ -392,3 +392,106 @@ async def test_schematic_connectivity_gate_flags_component_contract_violation(
     assert "Matched component contracts: 1" in text
     assert "Component contract violations: 1" in text
     assert "esp32_s3_wroom_1" in text
+
+
+def test_connectivity_page_parses_once_and_observes_external_edits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    from kicad_mcp.tools import schematic, validation
+
+    page = tmp_path / "test.kicad_sch"
+    page.write_text(_child_sheet_with_hierarchical_label("NET_A"), encoding="utf-8")
+    original_parse = schematic.parse_schematic_file
+    observed: list[str] = []
+
+    def counted_parse(path: Path) -> dict:
+        data = original_parse(path)
+        observed.extend(label["name"] for label in data["labels"])
+        return data
+
+    monkeypatch.setattr(schematic, "parse_schematic_file", counted_parse)
+
+    def analyze() -> list[str]:
+        blocked: list[str] = []
+        validation._analyze_single_page_connectivity(
+            "Top",
+            page,
+            validation._ConnectivityGateCounters(),
+            sheet_keys_by_path={},
+            has_sheet_contract=False,
+            required_sheet_keys=set(),
+            optional_sheet_keys=set(),
+            blocked=blocked,
+            failures=[],
+            page_summaries=[],
+        )
+        return blocked
+
+    assert analyze() == []
+    assert observed == ["NET_A"]
+    original_stat = page.stat()
+    page.write_text(_child_sheet_with_hierarchical_label("NET_B"), encoding="utf-8")
+    os.utime(page, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+    assert analyze() == []
+    assert observed == ["NET_A", "NET_B"]
+
+
+def test_connectivity_page_blocks_edit_during_parse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.tools import schematic, validation
+
+    page = tmp_path / "test.kicad_sch"
+    page.write_text(_child_sheet_with_hierarchical_label("NET_A"), encoding="utf-8")
+    original_parse = schematic.parse_schematic_file
+
+    def changing_parse(path: Path) -> dict:
+        data = original_parse(path)
+        path.write_text(_child_sheet_with_hierarchical_label("NET_B"), encoding="utf-8")
+        return data
+
+    monkeypatch.setattr(schematic, "parse_schematic_file", changing_parse)
+    blocked: list[str] = []
+    summaries: list[str] = []
+    validation._analyze_single_page_connectivity(
+        "Top",
+        page,
+        validation._ConnectivityGateCounters(),
+        sheet_keys_by_path={},
+        has_sheet_contract=False,
+        required_sheet_keys=set(),
+        optional_sheet_keys=set(),
+        blocked=blocked,
+        failures=[],
+        page_summaries=summaries,
+    )
+    assert blocked
+    assert "changed during" in blocked[0]
+    assert summaries == []
+
+
+def test_checked_analysis_matches_legacy_groups_and_blocks_removed_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.tools import schematic
+
+    page = tmp_path / "test.kicad_sch"
+    page.write_text(_child_sheet_with_hierarchical_label("NET_A"), encoding="utf-8")
+    expected_data = schematic.parse_schematic_file(page)
+    expected_groups = schematic.build_connectivity_groups(page)
+    data, groups = schematic.analyze_schematic_file(page)
+    assert data == expected_data
+    assert groups == expected_groups
+
+    original_parse = schematic.parse_schematic_file
+
+    def remove_after_parse(path: Path) -> dict:
+        data = original_parse(path)
+        path.unlink()
+        return data
+
+    monkeypatch.setattr(schematic, "parse_schematic_file", remove_after_parse)
+    with pytest.raises(schematic.SchematicChangedDuringAnalysisError, match="changed during"):
+        schematic.analyze_schematic_file(page)

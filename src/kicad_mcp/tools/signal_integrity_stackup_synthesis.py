@@ -35,7 +35,7 @@ def register(
         cost_tier: str = "standard",
         board_thickness_mm: float = 1.6,
     ) -> str:
-        """Synthesise a PCB stackup that meets the impedance requirements of the given interfaces.
+        """Synthesise a candidate PCB stackup and first-pass impedance estimates.
 
         Analyses each InterfaceSpec dict and recommends:
         - Layer count
@@ -54,7 +54,8 @@ def register(
 
         Returns:
             Recommended stackup specification and net class table in human-readable
-            markdown, ready to pass to pcb_set_stackup() and pcb_set_net_class().
+            markdown with conditional JSON tool actions. Fabricator review is required;
+            estimates do not establish physical impedance or net-class assignment.
         """
         return deps.service.synthesize(
             interfaces=interfaces,
