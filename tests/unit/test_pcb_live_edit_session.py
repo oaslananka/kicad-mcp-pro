@@ -680,8 +680,10 @@ def test_mutation_response_never_claims_success_when_recovery_is_required(monkey
     board = FakeBoard()
     epoch = [0]
     service = _service([board], epoch_ref=epoch)
-    service.begin()
     monkeypatch.setattr(pcb, "get_live_edit_service", lambda: service)
+    assert pcb._native_live_transaction_active() is False
+    assert service.begin().startswith("Transaction group started")
+    assert pcb._native_live_transaction_active() is True
     epoch[0] += 1
     with pytest.raises(RuntimeError, match="recovery is required"):
         pcb._native_live_transaction_active()

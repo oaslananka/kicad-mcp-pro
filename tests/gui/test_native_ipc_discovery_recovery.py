@@ -240,9 +240,17 @@ async def _exercise_native_session(
                     await settle()
                     assert await catalog() == online
                     live = verified_board()
-                    for name in ("pcb_begin_commit", "pcb_push_commit", "pcb_drop_commit"):
+                    for name in (
+                        "pcb_begin_commit",
+                        "pcb_push_commit",
+                        "pcb_drop_commit",
+                        "pcb_revert",
+                    ):
                         refused = await session.call_tool(name, {})
-                        assert "reconcile the active KiCad board" in tool_text(refused)
+                        message = tool_text(refused)
+                        assert refused.is_error, name
+                        assert "reconcile the active KiCad board" in message
+                        assert "Do not retry" in message
                     denied = await session.call_tool("pcb_add_track", second)
                     assert denied.is_error and "recovery" in tool_text(denied)
                     assert len(live.get_tracks()) == 1
