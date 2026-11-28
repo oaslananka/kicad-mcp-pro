@@ -33,7 +33,9 @@ def test_main_callback_runs_streamable_http(sample_project: Path, monkeypatch) -
         "kicad_mcp.server.build_server",
         lambda profile, *, defer_registration=False: fake_server,
     )
-    monkeypatch.setattr("kicad_mcp.server.setup_logging", lambda *args: None)
+    log_setup = MagicMock()
+    monkeypatch.setattr("kicad_mcp.server.setup_logging", log_setup)
+    monkeypatch.setenv("KICAD_MCP_LOG_SCHEMATIC_ITEM_DETAILS", "true")
 
     main_callback(
         transport="http",
@@ -46,6 +48,7 @@ def test_main_callback_runs_streamable_http(sample_project: Path, monkeypatch) -
         experimental=True,
     )
 
+    assert log_setup.call_args.args[-1] is True
     fake_server.run.assert_called_once_with(
         transport="streamable-http",
         host="127.0.0.1",

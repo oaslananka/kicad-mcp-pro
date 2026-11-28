@@ -116,12 +116,23 @@ def _build_handlers(
     return handlers
 
 
+class _SchematicItemTraceFilter(logging.Filter):
+    """Suppress only the two noisy per-item DEBUG events from kicad-sch-api."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.name != "kicad_sch_api.collections.base" or record.levelno != logging.DEBUG:
+            return True
+        message = record.getMessage()
+        return message != "Indexes marked dirty" and not message.startswith("Added item with UUID ")
+
+
 def setup_logging(
     level: str = "INFO",
     format: LogFormat = "text",
     log_file: Path | None = None,
     log_max_bytes: int = 5_000_000,
     log_backup_count: int = 3,
+    schematic_item_details: bool = False,
 ) -> None:
     """Configure structured logging for the MCP server."""
     processors: list[object] = [
@@ -146,8 +157,12 @@ def setup_logging(
         cache_logger_on_first_use=True,
     )
 
+    handlers = _build_handlers(log_file, log_max_bytes, log_backup_count)
+    if not schematic_item_details:
+        for handler in handlers:
+            handler.addFilter(_SchematicItemTraceFilter())
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
-        handlers=_build_handlers(log_file, log_max_bytes, log_backup_count),
+        handlers=handlers,
         force=True,
     )

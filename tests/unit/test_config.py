@@ -483,3 +483,10 @@ def test_explicit_trusted_dotenv_remains_opt_in(tmp_path: Path) -> None:
     trusted = tmp_path / "owner-settings.env"
     trusted.write_text("KICAD_MCP_LOG_LEVEL=WARNING\n", encoding="utf-8")
     assert KiCadMCPConfig(_env_file=trusted).log_level == "WARNING"
+
+
+def test_config_schematic_item_log_details(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("KICAD_MCP_LOG_SCHEMATIC_ITEM_DETAILS", raising=False)
+    assert KiCadMCPConfig().log_schematic_item_details is False
+    monkeypatch.setenv("KICAD_MCP_LOG_SCHEMATIC_ITEM_DETAILS", "true")
+    assert KiCadMCPConfig().log_schematic_item_details is True
