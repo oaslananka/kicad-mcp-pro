@@ -67,6 +67,39 @@ For new functional schematics, follow the [wired-subcircuit-design skill](https:
 
 `pcb_add_tracks_bulk` is **not** in that allowlist. While a transaction is open, calling it is refused with: *"pcb_add_tracks_bulk does not participate in the active native-live transaction. Commit or discard the transaction before using this operation."* Bulk track additions therefore cannot be staged inside a commit group. Either add tracks one at a time with `pcb_add_track` (which does participate), or commit or drop the current transaction before running the bulk call. On an IPC failure the session state becomes ambiguous and further transactions are blocked until the active board is reconciled, so treat a transaction as a single long-running unit rather than interleaving unrelated tool calls.
 
+## Footprint keepout intent during stackup changes
+
+KiCad can save a footprint rule area using only the currently enabled copper
+layers, even when the original library declares every copper layer. A layer
+count change must preserve known all-copper intent without expanding an
+explicitly restricted rule. File-based library import records this intent in a
+hidden footprint field (`KICAD_MCP_RULE_LAYER_INTENT`) scoped to rule UUIDs.
+Cloning updates the recorded identities along with the copied rule areas.
+
+If `pcb_set_stackup` reports ambiguous copper keepout intent, inspect the
+footprint and original design intent before retrying. Use the exact
+`footprint UUID/rule UUID` key in the diagnostic as a key in the optional
+`keepout_layer_intents` mapping. Select `all_copper` only for an area intended to
+protect every enabled copper layer; `fixed_layers` preserves its current
+concrete layer mask. Do not infer an all-copper policy merely because a saved
+rule covers every current layer. Unknown identities or conflicting/stale
+provenance refuse the edit rather than silently widen a rule. For a missing
+UUID, save and inspect the board in KiCad before resolving intent. Review
+stale provenance against the actual rule areas before changing it. Ordinary
+board-owned custom rule areas are not reinterpreted.
+
+A successful stackup consistency gate is not RF protection or manufacturing
+approval. Verify saved rule-area masks and native DRC and refill on every
+relevant layer after changing the stackup.
+
+Maintainers can reproduce the KiCad 10 native acceptance using
+`tests/integration/test_native_footprint_rule_intent.py`. Set
+`KICAD_NATIVE_KEEPOUT_CLI` to an installed KiCad CLI executable and
+`KICAD_NATIVE_KEEPOUT_FOOTPRINT` to the stock `RF_Module:ESP32-C6-MINI-1`
+footprint file, then run that test with the locked project environment. It
+uses a disposable project and checks intentional inside/outside DRC probes
+and filled polygons, not a production-ready DRC pass.
+
 ## Common failure states
 
 - **Project not found:** ask for a valid folder containing a `.kicad_pro` file.
