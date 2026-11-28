@@ -6,7 +6,6 @@ import asyncio
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
@@ -25,6 +24,7 @@ from kicad_mcp.connection import get_board, reset_connection
 from kicad_mcp.pcb.live_edit_runtime import reset_live_edit_service
 from kicad_mcp.server import IPC_CAPABILITY_CACHE_TTL_SEC
 from tests.conftest import tool_text
+from tests.gui.test_kicad_gui_live_context import _launch_process, _stop_process
 from tests.integration.test_mcp_native_v2_protocol import (
     _configure_native_v2_server,
     _running_http_server,
@@ -50,40 +50,30 @@ def _private_editor(
     executable: Path, board: Path, env: dict[str, str], endpoint: str
 ) -> Iterator[None]:
     """Launch and stop only an owned editor with a verified private project."""
-    with subprocess.Popen(  # nosec B603
-        [str(executable), str(board)],
-        cwd=board.parent,
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    ) as process:
-        try:
-            for _ in range(20):
-                assert process.poll() is None, "Private PCB Editor exited"
-                try:
-                    client = KiCad(socket_path=endpoint, timeout_ms=1000)
-                    version = client.get_version()
-                    native = client.get_board()
-                except Exception:
-                    time.sleep(1)
-                    continue
-                assert str(version).startswith("10.")
-                identity = native.get_project()
-                assert Path(identity.path).resolve() == board.parent.resolve()
-                assert identity.name == board.stem
-                assert native.name == board.name
-                break
-            else:
-                pytest.fail("Private PCB Editor IPC did not become ready")
-            yield
-        finally:
-            if process.poll() is None:
-                process.terminate()
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=10)
+    managed = _launch_process(
+        "private-pcb", executable, board, board.parent.parent / "editor-logs", env=env
+    )
+    try:
+        for _ in range(20):
+            assert managed.process.poll() is None, "Private PCB Editor exited"
+            try:
+                client = KiCad(socket_path=endpoint, timeout_ms=1000)
+                version = client.get_version()
+                native = client.get_board()
+            except Exception:
+                time.sleep(1)
+                continue
+            assert str(version).startswith("10.")
+            identity = native.get_project()
+            assert Path(identity.path).resolve() == board.parent.resolve()
+            assert identity.name == board.stem
+            assert native.name == board.name
+            break
+        else:
+            pytest.fail("Private PCB Editor IPC did not become ready")
+        yield
+    finally:
+        _stop_process(managed)
 
 
 def _configure_private_project(
@@ -257,13 +247,25 @@ async def _exercise_native_session(
                     assert board.read_bytes() == saved
 
 
+def _installed_bin_dir(raw: str) -> Path:
+    """Refuse non-local, relative, or redirected editor executables before launch."""
+    bin_dir = Path(raw)
+    assert bin_dir.is_absolute() and not bin_dir.drive.startswith("\\\\"), (
+        "Select an installed local KiCad bin directory"
+    )
+    bin_dir = bin_dir.resolve(strict=True)
+    assert bin_dir.is_dir() and not bin_dir.drive.startswith("\\\\")
+    for executable in (bin_dir / "pcbnew.exe", bin_dir / "kicad-cli.exe"):
+        assert executable.is_file() and executable.resolve(strict=True) == executable
+    return bin_dir
+
+
 def test_native_windows_discovery_and_transaction_recovery(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Explicitly opt in; no default socket, real project, or shared editor is used."""
-    bin_dir = Path(os.environ[OPT_IN]).resolve(strict=True)
+    bin_dir = _installed_bin_dir(os.environ[OPT_IN])
     editor = bin_dir / "pcbnew.exe"
-    assert editor.is_file() and (bin_dir / "kicad-cli.exe").is_file()
     original = FIXTURE.read_bytes()
     with tempfile.TemporaryDirectory(prefix="kicad-ipc-") as temp:
         try:
