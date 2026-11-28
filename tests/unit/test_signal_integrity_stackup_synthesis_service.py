@@ -128,25 +128,25 @@ def test_synthesis_returns_valid_candidate_stackup_call(kind: str, count: int) -
     ],
 )
 def test_synthesis_rejects_unusable_interface_specs(raw: dict[str, object]) -> None:
+    service = synthesis.SignalIntegrityStackupSynthesisService()
     with pytest.raises(ValueError, match="interface"):
-        synthesis.SignalIntegrityStackupSynthesisService().synthesize([raw])
+        service.synthesize([raw])
 
 
 def test_synthesis_rejects_impossible_thickness() -> None:
+    service = synthesis.SignalIntegrityStackupSynthesisService()
     with pytest.raises(ValueError, match="thickness"):
-        synthesis.SignalIntegrityStackupSynthesisService().synthesize(
-            [{"kind": "usb3_gen2"}], board_thickness_mm=0.1
-        )
+        service.synthesize([{"kind": "usb3_gen2"}], board_thickness_mm=0.1)
 
 
 def test_synthesis_rejects_empty_interface_list() -> None:
+    service = synthesis.SignalIntegrityStackupSynthesisService()
     with pytest.raises(ValueError, match="At least one interface"):
-        synthesis.SignalIntegrityStackupSynthesisService().synthesize([])
+        service.synthesize([])
 
 
 @pytest.mark.parametrize("thickness", [0.0, -1.0, float("nan"), float("inf")])
 def test_synthesis_rejects_nonpositive_or_nonfinite_thickness(thickness: float) -> None:
+    service = synthesis.SignalIntegrityStackupSynthesisService()
     with pytest.raises(ValueError, match="positive finite"):
-        synthesis.SignalIntegrityStackupSynthesisService().synthesize(
-            [{"kind": "usb2"}], board_thickness_mm=thickness
-        )
+        service.synthesize([{"kind": "usb2"}], board_thickness_mm=thickness)

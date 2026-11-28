@@ -114,7 +114,8 @@ async def test_usb_guidance_actions(
     inspect, apply_rules = _actions(plan)
     assert inspect["tool"] == "pcb_get_nets"
     nets = await call(inspect["tool"], inspect["arguments"])
-    assert "USB_DP" in nets and "USB_DM" in nets
+    assert "USB_DP" in nets
+    assert "USB_DM" in nets
     assert "exact net" in plan.casefold()
     assert "does not assign" in plan.casefold()
     assert apply_rules["tool"] == "si_bind_interfaces_to_net_classes"
@@ -137,7 +138,8 @@ async def test_usb_guidance_actions(
     ]
     assert sum(x.thickness_mm for x in parsed) == pytest.approx(1.6, abs=0.001)
     reread = await call("pcb_get_stackup", {})
-    assert "In1" in reread and "In2" in reread
+    assert "In1" in reread
+    assert "In2" in reread
     assert _hashes((pro, dru)) == {name: before[name] for name in (pro.name, dru.name)}
     board_before_rules = _hashes((board, pro))
     applied_rules = await call(apply_rules["tool"], apply_rules["arguments"])
