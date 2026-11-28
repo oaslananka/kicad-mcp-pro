@@ -184,3 +184,16 @@ def test_unreachable_headless_ipc_false() -> None:
     state = _make_state(major=11, reachable=False, headless_requested=True)
     assert state.headless_ipc_available is False
     assert state.live_pcb_read is False
+
+
+def test_emc_discovery_requires_board_not_only_reachable_ipc() -> None:
+    from kicad_mcp.server import _ipc_runtime_allows_tool
+    from kicad_mcp.tools.router import TOOL_CATEGORIES
+
+    no_board = _make_state(major=10, live_schematic_context=True)
+    with_board = _make_state(major=10, live_pcb_context=True)
+    offline = _make_state(major=10, reachable=False)
+    for name in TOOL_CATEGORIES["emc"]["tools"]:
+        assert not _ipc_runtime_allows_tool(name, no_board), name
+        assert not _ipc_runtime_allows_tool(name, offline), name
+        assert _ipc_runtime_allows_tool(name, with_board), name

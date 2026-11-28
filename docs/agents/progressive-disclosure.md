@@ -74,6 +74,14 @@ and run `uv run --locked pytest tests/gui/test_native_ipc_discovery_recovery.py`
 It uses a disposable project, private configuration and IPC endpoint, and
 loopback HTTP only; it does not qualify an external Cloud Tunnel.
 
+The same opt-in environment supports `tests/gui/test_native_emc_readonly.py`.
+On a disposable four-layer PCB it compares stored ground-plane fill samples
+with an independent native KiCad baseline, exercises all eight EMC tools via
+loopback MCP in readonly mode, rejects track creation, and checks both the live
+board snapshot and saved file hash. This is geometric advisory evidence only;
+it does not verify fill freshness, electrical return-current continuity, or
+formal EMC compliance.
+
 ## Versioned local capability contract
 
 The machine-readable contract under integrations/common/capability-catalog.json

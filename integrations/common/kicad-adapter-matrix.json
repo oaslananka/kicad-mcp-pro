@@ -14,14 +14,15 @@
     },
     "emc": {
       "canarySurfaces": [
-        "write"
+        "read"
       ],
       "description": "Run lightweight EMC-oriented layout checks and a bundled compliance sweep.",
-      "fallbackPolicy": "Apply explicit, reviewable design changes without hidden native API fallback.",
-      "kicad11Support": "independent",
-      "mutationGuard": "validated-design-file-write",
+      "fallbackPolicy": "Require live board IPC; report geometric advisory evidence, not sign-off.",
+      "kicad11Support": "preview",
+      "mutationGuard": null,
       "preferredBackends": [
-        "local-engine"
+        "kicad-11-headless-ipc",
+        "kicad-gui-ipc"
       ]
     },
     "export": {
@@ -237,19 +238,20 @@
           "toolCount": 3
         },
         "emc": {
-          "availableCount": 8,
-          "blockedCount": 0,
+          "availableCount": 0,
+          "blockedCount": 8,
           "canarySurfaces": [
-            "write"
+            "read"
           ],
-          "fallbackPolicy": "Apply explicit, reviewable design changes without hidden native API fallback.",
-          "kicad11Support": "independent",
-          "mutationGuard": "validated-design-file-write",
+          "fallbackPolicy": "Require live board IPC; report geometric advisory evidence, not sign-off.",
+          "kicad11Support": "preview",
+          "mutationGuard": null,
           "preferredBackends": [
-            "local-engine"
+            "kicad-11-headless-ipc",
+            "kicad-gui-ipc"
           ],
           "selectedBackends": {
-            "local-filesystem": 8
+            "unavailable": 8
           },
           "toolCount": 8
         },
@@ -565,16 +567,17 @@
           "availableCount": 8,
           "blockedCount": 0,
           "canarySurfaces": [
-            "write"
+            "read"
           ],
-          "fallbackPolicy": "Apply explicit, reviewable design changes without hidden native API fallback.",
-          "kicad11Support": "independent",
-          "mutationGuard": "validated-design-file-write",
+          "fallbackPolicy": "Require live board IPC; report geometric advisory evidence, not sign-off.",
+          "kicad11Support": "preview",
+          "mutationGuard": null,
           "preferredBackends": [
-            "local-engine"
+            "kicad-11-headless-ipc",
+            "kicad-gui-ipc"
           ],
           "selectedBackends": {
-            "local-filesystem": 8
+            "kicad-gui-ipc": 8
           },
           "toolCount": 8
         },
@@ -891,16 +894,17 @@
           "availableCount": 8,
           "blockedCount": 0,
           "canarySurfaces": [
-            "write"
+            "read"
           ],
-          "fallbackPolicy": "Apply explicit, reviewable design changes without hidden native API fallback.",
-          "kicad11Support": "independent",
-          "mutationGuard": "validated-design-file-write",
+          "fallbackPolicy": "Require live board IPC; report geometric advisory evidence, not sign-off.",
+          "kicad11Support": "preview",
+          "mutationGuard": null,
           "preferredBackends": [
-            "local-engine"
+            "kicad-11-headless-ipc",
+            "kicad-gui-ipc"
           ],
           "selectedBackends": {
-            "local-filesystem": 8
+            "kicad-11-headless-ipc": 8
           },
           "toolCount": 8
         },
@@ -1592,193 +1596,193 @@
       "category": "emc",
       "routes": {
         "degradedNoKiCad": {
-          "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": null
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": null
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": null
         }
       },
-      "runtime": "none",
-      "tier": "write",
+      "runtime": "kicad_ipc",
+      "tier": "read",
       "tool": "emc_check_decoupling_placement",
-      "writesFiles": true
+      "writesFiles": false
     },
     {
       "category": "emc",
       "routes": {
         "degradedNoKiCad": {
-          "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": null
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": null
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": null
         }
       },
-      "runtime": "none",
-      "tier": "write",
+      "runtime": "kicad_ipc",
+      "tier": "read",
       "tool": "emc_check_differential_pair_symmetry",
-      "writesFiles": true
+      "writesFiles": false
     },
     {
       "category": "emc",
       "routes": {
         "degradedNoKiCad": {
-          "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": null
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": null
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": null
         }
       },
-      "runtime": "none",
-      "tier": "write",
+      "runtime": "kicad_ipc",
+      "tier": "read",
       "tool": "emc_check_ground_plane_voids",
-      "writesFiles": true
+      "writesFiles": false
     },
     {
       "category": "emc",
       "routes": {
         "degradedNoKiCad": {
-          "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": null
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": null
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": null
         }
       },
-      "runtime": "none",
-      "tier": "write",
+      "runtime": "kicad_ipc",
+      "tier": "read",
       "tool": "emc_check_high_speed_routing_rules",
-      "writesFiles": true
+      "writesFiles": false
     },
     {
       "category": "emc",
       "routes": {
         "degradedNoKiCad": {
-          "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": null
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": null
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": null
         }
       },
-      "runtime": "none",
-      "tier": "write",
+      "runtime": "kicad_ipc",
+      "tier": "read",
       "tool": "emc_check_return_path_continuity",
-      "writesFiles": true
+      "writesFiles": false
     },
     {
       "category": "emc",
       "routes": {
         "degradedNoKiCad": {
-          "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": null
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": null
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": null
         }
       },
-      "runtime": "none",
-      "tier": "write",
+      "runtime": "kicad_ipc",
+      "tier": "read",
       "tool": "emc_check_split_plane_crossing",
-      "writesFiles": true
+      "writesFiles": false
     },
     {
       "category": "emc",
       "routes": {
         "degradedNoKiCad": {
-          "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": null
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": null
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": null
         }
       },
-      "runtime": "none",
-      "tier": "write",
+      "runtime": "kicad_ipc",
+      "tier": "read",
       "tool": "emc_check_via_stitching",
-      "writesFiles": true
+      "writesFiles": false
     },
     {
       "category": "emc",
       "routes": {
         "degradedNoKiCad": {
-          "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "available": false,
+          "backend": "unavailable",
+          "mutationGuard": null
         },
         "kicad10Gui": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "backend": "kicad-gui-ipc",
+          "mutationGuard": null
         },
         "kicad11Headless": {
           "available": true,
-          "backend": "local-filesystem",
-          "mutationGuard": "validated-design-file-write"
+          "backend": "kicad-11-headless-ipc",
+          "mutationGuard": null
         }
       },
-      "runtime": "none",
-      "tier": "write",
+      "runtime": "kicad_ipc",
+      "tier": "read",
       "tool": "emc_run_full_compliance",
-      "writesFiles": true
+      "writesFiles": false
     },
     {
       "category": "validation",

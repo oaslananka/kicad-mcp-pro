@@ -191,13 +191,10 @@ CATEGORY_ADAPTER_POLICIES: dict[str, CategoryAdapterPolicy] = {
         mutation_guard="validated-design-rule-write",
     ),
     "emc": CategoryAdapterPolicy(
-        preferred_backends=(AdapterBackend.LOCAL_ENGINE,),
-        kicad11_support=KiCad11Support.INDEPENDENT,
-        canary_surfaces=("write",),
-        fallback_policy=(
-            "Apply explicit, reviewable design changes without hidden native API fallback."
-        ),
-        mutation_guard="validated-design-file-write",
+        preferred_backends=(AdapterBackend.KICAD_11_HEADLESS_IPC, AdapterBackend.KICAD_GUI_IPC),
+        kicad11_support=KiCad11Support.PREVIEW,
+        canary_surfaces=("read",),
+        fallback_policy="Require live board IPC; report geometric advisory evidence, not sign-off.",
     ),
     "simulation": CategoryAdapterPolicy(
         preferred_backends=(AdapterBackend.NGSPICE,),
@@ -331,7 +328,7 @@ def _mutation_guard(category: str, tier: AccessTier, backend: AdapterBackend) ->
 
 
 def _ipc_context_available(category: str, context: AdapterRuntimeContext) -> bool:
-    if category in {"pcb_read", "pcb_write"}:
+    if category in {"pcb_read", "pcb_write", "emc"}:
         return context.live_pcb_context
     if category == "schematic":
         return context.live_schematic_context

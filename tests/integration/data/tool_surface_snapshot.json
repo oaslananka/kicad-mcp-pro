@@ -406,7 +406,7 @@
     "destructive": false,
     "experimental": false,
     "headless": false,
-    "idempotent": false,
+    "idempotent": true,
     "name": "emc_check_decoupling_placement",
     "open_world": false,
     "profiles": [
@@ -417,14 +417,14 @@
       "full",
       "high_speed"
     ],
-    "read_only": false,
-    "requires_kicad_running": false
+    "read_only": true,
+    "requires_kicad_running": true
   },
   {
     "destructive": false,
     "experimental": false,
     "headless": false,
-    "idempotent": false,
+    "idempotent": true,
     "name": "emc_check_differential_pair_symmetry",
     "open_world": false,
     "profiles": [
@@ -435,14 +435,14 @@
       "full",
       "high_speed"
     ],
-    "read_only": false,
-    "requires_kicad_running": false
+    "read_only": true,
+    "requires_kicad_running": true
   },
   {
     "destructive": false,
     "experimental": false,
     "headless": false,
-    "idempotent": false,
+    "idempotent": true,
     "name": "emc_check_ground_plane_voids",
     "open_world": false,
     "profiles": [
@@ -453,14 +453,14 @@
       "full",
       "high_speed"
     ],
-    "read_only": false,
-    "requires_kicad_running": false
+    "read_only": true,
+    "requires_kicad_running": true
   },
   {
     "destructive": false,
     "experimental": false,
     "headless": false,
-    "idempotent": false,
+    "idempotent": true,
     "name": "emc_check_high_speed_routing_rules",
     "open_world": false,
     "profiles": [
@@ -471,14 +471,14 @@
       "full",
       "high_speed"
     ],
-    "read_only": false,
-    "requires_kicad_running": false
+    "read_only": true,
+    "requires_kicad_running": true
   },
   {
     "destructive": false,
     "experimental": false,
     "headless": false,
-    "idempotent": false,
+    "idempotent": true,
     "name": "emc_check_return_path_continuity",
     "open_world": false,
     "profiles": [
@@ -489,14 +489,14 @@
       "full",
       "high_speed"
     ],
-    "read_only": false,
-    "requires_kicad_running": false
+    "read_only": true,
+    "requires_kicad_running": true
   },
   {
     "destructive": false,
     "experimental": false,
     "headless": false,
-    "idempotent": false,
+    "idempotent": true,
     "name": "emc_check_split_plane_crossing",
     "open_world": false,
     "profiles": [
@@ -507,14 +507,14 @@
       "full",
       "high_speed"
     ],
-    "read_only": false,
-    "requires_kicad_running": false
+    "read_only": true,
+    "requires_kicad_running": true
   },
   {
     "destructive": false,
     "experimental": false,
     "headless": false,
-    "idempotent": false,
+    "idempotent": true,
     "name": "emc_check_via_stitching",
     "open_world": false,
     "profiles": [
@@ -525,14 +525,14 @@
       "full",
       "high_speed"
     ],
-    "read_only": false,
-    "requires_kicad_running": false
+    "read_only": true,
+    "requires_kicad_running": true
   },
   {
     "destructive": false,
     "experimental": false,
     "headless": false,
-    "idempotent": false,
+    "idempotent": true,
     "name": "emc_run_full_compliance",
     "open_world": false,
     "profiles": [
@@ -543,8 +543,8 @@
       "full",
       "high_speed"
     ],
-    "read_only": false,
-    "requires_kicad_running": false
+    "read_only": true,
+    "requires_kicad_running": true
   },
   {
     "destructive": false,

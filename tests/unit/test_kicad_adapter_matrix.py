@@ -132,3 +132,18 @@ def test_generated_adapter_artifacts_match_runtime_payload() -> None:
 
     assert payload == build_adapter_matrix_payload()
     assert "# KiCad Adapter Matrix" in GENERATED_DOCS.read_text(encoding="utf-8")
+
+
+def test_emc_requires_live_pcb_context_without_mutation() -> None:
+    without_board = AdapterRuntimeContext(
+        kicad_major=10, ipc_reachable=True, live_pcb_context=False
+    )
+    with_board = AdapterRuntimeContext(kicad_major=10, ipc_reachable=True, live_pcb_context=True)
+    for name in TOOL_CATEGORIES["emc"]["tools"]:
+        blocked = decision_for_tool(name, without_board)
+        assert blocked.available is False
+        assert blocked.backend is AdapterBackend.UNAVAILABLE
+        live = decision_for_tool(name, with_board)
+        assert live.available is True
+        assert live.backend is AdapterBackend.KICAD_GUI_IPC
+        assert live.mutation_guard is None

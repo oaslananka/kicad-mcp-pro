@@ -445,3 +445,50 @@ def test_stored_fill_boundary_is_not_counted_as_confirmed_interior(mode) -> None
     )
     assert re.search(r"0/\d+ covered", result), result
     assert "boundary" in result.lower()
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("readonly")
+@pytest.mark.parametrize(
+    ("name", "args"),
+    [
+        ("emc_check_ground_plane_voids", {}),
+        (
+            "emc_check_return_path_continuity",
+            {"signal_net": "USB_DP", "reference_plane_layer": "B_Cu"},
+        ),
+        ("emc_check_split_plane_crossing", {"signal_nets": ["USB_DP"]}),
+        ("emc_check_decoupling_placement", {}),
+        ("emc_check_via_stitching", {}),
+        ("emc_check_differential_pair_symmetry", {"net_p": "USB_DP", "net_n": "USB_DN"}),
+        ("emc_check_high_speed_routing_rules", {"net_class": "USB"}),
+        ("emc_run_full_compliance", {}),
+    ],
+)
+async def test_emc_review_is_available_without_write_permission(
+    sample_project, mock_board, name, args
+) -> None:
+    from kicad_mcp.capabilities import AccessTier, RuntimeRequirement, get
+    from kicad_mcp.operating_modes import OperatingMode, tool_required_mode
+    from kicad_mcp.tools.metadata import infer_tool_annotations
+
+    _configure_emc_board(mock_board)
+    server = build_server("expert")
+    server.filter_runtime_tools = False
+    result = await call_tool_payload(server, name, args)
+    assert isinstance(result, dict), result
+    assert result["verdict"] in {"PASS", "WARN", "FAIL"}
+    record = get(name)
+    assert record is not None
+    assert record.tier is AccessTier.READ
+    assert record.runtime is RuntimeRequirement.KICAD_IPC
+    assert record.writes_files is False
+    assert record.writes_kicad_gui_state is False
+    assert tool_required_mode(name) is OperatingMode.READONLY
+    annotation = infer_tool_annotations(name).model_dump(by_alias=True, exclude_none=True)
+    assert annotation["readOnlyHint"] is True
+    assert annotation["idempotentHint"] is True
+    names = {tool.name for tool in server.list_tools_sync()}
+    assert name in names
+    assert "pcb_add_track" not in names
+    assert "export_manufacturing_package" not in names

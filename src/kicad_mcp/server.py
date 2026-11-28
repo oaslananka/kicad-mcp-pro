@@ -883,7 +883,7 @@ def _ipc_runtime_allows_tool(tool_name: str, state: KiCadIpcCapabilityState) -> 
 
     record = get_capability_record(tool_name)
     tier = record.tier if record is not None else AccessTier.WRITE
-    if tool_name.startswith("pcb_"):
+    if tool_name.startswith("pcb_") or (record is not None and record.category == "emc"):
         return state.live_pcb_read if tier is AccessTier.READ else state.live_pcb_write
     if tool_name.startswith("sch_"):
         return state.live_schematic_read if tier is AccessTier.READ else state.live_schematic_write
