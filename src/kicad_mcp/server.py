@@ -487,6 +487,17 @@ def _tool_error_code(message: str, *, tool_name: str = "") -> str:
 
 
 def _classify_system_error_hint(lowered: str) -> str | None:
+    if lowered.startswith(
+        (
+            "transaction state is ambiguous after an ipc failure",
+            "native-live transaction recovery is required",
+            "the kicad ipc session changed during the native-live transaction",
+        )
+    ):
+        return (
+            "Do not retry the transaction or another write. Reconcile the active KiCad board "
+            "and verify its saved state before resetting or reselecting the project."
+        )
     if "operating mode" in lowered and "requires" in lowered:
         return (
             "Start kicad-mcp-pro with --mode write, --mode manufacturing, "
@@ -670,6 +681,15 @@ def _promote_failed_tool_result(result: object) -> object:
     return result
 
 
+def _is_transaction_recovery_message(tool_name: str, first_line: str) -> bool:
+    return tool_name in {
+        "pcb_begin_commit",
+        "pcb_push_commit",
+        "pcb_drop_commit",
+        "pcb_revert",
+    } and first_line.startswith("transaction state is ambiguous after an ipc failure")
+
+
 def _tool_failure_message(tool_name: str, result: object) -> str | None:
     text = _result_text(result).strip()
     lowered = text.casefold()
@@ -678,6 +698,7 @@ def _tool_failure_message(tool_name: str, result: object) -> str | None:
         _is_manufacturing_block_message(tool_name, lowered)
         or _is_cli_failure_message(tool_name, lowered)
         or _is_generic_first_line_failure(first_line)
+        or _is_transaction_recovery_message(tool_name, first_line)
         or (
             tool_name
             in {

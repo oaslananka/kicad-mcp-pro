@@ -1805,3 +1805,37 @@ async def test_unexpected_server_error_is_audited_without_raw_exception_details(
     assert audits[0]["error_code"] == "RuntimeError"
     assert "private-board-detail" not in str(events)
     assert "_exc_info" not in unexpected[0]
+
+
+@pytest.mark.anyio
+@pytest.mark.mcp_mode("write")
+async def test_native_transaction_reconciliation_is_mcp_error(mock_board, monkeypatch) -> None:
+    from kicad_mcp.pcb import live_edit_runtime
+    from tests.unit.test_pcb_live_edit_session import FakeBoard, _service
+
+    board = FakeBoard()
+    epoch = [0]
+    service = _service([board], epoch_ref=epoch)
+    assert service.begin().startswith("Transaction group started")
+    epoch[0] += 1
+    with pytest.raises(RuntimeError, match="IPC session changed"):
+        service.push()
+    monkeypatch.setattr(live_edit_runtime, "_SERVICE", service)
+    cfg = get_config()
+    monkeypatch.setattr(cfg, "filter_runtime_tools", False)
+    monkeypatch.setattr(cfg, "transport", "streamable-http")
+    server = build_server("full")
+    events: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        "kicad_mcp.server.logger.info", lambda event, **kwargs: events.append((event, kwargs))
+    )
+    for name in ("pcb_begin_commit", "pcb_push_commit", "pcb_drop_commit", "pcb_revert"):
+        result = await server.call_tool(name, {})
+        assert result.is_error, name
+        assert "reconcile the active KiCad board" in result.content[0].text
+        assert "Do not retry" in result.content[0].text
+        audit = [data for event, data in events if event == "tool_call_audit"][-1]
+        assert audit["status"] == "error"
+        assert audit["error_code"] == "TOOL_EXECUTION_FAILED"
+    assert board.calls == [("begin",)]
+    assert service.status_payload()["state"] == "recovery_required"
