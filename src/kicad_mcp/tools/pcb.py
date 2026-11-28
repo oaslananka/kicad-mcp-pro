@@ -68,6 +68,7 @@ from ..models.pcb import (
     StackupLayerSpec,
     SyncPcbFromSchematicInput,
     ZoneCornerInput,
+    ZoneCorners,
 )
 from ..models.verdict import Finding, SuggestedFix, VerdictReport, stable_finding_id
 from ..operating_modes import OperatingMode, active_operating_mode
@@ -5513,7 +5514,7 @@ def _register_copper_zone_tools(mcp: FastMCP) -> None:
     def pcb_add_zone(
         net_name: str,
         layer: str,
-        corners: list[dict[str, float]],
+        corners: ZoneCorners,
         clearance_mm: float = 0.3,
         min_width_mm: float = 0.25,
         thermal_relief: bool = True,
@@ -5522,7 +5523,13 @@ def _register_copper_zone_tools(mcp: FastMCP) -> None:
         priority: int = 0,
         name: str = "",
     ) -> str:
-        """Add a copper zone with an arbitrary polygon outline on one copper layer."""
+        """Add and refill a copper zone on one layer, outside an active transaction.
+
+        Supply 3?128 polygon corners as objects with x_mm and y_mm coordinates.
+        This mutation does not participate in native-live transaction groups.
+        Check pcb_get_live_edit_state; explicitly finish or discard any active
+        group before calling this tool. It never commits or drops a group for you.
+        """
         payload = AddZoneInput(
             net_name=net_name,
             layer=layer,
@@ -5582,7 +5589,7 @@ def _register_copper_zone_tools(mcp: FastMCP) -> None:
     def pcb_add_copper_zone(
         net_name: str,
         layer: str,
-        corners: list[dict[str, float]],
+        corners: ZoneCorners,
         clearance_mm: float = 0.3,
         min_width_mm: float = 0.25,
         thermal_relief: bool = True,
@@ -5591,7 +5598,11 @@ def _register_copper_zone_tools(mcp: FastMCP) -> None:
         priority: int = 0,
         name: str = "",
     ) -> str:
-        """Backward-compatible alias for pcb_add_zone()."""
+        """Alias for pcb_add_zone; use only outside an active transaction.
+
+        Supply 3?128 polygon corners as objects with x_mm and y_mm coordinates.
+        Zone creation and refill do not participate in native-live transaction groups.
+        """
         return str(
             pcb_add_zone(
                 net_name=net_name,

@@ -2,10 +2,10 @@
   "profiles": {
     "build": {
       "callableTools": 24,
-      "catalogCharacters": 9377,
+      "catalogCharacters": 9486,
       "catalogReductionVsExpertPct": 96.1,
       "declaredTools": 24,
-      "estimatedCatalogTokens": 2345,
+      "estimatedCatalogTokens": 2372,
       "forbiddenToolExposures": 2,
       "goldenCases": 65,
       "goldenCasesCovered": 7,
@@ -95,10 +95,10 @@
     },
     "expert": {
       "callableTools": 396,
-      "catalogCharacters": 240235,
+      "catalogCharacters": 241564,
       "catalogReductionVsExpertPct": 0.0,
       "declaredTools": 396,
-      "estimatedCatalogTokens": 60059,
+      "estimatedCatalogTokens": 60391,
       "forbiddenToolExposures": 8,
       "goldenCases": 65,
       "goldenCasesCovered": 55,
