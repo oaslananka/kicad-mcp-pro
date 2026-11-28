@@ -648,3 +648,41 @@ def test_failed_new_probe_does_not_reuse_previous_support_evidence() -> None:
     assert service.begin().startswith("Failed to begin transaction")
     assert service.status_payload()["transaction_support_status"] == "unknown"
     assert service.status_payload()["transaction_supported"] is False
+
+
+def test_status_marks_lost_active_epoch_as_recovery_without_ipc_writes() -> None:
+    board = FakeBoard()
+    epoch = [0]
+    service = _service([board], epoch_ref=epoch)
+    assert service.begin().startswith("Transaction group started")
+    service.execute_board_mutation(
+        "pcb_add_track",
+        lambda _board: "staged",
+        verifier=lambda _board, _result: True,
+        participates_in_live_session=True,
+    )
+    calls = board.calls[:]
+    epoch[0] += 1
+    payload = service.status_payload()
+    assert payload["state"] == "recovery_required"
+    assert payload["transaction_support_status"] == "unknown"
+    assert payload["recovery_required"] is True
+    assert service.last_evidence is not None
+    assert service.last_evidence.outcome == "recovery_required"
+    assert service.status_payload() == payload
+    assert "ambiguous" in service.push().casefold()
+    assert board.calls == calls
+
+
+def test_mutation_response_never_claims_success_when_recovery_is_required(monkeypatch) -> None:
+    from kicad_mcp.tools import pcb
+
+    board = FakeBoard()
+    epoch = [0]
+    service = _service([board], epoch_ref=epoch)
+    service.begin()
+    monkeypatch.setattr(pcb, "get_live_edit_service", lambda: service)
+    epoch[0] += 1
+    with pytest.raises(RuntimeError, match="recovery is required"):
+        pcb._native_live_transaction_active()
+    assert board.calls == [("begin",)]

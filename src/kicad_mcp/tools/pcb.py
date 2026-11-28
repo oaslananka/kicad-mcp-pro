@@ -211,7 +211,12 @@ def _run_queued_ipc_mutation[T](operation: str, command: Callable[[], T]) -> T:
 
 def _native_live_transaction_active() -> bool:
     """Return whether the canonical native-live service has a staged transaction."""
-    return get_live_edit_service().status_payload()["state"] == "active"
+    state = get_live_edit_service().status_payload()["state"]
+    if state == "recovery_required":
+        raise RuntimeError(
+            "Native-live transaction recovery is required before another mutation can run."
+        )
+    return state == "active"
 
 
 def _staged_message(operation: str) -> str:

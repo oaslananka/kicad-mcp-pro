@@ -220,6 +220,9 @@ class PcbTransactionLifecycleService:
     def status_payload(self) -> dict[str, object]:
         """Return bounded path-free native-live state for public reporting."""
         with self._lock:
+            epoch = self.get_connection_epoch()
+            if self._commit_handle is not None and self._connection_epoch != epoch:
+                self._mark_control_ambiguity()
             identity = self._active_identity
             last = self._last_evidence
             if identity is not None:
@@ -232,7 +235,7 @@ class PcbTransactionLifecycleService:
                 board_fingerprint = ""
                 board_name = ""
             supported = self._transaction_supported
-            if self._transaction_support_epoch != self.get_connection_epoch():
+            if self._transaction_support_epoch != epoch:
                 supported = None
             if supported is None:
                 support_status = "unknown"
