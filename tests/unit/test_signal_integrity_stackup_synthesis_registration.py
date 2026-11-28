@@ -40,7 +40,7 @@ def test_registration_preserves_signature_docstring_order_and_delegation() -> No
     )
     assert tool.fn.__doc__ is not None
     assert tool.fn.__doc__.startswith(
-        "Synthesise a PCB stackup that meets the impedance requirements"
+        "Synthesise a candidate PCB stackup and first-pass impedance estimates"
     )
 
     interfaces = [{"kind": "usb3", "differential": True}]

@@ -74,16 +74,17 @@ def register(
         interfaces: list[dict[str, object]],
         dry_run: bool = True,
     ) -> str:
-        """Map interface specs from the project design intent to KiCad net classes.
+        """Plan net-class routing constraints for interfaces without assigning nets.
 
-        For each interface with an impedance target, this tool generates the
-        pcb_set_net_class() calls needed to enforce clearance and diff-pair rules.
-        When ``dry_run=True`` (default), only returns the plan without executing it.
+        This tool plans first-pass clearance and diff-pair constraints, with
+        exact-net inspection and class-membership review before rule writing.
+        When ``dry_run=True`` (default), no project files are changed.
+        It does not create net classes, assign nets, or verify physical impedance.
 
         Args:
             interfaces: List of InterfaceSpec dicts from project_get_design_spec().
             dry_run: If True, return the mapping plan without modifying the project.
-                Set to False to have the tool call pcb_set_net_class() for each class.
+                Set to False to write reviewed class constraints to the .kicad_dru file.
 
         Returns:
             Net class plan or confirmation of changes applied.
