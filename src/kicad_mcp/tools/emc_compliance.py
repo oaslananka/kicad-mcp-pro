@@ -28,6 +28,7 @@ from ..pcb.board_access import (
     board_zones,
 )
 from ..pcb.geometry import point_xy_mm, track_segment_length_mm
+from ..pcb.return_path_evidence import describe_stored_plane
 from ..utils.impedance import propagation_delay_ps_per_mm
 from ..utils.layers import resolve_layer
 from ..utils.solver_seams import emc_method, format_solver_verdict
@@ -280,17 +281,25 @@ def _emc_check_single_return_path_text(
     if not tracks:
         return "FAIL", f"No routed tracks were found for signal net '{signal_net}'."
     plane_layer = resolve_layer(reference_plane_layer)
-    plane_exists = any(
-        _is_ground_like_net(_zone_net_name(zone)) and plane_layer in getattr(zone, "layers", [])
-        for zone in cast(list[_ZoneLike], board_zones(get_board()))
-    )
-    if not plane_exists:
+    zones = [zone for zone in _gnd_zones() if plane_layer in zone.layers]
+    if not zones:
         return "WARN", f"No GND plane was found on reference layer {reference_plane_layer}."
-    signal_layers = sorted({BoardLayer.Name(track.layer) for track in tracks})
+    layers = {track.layer for track in tracks}
+    if len(layers) > 1:
+        return (
+            "WARN",
+            "Multiple signal layers: review each adjacent plane and via transitions separately.",
+        )
+    if plane_layer in layers:
+        return "WARN", "Selected reference plane is on the same layer as the signal."
+    if not any(zone.filled for zone in zones):
+        return "WARN", "Selected GND reference zone is unfilled."
+    observation = describe_stored_plane(tracks, zones, plane_layer)
     return (
-        "PASS",
-        f"Signal net '{signal_net}' is routed on {', '.join(signal_layers)} with a GND "
-        f"reference plane on {reference_plane_layer}.",
+        "WARN",
+        f"{observation} Physical return continuity unverified: stored fill may be stale; "
+        "verify adjacent stackup reference, plane connectivity and signal/return vias "
+        "independently.",
     )
 
 
@@ -299,7 +308,9 @@ def _emc_check_return_path_text(
     reference_plane_layer: str,
     search_radius_mm: float = 2.0,
 ) -> tuple[str, str]:
-    target_nets = [signal_net] if signal_net else _high_speed_nets()
+    if not math.isfinite(search_radius_mm) or search_radius_mm <= 0:
+        return "WARN", "search_radius_mm must be finite and positive."
+    target_nets = [signal_net] if signal_net else (_intent_critical_nets() or _high_speed_nets())
     if not target_nets:
         return "WARN", "No high-speed or design-intent critical nets were available."
     plane_layer = (
@@ -307,22 +318,16 @@ def _emc_check_return_path_text(
         if reference_plane_layer == "auto"
         else reference_plane_layer
     )
-    failures: list[str] = []
+    checked = target_nets[: get_config().max_items_per_response]
     details: list[str] = []
-    for net_name in target_nets[: get_config().max_items_per_response]:
+    for net_name in checked:
         verdict, detail = _emc_check_single_return_path_text(net_name, plane_layer)
         details.append(f"{net_name}: {verdict} ({detail})")
-        if verdict != "PASS":
-            failures.append(net_name)
-    if failures:
-        geometry = ", ".join(f"net={name}, radius={search_radius_mm:.2f}mm" for name in failures)
-        return (
-            "WARN",
-            f"Violations: {len(failures)}. Geometry: {geometry}. " + " ".join(details),
-        )
     return (
-        "PASS",
-        f"All {len(target_nets)} checked net(s) have a GND return on {plane_layer}. "
+        "WARN",
+        f"Checked {len(checked)}/{len(target_nets)} net(s) on {plane_layer}; "
+        f"{len(target_nets) - len(checked)} omitted. "
+        "Centerline sampling only; search radius does not verify via or return-current geometry. "
         + " ".join(details),
     )
 
@@ -461,7 +466,10 @@ def _emc_check_reference_plane_text() -> tuple[str, str]:
     }
     if not gnd_layers:
         return "FAIL", "No dedicated GND plane or pour layers were detected."
-    return "PASS", f"Reference plane coverage is available on: {', '.join(sorted(gnd_layers))}."
+    return (
+        "WARN",
+        f"GND plane presence on: {', '.join(sorted(gnd_layers))}; coverage unverified.",
+    )
 
 
 def register(mcp: FastMCP) -> None:
