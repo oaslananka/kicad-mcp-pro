@@ -238,10 +238,26 @@ def test_native_custom_track_width_rules_cannot_be_silently_skipped(
         run_route_drc_preflight(*_checked_args, **_checked_kwargs)
 
 
+@pytest.mark.parametrize(
+    ("rule_pair", "board_pair"),
+    [
+        (("USB_D_P", "USB_D_N"), ("USB_D_P", "USB_D_N")),
+        (("/USB_DP", "/USB_DN"), ("/USB_DP", "/USB_DN")),
+        (("/CLK_P0", "/CLK_N0"), ("/CLK_P0", "/CLK_N0")),
+        (("/CLK_P0", "/CLK_N0"), ("/CLK_P1", "/CLK_N1")),
+        (("/CLK_P0", "/CLK_N0"), ("/clk_P0", "/clk_N0")),
+    ],
+)
 def test_native_usb_differential_pair_matched_skew_passes_and_mismatch_fails(
     tmp_path: Path,
+    rule_pair: tuple[str, str],
+    board_pair: tuple[str, str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """KiCad's native pair-skew DRC is a separate gate from connectivity."""
+    config_home = tmp_path / "kicad-config"
+    config_home.mkdir()
+    monkeypatch.setenv("KICAD_CONFIG_HOME", str(config_home))
     source = (
         Path(__file__).resolve().parents[1]
         / "fixtures"
@@ -253,7 +269,7 @@ def test_native_usb_differential_pair_matched_skew_passes_and_mismatch_fails(
     board = tmp_path / "demo.kicad_pcb"
     shutil.copy2(original_pcb, board)
     shutil.copy2(source / "demo.kicad_pro", tmp_path / "demo.kicad_pro")
-    rule_name, body = build_differential_pair_rule("USB_D_P", "USB_D_N", 0.25, 0.5, 0.1)
+    rule_name, body = build_differential_pair_rule(*rule_pair, 0.25, 0.5, 0.1)
     (tmp_path / "demo.kicad_dru").write_text("(version 1)\n" + body + "\n", encoding="utf-8")
     cli = get_config().kicad_cli
     native_python = cli.parent / "python.exe"
@@ -324,6 +340,10 @@ for mode in ("matched", "mismatched"):
         )
     pcbnew.SaveBoard(str(output / "demo.kicad_pcb"), design)
 """
+    # All names are fixed test parameters; never interpolate caller-controlled code.
+    fixture_builder = fixture_builder.replace('"USB_D_P"', repr(board_pair[0])).replace(
+        '"USB_D_N"', repr(board_pair[1])
+    )
     result = subprocess.run(
         [str(native_python), "-c", fixture_builder, str(tmp_path)],
         capture_output=True,
@@ -335,18 +355,23 @@ for mode in ("matched", "mismatched"):
     preflight = run_route_drc_preflight(
         board.read_text(encoding="utf-8"),
         [
-            TrackSpec(10.95, 8.5, 19.05, 8.5, "F_Cu", 0.25, "USB_D_P"),
-            TrackSpec(10.95, 9.25, 19.05, 9.25, "F_Cu", 0.25, "USB_D_N"),
+            TrackSpec(10.95, 8.5, 19.05, 8.5, "F_Cu", 0.25, board_pair[0]),
+            TrackSpec(10.95, 9.25, 19.05, 9.25, "F_Cu", 0.25, board_pair[1]),
         ],
         project_file=tmp_path / "demo.kicad_pro",
         kicad_cli=cli,
-        pair_nets=frozenset(("USB_D_P", "USB_D_N")),
+        pair_nets=frozenset(board_pair),
     )
     assert preflight["accepted"] is True
     assert preflight["introducedViolations"] == 0
     assert preflight["unconnectedBefore"] == 2
     assert preflight["unconnectedAfter"] == 0
 
+    # Native NetName matching is case-insensitive. The rule-writing service
+    # refuses existing board name collisions before emitting such a rule.
+    rule_matches = tuple(name.casefold() for name in rule_pair) == tuple(
+        name.casefold() for name in board_pair
+    )
     for mode, should_violate in (("matched", False), ("mismatched", True)):
         case = tmp_path / mode
         report = case / "report.json"
@@ -374,7 +399,41 @@ for mode in ("matched", "mismatched"):
             if entry.get("type") == "skew_out_of_range"
             and rule_name in entry.get("description", "")
         ]
-        assert bool(skew_errors) is should_violate
+        assert bool(skew_errors) is (should_violate and rule_matches)
         assert len(findings["unconnected_items"]) == 0
+
+    # Tighten only the requested rule: native DRC must flag the actual
+    # 0.5 mm gap on that pair, not on a sibling sharing its base name.
+    _, tight_rule = build_differential_pair_rule(*rule_pair, 0.25, 0.6, 0.1)
+    case = tmp_path / "matched"
+    (case / "demo.kicad_dru").write_text("(version 1)\n" + tight_rule + "\n", encoding="utf-8")
+    report = case / "gap-report.json"
+    result = subprocess.run(
+        [
+            str(cli),
+            "pcb",
+            "drc",
+            "--severity-all",
+            "--format",
+            "json",
+            "--output",
+            str(report),
+            str(case / "demo.kicad_pcb"),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr[-1000:]
+    findings = json.loads(report.read_text(encoding="utf-8"))
+    gap_errors = [
+        entry
+        for entry in findings["violations"]
+        if entry.get("type") == "diff_pair_gap_out_of_range"
+        and rule_name in entry.get("description", "")
+    ]
+    assert bool(gap_errors) is rule_matches
+    assert len(findings["unconnected_items"]) == 0
 
     assert hashlib.sha256(original_pcb.read_bytes()).hexdigest() == original_sha

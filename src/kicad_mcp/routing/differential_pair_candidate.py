@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from math import hypot, isfinite
 
-from .differential_pair_rules import infer_diff_pair_base
+from .differential_pair_rules import PAIR_NAME_GUIDANCE, infer_diff_pair_base
 from .manual_tracks import TrackSpec
 from .path_planner import (
     Obstacle,
@@ -52,7 +52,7 @@ def _validate_pair_scope(
     if plus.width_mm != minus.width_mm or plus.width_mm <= 0:
         raise RoutePlanningError("Differential pair track widths must match")
     if not infer_diff_pair_base(plus.net_name, minus.net_name):
-        raise RoutePlanningError("Differential pair requires matching positive/negative net names")
+        raise RoutePlanningError(PAIR_NAME_GUIDANCE)
 
 
 def inspect_straight_pair(
@@ -336,10 +336,8 @@ def plan_coupled_hv45_pair(
 
     The native KiCad DRC preflight remains mandatory before writing copper.
     """
-    from .differential_pair_rules import infer_diff_pair_base
-
     if not infer_diff_pair_base(net_plus, net_minus):
-        raise RoutePlanningError("Coupled pair requires matched P/N nets")
+        raise RoutePlanningError("Coupled pair requires matched P/N nets. " + PAIR_NAME_GUIDANCE)
     if not layer.endswith("_Cu"):
         raise RoutePlanningError("Coupled pair requires a copper layer")
     if not all(isfinite(x) for x in (width_mm, gap_mm, clearance_mm, max_skew_mm)):

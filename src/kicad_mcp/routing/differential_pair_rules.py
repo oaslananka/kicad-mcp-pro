@@ -18,19 +18,25 @@ def _mm(value: float) -> str:
 
 
 def infer_diff_pair_base(net_p: str, net_n: str) -> str | None:
-    """Infer the KiCad differential-pair base name from common suffix conventions."""
-    candidates = [
-        (r"(.+)_P$", r"(.+)_N$"),
-        (r"(.+)_DP$", r"(.+)_DN$"),
-        (r"(.+)\+$", r"(.+)-$"),
-        (r"(.+)P$", r"(.+)N$"),
-    ]
-    for pattern_p, pattern_n in candidates:
-        match_p = re.fullmatch(pattern_p, net_p)
-        match_n = re.fullmatch(pattern_n, net_n)
-        if match_p and match_n and match_p.group(1) == match_n.group(1):
-            return match_p.group(1).rstrip("_-+/")
-    return None
+    """Match KiCad's native polarity suffix, including trailing digits/underscores."""
+    match = re.fullmatch(r"(.+)([P+])([0-9_]*)", net_p)
+    if match is None:
+        return None
+    base, polarity, suffix = match.groups()
+    complement = "N" if polarity == "P" else "-"
+    return base if net_n == f"{base}{complement}{suffix}" else None
+
+
+PAIR_NAME_GUIDANCE = (
+    "Differential pair requires matching positive/negative net names recognized by KiCad. "
+    "Use matching P/N or +/- suffixes (including matching trailing digits); "
+    "rename unsupported nets in the schematic and update the PCB before retrying."
+)
+
+
+def _literal_pair_name(name: str) -> bool:
+    """Allow plain rule literals only; KiCad equality interprets wildcard patterns."""
+    return name.isprintable() and not any(char in name for char in "*?[]\\\"'")
 
 
 def build_differential_pair_rule(
@@ -40,13 +46,12 @@ def build_differential_pair_rule(
     gap_mm: float,
     length_tolerance_mm: float,
 ) -> tuple[str, str]:
-    """Build the legacy differential-pair .kicad_dru rule body."""
-    base_name = infer_diff_pair_base(net_p, net_n)
-    condition = (
-        f"A.inDiffPair('{base_name}')"
-        if base_name is not None
-        else f"A.NetName == '{net_p}' || A.NetName == '{net_n}'"
-    )
+    """Build a native rule for two names, after checking board ambiguity in the service."""
+    if infer_diff_pair_base(net_p, net_n) is None or not all(
+        _literal_pair_name(name) for name in (net_p, net_n)
+    ):
+        raise ValueError(PAIR_NAME_GUIDANCE)
+    condition = f"A.NetName == '{net_p}' || A.NetName == '{net_n}'"
     track_width_constraint = (
         f"  (constraint track_width (min {_mm(width_mm)}) "
         f"(opt {_mm(width_mm)}) (max {_mm(width_mm)}))"
@@ -66,6 +71,13 @@ def build_differential_pair_rule(
         ]
     )
     return name, body
+
+
+def _ambiguous_pair_names(board_nets: set[str], net_p: str, net_n: str) -> bool:
+    """KiCad DRC string matching is case-insensitive; refuse colliding board nets."""
+    pair = {net_p, net_n}
+    folded = {name.casefold() for name in pair}
+    return any(name.casefold() in folded for name in board_nets - pair)
 
 
 @dataclass(frozen=True)
@@ -91,9 +103,18 @@ class RoutingDifferentialPairService:
                 "Differential-pair routing rule was not written. "
                 f"Missing nets: {', '.join(missing)}"
             )
-        rule_name, rule_body = build_differential_pair_rule(
-            net_p, net_n, width_mm, gap_mm, length_tolerance_mm
-        )
+        if _ambiguous_pair_names(board_nets, net_p, net_n):
+            return (
+                "Differential-pair routing rule was not written. KiCad rule matching is "
+                "case-insensitive and other board net names collide with this pair. "
+                "Rename ambiguous nets in the schematic and update the PCB before retrying."
+            )
+        try:
+            rule_name, rule_body = build_differential_pair_rule(
+                net_p, net_n, width_mm, gap_mm, length_tolerance_mm
+            )
+        except ValueError as exc:
+            return f"Differential-pair routing rule was not written. {exc}"
         try:
             path = self.write_rule(rule_name, rule_body)
         except (OSError, ValueError) as exc:
