@@ -67,3 +67,41 @@ def test_pair_rejects_different_layer_or_net_pair_names() -> None:
             gap_mm=0.5,
             max_skew_mm=0.1,
         )
+
+
+@pytest.mark.parametrize(
+    ("positive", "negative"),
+    [("/USB_DP", "/USB_DN"), ("/CLK_P0", "/CLK_N0")],
+)
+def test_native_names_pass_straight_pair(positive: str, negative: str) -> None:
+    from dataclasses import replace
+
+    from kicad_mcp.routing.differential_pair_candidate import inspect_straight_pair
+
+    plus, minus = _pair()
+    result = inspect_straight_pair(
+        replace(plus, net_name=positive),
+        replace(minus, net_name=negative),
+        gap_mm=0.5,
+        max_skew_mm=0.1,
+    )
+    assert result["gapMm"] == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize(
+    ("positive", "negative"),
+    [("USB_DP", "USB_DM"), ("CLK_P0", "CLK_N1"), ("CLK_N", "CLK_P")],
+)
+def test_unsupported_native_names_provide_rename_guidance(positive: str, negative: str) -> None:
+    from dataclasses import replace
+
+    from kicad_mcp.routing.differential_pair_candidate import inspect_straight_pair
+
+    plus, minus = _pair()
+    with pytest.raises(RoutePlanningError, match="schematic"):
+        inspect_straight_pair(
+            replace(plus, net_name=positive),
+            replace(minus, net_name=negative),
+            gap_mm=0.5,
+            max_skew_mm=0.1,
+        )
