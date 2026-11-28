@@ -111,7 +111,7 @@ def extract_balanced_block(text: str, start: int) -> str:
 
 def _physical_pin_numbers(number: str) -> tuple[str, ...]:
     """Expand KiCad's explicit decimal member list, never infer a range."""
-    if re.fullmatch(r"\[[0-9]+(?:,[0-9]+)+\]", number):
+    if re.fullmatch(r"\[\d+(?:,\d+)+\]", number, flags=re.ASCII):
         members = tuple(number[1:-1].split(","))
         if len(set(members)) == len(members):
             return members

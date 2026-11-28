@@ -373,7 +373,9 @@ def test_missing_group_member_is_a_genuine_contract_failure() -> None:
     )
 
 
-@pytest.mark.parametrize("number", ["[1,15,,39]", "[1,1]", "[1-39]", "[1,15,39"])
+@pytest.mark.parametrize(
+    "number", ["[1,15,,39]", "[1,1]", "[1-39]", "[1,15,39", "[1,\u0662]", "[1,\uff12]"]
+)
 def test_unverified_group_is_not_certified_or_inferred_from_pads(number: str) -> None:
     report = verify_contract(
         reference="U1",
