@@ -973,3 +973,32 @@ async def test_project_release_readiness_blocks_adopted_contract_without_fresh_e
         "HardwareIntentContract evidence is fresh" in item and item.startswith("[ ]")
         for item in result["approval_checklist"]
     )
+
+
+@pytest.mark.anyio
+async def test_schematic_quality_gate_blocks_changed_analysis(
+    sample_project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kicad_mcp.tools import schematic, validation
+
+    server = build_server("full")
+    await call_tool_text(server, "kicad_set_project", {"project_dir": str(sample_project)})
+    erc_calls: list[str] = []
+
+    def run_erc(report_name: str) -> tuple[Path, dict, None]:
+        erc_calls.append(report_name)
+        return sample_project / report_name, {"sheets": [{"path": "/", "violations": []}]}, None
+
+    original_parse = schematic.parse_schematic_file
+
+    def changing_parse(path: Path) -> dict:
+        data = original_parse(path)
+        path.write_bytes(path.read_bytes() + b"\n")
+        return data
+
+    monkeypatch.setattr(validation, "_run_erc_report", run_erc)
+    monkeypatch.setattr(schematic, "parse_schematic_file", changing_parse)
+    result = await call_tool_text(server, "schematic_quality_gate", {})
+    assert "Schematic quality gate: BLOCKED" in result
+    assert "changed during analysis" in result
+    assert erc_calls == ["schematic_quality_gate.json"]

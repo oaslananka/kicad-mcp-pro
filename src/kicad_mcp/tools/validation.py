@@ -1039,7 +1039,7 @@ def _evaluate_pcb_transfer_gate() -> GateOutcome:
 
 
 def _evaluate_schematic_gate() -> GateOutcome:
-    from .schematic import _build_connectivity_groups, parse_schematic_file
+    from .schematic import SchematicChangedDuringAnalysisError, analyze_schematic_file
 
     _, report, error = _run_erc_report("schematic_quality_gate.json")
     if report is None:
@@ -1061,8 +1061,7 @@ def _evaluate_schematic_gate() -> GateOutcome:
         details.append(f"Ignored empty child-sheet ERC violations: {ignored_violation_count}")
     if cfg.sch_file is not None:
         try:
-            data = parse_schematic_file(cfg.sch_file)
-            groups = _build_connectivity_groups(cfg.sch_file)
+            data, groups = analyze_schematic_file(cfg.sch_file)
             orphan_groups = [
                 group
                 for group in groups
@@ -1078,6 +1077,13 @@ def _evaluate_schematic_gate() -> GateOutcome:
                     f"Connectivity groups: {len(groups)}",
                     f"Unnamed single-pin groups: {len(orphan_groups)}",
                 ]
+            )
+        except SchematicChangedDuringAnalysisError as exc:
+            return GateOutcome(
+                name="Schematic",
+                status="BLOCKED",
+                summary=str(exc),
+                details=details,
             )
         except (OSError, ValueError) as exc:
             details.append(f"Connectivity summary unavailable ({exc})")
@@ -1430,13 +1436,12 @@ def _analyze_single_page_connectivity(
     failures: list[str],
     page_summaries: list[str],
 ) -> None:
-    from .schematic import _build_connectivity_groups, parse_schematic_file
+    from .schematic import analyze_schematic_file
 
     if not page_path.exists():
         return
     try:
-        data = parse_schematic_file(page_path)
-        groups = _build_connectivity_groups(page_path)
+        data, groups = analyze_schematic_file(page_path)
     except (OSError, RuntimeError, ValueError) as exc:
         blocked.append(f"{page_name}: connectivity data was unavailable ({exc}).")
         return

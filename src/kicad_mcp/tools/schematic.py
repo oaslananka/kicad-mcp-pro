@@ -6408,6 +6408,10 @@ def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
         content = sch_file.read_text(encoding="utf-8")
     except OSError:
         content = ""
+    return _connectivity_groups_from_data(data, content)
+
+
+def _connectivity_groups_from_data(data: dict[str, Any], content: str) -> list[dict[str, Any]]:
     no_connect_points = _extract_no_connects(content) if content else set()
     symbol_mirrors = _placed_symbol_mirrors(content)
 
@@ -6417,6 +6421,47 @@ def _build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
     groups: dict[tuple[float, float], dict[str, Any]] = {}
     _populate_connectivity_elements(data, no_connect_points, symbol_mirrors, dset, groups)
     return _collapse_and_normalize_groups(groups, dset, no_connect_points)
+
+
+class SchematicChangedDuringAnalysisError(ValueError):
+    """The schematic changed while its connectivity evidence was collected."""
+
+
+def _schematic_file_identity(stat_result: os.stat_result) -> tuple[int, ...]:
+    return (
+        stat_result.st_dev,
+        stat_result.st_ino,
+        stat_result.st_size,
+        stat_result.st_mtime_ns,
+        stat_result.st_ctime_ns,
+    )
+
+
+def analyze_schematic_file(
+    sch_file: Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Reuse one parse within a checked, single-file connectivity analysis.
+
+    Keep the backend's original path and library resolution. Verify bytes and
+    file identity around analysis to detect external edits/replacements. This
+    is not a persistent cache or an exclusive filesystem lock.
+    """
+    before = _schematic_file_identity(sch_file.stat())
+    original = sch_file.read_bytes()
+    data = parse_schematic_file(sch_file)
+    content = original.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    groups = _connectivity_groups_from_data(data, content)
+    message = "Schematic changed during analysis; save edits and retry."
+    try:
+        unchanged = (
+            sch_file.read_bytes() == original
+            and _schematic_file_identity(sch_file.stat()) == before
+        )
+    except OSError as exc:
+        raise SchematicChangedDuringAnalysisError(message) from exc
+    if not unchanged:
+        raise SchematicChangedDuringAnalysisError(message)
+    return data, groups
 
 
 def build_connectivity_groups(sch_file: Path) -> list[dict[str, Any]]:
