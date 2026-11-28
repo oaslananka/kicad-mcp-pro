@@ -10,6 +10,27 @@ and this package adheres to
 Comparison links will be added after the first public component tags are
 published.
 
+## [4.25.1](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.25.0...mcp-server-v4.25.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* **export:** honor native 3D render boolean options and diagnostics ([#1973](https://github.com/oaslananka/kicad-mcp-pro/issues/1973)) ([f2406b0](https://github.com/oaslananka/kicad-mcp-pro/commit/f2406b09778a9802ca58dd0975f8d8ba2749aa75))
+* **mcp:** expose typed zone corners and transaction limits ([#1977](https://github.com/oaslananka/kicad-mcp-pro/issues/1977)) ([167c877](https://github.com/oaslananka/kicad-mcp-pro/commit/167c877ef047a20d7887f8443b4657541b9ba9eb))
+* **mcp:** preserve tool error classification and registration integrity ([#1971](https://github.com/oaslananka/kicad-mcp-pro/issues/1971)) ([ec23c97](https://github.com/oaslananka/kicad-mcp-pro/commit/ec23c97cfb8171a744cfe2fd67471734060ea0fc))
+* **pcb:** align noncardinal footprint rotation with native rounding ([#1981](https://github.com/oaslananka/kicad-mcp-pro/issues/1981)) ([e60b337](https://github.com/oaslananka/kicad-mcp-pro/commit/e60b3372b23b53fcaa57eb81d26fc3ea93de131f))
+* **pcb:** center mounting-hole keepouts without own NPTH violation ([#1976](https://github.com/oaslananka/kicad-mcp-pro/issues/1976)) ([273a9ed](https://github.com/oaslananka/kicad-mcp-pro/commit/273a9ed338c8457862e068bc20ffbf66a8d3e478))
+* **pcb:** distinguish unprobed transaction support and verify IPC discovery ([#1972](https://github.com/oaslananka/kicad-mcp-pro/issues/1972)) ([d527a9f](https://github.com/oaslananka/kicad-mcp-pro/commit/d527a9f88836a72d35a5db96df1cc558fa14f785))
+* **pcb:** preserve footprint keepout intent across stackup changes ([#1978](https://github.com/oaslananka/kicad-mcp-pro/issues/1978)) ([12ca97b](https://github.com/oaslananka/kicad-mcp-pro/commit/12ca97bc670fde42b249aafadb276fd1b313a6f3))
+* **si:** validate interface specs and emit conditional executable guidance ([#1974](https://github.com/oaslananka/kicad-mcp-pro/issues/1974)) ([065727b](https://github.com/oaslananka/kicad-mcp-pro/commit/065727ba38967ef355dd90924af42d73f06441d2))
+* **validation:** distinguish signal inputs from power rail bypass requirements ([#1980](https://github.com/oaslananka/kicad-mcp-pro/issues/1980)) ([9cdc345](https://github.com/oaslananka/kicad-mcp-pro/commit/9cdc345f95ac92002f12ba40048ade31d3a2650f))
+* **validation:** resolve grouped physical pins in component contracts ([#1979](https://github.com/oaslananka/kicad-mcp-pro/issues/1979)) ([3871905](https://github.com/oaslananka/kicad-mcp-pro/commit/3871905b3aa4753165564d39ffaf54c762299a3e))
+
+
+### Performance Improvements
+
+* **validation:** reuse checked schematic analyses and reduce trace noise ([#1975](https://github.com/oaslananka/kicad-mcp-pro/issues/1975)) ([e5d6360](https://github.com/oaslananka/kicad-mcp-pro/commit/e5d6360ea94911cd3a1268561c5e864f0061ca50))
+
 ## [4.25.0](https://github.com/oaslananka/kicad-mcp-pro/compare/mcp-server-v4.24.0...mcp-server-v4.25.0) (2026-11-27)
 
 
