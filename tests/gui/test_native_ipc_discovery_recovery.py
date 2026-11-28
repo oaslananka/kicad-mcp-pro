@@ -77,7 +77,7 @@ def _private_editor(
 
 
 def _configure_private_project(
-    scratch: Path, bin_dir: Path, monkeypatch: pytest.MonkeyPatch
+    scratch: Path, bin_dir: Path, monkeypatch: pytest.MonkeyPatch, *, mode: str = "write"
 ) -> tuple[Path, dict[str, str], str]:
     profile = scratch / "config/10.0"
     profile.mkdir(parents=True)
@@ -130,7 +130,7 @@ def _configure_private_project(
         "KICAD_MCP_KICAD_CLI": str(bin_dir / "kicad-cli.exe"),
         "KICAD_MCP_PROJECT_DIR": str(project),
         "KICAD_MCP_WORKSPACE_ROOT": str(project),
-        "KICAD_MCP_OPERATING_MODE": "write",
+        "KICAD_MCP_OPERATING_MODE": mode,
         "KICAD_MCP_FILTER_RUNTIME_TOOLS": "true",
         "KICAD_MCP_TELEMETRY_ENABLED": "false",
     }.items():

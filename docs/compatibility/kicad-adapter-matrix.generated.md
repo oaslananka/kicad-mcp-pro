@@ -10,7 +10,7 @@ redirected to a file parser.
 | Category | Tools | KiCad 11 | Preferred adapters | Canary surfaces | Mutation guard |
 | --- | ---: | --- | --- | --- | --- |
 | `dfm` | 3 | `independent` | `local-engine` | `read` | — |
-| `emc` | 8 | `independent` | `local-engine` | `write` | `validated-design-file-write` |
+| `emc` | 8 | `preview` | `kicad-11-headless-ipc` → `kicad-gui-ipc` | `read` | — |
 | `export` | 31 | `preview` | `kicad-cli` | `export` | `isolated-output-validation` |
 | `library` | 30 | `independent` | `local-engine` → `network` | `read`, `write` | `isolated-library-output-validation` |
 | `manufacturing` | 23 | `partial` | `kicad-cli` → `local-filesystem` | `read`, `write`, `export` | `isolated-output-and-source-preservation` |
@@ -30,9 +30,9 @@ redirected to a file parser.
 
 | Scenario | Available tools | Blocked tools | Selected backends |
 | --- | ---: | ---: | --- |
-| `kicad10Gui` | 396 | 0 | `freerouting`: 1, `git`: 6, `guarded-schematic-file`: 69, `kicad-cli`: 59, `kicad-gui-ipc`: 59, `local-engine`: 95, `local-filesystem`: 77, `network`: 6, `ngspice`: 11, `transactional-pcb-file`: 13 |
-| `kicad11Headless` | 396 | 0 | `freerouting`: 1, `git`: 6, `guarded-schematic-file`: 69, `kicad-11-headless-ipc`: 59, `kicad-cli`: 59, `local-engine`: 95, `local-filesystem`: 77, `network`: 6, `ngspice`: 11, `transactional-pcb-file`: 13 |
-| `degradedNoKiCad` | 260 | 136 | `git`: 6, `guarded-schematic-file`: 69, `local-engine`: 95, `local-filesystem`: 77, `transactional-pcb-file`: 13, `unavailable`: 136 |
+| `kicad10Gui` | 396 | 0 | `freerouting`: 1, `git`: 6, `guarded-schematic-file`: 69, `kicad-cli`: 59, `kicad-gui-ipc`: 67, `local-engine`: 95, `local-filesystem`: 69, `network`: 6, `ngspice`: 11, `transactional-pcb-file`: 13 |
+| `kicad11Headless` | 396 | 0 | `freerouting`: 1, `git`: 6, `guarded-schematic-file`: 69, `kicad-11-headless-ipc`: 67, `kicad-cli`: 59, `local-engine`: 95, `local-filesystem`: 69, `network`: 6, `ngspice`: 11, `transactional-pcb-file`: 13 |
+| `degradedNoKiCad` | 252 | 144 | `git`: 6, `guarded-schematic-file`: 69, `local-engine`: 95, `local-filesystem`: 69, `transactional-pcb-file`: 13, `unavailable`: 144 |
 
 ## Mutation safety
 

@@ -7,6 +7,8 @@ from dataclasses import dataclass
 
 from mcp.types import ToolAnnotations
 
+from ..emc_contract import EMC_READ_TOOLS
+
 
 @dataclass(frozen=True)
 class ToolMetadata:
@@ -151,6 +153,7 @@ _IDEMPOTENT_TOOL_NAMES = {"sch_spread_sheets", "sch_wire_sheet_pins"}
 def _is_read_only_name(normalized: str) -> bool:
     return (
         normalized in _READ_ONLY_TOOL_NAMES
+        or normalized in EMC_READ_TOOLS
         or normalized.startswith(_READ_ONLY_PREFIXES)
         or normalized.startswith("lib_search_")
         or normalized.startswith("pcb_get_")

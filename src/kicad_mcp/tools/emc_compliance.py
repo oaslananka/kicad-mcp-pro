@@ -33,6 +33,7 @@ from ..utils.impedance import propagation_delay_ps_per_mm
 from ..utils.layers import resolve_layer
 from ..utils.solver_seams import emc_method, format_solver_verdict
 from ..utils.units import nm_to_mm
+from .metadata import requires_kicad_running
 
 
 class _TrackLike(Protocol):
@@ -476,6 +477,7 @@ def register(mcp: FastMCP) -> None:
     """Register EMC-oriented review tools."""
 
     @mcp.tool()
+    @requires_kicad_running
     def emc_check_ground_plane_voids(max_void_area_mm2: float = 25.0) -> VerdictReport:
         """Review GND plane presence and a simple void-risk proxy."""
         verdict, detail = _emc_check_ground_plane_voids_text(max_void_area_mm2)
@@ -487,6 +489,7 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool()
+    @requires_kicad_running
     def emc_check_return_path_continuity(
         signal_net: str = "",
         reference_plane_layer: str = "auto",
@@ -506,6 +509,7 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool()
+    @requires_kicad_running
     def emc_check_split_plane_crossing(signal_nets: list[str]) -> VerdictReport:
         """Warn when routed signals share layers with split non-ground planes."""
         verdict, detail = _emc_check_split_plane_text(signal_nets)
@@ -517,6 +521,7 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool()
+    @requires_kicad_running
     def emc_check_decoupling_placement(max_distance_mm: float = 3.0) -> VerdictReport:
         """Review whether ICs have nearby decoupling capacitors."""
         verdict, detail = _emc_check_decoupling_text(max_distance_mm)
@@ -528,6 +533,7 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool()
+    @requires_kicad_running
     def emc_check_via_stitching(max_gap_mm: float = 5.0, ground_net: str = "GND") -> VerdictReport:
         """Estimate via-stitching density from existing ground vias."""
         verdict, detail = _emc_check_via_stitching_text(max_gap_mm, ground_net)
@@ -539,6 +545,7 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool()
+    @requires_kicad_running
     def emc_check_differential_pair_symmetry(
         net_p: str,
         net_n: str,
@@ -554,6 +561,7 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool()
+    @requires_kicad_running
     def emc_check_high_speed_routing_rules(
         net_class: str,
         max_stub_length_mm: float = 1.0,
@@ -568,6 +576,7 @@ def register(mcp: FastMCP) -> None:
         )
 
     @mcp.tool()
+    @requires_kicad_running
     def emc_run_full_compliance(standard: str = "FCC") -> VerdictReport:
         """Run a lightweight EMC sweep with at least ten heuristic checks."""
         diff_pair = _find_diff_pair()
