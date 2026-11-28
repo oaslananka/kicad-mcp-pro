@@ -85,8 +85,8 @@ def _unquoted_parentheses(content: str) -> Iterator[tuple[int, str]]:
             yield index, char
 
 
-def iter_root_children(content: str) -> Iterator[tuple[str, str]]:
-    """Yield immediate child blocks in one pass, ignoring quoted parentheses."""
+def iter_root_child_spans(content: str) -> Iterator[tuple[str, int, int]]:
+    """Yield immediate child spans without confusing quoted text for syntax."""
     depth = 0
     start = 0
     for index, char in _unquoted_parentheses(content):
@@ -98,10 +98,16 @@ def iter_root_children(content: str) -> Iterator[tuple[str, str]]:
         if depth == 2:
             head = _HEAD.match(content, start + 1)
             if head is not None:
-                yield head.group(), content[start : index + 1]
+                yield head.group(), start, index + 1
         depth -= 1
         if depth == 0:
             return
+
+
+def iter_root_children(content: str) -> Iterator[tuple[str, str]]:
+    """Yield immediate child blocks in one pass, ignoring quoted parentheses."""
+    for name, start, end in iter_root_child_spans(content):
+        yield name, content[start:end]
 
 
 __all__ = [
@@ -109,5 +115,6 @@ __all__ = [
     "_extract_block",
     "_sexpr_string",
     "_unescape_sexpr_string",
+    "iter_root_child_spans",
     "iter_root_children",
 ]

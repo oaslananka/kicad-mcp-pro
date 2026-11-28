@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from kicad_mcp.models.pcb import StackupLayerSpec
+from kicad_mcp.models.pcb import KeepoutLayerIntents, StackupLayerSpec
 from kicad_mcp.pcb.stackup_management import PcbStackupManagementService
 
 
@@ -56,7 +56,7 @@ def test_get_stackup_preserves_rendering_and_optional_fields() -> None:
         is_copper_stackup_layer=lambda layer: layer.material == "Copper",
         write_stackup_state=lambda _layers: Path("stackup.json"),
         transactional_board_write=lambda mutator: mutator("board"),
-        apply_stackup_to_board=lambda current, _layers: current + "::updated",
+        apply_stackup_to_board=lambda current, _layers, _intents: current + "::updated",
         reload_board_after_file_sync=lambda: "reloaded",
     )
 
@@ -86,7 +86,7 @@ def test_get_stackup_preserves_value_error_diagnostics() -> None:
         is_copper_stackup_layer=lambda layer: layer.material == "Copper",
         write_stackup_state=lambda _layers: Path("stackup.json"),
         transactional_board_write=lambda mutator: mutator("board"),
-        apply_stackup_to_board=lambda current, _layers: current,
+        apply_stackup_to_board=lambda current, _layers, _intents: current,
         reload_board_after_file_sync=lambda: "reloaded",
     )
 
@@ -106,8 +106,8 @@ def test_set_stackup_preserves_state_transaction_reload_and_message() -> None:
         events.append(("state", [layer.name for layer in layers]))
         return Path("stackup.json")
 
-    def apply(current: str, layers: list[StackupLayerSpec]) -> str:
-        events.append(("apply", current, [layer.name for layer in layers]))
+    def apply(current: str, layers: list[StackupLayerSpec], intents: KeepoutLayerIntents) -> str:
+        events.append(("apply", current, [layer.name for layer in layers], intents))
         return current + "::updated"
 
     def transaction(mutator: Callable[[str], str]) -> str:
@@ -132,7 +132,10 @@ def test_set_stackup_preserves_state_transaction_reload_and_message() -> None:
     )
     raw_layers = [layer.model_dump() for layer in _layers()]
 
-    assert service.set_stackup(raw_layers) == "\n".join(
+    decision = {
+        "33333333-3333-4333-8333-333333333333/11111111-1111-4111-8111-111111111111": "all_copper"
+    }
+    assert service.set_stackup(raw_layers, keepout_layer_intents=decision) == "\n".join(
         [
             "Configured stackup with 3 layers.",
             "- Copper layers: 2",
@@ -142,7 +145,7 @@ def test_set_stackup_preserves_state_transaction_reload_and_message() -> None:
         ]
     )
     assert events == [
-        ("apply", "board", ["F_Cu", "dielectric_1", "B_Cu"]),
+        ("apply", "board", ["F_Cu", "dielectric_1", "B_Cu"], decision),
         ("transaction", "board::updated"),
         ("state", ["F_Cu", "dielectric_1", "B_Cu"]),
         "reload",
@@ -152,7 +155,9 @@ def test_set_stackup_preserves_state_transaction_reload_and_message() -> None:
 def test_set_stackup_does_not_persist_state_when_the_board_rejects_it() -> None:
     written: list[object] = []
 
-    def reject(_current: str, _layers: list[StackupLayerSpec]) -> str:
+    def reject(
+        _current: str, _layers: list[StackupLayerSpec], _intents: KeepoutLayerIntents
+    ) -> str:
         raise ValueError("Stackup copper layers must be listed top to bottom")
 
     service = PcbStackupManagementService(
@@ -182,7 +187,7 @@ def test_set_stackup_rejects_profiles_without_two_copper_layers() -> None:
         is_copper_stackup_layer=lambda layer: layer.material.casefold() == "copper",
         write_stackup_state=lambda _layers: Path("stackup.json"),
         transactional_board_write=lambda mutator: mutator("board"),
-        apply_stackup_to_board=lambda current, _layers: current,
+        apply_stackup_to_board=lambda current, _layers, _intents: current,
         reload_board_after_file_sync=lambda: "reloaded",
     )
     invalid = [
