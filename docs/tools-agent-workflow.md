@@ -65,6 +65,15 @@ For new functional schematics, follow the [wired-subcircuit-design skill](https:
 
 `pcb_begin_commit`, `pcb_push_commit`, and `pcb_drop_commit` group live-board mutations into one native-live transaction. Only reviewed operations participate in an active transaction; the router keeps a fixed allowlist and each participating operation must supply a postcondition verifier.
 
+Use `pcb_get_live_edit_state` to inspect the transaction state without opening
+a transaction. Its `transaction_support_status` is `unknown` until a native
+begin attempt establishes evidence, `supported` after a successful begin,
+or `unsupported` when native grouping is unavailable. Evidence expires when
+the observed IPC connection epoch changes. The existing
+`transaction_supported` boolean stays conservative for older clients: only
+`supported` produces `true`; `false` alone does not distinguish unknown from
+unsupported. Neither field authorizes mutation or overrides recovery guards.
+
 `pcb_add_tracks_bulk` is **not** in that allowlist. While a transaction is open, calling it is refused with: *"pcb_add_tracks_bulk does not participate in the active native-live transaction. Commit or discard the transaction before using this operation."* Bulk track additions therefore cannot be staged inside a commit group. Either add tracks one at a time with `pcb_add_track` (which does participate), or commit or drop the current transaction before running the bulk call. On an IPC failure the session state becomes ambiguous and further transactions are blocked until the active board is reconciled, so treat a transaction as a single long-running unit rather than interleaving unrelated tool calls.
 
 ## Footprint keepout intent during stackup changes

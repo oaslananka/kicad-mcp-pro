@@ -56,6 +56,24 @@ Profiles are selected when the MCP server process starts. To move from review to
 
 KiCad MCP Pro does not currently mutate a session's profile at runtime, so it does not emit `notifications/tools/list_changed` for profile transitions. Clients that support `tools/listChanged` still receive normal server-driven list changes where the underlying MCP implementation supports them, but profile changes require a fresh connection.
 
+## Runtime IPC discovery
+
+With runtime tool filtering enabled, the server's `tools/list` reflects the
+current KiCad IPC capability snapshot, cached for approximately one second.
+After opening or closing a KiCad PCB or schematic, allow the snapshot to
+expire and request `tools/list` again. If the host retains an older catalog
+and cannot refresh it, reconnect the MCP session. Do not assume that a
+stateless HTTP session receives an automatic catalog-change notification.
+A discovered tool is not proof that IPC is still connected when it is called;
+the normal operating-mode and native execution guards remain authoritative.
+
+Maintainers can reproduce the Windows native discovery and recovery contract
+with the opt-in `tests/gui/test_native_ipc_discovery_recovery.py` test. Set
+`KICAD_NATIVE_WINDOWS_IPC_GUI_BIN` to an installed KiCad 10.0 bin directory
+and run `uv run --locked pytest tests/gui/test_native_ipc_discovery_recovery.py`.
+It uses a disposable project, private configuration and IPC endpoint, and
+loopback HTTP only; it does not qualify an external Cloud Tunnel.
+
 ## Versioned local capability contract
 
 The machine-readable contract under integrations/common/capability-catalog.json
