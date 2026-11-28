@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from ..models.pcb import SetStackupInput, StackupLayerSpec
+from ..models.pcb import KeepoutLayerIntents, SetStackupInput, StackupLayerSpec
 
 
 class BoardFileDiagnostics(Protocol):
@@ -32,7 +32,7 @@ type TotalStackupThickness = Callable[[list[StackupLayerSpec]], float]
 type ConfiguredBoardFile = Callable[[], Path | None]
 type IsCopperStackupLayer = Callable[[StackupLayerSpec], bool]
 type WriteStackupState = Callable[[list[StackupLayerSpec]], Path]
-type ApplyStackupToBoard = Callable[[str, list[StackupLayerSpec]], str]
+type ApplyStackupToBoard = Callable[[str, list[StackupLayerSpec], KeepoutLayerIntents], str]
 type ReloadBoardAfterFileSync = Callable[[], str]
 type GuardFileBasedBoardEdit = Callable[[str, bool], str | None]
 type FinalizeFileBasedBoardEdit = Callable[[bool], str]
@@ -89,7 +89,12 @@ class PcbStackupManagementService:
         lines.append(f"- Total thickness: {self.total_stackup_thickness_mm(layers):.4f} mm")
         return "\n".join(lines)
 
-    def set_stackup(self, layers: list[dict[str, object]], allow_open_board: bool = False) -> str:
+    def set_stackup(
+        self,
+        layers: list[dict[str, object]],
+        allow_open_board: bool = False,
+        keepout_layer_intents: KeepoutLayerIntents | None = None,
+    ) -> str:
         """Validate and persist a file-backed stackup profile transactionally.
 
         Refuses while the board is open in KiCad unless ``allow_open_board`` is
@@ -99,13 +104,17 @@ class PcbStackupManagementService:
             refusal := self.guard_file_based_board_edit("stackup update", allow_open_board)
         ):
             return refusal
-        payload = SetStackupInput.model_validate({"layers": layers})
+        payload = SetStackupInput.model_validate(
+            {"layers": layers, "keepout_layer_intents": keepout_layer_intents or {}}
+        )
         copper_count = sum(1 for layer in payload.layers if self.is_copper_stackup_layer(layer))
         if copper_count < 2:
             raise ValueError("A valid stackup needs at least two copper layers.")
 
         self.transactional_board_write(
-            lambda current: self.apply_stackup_to_board(current, payload.layers)
+            lambda current: self.apply_stackup_to_board(
+                current, payload.layers, payload.keepout_layer_intents
+            )
         )
         # Persist the profile only once the board accepted it, so a rejected stackup
         # never becomes the "current" one that later tools read back.

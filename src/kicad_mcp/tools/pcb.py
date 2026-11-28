@@ -60,6 +60,7 @@ from ..models.pcb import (
     CreepageCheckInput,
     GroupFootprintsInput,
     ImpedanceForTraceInput,
+    KeepoutLayerIntents,
     KeepoutZoneInput,
     LayerViaInput,
     PlaceDecouplingCapsInput,
@@ -97,6 +98,12 @@ from ..pcb.live_edit_runtime import (
     get_live_edit_service,
 )
 from ..pcb.origin_management import PcbOriginService
+from ..pcb.rule_layer_intent import (
+    COPPER_LAYERS,
+    mark_library_keepout_intent,
+    reconcile_footprint_keepouts,
+    remap_cloned_rule_intents,
+)
 from ..pcb.saved_state import SavedPcbStateService
 from ..pcb.session_inspection import PcbSessionInspectionService
 from ..pcb.stackup_management import PcbStackupManagementService
@@ -1023,14 +1030,24 @@ def _required_creepage_mm(
     return round(required_mm * group_multiplier[material_group], 3)
 
 
-def _apply_stackup_to_board(content: str, layers: list[StackupLayerSpec]) -> str:
+def _apply_stackup_to_board(
+    content: str,
+    layers: list[StackupLayerSpec],
+    keepout_layer_intents: KeepoutLayerIntents | None = None,
+) -> str:
     """Write ``layers`` as the board stackup, keeping KiCad's layer table in step.
 
     KiCad reads the copper layer count from the root ``(layers ...)`` table, so inner
     copper layers are added to (or, when unused, removed from) that table as well.
     """
-    _validate_stackup_copper_sequence(layers)
+    copper = _validate_stackup_copper_sequence(layers)
     updated = _normalize_board_content(content)
+    if table_span := _child_span(updated, "layers"):
+        start, end = table_span
+        old_copper = set(_layer_table_entries(updated[start:end])) & COPPER_LAYERS
+        updated = reconcile_footprint_keepouts(updated, old_copper, copper, keepout_layer_intents)
+    elif keepout_layer_intents:
+        raise ValueError("Cannot resolve rule intent without a board layer table.")
     updated = _sync_layer_table_with_stackup(updated, layers)
     updated = _set_general_thickness(updated, _total_stackup_thickness_mm(layers))
     stackup_block = _render_stackup_block(layers, _existing_stackup_properties(updated))
@@ -2936,11 +2953,15 @@ def _append_to_footprint_block(block: str, child_block: str) -> str:
 
 
 def _refresh_uuid_fields(block: str) -> str:
-    return re.sub(
-        r'(?<=\(uuid\s")[0-9a-fA-F-]{36}(?="\))',
-        lambda _match: str(uuid.uuid4()),
-        block,
-    )
+    uuid_map: dict[str, str] = {}
+
+    def refresh(match: re.Match[str]) -> str:
+        identity = str(uuid.uuid4())
+        uuid_map[match.group()] = identity
+        return identity
+
+    updated = re.sub(r'(?<=\(uuid\s")[0-9a-fA-F-]{36}(?="\))', refresh, block)
+    return remap_cloned_rule_intents(updated, uuid_map)
 
 
 def _inner_layer_graphic_block(
@@ -3194,6 +3215,7 @@ def _render_board_footprint_block(
     block = _replace_property_value(block, "Reference", reference)
     block = _replace_property_value(block, "Value", value)
     block = _apply_schematic_footprint_fields(block, properties or {})
+    block = mark_library_keepout_intent(block)
     block = _assign_pad_nets(block, pad_nets)
     block = _rotate_footprint_child_angles(block, rotation)
     block = _transform_footprint_zone_geometry(
