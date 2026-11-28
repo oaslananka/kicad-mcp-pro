@@ -343,31 +343,71 @@ def _rule_i2c_pullups(nets: Sequence[NetView]) -> list[Finding]:
     return findings
 
 
+_SIGNAL_PIN_TYPES = frozenset(
+    {
+        "input",
+        "output",
+        "bidirectional",
+        "tri_state",
+        "open_collector",
+        "open_emitter",
+        "no_connect",
+    }
+)
+
+
+def _rail_ic_roles(net: NetView) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Separate confirmed power loads from pins with unresolved bypass requirements."""
+    loads: dict[str, None] = {}
+    unverified: dict[str, None] = {}
+    for pin in net.get("pins", []):
+        ref = str(pin.get("reference", ""))
+        if not _IC_RE.match(ref):
+            continue
+        kind = str(pin.get("etype", "")).strip().lower()
+        if kind == "power_in":
+            loads[ref] = None
+        elif kind not in _SIGNAL_PIN_TYPES:
+            # Passive/unspecified metadata and regulator outputs do not establish
+            # an input load or the manufacturer's output-capacitor requirements.
+            unverified[ref] = None
+    return tuple(loads), tuple(unverified)
+
+
 def _rule_power_rail_decoupling(nets: Sequence[NetView]) -> list[Finding]:
     findings: list[Finding] = []
     for net in nets:
-        names = _net_names(net)
-        rail_names = [name for name in names if is_supply_rail_name(name)]
+        rail_names = [name for name in _net_names(net) if is_supply_rail_name(name)]
         if not rail_names:
             continue
-        ics = _net_refs(net, _IC_RE)
-        if not ics:
-            continue
-        if _net_refs(net, _CAP_RE):
-            continue
+        loads, unverified = _rail_ic_roles(net)
         label = rail_names[0]
-        findings.append(
-            Finding(
-                rule_id="power_rail_decoupling",
-                severity="warning",
-                message=(
-                    f"Supply rail '{label}' feeds {', '.join(ics)} but has no decoupling "
-                    "capacitor on the rail. Every IC supply pin should have a local "
-                    "decoupling capacitor (typically 100nF per pin)."
-                ),
-                refs=tuple(ics),
+        if unverified:
+            findings.append(
+                Finding(
+                    rule_id="power_rail_decoupling",
+                    severity="warning",
+                    message=(
+                        f"Bypass requirements on '{label}' for {', '.join(unverified)} are "
+                        "unverified from symbol pin types. Check the datasheet, pin function "
+                        "and actual circuit intent before deciding whether capacitance is required."
+                    ),
+                    refs=unverified,
+                )
             )
-        )
+        if loads and not _net_refs(net, _CAP_RE):
+            findings.append(
+                Finding(
+                    rule_id="power_rail_decoupling",
+                    severity="warning",
+                    message=(
+                        f"Supply rail '{label}' feeds {', '.join(loads)} but has no decoupling "
+                        "capacitor on the rail. Review the manufacturer's local bypass "
+                        "requirements for the confirmed power input pins."
+                    ),
+                    refs=loads,
+                )
+            )
     return findings
 
 

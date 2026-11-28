@@ -103,7 +103,9 @@ def test_supply_rail_without_decoupling_is_flagged() -> None:
 
 
 def test_supply_rail_with_cap_or_without_ic_is_clean() -> None:
-    with_cap = run_schematic_design_rules([_net(["+3V3"], [("U1", "1"), ("C1", "1")])])
+    with_cap = run_schematic_design_rules(
+        [_supply_net("+3V3", [("U1", "1", "power_in"), ("C1", "1", "passive")])]
+    )
     assert not any(f.rule_id == "power_rail_decoupling" for f in with_cap)
 
     # A rail with no IC on it (e.g. just a connector) is not flagged for decoupling.
@@ -471,3 +473,74 @@ def test_findings_are_sorted_and_typed() -> None:
     assert all(f.severity in {"error", "warning", "info"} for f in findings)
     # Stable ordering by (severity, rule_id, message).
     assert findings == sorted(findings, key=lambda f: f.sort_key())
+
+
+def _vbus_sense_divider(pin_type: str = "input") -> list[dict]:
+    return [
+        _supply_net("VBUS_5V", [("U1", "7", "power_in"), ("R1", "1", "passive")]),
+        _supply_net(
+            "VBUS_SENSE", [("U1", "8", pin_type), ("R1", "2", "passive"), ("R2", "1", "passive")]
+        ),
+        _supply_net("GND", [("U1", "3", "power_in"), ("R2", "2", "passive")]),
+    ]
+
+
+def test_sense_divider_does_not_require_supply_decoupling() -> None:
+    findings = run_schematic_design_rules(_vbus_sense_divider())
+    warnings = [f for f in findings if f.rule_id == "power_rail_decoupling"]
+    assert len(warnings) == 1
+    assert "'VBUS_5V'" in warnings[0].message
+    assert warnings[0].refs == ("U1",)
+
+
+def test_sense_named_rail_with_real_power_input_is_still_flagged() -> None:
+    nets = _vbus_sense_divider()
+    nets[1]["pins"].append({"reference": "U2", "pin": "1", "etype": "power_in"})
+    findings = run_schematic_design_rules(nets)
+    warnings = [
+        f for f in findings if f.rule_id == "power_rail_decoupling" and "'VBUS_SENSE'" in f.message
+    ]
+    assert len(warnings) == 1
+    assert warnings[0].refs == ("U2",)
+
+
+def test_ambiguous_sense_metadata_is_actionable_without_capacitor_prescription() -> None:
+    findings = run_schematic_design_rules(_vbus_sense_divider("unspecified"))
+    warnings = [
+        f for f in findings if f.rule_id == "power_rail_decoupling" and "'VBUS_SENSE'" in f.message
+    ]
+    assert len(warnings) == 1
+    assert warnings[0].severity == "warning"
+    assert "unverified" in warnings[0].message.lower()
+    assert "datasheet" in warnings[0].message.lower()
+    assert "100nF" not in warnings[0].message
+
+
+def test_ambiguous_pin_is_not_hidden_by_another_confirmed_supply() -> None:
+    net = _supply_net(
+        "VBUS_SENSE", [("U1", "8", "input"), ("U2", "1", "power_in"), ("U3", "2", "passive")]
+    )
+    findings = [
+        f for f in run_schematic_design_rules([net]) if f.rule_id == "power_rail_decoupling"
+    ]
+    assert {f.refs for f in findings} == {("U2",), ("U3",)}
+    assert any("unverified" in f.message.lower() for f in findings if f.refs == ("U3",))
+
+
+def test_supply_output_without_load_is_advisory_not_assumed_input() -> None:
+    net = _supply_net("+3V3", [("U1", "1", "power_out")])
+    findings = [
+        f for f in run_schematic_design_rules([net]) if f.rule_id == "power_rail_decoupling"
+    ]
+    assert len(findings) == 1
+    assert "unverified" in findings[0].message.lower()
+    assert "datasheet" in findings[0].message.lower()
+
+
+def test_ambiguous_role_remains_unverified_even_with_capacitor() -> None:
+    net = _supply_net("+3V3", [("U1", "1", "unspecified"), ("C1", "1", "passive")])
+    findings = [
+        f for f in run_schematic_design_rules([net]) if f.rule_id == "power_rail_decoupling"
+    ]
+    assert len(findings) == 1
+    assert "unverified" in findings[0].message.lower()
