@@ -109,14 +109,25 @@ def extract_balanced_block(text: str, start: int) -> str:
     return text[start:]
 
 
+def _physical_pin_numbers(number: str) -> tuple[str, ...]:
+    """Expand KiCad's explicit decimal member list, never infer a range."""
+    if re.fullmatch(r"\[[0-9]+(?:,[0-9]+)+\]", number):
+        members = tuple(number[1:-1].split(","))
+        if len(set(members)) == len(members):
+            return members
+    return (number,)
+
+
 def parse_symbol_pins(symbol_block: str) -> tuple[Pin, ...]:
     """Extract pins from a ``(symbol "Lib:Name" ...)`` definition block.
 
     Each ``(pin ...)`` sub-expression is isolated as a balanced block and parsed
     on its own, so a pin missing a name or number cannot bleed into the next
     pin's fields (a single non-greedy ``findall`` over the whole block could).
-    Duplicate pin numbers (parts drawn as multiple units) are collapsed to the
-    first occurrence so the count reflects distinct electrical pins.
+    Explicit comma-separated decimal groups (e.g. "[1,15,38,39]") expand
+    to their physical members with the original name and electrical type.
+    Unsupported group syntax remains visible for an unverified finding.
+    Duplicate physical numbers are collapsed to the first occurrence.
     """
 
     # ``(pin`` + word boundary tolerates any whitespace after the keyword
@@ -139,17 +150,11 @@ def parse_symbol_pins(symbol_block: str) -> tuple[Pin, ...]:
         number_match = re.search(r'\(number\s+"([^"\\]*(?:\\.[^"\\]*)*)"', pin_block)
         if not (type_match and name_match and number_match):
             continue
-        number = number_match.group(1)
-        if number in seen:
-            continue
-        seen.add(number)
-        pins.append(
-            Pin(
-                number=number,
-                name=name_match.group(1),
-                electrical_type=type_match.group(1),
-            )
-        )
+        for number in _physical_pin_numbers(number_match.group(1)):
+            if number in seen:
+                continue
+            seen.add(number)
+            pins.append(Pin(number, name_match.group(1), type_match.group(1)))
     return tuple(pins)
 
 
@@ -320,7 +325,19 @@ def verify_contract(
     findings: list[Finding] = []
 
     pin_numbers = {pin.number for pin in pins if pin.number}
+    unverified_groups = {number for number in pin_numbers if number.startswith("[")}
+    pin_numbers -= unverified_groups
     pad_numbers = set(footprint.connectable_pads)
+    if unverified_groups:
+        findings.append(
+            Finding(
+                "WARN",
+                "symbol_pin_group_unverified",
+                "Unsupported grouped pin notation: "
+                f"{', '.join(sorted(unverified_groups))}. "
+                "Full pin/pad alignment is unverified; inspect the native netlist and symbol.",
+            )
+        )
 
     if not pins:
         findings.append(
@@ -332,7 +349,14 @@ def verify_contract(
         )
 
     if pin_numbers and pad_numbers:
-        findings.extend(_verify_pin_pad_alignment(pin_numbers, pad_numbers))
+        if not unverified_groups:
+            findings.extend(_verify_pin_pad_alignment(pin_numbers, pad_numbers))
+        elif missing := sorted(pin_numbers - pad_numbers):
+            findings.append(
+                Finding(
+                    "FAIL", "pin_pad_numbers", f"Pins with no matching pad: {', '.join(missing)}."
+                )
+            )
 
     findings.extend(
         [
