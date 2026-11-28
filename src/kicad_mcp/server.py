@@ -2645,6 +2645,7 @@ def _run_server_from_options(
             cfg.log_file,
             cfg.log_max_bytes,
             cfg.log_backup_count,
+            cfg.log_schematic_item_details,
         )
 
         selected_transport = "stdio" if cfg.transport == "stdio" else "streamable-http"

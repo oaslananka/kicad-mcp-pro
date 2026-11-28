@@ -96,7 +96,7 @@ Total public tools: 257.
 | `pcb_add_barcode` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | yes | no | Add a production barcode marker to the board file. This KiCad MCP Pro tool supports production EDA automation workflo... |
 | `pcb_add_blind_via` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | no | Add a blind or buried via between the requested copper layers. |
 | `pcb_add_circle` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | no | Add a board graphic circle. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
-| `pcb_add_copper_zone` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Backward-compatible alias for pcb_add_zone(). This KiCad MCP Pro tool supports production EDA automation workflows fo... |
+| `pcb_add_copper_zone` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Alias for pcb_add_zone; use only outside an active transaction. |
 | `pcb_add_fiducial_marks` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | yes | no | Append simple fiducial footprints near the board corners. This KiCad MCP Pro tool supports production EDA automation... |
 | `pcb_add_microvia` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | no | Add a microvia between adjacent copper layers. This KiCad MCP Pro tool supports production EDA automation workflows f... |
 | `pcb_add_mounting_holes` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | yes | no | Append standard mounting-hole footprints around the current board frame. |
@@ -107,7 +107,7 @@ Total public tools: 257.
 | `pcb_add_track` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Add a single track segment. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
 | `pcb_add_tracks_bulk` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | no | Add multiple tracks in a single operation. This KiCad MCP Pro tool supports production EDA automation workflows for M... |
 | `pcb_add_via` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Add a via. This KiCad MCP Pro tool supports production EDA automation workflows for MCP clients. |
-| `pcb_add_zone` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Add a copper zone with an arbitrary polygon outline on one copper layer. |
+| `pcb_add_zone` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | no | yes | Add and refill a copper zone on one layer, outside an active transaction. |
 | `pcb_align_footprints` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | no | no | yes | no | Arrange selected footprints into a straight row or column. This KiCad MCP Pro tool supports production EDA automation... |
 | `pcb_auto_place_by_schematic` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | yes | no | Place PCB footprints from the current schematic using deterministic heuristics. |
 | `pcb_auto_place_force_directed` | agent_full, builder, full, high_speed, pcb, pcb_only, power | no | yes | no | yes | no | Run a force-directed spring-embedder placement algorithm on a set of components. |
@@ -235,7 +235,7 @@ Total public tools: 257.
 | `sch_update_properties` | agent_full, builder, critic, full, high_speed, power, schematic, schematic_only, simulation | no | yes | no | no | no | Update a property on a placed symbol. This KiCad MCP Pro tool supports production EDA automation workflows for MCP cl... |
 | `schematic_connectivity_gate` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | no | no | no | yes | no | Evaluate whether schematic structure and hierarchy look electrically meaningful. This KiCad MCP Pro tool supports pro... |
 | `schematic_quality_gate` | agent_full, analysis, builder, critic, full, high_speed, manufacturing, pcb, power, release_manager, schematic | yes | no | no | yes | no | Evaluate whether the schematic is clean enough to proceed. This KiCad MCP Pro tool supports production EDA automation... |
-| `si_bind_interfaces_to_net_classes` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Map interface specs from the project design intent to KiCad net classes. |
+| `si_bind_interfaces_to_net_classes` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Plan net-class routing constraints for interfaces without assigning nets. |
 | `si_calculate_decoupling_placement` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Estimate decoupling placement quality around an IC power pin. This KiCad MCP Pro tool supports production EDA automat... |
 | `si_calculate_trace_impedance` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Estimate PCB trace impedance using quasi-static interconnect formulas. This KiCad MCP Pro tool supports production ED... |
 | `si_calculate_trace_width_for_impedance` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Solve for a trace width that meets the requested impedance target. |
@@ -243,7 +243,7 @@ Total public tools: 257.
 | `si_check_via_stub` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Estimate via-stub resonance and risk for selected vias on the active board. |
 | `si_generate_stackup` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Generate a practical board stackup recommendation and target trace geometry. |
 | `si_list_dielectric_materials` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | List all built-in dielectric materials with Er, loss tangent, and frequency range. |
-| `si_synthesize_stackup_for_interfaces` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Synthesise a PCB stackup that meets the impedance requirements of the given interfaces. |
+| `si_synthesize_stackup_for_interfaces` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Synthesise a candidate PCB stackup and first-pass impedance estimates. |
 | `si_validate_length_matching` | agent_full, analysis, critic, full, high_speed | no | no | no | no | no | Validate that each net group is matched within the supplied tolerance. |
 | `sim_add_spice_directive` | agent_full, full, high_speed, simulation | no | yes | no | yes | no | Persist a SPICE directive used by future MCP simulation runs. |
 | `sim_check_stability` | agent_full, full, high_speed, simulation | no | no | no | yes | no | Estimate loop crossover and phase margin from an AC sweep. |

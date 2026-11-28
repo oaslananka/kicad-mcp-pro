@@ -84,10 +84,10 @@ def _render_args(options: Pcb3dRenderOptions, out_file: Path) -> list[str]:
         args.extend(["--preset", options.preset])
     if options.use_board_stackup_colors:
         args.append("--use-board-stackup-colors")
-    if not options.floor:
-        args.append("--no-floor")
-    if not options.perspective:
-        args.append("--orthographic")
+    if options.floor:
+        args.append("--floor")
+    if options.perspective:
+        args.append("--perspective")
     args.extend(_camera_args(options))
     _append_optional(args, "--light-top", options.light_top)
     _append_optional(args, "--light-bottom", options.light_bottom)
@@ -126,9 +126,16 @@ class ExportPcb3dRenderService:
         args = _render_args(options, out_file)
         args.extend(self.active_variant_args())
         args.append(str(pcb_file))
-        code, _, stderr = self.run_cli_variants([args])
+        code, stdout, stderr = self.run_cli_variants([args])
         if code != 0:
-            return Pcb3dRenderResponse(text=f"3D render failed: {stderr or 'unknown error'}")
+            # The CLI adapter sanitizes both streams; parser errors can be stdout-only.
+            diagnostic = stderr.strip() or stdout.strip()
+            detail = (
+                diagnostic.splitlines()[0][:500]
+                if diagnostic
+                else "No diagnostic output; check KiCad CLI render options and project."
+            )
+            return Pcb3dRenderResponse(text=f"3D render failed: exit code {code}; {detail}")
         if not out_file.exists():
             return Pcb3dRenderResponse(text=f"Rendered board image exported to {out_file}")
 

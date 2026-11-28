@@ -153,6 +153,10 @@ class KiCadMCPConfig(BaseSettings):
     log_file: Path | None = Field(default=None)
     log_max_bytes: int = Field(default=5_000_000, ge=1024, le=1_000_000_000)
     log_backup_count: int = Field(default=3, ge=1, le=20)
+    log_schematic_item_details: bool = Field(
+        default=False,
+        description="Opt-in per-item schematic dependency trace at DEBUG level.",
+    )
 
     enable_experimental_tools: bool = Field(default=False)
     enable_persistent_pcb_state: bool = Field(

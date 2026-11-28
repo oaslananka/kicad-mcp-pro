@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import json
+import re
+
+import pytest
+
 from kicad_mcp.signal_integrity.net_class_binding import (
     SignalIntegrityNetClassBindingService,
 )
@@ -34,7 +39,14 @@ def test_bind_dry_run_preserves_plan_output_and_skips_writer() -> None:
     assert "- Diff-pair gap: 0.15 mm" in result
     assert "- Impedance target: 90 ohm" in result
     assert "- Net prefix filter: USB_" in result
-    assert "pcb_set_net_class(net_class='USB3', clearance=0.12, track_width=0.18)" in result
+    assert "pcb_set_net_class(net_class=" not in result
+    actions = [json.loads(x) for x in re.findall(r"```json\n(.*?)\n```", result, re.S)]
+    assert {"tool": "pcb_get_nets", "arguments": {}} in actions
+    rule_action = next(a for a in actions if a["tool"] == "si_bind_interfaces_to_net_classes")
+    assert rule_action["arguments"]["dry_run"] is False
+    assert rule_action["arguments"]["interfaces"][0]["kind"] == "usb3"
+    assert "exact net" in result.casefold()
+    assert "does not assign" in result.casefold()
     assert "_Dry-run mode: no changes applied." in result
     assert "I2C" not in result
 
@@ -75,3 +87,22 @@ def test_bind_reports_when_no_high_speed_interfaces_exist() -> None:
     )
 
     assert result == "No high-speed interfaces found that require custom net classes."
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {},
+        {"kind": "usb22"},
+        {"kind": "usb2", "differential": "false"},
+        {"kind": "usb2", "impedance_target_ohm": -1},
+    ],
+)
+def test_bind_validates_all_interfaces_before_writing(raw: dict[str, object]) -> None:
+    def forbidden(*_args: object) -> str:
+        pytest.fail("Invalid plan must not write rules")
+
+    with pytest.raises(ValueError, match="interface"):
+        SignalIntegrityNetClassBindingService().bind(
+            [{"kind": "usb2"}, raw], dry_run=False, rule_writer=forbidden
+        )

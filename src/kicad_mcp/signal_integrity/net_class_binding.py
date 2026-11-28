@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
+
+from ..models.intent import InterfaceSpec
+from .interface_validation import validate_interfaces
 
 NetClassRuleWriter = Callable[[str, float, float, float | None], str]
 
@@ -29,17 +33,17 @@ _NET_CLASS_TEMPLATES: dict[str, dict[str, object]] = {
 }
 
 
-def _build_net_class_plan(interfaces: list[dict[str, object]]) -> list[dict[str, object]]:
+def _build_net_class_plan(interfaces: list[InterfaceSpec]) -> list[dict[str, object]]:
     plan: list[dict[str, object]] = []
-    for raw in interfaces:
-        kind = str(raw.get("kind", "")).lower()
+    for spec in interfaces:
+        kind = spec.kind
         template = _NET_CLASS_TEMPLATES.get(kind)
         if template is None:
             continue
-        impedance = raw.get("impedance_target_ohm")
-        differential = bool(raw.get("differential", False))
-        net_prefix = str(raw.get("net_prefix", ""))
-        nc_name = f"{kind.upper().replace('_', '_')}"
+        impedance = spec.impedance_target_ohm
+        differential = spec.differential
+        net_prefix = spec.net_prefix
+        nc_name = kind.upper()
         plan.append(
             {
                 "net_class": nc_name,
@@ -62,13 +66,11 @@ def _format_entry_markdown(entry: dict[str, object]) -> list[str]:
     if entry.get("diff_pair_gap_mm") is not None:
         lines.append(f"- Diff-pair gap: {entry['diff_pair_gap_mm']} mm")
     if entry.get("impedance_target_ohm") is not None:
-        lines.append(f"- Impedance target: {entry['impedance_target_ohm']} ohm")
+        lines.append(f"- Impedance target: {float(entry['impedance_target_ohm']):g} ohm")  # type: ignore[arg-type]
     if entry.get("net_prefix"):
         lines.append(f"- Net prefix filter: {entry['net_prefix']}")
     lines.append(
-        f"  → Call: pcb_set_net_class(net_class={entry['net_class']!r}, "
-        f"clearance={entry['clearance_mm']}, "
-        f"track_width={entry['track_width_mm']})"
+        "- Resolve exact net names and class membership in the project before applying rules."
     )
     lines.append("")
     return lines
@@ -107,7 +109,8 @@ class SignalIntegrityNetClassBindingService:
         dry_run: bool,
         rule_writer: NetClassRuleWriter,
     ) -> str:
-        plan = _build_net_class_plan(interfaces)
+        specs = validate_interfaces(interfaces)
+        plan = _build_net_class_plan(specs)
         if not plan:
             return "No high-speed interfaces found that require custom net classes."
 
@@ -115,7 +118,37 @@ class SignalIntegrityNetClassBindingService:
         for entry in plan:
             lines.extend(_format_entry_markdown(entry))
 
+        lines.append(
+            "Rule templates are estimates; this tool writes class constraints but does not assign "
+            "nets or verify physical impedance. Confirm exact net membership in Board Setup."
+        )
         if dry_run:
+            lines.extend(
+                [
+                    "Inspect the actual board nets and match the literal prefix (if supplied). "
+                    "Confirm exact names and class membership; stop if no intended nets resolve. "
+                    "If a tool is absent from tools/list, use Board Setup instead:",
+                    "```json",
+                    json.dumps({"tool": "pcb_get_nets", "arguments": {}}, indent=2),
+                    "```",
+                    "After explicit review of exact nets and class membership, write rules:",
+                    "```json",
+                    json.dumps(
+                        {
+                            "tool": "si_bind_interfaces_to_net_classes",
+                            "arguments": {
+                                "interfaces": [
+                                    spec.model_dump(mode="json", exclude_unset=True)
+                                    for spec in specs
+                                ],
+                                "dry_run": False,
+                            },
+                        },
+                        indent=2,
+                    ),
+                    "```",
+                ]
+            )
             lines.append(
                 "_Dry-run mode: no changes applied. "
                 "Set dry_run=False to write all net class rules to the .kicad_dru file._"

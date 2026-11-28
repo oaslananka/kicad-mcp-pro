@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from jsonschema import Draft202012Validator
 from kipy.proto.board import board_types_pb2
 from kipy.proto.board.board_types_pb2 import BoardLayer, ViaType
 from kipy.proto.common import types as common_types
@@ -1242,12 +1243,85 @@ async def test_pcb_set_keepout_zone_creates_rule_area(mock_board) -> None:
 
 
 @pytest.mark.anyio
-async def test_pcb_add_zone_creates_copper_zone(mock_board) -> None:
+async def test_public_zone_corner_contract_and_transaction_guidance(mock_board) -> None:
+    server = build_server("pcb")
+    tools = {tool.name: tool for tool in await server.list_tools()}
+    canonical = tools["pcb_add_zone"]
+    alias = tools["pcb_add_copper_zone"]
+    assert {k: v for k, v in canonical.input_schema.items() if k != "title"} == {
+        k: v for k, v in alias.input_schema.items() if k != "title"
+    }
+    valid = {
+        "net_name": "GND_DIG",
+        "layer": "B_Cu",
+        "corners": [
+            {"x_mm": 0, "y_mm": 0},
+            {"x_mm": 20, "y_mm": 0},
+            {"x_mm": 20, "y_mm": 10},
+        ],
+    }
+    invalid_corners = [
+        [{"x": 0, "y": 0}] * 3,
+        [{"x_mm": 0}] * 3,
+        [{"x_mm": 2001, "y_mm": 0}] * 3,
+        valid["corners"][:2],
+        valid["corners"] * 43,
+    ]
+    for tool in (canonical, alias):
+        validator = Draft202012Validator(tool.input_schema)
+        assert validator.is_valid(valid)
+        for corners in invalid_corners:
+            assert not validator.is_valid({**valid, "corners": corners}), corners
+        assert "outside an active transaction" in tool.description
+    mock_board.create_items.assert_not_called()
+    mock_board.refill_zones.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool_name", ["pcb_add_zone", "pcb_add_copper_zone"])
+async def test_zone_invalid_input_and_active_group_refuse_before_write(
+    sample_project: Path, mock_board, tool_name: str
+) -> None:
+    mock_board.name = "demo.kicad_pcb"
+    mock_board.get_project.return_value = SimpleNamespace(
+        path=str(sample_project / "demo.kicad_pro"), name="demo"
+    )
+    server = build_server("full")
+    before = mock_board.get_as_string.return_value
+    valid = {
+        "net_name": "GND_DIG",
+        "layer": "B_Cu",
+        "corners": [
+            {"x_mm": 0, "y_mm": 0},
+            {"x_mm": 20, "y_mm": 0},
+            {"x_mm": 20, "y_mm": 10},
+        ],
+    }
+    result = await server.call_tool(tool_name, {**valid, "corners": [{"x": 0, "y": 0}] * 3})
+    assert result.is_error
+    mock_board.create_items.assert_not_called()
+    mock_board.refill_zones.assert_not_called()
+    assert "Transaction group started" in await call_tool_text(server, "pcb_begin_commit", {})
+    refused = await call_tool_text(server, tool_name, valid)
+    assert "does not participate" in refused
+    mock_board.create_items.assert_not_called()
+    mock_board.refill_zones.assert_not_called()
+    mock_board.push_commit.assert_not_called()
+    mock_board.drop_commit.assert_not_called()
+    discarded = await call_tool_text(server, "pcb_drop_commit", {})
+    assert "discarded" in discarded.casefold()
+    assert mock_board.get_as_string() == before
+    mock_board.drop_commit.assert_called_once()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool_name", ["pcb_add_zone", "pcb_add_copper_zone"])
+async def test_pcb_add_zone_creates_copper_zone(mock_board, tool_name: str) -> None:
     server = build_server("pcb")
 
     result = await call_tool_text(
         server,
-        "pcb_add_zone",
+        tool_name,
         {
             "net_name": "GND_DIG",
             "layer": "B_Cu",

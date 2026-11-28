@@ -44,9 +44,10 @@ def register(mcp: FastMCP, dependencies: PcbTransactionLifecycleDependencies) ->
     def pcb_begin_commit() -> str:
         """Begin a transaction group for atomic board modifications.
 
-        All subsequent mutations (add, remove, update operations) will be grouped
-        into a single undo step in KiCad. Call pcb_push_commit to apply or
-        pcb_drop_commit to discard.
+        Only explicitly supported native-live mutations participate in the group.
+        Copper zone creation and refill, including pcb_add_copper_zone, are
+        unsupported while a group is active. Review tool descriptions before use.
+        Call pcb_push_commit to apply or pcb_drop_commit to discard.
 
         Returns:
             Confirmation message with commit status.

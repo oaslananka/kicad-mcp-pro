@@ -80,9 +80,18 @@ async def test_mounting_holes_can_add_keepout_and_hole_clearance(
         ):
             assert rule in zone, (rule, zone)
         points = [(float(x), float(y)) for x, y in re.findall(r"\(xy ([-\d.]+) ([-\d.]+)\)", zone)]
-        # The rule area covers the courtyard circle (radius 1.6 + 1.9 = 3.5 mm).
+        anchor = re.search(r"\(at ([-\d.]+) ([-\d.]+) 0\)", block)
+        assert anchor is not None
+        cx, cy = map(float, anchor.groups())
+        # Zone coordinates in a board file are world coordinates, unlike pad coordinates.
         assert len(points) >= 16
-        assert min((x * x + y * y) ** 0.5 for x, y in points) >= 3.5 - 1e-6
+        assert sum(x for x, _ in points) / len(points) == pytest.approx(cx, abs=0.0001)
+        assert sum(y for _, y in points) / len(points) == pytest.approx(cy, abs=0.0001)
+        assert min(((x - cx) ** 2 + (y - cy) ** 2) ** 0.5 for x, y in points) >= 3.5 - 1e-6
+        assert '(pad "" np_thru_hole circle (at 0 0)' in block
+        assert "(size 3.2000 3.2000)" in block
+        assert "(drill 3.2000)" in block
+        assert '(layers "*.Mask")' in block
         assert "(clearance 0.5000)" in block
 
 
@@ -99,7 +108,9 @@ async def test_mounting_holes_default_output_is_unchanged(
 
     blocks = _hole_blocks((sample_project / "demo.kicad_pcb").read_text(encoding="utf-8"))
     assert len(blocks) == 4
-    assert all("(zone" not in block and "(clearance" not in block for block in blocks)
+    assert all("(zone" not in block for block in blocks)
+    assert all("(clearance" not in block for block in blocks)
+    assert all('(layers "*.Cu" "*.Mask")' in block for block in blocks)
 
 
 @pytest.mark.anyio

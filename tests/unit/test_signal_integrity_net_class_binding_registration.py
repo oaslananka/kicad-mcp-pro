@@ -47,7 +47,7 @@ def test_registration_preserves_signature_docstring_and_delegation() -> None:
     )
     assert tool.fn.__doc__ is not None
     assert tool.fn.__doc__.startswith(
-        "Map interface specs from the project design intent to KiCad net classes."
+        "Plan net-class routing constraints for interfaces without assigning nets."
     )
 
     interfaces = [{"kind": "usb3", "differential": True}]
