@@ -1290,7 +1290,8 @@ def test_noncardinal_rotation_rounds_world_positions_like_native(
         items[0].proto.position,
         items[1].proto.shape.segment.start,
     ):
-        assert (v.x_nm, v.y_nm) == expected
+        actual_position = (v.x_nm, v.y_nm)
+        assert actual_position == expected
 
 
 def test_noncardinal_rectangle_preserves_uuid_and_rounded_corner_geometry() -> None:

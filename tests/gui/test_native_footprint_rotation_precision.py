@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -25,6 +24,7 @@ from tests.gui.test_native_ipc_discovery_recovery import (
     _private_editor,
 )
 from tests.integration.test_native_mounting_hole_keepout import _append_objects
+from tests.integration.test_routing_native_drc_preflight import _run_native_python
 
 OPT_IN = "KICAD_NATIVE_WINDOWS_ROTATION_BIN"
 pytestmark = [
@@ -121,15 +121,7 @@ async def test_registered_rotation_matches_native_library_parity(
             ]
             _append_objects(board, board.read_text(encoding="utf-8"), *blocks)
             assert not _mismatch_references(board, board.with_name("baseline.json"))
-            oracle = Path(scratch) / "native_oracle.py"
-            oracle.write_text(_NATIVE_ORACLE, encoding="utf-8")
-            subprocess.run(
-                [str(bin_dir / "python.exe"), "-I", str(oracle), str(board)],
-                env=env,
-                check=True,
-                capture_output=True,
-                timeout=30,
-            )
+            _run_native_python(bin_dir / "python.exe", _NATIVE_ORACLE, board, env=env)
             expected = {
                 (cycle, restored): _mismatch_references(
                     board.with_name(f"native_{cycle}_{restored}.kicad_pcb"),

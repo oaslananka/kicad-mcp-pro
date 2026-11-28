@@ -119,12 +119,15 @@ def _cardinal_world_positions(
     return result
 
 
+_GEOMETRY_STRUCTURE_CHANGED = "Footprint geometry changed structure during rotation."
+
+
 def _restore_cardinal_world_positions(
     footprint: FootprintInstance, expected: list[tuple[int, int]]
 ) -> None:
     vectors = list(_world_vectors(footprint))
     if len(vectors) != len(expected):
-        raise FootprintRotationError("Footprint geometry changed structure during rotation.")
+        raise FootprintRotationError(_GEOMETRY_STRUCTURE_CHANGED)
     for vector, (x, y) in zip(vectors, expected, strict=True):
         vector.x_nm, vector.y_nm = x, y
 
@@ -210,13 +213,13 @@ def _noncardinal_rotation_plan(footprint: FootprintInstance, delta: float) -> _R
 def _restore_noncardinal_positions(footprint: FootprintInstance, plan: _RotationPlan) -> None:
     children = list(_rotation_children(footprint))
     if len(children) != len(plan):
-        raise FootprintRotationError("Footprint geometry changed structure during rotation.")
+        raise FootprintRotationError(_GEOMETRY_STRUCTURE_CHANGED)
     pending: list[tuple[VectorProto, tuple[int, int]]] = []
     for item, (key, positions) in zip(children, plan, strict=True):
         actual_key = _rotation_child_key(item)
         vectors = list(_item_world_vectors(item))
         if actual_key != key or len(vectors) != len(positions):
-            raise FootprintRotationError("Footprint geometry changed structure during rotation.")
+            raise FootprintRotationError(_GEOMETRY_STRUCTURE_CHANGED)
         pending.extend(zip(vectors, positions, strict=True))
     # Verify every child before modifying any coordinates.
     for vector, (x, y) in pending:
