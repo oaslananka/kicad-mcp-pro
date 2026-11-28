@@ -32,10 +32,16 @@ assert pcbnew.LoadBoard(sys.argv[1]) is not None
 """
 
 
-def _run_native_python(native_python: Path, snippet: str, *arguments: Path) -> None:
+def _run_native_python(
+    native_python: Path, snippet: str, *arguments: Path, env: dict[str, str] | None = None
+) -> None:
     """Only execute fixed test-controlled KiCad snippets on disposable files."""
+    assert native_python.is_absolute()
+    assert native_python.is_file()
+    assert native_python.resolve(strict=True) == native_python
     result = subprocess.run(
-        [str(native_python), "-c", snippet, *(str(path) for path in arguments)],
+        [str(native_python), "-I", "-c", snippet, *(str(path) for path in arguments)],
+        env=env,
         capture_output=True,
         text=True,
         timeout=40,

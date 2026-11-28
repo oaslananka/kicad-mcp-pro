@@ -1257,3 +1257,219 @@ def test_sdk_rotation_matches_native_keep_upright(
         assert expected_v == attrs.vertical_alignment
         assert upright == attrs.keep_upright
         assert attrs.mirrored
+
+
+@pytest.mark.parametrize(
+    ("degrees", "expected"),
+    [(37.25, (60001123, 50000129)), (-37.25, (60000176, 50001116))],
+)
+def test_noncardinal_rotation_rounds_world_positions_like_native(
+    degrees: float, expected: tuple[int, int]
+) -> None:
+    from kipy.board_types import BoardSegment, Pad
+
+    footprint = FootprintInstance()
+    footprint.position = Vector2.from_xy_mm(60, 50)
+    pad = Pad()
+    segment = BoardSegment()
+    segment.end = Vector2.from_xy_mm(62, 51)
+    footprint.definition.items = [pad, segment]
+    # Expected values measured with KiCad 10.0.8 native FOOTPRINT.Rotate.
+    position = Vector2()
+    position.x, position.y = 60000816, 50000782
+    footprint.reference_field.text.position = position
+    pad.position = position
+    segment.start = position
+
+    apply_footprint_rotation(footprint, degrees)
+
+    refreshed = FootprintInstance(proto=footprint.proto)
+    items = refreshed.definition.items
+    for v in (
+        refreshed.reference_field.text.position.proto,
+        items[0].proto.position,
+        items[1].proto.shape.segment.start,
+    ):
+        actual_position = (v.x_nm, v.y_nm)
+        assert actual_position == expected
+
+
+def test_noncardinal_rectangle_preserves_uuid_and_rounded_corner_geometry() -> None:
+    from kipy.board_types import BoardRectangle
+
+    footprint = FootprintInstance()
+    footprint.position = Vector2.from_xy_mm(60, 50)
+    rect = BoardRectangle()
+    rect.proto.id.value = "a1111111-1111-4111-8111-111111111111"
+    rect.top_left = Vector2.from_xy_mm(59.2, 49.5875)
+    rect.bottom_right = Vector2.from_xy_mm(60.8, 50.4125)
+    footprint.definition.items = [rect]
+
+    apply_footprint_rotation(footprint, 37.25)
+
+    polygon = FootprintInstance(proto=footprint.proto).definition.items[0]
+    assert polygon.proto.shape.WhichOneof("geometry") == "polygon"
+    assert polygon.proto.id.value == "a1111111-1111-4111-8111-111111111111"
+    outline = polygon.proto.shape.polygon.polygons[0].outline
+    assert outline.closed
+    assert len(outline.nodes) == 4
+    assert [(n.point.x_nm, n.point.y_nm) for n in outline.nodes] == [
+        (59113515, 50155884),
+        (59612882, 50812586),
+        (60886485, 49844116),
+        (60387118, 49187414),
+    ]
+
+
+def test_noncardinal_rotation_rejects_reordered_child_identities(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kipy.board_types import Pad
+
+    footprint = FootprintInstance()
+    first, second = Pad(), Pad()
+    first.proto.id.value = "11111111-1111-4111-8111-111111111111"
+    second.proto.id.value = "22222222-2222-4222-8222-222222222222"
+    first.position = Vector2.from_xy_mm(1, 2)
+    second.position = Vector2.from_xy_mm(3, 4)
+    footprint.definition.items = [first, second]
+    original = FootprintInstance.orientation
+    assert original.fset is not None
+
+    def reorder(instance: FootprintInstance, angle: Angle) -> None:
+        original.fset(instance, angle)
+        instance.definition.items = list(reversed(instance.definition.items))
+
+    monkeypatch.setattr(FootprintInstance, "orientation", property(original.fget, reorder))
+    with pytest.raises(FootprintRotationError, match="geometry changed structure"):
+        apply_footprint_rotation(footprint, 37.25)
+
+
+def test_noncardinal_rotation_rejects_changed_polygon_topology(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kipy.board_types import BoardPolygon
+    from kipy.geometry import PolygonWithHoles
+
+    footprint = FootprintInstance()
+    polygon = BoardPolygon()
+    polygon.polygons.append(PolygonWithHoles())
+    outline = polygon.polygons[0].proto.outline
+    outline.closed = True
+    for x, y in [(1, 2), (2, 3), (3, 2)]:
+        outline.nodes.add().point.CopyFrom(Vector2.from_xy_mm(x, y).proto)
+    footprint.definition.items = [polygon]
+    original = FootprintInstance.orientation
+    assert original.fset is not None
+
+    def change_topology(instance: FootprintInstance, angle: Angle) -> None:
+        original.fset(instance, angle)
+        instance.definition.items[0].polygons[0].proto.outline.closed = False
+
+    monkeypatch.setattr(FootprintInstance, "orientation", property(original.fget, change_topology))
+    with pytest.raises(FootprintRotationError, match="geometry changed structure"):
+        apply_footprint_rotation(footprint, 37.25)
+
+
+def test_noncardinal_rotation_preserves_local_pad_geometry_and_zone_topology() -> None:
+    from kipy.board_types import BoardText, Pad, Zone
+
+    footprint = FootprintInstance()
+    footprint.position = Vector2.from_xy_mm(60, 50)
+    position = Vector2()
+    position.x, position.y = 60000816, 50000782
+    pad = Pad()
+    pad.proto.id.value = "11111111-1111-4111-8111-111111111111"
+    pad.position = position
+    layer = pad.proto.pad_stack.copper_layers[0]
+    layer.offset.x_nm, layer.offset.y_nm = 123, -456
+    layer.size.x_nm, layer.size.y_nm = 2000000, 1000000
+    local_shape = layer.custom_shapes.add().shape.segment
+    local_shape.start.x_nm, local_shape.start.y_nm = 321, -654
+    local_shape.end.x_nm, local_shape.end.y_nm = 789, 987
+    local_before = layer.SerializeToString()
+    zone = Zone()
+    zone.proto.id.value = "22222222-2222-4222-8222-222222222222"
+    for outline in (
+        zone.proto.outline.polygons.add().outline,
+        zone.proto.filled_polygons.add().shapes.polygons.add().outline,
+    ):
+        outline.closed = True
+        for point in (position, Vector2.from_xy_mm(61, 52), Vector2.from_xy_mm(63, 51)):
+            outline.nodes.add().point.CopyFrom(point.proto)
+    text = BoardText()
+    text.position = position
+    text.attributes.angle = 12
+    text.attributes.keep_upright = True
+    text.value = "custom"
+    model = Footprint3DModel()
+    model.filename = "custom.step"
+    model.proto.offset.x_nm = 1500000
+    model_before = model.proto.SerializeToString()
+    footprint.definition.items = [pad, zone, text, model]
+
+    apply_footprint_rotation(footprint, 37.25)
+
+    actual = FootprintInstance(proto=footprint.proto)
+    p, z, t, m = actual.definition.items
+    assert p.proto.id.value == pad.proto.id.value
+    assert z.proto.id.value == zone.proto.id.value
+    assert p.proto.pad_stack.copper_layers[0].SerializeToString() == local_before
+    assert (p.proto.position.x_nm, p.proto.position.y_nm) == (60001123, 50000129)
+    for outline in (
+        z.proto.outline.polygons[0].outline,
+        z.proto.filled_polygons[0].shapes.polygons[0].outline,
+    ):
+        assert outline.closed
+        assert len(outline.nodes) == 3
+        assert (outline.nodes[0].point.x_nm, outline.nodes[0].point.y_nm) == (
+            60001123,
+            50000129,
+        )
+    assert t.value == "custom"
+    assert t.attributes.angle == pytest.approx(49.25)
+    assert m.proto.SerializeToString() == model_before
+
+
+def test_noncardinal_rotation_rejects_unsupported_child_before_mutation() -> None:
+    footprint = FootprintInstance()
+    footprint.definition.items = [object()]
+    with pytest.raises(FootprintRotationError, match="Unsupported footprint child"):
+        apply_footprint_rotation(footprint, 37.25)
+    assert footprint.orientation.degrees == 0
+
+
+def test_noncardinal_rotation_rejects_dropped_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from kipy.board_types import Pad
+
+    footprint = FootprintInstance()
+    footprint.definition.items = [Pad()]
+    original = FootprintInstance.orientation
+    assert original.fset is not None
+
+    def drop(instance: FootprintInstance, angle: Angle) -> None:
+        original.fset(instance, angle)
+        instance.definition.items = []
+
+    monkeypatch.setattr(FootprintInstance, "orientation", property(original.fget, drop))
+    with pytest.raises(FootprintRotationError, match="geometry changed structure"):
+        apply_footprint_rotation(footprint, 37.25)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (0.49999999999999994, 0),
+        (-0.49999999999999994, 0),
+        (0.5, 1),
+        (-0.5, -1),
+        (1.5, 2),
+        (-1.5, -2),
+    ],
+)
+def test_native_rounding_handles_half_boundaries(value: float, expected: int) -> None:
+    from kicad_mcp.pcb.footprint_transform import _native_round
+
+    assert _native_round(value) == expected

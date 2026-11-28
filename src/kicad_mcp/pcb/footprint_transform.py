@@ -10,12 +10,15 @@ from google.protobuf.descriptor import FieldDescriptor  # type: ignore[import-un
 from google.protobuf.message import Message  # type: ignore[import-untyped]
 from kipy.board_types import (
     BoardPolygon,
+    BoardRectangle,
     BoardShape,
     BoardText,
     Field,
+    Footprint3DModel,
     FootprintInstance,
     Pad,
     Zone,
+    to_concrete_board_shape,
 )
 from kipy.geometry import Angle
 from kipy.proto.common import types as common_types
@@ -116,13 +119,110 @@ def _cardinal_world_positions(
     return result
 
 
+_GEOMETRY_STRUCTURE_CHANGED = "Footprint geometry changed structure during rotation."
+
+
 def _restore_cardinal_world_positions(
     footprint: FootprintInstance, expected: list[tuple[int, int]]
 ) -> None:
     vectors = list(_world_vectors(footprint))
     if len(vectors) != len(expected):
-        raise FootprintRotationError("Footprint geometry changed structure during rotation.")
+        raise FootprintRotationError(_GEOMETRY_STRUCTURE_CHANGED)
     for vector, (x, y) in zip(vectors, expected, strict=True):
+        vector.x_nm, vector.y_nm = x, y
+
+
+def _native_round(value: float) -> int:
+    """KiCad KiROUND uses nearest integer, with halves away from zero."""
+    magnitude = abs(value)
+    integral = math.floor(magnitude)
+    rounded = integral + int(magnitude - integral >= 0.5)
+    return rounded if value >= 0 else -rounded
+
+
+def _rotation_children(footprint: FootprintInstance) -> Iterator[object]:
+    yield footprint.reference_field
+    yield footprint.value_field
+    yield footprint.datasheet_field
+    yield footprint.description_field
+    for item in footprint.definition.items:
+        if not isinstance(item, Footprint3DModel):
+            yield item
+
+
+def _geometry_topology(message: Message) -> bytes:
+    """Compare geometry structure independently of the coordinate values."""
+    copy = type(message)()
+    copy.CopyFrom(message)
+    for vector in _geometry_vectors(copy):
+        vector.x_nm = 0
+        vector.y_nm = 0
+    return cast(bytes, copy.SerializeToString(deterministic=True))
+
+
+_RotationChildKey = tuple[str, bytes, str | None, tuple[bytes, ...]]
+
+
+def _rotation_child_key(item: object) -> _RotationChildKey:
+    if not isinstance(item, (Field, BoardText, Pad, Zone, BoardShape)):
+        raise FootprintRotationError("Unsupported footprint child during rotation.")
+    proto = item.proto
+    kind = None
+    topology: tuple[bytes, ...] = ()
+    if isinstance(item, BoardShape):
+        kind = proto.shape.WhichOneof("geometry")
+        if kind is not None:
+            topology = (_geometry_topology(getattr(proto.shape, kind)),)
+    elif isinstance(item, Zone):
+        topology = (
+            _geometry_topology(proto.outline),
+            *(_geometry_topology(filled) for filled in proto.filled_polygons),
+        )
+    return proto.DESCRIPTOR.full_name, proto.id.SerializeToString(), kind, topology
+
+
+_RotationPlan = list[tuple[_RotationChildKey, list[tuple[int, int]]]]
+
+
+def _noncardinal_rotation_plan(footprint: FootprintInstance, delta: float) -> _RotationPlan:
+    cx, cy = footprint.position.x, footprint.position.y
+    sine, cosine = math.sin(math.radians(delta)), math.cos(math.radians(delta))
+    result: _RotationPlan = []
+    for item in _rotation_children(footprint):
+        if isinstance(item, BoardShape):
+            # Match the SDK's deliberate rectangle-to-polygon conversion without
+            # altering the original footprint or replacing library geometry.
+            _ = item.proto
+            shape = to_concrete_board_shape(item)
+            if isinstance(shape, BoardRectangle):
+                item = BoardPolygon.from_rectangle(shape)
+        key = _rotation_child_key(item)
+        positions = []
+        for vector in _item_world_vectors(item):
+            x, y = vector.x_nm - cx, vector.y_nm - cy
+            positions.append(
+                (
+                    _native_round(y * sine + x * cosine) + cx,
+                    _native_round(y * cosine - x * sine) + cy,
+                )
+            )
+        result.append((key, positions))
+    return result
+
+
+def _restore_noncardinal_positions(footprint: FootprintInstance, plan: _RotationPlan) -> None:
+    children = list(_rotation_children(footprint))
+    if len(children) != len(plan):
+        raise FootprintRotationError(_GEOMETRY_STRUCTURE_CHANGED)
+    pending: list[tuple[VectorProto, tuple[int, int]]] = []
+    for item, (key, positions) in zip(children, plan, strict=True):
+        actual_key = _rotation_child_key(item)
+        vectors = list(_item_world_vectors(item))
+        if actual_key != key or len(vectors) != len(positions):
+            raise FootprintRotationError(_GEOMETRY_STRUCTURE_CHANGED)
+        pending.extend(zip(vectors, positions, strict=True))
+    # Verify every child before modifying any coordinates.
+    for vector, (x, y) in pending:
         vector.x_nm, vector.y_nm = x, y
 
 
@@ -246,6 +346,13 @@ def _apply_rotation_attribute(
     definition = getattr(footprint, "definition", None)
     models_before = list(getattr(definition, "models", ()))
     expected_positions = _expected_cardinal_positions(footprint, current_deg, rotation_deg)
+    noncardinal_plan = None
+    if (
+        isinstance(footprint, FootprintInstance)
+        and current_deg is not None
+        and expected_positions is None
+    ):
+        noncardinal_plan = _noncardinal_rotation_plan(footprint, (rotation_deg - current_deg) % 360)
     try:
         setattr(footprint, attribute, requested)
     except Exception as exc:  # KiCad IPC surfaces raise generated transport/type errors.
@@ -254,6 +361,8 @@ def _apply_rotation_attribute(
     if isinstance(footprint, FootprintInstance):
         if expected_positions is not None:
             _restore_cardinal_world_positions(footprint, expected_positions)
+        elif noncardinal_plan is not None:
+            _restore_noncardinal_positions(footprint, noncardinal_plan)
         _normalize_footprint_text(footprint)
     return None
 
