@@ -189,7 +189,8 @@ async def _exercise_native_session(
                 with _private_editor(editor, board, env, endpoint):
                     await settle()
                     online = await catalog()
-                    assert "pcb_begin_commit" in online and "pcb_add_track" in online
+                    assert "pcb_begin_commit" in online
+                    assert "pcb_add_track" in online
                     assert set(offline) < set(online)
                     assert all(online[name] == value for name, value in offline.items())
                     live = verified_board()
@@ -199,7 +200,8 @@ async def _exercise_native_session(
                     assert (await state())["transaction_support_status"] == "supported"
                     assert "staged" in await successful_call("pcb_add_track", track)
                     assert "discarded" in await successful_call("pcb_drop_commit")
-                    assert live.get_as_string() == before and len(live.get_tracks()) == 0
+                    assert live.get_as_string() == before
+                    assert len(live.get_tracks()) == 0
                     await successful_call("pcb_begin_commit")
                     await successful_call("pcb_add_track", track)
                     assert "committed successfully" in await successful_call("pcb_push_commit")
@@ -242,7 +244,8 @@ async def _exercise_native_session(
                         assert "reconcile the active KiCad board" in message
                         assert "Do not retry" in message
                     denied = await session.call_tool("pcb_add_track", second)
-                    assert denied.is_error and "recovery" in tool_text(denied)
+                    assert denied.is_error
+                    assert "recovery" in tool_text(denied)
                     assert len(live.get_tracks()) == 1
                     assert board.read_bytes() == saved
 
@@ -250,13 +253,14 @@ async def _exercise_native_session(
 def _installed_bin_dir(raw: str) -> Path:
     """Refuse non-local, relative, or redirected editor executables before launch."""
     bin_dir = Path(raw)
-    assert bin_dir.is_absolute() and not bin_dir.drive.startswith("\\\\"), (
-        "Select an installed local KiCad bin directory"
-    )
+    assert bin_dir.is_absolute(), "Select an installed local KiCad bin directory"
+    assert not bin_dir.drive.startswith("\\\\"), "Select an installed local KiCad bin directory"
     bin_dir = bin_dir.resolve(strict=True)
-    assert bin_dir.is_dir() and not bin_dir.drive.startswith("\\\\")
+    assert bin_dir.is_dir()
+    assert not bin_dir.drive.startswith("\\\\")
     for executable in (bin_dir / "pcbnew.exe", bin_dir / "kicad-cli.exe"):
-        assert executable.is_file() and executable.resolve(strict=True) == executable
+        assert executable.is_file()
+        assert executable.resolve(strict=True) == executable
     return bin_dir
 
 
