@@ -132,12 +132,15 @@ class ZoneCornerInput(BaseModel):
     y_mm: CoordMM
 
 
+ZoneCorners = Annotated[list[ZoneCornerInput], Field(min_length=3, max_length=128)]
+
+
 class AddZoneInput(BaseModel):
     """Copper zone placement parameters."""
 
     net_name: str = Field(min_length=1, max_length=240)
     layer: LayerName = Field(default="F_Cu")
-    corners: list[ZoneCornerInput] = Field(min_length=3, max_length=128)
+    corners: ZoneCorners
     clearance_mm: WidthMM = Field(default=0.3)
     min_width_mm: WidthMM = Field(default=0.25)
     thermal_relief: bool = Field(default=True)
